@@ -578,6 +578,40 @@ void test_tsc_view_uses_logical_order_and_validates_added_local_rows() {
     require(rejected && traversal.traversals == 0,
             "TSC view accepted a new logical row without a local physical mapping");
 }
+
+void test_tsc_view_rejects_native_rows_from_another_logical_domain() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto value_rows = NativeRows{};
+    auto visible_rows = NativeRows{};
+    auto cells = NativeColumnData<i64>{};
+    auto release = util::scope_exit{[&]() noexcept {
+        cells.release(memory);
+        value_rows.release(memory);
+        visible_rows.release(memory);
+    }};
+
+    const auto time = MIN_DT + EvaluationTime::duration{1};
+    const auto value_id = value_rows.add(time, memory);
+    const auto visible_id = visible_rows.add(time, memory);
+    cells.add(value_rows, value_id, i64{10}, memory);
+    require(value_id == visible_id && value_rows.identity() != visible_rows.identity(),
+            "test setup did not create overlapping row IDs in distinct logical domains");
+
+    const auto input = ColumnStorage<i64>{cells, value_rows, RowSet::native(visible_rows), &value_rows.added(),
+                                          &cells.modified(), &value_rows.removed(), time};
+    auto output = ColumnViewOutputStorage<i64>{};
+    auto rejected = false;
+    try {
+        static_cast<void>(output.bind(input, true, time, time, memory));
+    } catch (const std::invalid_argument &) {
+        rejected = true;
+    }
+    require(rejected, "TSC view accepted native column deltas for an overlapping foreign row ID");
+}
 } // namespace
 
 int main() {
@@ -594,6 +628,7 @@ int main() {
         test_snapshot_lifetime_and_sparse_batches();
         test_native_row_slots_map_external_ids_and_reuse_clean_cells();
         test_tsc_view_uses_logical_order_and_validates_added_local_rows();
+        test_tsc_view_rejects_native_rows_from_another_logical_domain();
         std::cout << "bg_frame_column_test passed\n";
     } catch (const std::exception &error) {
         std::cerr << "bg_frame_column_test: " << error.what() << '\n';

@@ -1736,7 +1736,8 @@ class RuntimeFrameViewOutputStorage {
             const auto &field = layout->fields[index].column;
             if (binding.cell_type != field.cell_type || binding.payload == nullptr ||
                 binding.copy_column_storage == nullptr || binding.native == nullptr ||
-                binding.physical_rows == nullptr || binding.visible_rows.identity != input.rows.identity)
+                binding.physical_rows == nullptr || binding.visible_rows.identity != input.rows.identity ||
+                (binding.rows != nullptr && binding.rows->identity() != input.rows.identity))
                 throw std::invalid_argument{"frame view column does not match the resolved schema or row domain"};
             const auto exact_native_coverage = binding.rows != nullptr &&
                                                std::addressof(binding.rows->slots()) == binding.physical_rows &&

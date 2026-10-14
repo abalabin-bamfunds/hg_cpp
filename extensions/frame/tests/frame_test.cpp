@@ -2891,6 +2891,52 @@ void test_tsf_projection_rejects_empty_row_domain_mismatch() {
     require(rejected, "empty TSF projection accepted a mismatched physical row domain");
 }
 
+void test_tsf_projection_rejects_native_columns_from_another_logical_domain() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto memory = allocator{};
+    auto value_frame = NativeFrame<Quotes>{};
+    auto visible_frame = NativeFrame<Quotes>{};
+    auto release = util::scope_exit{[&]() noexcept {
+        value_frame.release(memory);
+        visible_frame.release(memory);
+    }};
+
+    const auto time = MIN_DT + EvaluationTime::duration{1};
+    const auto value_id = value_frame.add(Quotes<Cell>{.size = Cell<i64>{5}, .bid = Cell<double>{10.5},
+                                                       .ask = Cell<double>{11.0}},
+                                         time, memory);
+    const auto visible_id = visible_frame.add(Quotes<Cell>{.size = Cell<i64>{8}, .bid = Cell<double>{20.5},
+                                                          .ask = Cell<double>{21.0}},
+                                             time, memory);
+    require(value_id == visible_id && value_frame.rows().identity() != visible_frame.rows().identity(),
+            "test setup did not create overlapping frame row IDs in distinct logical domains");
+
+    auto input = native_frame_input(value_frame);
+    const auto foreign_rows = RowSet::native(visible_frame.rows());
+    input.rows = foreign_rows;
+    const auto bid_index = input.field_index(util::symbol{"bid"});
+    auto bindings = FrameReadBindings{};
+    bindings.source = input;
+    bindings.overridden_index = bid_index;
+    bindings.overridden_binding = input.column(bid_index);
+    bindings.overridden_binding.visible_rows = foreign_rows;
+    bindings.overridden_binding.coverage = foreign_rows;
+    bindings.apply(input);
+
+    auto rejected = false;
+    const auto bid_field = std::array{bid_index};
+    with_runtime_view_storage<BidOnly>(memory, [&](auto &projection, const auto &) {
+        try {
+            static_cast<void>(projection.bind(input, bid_field, std::nullopt, nullptr, nullptr, time, memory));
+        } catch (const std::invalid_argument &) {
+            rejected = true;
+        }
+    });
+    require(rejected, "TSF projection accepted a native column delta for an overlapping foreign row ID");
+}
+
 void test_view_updates_do_not_traverse_source_rows() {
     using namespace bg;
     using namespace bg::frame;
@@ -3262,6 +3308,7 @@ int main() {
         test_tsf_projection_selection_change();
         test_tsf_projection_rejects_invalid_mappings_before_invalidation();
         test_tsf_projection_rejects_empty_row_domain_mismatch();
+        test_tsf_projection_rejects_native_columns_from_another_logical_domain();
         test_view_updates_do_not_traverse_source_rows();
         test_tsf_view_uses_local_physical_rows_incrementally();
         test_filtered_column_coverage_rejects_a_different_row_set();

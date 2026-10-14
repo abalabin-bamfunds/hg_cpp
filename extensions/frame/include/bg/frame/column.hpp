@@ -968,7 +968,8 @@ template <typename T> struct ColumnViewOutputStorage {
 
     bool bind(const ColumnStorage<T> &input, bool source_modified, EvaluationTime source_last_updated,
               EvaluationTime time, allocator memory) {
-        if (input.native == nullptr || input.physical_rows == nullptr || input.visible_rows.identity == nullptr)
+        if (input.native == nullptr || input.physical_rows == nullptr || input.visible_rows.identity == nullptr ||
+            (input.rows != nullptr && input.rows->identity() != input.visible_rows.identity))
             throw std::invalid_argument{"TSC view source has no consistent physical row domain"};
         const auto exact_native_coverage = input.rows != nullptr &&
                                            std::addressof(input.rows->slots()) == input.physical_rows &&
