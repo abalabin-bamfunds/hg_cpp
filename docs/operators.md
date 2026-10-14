@@ -103,6 +103,49 @@ retains every registered implementation.
 Node templates and graph templates can both be overloads. Their normal wiring
 behavior runs only after overload selection.
 
+## Overload implementation declarations
+
+`<bg/overload.hpp>` provides declarations for library initialization:
+
+- `overload<OP>{arguments...}` forwards the arguments to `node()` and registers
+  the resulting node template with `OP`.
+- `overload<OP>{implementation}` registers an existing node or graph template
+  directly. Use `graph(...)` explicitly for graph functions.
+- `overload<OP, Definition>{}` constructs and registers `node<Definition>()`.
+- `instantiate_overloads<OP, Definition, T...>{}` constructs and registers
+  `node<Definition<T>>()` for each listed type. `Definition` is a C++ class
+  template; the list selects separate specializations, not type combinations.
+
+These initialization forms register synchronously. The declaration object
+retains no implementation or handle. The operator owns the registered template.
+
+Place these declarations as ordinary members of a file-local class. Keep each
+aggregate definition beside its registration member and group members by
+operator:
+
+```cpp
+struct numeric_overloads {
+    bg::overload<bg::operators::add> addition{
+        [](double lhs, double rhs) { return lhs + rhs; }
+    };
+
+    bg::overload<bg::operators::add> optional_addition{
+        [](std::optional<double> lhs, std::optional<double> rhs) {
+            return lhs.value_or(0.0) + rhs.value_or(0.0);
+        }
+    };
+};
+
+void register_numeric_operators() {
+    (void)numeric_overloads{};
+}
+```
+
+Library initialization calls the file's registration function after constructing
+the operator objects. Constructing the class registers its members in declaration
+order. The temporary class is not a node definition and adds no runtime node
+storage. Declaring the class alone performs no registration.
+
 ## Candidate resolution
 
 The operator performs overload resolution within its wiring call.

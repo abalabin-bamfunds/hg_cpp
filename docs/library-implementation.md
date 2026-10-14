@@ -79,6 +79,18 @@ restrictions on plain promoted parameters.
 Use a dedicated node when graph composition has a demonstrated execution or
 memory cost that the node can reduce.
 
+## Keep each operator's implementations together
+
+Use one file-local registration class per implementation file, following
+[overload implementation declarations](operators.md#overload-implementation-declarations).
+Group its members by operator, with one short comment before each group. Keep an
+aggregate definition immediately before its registration member. Put callable
+and graph implementations directly in their registration initializers. Keep
+implementation helpers beside the definitions that use them.
+
+Give callback captures a lifetime independent of the temporary registration
+class.
+
 ## Select input validity
 
 Use `required` when the calculation needs a valid root value. This is the

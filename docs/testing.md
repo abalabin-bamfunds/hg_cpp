@@ -181,6 +181,9 @@ graph compilation or evaluation.
 - wiring paths, labels, and diagnostics
 - node-call deduplication, opt-out, and identity inputs
 - operator overload applicability, selection, on-demand metadata and requirement resolvers, error handling, and caching
+- declarative overload registration through explicit construction, including
+  callable argument forwarding, aggregate definitions, class-template families,
+  existing node and graph templates, registration order, and retained callable ownership
 - unsupported output guarantees rejecting candidates without blocking applicable
   overloads in either registration order; resolver callback exceptions remaining fatal
 - graph requirements, including resolved scalar inspection, rejection before body wiring, overload fallback, and diagnostics

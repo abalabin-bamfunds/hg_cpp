@@ -3,58 +3,69 @@
 #include <bg/graph.hpp>
 #include <bg/library/operators.hpp>
 #include <bg/node.hpp>
+#include <bg/overload.hpp>
 
 namespace bg::operators::details {
 namespace {
 
+using namespace bg::literals;
+
 inline constexpr auto DEDUPED = guarantee_variable<"DEDUPED", TimeSeriesGuarantee::deduplicated>;
 
-struct sample_series {
-    In<SIGNAL> signal;
-    In<TS_T, passive> value;
-    Out<OUT> output;
+struct stream_overloads {
+    // Validity queries.
+    overload<valid> validity{
+        eval = [](In<TS_T, "value"_n, optional> value, Out<TS<bool, TimeSeriesGuarantee::deduplicated>> output) {
+            output.set(value.valid());
+        },
+        schedule_on_start = true};
+    overload<all_valid> immediate_validity{
+        eval = [](In<TS_T, "value"_n, optional> value, Out<TS<bool, TimeSeriesGuarantee::deduplicated>> output) {
+            output.set(value.all_valid());
+        },
+        schedule_on_start = true};
 
-    static const TimeSeriesType *resolve(OUT, const WiringArguments &arguments) {
-        const auto &value_type = type_cast<TimeSeriesType>(arguments.resolved_type("value"));
-        return &value_type.with_guarantee_limit(TimeSeriesGuarantee::ordinary);
-    }
+    // Tick selection.
+    struct sample_series {
+        In<SIGNAL> signal;
+        In<TS_T, passive> value;
+        Out<OUT> output;
 
-    void evaluate() const { output.copy(value); }
+        static const TimeSeriesType *resolve(OUT, const WiringArguments &arguments) {
+            const auto &value_type = type_cast<TimeSeriesType>(arguments.resolved_type("value"));
+            return &value_type.with_guarantee_limit(TimeSeriesGuarantee::ordinary);
+        }
 
-    static constexpr auto on_invalidation = preserve_output;
-};
+        void evaluate() const { output.copy(value); }
 
-struct deduplicate_series {
-    In<TS_T> value;
-    Out<OUT> output;
+        static constexpr auto on_invalidation = preserve_output;
+    };
 
-    static const TimeSeriesType *resolve(OUT, const WiringArguments &arguments) {
-        const auto &value_type = type_cast<TimeSeriesType>(arguments.resolved_type("value"));
-        const auto guarantee = strongest(*value_type.guarantee().value(), TimeSeriesGuarantee::deduplicated);
-        return &value_type.with_guarantee(guarantee);
-    }
+    overload<sample, sample_series> sampling;
 
-    void evaluate() const { output.copy_tick(value); }
+    overload<dedup> deduplicate_identity{
+        graph("name"_n = "deduplicated_identity", [](wp<TS_T::with<DEDUPED>> value) { return value; })};
+
+    struct deduplicate_series {
+        In<TS_T> value;
+        Out<OUT> output;
+
+        static const TimeSeriesType *resolve(OUT, const WiringArguments &arguments) {
+            const auto &value_type = type_cast<TimeSeriesType>(arguments.resolved_type("value"));
+            const auto guarantee = strongest(*value_type.guarantee().value(), TimeSeriesGuarantee::deduplicated);
+            return &value_type.with_guarantee(guarantee);
+        }
+
+        void evaluate() const { output.copy_tick(value); }
+    };
+
+    overload<dedup, deduplicate_series> deduplicate_node;
 };
 
 } // namespace
 
 void register_stream_operators() {
-    using namespace bg::literals;
-
-    valid.overload(node(
-        eval = [](In<TS_T, "value"_n, optional> value,
-                 Out<TS<bool, TimeSeriesGuarantee::deduplicated>> output) { output.set(value.valid()); },
-        schedule_on_start = true));
-    all_valid.overload(node(
-        eval = [](In<TS_T, "value"_n, optional> value,
-                 Out<TS<bool, TimeSeriesGuarantee::deduplicated>> output) { output.set(value.all_valid()); },
-        schedule_on_start = true));
-
-    sample.overload(node<sample_series>());
-
-    dedup.overload(graph("name"_n = "deduplicated_identity", [](wp<TS_T::with<DEDUPED>> value) { return value; }));
-    dedup.overload(node<deduplicate_series>());
+    (void)stream_overloads{};
 }
 
 } // namespace bg::operators::details

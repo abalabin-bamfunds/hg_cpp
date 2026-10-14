@@ -175,7 +175,12 @@ set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES "${catch2_environment}
 
 catch_discover_tests(bg_tests DISCOVERY_MODE PRE_TEST)
 
-add_executable(bg_library_tests library/add_test.cpp library/operators_test.cpp library/stream_test.cpp)
+add_executable(
+    bg_library_tests
+    library/add_test.cpp
+    library/operators_test.cpp
+    library/overload_registration_test.cpp
+    library/stream_test.cpp)
 target_link_libraries(bg_library_tests PRIVATE bg::library Catch2::Catch2WithMain)
 target_compile_options(bg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj>)
 target_compile_definitions(bg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:CATCH_CONFIG_NO_CPP17_STRING_VIEW>)
