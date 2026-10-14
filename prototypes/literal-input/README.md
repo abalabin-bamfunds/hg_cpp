@@ -12,20 +12,21 @@ cmake --build build/prototypes/literal-input --target literal_input_probe
 build/prototypes/literal-input/literal_input_probe
 ```
 
-The prototype separates a borrowed scalar source from recursive brace storage.
-`ScalarSource` stores a source address and a typed visit function pointer. It
+The prototype separates a borrowed scalar literal item from recursive literal
+storage. `ScalarLiteralItem` stores a source address and a typed visit function
+pointer. It
 canonicalizes raw C++ values only during `visit()`, then calls the existing
 `details::make_scalar_source` utility while the canonical value remains alive.
 `Scalar`, `ScalarValue`, and `ScalarData` use direct descriptor access.
-`ScalarSource` borrows its source, which must remain alive through `visit()`. A
+`ScalarLiteralItem` borrows its source, which must remain alive through `visit()`. A
 `ScalarData` descriptor passed to the callback is valid only until the callback
 returns.
 
-`BraceElement<Leaf>` stores either one leaf or a span of child elements. The
-span refers to initializer-list backing storage. Construct, traverse, and
-consume a brace element within the full expression that created its
-initializer lists and temporary scalar sources. Do not retain it beyond that
-expression.
+`Literal<Leaf>` stores either one leaf or a span of child elements. The span
+refers to initializer-list backing storage. `ScalarLiteral` aliases
+`Literal<ScalarLiteralItem>` for recursive scalar input. Construct, traverse,
+and consume a literal within the full expression that created its initializer
+lists and temporary scalar sources. Do not retain it beyond that expression.
 
 The probe reports object layout and counts global `operator new` calls for
 source construction, first visit, warmed visit, and recursive construction
@@ -37,8 +38,8 @@ count is reported separately because runtime registration may allocate.
 With GCC 14.3, the measured sizes and counts were:
 
 ```text
-ScalarSource: 16 bytes, alignment 8
-BraceElement<ScalarSource>: 24 bytes, alignment 8
+ScalarLiteralItem: 16 bytes, alignment 8
+ScalarLiteral: 24 bytes, alignment 8
 operator new calls: first visit=0, source construction=0, warmed visit=0,
                     recursive construction/traversal=0
 ```

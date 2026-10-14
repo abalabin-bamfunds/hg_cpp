@@ -14,7 +14,7 @@
 
 namespace literal_input {
 
-class ScalarSource {
+class ScalarLiteralItem {
   private:
     using ErasedVisitor = void (*)(void *, const bg::ScalarData &);
     using Visit = void (*)(const void *, void *, ErasedVisitor);
@@ -26,8 +26,8 @@ class ScalarSource {
 
   public:
     template <typename Source>
-        requires (supported_source<Source>) && (!std::same_as<std::remove_cvref_t<Source>, ScalarSource>)
-    ScalarSource(const Source &source) noexcept
+        requires (supported_source<Source>) && (!std::same_as<std::remove_cvref_t<Source>, ScalarLiteralItem>)
+    ScalarLiteralItem(const Source &source) noexcept
         : source_{std::addressof(source)}, visit_{&visit_source<std::remove_cv_t<Source> >} {}
 
     template <typename Visitor> void visit(Visitor &&visitor) const {
@@ -60,6 +60,6 @@ class ScalarSource {
     Visit visit_;
 };
 
-static_assert(sizeof(ScalarSource) == 2 * sizeof(void *));
+static_assert(sizeof(ScalarLiteralItem) == 2 * sizeof(void *));
 
 } // namespace literal_input

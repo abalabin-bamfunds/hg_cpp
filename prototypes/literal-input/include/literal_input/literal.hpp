@@ -10,19 +10,19 @@
 
 namespace literal_input {
 
-template <typename Leaf> class BraceElement {
+template <typename Leaf> class Literal {
   public:
-    using sequence_type = std::span<const BraceElement>;
+    using sequence_type = std::span<const Literal>;
 
-    BraceElement() noexcept = default;
+    Literal() noexcept = default;
 
-    BraceElement(std::initializer_list<BraceElement> elements) noexcept
+    Literal(std::initializer_list<Literal> elements) noexcept
         : value_{std::in_place_index<1>, elements.begin(), elements.size()} {}
 
     template <typename Source>
         requires std::constructible_from<Leaf, Source &&> &&
-                 (!std::same_as<std::remove_cvref_t<Source>, BraceElement>)
-    BraceElement(Source &&source) : value_{std::in_place_index<0>, std::forward<Source>(source)} {}
+                 (!std::same_as<std::remove_cvref_t<Source>, Literal>)
+    Literal(Source &&source) : value_{std::in_place_index<0>, std::forward<Source>(source)} {}
 
     template <typename LeafVisitor, typename SequenceVisitor>
     void visit(LeafVisitor &&visit_leaf, SequenceVisitor &&visit_sequence) const {
