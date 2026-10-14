@@ -963,8 +963,10 @@ void test_aligned_batches_keep_null_only_blocks_unreadable() {
         right_cells.add(rows, id, std::nullopt, memory);
     }
 
-    auto left = ColumnSeriesView<i64>{ColumnStorage<i64>{left_cells, rows}};
-    auto right = ColumnSeriesView<double>{ColumnStorage<double>{right_cells, rows}};
+    auto left_storage = ColumnStorage<i64>{left_cells, rows};
+    auto right_storage = ColumnStorage<double>{right_cells, rows};
+    auto left = ColumnSeriesView<i64>{left_storage};
+    auto right = ColumnSeriesView<double>{right_storage};
     auto visited = std::size_t{};
     auto batches = std::size_t{};
     left.for_each_aligned_batch(right, [&](const auto &batch) {
