@@ -1,0 +1,19 @@
+case,method,selected_rows,chunks,source_mutation_median_ms,source_mutation_min_ms,source_mutation_max_ms,graph_cycle_median_ms,graph_cycle_min_ms,graph_cycle_max_ms,consumer_sum_median_ms,consumer_sum_min_ms,consumer_sum_max_ms,plain_arrow_sum_median_ms,plain_arrow_sum_min_ms,plain_arrow_sum_max_ms
+"50% clustered selection, clustered deletion","native batch sum",48336,14,0.016591,0.016261,0.01721,0.952648,0.941858,0.968608,0.897787,0.884987,0.908527,0.01059,0.01016,0.01231
+"50% clustered selection, clustered deletion","borrowed Arrow + sum",48336,14,0.01657,0.01637,0.02568,0.966948,0.943788,1.36775,0.902487,0.883527,1.27808,0.0067,0.00652,0.00685
+"50% clustered selection, clustered deletion","dense gather + sum",48336,1,0.01721,0.01639,0.01815,1.11644,1.10177,1.14658,1.05481,1.04013,1.0862,0.00656,0.00651,0.00667
+"50% scattered selection, clustered deletion","native batch sum",49168,49168,0.01396,0.01379,0.0143,1.28053,1.27019,1.31553,1.228,1.21856,1.26525,0.00684,0.00679,0.00712
+"50% scattered selection, clustered deletion","borrowed Arrow + sum",49168,49168,0.016231,0.014591,0.018831,15.9311,15.7966,16.2462,15.8566,15.6935,16.1551,0.00796,0.00718,0.00898
+"50% scattered selection, clustered deletion","dense gather + sum",49168,1,0.01415,0.01315,0.01501,1.52853,1.50559,1.54734,1.48331,1.45939,1.50101,0.00793,0.00704,0.008121
+"50% clustered selection, scattered deletion","native batch sum",49375,638,0.01941,0.018601,0.020321,0.980138,0.976228,0.994248,0.928448,0.926268,0.942648,0.00802,0.00726,0.00825
+"50% clustered selection, scattered deletion","borrowed Arrow + sum",49375,638,0.019861,0.019651,0.020731,1.075,0.999509,1.13162,1.00265,0.939118,1.06438,0.00802,0.0073,0.00907
+"50% clustered selection, scattered deletion","dense gather + sum",49375,1,0.01956,0.019171,0.020121,1.0223,1.01208,1.06187,0.963708,0.959168,1.00644,0.007691,0.00705,0.00785
+"50% scattered selection, scattered deletion","native batch sum",49168,49168,0.01652,0.01625,0.018001,1.29343,1.28539,1.32194,1.24537,1.2375,1.27361,0.00796,0.0071,0.00826
+"50% scattered selection, scattered deletion","borrowed Arrow + sum",49168,49168,0.035711,0.028141,0.046181,16.2217,15.813,16.3862,16.0633,15.7072,16.2688,0.00796,0.007241,0.00871
+"50% scattered selection, scattered deletion","dense gather + sum",49168,1,0.01763,0.016561,0.018041,1.54324,1.5349,1.5597,1.48861,1.47972,1.50615,0.00801,0.00715,0.008101
+"100% selection, no deletion","native batch sum",100000,15,0.0057,0.00562,0.006381,1.33762,1.33506,1.35119,1.30612,1.30455,1.32066,0.0166,0.016411,0.01749
+"100% selection, no deletion","borrowed Arrow + sum",100000,15,0.00573,0.00565,0.00674,1.29593,1.28974,1.32509,1.25472,1.25338,1.2883,0.016661,0.01655,0.01717
+"100% selection, no deletion","dense gather + sum",100000,1,0.00574,0.005641,0.0066,1.50638,1.4988,1.5291,1.47092,1.46283,1.49393,0.01672,0.01659,0.01713
+"10% scattered selection and deletion","native batch sum",9001,9001,0.060501,0.059521,0.061911,0.845486,0.823105,0.877166,0.743214,0.723434,0.775115,0.00272,0.00267,0.00287
+"10% scattered selection and deletion","borrowed Arrow + sum",9001,9001,0.062021,0.060001,0.063272,3.58096,3.41715,3.75728,3.47341,3.30787,3.64335,0.002671,0.00264,0.00292
+"10% scattered selection and deletion","dense gather + sum",9001,1,0.060891,0.060381,0.062751,0.898737,0.883837,0.941748,0.794405,0.779855,0.832885,0.002711,0.002651,0.00281

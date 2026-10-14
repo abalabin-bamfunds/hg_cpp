@@ -1,33 +1,27 @@
 # Frame foundation handoff
 
-Updated: 2026-10-14. Generic Row/RowPatch field support is complete and reviewed.
-The current source passed all configurations below. It remains uncommitted
-and unmerged.
+Updated: 2026-10-14. The frame foundation, including generic Row/RowPatch field
+support, is committed on `agent/frame-field-access` at `e65c2cb3` and rebased
+onto main `052a7f0b`. The lane is clean. BG integration and the final consumer
+rebuild remain outstanding.
 
 ## Work locations
 
-[CONSOLIDATION.md](CONSOLIDATION.md) records the lane review against main
-`052a7f0b`, the three pending BG changes, and the proposed integration order.
+[CONSOLIDATION.md](CONSOLIDATION.md) records the selected BG integration scope
+and the remaining consumer verification.
 
 | Work | Location / branch | State |
 | --- | --- | --- |
-| Main | `/home/abalabin/_bg`, `main` | Maintained separately; this frame task makes no root changes |
-| BG copy selection support | `.lanes/scalar-access-paths`, `agent/scalar-access-paths` | Rebased at `a8af8eef` onto main `d06e719e`; unmerged |
-| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Rebased HEAD `c80c8d70` onto main `d06e719e`; substantial uncommitted foundation changes |
-| Shared numeric value functions | `.lanes/library-numeric-values`, `agent/library-numeric-values` | Based on main `d05863a6`; approved, implemented, uncommitted |
-| Wiring-time output-runtime hooks | `.lanes/output-runtime-hook`, `agent/output-runtime-hook` | Based on main `6680e192`; implemented, reviewed, tested; uncommitted and unmerged |
-| Original frame checkpoint | `.lanes/frame-schema`, `agent/frame-schema` | Preserved at `1b78c7f9` with its working changes and artifacts |
-| Schema field reflection | Main, `8f4dc0a9` | Integrated; the former `schema-field-probe` checkout no longer exists |
+| Main | `/home/abalabin/_bg`, `main` | Root integrates scalar copy selection and output-runtime selection |
+| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Clean at `e65c2cb3`, based on main `052a7f0b` |
+| Numeric value extraction | Separate work | Held; frame does not depend on it |
+| Historical frame work | `extensions/frame/archive/` | Proposals, probe sources, and benchmark results preserved; see its README |
+| Schema field reflection | Main | Integrated and covered by BG schema reflection tests |
 
-The standalone frame consumers use installed BG from:
-
-```text
-/home/abalabin/_bg/.lanes/scalar-access-paths/build/dev/install-a8af8eef
-```
-
-The installed package includes the unmerged scalar-copy hook from the
-scalar-access-paths lane. Inspect that hook in its dependency lane.
-Do not configure a root BG build in the frame lane.
+The standalone consumer caches still reference prior lane installations.
+Reconfigure them after root provides the integrated main prefix. Do not reuse
+their current cache paths as final verification, and do not configure a root BG
+build in the frame lane.
 
 Preserve the recovery stashes, including the checkpoint made before this rebase:
 
@@ -37,12 +31,10 @@ Preserve the recovery stashes, including the checkpoint made before this rebase:
 f650a30a79bd707b8f566242c7bbe2d48020e578
 ```
 
-Root owns design, documentation, user interaction, independent verification,
-and integration. `/root/frame_generic_rows` completed the Row/RowPatch work
-and froze its source before root verification.
-The dirty checkpoint was preserved by stashing and restored after the rebase.
-Do not reset it.
-Commit and integration require owner authorization.
+Root owns design decisions, BG integration, independent verification, and
+retirement of superseded lanes. Recovery stashes and the external recovery
+archive at `/home/abalabin/_bg/build/frame-lane-recovery/2026-10-14` remain
+intact; do not remove them during frame verification.
 
 ## Selected design
 
@@ -130,25 +122,14 @@ erased Arrow copies preserve Arrow representation.
 
 ## Verification
 
-The approved generic field, immutable snapshot assignment, Row/RowPatch writer,
-and projection APIs are implemented and tested. Integration coverage includes
-runtime-schema mutation through public nodes feeding runtime-schema view outputs,
-checked declared generic fields, null patches, validation before mutation,
-zero-column frames, snapshot sharing, and ownership after graph destruction.
-RowPatch insertion covers partial and all-null rows in concrete and generic
-outputs. Writer tests check reordered fields, wrong counts and types, unknown
-and duplicate names, and empty modification patches. Missing-row writes preserve
-prior delta state. Projection validates ordinals and cell types even while its
-source is invalid, before changing output validity.
+Coverage includes native and runtime schemas, numeric columns, snapshots,
+borrowing, Arrow views and copies, projection, and concrete and generic
+Row/RowPatch writes. Tests cover schema/type validation before mutation,
+nullable cells, all-null insertions, inherited and shadowed fields, generic
+type variables, and ownership after graph destruction.
 
-Generic Row/RowPatch tests cover declared-generic outputs resolved to both
-numeric types, runtime-schema outputs, mixed fields, inherited and shadowed
-fields, compatible and incompatible constrained/repeated variables, and
-borrowed-value independence. A rejected later patch field leaves earlier valid
-fields unchanged. Complete source-schema validation includes omitted fields.
-
-Before rebasing onto `d06e719e`, root rebuilt and tested the frozen source with
-GCC C++23 on 2026-10-13, including generic Row/RowPatch field support:
+The last complete frame test run was on 2026-10-14 with GCC C++23 and all three
+required configurations:
 
 | Configuration | Result |
 | --- | --- |
@@ -156,70 +137,21 @@ GCC C++23 on 2026-10-13, including generic Row/RowPatch field support:
 | Release, Arrow disabled | 4/4 suites passed |
 | Debug, Arrow enabled, AddressSanitizer and UndefinedBehaviorSanitizer | 5/5 suites passed; no sanitizer diagnostics |
 
-Existing standalone build directories, relative to the frame lane root:
-
-```text
-extensions/frame/build/field-access-on       Release, Arrow ON
-extensions/frame/build/cc4-checkpoint-off    Release, Arrow OFF
-extensions/frame/build/cc4-lifetime          Debug, ASan/UBSan, Arrow ON
-```
-
-Use `-j12`. Build and test from the frame lane:
-
-```sh
-conda run --no-capture-output -n bg-build cmake \
-  --build extensions/frame/build/field-access-on --parallel 12
-conda run --no-capture-output -n bg-build ctest \
-  --test-dir extensions/frame/build/field-access-on --output-on-failure
-```
-
-Substitute `cc4-checkpoint-off` for the native-only consumer.
-For the sanitizer consumer, use `cc4-lifetime` and:
-
-```sh
-ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
-conda run --no-capture-output -n bg-build ctest \
-  --test-dir extensions/frame/build/cc4-lifetime --output-on-failure
-```
-
-LeakSanitizer is disabled due environment ptrace restrictions. Allocation-balance
-and injected-failure tests remain enabled. GCC C++23 is available; Clang and MSVC
-have not been tested. BG `cc4a3f29` passed its complete 1,547-test suite and
-coverage validation before installation.
-
-After the rebase, the dependency rebuilt successfully. Its full suite passed
-1,649 of 1,649 tests, and core and library coverage validation passed. One new
-main test needed its runtime expectation updated: wiring retains an erased
-owning scalar copy, so the copy-selection hook selects the provider's immutable
-snapshot runtime. The test still verifies the value and provider read function.
-This test-only change remains uncommitted in the dependency lane. Production
-behavior is unchanged. The full-suite log is
-`.lanes/scalar-access-paths/build/dev/scalar-rebase-ctest.log`.
-
-Root rebuilt and tested all standalone consumers after the rebase against the
-new installed package:
-
-| Configuration | Result |
-| --- | --- |
-| Release, Arrow enabled | 5/5 suites passed |
-| Release, Arrow disabled | 4/4 suites passed |
-| Debug, Arrow enabled, AddressSanitizer and UndefinedBehaviorSanitizer | 5/5 suites passed; no sanitizer diagnostics |
-
-Leak detection remains disabled as described above. The package has unchanged
-production code after the test-only correction.
-
-Bounded independent reviews covered ownership, shared views, Arrow,
-registration, generic field access, snapshot assignment, and writer/projection
-APIs. The final recheck verified argument validation before output mutation and
-the corresponding regressions. `git diff --check` is clean.
+These runs used the prior BG package and are not final verification for the
+current main base. The consumer caches still point to old lane installations.
+After root integrates the two approved BG changes, reconfigure all three
+consumers against the supplied main prefix, remove cached BG, ddvisitor, and
+tpack paths to old lanes, and rerun the build and tests with -j12. Record that
+final prefix and its results here. Leak detection was disabled in earlier runs
+because of environment ptrace restrictions; Clang and MSVC have not been tested.
 
 ## Performance artifacts
 
-Current artifacts are in the active lane:
+The preserved active-lane sample is archived at:
 
 ```text
-extensions/frame/build/foundation-benchmark/shared-view.md
-extensions/frame/build/foundation-benchmark/shared-view.csv
+extensions/frame/archive/benchmarks/foundation-benchmark/shared-view.md
+extensions/frame/archive/benchmarks/foundation-benchmark/shared-view.csv
 ```
 
 The workload starts with 100,000 rows and runs source mutation, filtering,
@@ -229,82 +161,34 @@ sum was 1.255 ms. Exporting 49,168 scattered chunks plus sum was 15.857 ms;
 gathering that selection plus sum was 1.483 ms. These measurements predate the
 current API completion.
 
-Preserved comparison artifacts are under
-`.lanes/frame-schema/extensions/frame/build/schema-hooks-consumer`.
-Repeat performance testing only for a concrete risk introduced by the changes.
+The earlier schema-hooks comparison and direct sparse-bunch PyArrow probe are
+preserved under `extensions/frame/archive/`. Their source and measurement
+conditions are documented in the archive README. These results inform the
+design; they do not replace the pending consumer verification.
 
-## Later work
+## Agreed next work
 
-The current request is to start expressions and computed columns. Register
-frame arithmetic overloads on the exported `bg::operators` objects from
-`<bg/library.hpp>` and link `bg::library`. C++ forwarding operators already
-exist; do not define separate arithmetic operator identities or forwarding
-operators.
+The current BG integration contains exactly two changes: scalar copy runtime
+selection and wiring-time output runtime selection. The frame extension uses
+scalar copy selection for owning frame copies. It will use the output hook to
+select frame-specific output storage. Frame output layout options remain in the
+extension and on Out; BG does not define frame types or layouts.
 
-The owner agreed that a compile-time output specification lists its computed
-columns, for example `Out<TSF<Prices>, frame::computed<"mid">>`. Other columns
-use view storage. Keep this configuration on `Out`, outside the semantic frame
-type. This specification has not been implemented.
+Do not integrate or depend on the shared numeric function extraction. It is
+held. Frame block mathematics must be
+designed before implementing expressions, filtering kernels, or computed
+columns. Do not add frame APIs while this design is open.
 
-For runtime schemas, the owner requested a wiring-time output-runtime hook on
-aggregate definitions and callable definitions. The descriptor must be selected
-before BG compiles output storage. Runtime descriptors contain shared layout
-metadata; buffers, rows, deltas, and actual source bindings belong to output
-storage. The hook is implemented in `.lanes/output-runtime-hook`, branch
-`agent/output-runtime-hook`, rebased onto main `6680e192`. The owner confirmed
-that implementation can proceed in the separate lane. Aggregate definitions
-provide a static `output_runtime_type(const WiringArguments &)` hook; callable
-definitions use `bg::output_runtime_type = callback`; runtime-signature definitions
-provide an instance hook. Each returns `const TimeSeriesRuntimeType &`.
-The approved engine API replaces the `TypeMap` parameter of
-`WiringTemplate::wire` with `const WiringArguments &`; its normalized argument
-span remains separate. The view retains fixed and flattened variadic argument
-descriptors without repeating normalization. The selector must return the same
-runtime type for the same node definition and arguments. Node-call
-deduplication retains its existing identity.
-The complete C++ and Python CTest suite passed 1714/1714 on 2026-10-14 after
-the concrete output binding correction. The complete build passed with `-j12`.
-The build includes Python 3.13.15. Coverage validation reports six existing tag
-errors in unchanged tests. The operator-cache regression verifies one overload
-requirement call and two selector calls across different scalar configuration
-values. Repeated identical calls retain one finalized output.
+After root provides the integrated main install prefix, reconfigure the Arrow-on,
+Arrow-off, and sanitizer consumers listed above. Remove every cached BG,
+ddvisitor, and tpack path that points into scalar lanes. Resolve BG and its
+installed dependencies from that same prefix, then build and test with -j12.
+Record the actual prefix and results here. Report a required BG API repair or an
+unexpected design issue instead of adding a frame-side workaround.
 
-The selected runtime type controls both output allocation and `Out` construction,
-including concrete outputs. Definitions without a hook retain the output
-declaration's default runtime selection. The correction retains direct scalar
-access and records runtime type availability explicitly in compiled node flags
-without increasing `CompiledNode` size. Regression tests evaluate concrete
-aggregate and callable outputs and typed runtime-signature outputs, check the
-selected runtime type, and exercise direct `set()` and `value()`.
-Mixed-frame construction and source-row-bound computed-column operations
-still need completion before arithmetic nodes can be built.
-
-The owner approved sharing BG's numeric value functions and using its arithmetic
-operator objects. The uncommitted extraction is in
-`.lanes/library-numeric-values`, branch `agent/library-numeric-values`, based on
-main `d05863a6`. `<bg/library/numeric.hpp>` provides inline
-`bg::library::numeric::{add, sub, mul, div}` for `i64` and `double`; scalar
-operator nodes call the same functions. The existing integer division and
-wrapping arithmetic implementations are preserved. The complete `-j12` build
-passed; the arithmetic-related CTest filter passed 45/45, and library coverage
-validation passed. The combined coverage target reports six tag errors in
-unchanged core tests; see that lane's `build/dev/test-coverage.md`. This change
-has not been integrated into the frame dependency.
-
-Free expression bundles can be traversed through `operators::getattr`; BG
-returns their original child wiring points. Scalar arguments supplied to typed
-bundles become const-node points. Direct inspection of their scalar operation
-metadata still needs a supported design. Runtime-sized free bundle construction
-exists in an installed `details` header; its extension API audience needs review.
-
-Expression and block filter integration, previous-value subscriptions,
-strings/symbol cells, compaction, capacity trimming, and delta transport remain
-later work. Discuss required BG changes before implementing them. Maintain the
-shared storage and operation implementations; do not add a parallel runtime
-schema implementation.
-
-For later previous-value support, consumers can request capture directly from
-the storage owner reached through `ColumnSource`; no graph requirement
-propagation is needed. For expressions with time series scalar parameters,
-constructing the expression in a separate node is intended to simplify node
-code. Neither feature is implemented by the current foundation.
+Previous-value subscriptions, strings and symbols, compaction, capacity
+trimming, and delta transport remain later work. Previous-cell capture, if
+needed, is requested from the owning storage through ColumnSource; graph
+back-propagation is not required. For expressions with time-series scalar
+parameters, a separate expression-construction node is intended to simplify
+node code. These features are not implemented.
