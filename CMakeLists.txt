@@ -163,6 +163,7 @@ add_library(
     src/library/numeric.cpp
     src/library/operators.cpp
     src/library/string.cpp
+    src/library/stream.cpp
 )
 add_library(bg::library ALIAS bg_library)
 

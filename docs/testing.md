@@ -313,6 +313,13 @@ For each reusable node and graph, test:
 
 ### Standard library
 
+- validity queries at startup and on validity changes; immediate collection
+  validity, empty collections, references, and free collections
+- signal-driven complete-value sampling, passive value inputs, preserved
+  outputs on invalidation, collection reconciliation, and repeated sampling of
+  const collection items
+- exact deduplication, output guarantees, unchanged guaranteed inputs without
+  added nodes, reference-observed guarantees, and invalidation/revalidation
 - arithmetic across scalar and time series arguments, exact type matching,
   integer and temporal wraparound, and borrowed string construction
 - conversion between scalar time series, full target type matching including

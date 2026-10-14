@@ -18,6 +18,7 @@ using ORDERED_SCALAR = ScalarVariable<"ORDERED_SCALAR", i64, double, string, dat
 using BOOL = ScalarVariable<"BOOL", bool>;
 using NUMERIC = ScalarVariable<"NUMERIC", i64, double>;
 using CONVERT_RESULT = TimeSeriesVariable<"CONVERT_RESULT">;
+using SIGNAL = TimeSeriesVariable<"SIGNAL">;
 
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR, SCALAR) -> SCALAR> add;
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR, SCALAR) -> SCALAR> sub;
@@ -40,6 +41,10 @@ extern BG_LIBRARY_EXPORT operator_<ORDERED_SCALAR, auto(ORDERED_SCALAR, ORDERED_
 extern BG_LIBRARY_EXPORT operator_<BOOL, auto(BOOL, BOOL) -> bool> and_;
 extern BG_LIBRARY_EXPORT operator_<BOOL, auto(BOOL, BOOL) -> bool> or_;
 extern BG_LIBRARY_EXPORT operator_<BOOL, auto(BOOL) -> bool> not_;
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> bool> valid;
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> bool> all_valid;
+extern BG_LIBRARY_EXPORT operator_<auto(SIGNAL, TS_T) -> TS_T> sample;
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> TS_T> dedup;
 
 using ::bg::map;
 using ::bg::mesh;

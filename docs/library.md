@@ -109,7 +109,35 @@ auto with_fallback = operators::default_(x, 10.0) + y;
 Time series calls do not schedule on start. An input change can calculate a
 result while either operand is invalid. No input change means no calculation.
 `default_()` supplies a caller-selected fallback; it does not select optional
-arithmetic. Other operators reject `opt()` arguments.
+arithmetic. Other arithmetic operators reject `opt()` arguments.
+
+## Validity and tick selection
+
+`valid(value)` reports root validity. `all_valid(value)` reports whether the
+root and every immediate contained time series are valid, following the
+[validity rules](time-series-validity.md#nodes). Both evaluate in the first
+cycle, accept initially invalid inputs, and produce deduplicated Boolean
+outputs. Reference arguments observe their targets through normal input
+bindings.
+
+`sample(signal, value)` copies the complete current value when a valid signal
+ticks and `value` is valid. Changes to `value` alone do not schedule evaluation.
+Invalidating either input preserves the last sampled output. The output has
+ordinary guarantees, including its contained time series, so a later signal
+can sample an unchanged value again. Copying uses the normal collection
+mutation rules: unchanged set membership and already-valid empty dictionaries
+do not publish another tick. Contained references copy reference values, not
+their target values. See [output copying](node-api.md#output-parameters).
+
+`dedup(value)` forwards changes through an output with at least the
+deduplicated guarantee. Equality is exact and uses the scalar type's equality
+operation; floating-point values use no tolerance. Inputs already observed as
+deduplicated, final, or const are returned without adding a node. Invalidation
+and revalidation follow the normal output rules. Collection outputs apply the
+guarantee recursively and retain stronger contained guarantees.
+
+These operators are available under `bg::operators` in C++ and `bg.operators`
+in Python.
 
 ## Wiring syntax
 

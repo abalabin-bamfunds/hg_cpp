@@ -23,6 +23,10 @@ ge = _native.ge
 and_ = _native.and_
 or_ = _native.or_
 not_ = _native.not_
+valid = _native.valid
+all_valid = _native.all_valid
+sample = _native.sample
+dedup = _native.dedup
 const_ = _native.const_
 default_ = _native.default_
 getitem = _native.getitem
@@ -30,11 +34,13 @@ getattr = _native.getattr
 
 __all__ = [
     "abs",
+    "all_valid",
     "add",
     "and_",
     "const_",
     "convert",
     "default_",
+    "dedup",
     "div",
     "eq",
     "floordiv",
@@ -55,6 +61,8 @@ __all__ = [
     "pow",
     "pos",
     "round",
+    "sample",
     "sub",
     "switch_",
+    "valid",
 ]

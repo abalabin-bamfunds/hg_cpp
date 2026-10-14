@@ -25,6 +25,10 @@ decltype(ge) ge{"ge", {"lhs", "rhs"}};
 decltype(and_) and_{"and_", {"lhs", "rhs"}};
 decltype(or_) or_{"or_", {"lhs", "rhs"}};
 decltype(not_) not_{"not_", {"value"}};
+decltype(valid) valid{"valid", {"value"}};
+decltype(all_valid) all_valid{"all_valid", {"value"}};
+decltype(sample) sample{"sample", {"signal", "value"}};
+decltype(dedup) dedup{"dedup", {"value"}};
 
 namespace {
 
@@ -33,6 +37,7 @@ const auto registered = [] {
     details::register_numeric_operators();
     details::register_string_operators();
     details::register_logical_operators();
+    details::register_stream_operators();
     return true;
 }();
 
