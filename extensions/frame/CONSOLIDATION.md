@@ -1,7 +1,7 @@
 # Frame lane consolidation
 
 Updated 2026-10-14. The frame implementation lane is based on integrated main
-`6051cc63`. The foundation checkpoint `0cb29949` contains the generic
+`bf338ca5`. The foundation checkpoint `bd6d9cc5` contains the generic
 Row/RowPatch work. Keep `.lanes/frame-field-access` as the active frame lane.
 
 ## BG changes
@@ -11,9 +11,11 @@ The two BG changes integrated in this task are:
 - scalar copy runtime selection, integrated in `a194846e`;
 - wiring-time output runtime selection, integrated in `ea8077c2`.
 
-The final BG correction is `6051cc63`; its complete C++ and Python suite passed
-1,720/1,720. The output hook is available for planned mixed computed/view frame
-outputs. Frame output layout specifications remain extension-owned.
+The runtime changes completed at `6051cc63`; its complete C++ and Python suite
+passed 1,720/1,720. The frame lane is now rebased onto `bf338ca5`, which also
+includes borrowed evaluation inputs. The output hook is available for planned
+mixed computed/view frame outputs. Frame output layout specifications remain
+extension-owned.
 
 The shared numeric function extraction is held. Frame block arithmetic design
 and implementation is next. Whether that work should reuse the held extraction
@@ -38,9 +40,11 @@ remain unchanged. `.lanes/frame-field-access` is the only active frame lane.
 
 ## Consumer verification
 
-All three standalone consumers were reconfigured against
-`/home/abalabin/_bg/build/frame-dependency/install`. The Conda environment is
-also on `CMAKE_PREFIX_PATH` for unrelated dependencies such as Arrow.
+All three standalone consumers were rebuilt against a fresh Debug BG install
+of `bf338ca5` at `/home/abalabin/_bg/build/frame-dependency/install`. The Conda
+environment is also on `CMAKE_PREFIX_PATH` for unrelated dependencies such as
+Arrow. [HANDOFF.md](HANDOFF.md#verification) records build settings, commands,
+and current logs. The complete BG suite was not repeated for this revision.
 
 | Consumer | Build and test result |
 | --- | --- |
@@ -51,13 +55,9 @@ also on `CMAKE_PREFIX_PATH` for unrelated dependencies such as Arrow.
 All builds used `-j12`. The sanitizer test used
 `ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1`. CMake resolved
 `bg`, `ddvisitor`, and `tpack` from the supplied prefix in every consumer. No
-references to old scalar-lane installs remain in the three build trees. Frame
-shared-library RPATHs point to the supplied prefix and Conda libraries, plus
-the local frame build directory for the Arrow adapter.
+retired-worktree paths occur in the three consumer caches.
 
-Root reran all three test configurations after lane retirement. CMake caches,
-generated target files, and frame shared-library RPATHs contain no references
-to the retired checkouts.
-
-Configure, build, and test logs are under the corresponding ignored build
-directories: `reconfigure-main.log`, `build-main.log`, and `test-main.log`.
+Test checkpoint `bf4d9483` exercises borrowed graph input slots with native and
+view TSF runtimes. It checks storage identity, nullable cells, and incremental
+row and column changes. Frame implementation code required no compatibility
+changes.

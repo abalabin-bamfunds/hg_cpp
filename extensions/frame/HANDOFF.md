@@ -1,8 +1,8 @@
 # Frame foundation handoff
 
 Updated: 2026-10-14. The frame foundation includes generic Row/RowPatch field
-support. It is based on integrated main `6051cc63`; the foundation checkpoint
-`0cb29949` records the completed row work. The active lane has been rebuilt and
+support. It is based on integrated main `bf338ca5`; the foundation checkpoint
+`bd6d9cc5` records the completed row work. The active lane has been rebuilt and
 tested against the integrated main install.
 
 ## Work locations
@@ -12,17 +12,16 @@ completed lane retirement, and consumer verification.
 
 | Work | Location / branch | State |
 | --- | --- | --- |
-| Main | `/home/abalabin/_bg`, `main` at `6051cc63` | Scalar copy and output-runtime changes integrated |
-| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Based on main `6051cc63` |
+| Main | `/home/abalabin/_bg`, `main` at `bf338ca5` | Scalar copy, output-runtime selection, and borrowed inputs integrated |
+| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Based on main `bf338ca5` |
 | Numeric value extraction | Separate work | Held; frame does not depend on it |
 | Historical frame work | `extensions/frame/archive/` | Proposals, probe sources, and benchmark results preserved; see its README |
 | Schema field reflection | Main | Integrated and covered by BG schema reflection tests |
 
 The standalone consumers use `/home/abalabin/_bg/build/frame-dependency/install`
-for BG, ddvisitor, and tpack. Conda provides unrelated dependencies. Each
-consumer cache was cleared of the prior package paths before reconfiguration.
+for BG, ddvisitor, and tpack. Conda provides unrelated dependencies.
 
-Preserve the recovery stashes, including the checkpoint made before this rebase:
+Preserve the existing recovery stashes:
 
 ```text
 6c9a333b5b819b453026f02beee198a7a32c4946
@@ -126,14 +125,23 @@ Coverage includes native and runtime schemas, numeric columns, snapshots,
 borrowing, Arrow views and copies, projection, and concrete and generic
 Row/RowPatch writes. Tests cover schema/type validation before mutation,
 nullable cells, all-null insertions, inherited and shadowed fields, generic
-type variables, and ownership after graph destruction.
+type variables, and ownership after graph destruction. Borrowed graph input
+tests use native and view TSF runtimes with one concrete schema. They verify
+runtime descriptors, source and column buffer identity, nullable cells, and
+row and column deltas across invocations. Test checkpoint: `bf4d9483`.
 
-BG main 6051cc63 passed its complete C++ and Python suite: 1,720/1,720.
-The three frame consumers were configured with
-CMAKE_PREFIX_PATH=/home/abalabin/_bg/build/frame-dependency/install;/home/abalabin/miniforge3/envs/bg-build.
-Each configure removed cached bg_DIR, ddvisitor_DIR, and tpack_DIR before
-package discovery. All three packages resolve from the installed main prefix;
-Conda supplies unrelated dependencies including Arrow.
+BG main `6051cc63` previously passed its complete C++ and Python suite:
+1,720/1,720. Current verification uses a fresh Debug BG installation built from
+`bf338ca5` in `/home/abalabin/_bg/build/frame-dependency/bg-build`, with testing,
+Python, and benchmarks disabled. The complete BG suite was not repeated.
+Dependency configure, build, and install logs are under
+`/home/abalabin/_bg/build/frame-dependency`, named `configure-bf338ca5.log`,
+`build-bf338ca5.log`, and `install-bf338ca5.log`.
+
+All three consumer caches resolve BG, ddvisitor, and tpack from the installed
+prefix. Conda supplies unrelated dependencies including Arrow 24.0.0. Arrow-on
+Release regenerated its CMake configuration during its build. The other two
+consumers were explicitly reconfigured with their existing settings.
 
 | Consumer | Build | Test |
 | --- | --- | --- |
@@ -143,16 +151,25 @@ Conda supplies unrelated dependencies including Arrow.
 
 The sanitizer test used ASAN_OPTIONS=detect_leaks=0 and
 UBSAN_OPTIONS=halt_on_error=1. Leak detection remains disabled because of
-environment ptrace restrictions. Clang and MSVC have not been tested.
+environment ptrace restrictions. The sanitizer frame build links the Debug BG
+dependency. Clang and MSVC have not been tested.
 
-Configure, build, and test logs are stored in each consumer build directory as
-reconfigure-main.log, build-main.log, and test-main.log. A scan of all three
-build trees found no references to retired worktrees. Frame shared-library
-RPATHs point to the installed main prefix and Conda libraries, plus the local
-frame build directory for the Arrow adapter. Root reran all three CTest
-configurations after lane retirement: Arrow on 5/5, Arrow off 4/4, and ASan/UBSan
-5/5, with no sanitizer diagnostics. Those logs are named
-root-after-retirement-ctest.log in each consumer build directory.
+Current build and test logs are `build-bf338ca5.log` and `test-bf338ca5.log` in
+each consumer build directory. Explicit configure logs are
+`configure-bf338ca5.log` in `cc4-checkpoint-off` and `cc4-lifetime`.
+Earlier verification logs remain preserved. No retired-worktree paths occur
+in the three consumer caches. The Arrow-on Release shared-library RPATH uses
+the installed prefix and Conda libraries.
+
+Run builds and tests from the active lane:
+
+```sh
+conda run --no-capture-output -n bg-build cmake --build extensions/frame/build/field-access-on --parallel 12
+conda run --no-capture-output -n bg-build ctest --test-dir extensions/frame/build/field-access-on --output-on-failure
+```
+
+Use `cc4-checkpoint-off` for Arrow-off Release. For `cc4-lifetime`, prefix the
+CTest command with `ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1`.
 
 ## Performance artifacts
 
