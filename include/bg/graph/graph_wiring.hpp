@@ -103,8 +103,6 @@ class GraphWiring {
 
     std::span<const WiredOutput> outputs() const noexcept { return outputs_; }
 
-    std::span<const std::size_t> runtime_input_outputs() const noexcept { return runtime_input_outputs_; }
-
     std::span<const InheritedTimeSeriesRequirement> inherited_requirements() const noexcept {
         return inherited_requirements_;
     }
@@ -188,10 +186,6 @@ class GraphWiring {
     // Runs the selected builder synchronously. Callers must activate this graph's WiringContext if the
     // builder wires graph operations. The returned point may remain lazy.
     [[nodiscard]] WiringPoint expand_materialisation(WiringPoint point, const TimeSeriesType &target_type);
-    // Creates a distinct external time-series source. Its index is stable for this GraphWiring and its compilations.
-    [[nodiscard]] WiringPoint runtime_input(const TimeSeriesType &type);
-    [[nodiscard]] WiringPoint runtime_input(const TimeSeriesType &type, const TimeSeriesRuntimeType &runtime_type);
-    [[nodiscard]] std::size_t runtime_input_index(WiringPoint point) const;
     [[nodiscard]] WiringPoint materialize(WiringPoint point, const TimeSeriesType &type);
     [[nodiscard]] WiringPoint output_item(WiringPoint parent, item_id_t item, const TimeSeriesType &type);
     [[nodiscard]] std::size_t output_index(WiringPoint point) const;
@@ -271,7 +265,6 @@ class GraphWiring {
     std::vector<WiredNode> nodes_;
     std::vector<WiredOutput> outputs_;
     std::vector<const details::WiringRecord *> output_records_;
-    std::vector<std::size_t> runtime_input_outputs_;
     std::vector<const details::WiringRecord *> node_output_records_;
     std::vector<const TimeSeriesType *> borrowed_input_types_;
     util::linear_hash_table wired_nodes_;

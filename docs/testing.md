@@ -21,7 +21,7 @@ Use `[dimension:value]` for each applicable dimension:
   `lifecycle`, `finalization`, `scheduling`, `timed-scheduling`, `simulation`, `wall-clock`, `input-activity`, `validity`,
   `invalidation`, `operator`, `constant`, `graph-argument`, `map`, `switch`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `feedback`,
-  `runtime-input`, `item-id-remapping`, `service`, `getitem`, `getattr`, `nested-graph`, `mesh`,
+  `item-id-remapping`, `service`, `getitem`, `getattr`, `nested-graph`, `mesh`,
   `multiservice`, `reduce`,
   `variadic-wiring`, or `wiring-materialisation`
 - `series`: `value`, `fixed-tsl`, `tss`, `tsd`, `tsb`, `reference`, or `generic`
@@ -212,7 +212,6 @@ graph compilation or evaluation.
 
 - topological order and cycle rejection
 - node records, offsets, alignment, and size limits
-- direct runtime-input endpoints, slot layout, notification, and graph identity
 - packed scalar, state, input, output, and view data
 - runtime storage initialization by byte copy
 - subscriber data for activity and validity changes

@@ -1,6 +1,6 @@
 # Runtime input types
 
-Status: accepted
+Status: superseded by [borrowed evaluation inputs](0058-borrowed-evaluation-inputs.md)
 
 ## Context
 

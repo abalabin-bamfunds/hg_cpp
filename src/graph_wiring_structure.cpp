@@ -39,20 +39,13 @@ struct OutputStep {
     bool operator==(const OutputStep &) const noexcept = default;
 };
 
-enum class EndpointKind : std::uint8_t { node, boundary, runtime_input, borrowed_input };
+enum class EndpointKind : std::uint8_t { node, boundary, borrowed_input };
 
 struct Endpoint {
     bool dereference{};
     EndpointKind kind{EndpointKind::node};
     std::size_t index{};
     std::vector<OutputStep> path;
-};
-
-struct RuntimeInputShape {
-    const TimeSeriesType *type;
-    const TimeSeriesRuntimeType *runtime_type;
-
-    bool operator==(const RuntimeInputShape &) const noexcept = default;
 };
 
 struct ParameterShape {
@@ -147,12 +140,7 @@ Endpoint endpoint(const GraphWiring &wiring, std::size_t output_index) {
             if (output.node_index != WiredOutput::npos) {
                 result.index = output.node_index;
             } else {
-                const auto runtime_input = std::ranges::find(wiring.runtime_input_outputs(), output_index);
-                if (runtime_input == wiring.runtime_input_outputs().end()) {
-                    throw std::logic_error{"a wired output has neither a producer node nor a runtime input"};
-                }
-                result.kind = EndpointKind::runtime_input;
-                result.index = static_cast<std::size_t>(runtime_input - wiring.runtime_input_outputs().begin());
+                throw std::logic_error{"a wired output has no producer node"};
             }
             break;
         }
@@ -177,7 +165,6 @@ std::size_t root_output_for(const GraphWiring &wiring, std::size_t node) {
 struct GraphWiringStructure::Data {
     std::vector<NodeShape> nodes;
     std::vector<const TimeSeriesType *> boundaries;
-    std::vector<RuntimeInputShape> runtime_inputs;
     std::vector<const TimeSeriesType *> borrowed_inputs;
     std::vector<const TimeSeriesType *> inherited_time_series;
     std::optional<Endpoint> result;
@@ -210,10 +197,6 @@ std::size_t structure_hash(const GraphWiringStructure::Data &data) {
     }
     for (const auto *boundary : data.boundaries) {
         combine_pointer(result, boundary);
-    }
-    for (const auto &runtime_input : data.runtime_inputs) {
-        combine_pointer(result, runtime_input.type);
-        combine_pointer(result, runtime_input.runtime_type);
     }
     for (const auto &borrowed_input : data.borrowed_inputs) {
         combine_pointer(result, borrowed_input);
@@ -295,7 +278,7 @@ bool complete_mapping(const GraphWiringStructure::Data &left, const GraphWiringS
 bool equivalent(const GraphWiringStructure::Data &left, const GraphWiringStructure::Data &right) {
     if (!left.cacheable || !right.cacheable || left.hash != right.hash || left.nodes.size() != right.nodes.size() ||
         left.boundaries.size() != right.boundaries.size() || left.boundaries != right.boundaries ||
-        left.runtime_inputs != right.runtime_inputs || left.borrowed_inputs != right.borrowed_inputs ||
+        left.borrowed_inputs != right.borrowed_inputs ||
         left.inherited_time_series != right.inherited_time_series ||
         left.result.has_value() != right.result.has_value() || left.result_type != right.result_type) {
         return false;
@@ -348,18 +331,6 @@ std::shared_ptr<GraphWiringStructure::Data> snapshot(const GraphWiring &wiring,
         data->borrowed_inputs.push_back(wiring.borrowed_input_types()[index]);
     }
 
-    auto runtime_input_indices = std::vector<std::size_t>(wiring.runtime_input_outputs().size(), unmapped);
-    for (auto index = std::size_t{}; index < wiring.runtime_input_outputs().size(); ++index) {
-        if (std::ranges::any_of(external_boundaries, [&](const auto &boundary) {
-                return boundary.kind == EndpointKind::runtime_input && boundary.index == index;
-            })) {
-            continue;
-        }
-
-        runtime_input_indices[index] = data->runtime_inputs.size();
-        const auto &output = wiring.outputs()[wiring.runtime_input_outputs()[index]];
-        data->runtime_inputs.push_back({output.type, output.runtime_type});
-    }
     for (const auto &requirement : wiring.inherited_requirements()) {
         data->inherited_time_series.push_back(requirement.type);
     }
@@ -455,11 +426,6 @@ std::shared_ptr<GraphWiringStructure::Data> snapshot(const GraphWiring &wiring,
             value.index = index;
             value.path.erase(value.path.begin(),
                              value.path.begin() + static_cast<std::ptrdiff_t>(boundary.path.size()));
-            return value;
-        }
-
-        if (value.kind == EndpointKind::runtime_input) {
-            value.index = runtime_input_indices[value.index];
             return value;
         }
 

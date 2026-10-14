@@ -82,16 +82,7 @@ enum class ParameterBindingMode : std::uint8_t {
     scalar,
     constant,
     default_value,
-    runtime_input,
 };
-
-// The effective state and value pointer bound to one compiled runtime input.
-struct RuntimeInputBinding {
-    TimeSeriesState last_updated{};
-    const void *value{};
-};
-
-static_assert(sizeof(RuntimeInputBinding) == 16);
 
 class Subscriber {
   public:
@@ -232,11 +223,8 @@ class ParameterBinding {
             }
             return (value_offset_ & constant_flag) == 0 ? ParameterBindingMode::scalar : ParameterBindingMode::constant;
         }
-        if ((value_offset_ & (reference_flag | runtime_input_flag)) == (reference_flag | runtime_input_flag)) {
+        if ((value_offset_ & borrowed_input_flag) != 0) {
             return ParameterBindingMode::borrowed;
-        }
-        if ((value_offset_ & runtime_input_flag) != 0) {
-            return ParameterBindingMode::runtime_input;
         }
         return (value_offset_ & reference_flag) == 0 ? ParameterBindingMode::time_series
                                                      : ParameterBindingMode::reference;
@@ -285,10 +273,10 @@ class ParameterBinding {
     static constexpr std::uint32_t optional_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t location_mask = optional_flag - 1;
     static constexpr std::uint32_t reference_flag = std::uint32_t{1} << 31;
-    static constexpr std::uint32_t runtime_input_flag = std::uint32_t{1} << 30;
+    static constexpr std::uint32_t borrowed_input_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t constant_flag = reference_flag;
     static constexpr std::uint32_t default_flag = std::uint32_t{1} << 30;
-    static constexpr std::uint32_t borrowed_flag = reference_flag | runtime_input_flag;
+    static constexpr std::uint32_t borrowed_flag = reference_flag | borrowed_input_flag;
     // Reference input slots are aligned, so their low bits store metadata without growing the binding.
     static constexpr std::uint32_t reference_dynamic_activity_flag = 1;
     static constexpr std::uint32_t reference_sample_flag = 2;
@@ -320,10 +308,6 @@ class ParameterBinding {
                                 input_offset | reference_flag | (sampled ? reference_sample_flag : std::uint32_t{}) |
                                     (dynamic_activity ? reference_dynamic_activity_flag : std::uint32_t{}),
                                 validity};
-    }
-
-    static ParameterBinding runtime_input(std::uint32_t slot_offset, InputValidity validity) noexcept {
-        return ParameterBinding{0, slot_offset | runtime_input_flag, validity};
     }
 
     static ParameterBinding borrowed(std::uint32_t input_index, InputValidity validity) noexcept {

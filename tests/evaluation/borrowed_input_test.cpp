@@ -12,9 +12,11 @@
 #include <bg/time_series/tss/tss_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
 
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <stdexcept>
 #include <vector>
@@ -140,6 +142,9 @@ struct BorrowedInputRunner {
             state.publish(evaluation_time);
             value = 33;
             change = bg::BorrowedInputChange::revalidation;
+        } else if (evaluation_time == time(4)) {
+            state.publish(time(3));
+            value = 44;
         } else {
             state.publish(evaluation_time);
             value = 11;
@@ -186,6 +191,16 @@ struct BorrowedInputRunner {
     inline static bg::RuntimeGraph *child{};
     inline static bool use_different_runtime_type{};
     inline static bool different_runtime_type_rejected{};
+};
+
+struct BorrowedInputNoop {
+    bg::In<bg::TS<bg::i64>> input;
+
+    void evaluate() const {}
+};
+
+struct PendingBorrowedInputGraph {
+    bool evaluate() const { return true; }
 };
 
 bg::CompiledGraph make_borrowed_input_graph() {
@@ -240,9 +255,11 @@ TEST_CASE("borrowed inputs sample values and deliver update, invalidation, and r
     runtime.evaluate(time(2));
     runtime.schedule(0);
     runtime.evaluate(time(3));
+    runtime.schedule(0);
+    runtime.evaluate(time(4));
     runtime.stop();
 
-    REQUIRE(BorrowedInputSink::observations.size() == 3);
+    REQUIRE(BorrowedInputSink::observations.size() == 4);
     CHECK(BorrowedInputSink::observations[0].value == 11);
     CHECK(BorrowedInputSink::observations[0].time == time(1));
     CHECK(BorrowedInputSink::observations[0].evaluation_time == time(1));
@@ -257,10 +274,15 @@ TEST_CASE("borrowed inputs sample values and deliver update, invalidation, and r
     CHECK(BorrowedInputSink::observations[2].value == 33);
     CHECK(BorrowedInputSink::observations[2].time == time(3));
     CHECK(BorrowedInputSink::observations[2].modified);
+    CHECK(BorrowedInputSink::observations[3].value == 44);
+    CHECK(BorrowedInputSink::observations[3].time == time(3));
+    CHECK(BorrowedInputSink::observations[3].evaluation_time == time(4));
+    CHECK_FALSE(BorrowedInputSink::observations[3].modified);
+    CHECK(BorrowedInputSink::observations[3].set_modified);
     CHECK(BorrowedInputSink::stop_count == 1);
     CHECK(BorrowedInputSink::stop_value == 33);
     CHECK(BorrowedInputSink::stop_time == time(3));
-    CHECK(BorrowedInputSink::stop_evaluation_time == time(3));
+    CHECK(BorrowedInputSink::stop_evaluation_time == time(4));
     CHECK(BorrowedInputSink::stop_valid);
     CHECK(BorrowedInputSink::stop_set_valid);
     CHECK(BorrowedInputSink::stop_set_size == 0);
@@ -291,4 +313,60 @@ TEST_CASE("borrowed direct inputs reject a different time-series runtime type",
 
     CHECK(BorrowedInputRunner::different_runtime_type_rejected);
     runtime.stop();
+}
+
+TEST_CASE("borrowed storage includes scheduling spill words and validates its layout",
+          "[evaluation][feature:borrowed-input][feature:graph-compilation][storage:fixed]") {
+    auto wiring = bg::GraphWiring{};
+    const auto consumer = bg::node<BorrowedInputNoop>();
+    {
+        auto context = bg::WiringContext{wiring};
+        for (auto index = std::size_t{}; index < bg::CompiledGraph::schedule_word_bits + 1; ++index) {
+            (void)consumer(wiring.borrowed_input(bg::TS<bg::i64>::type()));
+        }
+    }
+    wiring.finalize();
+    const auto graph = bg::CompiledGraph{wiring};
+
+    REQUIRE(graph.supports_borrowed_evaluation());
+    REQUIRE(graph.schedule_word_count() == 2);
+    const auto storage_size = bg::RuntimeGraph::borrowed_storage_size(graph);
+    const auto alignment = bg::RuntimeGraph::borrowed_storage_alignment(graph);
+    REQUIRE(alignment > 1);
+    const auto spill_offset = (graph.runtime_storage_size() + alignof(bg::CompiledGraph::SchedulingInfo) - 1) &
+                              ~(alignof(bg::CompiledGraph::SchedulingInfo) - 1);
+    CHECK(storage_size == spill_offset + sizeof(bg::CompiledGraph::SchedulingInfo));
+    CHECK(alignment >= alignof(bg::CompiledGraph::SchedulingInfo));
+
+    const auto word_count = (storage_size + alignment + sizeof(std::max_align_t) - 1) / sizeof(std::max_align_t);
+    auto allocation = std::vector<std::max_align_t>(word_count);
+    auto *storage_data = reinterpret_cast<std::byte *>(allocation.data());
+    auto storage = std::span{storage_data, storage_size};
+    CHECK_THROWS_WITH(bg::RuntimeGraph::initialize_borrowed_storage(graph, storage.first(storage_size - 1)),
+                      "borrowed runtime storage is too small");
+
+    auto misaligned_offset = std::size_t{};
+    while (reinterpret_cast<std::uintptr_t>(storage_data + misaligned_offset) % alignment == 0) {
+        ++misaligned_offset;
+    }
+    CHECK_THROWS_WITH(bg::RuntimeGraph::initialize_borrowed_storage(
+                          graph, std::span{storage_data + misaligned_offset, storage_size}),
+                      "borrowed runtime storage is misaligned");
+
+    bg::RuntimeGraph::initialize_borrowed_storage(graph, storage);
+    auto global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{graph, bg::allocator{}, storage, global_state};
+    CHECK(runtime.input_validity() == 0);
+
+    auto pending_wiring = bg::GraphWiring{};
+    const auto pending = bg::node<PendingBorrowedInputGraph>();
+    {
+        auto context = bg::WiringContext{pending_wiring};
+        (void)pending();
+    }
+    pending_wiring.finalize();
+    const auto pending_graph = bg::CompiledGraph{pending_wiring};
+    CHECK_FALSE(pending_graph.supports_borrowed_evaluation());
+    CHECK_THROWS_WITH(bg::RuntimeGraph::initialize_borrowed_storage(pending_graph, storage),
+                      "the compiled graph does not support borrowed evaluation");
 }

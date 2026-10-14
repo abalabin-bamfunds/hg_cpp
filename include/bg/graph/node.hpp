@@ -312,12 +312,6 @@ class Node {
             return {&last_updated, runtime_storage_ + binding.value_offset()};
         }
 
-        if (mode == ParameterBindingMode::runtime_input) {
-            const auto &source =
-                *reinterpret_cast<const RuntimeInputBinding *>(runtime_storage_ + binding.value_offset());
-            return {&source.last_updated, source.value};
-        }
-
         const auto *wired_last_updated =
             reinterpret_cast<const TimeSeriesState *>(runtime_storage_ + binding.last_updated_offset());
         if (mode == ParameterBindingMode::constant) {

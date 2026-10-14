@@ -182,7 +182,7 @@ The function uses compiled offsets to locate inputs, output, and private state. 
 the node defines one.
 
 For a plain C++ function, compiled parameter records retain callable order and
-identify shared scalar data, a direct runtime input, a time-series input, or a
+identify shared scalar data, a borrowed input, a time-series input, or a
 reference input. The evaluation entry point uses these records to pack the C++
 arguments. Runtime graphs share the records and scalar values.
 

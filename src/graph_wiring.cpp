@@ -1191,7 +1191,7 @@ void GraphWiring::register_nested_service_consumers(const GraphWiring &nested, N
 std::size_t GraphWiring::output_node_index(WiringPoint point) const {
     const auto node_index = outputs_[output_index(point)].node_index;
     if (node_index == WiredOutput::npos) {
-        throw WiringError{"a runtime input does not have an owning node"};
+        throw WiringError{"a wired output does not have an owning node"};
     }
     return node_index;
 }

@@ -1,10 +1,6 @@
 #include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_error.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-
 #include "time_series/ref/ref_node.hpp"
 
 #include <algorithm>
@@ -138,61 +134,10 @@ class SelectedMaterialisationFormWiringRecord final : public details::WiringReco
     const TimeSeriesType *target_;
 };
 
-class RuntimeInputWiringRecord final : public details::WiringRecord {
-  public:
-    explicit RuntimeInputWiringRecord(const TimeSeriesType &type) noexcept : details::WiringRecord{type} {}
-
-  private:
-    WiringPoint materialize(const TimeSeriesType &requested_type) const override {
-        if (type_cast<TimeSeriesReferenceType>(&type()) == nullptr &&
-            (type_cast<TimeSeriesReferenceType>(&requested_type) != nullptr ||
-             requested_type.requires_reference_representation_for(type()))) {
-            throw WiringError{"a runtime input cannot create an owning reference output"};
-        }
-        return details::materialize_reference(point(*this), requested_type);
-    }
-};
-
 } // namespace
 
 WiringPoint GraphWiring::register_output(WiredOutput output) {
     return register_output(output, std::make_unique<OutputWiringRecord>(*output.type));
-}
-
-WiringPoint GraphWiring::runtime_input(const TimeSeriesType &type) {
-    return runtime_input(type, resolve_time_series_runtime_type(type));
-}
-
-WiringPoint GraphWiring::runtime_input(const TimeSeriesType &type, const TimeSeriesRuntimeType &runtime_type) {
-    const auto is_value_series = type_cast<TimeSeriesValueType>(&type) != nullptr;
-    if (!is_value_series) {
-        throw WiringError{"runtime inputs currently support TS<V> only"};
-    }
-    if (type.guarantee().value() != TimeSeriesGuarantee::ordinary) {
-        throw WiringError{"a rebindable runtime input requires an ordinary guarantee"};
-    }
-    if (!type.accepts(runtime_type.type())) {
-        throw WiringError{"a runtime input representation is incompatible with its time series type"};
-    }
-    runtime_input_outputs_.reserve(runtime_input_outputs_.size() + 1);
-    auto point = register_output({WiredOutput::npos, WiredOutput::npos, 0, &type, &runtime_type},
-                                 std::make_unique<RuntimeInputWiringRecord>(type));
-    runtime_input_outputs_.push_back(output_index(point));
-    return point;
-}
-
-std::size_t GraphWiring::runtime_input_index(WiringPoint point) const {
-    if (&point.graph() != this) {
-        throw WiringError{"a WiringPoint belongs to another GraphWiring"};
-    }
-
-    for (auto index = std::size_t{}; index < runtime_input_outputs_.size(); ++index) {
-        if (output_records_[runtime_input_outputs_[index]] == point.record()) {
-            return index;
-        }
-    }
-
-    throw WiringError{"a WiringPoint is not a runtime input"};
 }
 
 WiringPoint GraphWiring::output_item(WiringPoint parent, item_id_t item, const TimeSeriesType &type) {
@@ -213,7 +158,7 @@ WiringPoint GraphWiring::output_item(WiringPoint parent, item_id_t item, const T
         root = outputs_[root].parent;
     }
     if (outputs_[root].node_index == WiredOutput::npos) {
-        throw WiringError{"runtime inputs do not support collection item selection"};
+        throw WiringError{"a collection item requires an owning node output"};
     }
 
     if (const auto existing = find_output_item(parent_index, item)) {

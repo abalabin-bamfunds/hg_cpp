@@ -39,8 +39,7 @@ class GraphWiringStructure {
                                                        std::optional<std::size_t>);
 };
 
-// Boundary, runtime-input, and borrowed-input order are semantic. Wiring paths, labels, parameter names, and node
-// indices are not.
+// Boundary and borrowed-input order are semantic. Wiring paths, labels, parameter names, and node indices are not.
 GraphWiringStructure graph_wiring_structure(const GraphWiring &wiring,
                                             std::span<const WiringPoint> boundaries,
                                             std::optional<WiringPoint> result = std::nullopt);
@@ -51,7 +50,7 @@ GraphWiringStructure graph_wiring_structure(const GraphWiring &wiring,
                                             std::optional<std::size_t> result_node = std::nullopt);
 
 // Compares graph bodies after treating corresponding outputs as the same declared inputs, independent of whether
-// each wiring represents those inputs as boundary nodes or runtime inputs.
+// each wiring represents those inputs as boundary nodes or borrowed inputs.
 bool equivalent_wiring_bodies(const GraphWiring &left, std::span<const WiringPoint> left_inputs,
                               std::optional<WiringPoint> left_result, const GraphWiring &right,
                               std::span<const WiringPoint> right_inputs, std::optional<WiringPoint> right_result,

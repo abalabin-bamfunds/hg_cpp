@@ -96,7 +96,6 @@ TEST_CASE("reduce wiring records a graph whose result forwards one of its inputs
         CHECK_FALSE(built.graph.compact_graph->output_node.has_value());
         CHECK(built.graph.compact_graph->output_input.has_value());
         CHECK(built.graph.compact_graph->output_input == std::optional<std::size_t>{0});
-        CHECK(built.graph.compact_graph->graph->runtime_inputs().empty());
         CHECK(built.graph.compact_graph->graph->borrowed_input_bindings().size() == 2);
         CHECK(built.graph.nested.output_node != built.graph.nested.input_nodes[0]);
     });

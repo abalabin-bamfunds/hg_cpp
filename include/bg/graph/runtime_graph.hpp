@@ -87,17 +87,6 @@ class RuntimeGraph {
 
     void update_reference_output(std::size_t node_index, Reference reference, EvaluationTime evaluation_time);
     void initialize_constant_output(std::size_t node_index, Scalar<> value, EvaluationTime evaluation_time);
-    // Publish a borrowed sample before its consuming cycle. source_runtime_type must exactly match the type selected
-    // when wiring; the value remains borrowed.
-    void bind_runtime_input(std::size_t index, const TimeSeriesRuntimeType &source_runtime_type,
-                            const TimeSeriesState &source_state, const void *value,
-                            EvaluationTime evaluation_time);
-    // Refreshes a valid borrowed input's address without changing its state or notifying subscribers. The caller must
-    // know that the source's logical state is unchanged.
-    void refresh_runtime_input(std::size_t index, const TimeSeriesRuntimeType &source_runtime_type,
-                               const void *value);
-    // Publish an invalid sample before the graph evaluates its supplied cycle.
-    void clear_runtime_input(std::size_t index, EvaluationTime evaluation_time);
     // Save this word between temporary borrowed views; spill words already live in borrowed storage.
     CompiledGraph::ScheduleWord input_validity() const noexcept { return inline_scheduling_.input_validity(); }
 
@@ -139,8 +128,6 @@ class RuntimeGraph {
     std::size_t runtime_allocation_size() const noexcept;
     std::size_t runtime_allocation_alignment() const noexcept;
     void initialize_storage();
-    void notify_runtime_input(const details::RuntimeInputDescriptor &binding, OutputChange change,
-                              EvaluationTime evaluation_time);
 
     TimedSchedule *&timed_schedule() noexcept;
     TimedSchedule *timed_schedule() const noexcept;
