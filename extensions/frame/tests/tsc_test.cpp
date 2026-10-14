@@ -11,6 +11,7 @@
 #include <memory_resource>
 #include <optional>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 namespace {
@@ -204,6 +205,31 @@ void test_tsc_guarantee_matching() {
         rejected_other_runtime = true;
     }
     require(rejected_other_runtime, "TSC runtime accepted another time series family");
+
+}
+
+void test_cold_generic_tsc_column_output() {
+    const auto write = bg::node([](bg::In<bg::TS<bg::SCALAR>> input,
+                                   bg::Out<bg::frame::TSC<bg::SCALAR>> output) {
+        output.clear();
+        input.value_view().visit(
+            [&](const auto *value) {
+                using Cell = typename std::remove_pointer_t<decltype(value)>::scalar_type;
+                if constexpr (bg::frame::cell_type<Cell>)
+                    static_cast<void>(output.template add<Cell>(value->value()));
+            },
+            ddv::noop);
+    });
+    const auto copy = bg::node([](bg::In<bg::frame::TSC<bg::SCALAR>> input,
+                                  bg::Out<bg::TS<bg::frame::Column<bg::SCALAR>>> output) {
+        output.set_value(input.value_view());
+    });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return copy(write(input)); };
+    const auto values = std::array<bg::i64, 2>{14, -7};
+    const auto result = bg::testing::test_graph(graph, values);
+    require(result.size() == values.size() && result[0] && result[1] &&
+                result[0]->value().cell<bg::i64>(0) == 14 && result[1]->value().cell<bg::i64>(0) == -7,
+            "cold generic TSC input did not publish its value as a typed column series");
 }
 
 void test_column_descriptor_resolution() {
@@ -215,6 +241,9 @@ void test_column_descriptor_resolution() {
             "column descriptor factory did not canonicalize concrete cell types");
     require(&bg::cpp_scalar_type<bg::frame::Column<bg::i64>>() == &integer_column,
             "Column<T> did not use the canonical column descriptor factory");
+    auto column_name = std::string{};
+    integer_column.format_name(column_name);
+    require(column_name == "Column<i64>", "column descriptor formatted with the wrong name");
 
     auto column_map = bg::TypeMap{};
     require(generic_column.match(integer_column, column_map), "column descriptor did not match a scalar variable");
@@ -226,6 +255,9 @@ void test_column_descriptor_resolution() {
     const auto &generic_series = bg::frame::column_series_type(
         bg::cpp_scalar_type<CELL>(), bg::TimeSeriesGuarantee::ordinary);
     const auto &integer_series = bg::frame::TSC<bg::i64>::type();
+    auto series_name = std::string{};
+    integer_series.format_name(series_name);
+    require(series_name == "TSC<i64>", "column series descriptor formatted with the wrong name");
     auto series_map = bg::TypeMap{};
     require(!generic_series.is_resolved(), "generic column series descriptor resolved before its cell type");
     require(generic_series.match(integer_series, series_map), "column series descriptor did not match a scalar variable");
@@ -296,10 +328,15 @@ void test_runtime_initialization() {
 
 void test_tsc_graph_behavior() {
     auto observations = std::vector<observation>{};
+    auto snapshot_memory_resource = CountingResource{};
+    auto snapshot_memory = bg::allocator{snapshot_memory_resource};
+    auto explicit_snapshots = std::vector<bg::ScalarValue<bg::frame::Column<bg::i64>>>{};
     const auto write = bg::node<tsc_writer>();
     const auto observe = bg::node([&](bg::In<bg::frame::TSC<bg::i64>, bg::optional> input,
                                       bg::In<bg::TS<bg::i64>> tick) {
         static_cast<void>(tick);
+        require(&input.input_data().runtime_type() == &input.runtime_type(),
+                "TSC input did not expose its input data");
         auto result = observation{.valid = input.valid(),
                                   .became_valid = input.became_valid(),
                                   .became_invalid = input.became_invalid(),
@@ -325,9 +362,16 @@ void test_tsc_graph_behavior() {
                                       bg::Out<bg::TS<bg::frame::Column<bg::i64>>> output) {
         output.set_value(input.value_view());
     });
+    const auto copy_with_explicit_allocator = bg::node([&](bg::In<bg::frame::TSC<bg::i64>> input,
+                                                           bg::In<bg::TS<bg::i64>> tick) {
+        static_cast<void>(tick);
+        if (input.valid())
+            explicit_snapshots.emplace_back(input.value_view(), snapshot_memory);
+    });
     const auto graph = [&](bg::wp<bg::TS<bg::i64>> command, bg::wp<bg::TS<bg::i64>> tick) {
         const auto rows = write(command);
         observe(rows, tick);
+        copy_with_explicit_allocator(rows, tick);
         return snapshot(rows);
     };
     const auto commands = std::array<bg::i64, 16>{9, 1, 2, 3, 0, 4, 5, 6, 7, 8, 9, 11, 10, 0, 9, 11};
@@ -409,6 +453,14 @@ void test_tsc_graph_behavior() {
     require(!snapshots[13].has_value(), "quiet invalid cycle produced a snapshot");
     require_snapshot(snapshots[14], {}, "empty revalidation snapshot was lost");
     require_snapshot(snapshots[15], {70}, "post-revalidation snapshot was lost");
+
+    require(explicit_snapshots.size() == 14 && explicit_snapshots[1].view().value().cell(0) == 10 &&
+                !explicit_snapshots[2].view().value().cell(1) &&
+                explicit_snapshots.back().view().value().cell(0) == 70,
+            "explicit allocator did not preserve standalone TSC column copies after graph destruction");
+    explicit_snapshots.clear();
+    require(snapshot_memory_resource.allocations == snapshot_memory_resource.deallocations,
+            "explicit allocator TSC column copies did not release their storage");
 }
 
 void test_double_tsc_graph() {
@@ -429,6 +481,109 @@ void test_double_tsc_graph() {
                     result[index]->value().cell(0) == values[index],
                 "double TSC graph changed a value");
     }
+}
+
+void test_generic_tsc_output() {
+    auto rejected_add = std::vector<bool>{};
+    auto rejected_set = std::vector<bool>{};
+    auto snapshot_memory_resource = CountingResource{};
+    auto snapshot_memory = bg::allocator{snapshot_memory_resource};
+    auto integer_snapshots = std::vector<bg::ScalarValue<bg::frame::Column<bg::i64>>>{};
+    auto double_snapshots = std::vector<bg::ScalarValue<bg::frame::Column<double>>>{};
+    const auto write = bg::node([&](bg::In<bg::TS<bg::SCALAR>> input,
+                                    bg::Out<bg::frame::TSC<bg::SCALAR>> output) {
+        output.clear();
+        input.value_view().visit(
+            [&](const auto *value) {
+                using Cell = typename std::remove_pointer_t<decltype(value)>::scalar_type;
+                if constexpr (bg::frame::cell_type<Cell>) {
+                    using WrongCell = std::conditional_t<std::same_as<Cell, bg::i64>, double, bg::i64>;
+                    auto add_rejected = false;
+                    try {
+                        static_cast<void>(output.template add<WrongCell>(WrongCell{}));
+                    } catch (const std::invalid_argument &) {
+                        add_rejected = true;
+                    }
+                    const auto id = output.template add<Cell>(value->value());
+
+                    auto set_rejected = false;
+                    try {
+                        output.template set<WrongCell>(id, WrongCell{});
+                    } catch (const std::invalid_argument &) {
+                        set_rejected = true;
+                    }
+                    output.template set<Cell>(id, value->value());
+                    rejected_add.push_back(add_rejected);
+                    rejected_set.push_back(set_rejected);
+                }
+            },
+            ddv::noop);
+    });
+
+    auto observed_values = std::vector<double>{};
+    const auto inspect = bg::node([&](bg::In<bg::frame::TSC<bg::SCALAR>> input,
+                                      bg::In<bg::TS<bg::i64>> tick, bg::Out<bg::TS<bg::i64>> output) {
+        const auto borrowed = input.value_view();
+        if (std::addressof(input.column_view().cell_type()) == std::addressof(bg::cpp_scalar_type<bg::i64>())) {
+            const auto value = bg::Scalar<bg::frame::Column<bg::i64>>::from(borrowed);
+            const auto cell = value.value().cell(0).value();
+            observed_values.push_back(static_cast<double>(cell));
+            integer_snapshots.emplace_back(value, snapshot_memory);
+        } else {
+            const auto value = bg::Scalar<bg::frame::Column<double>>::from(borrowed);
+            const auto cell = value.value().cell(0).value();
+            observed_values.push_back(cell);
+            double_snapshots.emplace_back(value, snapshot_memory);
+        }
+        output.set(*tick);
+    });
+
+    const auto integer_graph = [&](bg::wp<bg::TS<bg::i64>> input, bg::wp<bg::TS<bg::i64>> tick) {
+        return inspect(write(input), tick);
+    };
+    const auto double_graph = [&](bg::wp<bg::TS<double>> input, bg::wp<bg::TS<bg::i64>> tick) {
+        return inspect(write(input), tick);
+    };
+    const auto integers = std::array<bg::i64, 2>{14, -7};
+    const auto doubles = std::array{1.25, -3.5};
+    const auto ticks = std::array<bg::i64, 2>{0, 1};
+    static_cast<void>(bg::testing::test_graph(integer_graph, integers, ticks));
+    static_cast<void>(bg::testing::test_graph(double_graph, doubles, ticks));
+
+    require(observed_values == std::vector<double>{14, -7, 1.25, -3.5},
+            "generic TSC output changed an i64 or double value");
+    require(rejected_add == std::vector<bool>{true, true, true, true},
+            "generic TSC output accepted an add with a mismatched cell type");
+    require(rejected_set == std::vector<bool>{true, true, true, true},
+            "generic TSC output accepted a set with a mismatched cell type");
+    require(integer_snapshots.size() == 2 && integer_snapshots[0].view().value().cell(0) == 14 &&
+                integer_snapshots[1].view().value().cell(0) == -7,
+            "generic i64 TSC input did not create independent owning column values");
+    require(double_snapshots.size() == 2 && double_snapshots[0].view().value().cell(0) == 1.25 &&
+                double_snapshots[1].view().value().cell(0) == -3.5,
+            "generic double TSC input did not create independent owning column values");
+    integer_snapshots.clear();
+    double_snapshots.clear();
+    require(snapshot_memory_resource.allocations == snapshot_memory_resource.deallocations,
+            "generic TSC owning values did not release their allocations");
+}
+
+void test_generic_tsc_view_output() {
+    const auto write = bg::node<tsc_writer>();
+    const auto bind = bg::node([](bg::In<bg::frame::TSC<bg::SCALAR>> source,
+                                  bg::Out<bg::frame::TSC<bg::SCALAR>, bg::frame::view> output) {
+        output.bind(source);
+    });
+    const auto observe = bg::node([](bg::In<bg::frame::TSC<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
+        output.set(input.valid() ? input.cell(0).value_or(-1) : -1);
+    });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> command) {
+        return observe(bind(write(command)));
+    };
+    const auto commands = std::array<bg::i64, 4>{1, 2, 3, 5};
+    const auto result = bg::testing::test_graph(graph, commands);
+    require(result.equals({10, 10, 10, 10}),
+            "generic TSC view output did not dispatch to its resolved cell runtime");
 }
 
 void test_tsc_view_binding() {
@@ -539,11 +694,14 @@ void test_tsc_view_rebinding() {
 
 int main() {
     try {
+        test_cold_generic_tsc_column_output();
         test_tsc_guarantee_matching();
         test_column_descriptor_resolution();
         test_runtime_initialization();
         test_tsc_graph_behavior();
         test_double_tsc_graph();
+        test_generic_tsc_output();
+        test_generic_tsc_view_output();
         test_tsc_view_binding();
         test_tsc_view_rebinding();
         std::cout << "bg_frame_tsc_test passed\n";

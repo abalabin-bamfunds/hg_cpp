@@ -1,16 +1,8 @@
 # Frame schema foundation
 
-Status: schema-backed semantic descriptors are committed in `e9f04c74` on
-`agent/frame-schema`. The common borrowed read descriptor is committed in
-`c3f4fafc` and passes all five extension tests, including Arrow. Shared owning
-storage, inherited input matching, and generic node access follow.
-
-The existing extension at `c4360703` also passes all five tests against the
-installed BG hook package at `42f63586`. Its six-case benchmark completed
-before the storage migration. Reports are local build artifacts:
-`build/schema-hooks-consumer/baseline.md` and `baseline.csv`. Extension and
-benchmark code use Release; the installed BG library uses Debug. Use the same
-package and workload for the storage comparison.
+Status: implementation and verification are active in `agent/frame-field-access`.
+The extension consumes the installed BG package at `cc4a3f29`. Current checkpoints
+and remaining work are recorded in [HANDOFF.md](HANDOFF.md).
 
 ## Purpose
 
@@ -34,8 +26,8 @@ The initial cell implementations remain nullable `i64` and `double`.
 Unsupported resolved cell types fail during wiring. This work adds schema
 generality rather than additional cell layouts or expression operations.
 
-Frame input inheritance is approved. Concrete matching remains unchanged until
-the shared storage and scalar access support inherited inputs safely.
+Frame and TSF input matching check named ancestry and required field types.
+Declared fields control typed access; the scalar view retains the actual schema.
 
 ## One implementation
 
@@ -58,26 +50,27 @@ FrameSeriesType : FixedItemTimeSeriesType {
     guarantee
 }
 
-FrameStorage {
+FrameReadStorage {
     current row view and row count
     ordered column descriptors
     shared membership changes
     per-column modification information
 }
 
-NativeFrame {
+NativeFrameStorage {
+    resolved schema layout
     NativeRows
     schema-described column storage
     child publication state
-    FrameStorage borrowed descriptor
 }
 ```
 
-`FrameStorage`, `NativeFrame`, and their runtime interfaces become independent
-of the C++ schema template. A runtime type computes the column layouts and
-operation bindings from the resolved schema. Each column continues to use the
-existing typed cell storage and batch operations. Frame mutation, rollback,
-membership changes, and publication have one implementation.
+`FrameReadStorage`, `NativeFrameStorage`, and their runtime interfaces are
+independent of the C++ schema template. Typed adapters hold column read bindings
+and translate row arguments. A runtime type computes the column layouts and
+operation bindings from the resolved schema. Each column uses the existing typed
+cell storage and batch operations. Frame mutation, rollback, membership changes,
+and publication have one implementation.
 
 Frame construction validates that fields describe supported cell scalar types
 and present columns. Cell nullability belongs to column values. The extension
@@ -138,38 +131,46 @@ and compatible cell types. The input retains the actual anonymous schema.
 
 ### Scalar extension integration
 
-Status: source-aware scalar reads and copies (`dbbbe24f`), typed time-series
-reads (`0d208d21`), node scalar reads (`20cbf814`), and runtime selection and
-borrowing hooks (`42f63586`) are committed on `agent/scalar-access-paths`.
-The installed package passes all 1469 BG tests, including Python, and the
-coverage check. These changes are not merged into main.
+The extension declares `supports_alternative_layouts` and implements typed
+`read_value(ScalarData)` to construct the declared `FrameView` from the actual
+representation. Every frame scalar runtime implements
+`FrameScalarRuntimeType::read_storage`. Fixed-layout BG scalars keep their
+direct read path.
 
-BG's current scalar read path asks the source runtime to construct a C++ view
-in storage sized for the declared view. `FrameView<Base>` and
-`FrameView<Derived>` can have different layouts. Shared frame storage is required
-to construct the declared typed view while retaining the actual scalar runtime.
+`In<TSF>::value_view()` borrows persistent series storage through its scalar
+adapter. Returning that view from a helper taking `In` by value retains the
+source lifetime. The adapter is used explicitly for borrowing. The owning
+snapshot runtime is registered as the default for ordinary scalar storage.
+
+Canonical `FrameSnapshotStorage` contains one owner pointer. The owner retains
+the actual schema, runtime, dense column snapshots, row count, and allocation
+owner. This fixed-size representation lets `TS<Frame<Base>>` retain all columns
+of an assigned Derived frame. Assignment constructs the replacement owner
+before releasing the previous owner. Borrowing a stored snapshot returns the
+owner's actual runtime.
 
 Optional extension-facing scalar storage trait operations:
 
 ```cpp
 static value_type read_value(const details::ScalarData &data);
-static const ScalarRuntimeType &copy_runtime_type(const details::ScalarData &source);
+static const ScalarRuntimeType &runtime_type_for_copy(const ScalarData &source);
 static const ScalarRuntimeType &runtime_type(const ScalarType &type);
 static ScalarData borrow_value(const value_type &value);
 ```
 
 The `read_value` operation constructs the declared view from the source representation.
-The copy operation selects the runtime used for an owning copy. Existing traits
-retain their current behavior. An owning `ScalarValue<Frame<Base>>` copied from
-Derived retains Derived's actual schema and columns. Selecting the source
-runtime retains shared immutable storage when supported, or clones through
-that runtime. Typed copies from a same-schema Arrow representation use canonical
-native storage. Node code uses the scalar and time series APIs rather than
-these trait operations.
+The copy operation selects the runtime used for an owning copy. An owning
+`ScalarValue<Frame<Base>>` copied from Derived selects the native snapshot runtime
+for the actual Derived schema. Typed Arrow copies also select native snapshots;
+erased Arrow copies retain their Arrow runtime. Node code uses the scalar and
+time series APIs rather than these trait operations.
 
 Canonical scalar runtime customization and borrowing of C++ views carrying
 their actual semantic type both use `scalar_storage_traits<T>`.
-`docs/scalar-api.md` at commit `42f63586` defines their implemented contracts.
+`docs/scalar-api.md` defines their contracts. Erased owning copies use
+`ScalarRuntimeType::runtime_type_for_copy(const ScalarData&) const`; its default
+preserves the source runtime. A mutable frame borrow selects immutable snapshot
+storage that retains its actual schema. Typed trait selection takes priority.
 
 ## Node and value APIs
 
@@ -197,6 +198,29 @@ column does not authorize independent additions or removals from that frame.
 `Column<SCALAR>` and `TSC<SCALAR>` need generic declarations and checked access
 so generic frames can expose columns without losing their family. They use
 the existing concrete column implementations after cell type resolution.
+A C++ schema field declared as `Field<SCALAR>` exposes a generic column through
+`value.columns().field`; `view<T>()` checks its resolved cell type.
+
+Generic outputs accept typed `Row<Schema>` for insertion and
+`RowPatch<Schema>` for insertion and modification. Their argument adapters validate against
+the resolved output fields and call the shared native mutation implementation.
+Complete rows contain every output field. Patches distinguish omitted fields
+from null cells. Insertion sets omitted patch fields to null; modification
+leaves them unchanged. All current frame columns allow nulls.
+
+Row/RowPatch fields declared with scalar variables store borrowed `Scalar<>`
+handles. Concrete fields store nullable typed values. Adapters validate source
+field declarations through BG type matching and check each present handle
+against its resolved target cell type before mutation. Temporary numeric
+storage decodes generic fields; native table storage retains no handles.
+
+Projection binding accepts source ordinals in target-schema order. Named and
+compile-time conveniences resolve names and call the same binding operation.
+
+Live filtering belongs to a node. The expression implementation evaluates
+blocks and supplies row-selection changes to its TSF view output. Expression
+wiring uses BG materialisation options. The existing numeric filter helper is
+a probe; the generic foundation does not add a cell callback filter API.
 
 Arrow import gains a schema-inferred form and a form taking an explicit frame
 schema descriptor. Both construct the same frame semantic types. Typed imports
@@ -210,11 +234,11 @@ adapters, and output options belong to the extension. The common BG descriptor
 provides schema identity and field metadata. Report any required BG change for
 owner review before implementing it.
 
-BG review item: aggregate scalar arguments without a source-aware read hook
-retain the supplied runtime's storage but read it as canonical trait storage.
-Different layouts require a BG policy decision. Ordinary typed TS outputs
-construct their configured canonical representation; manually bound alternative
-TS inputs need the same review.
+Ordinary typed TS outputs assign through their configured canonical runtime;
+they do not invoke the owning-copy selector. Frame's owner pointer preserves
+actual-schema values at this boundary. Assignment from an immutable native
+snapshot retains its owner. Assignment from a mutable TSF borrow copies current
+cells into an independent snapshot.
 
 ## Build order and acceptance
 

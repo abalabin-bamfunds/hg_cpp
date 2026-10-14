@@ -168,7 +168,7 @@ struct time_series_type_traits<provider::Series<i64, Properties...>> {
     static constexpr bool generic = false;
     static constexpr bool supported = true;
 
-    template <typename, std::size_t, bool>
+    template <typename, std::size_t, TimeSeriesTypeRole>
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {
         if (!guarantee.is_resolved()) {
             static const auto type = provider::SeriesType{guarantee};

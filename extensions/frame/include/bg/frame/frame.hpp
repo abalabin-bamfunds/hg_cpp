@@ -17,48 +17,65 @@
 #include <bg/type/type_registry.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/node/output_declaration_traits.hpp>
+#include <bg/schema/reflection.hpp>
 #include <bg/scalar/bundle/scalar_type.hpp>
+#include <bg/scalar/bundle/details/allocation_owner.hpp>
+#include <bg/scalar/details/allocation_context.hpp>
 #include <bg/util/compile_time_string.hpp>
 #include <bg/util/reflection.hpp>
 
 #include <array>
+#include <atomic>
+#include <deque>
 #include <functional>
+#include <limits>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <typeinfo>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace bg::frame {
 
 template <typename T> class Cell {
   public:
+    using value_type = std::conditional_t<bg::details::scalar_variable<T>, Scalar<>, T>;
+
     Cell() = delete;
-    Cell(T value) : value_{std::move(value)} {}
-    Cell(std::optional<T> value) : value_{std::move(value)} {}
+    Cell(bg::details::FieldProbe &probe) noexcept { probe.record(this); }
+    Cell(value_type value) : value_{std::move(value)} {}
+    Cell(std::optional<value_type> value) : value_{std::move(value)} {}
     Cell(std::nullopt_t) noexcept {}
-    const std::optional<T> &value() const noexcept { return value_; }
+    const std::optional<value_type> &value() const noexcept { return value_; }
 
   private:
-    std::optional<T> value_;
+    std::optional<value_type> value_;
 };
 
 template <typename T> class PatchCell {
   public:
+    using value_type = std::conditional_t<bg::details::scalar_variable<T>, Scalar<>, T>;
+
     PatchCell() noexcept = default;
-    PatchCell(T value) : value_{std::move(value)}, changed_{true} {}
+    PatchCell(bg::details::FieldProbe &probe) noexcept { probe.record(this); }
+    PatchCell(value_type value) : value_{std::move(value)}, changed_{true} {}
+    PatchCell(std::optional<value_type> value) : value_{std::move(value)}, changed_{true} {}
     PatchCell(std::nullopt_t) noexcept : changed_{true} {}
 
     bool changed() const noexcept { return changed_; }
-    const std::optional<T> &value() const noexcept { return value_; }
+    const std::optional<value_type> &value() const noexcept { return value_; }
 
   private:
-    std::optional<T> value_;
+    std::optional<value_type> value_;
     bool changed_{};
 };
 
@@ -100,6 +117,7 @@ class FrameSeriesType final : public FixedItemTimeSeriesType {
     std::size_t item_count() const noexcept override { return schema_->field_count(); }
     const TimeSeriesType &item_type(std::size_t index) const override;
     const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
+    const TimeSeriesType &with_guarantee_limit(TimeSeriesGuarantee limit) const override;
     const Type &resolve(const TypeMap &type_map) const override;
 
   protected:
@@ -129,24 +147,110 @@ const TimeSeriesRuntimeType &frame_time_series_runtime_type(const TimeSeriesType
 
 template <template <template <typename, auto...> typename> typename Schema> class Frame;
 template <template <template <typename, auto...> typename> typename Schema> class FrameView;
+template <template <template <typename, auto...> typename> typename Schema> class NativeFrame;
+class NativeFrameStorage;
+struct FrameColumnReadBinding;
+namespace details {
+struct NativeFrameLayout;
+struct FrameSnapshotOwner;
+}
+
+struct FrameSnapshotStorage {
+    details::FrameSnapshotOwner *owner{};
+};
 
 namespace details {
 using frame_series_runtime_factory = std::unique_ptr<TimeSeriesRuntimeType> (*)(const TimeSeriesType &);
-const TimeSeriesRuntimeType &canonical_frame_series_runtime_type(const std::type_info &identity,
-                                                                 const TimeSeriesType &type,
+const TimeSeriesRuntimeType &canonical_frame_series_runtime_type(const TimeSeriesType &type,
                                                                  frame_series_runtime_factory factory);
+
+struct NativeFrameFieldLayout {
+    using add_function = void (*)(void *, NativeRows &, row_id_t, const void *, allocator);
+    using set_function = void (*)(void *, NativeRows &, row_id_t, const void *, allocator);
+    using erase_function = void (*)(void *, row_id_t, row_id_t, allocator);
+    using reset_function = void (*)(void *);
+    using release_function = void (*)(void *, allocator);
+    using modified_function = const util::index<> *(*)(const void *) noexcept;
+    using bind_storage_function = void (*)(void *, const void *, const NativeRows &) noexcept;
+    using copy_column_storage_function = void (*)(void *, const void *) noexcept;
+    using construct_function = void (*)(void *) noexcept;
+    using destroy_function = void (*)(void *) noexcept;
+    using bind_column_view_function = void (*)(const void *, void *);
+    using bind_column_series_view_function = void (*)(const void *, void *);
+    using bind_view_storage_function = void (*)(void *, const FrameColumnReadBinding &, RowSet,
+                                                const util::index<> *, const util::index<> *,
+                                                const util::index<> *, EvaluationTime);
+    using read_binding_function = FrameColumnReadBinding (*)(const void *);
+    using copy_snapshot_column_function = void *(*)(const FrameColumnReadBinding &, std::size_t, allocator);
+    using release_snapshot_column_function = void (*)(void *);
+    using release_snapshot_storage_function = void (*)(void *, allocator);
+    using install_snapshot_column_function = void (*)(void *, void *);
+
+    const ScalarType *cell_type{};
+    const TimeSeriesRuntimeType *column_runtime{};
+    std::size_t native_offset{};
+    std::size_t child_state_offset{};
+    std::size_t column_storage_offset{};
+    std::size_t native_size{};
+    std::size_t native_alignment{};
+    std::size_t child_state_size{};
+    std::size_t child_state_alignment{};
+    std::size_t column_storage_size{};
+    std::size_t column_storage_alignment{};
+    add_function add{};
+    set_function set{};
+    erase_function erase{};
+    reset_function reset{};
+    release_function release{};
+    modified_function modified{};
+    bind_storage_function bind_storage{};
+    copy_column_storage_function copy_column_storage{};
+    construct_function construct{};
+    destroy_function destroy{};
+    construct_function construct_storage{};
+    destroy_function destroy_storage{};
+    bind_column_view_function bind_column_view{};
+    bind_column_series_view_function bind_column_series_view{};
+    bind_view_storage_function bind_view_storage{};
+    read_binding_function read_binding{};
+    copy_snapshot_column_function copy_snapshot_column{};
+    release_snapshot_column_function release_snapshot_column{};
+    release_snapshot_storage_function release_snapshot_storage{};
+    install_snapshot_column_function install_snapshot_column{};
+};
+
+struct NativeFrameCellPatch {
+    bool changed{};
+    const void *value{};
+};
+
+struct NativeFrameLayout {
+    const bg::Schema *schema{};
+    std::size_t size{};
+    std::size_t alignment{};
+    std::vector<NativeFrameFieldLayout> fields;
+};
+
+const NativeFrameLayout &native_frame_layout(const SchemaType &schema);
+NativeFrameFieldLayout native_frame_field_layout(const ScalarType &cell_type);
+
+template <template <template <typename, auto...> typename> typename Schema>
+const NativeFrameLayout &native_frame_layout() {
+    return native_frame_layout(frame_schema_type<Schema>());
+}
 }
 
 template <template <template <typename, auto...> typename> typename Schema> struct FrameStorage {
     static constexpr bool supports_byte_copy_initialization = true;
-    static constexpr auto field_count = util::aggregate_member_count<Schema<ColumnStorage>>;
+    static constexpr auto field_count =
+        bg::details::hierarchical_scalar_schema_reflection<Schema>::field_count;
     Schema<ColumnStorage> columns;
     RowSet rows{};
     const util::index<> *added{};
     const util::index<> *removed{};
     const util::index<> *changed{};
     std::array<const util::index<> *, field_count> modified{};
-    const util::index<field_count> *changed_columns{};
+    const util::index<> *changed_columns{};
     EvaluationTime change_time{MIN_DT};
     bool valid{};
     std::size_t size{};
@@ -158,6 +262,12 @@ struct FrameColumnReadBinding {
     const void *payload{};
     void (*bind_column_view)(const void *, void *){};
     void (*bind_column_series_view)(const void *, void *){};
+    void (*copy_column_storage)(void *, const void *) noexcept{};
+    const void *native{};
+    const NativeRows *rows{};
+    const void *snapshot{};
+    RowSet visible_rows{};
+    RowSet coverage{};
 };
 
 // Extension-facing borrowed descriptor. Copies retain no owner; the source owner controls its lifetime. Descriptors
@@ -175,6 +285,8 @@ struct FrameReadStorage {
     const util::index<> *removed{};
     const util::index<> *changed{};
     std::span<const util::index<> *const> column_modified;
+    const void *column_modified_context{};
+    const util::index<> *(*modified_column)(const void *, std::size_t) noexcept{};
     EvaluationTime change_time{MIN_DT};
     EvaluationTime last_updated{MIN_DT};
     const void *columns_context{};
@@ -183,17 +295,43 @@ struct FrameReadStorage {
     bool (*column_changed)(const void *, std::size_t) noexcept{};
     void (*for_each_changed_column)(const void *, void *, changed_column_visitor){};
     const void *source_owner{};
-    const void *source_payload{};
     const RuntimeType *source_runtime{};
-    bool frame_storage_payload{};
 
     std::size_t field_index(util::symbol name) const;
+    template <template <template <typename, auto...> typename> typename Schema>
+    auto field_ordinals() const;
+    const util::index<> *modified_at(util::symbol name) const { return modified_at(field_index(name)); }
     FrameColumnReadBinding column(std::size_t index) const;
+    ColumnView<> generic_column(std::size_t index) const {
+        const auto binding = column(index);
+        if (binding.cell_type == nullptr || binding.bind_column_view == nullptr)
+            throw std::logic_error{"frame column has no readable cell type"};
+        if (binding.cell_type == std::addressof(cpp_scalar_type<i64>())) {
+            auto result = ColumnView<i64>{};
+            binding.bind_column_view(binding.payload, std::addressof(result));
+            return ColumnView<>{result};
+        }
+        if (binding.cell_type == std::addressof(cpp_scalar_type<double>())) {
+            auto result = ColumnView<double>{};
+            binding.bind_column_view(binding.payload, std::addressof(result));
+            return ColumnView<>{result};
+        }
+        throw std::invalid_argument{"frame columns support only i64 and double cell types"};
+    }
+    const util::index<> *modified_at(std::size_t index) const noexcept {
+        if (modified_column != nullptr)
+            return modified_column(column_modified_context, index);
+        return index < column_modified.size() ? column_modified[index] : nullptr;
+    }
 
     template <cell_type T> void bind_column_view(util::symbol name, ColumnView<T> &destination) const;
     template <cell_type T>
     void bind_column_series_view(util::symbol name,
                                  std::optional<ColumnSeriesView<T>> &destination) const;
+    template <template <template <typename, auto...> typename> typename Schema>
+    FrameStorage<Schema> typed_storage() const;
+    template <template <template <typename, auto...> typename> typename Schema, std::size_t Count>
+    FrameStorage<Schema> typed_storage(const std::array<std::size_t, Count> &ordinals) const;
     bool has_changed_column(std::size_t index) const noexcept {
         return changed_columns_context != nullptr && column_changed != nullptr &&
                column_changed(changed_columns_context, index);
@@ -203,13 +341,40 @@ struct FrameReadStorage {
             for_each_changed_column(changed_columns_context, context, visit);
     }
 
-    template <template <template <typename, auto...> typename> typename SchemaTemplate>
-    const FrameStorage<SchemaTemplate> &exact_storage() const;
 };
+
+// Common scalar runtime interface for native, Arrow, and snapshot frame representations.
+class FrameScalarRuntimeType : public ScalarRuntimeType {
+  public:
+    virtual FrameReadStorage read_storage(const ScalarData &source) const = 0;
+    virtual details::FrameSnapshotOwner *snapshot_owner(const ScalarData &) const noexcept { return nullptr; }
+    const ScalarRuntimeType &runtime_type_for_copy(const ScalarData &source) const override;
+
+  protected:
+    using ScalarRuntimeType::ScalarRuntimeType;
+};
+
+class FrameSeriesRuntimeType;
+const ScalarRuntimeType &frame_series_scalar_runtime_type(const FrameSeriesRuntimeType &runtime);
+const ScalarRuntimeType &frame_snapshot_runtime_type(const FrameType &type);
 
 class FrameSeriesRuntimeType : public TimeSeriesRuntimeType {
   public:
     virtual FrameReadStorage input_storage(const void *value) const noexcept = 0;
+    const ScalarRuntimeType &scalar_runtime_type() const {
+        if (const auto *runtime = scalar_runtime_.load(std::memory_order_acquire))
+            return *runtime;
+        return frame_series_scalar_runtime_type(*this);
+    }
+    const ScalarRuntimeType *cached_scalar_runtime_type() const noexcept {
+        return scalar_runtime_.load(std::memory_order_acquire);
+    }
+    void cache_scalar_runtime_type(const ScalarRuntimeType &runtime) const noexcept {
+        auto *empty = static_cast<const ScalarRuntimeType *>(nullptr);
+        if (!scalar_runtime_.compare_exchange_strong(empty, std::addressof(runtime), std::memory_order_release,
+                                                    std::memory_order_relaxed) && empty != std::addressof(runtime))
+            std::terminate();
+    }
 
   protected:
     FrameSeriesRuntimeType(const TimeSeriesType &type, std::size_t size, std::size_t alignment,
@@ -217,32 +382,115 @@ class FrameSeriesRuntimeType : public TimeSeriesRuntimeType {
                            bool supports_byte_copy_initialization) noexcept
         : TimeSeriesRuntimeType{type, size, alignment, uses_variable_memory, requires_finalization,
                                 supports_byte_copy_initialization} {}
+
+  private:
+    mutable std::atomic<const ScalarRuntimeType *> scalar_runtime_{};
 };
 
 namespace details {
 
-template <typename T> struct frame_column_storage {
-    using scalar_type = void;
-};
+template <template <template <typename, auto...> typename> typename Schema>
+using frame_schema_reflection = bg::details::hierarchical_scalar_schema_reflection<Schema>;
 
-template <typename T> struct frame_schema_cell;
-template <typename T> struct frame_schema_cell<Column<T>> {
-    using type = T;
+template <typename T, bool Generic = bg::details::scalar_variable<T>> struct FrameViewColumnType {
+    using type = ColumnView<T>;
+};
+template <typename T> struct FrameViewColumnType<T, true> {
+    using type = ColumnView<>;
+};
+template <typename T, auto... Parameters>
+using FrameViewColumn = typename FrameViewColumnType<T>::type;
+
+template <template <template <typename, auto...> typename> typename Schema,
+          bool RuntimeSchema = bg::details::schema_variable_template<Schema>>
+struct FrameViewColumnsType {
+    using type = Schema<FrameViewColumn>;
+};
+template <template <template <typename, auto...> typename> typename Schema>
+struct FrameViewColumnsType<Schema, true> {
+    using type = Schema<ColumnView>;
 };
 
 template <std::size_t Index, template <template <typename, auto...> typename> typename Schema>
-using frame_schema_cell_t = typename frame_schema_cell<std::remove_cvref_t<decltype(
-    std::get<Index>(util::aggregate_members(std::declval<Schema<Column> &>())))>>::type;
+using frame_schema_cell_t = typename frame_schema_reflection<Schema>::template field<Index>::scalar_type;
+
+template <template <template <typename, auto...> typename> typename Schema, std::size_t... Index>
+consteval bool frame_schema_fields_generic(std::index_sequence<Index...>) {
+    return (false || ... || bg::details::scalar_variable<frame_schema_cell_t<Index, Schema>>);
+}
+
+template <template <template <typename, auto...> typename> typename Schema, std::size_t... Index>
+consteval bool frame_schema_fields_supported(std::index_sequence<Index...>) {
+    return (true && ... && (cell_type<frame_schema_cell_t<Index, Schema>> ||
+                            bg::details::scalar_variable<frame_schema_cell_t<Index, Schema>>));
+}
+
+template <template <template <typename, auto...> typename> typename Schema, typename Visitor, std::size_t... Index>
+void for_each_frame_schema_field_variable(Visitor &&visitor, std::index_sequence<Index...>) {
+    (bg::for_each_declaration_variable<frame_schema_cell_t<Index, Schema>>(visitor), ...);
+}
+
+template <template <template <typename, auto...> typename> typename Schema>
+struct frame_schema_declaration_traits {
+    using Reflection = frame_schema_reflection<Schema>;
+
+    static constexpr auto is_schema_variable = bg::details::schema_variable_template<Schema>;
+    static constexpr auto has_generic_fields = [] {
+        if constexpr (is_schema_variable)
+            return false;
+        else
+            return frame_schema_fields_generic<Schema>(std::make_index_sequence<Reflection::field_count>{});
+    }();
+    static constexpr auto fields_supported = [] {
+        if constexpr (is_schema_variable)
+            return true;
+        else
+            return frame_schema_fields_supported<Schema>(std::make_index_sequence<Reflection::field_count>{});
+    }();
+
+    template <typename Visitor> static void for_each(Visitor &&visitor) {
+        if constexpr (is_schema_variable) {
+            using Declaration = bg::schema_type<Schema>;
+            visitor.template operator()<Declaration>(bg::details::schema_variable_instance<Schema>());
+        } else {
+            for_each_frame_schema_field_variable<Schema>(visitor,
+                                                         std::make_index_sequence<Reflection::field_count>{});
+        }
+    }
+};
+
+template <template <template <typename, auto...> typename> typename Schema>
+consteval auto frame_schema_field_names() {
+    using Reflection = frame_schema_reflection<Schema>;
+    return []<std::size_t... Index>(std::index_sequence<Index...>) {
+        return std::array<std::string_view, sizeof...(Index)>{Reflection::template field_name<Index>()...};
+    }(std::make_index_sequence<Reflection::field_count>{});
+}
+
+template <typename T> struct frame_column_storage {
+    using scalar_type = void;
+};
 
 template <std::size_t Index, util::compile_time_string... Names>
 consteval auto frame_column_name(ColumnNames<Names...>) {
     constexpr auto names = std::array{Names...};
     return names[Index];
 }
+
+template <std::size_t Index, template <template <typename, auto...> typename> typename Schema>
+const util::symbol &frame_declared_field_symbol() {
+    static const auto &schema = static_cast<const bg::Schema &>(frame_schema_type<Schema>());
+    static const auto name = schema.field(Index).name;
+    return name;
+}
 template <typename T> struct frame_column_storage<ColumnStorage<T>> {
     using scalar_type = Column<T>;
     using cell_type = T;
 };
+
+bool frame_column_changed(const void *context, std::size_t index) noexcept;
+void frame_for_each_changed_column(const void *context, void *target,
+                                   FrameReadStorage::changed_column_visitor visit);
 
 template <cell_type Cell>
 void bind_frame_column_view(const void *payload, void *destination) {
@@ -256,12 +504,68 @@ void bind_frame_column_series_view(const void *payload, void *destination) {
         *static_cast<const ColumnStorage<Cell> *>(payload));
 }
 
+template <cell_type Cell> void copy_frame_column_storage(void *destination, const void *source) noexcept {
+    *static_cast<ColumnStorage<Cell> *>(destination) = *static_cast<const ColumnStorage<Cell> *>(source);
+}
+
+template <cell_type Cell> FrameColumnReadBinding frame_column_read_binding(const void *payload) {
+    const auto &column = *static_cast<const ColumnStorage<Cell> *>(payload);
+    return {std::addressof(cpp_scalar_type<Cell>()), payload, &bind_frame_column_view<Cell>,
+            &bind_frame_column_series_view<Cell>, &copy_frame_column_storage<Cell>, column.native,
+            column.rows, column.snapshot, column.visible_rows, column.coverage};
+}
+
+template <cell_type Cell>
+void *copy_frame_snapshot_column(const FrameColumnReadBinding &source, std::size_t size, allocator memory) {
+    if (source.cell_type != std::addressof(cpp_scalar_type<Cell>()) || source.bind_column_view == nullptr)
+        throw std::invalid_argument{"frame snapshot column type does not match its schema"};
+    auto column = ColumnView<Cell>{};
+    source.bind_column_view(source.payload, std::addressof(column));
+    auto *snapshot = ColumnSnapshot<Cell>::create(memory, size);
+    try {
+        auto position = std::size_t{};
+        column.batches([&](const auto &batch) {
+            if (batch.size > size - position)
+                throw std::invalid_argument{"frame snapshot column has more rows than its schema"};
+            for (auto index = std::size_t{}; index != batch.size; ++index, ++position) {
+                if (!batch.is_valid(index))
+                    continue;
+                snapshot->value_at(position) = batch.values[index];
+                snapshot->set_valid(static_cast<row_id_t>(position));
+            }
+        });
+        if (position != size)
+            throw std::invalid_argument{"frame snapshot column has fewer rows than its schema"};
+    } catch (...) {
+        snapshot->release();
+        throw;
+    }
+    return snapshot;
+}
+
+template <cell_type Cell> void release_frame_snapshot_column(void *snapshot) {
+    static_cast<ColumnSnapshot<Cell> *>(snapshot)->release();
+}
+
+template <cell_type Cell>
+void release_frame_snapshot_storage(void *storage, allocator) {
+    auto &column = *static_cast<ColumnStorage<Cell> *>(storage);
+    if (column.snapshot != nullptr) {
+        column.snapshot->release();
+        column.snapshot = nullptr;
+    }
+}
+
+template <cell_type Cell> void install_frame_snapshot_column(void *storage, void *snapshot) {
+    *static_cast<ColumnStorage<Cell> *>(storage) =
+        ColumnStorage<Cell>{static_cast<ColumnSnapshot<Cell> *>(snapshot)};
+}
+
 template <template <template <typename, auto...> typename> typename Schema, std::size_t Index>
 FrameColumnReadBinding frame_column_binding(const void *context) {
     using Cell = frame_schema_cell_t<Index, Schema>;
-    const auto fields = util::aggregate_members(*static_cast<const Schema<ColumnStorage> *>(context));
-    return {std::addressof(cpp_scalar_type<Cell>()), std::addressof(std::get<Index>(fields)),
-            &bind_frame_column_view<Cell>, &bind_frame_column_series_view<Cell>};
+    const auto fields = frame_schema_reflection<Schema>::fields(*static_cast<const Schema<ColumnStorage> *>(context));
+    return frame_column_read_binding<Cell>(std::addressof(std::get<Index>(fields)));
 }
 
 template <template <template <typename, auto...> typename> typename Schema, std::size_t... Index>
@@ -276,26 +580,37 @@ FrameColumnReadBinding frame_column_binding(const void *context, std::size_t ind
 template <template <template <typename, auto...> typename> typename Schema>
 FrameColumnReadBinding frame_column_binding(const void *context, std::size_t index) {
     return frame_column_binding<Schema>(
-        context, index, std::make_index_sequence<util::aggregate_member_count<Schema<ColumnStorage>>>{});
+        context, index, std::make_index_sequence<frame_schema_reflection<Schema>::field_count>{});
 }
 
-template <std::size_t Count>
-bool frame_column_changed(const void *context, std::size_t index) noexcept {
-    return static_cast<const util::index<Count> *>(context)->contains(index);
+template <template <template <typename, auto...> typename> typename Schema, std::size_t Index>
+void bind_typed_frame_column(FrameStorage<Schema> &storage, const FrameReadStorage &source,
+                             std::size_t source_index) {
+    using Cell = frame_schema_cell_t<Index, Schema>;
+    const auto binding = source.column(source_index);
+    if (binding.cell_type != std::addressof(cpp_scalar_type<Cell>()) || binding.payload == nullptr ||
+        binding.copy_column_storage == nullptr)
+        throw std::invalid_argument{"frame column type does not match the requested schema"};
+    auto target_fields = frame_schema_reflection<Schema>::fields(storage.columns);
+    binding.copy_column_storage(std::addressof(std::get<Index>(target_fields)), binding.payload);
+    storage.modified[Index] = source.modified_at(source_index);
 }
 
-template <std::size_t Count>
-void frame_for_each_changed_column(const void *context, void *target,
-                                   FrameReadStorage::changed_column_visitor visit) {
-    for (const auto index : *static_cast<const util::index<Count> *>(context))
+inline bool frame_column_changed(const void *context, std::size_t index) noexcept {
+    return static_cast<const util::index<> *>(context)->contains(index);
+}
+
+inline void frame_for_each_changed_column(const void *context, void *target,
+                                          FrameReadStorage::changed_column_visitor visit) {
+    for (const auto index : *static_cast<const util::index<> *>(context))
         visit(target, index);
 }
 
 template <template <template <typename, auto...> typename> typename Schema, typename Storage, std::size_t... Index>
 auto frame_columns_view(const Storage &storage, std::index_sequence<Index...>) {
     auto result = Schema<ColumnView>{};
-    auto source = util::aggregate_members(storage);
-    auto destination = util::aggregate_members(result);
+    auto source = frame_schema_reflection<Schema>::fields(storage);
+    auto destination = frame_schema_reflection<Schema>::fields(result);
     ((std::get<Index>(destination) = scalar_storage_traits<typename frame_column_storage<
           std::remove_cvref_t<decltype(std::get<Index>(source))>>::scalar_type>::read(std::get<Index>(source))),
      ...);
@@ -320,19 +635,17 @@ FrameReadStorage frame_read_storage(const FrameStorage<Schema> &storage, const v
     result.column_binding = &frame_column_binding<Schema>;
     result.changed_columns_context = storage.changed_columns;
     if (storage.changed_columns != nullptr) {
-        result.column_changed = &frame_column_changed<FrameStorage<Schema>::field_count>;
-        result.for_each_changed_column = &frame_for_each_changed_column<FrameStorage<Schema>::field_count>;
+        result.column_changed = &frame_column_changed;
+        result.for_each_changed_column = &frame_for_each_changed_column;
     }
     result.source_owner = owner == nullptr ? std::addressof(storage) : owner;
-    result.source_payload = std::addressof(storage);
     result.source_runtime = runtime;
-    result.frame_storage_payload = true;
     return result;
 }
 
 template <util::compile_time_string Name, template <template <typename, auto...> typename> typename Schema>
 consteval std::size_t frame_column_index() {
-    constexpr auto names = util::aggregate_member_names<Schema<Column>>;
+    constexpr auto names = frame_schema_field_names<Schema>();
     for (auto index = std::size_t{}; index != names.size(); ++index) {
         if (names[index] == Name.view())
             return index;
@@ -352,10 +665,47 @@ inline std::size_t FrameReadStorage::field_index(util::symbol name) const {
     throw std::invalid_argument{"frame column is absent from the retained schema"};
 }
 
+template <template <template <typename, auto...> typename> typename Schema>
+auto FrameReadStorage::field_ordinals() const {
+    constexpr auto count = details::frame_schema_reflection<Schema>::field_count;
+    auto result = std::array<std::size_t, count>{};
+    if (schema == std::addressof(bg::details::cpp_hierarchical_scalar_schema<Schema>())) {
+        for (auto index = std::size_t{}; index != count; ++index)
+            result[index] = index;
+        return result;
+    }
+    [&]<std::size_t... Index>(std::index_sequence<Index...>) {
+        ((result[Index] = field_index(details::frame_declared_field_symbol<Index, Schema>())), ...);
+    }(std::make_index_sequence<count>{});
+    return result;
+}
+
 inline FrameColumnReadBinding FrameReadStorage::column(std::size_t index) const {
     if (schema == nullptr || index >= schema->field_count() || column_binding == nullptr)
         throw std::out_of_range{"frame column index"};
     return column_binding(columns_context, index);
+}
+
+template <template <template <typename, auto...> typename> typename Schema>
+inline FrameStorage<Schema> FrameReadStorage::typed_storage() const {
+    return typed_storage<Schema>(field_ordinals<Schema>());
+}
+
+template <template <template <typename, auto...> typename> typename Schema, std::size_t Count>
+inline FrameStorage<Schema> FrameReadStorage::typed_storage(const std::array<std::size_t, Count> &ordinals) const {
+    static_assert(Count == details::frame_schema_reflection<Schema>::field_count);
+    auto result = FrameStorage<Schema>{};
+    [&]<std::size_t... Index>(std::index_sequence<Index...>) {
+        (details::bind_typed_frame_column<Schema, Index>(result, *this, ordinals[Index]), ...);
+    }(std::make_index_sequence<Count>{});
+    result.rows = rows;
+    result.added = added;
+    result.removed = removed;
+    result.changed = changed;
+    result.change_time = change_time;
+    result.valid = valid;
+    result.size = size;
+    return result;
 }
 
 template <cell_type T> void FrameReadStorage::bind_column_view(util::symbol name, ColumnView<T> &destination) const {
@@ -374,27 +724,27 @@ void FrameReadStorage::bind_column_series_view(util::symbol name,
     binding.bind_column_series_view(binding.payload, std::addressof(destination));
 }
 
-template <template <template <typename, auto...> typename> typename SchemaTemplate>
-const FrameStorage<SchemaTemplate> &FrameReadStorage::exact_storage() const {
-    if (!frame_storage_payload || schema != std::addressof(frame_schema_type<SchemaTemplate>()))
-        throw std::invalid_argument{"frame read storage does not have the requested concrete schema"};
-    return *static_cast<const FrameStorage<SchemaTemplate> *>(source_payload);
-}
-
 template <template <template <typename, auto...> typename> typename Schema> class FrameView {
   public:
-    using columns_type = Schema<ColumnView>;
+    using columns_type = typename details::FrameViewColumnsType<Schema>::type;
 
     FrameView() = default;
-    FrameView(columns_type columns, std::size_t size) : columns_{std::move(columns)}, size_{size} {}
+    FrameView(columns_type columns, std::size_t size, ScalarData source = {})
+        : columns_{std::move(columns)}, size_{size}, source_{source} {}
     explicit FrameView(const Frame<Schema> &frame);
 
     std::size_t size() const noexcept { return size_; }
     const columns_type &columns() const noexcept { return columns_; }
+    const ScalarData &source_data() const noexcept { return source_; }
+    const bg::Schema &schema() const;
+    ColumnView<> column(std::size_t index) const;
+    ColumnView<> column(util::symbol name) const;
+    ColumnView<> column(std::string_view name) const { return column(util::symbol{name}); }
 
   private:
     columns_type columns_;
     std::size_t size_{};
+    ScalarData source_;
 };
 
 template <template <template <typename, auto...> typename> typename Schema> class Frame {
@@ -436,19 +786,23 @@ template <template <template <typename, auto...> typename> typename Schema> clas
     std::size_t size() const noexcept { return size_; }
     const columns_type &columns() const noexcept { return columns_; }
     const FrameStorage<Schema> &scalar_storage() const noexcept { return storage_; }
+    const bg::Schema &schema() const { return bg::details::cpp_hierarchical_scalar_schema<Schema>(); }
+    ColumnView<> column(std::size_t index) const;
+    ColumnView<> column(util::symbol name) const;
+    ColumnView<> column(std::string_view name) const { return column(util::symbol{name}); }
 
   private:
     static std::size_t column_size(const columns_type &columns) {
-        if constexpr (util::aggregate_member_count<columns_type> == 0)
+        if constexpr (details::frame_schema_reflection<Schema>::field_count == 0)
             return 0;
         else {
-            const auto members = util::aggregate_members(columns);
+            const auto members = details::frame_schema_reflection<Schema>::fields(columns);
             return std::get<0>(members).size();
         }
     }
     void validate_column_sizes() const {
-        if constexpr (util::aggregate_member_count<columns_type> != 0) {
-            const auto members = util::aggregate_members(columns_);
+        if constexpr (details::frame_schema_reflection<Schema>::field_count != 0) {
+            const auto members = details::frame_schema_reflection<Schema>::fields(columns_);
             std::apply(
                 [&](const auto &first, const auto &...rest) {
                     if (first.size() != size_ || ((rest.size() != size_) || ...))
@@ -458,11 +812,11 @@ template <template <template <typename, auto...> typename> typename Schema> clas
         }
     }
     void bind_storage() {
-        auto destination = util::aggregate_members(storage_.columns);
-        auto source = util::aggregate_members(columns_);
+        auto destination = details::frame_schema_reflection<Schema>::fields(storage_.columns);
+        auto source = details::frame_schema_reflection<Schema>::fields(columns_);
         [&]<std::size_t... Index>(std::index_sequence<Index...>) {
             ((std::get<Index>(destination) = std::get<Index>(source).storage()), ...);
-        }(std::make_index_sequence<util::aggregate_member_count<columns_type>>{});
+        }(std::make_index_sequence<details::frame_schema_reflection<Schema>::field_count>{});
         storage_.size = size_;
     }
 
@@ -473,26 +827,200 @@ template <template <template <typename, auto...> typename> typename Schema> clas
 
 template <template <template <typename, auto...> typename> typename Schema>
 FrameView<Schema>::FrameView(const Frame<Schema> &frame) : size_{frame.size()} {
-    auto source = util::aggregate_members(frame.columns());
-    auto destination = util::aggregate_members(columns_);
+    auto source = details::frame_schema_reflection<Schema>::fields(frame.columns());
+    auto destination = details::frame_schema_reflection<Schema>::fields(columns_);
     [&]<std::size_t... Index>(std::index_sequence<Index...>) {
         ((std::get<Index>(destination) = std::get<Index>(source).view()), ...);
-    }(std::make_index_sequence<util::aggregate_member_count<typename Frame<Schema>::columns_type>>{});
+    }(std::make_index_sequence<details::frame_schema_reflection<Schema>::field_count>{});
+}
+
+namespace details {
+
+template <template <template <typename, auto...> typename> typename Schema, std::size_t Index>
+void bind_frame_view_column(const void *payload, void *destination) {
+    using Cell = frame_schema_cell_t<Index, Schema>;
+    const auto columns = frame_schema_reflection<Schema>::fields(
+        *static_cast<const Schema<FrameViewColumn> *>(payload));
+    if constexpr (bg::details::scalar_variable<Cell>) {
+        *static_cast<ColumnView<Cell> *>(destination) = std::get<Index>(columns).template view<Cell>();
+    } else {
+        *static_cast<ColumnView<Cell> *>(destination) = std::get<Index>(columns);
+    }
+}
+
+template <cell_type Cell> void bind_generic_frame_view_column(const void *payload, void *destination) {
+    *static_cast<ColumnView<Cell> *>(destination) = static_cast<const ColumnView<> *>(payload)->template view<Cell>();
+}
+
+template <template <template <typename, auto...> typename> typename Schema, std::size_t... Index>
+FrameColumnReadBinding frame_view_column_binding(const void *context, std::size_t index,
+                                                 std::index_sequence<Index...>) {
+    using binding_function = FrameColumnReadBinding (*)(const void *);
+    static constexpr std::array<binding_function, sizeof...(Index)> bindings{
+        +[](const void *payload) -> FrameColumnReadBinding {
+            using Cell = frame_schema_cell_t<Index, Schema>;
+            if constexpr (bg::details::scalar_variable<Cell>) {
+                const auto columns = frame_schema_reflection<Schema>::fields(
+                    *static_cast<const Schema<FrameViewColumn> *>(payload));
+                const auto &column = std::get<Index>(columns);
+                const auto &cell_type = column.cell_type();
+                if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<i64>()))
+                    return {std::addressof(cell_type), std::addressof(column),
+                            &bind_generic_frame_view_column<i64>, nullptr};
+                if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<double>()))
+                    return {std::addressof(cell_type), std::addressof(column),
+                            &bind_generic_frame_view_column<double>, nullptr};
+                throw std::invalid_argument{"frame columns support only i64 and double cell types"};
+            } else {
+                return {std::addressof(cpp_scalar_type<Cell>()), payload,
+                        &bind_frame_view_column<Schema, Index>, nullptr};
+            }
+        }...};
+    return index < bindings.size() ? bindings[index](context) : FrameColumnReadBinding{};
 }
 
 template <template <template <typename, auto...> typename> typename Schema>
-class NativeFrame {
+FrameReadStorage frame_read_storage(const FrameView<Schema> &view, const RuntimeType *runtime) {
+    constexpr auto count = frame_schema_reflection<Schema>::field_count;
+    auto result = FrameReadStorage{};
+    result.schema = std::addressof(bg::details::cpp_hierarchical_scalar_schema<Schema>());
+    result.valid = true;
+    result.size = view.size();
+    result.columns_context = std::addressof(view.columns());
+    result.column_binding = [](const void *context, std::size_t index) {
+        return frame_view_column_binding<Schema>(context, index, std::make_index_sequence<count>{});
+    };
+    result.source_owner = std::addressof(view);
+    result.source_runtime = runtime;
+    return result;
+}
+
+} // namespace details
+
+template <template <template <typename, auto...> typename> typename Schema>
+const bg::Schema &FrameView<Schema>::schema() const {
+    if (source_.empty()) {
+        if constexpr (bg::details::schema_variable_template<Schema>)
+            throw std::logic_error{"runtime-schema frame view has no retained schema"};
+        else
+            return bg::details::cpp_hierarchical_scalar_schema<Schema>();
+    }
+    const auto &runtime = static_cast<const FrameScalarRuntimeType &>(source_.runtime_type());
+    const auto storage = runtime.read_storage(source_);
+    if (storage.schema == nullptr)
+        throw std::logic_error{"frame scalar view has no schema"};
+    return *storage.schema;
+}
+
+template <template <template <typename, auto...> typename> typename Schema>
+ColumnView<> FrameView<Schema>::column(std::size_t index) const {
+    if (source_.empty())
+        return details::frame_read_storage(*this, nullptr).generic_column(index);
+    const auto &runtime = static_cast<const FrameScalarRuntimeType &>(source_.runtime_type());
+    return runtime.read_storage(source_).generic_column(index);
+}
+
+template <template <template <typename, auto...> typename> typename Schema>
+ColumnView<> FrameView<Schema>::column(util::symbol name) const {
+    if (source_.empty())
+        return column(details::frame_read_storage(*this, nullptr).field_index(name));
+    const auto &runtime = static_cast<const FrameScalarRuntimeType &>(source_.runtime_type());
+    const auto storage = runtime.read_storage(source_);
+    return storage.generic_column(storage.field_index(name));
+}
+
+template <template <template <typename, auto...> typename> typename Schema>
+ColumnView<> Frame<Schema>::column(std::size_t index) const {
+    auto storage = details::frame_read_storage(scalar_storage(), this, nullptr, true);
+    return storage.generic_column(index);
+}
+
+template <template <template <typename, auto...> typename> typename Schema>
+ColumnView<> Frame<Schema>::column(util::symbol name) const {
+    auto storage = details::frame_read_storage(scalar_storage(), this, nullptr, true);
+    return storage.generic_column(storage.field_index(name));
+}
+
+namespace details {
+
+template <template <template <typename, auto...> typename> typename Schema>
+FrameView<Schema> frame_view(const FrameReadStorage &storage, const ScalarData &source) {
+    auto columns = typename FrameView<Schema>::columns_type{};
+    if constexpr (!bg::details::schema_variable_template<Schema>) {
+        constexpr auto count = frame_schema_reflection<Schema>::field_count;
+        const auto ordinals = storage.template field_ordinals<Schema>();
+        auto destination = frame_schema_reflection<Schema>::fields(columns);
+        [&]<std::size_t... Index>(std::index_sequence<Index...>) {
+            (([&] {
+                 using Cell = frame_schema_cell_t<Index, Schema>;
+                 const auto binding = storage.column(ordinals[Index]);
+                 if constexpr (bg::details::scalar_variable<Cell>) {
+                     if (storage.schema == nullptr || binding.cell_type == nullptr ||
+                         binding.cell_type != storage.schema->field(ordinals[Index]).type)
+                         throw std::invalid_argument{"frame column type does not match the requested schema"};
+                     std::get<Index>(destination) = storage.generic_column(ordinals[Index]);
+                 } else {
+                     if (binding.cell_type != std::addressof(cpp_scalar_type<Cell>()) ||
+                         binding.bind_column_view == nullptr)
+                         throw std::invalid_argument{"frame column type does not match the requested schema"};
+                     binding.bind_column_view(binding.payload, std::addressof(std::get<Index>(destination)));
+                 }
+             }()),
+             ...);
+        }(std::make_index_sequence<count>{});
+    }
+    return FrameView<Schema>{std::move(columns), storage.size, source};
+}
+
+template <template <template <typename, auto...> typename> typename Schema>
+class FrameViewScalarRuntimeType final : public FrameScalarRuntimeType {
   public:
-    using fields_type = Schema<NativeColumnData>;
-    template <typename, auto...> using child_state = TimeSeriesState;
-    using child_states_type = Schema<child_state>;
-    using row_type = Row<Schema>;
-    using patch_type = RowPatch<Schema>;
+    FrameViewScalarRuntimeType()
+        : FrameScalarRuntimeType{frame_type(frame_schema_type<Schema>()), sizeof(FrameView<Schema>),
+                                 alignof(FrameView<Schema>), false, false, false} {}
 
-    NativeFrame() noexcept = default;
-    NativeFrame(const NativeFrame &) = delete;
+    FrameReadStorage read_storage(const ScalarData &source) const override {
+        return frame_read_storage(*static_cast<const FrameView<Schema> *>(source.data()), this);
+    }
+    void read_value(ScalarDataMode, std::uintptr_t, void *) const override { std::terminate(); }
+    void construct_initial_value(void *) const noexcept override { std::terminate(); }
+    void copy_construct(void *, const void *, allocator &) const override { std::terminate(); }
+    std::size_t hash(const void *) const noexcept override { return 0; }
+    bool equals(const void *, const ScalarData &) const noexcept override { return false; }
+    bool equals_same_type(const void *, const ScalarData &) const noexcept override { return false; }
+    void destroy(void *, allocator &) const noexcept override {}
+    bool accepts_input(const ScalarRuntimeType &) const noexcept override { return false; }
+
+  protected:
+    void do_construct_from_input(void *, const ScalarData &, allocator &) const override { std::terminate(); }
+    void do_assign_from_input(void *, const ScalarData &) const override { std::terminate(); }
+};
+
+template <template <template <typename, auto...> typename> typename Schema>
+const FrameViewScalarRuntimeType<Schema> &frame_view_scalar_runtime_type() {
+    static const auto runtime = FrameViewScalarRuntimeType<Schema>{};
+    return runtime;
+}
+
+} // namespace details
+
+class NativeFrameStorage {
+  public:
     static constexpr bool supports_byte_copy_initialization = true;
+    NativeFrameStorage() noexcept = default;
+    NativeFrameStorage(const NativeFrameStorage &) = delete;
 
+    void initialize(const details::NativeFrameLayout &layout) noexcept {
+        layout_ = std::addressof(layout);
+        auto *bytes = reinterpret_cast<std::byte *>(this);
+        for (const auto &field : layout.fields) {
+            field.construct(bytes + field.native_offset);
+            std::construct_at(reinterpret_cast<TimeSeriesState *>(bytes + field.child_state_offset));
+            field.construct_storage(bytes + field.column_storage_offset);
+        }
+    }
+
+    const details::NativeFrameLayout &layout() const noexcept { return *layout_; }
     std::size_t size() const noexcept { return rows_.size(); }
     bool valid() const noexcept { return valid_; }
     bool contains(row_id_t id) const noexcept { return rows_.contains(id); }
@@ -501,49 +1029,58 @@ class NativeFrame {
     const util::index<> &added() const noexcept { return rows_.added(); }
     const util::index<> &removed() const noexcept { return rows_.removed(); }
     EvaluationTime change_time() const noexcept { return rows_.change_time(); }
-    const FrameStorage<Schema> &scalar_storage() const noexcept { return scalar_; }
     const NativeRows &rows() const noexcept { return rows_; }
-    const child_states_type &child_states() const noexcept { return child_states_; }
-    const auto &changed_columns() const noexcept { return changed_columns_; }
+    const util::index<> &changed_columns() const noexcept { return changed_columns_; }
+    const util::index<> &changed() const noexcept { return changed_; }
 
-    template <std::size_t Index> const auto &column() const noexcept {
-        return std::get<Index>(util::aggregate_members(fields_));
+    void *native_field(std::size_t index) noexcept {
+        return reinterpret_cast<std::byte *>(this) + layout_->fields[index].native_offset;
     }
-    template <std::size_t Index> auto cell(row_id_t id) const {
-        return column<Index>().cell(rows_, id);
+    const void *native_field(std::size_t index) const noexcept {
+        return reinterpret_cast<const std::byte *>(this) + layout_->fields[index].native_offset;
     }
-    template <std::size_t Index> const util::index<> &modified() const noexcept {
-        return column<Index>().modified();
+    void *column_storage(std::size_t index) noexcept {
+        return reinterpret_cast<std::byte *>(this) + layout_->fields[index].column_storage_offset;
+    }
+    const void *column_storage(std::size_t index) const noexcept {
+        return reinterpret_cast<const std::byte *>(this) + layout_->fields[index].column_storage_offset;
+    }
+    const util::index<> *modified(std::size_t index) const noexcept {
+        return layout_->fields[index].modified(native_field(index));
     }
 
-    row_id_t add(const row_type &row, EvaluationTime time, allocator memory) {
+    row_id_t add(std::span<const void *const> values, EvaluationTime time, allocator memory) {
+        if (values.size() != layout_->fields.size())
+            throw std::invalid_argument{"frame row field count does not match its schema"};
+        reserve_changed_columns(memory);
         begin_cycle(time);
         const auto id = rows_.add(time, memory);
         const auto slot = rows_.slot_of(id);
         auto rollback = util::scope_exit{[&]() noexcept {
-            for_each_field([&](auto &field) { field.erase_slot(slot, id, memory); });
+            for (std::size_t index = 0; index != layout_->fields.size(); ++index)
+                layout_->fields[index].erase(native_field(index), slot, id, memory);
             changed_.reset(id);
             rows_.rollback_add(id);
         }};
         changed_.set(id, memory.memory_resource());
-        const auto values = util::aggregate_members(row);
-        for_each_field_index([&]<std::size_t Index>(auto &field) {
-            field.add(rows_, id, std::get<Index>(values).value(), memory);
-        });
-        publish_all_columns(time);
+        for (std::size_t index = 0; index != layout_->fields.size(); ++index)
+            layout_->fields[index].add(native_field(index), rows_, id, values[index], memory);
+        publish_all_columns(time, memory);
         valid_ = true;
-        bind_scalar_storage();
+        bind_column_storage();
         rollback.release();
         return id;
     }
 
-    bool set(row_id_t id, const patch_type &patch, EvaluationTime time, allocator memory) {
-        begin_cycle(time);
+    bool set(row_id_t id, std::span<const details::NativeFrameCellPatch> patches,
+             EvaluationTime time, allocator memory) {
+        if (patches.size() != layout_->fields.size())
+            throw std::invalid_argument{"frame patch field count does not match its schema"};
         if (!rows_.contains(id))
             throw std::out_of_range{"frame row ID"};
-        const auto patches = util::aggregate_members(patch);
-        const auto has_change = std::apply(
-            [](const auto &...value) { return (value.changed() || ...); }, patches);
+        reserve_changed_columns(memory);
+        begin_cycle(time);
+        const auto has_change = std::ranges::any_of(patches, &details::NativeFrameCellPatch::changed);
         if (!has_change)
             return false;
         const auto was_changed = changed_.contains(id);
@@ -553,35 +1090,38 @@ class NativeFrame {
             if (!was_changed && !any_column_modified(id))
                 changed_.reset(id);
         }};
-        for_each_field_index([&]<std::size_t Index>(auto &field) {
-            const auto &value = std::get<Index>(patches);
-            if (value.changed()) {
-                field.set(rows_, id, value.value(), memory);
-                publish_column<Index>(time);
-            }
-        });
+        for (std::size_t index = 0; index != layout_->fields.size(); ++index) {
+            if (!patches[index].changed)
+                continue;
+            const auto &field = layout_->fields[index];
+            field.set(native_field(index), rows_, id, patches[index].value, memory);
+            publish_column(index, time, memory);
+        }
         valid_ = true;
-        bind_scalar_storage();
+        bind_column_storage();
         remove_empty_change.release();
         return true;
     }
 
     bool erase(row_id_t id, EvaluationTime time, allocator memory) {
+        reserve_changed_columns(memory);
         begin_cycle(time);
         if (!rows_.contains(id))
             return false;
         const auto slot = rows_.slot_of(id);
         if (!rows_.erase(id, time, memory))
             return false;
-        for_each_field([&](auto &field) { field.erase_slot(slot, id, memory); });
-        publish_all_columns(time);
+        for (std::size_t index = 0; index != layout_->fields.size(); ++index)
+            layout_->fields[index].erase(native_field(index), slot, id, memory);
+        publish_all_columns(time, memory);
         valid_ = true;
         changed_.reset(id);
-        bind_scalar_storage();
+        bind_column_storage();
         return true;
     }
 
     void clear(EvaluationTime time, allocator memory) {
+        reserve_changed_columns(memory);
         begin_cycle(time);
         const auto was_valid = valid_;
         auto removed_rows = false;
@@ -592,20 +1132,38 @@ class NativeFrame {
             const auto id = rows_.id_at_slot(slot);
             if (!rows_.erase(id, time, memory))
                 std::terminate();
-            for_each_field([&](auto &field) { field.erase_slot(slot, id, memory); });
+            for (std::size_t index = 0; index != layout_->fields.size(); ++index)
+                layout_->fields[index].erase(native_field(index), slot, id, memory);
             changed_.reset(id);
             removed_rows = true;
         }
         if (!was_valid || removed_rows)
-            publish_all_columns(time);
+            publish_all_columns(time, memory);
         valid_ = true;
-        bind_scalar_storage();
+        bind_column_storage();
     }
 
     void invalidate(EvaluationTime time, allocator memory) {
         clear(time, memory);
         valid_ = false;
-        scalar_.valid = false;
+    }
+
+    void release(allocator memory) noexcept {
+        if (layout_ == nullptr)
+            return;
+        auto *bytes = reinterpret_cast<std::byte *>(this);
+        for (const auto &field : layout_->fields)
+            field.release(bytes + field.native_offset, memory);
+        rows_.release(memory);
+        changed_.release(memory.memory_resource());
+        changed_columns_.release(memory.memory_resource());
+        for (const auto &field : layout_->fields) {
+            field.destroy_storage(bytes + field.column_storage_offset);
+            std::destroy_at(reinterpret_cast<TimeSeriesState *>(bytes + field.child_state_offset));
+            field.destroy(bytes + field.native_offset);
+        }
+        layout_ = nullptr;
+        valid_ = false;
     }
 
     template <typename Function> void for_each_changed(Function &&function) const {
@@ -618,92 +1176,472 @@ class NativeFrame {
             std::invoke(function, id);
     }
 
-    void release(allocator memory) noexcept {
-        for_each_field([&](auto &field) { field.release(memory); });
-        rows_.release(memory);
-        changed_.release(memory.memory_resource());
-        changed_columns_.clear();
-        scalar_ = {};
-        child_states_ = {};
-        valid_ = false;
+  private:
+    void reserve_changed_columns(allocator memory) {
+        if (layout_->fields.size() > std::numeric_limits<util::index<>::size_type>::max())
+            throw std::length_error{"frame schema has too many columns"};
+        changed_columns_.grow(static_cast<util::index<>::size_type>(layout_->fields.size()),
+                              memory.memory_resource());
     }
 
-  private:
     void begin_cycle(EvaluationTime time) {
         if (!rows_.reset_changes(time))
             return;
         changed_.clear();
         changed_columns_.clear();
-        for_each_field([&](auto &field) { field.reset_changes(); });
+        for (std::size_t index = 0; index != layout_->fields.size(); ++index)
+            layout_->fields[index].reset(native_field(index));
     }
 
-    template <std::size_t Index> void publish_column(EvaluationTime time) {
-        std::get<Index>(util::aggregate_members(child_states_)).publish(time);
-        changed_columns_.set(Index);
+    void publish_column(std::size_t index, EvaluationTime time, allocator memory) {
+        const auto &field = layout_->fields[index];
+        auto *state = reinterpret_cast<std::byte *>(this) + field.child_state_offset;
+        reinterpret_cast<TimeSeriesState *>(state)->publish(time);
+        changed_columns_.set(static_cast<util::index<>::size_type>(index), memory.memory_resource());
     }
 
-    template <std::size_t... Index> void publish_all_columns(EvaluationTime time, std::index_sequence<Index...>) {
-        (publish_column<Index>(time), ...);
+    void publish_all_columns(EvaluationTime time, allocator memory) {
+        for (std::size_t index = 0; index != layout_->fields.size(); ++index)
+            publish_column(index, time, memory);
     }
 
-    void publish_all_columns(EvaluationTime time) {
-        publish_all_columns(time, std::make_index_sequence<util::aggregate_member_count<fields_type>>{});
-    }
-
-    template <typename Function> void for_each_field(Function &&function) {
-        std::apply(
-            [&](auto &...field) { (std::invoke(function, field), ...); },
-            util::aggregate_members(fields_));
-    }
-
-    void bind_scalar_storage() noexcept {
-        auto destination = util::aggregate_members(scalar_.columns);
-        auto source = util::aggregate_members(fields_);
-        [&]<std::size_t... Index>(std::index_sequence<Index...>) {
-            ((std::get<Index>(destination) = ColumnStorage{std::get<Index>(source), rows_}), ...);
-        }(std::make_index_sequence<util::aggregate_member_count<fields_type>>{});
-        scalar_.rows = RowSet::native(rows_);
-        scalar_.added = std::addressof(rows_.added());
-        scalar_.removed = std::addressof(rows_.removed());
-        scalar_.changed = std::addressof(changed_);
-        scalar_.changed_columns = std::addressof(changed_columns_);
-        scalar_.change_time = rows_.change_time();
-        scalar_.valid = valid_;
-        auto source_fields = util::aggregate_members(fields_);
-        [&]<std::size_t... Index>(std::index_sequence<Index...>) {
-            ((scalar_.modified[Index] = std::addressof(std::get<Index>(source_fields).modified())), ...);
-        }(std::make_index_sequence<util::aggregate_member_count<fields_type>>{});
-        scalar_.size = rows_.size();
-    }
-
-    template <typename Function> void for_each_field_index(Function &&function) {
-        auto members = util::aggregate_members(fields_);
-        [&]<std::size_t... Index>(std::index_sequence<Index...>) {
-            (function.template operator()<Index>(std::get<Index>(members)), ...);
-        }(std::make_index_sequence<util::aggregate_member_count<fields_type>>{});
+    void bind_column_storage() noexcept {
+        for (std::size_t index = 0; index != layout_->fields.size(); ++index) {
+            const auto &field = layout_->fields[index];
+            field.bind_storage(column_storage(index), native_field(index), rows_);
+        }
     }
 
     bool any_column_modified(row_id_t id) const noexcept {
-        const auto members = util::aggregate_members(fields_);
-        return std::apply([&](const auto &...field) { return (field.modified().contains(id) || ...); }, members);
+        for (std::size_t index = 0; index != layout_->fields.size(); ++index)
+            if (modified(index)->contains(id))
+                return true;
+        return false;
     }
 
+    const details::NativeFrameLayout *layout_{};
     NativeRows rows_;
-    fields_type fields_;
-    child_states_type child_states_;
     util::index<> changed_;
-    util::index<util::aggregate_member_count<fields_type>> changed_columns_;
-    FrameStorage<Schema> scalar_;
+    util::index<> changed_columns_;
     bool valid_{};
 };
 
-template <template <template <typename, auto...> typename> typename Schema> struct FrameViewOutputStorage {
-    using fields_type = Schema<ColumnStorage>;
-    enum class Operation { none, projection, filter };
-    template <typename, auto...> using child_state = TimeSeriesState;
-    using child_states_type = Schema<child_state>;
-    template <typename, auto...> using row_index = util::index<>;
-    using modified_rows_type = Schema<row_index>;
+namespace details {
+
+struct FrameSnapshotOwner {
+    std::atomic_size_t references{1};
+    const ScalarRuntimeType *runtime{};
+    const NativeFrameLayout *layout{};
+    NativeFrameStorage *frame{};
+    bg::details::BundleAllocationOwner *bundle_owner{};
+    allocator memory{};
+    std::size_t size{};
+
+    void retain() noexcept { references.fetch_add(1, std::memory_order_relaxed); }
+    void release() noexcept;
+    static FrameSnapshotOwner *create(const NativeFrameLayout &layout, const FrameReadStorage &source,
+                                      allocator memory);
+};
+
+inline FrameSnapshotOwner *frame_snapshot_owner(const ScalarData &source) noexcept {
+    if (source.mode() == ScalarDataMode::shared_view || source.mode() == ScalarDataMode::shared_value)
+        return reinterpret_cast<FrameSnapshotOwner *>(source.data_word());
+    return static_cast<const FrameSnapshotStorage *>(source.data())->owner;
+}
+
+inline FrameColumnReadBinding native_frame_column_binding(const void *context, std::size_t index) {
+    const auto &frame = *static_cast<const NativeFrameStorage *>(context);
+    const auto &field = frame.layout().fields.at(index);
+    return field.read_binding(frame.column_storage(index));
+}
+
+inline const util::index<> *native_frame_modified_column(const void *context, std::size_t index) noexcept {
+    return static_cast<const NativeFrameStorage *>(context)->modified(index);
+}
+
+inline FrameReadStorage frame_read_storage(const NativeFrameStorage &frame, const void *owner,
+                                           const RuntimeType *runtime, bool scalar_value = false) {
+    auto result = FrameReadStorage{};
+    result.schema = frame.layout().schema;
+    result.rows = RowSet::native(frame.rows());
+    result.valid = scalar_value || frame.valid();
+    result.size = frame.size();
+    result.added = std::addressof(frame.added());
+    result.removed = std::addressof(frame.removed());
+    result.changed = std::addressof(frame.changed());
+    result.column_modified_context = std::addressof(frame);
+    result.modified_column = &native_frame_modified_column;
+    result.change_time = frame.change_time();
+    result.columns_context = std::addressof(frame);
+    result.column_binding = &native_frame_column_binding;
+    result.changed_columns_context = std::addressof(frame.changed_columns());
+    result.column_changed = &frame_column_changed;
+    result.for_each_changed_column = &frame_for_each_changed_column;
+    result.source_owner = owner == nullptr ? std::addressof(frame) : owner;
+    result.source_runtime = runtime;
+    return result;
+}
+
+inline FrameReadStorage frame_snapshot_read_storage(const NativeFrameStorage &frame, const void *owner,
+                                                    const RuntimeType *runtime, std::size_t size) {
+    auto result = FrameReadStorage{};
+    result.schema = frame.layout().schema;
+    result.valid = true;
+    result.size = size;
+    result.columns_context = std::addressof(frame);
+    result.column_binding = &native_frame_column_binding;
+    result.source_owner = owner == nullptr ? std::addressof(frame) : owner;
+    result.source_runtime = runtime;
+    return result;
+}
+
+inline void release_frame_snapshot_columns(NativeFrameStorage &frame, allocator memory) noexcept {
+    for (std::size_t index = 0; index != frame.layout().fields.size(); ++index) {
+        const auto &field = frame.layout().fields[index];
+        field.release_snapshot_storage(frame.column_storage(index), memory);
+    }
+}
+
+inline void copy_frame_snapshot_columns(NativeFrameStorage &destination, const FrameReadStorage &source,
+                                        allocator memory) {
+    const auto &layout = destination.layout();
+    if (source.schema != layout.schema)
+        throw std::invalid_argument{"frame snapshot schema does not match its runtime type"};
+    auto snapshots = std::vector<void *>(layout.fields.size());
+    auto release_snapshots = util::scope_exit{[&]() noexcept {
+        for (std::size_t index = 0; index != snapshots.size(); ++index)
+            if (snapshots[index] != nullptr)
+                layout.fields[index].release_snapshot_column(snapshots[index]);
+    }};
+    for (std::size_t index = 0; index != layout.fields.size(); ++index)
+        snapshots[index] = layout.fields[index].copy_snapshot_column(source.column(index), source.size, memory);
+
+    for (std::size_t index = 0; index != layout.fields.size(); ++index) {
+        const auto &field = layout.fields[index];
+        field.release_snapshot_storage(destination.column_storage(index), memory);
+        field.install_snapshot_column(destination.column_storage(index), snapshots[index]);
+        snapshots[index] = nullptr;
+    }
+    release_snapshots.release();
+}
+
+inline FrameSnapshotOwner *FrameSnapshotOwner::create(const NativeFrameLayout &layout,
+                                                      const FrameReadStorage &source, allocator memory) {
+    if (source.schema != layout.schema)
+        throw std::invalid_argument{"frame snapshot schema does not match its runtime type"};
+    auto *bundle_owner = static_cast<bg::details::BundleAllocationOwner *>(nullptr);
+    if (const auto *context = bg::details::current_scalar_allocation_owner();
+        context != nullptr && &context->memory.memory_resource() == &memory.memory_resource()) {
+        bundle_owner = context->bundle_owner;
+    }
+    if (bundle_owner != nullptr) {
+        bundle_owner->retain();
+        memory = bundle_owner->memory();
+    }
+
+    auto *owner_memory = static_cast<FrameSnapshotOwner *>(nullptr);
+    try {
+        owner_memory = static_cast<FrameSnapshotOwner *>(memory.allocate_bytes(sizeof(FrameSnapshotOwner),
+                                                                               alignof(FrameSnapshotOwner)));
+    } catch (...) {
+        if (bundle_owner != nullptr)
+            bundle_owner->release();
+        throw;
+    }
+    auto *owner = owner_memory;
+    std::construct_at(owner);
+    owner->memory = memory;
+    owner->bundle_owner = bundle_owner;
+    try {
+        owner->runtime = std::addressof(frame_snapshot_runtime_type(frame_type(*layout.schema)));
+        owner->layout = std::addressof(layout);
+        auto *allocation = memory.allocate_bytes(layout.size, layout.alignment);
+        owner->frame = std::construct_at(reinterpret_cast<NativeFrameStorage *>(allocation));
+        owner->frame->initialize(layout);
+        copy_frame_snapshot_columns(*owner->frame, source, memory);
+        owner->size = source.size;
+    } catch (...) {
+        if (owner->frame != nullptr)
+            owner->layout = std::addressof(layout);
+        owner->release();
+        throw;
+    }
+    return owner;
+}
+
+inline void FrameSnapshotOwner::release() noexcept {
+    if (references.fetch_sub(1, std::memory_order_acq_rel) != 1)
+        return;
+
+    auto resource = memory;
+    auto *bundle_owner = std::exchange(this->bundle_owner, nullptr);
+    if (frame != nullptr) {
+        release_frame_snapshot_columns(*frame, resource);
+        frame->release(resource);
+        std::destroy_at(frame);
+        resource.deallocate_bytes(frame, layout->size, layout->alignment);
+    }
+    std::destroy_at(this);
+    resource.deallocate_bytes(this, sizeof(FrameSnapshotOwner), alignof(FrameSnapshotOwner));
+    if (bundle_owner != nullptr)
+        bundle_owner->release();
+}
+
+inline void copy_frame_snapshot_storage(FrameSnapshotStorage &destination, const NativeFrameLayout &layout,
+                                        const FrameReadStorage &source, allocator memory) {
+    auto *owner = FrameSnapshotOwner::create(layout, source, memory);
+    auto *previous = std::exchange(destination.owner, owner);
+    if (previous != nullptr)
+        previous->release();
+}
+
+inline void copy_frame_snapshot_value(FrameSnapshotStorage &destination, const ScalarData &source,
+                                      allocator memory) {
+    const auto &runtime = static_cast<const FrameScalarRuntimeType &>(source.runtime_type());
+    if (auto *owner = runtime.snapshot_owner(source)) {
+        owner->retain();
+        auto *previous = std::exchange(destination.owner, owner);
+        if (previous != nullptr)
+            previous->release();
+        return;
+    }
+
+    const auto input = runtime.read_storage(source);
+    if (input.schema == nullptr)
+        throw std::invalid_argument{"frame scalar source has no schema"};
+    copy_frame_snapshot_storage(destination, native_frame_layout(*input.schema), input, memory);
+}
+
+template <cell_type Cell> void bind_runtime_frame_column_view(const void *source, void *destination) {
+    *static_cast<ColumnView<Cell> *>(destination) = static_cast<const ColumnView<> *>(source)->view<Cell>();
+}
+
+template <cell_type Cell>
+void bind_frame_view_storage(void *destination, const FrameColumnReadBinding &source, RowSet visible_rows,
+                             const util::index<> *added, const util::index<> *modified,
+                             const util::index<> *removed, EvaluationTime time) {
+    if (source.cell_type != std::addressof(cpp_scalar_type<Cell>()) || source.payload == nullptr ||
+        source.copy_column_storage == nullptr)
+        throw std::invalid_argument{"frame column type does not match the view schema"};
+    source.copy_column_storage(destination, source.payload);
+    auto &column = *static_cast<ColumnStorage<Cell> *>(destination);
+    column.visible_rows = visible_rows;
+    column.coverage = visible_rows;
+    column.added = added;
+    column.modified = modified;
+    column.removed = removed;
+    column.change_time = time;
+}
+
+inline FrameColumnReadBinding runtime_frame_column_binding(const ColumnView<> &column) {
+    const auto &type = column.cell_type();
+    if (std::addressof(type) == std::addressof(cpp_scalar_type<i64>()))
+        return {std::addressof(type), std::addressof(column), &bind_runtime_frame_column_view<i64>, nullptr};
+    if (std::addressof(type) == std::addressof(cpp_scalar_type<double>()))
+        return {std::addressof(type), std::addressof(column), &bind_runtime_frame_column_view<double>, nullptr};
+    throw std::invalid_argument{"frame columns support only i64 and double cell types"};
+}
+
+} // namespace details
+
+inline ScalarValue<Frame<bg::SCHEMA>> make_frame_value(allocator &memory, const bg::Schema &schema,
+                                                       std::size_t row_count,
+                                                       std::span<const ColumnView<>> columns);
+
+inline ScalarValue<Frame<bg::SCHEMA>> make_frame_value(const bg::Schema &schema, std::size_t row_count,
+                                                       std::span<const ColumnView<>> columns);
+
+template <template <template <typename, auto...> typename> typename Schema>
+class NativeFrame {
+  public:
+    static constexpr auto field_count = details::frame_schema_reflection<Schema>::field_count;
+    using row_type = Row<Schema>;
+    using patch_type = RowPatch<Schema>;
+
+    NativeFrame() : layout_{std::addressof(details::native_frame_layout<Schema>())} {
+        allocation_ = ::operator new(layout_->size, std::align_val_t{layout_->alignment});
+        storage_ = std::construct_at(static_cast<NativeFrameStorage *>(allocation_));
+        storage_->initialize(*layout_);
+    }
+    explicit NativeFrame(void *value) noexcept : storage_{static_cast<NativeFrameStorage *>(value)} {}
+    NativeFrame(const NativeFrame &) = delete;
+    NativeFrame &operator=(const NativeFrame &) = delete;
+    ~NativeFrame() {
+        if (allocation_ != nullptr) {
+            std::destroy_at(storage_);
+            ::operator delete(allocation_, std::align_val_t{layout_->alignment});
+        }
+    }
+
+    std::size_t size() const noexcept { return storage_->size(); }
+    bool valid() const noexcept { return storage_->valid(); }
+    bool contains(row_id_t id) const noexcept { return storage_->contains(id); }
+    row_id_t id_at(std::size_t position) const { return storage_->id_at(position); }
+    const void *row_domain() const noexcept { return storage_->row_domain(); }
+    const util::index<> &added() const noexcept { return storage_->added(); }
+    const util::index<> &removed() const noexcept { return storage_->removed(); }
+    EvaluationTime change_time() const noexcept { return storage_->change_time(); }
+    const NativeRows &rows() const noexcept { return storage_->rows(); }
+    const util::index<> &changed_columns() const noexcept { return storage_->changed_columns(); }
+    NativeFrameStorage &core() const noexcept { return *storage_; }
+
+    template <std::size_t Index> const auto &column() const noexcept {
+        using Cell = details::frame_schema_cell_t<Index, Schema>;
+        return *static_cast<const NativeColumnData<Cell> *>(storage_->native_field(Index));
+    }
+    template <std::size_t Index> auto cell(row_id_t id) const { return column<Index>().cell(rows(), id); }
+    template <std::size_t Index> const util::index<> &modified() const noexcept {
+        return *storage_->modified(Index);
+    }
+
+    FrameStorage<Schema> scalar_storage() const {
+        return scalar_storage(std::make_index_sequence<field_count>{});
+    }
+
+    row_id_t add(const row_type &row, EvaluationTime time, allocator memory) {
+        const auto values = add_values(row, std::make_index_sequence<field_count>{});
+        return storage_->add(values, time, memory);
+    }
+
+    bool set(row_id_t id, const patch_type &patch, EvaluationTime time, allocator memory) {
+        const auto fields = details::frame_schema_reflection<Schema>::fields(patch);
+        const auto values = patch_values(fields, std::make_index_sequence<field_count>{});
+        return storage_->set(id, values, time, memory);
+    }
+
+    bool erase(row_id_t id, EvaluationTime time, allocator memory) {
+        return storage_->erase(id, time, memory);
+    }
+
+    void clear(EvaluationTime time, allocator memory) { storage_->clear(time, memory); }
+    void invalidate(EvaluationTime time, allocator memory) { storage_->invalidate(time, memory); }
+    void release(allocator memory) noexcept { storage_->release(memory); }
+
+    template <typename Function> void for_each_changed(Function &&function) const {
+        storage_->for_each_changed(std::forward<Function>(function));
+    }
+    template <typename Function> void for_each_removed(Function &&function) const {
+        storage_->for_each_removed(std::forward<Function>(function));
+    }
+
+  private:
+    template <std::size_t... Index> auto add_values(const row_type &row, std::index_sequence<Index...>) const {
+        const auto fields = details::frame_schema_reflection<Schema>::fields(row);
+        return std::array<const void *, sizeof...(Index)>{
+            static_cast<const void *>(std::addressof(std::get<Index>(fields).value()))...};
+    }
+
+    template <typename Fields, std::size_t... Index>
+    static auto patch_values(const Fields &fields, std::index_sequence<Index...>) {
+        return std::array<details::NativeFrameCellPatch, sizeof...(Index)>{
+            details::NativeFrameCellPatch{std::get<Index>(fields).changed(),
+                                          std::addressof(std::get<Index>(fields).value())}...};
+    }
+
+    template <std::size_t... Index> FrameStorage<Schema> scalar_storage(std::index_sequence<Index...>) const {
+        auto result = FrameStorage<Schema>{};
+        auto destination = details::frame_schema_reflection<Schema>::fields(result.columns);
+        ((std::get<Index>(destination) =
+              *static_cast<const ColumnStorage<details::frame_schema_cell_t<Index, Schema>> *>(
+                  storage_->column_storage(Index))),
+         ...);
+        result.rows = RowSet::native(storage_->rows());
+        result.added = std::addressof(storage_->added());
+        result.removed = std::addressof(storage_->removed());
+        result.changed = std::addressof(storage_->changed());
+        ((result.modified[Index] = storage_->modified(Index)), ...);
+        result.changed_columns = std::addressof(storage_->changed_columns());
+        result.change_time = storage_->change_time();
+        result.valid = storage_->valid();
+        result.size = storage_->size();
+        return result;
+    }
+
+    const details::NativeFrameLayout *layout_{};
+    NativeFrameStorage *storage_{};
+    void *allocation_{};
+};
+namespace details {
+
+template <cell_type Cell> NativeFrameFieldLayout make_native_frame_field_layout() {
+    const auto &series_type = column_time_series_type<Cell>(TimeSeriesGuarantee::ordinary);
+    return {
+        .cell_type = std::addressof(cpp_scalar_type<Cell>()),
+        .column_runtime = std::addressof(column_view_time_series_runtime_type<Cell>(series_type)),
+        .native_size = sizeof(NativeColumnData<Cell>),
+        .native_alignment = alignof(NativeColumnData<Cell>),
+        .child_state_size = sizeof(TimeSeriesState),
+        .child_state_alignment = alignof(TimeSeriesState),
+        .column_storage_size = sizeof(ColumnStorage<Cell>),
+        .column_storage_alignment = alignof(ColumnStorage<Cell>),
+        .add = [](void *field, NativeRows &rows, row_id_t id, const void *value, allocator memory) {
+            static_cast<NativeColumnData<Cell> *>(field)->add(
+                rows, id, *static_cast<const std::optional<Cell> *>(value), memory);
+        },
+        .set = [](void *field, NativeRows &rows, row_id_t id, const void *value, allocator memory) {
+            static_cast<NativeColumnData<Cell> *>(field)->set(
+                rows, id, *static_cast<const std::optional<Cell> *>(value), memory);
+        },
+        .erase = [](void *field, row_id_t slot, row_id_t id, allocator memory) {
+            static_cast<NativeColumnData<Cell> *>(field)->erase_slot(slot, id, memory);
+        },
+        .reset = [](void *field) { static_cast<NativeColumnData<Cell> *>(field)->reset_changes(); },
+        .release = [](void *field, allocator memory) { static_cast<NativeColumnData<Cell> *>(field)->release(memory); },
+        .modified = [](const void *field) noexcept -> const util::index<> * {
+            return std::addressof(static_cast<const NativeColumnData<Cell> *>(field)->modified());
+        },
+        .bind_storage = [](void *destination, const void *field, const NativeRows &rows) noexcept {
+            *static_cast<ColumnStorage<Cell> *>(destination) =
+                ColumnStorage<Cell>{*static_cast<const NativeColumnData<Cell> *>(field), rows};
+        },
+        .copy_column_storage = &copy_frame_column_storage<Cell>,
+        .construct = [](void *field) noexcept { std::construct_at(static_cast<NativeColumnData<Cell> *>(field)); },
+        .destroy = [](void *field) noexcept { std::destroy_at(static_cast<NativeColumnData<Cell> *>(field)); },
+        .construct_storage = [](void *storage) noexcept {
+            std::construct_at(static_cast<ColumnStorage<Cell> *>(storage));
+        },
+        .destroy_storage = [](void *storage) noexcept {
+            std::destroy_at(static_cast<ColumnStorage<Cell> *>(storage));
+        },
+        .bind_column_view = &bind_frame_column_view<Cell>,
+        .bind_column_series_view = &bind_frame_column_series_view<Cell>,
+        .bind_view_storage = &bind_frame_view_storage<Cell>,
+        .read_binding = &frame_column_read_binding<Cell>,
+        .copy_snapshot_column = &copy_frame_snapshot_column<Cell>,
+        .release_snapshot_column = &release_frame_snapshot_column<Cell>,
+        .release_snapshot_storage = &release_frame_snapshot_storage<Cell>,
+        .install_snapshot_column = &install_frame_snapshot_column<Cell>,
+    };
+}
+
+inline NativeFrameFieldLayout native_frame_field_layout(const ScalarType &cell_type) {
+    if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<i64>()))
+        return make_native_frame_field_layout<i64>();
+    if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<double>()))
+        return make_native_frame_field_layout<double>();
+    throw std::invalid_argument{"frame columns support only i64 and double cell types"};
+}
+
+} // namespace details
+
+struct RuntimeFrameViewFieldLayout {
+    details::NativeFrameFieldLayout column;
+    std::size_t bookkeeping_offset{};
+    std::size_t state_offset{};
+    std::size_t column_storage_offset{};
+};
+
+struct RuntimeFrameViewLayout {
+    const bg::Schema *schema{};
+    std::size_t size{};
+    std::size_t alignment{};
+    std::vector<RuntimeFrameViewFieldLayout> fields;
+};
+
+class RuntimeFrameViewOutputStorage {
+  public:
+    static constexpr bool supports_byte_copy_initialization = true;
+    using predicate_function = bool (*)(void *, row_id_t);
 
     struct ColumnMapping {
         const void *native{};
@@ -713,445 +1651,269 @@ template <template <template <typename, auto...> typename> typename Schema> stru
         const void *visible_identity{};
         const void *coverage_context{};
         const void *coverage_identity{};
-
         friend bool operator==(const ColumnMapping &, const ColumnMapping &) = default;
     };
 
-    child_states_type child_states;
+    struct FieldState {
+        ColumnMapping mapping;
+        util::index<> modified_rows;
+    };
+
+    const RuntimeFrameViewLayout *layout{};
     SelectedRows previous_rows;
     SelectedRows selected_rows;
-    FrameStorage<Schema> scalar;
-    util::index<util::aggregate_member_count<fields_type>> changed_columns;
+    RowSet source_rows{};
+    util::index<> changed_columns;
     util::index<> added_rows;
     util::index<> removed_rows;
     util::index<> changed_rows;
     util::index<> predicate_rows;
-    modified_rows_type modified_rows;
-    std::array<ColumnMapping, util::aggregate_member_count<fields_type>> mapping{};
     EvaluationTime delta_time{MIN_DT};
-    Operation operation{Operation::none};
+    bool filtering{};
     bool valid{};
 
-    template <template <template <typename, auto...> typename> typename SourceSchema,
-              util::compile_time_string... Names>
-    bool bind_projection(const FrameStorage<SourceSchema> &input, bool source_modified,
-                         EvaluationTime source_last_updated, EvaluationTime time, allocator memory,
-                         ColumnNames<Names...>) {
-        if (valid && operation == Operation::filter)
-            throw std::logic_error{"a TSF view output cannot switch from filtering to projection"};
-
-        constexpr auto field_count = util::aggregate_member_count<fields_type>;
-        static_assert(sizeof...(Names) == field_count, "projection must name one source column per target column");
-        static_assert(((details::frame_column_index<Names, SourceSchema>() <
-                        util::aggregate_member_count<SourceSchema<Column>>) && ...),
-                      "projection names an unknown source column");
-        constexpr auto source_indices =
-            std::array<std::size_t, field_count>{details::frame_column_index<Names, SourceSchema>()...};
-
-        auto source_fields = util::aggregate_members(input.columns);
-        auto target_fields = util::aggregate_members(scalar.columns);
-        auto target_states = util::aggregate_members(child_states);
-        auto target_modified = util::aggregate_members(modified_rows);
-        auto next_mapping = std::array<ColumnMapping, field_count>{};
-        const auto new_cycle = !valid || time != delta_time;
-        const auto previous_row_set = previous_rows.source();
-        const auto row_domain_changed = previous_row_set.identity != input.rows.identity;
-        const auto row_set_rebound = !valid || previous_row_set.context != input.rows.context || row_domain_changed;
-        auto mapping_changed = std::array<bool, field_count>{};
-
-        [&]<std::size_t... Index>(std::index_sequence<Index...>) {
-            (([&] {
-                 constexpr auto source_index = source_indices[Index];
-                 using TargetColumn = std::remove_cvref_t<decltype(std::get<Index>(target_fields))>;
-                 using SourceColumn = std::remove_cvref_t<decltype(std::get<source_index>(source_fields))>;
-                 static_assert(std::same_as<typename details::frame_column_storage<TargetColumn>::cell_type,
-                                            typename details::frame_column_storage<SourceColumn>::cell_type>,
-                               "projection source and target column types must match");
-                 const auto &column = std::get<source_index>(source_fields);
-                 if (column.native == nullptr || column.rows == nullptr ||
-                     column.rows->identity() != input.rows.identity)
-                     throw std::invalid_argument{"projection column has a different physical row domain"};
-                 const auto identity = ColumnMapping{column.native,
-                                                     column.rows,
-                                                     column.snapshot,
-                                                     column.visible_rows.context,
-                                                     column.visible_rows.identity,
-                                                     column.coverage.context,
-                                                     column.coverage.identity};
-                 next_mapping[Index] = identity;
-                 mapping_changed[Index] = !valid || mapping[Index] != identity;
-                 const auto exact_coverage = column.coverage.context == input.rows.context &&
-                                             column.coverage.identity == input.rows.identity;
-                 if (!exact_coverage) {
-                     input.rows.each([&](row_id_t id) {
-                         if (!column.coverage.has(id) || !column.rows->contains(id))
-                             throw std::invalid_argument{"projection column does not cover every output row"};
-                     });
-                 }
-             }()),
-             ...);
-        }(std::make_index_sequence<field_count>{});
-
-        const auto sampled_rebuild = source_modified && input.change_time != source_last_updated;
-        mapping = next_mapping;
-
-        if (new_cycle) {
-            added_rows.clear();
-            removed_rows.clear();
-            changed_rows.clear();
-            changed_columns.clear();
-            [&]<std::size_t... Index>(std::index_sequence<Index...>) {
-                (std::get<Index>(target_modified).clear(), ...);
-            }(std::make_index_sequence<field_count>{});
-            delta_time = time;
-        }
-
-        const auto add_membership = [&](row_id_t id) {
-            if (removed_rows.reset(id))
-                return;
-            if (!added_rows.contains(id))
-                added_rows.set(id, memory.memory_resource());
-            changed_rows.set(id, memory.memory_resource());
-        };
-        const auto remove_membership = [&](row_id_t id) {
-            if (added_rows.reset(id)) {
-                changed_rows.reset(id);
-            } else {
-                removed_rows.set(id, memory.memory_resource());
-            }
-            changed_rows.reset(id);
-            [&]<std::size_t... Index>(std::index_sequence<Index...>) {
-                (std::get<Index>(target_modified).reset(id), ...);
-            }(std::make_index_sequence<field_count>{});
-        };
-
-        if (row_set_rebound || !new_cycle || sampled_rebuild) {
-            if (row_domain_changed) {
-                previous_rows.for_each_selected([&](row_id_t id) { removed_rows.set(id, memory.memory_resource()); });
-                previous_rows.clear();
-                input.rows.each([&](row_id_t id) {
-                    added_rows.set(id, memory.memory_resource());
-                    changed_rows.set(id, memory.memory_resource());
-                });
-            } else {
-                previous_rows.for_each_selected([&](row_id_t id) {
-                    if (!input.rows.has(id))
-                        remove_membership(id);
-                });
-                input.rows.each([&](row_id_t id) {
-                    if (previous_rows.contains(id))
-                        removed_rows.reset(id);
-                    else
-                        add_membership(id);
-                });
-                for (auto id : removed_rows)
-                    if (!input.rows.has(id))
-                        previous_rows.exclude(id);
-            }
-            previous_rows.bind(input.rows);
-            input.rows.each([&](row_id_t id) {
-                if (!previous_rows.contains(id))
-                    previous_rows.include(id, memory);
-            });
-        } else if (source_modified && input.change_time == source_last_updated) {
-            if (input.removed != nullptr) {
-                for (auto id : *input.removed)
-                    if (!input.rows.has(id) && previous_rows.contains(id))
-                        remove_membership(id);
-            }
-            for (auto id : removed_rows)
-                previous_rows.exclude(id);
-            if (input.added != nullptr) {
-                for (auto id : *input.added)
-                    if (input.rows.has(id) && !previous_rows.contains(id))
-                        add_membership(id);
-            }
-            for (auto id : added_rows)
-                previous_rows.include(id, memory);
-        }
-
-        auto any_change = !valid || !added_rows.empty() || !removed_rows.empty();
-        const auto input_changes_current = source_modified && input.change_time == source_last_updated;
-        [&]<std::size_t... Index>(std::index_sequence<Index...>) {
-            (([&] {
-                 constexpr auto source_index = source_indices[Index];
-                 const auto &column = std::get<source_index>(source_fields);
-                 auto &output_column = std::get<Index>(target_fields);
-                 auto &output_modified = std::get<Index>(target_modified);
-                 const auto *source_modified_rows = input_changes_current ? input.modified[source_index] : nullptr;
-                 if (mapping_changed[Index] || sampled_rebuild) {
-                     input.rows.each([&](row_id_t id) {
-                         if (!added_rows.contains(id))
-                             output_modified.set(id, memory.memory_resource());
-                     });
-                 } else if (source_modified_rows != nullptr) {
-                     for (auto id : *source_modified_rows) {
-                         if (input.rows.has(id) && !added_rows.contains(id)) {
-                             output_modified.set(id, memory.memory_resource());
-                             changed_rows.set(id, memory.memory_resource());
-                         }
-                     }
-                 }
-                 if (!output_modified.empty()) {
-                     if (mapping_changed[Index])
-                         for (auto id : output_modified)
-                             changed_rows.set(id, memory.memory_resource());
-                     any_change = true;
-                 }
-                 scalar.modified[Index] = std::addressof(output_modified);
-                 if (mapping_changed[Index] || !output_modified.empty()) {
-                     changed_columns.set(Index);
-                     std::get<Index>(target_states).publish(time);
-                     any_change = true;
-                 }
-
-                 output_column = column;
-                 output_column.visible_rows = input.rows;
-                 output_column.coverage = input.rows;
-                 output_column.added = std::addressof(added_rows);
-                 output_column.modified = scalar.modified[Index];
-                 output_column.removed = std::addressof(removed_rows);
-                 output_column.change_time = time;
-             }()),
-             ...);
-        }(std::make_index_sequence<field_count>{});
-
-        if (!added_rows.empty() || !removed_rows.empty()) {
-            [&]<std::size_t... Index>(std::index_sequence<Index...>) {
-                (([&] {
-                     changed_columns.set(Index);
-                     std::get<Index>(target_states).publish(time);
-                 }()),
-                 ...);
-            }(std::make_index_sequence<field_count>{});
-        }
-
-        scalar.rows = input.rows;
-        scalar.added = std::addressof(added_rows);
-        scalar.removed = std::addressof(removed_rows);
-        scalar.changed = std::addressof(changed_rows);
-        scalar.changed_columns = std::addressof(changed_columns);
-        scalar.change_time = time;
-        scalar.valid = true;
-        scalar.size = input.rows.count();
-        valid = true;
-        operation = Operation::projection;
-        return any_change;
+    void initialize(const RuntimeFrameViewLayout &runtime_layout) noexcept {
+        layout = std::addressof(runtime_layout);
     }
 
-    template <util::compile_time_string Name, template <template <typename, auto...> typename> typename SourceSchema,
-              typename Predicate>
-    bool bind_filter(const FrameStorage<SourceSchema> &input, bool source_modified,
-                     EvaluationTime source_last_updated, EvaluationTime time, allocator memory,
-                     Predicate &&predicate) {
-        if (valid && operation == Operation::projection)
-            throw std::logic_error{"a TSF view output cannot switch from projection to filtering"};
+    std::size_t field_index(util::symbol name) const {
+        const auto fields = layout->schema->fields();
+        for (auto index = std::size_t{}; index != fields.size(); ++index)
+            if (fields[index].name == name)
+                return index;
+        throw std::invalid_argument{"frame view output field is absent from its resolved schema"};
+    }
 
-        constexpr auto field_count = util::aggregate_member_count<fields_type>;
-        static_assert(field_count == util::aggregate_member_count<SourceSchema<ColumnStorage>>,
-                      "filtered frame must retain its source schema");
-        constexpr auto predicate_index = details::frame_column_index<Name, SourceSchema>();
-        static_assert(predicate_index < field_count, "filter names an unknown predicate column");
-        static_assert(cell_type<details::frame_schema_cell_t<predicate_index, SourceSchema>>,
-                      "filter predicate column must have a supported numeric cell type");
+    FieldState &field_state(void *base, std::size_t index) const noexcept {
+        auto *bytes = static_cast<std::byte *>(base);
+        return *reinterpret_cast<FieldState *>(bytes + layout->fields[index].bookkeeping_offset);
+    }
+    const FieldState &field_state(const void *base, std::size_t index) const noexcept {
+        const auto *bytes = static_cast<const std::byte *>(base);
+        return *reinterpret_cast<const FieldState *>(bytes + layout->fields[index].bookkeeping_offset);
+    }
+    TimeSeriesState &child_state(void *base, std::size_t index) const noexcept {
+        auto *bytes = static_cast<std::byte *>(base);
+        return *reinterpret_cast<TimeSeriesState *>(bytes + layout->fields[index].state_offset);
+    }
+    void *column_storage(void *base, std::size_t index) const noexcept {
+        return static_cast<std::byte *>(base) + layout->fields[index].column_storage_offset;
+    }
+    const void *column_storage(const void *base, std::size_t index) const noexcept {
+        return static_cast<const std::byte *>(base) + layout->fields[index].column_storage_offset;
+    }
 
-        auto source_fields = util::aggregate_members(input.columns);
-        auto target_fields = util::aggregate_members(scalar.columns);
-        auto target_states = util::aggregate_members(child_states);
-        auto target_modified = util::aggregate_members(modified_rows);
-        auto next_mapping = std::array<ColumnMapping, field_count>{};
-        auto mapping_changed = std::array<bool, field_count>{};
+    bool bind(const FrameReadStorage &input, std::span<const std::size_t> source_indices,
+              std::optional<std::size_t> predicate_index, void *predicate_context,
+              predicate_function predicate, EvaluationTime time, allocator memory) {
+        if (layout == nullptr || input.schema == nullptr)
+            throw std::logic_error{"TSF view has no resolved schema layout"};
+        if (valid && filtering != predicate_index.has_value())
+            throw std::logic_error{"a TSF view output cannot switch between projection and filtering"};
+        const auto infer_source_indices = source_indices.empty();
+        const auto identity_source_indices = infer_source_indices && input.schema == layout->schema;
+        if (!infer_source_indices && source_indices.size() != layout->fields.size())
+            throw std::invalid_argument{"frame view column count does not match its output schema"};
+        if (predicate_index.has_value() && (*predicate_index >= layout->fields.size() || predicate == nullptr))
+            throw std::invalid_argument{"frame view filter has no resolved predicate"};
 
-        [&]<std::size_t... Index>(std::index_sequence<Index...>) {
-            (([&] {
-                 const auto &column = std::get<Index>(source_fields);
-                 if (column.native == nullptr || column.rows == nullptr ||
-                     column.rows->identity() != input.rows.identity)
-                     throw std::invalid_argument{"filter column has a different physical row domain"};
-                 const auto exact_coverage = column.coverage.context == input.rows.context &&
-                                             column.coverage.identity == input.rows.identity;
-                 if (!exact_coverage)
-                     input.rows.each([&](row_id_t id) {
-                         if (!column.coverage.has(id) || !column.rows->contains(id))
-                             throw std::invalid_argument{"filter column does not cover every source row"};
-                     });
+        const auto source_index = [&](std::size_t index) {
+            if (!infer_source_indices)
+                return source_indices[index];
+            if (identity_source_indices)
+                return index;
+            return input.field_index(layout->schema->fields()[index].name);
+        };
+        auto predicate_mapping_changed = false;
+        for (std::size_t index = 0; index != layout->fields.size(); ++index) {
+            const auto binding = input.column(source_index(index));
+            const auto &field = layout->fields[index].column;
+            if (binding.cell_type != field.cell_type || binding.payload == nullptr ||
+                binding.copy_column_storage == nullptr || binding.native == nullptr || binding.rows == nullptr ||
+                binding.rows->identity() != input.rows.identity)
+                throw std::invalid_argument{"frame view column does not match the resolved schema or row domain"};
+            const auto exact_coverage = binding.coverage.context == input.rows.context &&
+                                        binding.coverage.identity == input.rows.identity;
+            if (!exact_coverage)
+                input.rows.each([&](row_id_t id) {
+                    if (!binding.coverage.has(id) || !binding.rows->contains(id))
+                        throw std::invalid_argument{"frame view column does not cover every source row"};
+                });
+            const auto mapping = ColumnMapping{binding.native, binding.rows, binding.snapshot,
+                                               binding.visible_rows.context, binding.visible_rows.identity,
+                                               binding.coverage.context, binding.coverage.identity};
+            if (predicate_index == index)
+                predicate_mapping_changed = !valid || field_state(this, index).mapping != mapping;
+        }
 
-                 next_mapping[Index] = ColumnMapping{column.native,
-                                                     column.rows,
-                                                     column.snapshot,
-                                                     column.visible_rows.context,
-                                                     column.visible_rows.identity,
-                                                     column.coverage.context,
-                                                     column.coverage.identity};
-                 mapping_changed[Index] = !valid || mapping[Index] != next_mapping[Index];
-             }()),
-             ...);
-        }(std::make_index_sequence<field_count>{});
-
-        const auto previous_row_set = previous_rows.source();
-        const auto row_domain_changed = previous_row_set.identity != nullptr &&
-                                        previous_row_set.identity != input.rows.identity;
-        const auto row_set_rebound = !valid || previous_row_set.context != input.rows.context;
-        const auto new_cycle = !valid || time != delta_time;
-        const auto input_delta_current = source_modified && input.change_time == source_last_updated;
-        const auto rebuild = !valid || row_set_rebound || row_domain_changed || mapping_changed[predicate_index] ||
-                             (source_modified && !input_delta_current);
-
-        mapping = next_mapping;
+        const auto previous = previous_rows.source();
+        const auto row_domain_changed = previous.identity != nullptr && previous.identity != input.rows.identity;
+        const auto row_set_rebound = !valid || previous.context != input.rows.context;
+        const auto new_cycle = !valid || delta_time != time;
+        const auto input_delta_current = input.modified && input.change_time == input.last_updated;
+        const auto rebuild_predicate = predicate_index.has_value() &&
+                                       (!valid || row_set_rebound || row_domain_changed ||
+                                        predicate_mapping_changed ||
+                                        (input.modified && !input_delta_current));
         if (new_cycle) {
             added_rows.clear();
             removed_rows.clear();
             changed_rows.clear();
             changed_columns.clear();
-            [&]<std::size_t... Index>(std::index_sequence<Index...>) {
-                (std::get<Index>(target_modified).clear(), ...);
-            }(std::make_index_sequence<field_count>{});
+            for (std::size_t index = 0; index != layout->fields.size(); ++index)
+                field_state(this, index).modified_rows.clear();
             delta_time = time;
         }
         predicate_rows.clear();
 
-        const auto remove_selected = [&](row_id_t id, bool preserve_domain_removal) {
+        const auto clear_modified = [&](row_id_t id) {
+            for (std::size_t index = 0; index != layout->fields.size(); ++index)
+                field_state(this, index).modified_rows.reset(id);
+        };
+        const auto remove_filter_row = [&](row_id_t id, bool preserve_domain_removal) {
             if (!selected_rows.exclude(id))
                 return;
             if (preserve_domain_removal || !added_rows.reset(id))
                 removed_rows.set(id, memory.memory_resource());
             changed_rows.reset(id);
-            [&]<std::size_t... Index>(std::index_sequence<Index...>) {
-                (std::get<Index>(target_modified).reset(id), ...);
-            }(std::make_index_sequence<field_count>{});
+            clear_modified(id);
         };
-        const auto add_selected = [&](row_id_t id, bool preserve_domain_addition) {
+        const auto add_filter_row = [&](row_id_t id, bool preserve_domain_addition) {
             if (!selected_rows.include(id, memory))
                 return;
             if (preserve_domain_addition || !removed_rows.reset(id))
                 added_rows.set(id, memory.memory_resource());
             changed_rows.set(id, memory.memory_resource());
         };
+        const auto remove_projection_row = [&](row_id_t id, bool preserve_domain_removal) {
+            if (preserve_domain_removal || !added_rows.reset(id))
+                removed_rows.set(id, memory.memory_resource());
+            changed_rows.reset(id);
+            clear_modified(id);
+        };
+        const auto add_projection_row = [&](row_id_t id, bool preserve_domain_addition) {
+            if (preserve_domain_addition || !removed_rows.reset(id))
+                added_rows.set(id, memory.memory_resource());
+            changed_rows.set(id, memory.memory_resource());
+        };
 
         if (row_domain_changed) {
-            selected_rows.for_each_selected([&](row_id_t id) {
-                removed_rows.set(id, memory.memory_resource());
-                changed_rows.reset(id);
-                [&]<std::size_t... Index>(std::index_sequence<Index...>) {
-                    (std::get<Index>(target_modified).reset(id), ...);
-                }(std::make_index_sequence<field_count>{});
-            });
-            selected_rows.clear();
+            if (predicate_index.has_value()) {
+                selected_rows.for_each_selected([&](row_id_t id) { remove_filter_row(id, true); });
+                selected_rows.clear();
+            } else {
+                previous_rows.for_each_selected([&](row_id_t id) { remove_projection_row(id, true); });
+            }
             previous_rows.clear();
             input.rows.each([&](row_id_t id) {
                 previous_rows.include(id, memory);
-                predicate_rows.set(id, memory.memory_resource());
+                if (predicate_index.has_value())
+                    predicate_rows.set(id, memory.memory_resource());
+                else
+                    add_projection_row(id, true);
             });
-        } else if (row_set_rebound || (source_modified && !input_delta_current)) {
+        } else if (row_set_rebound || (input.modified && !input_delta_current)) {
             previous_rows.for_each_selected([&](row_id_t id) {
                 if (!input.rows.has(id))
                     predicate_rows.set(id, memory.memory_resource());
             });
             for (auto id : predicate_rows) {
-                remove_selected(id, false);
+                if (predicate_index.has_value())
+                    remove_filter_row(id, false);
+                else
+                    remove_projection_row(id, false);
                 previous_rows.exclude(id);
             }
             predicate_rows.clear();
             input.rows.each([&](row_id_t id) {
-                if (!previous_rows.contains(id))
-                    predicate_rows.set(id, memory.memory_resource());
+                if (!previous_rows.contains(id)) {
+                    if (predicate_index.has_value())
+                        predicate_rows.set(id, memory.memory_resource());
+                    else
+                        add_projection_row(id, false);
+                }
                 previous_rows.include(id, memory);
             });
         } else if (input_delta_current) {
-            if (input.removed != nullptr) {
-                for (auto id : *input.removed) {
+            if (input.removed != nullptr)
+                for (auto id : *input.removed)
                     if (!input.rows.has(id) && previous_rows.contains(id)) {
-                        remove_selected(id, false);
+                        if (predicate_index.has_value())
+                            remove_filter_row(id, false);
+                        else
+                            remove_projection_row(id, false);
                         previous_rows.exclude(id);
                     }
-                }
-            }
-            if (input.added != nullptr) {
-                for (auto id : *input.added) {
+            if (input.added != nullptr)
+                for (auto id : *input.added)
                     if (input.rows.has(id) && !previous_rows.contains(id)) {
-                        predicate_rows.set(id, memory.memory_resource());
+                        if (predicate_index.has_value())
+                            predicate_rows.set(id, memory.memory_resource());
+                        else
+                            add_projection_row(id, false);
                         previous_rows.include(id, memory);
                     }
+        }
+
+        if (predicate_index.has_value()) {
+            if (rebuild_predicate)
+                input.rows.each([&](row_id_t id) { predicate_rows.set(id, memory.memory_resource()); });
+            else if (input_delta_current)
+                if (const auto *modified = input.modified_at(source_index(*predicate_index)); modified != nullptr)
+                    for (auto id : *modified)
+                        if (input.rows.has(id))
+                            predicate_rows.set(id, memory.memory_resource());
+
+            selected_rows.bind(input.rows);
+            for (auto id : predicate_rows) {
+                if (predicate(predicate_context, id)) {
+                    add_filter_row(id, row_domain_changed);
+                } else {
+                    remove_filter_row(id, false);
                 }
             }
         }
-
-        if (rebuild) {
-            input.rows.each([&](row_id_t id) { predicate_rows.set(id, memory.memory_resource()); });
-        } else if (input_delta_current && input.modified[predicate_index] != nullptr) {
-            for (auto id : *input.modified[predicate_index])
-                if (input.rows.has(id))
-                    predicate_rows.set(id, memory.memory_resource());
-        }
-
-        selected_rows.bind(input.rows);
-        for (auto id : predicate_rows) {
-            const auto qualifies = std::invoke(predicate, id);
-            if (row_domain_changed) {
-                if (qualifies)
-                    add_selected(id, true);
-                continue;
-            }
-            if (qualifies)
-                add_selected(id, false);
-            else
-                remove_selected(id, false);
-        }
         previous_rows.bind(input.rows);
+        source_rows = input.rows;
 
-        const auto input_changes_current = input_delta_current;
-        auto any_change = !valid || !added_rows.empty() || !removed_rows.empty();
-        [&]<std::size_t... Index>(std::index_sequence<Index...>) {
-            (([&] {
-                 const auto &column = std::get<Index>(source_fields);
-                 auto &output_column = std::get<Index>(target_fields);
-                 auto &output_modified = std::get<Index>(target_modified);
-                 const auto *source_modified_rows = input_changes_current ? input.modified[Index] : nullptr;
-                 if ((mapping_changed[Index] || (source_modified && !input_delta_current))) {
-                     input.rows.each([&](row_id_t id) {
-                         if (selected_rows.contains(id) && !added_rows.contains(id))
-                             output_modified.set(id, memory.memory_resource());
-                     });
-                 } else if (source_modified_rows != nullptr) {
-                     for (auto id : *source_modified_rows) {
-                         if (selected_rows.contains(id) && !added_rows.contains(id))
-                             output_modified.set(id, memory.memory_resource());
-                     }
-                 }
-                 if (!output_modified.empty()) {
-                     for (auto id : output_modified)
-                         changed_rows.set(id, memory.memory_resource());
-                     any_change = true;
-                 }
-                 scalar.modified[Index] = std::addressof(output_modified);
-                 if (mapping_changed[Index] || !output_modified.empty() || !added_rows.empty() ||
-                     !removed_rows.empty()) {
-                     changed_columns.set(Index);
-                     std::get<Index>(target_states).publish(time);
-                     any_change = true;
-                 }
+        const auto output_rows = predicate_index.has_value() ? selected_rows.rows() : input.rows;
+        const auto membership_changed = !added_rows.empty() || !removed_rows.empty();
+        auto any_change = !valid || membership_changed;
+        for (std::size_t index = 0; index != layout->fields.size(); ++index) {
+            auto &state = field_state(this, index);
+            auto &output_modified = state.modified_rows;
+            const auto binding = input.column(source_index(index));
+            const auto mapping = ColumnMapping{binding.native, binding.rows, binding.snapshot,
+                                               binding.visible_rows.context, binding.visible_rows.identity,
+                                               binding.coverage.context, binding.coverage.identity};
+            const auto mapping_changed = !valid || state.mapping != mapping;
+            state.mapping = mapping;
+            const auto *source_modified = input_delta_current ? input.modified_at(source_index(index)) : nullptr;
+            if (mapping_changed || (input.modified && !input_delta_current)) {
+                output_rows.each([&](row_id_t id) {
+                    if (!added_rows.contains(id))
+                        output_modified.set(id, memory.memory_resource());
+                });
+            } else if (source_modified != nullptr) {
+                for (auto id : *source_modified)
+                    if (output_rows.has(id) && !added_rows.contains(id))
+                        output_modified.set(id, memory.memory_resource());
+            }
+            for (auto id : output_modified)
+                changed_rows.set(id, memory.memory_resource());
+            if (mapping_changed || !output_modified.empty() || membership_changed) {
+                changed_columns.set(index, memory.memory_resource());
+                auto *bytes = reinterpret_cast<std::byte *>(this);
+                reinterpret_cast<TimeSeriesState *>(bytes + layout->fields[index].state_offset)->publish(time);
+                any_change = true;
+            }
+            layout->fields[index].column.bind_view_storage(
+                column_storage(this, index), binding, output_rows, std::addressof(added_rows),
+                std::addressof(output_modified), std::addressof(removed_rows), time);
+        }
 
-                 output_column = column;
-                 output_column.visible_rows = selected_rows.rows();
-                 output_column.coverage = selected_rows.rows();
-                 output_column.added = std::addressof(added_rows);
-                 output_column.modified = scalar.modified[Index];
-                 output_column.removed = std::addressof(removed_rows);
-                 output_column.change_time = time;
-             }()),
-             ...);
-        }(std::make_index_sequence<field_count>{});
-
-        scalar.rows = selected_rows.rows();
-        scalar.added = std::addressof(added_rows);
-        scalar.removed = std::addressof(removed_rows);
-        scalar.changed = std::addressof(changed_rows);
-        scalar.changed_columns = std::addressof(changed_columns);
-        scalar.change_time = time;
-        scalar.valid = true;
-        scalar.size = selected_rows.size();
+        filtering = predicate_index.has_value();
         valid = true;
-        operation = Operation::filter;
         return any_change;
     }
 
@@ -1160,16 +1922,17 @@ template <template <template <typename, auto...> typename> typename Schema> stru
         previous_rows.bind({});
         selected_rows.clear();
         selected_rows.bind({});
+        source_rows = {};
         added_rows.clear();
         removed_rows.clear();
         changed_rows.clear();
         predicate_rows.clear();
         changed_columns.clear();
-        auto modified = util::aggregate_members(modified_rows);
-        std::apply([](auto &...field) { (field.clear(), ...); }, modified);
-        scalar = {};
-        mapping = {};
-        operation = Operation::none;
+        for (std::size_t index = 0; index != layout->fields.size(); ++index) {
+            auto &field = field_state(this, index);
+            field.modified_rows.clear();
+            field.mapping = {};
+        }
         valid = false;
     }
 
@@ -1180,35 +1943,77 @@ template <template <template <typename, auto...> typename> typename Schema> stru
         removed_rows.release(memory.memory_resource());
         changed_rows.release(memory.memory_resource());
         predicate_rows.release(memory.memory_resource());
-        auto modified = util::aggregate_members(modified_rows);
-        std::apply([&](auto &...field) { (field.release(memory.memory_resource()), ...); }, modified);
-        changed_columns.clear();
-        scalar = {};
-        operation = Operation::none;
+        changed_columns.release(memory.memory_resource());
+        for (std::size_t index = 0; index != layout->fields.size(); ++index) {
+            auto &field = field_state(this, index);
+            field.modified_rows.release(memory.memory_resource());
+            field.mapping = {};
+        }
+        source_rows = {};
         valid = false;
     }
 };
 
+template <typename Cell, template <template <typename, auto...> typename> typename Schema, auto... Properties>
+auto select_column(wp<TSF<Schema, Properties...>> source, util::symbol name) {
+    const auto *frame_type = dynamic_cast<const frame::FrameSeriesType *>(std::addressof(source.type()));
+    if (frame_type == nullptr)
+        throw std::invalid_argument{"frame column selection requires a frame time series"};
+
+    const auto *schema = dynamic_cast<const bg::Schema *>(std::addressof(frame_type->schema_type()));
+    if (schema == nullptr)
+        throw std::invalid_argument{"frame column selection requires a resolved frame schema"};
+    const auto *field = schema->find(name);
+    if (field == nullptr)
+        throw std::out_of_range{"frame column selection names an unknown field"};
+    const auto fields = schema->fields();
+    const auto index = static_cast<std::size_t>(field - fields.data());
+
+    const auto child = WiringContext::current().wiring().output_item(
+        static_cast<WiringPoint>(source), static_cast<item_id_t>(index), frame_type->item_type(index));
+    return child.template as<TSC<Cell>>();
+}
+
+template <typename Cell, template <template <typename, auto...> typename> typename Schema, auto... Properties>
+auto select_column(wp<TSF<Schema, Properties...>> source, std::size_t index) {
+    const auto *frame_type = dynamic_cast<const frame::FrameSeriesType *>(std::addressof(source.type()));
+    if (frame_type == nullptr)
+        throw std::invalid_argument{"frame column selection requires a frame time series"};
+    const auto *schema = dynamic_cast<const bg::Schema *>(std::addressof(frame_type->schema_type()));
+    if (schema == nullptr)
+        throw std::invalid_argument{"frame column selection requires a resolved frame schema"};
+    if (index >= schema->field_count())
+        throw std::out_of_range{"frame column selection index is outside the resolved schema"};
+    return select_column<Cell>(source, schema->field(index).name);
+}
+
 template <std::size_t Index, template <template <typename, auto...> typename> typename Schema, auto... Properties>
 auto select_column(wp<TSF<Schema, Properties...>> source) {
-    using Cell = details::frame_schema_cell_t<Index, Schema>;
-    using ColumnSeries = TSC<Cell>;
-    const auto child = WiringContext::current().wiring().output_item(
-        static_cast<WiringPoint>(source), static_cast<item_id_t>(Index), ColumnSeries::type());
-    return child.template as<ColumnSeries>();
+    if constexpr (bg::details::schema_variable_template<Schema>) {
+        return select_column<SCALAR>(source, Index);
+    } else {
+        static_assert(Index < details::frame_schema_reflection<Schema>::field_count,
+                      "frame column index is outside the declared schema");
+        using Cell = details::frame_schema_cell_t<Index, Schema>;
+        return select_column<Cell>(source, details::frame_declared_field_symbol<Index, Schema>());
+    }
 }
 
 template <util::compile_time_string Name,
           template <template <typename, auto...> typename> typename Schema, auto... Properties>
 auto select_column(wp<TSF<Schema, Properties...>> source) {
-    constexpr auto index = details::frame_column_index<Name, Schema>();
-    static_assert(index < util::aggregate_member_count<Schema<Column>>, "unknown frame column name");
-    return select_column<index>(source);
+    if constexpr (bg::details::schema_variable_template<Schema>) {
+        return select_column<SCALAR>(source, util::symbol{Name.view()});
+    } else {
+        constexpr auto index = details::frame_column_index<Name, Schema>();
+        static_assert(index < details::frame_schema_reflection<Schema>::field_count,
+                      "unknown frame column name");
+        return select_column<index>(source);
+    }
 }
 
 namespace details {
 
-template <template <template <typename, auto...> typename> typename Schema>
 class NativeFrameSeriesRuntimeType final : public bg::frame::FrameSeriesRuntimeType {
   public:
     using ItemLayout = TimeSeriesRuntimeType::ItemLayout;
@@ -1218,10 +2023,15 @@ class NativeFrameSeriesRuntimeType final : public bg::frame::FrameSeriesRuntimeT
     using ModifiedItemFunction = TimeSeriesRuntimeType::ModifiedItemFunction;
 
     explicit NativeFrameSeriesRuntimeType(const TimeSeriesType &type)
-        : bg::frame::FrameSeriesRuntimeType{type, sizeof(NativeFrame<Schema>), alignof(NativeFrame<Schema>), true,
-                                            true, true} {
-        const auto sample = NativeFrame<Schema>{};
-        append_item_layouts(sample, std::make_index_sequence<util::aggregate_member_count<Schema<ColumnStorage>>>{});
+        : bg::frame::FrameSeriesRuntimeType{
+              type,
+              native_frame_layout(static_cast<const FrameSeriesType &>(type).schema_type()).size,
+              native_frame_layout(static_cast<const FrameSeriesType &>(type).schema_type()).alignment, true, true,
+              true},
+          layout_{std::addressof(native_frame_layout(static_cast<const FrameSeriesType &>(type).schema_type()))} {
+        fields_.reserve(layout_->fields.size());
+        for (const auto &field : layout_->fields)
+            fields_.emplace_back(*field.column_runtime, field.child_state_offset, field.column_storage_offset);
     }
 
     ItemLayout item_layout(item_id_t id) const override { return fields_.at(id); }
@@ -1243,13 +2053,13 @@ class NativeFrameSeriesRuntimeType final : public bg::frame::FrameSeriesRuntimeT
             function(context, id);
     }
     bool item_updated(const TimeSeriesState &last_updated, const void *value, item_id_t id) const noexcept override {
-        const auto &frame = *static_cast<const NativeFrame<Schema> *>(value);
+        const auto &frame = *static_cast<const NativeFrameStorage *>(value);
         return last_updated.valid() && frame.change_time() == last_updated.time() &&
                frame.changed_columns().contains(id);
     }
     void for_each_updated_item(const TimeSeriesState &last_updated, const void *value, void *context,
                                ItemIdFunction function) const override {
-        const auto &frame = *static_cast<const NativeFrame<Schema> *>(value);
+        const auto &frame = *static_cast<const NativeFrameStorage *>(value);
         if (!last_updated.valid() || frame.change_time() != last_updated.time())
             return;
         for (auto id : frame.changed_columns())
@@ -1257,7 +2067,7 @@ class NativeFrameSeriesRuntimeType final : public bg::frame::FrameSeriesRuntimeT
     }
     void for_each_modified_item(const TimeSeriesState &last_updated, const void *value, EvaluationTime evaluation_time,
                                 void *context, ModifiedItemFunction function) const override {
-        const auto &frame = *static_cast<const NativeFrame<Schema> *>(value);
+        const auto &frame = *static_cast<const NativeFrameStorage *>(value);
         const auto *bytes = static_cast<const std::byte *>(value);
         const auto publish = [&](item_id_t id) {
             const auto &field = fields_[id];
@@ -1277,65 +2087,48 @@ class NativeFrameSeriesRuntimeType final : public bg::frame::FrameSeriesRuntimeT
         }
     }
     bool collection_valid(const void *value) const noexcept override {
-        return static_cast<const NativeFrame<Schema> *>(value)->valid();
+        return static_cast<const NativeFrameStorage *>(value)->valid();
     }
 
     FrameReadStorage input_storage(const void *value) const noexcept override {
-        const auto &frame = *static_cast<const NativeFrame<Schema> *>(value);
-        return frame_read_storage(frame.scalar_storage(), value, this);
+        return frame_read_storage(*static_cast<const NativeFrameStorage *>(value), value, this);
     }
 
     void construct_initial_value(void *destination) const noexcept override {
-        std::construct_at(static_cast<NativeFrame<Schema> *>(destination));
+        auto *frame = std::construct_at(static_cast<NativeFrameStorage *>(destination));
+        frame->initialize(*layout_);
     }
     void destroy_value(void *value, allocator &memory) const noexcept override {
-        auto *frame = static_cast<NativeFrame<Schema> *>(value);
+        auto *frame = static_cast<NativeFrameStorage *>(value);
         frame->release(memory);
         std::destroy_at(frame);
     }
     void invalidate_output(const OutputState &output) const override {
-        auto *frame = static_cast<NativeFrame<Schema> *>(output.mutable_data());
+        auto *frame = static_cast<NativeFrameStorage *>(output.mutable_data());
         frame->invalidate(output.context().evaluation_time(), output.allocator());
         this->invalidate_output_items(output);
         this->invalidate_output_value(output);
     }
 
   private:
-    template <std::size_t... Index>
-    void append_item_layouts(const NativeFrame<Schema> &sample, std::index_sequence<Index...>) {
-        const auto states = util::aggregate_members(sample.child_states());
-        const auto values = util::aggregate_members(sample.scalar_storage().columns);
-        const auto *base = reinterpret_cast<const std::byte *>(&sample);
-        const auto append = [&]<std::size_t Field>() {
-            using Storage = std::remove_cvref_t<decltype(std::get<Field>(values))>;
-            using Cell = typename frame_column_storage<Storage>::cell_type;
-            const auto &type = column_time_series_type<Cell>(TimeSeriesGuarantee::ordinary);
-            const auto &runtime = column_view_time_series_runtime_type<Cell>(type);
-            const auto *state = reinterpret_cast<const std::byte *>(std::addressof(std::get<Field>(states)));
-            const auto *value = reinterpret_cast<const std::byte *>(std::addressof(std::get<Field>(values)));
-            fields_.emplace_back(runtime, static_cast<std::size_t>(state - base),
-                                 static_cast<std::size_t>(value - base));
-        };
-        (append.template operator()<Index>(), ...);
-    }
-
+    const NativeFrameLayout *layout_;
     std::vector<ItemLayout> fields_;
 };
 
-template <template <template <typename, auto...> typename> typename Schema>
-class FrameViewSeriesRuntimeType final : public FrameSeriesRuntimeType {
+class RuntimeSchemaFrameViewSeriesRuntimeType final : public FrameSeriesRuntimeType {
   public:
-    using Storage = FrameViewOutputStorage<Schema>;
+    using Storage = RuntimeFrameViewOutputStorage;
     using ItemLayout = TimeSeriesRuntimeType::ItemLayout;
     using ConstItem = TimeSeriesRuntimeType::ConstItem;
     using MutableItem = TimeSeriesRuntimeType::MutableItem;
     using ItemIdFunction = TimeSeriesRuntimeType::ItemIdFunction;
     using ModifiedItemFunction = TimeSeriesRuntimeType::ModifiedItemFunction;
 
-    explicit FrameViewSeriesRuntimeType(const TimeSeriesType &type)
-        : FrameSeriesRuntimeType{type, sizeof(Storage), alignof(Storage), true, true, true} {
-        const auto sample = Storage{};
-        append_item_layouts(sample, std::make_index_sequence<util::aggregate_member_count<Schema<ColumnStorage>>>{});
+    explicit RuntimeSchemaFrameViewSeriesRuntimeType(const TimeSeriesType &type)
+        : FrameSeriesRuntimeType{type, make_layout(type).size, make_layout(type).alignment, true, true, true},
+          layout_{make_layout(type)} {
+        for (const auto &field : layout_.fields)
+            fields_.emplace_back(*field.column.column_runtime, field.state_offset, field.column_storage_offset);
     }
 
     ItemLayout item_layout(item_id_t id) const override { return fields_.at(id); }
@@ -1358,19 +2151,20 @@ class FrameViewSeriesRuntimeType final : public FrameSeriesRuntimeType {
     }
     bool item_updated(const TimeSeriesState &last_updated, const void *value, item_id_t id) const noexcept override {
         const auto &storage = *static_cast<const Storage *>(value);
-        return last_updated.valid() && storage.scalar.change_time == last_updated.time() &&
+        return last_updated.valid() && storage.delta_time == last_updated.time() &&
                storage.changed_columns.contains(id);
     }
     void for_each_updated_item(const TimeSeriesState &last_updated, const void *value, void *context,
                                ItemIdFunction function) const override {
         const auto &storage = *static_cast<const Storage *>(value);
-        if (!last_updated.valid() || storage.scalar.change_time != last_updated.time())
+        if (!last_updated.valid() || storage.delta_time != last_updated.time())
             return;
         for (auto id : storage.changed_columns)
             function(context, id);
     }
-    void for_each_modified_item(const TimeSeriesState &last_updated, const void *value, EvaluationTime evaluation_time,
-                                void *context, ModifiedItemFunction function) const override {
+    void for_each_modified_item(const TimeSeriesState &last_updated, const void *value,
+                                EvaluationTime evaluation_time, void *context,
+                                ModifiedItemFunction function) const override {
         const auto &storage = *static_cast<const Storage *>(value);
         const auto *bytes = static_cast<const std::byte *>(value);
         const auto publish = [&](item_id_t id) {
@@ -1384,7 +2178,7 @@ class FrameViewSeriesRuntimeType final : public FrameSeriesRuntimeType {
                 publish(id);
             return;
         }
-        if (storage.scalar.change_time != evaluation_time)
+        if (storage.delta_time != evaluation_time)
             return;
         for (auto id : storage.changed_columns)
             publish(id);
@@ -1394,12 +2188,51 @@ class FrameViewSeriesRuntimeType final : public FrameSeriesRuntimeType {
     }
     FrameReadStorage input_storage(const void *value) const noexcept override {
         const auto &storage = *static_cast<const Storage *>(value);
-        return frame_read_storage(storage.scalar, value, this);
+        auto result = FrameReadStorage{};
+        result.schema = layout_.schema;
+        result.rows = storage.valid
+                          ? (storage.filtering ? storage.selected_rows.rows() : storage.source_rows)
+                          : RowSet{};
+        result.valid = storage.valid;
+        result.modified = storage.delta_time != MIN_DT && !storage.changed_columns.empty();
+        result.size = result.rows.count();
+        result.added = std::addressof(storage.added_rows);
+        result.removed = std::addressof(storage.removed_rows);
+        result.changed = std::addressof(storage.changed_rows);
+        result.column_modified_context = std::addressof(storage);
+        result.modified_column = &modified_column;
+        result.change_time = storage.delta_time;
+        result.last_updated = storage.delta_time;
+        result.columns_context = value;
+        result.column_binding = &column_binding;
+        result.changed_columns_context = std::addressof(storage.changed_columns);
+        result.column_changed = &frame_column_changed;
+        result.for_each_changed_column = &frame_for_each_changed_column;
+        result.source_owner = value;
+        result.source_runtime = this;
+        return result;
     }
-    void construct_initial_value(void *destination) const noexcept override { std::construct_at(static_cast<Storage *>(destination)); }
+    void construct_initial_value(void *destination) const noexcept override {
+        auto *storage = std::construct_at(static_cast<Storage *>(destination));
+        storage->initialize(layout_);
+        for (std::size_t index = 0; index != layout_.fields.size(); ++index) {
+            const auto &field = layout_.fields[index].column;
+            auto *bytes = static_cast<std::byte *>(destination);
+            std::construct_at(reinterpret_cast<Storage::FieldState *>(bytes + layout_.fields[index].bookkeeping_offset));
+            std::construct_at(reinterpret_cast<TimeSeriesState *>(bytes + layout_.fields[index].state_offset));
+            field.construct_storage(bytes + layout_.fields[index].column_storage_offset);
+        }
+    }
     void destroy_value(void *value, allocator &memory) const noexcept override {
         auto &storage = *static_cast<Storage *>(value);
         storage.release(memory);
+        auto *bytes = static_cast<std::byte *>(value);
+        for (std::size_t index = layout_.fields.size(); index != 0; --index) {
+            const auto &field = layout_.fields[index - 1];
+            field.column.destroy_storage(bytes + field.column_storage_offset);
+            std::destroy_at(reinterpret_cast<TimeSeriesState *>(bytes + field.state_offset));
+            std::destroy_at(reinterpret_cast<Storage::FieldState *>(bytes + field.bookkeeping_offset));
+        }
         std::destroy_at(&storage);
     }
     void invalidate_output(const OutputState &output) const override {
@@ -1410,25 +2243,153 @@ class FrameViewSeriesRuntimeType final : public FrameSeriesRuntimeType {
     }
 
   private:
-    template <std::size_t... Index>
-    void append_item_layouts(const Storage &sample, std::index_sequence<Index...>) {
-        const auto states = util::aggregate_members(sample.child_states);
-        const auto values = util::aggregate_members(sample.scalar.columns);
-        const auto *base = reinterpret_cast<const std::byte *>(&sample);
-        const auto append = [&]<std::size_t Field>() {
-            using ColumnStorageType = std::remove_cvref_t<decltype(std::get<Field>(values))>;
-            using Cell = typename frame_column_storage<ColumnStorageType>::cell_type;
-            const auto &type = column_time_series_type<Cell>(TimeSeriesGuarantee::ordinary);
-            const auto &runtime = column_view_time_series_runtime_type<Cell>(type);
-            const auto *state = reinterpret_cast<const std::byte *>(std::addressof(std::get<Field>(states)));
-            const auto *value = reinterpret_cast<const std::byte *>(std::addressof(std::get<Field>(values)));
-            fields_.emplace_back(runtime, static_cast<std::size_t>(state - base),
-                                 static_cast<std::size_t>(value - base));
-        };
-        (append.template operator()<Index>(), ...);
+    static RuntimeFrameViewLayout make_layout(const TimeSeriesType &type) {
+        const auto *series = dynamic_cast<const FrameSeriesType *>(std::addressof(type));
+        if (series == nullptr || !series->is_resolved() ||
+            series->guarantee().value() != TimeSeriesGuarantee::ordinary)
+            throw std::invalid_argument{"runtime-schema TSF view requires a resolved ordinary type"};
+        const auto &native = native_frame_layout(series->schema_type());
+        auto result = RuntimeFrameViewLayout{};
+        result.schema = native.schema;
+        result.alignment = alignof(Storage);
+        auto offset = sizeof(Storage);
+        result.fields.reserve(native.fields.size());
+        for (const auto &column : native.fields) {
+            const auto align = [&](std::size_t alignment) {
+                result.alignment = std::max(result.alignment, alignment);
+                offset = (offset + alignment - 1) / alignment * alignment;
+            };
+            align(alignof(Storage::FieldState));
+            const auto bookkeeping_offset = offset;
+            offset += sizeof(Storage::FieldState);
+            align(alignof(TimeSeriesState));
+            const auto state_offset = offset;
+            offset += sizeof(TimeSeriesState);
+            align(column.column_storage_alignment);
+            const auto column_storage_offset = offset;
+            offset += column.column_storage_size;
+            result.fields.push_back({column, bookkeeping_offset, state_offset, column_storage_offset});
+        }
+        result.size = (offset + result.alignment - 1) / result.alignment * result.alignment;
+        return result;
     }
 
+    static const util::index<> *modified_column(const void *context, std::size_t index) noexcept {
+        const auto &storage = *static_cast<const Storage *>(context);
+        return index < storage.layout->fields.size()
+                   ? std::addressof(storage.field_state(context, index).modified_rows)
+                   : nullptr;
+    }
+    static FrameColumnReadBinding column_binding(const void *context, std::size_t index) {
+        const auto &storage = *static_cast<const Storage *>(context);
+        const auto &field = storage.layout->fields.at(index).column;
+        const auto *bytes = static_cast<const std::byte *>(context);
+        return field.read_binding(storage.column_storage(bytes, index));
+    }
+
+    RuntimeFrameViewLayout layout_;
     std::vector<ItemLayout> fields_;
+};
+
+class FrameSeriesScalarRuntimeType final : public FrameScalarRuntimeType {
+  public:
+    FrameSeriesScalarRuntimeType(const FrameSeriesRuntimeType &series_runtime, const FrameType &frame_type)
+        : FrameScalarRuntimeType{frame_type, series_runtime.value_size(), series_runtime.value_alignment(), false,
+                                 false, false},
+          series_runtime_{std::addressof(series_runtime)} {}
+
+    FrameReadStorage read_storage(const ScalarData &source) const override {
+        return series_runtime_->input_storage(source.data());
+    }
+    void read_value(ScalarDataMode, std::uintptr_t, void *) const override { std::terminate(); }
+    void construct_initial_value(void *) const noexcept override { std::terminate(); }
+    void copy_construct(void *, const void *, allocator &) const override { std::terminate(); }
+    std::size_t hash(const void *) const noexcept override { return 0; }
+    bool equals(const void *, const ScalarData &) const noexcept override { return false; }
+    bool equals_same_type(const void *, const ScalarData &) const noexcept override { return false; }
+    void destroy(void *, allocator &) const noexcept override {}
+    bool accepts_input(const ScalarRuntimeType &) const noexcept override { return false; }
+
+  protected:
+    void do_construct_from_input(void *, const ScalarData &, allocator &) const override { std::terminate(); }
+    void do_assign_from_input(void *, const ScalarData &) const override { std::terminate(); }
+
+  private:
+    const FrameSeriesRuntimeType *series_runtime_;
+};
+
+class FrameSnapshotRuntimeType final : public FrameScalarRuntimeType {
+  public:
+    explicit FrameSnapshotRuntimeType(const FrameType &type)
+        : FrameScalarRuntimeType{type, sizeof(FrameSnapshotStorage), alignof(FrameSnapshotStorage), false, true,
+                                 true, shared_handle_flag} {}
+
+    FrameReadStorage read_storage(const ScalarData &source) const override {
+        const auto *owner = frame_snapshot_owner(source);
+        if (owner == nullptr || owner->frame == nullptr)
+            throw std::logic_error{"frame scalar snapshot has no value"};
+        return frame_snapshot_read_storage(*owner->frame, owner->frame, owner->runtime, owner->size);
+    }
+    FrameSnapshotOwner *snapshot_owner(const ScalarData &source) const noexcept override {
+        return frame_snapshot_owner(source);
+    }
+    void read_value(ScalarDataMode, std::uintptr_t, void *) const override { std::terminate(); }
+    void construct_initial_value(void *destination) const noexcept override {
+        std::construct_at(static_cast<FrameSnapshotStorage *>(destination));
+    }
+    void copy_construct(void *destination, const void *source, allocator &memory) const override {
+        const auto input = ScalarData{*this, source};
+        do_construct_from_input(destination, input, memory);
+    }
+    std::size_t hash(const void *) const noexcept override { return 0; }
+    bool equals(const void *, const ScalarData &) const noexcept override { return false; }
+    bool equals_same_type(const void *, const ScalarData &) const noexcept override { return false; }
+    void destroy(void *value, allocator &memory) const noexcept override {
+        static_cast<void>(memory);
+        auto *storage = static_cast<FrameSnapshotStorage *>(value);
+        if (auto *owner = std::exchange(storage->owner, nullptr))
+            owner->release();
+        std::destroy_at(storage);
+    }
+    const ScalarRuntimeType *retain_shared(const ScalarData &source, std::uintptr_t &data) const noexcept override {
+        auto *owner = frame_snapshot_owner(source);
+        if (owner == nullptr)
+            return nullptr;
+        owner->retain();
+        data = reinterpret_cast<std::uintptr_t>(owner);
+        return owner->runtime;
+    }
+    void release_shared(std::uintptr_t data) const noexcept override {
+        if (auto *owner = reinterpret_cast<FrameSnapshotOwner *>(data))
+            owner->release();
+    }
+    bool accepts_input(const ScalarRuntimeType &source) const noexcept override {
+        return type().accepts(source.type());
+    }
+
+  protected:
+    void do_construct_from_input(void *destination, const ScalarData &source, allocator &memory) const override {
+        auto *storage = std::construct_at(static_cast<FrameSnapshotStorage *>(destination));
+        try {
+            copy_frame_snapshot_value(*storage, source, memory);
+        } catch (...) {
+            if (auto *owner = std::exchange(storage->owner, nullptr))
+                owner->release();
+            std::destroy_at(storage);
+            throw;
+        }
+    }
+    void do_assign_from_input(void *destination, const ScalarData &source) const override {
+        copy_frame_snapshot_value(*static_cast<FrameSnapshotStorage *>(destination), source,
+                                  bg::details::current_scalar_allocator());
+    }
+
+    ScalarData borrow_shared(const void *value) const noexcept override {
+        auto *owner = static_cast<const FrameSnapshotStorage *>(value)->owner;
+        if (owner == nullptr)
+            return ScalarData{*this, value};
+        return ScalarData{*owner->runtime, reinterpret_cast<std::uintptr_t>(owner), ScalarDataMode::shared_view};
+    }
 };
 
 } // namespace details
@@ -1438,44 +2399,52 @@ const TimeSeriesType &frame_time_series_type(TimeSeriesGuarantee guarantee) {
     if (guarantee != TimeSeriesGuarantee::ordinary)
         throw std::invalid_argument{"TSF requires ordinary"};
     const auto &type = frame_series_type(frame_schema_type<Schema>(), guarantee);
-    if constexpr (!bg::details::schema_variable_template<Schema>) {
+    if (type.is_resolved()) {
         const auto &runtime = details::canonical_frame_series_runtime_type(
-            typeid(TSF<Schema>), type,
+            type,
             [](const TimeSeriesType &series_type) -> std::unique_ptr<TimeSeriesRuntimeType> {
-                return std::make_unique<details::NativeFrameSeriesRuntimeType<Schema>>(series_type);
+                return std::make_unique<details::NativeFrameSeriesRuntimeType>(series_type);
             });
         register_time_series_runtime_type(runtime);
+        const auto &frame_runtime = static_cast<const FrameSeriesRuntimeType &>(runtime);
+        frame_series_scalar_runtime_type(frame_runtime);
     }
     return type;
 }
 
 template <template <template <typename, auto...> typename> typename Schema>
 const TimeSeriesRuntimeType &frame_time_series_runtime_type(const TimeSeriesType &type) {
-    if constexpr (bg::details::schema_variable_template<Schema>) {
-        throw std::logic_error{"runtime-schema TSF storage is not implemented"};
-    } else {
-        const auto &canonical = frame_time_series_type<Schema>(TimeSeriesGuarantee::ordinary);
-        if (&type != &canonical)
-            throw std::invalid_argument{"TSF runtime requires resolved ordinary type"};
-        return details::canonical_frame_series_runtime_type(
-            typeid(TSF<Schema>), canonical,
-            [](const TimeSeriesType &series_type) -> std::unique_ptr<TimeSeriesRuntimeType> {
-                return std::make_unique<details::NativeFrameSeriesRuntimeType<Schema>>(series_type);
-            });
-    }
+    const auto *frame_type = dynamic_cast<const FrameSeriesType *>(std::addressof(type));
+    if (frame_type == nullptr || !frame_type->is_resolved() ||
+        frame_type->guarantee().value() != TimeSeriesGuarantee::ordinary)
+        throw std::invalid_argument{"TSF runtime requires a resolved ordinary frame series type"};
+    const auto &runtime = details::canonical_frame_series_runtime_type(
+        type, [](const TimeSeriesType &series_type) -> std::unique_ptr<TimeSeriesRuntimeType> {
+            return std::make_unique<details::NativeFrameSeriesRuntimeType>(series_type);
+        });
+    register_time_series_runtime_type(runtime);
+    const auto &frame_runtime = static_cast<const FrameSeriesRuntimeType &>(runtime);
+    frame_series_scalar_runtime_type(frame_runtime);
+    return runtime;
 }
 
 template <template <template <typename, auto...> typename> typename Schema>
 const TimeSeriesRuntimeType &frame_view_time_series_runtime_type(const TimeSeriesType &type) {
-    if constexpr (bg::details::schema_variable_template<Schema>) {
-        throw std::logic_error{"runtime-schema TSF views are not implemented"};
-    } else {
-        const auto &canonical = frame_time_series_type<Schema>(TimeSeriesGuarantee::ordinary);
-        if (&type != &canonical)
-            throw std::invalid_argument{"TSF view runtime requires resolved ordinary type"};
-        static const auto runtime = details::FrameViewSeriesRuntimeType<Schema>{canonical};
-        return runtime;
+    const auto *series = dynamic_cast<const FrameSeriesType *>(std::addressof(type));
+    if (series == nullptr || !series->is_resolved() ||
+        series->guarantee().value() != TimeSeriesGuarantee::ordinary)
+        throw std::invalid_argument{"TSF view runtime requires a resolved ordinary type"};
+    static auto mutex = std::mutex{};
+    static auto runtimes =
+        std::unordered_map<const TimeSeriesType *, std::unique_ptr<details::RuntimeSchemaFrameViewSeriesRuntimeType>>{};
+    const auto lock = std::lock_guard{mutex};
+    auto found = runtimes.find(std::addressof(type));
+    if (found == runtimes.end()) {
+        auto runtime = std::make_unique<details::RuntimeSchemaFrameViewSeriesRuntimeType>(type);
+        found = runtimes.emplace(std::addressof(type), std::move(runtime)).first;
     }
+    frame_series_scalar_runtime_type(*found->second);
+    return *found->second;
 }
 
 } // namespace bg::frame
@@ -1490,47 +2459,86 @@ class In<frame::TSF<Schema, SeriesProperties...>, Properties...>
     using ActivityControl = InputActivityControl<ParsedProperties::dynamic_activity>;
 
   public:
-    explicit In(const TimeSeriesInputData &data, bool *activity = nullptr) noexcept
-        : ActivityControl{activity}, data_{data} {}
+    explicit In(const TimeSeriesInputData &data, bool *activity = nullptr)
+        : ActivityControl{activity}, data_{data}, field_ordinals_{extension_descriptor().template field_ordinals<Schema>()} {}
 
     bool valid() const noexcept { return data_.valid(); }
     bool became_valid() const noexcept { return data_.became_valid(); }
     bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
-    std::size_t size() const { return valid() ? storage().size : 0; }
-    bool contains(frame::row_id_t id) const { return valid() && storage().rows.has(id); }
-    template <std::size_t Index> auto cell(frame::row_id_t id) const {
-        using Cell = frame::details::frame_schema_cell_t<Index, Schema>;
-        const auto fields = util::aggregate_members(storage().columns);
-        return frame::ColumnSeriesView<Cell>{std::get<Index>(fields)}.cell(id);
+    const TimeSeriesInputData &input_data() const noexcept { return data_; }
+    std::size_t size() const { return valid() ? extension_descriptor().size : 0; }
+    bool contains(frame::row_id_t id) const { return valid() && extension_descriptor().rows.has(id); }
+    const bg::Schema &schema() const {
+        const auto input = extension_descriptor();
+        if (input.schema == nullptr)
+            throw std::logic_error{"frame input has no schema"};
+        return *input.schema;
     }
-    const void *row_domain() const { return valid() ? storage().rows.identity : nullptr; }
+    In<frame::TSC<SCALAR>> column(std::size_t index) const {
+        const auto &resolved_schema = schema();
+        if (index >= resolved_schema.field_count() ||
+            index > static_cast<std::size_t>(std::numeric_limits<item_id_t>::max()))
+            throw std::out_of_range{"frame column index"};
+        const auto item = data_.runtime_type().item(data_.data(), static_cast<item_id_t>(index));
+        const auto child_modified = data_.modified() && item.last_updated.valid() &&
+                                    item.last_updated.time() == data_.last_updated();
+        return In<frame::TSC<SCALAR>>{
+            TimeSeriesInputData{item.runtime_type, item.last_updated, item.value, child_modified}};
+    }
+    In<frame::TSC<SCALAR>> column(util::symbol name) const {
+        return column(extension_descriptor().field_index(name));
+    }
+    In<frame::TSC<SCALAR>> column(std::string_view name) const { return column(util::symbol{name}); }
+    template <std::size_t Index>
+        requires(Index < frame::details::frame_schema_reflection<Schema>::field_count &&
+                 frame::cell_type<frame::details::frame_schema_cell_t<Index, Schema>>)
+    auto cell(frame::row_id_t id) const {
+        using Cell = frame::details::frame_schema_cell_t<Index, Schema>;
+        auto input = extension_descriptor();
+        auto column = std::optional<frame::ColumnSeriesView<Cell>>{};
+        const auto binding = input.column(field_ordinals_[Index]);
+        if (binding.cell_type != std::addressof(cpp_scalar_type<Cell>()) || binding.bind_column_series_view == nullptr)
+            throw std::invalid_argument{"frame column type does not match the requested cell type"};
+        binding.bind_column_series_view(binding.payload, std::addressof(column));
+        return column->cell(id);
+    }
+    const void *row_domain() const { return valid() ? extension_descriptor().rows.identity : nullptr; }
     Scalar<frame::Frame<Schema>> value_view() const {
-        return Scalar<frame::Frame<Schema>>::from(storage());
+        const auto &series_runtime = static_cast<const frame::FrameSeriesRuntimeType &>(data_.runtime_type());
+        return Scalar<frame::Frame<Schema>>::from(series_runtime.scalar_runtime_type(), data_.data());
     }
     template <typename Function> void for_each_row(Function &&function) const {
         if (!valid())
             return;
         auto position = std::size_t{};
-        storage().rows.each([&](frame::row_id_t id) { std::invoke(function, id, position++); });
+        extension_descriptor().rows.each([&](frame::row_id_t id) { std::invoke(function, id, position++); });
     }
     template <typename Function> void for_each_changed(Function &&function) const {
-        if (!changes_current() || storage().changed == nullptr)
+        const auto input = extension_descriptor();
+        if (!changes_current(input) || input.changed == nullptr)
             return;
-        for (auto id : *storage().changed)
+        for (auto id : *input.changed)
             std::invoke(function, id);
     }
     template <typename Function> void for_each_removed(Function &&function) const {
-        if (!changes_current() || storage().removed == nullptr)
+        const auto input = extension_descriptor();
+        if (!changes_current(input) || input.removed == nullptr)
             return;
-        for (auto id : *storage().removed)
+        for (auto id : *input.removed)
             std::invoke(function, id);
     }
-    template <std::size_t Index, typename Function> void for_each_modified(Function &&function) const {
-        if (!changes_current() || storage().modified[Index] == nullptr)
+    template <std::size_t Index, typename Function>
+        requires(Index < frame::details::frame_schema_reflection<Schema>::field_count)
+    void for_each_modified(Function &&function) const {
+        const auto input = extension_descriptor();
+        const auto *modified_rows = changes_current(input)
+                                        ? input.modified_at(field_ordinals_[Index])
+                                        : nullptr;
+        if (modified_rows == nullptr)
             return;
-        for (auto id : *storage().modified[Index])
+        for (auto id : *modified_rows)
             std::invoke(function, id);
     }
     frame::FrameReadStorage extension_descriptor() const noexcept {
@@ -1552,12 +2560,11 @@ class In<frame::TSF<Schema, SeriesProperties...>, Properties...>
     using time_series_type = frame::TSF<Schema, SeriesProperties...>;
 
   private:
-    const frame::FrameStorage<Schema> &storage() const {
-        return static_cast<const frame::FrameSeriesRuntimeType &>(data_.runtime_type())
-            .input_storage(data_.data()).template exact_storage<Schema>();
+    bool changes_current(const frame::FrameReadStorage &input) const {
+        return modified() && input.change_time == last_updated();
     }
-    bool changes_current() const { return modified() && storage().change_time == last_updated(); }
     TimeSeriesInputData data_;
+    std::array<std::size_t, frame::details::frame_schema_reflection<Schema>::field_count> field_ordinals_;
 };
 
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
@@ -1565,13 +2572,104 @@ class Out<frame::TSF<Schema, Properties...>> {
   public:
     explicit Out(TimeSeriesOutputBinding binding) noexcept : binding_{std::move(binding)} {}
 
-    frame::row_id_t add(const frame::Row<Schema> &row) const {
-        const auto id = storage().add(row, binding_->context().evaluation_time(), binding_->allocator());
+    const bg::Schema &schema() const {
+        return static_cast<const bg::Schema &>(
+            static_cast<const frame::FrameSeriesType &>(binding_->runtime_type().type()).schema_type());
+    }
+
+    frame::row_id_t add(const frame::Row<Schema> &row) const
+        requires(!bg::details::schema_variable_template<Schema> &&
+                 frame::details::frame_schema_declaration_traits<Schema>::fields_supported)
+    {
+        const auto id = [&] {
+            if constexpr (frame::details::frame_schema_declaration_traits<Schema>::has_generic_fields)
+                return add_typed_row<Schema>(row);
+            else
+                return storage().add(row, binding_->context().evaluation_time(), binding_->allocator());
+        }();
         binding_->publish();
         return id;
     }
-    void set(frame::row_id_t id, const frame::RowPatch<Schema> &patch) const {
-        if (storage().set(id, patch, binding_->context().evaluation_time(), binding_->allocator()))
+
+    frame::row_id_t add(std::span<const std::optional<Scalar<>>> row) const {
+        const auto &fields = schema();
+        if (row.size() != fields.field_count())
+            throw std::invalid_argument{"frame row field count does not match its schema"};
+
+        auto cell_values = std::vector<CellValue>(row.size());
+        auto values = std::vector<const void *>(row.size());
+        for (auto index = std::size_t{}; index != row.size(); ++index) {
+            values[index] = decode_cell(row[index], *fields.field(index).type, cell_values[index]);
+        }
+
+        const auto id = native_storage().add(values, binding_->context().evaluation_time(), binding_->allocator());
+        binding_->publish();
+        return id;
+    }
+
+    template <template <template <typename, auto...> typename> typename SourceSchema>
+        requires(!bg::details::schema_variable_template<SourceSchema> &&
+                 frame::details::frame_schema_declaration_traits<SourceSchema>::fields_supported)
+    frame::row_id_t add(const frame::Row<SourceSchema> &row) const {
+        const auto id = add_typed_row<SourceSchema>(row);
+        binding_->publish();
+        return id;
+    }
+
+    template <template <template <typename, auto...> typename> typename SourceSchema>
+        requires(!bg::details::schema_variable_template<SourceSchema> &&
+                 frame::details::frame_schema_declaration_traits<SourceSchema>::fields_supported)
+    frame::row_id_t add(const frame::RowPatch<SourceSchema> &row) const {
+        const auto id = [&] {
+            if constexpr (!frame::details::frame_schema_declaration_traits<SourceSchema>::has_generic_fields &&
+                          std::is_same_v<frame::RowPatch<SourceSchema>, frame::RowPatch<Schema>>) {
+                const auto fields = frame::details::frame_schema_reflection<SourceSchema>::fields(row);
+                constexpr auto field_count = frame::details::frame_schema_reflection<SourceSchema>::field_count;
+                const auto values = row_value_pointers(fields, std::make_index_sequence<field_count>{});
+                return native_storage().add(values, binding_->context().evaluation_time(), binding_->allocator());
+            } else {
+                return add_typed_row<SourceSchema>(row);
+            }
+        }();
+        binding_->publish();
+        return id;
+    }
+
+    void set(frame::row_id_t id, const frame::RowPatch<Schema> &patch) const
+        requires(!bg::details::schema_variable_template<Schema> &&
+                 frame::details::frame_schema_declaration_traits<Schema>::fields_supported)
+    {
+        const auto changed = [&] {
+            if constexpr (frame::details::frame_schema_declaration_traits<Schema>::has_generic_fields)
+                return set_typed_patch<Schema>(id, patch);
+            else
+                return storage().set(id, patch, binding_->context().evaluation_time(), binding_->allocator());
+        }();
+        if (changed)
+            binding_->publish();
+    }
+
+    void set(frame::row_id_t id,
+             std::span<const std::pair<util::symbol, std::optional<Scalar<>>>> patch) const {
+        const auto &fields = schema();
+        auto cell_values = std::vector<CellValue>(fields.field_count());
+        auto patches = std::vector<frame::details::NativeFrameCellPatch>(fields.field_count());
+        for (const auto &[name, value] : patch) {
+            const auto index = schema_field_index(fields, name);
+            if (patches[index].changed)
+                throw std::invalid_argument{"frame patch contains a duplicate field name"};
+            patches[index] = {true, decode_cell(value, *fields.field(index).type, cell_values[index])};
+        }
+
+        if (native_storage().set(id, patches, binding_->context().evaluation_time(), binding_->allocator()))
+            binding_->publish();
+    }
+
+    template <template <template <typename, auto...> typename> typename SourceSchema>
+        requires(!bg::details::schema_variable_template<SourceSchema> &&
+                 frame::details::frame_schema_declaration_traits<SourceSchema>::fields_supported)
+    void set(frame::row_id_t id, const frame::RowPatch<SourceSchema> &patch) const {
+        if (set_typed_patch<SourceSchema>(id, patch))
             binding_->publish();
     }
     bool erase(frame::row_id_t id) const {
@@ -1593,8 +2691,172 @@ class Out<frame::TSF<Schema, Properties...>> {
     using time_series_type = frame::TSF<Schema, Properties...>;
 
   private:
-    frame::NativeFrame<Schema> &storage() const noexcept {
-        return *static_cast<frame::NativeFrame<Schema> *>(binding_->mutable_data());
+    using CellValue = std::variant<std::optional<i64>, std::optional<double>>;
+
+    static const void *decode_cell(const std::optional<Scalar<>> &source, const Type &cell_type,
+                                   CellValue &destination) {
+        if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<i64>())) {
+            auto &value = destination.emplace<0>();
+            if (source) {
+                if (std::addressof(source->type()) != std::addressof(cpp_scalar_type<i64>()))
+                    throw std::invalid_argument{"frame cell type does not match its schema"};
+                const auto typed_value = Scalar<i64>::from(*source);
+                value = typed_value.value();
+            }
+            return std::addressof(value);
+        }
+        if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<double>())) {
+            auto &value = destination.emplace<1>();
+            if (source) {
+                if (std::addressof(source->type()) != std::addressof(cpp_scalar_type<double>()))
+                    throw std::invalid_argument{"frame cell type does not match its schema"};
+                const auto typed_value = Scalar<double>::from(*source);
+                value = typed_value.value();
+            }
+            return std::addressof(value);
+        }
+        throw std::invalid_argument{"frame schema has an unsupported cell type"};
+    }
+
+    template <template <template <typename, auto...> typename> typename SourceSchema>
+    auto typed_schema_mapping() const {
+        constexpr auto field_count = frame::details::frame_schema_reflection<SourceSchema>::field_count;
+        const auto &source_schema = static_cast<const bg::Schema &>(frame::frame_schema_type<SourceSchema>());
+        const auto &target_schema = schema();
+        if (source_schema.field_count() != field_count || source_schema.field_count() != target_schema.field_count())
+            throw std::invalid_argument{"typed frame row schema does not match the output schema"};
+
+        auto target_indices = std::array<std::size_t, field_count>{};
+        auto type_map = TypeMap{};
+        for (std::size_t index = 0; index != source_schema.field_count(); ++index) {
+            const auto &source_field = source_schema.field(index);
+            const auto target_index = schema_field_index(target_schema, source_field.name);
+            const auto &target_field = target_schema.field(target_index);
+            auto matches = false;
+            if constexpr (frame::details::frame_schema_declaration_traits<SourceSchema>::has_generic_fields)
+                matches = source_field.type->match(*target_field.type, type_map);
+            else
+                matches = source_field.type == target_field.type;
+            if (!matches)
+                throw std::invalid_argument{"typed frame row schema does not match the output schema"};
+            target_indices[index] = target_index;
+        }
+        return target_indices;
+    }
+
+    template <template <template <typename, auto...> typename> typename SourceSchema, std::size_t Index,
+              typename Fields, std::size_t FieldCount>
+    const void *typed_cell_value(const Fields &fields, const std::array<std::size_t, FieldCount> &target_indices,
+                                 std::array<CellValue, FieldCount> &cell_values) const {
+        using SourceCell = frame::details::frame_schema_cell_t<Index, SourceSchema>;
+        const auto &source = std::get<Index>(fields).value();
+        if constexpr (bg::details::scalar_variable<SourceCell>) {
+            const auto target = target_indices[Index];
+            return decode_cell(source, *schema().field(target).type, cell_values[Index]);
+        } else {
+            return std::addressof(source);
+        }
+    }
+
+    template <template <template <typename, auto...> typename> typename SourceSchema, typename Fields,
+              std::size_t FieldCount, std::size_t... Index>
+    auto typed_row_values(const Fields &fields, const std::array<std::size_t, FieldCount> &target_indices,
+                          std::array<CellValue, FieldCount> &cell_values,
+                          std::index_sequence<Index...>) const {
+        return std::array<const void *, sizeof...(Index)>{
+            typed_cell_value<SourceSchema, Index>(fields, target_indices, cell_values)...};
+    }
+
+    template <template <template <typename, auto...> typename> typename SourceSchema, typename RowType>
+    frame::row_id_t add_typed_row(const RowType &row) const {
+        constexpr auto field_count = frame::details::frame_schema_reflection<SourceSchema>::field_count;
+        const auto fields = frame::details::frame_schema_reflection<SourceSchema>::fields(row);
+        if constexpr (frame::details::frame_schema_declaration_traits<SourceSchema>::has_generic_fields) {
+            const auto target_indices = typed_schema_mapping<SourceSchema>();
+            auto cell_values = std::array<CellValue, field_count>{};
+            const auto source_values = typed_row_values<SourceSchema>(
+                fields, target_indices, cell_values, std::make_index_sequence<field_count>{});
+            auto values = std::array<const void *, field_count>{};
+            for (auto index = std::size_t{}; index != field_count; ++index)
+                values[target_indices[index]] = source_values[index];
+            return native_storage().add(values, binding_->context().evaluation_time(), binding_->allocator());
+        } else {
+            const auto target_indices = typed_schema_mapping<SourceSchema>();
+            const auto source_values = row_value_pointers(fields, std::make_index_sequence<field_count>{});
+            auto values = std::array<const void *, field_count>{};
+            for (auto index = std::size_t{}; index != field_count; ++index)
+                values[target_indices[index]] = source_values[index];
+            return native_storage().add(values, binding_->context().evaluation_time(), binding_->allocator());
+        }
+    }
+
+    template <template <template <typename, auto...> typename> typename SourceSchema, std::size_t Index,
+              typename Fields, std::size_t FieldCount>
+    frame::details::NativeFrameCellPatch typed_patch_value(
+        const Fields &fields, const std::array<std::size_t, FieldCount> &target_indices,
+        std::array<CellValue, FieldCount> &cell_values) const {
+        const auto &source = std::get<Index>(fields);
+        if (!source.changed())
+            return {};
+        return {true, typed_cell_value<SourceSchema, Index>(fields, target_indices, cell_values)};
+    }
+
+    template <template <template <typename, auto...> typename> typename SourceSchema, typename Fields,
+              std::size_t FieldCount, std::size_t... Index>
+    auto typed_patch_values(const Fields &fields, const std::array<std::size_t, FieldCount> &target_indices,
+                            std::array<CellValue, FieldCount> &cell_values,
+                            std::index_sequence<Index...>) const {
+        return std::array<frame::details::NativeFrameCellPatch, sizeof...(Index)>{
+            typed_patch_value<SourceSchema, Index>(fields, target_indices, cell_values)...};
+    }
+
+    template <template <template <typename, auto...> typename> typename SourceSchema, typename RowPatchType>
+    bool set_typed_patch(frame::row_id_t id, const RowPatchType &patch) const {
+        constexpr auto field_count = frame::details::frame_schema_reflection<SourceSchema>::field_count;
+        const auto target_indices = typed_schema_mapping<SourceSchema>();
+        const auto fields = frame::details::frame_schema_reflection<SourceSchema>::fields(patch);
+        if constexpr (frame::details::frame_schema_declaration_traits<SourceSchema>::has_generic_fields) {
+            auto cell_values = std::array<CellValue, field_count>{};
+            const auto source_patches = typed_patch_values<SourceSchema>(
+                fields, target_indices, cell_values, std::make_index_sequence<field_count>{});
+            auto patches = std::array<frame::details::NativeFrameCellPatch, field_count>{};
+            for (auto index = std::size_t{}; index != field_count; ++index)
+                patches[target_indices[index]] = source_patches[index];
+            return native_storage().set(id, patches, binding_->context().evaluation_time(), binding_->allocator());
+        } else {
+            const auto source_patches = row_patch_pointers(fields, std::make_index_sequence<field_count>{});
+            auto patches = std::array<frame::details::NativeFrameCellPatch, field_count>{};
+            for (auto index = std::size_t{}; index != field_count; ++index)
+                patches[target_indices[index]] = source_patches[index];
+            return native_storage().set(id, patches, binding_->context().evaluation_time(), binding_->allocator());
+        }
+    }
+
+    template <typename Fields, std::size_t... Index>
+    static auto row_value_pointers(const Fields &fields, std::index_sequence<Index...>) {
+        return std::array<const void *, sizeof...(Index)>{
+            static_cast<const void *>(std::addressof(std::get<Index>(fields).value()))...};
+    }
+
+    template <typename Fields, std::size_t... Index>
+    static auto row_patch_pointers(const Fields &fields, std::index_sequence<Index...>) {
+        return std::array<frame::details::NativeFrameCellPatch, sizeof...(Index)>{
+            frame::details::NativeFrameCellPatch{std::get<Index>(fields).changed(),
+                                                  std::addressof(std::get<Index>(fields).value())}...};
+    }
+
+    static std::size_t schema_field_index(const bg::Schema &fields, util::symbol name) {
+        for (auto index = std::size_t{}; index != fields.field_count(); ++index)
+            if (fields.field(index).name == name)
+                return index;
+        throw std::out_of_range{"unknown frame field name"};
+    }
+
+    frame::NativeFrame<Schema> storage() const noexcept {
+        return frame::NativeFrame<Schema>{binding_->mutable_data()};
+    }
+    frame::NativeFrameStorage &native_storage() const noexcept {
+        return *static_cast<frame::NativeFrameStorage *>(binding_->mutable_data());
     }
     TimeSeriesOutputBinding binding_;
 };
@@ -1604,21 +2866,35 @@ class Out<frame::TSF<Schema, Properties...>, frame::view> {
   public:
     explicit Out(TimeSeriesOutputBinding binding) noexcept : binding_{std::move(binding)} {}
 
+    const bg::Schema &schema() const {
+        return static_cast<const bg::Schema &>(
+            static_cast<const frame::FrameSeriesType &>(binding_->runtime_type().type()).schema_type());
+    }
+
     template <template <template <typename, auto...> typename> typename SourceSchema,
-              util::compile_time_string... Names>
-    bool bind_projection(const In<frame::TSF<SourceSchema>> &source, frame::ColumnNames<Names...>) const {
+              auto... SeriesProperties, auto... InputProperties>
+    bool bind_projection(const In<frame::TSF<SourceSchema, SeriesProperties...>, InputProperties...> &source,
+                         std::span<const std::size_t> source_indices) const {
         const auto input = source.extension_descriptor();
-        auto &output = storage();
+        auto &output = runtime_storage();
+        if (input.schema == nullptr)
+            throw std::logic_error{"TSF view has no resolved source schema"};
+        if (source_indices.size() != output.layout->fields.size())
+            throw std::invalid_argument{"frame view projection column count does not match its output schema"};
+        for (auto index = std::size_t{}; index != source_indices.size(); ++index) {
+            const auto source_index = source_indices[index];
+            if (source_index >= input.schema->field_count())
+                throw std::out_of_range{"frame view projection source column index"};
+            if (input.schema->field(source_index).type != output.layout->schema->field(index).type)
+                throw std::invalid_argument{"frame view projection column type does not match its output schema"};
+        }
         if (!input.valid) {
             if (output.valid)
                 binding_->invalidate();
             return false;
         }
-
-        const auto changed = output.bind_projection(input.template exact_storage<SourceSchema>(), input.modified,
-                                                    input.last_updated,
-                                                    binding_->context().evaluation_time(), binding_->allocator(),
-                                                    frame::ColumnNames<Names...>{});
+        const auto changed = output.bind(input, source_indices, std::nullopt, nullptr, nullptr,
+                                         binding_->context().evaluation_time(), binding_->allocator());
         if (changed) {
             for (auto index : output.changed_columns)
                 binding_->publish_item(binding_->runtime_type(), static_cast<item_id_t>(index));
@@ -1627,23 +2903,53 @@ class Out<frame::TSF<Schema, Properties...>, frame::view> {
         return changed;
     }
 
+    template <template <template <typename, auto...> typename> typename SourceSchema,
+              auto... SeriesProperties, auto... InputProperties, util::compile_time_string... Names>
+    bool bind_projection(
+        const In<frame::TSF<SourceSchema, SeriesProperties...>, InputProperties...> &source,
+        frame::ColumnNames<Names...>) const {
+        const auto input = source.extension_descriptor();
+        const auto source_indices = std::array<std::size_t, sizeof...(Names)>{
+            input.field_index(util::symbol{Names.view()})...};
+        return bind_projection(source, std::span<const std::size_t>{source_indices});
+    }
+
+    template <template <template <typename, auto...> typename> typename SourceSchema,
+              auto... SeriesProperties, auto... InputProperties>
+    bool bind_projection(
+        const In<frame::TSF<SourceSchema, SeriesProperties...>, InputProperties...> &source,
+        std::span<const util::symbol> source_names) const {
+        const auto input = source.extension_descriptor();
+        if (source_names.size() != schema().field_count())
+            throw std::invalid_argument{"frame view projection column count does not match its output schema"};
+        auto source_indices = std::vector<std::size_t>{};
+        source_indices.reserve(source_names.size());
+        for (const auto name : source_names)
+            source_indices.push_back(input.field_index(name));
+        return bind_projection(source, std::span<const std::size_t>{source_indices});
+    }
+
     template <util::compile_time_string Name,
               template <template <typename, auto...> typename> typename SourceSchema,
               auto... SeriesProperties, auto... InputProperties, typename Predicate>
     bool bind_filter(const In<frame::TSF<SourceSchema, SeriesProperties...>, InputProperties...> &source,
                      Predicate &&predicate) const {
         const auto input = source.extension_descriptor();
-        auto &output = storage();
+        auto &output = runtime_storage();
         if (!input.valid) {
             if (output.valid)
                 binding_->invalidate();
             return false;
         }
-
-        const auto changed = output.template bind_filter<Name>(
-            input.template exact_storage<SourceSchema>(), input.modified, input.last_updated,
-            binding_->context().evaluation_time(),
-            binding_->allocator(), std::forward<Predicate>(predicate));
+        using PredicateType = std::remove_reference_t<Predicate>;
+        auto *predicate_context = std::addressof(predicate);
+        const auto predicate_function = [](void *context, frame::row_id_t id) {
+            return std::invoke(*static_cast<PredicateType *>(context), id);
+        };
+        const auto predicate_index = output.field_index(util::symbol{Name.view()});
+        const auto changed = output.bind(input, {}, predicate_index, predicate_context,
+                                         predicate_function, binding_->context().evaluation_time(),
+                                         binding_->allocator());
         if (changed) {
             for (auto index : output.changed_columns)
                 binding_->publish_item(binding_->runtime_type(), static_cast<item_id_t>(index));
@@ -1659,19 +2965,21 @@ class Out<frame::TSF<Schema, Properties...>, frame::view> {
     using time_series_type = frame::TSF<Schema, Properties...>;
 
   private:
-    frame::FrameViewOutputStorage<Schema> &storage() const noexcept {
-        return *static_cast<frame::FrameViewOutputStorage<Schema> *>(binding_->mutable_data());
+    frame::RuntimeFrameViewOutputStorage &runtime_storage() const noexcept {
+        return *static_cast<frame::RuntimeFrameViewOutputStorage *>(binding_->mutable_data());
     }
+
     TimeSeriesOutputBinding binding_;
 };
 
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
 struct time_series_type_traits<frame::TSF<Schema, Properties...>> {
     using semantic_type = TimeSeriesType;
-    static constexpr bool generic = details::schema_variable_template<Schema>;
-    static constexpr bool supported = true;
+    static constexpr bool generic = frame::details::frame_schema_declaration_traits<Schema>::is_schema_variable ||
+                                    frame::details::frame_schema_declaration_traits<Schema>::has_generic_fields;
+    static constexpr bool supported = frame::details::frame_schema_declaration_traits<Schema>::fields_supported;
 
-    template <typename Scope, std::size_t Index, bool Input>
+    template <typename Scope, std::size_t Index, TimeSeriesTypeRole Role>
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {
         if (!guarantee.is_resolved()) {
             return frame::frame_series_type(frame::frame_schema_type<Schema>(), guarantee);
@@ -1682,26 +2990,24 @@ struct time_series_type_traits<frame::TSF<Schema, Properties...>> {
 
 template <template <template <typename, auto...> typename> typename Schema>
 struct scalar_declaration_traits<frame::Frame<Schema>> {
-    static constexpr bool generic = details::schema_variable_template<Schema>;
+    static constexpr bool generic = frame::details::frame_schema_declaration_traits<Schema>::is_schema_variable ||
+                                    frame::details::frame_schema_declaration_traits<Schema>::has_generic_fields;
     static constexpr bool is_collection = false;
     static constexpr bool supports_implicit_argument = false;
-    static constexpr bool supports_time_series = true;
+    static constexpr bool supports_time_series = frame::details::frame_schema_declaration_traits<Schema>::fields_supported;
 };
 
 template <template <template <typename, auto...> typename> typename Schema>
 struct declaration_variable_traits<frame::Frame<Schema>> {
     template <typename Visitor> static void for_each(Visitor &&visitor) {
-        if constexpr (details::schema_variable_template<Schema>) {
-            using Declaration = schema_type<Schema>;
-            std::forward<Visitor>(visitor).template operator()<Declaration>(
-                details::schema_variable_instance<Schema>());
-        }
+        frame::details::frame_schema_declaration_traits<Schema>::for_each(std::forward<Visitor>(visitor));
     }
 };
 
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
 struct declaration_variable_traits<frame::TSF<Schema, Properties...>> {
     template <typename Visitor> static void for_each(Visitor &&visitor) {
+        frame::details::frame_schema_declaration_traits<Schema>::for_each(visitor);
         TimeSeriesDeclarationProperties<Properties...>::for_each_variable(std::forward<Visitor>(visitor));
     }
 };
@@ -1739,18 +3045,45 @@ struct ProjectNode {
 template <util::compile_time_string Name,
           template <template <typename, auto...> typename> typename Schema, typename Threshold>
 struct FilterGreaterThanNode {
-    static constexpr auto predicate_index = frame_column_index<Name, Schema>();
-    static_assert(predicate_index < util::aggregate_member_count<Schema<Column>>,
-                  "filter names an unknown predicate column");
-    using Cell = frame_schema_cell_t<predicate_index, Schema>;
-    static_assert(cell_type<Cell>, "filter predicate column must have a supported numeric cell type");
     static_assert(std::is_arithmetic_v<Threshold>, "filter threshold must be numeric");
 
     void operator()(In<TSF<Schema>, optional> input, Threshold threshold, Out<TSF<Schema>, frame::view> output) const {
-        output.template bind_filter<Name>(input, [&](row_id_t id) {
-            const auto value = input.template cell<predicate_index>(id);
-            return value && *value > threshold;
-        });
+        if constexpr (bg::details::schema_variable_template<Schema> ||
+                      frame_schema_declaration_traits<Schema>::has_generic_fields) {
+            if (!input.valid()) {
+                output.template bind_filter<Name>(input, [](row_id_t) { return false; });
+                return;
+            }
+            const auto column = input.column(util::symbol{Name.view()});
+            const auto &column_type = static_cast<const ColumnSeriesType &>(column.runtime_type().type());
+            if (std::addressof(column_type.cell_type()) == std::addressof(cpp_scalar_type<i64>())) {
+                const auto typed_column = column.template input<i64>();
+                output.template bind_filter<Name>(input, [&](row_id_t id) {
+                    const auto value = typed_column.cell(id);
+                    return value && *value > threshold;
+                });
+                return;
+            }
+            if (std::addressof(column_type.cell_type()) == std::addressof(cpp_scalar_type<double>())) {
+                const auto typed_column = column.template input<double>();
+                output.template bind_filter<Name>(input, [&](row_id_t id) {
+                    const auto value = typed_column.cell(id);
+                    return value && *value > threshold;
+                });
+                return;
+            }
+            throw std::invalid_argument{"filter predicate column has an unsupported cell type"};
+        } else {
+            constexpr auto predicate_index = frame_column_index<Name, Schema>();
+            static_assert(predicate_index < bg::details::hierarchical_scalar_schema_reflection<Schema>::field_count,
+                          "filter names an unknown predicate column");
+            using Cell = frame_schema_cell_t<predicate_index, Schema>;
+            static_assert(cell_type<Cell>, "filter predicate column must have a supported numeric cell type");
+            output.template bind_filter<Name>(input, [&](row_id_t id) {
+                const auto value = input.template cell<predicate_index>(id);
+                return value && *value > threshold;
+            });
+        }
     }
 };
 
@@ -1780,91 +3113,147 @@ namespace bg {
 template <template <template <typename, auto...> typename> typename Schema>
 struct scalar_type_traits<frame::Frame<Schema>> {
     static const ScalarType &type() {
-        return frame::frame_type(frame::frame_schema_type<Schema>());
+        const auto &type = frame::frame_type(frame::frame_schema_type<Schema>());
+        if (type.is_resolved())
+            frame::frame_snapshot_runtime_type(type);
+        return type;
     }
 };
 
 template <template <template <typename, auto...> typename> typename Schema>
 struct scalar_storage_traits<frame::Frame<Schema>> {
-    using stored_type = frame::FrameStorage<Schema>;
+    using stored_type = frame::FrameSnapshotStorage;
     using value_type = frame::FrameView<Schema>;
     static constexpr bool supports_byte_copy_initialization = true;
     static constexpr bool supports_equality = false;
     static constexpr bool supports_hash = false;
+    static constexpr bool supports_alternative_layouts = true;
     static constexpr bool uses_variable_memory = true;
     static constexpr bool requires_finalization = true;
     static constexpr bool assign_uses_memory_resource = true;
 
-    static value_type read(const stored_type &source) noexcept {
-        constexpr auto member_count = util::aggregate_member_count<Schema<frame::ColumnStorage>>;
-        return value_type{
-            frame::details::frame_columns_view<Schema>(source.columns, std::make_index_sequence<member_count>{}),
-            source.size};
+    static const ScalarRuntimeType &runtime_type(const ScalarType &type) {
+        return frame::frame_snapshot_runtime_type(static_cast<const frame::FrameType &>(type));
+    }
+
+    static value_type read(const stored_type &source) {
+        const auto input = cpp_scalar_runtime_type<frame::Frame<Schema>>().borrow(std::addressof(source));
+        return read_value(input);
+    }
+
+    static value_type read_value(const ScalarData &source) {
+        const auto &runtime = static_cast<const frame::FrameScalarRuntimeType &>(source.runtime_type());
+        return frame::details::frame_view<Schema>(runtime.read_storage(source), source);
+    }
+
+    static ScalarData borrow_value(const value_type &value) noexcept {
+        if (!value.source_data().empty())
+            return value.source_data();
+        return frame::details::frame_view_scalar_runtime_type<Schema>().borrow(std::addressof(value));
+    }
+
+    static const ScalarRuntimeType &runtime_type_for_copy(const ScalarData &source) {
+        const auto &runtime = static_cast<const frame::FrameScalarRuntimeType &>(source.runtime_type());
+        const auto storage = runtime.read_storage(source);
+        if (storage.schema == nullptr)
+            throw std::invalid_argument{"frame scalar source has no schema"};
+        return frame::frame_snapshot_runtime_type(frame::frame_type(*storage.schema));
     }
 
     static void construct(stored_type *destination, value_type source, allocator &memory) {
         std::construct_at(destination);
         try {
-            copy_columns(*destination, source, memory);
-            destination->size = source.size();
+            copy_value(*destination, borrow_value(source), memory);
         } catch (...) {
-            release_columns(*destination);
+            if (auto *owner = std::exchange(destination->owner, nullptr))
+                owner->release();
             std::destroy_at(destination);
             throw;
         }
     }
 
     static void copy_construct(stored_type *destination, const stored_type &source, allocator &memory) {
-        construct(destination, read(source), memory);
+        static_cast<void>(memory);
+        auto *owner = source.owner;
+        if (owner != nullptr)
+            owner->retain();
+        std::construct_at(destination, stored_type{owner});
     }
 
     static void assign(stored_type &destination, value_type source, allocator &memory) {
         auto replacement = stored_type{};
-        auto release_replacement = util::scope_exit{[&]() noexcept { release_columns(replacement); }};
-        copy_columns(replacement, source, memory);
-        replacement.size = source.size();
-        std::swap(destination, replacement);
+        construct(std::addressof(replacement), std::move(source), memory);
+        auto *previous = std::exchange(destination.owner, std::exchange(replacement.owner, nullptr));
+        if (previous != nullptr)
+            previous->release();
+        std::destroy_at(std::addressof(replacement));
     }
 
     static void destroy(stored_type *value, allocator &) noexcept {
-        release_columns(*value);
+        if (auto *owner = std::exchange(value->owner, nullptr))
+            owner->release();
         std::destroy_at(value);
     }
 
   private:
-    template <std::size_t... Index>
-    static void copy_columns(stored_type &destination, value_type source, allocator &memory,
-                             std::index_sequence<Index...>) {
-        auto destination_fields = util::aggregate_members(destination.columns);
-        auto source_fields = util::aggregate_members(source.columns());
-        (scalar_storage_traits<typename frame::details::frame_column_storage<
-             std::remove_cvref_t<decltype(std::get<Index>(destination_fields))>>::scalar_type>::assign(
-             std::get<Index>(destination_fields), std::get<Index>(source_fields), memory),
-         ...);
-    }
-
-    static void copy_columns(stored_type &destination, value_type source, allocator &memory) {
-        constexpr auto member_count = util::aggregate_member_count<Schema<frame::ColumnStorage>>;
-        copy_columns(destination, source, memory, std::make_index_sequence<member_count>{});
-    }
-
-    template <std::size_t... Index>
-    static void release_columns(stored_type &value, std::index_sequence<Index...>) noexcept {
-        auto fields = util::aggregate_members(value.columns);
-        (([&] {
-             auto &field = std::get<Index>(fields);
-             if (field.snapshot != nullptr) {
-                 field.snapshot->release();
-                 field.snapshot = nullptr;
-             }
-         }()),
-         ...);
-    }
-
-    static void release_columns(stored_type &value) noexcept {
-        constexpr auto member_count = util::aggregate_member_count<Schema<frame::ColumnStorage>>;
-        release_columns(value, std::make_index_sequence<member_count>{});
+    static void copy_value(stored_type &destination, const ScalarData &source, allocator &memory) {
+        frame::details::copy_frame_snapshot_value(destination, source, memory);
     }
 };
 
 } // namespace bg
+
+namespace bg::frame {
+
+inline ScalarValue<Frame<bg::SCHEMA>> make_frame_value(allocator &memory, const bg::Schema &schema,
+                                                       std::size_t row_count,
+                                                       std::span<const ColumnView<>> columns) {
+    if (!schema.is_resolved())
+        throw std::invalid_argument{"frame value requires a resolved schema"};
+    if (schema.field_count() != columns.size())
+        throw std::invalid_argument{"frame column count does not match the schema"};
+
+    for (auto index = std::size_t{}; index != columns.size(); ++index) {
+        const auto &field = schema.field(index);
+        if (field.optional)
+            throw std::invalid_argument{"frame schema columns must be present"};
+        const auto &column = columns[index];
+        const auto binding = details::runtime_frame_column_binding(column);
+        if (field.type != binding.cell_type)
+            throw std::invalid_argument{"frame column type does not match the schema"};
+        if (binding.cell_type == std::addressof(cpp_scalar_type<i64>())) {
+            if (column.view<i64>().size() != row_count)
+                throw std::invalid_argument{"frame columns have different lengths"};
+        } else if (column.view<double>().size() != row_count) {
+            throw std::invalid_argument{"frame columns have different lengths"};
+        }
+    }
+
+    auto source = FrameReadStorage{};
+    source.schema = std::addressof(schema);
+    source.valid = true;
+    source.size = row_count;
+    source.columns_context = std::addressof(columns);
+    source.column_binding = [](const void *context, std::size_t index) {
+        const auto &values = *static_cast<const std::span<const ColumnView<> > *>(context);
+        return details::runtime_frame_column_binding(values[index]);
+    };
+
+    auto staged = FrameSnapshotStorage{};
+    details::copy_frame_snapshot_storage(staged, details::native_frame_layout(schema), source, memory);
+    auto release_staged = util::scope_exit{[&]() noexcept {
+        if (auto *owner = std::exchange(staged.owner, nullptr))
+            owner->release();
+    }};
+    const auto &runtime = frame_snapshot_runtime_type(frame_type(schema));
+    const auto borrowed = Scalar<Frame<bg::SCHEMA>>::from(runtime, std::addressof(staged));
+    return ScalarValue<Frame<bg::SCHEMA>>{borrowed, memory};
+}
+
+inline ScalarValue<Frame<bg::SCHEMA>> make_frame_value(const bg::Schema &schema, std::size_t row_count,
+                                                       std::span<const ColumnView<>> columns) {
+    auto memory = bg::details::current_scalar_allocator();
+    return make_frame_value(memory, schema, row_count, columns);
+}
+
+} // namespace bg::frame

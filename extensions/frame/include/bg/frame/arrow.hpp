@@ -20,6 +20,7 @@
 #include <typeinfo>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace bg::frame {
@@ -45,6 +46,15 @@ inline arrow::Status check_length(std::size_t size) {
         return arrow::Status::CapacityError("frame value exceeds Arrow's signed 64-bit length limit");
     return arrow::Status::OK();
 }
+
+class ArrowRuntimeFrameStorage;
+FrameReadStorage frame_read_storage(const ArrowRuntimeFrameStorage &storage, const FrameScalarRuntimeType &runtime);
+const ScalarRuntimeType &runtime_schema_frame_scalar_runtime(const FrameType &type);
+
+template <typename Semantic> class ArrowScalarRuntimeBase : public ScalarRuntimeType {
+  protected:
+    using ScalarRuntimeType::ScalarRuntimeType;
+};
 
 template <cell_type T> arrow::Status check_array_buffers(const std::shared_ptr<arrow::Array> &array) {
     if (!array || array->type_id() != arrow_type_id<T>)
@@ -75,6 +85,7 @@ template <cell_type T> arrow::Status validate_chunked(const std::shared_ptr<arro
 template <cell_type T> class ArrowColumnReadSource final : public ColumnReadSource<T> {
   public:
     ArrowColumnReadSource() = default;
+    ArrowColumnReadSource(bg::details::FieldProbe &probe) noexcept { probe.record(this); }
     explicit ArrowColumnReadSource(std::shared_ptr<arrow::ChunkedArray> column) { bind(std::move(column)); }
 
     void bind(std::shared_ptr<arrow::ChunkedArray> column) {
@@ -248,52 +259,50 @@ arrow::Result<std::shared_ptr<arrow::ChunkedArray>> export_column(const ColumnVi
     return std::move(result).ValueUnsafe();
 }
 
-template <template <template <typename, auto...> typename> typename Schema, std::size_t... Index>
-std::shared_ptr<arrow::Schema> make_schema(std::index_sequence<Index...>) {
-    constexpr auto names = util::aggregate_member_names<Schema<Column>>;
-    auto fields = std::vector<std::shared_ptr<arrow::Field>>{};
-    fields.reserve(sizeof...(Index));
-    (fields.push_back(arrow::field(std::string{names[Index]},
-                                   data_type<frame::details::frame_schema_cell_t<Index, Schema>>(), true)),
-     ...);
-    return arrow::schema(std::move(fields));
+inline arrow::Result<std::shared_ptr<arrow::ChunkedArray>> export_column(const ColumnView<> &column,
+                                                                          bool copy_values) {
+    if (std::addressof(column.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
+        return export_column(column.view<i64>(), copy_values);
+    if (std::addressof(column.cell_type()) == std::addressof(cpp_scalar_type<double>()))
+        return export_column(column.view<double>(), copy_values);
+    return arrow::Status::Invalid("frame column has an unsupported cell type");
 }
 
-template <template <template <typename, auto...> typename> typename Schema, bool CopyValues,
-          std::size_t... Index>
-arrow::Result<std::shared_ptr<arrow::Table>> export_frame(const FrameView<Schema> &frame,
-                                                          std::index_sequence<Index...>) {
+template <bool CopyValues, template <template <typename, auto...> typename> typename Schema>
+arrow::Result<std::shared_ptr<arrow::Table>> export_runtime_frame(const FrameView<Schema> &frame) {
     ARROW_RETURN_NOT_OK(check_length(frame.size()));
+    auto fields = std::vector<std::shared_ptr<arrow::Field>>{};
     auto columns = std::vector<std::shared_ptr<arrow::ChunkedArray>>{};
-    columns.reserve(sizeof...(Index));
-    auto source = util::aggregate_members(frame.columns());
-    auto status = arrow::Status::OK();
-    (([&] {
-         if (!status.ok())
-             return;
-         auto column = export_column(std::get<Index>(source), CopyValues);
-         if (!column.ok()) {
-             status = column.status();
-             return;
-         }
-         if (column.ValueUnsafe()->length() != static_cast<std::int64_t>(frame.size())) {
-             status = arrow::Status::Invalid("frame column length does not match the frame row count");
-             return;
-         }
-         columns.push_back(std::move(column).ValueUnsafe());
-     }()),
-     ...);
-    ARROW_RETURN_NOT_OK(status);
-    return arrow::Table::Make(make_schema<Schema>(std::index_sequence<Index...>{}), std::move(columns),
+    const auto &schema = frame.schema();
+    fields.reserve(schema.field_count());
+    columns.reserve(schema.field_count());
+    for (auto index = std::size_t{}; index != schema.field_count(); ++index) {
+        const auto &field = schema.field(index);
+        const auto source = frame.column(index);
+        auto column = std::shared_ptr<arrow::ChunkedArray>{};
+        if (&source.cell_type() == std::addressof(cpp_scalar_type<i64>())) {
+            fields.push_back(arrow::field(std::string{field.name.text()}, data_type<i64>(), true));
+        } else if (&source.cell_type() == std::addressof(cpp_scalar_type<double>())) {
+            fields.push_back(arrow::field(std::string{field.name.text()}, data_type<double>(), true));
+        } else {
+            return arrow::Status::Invalid("frame column has an unsupported cell type");
+        }
+        ARROW_ASSIGN_OR_RAISE(column, export_column(source, CopyValues));
+        if (column->length() != static_cast<std::int64_t>(frame.size()))
+            return arrow::Status::Invalid("frame column length does not match the frame row count");
+        columns.push_back(std::move(column));
+    }
+    return arrow::Table::Make(arrow::schema(std::move(fields)), std::move(columns),
                               static_cast<std::int64_t>(frame.size()));
 }
 
 template <typename Semantic, typename Storage, typename Value>
-class ArrowScalarRuntime final : public ScalarRuntimeType {
+class ArrowScalarRuntime final : public ArrowScalarRuntimeBase<Semantic> {
+    using Base = ArrowScalarRuntimeBase<Semantic>;
+
   public:
     ArrowScalarRuntime()
-        : ScalarRuntimeType{scalar_type_traits<Semantic>::type(), sizeof(Storage), alignof(Storage), false, true,
-                            false} {}
+        : Base{scalar_type_traits<Semantic>::type(), sizeof(Storage), alignof(Storage), false, true, false} {}
 
     void read_value(ScalarDataMode mode, std::uintptr_t data, void *destination) const override {
         static_cast<void>(mode);
@@ -333,121 +342,91 @@ const ArrowScalarRuntime<Semantic, Storage, Value> &scalar_runtime() {
 
 template <cell_type T>
 const ArrowScalarRuntime<Column<T>, ArrowColumnReadSource<T>, ColumnView<T>> &column_scalar_runtime() {
+    static_cast<void>(cpp_scalar_runtime_type<Column<T>>());
     return scalar_runtime<Column<T>, ArrowColumnReadSource<T>, ColumnView<T>>();
 }
 
-template <template <template <typename, auto...> typename> typename Schema> struct ArrowFrameStorage {
-    using source_schema = Schema<ArrowColumnReadSource>;
+using ArrowRuntimeFrameColumn =
+    std::variant<ArrowColumnReadSource<i64>, ArrowColumnReadSource<double>>;
 
-    ArrowFrameStorage() = default;
-    explicit ArrowFrameStorage(std::shared_ptr<arrow::Table> input) : table{std::move(input)} {
-        auto fields = util::aggregate_members(sources);
-        [&]<std::size_t... Index>(std::index_sequence<Index...>) {
-            ((std::get<Index>(fields).bind(table->column(static_cast<int>(Index)))), ...);
-        }(std::make_index_sequence<util::aggregate_member_count<Schema<Column>>>{});
-        size = static_cast<std::size_t>(table->num_rows());
+class ArrowRuntimeFrameStorage {
+  public:
+    ArrowRuntimeFrameStorage() = default;
+    ArrowRuntimeFrameStorage(std::shared_ptr<arrow::Table> input, const bg::Schema &input_schema)
+        : table{std::move(input)}, schema{std::addressof(input_schema)},
+          size{static_cast<std::size_t>(table->num_rows())} {
+        columns.reserve(schema->field_count());
+        for (auto index = std::size_t{}; index != schema->field_count(); ++index) {
+            const auto &field = schema->field(index);
+            if (field.type == std::addressof(cpp_scalar_type<i64>()))
+                columns.emplace_back(std::in_place_type<ArrowColumnReadSource<i64>>,
+                                     table->column(static_cast<int>(index)));
+            else
+                columns.emplace_back(std::in_place_type<ArrowColumnReadSource<double>>,
+                                     table->column(static_cast<int>(index)));
+        }
     }
 
     std::shared_ptr<arrow::Table> table;
-    source_schema sources;
+    const bg::Schema *schema{};
+    std::vector<ArrowRuntimeFrameColumn> columns;
     std::size_t size{};
 };
 
-template <template <template <typename, auto...> typename> typename Schema>
-const ArrowScalarRuntime<Frame<Schema>, ArrowFrameStorage<Schema>, FrameView<Schema>> &frame_scalar_runtime();
-
-template <cell_type T> void bind_arrow_column_view(const void *source, void *destination) {
-    *static_cast<ColumnView<T> *>(destination) =
-        ColumnView<T>{*static_cast<const ArrowColumnReadSource<T> *>(source)};
+template <cell_type T> void bind_runtime_arrow_column_view(const void *source, void *destination) {
+    const auto &column = std::get<ArrowColumnReadSource<T>>(*static_cast<const ArrowRuntimeFrameColumn *>(source));
+    *static_cast<ColumnView<T> *>(destination) = ColumnView<T>{column};
 }
 
-template <template <template <typename, auto...> typename> typename Schema, std::size_t Index>
-FrameColumnReadBinding arrow_frame_column_binding(const void *context) {
-    using Cell = frame::details::frame_schema_cell_t<Index, Schema>;
-    const auto fields = util::aggregate_members(
-        *static_cast<const typename ArrowFrameStorage<Schema>::source_schema *>(context));
-    return {std::addressof(cpp_scalar_type<Cell>()), std::addressof(std::get<Index>(fields)),
-            &bind_arrow_column_view<Cell>, nullptr};
+inline FrameColumnReadBinding runtime_arrow_frame_column_binding(const void *context, std::size_t index) {
+    const auto &storage = *static_cast<const ArrowRuntimeFrameStorage *>(context);
+    const auto &field = storage.schema->field(index);
+    const auto *column = std::addressof(storage.columns.at(index));
+    if (field.type == std::addressof(cpp_scalar_type<i64>()))
+        return {std::addressof(cpp_scalar_type<i64>()), column, &bind_runtime_arrow_column_view<i64>, nullptr};
+    return {std::addressof(cpp_scalar_type<double>()), column, &bind_runtime_arrow_column_view<double>, nullptr};
 }
 
-template <template <template <typename, auto...> typename> typename Schema, std::size_t... Index>
-FrameColumnReadBinding arrow_frame_column_binding(const void *context, std::size_t index,
-                                                   std::index_sequence<Index...>) {
-    using binding_function = FrameColumnReadBinding (*)(const void *);
-    static constexpr std::array<binding_function, sizeof...(Index)> bindings{
-        &arrow_frame_column_binding<Schema, Index>...};
-    return index < bindings.size() ? bindings[index](context) : FrameColumnReadBinding{};
-}
-
-template <template <template <typename, auto...> typename> typename Schema>
-FrameReadStorage frame_read_storage(const ArrowFrameStorage<Schema> &storage) {
-    constexpr auto count = util::aggregate_member_count<Schema<Column>>;
-    static_assert(!bg::details::schema_variable_template<Schema>);
+inline FrameReadStorage frame_read_storage(const ArrowRuntimeFrameStorage &storage,
+                                           const FrameScalarRuntimeType &runtime) {
     auto result = FrameReadStorage{};
-    result.schema = std::addressof(bg::details::cpp_hierarchical_scalar_schema<Schema>());
+    result.schema = storage.schema;
     result.valid = true;
     result.size = storage.size;
-    result.columns_context = std::addressof(storage.sources);
-    result.column_binding = [](const void *context, std::size_t index) {
-        return arrow_frame_column_binding<Schema>(context, index, std::make_index_sequence<count>{});
-    };
+    result.columns_context = std::addressof(storage);
+    result.column_binding = &runtime_arrow_frame_column_binding;
     result.source_owner = std::addressof(storage);
-    result.source_payload = std::addressof(storage);
-    result.source_runtime = std::addressof(frame_scalar_runtime<Schema>());
+    result.source_runtime = std::addressof(runtime);
     return result;
 }
 
-template <template <template <typename, auto...> typename> typename Schema, std::size_t... Index>
-FrameView<Schema> frame_view(const ArrowFrameStorage<Schema> &storage, std::index_sequence<Index...>) {
-    auto columns = Schema<ColumnView>{};
-    auto destination = util::aggregate_members(columns);
-    auto source = util::aggregate_members(storage.sources);
-    ((std::get<Index>(destination) = ColumnView<frame::details::frame_schema_cell_t<Index, Schema>>{
-          std::get<Index>(source)}),
-     ...);
-    return FrameView<Schema>{std::move(columns), storage.size};
-}
-
-template <template <template <typename, auto...> typename> typename Schema>
-struct ArrowScalarValueRead<ArrowFrameStorage<Schema>, FrameView<Schema>> {
-    static FrameView<Schema> read(const ArrowFrameStorage<Schema> &source) {
-        return frame_view(source, std::make_index_sequence<util::aggregate_member_count<Schema<Column>>>{});
-    }
-};
-
-template <template <template <typename, auto...> typename> typename Schema>
-const ArrowScalarRuntime<Frame<Schema>, ArrowFrameStorage<Schema>, FrameView<Schema>> &frame_scalar_runtime() {
-    return scalar_runtime<Frame<Schema>, ArrowFrameStorage<Schema>, FrameView<Schema>>();
-}
-
-template <template <template <typename, auto...> typename> typename Schema>
-arrow::Status validate_frame(const std::shared_ptr<arrow::Table> &table) {
+inline arrow::Status validate_frame(const std::shared_ptr<arrow::Table> &table, const bg::Schema &schema) {
     if (!table)
         return arrow::Status::Invalid("Arrow table is null");
-    constexpr auto count = util::aggregate_member_count<Schema<Column>>;
-    if (table->num_columns() != static_cast<int>(count))
+    if (!schema.is_resolved())
+        return arrow::Status::Invalid("Arrow frame import requires a resolved schema");
+    if (table->num_columns() != static_cast<int>(schema.field_count()) ||
+        table->columns().size() != schema.field_count())
         return arrow::Status::Invalid("Arrow table column count does not match the frame schema");
-    if (table->columns().size() != count)
-        return arrow::Status::Invalid("Arrow table data column count does not match its schema");
-    constexpr auto names = util::aggregate_member_names<Schema<Column>>;
-    auto status = arrow::Status::OK();
-    [&]<std::size_t... Index>(std::index_sequence<Index...>) {
-        (([&] {
-             if (!status.ok())
-                 return;
-             const auto field = table->field(static_cast<int>(Index));
-             if (field->name() != names[Index]) {
-                 status = arrow::Status::Invalid("Arrow table column name does not match the frame schema");
-                 return;
-             }
-             status = check_chunked_buffers<frame::details::frame_schema_cell_t<Index, Schema>>(
-                 table->column(static_cast<int>(Index)));
-         }()),
-         ...);
-    }(std::make_index_sequence<count>{});
-    if (status.ok())
-        status = table->ValidateFull();
-    return status;
+
+    for (auto index = std::size_t{}; index != schema.field_count(); ++index) {
+        const auto &field = schema.field(index);
+        if (field.optional)
+            return arrow::Status::Invalid("Arrow frame schema fields must be present");
+        if (table->field(static_cast<int>(index))->name() != field.name.text())
+            return arrow::Status::Invalid("Arrow table column name does not match the frame schema");
+
+        arrow::Status status;
+        if (field.type == std::addressof(cpp_scalar_type<i64>())) {
+            status = check_chunked_buffers<i64>(table->column(static_cast<int>(index)));
+        } else if (field.type == std::addressof(cpp_scalar_type<double>())) {
+            status = check_chunked_buffers<double>(table->column(static_cast<int>(index)));
+        } else {
+            return arrow::Status::TypeError("frame schema has an unsupported cell type");
+        }
+        ARROW_RETURN_NOT_OK(status);
+    }
+    return table->ValidateFull();
 }
 
 } // namespace arrow_details
@@ -458,25 +437,29 @@ arrow::Result<std::shared_ptr<arrow::ChunkedArray>> borrow_arrow(const ColumnVie
     return arrow_details::export_column(column, false);
 }
 
+inline arrow::Result<std::shared_ptr<arrow::ChunkedArray>> borrow_arrow(const ColumnView<> &column) {
+    return arrow_details::export_column(column, false);
+}
+
 // The result owns dense value and validity buffers, including initialized bytes for null cells.
 template <cell_type T>
 arrow::Result<std::shared_ptr<arrow::ChunkedArray>> copy_to_arrow(const ColumnView<T> &column) {
     return arrow_details::export_column(column, true);
 }
 
+inline arrow::Result<std::shared_ptr<arrow::ChunkedArray>> copy_to_arrow(const ColumnView<> &column) {
+    return arrow_details::export_column(column, true);
+}
+
 template <template <template <typename, auto...> typename> typename Schema>
 arrow::Result<std::shared_ptr<arrow::Table>> borrow_arrow(const FrameView<Schema> &frame) {
-    return arrow_details::export_frame<Schema, false>(frame,
-                                                      std::make_index_sequence<util::aggregate_member_count<
-                                                          Schema<Column>>>{});
+    return arrow_details::export_runtime_frame<false>(frame);
 }
 
 // Each copied frame column contains one dense, owned chunk, even when the source has multiple batches.
 template <template <template <typename, auto...> typename> typename Schema>
 arrow::Result<std::shared_ptr<arrow::Table>> copy_to_arrow(const FrameView<Schema> &frame) {
-    return arrow_details::export_frame<Schema, true>(frame,
-                                                     std::make_index_sequence<util::aggregate_member_count<
-                                                         Schema<Column>>>{});
+    return arrow_details::export_runtime_frame<true>(frame);
 }
 
 // Imports retain the supplied Arrow arrays. Their buffers must remain alive through those Arrow owners; importing
@@ -490,13 +473,50 @@ arrow::Result<ScalarValue<>> from_arrow(std::shared_ptr<arrow::ChunkedArray> col
     return ScalarValue<>{value};
 }
 
+inline arrow::Result<ScalarValue<>> from_arrow(std::shared_ptr<arrow::Table> table, const bg::Schema &schema) {
+    ARROW_RETURN_NOT_OK(arrow_details::validate_frame(table, schema));
+    auto storage = arrow_details::ArrowRuntimeFrameStorage{std::move(table), schema};
+    const auto &type = frame_type(schema);
+    const auto &runtime = arrow_details::runtime_schema_frame_scalar_runtime(type);
+    auto value = Scalar<Frame<bg::SCHEMA>>::from(runtime, std::addressof(storage));
+    return ScalarValue<>{value};
+}
+
+inline arrow::Result<ScalarValue<>> from_arrow(std::shared_ptr<arrow::Table> table) {
+    if (!table)
+        return arrow::Status::Invalid("Arrow table is null");
+
+    auto fields = std::vector<SchemaField>{};
+    fields.reserve(static_cast<std::size_t>(table->num_columns()));
+    for (auto index = 0; index != table->num_columns(); ++index) {
+        const auto field = table->field(index);
+        for (auto prior = 0; prior != index; ++prior)
+            if (table->field(prior)->name() == field->name())
+                return arrow::Status::Invalid("Arrow table has duplicate column names");
+
+        const ScalarType *cell_type{};
+        if (field->type()->id() == arrow::Type::INT64)
+            cell_type = std::addressof(cpp_scalar_type<i64>());
+        else if (field->type()->id() == arrow::Type::DOUBLE)
+            cell_type = std::addressof(cpp_scalar_type<double>());
+        else
+            return arrow::Status::TypeError("Arrow frame import supports only int64 and float64 fields");
+        fields.push_back({util::symbol{field->name()}, cell_type, false});
+    }
+
+    try {
+        return from_arrow(std::move(table), anonymous_schema(fields));
+    } catch (const std::invalid_argument &error) {
+        return arrow::Status::Invalid(error.what());
+    }
+}
+
 template <template <template <typename, auto...> typename> typename Schema>
 arrow::Result<ScalarValue<>> from_arrow(std::shared_ptr<arrow::Table> table) {
-    ARROW_RETURN_NOT_OK(arrow_details::validate_frame<Schema>(table));
-    auto storage = arrow_details::ArrowFrameStorage<Schema>{std::move(table)};
-    const auto &runtime = arrow_details::frame_scalar_runtime<Schema>();
-    auto value = Scalar<Frame<Schema>>::from(runtime, std::addressof(storage));
-    return ScalarValue<>{value};
+    const auto *schema = dynamic_cast<const bg::Schema *>(std::addressof(frame_schema_type<Schema>()));
+    if (schema == nullptr)
+        return arrow::Status::Invalid("Arrow frame import requires a resolved schema");
+    return from_arrow(std::move(table), *schema);
 }
 
 } // namespace bg::frame

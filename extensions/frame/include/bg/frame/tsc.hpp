@@ -2,6 +2,7 @@
 
 #include <bg/frame/column.hpp>
 
+#include <bg/scalar/declaration.hpp>
 #include <bg/node/input_fwd.hpp>
 #include <bg/node/input_properties.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
@@ -23,6 +24,12 @@ class ColumnSeriesType final : public TimeSeriesType {
     ColumnSeriesType(const ScalarType &cell_type, GuaranteeParameter guarantee) noexcept
         : TimeSeriesType{guarantee}, cell_type_{cell_type} {}
 
+    void format_name(std::string &result) const override {
+        result += "TSC<";
+        cell_type().format_name(result);
+        append_guarantee(result);
+        result += '>';
+    }
     const ScalarType &cell_type() const noexcept { return cell_type_; }
     bool is_resolved() const noexcept override { return cell_type_.is_resolved() && guarantee().is_resolved(); }
     const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
@@ -52,34 +59,45 @@ template <cell_type T> class ColumnSeriesRuntimeType : public TimeSeriesRuntimeT
 
 template <cell_type T>
 const TimeSeriesRuntimeType &column_binding_view_time_series_runtime_type(const TimeSeriesType &type);
+const TimeSeriesRuntimeType &column_time_series_runtime_type(const TimeSeriesType &type);
+const TimeSeriesRuntimeType &column_view_time_series_runtime_type(const TimeSeriesType &type);
+const TimeSeriesRuntimeType &column_binding_view_time_series_runtime_type(const TimeSeriesType &type);
 
 } // namespace frame
 
-template <frame::cell_type T, auto... Properties>
+template <typename T, auto... Properties>
 struct time_series_type_traits<frame::TSC<T, Properties...>> {
     using semantic_type = TimeSeriesType;
-    static constexpr bool generic = false;
-    static constexpr bool supported = true;
+    static constexpr bool generic = details::scalar_variable<T>;
+    static constexpr bool supported = frame::cell_type<T> || details::scalar_variable<T>;
 
-    template <typename Scope, std::size_t Index, bool Input>
+    template <typename Scope, std::size_t Index, TimeSeriesTypeRole Role>
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {
-        if (!guarantee.is_resolved())
+        if constexpr (frame::cell_type<T>) {
+            if (guarantee.is_resolved())
+                return frame::column_time_series_type<T>(*guarantee.value());
             return frame::column_series_type(cpp_scalar_type<T>(), guarantee);
-        return frame::column_time_series_type<T>(*guarantee.value());
+        } else {
+            return frame::column_series_type(scalar_type_traits<T>::type(), guarantee);
+        }
     }
 };
 
-template <frame::cell_type T, auto... Properties>
+template <typename T, auto... Properties>
 struct declaration_variable_traits<frame::TSC<T, Properties...>> {
     template <typename Visitor> static void for_each(Visitor &&visitor) {
+        declaration_variable_traits<T>::for_each(visitor);
         TimeSeriesDeclarationProperties<Properties...>::for_each_variable(std::forward<Visitor>(visitor));
     }
 };
 
-template <frame::cell_type T, auto... Properties>
+template <typename T, auto... Properties>
 struct time_series_runtime_traits<frame::TSC<T, Properties...>> {
     static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
-        return frame::column_time_series_runtime_type<T>(type);
+        if constexpr (frame::cell_type<T>)
+            return frame::column_time_series_runtime_type<T>(type);
+        else
+            return frame::column_time_series_runtime_type(type);
     }
 };
 
@@ -107,6 +125,7 @@ class In<frame::TSC<T, SeriesProperties...>, Properties...>
     bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    const TimeSeriesInputData &input_data() const noexcept { return data_; }
     std::size_t size() const noexcept { return valid() ? storage().size() : 0; }
     bool contains(frame::row_id_t id) const noexcept { return valid() && storage().contains(id); }
     std::optional<T> cell(frame::row_id_t id) const { return storage().cell(id); }
@@ -165,6 +184,92 @@ class In<frame::TSC<T, SeriesProperties...>, Properties...>
     TimeSeriesInputData data_;
 };
 
+template <details::scalar_variable T, auto... SeriesProperties, auto... Properties>
+class In<frame::TSC<T, SeriesProperties...>, Properties...>
+    : public InputActivityControl<InputProperties<Properties...>::dynamic_activity> {
+    using ParsedProperties = InputProperties<Properties...>;
+    using ActivityControl = InputActivityControl<ParsedProperties::dynamic_activity>;
+
+  public:
+    explicit In(const TimeSeriesInputData &data, bool *activity = nullptr) noexcept
+        : ActivityControl{activity}, data_{data} {}
+
+    bool valid() const noexcept { return data_.valid(); }
+    bool became_valid() const noexcept { return data_.became_valid(); }
+    bool became_invalid() const noexcept { return data_.became_invalid(); }
+    bool modified() const noexcept { return data_.modified(); }
+    EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    const TimeSeriesInputData &input_data() const noexcept { return data_; }
+    std::size_t size() const noexcept { return valid() ? cell_count() : 0; }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
+
+    template <frame::cell_type Cell>
+    auto input() const {
+        check_cell_type<Cell>();
+        auto *activity = ActivityControl::activity();
+        return In<frame::TSC<Cell, SeriesProperties...>, Properties...>{data_, activity};
+    }
+
+    template <frame::cell_type Cell>
+    frame::ColumnView<Cell> view() const {
+        return input<Cell>().value_view().value();
+    }
+
+    Scalar<frame::Column<T>> value_view() const {
+        const auto &type = column_type();
+        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<i64>())) {
+            const auto value = input<i64>().value_view();
+            return Scalar<frame::Column<T>>::from(value);
+        }
+        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<double>())) {
+            const auto value = input<double>().value_view();
+            return Scalar<frame::Column<T>>::from(value);
+        }
+        throw std::invalid_argument{"frame TSC input has an unsupported cell type"};
+    }
+
+    frame::ColumnView<> column_view() const {
+        const auto &type = column_type();
+        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
+            return frame::ColumnView<>{view<i64>()};
+        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<double>()))
+            return frame::ColumnView<>{view<double>()};
+        throw std::invalid_argument{"frame TSC input has an unsupported cell type"};
+    }
+
+    static constexpr auto name = ParsedProperties::name;
+    static constexpr auto activity = ParsedProperties::activity;
+    static constexpr auto validity = ParsedProperties::validity;
+    static constexpr auto dynamic_binding = ParsedProperties::dynamic_binding;
+    static constexpr auto dynamic_activity = ParsedProperties::dynamic_activity;
+    using time_series_type = frame::TSC<T, SeriesProperties...>;
+
+  private:
+    const frame::ColumnSeriesType &column_type() const noexcept {
+        return static_cast<const frame::ColumnSeriesType &>(data_.runtime_type().type());
+    }
+
+    std::size_t cell_count() const noexcept {
+        const auto &type = column_type();
+        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
+            return static_cast<const frame::ColumnSeriesRuntimeType<i64> &>(data_.runtime_type())
+                .input_view(data_.data())
+                .size();
+        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<double>()))
+            return static_cast<const frame::ColumnSeriesRuntimeType<double> &>(data_.runtime_type())
+                .input_view(data_.data())
+                .size();
+        return 0;
+    }
+
+    template <frame::cell_type Cell> void check_cell_type() const {
+        if (std::addressof(column_type().cell_type()) != std::addressof(cpp_scalar_type<Cell>()))
+            throw std::invalid_argument{"frame TSC input cell type does not match the requested type"};
+    }
+
+    TimeSeriesInputData data_;
+};
+
 template <frame::cell_type T, auto... Properties>
 class Out<frame::TSC<T, Properties...>> {
   public:
@@ -203,6 +308,89 @@ class Out<frame::TSC<T, Properties...>> {
     TimeSeriesOutputBinding binding_;
 };
 
+template <details::scalar_variable T, auto... Properties>
+class Out<frame::TSC<T, Properties...>> {
+  public:
+    explicit Out(TimeSeriesOutputBinding binding) noexcept : binding_{std::move(binding)} {}
+
+    template <frame::cell_type Cell> frame::row_id_t add(std::optional<Cell> value) const {
+        const auto id = storage<Cell>().add(value, binding_->context().evaluation_time(), binding_->allocator());
+        binding_->publish();
+        return id;
+    }
+
+    template <frame::cell_type Cell> frame::row_id_t add(Cell value) const {
+        return add<Cell>(std::optional<Cell>{value});
+    }
+
+    template <frame::cell_type Cell> void set(frame::row_id_t id, std::optional<Cell> value) const {
+        storage<Cell>().set(id, value, binding_->context().evaluation_time(), binding_->allocator());
+        binding_->publish();
+    }
+
+    template <frame::cell_type Cell> void set(frame::row_id_t id, Cell value) const {
+        set<Cell>(id, std::optional<Cell>{value});
+    }
+
+    bool erase(frame::row_id_t id) const {
+        if (has_cell_type<i64>())
+            return erase<i64>(id);
+        if (has_cell_type<double>())
+            return erase<double>(id);
+        throw std::invalid_argument{"frame TSC output has an unsupported cell type"};
+    }
+
+    void clear() const {
+        if (has_cell_type<i64>()) {
+            clear<i64>();
+            return;
+        }
+        if (has_cell_type<double>()) {
+            clear<double>();
+            return;
+        }
+        throw std::invalid_argument{"frame TSC output has an unsupported cell type"};
+    }
+
+    void invalidate() const { binding_->invalidate(); }
+    bool valid() const noexcept { return binding_->valid(); }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return binding_->runtime_type(); }
+
+    using time_series_type = frame::TSC<T, Properties...>;
+
+  private:
+    const frame::ColumnSeriesType &column_type() const noexcept {
+        return static_cast<const frame::ColumnSeriesType &>(binding_->runtime_type().type());
+    }
+
+    template <frame::cell_type Cell> bool has_cell_type() const noexcept {
+        return std::addressof(column_type().cell_type()) == std::addressof(cpp_scalar_type<Cell>());
+    }
+
+    template <frame::cell_type Cell> frame::NativeColumn<Cell> &storage() const {
+        if (!has_cell_type<Cell>())
+            throw std::invalid_argument{"frame TSC output cell type does not match the requested type"};
+        return *static_cast<frame::NativeColumn<Cell> *>(binding_->mutable_data());
+    }
+
+    template <frame::cell_type Cell> bool erase(frame::row_id_t id) const {
+        const auto erased = storage<Cell>().erase(id, binding_->context().evaluation_time(), binding_->allocator());
+        if (erased)
+            binding_->publish();
+        return erased;
+    }
+
+    template <frame::cell_type Cell> void clear() const {
+        auto &column = storage<Cell>();
+        if (!binding_->valid() || column.size() != 0) {
+            column.clear(binding_->context().evaluation_time(), binding_->allocator());
+            binding_->publish();
+        }
+    }
+
+    TimeSeriesOutputBinding binding_;
+};
+
 template <frame::cell_type T, auto... Properties>
 class Out<frame::TSC<T, Properties...>, frame::view> {
   public:
@@ -238,6 +426,61 @@ class Out<frame::TSC<T, Properties...>, frame::view> {
     TimeSeriesOutputBinding binding_;
 };
 
+template <details::scalar_variable T, auto... Properties>
+class Out<frame::TSC<T, Properties...>, frame::view> {
+  public:
+    explicit Out(TimeSeriesOutputBinding binding) noexcept : binding_{std::move(binding)} {}
+
+    template <typename SourceCell, auto... SourceProperties, auto... InputProperties>
+        requires(frame::cell_type<SourceCell> || details::scalar_variable<SourceCell>)
+    bool bind(const In<frame::TSC<SourceCell, SourceProperties...>, InputProperties...> &source) const {
+        if (!source.valid()) {
+            if (binding_->valid())
+                binding_->invalidate();
+            return false;
+        }
+
+        const auto &source_type = static_cast<const frame::ColumnSeriesType &>(source.runtime_type().type());
+        if (std::addressof(source_type.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
+            return bind_cell<i64>(concrete_input<i64, SourceCell>(source));
+        if (std::addressof(source_type.cell_type()) == std::addressof(cpp_scalar_type<double>()))
+            return bind_cell<double>(concrete_input<double, SourceCell>(source));
+        throw std::invalid_argument{"frame TSC view supports only i64 and double cell types"};
+    }
+
+    void invalidate() const { binding_->invalidate(); }
+    bool valid() const noexcept { return binding_->valid(); }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return binding_->runtime_type(); }
+
+    using time_series_type = frame::TSC<T, Properties...>;
+
+  private:
+    template <frame::cell_type Cell, typename SourceCell, typename SourceInput>
+    static auto concrete_input(const SourceInput &source) {
+        if constexpr (frame::cell_type<SourceCell>) {
+            return source;
+        } else {
+            return source.template input<Cell>();
+        }
+    }
+
+    template <frame::cell_type Cell, typename SourceInput>
+    bool bind_cell(const SourceInput &source) const {
+        if (std::addressof(static_cast<const frame::ColumnSeriesType &>(binding_->runtime_type().type()).cell_type()) !=
+            std::addressof(cpp_scalar_type<Cell>()))
+            throw std::invalid_argument{"frame TSC view cell type does not match its source"};
+        const auto input = source.extension_descriptor();
+        auto &output = *static_cast<frame::ColumnViewOutputStorage<Cell> *>(binding_->mutable_data());
+        const auto changed = output.bind(input.storage, input.modified, input.last_updated,
+                                         binding_->context().evaluation_time(), binding_->allocator());
+        if (changed)
+            binding_->publish();
+        return changed;
+    }
+
+    TimeSeriesOutputBinding binding_;
+};
+
 } // namespace bg
 
 namespace bg {
@@ -248,6 +491,15 @@ struct output_declaration_traits<Out<frame::TSC<T, Properties...>, frame::view>>
 
     static const TimeSeriesRuntimeType &runtime(const TimeSeriesType &type) {
         return frame::column_binding_view_time_series_runtime_type<T>(type);
+    }
+};
+
+template <details::scalar_variable T, auto... Properties>
+struct output_declaration_traits<Out<frame::TSC<T, Properties...>, frame::view>> {
+    using time_series_type = frame::TSC<T, Properties...>;
+
+    static const TimeSeriesRuntimeType &runtime(const TimeSeriesType &type) {
+        return frame::column_binding_view_time_series_runtime_type(type);
     }
 };
 

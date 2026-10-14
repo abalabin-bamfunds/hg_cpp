@@ -2,7 +2,9 @@
 
 #include <bg/allocator.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
+#include <bg/scalar/declaration.hpp>
 #include <bg/scalar/storage_traits.hpp>
+#include <bg/schema/reflection.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/input_data.hpp>
 #include <bg/time_series/output_binding.hpp>
@@ -25,6 +27,7 @@
 #include <span>
 #include <stdexcept>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace bg::frame {
@@ -41,6 +44,11 @@ class ColumnType final : public ScalarType {
   public:
     explicit ColumnType(const ScalarType &cell_type) noexcept : cell_type_{cell_type} {}
 
+    void format_name(std::string &result) const override {
+        result += "Column<";
+        cell_type().format_name(result);
+        result += '>';
+    }
     const ScalarType &cell_type() const noexcept { return cell_type_; }
     bool is_resolved() const noexcept override { return cell_type_.is_resolved(); }
     const Type &resolve(const TypeMap &type_map) const override;
@@ -252,11 +260,12 @@ template <typename T> struct NativeColumnBatch {
     ColumnBatch<T> cells;
 };
 
-template <typename T> class ColumnView {
+template <typename T = void> class ColumnView {
   public:
     using cell_type = std::optional<T>;
     using Batch = ColumnBatch<T>;
     ColumnView() = default;
+    ColumnView(bg::details::FieldProbe &probe) noexcept { probe.record(this); }
     ColumnView(const Column<T> &column) noexcept;
     explicit ColumnView(const ColumnReadSource<T> &source) noexcept : source_{std::addressof(source)} {}
     std::size_t size() const noexcept;
@@ -296,9 +305,67 @@ template <typename T> class ColumnView {
     RowSet coverage_{};
 };
 
+template <> class ColumnView<void> {
+  public:
+    ColumnView() = default;
+    ColumnView(bg::details::FieldProbe &probe) noexcept { probe.record(this); }
+    ColumnView(const ColumnView<i64> &view) : value_{view} {}
+    ColumnView(const ColumnView<double> &view) : value_{view} {}
+
+    const ScalarType &cell_type() const {
+        if (const auto *integer = std::get_if<ColumnView<i64>>(&value_)) {
+            static_cast<void>(integer);
+            return cpp_scalar_type<i64>();
+        }
+        if (std::holds_alternative<ColumnView<double>>(value_))
+            return cpp_scalar_type<double>();
+        throw std::logic_error{"generic column view has no cell type"};
+    }
+
+    std::size_t size() const {
+        if (const auto *view = std::get_if<ColumnView<i64>>(&value_))
+            return view->size();
+        if (const auto *view = std::get_if<ColumnView<double>>(&value_))
+            return view->size();
+        throw std::logic_error{"generic column view has no cell type"};
+    }
+
+    template <typename T>
+        requires bg::frame::cell_type<T>
+    ColumnView<T> view() const {
+        if constexpr (std::same_as<T, i64>) {
+            if (const auto *view = std::get_if<ColumnView<i64>>(&value_))
+                return *view;
+        } else if constexpr (std::same_as<T, double>) {
+            if (const auto *view = std::get_if<ColumnView<double>>(&value_))
+                return *view;
+        }
+        if (std::holds_alternative<std::monostate>(value_))
+            throw std::logic_error{"generic column view has no cell type"};
+        else
+            throw std::invalid_argument{"column view type does not match the requested cell type"};
+    }
+
+    template <typename T>
+        requires bg::frame::cell_type<T>
+    auto cell(std::size_t position) const {
+        return view<T>().cell(position);
+    }
+
+    template <typename T, typename Function>
+        requires bg::frame::cell_type<T>
+    void batches(Function &&function) const {
+        view<T>().batches(std::forward<Function>(function));
+    }
+
+  private:
+    std::variant<std::monostate, ColumnView<i64>, ColumnView<double>> value_;
+};
+
 template <typename T> struct ColumnStorage {
     static constexpr bool supports_byte_copy_initialization = true;
     ColumnStorage() = default;
+    ColumnStorage(bg::details::FieldProbe &probe) noexcept { probe.record(this); }
     explicit ColumnStorage(const NativeColumnData<T> &value, const NativeRows &rows) noexcept
         : native{&value}, rows{&rows}, visible_rows{RowSet::native(rows)}, coverage{visible_rows} {}
     explicit ColumnStorage(ColumnSnapshot<T> *value) noexcept : snapshot{value} {}
@@ -342,7 +409,9 @@ class RowDomain {
 template <typename T> class Column {
   public:
     using cell_type = std::optional<T>;
+    using value_type = ColumnView<T>;
     Column() = default;
+    Column(bg::details::FieldProbe &probe) noexcept { probe.record(this); }
     explicit Column(std::vector<cell_type> cells) : snapshot_{ColumnSnapshot<T>::create(allocator{}, cells.size())} {
         try {
             for (auto position = std::size_t{}; position != cells.size(); ++position) {
@@ -1047,8 +1116,24 @@ template <typename T> inline typename ColumnView<T>::cell_type ColumnView<T>::ce
 } // namespace bg::frame
 
 namespace bg {
-template <frame::cell_type T> struct scalar_type_traits<frame::Column<T>> {
-    static const ScalarType &type();
+template <typename T> struct scalar_type_traits<frame::Column<T>> {
+    static const ScalarType &type() {
+        if constexpr (frame::cell_type<T>)
+            return frame::column_type(cpp_scalar_type<T>());
+        else
+            return frame::column_type(scalar_type_traits<T>::type());
+    }
+};
+template <typename T> struct scalar_declaration_traits<frame::Column<T>> {
+    static constexpr bool generic = details::scalar_variable<T>;
+    static constexpr bool is_collection = false;
+    static constexpr bool supports_implicit_argument = false;
+    static constexpr bool supports_time_series = frame::cell_type<T> || details::scalar_variable<T>;
+};
+template <typename T> struct declaration_variable_traits<frame::Column<T>> {
+    template <typename Visitor> static void for_each(Visitor &&visitor) {
+        declaration_variable_traits<T>::for_each(std::forward<Visitor>(visitor));
+    }
 };
 template <frame::cell_type T> struct scalar_storage_traits<frame::Column<T>> {
     using stored_type = frame::ColumnStorage<T>;
@@ -1100,6 +1185,27 @@ template <frame::cell_type T> struct scalar_storage_traits<frame::Column<T>> {
             throw;
         }
         return snapshot;
+    }
+};
+
+template <details::scalar_variable T> struct scalar_storage_traits<frame::Column<T>> {
+    using stored_type = frame::ColumnStorage<T>;
+    using value_type = frame::ColumnView<>;
+    static constexpr bool supports_equality = false;
+    static constexpr bool supports_hash = false;
+    static constexpr bool supports_alternative_layouts = true;
+    static constexpr bool uses_shared_handle = false;
+    static constexpr bool uses_variable_memory = true;
+    static constexpr bool requires_finalization = true;
+    static constexpr bool assign_uses_memory_resource = true;
+
+    static value_type read_value(const ScalarData &source) {
+        const auto &type = static_cast<const frame::ColumnType &>(source.type());
+        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
+            return value_type{details::scalar_data_value<frame::Column<i64>>(source)};
+        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<double>()))
+            return value_type{details::scalar_data_value<frame::Column<double>>(source)};
+        throw std::invalid_argument{"frame column scalar has an unsupported cell type"};
     }
 };
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<frame::Column<i64>>();

@@ -25,11 +25,43 @@ template <template <typename, auto...> typename Field> struct Quotes {
     Field<double> ask;
 };
 
+template <template <typename, auto...> typename Field> struct InheritedArrowBase {
+    Field<i64> size;
+    Field<double> bid;
+};
+
+template <template <typename, auto...> typename Field>
+struct InheritedArrowFrame : bg::schema_extends<InheritedArrowBase, Field> {
+    Field<double> bid;
+    Field<double> ask;
+};
+
 template <template <typename, auto...> typename Field> struct EmptySchema {};
 
 void require(bool condition, const char *message) {
     if (!condition)
         throw std::runtime_error{message};
+}
+
+void test_arrow_default_frame_runtime() {
+    const auto &snapshot_runtime = frame_snapshot_runtime_type(frame_type(frame_schema_type<Quotes>()));
+    const auto &resolved_runtime = resolve_scalar_runtime_type(cpp_scalar_type<Frame<Quotes>>(), {});
+    require(&resolved_runtime == &snapshot_runtime && &cpp_scalar_runtime_type<Frame<Quotes>>() == &snapshot_runtime,
+            "Arrow import replaced the default native Frame scalar runtime");
+
+    const auto publish = node([](In<TS<i64>> command, Out<TS<Frame<Quotes>>> output) {
+        static_cast<void>(command);
+        auto frame = Frame<Quotes>{Quotes<Column>{.size = Column<i64>{{5}}, .bid = Column<double>{{12.5}},
+                                                   .ask = Column<double>{{2.0}}}};
+        auto view = FrameView<Quotes>{frame};
+        output.set_value(Scalar<Frame<Quotes>>::from(bg::frame::details::frame_view_scalar_runtime_type<Quotes>(),
+                                                     std::addressof(view)));
+    });
+    const auto graph = [&](wp<TS<i64>> command) { return publish(command); };
+    const auto commands = std::array<i64, 1>{0};
+    const auto snapshots = testing::test_graph(graph, commands);
+    require(snapshots.size() == 1 && snapshots[0] && snapshots[0]->value().columns().bid.cell(0) == 12.5,
+            "generic Frame scalar output failed after Arrow runtime initialization");
 }
 
 std::shared_ptr<arrow::Array> int_array(std::initializer_list<std::optional<std::int64_t>> values) {
@@ -58,6 +90,66 @@ std::shared_ptr<arrow::Array> double_array(std::initializer_list<std::optional<d
     if (!status.ok())
         throw std::runtime_error{status.ToString()};
     return result;
+}
+
+void test_arrow_first_column_runtime_registration() {
+    auto column = arrow::ChunkedArray::Make({int_array({4, std::nullopt, 6})}, arrow::int64());
+    require(column.ok(), "could not construct an Arrow column for cold runtime registration");
+    auto imported_result = from_arrow<i64>(std::move(column).ValueUnsafe());
+    require(imported_result.ok(), "cold Arrow column import failed");
+
+    auto imported = std::move(imported_result).ValueUnsafe();
+    const auto &default_runtime = cpp_scalar_runtime_type<Column<i64>>();
+    const auto &resolved_runtime = resolve_scalar_runtime_type(cpp_scalar_type<Column<i64>>(), {});
+    require(&default_runtime == &resolved_runtime && &imported.runtime_type() != &default_runtime,
+            "cold Arrow import replaced the default Column scalar runtime");
+}
+
+void test_inferred_arrow_frame_import() {
+    auto table = arrow::Table::Make(
+        arrow::schema({arrow::field("count", arrow::int64(), true), arrow::field("price", arrow::float64(), true)}),
+        std::vector<std::shared_ptr<arrow::Array>>{int_array({7, std::nullopt}),
+                                                   double_array({12.5, 13.0})});
+    auto imported_result = from_arrow(table);
+    require(imported_result.ok(), "schema-inferred Arrow frame import failed");
+    auto imported = std::move(imported_result).ValueUnsafe();
+    const auto &frame_type = static_cast<const FrameType &>(imported.type());
+    const auto &resolved_runtime = resolve_scalar_runtime_type(frame_type, {});
+    require(&resolved_runtime == &frame_snapshot_runtime_type(frame_type) &&
+                &imported.runtime_type() != &resolved_runtime,
+            "schema-inferred Arrow import changed the native default frame runtime");
+
+    auto erased_copy = ScalarValue<>{imported.view()};
+    table.reset();
+    const auto erased_view = erased_copy.view();
+    const auto scalar = Scalar<Frame<bg::SCHEMA>>::from(erased_view);
+    const auto frame = scalar.value();
+    const auto generic_count = frame.column("count");
+    const auto generic_price = frame.column("price");
+    const auto count = generic_count.view<i64>();
+    const auto price = generic_price.view<double>();
+    require(frame.schema().field_count() == 2 && frame.schema().field(0).name.text() == "count" &&
+                frame.schema().field(1).name.text() == "price" && frame.size() == 2 &&
+                !count.cell(1) && price.cell(0) == 12.5,
+            "schema-inferred Arrow frame lost its runtime schema, nulls, or columns");
+    auto borrowed_count_result = borrow_arrow(generic_count);
+    auto copied_price_result = copy_to_arrow(generic_price);
+    require(borrowed_count_result.ok() && copied_price_result.ok(),
+            "generic Arrow column export failed");
+    const auto borrowed_count = std::move(borrowed_count_result).ValueUnsafe();
+    const auto copied_price = std::move(copied_price_result).ValueUnsafe();
+    require(borrowed_count->length() == 2 && borrowed_count->chunk(0)->IsNull(1) &&
+                std::static_pointer_cast<arrow::DoubleArray>(copied_price->chunk(0))->Value(1) == 13.0,
+            "generic Arrow column export changed values or nulls");
+    auto borrowed_result = borrow_arrow(frame);
+    auto copied_result = copy_to_arrow(frame);
+    require(borrowed_result.ok() && copied_result.ok(), "schema-inferred Arrow frame export failed");
+    const auto borrowed = std::move(borrowed_result).ValueUnsafe();
+    const auto copied = std::move(copied_result).ValueUnsafe();
+    require(borrowed->num_rows() == 2 && borrowed->schema()->field(1)->name() == "price" &&
+                copied->num_rows() == 2 &&
+                std::static_pointer_cast<arrow::Int64Array>(copied->column(0)->chunk(0))->IsNull(1),
+            "schema-inferred Arrow export changed its shape, names, or validity");
 }
 
 void test_exports() {
@@ -181,15 +273,6 @@ void test_imports_and_runtime_lifetime() {
                                     {std::move(sizes), std::move(bids).ValueUnsafe(), std::move(asks).ValueUnsafe()},
                                     4);
 
-    const auto arrow_storage = arrow_details::ArrowFrameStorage<Quotes>{table};
-    const auto read_storage = arrow_details::frame_read_storage(arrow_storage);
-    auto read_bid = ColumnView<double>{};
-    read_storage.bind_column_view(util::symbol{"bid"}, read_bid);
-    require(read_storage.schema == std::addressof(frame_schema_type<Quotes>()) && read_storage.size == 4 &&
-                read_storage.source_runtime == std::addressof(arrow_details::frame_scalar_runtime<Quotes>()) &&
-                read_bid.size() == 4 && read_bid.cell(0) == 1.5 && read_bid.cell(3) == 4.5,
-            "Arrow frame read storage did not bind a typed column view");
-
     auto imported_result = from_arrow<Quotes>(table);
     require(imported_result.ok(), "Arrow frame import failed");
     auto imported = std::move(imported_result).ValueUnsafe();
@@ -197,6 +280,10 @@ void test_imports_and_runtime_lifetime() {
 
     const auto imported_view = imported.view();
     const auto scalar = Scalar<Frame<Quotes>>::from(imported_view);
+    require(std::addressof(scalar.runtime_type()) ==
+                std::addressof(arrow_details::runtime_schema_frame_scalar_runtime(
+                    static_cast<const FrameType &>(frame_type(frame_schema_type<Quotes>())))),
+            "Arrow frame view changed its scalar runtime");
     const auto view = scalar.value();
     require(view.size() == 4, "imported Arrow frame lost its row count");
     require(view.columns().size.cell(0) == 5 && !view.columns().size.cell(1) && view.columns().size.cell(3) == 9,
@@ -210,7 +297,10 @@ void test_imports_and_runtime_lifetime() {
     auto borrowed_result = borrow_arrow(view);
     require(borrowed_result.ok(), "borrowed Arrow frame export failed");
     auto borrowed = std::move(borrowed_result).ValueUnsafe();
-    require(borrowed->column(0)->num_chunks() == 2, "borrowed frame export changed source chunk count");
+    require(borrowed->column(0)->num_chunks() == 2,
+            (std::string{"borrowed frame export changed source chunk count to "} +
+             std::to_string(borrowed->column(0)->num_chunks()))
+                .c_str());
     for (auto index = std::size_t{}; index != size_values.size(); ++index)
         require(borrowed->column(0)->chunk(static_cast<int>(index))->data()->buffers[1]->data() ==
                     reinterpret_cast<const std::uint8_t *>(size_values[index]),
@@ -253,6 +343,10 @@ void test_arrow_scalar_owners() {
     require(&erased_owner.runtime_type().type() == &typed_owner.runtime_type().type() &&
                 &erased_owner.runtime_type() != &typed_owner.runtime_type(),
             "typed and erased Arrow owners did not keep distinct scalar runtimes");
+    auto erased_copy = ScalarValue<>{i64{0}};
+    erased_copy = erased_owner;
+    require(&erased_copy.runtime_type() == &erased_owner.runtime_type(),
+            "erased Arrow scalar copy did not preserve its runtime");
     table.reset();
     source = ScalarValue<>{i64{0}};
     const auto typed_view = typed_owner.view();
@@ -261,11 +355,79 @@ void test_arrow_scalar_owners() {
     const auto erased_view = erased_owner.view();
     require(Scalar<Frame<Quotes>>::from(erased_view).value().columns().ask.cell(0) == 2.0,
             "erased Arrow scalar owner did not outlive its source owner");
+    const auto erased_copy_view = erased_copy.view();
+    require(Scalar<Frame<Quotes>>::from(erased_copy_view).value().columns().ask.cell(0) == 2.0,
+            "copied erased Arrow scalar did not outlive its source owner");
+}
+
+void test_inherited_arrow_frame_fields() {
+    auto table = arrow::Table::Make(
+        arrow::schema({arrow::field("size", arrow::int64(), true), arrow::field("bid", arrow::float64(), true),
+                       arrow::field("ask", arrow::float64(), true)}),
+        std::vector<std::shared_ptr<arrow::Array>>{int_array({5, 6}), double_array({12.5, 23.0}),
+                                                   double_array({std::nullopt, 21.5})});
+    const auto &derived_schema = static_cast<const bg::Schema &>(frame_schema_type<InheritedArrowFrame>());
+    auto imported_result = from_arrow(table, derived_schema);
+    require(imported_result.ok(), "inherited Arrow frame import failed");
+    auto imported = std::move(imported_result).ValueUnsafe();
+    table.reset();
+
+    const auto imported_view = imported.view();
+    const auto scalar = Scalar<Frame<InheritedArrowFrame>>::from(imported_view);
+    const auto view = scalar.value();
+    const auto fields = bg::details::hierarchical_scalar_schema_reflection<InheritedArrowFrame>::fields(
+        view.columns());
+    require(view.size() == 2 && std::get<0>(fields).cell(1) == 6 && std::get<1>(fields).cell(0) == 12.5 &&
+                !std::get<2>(fields).cell(0) && std::get<2>(fields).cell(1) == 21.5,
+            "inherited Arrow frame read used physical rather than logical fields");
+
+    const auto base_view = Scalar<Frame<InheritedArrowBase>>::from(scalar).value();
+    require(base_view.columns().size.cell(0) == 5 && base_view.columns().bid.cell(0) == 12.5 &&
+                base_view.schema().field_count() == 3 && base_view.column("ask").view<double>().cell(1) == 21.5,
+            "base Arrow frame view did not inspect its retained derived column");
+    auto base_borrowed_result = borrow_arrow(base_view);
+    auto base_copied_result = copy_to_arrow(base_view);
+    require(base_borrowed_result.ok() && base_copied_result.ok(),
+            "base typed Arrow export failed to retain the derived schema");
+    auto base_borrowed = std::move(base_borrowed_result).ValueUnsafe();
+    auto base_copied = std::move(base_copied_result).ValueUnsafe();
+    require(base_borrowed->num_columns() == 3 && base_borrowed->schema()->field(2)->name() == "ask" &&
+                base_copied->num_columns() == 3 && base_copied->schema()->field(2)->name() == "ask" &&
+                std::static_pointer_cast<arrow::DoubleArray>(base_copied->column(2)->chunk(0))->Value(1) == 21.5,
+            "base typed Arrow export narrowed or changed the actual derived columns");
+
+    auto borrowed_result = borrow_arrow(view);
+    require(borrowed_result.ok(), "inherited Arrow frame borrowed export failed");
+    auto borrowed = std::move(borrowed_result).ValueUnsafe();
+    auto source_bid_values = std::array<const double *, 1>{};
+    auto source_bid_batches = std::size_t{};
+    std::get<1>(fields).batches([&](const auto &batch) { source_bid_values[source_bid_batches++] = batch.values; });
+    require(borrowed->num_columns() == 3 && borrowed->schema()->field(1)->name() == "bid" &&
+                borrowed->column(1)->chunk(0)->data()->buffers[1]->data() ==
+                    reinterpret_cast<const std::uint8_t *>(source_bid_values[0]),
+            "inherited Arrow borrowed export copied or reordered a logical field");
+
+    auto copied_result = copy_to_arrow(view);
+    require(copied_result.ok(), "inherited Arrow frame gather failed");
+    auto copied = std::move(copied_result).ValueUnsafe();
+    const auto bids = std::static_pointer_cast<arrow::DoubleArray>(copied->column(1)->chunk(0));
+    const auto asks = std::static_pointer_cast<arrow::DoubleArray>(copied->column(2)->chunk(0));
+    require(copied->schema()->field(0)->name() == "size" && copied->schema()->field(1)->name() == "bid" &&
+                copied->schema()->field(2)->name() == "ask" &&
+                bids->Value(0) == 12.5 && bids->Value(1) == 23.0 && asks->IsNull(0) && asks->Value(1) == 21.5,
+            "inherited Arrow gather changed logical order, values, or nulls");
 }
 
 void test_zero_column_row_count() {
     auto table = arrow::Table::Make(arrow::schema({}),
                                     std::vector<std::shared_ptr<arrow::ChunkedArray>>{}, 3);
+    auto inferred = from_arrow(table);
+    require(inferred.ok(), "schema-inferred zero-column Arrow frame import failed");
+    auto inferred_value = std::move(inferred).ValueUnsafe();
+    const auto inferred_view = inferred_value.view();
+    const auto inferred_frame = Scalar<Frame<bg::SCHEMA>>::from(inferred_view).value();
+    require(inferred_frame.schema().field_count() == 0 && inferred_frame.size() == 3,
+            "schema-inferred zero-column Arrow frame lost its row count");
     auto imported = from_arrow<EmptySchema>(table);
     require(imported.ok(), "zero-column Arrow frame import failed");
     auto imported_value = std::move(imported).ValueUnsafe();
@@ -278,6 +440,7 @@ void test_zero_column_row_count() {
 }
 
 void test_schema_validation() {
+    const auto &schema = static_cast<const bg::Schema &>(frame_schema_type<Quotes>());
     auto wrong_name = arrow::Table::Make(
         arrow::schema({arrow::field("wrong", arrow::int64(), true), arrow::field("bid", arrow::float64(), true),
                        arrow::field("ask", arrow::float64(), true)}),
@@ -289,11 +452,32 @@ void test_schema_validation() {
                        arrow::field("ask", arrow::float64(), true)}),
         std::vector<std::shared_ptr<arrow::Array>>{int_array({1}), double_array({2.0}), int_array({3})});
     require(!from_arrow<Quotes>(wrong_type).ok(), "Arrow import accepted a mismatched column type");
+    require(!from_arrow(wrong_name, schema).ok(), "explicit-schema Arrow import accepted a mismatched name");
+    require(!from_arrow(wrong_type, schema).ok(), "explicit-schema Arrow import accepted a mismatched type");
+
+    auto wrong_order = arrow::Table::Make(
+        arrow::schema({arrow::field("bid", arrow::float64(), true), arrow::field("size", arrow::int64(), true),
+                       arrow::field("ask", arrow::float64(), true)}),
+        std::vector<std::shared_ptr<arrow::Array>>{double_array({2.0}), int_array({1}), double_array({3.0})});
+    require(!from_arrow(wrong_order, schema).ok(), "explicit-schema Arrow import accepted a field order mismatch");
+
+    auto duplicate_names = arrow::Table::Make(
+        arrow::schema({arrow::field("dup", arrow::int64(), true), arrow::field("dup", arrow::float64(), true)}),
+        std::vector<std::shared_ptr<arrow::Array>>{int_array({1}), double_array({2.0})});
+    require(!from_arrow(duplicate_names).ok(), "schema-inferred Arrow import accepted duplicate field names");
+
+    auto unsupported = arrow::Table::Make(
+        arrow::schema({arrow::field("label", arrow::utf8(), true)}),
+        std::vector<std::shared_ptr<arrow::Array>>{arrow::MakeArrayOfNull(arrow::utf8(), 1).ValueOrDie()});
+    require(!from_arrow(unsupported).ok(), "schema-inferred Arrow import accepted an unsupported cell type");
 }
 
 } // namespace
 
 int main() {
+    test_arrow_first_column_runtime_registration();
+    test_inferred_arrow_frame_import();
+    test_arrow_default_frame_runtime();
     test_exports();
     test_fragmented_dense_copy_and_source_mutation();
     test_null_only_and_empty_exports();
@@ -301,4 +485,5 @@ int main() {
     test_zero_column_row_count();
     test_schema_validation();
     test_arrow_scalar_owners();
+    test_inherited_arrow_frame_fields();
 }
