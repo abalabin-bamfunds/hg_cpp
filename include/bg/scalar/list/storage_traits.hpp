@@ -38,13 +38,7 @@ template <typename T> struct scalar_storage_traits<List<T>> {
     static bool equals(value_type left, value_type right) { return left == right; }
 
     static void construct(stored_type *destination, value_type value, allocator &memory) {
-        std::construct_at(destination);
-        auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
-        for (auto i = std::size_t{}; i < value.size(); ++i) {
-            destination->items.emplace_back_with(memory.memory_resource(),
-                                                 [&](auto *item) { ItemTraits::construct(item, value[i], memory); });
-        }
-        rollback.release();
+        copy_construct(destination, value.storage(), memory);
     }
 
     template <std::ranges::contiguous_range Range>
@@ -68,7 +62,15 @@ template <typename T> struct scalar_storage_traits<List<T>> {
     }
 
     static void copy_construct(stored_type *destination, const stored_type &source, allocator &memory) {
-        construct(destination, read(source), memory);
+        std::construct_at(destination);
+        auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
+        const auto &item_runtime_type = cpp_scalar_runtime_type<T>();
+        for (auto index = std::size_t{}; index < source.items.size(); ++index) {
+            destination->items.emplace_back_with(memory.memory_resource(), [&](auto *item) {
+                item_runtime_type.copy_construct(item, std::addressof(source.items[index]), memory);
+            });
+        }
+        rollback.release();
     }
 
     static void assign(stored_type &destination, value_type value, allocator &memory) {

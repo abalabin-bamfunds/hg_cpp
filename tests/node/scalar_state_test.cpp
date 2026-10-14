@@ -46,6 +46,91 @@ TEST_CASE("collection state is mutable during a node invocation", "[node][state]
     state.read([](const auto &values) { CHECK(*bg::scalar_cast<std::int64_t>(values.at("result")) == 12); });
 }
 
+namespace {
+
+struct collection_copy_node {
+    bg::Scalar<bg::List<bg::string>> list;
+    bg::Scalar<bg::Set<bg::string>> set;
+    bg::Scalar<bg::Dict<bg::string, bg::string>> dict;
+    bg::Scalar<bg::Dict<bg::string, bg::List<bg::string>>> nested_dict;
+    bg::Scalar<bg::Opaque<const char *>> list_item_data;
+    bg::Scalar<bg::Opaque<const char *>> set_item_data;
+    bg::Scalar<bg::Opaque<const char *>> dict_key_data;
+    bg::Scalar<bg::Opaque<const char *>> dict_value_data;
+    bg::Scalar<bg::Opaque<const char *>> nested_item_data;
+
+    void start(bg::EvaluationContext *context) const {
+        auto set_item_matches = false;
+        set.for_each([&](const auto item) { set_item_matches = item.value().data() == set_item_data.value(); });
+
+        auto dict_key_matches = false;
+        auto dict_value_matches = false;
+        dict.for_each([&](const auto key, const auto value) {
+            dict_key_matches = key.value().data() == dict_key_data.value();
+            dict_value_matches = value.value().data() == dict_value_data.value();
+        });
+
+        const auto nested_item_matches = nested_dict.at("nested")[0].value().data() == nested_item_data.value();
+
+        context->global_state().write([&](auto &values) {
+            values.set(bg::util::symbol{"list_item_matches"},
+                       bg::ScalarValue{list[0].value().data() == list_item_data.value()});
+            values.set(bg::util::symbol{"set_item_matches"}, bg::ScalarValue{set_item_matches});
+            values.set(bg::util::symbol{"dict_key_matches"}, bg::ScalarValue{dict_key_matches});
+            values.set(bg::util::symbol{"dict_value_matches"}, bg::ScalarValue{dict_value_matches});
+            values.set(bg::util::symbol{"nested_item_matches"}, bg::ScalarValue{nested_item_matches});
+        });
+    }
+
+    void evaluate() const {}
+};
+
+} // namespace
+
+TEST_CASE("compiled graph collection copies retain their string items",
+          "[node][scalar][scalar:list][scalar:set][scalar:dict][scalar:string]"
+          "[feature:scalar-storage][feature:graph-compilation][feature:global-state][storage:variable]") {
+    const auto collection_copy = bg::node<collection_copy_node>();
+    const auto list = bg::ScalarValue<bg::List<bg::string>>{std::array<std::string_view, 1>{"list item"}};
+    const auto set = bg::ScalarValue<bg::Set<bg::string>>{std::array<std::string_view, 1>{"set item"}};
+    const auto dict = bg::ScalarValue<bg::Dict<bg::string, bg::string>>{
+        std::array{std::pair{std::string_view{"dict key"}, std::string_view{"dict value"}}}};
+    const auto nested_items = bg::ScalarValue<bg::List<bg::string>>{
+        std::array<std::string_view, 1>{"nested item"}};
+    const auto nested_dict = bg::ScalarValue<bg::Dict<bg::string, bg::List<bg::string>>>{
+        std::array{std::pair{std::string_view{"nested"}, nested_items.view()}}};
+    const auto list_item_data = bg::ScalarValue<bg::Opaque<const char *>>{list.view()[0].value().data()};
+    auto set_item_text = static_cast<const char *>(nullptr);
+    set.view().for_each([&](const auto item) { set_item_text = item.value().data(); });
+    auto dict_key_text = static_cast<const char *>(nullptr);
+    auto dict_value_text = static_cast<const char *>(nullptr);
+    dict.view().for_each([&](const auto key, const auto value) {
+        dict_key_text = key.value().data();
+        dict_value_text = value.value().data();
+    });
+    const auto nested_item_text = nested_dict.view().at("nested")[0].value().data();
+    const auto set_item_data = bg::ScalarValue<bg::Opaque<const char *>>{set_item_text};
+    const auto dict_key_data = bg::ScalarValue<bg::Opaque<const char *>>{dict_key_text};
+    const auto dict_value_data = bg::ScalarValue<bg::Opaque<const char *>>{dict_value_text};
+    const auto nested_item_data = bg::ScalarValue<bg::Opaque<const char *>>{nested_item_text};
+    auto global_state = bg::GlobalState{};
+
+    bg::run_graph(
+        [&] {
+            collection_copy(list, set, dict, nested_dict, list_item_data, set_item_data, dict_key_data,
+                            dict_value_data, nested_item_data);
+        },
+        global_state);
+
+    global_state.read([](const auto &values) {
+        CHECK(*bg::scalar_cast<bool>(values.at("list_item_matches")));
+        CHECK(*bg::scalar_cast<bool>(values.at("set_item_matches")));
+        CHECK(*bg::scalar_cast<bool>(values.at("dict_key_matches")));
+        CHECK(*bg::scalar_cast<bool>(values.at("dict_value_matches")));
+        CHECK(*bg::scalar_cast<bool>(values.at("nested_item_matches")));
+    });
+}
+
 TEST_CASE("a runtime graph releases collection state storage", "[node][state][scalar][allocation][feature:state]") {
     const auto collection_state = bg::node<collection_state_node>();
     auto wiring = bg::GraphWiring{};

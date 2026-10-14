@@ -5,9 +5,13 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "../../../utils/counting_memory_resource.hpp"
+
 #include <array>
 #include <cstdint>
 #include <memory_resource>
+#include <new>
+#include <string_view>
 #include <vector>
 
 TEST_CASE("resolved scalar list storage supports mutation",
@@ -73,4 +77,48 @@ TEST_CASE("a scalar list copies between composed and C++ storage",
 
     composed.destroy(storage, allocator);
     allocator.deallocate_bytes(storage, composed.size(), composed.alignment());
+}
+
+TEST_CASE("a scalar list copy releases retained items when allocation fails",
+          "[value][scalar:list][scalar:string][feature:scalar-storage][storage:variable]") {
+    using List = bg::List<bg::string>;
+
+    const auto items = std::array<std::string_view, 16>{
+        "zero", "one", "two", "three", "four", "five", "six", "seven",
+        "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen"};
+    const auto &runtime_type = bg::cpp_scalar_runtime_type<List>();
+    auto source_memory = counting_memory_resource{};
+    auto copy_memory = counting_memory_resource{};
+    auto destination_memory = std::pmr::unsynchronized_pool_resource{};
+    auto *destination = destination_memory.allocate(runtime_type.size(), runtime_type.alignment());
+
+    {
+        auto source_allocator = bg::allocator{source_memory};
+        const auto source = bg::ScalarValue<List>{items, source_allocator};
+        const auto source_view = source.view();
+
+        SECTION("stored copy") {
+            copy_memory.fail_after(1);
+            auto copy_allocator = bg::allocator{copy_memory};
+
+            CHECK_THROWS_AS(runtime_type.copy_construct(destination, source_view.data(), copy_allocator),
+                            std::bad_alloc);
+        }
+
+        SECTION("native value construction") {
+            const auto &source_storage =
+                *static_cast<const bg::scalar_storage_traits<List>::stored_type *>(source_view.data());
+            const auto source_list = bg::scalar_storage_traits<List>::read(source_storage);
+            copy_memory.fail_after(1);
+            auto copy_allocator = bg::allocator{copy_memory};
+
+            CHECK_THROWS_AS(runtime_type.construct_from_value(destination, &source_list, copy_allocator),
+                            std::bad_alloc);
+        }
+
+        CHECK(copy_memory.allocations() == 0);
+    }
+
+    destination_memory.deallocate(destination, runtime_type.size(), runtime_type.alignment());
+    CHECK(source_memory.allocations() == 0);
 }

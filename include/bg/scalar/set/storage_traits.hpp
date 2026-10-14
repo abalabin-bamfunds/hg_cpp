@@ -35,14 +35,7 @@ template <typename T> struct scalar_storage_traits<Set<T>> {
     static bool equals(value_type left, value_type right) { return left == right; }
 
     static void construct(stored_type *destination, value_type value, allocator &memory) {
-        std::construct_at(destination);
-        auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
-        for (const auto item : value) {
-            (void)destination->items.insert_with(
-                item, memory.memory_resource(), [&](auto *stored) { ItemTraits::construct(stored, item, memory); },
-                [&](auto *stored) noexcept { ItemTraits::destroy(stored, memory); });
-        }
-        rollback.release();
+        copy_construct(destination, value.storage(), memory);
     }
 
     template <std::ranges::input_range Range>
@@ -74,7 +67,16 @@ template <typename T> struct scalar_storage_traits<Set<T>> {
     }
 
     static void copy_construct(stored_type *destination, const stored_type &source, allocator &memory) {
-        construct(destination, read(source), memory);
+        std::construct_at(destination);
+        auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
+        const auto &item_runtime_type = cpp_scalar_runtime_type<T>();
+        for (const auto &item : source.items) {
+            (void)destination->items.insert_with(
+                ItemTraits::read(item), memory.memory_resource(),
+                [&](auto *stored) { item_runtime_type.copy_construct(stored, std::addressof(item), memory); },
+                [&](auto *stored) noexcept { ItemTraits::destroy(stored, memory); });
+        }
+        rollback.release();
     }
 
     static void assign(stored_type &destination, value_type value, allocator &memory) {

@@ -41,15 +41,7 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
     static bool equals(value_type left, value_type right) { return left == right; }
 
     static void construct(stored_type *destination, value_type value, allocator &memory) {
-        std::construct_at(destination);
-        auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
-        for (const auto [key, item] : value) {
-            (void)destination->items.try_emplace_with(
-                key, memory.memory_resource(), [&](auto *stored) { KeyTraits::construct(stored, key, memory); },
-                [&](auto *stored) noexcept { KeyTraits::destroy(stored, memory); },
-                [&](auto *stored) { ValueTraits::construct(stored, item, memory); });
-        }
-        rollback.release();
+        copy_construct(destination, value.storage(), memory);
     }
 
     template <std::ranges::input_range Range>
@@ -79,7 +71,18 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
     }
 
     static void copy_construct(stored_type *destination, const stored_type &source, allocator &memory) {
-        construct(destination, read(source), memory);
+        std::construct_at(destination);
+        auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
+        const auto &key_runtime_type = cpp_scalar_runtime_type<K>();
+        const auto &value_runtime_type = cpp_scalar_runtime_type<V>();
+        for (const auto [key, value] : source.items) {
+            (void)destination->items.try_emplace_with(
+                KeyTraits::read(key), memory.memory_resource(),
+                [&](auto *stored) { key_runtime_type.copy_construct(stored, std::addressof(key), memory); },
+                [&](auto *stored) noexcept { KeyTraits::destroy(stored, memory); },
+                [&](auto *stored) { value_runtime_type.copy_construct(stored, std::addressof(value), memory); });
+        }
+        rollback.release();
     }
 
     static void assign(stored_type &destination, value_type value, allocator &memory) {
