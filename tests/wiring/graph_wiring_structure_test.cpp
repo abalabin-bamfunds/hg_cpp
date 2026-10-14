@@ -1,4 +1,5 @@
 #include <bg/graph.hpp>
+#include <bg/graph/details/nested.hpp>
 #include <bg/graph/details/graph_wiring_structure.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
@@ -217,6 +218,60 @@ details::GraphWiringStructure inherited_requirement_structure(const void *identi
     return details::graph_wiring_structure(wiring, boundaries, static_cast<WiringPoint>(result));
 }
 
+bool nested_reference_and_borrowed_bodies_equivalent(bool swapped_inputs) {
+    auto nested_wiring = GraphWiring{};
+    const auto nested_context = WiringContext{nested_wiring};
+    const auto &reference_type = type_cast<TimeSeriesReferenceType>(REF<TS<i64>>::type());
+    const auto nested_left = details::wire_nested_input(reference_type);
+    const auto nested_right = details::wire_nested_input(reference_type);
+    const auto nested_add = node<add_node>();
+    const auto nested_result = nested_add(nested_left, nested_right);
+    const auto nested_concrete_result = nested_wiring.complete_pending_wiring(nested_result);
+    const auto nested_inputs = std::array{nested_left, nested_right};
+
+    auto compact_wiring = GraphWiring{};
+    const auto compact_context = WiringContext{compact_wiring};
+    const auto compact_left = compact_wiring.borrowed_input(TS<i64>::type());
+    const auto compact_right = compact_wiring.borrowed_input(TS<i64>::type());
+    const auto compact_add = node<add_node>();
+    const auto compact_result = swapped_inputs ? compact_add(compact_right, compact_left)
+                                               : compact_add(compact_left, compact_right);
+    const auto compact_concrete_result = compact_wiring.complete_pending_wiring(compact_result);
+    const auto compact_inputs = std::array{compact_left, compact_right};
+    const auto input_types = std::array<const TimeSeriesType *, 2>{&TS<i64>::type(), &TS<i64>::type()};
+
+    return details::equivalent_wiring_bodies(nested_wiring, nested_inputs, nested_concrete_result, compact_wiring,
+                                             compact_inputs, compact_concrete_result, input_types);
+}
+
+details::GraphWiringStructure ordinary_borrowed_structure(bool swapped_inputs, bool unrelated_input) {
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto left = wiring.borrowed_input(TS<i64>::type());
+    const auto right = wiring.borrowed_input(TS<i64>::type());
+    if (unrelated_input) {
+        (void)wiring.borrowed_input(TS<bool>::type());
+    }
+    const auto add = node<add_node>();
+    const auto result = swapped_inputs ? add(right, left) : add(left, right);
+    const auto concrete_result = wiring.complete_pending_wiring(result);
+
+    return details::graph_wiring_structure(wiring, std::span<const WiringPoint>{}, concrete_result);
+}
+
+details::GraphWiringStructure direct_borrowed_result(std::size_t result_index, bool declared_inputs) {
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto first = wiring.borrowed_input(TS<i64>::type());
+    const auto second = wiring.borrowed_input(TS<i64>::type());
+    if (declared_inputs) {
+        const auto inputs = std::array{first, second};
+        return details::graph_wiring_structure(wiring, inputs, result_index == 0 ? first : second);
+    }
+    return details::graph_wiring_structure(wiring, std::span<const WiringPoint>{},
+                                           result_index == 0 ? first : second);
+}
+
 } // namespace
 
 TEST_CASE("graph wiring structure ignores local names and template object lifetimes",
@@ -313,4 +368,49 @@ TEST_CASE("graph wiring structure excludes the provider identity of inherited co
     REQUIRE(second.cacheable());
     CHECK(first.hash() == second.hash());
     CHECK(first == second);
+}
+
+TEST_CASE("nested reference boundaries and borrowed values have equivalent bodies",
+          "[graph_wiring][feature:borrowed-input][series:value][binding:reference-to-value][shape:multiple]") {
+    CHECK(nested_reference_and_borrowed_bodies_equivalent(false));
+    CHECK_FALSE(nested_reference_and_borrowed_bodies_equivalent(true));
+}
+
+TEST_CASE("ordinary graph snapshots include borrowed input slots",
+          "[graph_wiring][feature:borrowed-input][series:value][shape:multiple]") {
+    const auto first = ordinary_borrowed_structure(false, false);
+    const auto same = ordinary_borrowed_structure(false, false);
+    const auto swapped = ordinary_borrowed_structure(true, false);
+    const auto with_unrelated_input = ordinary_borrowed_structure(false, true);
+
+    REQUIRE(first.cacheable());
+    CHECK(first == same);
+    CHECK_FALSE(first == swapped);
+    CHECK_FALSE(first == with_unrelated_input);
+}
+
+TEST_CASE("a borrowed input can be a declared boundary and graph result",
+          "[graph_wiring][feature:borrowed-input][series:value][shape:source]") {
+    const auto first = direct_borrowed_result(0, true);
+    const auto same = direct_borrowed_result(0, true);
+    const auto second = direct_borrowed_result(1, true);
+
+    CHECK(first.cacheable());
+    CHECK(first.boundary_count() == 2);
+    CHECK(first.result_type() == &TS<i64>::type());
+    CHECK(first == same);
+    CHECK_FALSE(first == second);
+}
+
+TEST_CASE("an undeclared borrowed input can be the graph result",
+          "[graph_wiring][feature:borrowed-input][series:value][shape:source]") {
+    const auto first = direct_borrowed_result(0, false);
+    const auto same = direct_borrowed_result(0, false);
+    const auto second = direct_borrowed_result(1, false);
+
+    CHECK(first.cacheable());
+    CHECK(first.boundary_count() == 0);
+    CHECK(first.result_type() == &TS<i64>::type());
+    CHECK(first == same);
+    CHECK_FALSE(first == second);
 }
