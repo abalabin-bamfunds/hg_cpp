@@ -129,17 +129,19 @@ The context provides:
 - registration of outer-cycle callbacks
 
 A runtime graph can declare borrowed time-series input slots. Each invocation
-supplies the slot values through an `EvaluationContext` section keyed to that
-`RuntimeGraph` instance. A slot provides its value, runtime type, time-series
-state, and change for the current invocation. Compiled input bindings store the
-slot index; the runtime does not retain the supplied values. The caller keeps
-their storage alive through the invocation. Slot changes use the normal input
-notification and validity paths. A borrowed input cannot be materialized as a
-reference because a reference can outlive the invocation that supplies the slot.
+supplies a pointer to its `RuntimeGraphInput` records when creating the graph's
+`EvaluationContext`. The compiled graph defines the record count and each input
+binding's slot index. A record provides its value, runtime type, time-series
+state, and change for the invocation. The runtime does not retain the supplied
+values. The caller keeps their storage alive through the invocation. Slot
+changes use the normal input notification and validity paths. A borrowed input
+cannot be materialized as a reference because a reference can outlive the
+invocation that supplies the slot.
 
-An inner runtime graph receives a child `EvaluationContext` derived from the
-context used to evaluate its owning node. This preserves evaluation services
-and internal sections through any number of nested graph owners.
+Child contexts for the same runtime graph inherit its input pointer. A context
+for a different runtime graph clears the pointer unless the caller supplies
+that graph's records. Other evaluation services and context sections continue
+through nested graph owners.
 
 `SimulationEvaluationEngine::run()` owns one simulated wall clock for the run.
 The engine sets it to the start time before graph startup, then updates it once

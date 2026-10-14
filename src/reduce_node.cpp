@@ -467,26 +467,25 @@ class CompactReduceRuntime {
         const auto storage = std::span{compact_pair_storage(branch.pair_index), compact_storage_size_};
         auto runtime = RuntimeGraph{*compact.graph, memory_, storage, invocation.context().global_state(),
                                    pair_state.initialized ? std::optional{pair_state.input_validity} : std::nullopt};
-        auto borrowed_inputs = std::array<BorrowedInput, 2>{};
+        auto runtime_graph_inputs = std::array<RuntimeGraphInput, 2>{};
         const auto bind_input = [&](std::size_t side, std::size_t binding_index,
                                     const CompactReduceInput &input, bool child_replaced, bool child_changed) {
             auto &state = pair_state.input_states[side];
-            auto change = BorrowedInputChange::unchanged;
+            auto change = RuntimeGraphInputChange::unchanged;
             if (child_replaced || !pair_state.initialized || child_changed) {
                 if (input.last_updated.valid()) {
-                    change = state.valid() ? BorrowedInputChange::update : BorrowedInputChange::revalidation;
+                    change = state.valid() ? RuntimeGraphInputChange::update : RuntimeGraphInputChange::revalidation;
                     state.publish(evaluation_time);
                 } else if (state.valid()) {
-                    change = BorrowedInputChange::invalidation;
+                    change = RuntimeGraphInputChange::invalidation;
                     state.invalidate(evaluation_time);
                 }
             }
-            borrowed_inputs[binding_index] = BorrowedInput{&state, input.value, input.runtime_type, change};
+            runtime_graph_inputs[binding_index] = RuntimeGraphInput{&state, input.value, input.runtime_type, change};
         };
         bind_input(0, compact.input_indices[0], left, branch.input_replaced(0), left_changed);
         bind_input(1, compact.input_indices[1], right, branch.input_replaced(1), right_changed);
-        auto section = BorrowedInputSection{runtime, borrowed_inputs};
-        auto context = invocation.context().child(section);
+        auto context = invocation.context().child(runtime, runtime_graph_inputs.data());
         if (!runtime.evaluate(context)) {
             throw std::logic_error{"a borrowed reduce graph cannot pend evaluation"};
         }

@@ -49,7 +49,9 @@ void DefaultInputDescriptor::notify_value(OutputChangeContext &context, std::siz
     const auto notification = runtime_node.default_descriptor(parameter_index).notification;
     const auto initial_revalidation = change == OutputChange::revalidation && !input.last_updated.valid() &&
                                       context.evaluation_time() ==
-                                          runtime_node.input_last_updated(parameter_index, context.borrowed_inputs()).time();
+                                          runtime_node.input_last_updated(parameter_index,
+                                                                          context.runtime_graph_inputs())
+                                              .time();
     input.last_updated.publish(context.evaluation_time());
     if (notification.function != nullptr) {
         notification.function(context, node_index, notification.data,

@@ -1,6 +1,6 @@
 # Borrowed evaluation inputs
 
-Status: accepted
+Status: superseded by [0059](0059-runtime-graph-input-context.md)
 
 ## Context
 

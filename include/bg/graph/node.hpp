@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bg/graph/compiled_node.hpp>
-#include <bg/graph/borrowed_input.hpp>
+#include <bg/graph/runtime_graph_input.hpp>
 #include <bg/evaluation_context.hpp>
 #include <bg/time_series/ref/ref_input_storage.hpp>
 #include <bg/time_series/ref/ref_input_sample.hpp>
@@ -10,7 +10,6 @@
 #include <bg/time_series/time_series_input.hpp>
 
 #include <cstddef>
-#include <span>
 #include <stdexcept>
 #include <type_traits>
 
@@ -47,8 +46,8 @@ class Node {
     }
 
     const TimeSeriesState &input_last_updated(std::size_t parameter_index,
-                                              std::span<const BorrowedInput> borrowed_inputs) const {
-        return *input_data(parameter_index, borrowed_inputs).last_updated;
+                                              const RuntimeGraphInput *runtime_graph_inputs) const {
+        return *input_data(parameter_index, runtime_graph_inputs).last_updated;
     }
 
     bool input_modified(std::size_t parameter_index, EvaluationTime evaluation_time) const noexcept {
@@ -57,8 +56,8 @@ class Node {
     }
 
     bool input_modified(std::size_t parameter_index, EvaluationTime evaluation_time,
-                        std::span<const BorrowedInput> borrowed_inputs) const {
-        const auto &state = input_last_updated(parameter_index, borrowed_inputs);
+                        const RuntimeGraphInput *runtime_graph_inputs) const {
+        const auto &state = input_last_updated(parameter_index, runtime_graph_inputs);
         return state.valid() && state.time() == evaluation_time;
     }
 
@@ -84,16 +83,16 @@ class Node {
         return binding_data(binding, mode);
     }
 
-    InputData input_data(std::size_t parameter_index, std::span<const BorrowedInput> borrowed_inputs) const {
+    InputData input_data(std::size_t parameter_index, const RuntimeGraphInput *runtime_graph_inputs) const {
         const auto &binding = compiled_node_->parameters()[parameter_index];
         const auto mode = binding.mode();
         if (mode == ParameterBindingMode::borrowed) {
-            return borrowed_input_data(binding, borrowed_inputs);
+            return borrowed_input_data(binding, runtime_graph_inputs);
         }
         if (mode == ParameterBindingMode::default_value) {
             const auto &descriptor = default_descriptor(binding);
             if (descriptor.source.mode() == ParameterBindingMode::borrowed) {
-                const auto source_data = borrowed_input_data(descriptor.source, borrowed_inputs);
+                const auto source_data = borrowed_input_data(descriptor.source, runtime_graph_inputs);
                 const auto *last_updated = &default_input(binding).last_updated;
                 if (!last_updated->valid()) {
                     last_updated = reinterpret_cast<const TimeSeriesState *>(runtime_storage_ +
@@ -109,7 +108,7 @@ class Node {
         const auto &binding = compiled_node_->parameters()[parameter_index];
         const auto mode = binding.mode();
         if (mode == ParameterBindingMode::borrowed) {
-            return borrowed_input_data(binding, context.borrowed_inputs());
+            return borrowed_input_data(binding, context.runtime_graph_inputs());
         }
         if (mode != ParameterBindingMode::default_value) {
             return binding_data(binding, mode);
@@ -117,7 +116,7 @@ class Node {
 
         const auto &descriptor = default_descriptor(binding);
         if (descriptor.source.mode() == ParameterBindingMode::borrowed) {
-            const auto source_data = borrowed_input_data(descriptor.source, context.borrowed_inputs());
+            const auto source_data = borrowed_input_data(descriptor.source, context.runtime_graph_inputs());
             const auto *last_updated = &default_input(binding).last_updated;
             if (!last_updated->valid()) {
                 last_updated = reinterpret_cast<const TimeSeriesState *>(runtime_storage_ +
@@ -146,15 +145,15 @@ class Node {
     }
 
     const TimeSeriesRuntimeType &time_series_input_runtime_type(
-        std::size_t parameter_index, std::span<const BorrowedInput> borrowed_inputs) const {
+        std::size_t parameter_index, const RuntimeGraphInput *runtime_graph_inputs) const {
         const auto &binding = compiled_node_->parameters()[parameter_index];
         if (binding.mode() == ParameterBindingMode::borrowed) {
-            return *borrowed_input(binding, borrowed_inputs).runtime_type;
+            return *borrowed_input(binding, runtime_graph_inputs).runtime_type;
         }
         if (binding.mode() == ParameterBindingMode::default_value) {
             const auto &source = default_descriptor(binding).source;
             if (source.mode() == ParameterBindingMode::borrowed) {
-                const auto &input = borrowed_input(source, borrowed_inputs);
+                const auto &input = borrowed_input(source, runtime_graph_inputs);
                 if (input.last_updated->valid()) {
                     return *input.runtime_type;
                 }
@@ -169,12 +168,12 @@ class Node {
         const auto &binding = compiled_node_->parameters()[parameter_index];
         const auto mode = binding.mode();
         if (mode == ParameterBindingMode::borrowed) {
-            return *borrowed_input(binding, context.borrowed_inputs()).runtime_type;
+            return *borrowed_input(binding, context.runtime_graph_inputs()).runtime_type;
         }
         if (mode == ParameterBindingMode::default_value) {
             const auto &source = default_descriptor(binding).source;
             if (source.mode() == ParameterBindingMode::borrowed) {
-                const auto &input = borrowed_input(source, context.borrowed_inputs());
+                const auto &input = borrowed_input(source, context.runtime_graph_inputs());
                 return input.last_updated->valid() ? *input.runtime_type
                                                     : compiled_node_->time_series_input_runtime_type(parameter_index);
             }
@@ -203,13 +202,13 @@ class Node {
                                                               const EvaluationContext &context) const {
         const auto &binding = compiled_node_->parameters()[descriptor.parameter_index];
         if (binding.mode() == ParameterBindingMode::borrowed) {
-            return *borrowed_input(binding, context.borrowed_inputs()).runtime_type;
+            return *borrowed_input(binding, context.runtime_graph_inputs()).runtime_type;
         }
         if (binding.mode() == ParameterBindingMode::default_value &&
             default_descriptor(binding).source.mode() == ParameterBindingMode::borrowed) {
             const auto &source = default_descriptor(binding).source;
-            if (borrowed_input(source, context.borrowed_inputs()).last_updated->valid()) {
-                return *borrowed_input(source, context.borrowed_inputs()).runtime_type;
+            if (borrowed_input(source, context.runtime_graph_inputs()).last_updated->valid()) {
+                return *borrowed_input(source, context.runtime_graph_inputs()).runtime_type;
             }
         }
         return all_valid_input_runtime_type(descriptor);
@@ -287,21 +286,21 @@ class Node {
     void *state() const noexcept { return runtime_storage_ + compiled_node_->state_offset(); }
 
   private:
-    const BorrowedInput &borrowed_input(const ParameterBinding &binding,
-                                        std::span<const BorrowedInput> borrowed_inputs) const {
-        if (binding.borrowed_input_index() >= borrowed_inputs.size()) {
-            throw std::logic_error{"a borrowed input binding requires its evaluation context"};
+    const RuntimeGraphInput &borrowed_input(const ParameterBinding &binding,
+                                            const RuntimeGraphInput *runtime_graph_inputs) const {
+        if (runtime_graph_inputs == nullptr) {
+            throw std::logic_error{"a runtime graph input binding requires its evaluation context"};
         }
-        const auto &input = borrowed_inputs[binding.borrowed_input_index()];
+        const auto &input = runtime_graph_inputs[binding.borrowed_input_index()];
         if (input.last_updated == nullptr || input.runtime_type == nullptr) {
-            throw std::logic_error{"a borrowed input slot must provide its state and runtime type"};
+            throw std::logic_error{"a runtime graph input slot must provide its state and runtime type"};
         }
         return input;
     }
 
     InputData borrowed_input_data(const ParameterBinding &binding,
-                                  std::span<const BorrowedInput> borrowed_inputs) const {
-        const auto &input = borrowed_input(binding, borrowed_inputs);
+                                  const RuntimeGraphInput *runtime_graph_inputs) const {
+        const auto &input = borrowed_input(binding, runtime_graph_inputs);
         return {input.last_updated, input.value};
     }
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bg/evaluation_time.hpp>
-#include <bg/graph/borrowed_input.hpp>
+#include <bg/graph/runtime_graph_input.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -31,9 +31,7 @@ class OutputChangeContext {
 
     RuntimeGraph &runtime_graph() const noexcept { return *runtime_graph_; }
     EvaluationTime evaluation_time() const noexcept;
-    std::span<const BorrowedInput> borrowed_inputs() const noexcept {
-        return borrowed_inputs_ == nullptr ? std::span<const BorrowedInput>{} : borrowed_inputs_->inputs;
-    }
+    const RuntimeGraphInput *runtime_graph_inputs() const noexcept { return runtime_graph_inputs_; }
     OutputChangeContext for_graph(RuntimeGraph &graph) const noexcept {
         return OutputChangeContext{graph, evaluation_time_, nullptr};
     }
@@ -44,12 +42,12 @@ class OutputChangeContext {
 
   private:
     OutputChangeContext(RuntimeGraph &runtime_graph, EvaluationTime evaluation_time,
-                        const details::BorrowedInputSection *borrowed_inputs) noexcept
-        : runtime_graph_{&runtime_graph}, evaluation_time_{evaluation_time}, borrowed_inputs_{borrowed_inputs} {}
+                        const RuntimeGraphInput *runtime_graph_inputs) noexcept
+        : runtime_graph_{&runtime_graph}, evaluation_time_{evaluation_time}, runtime_graph_inputs_{runtime_graph_inputs} {}
 
     RuntimeGraph *runtime_graph_;
     EvaluationTime evaluation_time_;
-    const details::BorrowedInputSection *borrowed_inputs_{};
+    const RuntimeGraphInput *runtime_graph_inputs_{};
 };
 
 using OutputChangeHandler = void (*)(OutputChangeContext &, const TimeSeriesRuntimeType *, const void *, OutputChange,

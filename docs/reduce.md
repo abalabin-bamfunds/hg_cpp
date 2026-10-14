@@ -35,10 +35,10 @@ types. Compact evaluation stores valid items in a compressed binary Patricia
 tree keyed by their physical TSD item IDs. Item changes update affected paths;
 membership changes and physical-ID remapping update the tree structure.
 
-Each reducer instance receives two borrowed inputs through an evaluation-context
-section. Its pair state retains input validity and timestamps, but no input
-value pointers. The source values remain owned by the TSD or another reducer
-instance for the duration of that evaluation.
+Each reducer instance receives two `RuntimeGraphInput` records through its
+evaluation context. Its pair state retains input validity and timestamps, but
+no input value pointers. The source values remain owned by the TSD or another
+reducer instance for the duration of that evaluation.
 
 Other reducer graphs use nested runtime graphs arranged in adjacent pairs by
 TSD iteration order. A membership change rebuilds that graph set. Stopped

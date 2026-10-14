@@ -1,5 +1,5 @@
 #include <bg/evaluation_context.hpp>
-#include <bg/graph/borrowed_input.hpp>
+#include <bg/graph/runtime_graph_input.hpp>
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
@@ -106,12 +106,11 @@ struct BorrowedInputRunner {
                                        : bg::resolve_time_series_runtime_type(bg::TS<bg::i64>::type());
         auto set_value = bg::details::time_series_set_storage{};
         const auto &set_runtime_type = bg::resolve_time_series_runtime_type(bg::TSS<bg::i64>::type());
-        const auto inputs = std::array{bg::BorrowedInput{&state, &value, &runtime_type,
-                                                         bg::BorrowedInputChange::update},
-                                       bg::BorrowedInput{&state, &set_value, &set_runtime_type,
-                                                         bg::BorrowedInputChange::update}};
-        auto section = bg::details::BorrowedInputSection{*child, inputs};
-        auto child_context = context->child(section);
+        const auto inputs = std::array{bg::RuntimeGraphInput{&state, &value, &runtime_type,
+                                                             bg::RuntimeGraphInputChange::update},
+                                       bg::RuntimeGraphInput{&state, &set_value, &set_runtime_type,
+                                                             bg::RuntimeGraphInputChange::update}};
+        auto child_context = context->child(*child, inputs.data());
         try {
             child->start(child_context);
         } catch (const std::invalid_argument &) {
@@ -130,18 +129,18 @@ struct BorrowedInputRunner {
     void evaluate(bg::EvaluationContext *context) const {
         auto state = bg::TimeSeriesState{};
         auto value = bg::i64{};
-        auto change = bg::BorrowedInputChange::unchanged;
+        auto change = bg::RuntimeGraphInputChange::unchanged;
         const auto evaluation_time = context->evaluation_time();
 
         if (evaluation_time == time(2)) {
             state.publish(time(1));
             state.invalidate(evaluation_time);
             value = 11;
-            change = bg::BorrowedInputChange::invalidation;
+            change = bg::RuntimeGraphInputChange::invalidation;
         } else if (evaluation_time == time(3)) {
             state.publish(evaluation_time);
             value = 33;
-            change = bg::BorrowedInputChange::revalidation;
+            change = bg::RuntimeGraphInputChange::revalidation;
         } else if (evaluation_time == time(4)) {
             state.publish(time(3));
             value = 44;
@@ -154,11 +153,10 @@ struct BorrowedInputRunner {
         auto set_state = bg::TimeSeriesState{evaluation_time};
         auto set_value = bg::details::time_series_set_storage{};
         const auto &set_runtime_type = bg::resolve_time_series_runtime_type(bg::TSS<bg::i64>::type());
-        const auto inputs = std::array{bg::BorrowedInput{&state, &value, &runtime_type, change},
-                                       bg::BorrowedInput{&set_state, &set_value, &set_runtime_type,
-                                                         bg::BorrowedInputChange::update}};
-        auto section = bg::details::BorrowedInputSection{*child, inputs};
-        auto child_context = context->child(section);
+        const auto inputs = std::array{bg::RuntimeGraphInput{&state, &value, &runtime_type, change},
+                                       bg::RuntimeGraphInput{&set_state, &set_value, &set_runtime_type,
+                                                             bg::RuntimeGraphInputChange::update}};
+        auto child_context = context->child(*child, inputs.data());
         child->evaluate(child_context);
     }
 
@@ -172,12 +170,11 @@ struct BorrowedInputRunner {
         const auto &runtime_type = bg::resolve_time_series_runtime_type(bg::TS<bg::i64>::type());
         auto set_value = bg::details::time_series_set_storage{};
         const auto &set_runtime_type = bg::resolve_time_series_runtime_type(bg::TSS<bg::i64>::type());
-        const auto inputs = std::array{bg::BorrowedInput{&state, &value, &runtime_type,
-                                                         bg::BorrowedInputChange::unchanged},
-                                       bg::BorrowedInput{&state, &set_value, &set_runtime_type,
-                                                         bg::BorrowedInputChange::unchanged}};
-        auto section = bg::details::BorrowedInputSection{*child, inputs};
-        auto child_context = context->child(section);
+        const auto inputs = std::array{bg::RuntimeGraphInput{&state, &value, &runtime_type,
+                                                             bg::RuntimeGraphInputChange::unchanged},
+                                       bg::RuntimeGraphInput{&state, &set_value, &set_runtime_type,
+                                                             bg::RuntimeGraphInputChange::unchanged}};
+        auto child_context = context->child(*child, inputs.data());
         child->stop(child_context);
         child->finalize(child_context);
         context->runtime_graph().allocation().delete_object(child);
