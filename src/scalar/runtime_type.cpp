@@ -632,6 +632,46 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         release_position.release();
     }
 
+    [[nodiscard]] bool try_emplace_with(void *value, allocator &memory, ScalarConstruction key,
+                                        ScalarConstruction mapped) const override {
+        auto &target = storage(value);
+        const auto position = target.positions.acquire(memory);
+        auto release_position = util::scope_exit{[&]() noexcept {
+            (void)target.positions.reset(position);
+            target.positions.trim(memory);
+        }};
+
+        target.keys.emplace_at_with(position, key_layout_, memory, [&](void *destination) {
+            key.construct(key.context, key_runtime_type(), destination, memory);
+        });
+        auto release_key = util::scope_exit{[&]() noexcept {
+            target.keys.erase_at_with(position, key_layout_, memory,
+                                      [&](void *stored) noexcept { key_runtime_type().destroy(stored, memory); });
+        }};
+
+        auto *candidate = target.keys.get(position, key_layout_);
+        const auto hash = util::linear_hash_table::hash_code(key_runtime_type().hash(candidate));
+        if (target.lookup.find(hash, [&](auto existing) {
+                return key_runtime_type().equals(target.keys.get(existing, key_layout_),
+                                                 details::ScalarData{key_runtime_type(), candidate});
+            })) {
+            return false;
+        }
+
+        target.values.emplace_at_with(position, mapped_layout_, memory, [&](void *destination) {
+            mapped.construct(mapped.context, mapped_runtime_type(), destination, memory);
+        });
+        auto release_value = util::scope_exit{[&]() noexcept {
+            target.values.erase_at_with(position, mapped_layout_, memory,
+                                        [&](void *stored) noexcept { mapped_runtime_type().destroy(stored, memory); });
+        }};
+        target.lookup.insert(hash, position, memory);
+        release_value.release();
+        release_key.release();
+        release_position.release();
+        return true;
+    }
+
     [[nodiscard]] bool erase(void *value, const details::ScalarData &key, allocator &memory) const override {
         auto &target = storage(value);
         const auto hash = util::linear_hash_table::hash_code(key.hash());

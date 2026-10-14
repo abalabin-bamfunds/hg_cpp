@@ -18,17 +18,20 @@ class ScalarLiteralItem {
   private:
     using Visit = void (*)(const void *, bg::ScalarVisitTypes &);
 
-    template <typename Source>
-    static constexpr bool supported_provider =
-        bg::scalar_type_mapped<Source> && requires(const Source &source) {
-            typename bg::scalar_storage_traits<Source>::value_type;
-            requires std::constructible_from<typename bg::scalar_storage_traits<Source>::value_type, const Source &>;
-        };
-
-    template <typename Source>
-    static constexpr bool supported_source =
-        bg::scalar_source<Source> || std::same_as<Source, bg::ScalarData> ||
-        requires(const Source &source) { bg::details::scalar_data(source); } || supported_provider<Source>;
+    template <typename Source> static constexpr bool supported_source = [] {
+        if constexpr (bg::scalar_source<Source> || std::same_as<Source, bg::ScalarData> ||
+                      requires(const Source &source) { bg::details::scalar_data(source); }) {
+            return true;
+        } else if constexpr (bg::scalar_type_mapped<Source>) {
+            return requires(const Source &source) {
+                typename bg::scalar_storage_traits<Source>::value_type;
+                requires std::constructible_from<typename bg::scalar_storage_traits<Source>::value_type,
+                                                 const Source &>;
+            };
+        } else {
+            return false;
+        }
+    }();
 
   public:
     template <typename Source>

@@ -75,6 +75,36 @@ template <typename Key, typename Hash, typename Equal> class hash_key_table {
                           std::forward<Destructor>(destroy));
     }
 
+    template <typename HashFunction, typename Predicate, typename Constructor, typename Destructor>
+        requires std::invocable<HashFunction &, const Key &> &&
+                 std::predicate<Predicate &, const Key &, const Key &> && std::invocable<Constructor &, Key *> &&
+                 std::invocable<Destructor &, Key *>
+    [[nodiscard]] insertion insert_constructed_with(std::pmr::memory_resource &memory, HashFunction &&hash_key,
+                                                    Predicate &&matches, Constructor &&construct,
+                                                    Destructor &&destroy) {
+        const auto position = positions_.acquire(memory);
+        auto release_position = scope_exit{[&]() noexcept {
+            const auto removed = positions_.reset(position);
+            assert(removed);
+            positions_.trim(memory);
+        }};
+
+        keys_.emplace_at_with(position, memory, std::forward<Constructor>(construct));
+        auto release_key = scope_exit{[&]() noexcept { keys_.erase_at_with(position, memory, destroy); }};
+
+        const auto hash = linear_hash_table::hash_code(std::invoke(hash_key, keys_[position]));
+        if (const auto found = lookup_.find(hash, [&](auto candidate) {
+                return std::invoke(matches, keys_[candidate], keys_[position]);
+            })) {
+            return {*found, hash, false};
+        }
+
+        lookup_.insert(hash, position, memory);
+        release_key.release();
+        release_position.release();
+        return {position, hash, true};
+    }
+
     template <typename Predicate, typename Destructor>
         requires std::predicate<Predicate &, const Key &> && std::invocable<Destructor &, Key *>
     [[nodiscard]] bool erase_with(std::size_t hash, Predicate &&matches, std::pmr::memory_resource &memory,

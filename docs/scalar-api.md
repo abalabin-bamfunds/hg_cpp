@@ -103,6 +103,13 @@ valid until it returns. `ScalarListRuntimeType::emplace_back_with` applies the
 same callback contract to an item slot and commits the slot only after successful
 construction.
 
+`ScalarDictRuntimeType::try_emplace_with(storage, memory, key, mapped)` uses
+these callbacks to construct a key and mapped value in their final slots. It
+hashes the constructed key using the destination key runtime. A duplicate key
+returns `false`, destroys the candidate key, and skips mapped construction.
+Success returns `true`. An exception destroys the partial entry and preserves
+existing entries. Storage can retain allocation capacity after a failed insertion.
+
 An explicit allocator defines the ownership of dynamic storage. Without
 one, dynamic storage created during a node invocation belongs to the runtime
 graph, and its `ScalarValue` must be destroyed in that invocation. This is

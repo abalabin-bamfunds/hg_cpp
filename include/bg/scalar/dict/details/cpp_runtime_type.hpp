@@ -123,6 +123,25 @@ class CppScalarRuntimeType<Dict<K, V>> final : public CppScalarRuntimeTypeBase<D
         }
     }
 
+    [[nodiscard]] bool try_emplace_with(void *storage, allocator &memory, ScalarConstruction key,
+                                        ScalarConstruction mapped) const override {
+        auto &items = static_cast<details::scalar_dict_storage<K, V> *>(storage)->items;
+        const auto [stored, inserted] = items.try_emplace_constructed_with(
+            memory.memory_resource(),
+            [&](const auto &candidate) { return this->key_runtime_type().hash(std::addressof(candidate)); },
+            [&](const auto &stored_key, const auto &candidate) {
+                return this->key_runtime_type().equals(
+                    std::addressof(stored_key), details::ScalarData{this->key_runtime_type(), std::addressof(candidate)});
+            },
+            [&](auto *destination) { key.construct(key.context, this->key_runtime_type(), destination, memory); },
+            [&](auto *destination) noexcept { scalar_storage_traits<K>::destroy(destination, memory); },
+            [&](auto *destination) {
+                mapped.construct(mapped.context, this->mapped_runtime_type(), destination, memory);
+            });
+        (void)stored;
+        return inserted;
+    }
+
     [[nodiscard]] bool erase(void *storage, const details::ScalarData &key,
                              allocator &memory) const override {
         auto &items = static_cast<details::scalar_dict_storage<K, V> *>(storage)->items;

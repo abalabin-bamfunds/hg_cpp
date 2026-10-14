@@ -4,6 +4,7 @@
 #include <bg/scalar/details/value_access.hpp>
 #include <bg/scalar/bundle/value.hpp>
 #include <bg/scalar/value.hpp>
+#include <bg/util/hash_dictionary.hpp>
 #include "test_scalar_provider.hpp"
 
 #include <atomic>
@@ -120,6 +121,29 @@ class CountingMemoryResource final : public std::pmr::memory_resource {
     bool do_is_equal(const std::pmr::memory_resource &other) const noexcept override { return this == &other; }
 };
 
+class FailNextAllocationResource final : public std::pmr::memory_resource {
+  public:
+    bool fail_next{};
+    std::size_t outstanding{};
+
+  private:
+    void *do_allocate(std::size_t size, std::size_t alignment) override {
+        if (std::exchange(fail_next, false)) {
+            throw std::bad_alloc{};
+        }
+        auto *result = std::pmr::new_delete_resource()->allocate(size, alignment);
+        ++outstanding;
+        return result;
+    }
+
+    void do_deallocate(void *value, std::size_t size, std::size_t alignment) override {
+        std::pmr::new_delete_resource()->deallocate(value, size, alignment);
+        --outstanding;
+    }
+
+    bool do_is_equal(const std::pmr::memory_resource &other) const noexcept override { return this == &other; }
+};
+
 struct CopyTracked {
     explicit CopyTracked(int value) noexcept : value{value} {}
     CopyTracked(const CopyTracked &other) noexcept : value{other.value} { ++copies; }
@@ -142,6 +166,24 @@ struct ListItemConstruction {
         ++construction.calls;
         if (construction.calls == construction.fail_on) {
             throw std::runtime_error{"list item construction failed"};
+        }
+        runtime_type.construct_from_input(destination, *construction.source, memory);
+    }
+};
+
+struct ScalarConstructionProbe {
+    const bg::ScalarData *source;
+    std::size_t calls{};
+    bool fail{};
+    void *destination{};
+
+    static void callback(void *context, const bg::ScalarRuntimeType &runtime_type, void *destination,
+                         bg::allocator &memory) {
+        auto &construction = *static_cast<ScalarConstructionProbe *>(context);
+        ++construction.calls;
+        construction.destination = destination;
+        if (construction.fail) {
+            throw std::runtime_error{"scalar construction failed"};
         }
         runtime_type.construct_from_input(destination, *construction.source, memory);
     }
@@ -343,6 +385,152 @@ void verify_literal_construction() {
                     deeper.view()[1].empty() && deeper.view()[2][0][0].value() == 3,
                 "three-level list literal did not preserve its nested shape");
 
+        using IntList = bg::List<bg::i64>;
+        using StringListDict = bg::Dict<bg::string, IntList>;
+        const auto string_list_dict = literal::construct<StringListDict>(
+            {{"a", {1, 2}}, {"b", {3, 4}}}, memory);
+        require(string_list_dict.view().size() == 2 && string_list_dict.view().at("a").size() == 2 &&
+                    string_list_dict.view().at("a")[1].value() == 2 &&
+                    string_list_dict.view().at("b")[0].value() == 3,
+                "typed dictionary literal did not construct nested list values");
+
+        using StringDict = bg::Dict<bg::string, bg::string>;
+        const auto string_dict = literal::construct<StringDict>({{"key", "value"}}, memory);
+        require(string_dict.view().at("key").value() == "value",
+                "typed dictionary literal did not adapt character-array keys and mapped values");
+
+        const auto &string_runtime = bg::cpp_scalar_runtime_type<bg::string>();
+        const auto &string_list_dict_type = bg::dict_scalar_type(string_runtime.type(), inner_type);
+        const auto dict_available = std::array<const bg::ScalarRuntimeType *, 2>{&string_runtime, &composed_inner};
+        const auto &composed_string_list_dict = static_cast<const bg::ScalarDictRuntimeType &>(
+            bg::resolve_scalar_runtime_type(string_list_dict_type, dict_available));
+        const auto runtime_string_list_dict = literal::construct(
+            composed_string_list_dict, ScalarLiteral{{"x", {6, 7}}, {"y", {8}}}, memory);
+        const auto runtime_dict_view = bg::unchecked_scalar_cast<StringListDict>(runtime_string_list_dict.view());
+        require(runtime_dict_view.size() == 2 && runtime_dict_view.at("x").size() == 2 &&
+                    runtime_dict_view.at("x")[1].value() == 7 && runtime_dict_view.at("y")[0].value() == 8,
+                "runtime-only composed dictionary literal produced the wrong values");
+
+        const auto &string_dict_type = bg::dict_scalar_type(string_runtime.type(), string_runtime.type());
+        const auto string_available = std::array<const bg::ScalarRuntimeType *, 1>{&string_runtime};
+        const auto &composed_string_dict = static_cast<const bg::ScalarDictRuntimeType &>(
+            bg::resolve_scalar_runtime_type(string_dict_type, string_available));
+        const auto runtime_string_dict = literal::construct(composed_string_dict, {{"runtime key", "runtime value"}},
+                                                            memory);
+        require(bg::unchecked_scalar_cast<StringDict>(runtime_string_dict.view())
+                        .at("runtime key")
+                        .value() == "runtime value",
+                "runtime-only dictionary did not adapt character-array keys and mapped values");
+
+        using ProviderValue = test_scalar_provider::value;
+        using ProviderDict = bg::Dict<bg::i64, ProviderValue>;
+        const auto &provider_runtime = test_scalar_provider::preserving_runtime_type();
+        const auto &provider_dict_type = bg::dict_scalar_type(item_runtime.type(), provider_runtime.type());
+        const auto provider_dict_available =
+            std::array<const bg::ScalarRuntimeType *, 2>{&item_runtime, &provider_runtime};
+        const auto &composed_provider_dict = static_cast<const bg::ScalarDictRuntimeType &>(
+            bg::resolve_scalar_runtime_type(provider_dict_type, provider_dict_available));
+        auto provider_storage = test_scalar_provider::storage{.number = 83};
+        const auto provider_view = bg::Scalar<ProviderValue>::from(provider_runtime, &provider_storage);
+        const auto provider_dict_value =
+            literal::construct(composed_provider_dict, ScalarLiteral{{9, provider_view}}, memory);
+        const auto provider_dict_view = bg::unchecked_scalar_cast<ProviderDict>(provider_dict_value.view());
+        require(&provider_dict_view.at(9).runtime_type() == &provider_runtime &&
+                    provider_dict_view.at(9).value().get() == 83,
+                "runtime-only dictionary construction lost a provider mapped runtime");
+
+        using IntListDict = bg::Dict<bg::i64, IntList>;
+        using ListOfDicts = bg::List<IntListDict>;
+        const auto list_of_dicts = literal::construct<ListOfDicts>(
+            ScalarLiteral{{{1, {2, 3}}, {4, {5}}}, {}, {{6, {7}}}}, memory);
+        require(list_of_dicts.view().size() == 3 && list_of_dicts.view()[0].size() == 2 &&
+                    list_of_dicts.view()[0].at(1)[1].value() == 3 && list_of_dicts.view()[1].empty() &&
+                    list_of_dicts.view()[2].at(6)[0].value() == 7,
+                "list of dictionaries did not preserve its nested shape and values");
+
+        using InnerDict = bg::Dict<bg::i64, bg::i64>;
+        using DictOfDicts = bg::Dict<bg::i64, InnerDict>;
+        const auto dict_of_dicts = literal::construct<DictOfDicts>(ScalarLiteral{{1, {{2, 3}, {4, 5}}}, {6, {}}},
+                                                                  memory);
+        require(dict_of_dicts.view().size() == 2 && dict_of_dicts.view().at(1).size() == 2 &&
+                    dict_of_dicts.view().at(1).at(4).value() == 5 && dict_of_dicts.view().at(6).empty(),
+                "nested dictionary literal produced the wrong values");
+
+        const auto empty_dict = literal::construct<InnerDict>(ScalarLiteral{}, memory);
+        require(empty_dict.view().empty(), "empty dictionary literal did not construct an empty dictionary");
+
+        auto malformed_leaf_threw = false;
+        try {
+            (void)literal::construct<InnerDict>(ScalarLiteral{1}, memory);
+        } catch (const std::invalid_argument &) {
+            malformed_leaf_threw = true;
+        }
+        require(malformed_leaf_threw, "dictionary literal accepted a leaf in place of an entry");
+
+        auto malformed_arity_threw = false;
+        try {
+            (void)literal::construct<InnerDict>(ScalarLiteral{{}}, memory);
+        } catch (const std::invalid_argument &) {
+            malformed_arity_threw = true;
+        }
+        require(malformed_arity_threw, "dictionary literal accepted a zero-field entry");
+
+        auto excess_fields_threw = false;
+        try {
+            (void)literal::construct<InnerDict>(ScalarLiteral{{2, 3, 4}}, memory);
+        } catch (const std::invalid_argument &) {
+            excess_fields_threw = true;
+        }
+        require(excess_fields_threw, "dictionary literal accepted an entry with more than two fields");
+
+        auto malformed_resource = CountingMemoryResource{};
+        auto malformed_memory = bg::allocator{malformed_resource};
+        auto malformed_after_value_threw = false;
+        try {
+            (void)literal::construct<InnerDict>(ScalarLiteral{{1, 2}, {3}}, malformed_memory);
+        } catch (const std::invalid_argument &) {
+            malformed_after_value_threw = true;
+        }
+        require(malformed_after_value_threw && malformed_resource.outstanding == 0,
+                "malformed later entry did not roll back the dictionary and its allocator storage");
+
+        auto duplicate_key_threw = false;
+        try {
+            (void)literal::construct<InnerDict>(ScalarLiteral{{1, 2}, {1, 3}}, memory);
+        } catch (const std::invalid_argument &) {
+            duplicate_key_threw = true;
+        }
+        require(duplicate_key_threw, "dictionary literal accepted duplicate keys");
+
+        using ListKeyDict = bg::Dict<IntList, bg::i64>;
+        auto duplicate_nested_key_threw = false;
+        try {
+            (void)literal::construct<ListKeyDict>(ScalarLiteral{{{1, 2}, 3}, {{1, 2}, 4}}, memory);
+        } catch (const std::invalid_argument &) {
+            duplicate_nested_key_threw = true;
+        }
+        require(duplicate_nested_key_threw, "dictionary literal did not detect duplicate nested keys");
+
+        using TrackedValue = bg::Opaque<CopyTracked>;
+        using TrackedDict = bg::Dict<bg::i64, TrackedValue>;
+        const auto mapped_source = bg::ScalarValue<TrackedValue>{CopyTracked{42}};
+        const auto mapped_view = mapped_source.view();
+        const auto copies_before_duplicate = CopyTracked::copies;
+        const auto destructions_before_duplicate = CopyTracked::destructions;
+        auto duplicate_value_resource = CountingMemoryResource{};
+        auto duplicate_value_memory = bg::allocator{duplicate_value_resource};
+        auto duplicate_tracked_key_threw = false;
+        try {
+            (void)literal::construct<TrackedDict>(
+                {{1, mapped_view}, {1, mapped_view}}, duplicate_value_memory);
+        } catch (const std::invalid_argument &) {
+            duplicate_tracked_key_threw = true;
+        }
+        require(duplicate_tracked_key_threw && CopyTracked::copies - copies_before_duplicate == 1 &&
+                    CopyTracked::destructions - destructions_before_duplicate == 1 &&
+                    duplicate_value_resource.outstanding == 0,
+                "duplicate key constructed its mapped value or failed to clean the committed value");
+
         const auto text = literal::construct<bg::List<bg::string>>(
             ScalarLiteral{std::string{"temporary text"}, std::string{"another temporary"}}, memory);
         require(text.view().size() == 2 && text.view()[0].value() == "temporary text" &&
@@ -522,6 +710,265 @@ void verify_list_emplacement_failure_cleanup() {
     const auto &composed = static_cast<const bg::ScalarListRuntimeType &>(
         bg::resolve_scalar_runtime_type(list_type, available));
     verify_late_list_emplacement_failure(composed, bg::details::scalar_data(item_value));
+}
+
+void verify_dictionary_emplacement_failure_cleanup(const bg::ScalarDictRuntimeType &runtime_type) {
+    const auto key_one = bg::ScalarValue<bg::i64>{1};
+    const auto value_ten = bg::ScalarValue<bg::i64>{10};
+    const auto value_twenty = bg::ScalarValue<bg::i64>{20};
+    const auto key_two = bg::ScalarValue<bg::i64>{2};
+    const auto key_three = bg::ScalarValue<bg::i64>{3};
+
+    auto resource = CountingMemoryResource{};
+    auto memory = bg::allocator{resource};
+    {
+        auto *storage = memory.allocate_bytes(runtime_type.size(), runtime_type.alignment());
+        runtime_type.construct_runtime_value(storage, memory);
+        auto release = bg::util::scope_exit{[&]() noexcept {
+            runtime_type.destroy(storage, memory);
+            memory.deallocate_bytes(storage, runtime_type.size(), runtime_type.alignment());
+        }};
+
+        auto key_construction = ScalarConstructionProbe{&bg::details::scalar_data(key_one)};
+        auto mapped_construction = ScalarConstructionProbe{&bg::details::scalar_data(value_ten)};
+        const auto key_callback = bg::ScalarConstruction{&key_construction, &ScalarConstructionProbe::callback};
+        const auto mapped_callback =
+            bg::ScalarConstruction{&mapped_construction, &ScalarConstructionProbe::callback};
+        require(runtime_type.try_emplace_with(storage, memory, key_callback, mapped_callback),
+                "first dictionary emplacement was rejected");
+
+        struct StoredAddresses {
+            const void *key{};
+            const void *mapped{};
+        } addresses;
+        runtime_type.for_each(storage, &addresses, [](void *context, bg::ScalarDictRuntimeType::Entry entry) {
+            auto &stored = *static_cast<StoredAddresses *>(context);
+            stored.key = entry.key.data;
+            stored.mapped = entry.value.data;
+        });
+        require(addresses.key == key_construction.destination && addresses.mapped == mapped_construction.destination,
+                "dictionary emplacement copied constructed keys or mapped values into their final slots");
+
+        auto duplicate_value_construction = ScalarConstructionProbe{&bg::details::scalar_data(value_twenty)};
+        const auto duplicate_value_callback =
+            bg::ScalarConstruction{&duplicate_value_construction, &ScalarConstructionProbe::callback};
+        require(!runtime_type.try_emplace_with(storage, memory, key_callback, duplicate_value_callback),
+                "duplicate dictionary emplacement was inserted");
+        require(key_construction.calls == 2 && duplicate_value_construction.calls == 0 &&
+                    runtime_type.item_count(storage) == 1,
+                "duplicate emplacement constructed its mapped value or changed the dictionary");
+
+        key_construction.source = &bg::details::scalar_data(key_two);
+        mapped_construction.source = &bg::details::scalar_data(value_twenty);
+        mapped_construction.fail = true;
+        auto mapped_failure_threw = false;
+        try {
+            (void)runtime_type.try_emplace_with(storage, memory, key_callback, mapped_callback);
+        } catch (const std::runtime_error &) {
+            mapped_failure_threw = true;
+        }
+        require(mapped_failure_threw && runtime_type.item_count(storage) == 1 &&
+                    runtime_type.at(storage, bg::details::scalar_data(key_one)).data != nullptr,
+                "mapped construction failure did not preserve the existing dictionary entry");
+
+        key_construction.source = &bg::details::scalar_data(key_three);
+        key_construction.fail = true;
+        mapped_construction.fail = false;
+        const auto mapped_calls_before_key_failure = mapped_construction.calls;
+        auto key_failure_threw = false;
+        try {
+            (void)runtime_type.try_emplace_with(storage, memory, key_callback, mapped_callback);
+        } catch (const std::runtime_error &) {
+            key_failure_threw = true;
+        }
+        require(key_failure_threw && mapped_construction.calls == mapped_calls_before_key_failure &&
+                    runtime_type.item_count(storage) == 1,
+                "key construction failure changed the dictionary or invoked mapped construction");
+
+        key_construction.fail = false;
+        require(runtime_type.try_emplace_with(storage, memory, key_callback, mapped_callback) &&
+                    runtime_type.item_count(storage) == 2,
+                "dictionary could not accept a new entry after construction failures");
+    }
+    require(resource.outstanding == 0 && resource.allocations == resource.deallocations,
+            "dictionary emplacement failures leaked storage or allocator metadata");
+}
+
+void verify_dictionary_allocation_failure_cleanup(const bg::ScalarDictRuntimeType &runtime_type) {
+    auto resource = FailNextAllocationResource{};
+    auto memory = bg::allocator{resource};
+    {
+        auto *storage = memory.allocate_bytes(runtime_type.size(), runtime_type.alignment());
+        runtime_type.construct_runtime_value(storage, memory);
+        auto release = bg::util::scope_exit{[&]() noexcept {
+            runtime_type.destroy(storage, memory);
+            memory.deallocate_bytes(storage, runtime_type.size(), runtime_type.alignment());
+        }};
+
+        auto failed = false;
+        auto failed_index = std::size_t{};
+        auto seed_key = bg::ScalarValue<bg::i64>{0};
+        auto seed_value = bg::ScalarValue<bg::i64>{100};
+        auto seed_key_construction = ScalarConstructionProbe{&bg::details::scalar_data(seed_key)};
+        auto seed_value_construction = ScalarConstructionProbe{&bg::details::scalar_data(seed_value)};
+        require(runtime_type.try_emplace_with(
+                    storage, memory,
+                    {&seed_key_construction, &ScalarConstructionProbe::callback},
+                    {&seed_value_construction, &ScalarConstructionProbe::callback}),
+                "dictionary rejected its seed entry before allocation-failure probing");
+
+        for (auto index = std::size_t{1}; index < 1024; ++index) {
+            const auto key = bg::ScalarValue<bg::i64>{static_cast<std::int64_t>(index)};
+            const auto mapped = bg::ScalarValue<bg::i64>{static_cast<std::int64_t>(index + 100)};
+            auto key_construction = ScalarConstructionProbe{&bg::details::scalar_data(key)};
+            auto mapped_construction = ScalarConstructionProbe{&bg::details::scalar_data(mapped)};
+            const auto key_callback =
+                bg::ScalarConstruction{&key_construction, &ScalarConstructionProbe::callback};
+            const auto mapped_callback =
+                bg::ScalarConstruction{&mapped_construction, &ScalarConstructionProbe::callback};
+
+            resource.fail_next = true;
+            try {
+                require(runtime_type.try_emplace_with(storage, memory, key_callback, mapped_callback),
+                        "unique key was rejected while probing allocation failure");
+            } catch (const std::bad_alloc &) {
+                failed = true;
+                failed_index = index;
+            }
+            if (failed) {
+                break;
+            }
+        }
+
+        require(failed && failed_index > 0 && runtime_type.item_count(storage) == failed_index,
+                "dictionary insertion did not reach an allocation failure at a bunch growth boundary");
+
+        const auto first_key = bg::ScalarValue<bg::i64>{0};
+        const auto first_value = runtime_type.at(storage, bg::details::scalar_data(first_key));
+        require(bg::Scalar<bg::i64>::from(first_value.runtime_type, first_value.data).value() == 100,
+                "allocation failure changed an existing dictionary value");
+
+        const auto retry_key = bg::ScalarValue<bg::i64>{static_cast<std::int64_t>(failed_index)};
+        const auto retry_mapped = bg::ScalarValue<bg::i64>{static_cast<std::int64_t>(failed_index + 100)};
+        auto retry_key_construction = ScalarConstructionProbe{&bg::details::scalar_data(retry_key)};
+        auto retry_mapped_construction = ScalarConstructionProbe{&bg::details::scalar_data(retry_mapped)};
+        require(runtime_type.try_emplace_with(
+                    storage, memory,
+                    {&retry_key_construction, &ScalarConstructionProbe::callback},
+                    {&retry_mapped_construction, &ScalarConstructionProbe::callback}),
+                "dictionary could not accept the entry after allocation failure");
+        require(runtime_type.item_count(storage) == failed_index + 1,
+                "successful retry after allocation failure produced the wrong item count");
+    }
+    require(resource.outstanding == 0, "dictionary allocation failure leaked allocator-owned storage");
+}
+
+void verify_constructed_hash_dictionary_failure_cleanup() {
+    auto resource = FailNextAllocationResource{};
+    auto items = bg::util::hash_dictionary<int, int>{};
+    auto candidate_key = 1;
+    auto candidate_value = 10;
+    auto fail_hash = false;
+    auto fail_equal = false;
+    auto fail_value = false;
+    auto destroyed_keys = std::size_t{};
+
+    const auto hash = [&](const int &key) {
+        if (fail_hash) {
+            throw std::runtime_error{"key hash failed"};
+        }
+        return std::hash<int>{}(key);
+    };
+    const auto equal = [&](const int &stored, const int &candidate) {
+        if (fail_equal) {
+            throw std::runtime_error{"key equality failed"};
+        }
+        return stored == candidate;
+    };
+    const auto construct_key = [&](int *destination) { std::construct_at(destination, candidate_key); };
+    const auto destroy_key = [&](int *value) noexcept {
+        ++destroyed_keys;
+        std::destroy_at(value);
+    };
+    const auto construct_value = [&](int *destination) {
+        if (fail_value) {
+            throw std::runtime_error{"mapped construction failed"};
+        }
+        std::construct_at(destination, candidate_value);
+    };
+    const auto insert = [&] {
+        return items.try_emplace_constructed_with(resource, hash, equal, construct_key, destroy_key,
+                                                  construct_value);
+    };
+
+    {
+        const auto [stored, inserted] = insert();
+        require(inserted && *stored == 10, "constructed hash dictionary rejected its first entry");
+
+        candidate_key = 2;
+        fail_hash = true;
+        auto hash_threw = false;
+        try {
+            (void)insert();
+        } catch (const std::runtime_error &) {
+            hash_threw = true;
+        }
+        require(hash_threw && items.size() == 1 && destroyed_keys == 1,
+                "hash failure did not destroy the candidate key and preserve the dictionary");
+
+        candidate_key = 1;
+        fail_hash = false;
+        fail_equal = true;
+        auto equality_threw = false;
+        try {
+            (void)insert();
+        } catch (const std::runtime_error &) {
+            equality_threw = true;
+        }
+        require(equality_threw && items.size() == 1 && destroyed_keys == 2,
+                "equality failure did not destroy the candidate key and preserve the dictionary");
+
+        candidate_key = 2;
+        fail_equal = false;
+        fail_value = true;
+        auto value_threw = false;
+        try {
+            (void)insert();
+        } catch (const std::runtime_error &) {
+            value_threw = true;
+        }
+        require(value_threw && items.size() == 1 && destroyed_keys == 3,
+                "mapped failure did not roll back its key and preserve the dictionary");
+
+        fail_value = false;
+        auto allocation_failed = false;
+        auto failed_key = 2;
+        for (; failed_key < 1024; ++failed_key) {
+            candidate_key = failed_key;
+            candidate_value = failed_key + 100;
+            resource.fail_next = true;
+            try {
+                (void)insert();
+            } catch (const std::bad_alloc &) {
+                allocation_failed = true;
+            }
+            if (allocation_failed) {
+                break;
+            }
+        }
+        require(allocation_failed && items.size() == static_cast<std::size_t>(failed_key - 1),
+                "constructed hash dictionary did not clean up after an allocation failure");
+        require(items.at(1) == 10, "allocation failure changed an existing hash dictionary value");
+
+        candidate_key = failed_key;
+        candidate_value = failed_key + 100;
+        const auto [retried, retry_inserted] = insert();
+        require(retry_inserted && *retried == candidate_value,
+                "constructed hash dictionary did not accept an entry after allocation failure");
+    }
+
+    items.release_with(resource, destroy_key, [](int *value) noexcept { std::destroy_at(value); });
+    require(resource.outstanding == 0, "constructed hash dictionary failure test leaked storage");
 }
 
 } // namespace
@@ -759,6 +1206,18 @@ int main() {
     verify_scalar_dispatch();
     verify_literal_construction();
     verify_list_emplacement_failure_cleanup();
+    const auto &integer_runtime = bg::cpp_scalar_runtime_type<bg::i64>();
+    const auto &integer_dict_type = bg::dict_scalar_type(integer_runtime.type(), integer_runtime.type());
+    const auto integer_available = std::array<const bg::ScalarRuntimeType *, 1>{&integer_runtime};
+    const auto &composed_integer_dict = static_cast<const bg::ScalarDictRuntimeType &>(
+        bg::resolve_scalar_runtime_type(integer_dict_type, integer_available));
+    verify_dictionary_emplacement_failure_cleanup(
+        static_cast<const bg::ScalarDictRuntimeType &>(bg::cpp_scalar_runtime_type<bg::Dict<bg::i64, bg::i64>>()));
+    verify_dictionary_emplacement_failure_cleanup(composed_integer_dict);
+    verify_dictionary_allocation_failure_cleanup(
+        static_cast<const bg::ScalarDictRuntimeType &>(bg::cpp_scalar_runtime_type<bg::Dict<bg::i64, bg::i64>>()));
+    verify_dictionary_allocation_failure_cleanup(composed_integer_dict);
+    verify_constructed_hash_dictionary_failure_cleanup();
 
     std::cout << "ScalarLiteralItem size/alignment: " << sizeof(ScalarLiteralItem) << '/' << alignof(ScalarLiteralItem)
               << '\n';

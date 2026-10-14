@@ -76,6 +76,25 @@ class hash_dictionary {
         return {&value, true};
     }
 
+    template <typename HashFunction, typename Predicate, typename KeyConstructor, typename KeyDestructor,
+              typename ValueConstructor>
+    std::pair<Value *, bool> try_emplace_constructed_with(
+        std::pmr::memory_resource &memory, HashFunction &&hash_key, Predicate &&matches,
+        KeyConstructor &&construct_key, KeyDestructor &&destroy_key, ValueConstructor &&construct_value) {
+        const auto result = keys_.insert_constructed_with(
+            memory, std::forward<HashFunction>(hash_key), std::forward<Predicate>(matches),
+            std::forward<KeyConstructor>(construct_key), destroy_key);
+        if (!result.inserted) {
+            return {&values_[result.position], false};
+        }
+
+        auto rollback =
+            scope_exit{[&]() noexcept { keys_.erase_at_with(result.position, result.hash, memory, destroy_key); }};
+        auto &value = values_.emplace_at_with(result.position, memory, std::forward<ValueConstructor>(construct_value));
+        rollback.release();
+        return {&value, true};
+    }
+
     template <typename KeySource, typename ValueSource>
     Value &insert_or_assign(KeySource &&key, ValueSource &&value, std::pmr::memory_resource &memory) {
         auto [stored, inserted] = try_emplace(std::forward<KeySource>(key), memory, std::forward<ValueSource>(value));

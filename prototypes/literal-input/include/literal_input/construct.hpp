@@ -2,6 +2,8 @@
 
 #include <literal_input/scalar_literal.hpp>
 
+#include <bg/scalar/dict/runtime_type.hpp>
+#include <bg/scalar/dict/type.hpp>
 #include <bg/scalar/list/runtime_type.hpp>
 #include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/value.hpp>
@@ -43,8 +45,37 @@ class ScalarConstructionContext {
                         }
                         rollback.release();
                     },
+                    [&](const bg::DictScalarType *) {
+                        const auto &dict_runtime_type = static_cast<const bg::ScalarDictRuntimeType &>(runtime_type);
+                        dict_runtime_type.construct_runtime_value(destination, memory);
+                        auto rollback = bg::util::scope_exit{
+                            [&]() noexcept { dict_runtime_type.destroy(destination, memory); }};
+                        for (const auto &entry : children) {
+                            entry.visit(
+                                [&](const ScalarLiteralItem &) {
+                                    throw std::invalid_argument{
+                                        "dictionary literal entries must contain a key and mapped value"};
+                                },
+                                [&](std::span<const ScalarLiteral> fields) {
+                                    if (fields.size() != 2) {
+                                        throw std::invalid_argument{
+                                            "dictionary literal entries must contain exactly two values"};
+                                    }
+
+                                    auto key_context = ScalarConstructionContext{fields[0]};
+                                    auto mapped_context = ScalarConstructionContext{fields[1]};
+                                    if (!dict_runtime_type.try_emplace_with(
+                                            destination, memory,
+                                            {&key_context, &ScalarConstructionContext::callback},
+                                            {&mapped_context, &ScalarConstructionContext::callback})) {
+                                        throw std::invalid_argument{"dictionary literal contains duplicate keys"};
+                                    }
+                                });
+                        }
+                        rollback.release();
+                    },
                     [&](auto *) {
-                        throw std::invalid_argument{"literal sequence requires a list scalar destination"};
+                        throw std::invalid_argument{"literal sequence requires a list or dictionary scalar destination"};
                     });
             });
     }

@@ -41,11 +41,15 @@ item.accept(scalar_types);
 
 `construct<T>(literal)` builds a typed owning scalar in its final storage. The
 runtime-only overload takes the destination runtime type. Both use the engine's
-borrowed `ScalarConstruction` callback and recursively initialize nested lists:
+borrowed `ScalarConstruction` callback and recursively initialize lists and
+dictionaries:
 
 ```cpp
 auto nested = literal::construct<bg::List<bg::List<bg::i64>>>(
     {{1, 2}, {}, {3}});
+
+auto dictionary = literal::construct<bg::Dict<bg::string, bg::List<bg::i64>>>(
+    {{"a", {1, 2}}, {"b", {3, 4}}});
 
 const auto &item_runtime = bg::cpp_scalar_runtime_type<bg::i64>();
 const auto &inner_type = bg::list_scalar_type(item_runtime.type());
@@ -61,6 +65,14 @@ Construction dispatches each scalar leaf through `ScalarRuntimeType::construct_f
 List runtimes acquire item storage and commit each item only after its callback
 returns successfully. A thrown callback leaves the destination slot unconstructed;
 the enclosing list destroys all previously committed items.
+
+A dictionary sequence contains entries with exactly two literals: a key and
+a mapped value. Each literal is interpreted recursively by its destination
+runtime. Dictionary construction rejects duplicate keys with
+`std::invalid_argument`. The dictionary runtime constructs each key in its
+final slot before hashing and duplicate lookup. A duplicate destroys the
+candidate key and skips mapped construction. Any failed entry destroys the
+enclosing dictionary and its committed entries.
 
 `ScalarVisitTypes` dispatches built-in atomic types to typed scalar views and
 structural types to their generic views. Other declarations reach the

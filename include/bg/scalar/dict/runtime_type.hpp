@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/scalar/construction.hpp>
 #include <bg/scalar/runtime_type.hpp>
 
 #include <cstddef>
@@ -88,6 +89,10 @@ class ScalarDictRuntimeType : public ScalarRuntimeType {
     void insert_or_assign(void *storage, const Key &key, const Value &value, allocator &memory) const {
         insert_or_assign(storage, details::scalar_data(key), details::scalar_data(value), memory);
     }
+    // Constructs the key in its final slot before hashing and duplicate lookup. On a duplicate, destroys the
+    // candidate key and returns false without invoking mapped construction. On failure, preserves existing entries.
+    [[nodiscard]] virtual bool try_emplace_with(void *storage, allocator &memory, ScalarConstruction key,
+                                                ScalarConstruction mapped) const = 0;
     [[nodiscard]] virtual bool erase(void *storage, const details::ScalarData &key, allocator &memory) const = 0;
     template <typename Key>
         requires requires(const Key &key) { details::scalar_data(key); }
