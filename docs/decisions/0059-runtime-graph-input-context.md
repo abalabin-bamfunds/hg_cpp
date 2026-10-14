@@ -11,13 +11,13 @@ sections add no required routing information.
 
 ## Decision
 
-The caller supplies a pointer to `RuntimeGraphInput` records on the
-`EvaluationContext` for the target runtime graph. The compiled graph defines the
-record count. Same-graph child contexts inherit the pointer; contexts for a
-different runtime graph clear it unless the caller supplies that graph's
-records. The caller supplies at least the compiled slot count of records with
-types and per-cycle fields that satisfy their compiled bindings. The runtime
-uses the compiled slot count to iterate them and does not validate or retain
-the pointer beyond the invocation.
+The caller supplies a pointer to `RuntimeGraphInput` records to the target
+`RuntimeGraph` entry call. The compiled graph defines the record count. Graph
+entry creates a graph-local evaluation context with that pointer; evaluation
+contexts do not inherit runtime graph inputs. Ordinary nested graphs pass
+`nullptr` unless they have their own records. The caller supplies at least the
+compiled slot count of records with types and per-call fields that satisfy
+their compiled bindings. The runtime uses the compiled slot count to iterate
+them and does not validate or retain the pointer beyond the call.
 
 See [evaluation](../evaluation.md#evaluation-context) and [reduce](../reduce.md).

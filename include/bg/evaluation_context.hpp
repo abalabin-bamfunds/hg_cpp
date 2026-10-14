@@ -72,13 +72,16 @@ class EvaluationContext {
     EvaluationContext(EvaluationContext &parent, RuntimeGraph &runtime_graph, std::size_t node_index) noexcept
         : evaluation_time_(parent.evaluation_time_), wall_clock_(parent.wall_clock_), runtime_graph_(&runtime_graph),
           node_index_(node_index), global_state_(parent.global_state_),
-          scratch_{parent.scratch_.evaluation_scratch_}, sections_(parent.sections_),
-          runtime_graph_inputs_{parent.runtime_graph_ == &runtime_graph ? parent.runtime_graph_inputs_ : nullptr} {}
+          scratch_{parent.scratch_.evaluation_scratch_}, sections_(parent.sections_) {}
+    EvaluationContext(RuntimeGraph &runtime_graph, EvaluationContext &parent,
+                      const RuntimeGraphInput *runtime_graph_inputs) noexcept
+        : evaluation_time_(parent.evaluation_time_), wall_clock_(parent.wall_clock_), runtime_graph_(&runtime_graph),
+          node_index_{}, global_state_(parent.global_state_), scratch_{parent.scratch_.evaluation_scratch_},
+          sections_(parent.sections_), runtime_graph_inputs_{runtime_graph_inputs} {}
     EvaluationContext(EvaluationContext &parent, const details::EvaluationContextSection &section) noexcept
         : evaluation_time_(parent.evaluation_time_), wall_clock_(parent.wall_clock_),
           runtime_graph_(parent.runtime_graph_), node_index_(parent.node_index_),
-          global_state_(parent.global_state_), scratch_{parent.scratch_.evaluation_scratch_}, sections_(&section),
-          runtime_graph_inputs_{parent.runtime_graph_inputs_} {}
+          global_state_(parent.global_state_), scratch_{parent.scratch_.evaluation_scratch_}, sections_(&section) {}
 
     void reset_scratch() noexcept { scratch_.reset(); }
 

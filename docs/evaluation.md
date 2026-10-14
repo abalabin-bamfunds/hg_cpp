@@ -128,22 +128,18 @@ The context provides:
 - cancellation of timed scheduling
 - registration of outer-cycle callbacks
 
-A runtime graph can declare borrowed time-series input slots. For each
-invocation, the caller supplies a pointer to an array of `RuntimeGraphInput`
-records when creating the graph's `EvaluationContext`. The array contains at
-least one record for each slot defined by the compiled graph. Each record's
-runtime type must satisfy its compiled binding. Its value, time-series state,
-and change must describe the current invocation. The runtime uses the compiled
-slot count and does not validate the pointer or records. The caller keeps the
-records and their values alive through the invocation. Slot changes use the
+A runtime graph can declare borrowed time-series input slots.
+The caller passes a pointer to an array of `RuntimeGraphInput` records to each
+`RuntimeGraph::start()`, `evaluate()`, or `stop()` call that needs the inputs.
+The array contains at least one record for each slot defined by the compiled
+graph. Each record's runtime type must satisfy its compiled binding. Its value,
+time-series state, and change must describe that call. The runtime uses the
+compiled slot count and does not validate the pointer or records. The caller
+keeps the records and their values alive through the call. Slot changes use the
 normal input notification and validity paths. A borrowed input cannot be
-materialized as a reference because a reference can outlive the invocation
-that supplies the slot.
-
-Child contexts for the same runtime graph inherit its input pointer. A context
-for a different runtime graph clears the pointer unless the caller supplies
-that graph's records. Other evaluation services and context sections continue
-through nested graph owners.
+materialized as a reference because a reference can outlive the call that
+supplies the slot. Evaluation contexts do not inherit runtime graph inputs;
+ordinary nested graphs pass `nullptr` unless they have their own input records.
 
 `SimulationEvaluationEngine::run()` owns one simulated wall clock for the run.
 The engine sets it to the start time before graph startup, then updates it once

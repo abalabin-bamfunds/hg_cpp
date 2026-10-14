@@ -64,7 +64,9 @@ class ServiceRequestBinding {
         auto &graph = provider_.runtime_graph();
         const auto node_index = provider_.node_index();
         auto runtime_node = graph.node(node_index);
-        auto provider_context = provider_.node_context(caller_context);
+        const auto *inputs = &caller_context.runtime_graph() == &graph ? caller_context.runtime_graph_inputs()
+                                                                       : nullptr;
+        auto provider_context = provider_.node_context(caller_context, inputs);
         auto *bundle_owner = current_bundle_allocation_owner();
         assert(bundle_owner != nullptr);
         const auto allocation_context = ScalarAllocationContext{graph.allocation(), *bundle_owner, &graph, node_index};

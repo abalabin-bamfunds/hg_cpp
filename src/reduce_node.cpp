@@ -485,8 +485,7 @@ class CompactReduceRuntime {
         };
         bind_input(0, compact.input_indices[0], left, branch.input_replaced(0), left_changed);
         bind_input(1, compact.input_indices[1], right, branch.input_replaced(1), right_changed);
-        auto context = invocation.context().child(runtime, runtime_graph_inputs.data());
-        if (!runtime.evaluate(context)) {
+        if (!runtime.evaluate(invocation.context(), runtime_graph_inputs.data())) {
             throw std::logic_error{"a borrowed reduce graph cannot pend evaluation"};
         }
         const auto &compiled_node = compact.graph->node(*compact.output_node);

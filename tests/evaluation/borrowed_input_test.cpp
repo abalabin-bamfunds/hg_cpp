@@ -30,7 +30,12 @@ struct BorrowedInputSink {
     bg::In<bg::TS<bg::i64>> input;
     bg::In<bg::TSS<bg::i64>> set_input;
 
+    void start(bg::EvaluationContext *context) const {
+        start_inputs_explicit = context->runtime_graph_inputs() == expected_inputs;
+    }
+
     void stop(bg::EvaluationContext *context) const noexcept {
+        stop_inputs_explicit = context->runtime_graph_inputs() == expected_inputs;
         stop_value = *input;
         stop_time = input.last_updated();
         stop_evaluation_time = context->evaluation_time();
@@ -41,8 +46,7 @@ struct BorrowedInputSink {
     }
 
     void evaluate(bg::EvaluationContext *context) const {
-        same_graph_inputs_inherited =
-            same_graph_inputs_inherited && context->runtime_graph_inputs() == expected_inputs;
+        evaluate_inputs_explicit = context->runtime_graph_inputs() == expected_inputs;
 
         observations.push_back({.value = *input,
                                 .time = input.last_updated(),
@@ -78,7 +82,9 @@ struct BorrowedInputSink {
 
     inline static const bg::CompiledGraph *context_probe_graph{};
     inline static const bg::RuntimeGraphInput *expected_inputs{};
-    inline static bool same_graph_inputs_inherited{};
+    inline static bool start_inputs_explicit{};
+    inline static bool evaluate_inputs_explicit{};
+    inline static bool stop_inputs_explicit{};
     inline static bool check_different_graph_context{};
     inline static std::vector<Observation> observations;
     inline static bg::i64 stop_value{};
@@ -107,8 +113,8 @@ struct BorrowedInputRunner {
                                                              bg::RuntimeGraphInputChange::update},
                                        bg::RuntimeGraphInput{&state, &set_value, &set_runtime_type,
                                                              bg::RuntimeGraphInputChange::update}};
-        auto child_context = context->child(*child, inputs.data());
-        child->start(child_context);
+        BorrowedInputSink::expected_inputs = inputs.data();
+        child->start(*context, inputs.data());
     }
 
     void evaluate(bg::EvaluationContext *context) const {
@@ -142,8 +148,7 @@ struct BorrowedInputRunner {
                                        bg::RuntimeGraphInput{&set_state, &set_value, &set_runtime_type,
                                                              bg::RuntimeGraphInputChange::update}};
         BorrowedInputSink::expected_inputs = inputs.data();
-        auto child_context = context->child(*child, inputs.data());
-        child->evaluate(child_context);
+        child->evaluate(*context, inputs.data());
     }
 
     void stop(bg::EvaluationContext *context) const noexcept {
@@ -160,9 +165,9 @@ struct BorrowedInputRunner {
                                                              bg::RuntimeGraphInputChange::unchanged},
                                        bg::RuntimeGraphInput{&state, &set_value, &set_runtime_type,
                                                              bg::RuntimeGraphInputChange::unchanged}};
-        auto child_context = context->child(*child, inputs.data());
-        child->stop(child_context);
-        child->finalize(child_context);
+        BorrowedInputSink::expected_inputs = inputs.data();
+        child->stop(*context, inputs.data());
+        child->finalize(*context);
         context->runtime_graph().allocation().delete_object(child);
         child = nullptr;
         context->runtime_graph().allocation().delete_object(evaluator);
@@ -192,6 +197,112 @@ struct ContextInputProbe {
     inline static bool different_graph_inputs_cleared{};
 };
 
+struct BorrowedInputCycleCallback {
+    BorrowedInputCycleCallback()
+        : signature_{bg::util::symbol{"borrowed_input_cycle_callback"},
+                     {{bg::util::symbol{"input"}, &bg::TS<bg::i64>::type()}}} {}
+
+    const bg::Signature &signature() const { return signature_; }
+
+    static void start(bg::NodeInvocation<> invocation) {
+        invocation.context().add_cycle_callback(nullptr, &run_callback);
+    }
+
+    static void evaluate(bg::NodeInvocation<>) {}
+
+    static void run_callback(void *, bg::EvaluationContext &context) noexcept {
+        observed_inputs = context.runtime_graph_inputs();
+        if (observed_inputs != nullptr) {
+            observed_value = *static_cast<const bg::i64 *>(observed_inputs[0].value);
+        }
+        ++callback_count;
+    }
+
+    static constexpr bool uses_cycle_callbacks = true;
+
+    inline static const bg::RuntimeGraphInput *observed_inputs{};
+    inline static bg::i64 observed_value{};
+    inline static std::size_t callback_count{};
+
+  private:
+    bg::Signature signature_;
+};
+
+struct CrossGraphCallbackMarker {
+    CrossGraphCallbackMarker() : signature_{bg::util::symbol{"cross_graph_callback_marker"}, {}} {}
+
+    const bg::Signature &signature() const { return signature_; }
+
+    static void start(bg::NodeInvocation<> invocation) {
+        invocation.context().add_cycle_callback(nullptr, &run_callback);
+    }
+
+    static void evaluate(bg::NodeInvocation<>) {}
+
+    static void run_callback(void *, bg::EvaluationContext &context) noexcept {
+        callback_inputs_cleared = context.runtime_graph_inputs() == nullptr;
+        ++callback_count;
+    }
+
+    static constexpr bool uses_cycle_callbacks = true;
+
+    inline static bool callback_inputs_cleared{};
+    inline static std::size_t callback_count{};
+
+  private:
+    bg::Signature signature_;
+};
+
+struct CrossGraphCallbackRunnerState {
+    static constexpr bool supports_byte_copy_initialization = true;
+
+    bg::RuntimeGraphEvaluator evaluator;
+    bg::RuntimeGraph *graph{};
+};
+
+struct CrossGraphCallbackRunner {
+    using compiled_data_type = void;
+    using state_type = CrossGraphCallbackRunnerState;
+
+    CrossGraphCallbackRunner()
+        : signature_{bg::util::symbol{"cross_graph_callback_runner"},
+                     {{bg::util::symbol{"input"}, &bg::TS<bg::i64>::type()}}} {}
+
+    const bg::Signature &signature() const { return signature_; }
+
+    static void start(bg::NodeInvocation<compiled_data_type, state_type> invocation) {
+        auto &parent = invocation.context().runtime_graph();
+        auto &state = invocation.state();
+        state.evaluator.bind_owner(parent, invocation.context().node_index());
+        state.graph = parent.allocation().new_object<bg::RuntimeGraph>(
+            *child_graph, parent.allocation(), state.evaluator, invocation.context().node_index());
+        state.graph->start(invocation.context());
+    }
+
+    static void evaluate(bg::NodeInvocation<compiled_data_type, state_type> invocation) {
+        (void)invocation.input<bg::In<bg::TS<bg::i64>>>(0);
+        invocation.state().graph->evaluate(invocation.context());
+    }
+
+    static void stop(bg::NodeInvocation<compiled_data_type, state_type> invocation) noexcept {
+        auto &state = invocation.state();
+        if (state.graph == nullptr) {
+            return;
+        }
+        state.graph->stop(invocation.context());
+        state.graph->finalize(invocation.context());
+        invocation.context().runtime_graph().allocation().delete_object(state.graph);
+        state.graph = nullptr;
+    }
+
+    static constexpr bool uses_cycle_callbacks = true;
+
+    inline static const bg::CompiledGraph *child_graph{};
+
+  private:
+    bg::Signature signature_;
+};
+
 bg::CompiledGraph make_borrowed_input_graph() {
     auto wiring = bg::GraphWiring{};
     const auto input = wiring.borrowed_input(bg::TS<bg::i64>::type());
@@ -216,7 +327,81 @@ bg::CompiledGraph make_context_probe_graph() {
     return bg::CompiledGraph{wiring};
 }
 
+bg::CompiledGraph make_cross_graph_callback_graph() {
+    auto wiring = bg::GraphWiring{};
+    const auto callback = bg::node(CrossGraphCallbackMarker{});
+    {
+        auto context = bg::WiringContext{wiring};
+        (void)callback();
+    }
+    wiring.finalize();
+    return bg::CompiledGraph{wiring};
+}
+
 } // namespace
+
+TEST_CASE("same-graph cycle callbacks receive and read explicit borrowed inputs",
+          "[feature:borrowed-input][feature:lifecycle][transition:lifecycle][shape:single-node]") {
+    auto wiring = bg::GraphWiring{};
+    const auto input = wiring.borrowed_input(bg::TS<bg::i64>::type());
+    const auto callback = bg::node(BorrowedInputCycleCallback{});
+    {
+        auto context = bg::WiringContext{wiring};
+        (void)callback(input);
+    }
+    wiring.finalize();
+    const auto graph = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{graph, global_state};
+    auto state = bg::TimeSeriesState{time(1)};
+    auto value = bg::i64{71};
+    const auto &runtime_type = bg::resolve_time_series_runtime_type(bg::TS<bg::i64>::type());
+    const auto inputs = std::array{bg::RuntimeGraphInput{&state, &value, &runtime_type,
+                                                         bg::RuntimeGraphInputChange::update}};
+    BorrowedInputCycleCallback::observed_inputs = nullptr;
+    BorrowedInputCycleCallback::observed_value = 0;
+    BorrowedInputCycleCallback::callback_count = 0;
+
+    runtime.start(time(1), global_state, inputs.data());
+    runtime.evaluate(time(1), global_state, inputs.data());
+    runtime.stop(global_state, inputs.data());
+
+    CHECK(BorrowedInputCycleCallback::callback_count == 1);
+    CHECK(BorrowedInputCycleCallback::observed_inputs == inputs.data());
+    CHECK(BorrowedInputCycleCallback::observed_value == 71);
+}
+
+TEST_CASE("cycle callbacks owned by another graph do not inherit borrowed inputs",
+          "[feature:borrowed-input][feature:lifecycle][transition:lifecycle][shape:nested]") {
+    auto child_graph = make_cross_graph_callback_graph();
+    CrossGraphCallbackRunner::child_graph = &child_graph;
+    CrossGraphCallbackMarker::callback_inputs_cleared = false;
+    CrossGraphCallbackMarker::callback_count = 0;
+
+    auto wiring = bg::GraphWiring{};
+    const auto input = wiring.borrowed_input(bg::TS<bg::i64>::type());
+    const auto runner = bg::node(CrossGraphCallbackRunner{});
+    {
+        auto context = bg::WiringContext{wiring};
+        (void)runner(input);
+    }
+    wiring.finalize();
+    const auto graph = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{graph, global_state};
+    auto state = bg::TimeSeriesState{time(1)};
+    auto value = bg::i64{88};
+    const auto &runtime_type = bg::resolve_time_series_runtime_type(bg::TS<bg::i64>::type());
+    const auto inputs = std::array{bg::RuntimeGraphInput{&state, &value, &runtime_type,
+                                                         bg::RuntimeGraphInputChange::update}};
+
+    runtime.start(time(1), global_state, inputs.data());
+    runtime.evaluate(time(1), global_state, inputs.data());
+    runtime.stop(global_state, inputs.data());
+
+    CHECK(CrossGraphCallbackMarker::callback_count == 1);
+    CHECK(CrossGraphCallbackMarker::callback_inputs_cleared);
+}
 
 TEST_CASE("borrowed inputs sample values and deliver update, invalidation, and revalidation",
           "[evaluation][feature:borrowed-input][series:tss][validity][shape:nested]") {
@@ -224,7 +409,9 @@ TEST_CASE("borrowed inputs sample values and deliver update, invalidation, and r
     auto context_probe_graph = make_context_probe_graph();
     BorrowedInputSink::context_probe_graph = &context_probe_graph;
     BorrowedInputSink::expected_inputs = nullptr;
-    BorrowedInputSink::same_graph_inputs_inherited = true;
+    BorrowedInputSink::start_inputs_explicit = false;
+    BorrowedInputSink::evaluate_inputs_explicit = false;
+    BorrowedInputSink::stop_inputs_explicit = false;
     BorrowedInputSink::check_different_graph_context = true;
     ContextInputProbe::different_graph_inputs_cleared = false;
     BorrowedInputSink::observations.clear();
@@ -287,7 +474,9 @@ TEST_CASE("borrowed inputs sample values and deliver update, invalidation, and r
     CHECK(BorrowedInputSink::stop_valid);
     CHECK(BorrowedInputSink::stop_set_valid);
     CHECK(BorrowedInputSink::stop_set_size == 0);
-    CHECK(BorrowedInputSink::same_graph_inputs_inherited);
+    CHECK(BorrowedInputSink::start_inputs_explicit);
+    CHECK(BorrowedInputSink::evaluate_inputs_explicit);
+    CHECK(BorrowedInputSink::stop_inputs_explicit);
     CHECK(ContextInputProbe::different_graph_inputs_cleared);
 }
 

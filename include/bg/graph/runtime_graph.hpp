@@ -54,12 +54,14 @@ class RuntimeGraph {
     RuntimeGraph &operator=(RuntimeGraph &&) = delete;
 
     // Overloads without a GlobalState or EvaluationContext apply only to outer graphs.
-    void start(EvaluationTime evaluation_time);
-    void start(EvaluationTime evaluation_time, GlobalState &global_state);
-    void stop() noexcept;
-    void stop(GlobalState &global_state) noexcept;
-    void evaluate(EvaluationTime evaluation_time);
-    void evaluate(EvaluationTime evaluation_time, GlobalState &global_state);
+    void start(EvaluationTime evaluation_time, const RuntimeGraphInput *inputs = nullptr);
+    void start(EvaluationTime evaluation_time, GlobalState &global_state,
+               const RuntimeGraphInput *inputs = nullptr);
+    void stop(const RuntimeGraphInput *inputs = nullptr) noexcept;
+    void stop(GlobalState &global_state, const RuntimeGraphInput *inputs = nullptr) noexcept;
+    void evaluate(EvaluationTime evaluation_time, const RuntimeGraphInput *inputs = nullptr);
+    void evaluate(EvaluationTime evaluation_time, GlobalState &global_state,
+                  const RuntimeGraphInput *inputs = nullptr);
     std::optional<EvaluationTime> next_scheduled_time() const noexcept;
     EvaluationTime evaluation_time() const noexcept { return evaluation_time_; }
     GlobalState &global_state() const noexcept;
@@ -70,9 +72,9 @@ class RuntimeGraph {
     Node node(const CompiledNode &compiled_node) noexcept { return {compiled_node, storage_}; }
     const CompiledNode &compiled_node(std::size_t index) const noexcept { return compiled_graph_->node(index); }
 
-    void start(EvaluationContext &context);
-    bool evaluate(EvaluationContext &context);
-    void stop(EvaluationContext &context) noexcept;
+    void start(EvaluationContext &context, const RuntimeGraphInput *inputs = nullptr);
+    bool evaluate(EvaluationContext &context, const RuntimeGraphInput *inputs = nullptr);
+    void stop(EvaluationContext &context, const RuntimeGraphInput *inputs = nullptr) noexcept;
     void finalize(EvaluationContext &context) noexcept;
     void finalize(GlobalState &global_state) noexcept;
 

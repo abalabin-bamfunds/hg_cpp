@@ -6,6 +6,7 @@ namespace bg {
 
 class EvaluationContext;
 class RuntimeGraph;
+struct RuntimeGraphInput;
 
 namespace details {
 
@@ -18,7 +19,7 @@ class NodeScheduler {
     void schedule() const noexcept;
     RuntimeGraph &runtime_graph() const noexcept { return *graph_; }
     std::size_t node_index() const noexcept { return node_index_; }
-    EvaluationContext node_context(EvaluationContext &parent) const noexcept;
+    EvaluationContext node_context(EvaluationContext &parent, const RuntimeGraphInput *inputs) const noexcept;
 
   private:
     RuntimeGraph *graph_{};

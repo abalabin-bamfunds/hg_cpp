@@ -27,9 +27,9 @@ class RuntimeGraphEvaluator {
     void bind_owner(RuntimeGraph &graph, std::size_t node_index, RuntimeGraphSchedulingHandler handler);
     bool owner_bound() const noexcept { return parent_.get() != nullptr; }
 
-    void start(RuntimeGraph &graph, EvaluationContext &context);
-    static bool evaluate(RuntimeGraph &graph, EvaluationContext &context);
-    void stop(RuntimeGraph &graph, EvaluationContext &context) noexcept;
+    void start(RuntimeGraph &graph, EvaluationContext &context, const RuntimeGraphInput *inputs);
+    static bool evaluate(RuntimeGraph &graph, EvaluationContext &context, const RuntimeGraphInput *inputs);
+    void stop(RuntimeGraph &graph, EvaluationContext &context, const RuntimeGraphInput *inputs) noexcept;
 
   private:
     friend RuntimeGraph;
