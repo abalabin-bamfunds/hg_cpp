@@ -268,7 +268,6 @@ struct InheritedTimeSeriesPlan {
 
 struct BorrowedInputPlan {
     const TimeSeriesRuntimeType *runtime_type{};
-    bool requires_exact_runtime_type{};
     SubscriptionPlan subscriptions;
     StorageSection subscribers;
     StorageSection output_notification;
@@ -1410,21 +1409,6 @@ void plan_fixed_storage(CompilationPlan &plan) {
     }
 
     plan_time_series_inputs(result, wiring);
-    for (std::size_t node_index = 0; node_index < result.nodes.size(); ++node_index) {
-        if (result.is_lowered_node(node_index)) {
-            continue;
-        }
-
-        const auto &node = result.nodes[node_index];
-        for (const auto &input : result.node_plans[node_index].time_series_inputs) {
-            if (!input.wired_input.is_borrowed() ||
-                node.node_template().uses_time_series_input_runtime_type(node.signature(), input.parameter)) {
-                continue;
-            }
-
-            result.borrowed_inputs[input.wired_input.index()].requires_exact_runtime_type = true;
-        }
-    }
     const auto node_order = dependency_order(result, wiring);
     result.wired_node_indices.clear();
     for (const auto node_index : node_order) {
@@ -2348,9 +2332,6 @@ class CompiledGraphBuilder {
                                                ? std::numeric_limits<std::uint32_t>::max()
                                                : packed_offset(input.output_notification.offset,
                                                                "compiled fixed storage reaches 1 GiB"),
-                    .flags = input.requires_exact_runtime_type
-                                 ? details::BorrowedInputBinding::exact_runtime_type_flag
-                                 : 0,
                 });
         }
     }

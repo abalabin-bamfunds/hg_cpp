@@ -558,52 +558,6 @@ void RuntimeGraph::initialize_inherited_time_series(std::size_t index, Reference
     notify_subscribers(compiled_graph_->inherited_time_series_subscribers(binding), OutputChange::revalidation);
 }
 
-void RuntimeGraph::validate_runtime_graph_inputs(const EvaluationContext &context) const {
-    const auto bindings = compiled_graph_->borrowed_input_bindings();
-    if (bindings.empty()) {
-        return;
-    }
-    const auto *inputs = &context.runtime_graph() == this ? context.runtime_graph_inputs() : nullptr;
-    if (inputs == nullptr) {
-        throw std::invalid_argument{"the runtime graph received no inputs"};
-    }
-
-    for (auto index = std::size_t{}; index < bindings.size(); ++index) {
-        const auto &input = inputs[index];
-        const auto &binding = bindings[index];
-        if (input.last_updated == nullptr || input.runtime_type == nullptr || binding.runtime_type == nullptr) {
-            throw std::invalid_argument{"a runtime graph input must provide its state and runtime type"};
-        }
-        if (binding.requires_exact_runtime_type()) {
-            if (input.runtime_type != binding.runtime_type) {
-                throw std::invalid_argument{
-                    "a runtime graph input has a different runtime type than its compiled binding"};
-            }
-        } else if (!binding.runtime_type->type().accepts(input.runtime_type->type())) {
-            throw std::invalid_argument{"a runtime graph input has an incompatible runtime type"};
-        }
-        if (input.last_updated->valid() && input.value == nullptr) {
-            throw std::invalid_argument{"a valid runtime graph input must provide its value"};
-        }
-        if (input.change == RuntimeGraphInputChange::update ||
-            input.change == RuntimeGraphInputChange::revalidation) {
-            if (!input.last_updated->valid()) {
-                throw std::invalid_argument{"an updated or revalidated runtime graph input must be valid"};
-            }
-        } else if (input.change == RuntimeGraphInputChange::invalidation) {
-            if (input.last_updated->valid()) {
-                throw std::invalid_argument{"an invalidated runtime graph input must be invalid"};
-            }
-        } else if (input.change != RuntimeGraphInputChange::unchanged) {
-            throw std::invalid_argument{"a runtime graph input has an unknown change class"};
-        }
-        if (input.change != RuntimeGraphInputChange::unchanged &&
-            input.last_updated->time() != context.evaluation_time()) {
-            throw std::invalid_argument{"a changed runtime graph input must be sampled at the evaluation time"};
-        }
-    }
-}
-
 void RuntimeGraph::notify_runtime_graph_inputs(EvaluationContext &evaluation_context) {
     const auto bindings = compiled_graph_->borrowed_input_bindings();
     if (bindings.empty()) {
@@ -1157,8 +1111,6 @@ void RuntimeGraphEvaluator::start(RuntimeGraph &graph, EvaluationContext &parent
 
     auto binding_context = ServiceBindingContext{parent_context, bindings};
     auto &context = binding_context.context();
-    graph.validate_runtime_graph_inputs(context);
-
     graph.started_ = true;
     graph.evaluation_time_ = context.evaluation_time();
     const auto starts = graph.compiled_graph_->start_functions();
@@ -1320,7 +1272,6 @@ bool RuntimeGraphEvaluator::evaluate(RuntimeGraph &graph, EvaluationContext &par
 
     auto binding_context = ServiceBindingContext{parent_context, graph.service_bindings()};
     auto &context = binding_context.context();
-    graph.validate_runtime_graph_inputs(context);
     const auto evaluation_time = context.evaluation_time();
     const auto resuming = graph.paused_node_index_ != std::numeric_limits<std::uint32_t>::max();
     if (!resuming) {

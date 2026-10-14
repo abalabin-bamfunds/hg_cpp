@@ -128,15 +128,17 @@ The context provides:
 - cancellation of timed scheduling
 - registration of outer-cycle callbacks
 
-A runtime graph can declare borrowed time-series input slots. Each invocation
-supplies a pointer to its `RuntimeGraphInput` records when creating the graph's
-`EvaluationContext`. The compiled graph defines the record count and each input
-binding's slot index. A record provides its value, runtime type, time-series
-state, and change for the invocation. The runtime does not retain the supplied
-values. The caller keeps their storage alive through the invocation. Slot
-changes use the normal input notification and validity paths. A borrowed input
-cannot be materialized as a reference because a reference can outlive the
-invocation that supplies the slot.
+A runtime graph can declare borrowed time-series input slots. For each
+invocation, the caller supplies a pointer to an array of `RuntimeGraphInput`
+records when creating the graph's `EvaluationContext`. The array contains at
+least one record for each slot defined by the compiled graph. Each record's
+runtime type must satisfy its compiled binding. Its value, time-series state,
+and change must describe the current invocation. The runtime uses the compiled
+slot count and does not validate the pointer or records. The caller keeps the
+records and their values alive through the invocation. Slot changes use the
+normal input notification and validity paths. A borrowed input cannot be
+materialized as a reference because a reference can outlive the invocation
+that supplies the slot.
 
 Child contexts for the same runtime graph inherit its input pointer. A context
 for a different runtime graph clears the pointer unless the caller supplies

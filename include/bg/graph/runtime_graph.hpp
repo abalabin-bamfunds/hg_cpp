@@ -147,7 +147,6 @@ class RuntimeGraph {
     void notify_node_subscriber(std::size_t node_index, bool active, bool required, bool active_optional,
                                 OutputChange change) noexcept;
     bool dynamic_input_active(std::uint32_t input_offset) const noexcept;
-    void validate_runtime_graph_inputs(const EvaluationContext &context) const;
     void notify_runtime_graph_inputs(EvaluationContext &context);
     void initialize_inherited_time_series(std::size_t index, Reference reference);
     std::span<details::ServiceRequestBinding *> service_bindings() noexcept;

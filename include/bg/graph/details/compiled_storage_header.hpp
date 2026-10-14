@@ -62,16 +62,10 @@ struct BorrowedInputBinding {
     std::uint32_t subscribers_offset;
     std::uint32_t subscriber_count;
     std::uint32_t notification_offset;
-    std::uint32_t flags;
-
-    static constexpr std::uint32_t exact_runtime_type_flag = 1;
-
-    bool requires_exact_runtime_type() const noexcept { return (flags & exact_runtime_type_flag) != 0; }
 };
 
 static_assert(sizeof(BorrowedInputBinding) == 24);
 static_assert(alignof(BorrowedInputBinding) == alignof(const TimeSeriesRuntimeType *));
-static_assert(offsetof(BorrowedInputBinding, flags) == 20);
 static_assert(std::is_trivially_copyable_v<BorrowedInputBinding>);
 
 // Describes the variable sections of compiled graph storage. Node offsets, paths, and optional metadata follow.

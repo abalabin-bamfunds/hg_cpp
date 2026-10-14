@@ -18,7 +18,6 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <stdexcept>
 #include <vector>
 
 namespace {
@@ -42,6 +41,9 @@ struct BorrowedInputSink {
     }
 
     void evaluate(bg::EvaluationContext *context) const {
+        same_graph_inputs_inherited =
+            same_graph_inputs_inherited && context->runtime_graph_inputs() == expected_inputs;
+
         observations.push_back({.value = *input,
                                 .time = input.last_updated(),
                                 .evaluation_time = context->evaluation_time(),
@@ -51,17 +53,14 @@ struct BorrowedInputSink {
                                 .set_size = set_input.size(),
                                 .set_modified = set_input.modified()});
 
-        if (check_nested_scope) {
-            check_nested_scope = false;
+        if (check_different_graph_context) {
+            check_different_graph_context = false;
             auto &parent = context->runtime_graph();
             auto evaluator = bg::RuntimeGraphEvaluator{};
             evaluator.bind_owner(parent, context->node_index());
-            auto nested = bg::RuntimeGraph{*compiled_graph, parent.allocation(), evaluator, 0};
-            try {
-                nested.start(*context);
-            } catch (const std::invalid_argument &) {
-                nested_scope_rejected = true;
-            }
+            auto nested = bg::RuntimeGraph{*context_probe_graph, parent.allocation(), evaluator,
+                                           context->node_index()};
+            nested.start(*context);
             nested.finalize(*context);
         }
     }
@@ -77,7 +76,10 @@ struct BorrowedInputSink {
         bool set_modified;
     };
 
-    inline static const bg::CompiledGraph *compiled_graph{};
+    inline static const bg::CompiledGraph *context_probe_graph{};
+    inline static const bg::RuntimeGraphInput *expected_inputs{};
+    inline static bool same_graph_inputs_inherited{};
+    inline static bool check_different_graph_context{};
     inline static std::vector<Observation> observations;
     inline static bg::i64 stop_value{};
     inline static bg::EvaluationTime stop_time{};
@@ -86,8 +88,6 @@ struct BorrowedInputSink {
     inline static bool stop_set_valid{};
     inline static std::size_t stop_set_size{};
     inline static std::size_t stop_count{};
-    inline static bool check_nested_scope{};
-    inline static bool nested_scope_rejected{};
 };
 
 struct BorrowedInputRunner {
@@ -100,10 +100,7 @@ struct BorrowedInputRunner {
 
         auto state = bg::TimeSeriesState{context->evaluation_time()};
         auto value = bg::i64{11};
-        const auto &runtime_type = use_different_runtime_type
-                                       ? bg::resolve_time_series_runtime_type(
-                                             bg::TS<bg::i64, bg::TimeSeriesGuarantee::deduplicated>::type())
-                                       : bg::resolve_time_series_runtime_type(bg::TS<bg::i64>::type());
+        const auto &runtime_type = bg::resolve_time_series_runtime_type(bg::TS<bg::i64>::type());
         auto set_value = bg::details::time_series_set_storage{};
         const auto &set_runtime_type = bg::resolve_time_series_runtime_type(bg::TSS<bg::i64>::type());
         const auto inputs = std::array{bg::RuntimeGraphInput{&state, &value, &runtime_type,
@@ -111,19 +108,7 @@ struct BorrowedInputRunner {
                                        bg::RuntimeGraphInput{&state, &set_value, &set_runtime_type,
                                                              bg::RuntimeGraphInputChange::update}};
         auto child_context = context->child(*child, inputs.data());
-        try {
-            child->start(child_context);
-        } catch (const std::invalid_argument &) {
-            if (!use_different_runtime_type) {
-                throw;
-            }
-            different_runtime_type_rejected = true;
-            child->finalize(child_context);
-            parent.allocation().delete_object(child);
-            child = nullptr;
-            parent.allocation().delete_object(evaluator);
-            evaluator = nullptr;
-        }
+        child->start(child_context);
     }
 
     void evaluate(bg::EvaluationContext *context) const {
@@ -156,6 +141,7 @@ struct BorrowedInputRunner {
         const auto inputs = std::array{bg::RuntimeGraphInput{&state, &value, &runtime_type, change},
                                        bg::RuntimeGraphInput{&set_state, &set_value, &set_runtime_type,
                                                              bg::RuntimeGraphInputChange::update}};
+        BorrowedInputSink::expected_inputs = inputs.data();
         auto child_context = context->child(*child, inputs.data());
         child->evaluate(child_context);
     }
@@ -186,8 +172,6 @@ struct BorrowedInputRunner {
     inline static const bg::CompiledGraph *compiled_graph{};
     inline static bg::RuntimeGraphEvaluator *evaluator{};
     inline static bg::RuntimeGraph *child{};
-    inline static bool use_different_runtime_type{};
-    inline static bool different_runtime_type_rejected{};
 };
 
 struct BorrowedInputNoop {
@@ -198,6 +182,14 @@ struct BorrowedInputNoop {
 
 struct PendingBorrowedInputGraph {
     bool evaluate() const { return true; }
+};
+
+struct ContextInputProbe {
+    void start(bg::EvaluationContext *context) const {
+        different_graph_inputs_cleared = context->runtime_graph_inputs() == nullptr;
+    }
+
+    inline static bool different_graph_inputs_cleared{};
 };
 
 bg::CompiledGraph make_borrowed_input_graph() {
@@ -213,12 +205,28 @@ bg::CompiledGraph make_borrowed_input_graph() {
     return bg::CompiledGraph{wiring};
 }
 
+bg::CompiledGraph make_context_probe_graph() {
+    auto wiring = bg::GraphWiring{};
+    const auto probe = bg::node<ContextInputProbe>();
+    {
+        auto context = bg::WiringContext{wiring};
+        probe();
+    }
+    wiring.finalize();
+    return bg::CompiledGraph{wiring};
+}
+
 } // namespace
 
 TEST_CASE("borrowed inputs sample values and deliver update, invalidation, and revalidation",
           "[evaluation][feature:borrowed-input][series:tss][validity][shape:nested]") {
     auto child_graph = make_borrowed_input_graph();
-    BorrowedInputSink::compiled_graph = &child_graph;
+    auto context_probe_graph = make_context_probe_graph();
+    BorrowedInputSink::context_probe_graph = &context_probe_graph;
+    BorrowedInputSink::expected_inputs = nullptr;
+    BorrowedInputSink::same_graph_inputs_inherited = true;
+    BorrowedInputSink::check_different_graph_context = true;
+    ContextInputProbe::different_graph_inputs_cleared = false;
     BorrowedInputSink::observations.clear();
     BorrowedInputSink::stop_value = 0;
     BorrowedInputSink::stop_time = {};
@@ -227,13 +235,9 @@ TEST_CASE("borrowed inputs sample values and deliver update, invalidation, and r
     BorrowedInputSink::stop_set_valid = false;
     BorrowedInputSink::stop_set_size = 0;
     BorrowedInputSink::stop_count = 0;
-    BorrowedInputSink::check_nested_scope = true;
-    BorrowedInputSink::nested_scope_rejected = false;
     BorrowedInputRunner::compiled_graph = &child_graph;
     BorrowedInputRunner::child = nullptr;
     BorrowedInputRunner::evaluator = nullptr;
-    BorrowedInputRunner::use_different_runtime_type = false;
-    BorrowedInputRunner::different_runtime_type_rejected = false;
 
     const auto runner = bg::node<BorrowedInputRunner>();
     auto wiring = bg::GraphWiring{};
@@ -283,33 +287,8 @@ TEST_CASE("borrowed inputs sample values and deliver update, invalidation, and r
     CHECK(BorrowedInputSink::stop_valid);
     CHECK(BorrowedInputSink::stop_set_valid);
     CHECK(BorrowedInputSink::stop_set_size == 0);
-    CHECK(BorrowedInputSink::nested_scope_rejected);
-}
-
-TEST_CASE("borrowed direct inputs reject a different time-series runtime type",
-          "[evaluation][feature:borrowed-input]") {
-    auto child_graph = make_borrowed_input_graph();
-    BorrowedInputRunner::compiled_graph = &child_graph;
-    BorrowedInputRunner::child = nullptr;
-    BorrowedInputRunner::evaluator = nullptr;
-    BorrowedInputRunner::use_different_runtime_type = true;
-    BorrowedInputRunner::different_runtime_type_rejected = false;
-
-    const auto runner = bg::node<BorrowedInputRunner>();
-    auto wiring = bg::GraphWiring{};
-    {
-        auto context = bg::WiringContext{wiring};
-        runner();
-    }
-    wiring.finalize();
-    const auto graph = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{graph, global_state};
-
-    runtime.start(time(1));
-
-    CHECK(BorrowedInputRunner::different_runtime_type_rejected);
-    runtime.stop();
+    CHECK(BorrowedInputSink::same_graph_inputs_inherited);
+    CHECK(ContextInputProbe::different_graph_inputs_cleared);
 }
 
 TEST_CASE("borrowed storage includes scheduling spill words and validates its layout",

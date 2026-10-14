@@ -10,7 +10,6 @@
 #include <bg/time_series/time_series_input.hpp>
 
 #include <cstddef>
-#include <stdexcept>
 #include <type_traits>
 
 namespace bg {
@@ -288,14 +287,7 @@ class Node {
   private:
     const RuntimeGraphInput &borrowed_input(const ParameterBinding &binding,
                                             const RuntimeGraphInput *runtime_graph_inputs) const {
-        if (runtime_graph_inputs == nullptr) {
-            throw std::logic_error{"a runtime graph input binding requires its evaluation context"};
-        }
-        const auto &input = runtime_graph_inputs[binding.borrowed_input_index()];
-        if (input.last_updated == nullptr || input.runtime_type == nullptr) {
-            throw std::logic_error{"a runtime graph input slot must provide its state and runtime type"};
-        }
-        return input;
+        return runtime_graph_inputs[binding.borrowed_input_index()];
     }
 
     InputData borrowed_input_data(const ParameterBinding &binding,
