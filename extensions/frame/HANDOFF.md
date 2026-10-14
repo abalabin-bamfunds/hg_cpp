@@ -2,13 +2,13 @@
 
 Updated: 2026-10-14. The frame foundation includes generic Row/RowPatch field
 support. It is based on integrated main `6051cc63`; the foundation checkpoint
-`e65c2cb3` records the completed row work. The active lane has been rebuilt and
+`0cb29949` records the completed row work. The active lane has been rebuilt and
 tested against the integrated main install.
 
 ## Work locations
 
 [CONSOLIDATION.md](CONSOLIDATION.md) records the integrated BG changes, archive,
-lane-retirement plan, and consumer verification.
+completed lane retirement, and consumer verification.
 
 | Work | Location / branch | State |
 | --- | --- | --- |
@@ -177,11 +177,11 @@ design; they do not replace the consumer verification recorded above.
 
 ## Agreed next work
 
-Main contains exactly two BG changes needed by the current frame foundation:
-scalar copy runtime selection and wiring-time output runtime selection. The
-frame extension uses scalar copy selection for owning frame copies and the
-output hook to select frame-specific output storage. Frame output layout options
-remain extension-owned; BG does not define frame types or layouts.
+The two BG changes integrated in this task are scalar copy runtime selection
+and wiring-time output runtime selection. The frame extension uses scalar copy
+selection for owning frame copies. The output hook is available for planned
+mixed computed/view output layouts. Frame output layout options remain
+extension-owned.
 
 The shared numeric function extraction is held. Block arithmetic design and
 implementation are next. Whether that work should reuse the held extraction

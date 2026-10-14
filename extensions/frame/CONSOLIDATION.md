@@ -1,19 +1,19 @@
 # Frame lane consolidation
 
 Updated 2026-10-14. The frame implementation lane is based on integrated main
-`6051cc63`. The foundation checkpoint `e65c2cb3` contains the generic
+`6051cc63`. The foundation checkpoint `0cb29949` contains the generic
 Row/RowPatch work. Keep `.lanes/frame-field-access` as the active frame lane.
 
 ## BG changes
 
-Main contains the two BG changes required by the frame extension:
+The two BG changes integrated in this task are:
 
 - scalar copy runtime selection, integrated in `a194846e`;
 - wiring-time output runtime selection, integrated in `ea8077c2`.
 
 The final BG correction is `6051cc63`; its complete C++ and Python suite passed
-1,720/1,720. The frame-specific output layout remains extension-owned and is
-selected through the output hook.
+1,720/1,720. The output hook is available for planned mixed computed/view frame
+outputs. Frame output layout specifications remain extension-owned.
 
 The shared numeric function extraction is held. Frame block arithmetic design
 and implementation is next. Whether that work should reuse the held extraction
