@@ -39,6 +39,29 @@ auto &scalar_types = static_cast<bg::ScalarVisitTypes &>(visitor);
 item.accept(scalar_types);
 ```
 
+`construct<T>(literal)` builds a typed owning scalar in its final storage. The
+runtime-only overload takes the destination runtime type. Both use the engine's
+borrowed `ScalarConstruction` callback and recursively initialize nested lists:
+
+```cpp
+auto nested = literal_input::construct<bg::List<bg::List<bg::i64>>>(
+    {{1, 2}, {}, {3}});
+
+const auto &item_runtime = bg::cpp_scalar_runtime_type<bg::i64>();
+const auto &inner_type = bg::list_scalar_type(item_runtime.type());
+const auto inner_available = std::array<const bg::ScalarRuntimeType *, 1>{&item_runtime};
+const auto &inner_runtime = bg::resolve_scalar_runtime_type(inner_type, inner_available);
+const auto &outer_type = bg::list_scalar_type(inner_type);
+const auto outer_available = std::array<const bg::ScalarRuntimeType *, 1>{&inner_runtime};
+const auto &runtime_type = bg::resolve_scalar_runtime_type(outer_type, outer_available);
+auto erased = literal_input::construct(runtime_type, {{1, 2}, {}, {3}});
+```
+
+Construction dispatches each scalar leaf through `ScalarRuntimeType::construct_from_input`.
+List runtimes acquire item storage and commit each item only after its callback
+returns successfully. A thrown callback leaves the destination slot unconstructed;
+the enclosing list destroys all previously committed items.
+
 `ScalarVisitTypes` dispatches built-in atomic types to typed scalar views and
 structural types to their generic views. Other declarations reach the
 `Scalar<>` extension callback, where the consumer owns extension behavior,

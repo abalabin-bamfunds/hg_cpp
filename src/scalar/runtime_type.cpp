@@ -187,6 +187,12 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
         return storage(value).items.get(static_cast<std::uint32_t>(index), item_layout_);
     }
 
+    void emplace_back_with(void *value, allocator &memory, ScalarConstruction construction) const override {
+        storage(value).items.emplace_back_with(item_layout_, memory.memory_resource(), [&](void *destination) {
+            construction.construct(construction.context, item_runtime_type(), destination, memory);
+        });
+    }
+
     void append(void *value, const details::ScalarData &item, allocator &memory) const override {
         append(value, item.runtime_type(), memory, item.data());
     }

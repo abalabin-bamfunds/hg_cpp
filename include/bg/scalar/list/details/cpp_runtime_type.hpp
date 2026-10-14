@@ -74,6 +74,13 @@ class CppScalarRuntimeType<List<T>> final : public CppScalarRuntimeTypeBase<List
         return std::addressof(items[static_cast<std::uint32_t>(index)]);
     }
 
+    void emplace_back_with(void *storage, allocator &memory, ScalarConstruction construction) const override {
+        auto &items = static_cast<details::scalar_list_storage<T> *>(storage)->items;
+        items.emplace_back_with(memory.memory_resource(), [&](auto *destination) {
+            construction.construct(construction.context, this->item_runtime_type(), destination, memory);
+        });
+    }
+
     void append(void *storage, const details::ScalarData &value, allocator &memory) const override {
         auto &items = static_cast<details::scalar_list_storage<T> *>(storage)->items;
         items.emplace_back_with(

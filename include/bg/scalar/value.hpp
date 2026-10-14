@@ -2,6 +2,7 @@
 
 #include <bg/allocator.hpp>
 #include <bg/scalar/canonical.hpp>
+#include <bg/scalar/construction.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/scalar/details/value_storage.hpp>
 #include <bg/scalar/scalar.hpp>
@@ -38,6 +39,26 @@ concept direct_scalar_source =
 
 template <typename T> class ScalarValue {
   public:
+    [[nodiscard]] static ScalarValue from_construction(ScalarConstruction construction)
+        requires(!details::generic_scalar<T>)
+    {
+        const auto &runtime_type = cpp_scalar_runtime_type<T>();
+        return ScalarValue{details::allocate_scalar_value(runtime_type, nullptr, [&](void *destination,
+                                                                                     allocator &memory) {
+            construction.construct(construction.context, runtime_type, destination, memory);
+        })};
+    }
+
+    [[nodiscard]] static ScalarValue from_construction(ScalarConstruction construction, allocator &memory)
+        requires(!details::generic_scalar<T>)
+    {
+        const auto &runtime_type = cpp_scalar_runtime_type<T>();
+        return ScalarValue{details::allocate_scalar_value(runtime_type, &memory, [&](void *destination,
+                                                                                     allocator &resource) {
+            construction.construct(construction.context, runtime_type, destination, resource);
+        })};
+    }
+
     template <scalar_source Source>
         requires std::same_as<canonical_scalar_t<Source>, T>
     ScalarValue(Source &&source)
@@ -131,6 +152,22 @@ template <typename T> class ScalarValue {
 
 template <> class ScalarValue<> {
   public:
+    [[nodiscard]] static ScalarValue from_construction(const ScalarRuntimeType &runtime_type,
+                                                       ScalarConstruction construction) {
+        return ScalarValue{details::allocate_scalar_value(runtime_type, nullptr, [&](void *destination,
+                                                                                     allocator &memory) {
+            construction.construct(construction.context, runtime_type, destination, memory);
+        })};
+    }
+
+    [[nodiscard]] static ScalarValue from_construction(const ScalarRuntimeType &runtime_type,
+                                                       ScalarConstruction construction, allocator &memory) {
+        return ScalarValue{details::allocate_scalar_value(runtime_type, &memory, [&](void *destination,
+                                                                                     allocator &resource) {
+            construction.construct(construction.context, runtime_type, destination, resource);
+        })};
+    }
+
     template <scalar_source Source>
     explicit ScalarValue(Source &&source)
         : value_{make(details::make_scalar_value<canonical_scalar_t<Source>>(
@@ -202,6 +239,8 @@ template <> class ScalarValue<> {
 
   private:
     template <typename U> friend const details::ScalarData &details::scalar_data(const ScalarValue<U> &) noexcept;
+
+    explicit ScalarValue(details::OwnedScalarData value) noexcept : value_{make(value)} {}
 
     explicit ScalarValue(const details::ScalarData &source)
         : value_{make(details::copy_scalar_value(source, nullptr))} {}

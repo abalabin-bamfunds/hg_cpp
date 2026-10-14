@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/scalar/construction.hpp>
 #include <bg/scalar/runtime_type.hpp>
 
 #include <cstddef>
@@ -22,6 +23,8 @@ class ScalarListRuntimeType : public ScalarRuntimeType {
     virtual std::size_t item_count(const void *storage) const noexcept = 0;
     virtual const void *item(const void *storage, std::size_t index) const noexcept = 0;
     virtual void *item(void *storage, std::size_t index) const noexcept = 0;
+
+    virtual void emplace_back_with(void *storage, allocator &memory, ScalarConstruction construction) const = 0;
 
     virtual void append(void *storage, const details::ScalarData &value, allocator &memory) const = 0;
     template <typename Value>

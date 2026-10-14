@@ -89,6 +89,20 @@ containers that accept any combination of `Scalar` and `ScalarValue` handles.
 Use `ScalarValue` when a value must outlive a borrowed view. A constructor can
 accept a `bg::allocator` for owned storage.
 
+`ScalarConstruction` is an engine and scalar-provider interface for constructing
+an owned value directly in its final storage. `ScalarValue<T>::from_construction`
+selects the runtime type for a concrete scalar declaration. The erased
+`ScalarValue<>::from_construction(runtime_type, construction)` form uses an
+explicit runtime type. Both forms accept an optional allocator.
+
+The callback runs synchronously with the destination runtime type, uninitialized
+storage sized and aligned for that type, and the owning allocator. It must fully
+construct the value before returning. If it throws, the storage must contain no
+live object or owned resources. The callback context is borrowed and must remain
+valid until it returns. `ScalarListRuntimeType::emplace_back_with` applies the
+same callback contract to an item slot and commits the slot only after successful
+construction.
+
 An explicit allocator defines the ownership of dynamic storage. Without
 one, dynamic storage created during a node invocation belongs to the runtime
 graph, and its `ScalarValue` must be destroyed in that invocation. This is

@@ -1,4 +1,5 @@
 #include <literal_input/scalar_literal.hpp>
+#include <literal_input/construct.hpp>
 
 #include <bg/scalar/details/value_access.hpp>
 #include <bg/scalar/bundle/value.hpp>
@@ -15,6 +16,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <memory_resource>
 #include <new>
 #include <stdexcept>
 #include <string>
@@ -23,6 +25,7 @@
 #include <tuple>
 #include <utility>
 #include <vector>
+
 
 #ifdef _MSC_VER
 #include <malloc.h>
@@ -92,6 +95,56 @@ struct ShapeStats {
     std::size_t sequences{};
     std::size_t empty_sequences{};
     std::size_t leaves{};
+};
+
+class CountingMemoryResource final : public std::pmr::memory_resource {
+  public:
+    std::size_t allocations{};
+    std::size_t deallocations{};
+    std::size_t outstanding{};
+
+  private:
+    void *do_allocate(std::size_t size, std::size_t alignment) override {
+        auto *result = std::pmr::new_delete_resource()->allocate(size, alignment);
+        ++allocations;
+        ++outstanding;
+        return result;
+    }
+
+    void do_deallocate(void *value, std::size_t size, std::size_t alignment) override {
+        std::pmr::new_delete_resource()->deallocate(value, size, alignment);
+        ++deallocations;
+        --outstanding;
+    }
+
+    bool do_is_equal(const std::pmr::memory_resource &other) const noexcept override { return this == &other; }
+};
+
+struct CopyTracked {
+    explicit CopyTracked(int value) noexcept : value{value} {}
+    CopyTracked(const CopyTracked &other) noexcept : value{other.value} { ++copies; }
+    CopyTracked(CopyTracked &&) noexcept = default;
+    ~CopyTracked() { ++destructions; }
+
+    int value;
+    static inline std::size_t copies{};
+    static inline std::size_t destructions{};
+};
+
+struct ListItemConstruction {
+    const bg::ScalarData *source;
+    std::size_t calls{};
+    std::size_t fail_on{};
+
+    static void callback(void *context, const bg::ScalarRuntimeType &runtime_type, void *destination,
+                         bg::allocator &memory) {
+        auto &construction = *static_cast<ListItemConstruction *>(context);
+        ++construction.calls;
+        if (construction.calls == construction.fail_on) {
+            throw std::runtime_error{"list item construction failed"};
+        }
+        runtime_type.construct_from_input(destination, *construction.source, memory);
+    }
 };
 
 void inspect_shape(const literal_input::ScalarLiteral &element, ShapeStats &stats) {
@@ -243,6 +296,232 @@ void verify_scalar_dispatch() {
                     "same-type provider source used an unexpected data mode");
         },
         ddv::noop);
+}
+
+void verify_literal_construction() {
+    using literal_input::ScalarLiteral;
+    using Inner = bg::List<bg::i64>;
+    using Nested = bg::List<Inner>;
+
+    const auto &item_runtime = bg::cpp_scalar_runtime_type<bg::i64>();
+    const auto &inner_type = bg::list_scalar_type(item_runtime.type());
+    const auto inner_available = std::array<const bg::ScalarRuntimeType *, 1>{&item_runtime};
+    const auto &composed_inner = static_cast<const bg::ScalarListRuntimeType &>(
+        bg::resolve_scalar_runtime_type(inner_type, inner_available));
+    const auto &outer_type = bg::list_scalar_type(inner_type);
+    const auto outer_available = std::array<const bg::ScalarRuntimeType *, 1>{&composed_inner};
+    const auto &composed_outer = static_cast<const bg::ScalarListRuntimeType &>(
+        bg::resolve_scalar_runtime_type(outer_type, outer_available));
+
+    auto resource = CountingMemoryResource{};
+    auto memory = bg::allocator{resource};
+    {
+        const auto runtime_only = literal_input::construct(composed_outer, {{1, 2}, {}, {3, 4}}, memory);
+        const auto typed = literal_input::construct<Nested>({{1, 2}, {}, {3, 4}}, memory);
+        const auto runtime_view = bg::unchecked_scalar_cast<Nested>(runtime_only.view());
+        require(runtime_view.size() == 3 && runtime_view[0].size() == 2 &&
+                    runtime_view[0][1].value() == 2 && runtime_view[1].empty() &&
+                    runtime_view[2][1].value() == 4,
+                "runtime-only nested list construction produced the wrong values");
+        require(typed.view().size() == 3, "nested literal produced the wrong outer list size");
+        require(typed.view()[0].size() == 2 && typed.view()[0][1].value() == 2,
+                "nested literal produced the wrong first list");
+        require(typed.view()[1].empty(), "empty nested literal was not preserved");
+        require(typed.view()[2][1].value() == 4, "nested literal produced the wrong final value");
+
+        const auto empty = literal_input::construct<bg::List<bg::i64>>(ScalarLiteral{}, memory);
+        require(empty.view().empty(), "empty literal did not construct an empty list");
+        const auto nested_empty = literal_input::construct<Nested>(ScalarLiteral{{}, {}}, memory);
+        require(nested_empty.view().size() == 2 && nested_empty.view()[0].empty() &&
+                    nested_empty.view()[1].empty(),
+                "nested empty lists were not preserved");
+
+        const auto deeper = literal_input::construct<bg::List<bg::List<Inner>>>(
+            ScalarLiteral{{{1, 2}, {}}, {}, {{3}}}, memory);
+        require(deeper.view().size() == 3 && deeper.view()[0].size() == 2 &&
+                    deeper.view()[0][0].size() == 2 && deeper.view()[0][1].empty() &&
+                    deeper.view()[1].empty() && deeper.view()[2][0][0].value() == 3,
+                "three-level list literal did not preserve its nested shape");
+
+        const auto text = literal_input::construct<bg::List<bg::string>>(
+            ScalarLiteral{std::string{"temporary text"}, std::string{"another temporary"}}, memory);
+        require(text.view().size() == 2 && text.view()[0].value() == "temporary text" &&
+                    text.view()[1].value() == "another temporary",
+                "temporary strings were not copied into owned storage");
+
+        auto shape_mismatch_threw = false;
+        try {
+            (void)literal_input::construct<bg::i64>(ScalarLiteral{1, 2}, memory);
+        } catch (const std::invalid_argument &) {
+            shape_mismatch_threw = true;
+        }
+        require(shape_mismatch_threw, "a sequence accepted a scalar destination");
+
+        auto child_failure_threw = false;
+        try {
+            (void)literal_input::construct<bg::List<bg::i64>>(
+                ScalarLiteral{std::string{"not an integer"}}, memory);
+        } catch (const std::invalid_argument &) {
+            child_failure_threw = true;
+        }
+        require(child_failure_threw, "an incompatible list child was accepted");
+        require(resource.outstanding != 0, "live values lost their allocator-owned storage");
+    }
+    require(resource.outstanding == 0, "nested scalar values leaked allocator-owned storage");
+
+    using ProviderValue = test_scalar_provider::value;
+    const auto &provider_runtime = test_scalar_provider::preserving_runtime_type();
+    const auto &provider_type = bg::list_scalar_type(provider_runtime.type());
+    const auto provider_available = std::array<const bg::ScalarRuntimeType *, 1>{&provider_runtime};
+    const auto &composed_provider = static_cast<const bg::ScalarListRuntimeType &>(
+        bg::resolve_scalar_runtime_type(provider_type, provider_available));
+    auto provider_storage = test_scalar_provider::storage{.number = 47};
+    const auto provider_view = bg::Scalar<ProviderValue>::from(provider_runtime, &provider_storage);
+    const auto provider_result = literal_input::construct(composed_provider, ScalarLiteral{provider_view});
+    const auto provider_list = bg::unchecked_scalar_cast<bg::List<ProviderValue>>(provider_result.view());
+    require(&provider_list[0].runtime_type() == &provider_runtime,
+            "runtime-only list construction lost the provider runtime identity");
+    require(provider_list[0].value().get() == 47, "runtime-only provider list changed the leaf value");
+
+    const auto raw_provider_result = literal_input::construct(
+        test_scalar_provider::immutable_snapshot_runtime_type(),
+        ScalarLiteral(ProviderValue{.number = 51}));
+    require(&raw_provider_result.runtime_type() == &test_scalar_provider::immutable_snapshot_runtime_type(),
+            "runtime-only construction lost the requested provider representation");
+    require(bg::unchecked_scalar_cast<ProviderValue>(raw_provider_result.view()).value().get() == 51,
+            "raw provider value was not constructed into the requested runtime representation");
+
+    auto alternative_storage = test_scalar_provider::storage{.number = 53};
+    const auto alternative_source = bg::Scalar<ProviderValue>::from(
+        test_scalar_provider::canonicalizing_runtime_type(), &alternative_storage);
+    const auto alternative_result = literal_input::construct(
+        test_scalar_provider::immutable_snapshot_runtime_type(), ScalarLiteral(alternative_source));
+    require(bg::details::scalar_data(alternative_source).mode() == bg::ScalarDataMode::stored_view &&
+                &bg::details::scalar_data(alternative_source).runtime_type() ==
+                    &test_scalar_provider::canonicalizing_runtime_type(),
+            "alternative provider source did not retain its runtime representation");
+    require(&alternative_result.runtime_type() == &test_scalar_provider::immutable_snapshot_runtime_type() &&
+                bg::unchecked_scalar_cast<ProviderValue>(alternative_result.view()).value().get() == 53,
+            "alternative provider source was not applied to the requested destination runtime");
+
+    using Item = bg::Opaque<CopyTracked>;
+    using ItemList = bg::List<Item>;
+    auto sources = std::array{
+        bg::ScalarValue<Item>{CopyTracked{0}}, bg::ScalarValue<Item>{CopyTracked{1}},
+        bg::ScalarValue<Item>{CopyTracked{2}}, bg::ScalarValue<Item>{CopyTracked{3}},
+        bg::ScalarValue<Item>{CopyTracked{4}}, bg::ScalarValue<Item>{CopyTracked{5}},
+        bg::ScalarValue<Item>{CopyTracked{6}}, bg::ScalarValue<Item>{CopyTracked{7}},
+        bg::ScalarValue<Item>{CopyTracked{8}},
+    };
+    CopyTracked::copies = 0;
+    auto tracked_resource = CountingMemoryResource{};
+    auto tracked_memory = bg::allocator{tracked_resource};
+    {
+        const auto tracked = literal_input::construct<ItemList>(
+            ScalarLiteral{sources[0], sources[1], sources[2], sources[3], sources[4],
+                          sources[5], sources[6], sources[7], sources[8]},
+            tracked_memory);
+        require(CopyTracked::copies == 9, "literal construction made an intermediate or duplicate leaf copy");
+        require(tracked.view().size() == 9 && tracked.view()[8].value().value == 8,
+                "literal construction lost a leaf beyond the first bunch block");
+        require(tracked_resource.allocations == 4,
+                "nine scalar leaves did not use one owner, two data blocks, and descriptor metadata");
+    }
+    require(tracked_resource.outstanding == 0 && tracked_resource.deallocations == 4,
+            "tracked list construction did not release every allocation");
+
+    auto failure_resource = CountingMemoryResource{};
+    auto failure_memory = bg::allocator{failure_resource};
+    const auto copies_before_failure = CopyTracked::copies;
+    const auto destructions_before_failure = CopyTracked::destructions;
+    auto partial_failure_threw = false;
+    try {
+        (void)literal_input::construct<ItemList>(
+            ScalarLiteral{sources[0], sources[1], std::string{"incompatible child"}}, failure_memory);
+    } catch (const std::invalid_argument &) {
+        partial_failure_threw = true;
+    }
+    require(partial_failure_threw, "a later incompatible list child was accepted");
+    require(CopyTracked::copies - copies_before_failure == 2,
+            "partial list construction made an unexpected number of child copies");
+    require(CopyTracked::destructions - destructions_before_failure == 2,
+            "partial list construction did not destroy its two committed children");
+    require(failure_resource.outstanding == 0,
+            "partial list construction leaked its owner or bunch allocation");
+
+    using NestedItemList = bg::List<ItemList>;
+    auto nested_failure_resource = CountingMemoryResource{};
+    auto nested_failure_memory = bg::allocator{nested_failure_resource};
+    const auto nested_copies_before = CopyTracked::copies;
+    const auto nested_destructions_before = CopyTracked::destructions;
+    auto nested_failure_threw = false;
+    try {
+        (void)literal_input::construct<NestedItemList>(
+            ScalarLiteral{{sources[0]}, {sources[1], std::string{"incompatible nested child"}}},
+            nested_failure_memory);
+    } catch (const std::invalid_argument &) {
+        nested_failure_threw = true;
+    }
+    require(nested_failure_threw, "an incompatible nested-list child was accepted");
+    require(CopyTracked::copies - nested_copies_before == 2 &&
+                CopyTracked::destructions - nested_destructions_before == 2,
+            "nested rollback did not destroy both the incomplete and completed inner lists");
+    require(nested_failure_resource.outstanding == 0,
+            "nested partial construction leaked owner or list bunch allocations");
+}
+
+void verify_late_list_emplacement_failure(const bg::ScalarListRuntimeType &runtime_type,
+                                          const bg::ScalarData &source) {
+    auto resource = CountingMemoryResource{};
+    auto memory = bg::allocator{resource};
+    {
+        auto *storage = memory.allocate_bytes(runtime_type.size(), runtime_type.alignment());
+        runtime_type.construct_runtime_value(storage, memory);
+        auto release = bg::util::scope_exit{[&]() noexcept {
+            runtime_type.destroy(storage, memory);
+            memory.deallocate_bytes(storage, runtime_type.size(), runtime_type.alignment());
+        }};
+
+        auto construction = ListItemConstruction{&source, 0, 9};
+        const auto callback = bg::ScalarConstruction{&construction, &ListItemConstruction::callback};
+        for (auto index = std::size_t{}; index < 8; ++index) {
+            runtime_type.emplace_back_with(storage, memory, callback);
+        }
+        const auto outstanding_before_growth = resource.outstanding;
+        auto threw = false;
+        try {
+            runtime_type.emplace_back_with(storage, memory, callback);
+        } catch (const std::runtime_error &) {
+            threw = true;
+        }
+
+        require(threw && construction.calls == 9, "later-block construction did not fail at the requested item");
+        require(resource.outstanding == outstanding_before_growth + 1,
+                "failed later-block insertion did not release its data block while retaining descriptor metadata");
+        require(runtime_type.item_count(storage) == 8, "failed emplacement committed an unconstructed item slot");
+    }
+    require(resource.outstanding == 0 && resource.allocations == resource.deallocations,
+            "destroying the partially populated list did not release its storage and descriptor metadata");
+}
+
+void verify_list_emplacement_failure_cleanup() {
+    using literal_input::ScalarLiteral;
+    const auto integer = bg::ScalarValue<bg::i64>{37};
+    verify_late_list_emplacement_failure(
+        static_cast<const bg::ScalarListRuntimeType &>(bg::cpp_scalar_runtime_type<bg::List<bg::i64>>()),
+        bg::details::scalar_data(integer));
+
+    struct ComposedItem {
+        int value;
+    };
+    using OpaqueItem = bg::Opaque<ComposedItem>;
+    const auto item_value = bg::ScalarValue<OpaqueItem>{ComposedItem{42}};
+    const auto &item_runtime = bg::cpp_scalar_runtime_type<OpaqueItem>();
+    const auto &list_type = bg::list_scalar_type(item_runtime.type());
+    const auto available = std::array<const bg::ScalarRuntimeType *, 1>{&item_runtime};
+    const auto &composed = static_cast<const bg::ScalarListRuntimeType &>(
+        bg::resolve_scalar_runtime_type(list_type, available));
+    verify_late_list_emplacement_failure(composed, bg::details::scalar_data(item_value));
 }
 
 } // namespace
@@ -478,6 +757,8 @@ int main() {
     require(callable_list_result == 10, "literal callable-list visitor lost its result");
 
     verify_scalar_dispatch();
+    verify_literal_construction();
+    verify_list_emplacement_failure_cleanup();
 
     std::cout << "ScalarLiteralItem size/alignment: " << sizeof(ScalarLiteralItem) << '/' << alignof(ScalarLiteralItem)
               << '\n';
