@@ -1895,6 +1895,29 @@ struct computed_quote_node {
     }
 };
 
+struct computed_bid_aggregate {
+    In<TSF<ComputedQuote>> input;
+    Out<TSF<ComputedQuote>, frame::computed<"bid">> output;
+
+    inline static std::size_t runtime_selections{};
+
+    static const TimeSeriesRuntimeType &output_runtime_type(const WiringArguments &arguments) {
+        ++runtime_selections;
+        return frame_computed_time_series_runtime_type<ComputedQuote>(
+            *arguments.resolved_output_type(), computed_option<"bid">{});
+    }
+
+    void evaluate() const {
+        output.bind(input);
+        if (!input.valid())
+            return;
+        input.for_each_row([&](row_id_t id, std::size_t) {
+            if (const auto bid = input.cell<2>(id))
+                output.template set<"bid">(id, *bid + 10.0);
+        });
+    }
+};
+
 struct frame_command_source {
     int slot;
     Out<TS<i64>> output;
@@ -3543,6 +3566,86 @@ void test_computed_tsf_outputs_and_downstream_views() {
             "computed TSF did not invalidate and revalidate with its source");
 }
 
+void test_computed_tsf_callable_and_aggregate_runtime_hooks() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    struct observation {
+        const TimeSeriesRuntimeType *mid_runtime{};
+        const TimeSeriesRuntimeType *bid_runtime{};
+        std::vector<row_id_t> rows;
+        std::vector<std::optional<double>> mids;
+        std::vector<std::optional<double>> bids;
+    };
+    auto observations = std::vector<observation>{};
+    auto callable_runtime_selections = std::size_t{};
+    computed_bid_aggregate::runtime_selections = 0;
+
+    const auto source = node([](In<TS<i64>> command, Out<TSF<ComputedQuote>> output) {
+        if (*command == 0) {
+            output.clear();
+            return;
+        }
+        static_cast<void>(output.add(
+            ComputedQuote<Cell>{.mid = Cell<double>{0.0}, .ask = Cell<double>{12.0}, .bid = Cell<double>{10.0}}));
+    });
+    const auto compute_mid = node(
+        eval = [](In<TSF<ComputedQuote>> input, Out<TSF<ComputedQuote>, frame::computed<"mid">> output) {
+            output.bind(input);
+            if (!input.valid())
+                return;
+            input.for_each_row([&](row_id_t id, std::size_t) {
+                const auto bid = input.cell<2>(id);
+                const auto ask = input.cell<1>(id);
+                if (bid && ask)
+                    output.template set<"mid">(id, (*bid + *ask) / 2.0);
+            });
+        },
+        output_runtime_type = [&](const WiringArguments &arguments) -> const TimeSeriesRuntimeType & {
+            ++callable_runtime_selections;
+            return frame_computed_time_series_runtime_type<ComputedQuote>(
+                *arguments.resolved_output_type(), computed_option<"mid">{});
+        });
+    const auto compute_bid = node<computed_bid_aggregate>();
+    const auto observe = node([&](In<TSF<ComputedQuote>, optional> input,
+                                  In<TSF<ComputedQuote>, optional> mid,
+                                  In<TSF<ComputedQuote>, optional> bid,
+                                  In<TS<i64>> command, Out<TS<i64>> output) {
+        auto result = observation{};
+        if (input.valid() && mid.valid() && bid.valid()) {
+            result.mid_runtime = std::addressof(mid.runtime_type());
+            result.bid_runtime = std::addressof(bid.runtime_type());
+            input.for_each_row([&](row_id_t id, std::size_t) {
+                result.rows.push_back(id);
+                result.mids.push_back(mid.cell<0>(id));
+                result.bids.push_back(bid.cell<2>(id));
+            });
+        }
+        observations.push_back(std::move(result));
+        output.set(*command);
+    });
+    const auto graph = [&](wp<TS<i64>> command) {
+        const auto frame = source(command);
+        return observe(frame, compute_mid(frame), compute_bid(frame), command);
+    };
+    const auto commands = std::array<i64, 2>{0, 1};
+    static_cast<void>(testing::test_graph(graph, commands));
+
+    const auto &series_type = TSF<ComputedQuote>::type();
+    const auto &mid_runtime = frame_computed_time_series_runtime_type<ComputedQuote>(
+        series_type, computed_option<"mid">{});
+    const auto &bid_runtime = frame_computed_time_series_runtime_type<ComputedQuote>(
+        series_type, computed_option<"bid">{});
+    require(observations.size() == commands.size() && callable_runtime_selections == 1 &&
+                computed_bid_aggregate::runtime_selections == 1 &&
+                observations[1].mid_runtime == std::addressof(mid_runtime) &&
+                observations[1].bid_runtime == std::addressof(bid_runtime) &&
+                observations[1].rows == std::vector<row_id_t>{0} &&
+                observations[1].mids == std::vector<std::optional<double>>{11.0} &&
+                observations[1].bids == std::vector<std::optional<double>>{20.0},
+            "callable and aggregate output hooks selected incorrect computed TSF layouts");
+}
+
 void test_computed_tsf_runtime_cache_and_source_rebinding() {
     using namespace bg;
     using namespace bg::frame;
@@ -3777,6 +3880,7 @@ int main() {
         test_incremental_numeric_filter();
         test_filter_greater_than_composes_with_column_projection();
         test_computed_tsf_outputs_and_downstream_views();
+        test_computed_tsf_callable_and_aggregate_runtime_hooks();
         test_computed_tsf_runtime_cache_and_source_rebinding();
         test_runtime_schema_computed_tsf_output();
         test_scalar_variable_frame_input();

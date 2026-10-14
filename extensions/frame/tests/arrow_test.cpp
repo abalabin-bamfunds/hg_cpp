@@ -1,6 +1,7 @@
 #include <bg/frame/arrow.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/testing/test_graph.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <arrow/api.h>
 #include <arrow/builder.h>
@@ -37,6 +38,31 @@ struct InheritedArrowFrame : bg::schema_extends<InheritedArrowBase, Field> {
 };
 
 template <template <typename, auto...> typename Field> struct EmptySchema {};
+
+struct RowTraversalOrder {
+    const NativeRows *rows{};
+    std::array<row_id_t, 2> ids{};
+
+    RowSet row_set() const noexcept {
+        return {this,
+                nullptr,
+                rows->identity(),
+                [](const void *context) noexcept {
+                    return static_cast<const RowTraversalOrder *>(context)->ids.size();
+                },
+                [](const void *context, row_id_t id) noexcept {
+                    const auto &order = *static_cast<const RowTraversalOrder *>(context);
+                    return order.rows->contains(id);
+                },
+                [](const void *context, std::size_t position) {
+                    return static_cast<const RowTraversalOrder *>(context)->ids.at(position);
+                },
+                [](const void *context, void *target, RowSet::visit_function visit) {
+                    for (const auto id : static_cast<const RowTraversalOrder *>(context)->ids)
+                        visit(target, id);
+                }};
+    }
+};
 
 void require(bool condition, const char *message) {
     if (!condition)
@@ -214,6 +240,61 @@ void test_fragmented_dense_copy_and_source_mutation() {
     require(dense->Value(0) == 10, "gather-copy export changed after source mutation");
     native.release(memory);
     require(dense->Value(1) == 30, "gather-copy export did not survive source release");
+}
+
+void test_computed_tsc_arrow_export_preserves_traversal_and_copy_ownership() {
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto source = NativeColumn<double>{};
+    auto output = ColumnComputedOutputStorage<i64>{};
+    auto output_released = false;
+    auto release = util::scope_exit{[&]() noexcept {
+        if (!output_released)
+            output.release(memory);
+        source.release(memory);
+    }};
+
+    const auto first_time = MIN_DT + EvaluationTime::duration{1};
+    const auto first_id = source.add(10.0, first_time, memory);
+    const auto second_id = source.add(20.0, first_time, memory);
+    auto input = source.scalar_storage();
+    auto first_order = RowTraversalOrder{input.rows, {first_id, second_id}};
+    input.visible_rows = first_order.row_set();
+    input.coverage = input.visible_rows;
+    require(output.bind(input, true, first_time, first_time, memory),
+            "computed Arrow column did not bind source rows");
+    output.set(first_id, i64{100}, first_time, memory);
+    output.set(second_id, std::nullopt, first_time, memory);
+
+    const auto second_time = first_time + EvaluationTime::duration{1};
+    auto reverse_order = RowTraversalOrder{input.rows, {second_id, first_id}};
+    input.visible_rows = reverse_order.row_set();
+    input.coverage = input.visible_rows;
+    static_cast<void>(output.bind(input, false, second_time, second_time, memory));
+
+    const auto column = scalar_storage_traits<Column<i64>>::read(output.series_view().scalar_storage());
+    auto source_value_buffers = std::vector<const std::uint8_t *>{};
+    column.batches([&](const auto &batch) {
+        source_value_buffers.push_back(reinterpret_cast<const std::uint8_t *>(batch.values));
+    });
+    auto borrowed_result = borrow_arrow(column);
+    auto copied_result = copy_to_arrow(column);
+    require(borrowed_result.ok() && copied_result.ok(), "computed TSC Arrow export failed");
+    const auto borrowed = std::move(borrowed_result).ValueUnsafe();
+    const auto copied = std::move(copied_result).ValueUnsafe();
+    require(borrowed->num_chunks() == 2 && borrowed->chunk(0)->IsNull(0) &&
+                borrowed->chunk(1)->data()->buffers[1]->data() == source_value_buffers[1],
+            "computed TSC borrowed Arrow view copied values or lost traversal order and nulls");
+    require(copied->num_chunks() == 1 && copied->chunk(0)->IsNull(0) &&
+                std::static_pointer_cast<arrow::Int64Array>(copied->chunk(0))->Value(1) == 100 &&
+                copied->chunk(0)->data()->buffers[1]->data() != source_value_buffers[1],
+            "computed TSC Arrow copy did not gather independent values in traversal order");
+
+    const auto copied_values = std::static_pointer_cast<arrow::Int64Array>(copied->chunk(0));
+    output.release(memory);
+    output_released = true;
+    require(copied_values->IsNull(0) && copied_values->Value(1) == 100,
+            "computed TSC Arrow copy did not survive output storage release");
 }
 
 void test_null_only_and_empty_exports() {
@@ -480,6 +561,7 @@ int main() {
     test_arrow_default_frame_runtime();
     test_exports();
     test_fragmented_dense_copy_and_source_mutation();
+    test_computed_tsc_arrow_export_preserves_traversal_and_copy_ownership();
     test_null_only_and_empty_exports();
     test_imports_and_runtime_lifetime();
     test_zero_column_row_count();

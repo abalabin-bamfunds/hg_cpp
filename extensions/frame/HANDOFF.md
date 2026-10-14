@@ -3,9 +3,9 @@
 Updated: 2026-10-14. The active lane is based on integrated main `a16f4761`.
 The generic Row/RowPatch foundation checkpoint is `bd6d9cc5`. Commit `8e6bd52d`
 separates logical row identity from physical slots; `69d1f643` retains native
-owner/domain validation for borrowed views. Mixed computed/view outputs are
-implemented and pass the Arrow-enabled suites. Output-runtime-hook coverage and
-the implementation commit are being completed before independent review.
+owner/domain validation for borrowed views. Mixed computed/view TSF outputs and
+standalone computed TSC outputs are implemented. Arrow-on, Arrow-off, and
+ASan/UBSan consumer suites pass; the implementation commit is pending.
 
 ## Work locations
 
@@ -105,6 +105,13 @@ storage. New computed cells start null. `set<Name>` and `set_batch<Name>` update
 computed cells and publish their child columns. Batch preflight completes before
 cell writes and publication occurs once. Set-only later invocations refresh the
 column delta timestamp. Accepted equal-value writes follow ordinary semantics.
+
+Standalone computed columns use `Out<TSC<T>, frame::computed<>>`. `bind(source)`
+tracks source membership and row identity while owning result cells. Source cell
+changes alone do not publish the result. `set` and `set_batch` write result
+cells; new rows start null, and removed rows release their local slots. The
+result cell type may differ from the source cell type. Generic declarations
+resolve source and result cell types at wiring.
 
 The TSF scalar adapter borrows persistent output storage. It is not registered
 as default scalar storage. The default is the immutable snapshot runtime,
@@ -213,39 +220,37 @@ preserved under `extensions/frame/archive/`. Their source and measurement
 conditions are documented in the archive README. These results inform the
 design; they do not replace the consumer verification recorded above.
 
-## Agreed next work
-
-Arrow-off and sanitizer builds have not yet been repeated for the row-slot
-commits.
+## Status and remaining work
 
 Fixed-name `Out<TSF<Schema>, frame::computed<"mid">>` outputs are implemented
 through the shared runtime-schema view backend. Dedicated Arrow-on tests cover
 concrete and runtime schemas, independent computed buffers, shared slot maps,
 row removal and reuse, null batches, validation before mutation, downstream
 views, set-only later invocations, cache identity, and child revalidation.
-Arrow-off and sanitizer gates will be repeated after standalone computed-column
-support.
 
-Standalone row-preserving column outputs use the approved declaration
-`Out<TSC<T>, frame::computed<>>`. They preserve source row identity and own
-result cells. The intended operations are `bind(source)`, `set(id, value)`,
-and `set_batch(ids, ColumnBatch<T>)`.
+Standalone computed TSC tests cover distinct and generic source/result types,
+row membership changes, same-cycle writes and removals, null writes, batch
+preflight, invalidation, domain rebinding, and row-ID reuse. Plain-view
+regression tests cover mapping changes with missing retained coverage and
+removal after a same-cycle change.
 
-Public API decisions remain pending: the declaration for computed frame names
-selected during wiring and whether to expose BG's existing integer division
-function for column arithmetic. Fixed computed names can be used with runtime
-schemas independently of the first decision. The numeric extraction remains
-held; do not duplicate its exact integer division implementation.
+Remaining work includes the frame expression and block-arithmetic design. The
+numeric extraction remains held; do not duplicate its integer division
+implementation.
 
 The two BG changes integrated in this task are scalar copy runtime selection
 and wiring-time output runtime selection. The frame extension uses scalar copy
-selection for owning frame copies. The output hook is available for planned
-mixed computed/view output layouts. Frame output layout options remain
-extension-owned.
+selection for owning frame copies and the output hook to select frame layouts.
+Frame output layout options remain extension-owned.
 
 The shared numeric function extraction is held. Block arithmetic design and
 implementation are next. Whether that work should reuse the held extraction
 depends on the design and implementation.
+
+Arrow-on Release passed all 5 suites in `build/field-access-on`. Arrow-off
+Release passed all 4 suites in `build/cc4-checkpoint-off`. Arrow-on Debug with
+ASan/UBSan passed all 5 suites in `build/cc4-lifetime`, using
+`ASAN_OPTIONS=detect_leaks=0` and `UBSAN_OPTIONS=halt_on_error=1`.
 
 Previous-value subscriptions, strings and symbols, compaction, capacity
 trimming, and delta transport remain later work. Previous-cell capture, if

@@ -62,6 +62,9 @@ const TimeSeriesRuntimeType &column_binding_view_time_series_runtime_type(const 
 const TimeSeriesRuntimeType &column_time_series_runtime_type(const TimeSeriesType &type);
 const TimeSeriesRuntimeType &column_view_time_series_runtime_type(const TimeSeriesType &type);
 const TimeSeriesRuntimeType &column_binding_view_time_series_runtime_type(const TimeSeriesType &type);
+template <cell_type T>
+const TimeSeriesRuntimeType &column_computed_time_series_runtime_type(const TimeSeriesType &type);
+const TimeSeriesRuntimeType &column_computed_time_series_runtime_type(const TimeSeriesType &type);
 
 } // namespace frame
 
@@ -401,7 +404,7 @@ class Out<frame::TSC<T, Properties...>, frame::view> {
         const auto input = source.extension_descriptor();
         auto &output = storage();
         if (!input.valid) {
-            if (output.valid)
+            if (output.membership.valid)
                 binding_->invalidate();
             return false;
         }
@@ -481,6 +484,138 @@ class Out<frame::TSC<T, Properties...>, frame::view> {
     TimeSeriesOutputBinding binding_;
 };
 
+template <typename T, auto... Properties>
+class Out<frame::TSC<T, Properties...>, frame::computed<>> {
+    static_assert(frame::cell_type<T> || details::scalar_variable<T>);
+
+  public:
+    explicit Out(TimeSeriesOutputBinding binding) noexcept : binding_{std::move(binding)} {}
+
+    template <typename SourceCell, auto... SourceProperties, auto... InputProperties>
+        requires(frame::cell_type<SourceCell> || details::scalar_variable<SourceCell>)
+    bool bind(const In<frame::TSC<SourceCell, SourceProperties...>, InputProperties...> &source) const {
+        if (!source.valid()) {
+            if (binding_->valid())
+                binding_->invalidate();
+            return false;
+        }
+        const auto &source_type = static_cast<const frame::ColumnSeriesType &>(source.runtime_type().type());
+        if (std::addressof(source_type.cell_type()) == std::addressof(cpp_scalar_type<i64>())) {
+            if constexpr (frame::cell_type<SourceCell>)
+                return bind_source(source);
+            else
+                return bind_source(source.template input<i64>());
+        }
+        if (std::addressof(source_type.cell_type()) == std::addressof(cpp_scalar_type<double>())) {
+            if constexpr (frame::cell_type<SourceCell>)
+                return bind_source(source);
+            else
+                return bind_source(source.template input<double>());
+        }
+        throw std::invalid_argument{"computed TSC source has an unsupported cell type"};
+    }
+
+    void set(frame::row_id_t id, std::optional<T> value) const
+        requires frame::cell_type<T>
+    {
+        auto &output = storage<T>();
+        output.set(id, value, binding_->context().evaluation_time(), binding_->allocator());
+        binding_->publish();
+    }
+
+    template <frame::cell_type Cell>
+        requires details::scalar_variable<T>
+    void set(frame::row_id_t id, std::optional<Cell> value) const {
+        auto &output = storage<Cell>();
+        output.set(id, value, binding_->context().evaluation_time(), binding_->allocator());
+        binding_->publish();
+    }
+
+    template <frame::cell_type Cell>
+        requires details::scalar_variable<T>
+    void set(frame::row_id_t id, Cell value) const {
+        set(id, std::optional<Cell>{value});
+    }
+
+    void set(frame::row_id_t id, T value) const
+        requires frame::cell_type<T>
+    {
+        set(id, std::optional<T>{value});
+    }
+
+    void set(frame::row_id_t id, std::nullopt_t) const {
+        if constexpr (frame::cell_type<T>) {
+            set(id, std::optional<T>{});
+        } else if (has_cell_type<i64>()) {
+            set<i64>(id, std::optional<i64>{});
+        } else if (has_cell_type<double>()) {
+            set<double>(id, std::optional<double>{});
+        } else {
+            throw std::invalid_argument{"computed TSC output has an unsupported cell type"};
+        }
+    }
+
+    template <frame::cell_type Cell>
+        requires(details::scalar_variable<T> || std::same_as<T, Cell>)
+    void set_batch(std::span<const frame::row_id_t> ids, const frame::ColumnBatch<Cell> &batch) const {
+        auto &output = storage<Cell>();
+        if (output.set_batch(ids, batch, binding_->context().evaluation_time(), binding_->allocator()))
+            binding_->publish();
+    }
+
+    void invalidate() const { binding_->invalidate(); }
+    bool valid() const noexcept { return binding_->valid(); }
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return binding_->runtime_type(); }
+
+    using time_series_type = frame::TSC<T, Properties...>;
+
+  private:
+    template <frame::cell_type Cell>
+    bool has_cell_type() const noexcept {
+        return std::addressof(column_type().cell_type()) == std::addressof(cpp_scalar_type<Cell>());
+    }
+
+    const frame::ColumnSeriesType &column_type() const noexcept {
+        return static_cast<const frame::ColumnSeriesType &>(binding_->runtime_type().type());
+    }
+
+    template <frame::cell_type Cell>
+    frame::ColumnComputedOutputStorage<Cell> &storage() const {
+        if constexpr (frame::cell_type<T>) {
+            static_assert(std::same_as<T, Cell>);
+        } else if (!has_cell_type<Cell>()) {
+            throw std::invalid_argument{"computed TSC cell type does not match its output type"};
+        }
+        return *static_cast<frame::ColumnComputedOutputStorage<Cell> *>(binding_->mutable_data());
+    }
+
+    template <typename SourceInput>
+    bool bind_source(const SourceInput &source) const {
+        if constexpr (frame::cell_type<T>) {
+            return bind_result<T>(source);
+        } else if (has_cell_type<i64>()) {
+            return bind_result<i64>(source);
+        } else if (has_cell_type<double>()) {
+            return bind_result<double>(source);
+        } else {
+            throw std::invalid_argument{"computed TSC output has an unsupported cell type"};
+        }
+    }
+
+    template <frame::cell_type Cell, typename SourceInput>
+    bool bind_result(const SourceInput &source) const {
+        const auto input = source.extension_descriptor();
+        auto &output = storage<Cell>();
+        const auto changed = output.bind(input.storage, input.modified, input.last_updated,
+                                         binding_->context().evaluation_time(), binding_->allocator());
+        if (changed)
+            binding_->publish();
+        return changed;
+    }
+
+    TimeSeriesOutputBinding binding_;
+};
+
 } // namespace bg
 
 namespace bg {
@@ -500,6 +635,24 @@ struct output_declaration_traits<Out<frame::TSC<T, Properties...>, frame::view>>
 
     static const TimeSeriesRuntimeType &runtime(const TimeSeriesType &type) {
         return frame::column_binding_view_time_series_runtime_type(type);
+    }
+};
+
+template <frame::cell_type T, auto... Properties>
+struct output_declaration_traits<Out<frame::TSC<T, Properties...>, frame::computed<>>> {
+    using time_series_type = frame::TSC<T, Properties...>;
+
+    static const TimeSeriesRuntimeType &runtime(const TimeSeriesType &type) {
+        return frame::column_computed_time_series_runtime_type<T>(type);
+    }
+};
+
+template <details::scalar_variable T, auto... Properties>
+struct output_declaration_traits<Out<frame::TSC<T, Properties...>, frame::computed<>>> {
+    using time_series_type = frame::TSC<T, Properties...>;
+
+    static const TimeSeriesRuntimeType &runtime(const TimeSeriesType &type) {
+        return frame::column_computed_time_series_runtime_type(type);
     }
 };
 

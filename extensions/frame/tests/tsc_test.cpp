@@ -94,8 +94,67 @@ struct tsc_writer {
         case 11:
             state->first = output.add(70);
             return;
+        case 12:
+        case 13:
+            return;
         default:
             throw std::runtime_error{"unknown TSC test command"};
+        }
+    }
+};
+
+struct computed_tsc_source {
+    bg::In<bg::TS<bg::i64>> command;
+    bg::State<writer_state> state;
+    bg::Out<bg::frame::TSC<bg::i64>> output;
+
+    void evaluate() const {
+        switch (*command) {
+        case 0:
+            output.clear();
+            return;
+        case 1:
+            state->first = output.add(10);
+            return;
+        case 2:
+            state->second = output.add(std::nullopt);
+            return;
+        case 3:
+            output.set(state->first, 10);
+            return;
+        case 4:
+            output.set(state->second, 20);
+            return;
+        case 5:
+            output.set(state->second, std::nullopt);
+            return;
+        case 6:
+            require(output.erase(state->first), "computed TSC source could not remove its first row");
+            return;
+        case 7: {
+            const auto recycled = output.add(40);
+            require(recycled == state->first, "computed TSC source did not reuse its retired row ID");
+            return;
+        }
+        case 8: {
+            const auto temporary = output.add(50);
+            require(output.erase(temporary), "computed TSC source could not remove its temporary row");
+            return;
+        }
+        case 9:
+            output.clear();
+            return;
+        case 10:
+            output.invalidate();
+            return;
+        case 11:
+            state->first = output.add(70);
+            return;
+        case 12:
+        case 13:
+            return;
+        default:
+            throw std::runtime_error{"unknown computed TSC source command"};
         }
     }
 };
@@ -105,6 +164,62 @@ struct tsc_view {
     bg::Out<bg::frame::TSC<bg::i64>, bg::frame::view> output;
 
     void evaluate() const { output.bind(input); }
+};
+
+struct computed_tsc_output {
+    bg::In<bg::frame::TSC<bg::i64>> input;
+    bg::In<bg::TS<bg::i64>> command;
+    bg::Out<bg::frame::TSC<double>, bg::frame::computed<>> output;
+
+    void evaluate() const {
+        static_cast<void>(output.bind(input));
+        if (!input.valid())
+            return;
+
+        auto ids = std::vector<bg::frame::row_id_t>{};
+        input.for_each_row([&](bg::frame::row_id_t id, std::size_t) { ids.push_back(id); });
+        if (ids.empty())
+            return;
+
+        switch (*command) {
+        case 1:
+            output.set(ids.front(), 100);
+            return;
+        case 4:
+            output.set(ids.front(), 100);
+            return;
+        case 5:
+            output.set(ids.back(), std::nullopt);
+            return;
+        case 7: {
+            const auto value = std::array{700.0};
+            output.set_batch(std::span<const bg::frame::row_id_t>{ids.data(), 1},
+                             bg::frame::ColumnBatch<double>{0, value.size(), value.data(),
+                                                            bg::frame::ColumnBatch<double>::Validity::all_valid()});
+            return;
+        }
+        case 11: {
+            const auto invalid_ids = std::array{ids.front(), bg::frame::no_row};
+            const auto values = std::array{1.0, 2.0};
+            auto rejected = false;
+            try {
+                output.set_batch(invalid_ids,
+                                 bg::frame::ColumnBatch<double>{0, values.size(), values.data(),
+                                                                bg::frame::ColumnBatch<double>::Validity::all_valid()});
+            } catch (const std::out_of_range &) {
+                rejected = true;
+            }
+            require(rejected, "computed TSC batch accepted an ID outside its bound row set");
+            return;
+        }
+        case 12:
+        case 13:
+            output.set(ids.front(), 70);
+            return;
+        default:
+            return;
+        }
+    }
 };
 
 struct selectable_tsc_view {
@@ -129,6 +244,18 @@ struct observation {
     bool zero_copy{};
     std::vector<bg::frame::row_id_t> rows;
     std::vector<std::optional<bg::i64>> cells;
+    std::vector<bg::frame::row_id_t> changed;
+    std::vector<bg::frame::row_id_t> removed;
+};
+
+struct computed_observation {
+    bool valid{};
+    bool became_valid{};
+    bool became_invalid{};
+    bool modified{};
+    bg::EvaluationTime last_updated{bg::MIN_DT};
+    std::vector<bg::frame::row_id_t> rows;
+    std::vector<std::optional<double>> cells;
     std::vector<bg::frame::row_id_t> changed;
     std::vector<bg::frame::row_id_t> removed;
 };
@@ -230,6 +357,133 @@ void test_cold_generic_tsc_column_output() {
     require(result.size() == values.size() && result[0] && result[1] &&
                 result[0]->value().cell<bg::i64>(0) == 14 && result[1]->value().cell<bg::i64>(0) == -7,
             "cold generic TSC input did not publish its value as a typed column series");
+}
+
+void test_computed_tsc_output() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto observations = std::vector<computed_observation>{};
+    const auto write = node<computed_tsc_source>();
+    const auto compute = node<computed_tsc_output>();
+    const auto observe = node([&](In<TSC<double>, optional> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto result = computed_observation{.valid = input.valid(),
+                                           .became_valid = input.became_valid(),
+                                           .became_invalid = input.became_invalid(),
+                                           .modified = input.modified(),
+                                           .last_updated = input.last_updated()};
+        if (input.valid()) {
+            input.for_each_row([&](row_id_t id, std::size_t) {
+                result.rows.push_back(id);
+                result.cells.push_back(input.cell(id));
+            });
+            input.for_each_changed([&](row_id_t id) { result.changed.push_back(id); });
+            input.for_each_removed([&](row_id_t id) { result.removed.push_back(id); });
+        }
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        return observe(compute(write(command), command), tick);
+    };
+    const auto commands = std::array<i64, 15>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 10, 11, 12, 13};
+    const auto result = testing::test_graph(graph, commands, commands);
+
+    require(result.size() == commands.size() && observations.size() == commands.size(),
+            "computed TSC graph missed a command cycle");
+    require(observations[0].valid && observations[0].became_valid && observations[0].rows.empty() &&
+                observations[1].rows == std::vector<row_id_t>{0} &&
+                observations[1].cells == std::vector<std::optional<double>>{100.0} &&
+                observations[1].changed == std::vector<row_id_t>{0},
+            "computed TSC did not initialize a valid empty output or write its first row");
+    require(observations[2].rows == std::vector<row_id_t>{0, 1} &&
+                observations[2].cells == std::vector<std::optional<double>>{100.0, std::nullopt} &&
+                observations[2].changed == std::vector<row_id_t>{1},
+            "computed TSC did not bind added rows with null result cells");
+    require(!observations[3].modified && observations[3].last_updated == observations[2].last_updated &&
+                observations[3].cells == observations[2].cells,
+            "source cell changes alone ticked a computed TSC");
+    require(observations[4].modified && observations[4].changed == std::vector<row_id_t>{0} &&
+                observations[4].cells.front() == 100.0 && observations[4].last_updated > observations[3].last_updated,
+            "an equal computed TSC write did not publish a row modification");
+    require(observations[5].modified && observations[5].changed == std::vector<row_id_t>{1} &&
+                !observations[5].cells.back(),
+            "a null-to-null computed TSC write did not publish a row modification");
+    require(observations[6].rows == std::vector<row_id_t>{1} &&
+                observations[6].removed == std::vector<row_id_t>{0},
+            "computed TSC did not remove the result cell with its source row");
+    require(observations[7].rows == std::vector<row_id_t>{0, 1} &&
+                observations[7].cells.front() == 700.0 && !observations[7].cells.back(),
+            "computed TSC did not support a batch write after row-ID reuse");
+    require(!observations[8].modified && observations[8].rows == observations[7].rows &&
+                observations[9].valid && observations[9].rows.empty() &&
+                observations[9].removed == std::vector<row_id_t>{0, 1} &&
+                observations[10].valid && !observations[10].modified &&
+                observations[10].last_updated == observations[9].last_updated,
+            "computed TSC mishandled net-zero source changes or an unchanged valid empty binding");
+    require(observations[11].became_invalid && !observations[11].valid &&
+                observations[12].became_valid && observations[12].rows == std::vector<row_id_t>{0} &&
+                !observations[12].cells.front(),
+            "computed TSC did not invalidate and revalidate its source row domain");
+    require(observations[13].modified && observations[13].changed == std::vector<row_id_t>{0} &&
+                observations[13].cells.front() == 70.0 && observations[14].modified &&
+                observations[14].changed == std::vector<row_id_t>{0} && observations[14].cells.front() == 70.0,
+            "computed TSC set-only writes did not publish, including an equal-value write");
+
+    const auto &series_type = TSC<double>::type();
+    const auto &ordinary = column_time_series_runtime_type<double>(series_type);
+    const auto &computed = column_computed_time_series_runtime_type<double>(series_type);
+    require(std::addressof(computed) != std::addressof(ordinary) && std::addressof(computed.type()) ==
+                std::addressof(series_type) &&
+                std::addressof(column_computed_time_series_runtime_type<double>(series_type)) ==
+                    std::addressof(computed),
+            "computed TSC runtime selection was not canonical for its resolved semantic type");
+}
+
+void test_computed_tsc_domain_rebinding() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto observations = std::vector<computed_observation>{};
+    const auto write_first = node<tsc_writer>();
+    const auto write_second = node<tsc_writer>();
+    const auto select = node<selectable_tsc_view>();
+    const auto compute = node([](In<TSC<i64>, optional> input, Out<TSC<double>, computed<>> output) {
+        static_cast<void>(output.bind(input));
+    });
+    const auto observe = node([&](In<TSC<double>, optional> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto result = computed_observation{.valid = input.valid(), .modified = input.modified()};
+        if (input.valid()) {
+            input.for_each_row([&](row_id_t id, std::size_t) {
+                result.rows.push_back(id);
+                result.cells.push_back(input.cell(id));
+            });
+            input.for_each_changed([&](row_id_t id) { result.changed.push_back(id); });
+            input.for_each_removed([&](row_id_t id) { result.removed.push_back(id); });
+        }
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> first_command, wp<TS<i64>> second_command, wp<TS<i64>> selection,
+                           wp<TS<i64>> tick) {
+        const auto first = write_first(first_command);
+        const auto second = write_second(second_command);
+        const auto selected = select(first, second, selection);
+        return observe(compute(selected), tick);
+    };
+    const auto first_commands = std::array<i64, 3>{1, 0, 0};
+    const auto second_commands = std::array<i64, 3>{1, 2, 0};
+    const auto selections = std::array<i64, 3>{0, 0, 1};
+    const auto ticks = std::array<i64, 3>{0, 1, 2};
+    static_cast<void>(testing::test_graph(graph, first_commands, second_commands, selections, ticks));
+
+    require(observations.size() == 3 && observations[0].rows == std::vector<row_id_t>{0} &&
+                !observations[0].cells.front() && observations[0].changed == std::vector<row_id_t>{0} &&
+                !observations[1].modified && observations[2].rows == std::vector<row_id_t>{0, 1} &&
+                observations[2].cells == std::vector<std::optional<double>>{std::nullopt, std::nullopt} &&
+                observations[2].changed == std::vector<row_id_t>{0, 1} &&
+                observations[2].removed == std::vector<row_id_t>{0},
+            "computed TSC did not clear and rebind overlapping IDs across row domains");
 }
 
 void test_column_descriptor_resolution() {
@@ -586,6 +840,59 @@ void test_generic_tsc_view_output() {
             "generic TSC view output did not dispatch to its resolved cell runtime");
 }
 
+void test_generic_computed_tsc_output() {
+    auto observed = std::vector<std::optional<double>>{};
+    const auto write = bg::node([](bg::In<bg::TS<bg::SCALAR>> input,
+                                   bg::Out<bg::frame::TSC<bg::SCALAR>> output) {
+        output.clear();
+        input.value_view().visit(
+            [&](const auto *value) {
+                using Cell = typename std::remove_pointer_t<decltype(value)>::scalar_type;
+                if constexpr (bg::frame::cell_type<Cell>)
+                    static_cast<void>(output.template add<Cell>(value->value()));
+            },
+            ddv::noop);
+    });
+    const auto compute = bg::node([](bg::In<bg::frame::TSC<bg::SCALAR>> input,
+                                     bg::Out<bg::frame::TSC<bg::SCALAR>, bg::frame::computed<>> output) {
+        static_cast<void>(output.bind(input));
+        const auto &type = static_cast<const bg::frame::ColumnSeriesType &>(input.runtime_type().type());
+        if (std::addressof(type.cell_type()) == std::addressof(bg::cpp_scalar_type<bg::i64>())) {
+            const auto typed = input.input<bg::i64>();
+            typed.for_each_row([&](bg::frame::row_id_t id, std::size_t) {
+                output.set<bg::i64>(id, typed.cell(id));
+            });
+        } else {
+            const auto typed = input.input<double>();
+            typed.for_each_row([&](bg::frame::row_id_t id, std::size_t) {
+                output.set<double>(id, typed.cell(id));
+            });
+        }
+    });
+    const auto inspect = bg::node([&](bg::In<bg::frame::TSC<bg::SCALAR>> input,
+                                      bg::Out<bg::TS<bg::i64>> output) {
+        const auto &type = static_cast<const bg::frame::ColumnSeriesType &>(input.runtime_type().type());
+        if (std::addressof(type.cell_type()) == std::addressof(bg::cpp_scalar_type<bg::i64>()))
+            observed.emplace_back(static_cast<double>(input.input<bg::i64>().cell(0).value()));
+        else
+            observed.emplace_back(input.input<double>().cell(0));
+        output.set(1);
+    });
+
+    const auto integer_graph = [&](bg::wp<bg::TS<bg::i64>> value) {
+        return inspect(compute(write(value)));
+    };
+    const auto double_graph = [&](bg::wp<bg::TS<double>> value) {
+        return inspect(compute(write(value)));
+    };
+    const auto integer_result = bg::testing::test_graph(integer_graph, std::array<bg::i64, 1>{17});
+    const auto double_result = bg::testing::test_graph(double_graph, std::array<double, 1>{2.5});
+
+    require(integer_result.equals({1}) && double_result.equals({1}) &&
+                observed == std::vector<std::optional<double>>{17.0, 2.5},
+            "generic computed TSC did not resolve source and result cell types");
+}
+
 void test_tsc_view_binding() {
     auto observations = std::vector<observation>{};
     const auto write = bg::node<tsc_writer>();
@@ -695,6 +1002,8 @@ void test_tsc_view_rebinding() {
 int main() {
     try {
         test_cold_generic_tsc_column_output();
+        test_computed_tsc_output();
+        test_computed_tsc_domain_rebinding();
         test_tsc_guarantee_matching();
         test_column_descriptor_resolution();
         test_runtime_initialization();
@@ -702,6 +1011,7 @@ int main() {
         test_double_tsc_graph();
         test_generic_tsc_output();
         test_generic_tsc_view_output();
+        test_generic_computed_tsc_output();
         test_tsc_view_binding();
         test_tsc_view_rebinding();
         std::cout << "bg_frame_tsc_test passed\n";

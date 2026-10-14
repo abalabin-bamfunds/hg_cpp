@@ -801,11 +801,12 @@ template <typename T> class NativeColumnData {
         modified_.reset(id);
     }
     void clear(const NativeRows &rows, allocator memory) {
-        for (auto slot = live_slots(rows).begin(); slot != live_slots(rows).end(); ++slot) {
-            if (valid_cells_.contains(*slot)) {
-                cells_.erase_at(*slot, memory.memory_resource());
-                constructed_cells_.reset(*slot);
-                valid_cells_.reset(*slot);
+        clear(rows.slots(), memory);
+    }
+    void clear(const NativeRowSlots &rows, allocator memory) {
+        for (const auto slot : rows.live_slots()) {
+            if (valid_cells_.contains(slot)) {
+                erase_slot(slot, rows.id_at_slot(slot), memory);
             }
         }
     }
@@ -953,7 +954,17 @@ template <typename T> class ColumnSeriesView {
     const ColumnStorage<T> *scalar_storage_;
 };
 
-template <typename T> struct ColumnViewOutputStorage {
+struct ColumnRowMembership {
+    struct Binding {
+        bool row_domain_changed{};
+        bool row_set_rebound{};
+        bool input_changes_current{};
+        bool mapping_changed{};
+        bool new_cycle{};
+        bool reconciled{};
+        bool transitioned{};
+    };
+
     struct Mapping {
         const void *native{};
         const NativeRows *rows{};
@@ -968,16 +979,15 @@ template <typename T> struct ColumnViewOutputStorage {
     };
 
     SelectedRows previous_rows;
-    ColumnStorage<T> scalar;
     util::index<> added_rows;
     util::index<> removed_rows;
-    util::index<> modified_rows;
     Mapping mapping{};
     EvaluationTime delta_time{MIN_DT};
     bool valid{};
 
-    bool bind(const ColumnStorage<T> &input, bool source_modified, EvaluationTime source_last_updated,
-              EvaluationTime time, allocator memory) {
+    template <typename T, typename OnAdd, typename OnRemove>
+    Binding bind(const ColumnStorage<T> &input, bool source_modified, EvaluationTime source_last_updated,
+                 EvaluationTime time, allocator memory, OnAdd &&on_add, OnRemove &&on_remove) {
         if (input.native == nullptr || input.physical_rows == nullptr || input.visible_rows.identity == nullptr ||
             (input.rows != nullptr && input.rows->identity() != input.visible_rows.identity))
             throw std::invalid_argument{"TSC view source has no consistent physical row domain"};
@@ -987,7 +997,6 @@ template <typename T> struct ColumnViewOutputStorage {
                                            input.coverage.identity == input.visible_rows.identity;
         const auto exact_coverage = input.coverage.context == input.visible_rows.context &&
                                     input.coverage.identity == input.visible_rows.identity;
-
         const auto next_mapping = Mapping{input.native, input.rows, input.physical_rows, input.snapshot,
                                           input.visible_rows.context, input.visible_rows.identity, input.coverage.context,
                                           input.coverage.identity};
@@ -1018,29 +1027,41 @@ template <typename T> struct ColumnViewOutputStorage {
             }
         }
 
+        const auto was_valid = valid;
         if (new_cycle) {
             added_rows.clear();
             removed_rows.clear();
-            modified_rows.clear();
             delta_time = time;
         }
 
+        auto transitioned = false;
         const auto remove_row = [&](row_id_t id) {
+            std::invoke(on_remove, id);
             if (!added_rows.reset(id))
                 removed_rows.set(id, memory.memory_resource());
-            modified_rows.reset(id);
             previous_rows.exclude(id);
+            transitioned = true;
         };
         const auto add_row = [&](row_id_t id) {
+            std::invoke(on_add, id);
             if (!removed_rows.reset(id))
                 added_rows.set(id, memory.memory_resource());
             previous_rows.include(id, memory);
+            transitioned = true;
         };
 
         if (row_domain_changed) {
-            previous_rows.for_each_selected([&](row_id_t id) { removed_rows.set(id, memory.memory_resource()); });
+            previous_rows.for_each_selected([&](row_id_t id) {
+                std::invoke(on_remove, id);
+                removed_rows.set(id, memory.memory_resource());
+                transitioned = true;
+            });
             previous_rows.clear();
-            input.visible_rows.each([&](row_id_t id) { added_rows.set(id, memory.memory_resource()); });
+            input.visible_rows.each([&](row_id_t id) {
+                std::invoke(on_add, id);
+                added_rows.set(id, memory.memory_resource());
+                transitioned = true;
+            });
         } else if (row_set_rebound) {
             previous_rows.for_each_selected([&](row_id_t id) {
                 if (!input.visible_rows.has(id))
@@ -1066,37 +1087,24 @@ template <typename T> struct ColumnViewOutputStorage {
                 if (!previous_rows.contains(id))
                     add_row(id);
             });
-            input.visible_rows.each([&](row_id_t id) {
-                if (!added_rows.contains(id))
-                    modified_rows.set(id, memory.memory_resource());
-            });
         }
 
         previous_rows.bind(input.visible_rows);
-        if (row_domain_changed || row_set_rebound) {
+        if (row_domain_changed || row_set_rebound)
             input.visible_rows.each([&](row_id_t id) { previous_rows.include(id, memory); });
-        }
-
-        if (mapping_changed) {
-            input.visible_rows.each([&](row_id_t id) {
-                if (!added_rows.contains(id))
-                    modified_rows.set(id, memory.memory_resource());
-            });
-        } else if (input_changes_current) {
-            for (auto id : source_view.modified())
-                if (input.visible_rows.has(id) && !added_rows.contains(id))
-                    modified_rows.set(id, memory.memory_resource());
-        }
-
-        auto any_change = !valid || !added_rows.empty() || !removed_rows.empty() || !modified_rows.empty();
-        scalar = input;
-        scalar.added = std::addressof(added_rows);
-        scalar.modified = std::addressof(modified_rows);
-        scalar.removed = std::addressof(removed_rows);
-        scalar.change_time = time;
         mapping = next_mapping;
         valid = true;
-        return any_change;
+        return {row_domain_changed, row_set_rebound, input_changes_current, mapping_changed, new_cycle,
+                source_modified && !row_domain_changed && !row_set_rebound && !input_changes_current,
+                transitioned || !was_valid};
+    }
+
+    void begin_cycle(EvaluationTime time) noexcept {
+        if (!valid || time == delta_time)
+            return;
+        added_rows.clear();
+        removed_rows.clear();
+        delta_time = time;
     }
 
     void invalidate() noexcept {
@@ -1104,8 +1112,6 @@ template <typename T> struct ColumnViewOutputStorage {
         previous_rows.bind({});
         added_rows.clear();
         removed_rows.clear();
-        modified_rows.clear();
-        scalar = {};
         mapping = {};
         valid = false;
     }
@@ -1114,9 +1120,156 @@ template <typename T> struct ColumnViewOutputStorage {
         previous_rows.release(memory);
         added_rows.release(memory.memory_resource());
         removed_rows.release(memory.memory_resource());
+        mapping = {};
+        valid = false;
+    }
+};
+
+template <typename T> struct ColumnViewOutputStorage {
+    ColumnRowMembership membership;
+    ColumnStorage<T> scalar;
+    util::index<> modified_rows;
+
+    bool bind(const ColumnStorage<T> &input, bool source_modified, EvaluationTime source_last_updated,
+              EvaluationTime time, allocator memory) {
+        auto source_view = ColumnSeriesView<T>{input};
+        const auto binding = membership.bind(input, source_modified, source_last_updated, time, memory,
+                                             [](row_id_t) {}, [&](row_id_t id) { modified_rows.reset(id); });
+        if (binding.new_cycle)
+            modified_rows.clear();
+
+        if (binding.reconciled) {
+            input.visible_rows.each([&](row_id_t id) {
+                if (!membership.added_rows.contains(id))
+                    modified_rows.set(id, memory.memory_resource());
+            });
+        }
+        if (binding.mapping_changed) {
+            input.visible_rows.each([&](row_id_t id) {
+                if (!membership.added_rows.contains(id))
+                    modified_rows.set(id, memory.memory_resource());
+            });
+        } else if (binding.input_changes_current) {
+            for (auto id : source_view.modified())
+                if (input.visible_rows.has(id) && !membership.added_rows.contains(id))
+                    modified_rows.set(id, memory.memory_resource());
+        }
+
+        scalar = input;
+        scalar.added = std::addressof(membership.added_rows);
+        scalar.modified = std::addressof(modified_rows);
+        scalar.removed = std::addressof(membership.removed_rows);
+        scalar.change_time = time;
+        return binding.transitioned || !modified_rows.empty();
+    }
+
+    void invalidate() noexcept {
+        membership.invalidate();
+        modified_rows.clear();
+        scalar = {};
+    }
+
+    void release(allocator memory) noexcept {
+        membership.release(memory);
         modified_rows.release(memory.memory_resource());
         scalar = {};
-        valid = false;
+    }
+};
+
+template <typename T> struct ColumnComputedOutputStorage {
+    ColumnRowMembership membership;
+    NativeRowSlots physical_rows;
+    NativeColumnData<T> cells;
+    ColumnStorage<T> scalar;
+
+    template <typename SourceCell>
+    bool bind(const ColumnStorage<SourceCell> &input, bool source_modified, EvaluationTime source_last_updated,
+              EvaluationTime time, allocator memory) {
+        const auto binding = membership.bind(
+            input, source_modified, source_last_updated, time, memory,
+            [&](row_id_t id) { physical_rows.insert(id, memory); },
+            [&](row_id_t id) {
+                if (!physical_rows.contains(id))
+                    return;
+                const auto slot = physical_rows.slot_of(id);
+                cells.erase_slot(slot, id, memory);
+                physical_rows.erase(id);
+            });
+        if (binding.new_cycle)
+            cells.reset_changes();
+        scalar = ColumnStorage<T>{cells, physical_rows, input.visible_rows, membership.added_rows,
+                                  cells.modified(), membership.removed_rows, time};
+        return binding.transitioned;
+    }
+
+    bool set(row_id_t id, std::optional<T> value, EvaluationTime time, allocator memory) {
+        if (!membership.valid || !scalar.visible_rows.has(id) || !physical_rows.contains(id))
+            throw std::out_of_range{"computed TSC row ID"};
+        begin_cycle(time);
+        const auto changed = cells.set(physical_rows, membership.added_rows, id, value, memory);
+        refresh_scalar(time);
+        return changed;
+    }
+
+    bool set_batch(std::span<const row_id_t> ids, const ColumnBatch<T> &batch,
+                   EvaluationTime time, allocator memory) {
+        if (batch.size != ids.size())
+            throw std::invalid_argument{"computed TSC batch length does not match its row IDs"};
+        auto has_valid_cell = false;
+        for (std::size_t position = 0; position != ids.size(); ++position) {
+            if (!membership.valid || !scalar.visible_rows.has(ids[position]) || !physical_rows.contains(ids[position]))
+                throw std::out_of_range{"computed TSC batch row ID"};
+            has_valid_cell = has_valid_cell || batch.is_valid(position);
+        }
+        if (has_valid_cell && batch.values == nullptr)
+            throw std::invalid_argument{"computed TSC batch has valid cells but no values"};
+        if (ids.empty())
+            return false;
+
+        begin_cycle(time);
+        auto changed = false;
+        for (std::size_t position = 0; position != ids.size(); ++position) {
+            auto value = std::optional<T>{};
+            if (batch.is_valid(position))
+                value = batch.values[position];
+            changed = cells.set(physical_rows, membership.added_rows, ids[position], value, memory) || changed;
+        }
+        refresh_scalar(time);
+        return changed;
+    }
+
+    ColumnSeriesView<T> series_view() const noexcept { return ColumnSeriesView<T>{scalar}; }
+
+    void invalidate(allocator memory) noexcept {
+        cells.clear(physical_rows, memory);
+        physical_rows.release(memory);
+        membership.invalidate();
+        cells.reset_changes();
+        scalar = {};
+    }
+
+    void release(allocator memory) noexcept {
+        cells.release(memory);
+        physical_rows.release(memory);
+        membership.release(memory);
+        scalar = {};
+    }
+
+  private:
+    void begin_cycle(EvaluationTime time) noexcept {
+        const auto previous_time = membership.delta_time;
+        membership.begin_cycle(time);
+        if (membership.delta_time != previous_time) {
+            cells.reset_changes();
+            refresh_scalar(time);
+        }
+    }
+
+    void refresh_scalar(EvaluationTime time) noexcept {
+        scalar.added = std::addressof(membership.added_rows);
+        scalar.modified = std::addressof(cells.modified());
+        scalar.removed = std::addressof(membership.removed_rows);
+        scalar.change_time = time;
     }
 };
 

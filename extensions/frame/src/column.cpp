@@ -79,6 +79,30 @@ class ColumnBindingViewSeriesRuntimeType final : public bg::frame::ColumnSeriesR
     }
 };
 
+template <bg::frame::cell_type T>
+class ComputedColumnSeriesRuntimeType final : public bg::frame::ColumnSeriesRuntimeType<T> {
+  public:
+    explicit ComputedColumnSeriesRuntimeType(const bg::TimeSeriesType &type)
+        : bg::frame::ColumnSeriesRuntimeType<T>{type, sizeof(bg::frame::ColumnComputedOutputStorage<T>),
+                                                alignof(bg::frame::ColumnComputedOutputStorage<T>), true, true, true} {}
+    bg::frame::ColumnSeriesView<T> input_view(const void *value) const noexcept override {
+        return static_cast<const bg::frame::ColumnComputedOutputStorage<T> *>(value)->series_view();
+    }
+    void construct_initial_value(void *destination) const noexcept override {
+        std::construct_at(static_cast<bg::frame::ColumnComputedOutputStorage<T> *>(destination));
+    }
+    void destroy_value(void *value, bg::allocator &memory) const noexcept override {
+        auto *storage = static_cast<bg::frame::ColumnComputedOutputStorage<T> *>(value);
+        storage->release(memory);
+        std::destroy_at(storage);
+    }
+    void invalidate_output(const bg::OutputState &output) const override {
+        auto *storage = static_cast<bg::frame::ColumnComputedOutputStorage<T> *>(output.mutable_data());
+        storage->invalidate(output.allocator());
+        bg::TimeSeriesRuntimeType::invalidate_output_value(output);
+    }
+};
+
 struct ColumnSeriesTypeKey {
     const bg::ScalarType *cell_type;
     std::variant<bg::TimeSeriesGuarantee, const bg::GuaranteeVariable *> guarantee;
@@ -136,6 +160,14 @@ const ColumnViewSeriesRuntimeType<T> &column_view_series_runtime_type() {
 template <bg::frame::cell_type T>
 const ColumnBindingViewSeriesRuntimeType<T> &column_binding_view_series_runtime_type() {
     static const auto runtime = ColumnBindingViewSeriesRuntimeType<T>{ordinary_column_series_type<T>()};
+    return runtime;
+}
+
+template <bg::frame::cell_type T>
+const ComputedColumnSeriesRuntimeType<T> &computed_column_series_runtime_type(const bg::TimeSeriesType &type) {
+    static const auto runtime = ComputedColumnSeriesRuntimeType<T>{type};
+    if (std::addressof(runtime.type()) != std::addressof(type))
+        throw std::logic_error{"computed TSC runtime was requested for a non-canonical type"};
     return runtime;
 }
 
@@ -290,6 +322,14 @@ const TimeSeriesRuntimeType &runtime_for_column_type(const TimeSeriesType &type,
 
 } // namespace
 
+template <frame::cell_type T>
+const TimeSeriesRuntimeType &frame::column_computed_time_series_runtime_type(const TimeSeriesType &type) {
+    if (std::addressof(type) != std::addressof(ordinary_column_series_type<T>()))
+        throw std::invalid_argument{"computed TSC runtime requires resolved ordinary type"};
+    static_cast<void>(column_time_series_type<T>(TimeSeriesGuarantee::ordinary));
+    return computed_column_series_runtime_type<T>(type);
+}
+
 const TimeSeriesRuntimeType &frame::column_time_series_runtime_type(const TimeSeriesType &type) {
     return runtime_for_column_type(type, [&](auto cell) -> const TimeSeriesRuntimeType & {
         using Cell = typename decltype(cell)::type;
@@ -314,6 +354,13 @@ const TimeSeriesRuntimeType &frame::column_binding_view_time_series_runtime_type
     });
 }
 
+const TimeSeriesRuntimeType &frame::column_computed_time_series_runtime_type(const TimeSeriesType &type) {
+    return runtime_for_column_type(type, [&](auto cell) -> const TimeSeriesRuntimeType & {
+        using Cell = typename decltype(cell)::type;
+        return column_computed_time_series_runtime_type<Cell>(type);
+    });
+}
+
 template const TimeSeriesType &frame::column_time_series_type<i64>(TimeSeriesGuarantee);
 template const TimeSeriesType &frame::column_time_series_type<double>(TimeSeriesGuarantee);
 template const TimeSeriesRuntimeType &frame::column_time_series_runtime_type<i64>(const TimeSeriesType &);
@@ -322,5 +369,7 @@ template const TimeSeriesRuntimeType &frame::column_view_time_series_runtime_typ
 template const TimeSeriesRuntimeType &frame::column_view_time_series_runtime_type<double>(const TimeSeriesType &);
 template const TimeSeriesRuntimeType &frame::column_binding_view_time_series_runtime_type<i64>(const TimeSeriesType &);
 template const TimeSeriesRuntimeType &frame::column_binding_view_time_series_runtime_type<double>(const TimeSeriesType &);
+template const TimeSeriesRuntimeType &frame::column_computed_time_series_runtime_type<i64>(const TimeSeriesType &);
+template const TimeSeriesRuntimeType &frame::column_computed_time_series_runtime_type<double>(const TimeSeriesType &);
 
 } // namespace bg

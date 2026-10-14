@@ -612,6 +612,75 @@ void test_tsc_view_rejects_native_rows_from_another_logical_domain() {
     }
     require(rejected, "TSC view accepted native column deltas for an overlapping foreign row ID");
 }
+
+void test_tsc_view_revalidates_coverage_when_mapping_changes() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto first = NativeColumn<i64>{};
+    auto second = NativeColumn<i64>{};
+    auto release = util::scope_exit{[&]() noexcept {
+        second.release(memory);
+        first.release(memory);
+    }};
+
+    const auto time = MIN_DT + EvaluationTime::duration{1};
+    const auto first_id = first.add(i64{10}, time, memory);
+    static_cast<void>(first.add(i64{20}, time, memory));
+    static_cast<void>(second.add(i64{30}, time, memory));
+    const auto uncovered_id = second.add(i64{40}, time, memory);
+    require(first_id != uncovered_id, "test setup did not create overlapping row IDs");
+
+    auto selected = SelectedRows{};
+    auto release_selected = util::scope_exit{[&]() noexcept { selected.release(memory); }};
+    selected.bind(RowSet::native(*first.scalar_storage().rows));
+    selected.include(first_id, memory);
+    auto first_input = first.scalar_storage();
+    first_input.visible_rows = selected.rows();
+    first_input.coverage = selected.rows();
+
+    auto output = ColumnViewOutputStorage<i64>{};
+    require(output.bind(first_input, true, time, time, memory), "TSC view did not accept initial covered rows");
+
+    auto second_input = second.scalar_storage();
+    second_input.coverage = selected.rows();
+    auto rejected = false;
+    try {
+        static_cast<void>(output.bind(second_input, true, time, time, memory));
+    } catch (const std::invalid_argument &) {
+        rejected = true;
+    }
+    require(rejected, "TSC view accepted missing retained coverage after its source mapping changed");
+}
+
+void test_tsc_view_clears_modified_rows_removed_during_the_same_cycle() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto source = NativeColumn<i64>{};
+    auto release = util::scope_exit{[&]() noexcept { source.release(memory); }};
+    auto output = ColumnViewOutputStorage<i64>{};
+
+    const auto first_time = MIN_DT + EvaluationTime::duration{1};
+    const auto id = source.add(i64{10}, first_time, memory);
+    require(output.bind(source.scalar_storage(), true, first_time, first_time, memory),
+            "TSC view did not bind its initial row");
+
+    const auto second_time = first_time + EvaluationTime::duration{1};
+    source.set(id, i64{20}, second_time, memory);
+    require(output.bind(source.scalar_storage(), true, second_time, second_time, memory) &&
+                output.scalar.modified->contains(id),
+            "TSC view did not report a row modified during the cycle");
+
+    source.erase(id, second_time, memory);
+    require(output.bind(source.scalar_storage(), true, second_time, second_time, memory) &&
+                !output.scalar.modified->contains(id) && output.scalar.removed->contains(id),
+            "TSC view retained a modification after the row was removed in the same cycle");
+}
 } // namespace
 
 int main() {
@@ -629,6 +698,8 @@ int main() {
         test_native_row_slots_map_external_ids_and_reuse_clean_cells();
         test_tsc_view_uses_logical_order_and_validates_added_local_rows();
         test_tsc_view_rejects_native_rows_from_another_logical_domain();
+        test_tsc_view_revalidates_coverage_when_mapping_changes();
+        test_tsc_view_clears_modified_rows_removed_during_the_same_cycle();
         std::cout << "bg_frame_column_test passed\n";
     } catch (const std::exception &error) {
         std::cerr << "bg_frame_column_test: " << error.what() << '\n';

@@ -13,10 +13,10 @@ public type, node, and runtime extension points.
   columns as child `TSC` values.
 
 The current cell types are `i64` and `double`. `TSC` and `TSF` use ordinary
-outputs by default. `TSC` supports borrowed column views. `TSF` supports
-borrowed projections and row filters. The optional Arrow adapter supports
-numeric scalar imports and exports. Previous-cell subscriptions and expression
-kernels are later work.
+outputs by default. Both support borrowed views; `TSC` and `TSF` also support
+computed outputs. `TSF` supports borrowed projections and row filters. The
+optional Arrow adapter supports numeric scalar imports and exports.
+Previous-cell subscriptions and expression kernels are later work.
 
 `frame::view` is an output option owned by this extension. Use it with
 `Out<TSC<T>, frame::view>` and `Out<TSF<Schema>, frame::view>`. BG does not
@@ -78,6 +78,7 @@ Include `<bg/frame/tsc.hpp>` for the typed views.
 | Delta | `for_each_changed` combines additions and modifications; `for_each_removed` supplies IDs |
 | `Out<TSC<i64>>` | `add`, `set`, `erase`, `clear`, `invalidate` |
 | `Out<TSC<i64>, frame::view>` | `bind(source)`, `invalidate` |
+| `Out<TSC<i64>, frame::computed<>>` | `bind(source)`, `set(id, value)`, `set_batch(ids, batch)`, `invalidate` |
 
 Delta reads require a modified input with matching change time. An accepted
 ordinary set publishes even when the value is equal. An addition followed by
@@ -94,6 +95,14 @@ and cell modifications. Rebinding to another row domain reports the old rows as
 removed and the new rows as added, including overlapping numeric row IDs.
 If the source changed but its delta timestamp does not match the input's last
 update, the view reconciles the current rows and marks retained rows modified.
+
+A computed `TSC` output uses `bind(source)` to follow source row membership and
+row identity while owning its result cells. Source cell changes alone do not
+publish the computed output; the node writes results with `set` or
+`set_batch`. New rows start with null result cells. Removing a source row clears
+its result cell. Accepted writes publish even when the value is equal or both
+the old and new values are null. The output cell type may differ from the source
+cell type. Generic `TSC<SCALAR>` declarations resolve both cell types at wiring.
 
 ## TSF input/output surface
 
