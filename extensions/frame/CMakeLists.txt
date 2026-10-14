@@ -11,7 +11,7 @@ if(NOT TARGET bg::bg)
     find_package(bg CONFIG REQUIRED)
 endif()
 
-add_library(bg_frame SHARED src/column.cpp src/frame.cpp)
+add_library(bg_frame SHARED src/column.cpp src/expression.cpp src/frame.cpp)
 add_library(bg::frame ALIAS bg_frame)
 
 target_compile_features(bg_frame PUBLIC cxx_std_23)
@@ -61,6 +61,10 @@ if(BUILD_TESTING)
     add_executable(bg_frame_frame_test tests/frame_test.cpp)
     target_link_libraries(bg_frame_frame_test PRIVATE bg::frame)
     add_test(NAME bg_frame_frame_test COMMAND bg_frame_frame_test)
+
+    add_executable(bg_frame_expression_test tests/expression_test.cpp)
+    target_link_libraries(bg_frame_expression_test PRIVATE bg::frame)
+    add_test(NAME bg_frame_expression_test COMMAND bg_frame_expression_test)
 
     if(BG_FRAME_BUILD_ARROW)
         add_executable(bg_frame_arrow_test tests/arrow_test.cpp)
