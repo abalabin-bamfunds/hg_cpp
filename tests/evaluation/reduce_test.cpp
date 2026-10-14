@@ -1,7 +1,9 @@
 #include <bg/graph.hpp>
 #include <bg/node.hpp>
 #include <bg/reduce.hpp>
+#include <bg/reduce/details/reduce_graph_argument.hpp>
 #include <bg/testing/test_graph.hpp>
+#include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -314,6 +316,45 @@ TEST_CASE("compact reduce updates a sparse path in a larger TSD",
                                             std::array{100, 100});
 
     CHECK(actual.equals<i64>({2080, 2148}));
+}
+
+TEST_CASE("compact reduce timestamps a replacement input in its cycle and leaves it unchanged afterward",
+          "[feature:reduce][series:tsd][shape:single-node][transition:removal][transition:update]") {
+    const auto make_dictionary = node([](In<TS<i64>> phase, Out<TSD<std::int64_t, TS<i64>>> output) {
+        if (*phase == 0) {
+            output[1].set(1);
+            output[2].set(2);
+            output[3].set(3);
+        } else if (*phase == 1) {
+            output.erase(1);
+        } else {
+            output[3].set(30);
+        }
+    });
+    const auto cycle_two = MIN_DT + EvaluationTime::duration{2};
+    const auto cycle_three = MIN_DT + EvaluationTime::duration{3};
+    auto retained_cycle_two_timestamp = false;
+    const auto observe_inputs = node([&](In<TS<i64>> left, In<TS<i64>> right, Out<TS<i64>> output) {
+        retained_cycle_two_timestamp = retained_cycle_two_timestamp ||
+                                       (left.last_updated() == cycle_two && right.last_updated() == cycle_three);
+        output.set(*left + *right);
+    });
+    const auto timestamp_reducer = graph("name"_n = "reduce_input_timestamp", [=](wp<TS<i64>> left,
+                                                                                     wp<TS<i64>> right) {
+        return observe_inputs(left, right);
+    });
+    const auto tested = [=](wp<TS<i64>> phase) { return reduce(timestamp_reducer, make_dictionary(phase)); };
+
+    testing::test_wiring([&] {
+        const auto candidate = details::build_reduce_graph_argument_wiring(
+            timestamp_reducer, TS<i64>::type(), TypeMap{});
+        CHECK(candidate.graph.compact_graph.has_value());
+    });
+
+    const auto actual = testing::test_graph(tested, std::array{0, 1, 2});
+
+    CHECK(actual.equals<i64>({6, 5, 32}));
+    CHECK(retained_cycle_two_timestamp);
 }
 
 TEST_CASE("reduce combines final TSD items through a context-dependent fallback reducer",

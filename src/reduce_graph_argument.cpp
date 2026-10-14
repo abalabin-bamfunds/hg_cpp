@@ -113,8 +113,8 @@ ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplat
             try {
                 auto compact_wiring = std::make_shared<GraphWiring>();
                 auto compact_context = WiringContext{*compact_wiring};
-                auto compact_inputs = std::array{compact_wiring->runtime_input(reducer_input_type),
-                                                 compact_wiring->runtime_input(reducer_input_type)};
+                auto compact_inputs = std::array{compact_wiring->borrowed_input(reducer_input_type),
+                                                 compact_wiring->borrowed_input(reducer_input_type)};
                 auto compact_arguments =
                     std::array{WiringArgument{compact_inputs[0]}, WiringArgument{compact_inputs[1]}};
                 const auto compact_result = function(type_map, std::span<const WiringArgument>{compact_arguments});
@@ -131,22 +131,36 @@ ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplat
                             if (equivalent_wiring_bodies(*wiring, boundaries, concrete_result, *compact_wiring,
                                                          compact_inputs, concrete_compact_result,
                                                          reducer_input_types)) {
+                                const auto compact_input_bindings = std::array{
+                                    compact_inputs[0].record()->input_binding(compact_inputs[0].type()),
+                                    compact_inputs[1].record()->input_binding(compact_inputs[1].type()),
+                                };
+                                if (!compact_input_bindings[0] || !compact_input_bindings[0]->is_borrowed() ||
+                                    !compact_input_bindings[1] || !compact_input_bindings[1]->is_borrowed()) {
+                                    throw WiringError{"a compact reduce input must use a borrowed input binding"};
+                                }
                                 const auto compact_input_indices = std::array{
-                                    compact_wiring->runtime_input_index(compact_inputs[0]),
-                                    compact_wiring->runtime_input_index(compact_inputs[1]),
+                                    compact_input_bindings[0]->index(),
+                                    compact_input_bindings[1]->index(),
                                 };
                                 auto output_input = std::optional<std::size_t>{};
                                 auto compact_output_node = std::optional<std::size_t>{};
-                                const auto &compact_output = compact_wiring->outputs()[
-                                    compact_wiring->output_index(concrete_compact_result)];
-                                const auto *compact_output_runtime_type = compact_output.runtime_type;
-                                if (compact_output_runtime_type == nullptr) {
+                                const auto *compact_output_record = concrete_compact_result.record();
+                                const auto compact_output_binding =
+                                    compact_output_record->input_binding(concrete_compact_result.type());
+                                const TimeSeriesRuntimeType *compact_output_runtime_type{};
+                                if (compact_output_binding && compact_output_binding->is_borrowed()) {
+                                    output_input = compact_output_binding->index();
                                     compact_output_runtime_type =
-                                        &resolve_time_series_runtime_type(*compact_output.type);
-                                }
-                                if (compact_output.node_index == WiredOutput::npos) {
-                                    output_input = compact_wiring->runtime_input_index(concrete_compact_result);
+                                        &resolve_time_series_runtime_type(concrete_compact_result.type());
                                 } else {
+                                    const auto &compact_output = compact_wiring->outputs()[
+                                        compact_wiring->output_index(concrete_compact_result)];
+                                    compact_output_runtime_type = compact_output.runtime_type;
+                                    if (compact_output_runtime_type == nullptr) {
+                                        compact_output_runtime_type =
+                                            &resolve_time_series_runtime_type(*compact_output.type);
+                                    }
                                     compact_output_node = compact_wiring->output_node_index(concrete_compact_result);
                                 }
                                 const auto compact_structure = graph_wiring_structure(
@@ -158,25 +172,26 @@ ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplat
                                 }
                                 auto compact_compiled_graph =
                                     compile_graph(*compact_wiring, allocator{}, compact_node_indices);
-                                const auto runtime_inputs = compact_compiled_graph->runtime_inputs();
+                                const auto borrowed_inputs = compact_compiled_graph->borrowed_input_bindings();
                                 const auto &source_item_runtime_type = resolve_time_series_runtime_type(item_type);
-                                const auto exact_runtime_inputs =
+                                const auto exact_borrowed_inputs =
                                     compact_compiled_graph->supports_borrowed_evaluation() &&
-                                    runtime_inputs.size() == compact_input_indices.size() &&
+                                    borrowed_inputs.size() == compact_input_indices.size() &&
                                     compact_input_indices[0] != compact_input_indices[1] &&
-                                    compact_input_indices[0] < runtime_inputs.size() &&
-                                    compact_input_indices[1] < runtime_inputs.size() &&
-                                    runtime_inputs[compact_input_indices[0]].runtime_type == &source_item_runtime_type &&
-                                    runtime_inputs[compact_input_indices[1]].runtime_type == &source_item_runtime_type;
+                                    compact_input_indices[0] < borrowed_inputs.size() &&
+                                    compact_input_indices[1] < borrowed_inputs.size() &&
+                                    borrowed_inputs[compact_input_indices[0]].runtime_type ==
+                                        &source_item_runtime_type &&
+                                    borrowed_inputs[compact_input_indices[1]].runtime_type == &source_item_runtime_type;
                                 auto compact_output_input = std::optional<std::size_t>{};
-                                auto compatible_output = exact_runtime_inputs;
+                                auto compatible_output = exact_borrowed_inputs;
                                 if (compact_output_node) {
                                     compatible_output = compatible_output &&
                                         compact_output_runtime_type == &source_item_runtime_type &&
                                         compact_output_runtime_type ==
-                                            runtime_inputs[compact_input_indices[0]].runtime_type &&
+                                            borrowed_inputs[compact_input_indices[0]].runtime_type &&
                                         compact_output_runtime_type ==
-                                            runtime_inputs[compact_input_indices[1]].runtime_type;
+                                            borrowed_inputs[compact_input_indices[1]].runtime_type;
                                 } else if (output_input) {
                                     if (*output_input == compact_input_indices[0]) {
                                         compact_output_input = 0;

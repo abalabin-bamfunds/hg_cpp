@@ -97,6 +97,7 @@ struct CompactReduceInput {
 
 struct CompactReducePairState {
     CompiledGraph::ScheduleWord input_validity{};
+    std::array<TimeSeriesState, 2> input_states{};
     bool initialized{};
 };
 
@@ -463,36 +464,30 @@ class CompactReduceRuntime {
         auto &pair_state = compact_pair_states_[branch.pair_index];
         const auto left = compact_tree_output(branch.left, values, compact);
         const auto right = compact_tree_output(branch.right, values, compact);
-        const auto runtime_inputs = compact.graph->runtime_inputs();
-        const auto left_index = compact.input_indices[0];
-        const auto right_index = compact.input_indices[1];
         const auto storage = std::span{compact_pair_storage(branch.pair_index), compact_storage_size_};
-        const auto left_binding = *reinterpret_cast<const RuntimeInputBinding *>(
-            storage.data() + runtime_inputs[left_index].slot_offset);
-        const auto right_binding = *reinterpret_cast<const RuntimeInputBinding *>(
-            storage.data() + runtime_inputs[right_index].slot_offset);
         auto runtime = RuntimeGraph{*compact.graph, memory_, storage, invocation.context().global_state(),
                                    pair_state.initialized ? std::optional{pair_state.input_validity} : std::nullopt};
-
-        const auto bind_input = [&](std::size_t binding_index, const CompactReduceInput &input,
-                                    const RuntimeInputBinding &previous, bool child_replaced,
-                                    bool child_changed) {
-            if (!input.last_updated.valid()) {
-                if (previous.last_updated.valid()) {
-                    runtime.clear_runtime_input(binding_index, evaluation_time);
-                }
-                return;
-            }
+        auto borrowed_inputs = std::array<BorrowedInput, 2>{};
+        const auto bind_input = [&](std::size_t side, std::size_t binding_index,
+                                    const CompactReduceInput &input, bool child_replaced, bool child_changed) {
+            auto &state = pair_state.input_states[side];
+            auto change = BorrowedInputChange::unchanged;
             if (child_replaced || !pair_state.initialized || child_changed) {
-                runtime.bind_runtime_input(binding_index, *input.runtime_type, input.last_updated, input.value,
-                                           evaluation_time);
-                return;
+                if (input.last_updated.valid()) {
+                    change = state.valid() ? BorrowedInputChange::update : BorrowedInputChange::revalidation;
+                    state.publish(evaluation_time);
+                } else if (state.valid()) {
+                    change = BorrowedInputChange::invalidation;
+                    state.invalidate(evaluation_time);
+                }
             }
-            runtime.refresh_runtime_input(binding_index, *input.runtime_type, input.value);
+            borrowed_inputs[binding_index] = BorrowedInput{&state, input.value, input.runtime_type, change};
         };
-        bind_input(left_index, left, left_binding, branch.input_replaced(0), left_changed);
-        bind_input(right_index, right, right_binding, branch.input_replaced(1), right_changed);
-        if (!runtime.evaluate(invocation.context())) {
+        bind_input(0, compact.input_indices[0], left, branch.input_replaced(0), left_changed);
+        bind_input(1, compact.input_indices[1], right, branch.input_replaced(1), right_changed);
+        auto section = BorrowedInputSection{runtime, borrowed_inputs};
+        auto context = invocation.context().child(section);
+        if (!runtime.evaluate(context)) {
             throw std::logic_error{"a borrowed reduce graph cannot pend evaluation"};
         }
         const auto &compiled_node = compact.graph->node(*compact.output_node);
