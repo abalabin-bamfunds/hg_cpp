@@ -107,10 +107,23 @@ class Node {
 
     InputData input_data(std::size_t parameter_index, const EvaluationContext &context) const {
         const auto &binding = compiled_node_->parameters()[parameter_index];
-        if (binding.mode() == ParameterBindingMode::borrowed ||
-            (binding.mode() == ParameterBindingMode::default_value &&
-             default_descriptor(binding).source.mode() == ParameterBindingMode::borrowed)) {
-            return input_data(parameter_index, context.borrowed_inputs());
+        const auto mode = binding.mode();
+        if (mode == ParameterBindingMode::borrowed) {
+            return borrowed_input_data(binding, context.borrowed_inputs());
+        }
+        if (mode != ParameterBindingMode::default_value) {
+            return binding_data(binding, mode);
+        }
+
+        const auto &descriptor = default_descriptor(binding);
+        if (descriptor.source.mode() == ParameterBindingMode::borrowed) {
+            const auto source_data = borrowed_input_data(descriptor.source, context.borrowed_inputs());
+            const auto *last_updated = &default_input(binding).last_updated;
+            if (!last_updated->valid()) {
+                last_updated = reinterpret_cast<const TimeSeriesState *>(runtime_storage_ +
+                                                                         descriptor.start_time_offset);
+            }
+            return {last_updated, source_data.last_updated->valid() ? source_data.value : descriptor.fallback};
         }
         return input_data(parameter_index);
     }
@@ -154,12 +167,25 @@ class Node {
     const TimeSeriesRuntimeType &time_series_input_runtime_type(
         std::size_t parameter_index, const EvaluationContext &context) const {
         const auto &binding = compiled_node_->parameters()[parameter_index];
-        if (binding.mode() == ParameterBindingMode::borrowed ||
-            (binding.mode() == ParameterBindingMode::default_value &&
-             default_descriptor(binding).source.mode() == ParameterBindingMode::borrowed)) {
-            return time_series_input_runtime_type(parameter_index, context.borrowed_inputs());
+        const auto mode = binding.mode();
+        if (mode == ParameterBindingMode::borrowed) {
+            return *borrowed_input(binding, context.borrowed_inputs()).runtime_type;
         }
-        return time_series_input_runtime_type(parameter_index);
+        if (mode == ParameterBindingMode::default_value) {
+            const auto &source = default_descriptor(binding).source;
+            if (source.mode() == ParameterBindingMode::borrowed) {
+                const auto &input = borrowed_input(source, context.borrowed_inputs());
+                return input.last_updated->valid() ? *input.runtime_type
+                                                    : compiled_node_->time_series_input_runtime_type(parameter_index);
+            }
+            if (!binding_data(source, source.mode()).last_updated->valid()) {
+                return compiled_node_->time_series_input_runtime_type(parameter_index);
+            }
+        }
+        if (const auto *runtime_type = bound_reference_runtime_type(parameter_index)) {
+            return *runtime_type;
+        }
+        return compiled_node_->time_series_input_runtime_type(parameter_index);
     }
 
     const TimeSeriesRuntimeType &all_valid_input_runtime_type(
