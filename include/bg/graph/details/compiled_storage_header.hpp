@@ -178,5 +178,4 @@ struct CompiledStorageHeader {
 static_assert(sizeof(CompiledStorageHeader) == 44);
 static_assert(std::is_trivially_copyable_v<CompiledStorageHeader>);
 
-} // namespace details
-} // namespace bg
+} // namespace bg::details

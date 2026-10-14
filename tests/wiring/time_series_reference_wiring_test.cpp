@@ -70,3 +70,10 @@ TEST_CASE("wiring rejects materializing a borrowed input as a reference",
     CHECK_THROWS_AS(wiring.finalize(), bg::WiringError);
     CHECK(wiring.nodes().empty());
 }
+
+TEST_CASE("wiring rejects reference-typed borrowed input slots",
+          "[wiring][reference][feature:borrowed-input]") {
+    auto wiring = bg::GraphWiring{};
+
+    CHECK_THROWS_AS(wiring.borrowed_input(bg::REF<bg::TS<bg::i64>>::type()), bg::WiringError);
+}

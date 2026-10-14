@@ -166,8 +166,6 @@ class BorrowedInputWiringRecord final : public WiringRecord {
     BorrowedInputWiringRecord(const TimeSeriesType &type, std::size_t index)
         : WiringRecord{type}, input_{WiredInput::borrowed(index)} {}
 
-    std::optional<WiredInput> input_binding() const noexcept override { return input_; }
-
     std::optional<WiredInput> input_binding(const TimeSeriesType &requested_type) const noexcept override {
         return type().accepts(requested_type) ? std::optional<WiredInput>{input_} : std::nullopt;
     }
@@ -814,7 +812,7 @@ WiredInput GraphWiring::wire_input(WiringPoint point, const TimeSeriesType &type
         throw WiringError{"a WiringPoint belongs to another GraphWiring"};
     }
 
-    if (const auto input = point.record()->input_binding(); input && input->is_borrowed()) {
+    if (const auto input = point.record()->input_binding(point.type()); input && input->is_borrowed()) {
         if (type_cast<TimeSeriesReferenceType>(&type) != nullptr) {
             throw WiringError{"a borrowed input cannot be wired as a reference"};
         }
@@ -835,6 +833,9 @@ WiredInput GraphWiring::wire_input(WiringPoint point, const TimeSeriesType &type
 
 WiringPoint GraphWiring::borrowed_input(const TimeSeriesType &type) {
     ensure_open();
+    if (type_cast<TimeSeriesReferenceType>(&type) != nullptr) {
+        throw WiringError{"a borrowed input cannot have a reference type"};
+    }
     if (borrowed_input_types_.size() >= (std::size_t{1} << 30)) {
         throw WiringError{"a graph cannot contain more than 2^30 borrowed inputs"};
     }

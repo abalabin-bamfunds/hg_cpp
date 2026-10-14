@@ -319,7 +319,7 @@ WiringPoint materialize_time_series_bundle(std::span<const NamedBundleWiringPoin
     }
 
     if (std::ranges::any_of(ordered, [](WiringPoint field) {
-            const auto input = field.record()->input_binding();
+            const auto input = field.record()->input_binding(field.type());
             return input && input->is_borrowed();
         })) {
         throw WiringError{"a free TSB cannot retain borrowed input bindings"};

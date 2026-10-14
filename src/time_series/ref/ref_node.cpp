@@ -138,10 +138,12 @@ WiringPoint materialize_reference(WiringPoint argument, const TimeSeriesType &re
     const auto *argument_reference = type_cast<TimeSeriesReferenceType>(&argument.type());
 
     if (requested_reference != nullptr && argument_reference == nullptr) {
-        if (const auto input = argument.record()->input_binding(); input && input->is_borrowed()) {
+        if (const auto input = argument.record()->input_binding(argument.type()); input && input->is_borrowed()) {
             throw WiringError{"a borrowed input cannot be materialized as a reference"};
         }
-        argument = argument.record()->wiring().materialize(argument, requested_reference->target_type());
+        if (!requested_reference->target_type().accepts(argument.type())) {
+            argument = argument.record()->wiring().materialize(argument, requested_reference->target_type());
+        }
         if (type_cast<TimeSeriesReferenceType>(&argument.type()) != nullptr) {
             return argument;
         }

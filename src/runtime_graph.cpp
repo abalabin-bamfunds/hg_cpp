@@ -575,11 +575,12 @@ void RuntimeGraph::validate_borrowed_inputs(const EvaluationContext &context) co
         if (input.last_updated == nullptr || input.runtime_type == nullptr || binding.runtime_type == nullptr) {
             throw std::invalid_argument{"a borrowed input must provide its state and runtime type"};
         }
-        if (!binding.runtime_type->type().accepts(input.runtime_type->type())) {
+        if (binding.requires_exact_runtime_type()) {
+            if (input.runtime_type != binding.runtime_type) {
+                throw std::invalid_argument{"a borrowed input has a different runtime type than its compiled binding"};
+            }
+        } else if (!binding.runtime_type->type().accepts(input.runtime_type->type())) {
             throw std::invalid_argument{"a borrowed input has an incompatible runtime type"};
-        }
-        if (binding.requires_exact_runtime_type() && input.runtime_type != binding.runtime_type) {
-            throw std::invalid_argument{"a borrowed input has a different runtime type than its compiled binding"};
         }
         if (input.last_updated->valid() && input.value == nullptr) {
             throw std::invalid_argument{"a valid borrowed input must provide its value"};
@@ -1386,7 +1387,7 @@ bool RuntimeGraph::inputs_are_valid(const CompiledNode &node, const EvaluationCo
 
     for (const auto &descriptor : node.all_valid_input_descriptors()) {
         const auto input = runtime_node.input_data(descriptor.parameter_index, borrowed_inputs);
-        const auto &runtime_type = runtime_node.all_valid_input_runtime_type(descriptor, borrowed_inputs);
+        const auto &runtime_type = runtime_node.all_valid_input_runtime_type(descriptor, context);
         if (!runtime_type.all_valid(*input.last_updated, input.value, *descriptor.declared_type)) {
             return false;
         }
