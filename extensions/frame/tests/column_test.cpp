@@ -681,6 +681,194 @@ void test_tsc_view_clears_modified_rows_removed_during_the_same_cycle() {
                 !output.scalar.modified->contains(id) && output.scalar.removed->contains(id),
             "TSC view retained a modification after the row was removed in the same cycle");
 }
+
+void test_aligned_batches_borrow_shared_mapping_and_accept_requested_subsets() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto rows = NativeRows{};
+    auto left_cells = NativeColumnData<i64>{};
+    auto right_cells = NativeColumnData<double>{};
+    auto release = util::scope_exit{[&]() noexcept {
+        right_cells.release(memory);
+        left_cells.release(memory);
+        rows.release(memory);
+    }};
+
+    const auto time = MIN_DT + EvaluationTime::duration{1};
+    auto ids = std::array<row_id_t, 12>{};
+    for (auto position = std::size_t{}; position != ids.size(); ++position) {
+        ids[position] = rows.add(time, memory);
+        left_cells.add(rows, ids[position], position == 2 ? std::nullopt : std::optional<i64>{position}, memory);
+        right_cells.add(rows, ids[position], position == 9 ? std::nullopt : std::optional<double>{position + 0.5},
+                        memory);
+    }
+
+    auto left_storage = ColumnStorage<i64>{left_cells, rows};
+    auto right_storage = ColumnStorage<double>{right_cells, rows};
+    auto left = ColumnSeriesView<i64>{left_storage};
+    auto right = ColumnSeriesView<double>{right_storage};
+    const auto first_left_block = left_cells.block_containing(rows, ids[0]);
+    const auto first_right_block = right_cells.block_containing(rows, ids[0]);
+    auto visited = std::size_t{};
+    auto batches = std::size_t{};
+    left.for_each_aligned_batch(right, [&](const auto &batch) {
+        ++batches;
+        require(batch.ids.size() == batch.left.size && batch.ids.size() == batch.right.size,
+                "aligned native batches have different lengths");
+        if (batches == 1) {
+            require(batch.left.values == first_left_block.data && batch.right.values == first_right_block.data,
+                    "aligned native batches copied values instead of borrowing source blocks");
+        }
+        for (auto position = std::size_t{}; position != batch.ids.size(); ++position) {
+            const auto expected = static_cast<std::size_t>(batch.ids[position]);
+            require(batch.ids[position] == ids[expected], "aligned native batches changed row order");
+            if (expected == 2) {
+                require(!batch.left.is_valid(position), "aligned native batch lost a left null");
+            } else {
+                require(batch.left.is_valid(position) && batch.left.values[position] == static_cast<i64>(expected),
+                        "aligned native batch changed a left value");
+            }
+            if (expected == 9) {
+                require(!batch.right.is_valid(position), "aligned native batch lost a right null");
+            } else {
+                require(batch.right.is_valid(position) &&
+                            batch.right.values[position] == static_cast<double>(expected) + 0.5,
+                        "aligned native batch changed a right value");
+            }
+            ++visited;
+        }
+    });
+    require(visited == ids.size() && batches >= 2, "aligned native traversal did not split at storage blocks");
+
+    auto right_visible = SelectedRows{};
+    auto request = SelectedRows{};
+    auto release_selected = util::scope_exit{[&]() noexcept {
+        request.release(memory);
+        right_visible.release(memory);
+    }};
+    right_visible.bind(RowSet::native(rows));
+    request.bind(RowSet::native(rows));
+    for (auto position = std::size_t{}; position != 8; ++position)
+        right_visible.include(ids[position], memory);
+    request.include(ids[1], memory);
+    request.include(ids[3], memory);
+    auto restricted_storage = ColumnStorage<double>{right_cells, rows.slots(), right_visible.rows(), rows.added(),
+                                                    right_cells.modified(), rows.removed(), time};
+    auto restricted = ColumnSeriesView<double>{restricted_storage};
+    visited = 0;
+    left.for_each_aligned_batch(restricted, request.rows(), [&](const auto &batch) {
+        for (auto position = std::size_t{}; position != batch.ids.size(); ++position) {
+            const auto expected_id = visited == 0 ? ids[1] : ids[3];
+            require(batch.ids[position] == expected_id, "aligned batches changed requested row order");
+            require(batch.left.is_valid(position) && batch.right.is_valid(position),
+                    "aligned batches lost requested valid cells");
+            ++visited;
+        }
+    });
+    require(visited == 2, "aligned batches rejected a requested subset present in both views");
+
+    auto callback_invoked = false;
+    auto rejected = false;
+    try {
+        left.for_each_aligned_batch(restricted, [&](const auto &) { callback_invoked = true; });
+    } catch (const std::invalid_argument &) {
+        rejected = true;
+    }
+    require(rejected && !callback_invoked,
+            "aligned traversal invoked its callback before validating every requested row");
+}
+
+void test_aligned_batches_gather_distinct_mappings_and_validate_before_callback() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto rows = NativeRows{};
+    auto left_rows = NativeRowSlots{};
+    auto right_rows = NativeRowSlots{};
+    auto left_cells = NativeColumnData<i64>{};
+    auto right_cells = NativeColumnData<double>{};
+    auto release = util::scope_exit{[&]() noexcept {
+        right_cells.release(memory);
+        left_cells.release(memory);
+        right_rows.release(memory);
+        left_rows.release(memory);
+        rows.release(memory);
+    }};
+
+    const auto time = MIN_DT + EvaluationTime::duration{1};
+    auto ids = std::array<row_id_t, 4>{};
+    for (auto position = std::size_t{}; position != ids.size(); ++position)
+        ids[position] = rows.add(time, memory);
+    for (auto id : ids) {
+        left_rows.insert(id, memory);
+        left_cells.add(left_rows, id, id == ids[1] ? std::nullopt : std::optional<i64>{id + 10}, memory);
+    }
+    for (auto position = ids.size(); position != 0; --position) {
+        const auto id = ids[position - 1];
+        right_rows.insert(id, memory);
+        right_cells.add(right_rows, id, id == ids[3] ? std::nullopt : std::optional<double>{id + 20.5}, memory);
+    }
+
+    const auto visible = RowSet::native(rows);
+    auto left_storage = ColumnStorage<i64>{left_cells, left_rows, visible, rows.added(), left_cells.modified(),
+                                           rows.removed(), time};
+    auto right_storage = ColumnStorage<double>{right_cells, right_rows, visible, rows.added(), right_cells.modified(),
+                                               rows.removed(), time};
+    auto left = ColumnSeriesView<i64>{left_storage};
+    auto right = ColumnSeriesView<double>{right_storage};
+    auto request = SelectedRows{};
+    auto release_selected = util::scope_exit{[&]() noexcept { request.release(memory); }};
+    request.bind(visible);
+    request.include(ids[1], memory);
+    request.include(ids[3], memory);
+
+    auto visited = std::size_t{};
+    left.for_each_aligned_batch(right, request.rows(), [&](const auto &batch) {
+        require(batch.ids.size() == 2 && batch.ids[0] == ids[1] && batch.ids[1] == ids[3],
+                "gathered batches changed requested row order");
+        require(!batch.left.is_valid(0) && batch.left.is_valid(1), "gathered left validity is incorrect");
+        require(batch.right.is_valid(0) && !batch.right.is_valid(1), "gathered right validity is incorrect");
+        require(batch.right.values[0] == 21.5 && batch.left.values[1] == 13,
+                "gathered batches read cells using physical positions instead of row IDs");
+        require(batch.left.values != left_cells.block_containing(left_rows, ids[1]).data &&
+                    batch.right.values != right_cells.block_containing(right_rows, ids[1]).data,
+                "aligned batches did not gather values for distinct physical mappings");
+        visited += batch.ids.size();
+    });
+    require(visited == 2, "gathered batches omitted requested rows");
+
+    const auto missing_id = ids[1];
+    const auto missing_slot = right_rows.slot_of(missing_id);
+    right_cells.erase_slot(missing_slot, missing_id, memory);
+    right_rows.erase(missing_id);
+    auto callback_invoked = false;
+    auto rejected = false;
+    try {
+        left.for_each_aligned_batch(right, request.rows(), [&](const auto &) { callback_invoked = true; });
+    } catch (const std::invalid_argument &) {
+        rejected = true;
+    }
+    require(rejected && !callback_invoked,
+            "aligned gathered batches invoked their callback before validating requested row coverage");
+
+    auto foreign_rows = NativeRows{};
+    auto release_foreign = util::scope_exit{[&]() noexcept { foreign_rows.release(memory); }};
+    static_cast<void>(foreign_rows.add(time, memory));
+    auto wrong_domain = false;
+    try {
+        left.for_each_aligned_batch(right, RowSet::native(foreign_rows), [&](const auto &) {
+            callback_invoked = true;
+        });
+    } catch (const std::invalid_argument &) {
+        wrong_domain = true;
+    }
+    require(wrong_domain && !callback_invoked, "aligned batches accepted a different logical row domain");
+}
 } // namespace
 
 int main() {
@@ -700,6 +888,8 @@ int main() {
         test_tsc_view_rejects_native_rows_from_another_logical_domain();
         test_tsc_view_revalidates_coverage_when_mapping_changes();
         test_tsc_view_clears_modified_rows_removed_during_the_same_cycle();
+        test_aligned_batches_borrow_shared_mapping_and_accept_requested_subsets();
+        test_aligned_batches_gather_distinct_mappings_and_validate_before_callback();
         std::cout << "bg_frame_column_test passed\n";
     } catch (const std::exception &error) {
         std::cerr << "bg_frame_column_test: " << error.what() << '\n';

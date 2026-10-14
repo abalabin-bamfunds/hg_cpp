@@ -18,9 +18,12 @@
 #include <bg/util/sparse_bunch.hpp>
 #include <bg/util/byte_copy.hpp>
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <concepts>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <memory_resource>
@@ -269,6 +272,12 @@ template <typename T> class ColumnReadSource {
 template <typename T> struct NativeColumnBatch {
     std::span<const row_id_t> ids;
     ColumnBatch<T> cells;
+};
+
+template <typename Left, typename Right> struct AlignedColumnBatch {
+    std::span<const row_id_t> ids;
+    ColumnBatch<Left> left;
+    ColumnBatch<Right> right;
 };
 
 template <typename T = void> class ColumnView {
@@ -946,7 +955,174 @@ template <typename T> class ColumnSeriesView {
             cells_->for_each_batch(*physical_rows_, storage_.visible_rows, std::forward<Function>(function));
     }
 
+    // Aligns requested rows by ID and verifies that both views contain them before invoking the callback. It does not
+    // prove that the views have equal complete row sets. Batch buffers are borrowed for the callback; invalid cells
+    // must not be read.
+    template <typename U, typename Function>
+    void for_each_aligned_batch(const ColumnSeriesView<U> &other, const RowSet &requested_rows,
+                                Function &&function) const {
+        const auto &other_storage = other.scalar_storage();
+        if (row_domain() == nullptr || row_domain() != other.row_domain() || requested_rows.identity != row_domain())
+            throw std::invalid_argument{"aligned columns must use the same row domain"};
+        if (cells_ == nullptr || other_storage.native == nullptr || physical_rows_ == nullptr ||
+            other_storage.physical_rows == nullptr)
+            throw std::invalid_argument{"aligned column batches require native columns"};
+
+        const auto full_native_rows = same_rows(requested_rows, storage_.visible_rows) &&
+                                      same_rows(requested_rows, other_storage.visible_rows) &&
+                                      same_rows(requested_rows, storage_.coverage) &&
+                                      same_rows(requested_rows, other_storage.coverage) &&
+                                      requested_rows.native_rows != nullptr &&
+                                      physical_rows_ == std::addressof(requested_rows.native_rows->slots()) &&
+                                      other_storage.physical_rows == physical_rows_;
+        if (full_native_rows) {
+            for_each_native_aligned_batch(other, std::forward<Function>(function));
+            return;
+        }
+
+        requested_rows.each([&](row_id_t id) {
+            if (!contains(id) || !other.contains(id))
+                throw std::invalid_argument{"aligned columns do not contain every requested row"};
+        });
+
+        if (physical_rows_ == other_storage.physical_rows) {
+            for_each_shared_map_batch(other, requested_rows, std::forward<Function>(function));
+            return;
+        }
+
+        for_each_gathered_batch(other, requested_rows, std::forward<Function>(function));
+    }
+
+    template <typename U, typename Function>
+    void for_each_aligned_batch(const ColumnSeriesView<U> &other, Function &&function) const {
+        for_each_aligned_batch(other, storage_.visible_rows, std::forward<Function>(function));
+    }
+
   private:
+    static bool same_rows(const RowSet &left, const RowSet &right) noexcept {
+        return left.context == right.context && left.native_rows == right.native_rows &&
+               left.identity == right.identity && left.size == right.size && left.contains == right.contains &&
+               left.id_at == right.id_at && left.for_each == right.for_each;
+    }
+
+    template <typename U, typename Function>
+    void for_each_native_aligned_batch(const ColumnSeriesView<U> &other, Function &&function) const {
+        const auto &other_storage = other.scalar_storage();
+        physical_rows_->live_slots().for_each_run([&](row_id_t first, row_id_t end) {
+            while (first != end) {
+                const auto id_block = physical_rows_->ids_block_containing(first);
+                const auto id = physical_rows_->id_at_slot(first);
+                const auto left_block = cells_->block_containing(*physical_rows_, id);
+                const auto right_block = other_storage.native->block_containing(*other_storage.physical_rows, id);
+                const auto batch_end = static_cast<row_id_t>(
+                    std::min({std::uint64_t{end}, id_block.end, left_block.end, right_block.end}));
+                invoke_native_aligned_batch(other, first, batch_end, id_block, left_block, right_block, function);
+                first = batch_end;
+            }
+        });
+    }
+
+    template <typename U, typename Function>
+    void for_each_shared_map_batch(const ColumnSeriesView<U> &other, const RowSet &requested_rows,
+                                  Function &&function) const {
+        const auto &other_storage = other.scalar_storage();
+        auto has_batch = false;
+        auto first_slot = row_id_t{};
+        auto end_slot = std::uint64_t{};
+        auto id_block = util::storage_block{};
+        auto left_block = util::storage_block{};
+        auto right_block = util::storage_block{};
+        const auto flush = [&]() {
+            if (!has_batch)
+                return;
+            invoke_native_aligned_batch(other, first_slot, static_cast<row_id_t>(end_slot), id_block, left_block,
+                                        right_block, function);
+            has_batch = false;
+        };
+
+        requested_rows.each([&](row_id_t id) {
+            const auto slot = physical_rows_->slot_of(id);
+            if (has_batch && static_cast<std::uint64_t>(slot) == end_slot && end_slot < id_block.end &&
+                end_slot < left_block.end && end_slot < right_block.end) {
+                ++end_slot;
+                return;
+            }
+
+            flush();
+            id_block = physical_rows_->ids_block_containing(slot);
+            left_block = cells_->block_containing(*physical_rows_, id);
+            right_block = other_storage.native->block_containing(*other_storage.physical_rows, id);
+            first_slot = slot;
+            end_slot = static_cast<std::uint64_t>(slot) + 1;
+            has_batch = true;
+        });
+        flush();
+    }
+
+    template <typename U, typename Function>
+    void for_each_gathered_batch(const ColumnSeriesView<U> &other, const RowSet &requested_rows,
+                                 Function &&function) const {
+        static constexpr auto capacity = std::size_t{128};
+        static constexpr auto validity_bytes = (capacity + 7) / 8;
+        auto ids = std::array<row_id_t, capacity>{};
+        auto left_values = std::array<T, capacity>{};
+        auto right_values = std::array<U, capacity>{};
+        auto left_validity = std::array<std::uint8_t, validity_bytes>{};
+        auto right_validity = std::array<std::uint8_t, validity_bytes>{};
+        auto size = std::size_t{};
+        const auto flush = [&]() {
+            if (size == 0)
+                return;
+            std::invoke(function,
+                        AlignedColumnBatch<T, U>{
+                            std::span<const row_id_t>{ids.data(), size},
+                            ColumnBatch<T>{0, size, left_values.data(),
+                                           ColumnBatch<T>::Validity::from_bitmap(left_validity.data(), 0)},
+                            ColumnBatch<U>{0, size, right_values.data(),
+                                           ColumnBatch<U>::Validity::from_bitmap(right_validity.data(), 0)}});
+            left_validity.fill(0);
+            right_validity.fill(0);
+            size = 0;
+        };
+
+        requested_rows.each([&](row_id_t id) {
+            ids[size] = id;
+            if (const auto value = cell(id)) {
+                left_values[size] = *value;
+                left_validity[size / 8] |= std::uint8_t{1} << (size % 8);
+            }
+            if (const auto value = other.cell(id)) {
+                right_values[size] = *value;
+                right_validity[size / 8] |= std::uint8_t{1} << (size % 8);
+            }
+            if (++size == capacity)
+                flush();
+        });
+        flush();
+    }
+
+    template <typename U, typename Function>
+    void invoke_native_aligned_batch(const ColumnSeriesView<U> &other, row_id_t first, row_id_t end,
+                                     util::storage_block ids_block, util::storage_block left_block,
+                                     util::storage_block right_block, Function &function) const {
+        const auto &other_storage = other.scalar_storage();
+        const auto size = static_cast<std::size_t>(end - first);
+        const auto *ids = static_cast<const row_id_t *>(ids_block.data) + first - ids_block.first;
+        const auto *left_values = left_block.data == nullptr
+                                      ? nullptr
+                                      : static_cast<const T *>(left_block.data) + first - left_block.first;
+        const auto *right_values = right_block.data == nullptr
+                                       ? nullptr
+                                       : static_cast<const U *>(right_block.data) + first - right_block.first;
+        std::invoke(function,
+                    AlignedColumnBatch<T, U>{
+                        std::span<const row_id_t>{ids, size},
+                        ColumnBatch<T>{first, size, left_values,
+                                       ColumnBatch<T>::Validity::from_index(cells_->valid_cells())},
+                        ColumnBatch<U>{first, size, right_values,
+                                       ColumnBatch<U>::Validity::from_index(other_storage.native->valid_cells())}});
+    }
+
     const NativeColumnData<T> *cells_;
     const NativeRows *rows_;
     const NativeRowSlots *physical_rows_;

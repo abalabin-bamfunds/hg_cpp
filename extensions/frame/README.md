@@ -107,6 +107,16 @@ its result cell. Accepted writes publish even when the value is equal or both
 the old and new values are null. The output cell type may differ from the source
 cell type. Generic `TSC<SCALAR>` declarations resolve both cell types at wiring.
 
+`ColumnSeriesView::for_each_aligned_batch(other, rows, callback)` aligns the
+requested rows by ID and verifies that both views contain every requested row
+before the first callback. It requires the same logical row domain; it does not
+prove that both views have the same complete row set. Batch IDs and cell buffers
+are borrowed for the callback. Each column keeps its own validity bitmap, and a
+cell with a false validity bit must not be read. Shared physical mappings use
+source blocks; distinct mappings gather only requested rows into bounded
+scratch batches. Nodes that operate on complete columns must establish equal
+row membership and order separately.
+
 ## TSF input/output surface
 
 Include `<bg/frame/frame.hpp>` for concrete and runtime-schema frames.
