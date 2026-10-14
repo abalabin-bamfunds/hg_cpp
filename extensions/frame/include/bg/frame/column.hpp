@@ -246,6 +246,13 @@ template <typename T> struct ColumnBatch {
             std::terminate();
         }
 
+        Validity subspan(std::size_t offset) const noexcept {
+            auto result = *this;
+            if (result.kind_ == Kind::bitmap)
+                result.bit_offset_ += offset;
+            return result;
+        }
+
         friend bool operator==(const Validity &, const Validity &) = default;
 
       private:
@@ -257,6 +264,9 @@ template <typename T> struct ColumnBatch {
     } valid;
 
     bool is_valid(std::size_t position) const noexcept { return valid.contains(first_slot, position); }
+    ColumnBatch subspan(std::size_t offset, std::size_t count) const noexcept {
+        return {first_slot + offset, count, values == nullptr ? nullptr : values + offset, valid.subspan(offset)};
+    }
 };
 
 // Extension runtime implementers use this borrowed read interface to expose non-native scalar storage through

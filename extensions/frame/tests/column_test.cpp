@@ -846,6 +846,37 @@ void test_aligned_batches_stop_at_shared_id_and_cell_block_boundaries() {
             "aligned n-ary batches did not split at the ID and cell storage-block boundaries");
 }
 
+void test_column_batch_subspan_advances_value_and_validity_offsets() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto bitmap_values = std::array<double, 5>{1, 2, 3, 4, 5};
+    const auto bitmap = std::array<std::uint8_t, 1>{0b00101010};
+    const auto bitmap_batch = ColumnBatch<double>{20, bitmap_values.size(), bitmap_values.data(),
+                                                   ColumnBatch<double>::Validity::from_bitmap(bitmap.data(), 1)};
+    const auto bitmap_slice = bitmap_batch.subspan(1, 3);
+    require(bitmap_slice.first_slot == 21 && bitmap_slice.size == 3 &&
+                bitmap_slice.values == bitmap_values.data() + 1 && !bitmap_slice.is_valid(0) &&
+                bitmap_slice.is_valid(1) && !bitmap_slice.is_valid(2),
+            "column batch subspan did not advance its value and bitmap offsets");
+
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    auto valid_slots = util::index<>{};
+    auto release = util::scope_exit{[&]() noexcept { valid_slots.release(resource); }};
+    valid_slots.set(9, resource);
+    valid_slots.set(11, resource);
+    const auto indexed_batch = ColumnBatch<double>{7, bitmap_values.size(), bitmap_values.data(),
+                                                    ColumnBatch<double>::Validity::from_index(valid_slots)};
+    const auto indexed_slice = indexed_batch.subspan(2, 2);
+    require(indexed_slice.first_slot == 9 && indexed_slice.is_valid(0) && !indexed_slice.is_valid(1),
+            "column batch subspan did not advance its index validity offset");
+
+    const auto null_batch = ColumnBatch<double>{5, 2, nullptr, ColumnBatch<double>::Validity::all_invalid()};
+    const auto null_slice = null_batch.subspan(1, 1);
+    require(null_slice.first_slot == 6 && null_slice.values == nullptr && !null_slice.is_valid(0),
+            "column batch subspan changed an all-null batch");
+}
+
 void test_aligned_batches_gather_distinct_mappings_and_validate_before_callback() {
     using namespace bg;
     using namespace bg::frame;
@@ -1133,6 +1164,7 @@ int main() {
         test_tsc_view_clears_modified_rows_removed_during_the_same_cycle();
         test_aligned_batches_borrow_shared_mapping_and_accept_requested_subsets();
         test_aligned_batches_stop_at_shared_id_and_cell_block_boundaries();
+        test_column_batch_subspan_advances_value_and_validity_offsets();
         test_aligned_batches_gather_distinct_mappings_and_validate_before_callback();
         test_aligned_batches_gather_more_than_two_scratch_batches();
         test_aligned_batches_keep_null_only_blocks_unreadable();
