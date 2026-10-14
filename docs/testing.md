@@ -158,8 +158,8 @@ graph compilation or evaluation.
   scheduling, equality support, and nested graph boundaries
 - neutral type declarations, input matching, and output defaults through
   collections and reference targets, for callable and aggregate definitions
-- reference guarantee limits through collections and unions, explicit reference
-  targets, and rollback of rejected structural matches
+- reference guarantee limits through unconstrained time series variables, collections,
+  and unions; explicit reference targets; rollback of rejected structural matches
 - collection types and nested types
 - external declarations, public variable enumeration, runtime registration, and selection of supplied representations
 - extension-owned configured output declarations, runtime selection, semantic compatibility, and preservation through invocation and invalidation
@@ -180,6 +180,8 @@ graph compilation or evaluation.
 - wiring paths, labels, and diagnostics
 - node-call deduplication, opt-out, and identity inputs
 - operator overload applicability, selection, on-demand metadata and requirement resolvers, error handling, and caching
+- unsupported output guarantees rejecting candidates without blocking applicable
+  overloads in either registration order; resolver callback exceptions remaining fatal
 - graph requirements, including resolved scalar inspection, rejection before body wiring, overload fallback, and diagnostics
 - `opt` argument matching, required-input preference, cache separation, named arguments, and variadic forwarding
 - required scalar preference over absence-accepting parameters, including

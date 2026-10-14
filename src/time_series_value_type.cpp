@@ -1,9 +1,9 @@
 #include <bg/type/time_series_value_type.hpp>
+#include <bg/type/type_resolution_error.hpp>
 #include <bg/type/type_registry.hpp>
 
 #include <cstddef>
 #include <memory>
-#include <stdexcept>
 #include <utility>
 
 namespace bg {
@@ -46,7 +46,9 @@ void TimeSeriesValueType::format_name(std::string &result) const {
 
 const TimeSeriesValueType &time_series_value_type(const ScalarType &value_type, TimeSeriesGuarantee guarantee) {
     if (guarantee == TimeSeriesGuarantee::deduplicated && !value_type.supports_equality()) {
-        throw std::invalid_argument{"a deduplicated time series requires a scalar type that supports equality"};
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"TS"},
+                                  "a deduplicated time series requires a scalar type that supports equality",
+                                  nullptr, &value_type};
     }
 
     return TypeRegistry::instance().get_or_create<ResolvedTimeSeriesValueType, TimeSeriesValueTypeKeyHash>(

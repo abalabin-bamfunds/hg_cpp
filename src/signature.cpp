@@ -398,11 +398,14 @@ Signature::match_wiring_arguments(std::span<const WiringArgument> arguments, con
         }
 
         auto source_type = type_cast<TimeSeriesType>(&arguments[index].type());
-        while (const auto *reference = type_cast<TimeSeriesReferenceType>(source_type)) {
-            source_type = &reference->target_type();
-        }
         if (source_type == nullptr || !source_type->is_resolved()) {
             continue;
+        }
+
+        if (type_cast<TimeSeriesReferenceType>(parameters_[index].type) != nullptr) {
+            source_type = &source_type->target_type();
+        } else {
+            source_type = &source_type->dereferenced_type();
         }
 
         if (variable->matches_ordinary_structure) {

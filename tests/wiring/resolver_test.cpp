@@ -5,6 +5,8 @@
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/operator.hpp>
+#include <bg/scalar/opaque.hpp>
+#include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/scalar/type.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/testing/test_wiring.hpp>
@@ -491,6 +493,182 @@ TEST_CASE("a callable resolver cannot bypass a variable constraint",
         }));
 
     bg::testing::test_wiring([&] { CHECK_THROWS_AS(operation(), bg::WiringError); });
+}
+
+TEST_CASE("a resolver-produced time-series type can apply a guarantee",
+          "[feature:operator][feature:wiring][feature:type-system][declaration:generic]"
+          "[scalar:opaque][guarantee:deduplicated]") {
+    using OPAQUE_SERIES = bg::TimeSeriesVariable<"OPAQUE_SERIES">;
+    using DEDUPLICATED_RESULT = RESOLVED_TIME_SERIES::with<bg::TimeSeriesGuarantee::deduplicated>;
+    (void)bg::cpp_scalar_runtime_type<bg::Opaque<int>>();
+    const auto unsupported = [] {
+        return bg::node(
+            bg::eval = [](bg::Out<DEDUPLICATED_RESULT>) {},
+            bg::resolve<RESOLVED_TIME_SERIES> = [](const bg::WiringArguments &) -> const bg::TimeSeriesType & {
+                return bg::time_series_value_type(bg::cpp_scalar_type<bg::Opaque<int>>(),
+                                                  bg::TimeSeriesGuarantee::ordinary)
+                    .with_guarantee(bg::TimeSeriesGuarantee::deduplicated);
+            });
+    };
+    const auto &opaque_type = bg::time_series_value_type(bg::cpp_scalar_type<bg::Opaque<int>>(),
+                                                         bg::TimeSeriesGuarantee::ordinary);
+
+    const auto check_registration_order = [&](bool unsupported_first) {
+        auto operation = bg::operator_<auto() -> bg::TS_T>{"deduplicated_output"};
+        auto fallback_selected = false;
+        const auto concrete = bg::node(
+            bg::eval = [](bg::Out<OPAQUE_SERIES>) {},
+            bg::require = [&](const bg::WiringArguments &) {
+                fallback_selected = true;
+                return bg::accept;
+            },
+            bg::resolve<OPAQUE_SERIES> = []() -> const bg::TimeSeriesType & {
+                return bg::time_series_value_type(bg::cpp_scalar_type<bg::Opaque<int>>(),
+                                                  bg::TimeSeriesGuarantee::ordinary);
+            });
+        if (unsupported_first) {
+            operation.overload(unsupported());
+            operation.overload(concrete);
+        } else {
+            operation.overload(concrete);
+            operation.overload(unsupported());
+        }
+
+        bg::testing::test_wiring([&] {
+            CHECK(&operation().type() == &opaque_type);
+            CHECK(fallback_selected);
+        });
+    };
+
+    check_registration_order(true);
+    check_registration_order(false);
+
+    auto operation = bg::operator_<auto() -> bg::TS_T>{"deduplicated_output_without_fallback"};
+    operation.overload(unsupported());
+    bg::testing::test_wiring([&] {
+        try {
+            (void)operation();
+            FAIL("expected no applicable overload");
+        } catch (const bg::WiringError &error) {
+            REQUIRE(error.diagnostic());
+            REQUIRE(error.diagnostic()->candidates.size() == 1);
+            CHECK(error.diagnostic()->candidates.front().stage == bg::WiringFailureStage::resolver);
+            CHECK(std::string{error.what()}.contains("requires a scalar type that supports equality"));
+        }
+    });
+}
+
+TEST_CASE("a generic deduplicated output rejects an unsupported scalar before fallback selection",
+          "[feature:operator][feature:wiring][declaration:generic][scalar:opaque]"
+          "[guarantee:deduplicated]") {
+    using OPAQUE_SERIES = bg::TimeSeriesVariable<"OPAQUE_SERIES">;
+    using VALUE = bg::ScalarVariable<"DEDUPLICATED_OUTPUT_VALUE">;
+    (void)bg::cpp_scalar_runtime_type<bg::Opaque<int>>();
+    const auto source = bg::node(
+        bg::eval = [](bg::Out<OPAQUE_SERIES>) {},
+        bg::resolve<OPAQUE_SERIES> = []() -> const bg::TimeSeriesType & {
+            return bg::time_series_value_type(bg::cpp_scalar_type<bg::Opaque<int>>(),
+                                              bg::TimeSeriesGuarantee::ordinary);
+        });
+    const auto generic = bg::node(bg::eval = [](bg::In<bg::TS<VALUE>>,
+                                                bg::Out<bg::TS<VALUE, bg::TimeSeriesGuarantee::deduplicated>>) {});
+    const auto &opaque_type = bg::time_series_value_type(bg::cpp_scalar_type<bg::Opaque<int>>(),
+                                                         bg::TimeSeriesGuarantee::ordinary);
+
+    const auto check_registration_order = [&](bool generic_first) {
+        auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS_T>{"generic_deduplicated_output", {"input"}};
+        auto fallback_selected = false;
+        const auto fallback = bg::graph(
+            "name"_n = "concrete_fallback",
+            [&](bg::wp<OPAQUE_SERIES> input) {
+                fallback_selected = true;
+                return input;
+            });
+
+        if (generic_first) {
+            operation.overload(generic);
+            operation.overload(fallback);
+        } else {
+            operation.overload(fallback);
+            operation.overload(generic);
+        }
+
+        bg::testing::test_wiring([&] {
+            CHECK(&operation(source()).type() == &opaque_type);
+            CHECK(fallback_selected);
+        });
+    };
+
+    check_registration_order(true);
+    check_registration_order(false);
+}
+
+TEST_CASE("a resolver callback invalid_argument remains a fatal wiring error",
+          "[feature:operator][feature:wiring][definition:function][declaration:generic]") {
+    auto operation = bg::operator_<auto() -> bg::TS<float>>{"resolver_callback_error"};
+    const auto concrete = bg::node([](bg::Out<bg::TS<float>>) {});
+    operation.overload(bg::graph("name"_n = "concrete_fallback", [concrete] { return concrete(); }));
+    operation.overload(bg::node(
+        bg::eval = [](bg::Out<bg::TS<RESOLVED_SCALAR>>) {},
+        bg::resolve<RESOLVED_SCALAR> = [](const bg::WiringArguments &) -> const bg::ScalarType & {
+            throw std::invalid_argument{"resolver callback failure"};
+        }));
+
+    bg::testing::test_wiring([&] {
+        try {
+            (void)operation();
+            FAIL("expected a resolver callback failure");
+        } catch (const bg::WiringError &error) {
+            REQUIRE(error.diagnostic());
+            auto callback_failure_found = false;
+            for (const auto &candidate : error.diagnostic()->candidates) {
+                callback_failure_found |= candidate.stage == bg::WiringFailureStage::callback;
+            }
+            CHECK(callback_failure_found);
+            CHECK(std::string{error.what()}.contains("resolver callback failure"));
+        }
+    });
+}
+
+TEST_CASE("generic identity overloads accept no-equality final and const values",
+          "[feature:operator][feature:wiring][declaration:generic][scalar:opaque]"
+          "[guarantee:final][guarantee:const]") {
+    using OPAQUE_SERIES = bg::TimeSeriesVariable<"OPAQUE_SERIES">;
+    const auto &opaque = bg::cpp_scalar_type<bg::Opaque<int>>();
+    (void)bg::cpp_scalar_runtime_type<bg::Opaque<int>>();
+    const auto make_source = [](bg::TimeSeriesGuarantee guarantee) {
+        return bg::node(
+            bg::eval = [](bg::Out<OPAQUE_SERIES>) {},
+            bg::resolve<OPAQUE_SERIES> = [guarantee]() -> const bg::TimeSeriesType & {
+                return bg::time_series_value_type(bg::cpp_scalar_type<bg::Opaque<int>>(), guarantee);
+            });
+    };
+    auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS_T>{"opaque_identity", {"value"}};
+    auto generic_selected = 0;
+    auto deduplicated_selected = 0;
+    operation.overload(bg::node(
+        bg::eval = [](bg::In<bg::TS_T::with<bg::TimeSeriesGuarantee::deduplicated>>,
+                      bg::Out<bg::TS_T::with<bg::TimeSeriesGuarantee::deduplicated>>) {},
+        bg::require = [&](const bg::WiringArguments &) {
+            ++deduplicated_selected;
+            return bg::accept;
+        }));
+    operation.overload(bg::graph("name"_n = "identity", [&](bg::wp<bg::TS_T> value) {
+        ++generic_selected;
+        return value;
+    }));
+    const auto final_source = make_source(bg::TimeSeriesGuarantee::final);
+    const auto const_source = make_source(bg::TimeSeriesGuarantee::const_);
+    const auto &final_type = bg::time_series_value_type(opaque, bg::TimeSeriesGuarantee::final);
+    const auto &const_type = bg::time_series_value_type(opaque, bg::TimeSeriesGuarantee::const_);
+
+    bg::testing::test_wiring([&] {
+        CHECK(&operation(final_source()).type() == &final_type);
+        CHECK(&operation(const_source()).type() == &const_type);
+    });
+
+    CHECK(generic_selected == 2);
+    CHECK(deduplicated_selected == 0);
 }
 
 TEST_CASE("aggregate resolvers resolve dependencies on demand",

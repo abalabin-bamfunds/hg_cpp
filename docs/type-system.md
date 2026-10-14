@@ -666,3 +666,7 @@ failure through a structured type-resolution exception. It identifies the
 affected parameter or output and the incompatible types. Operator resolution
 records the same information as an expected candidate rejection, as defined in
 [operator diagnostics](operators.md#diagnostics).
+
+`time_series_value_type()` throws `TypeResolutionError` when deduplication is
+requested for a scalar without equality. This is required to reject an
+inapplicable output type without stopping overload resolution.

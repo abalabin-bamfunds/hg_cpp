@@ -10,6 +10,7 @@
 #include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
+#include <bg/type/type_resolution_error.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/time_series_variable.hpp>
 #include <bg/type/guarantee_variable_instance.hpp>
@@ -219,9 +220,18 @@ TEST_CASE("a time series variable and its guarantee resolve independently",
 
 TEST_CASE("a deduplicated value time series requires equality",
           "[type_system][feature:type-system][series:value][scalar:opaque][guarantee:deduplicated]") {
+    const auto &opaque = bg::cpp_scalar_type<bg::Opaque<int>>();
     CHECK_THROWS_AS(
-        bg::time_series_value_type(bg::cpp_scalar_type<bg::Opaque<int>>(), bg::TimeSeriesGuarantee::deduplicated),
-        std::invalid_argument);
+        bg::time_series_value_type(opaque, bg::TimeSeriesGuarantee::deduplicated),
+        bg::TypeResolutionError);
+
+    const auto &final_type = bg::time_series_value_type(opaque, bg::TimeSeriesGuarantee::final);
+    CHECK(&final_type.value_type() == &opaque);
+    CHECK(final_type.guarantee().value() == bg::TimeSeriesGuarantee::final);
+
+    const auto &const_type = bg::time_series_value_type(opaque, bg::TimeSeriesGuarantee::const_);
+    CHECK(&const_type.value_type() == &opaque);
+    CHECK(const_type.guarantee().value() == bg::TimeSeriesGuarantee::const_);
 }
 
 TEST_CASE("a time series variable ignores the guarantees captured separately",
