@@ -486,6 +486,71 @@ void test_computed_tsc_domain_rebinding() {
             "computed TSC did not clear and rebind overlapping IDs across row domains");
 }
 
+void test_computed_tsc_publishes_empty_domain_rebinding() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    struct observation {
+        const void *source_row_domain{};
+        const void *row_domain{};
+        bool source_modified{};
+        bool valid{};
+        bool modified{};
+        std::vector<row_id_t> changed;
+        std::vector<row_id_t> removed;
+    };
+    auto observations = std::vector<observation>{};
+    const auto first_empty_source = node([](In<TS<i64>> tick, Out<TSC<i64>> output) {
+        output.clear();
+        static_cast<void>(tick);
+    });
+    const auto second_empty_source = node([](In<TS<i64>> tick, Out<TSC<i64>> output) {
+        output.clear();
+        static_cast<void>(tick);
+    });
+    const auto select = node<selectable_tsc_view>();
+    const auto compute = node([](In<TSC<i64>, optional> input, In<TS<i64>> tick,
+                                 Out<TSC<double>, computed<>> output) {
+        static_cast<void>(output.bind(input));
+        static_cast<void>(tick);
+    });
+    const auto observe = node([&](In<TSC<i64>, optional> source, In<TSC<double>, optional> input,
+                                  In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto result = observation{.source_row_domain = source.row_domain(),
+                                  .row_domain = input.row_domain(),
+                                  .source_modified = source.modified(),
+                                  .valid = input.valid(),
+                                  .modified = input.modified()};
+        input.for_each_changed([&](row_id_t id) { result.changed.push_back(id); });
+        input.for_each_removed([&](row_id_t id) { result.removed.push_back(id); });
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> tick, wp<TS<i64>> selection) {
+        const auto first = first_empty_source(tick);
+        const auto second = second_empty_source(tick);
+        const auto selected = select(first, second, selection);
+        return observe(selected, compute(selected, tick), tick);
+    };
+    const auto ticks = std::array<i64, 4>{0, 1, 2, 3};
+    const auto selections = std::array<i64, 4>{0, 0, 1, 1};
+    static_cast<void>(testing::test_graph(graph, ticks, selections));
+
+    require(observations.size() == ticks.size() && observations[0].valid &&
+                observations[0].source_row_domain != nullptr &&
+                observations[0].row_domain == observations[0].source_row_domain &&
+                observations[1].source_row_domain == observations[0].source_row_domain &&
+                observations[1].row_domain == observations[0].row_domain && !observations[1].source_modified &&
+                !observations[1].modified &&
+                observations[2].source_row_domain != observations[0].source_row_domain &&
+                observations[2].row_domain != observations[0].row_domain && observations[2].source_modified &&
+                observations[2].modified && observations[2].changed.empty() && observations[2].removed.empty() &&
+                observations[3].source_row_domain == observations[2].source_row_domain &&
+                observations[3].row_domain == observations[2].row_domain && !observations[3].source_modified &&
+                !observations[3].modified,
+            "computed TSC did not publish an empty domain change independently of row deltas");
+}
+
 void test_column_descriptor_resolution() {
     using CELL = bg::ScalarVariable<"FRAME_CELL_TYPE">;
     const auto &generic_column = bg::frame::column_type(bg::cpp_scalar_type<CELL>());
@@ -1004,6 +1069,7 @@ int main() {
         test_cold_generic_tsc_column_output();
         test_computed_tsc_output();
         test_computed_tsc_domain_rebinding();
+        test_computed_tsc_publishes_empty_domain_rebinding();
         test_tsc_guarantee_matching();
         test_column_descriptor_resolution();
         test_runtime_initialization();

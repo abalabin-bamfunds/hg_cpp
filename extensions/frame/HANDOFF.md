@@ -5,7 +5,9 @@ The generic Row/RowPatch foundation checkpoint is `bd6d9cc5`. Commit `8e6bd52d`
 separates logical row identity from physical slots; `69d1f643` retains native
 owner/domain validation for borrowed views. Mixed computed/view TSF outputs and
 standalone computed TSC outputs are implemented. Arrow-on, Arrow-off, and
-ASan/UBSan consumer suites pass; the implementation commit is pending.
+ASan/UBSan consumer suites pass. Computed TSC was committed as `33a660d8`.
+Independent review found and this lane fixes empty-domain publication on a
+row-domain change.
 
 ## Work locations
 
@@ -232,25 +234,34 @@ Standalone computed TSC tests cover distinct and generic source/result types,
 row membership changes, same-cycle writes and removals, null writes, batch
 preflight, invalidation, domain rebinding, and row-ID reuse. Plain-view
 regression tests cover mapping changes with missing retained coverage and
-removal after a same-cycle change.
+removal after a same-cycle change. Empty-domain graph tests cover plain and
+computed TSC bindings, all-computed TSF bindings, and a selected TSF child.
 
-Remaining work includes the frame expression and block-arithmetic design. The
-numeric extraction remains held; do not duplicate its integer division
-implementation.
+Independent review found that rebinding between distinct empty row domains
+could update the exposed domain without publishing. This correction publishes
+the domain change while keeping row deltas empty. Graph tests cover computed
+TSC, all-computed TSF, and a selected TSF child; same-domain empty bindings
+remain unticked. Root reviewed the correction and test fixtures.
+
+The declaration for computed TSF field names selected at wiring remains
+undecided; standalone computed TSC outputs use the approved `computed<>`
+declaration. Exposing BG's existing integer-division helper also remains
+undecided; do not duplicate its implementation.
 
 The two BG changes integrated in this task are scalar copy runtime selection
 and wiring-time output runtime selection. The frame extension uses scalar copy
 selection for owning frame copies and the output hook to select frame layouts.
 Frame output layout options remain extension-owned.
 
-The shared numeric function extraction is held. Block arithmetic design and
-implementation are next. Whether that work should reuse the held extraction
-depends on the design and implementation.
+The shared numeric function extraction remains held. Frame expression and
+block-arithmetic design are future work; their design will determine whether
+that extraction is reused.
 
-Arrow-on Release passed all 5 suites in `build/field-access-on`. Arrow-off
-Release passed all 4 suites in `build/cc4-checkpoint-off`. Arrow-on Debug with
-ASan/UBSan passed all 5 suites in `build/cc4-lifetime`, using
-`ASAN_OPTIONS=detect_leaks=0` and `UBSAN_OPTIONS=halt_on_error=1`.
+After the empty-domain publication correction, Arrow-on Release passed all 5
+suites in `build/field-access-on`; Arrow-off Release passed all 4 suites in
+`build/cc4-checkpoint-off`; and Arrow-on Debug with ASan/UBSan passed all 5
+suites in `build/cc4-lifetime`, using `ASAN_OPTIONS=detect_leaks=0` and
+`UBSAN_OPTIONS=halt_on_error=1`.
 
 Previous-value subscriptions, strings and symbols, compaction, capacity
 trimming, and delta transport remain later work. Previous-cell capture, if

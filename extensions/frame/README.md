@@ -57,6 +57,9 @@ Frame column lengths must match. A zero-column frame can carry an explicit row
 count. `TSF` rows use one internal row domain across columns; schema names do
 not define row identity.
 
+Rebinding to a different row domain publishes even when both values are empty.
+The row delta remains empty because no rows were added or removed.
+
 Borrowed values and batches are valid during a node invocation, before a
 mutation replaces their storage. Requesting an owning `ScalarValue` from
 mutable native storage copies current cells. Ordinary mutations do not take a

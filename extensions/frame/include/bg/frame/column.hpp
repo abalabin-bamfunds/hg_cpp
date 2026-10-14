@@ -1096,7 +1096,7 @@ struct ColumnRowMembership {
         valid = true;
         return {row_domain_changed, row_set_rebound, input_changes_current, mapping_changed, new_cycle,
                 source_modified && !row_domain_changed && !row_set_rebound && !input_changes_current,
-                transitioned || !was_valid};
+                transitioned || row_domain_changed || !was_valid};
     }
 
     void begin_cycle(EvaluationTime time) noexcept {

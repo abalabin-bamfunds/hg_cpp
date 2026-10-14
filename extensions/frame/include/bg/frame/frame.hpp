@@ -1990,7 +1990,7 @@ class RuntimeFrameViewOutputStorage {
 
         const auto output_rows = predicate_index.has_value() ? selected_rows.rows() : input.rows;
         const auto membership_changed = !added_rows.empty() || !removed_rows.empty();
-        auto any_change = !valid || membership_changed;
+        auto any_change = !valid || row_domain_changed || membership_changed;
         for (std::size_t index = 0; index != layout->fields.size(); ++index) {
             auto &state = field_state(this, index);
             auto &output_modified = state.modified_rows;
@@ -1999,7 +1999,7 @@ class RuntimeFrameViewOutputStorage {
                 const auto *native_modified = layout->fields[index].column.modified(native_field(this, index));
                 for (auto id : *native_modified)
                     changed_rows.set(id, memory.memory_resource());
-                if (!valid || !native_modified->empty() || membership_changed) {
+                if (!valid || row_domain_changed || !native_modified->empty() || membership_changed) {
                     changed_columns.set(index, memory.memory_resource());
                     child_state(this, index).publish(time);
                     any_change = true;

@@ -3566,6 +3566,92 @@ void test_computed_tsf_outputs_and_downstream_views() {
             "computed TSF did not invalidate and revalidate with its source");
 }
 
+void test_all_computed_tsf_publishes_empty_domain_rebinding() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    struct observation {
+        const void *selected_row_domain{};
+        const void *row_domain{};
+        const void *bid_row_domain{};
+        bool selected_modified{};
+        bool valid{};
+        bool modified{};
+        bool bid_valid{};
+        bool bid_modified{};
+        std::vector<row_id_t> changed;
+        std::vector<row_id_t> removed;
+        std::vector<row_id_t> bid_changed;
+        std::vector<row_id_t> bid_removed;
+    };
+    auto observations = std::vector<observation>{};
+    const auto first_empty_source = node([](In<TS<i64>> tick, Out<TSF<Quotes>> output) {
+        output.clear();
+        static_cast<void>(tick);
+    });
+    const auto second_empty_source = node([](In<TS<i64>> tick, Out<TSF<Quotes>> output) {
+        output.clear();
+        static_cast<void>(tick);
+    });
+    const auto select = node([](In<TSF<Quotes>, optional> first, In<TSF<Quotes>, optional> second,
+                                In<TS<i64>> selection, Out<TSF<Quotes>, view> output) {
+        if (*selection == 0)
+            output.bind_projection(first, columns<"size", "bid", "ask">());
+        else
+            output.bind_projection(second, columns<"size", "bid", "ask">());
+    });
+    const auto compute = node([](In<TSF<Quotes>, optional> input, In<TS<i64>> tick,
+                                 Out<TSF<Quotes>, computed<"size", "bid", "ask">> output) {
+        static_cast<void>(output.bind(input));
+        static_cast<void>(tick);
+    });
+    const auto observe = node([&](In<TSF<Quotes>, optional> selected, In<TSF<Quotes>, optional> input,
+                                  In<TSC<double>, optional> bid,
+                                  In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto result = observation{.selected_row_domain = selected.row_domain(),
+                                  .row_domain = input.row_domain(),
+                                  .bid_row_domain = bid.row_domain(),
+                                  .selected_modified = selected.modified(),
+                                  .valid = input.valid(),
+                                  .modified = input.modified(),
+                                  .bid_valid = bid.valid(),
+                                  .bid_modified = bid.modified()};
+        input.for_each_changed([&](row_id_t id) { result.changed.push_back(id); });
+        input.for_each_removed([&](row_id_t id) { result.removed.push_back(id); });
+        bid.for_each_changed([&](row_id_t id) { result.bid_changed.push_back(id); });
+        bid.for_each_removed([&](row_id_t id) { result.bid_removed.push_back(id); });
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> tick, wp<TS<i64>> selection) {
+        const auto first = first_empty_source(tick);
+        const auto second = second_empty_source(tick);
+        const auto selected = select(first, second, selection);
+        const auto computed = compute(selected, tick);
+        return observe(selected, computed, select_column<"bid">(computed), tick);
+    };
+    const auto ticks = std::array<i64, 4>{0, 1, 2, 3};
+    const auto selections = std::array<i64, 4>{0, 0, 1, 1};
+    static_cast<void>(testing::test_graph(graph, ticks, selections));
+
+    require(observations.size() == ticks.size() && observations[0].valid && observations[0].bid_valid &&
+                observations[0].row_domain != nullptr && observations[0].bid_row_domain == observations[0].row_domain &&
+                observations[0].selected_row_domain == observations[0].row_domain &&
+                observations[1].selected_row_domain == observations[0].selected_row_domain &&
+                observations[1].row_domain == observations[0].row_domain && !observations[1].selected_modified &&
+                !observations[1].modified && !observations[1].bid_modified &&
+                observations[2].selected_row_domain != observations[0].selected_row_domain &&
+                observations[2].selected_modified && observations[2].row_domain != observations[0].row_domain &&
+                observations[2].bid_row_domain == observations[2].row_domain && observations[2].modified &&
+                observations[2].bid_modified && observations[2].changed.empty() &&
+                observations[2].removed.empty() && observations[2].bid_changed.empty() &&
+                observations[2].bid_removed.empty() &&
+                observations[3].selected_row_domain == observations[2].selected_row_domain &&
+                observations[3].row_domain == observations[2].row_domain && !observations[3].selected_modified &&
+                !observations[3].modified && !observations[3].bid_modified,
+            "all-computed TSF or its selected child missed an empty row-domain change");
+}
+
 void test_computed_tsf_callable_and_aggregate_runtime_hooks() {
     using namespace bg;
     using namespace bg::frame;
@@ -3880,6 +3966,7 @@ int main() {
         test_incremental_numeric_filter();
         test_filter_greater_than_composes_with_column_projection();
         test_computed_tsf_outputs_and_downstream_views();
+        test_all_computed_tsf_publishes_empty_domain_rebinding();
         test_computed_tsf_callable_and_aggregate_runtime_hooks();
         test_computed_tsf_runtime_cache_and_source_rebinding();
         test_runtime_schema_computed_tsf_output();
