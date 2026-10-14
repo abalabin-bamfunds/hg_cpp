@@ -252,6 +252,11 @@ key's sparse item ID and creates a non-live key when the key is absent. The key
 set reclaims an unretained non-live ID after the outer cycle in which it was
 released.
 
+A key selection belongs to the currently selected TSD. When a `REF<TSD<K, TS_T>>`
+changes its target, the selecting node selects the key again and binds its item
+input to the new selection. `getitem` performs this re-bind when its reference
+input ticks.
+
 Selecting an item returns an `In<REF<V>>` that uses the canonical `REF<V>`
 runtime type. The input carries a separate `ReferenceBinding`; runtime types do
 not own selection state or subscriptions. A dynamic input uses the binding to
