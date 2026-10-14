@@ -60,6 +60,11 @@ the existing representation for that target and requested type. A new compatible
 request allocates its representation through the runtime graph that owns the
 target. Runtime storage is proportional to the representations that are used.
 
+TSD representation runtime types have stable lifetime independent of individual
+representations. A resolved TSD representation uses the representation object as
+its storage; its runtime type resolves the current base TSD when it reads items
+or change information.
+
 TSD supports compatible representations recursively. Examples include:
 
 | Provided type | Requested representation |

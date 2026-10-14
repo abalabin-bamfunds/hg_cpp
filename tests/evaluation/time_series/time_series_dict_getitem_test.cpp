@@ -10,6 +10,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <optional>
@@ -334,6 +335,64 @@ TEST_CASE("a dereferenced dictionary follows a target that is initially invalid"
 
 namespace {
 
+struct dereferenced_dictionary_change_queries {
+    In<TSD<std::int64_t, TS<i64>>> input;
+
+    void evaluate() const {
+        const std::int64_t key_value{1};
+        const auto key = Scalar<std::int64_t>::from(key_value);
+        const auto id = input.find_item_id(key);
+        auto modified_ids = std::vector<item_id_t>{};
+        auto updated_ids = std::vector<item_id_t>{};
+        auto modified_item_ids = std::vector<item_id_t>{};
+        auto cursor_ids = std::vector<item_id_t>{};
+
+        input.for_each_modified([&](const auto &modified_key) {
+            if (*modified_key == *key) {
+                modified_ids.push_back(input.find_item_id(modified_key));
+            }
+        });
+        input.runtime_type().for_each_updated_item(
+            input.last_updated_state(), input.data(), &updated_ids, [](void *context, item_id_t item_id) {
+                static_cast<std::vector<item_id_t> *>(context)->push_back(item_id);
+            });
+        input.runtime_type().for_each_modified_item(
+            input.last_updated_state(), input.data(), input.last_updated(), &modified_item_ids,
+            [](void *context, TimeSeriesRuntimeType::ModifiedItem item) {
+                static_cast<std::vector<item_id_t> *>(context)->push_back(item.id);
+            });
+        for (auto cursor = item_id_t{};;) {
+            cursor = input.next_modified_id(cursor);
+            if (cursor == util::occupancy_index::npos) {
+                break;
+            }
+            cursor_ids.push_back(cursor);
+            ++cursor;
+        }
+
+        changes.push_back({id, input.find_modified_id(key), input.item_modified(key),
+                           id != util::occupancy_index::npos &&
+                               input.runtime_type().item_updated(input.last_updated_state(), input.data(), id),
+                           std::move(modified_ids), std::move(updated_ids), std::move(modified_item_ids),
+                           std::move(cursor_ids)});
+    }
+
+    struct Change {
+        item_id_t id;
+        item_id_t found_modified_id;
+        bool item_modified;
+        bool item_updated;
+        std::vector<item_id_t> modified_ids;
+        std::vector<item_id_t> updated_ids;
+        std::vector<item_id_t> modified_item_ids;
+        std::vector<item_id_t> cursor_ids;
+
+        bool operator==(const Change &) const = default;
+    };
+
+    inline static std::vector<Change> changes;
+};
+
 struct rooted_reference_item_sink {
     In<TSD<std::int64_t, REF<TS<i64>>>> input;
 
@@ -346,6 +405,205 @@ struct rooted_reference_item_sink {
 };
 
 } // namespace
+
+TEST_CASE("a dereferenced dictionary reports later target changes after adding its key",
+          "[evaluation][series:tsd][series:value][reference][feature:reference][feature:sampling]"
+          "[feature:collection-change][transition:addition][transition:invalidation]"
+          "[transition:revalidation][transition:update]") {
+    const auto make_target = node([](In<TS<i64>> command, Out<TS<i64>> output) {
+        if (*command == 0) {
+            output.invalidate();
+        } else {
+            output.set(*command);
+        }
+    });
+    const auto make_dictionary = node([](In<REF<TS<i64>>> target,
+                                         Out<TSD<std::int64_t, REF<TS<i64>>>> output) { output[1].copy(target); });
+    const auto read_item = node([](In<TS<i64>> item, Out<TS<i64>> output) {
+        if (item.valid()) {
+            output.set(*item);
+        } else {
+            output.invalidate();
+        }
+    });
+    const auto observe_changes = node<dereferenced_dictionary_change_queries>();
+    dereferenced_dictionary_change_queries::changes.clear();
+    const auto graph = [&](wp<TS<i64>> command) {
+        const auto dictionary = make_dictionary(make_target(command));
+        observe_changes(dictionary);
+        return read_item(dictionary[1]);
+    };
+
+    const auto actual = testing::test_graph(graph, std::array{10, 0, 20, 21});
+
+    CHECK(actual.equals<bg::i64>({10, std::nullopt, 20, 21}));
+    REQUIRE(dereferenced_dictionary_change_queries::changes.size() == 4);
+    for (auto index = std::size_t{1}; index < dereferenced_dictionary_change_queries::changes.size(); ++index) {
+        const auto &change = dereferenced_dictionary_change_queries::changes[index];
+        REQUIRE(change.id != util::occupancy_index::npos);
+        CHECK(change.found_modified_id == change.id);
+        CHECK(change.item_modified);
+        CHECK(change.item_updated);
+        CHECK(change.modified_ids == std::vector<item_id_t>{change.id});
+        CHECK(change.updated_ids == std::vector<item_id_t>{change.id});
+        CHECK(change.modified_item_ids == std::vector<item_id_t>{change.id});
+        CHECK(change.cursor_ids == std::vector<item_id_t>{change.id});
+    }
+}
+
+TEST_CASE("a dereferenced dictionary reports one update when a stored reference changes",
+          "[evaluation][series:tsd][series:value][reference][feature:reference][feature:collection-change]"
+          "[transition:update]") {
+    const auto make_first = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
+    const auto make_second = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input + 100); });
+    const auto make_dictionary = node([](In<TS<bool>> select_second, In<REF<TS<i64>>> first,
+                                         In<REF<TS<i64>>> second,
+                                         Out<TSD<std::int64_t, REF<TS<i64>>>> output) {
+        output[1].copy(*select_second ? second : first);
+    });
+    const auto read_item = node([](In<TS<i64>> item, Out<TS<i64>> output) { output.set(*item); });
+    const auto observe_changes = node<dereferenced_dictionary_change_queries>();
+    dereferenced_dictionary_change_queries::changes.clear();
+    const auto graph = [&](wp<TS<i64>> input, wp<TS<bool>> select_second) {
+        const auto dictionary = make_dictionary(select_second, make_first(input), make_second(input));
+        observe_changes(dictionary);
+        return read_item(dictionary[1]);
+    };
+
+    const auto actual = testing::test_graph(graph, std::array{1, 2}, std::array{false, true});
+
+    CHECK(actual.equals<bg::i64>({1, 102}));
+    REQUIRE(dereferenced_dictionary_change_queries::changes.size() == 2);
+    const auto &change = dereferenced_dictionary_change_queries::changes.back();
+    REQUIRE(change.id != util::occupancy_index::npos);
+    CHECK(change.found_modified_id == change.id);
+    CHECK(change.item_modified);
+    CHECK(change.item_updated);
+    CHECK(change.modified_ids == std::vector<item_id_t>{change.id});
+    CHECK(change.updated_ids == std::vector<item_id_t>{change.id});
+    CHECK(change.modified_item_ids == std::vector<item_id_t>{change.id});
+    CHECK(change.cursor_ids == std::vector<item_id_t>{change.id});
+}
+
+TEST_CASE("a dereferenced dictionary reports a removed item once",
+          "[evaluation][series:tsd][series:value][reference][feature:reference][feature:collection-change]"
+          "[transition:removal]") {
+    const auto make_target = node([](In<TS<i64>> command, Out<TS<i64>> output) {
+        if (*command == 0) {
+            output.invalidate();
+        } else {
+            output.set(*command);
+        }
+    });
+    const auto make_dictionary = node([](In<TS<i64>> command, In<REF<TS<i64>>> target,
+                                         Out<TSD<std::int64_t, REF<TS<i64>>>> output) {
+        if (*command == 0) {
+            output.erase(1);
+        } else {
+            output[1].copy(target);
+        }
+    });
+    const auto read_item = node([](In<TS<i64>> item, Out<TS<i64>> output) {
+        if (item.valid()) {
+            output.set(*item);
+        } else {
+            output.invalidate();
+        }
+    });
+    const auto observe_changes = node<dereferenced_dictionary_change_queries>();
+    dereferenced_dictionary_change_queries::changes.clear();
+    const auto graph = [&](wp<TS<i64>> command) {
+        const auto dictionary = make_dictionary(command, make_target(command));
+        observe_changes(dictionary);
+        return read_item(dictionary[1]);
+    };
+
+    const auto actual = testing::test_graph(graph, std::array{10, 0});
+
+    CHECK(actual.equals<bg::i64>({10, std::nullopt}));
+    REQUIRE(dereferenced_dictionary_change_queries::changes.size() == 2);
+    const auto &added = dereferenced_dictionary_change_queries::changes.front();
+    const auto &removed = dereferenced_dictionary_change_queries::changes.back();
+    REQUIRE(added.id != util::occupancy_index::npos);
+    CHECK(removed.id == util::occupancy_index::npos);
+    CHECK(removed.found_modified_id == util::occupancy_index::npos);
+    CHECK_FALSE(removed.item_modified);
+    CHECK_FALSE(removed.item_updated);
+    CHECK(removed.modified_ids.empty());
+    CHECK(removed.cursor_ids.empty());
+    CHECK(std::count(removed.updated_ids.begin(), removed.updated_ids.end(), added.id) == 1);
+    CHECK(std::count(removed.modified_item_ids.begin(), removed.modified_item_ids.end(), added.id) == 1);
+}
+
+TEST_CASE("a sampled dereferenced dictionary preserves physical IDs and remappings",
+          "[evaluation][series:tsd][series:value][reference][feature:reference][feature:sampling]"
+          "[feature:item-id-remapping][transition:rebind]") {
+    const auto make_value = node([](In<TS<bool>>, Out<TS<i64>> output) { output.set(1); });
+    const auto make_first = node([](In<TS<bool>>, In<REF<TS<i64>>> ten, In<REF<TS<i64>>> twenty,
+                                    In<REF<TS<i64>>> forty, Out<TSD<std::int64_t, REF<TS<i64>>>> output) {
+        output[10].copy(ten);
+        output[20].copy(twenty);
+        output[40].copy(forty);
+    });
+    const auto make_second = node([](In<TS<bool>>, In<REF<TS<i64>>> ten, In<REF<TS<i64>>> twenty,
+                                     In<REF<TS<i64>>> thirty, Out<TSD<std::int64_t, REF<TS<i64>>>> output) {
+        output[20].copy(twenty);
+        output[10].copy(ten);
+        output[30].copy(thirty);
+    });
+    const auto select_dictionary = node(
+        [](In<TS<bool>> select_second, In<REF<TSD<std::int64_t, REF<TS<i64>>>>> first,
+           In<REF<TSD<std::int64_t, REF<TS<i64>>>>> second,
+           Out<REF<TSD<std::int64_t, REF<TS<i64>>>>> output) { output.copy(*select_second ? second : first); });
+    const auto inspect = node([](In<TS<bool>> select_second, In<TSD<std::int64_t, TS<i64>>> selected,
+                                 In<TSD<std::int64_t, REF<TS<i64>>>> first,
+                                 In<TSD<std::int64_t, REF<TS<i64>>>> second, Out<TS<i64>> output) {
+        auto actual_remappings = std::vector<std::pair<item_id_t, item_id_t>>{};
+        selected.for_each_item_id_remapping([&](item_id_t old_id, item_id_t new_id) {
+            actual_remappings.emplace_back(old_id, new_id);
+        });
+        auto expected_remappings = std::vector<std::pair<item_id_t, item_id_t>>{};
+        if (*select_second) {
+            for (auto new_id = selected.next_item_id(0); new_id != util::occupancy_index::npos;
+                 new_id = selected.next_item_id(new_id + 1)) {
+                const auto old_id = first.find_item_id(selected.key_at(new_id));
+                if (old_id != util::occupancy_index::npos && old_id != new_id) {
+                    expected_remappings.emplace_back(old_id, new_id);
+                }
+            }
+        }
+
+        auto actual_removed = std::vector<item_id_t>{};
+        selected.for_each_removed_physical_id([&](item_id_t id) { actual_removed.push_back(id); });
+        auto expected_removed = std::vector<item_id_t>{};
+        if (*select_second) {
+            for (auto old_id = first.next_item_id(0); old_id != util::occupancy_index::npos;
+                 old_id = first.next_item_id(old_id + 1)) {
+                if (second.find_item_id(first.key_at(old_id)) == util::occupancy_index::npos) {
+                    expected_removed.push_back(old_id);
+                }
+            }
+        }
+
+        const auto remappings_match = actual_remappings == expected_remappings &&
+                                      selected.has_item_id_remapping() == !expected_remappings.empty();
+        output.set(remappings_match && actual_removed == expected_removed ? 1 : 0);
+    });
+    const auto graph = [&](wp<TS<bool>> select_second) {
+        const auto ten = make_value(select_second);
+        const auto twenty = make_value(select_second);
+        const auto thirty = make_value(select_second);
+        const auto forty = make_value(select_second);
+        const auto first = make_first(select_second, ten, twenty, forty);
+        const auto second = make_second(select_second, ten, twenty, thirty);
+        const auto selected = select_dictionary(select_second, first, second);
+        return inspect(select_second, selected, first, second);
+    };
+
+    const auto actual = testing::test_graph(graph, std::array{false, true});
+
+    CHECK(actual.equals<i64>({1, 1}));
+}
 
 TEST_CASE("a dereferenced dictionary follows target invalidation and revalidation",
           "[evaluation][series:tsd][series:value][reference][feature:reference]"

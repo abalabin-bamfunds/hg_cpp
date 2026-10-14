@@ -248,8 +248,11 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
             base.storage == nullptr || !modified_.contains(id)) {
             return false;
         }
-        return base_runtime_type(base).next_item_id(last_updated, base.storage,
-                                                    TimeSeriesDictionaryRuntimeType::ItemRange::added, id) != id;
+        const auto &runtime_type = base_runtime_type(base);
+        return runtime_type.next_item_id(last_updated, base.storage,
+                                         TimeSeriesDictionaryRuntimeType::ItemRange::added, id) != id &&
+               runtime_type.next_item_id(last_updated, base.storage,
+                                         TimeSeriesDictionaryRuntimeType::ItemRange::removed, id) != id;
     }
 
     item_id_t next_modified_item_id(const TimeSeriesState &last_updated, item_id_t start,
@@ -260,8 +263,10 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
         const auto &runtime_type = base_runtime_type(base);
         auto id = modified_.first_set(start);
         while (id != modified_.size() &&
-               runtime_type.next_item_id(last_updated, base.storage,
-                                         TimeSeriesDictionaryRuntimeType::ItemRange::added, id) == id) {
+               (runtime_type.next_item_id(last_updated, base.storage,
+                                          TimeSeriesDictionaryRuntimeType::ItemRange::added, id) == id ||
+                runtime_type.next_item_id(last_updated, base.storage,
+                                          TimeSeriesDictionaryRuntimeType::ItemRange::removed, id) == id)) {
             id = modified_.first_set(id + 1);
         }
         return id == modified_.size() ? util::occupancy_index::npos : id;

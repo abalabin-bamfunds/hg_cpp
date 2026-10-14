@@ -71,6 +71,14 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
         }
     }
 
+    void for_each_removed_physical_id(const TimeSeriesState &last_updated, const void *value, void *context,
+                                      ItemIdFunction function) const override {
+        const auto base = representation(value).base_time_series();
+        if (base.runtime_type != nullptr && base.storage != nullptr) {
+            base_runtime_type(base).for_each_removed_physical_id(last_updated, base.storage, context, function);
+        }
+    }
+
     void for_each_modified(const TimeSeriesState &last_updated, const void *value, void *context,
                            ItemIdFunction function) const override {
         representation(value).for_each_modified(last_updated, context, function);
@@ -135,6 +143,20 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
         const auto base = view.base_time_series();
         if (base.storage != nullptr) {
             base_runtime_type(base).for_each_item_id(base.storage, context, function);
+        }
+    }
+
+    bool has_item_id_remapping(const void *value) const override {
+        const auto base = representation(value).base_time_series();
+        return base.runtime_type != nullptr && base.storage != nullptr &&
+               base_runtime_type(base).has_item_id_remapping(base.storage);
+    }
+
+    void for_each_item_id_remapping(const void *value, void *context,
+                                    ItemIdRemappingFunction function) const override {
+        const auto base = representation(value).base_time_series();
+        if (base.runtime_type != nullptr && base.storage != nullptr) {
+            base_runtime_type(base).for_each_item_id_remapping(base.storage, context, function);
         }
     }
 
