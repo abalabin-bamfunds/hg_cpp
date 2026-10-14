@@ -3,9 +3,11 @@
 #include <bg/scalar/value.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/util/scope_exit.hpp>
+#include <bg/graph/borrowed_input.hpp>
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
+#include <bg/graph/runtime_graph_evaluator.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/type/type_registry.hpp>
 
@@ -1230,6 +1232,137 @@ struct frame_writer_state {
     row_id_t row{no_row};
 };
 
+struct borrowed_frame_observation {
+    const TimeSeriesRuntimeType *runtime_type{};
+    bool zero_copy_source{};
+    bool zero_copy_column{};
+    bool modified{};
+    EvaluationTime last_updated{MIN_DT};
+    std::vector<row_id_t> rows;
+    std::vector<row_id_t> changed;
+    std::vector<row_id_t> size_modified;
+    std::vector<row_id_t> bid_modified;
+    std::vector<row_id_t> ask_modified;
+    std::vector<std::optional<i64>> sizes;
+    std::vector<std::optional<double>> bids;
+    std::vector<std::optional<double>> asks;
+};
+
+struct borrowed_frame_sink {
+    In<TSF<Quotes>, optional> input;
+
+    void evaluate() const {
+        const auto scalar = input.value_view();
+        auto observation = borrowed_frame_observation{
+            .runtime_type = std::addressof(input.runtime_type()),
+            .zero_copy_source = input.input_data().data() == expected_data &&
+                                scalar.data() == expected_data,
+            .zero_copy_column = false,
+            .modified = input.modified(),
+            .last_updated = input.last_updated(),
+        };
+        auto frame = scalar.value();
+        frame.columns().bid.batches([&](const auto &batch) {
+            if (batch.values != nullptr && expected_bid_values != nullptr)
+                observation.zero_copy_column = batch.values == expected_bid_values;
+        });
+        input.for_each_row([&](row_id_t id, std::size_t) {
+            observation.rows.push_back(id);
+            observation.sizes.push_back(input.cell<0>(id));
+            observation.bids.push_back(input.cell<1>(id));
+            observation.asks.push_back(input.cell<2>(id));
+        });
+        input.for_each_changed([&](row_id_t id) { observation.changed.push_back(id); });
+        input.for_each_modified<0>([&](row_id_t id) { observation.size_modified.push_back(id); });
+        input.for_each_modified<1>([&](row_id_t id) { observation.bid_modified.push_back(id); });
+        input.for_each_modified<2>([&](row_id_t id) { observation.ask_modified.push_back(id); });
+        observations.push_back(std::move(observation));
+    }
+
+    inline static const double *expected_bid_values{};
+    inline static const void *expected_data{};
+    inline static std::vector<borrowed_frame_observation> observations;
+};
+
+struct borrowed_frame_runner {
+    In<TSF<Quotes>, optional> input;
+    In<TSF<Quotes>, optional> source;
+
+    void start(EvaluationContext *context) const {
+        auto &parent = context->runtime_graph();
+        evaluator = parent.allocation().new_object<RuntimeGraphEvaluator>();
+        evaluator->bind_owner(parent, context->node_index());
+        child = parent.allocation().new_object<RuntimeGraph>(*compiled_graph, parent.allocation(), *evaluator,
+                                                             context->node_index());
+
+        const auto data = input.input_data();
+        const auto inputs = std::array{BorrowedInput{std::addressof(data.last_updated_ref()), data.data(),
+                                                     std::addressof(data.runtime_type()),
+                                                     BorrowedInputChange::unchanged}};
+        auto section = bg::details::BorrowedInputSection{*child, inputs};
+        auto child_context = context->child(section);
+        child->start(child_context);
+    }
+
+    void evaluate(EvaluationContext *context) const {
+        const auto input_data = input.input_data();
+        borrowed_frame_sink::expected_data = input_data.data();
+        const auto source_value = source.value_view().value();
+        source_value.columns().bid.batches([&](const auto &batch) {
+            if (batch.values != nullptr)
+                borrowed_frame_sink::expected_bid_values = batch.values;
+        });
+
+        auto change = BorrowedInputChange::unchanged;
+        if (input.became_invalid())
+            change = BorrowedInputChange::invalidation;
+        else if (input.became_valid())
+            change = BorrowedInputChange::revalidation;
+        else if (input.modified())
+            change = BorrowedInputChange::update;
+
+        const auto inputs = std::array{BorrowedInput{std::addressof(input_data.last_updated_ref()), input_data.data(),
+                                                     std::addressof(input_data.runtime_type()), change}};
+        auto section = bg::details::BorrowedInputSection{*child, inputs};
+        auto child_context = context->child(section);
+        child->evaluate(child_context);
+    }
+
+    void stop(EvaluationContext *context) const noexcept {
+        if (child == nullptr)
+            return;
+
+        const auto data = input.input_data();
+        const auto inputs = std::array{BorrowedInput{std::addressof(data.last_updated_ref()), data.data(),
+                                                     std::addressof(data.runtime_type()),
+                                                     BorrowedInputChange::unchanged}};
+        auto section = bg::details::BorrowedInputSection{*child, inputs};
+        auto child_context = context->child(section);
+        child->stop(child_context);
+        child->finalize(child_context);
+        context->runtime_graph().allocation().delete_object(child);
+        child = nullptr;
+        context->runtime_graph().allocation().delete_object(evaluator);
+        evaluator = nullptr;
+    }
+
+    inline static const CompiledGraph *compiled_graph{};
+    inline static RuntimeGraphEvaluator *evaluator{};
+    inline static RuntimeGraph *child{};
+};
+
+CompiledGraph make_borrowed_frame_graph() {
+    auto wiring = GraphWiring{};
+    const auto input = wiring.borrowed_input(TSF<Quotes>::type());
+    const auto sink = node<borrowed_frame_sink>();
+    {
+        auto context = WiringContext{wiring};
+        sink(input);
+    }
+    wiring.finalize();
+    return CompiledGraph{wiring};
+}
+
 struct frame_observation {
     bool valid{};
     bool became_valid{};
@@ -1942,6 +2075,67 @@ void test_tsf_graph_behavior() {
                 snapshots[4]->value().columns().bid.cell(0) == 11.5 && snapshots[5]->value().size() == 0 &&
                 snapshots[7]->value().size() == 0 && snapshots[8]->value().size() == 0,
             "TSF scalar snapshots changed after later row mutations");
+}
+
+void test_borrowed_tsf_input_with_native_and_view_runtimes() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto child_graph = make_borrowed_frame_graph();
+    borrowed_frame_runner::compiled_graph = std::addressof(child_graph);
+    const auto write = node<tsf_writer>();
+    const auto run_borrowed = node<borrowed_frame_runner>();
+    const auto commands = std::array<i64, 2>{1, 2};
+
+    const auto run = [&](auto graph, const TimeSeriesRuntimeType &expected_runtime) {
+        borrowed_frame_sink::observations.clear();
+        borrowed_frame_sink::expected_bid_values = nullptr;
+        borrowed_frame_sink::expected_data = nullptr;
+        borrowed_frame_runner::child = nullptr;
+        borrowed_frame_runner::evaluator = nullptr;
+
+        const auto result = testing::test_graph(graph, commands);
+        require(result.size() == commands.size() && borrowed_frame_sink::observations.size() == commands.size(),
+                "borrowed TSF sink did not run for every graph cycle");
+        const auto &first = borrowed_frame_sink::observations[0];
+        const auto &second = borrowed_frame_sink::observations[1];
+        require(first.runtime_type == std::addressof(expected_runtime) &&
+                    second.runtime_type == std::addressof(expected_runtime),
+                "borrowed TSF input changed its runtime descriptor");
+        require(first.zero_copy_source && second.zero_copy_source,
+                "borrowed TSF input changed its source storage pointer");
+        require(first.zero_copy_column && second.zero_copy_column,
+                "borrowed TSF input changed its column storage pointer");
+        require(first.rows == std::vector<row_id_t>{0} && second.rows == std::vector<row_id_t>{0} &&
+                    first.sizes == std::vector<std::optional<i64>>{5} &&
+                    second.sizes == std::vector<std::optional<i64>>{5} &&
+                    first.bids == std::vector<std::optional<double>>{10.5} &&
+                    second.bids == std::vector<std::optional<double>>{11.5} &&
+                    first.asks == std::vector<std::optional<double>>{std::nullopt} &&
+                    second.asks == std::vector<std::optional<double>>{std::nullopt},
+                "borrowed TSF input changed row or cell values");
+        require(first.modified && second.modified && second.last_updated > first.last_updated,
+                "borrowed TSF input lost its modification state or time");
+        require(second.changed == std::vector<row_id_t>{0} &&
+                    second.size_modified.empty() && second.bid_modified == std::vector<row_id_t>{0} &&
+                    second.ask_modified.empty(),
+                "borrowed TSF input reported incorrect row or column deltas");
+    };
+
+    const auto native_graph = [&](wp<TS<i64>> command) {
+        const auto frame = write(command);
+        run_borrowed(frame, frame);
+        return command;
+    };
+    run(native_graph, frame_time_series_runtime_type<Quotes>(TSF<Quotes>::type()));
+
+    const auto view_graph = [&](wp<TS<i64>> command) {
+        const auto frame = write(command);
+        const auto view = project<Quotes, "size", "bid", "ask">(frame);
+        run_borrowed(view, frame);
+        return command;
+    };
+    run(view_graph, frame_view_time_series_runtime_type<Quotes>(TSF<Quotes>::type()));
 }
 
 void test_generic_tsf_input_schema_and_columns() {
@@ -2984,6 +3178,7 @@ int main() {
         test_scalar_frame_time_series_graph();
         test_compiled_graph_runtime_storage_is_independent();
         test_tsf_graph_behavior();
+        test_borrowed_tsf_input_with_native_and_view_runtimes();
         test_generic_tsf_input_schema_and_columns();
         test_generic_declared_tsf_rows_follow_resolved_cell_type();
         test_repeated_and_constrained_generic_tsf_fields_match_runtime_schema();
