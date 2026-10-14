@@ -33,6 +33,8 @@
 
 #if defined(__linux__)
 #include <cstdio>
+#include <pthread.h>
+#include <sched.h>
 #include <sys/resource.h>
 #include <unistd.h>
 #elif defined(__APPLE__)
@@ -841,6 +843,7 @@ void print_latency(std::string_view name, const LatencySummary &summary, bool tr
 struct Arguments {
     std::string_view profile_name{"250k"};
     std::size_t cycles{10'000};
+    std::optional<unsigned> reader_cpu{};
     bool record_evaluations{};
     bool verify_workload{};
     bool help{};
@@ -873,6 +876,14 @@ Arguments parse_arguments(int argument_count, char **argument_values) {
             result.cycles = parse_size(argument_values[++index], "--cycles");
         } else if (argument.starts_with("--cycles=")) {
             result.cycles = parse_size(argument.substr(std::string_view{"--cycles="}.size()), "--cycles");
+        } else if (argument == "--reader-cpu" && index + 1 < argument_count) {
+            const auto value = std::string_view{argument_values[++index]};
+            auto cpu = unsigned{};
+            const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), cpu);
+            if (error != std::errc{} || end != value.data() + value.size()) {
+                throw std::invalid_argument{"invalid value for --reader-cpu"};
+            }
+            result.reader_cpu = cpu;
         } else {
             throw std::invalid_argument{"unknown or incomplete argument: " + std::string{argument}};
         }
@@ -933,6 +944,24 @@ int run(const Arguments &arguments) {
             while (profile_reader->read()) {
             }
         }};
+    }
+    if (arguments.reader_cpu) {
+        if (!profile_reader_thread.joinable()) {
+            throw std::invalid_argument{"--reader-cpu requires --record-evaluations"};
+        }
+#if defined(__linux__)
+        if (*arguments.reader_cpu >= CPU_SETSIZE) {
+            throw std::invalid_argument{"--reader-cpu is outside the supported CPU set"};
+        }
+        auto affinity = cpu_set_t{};
+        CPU_ZERO(&affinity);
+        CPU_SET(*arguments.reader_cpu, &affinity);
+        if (pthread_setaffinity_np(profile_reader_thread.native_handle(), sizeof(affinity), &affinity) != 0) {
+            throw std::runtime_error{"cannot pin profile reader to the requested CPU"};
+        }
+#else
+        throw std::invalid_argument{"--reader-cpu requires Linux"};
+#endif
     }
     const auto empty_started_rss = current_rss();
 
@@ -1104,7 +1133,7 @@ int main(int argument_count, char **argument_values) {
         const auto arguments = parse_arguments(argument_count, argument_values);
         if (arguments.help) {
             std::cout << "usage: bg_high_count_map_benchmark [--profile smoke|25k|100k|250k] [--cycles N] "
-                         "[--record-evaluations] [--verify-workload]\n";
+                         "[--record-evaluations] [--reader-cpu N (Linux)] [--verify-workload]\n";
             return EXIT_SUCCESS;
         }
         if (arguments.verify_workload) {
