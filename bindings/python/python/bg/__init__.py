@@ -29,6 +29,10 @@ from ._bg import (
     _run_graph,
     _scalar_type,
     _test_graph,
+    _make_service,
+    _make_service_catalogue,
+    _register_service_impl,
+    _wire_service,
     _time_series_dict_type,
     _time_series_bundle_type,
     _time_series_list_type,
@@ -399,6 +403,36 @@ class GraphDefinition:
         return _wire_graph(self._native_definition, fixed, positional, named)
 
 
+class _ServiceDefinition:
+    def __init__(self, function: Any, native_definition: Any):
+        self.function = function
+        self._native_definition = native_definition
+        update_wrapper(self, function)
+        self.signature = inspect.signature(function)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        bound = self.signature.bind(*args, **kwargs)
+        bound.apply_defaults()
+        arguments = tuple(bound.arguments[parameter] for parameter in self.signature.parameters)
+        return _wire_service(self._native_definition, arguments)
+
+
+class ServiceCatalogue:
+    """Register Python graph implementations for service declarations."""
+
+    def __init__(self):
+        self._native_catalogue = _make_service_catalogue()
+
+    def register_impl(
+        self, service: _ServiceDefinition, implementation: GraphDefinition, *args: Any, **kwargs: Any
+    ) -> None:
+        if not isinstance(service, _ServiceDefinition):
+            raise TypeError("register_impl expects a @service or @reference_service declaration")
+        if not isinstance(implementation, GraphDefinition):
+            raise TypeError("register_impl expects a decorated @graph implementation")
+        _register_service_impl(self._native_catalogue, service, implementation, args, kwargs)
+
+
 def _bind_definition_arguments(
     signature: inspect.Signature,
     fixed_parameters: tuple[str, ...],
@@ -541,6 +575,33 @@ def _define_node(
     return NodeDefinition(function, native_definition, fixed_parameters, callback)
 
 
+def _define_service(function: Any, kind: str) -> _ServiceDefinition:
+    signature = inspect.signature(function)
+    annotations = get_type_hints(function, include_extras=True)
+    parameters = []
+    for parameter in signature.parameters.values():
+        if parameter.kind in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD):
+            raise TypeError("Python services do not support variadic parameters")
+        annotation = annotations.get(parameter.name, parameter.annotation)
+        if annotation is inspect.Parameter.empty:
+            raise TypeError(f"Python service parameter {parameter.name!r} requires a type annotation")
+        native_type = _native_type(annotation)
+        if isinstance(native_type, _ScalarAnnotation):
+            native_type = native_type.type
+        parameters.append((parameter.name, native_type, ""))
+
+    output = annotations.get("return", signature.return_annotation)
+    if output is inspect.Signature.empty or output is None or output is type(None):
+        output = None
+    else:
+        output = _native_type(output)
+        if isinstance(output, _ScalarAnnotation) or not output.is_time_series:
+            raise TypeError("Python service outputs must use an explicit TS[...] annotation")
+
+    native_definition = _make_service(function.__name__, kind, parameters, output)
+    return _ServiceDefinition(function, native_definition)
+
+
 def _native_type(annotation: Any) -> Any:
     if isinstance(annotation, _Type):
         return annotation
@@ -568,6 +629,16 @@ def _native_type(annotation: Any) -> Any:
 def compute_node(function: Any) -> NodeDefinition:
     """Declare a Python node that runs when one of its inputs changes."""
     return _define_node(function)
+
+
+def reference_service(function: Any) -> _ServiceDefinition:
+    """Declare a source-like service with scalar lookup parameters."""
+    return _define_service(function, "reference")
+
+
+def service(function: Any) -> _ServiceDefinition:
+    """Declare a request/reply service with time-series inputs."""
+    return _define_service(function, "request_reply")
 
 
 def node(function: Any) -> NodeDefinition:
@@ -611,28 +682,40 @@ def graph(function: Any) -> GraphDefinition:
     return GraphDefinition(function, native, fixed_parameters, callback)
 
 
-def run_graph(definition: GraphDefinition, *args: Any, recorder: _EvaluationProfilerRecorder | None = None,
-              **kwargs: Any) -> None:
+def run_graph(
+    definition: GraphDefinition,
+    *args: Any,
+    catalogue: ServiceCatalogue | None = None,
+    recorder: _EvaluationProfilerRecorder | None = None,
+    **kwargs: Any,
+) -> None:
     """Wire and run a graph to completion, using scalar arguments as wiring-time constants."""
     if not isinstance(definition, GraphDefinition):
         raise TypeError("run_graph expects a decorated @graph definition")
     if recorder is not None and not isinstance(recorder, _EvaluationProfilerRecorder):
         raise TypeError("recorder must be created by EvaluationProfiler.recorder()")
+    if catalogue is not None and not isinstance(catalogue, ServiceCatalogue):
+        raise TypeError("catalogue must be a bg.ServiceCatalogue")
 
     fixed, positional, named = _bind_definition_arguments(
         definition.signature, definition._fixed_parameters, args, kwargs
     )
-    _run_graph(definition._native_definition, fixed, positional, named, recorder)
+    native_catalogue = None if catalogue is None else catalogue._native_catalogue
+    _run_graph(definition._native_definition, fixed, positional, named, native_catalogue, recorder)
 
 
 def test_graph(definition: GraphDefinition, *inputs: Any,
+               catalogue: ServiceCatalogue | None = None,
                recorder: _EvaluationProfilerRecorder | None = None) -> Any:
     """Run a graph definition with one update sequence for each time-series input."""
     if not isinstance(definition, GraphDefinition):
         raise TypeError("test_graph expects a decorated @graph definition")
     if recorder is not None and not isinstance(recorder, _EvaluationProfilerRecorder):
         raise TypeError("recorder must be created by EvaluationProfiler.recorder()")
-    return _test_graph(definition._native_definition, inputs, recorder)
+    if catalogue is not None and not isinstance(catalogue, ServiceCatalogue):
+        raise TypeError("catalogue must be a bg.ServiceCatalogue")
+    native_catalogue = None if catalogue is None else catalogue._native_catalogue
+    return _test_graph(definition._native_definition, inputs, native_catalogue, recorder)
 
 
 operators.map = map
@@ -649,6 +732,7 @@ __all__ = [
     "REMOVE",
     "Removed",
     "Scalar",
+    "ServiceCatalogue",
     "SetDelta",
     "SIZE",
     "Symbol",
@@ -668,6 +752,8 @@ __all__ = [
     "operators",
     "pass_through",
     "run_graph",
+    "reference_service",
+    "service",
     "source_node",
     "symbol",
     "switch_",

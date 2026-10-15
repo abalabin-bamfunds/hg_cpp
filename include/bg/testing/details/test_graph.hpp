@@ -287,8 +287,9 @@ template <std::ranges::contiguous_range... Inputs>
     return std::move(captured.values);
 }
 
-[[nodiscard]] inline auto run_runtime_template(const WiringTemplate &tested, std::span<const TestGraphInput> inputs,
-                                               EvaluationProfiler::Recorder *recorder) {
+[[nodiscard]] inline auto run_runtime_template(const WiringTemplate &tested, const ServiceCatalogue *service_catalogue,
+                                               EvaluationProfiler::Recorder *recorder,
+                                               std::span<const TestGraphInput> inputs) {
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
     auto captured = CapturedValues{.start_time = start_time, .values = {}};
     auto cycle_count = std::size_t{1};
@@ -319,7 +320,11 @@ template <std::ranges::contiguous_range... Inputs>
 
     captured.values.resize(cycle_count);
 
-    wiring.finalize();
+    if (service_catalogue != nullptr) {
+        wiring.finalize(*service_catalogue);
+    } else {
+        wiring.finalize();
+    }
 
     const auto compiled = CompiledGraph{wiring};
     auto global_state = GlobalState{};

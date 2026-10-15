@@ -83,13 +83,26 @@ template <typename T = void> class TestGraphResult {
 // integrations that do not have C++ range element types, including the Python bindings.
 [[nodiscard]] inline TestGraphResult<> test_graph(const WiringTemplate &tested,
                                                   std::span<const TestGraphInput> inputs) {
-    return TestGraphResult<>{details::run_runtime_template(tested, inputs, nullptr)};
+    return TestGraphResult<>{details::run_runtime_template(tested, nullptr, nullptr, inputs)};
 }
 
 [[nodiscard]] inline TestGraphResult<> test_graph(const WiringTemplate &tested,
                                                   EvaluationProfiler::Recorder recorder,
                                                   std::span<const TestGraphInput> inputs) {
-    return TestGraphResult<>{details::run_runtime_template(tested, inputs, &recorder)};
+    return TestGraphResult<>{details::run_runtime_template(tested, nullptr, &recorder, inputs)};
+}
+
+[[nodiscard]] inline TestGraphResult<> test_graph(const WiringTemplate &tested,
+                                                  const ServiceCatalogue &service_catalogue,
+                                                  std::span<const TestGraphInput> inputs) {
+    return TestGraphResult<>{details::run_runtime_template(tested, &service_catalogue, nullptr, inputs)};
+}
+
+[[nodiscard]] inline TestGraphResult<> test_graph(const WiringTemplate &tested,
+                                                  EvaluationProfiler::Recorder recorder,
+                                                  const ServiceCatalogue &service_catalogue,
+                                                  std::span<const TestGraphInput> inputs) {
+    return TestGraphResult<>{details::run_runtime_template(tested, &service_catalogue, &recorder, inputs)};
 }
 
 // Each input range defines updates by outer cycle. An empty optional skips its cycle.

@@ -11,6 +11,8 @@
 #include <bg/python/object.hpp>
 #include <bg/python/scalar_conversion.hpp>
 #include <bg/python/wiring_point.hpp>
+#include <bg/service.hpp>
+#include <bg/service_catalogue.hpp>
 #include <bg/scalar/dict/scalar_type.hpp>
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/testing/test_graph.hpp>
@@ -130,6 +132,102 @@ class TypeDescriptor {
 
 using PythonParameter = std::tuple<std::string, TypeDescriptor, std::string>;
 
+class PythonServiceDefinition {
+  public:
+    PythonServiceDefinition(std::unique_ptr<ServiceDefinition> service,
+                            std::shared_ptr<const PythonNodeDefinition::SignatureDefinition> signature)
+        : service_{std::move(service)}, signature_{std::move(signature)} {}
+
+    const ServiceDefinition &service() const noexcept { return *service_; }
+    const PythonNodeDefinition::SignatureDefinition &signature() const noexcept { return *signature_; }
+
+    nb::object wire(nb::sequence arguments) const {
+        auto &wiring = WiringContext::current().wiring();
+        const auto &service_signature = signature_->signature;
+        if (nb::len(arguments) != service_signature.parameter_count()) {
+            throw std::invalid_argument{"the Python service received the wrong number of arguments"};
+        }
+
+        auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
+        auto memory = allocator{temporary_memory};
+        auto wiring_arguments = std::vector<WiringArgument>{};
+        wiring_arguments.reserve(service_signature.parameter_count());
+        for (auto index = std::size_t{}; index < service_signature.parameter_count(); ++index) {
+            const auto &parameter_type = *signature_->wiring_parameter_types[index];
+            if (parameter_type.is_scalar()) {
+                wiring_arguments.push_back(details::wiring_argument(parameter_type, arguments[index], memory, wiring));
+                continue;
+            }
+            if (!nb::isinstance<PythonWiringPoint>(arguments[index])) {
+                throw std::invalid_argument{"Python service time-series arguments require wiring points"};
+            }
+            wiring_arguments.push_back(nb::cast<const PythonWiringPoint &>(arguments[index]).argument(wiring));
+        }
+
+        const auto result = service_->operator()(std::span<const WiringArgument>{wiring_arguments});
+        if (!result) {
+            return nb::none();
+        }
+        return nb::cast(PythonWiringPoint{*result, PythonWiringScope::current()});
+    }
+
+  private:
+    std::unique_ptr<ServiceDefinition> service_;
+    std::shared_ptr<const PythonNodeDefinition::SignatureDefinition> signature_;
+};
+
+class PythonServiceCatalogue {
+  public:
+    void register_impl(const PythonServiceDefinition &service, const PythonGraphDefinition &implementation,
+                       nb::handle service_owner, nb::handle implementation_owner, nb::sequence positional,
+                       nb::dict named) {
+        auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
+        auto memory = allocator{temporary_memory};
+        auto arguments = std::vector<WiringArgument>{};
+        arguments.reserve(nb::len(positional) + nb::len(named));
+        for (auto index = std::size_t{}; index < nb::len(positional); ++index) {
+            arguments.push_back(registration_argument(positional[index], memory));
+        }
+        for (const auto [name, value] : named) {
+            arguments.push_back(registration_argument(value, memory, util::symbol{nb::cast<std::string>(name)}));
+        }
+
+        auto graph = std::make_shared<PythonGraphDefinition>(implementation);
+        catalogue_.register_impl(service.service(), std::move(graph), arguments);
+        keep_alive_.emplace_back(service_owner);
+        keep_alive_.emplace_back(implementation_owner);
+    }
+
+    const ServiceCatalogue &catalogue() const noexcept { return catalogue_; }
+
+  private:
+    WiringArgument registration_argument(nb::handle value, allocator &memory,
+                                         std::optional<util::symbol> name = std::nullopt) {
+        if (nb::isinstance<PythonWiringPoint>(value)) {
+            auto wiring_argument =
+                nb::cast<const PythonWiringPoint &>(value).argument(WiringContext::current().wiring());
+            auto argument = name ? WiringArgument{*name, std::move(wiring_argument)} : std::move(wiring_argument);
+            if (name) {
+                argument.match_fixed_parameter_by_name();
+            }
+            return argument;
+        }
+        if (value.is_none()) {
+            throw std::invalid_argument{"None is not a service implementation argument"};
+        }
+
+        auto scalar = scalar_conversions().from_python(value, memory);
+        auto argument = name ? WiringArgument{*name, std::move(scalar)} : WiringArgument{std::move(scalar)};
+        if (name) {
+            argument.match_fixed_parameter_by_name();
+        }
+        return argument;
+    }
+
+    ServiceCatalogue catalogue_;
+    std::vector<Object> keep_alive_;
+};
+
 std::unique_ptr<TimeSeriesType> generic_time_series_type(const TimeSeriesType &type,
                                                          const GuaranteeVariable &guarantee) {
     if (const auto *value = type_cast<TimeSeriesValueType>(&type)) {
@@ -235,6 +333,22 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
                                                                               std::move(signature));
 }
 
+PythonServiceDefinition make_service(std::string name, std::string kind,
+                                     const std::vector<PythonParameter> &parameters,
+                                     const std::optional<TypeDescriptor> &output) {
+    auto signature = make_signature(name, parameters, output);
+    auto service = [&]() -> std::unique_ptr<ServiceDefinition> {
+        if (kind == "reference") {
+            return std::make_unique<ReferenceService>(signature->signature);
+        }
+        if (kind == "request_reply") {
+            return std::make_unique<Service>(signature->signature);
+        }
+        throw std::invalid_argument{"unknown Python service kind"};
+    }();
+    return {std::move(service), std::move(signature)};
+}
+
 std::vector<WiringArgument> wiring_arguments(const Signature &signature, nb::sequence fixed_values,
                                              nb::sequence positional_values, nb::dict named_values, allocator &memory,
                                              GraphWiring &wiring, std::span<const Type *const> parameter_types = {}) {
@@ -280,7 +394,7 @@ nb::object wire_graph(const PythonGraphDefinition &definition, nb::sequence fixe
                      nb::sequence positional_values, nb::dict named_values);
 
 nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_sequences,
-                    EvaluationProfiler::Recorder *recorder) {
+                    PythonServiceCatalogue *service_catalogue, EvaluationProfiler::Recorder *recorder) {
     Object::drain_deferred_releases();
     auto drain_on_exit = util::scope_exit{[]() noexcept {
         if (Py_IsInitialized() && PyGILState_Check()) {
@@ -330,6 +444,16 @@ nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_
     auto results = [&] {
         try {
             auto release_gil = nb::gil_scoped_release{};
+            if (service_catalogue != nullptr && recorder != nullptr) {
+                return testing::test_graph(static_cast<const WiringTemplate &>(definition), *recorder,
+                                           service_catalogue->catalogue(),
+                                           std::span<const testing::TestGraphInput>{input_views});
+            }
+            if (service_catalogue != nullptr) {
+                return testing::test_graph(static_cast<const WiringTemplate &>(definition),
+                                           service_catalogue->catalogue(),
+                                           std::span<const testing::TestGraphInput>{input_views});
+            }
             if (recorder != nullptr) {
                 return testing::test_graph(static_cast<const WiringTemplate &>(definition), *recorder,
                                            std::span<const testing::TestGraphInput>{input_views});
@@ -353,7 +477,8 @@ nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_
 }
 
 void run_graph(const PythonGraphDefinition &definition, nb::sequence fixed_values, nb::sequence positional_values,
-               nb::dict named_values, EvaluationProfiler::Recorder *recorder) {
+               nb::dict named_values, PythonServiceCatalogue *service_catalogue,
+               EvaluationProfiler::Recorder *recorder) {
     Object::drain_deferred_releases();
     auto drain_on_exit = util::scope_exit{[]() noexcept {
         if (Py_IsInitialized() && PyGILState_Check()) {
@@ -369,7 +494,11 @@ void run_graph(const PythonGraphDefinition &definition, nb::sequence fixed_value
 
     try {
         auto release_gil = nb::gil_scoped_release{};
-        if (recorder != nullptr) {
+        if (service_catalogue != nullptr && recorder != nullptr) {
+            bg::run_graph(run, service_catalogue->catalogue(), *recorder);
+        } else if (service_catalogue != nullptr) {
+            bg::run_graph(run, service_catalogue->catalogue());
+        } else if (recorder != nullptr) {
             bg::run_graph(run, *recorder);
         } else {
             bg::run_graph(run);
@@ -520,6 +649,8 @@ void bind_core(nb::module_ &module) {
     }
 
     module.def("version", [] { return std::string{bg::version()}; });
+    nb::class_<PythonServiceDefinition>(module, "_PythonServiceDefinition");
+    nb::class_<PythonServiceCatalogue>(module, "_ServiceCatalogue").def(nb::init<>());
     module.def("_scalar_type",
                [](nb::handle value) { return TypeDescriptor{scalar_conversions().type_from_python(value)}; });
     module.def("_dict_scalar_type", [](const TypeDescriptor &key_value, const TypeDescriptor &mapped_value) {
@@ -640,6 +771,21 @@ void bind_core(nb::module_ &module) {
                                  bool lift_scalar_output) {
         return PythonGraphDefinition{make_signature(name, parameters, output), function, lift_scalar_output};
     });
+    module.def("_make_service", &make_service, "name"_a, "kind"_a, "parameters"_a, "output"_a);
+    module.def("_make_service_catalogue", [] { return PythonServiceCatalogue{}; });
+    module.def("_wire_service", [](const PythonServiceDefinition &definition, nb::sequence arguments) {
+        return definition.wire(arguments);
+    });
+    module.def("_register_service_impl",
+               [](PythonServiceCatalogue &catalogue, nb::handle service, nb::handle implementation,
+                  nb::sequence positional, nb::dict named) {
+                   const auto &service_definition =
+                       nb::cast<const PythonServiceDefinition &>(nb::getattr(service, "_native_definition"));
+                   const auto &graph_definition =
+                       nb::cast<const PythonGraphDefinition &>(nb::getattr(implementation, "_native_definition"));
+                   catalogue.register_impl(service_definition, graph_definition, service, implementation, positional,
+                                           named);
+               });
     module.def("_wire_node", &wire_node);
     module.def("_wire_graph", &wire_graph);
     nb::class_<EvaluationProfiler::Recorder>(module, "EvaluationProfilerRecorder");
@@ -728,9 +874,10 @@ void bind_core(nb::module_ &module) {
         }, "period_start"_a)
         .def("report", &EvaluationProfiler::report, "recent_outer_periods"_a = 10);
 
-    module.def("_test_graph", &test_graph, "definition"_a, "input_sequences"_a, "recorder"_a = nullptr);
+    module.def("_test_graph", &test_graph, "definition"_a, "input_sequences"_a, "catalogue"_a = nullptr,
+               "recorder"_a = nullptr);
     module.def("_run_graph", &run_graph, "definition"_a, "fixed_values"_a, "positional_values"_a,
-               "named_values"_a, "recorder"_a = nullptr);
+               "named_values"_a, "catalogue"_a = nullptr, "recorder"_a = nullptr);
     module.def("_register_delta_types", &details::register_delta_types);
     module.def("_scalar_conversions_address", [] { return reinterpret_cast<std::uintptr_t>(&scalar_conversions()); });
     module.def("_register_symbol_type", [](nb::handle python_type) {

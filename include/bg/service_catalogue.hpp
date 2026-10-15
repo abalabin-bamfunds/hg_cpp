@@ -90,6 +90,9 @@ class ServiceCatalogue {
                  values);
     }
 
+    void register_impl(const ServiceDefinition &service, std::shared_ptr<const WiringTemplate> implementation,
+                       std::span<const WiringArgument> arguments);
+
     template <typename Target, typename... Parameters, typename Implementation, typename... Arguments>
         requires std::derived_from<Target, ServiceDefinition> &&
                  std::derived_from<std::remove_cvref_t<Implementation>, WiringTemplate> &&

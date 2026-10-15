@@ -202,6 +202,12 @@ void ServiceCatalogue::add_impl(const ServiceDefinition &service, TypeMap type_m
                                      std::move(installation_arguments)});
 }
 
+void ServiceCatalogue::register_impl(const ServiceDefinition &service,
+                                     std::shared_ptr<const WiringTemplate> implementation,
+                                     std::span<const WiringArgument> arguments) {
+    add_impl(service, TypeMap{}, std::move(implementation), arguments);
+}
+
 std::size_t ServiceCatalogue::add_multiservice(std::shared_ptr<const WiringTemplate> implementation,
                                                std::span<const WiringArgument> arguments) {
     auto installation_arguments = std::vector<WiringArgument>{};

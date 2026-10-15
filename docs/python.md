@@ -146,6 +146,49 @@ when the graph needs update sequences or its output values. Pass an optional
 recorder created by `EvaluationProfiler.recorder()` through the `recorder`
 keyword.
 
+## Services
+
+`@reference_service` declares a source-like service. `@service` declares a
+request/reply service. Service inputs require annotations; scalar inputs use
+their scalar annotation and time-series inputs use `TS[...]`. Service outputs
+must use an explicit `TS[...]` annotation. An outputless `@service` declaration
+is a sink. A reference service requires an output. Calling a declaration wires
+a service request and returns its output wiring point, or `None` for a sink.
+
+Register graph implementations with `ServiceCatalogue.register_impl`, then
+pass the catalogue to `run_graph` or `test_graph`:
+
+```python
+@bg.reference_service
+def clock() -> bg.TS[int]:
+    pass
+
+@bg.source_node
+def source() -> bg.TS[int]:
+    return 42
+
+@bg.graph
+def clock_implementation() -> bg.TS[int]:
+    return source()
+
+catalogue = bg.ServiceCatalogue()
+catalogue.register_impl(clock, clock_implementation)
+
+@bg.graph
+def client() -> bg.TS[int]:
+    return clock()
+
+assert bg.test_graph(client, catalogue=catalogue) == [42]
+```
+
+For a request/reply service, the implementation graph receives the request
+time series as a `TSD` keyed by client id and returns a `TSD` delta with the
+same keys. A named registration argument matching a scalar service parameter
+filters the implementation by that parameter's value. Other registration
+arguments are passed to the implementation graph as installation arguments.
+The catalogue retains the Python service and graph wrappers while its native
+registrations are in use.
+
 ```python
 profiler = bg.EvaluationProfiler()
 bg.run_graph(example, recorder=profiler.recorder())
