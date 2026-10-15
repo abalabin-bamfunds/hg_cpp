@@ -224,8 +224,8 @@ class PythonServiceCatalogue {
         return argument;
     }
 
-    ServiceCatalogue catalogue_;
     std::vector<Object> keep_alive_;
+    ServiceCatalogue catalogue_;
 };
 
 std::unique_ptr<TimeSeriesType> generic_time_series_type(const TimeSeriesType &type,
