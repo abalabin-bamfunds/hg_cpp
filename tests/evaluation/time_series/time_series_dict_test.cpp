@@ -1,3 +1,4 @@
+#include <bg/graph.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/testing/test_graph.hpp>
@@ -14,29 +15,6 @@
 #include <vector>
 
 namespace {
-
-struct dict_source_definition {
-    static constexpr bool uses_timed_scheduling = true;
-
-    bg::State<int> step;
-    bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output;
-
-    void start(bg::EvaluationContext *context) const {
-        output[1].set(10);
-        output[2].set(20);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate(bg::EvaluationContext *context) const {
-        if (*step == 0) {
-            output[1].set(11);
-            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-        } else {
-            output.erase(2);
-        }
-        ++*step;
-    }
-};
 
 struct dict_sink_definition {
     bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input;
@@ -70,7 +48,7 @@ struct dict_sink_definition {
 TEST_CASE("a time series dictionary publishes item and key changes",
           "[evaluation][tsd][series:tsd][feature:collection-change][transition:update][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct]") {
-    const auto source = bg::node<dict_source_definition>();
+    using namespace bg::literals;
     const auto dict_sink = bg::node<dict_sink_definition>();
     dict_sink_definition::sizes.clear();
     dict_sink_definition::values.clear();
@@ -78,7 +56,9 @@ TEST_CASE("a time series dictionary publishes item and key changes",
     dict_sink_definition::removed.clear();
     dict_sink_definition::modified.clear();
 
-    bg::run_graph([&] { dict_sink(source()); });
+    const auto graph = bg::graph("name"_n = "dictionary_change_input",
+                                 [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { dict_sink(input); });
+    (void)bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
     CHECK(dict_sink_definition::sizes == std::vector<std::size_t>{2, 2, 1});
     CHECK(dict_sink_definition::values == std::vector{10, 11, 11});
@@ -210,7 +190,7 @@ struct dictionary_cursor_definition {
 TEST_CASE("a time series dictionary cursor enumerates current and changed items",
           "[evaluation][tsd][feature:collection-change][series:tsd][scalar:integer]"
           "[transition:addition][transition:removal][binding:direct]") {
-    const auto source = bg::node<dict_source_definition>();
+    using namespace bg::literals;
     const auto sink = bg::node<dictionary_cursor_definition>();
     dictionary_cursor_definition::current.clear();
     dictionary_cursor_definition::valid.clear();
@@ -219,7 +199,9 @@ TEST_CASE("a time series dictionary cursor enumerates current and changed items"
     dictionary_cursor_definition::modified.clear();
     dictionary_cursor_definition::removed_physical.clear();
 
-    bg::run_graph([&] { sink(source()); });
+    const auto graph = bg::graph("name"_n = "dictionary_cursor_input",
+                                 [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { sink(input); });
+    (void)bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
     CHECK(dictionary_cursor_definition::current ==
           std::vector<std::vector<bg::item_id_t>>{{0, 1}, {0, 1}, {0}});
@@ -248,20 +230,6 @@ TEST_CASE("an invalid dictionary cursor has no item IDs",
 
 namespace {
 
-struct partially_valid_dictionary_source_definition {
-    static constexpr bool uses_timed_scheduling = true;
-
-    bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output;
-
-    void start(bg::EvaluationContext *context) const {
-        output[1].set(10);
-        output[2].set(20);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate() const { output[1].invalidate(); }
-};
-
 struct valid_dictionary_cursor_definition {
     bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input;
 
@@ -281,11 +249,13 @@ struct valid_dictionary_cursor_definition {
 
 TEST_CASE("a time series dictionary valid cursor skips invalid items",
           "[evaluation][tsd][feature:validity][series:tsd][transition:invalidation]") {
-    const auto source = bg::node<partially_valid_dictionary_source_definition>();
+    using namespace bg::literals;
     const auto sink = bg::node<valid_dictionary_cursor_definition>();
     valid_dictionary_cursor_definition::snapshots.clear();
 
-    bg::run_graph([&] { sink(source()); });
+    const auto graph = bg::graph("name"_n = "valid_dictionary_cursor_input",
+                                 [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { sink(input); });
+    (void)bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, literal::INVALID}}});
 
     CHECK(valid_dictionary_cursor_definition::snapshots == std::vector<std::vector<std::int64_t>>{{1, 2}, {2}});
 }
@@ -304,11 +274,10 @@ struct item_modified_value_definition {
 TEST_CASE("dictionary item queries distinguish addition from modification",
           "[evaluation][tsd][feature:collection-change][series:tsd][scalar:integer]"
           "[transition:addition][transition:update][binding:direct]") {
-    const auto source = bg::node<dict_source_definition>();
     const auto modified = bg::node<item_modified_value_definition>();
-    const auto graph = [&] { return modified(source()); };
+    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { return modified(input); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
     CHECK(actual.equals({false, true, false}));
 }
@@ -333,12 +302,11 @@ struct reference_dictionary_summary_definition {
 TEST_CASE("a value dictionary provides a source-backed reference representation",
           "[evaluation][tsd][reference][feature:reference][feature:validity][series:tsd][scalar:integer]"
           "[binding:value-to-reference][transition:update]") {
-    const auto source = bg::node<dict_source_definition>();
     const auto summarize = bg::node<reference_dictionary_summary_definition>();
     reference_dictionary_summary_definition::item_became_valid.clear();
-    const auto graph = [&] { return summarize(source()); };
+    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { return summarize(input); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
     CHECK(actual.equals({210, std::nullopt, 111}));
     // The item reference remains valid after an unrelated dictionary change.
@@ -383,12 +351,11 @@ struct dictionary_summary_definition {
 TEST_CASE("rekeying a reference dictionary preserves item updates and removals",
           "[evaluation][tsd][reference][feature:reference][series:tsd][scalar:integer]"
           "[binding:reference-to-value][binding:value-to-reference][transition:update][transition:removal]") {
-    const auto source = bg::node<dict_source_definition>();
     const auto rekey = bg::node<reference_dictionary_rekey_definition>();
     const auto summarize = bg::node<dereferenced_dictionary_summary_definition>();
-    const auto graph = [&] { return summarize(rekey(source())); };
+    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { return summarize(rekey(input)); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
     CHECK(actual.equals({210, 211, 111}));
 }
@@ -487,19 +454,17 @@ TEST_CASE("an explicit dictionary reference input receives a recursively adapted
           "[evaluation][tsd][reference][feature:reference][series:tsd][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-reference][binding:reference-to-value]"
           "[transition:update][transition:removal]") {
-    const auto source = bg::node<dict_source_definition>();
     const auto pass = bg::node<explicit_reference_dictionary_pass_definition>();
     const auto summarize = bg::node<dictionary_summary_definition>();
-    const auto graph = [&] { return summarize(pass(source())); };
+    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { return summarize(pass(input)); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
     CHECK(actual.equals({210, 211, 111}));
 }
 
 TEST_CASE("a node can read one dictionary item",
           "[evaluation][tsd][feature:getitem][series:tsd][scalar:integer][binding:direct][transition:update]") {
-    const auto source = bg::node<dict_source_definition>();
     const auto select = bg::node([](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input, bg::Out<bg::TS<bg::i64>> output) {
         auto changed = input.item_modified(1);
         input.for_each_added([&](const auto &key) { changed = changed || key.value() == 1; });
@@ -507,47 +472,16 @@ TEST_CASE("a node can read one dictionary item",
             output.set(*input[1]);
         }
     });
-    const auto graph = [&] { return select(source()); };
+    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { return select(input); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
-    CHECK(actual.equals({10, 11}));
+    CHECK(actual.equals({10, 11, std::nullopt}));
 }
-
-namespace {
-
-struct delayed_selected_item_definition {
-    static constexpr bool uses_timed_scheduling = true;
-
-    bg::State<int> step;
-    bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output;
-
-    void start(bg::EvaluationContext *context) const {
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate(bg::EvaluationContext *context) const {
-        if (*step == 0) {
-            output[3].set(30);
-        } else if (*step == 1) {
-            output.erase(3);
-        } else {
-            output[3].set(31);
-        }
-
-        if (*step != 2) {
-            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-        }
-        ++*step;
-    }
-};
-
-} // namespace
 
 TEST_CASE("a node observes dictionary item addition, removal, and restoration",
           "[evaluation][tsd][feature:getitem][series:tsd][scalar:integer][binding:direct][transition:addition]"
           "[transition:removal][transition:resurrection]") {
-    const auto source = bg::node<delayed_selected_item_definition>();
     const auto select = bg::node([](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input, bg::Out<bg::TS<bg::i64>> output) {
         if (input.contains(3)) {
             output.set(*input[3]);
@@ -555,9 +489,9 @@ TEST_CASE("a node observes dictionary item addition, removal, and restoration",
             output.invalidate();
         }
     });
-    const auto graph = [&] { return select(source()); };
+    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { return select(input); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {literal::SKIP, {{3, 30}}, {{3, literal::REMOVE}}, {{3, 31}}});
 
     CHECK(actual.equals({std::nullopt, 30, std::nullopt, 31}));
 }
@@ -565,32 +499,17 @@ TEST_CASE("a node observes dictionary item addition, removal, and restoration",
 TEST_CASE("a node can publish a contained dictionary reference",
           "[evaluation][tsd][reference][feature:getitem][series:tsd][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value][transition:update]") {
-    const auto source = bg::node<dict_source_definition>();
     const auto rekey = bg::node<reference_dictionary_rekey_definition>();
     const auto select = bg::node([](bg::In<bg::TSD<std::int64_t, bg::REF<bg::TS<bg::i64>>>> input,
                                     bg::Out<bg::REF<bg::TS<bg::i64>>> output) { output.copy(input[10]); });
-    const auto graph = [&] { return select(rekey(source())); };
+    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { return select(rekey(input)); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
-    CHECK(actual.equals({10, 11}));
+    CHECK(actual.equals({10, 11, std::nullopt}));
 }
 
 namespace {
-
-struct list_dictionary_source_definition {
-    static constexpr bool uses_timed_scheduling = true;
-
-    bg::Out<bg::TSD<std::int64_t, bg::TSL<bg::TS<bg::i64>, 2>>> output;
-
-    void start(bg::EvaluationContext *context) const {
-        output[1][0].set(10);
-        output[1][1].set(20);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate() const { output[1][0].set(11); }
-};
 
 struct selected_list_sum_definition {
     bg::In<bg::TSL<bg::TS<bg::i64>, 2>> input;
@@ -604,7 +523,6 @@ struct selected_list_sum_definition {
 TEST_CASE("a node can read a collection-valued dictionary item",
           "[evaluation][tsd][tsl][feature:getitem][series:tsd][series:fixed-tsl][scalar:integer]"
           "[binding:direct][transition:update]") {
-    const auto source = bg::node<list_dictionary_source_definition>();
     const auto sum = bg::node<selected_list_sum_definition>();
     const auto select = bg::node(
         [](bg::In<bg::TSD<std::int64_t, bg::TSL<bg::TS<bg::i64>, 2>>> input, bg::Out<bg::TSL<bg::TS<bg::i64>, 2>> output) {
@@ -612,39 +530,28 @@ TEST_CASE("a node can read a collection-valued dictionary item",
             output[0].set(*item[0]);
             output[1].set(*item[1]);
         });
-    const auto graph = [&] { return sum(select(source())); };
+    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TSL<bg::TS<bg::i64>, 2>>> input) {
+        return sum(select(input));
+    };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(
+        graph, {{{1, {{0, 10}, {1, 20}}}}, {{1, {{0, 11}}}}});
 
     CHECK(actual.equals({30, 31}));
 }
 
-namespace {
-
-struct two_item_dictionary_definition {
-    bg::In<bg::TS<bg::i64>> input;
-    bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output;
-
-    void evaluate() const {
-        output[1].set(*input);
-        output[2].set(*input * 10);
-    }
-};
-
-} // namespace
-
 TEST_CASE("a node can select a dictionary item using a time series key",
           "[evaluation][tsd][feature:getitem][series:tsd][series:value][scalar:integer]"
           "[binding:direct][transition:update]") {
-    const auto dictionary = bg::node<two_item_dictionary_definition>();
     const auto select = bg::node([](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input, bg::In<bg::TS<std::int64_t>> key,
                                     bg::Out<bg::TS<bg::i64>> output) { output.set(*input[*key]); });
 
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input, bg::wp<bg::TS<std::int64_t>> key) {
-        return select(dictionary(input), key);
+    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input, bg::wp<bg::TS<std::int64_t>> key) {
+        return select(input, key);
     };
 
-    const auto actual = bg::testing::test_graph(graph, std::array{10, 11, 12}, std::array<std::int64_t, 3>{1, 2, 1});
+    const auto actual = bg::testing::test_graph(
+        graph, {{{1, 10}, {2, 100}}, {{1, 11}, {2, 110}}, {{1, 12}, {2, 120}}}, {1, 2, 1});
     CHECK(actual.equals({10, 110, 12}));
 }
 
@@ -681,26 +588,16 @@ TEST_CASE("a node observes same-cycle dictionary item resurrection",
     CHECK(actual.equals({30, 31}));
 }
 
-namespace {
-
-struct nested_dict_source_definition {
-    bg::Out<bg::TSD<std::int64_t, bg::TSD<std::int64_t, bg::TS<bg::i64>>>> output;
-
-    void start() const { output[1][2].set(12); }
-    void evaluate() const {}
-};
-
-} // namespace
-
 TEST_CASE("time series dictionaries can contain time series dictionaries",
           "[evaluation][tsd][series:tsd][feature:collection-change][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct]") {
-    const auto source = bg::node<nested_dict_source_definition>();
     const auto select = bg::node([](bg::In<bg::TSD<std::int64_t, bg::TSD<std::int64_t, bg::TS<bg::i64>>>> input,
                                     bg::Out<bg::TS<bg::i64>> output) { output.set(*input[1][2]); });
-    const auto graph = [&] { return select(source()); };
+    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TSD<std::int64_t, bg::TS<bg::i64>>>> input) {
+        return select(input);
+    };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {{{1, {{2, 12}}}}});
 
     CHECK(actual.equals({12}));
 }
@@ -709,12 +606,6 @@ namespace {
 
 template <template <typename, auto...> typename Field> struct DictionaryBundle {
     Field<bg::TS<bg::i64>> value;
-};
-
-struct bundle_dict_source_definition {
-    bg::Out<bg::TSD<std::int64_t, bg::TSB<DictionaryBundle>>> output;
-
-    void start() const { output[1]->value.set(12); }
 };
 
 struct bundle_dict_value_definition {
@@ -729,11 +620,10 @@ struct bundle_dict_value_definition {
 TEST_CASE("time series dictionaries can contain runtime-sized time series",
           "[evaluation][tsd][series:tsd][tsb][series:tsb][feature:collection-change][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct][schema:named]") {
-    const auto source = bg::node<bundle_dict_source_definition>();
     const auto extract = bg::node<bundle_dict_value_definition>();
-    const auto graph = [&] { return extract(source()); };
+    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TSB<DictionaryBundle>>> input) { return extract(input); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {{{1, {{"value", 12}}}}});
 
     CHECK(actual.equals({12}));
 }
@@ -866,56 +756,22 @@ struct generic_dict_copy_definition {
     }
 };
 
-struct one_item_dict_source_definition {
-    bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output;
-
-    void start() const { output[1].set(10); }
-    void evaluate() const {}
-};
-
 } // namespace
 
 TEST_CASE("a generic dictionary view uses its resolved item type",
           "[evaluation][tsd][series:tsd][generic][declaration:generic][feature:collection-change]"
           "[scalar:integer][representation:native][binding:direct]") {
-    const auto source = bg::node<one_item_dict_source_definition>();
     const auto copy = bg::node<generic_dict_copy_definition>();
     const auto select = bg::node([](bg::In<bg::TSD<std::int64_t, bg::TS<bg::SCALAR>>> input,
                                     bg::Out<bg::TS<bg::SCALAR>> output) { output.set_value(input[1].value_view()); });
-    const auto graph = [&] { return select(copy(source())); };
+    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { return select(copy(input)); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {{{1, 10}}});
 
     CHECK(actual.equals<bg::i64>({10}));
 }
 
 namespace {
-
-struct empty_dict_source_definition {
-    static constexpr bool uses_timed_scheduling = true;
-
-    bg::State<int> step;
-    bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output;
-
-    void start(bg::EvaluationContext *context) const {
-        output.clear();
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate(bg::EvaluationContext *context) const {
-        if (*step == 0) {
-            output[1].set(10);
-            output[2].set(20);
-        } else {
-            output.clear();
-        }
-
-        if (*step != 2) {
-            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-        }
-        ++*step;
-    }
-};
 
 struct optional_dict_sink_definition {
     bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>, bg::optional> input;
@@ -944,14 +800,16 @@ struct optional_dict_sink_definition {
 TEST_CASE("a dictionary becomes valid on its first empty tick and remains valid",
           "[evaluation][tsd][series:tsd][validity][feature:collection-change][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct][transition:first-tick]") {
-    const auto source = bg::node<empty_dict_source_definition>();
     const auto dict_sink = bg::node<optional_dict_sink_definition>();
     optional_dict_sink_definition::validity.clear();
     optional_dict_sink_definition::sizes.clear();
     optional_dict_sink_definition::added.clear();
     optional_dict_sink_definition::removed.clear();
 
-    bg::run_graph([&] { dict_sink(source()); });
+    using namespace bg::literals;
+    const auto graph = bg::graph("name"_n = "empty_dictionary_input",
+                                 [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { dict_sink(input); });
+    (void)bg::testing::test_graph(graph, {{}, {{1, 10}, {2, 20}}, {{1, literal::REMOVE}, {2, literal::REMOVE}}});
 
     CHECK(optional_dict_sink_definition::validity == std::vector{true, true, true});
     CHECK(optional_dict_sink_definition::sizes == std::vector<std::size_t>{0, 2, 0});
@@ -1030,11 +888,13 @@ struct dictionary_enumeration_sink_definition {
 TEST_CASE("dictionary enumeration exposes keys, ids, values, and their associations",
           "[evaluation][series:tsd][feature:time-series-view][feature:collection-change]"
           "[scalar:integer][binding:direct]") {
-    const auto source = bg::node<dict_source_definition>();
+    using namespace bg::literals;
     const auto sink = bg::node<dictionary_enumeration_sink_definition>();
     dictionary_enumeration_sink_definition::snapshots.clear();
 
-    bg::run_graph([&] { sink(source()); });
+    const auto graph = bg::graph("name"_n = "dictionary_enumeration_input",
+                                 [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { sink(input); });
+    (void)bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
     REQUIRE(dictionary_enumeration_sink_definition::snapshots.size() == 3);
     auto first = dictionary_enumeration_sink_definition::snapshots.front();
@@ -1083,19 +943,6 @@ TEST_CASE("an invalid dictionary input has no entries to enumerate",
 
 namespace {
 
-struct exact_int_dictionary_source_definition {
-    static constexpr bool uses_timed_scheduling = true;
-
-    bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output;
-
-    void start(bg::EvaluationContext *context) const {
-        output[7].set(70);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate() const { output.erase(7); }
-};
-
 struct exact_int_dictionary_read_definition {
     bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input;
     bg::Out<bg::TS<bg::i64>> output;
@@ -1108,18 +955,16 @@ struct exact_int_dictionary_read_definition {
 TEST_CASE("a dictionary view accepts its exact non-canonical key type",
           "[evaluation][series:tsd][feature:time-series-view][feature:collection-change]"
           "[scalar:integer][transition:addition][transition:removal][binding:direct]") {
-    const auto source = bg::node<exact_int_dictionary_source_definition>();
     const auto read = bg::node<exact_int_dictionary_read_definition>();
-    const auto graph = [&] { return read(source()); };
+    const auto graph = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) { return read(input); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {{{7, 70}}, {{7, literal::REMOVE}}});
 
     CHECK(actual.equals({70, -1}));
 }
 
 TEST_CASE("a dictionary input accepts its exact non-canonical key type",
           "[evaluation][feature:getitem][series:tsd][scalar:integer][binding:direct]") {
-    const auto source = bg::node<exact_int_dictionary_source_definition>();
     const auto select = bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input, bg::Out<bg::TS<bg::i64>> output) {
         if (input.contains(7)) {
             output.set(*input[7]);
@@ -1127,9 +972,9 @@ TEST_CASE("a dictionary input accepts its exact non-canonical key type",
             output.invalidate();
         }
     });
-    const auto graph = [&] { return select(source()); };
+    const auto graph = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) { return select(input); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {{{7, 70}}, {{7, literal::REMOVE}}});
 
     CHECK(actual.equals({70, std::nullopt}));
 }

@@ -363,17 +363,6 @@ TEST_CASE("a generic output copies time series set snapshots and changes",
 TEST_CASE("copy_tick copies a reference-bound time series set",
           "[feature:node-api][feature:sampling][series:tss][binding:reference-to-value]"
           "[transition:addition][transition:removal]") {
-    const auto source = node([](In<TS<i64>> cycle, Out<TSS<i64>> output) {
-        if (*cycle == 0) {
-            output.insert(1);
-            output.insert(2);
-        } else if (*cycle == 1) {
-            output.erase(2);
-            output.insert(3);
-        } else {
-            output.erase(3);
-        }
-    });
     const auto preserve_reference = node([](In<REF<TSS<i64>>> input, Out<REF<TSS<i64>>> output) {
         output.copy(input);
     });
@@ -383,11 +372,11 @@ TEST_CASE("copy_tick copies a reference-bound time series set",
                                 3 * static_cast<int>(input.contains(3));
         output.set(static_cast<i64>(input.size() * 10 + membership));
     });
-    const auto graph = [&](wp<TS<i64>> cycle) {
-        return summary(copy(preserve_reference(source(cycle))));
+    const auto graph = [&](wp<TSS<i64>> input) {
+        return summary(copy(preserve_reference(input)));
     };
 
-    const auto actual = testing::test_graph(graph, std::array{0, 1, 2});
+    const auto actual = testing::test_graph(graph, {{1, 2}, {literal::REMOVED(2), 3}, {literal::REMOVED(3)}});
 
     CHECK(actual.equals({23, 24, 11}));
 }
@@ -396,13 +385,6 @@ TEST_CASE("collection copies remove items when a reference selects an invalid TS
           "[feature:node-api][feature:test-graph][feature:sampling][series:tss]"
           "[binding:reference-to-value][transition:invalidation][transition:revalidation]"
           "[transition:removal][transition:addition]") {
-    const auto make_set = node([](In<TS<i64>> cycle, Out<TSS<i64>> output) {
-        if (*cycle == 0) {
-            output.insert(1);
-            output.insert(2);
-        }
-    });
-    const auto invalid_set = node([](Out<TSS<i64>>) {});
     const auto select = node([](In<TS<i64>> cycle, In<REF<TSS<i64>>, passive> populated,
                                 In<REF<TSS<i64>>, passive> invalid, Out<REF<TSS<i64>>> output) {
         output.copy(*cycle == 1 ? invalid : populated);
@@ -441,12 +423,13 @@ TEST_CASE("collection copies remove items when a reference selects an invalid TS
         output.set(tick_members + 10 * full_members + 100 * generic_tick_members +
                    1000 * generic_full_members + 10000 * reports_removals);
     });
-    const auto graph = [&](wp<TS<i64>> cycle) {
-        const auto selected = select(cycle, make_set(cycle), invalid_set());
+    const auto graph = [&](wp<TS<i64>> cycle, wp<TSS<i64>> populated, wp<TSS<i64>> invalid) {
+        const auto selected = select(cycle, populated, invalid);
         return inspect(copy_tick(selected), copy(selected), generic_copy_tick(selected), generic_copy(selected));
     };
 
-    const auto actual = testing::test_graph(graph, std::array{0, 1, 2});
+    const auto actual = testing::test_graph(graph, {0, 1, 2}, {{1, 2}, literal::SKIP, literal::SKIP},
+                                            {});
 
     CHECK(actual.equals({3342, 10009, 3342}));
 }
@@ -455,13 +438,6 @@ TEST_CASE("generic collection copy_tick removes nested items from an invalid TSD
           "[feature:node-api][feature:test-graph][feature:sampling][series:tsd][series:generic]"
           "[binding:reference-to-value][shape:nested][transition:invalidation]"
           "[transition:revalidation][transition:removal][transition:addition]") {
-    const auto make_dictionary = node([](In<TS<i64>> cycle, Out<TSD<i64, TSD<i64, TS<i64>>>> output) {
-        if (*cycle == 0) {
-            output[1][10].set(10);
-            output[1][11].set(20);
-        }
-    });
-    const auto invalid_dictionary = node([](Out<TSD<i64, TSD<i64, TS<i64>>>>) {});
     const auto select = node([](In<TS<i64>> cycle, In<REF<TSD<i64, TSD<i64, TS<i64>>>>, passive> populated,
                                 In<REF<TSD<i64, TSD<i64, TS<i64>>>>, passive> invalid,
                                 Out<REF<TSD<i64, TSD<i64, TS<i64>>>>> output) {
@@ -492,12 +468,14 @@ TEST_CASE("generic collection copy_tick removes nested items from an invalid TSD
             full_copy.find_removed_id(Scalar<i64>::from(removed_key)) != util::occupancy_index::npos;
         output.set(value(tick_copy) + 10 * value(full_copy) + 1000 * reports_removal);
     });
-    const auto graph = [&](wp<TS<i64>> cycle) {
-        const auto selected = select(cycle, make_dictionary(cycle), invalid_dictionary());
+    const auto graph = [&](wp<TS<i64>> cycle, wp<TSD<i64, TSD<i64, TS<i64>>>> populated,
+                           wp<TSD<i64, TSD<i64, TS<i64>>>> invalid) {
+        const auto selected = select(cycle, populated, invalid);
         return inspect(copy_tick(selected), copy(selected));
     };
 
-    const auto actual = testing::test_graph(graph, std::array{0, 1, 2});
+    const auto actual = testing::test_graph(graph, {0, 1, 2},
+                                            {{{1, {{10, 10}, {11, 20}}}}, literal::SKIP, literal::SKIP}, {});
 
     CHECK(actual.equals({1650, 1000, 1650}));
 }
@@ -505,13 +483,6 @@ TEST_CASE("generic collection copy_tick removes nested items from an invalid TSD
 TEST_CASE("copy_tick does not reconstruct TSS changes missed in an earlier cycle",
           "[feature:node-api][feature:test-graph][series:tss][activity:passive]"
           "[transition:addition][transition:update]") {
-    const auto make_set = node([](In<TS<i64>> cycle, Out<TSS<i64>> output) {
-        if (*cycle == 0) {
-            output.insert(1);
-        } else if (*cycle == 1) {
-            output.insert(2);
-        }
-    });
     const auto copy_tick = node([](In<TSS<i64>, passive, optional> input, In<TS<i64>> trigger,
                                    Out<TSS<i64>> output) {
         static_cast<void>(trigger);
@@ -523,12 +494,10 @@ TEST_CASE("copy_tick does not reconstruct TSS changes missed in an earlier cycle
         input.for_each([&](const auto &item) { value += *item; });
         output.set(value);
     });
-    const auto graph = [&](wp<TS<i64>> cycle, wp<TS<i64>> trigger) {
-        return sum(copy_tick(make_set(cycle), trigger), trigger);
+    const auto graph = [&](wp<TSS<i64>> input, wp<TS<i64>> trigger) {
+        return sum(copy_tick(input, trigger), trigger);
     };
-    const auto trigger = std::array<std::optional<i64>, 3>{1, std::nullopt, 2};
-
-    const auto actual = testing::test_graph(graph, std::array{0, 1, 2}, trigger);
+    const auto actual = testing::test_graph(graph, {{1}, {2}, literal::SKIP}, {1, literal::SKIP, 2});
 
     CHECK(actual.equals({1, std::nullopt, 1}));
 }
@@ -565,16 +534,6 @@ TEST_CASE("copy and copy_tick leave initially invalid collection outputs invalid
 TEST_CASE("copy copies a reference-bound time series dictionary",
           "[feature:node-api][feature:sampling][series:tsd][binding:reference-to-value]"
           "[transition:update][transition:removal]") {
-    const auto source = node([](In<TS<i64>> cycle, Out<TSD<i64, TS<i64>>> output) {
-        output[1].set(*cycle + 10);
-        if (*cycle == 0) {
-            output[2].set(20);
-        } else if (*cycle == 1) {
-            output.erase(2);
-        } else {
-            output[3].set(30);
-        }
-    });
     const auto preserve_reference = node([](In<REF<TSD<i64, TS<i64>>>> input,
                                             Out<REF<TSD<i64, TS<i64>>>> output) { output.copy(input); });
     const auto copy = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
@@ -586,9 +545,10 @@ TEST_CASE("copy copies a reference-bound time series dictionary",
         const auto third = input.contains(3) ? *input[3] : 0;
         output.set(static_cast<i64>(input.size() * 100) + first * 10 + second + third);
     });
-    const auto graph = [&](wp<TS<i64>> cycle) { return summary(copy(preserve_reference(source(cycle)))); };
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return summary(copy(preserve_reference(input))); };
 
-    const auto actual = testing::test_graph(graph, std::array{0, 1, 2});
+    const auto actual = testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}, {2, literal::REMOVE}},
+                                                    {{1, 12}, {3, 30}}});
 
     CHECK(actual.equals({320, 210, 350}));
 }
@@ -615,20 +575,13 @@ TEST_CASE("copy uses the valid_items view of a dictionary input",
 TEST_CASE("copy_tick publishes an initially empty time series set",
           "[feature:node-api][feature:test-graph][series:tss][transition:first-tick]"
           "[transition:addition]") {
-    const auto source = node([](In<TS<i64>> cycle, Out<TSS<i64>> output) {
-        if (*cycle == 0) {
-            output.clear();
-            return;
-        }
-        output.insert(*cycle);
-    });
     const auto copy = node([](In<TSS<i64>> input, Out<TSS<i64>> output) { output.copy_tick(input); });
     const auto size = node([](In<TSS<i64>> input, Out<TS<i64>> output) {
         output.set(static_cast<i64>(input.size()));
     });
-    const auto graph = [&](wp<TS<i64>> cycle) { return size(copy(source(cycle))); };
+    const auto graph = [&](wp<TSS<i64>> input) { return size(copy(input)); };
 
-    const auto actual = testing::test_graph(graph, std::array{0, 1});
+    const auto actual = testing::test_graph(graph, {{}, {1}});
 
     CHECK(actual.equals({0, 1}));
 }
@@ -636,14 +589,6 @@ TEST_CASE("copy_tick publishes an initially empty time series set",
 TEST_CASE("a nested dictionary copy reconciles nested item changes",
           "[feature:node-api][feature:test-graph][series:tsd][shape:nested]"
           "[transition:update][transition:removal]") {
-    const auto source = node([](In<TS<i64>> cycle, Out<TSD<i64, TSD<i64, TS<i64>>>> output) {
-        output[1][10].set(*cycle);
-        if (*cycle == 2) {
-            output[1].erase(11);
-        } else {
-            output[1][11].set(*cycle + 10);
-        }
-    });
     const auto copy = node([](In<TSD<i64, TSD<i64, TS<i64>>>> input,
                               Out<TSD<i64, TSD<i64, TS<i64>>>> output) {
         output.copy(input);
@@ -653,9 +598,10 @@ TEST_CASE("a nested dictionary copy reconciles nested item changes",
         const auto second = nested.contains(11) ? *nested[11] : 0;
         output.set(static_cast<i64>(nested.size() * 100) + *nested[10] + second);
     });
-    const auto graph = [&](wp<TS<i64>> cycle) { return summarize(copy(source(cycle))); };
+    const auto graph = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> input) { return summarize(copy(input)); };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2});
+    const auto actual = testing::test_graph(
+        graph, {{{1, {{10, 1}, {11, 11}}}}, {{1, {{10, 2}, {11, literal::REMOVE}}}}});
 
     CHECK(actual.equals({212, 102}));
 }
@@ -663,14 +609,6 @@ TEST_CASE("a nested dictionary copy reconciles nested item changes",
 TEST_CASE("copy_tick forwards a nested dictionary delta to its changed leaves",
           "[feature:node-api][feature:test-graph][series:tsd][shape:nested]"
           "[transition:update][transition:removal]") {
-    const auto source = node([](In<TS<i64>> cycle, Out<TSD<i64, TSD<i64, TS<i64>>>> output) {
-        output[1][10].set(*cycle);
-        if (*cycle == 1) {
-            output[1][11].set(11);
-        } else if (*cycle == 3) {
-            output[1].erase(11);
-        }
-    });
     const auto copy = node([](In<TSD<i64, TSD<i64, TS<i64>>>> input,
                               Out<TSD<i64, TSD<i64, TS<i64>>>> output) {
         output.copy_tick(input);
@@ -690,12 +628,12 @@ TEST_CASE("copy_tick forwards a nested dictionary delta to its changed leaves",
                                    Out<TSD<i64, TSD<i64, TS<i64>>>> output) {
         output.copy(input);
     });
-    const auto graph = [&](wp<TS<i64>> cycle) {
-        const auto nested = source(cycle);
-        return summary(full_copy(nested), copy(nested));
+    const auto graph = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> input) {
+        return summary(full_copy(input), copy(input));
     };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2, 3});
+    const auto actual = testing::test_graph(
+        graph, {{{1, {{10, 1}, {11, 11}}}}, {{1, {{10, 2}}}}, {{1, {{10, 3}, {11, literal::REMOVE}}}}});
 
     CHECK(actual.equals({1, 1, 1}));
 }

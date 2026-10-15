@@ -104,7 +104,7 @@ TEST_CASE("fixed TSL getitem follows selected item invalidation and revalidation
         return input[index].as<TS<i64>>();
     };
     const auto actual = testing::test_graph(
-        graph, {{{0, 1}, {1, 10}}, {{0, literal::INVALID}, {1, 20}}, {{0, 2}, {1, 30}}},
+        graph, {{{0, 1}, {1, 10}}, {{0, literal::INVALID}, {1, -10}}, {{0, 2}, {1, 20}}},
         {0, literal::SKIP, literal::SKIP});
 
     CHECK(actual.equals<bg::i64>({1, std::nullopt, 2}));

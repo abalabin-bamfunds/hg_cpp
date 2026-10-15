@@ -328,10 +328,6 @@ TEST_CASE("invalidating a list invalidates its items",
     CHECK(revalidation_list_sink_definition::updated_item_counts == std::vector<std::size_t>{1, 0, 1});
 }
 
-namespace {
-
-} // namespace
-
 TEST_CASE("a list remains valid while one item remains valid",
           "[evaluation][tsl][series:fixed-tsl][validity][feature:collection-change][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct]") {
@@ -382,10 +378,6 @@ TEST_CASE("required-input invalidation invalidates list items",
 
     CHECK(actual.equals({10, std::nullopt}));
 }
-
-namespace {
-
-} // namespace
 
 TEST_CASE("nested list invalidation and revalidation propagate through each level",
           "[evaluation][tsl][series:fixed-tsl][validity][feature:collection-change]"

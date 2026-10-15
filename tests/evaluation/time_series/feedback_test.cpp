@@ -222,7 +222,7 @@ TEST_CASE("feedback samples switched dictionary references before retaining thei
     };
 
     const auto actual = bg::testing::test_graph(
-        graph, {false, true}, {{{1, 10}}, literal::SKIP}, {{{2, 20}}, literal::SKIP});
+        graph, {false, true}, {{{1, 10}}, {{1, 10}}}, {{{2, 20}}, {{2, 20}}});
     CHECK(actual.equals({std::nullopt, 100, 201}));
 }
 
