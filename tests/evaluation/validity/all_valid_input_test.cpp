@@ -40,41 +40,6 @@ struct NestedValidityDerivedBundle : bundle_extends<NestedValidityBaseBundle, Fi
     Field<i64> extra;
 };
 
-struct validity_derived_bundle_source {
-    i64 value;
-    Out<TSB<ValidityDerivedBundle>> output;
-
-    void start() const { output->value.set(value); }
-};
-
-struct changing_derived_bundle_source {
-    static constexpr bool uses_timed_scheduling = true;
-
-    State<int> step;
-    Out<TSB<ValidityDerivedBundle>> output;
-
-    void start(EvaluationContext *context) const {
-        output->value.set(1);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate(EvaluationContext *context) const {
-        if ((*step)++ == 0) {
-            output->value.invalidate();
-            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-            return;
-        }
-
-        output->value.set(2);
-    }
-};
-
-struct nested_derived_bundle_source {
-    Out<TSB<NestedValidityDerivedBundle>> output;
-
-    void start() const { output->nested->value.set(10); }
-};
-
 struct validity_bundle_reference_selector {
     In<TS<i64>> condition;
     In<REF<TSB<ValidityDerivedBundle>>, passive, optional> left;
@@ -86,44 +51,6 @@ struct validity_bundle_reference_selector {
             output.copy(left);
         } else {
             output.copy(right);
-        }
-    }
-};
-
-struct optional_field_bundle_source {
-    static constexpr bool uses_timed_scheduling = true;
-
-    Out<TSB<OptionalFieldBundle>> output;
-
-    void start(EvaluationContext *context) const {
-        output->first.set(1);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate() const { output->second.set(2); }
-};
-
-struct partially_valid_list_source {
-    static constexpr bool uses_timed_scheduling = true;
-
-    State<int> step;
-    Out<TSL<TS<i64>, 2>> output;
-
-    void start(EvaluationContext *context) const {
-        output[0].set(1);
-        output[1].set(10);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate(EvaluationContext *context) const {
-        if (*step == 0) {
-            output[1].invalidate();
-        } else {
-            output[1].set(12);
-        }
-
-        if ((*step)++ == 0) {
-            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
         }
     }
 };
@@ -150,48 +77,20 @@ struct invalidating_leaf_source {
     }
 };
 
-struct partially_valid_dictionary_source {
-    static constexpr bool uses_timed_scheduling = true;
-
-    State<int> step;
-    Out<TSD<i64, TS<i64>>> output;
-
-    void start(EvaluationContext *context) const {
-        output[1].set(10);
-        output[2].set(20);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate(EvaluationContext *context) const {
-        if (*step == 0) {
-            output[1].invalidate();
-        } else if (*step == 1) {
-            output.erase(1);
-        } else {
-            output.erase(2);
-        }
-
-        if (++*step != 3) {
-            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-        }
-    }
-};
-
 } // namespace
 
 TEST_CASE("all_valid checks every item in a fixed list",
           "[evaluation][validity][feature:validity][validity:all-valid][series:fixed-tsl][feature:collection-change]"
           "[transition:invalidation][transition:revalidation]") {
-    const auto source = node<partially_valid_list_source>();
     const auto sum = node([](In<TSL<TS<i64>, 2>, all_valid> input, Out<TS<i64>> output) {
         output.set(*input[0] + *input[1]);
     });
     const auto observe = node([](In<TS<i64>, optional> input, Out<TS<i64>> output) {
         output.set(input.valid() ? input.value() : i64{-1});
     });
-    const auto graph = [&] { return observe(sum(source())); };
+    const auto graph = [&](wp<TSL<TS<i64>, 2>> input) { return observe(sum(input)); };
 
-    const auto actual = testing::test_graph(graph);
+    const auto actual = testing::test_graph(graph, {{{0, 1}, {1, 10}}, {{1, literal::INVALID}}, {{1, 12}}});
 
     CHECK(actual.equals({11, -1, 13}));
 }
@@ -199,16 +98,6 @@ TEST_CASE("all_valid checks every item in a fixed list",
 TEST_CASE("all_valid rejects an unpopulated fixed-list position",
           "[evaluation][validity][feature:validity][validity:all-valid][series:fixed-tsl]"
           "[feature:collection-change]") {
-    struct partially_valid_fixed_list_source {
-        Out<TSL<TS<i64>, 3>> output;
-
-        void start() const {
-            output[0].set(10);
-            output[2].set(20);
-        }
-    };
-
-    const auto source = node<partially_valid_fixed_list_source>();
     const auto query = node([](In<TSL<TS<i64>, 3>> input, Out<TS<bool>> output) { output.set(input.all_valid()); });
     const auto gate = node([](In<TSL<TS<i64>, 3>, all_valid> input, Out<TS<i64>> output) {
         output.set(*input[0] + *input[2]);
@@ -216,40 +105,31 @@ TEST_CASE("all_valid rejects an unpopulated fixed-list position",
     const auto report = node([](In<TS<bool>> query, In<TS<i64>, optional> gate, Out<TS<i64>> output) {
         output.set((query.value() ? 2 : 0) + (gate.valid() ? 1 : 0));
     });
-    const auto graph = [&] {
-        const auto input = source();
+    const auto graph = [&](wp<TSL<TS<i64>, 3>> input) {
         return report(query(input), gate(input));
     };
 
-    CHECK(testing::test_graph(graph).equals({0}));
+    CHECK(testing::test_graph(graph, {{{0, 10}, {2, 20}}}).equals({0}));
 }
 
 TEST_CASE("an erased all_valid input uses the resolved runtime type",
           "[evaluation][validity][feature:validity][validity:all-valid][declaration:generic]"
           "[series:fixed-tsl][transition:invalidation][transition:revalidation]") {
-    const auto source = node<partially_valid_list_source>();
     const auto query = node([](In<TS_T> input, Out<TS<bool>> output) { output.set(input.all_valid()); });
     const auto gate = node([](In<TS_T, all_valid>, Out<TS<i64>> output) { output.set(1); });
     const auto report = node([](In<TS<bool>> query, In<TS<i64>, optional> gate, Out<TS<i64>> output) {
         output.set((query.value() ? 2 : 0) + (gate.valid() ? 1 : 0));
     });
-    const auto graph = [&] {
-        const auto input = source();
+    const auto graph = [&](wp<TSL<TS<i64>, 2>> input) {
         return report(query(input), gate(input));
     };
 
-    CHECK(testing::test_graph(graph).equals({3, 0, 3}));
+    CHECK(testing::test_graph(graph, {{{0, 1}, {1, 10}}, {{1, literal::INVALID}}, {{1, 12}}})
+              .equals({3, 0, 3}));
 }
 
 TEST_CASE("all_valid treats a valid empty set as valid",
           "[evaluation][validity][feature:validity][validity:all-valid][series:tss][transition:start]") {
-    struct empty_set_source {
-        Out<TSS<i64>> output;
-
-        void start() const { output.clear(); }
-    };
-
-    const auto source = node<empty_set_source>();
     const auto query = node([](In<TSS<i64>> input, Out<TS<bool>> output) { output.set(input.all_valid()); });
     const auto gate = node([](In<TSS<i64>, all_valid> input, Out<TS<i64>> output) {
         output.set(static_cast<i64>(input.size()));
@@ -257,23 +137,21 @@ TEST_CASE("all_valid treats a valid empty set as valid",
     const auto report = node([](In<TS<bool>> query, In<TS<i64>, optional> gate, Out<TS<i64>> output) {
         output.set((query.value() ? 2 : 0) + (gate.valid() ? 1 : 0));
     });
-    const auto graph = [&] {
-        const auto input = source();
+    const auto graph = [&](wp<TSS<i64>> input) {
         return report(query(input), gate(input));
     };
 
-    CHECK(testing::test_graph(graph).equals({3}));
+    CHECK(testing::test_graph(graph, {{}}).equals({3}));
 }
 
 TEST_CASE("all_valid reports an invalid root even when the collection has no data",
           "[evaluation][validity][feature:validity][validity:all-valid][series:fixed-tsl][transition:start]") {
-    const auto source = node([](Out<TSL<TS<i64>, 2>>) {});
     const auto query = node(
         eval = [](In<TSL<TS<i64>, 2>, optional> input, Out<TS<bool>> output) { output.set(input.all_valid()); },
         schedule_on_start = true);
-    const auto graph = [&] { return query(source()); };
+    const auto graph = [&](wp<TSL<TS<i64>, 2>> input) { return query(input); };
 
-    CHECK(testing::test_graph(graph).equals({false}));
+    CHECK(testing::test_graph(graph, {}).equals({false}));
 }
 
 TEST_CASE("all_valid on an empty input view rejects invalid roots without runtime data",
@@ -301,14 +179,14 @@ TEST_CASE("aggregate all_valid inputs gate evaluation until every list item is v
         void evaluate() const { output.set(*input[0] + *input[1]); }
     };
 
-    const auto source = node<partially_valid_list_source>();
     const auto sum = node<sum_valid_list>();
     const auto observe = node([](In<TS<i64>, optional> input, Out<TS<i64>> output) {
         output.set(input.valid() ? input.value() : i64{-1});
     });
-    const auto graph = [&] { return observe(sum(source())); };
+    const auto graph = [&](wp<TSL<TS<i64>, 2>> input) { return observe(sum(input)); };
 
-    CHECK(testing::test_graph(graph).equals({11, -1, 13}));
+    CHECK(testing::test_graph(graph, {{{0, 1}, {1, 10}}, {{1, literal::INVALID}}, {{1, 12}}})
+              .equals({11, -1, 13}));
 }
 
 TEST_CASE("free TSL queries and enforces immediate item validity",
@@ -336,13 +214,13 @@ TEST_CASE("all_valid includes optional fields in a bundle",
           "[evaluation][validity][feature:validity][validity:all-valid][series:tsb][schema:named]"
           "[feature:collection-change]"
           "[transition:first-tick][transition:revalidation]") {
-    const auto source = node<optional_field_bundle_source>();
     const auto sum = node([](In<TSB<OptionalFieldBundle>, all_valid> input, Out<TS<i64>> output) {
         output.set(*input->first + *input->second);
     });
-    const auto graph = [&] { return sum(source()); };
+    const auto graph = [&](wp<TSB<OptionalFieldBundle>> input) { return sum(input); };
 
-    const auto actual = testing::test_graph(graph);
+    const auto actual = testing::test_graph(
+        graph, {{{"first", 1}}, {{"second", 2}}});
 
     CHECK(actual.equals({std::nullopt, 3}));
 }
@@ -372,13 +250,13 @@ TEST_CASE("all_valid uses the declared base schema for native derived bundle sto
           "[evaluation][validity][feature:validity][validity:all-valid][series:tsb][schema:named]"
           "[binding:covariant][representation:native]"
           "[transition:invalidation][transition:revalidation]") {
-    const auto source = node<changing_derived_bundle_source>();
     const auto inspect = node([](In<TSB<ValidityBaseBundle>, all_valid> input, Out<TS<i64>> output) {
         output.set(*input->value);
     });
-    const auto graph = [&] { return inspect(source()); };
+    const auto graph = [&](wp<TSB<ValidityDerivedBundle>> input) { return inspect(input); };
 
-    CHECK(testing::test_graph(graph).equals({1, std::nullopt, 2}));
+    CHECK(testing::test_graph(graph, {{{"value", 1}}, {{"value", literal::INVALID}}, {{"value", 2}}})
+              .equals({1, std::nullopt, 2}));
 }
 
 TEST_CASE("all_valid uses the declared base schema for free derived bundle fields",
@@ -408,20 +286,18 @@ TEST_CASE("all_valid uses the declared base schema for free derived bundle field
 TEST_CASE("all_valid checks nested bundle roots without recursively checking their fields",
           "[evaluation][validity][feature:validity][validity:all-valid][series:tsb][schema:named]"
           "[binding:covariant][representation:native][feature:collection-change]") {
-    const auto source = node<nested_derived_bundle_source>();
     const auto inspect = node([](In<TSB<NestedValidityBaseBundle>, all_valid> input, Out<TS<bool>> output) {
         output.set(input.all_valid() && !input->nested.all_valid());
     });
-    const auto graph = [&] { return inspect(source()); };
+    const auto graph = [&](wp<TSB<NestedValidityDerivedBundle>> input) { return inspect(input); };
 
-    CHECK(testing::test_graph(graph).equals({true}));
+    CHECK(testing::test_graph(graph, {{{"nested", {{"value", 10}}}}}).equals({true}));
 }
 
 TEST_CASE("all_valid follows a selected reference using the declared base schema",
           "[evaluation][validity][feature:validity][validity:all-valid][series:tsb][series:reference]"
           "[schema:named][binding:reference-to-value][representation:covariant]"
           "[transition:invalidation][transition:revalidation]") {
-    const auto first = node<validity_derived_bundle_source>();
     const auto second_value = node<invalidating_leaf_source>();
     const auto second = [&] {
         return bundle<TSB<ValidityDerivedBundle>>("value"_n = second_value(),
@@ -431,29 +307,32 @@ TEST_CASE("all_valid follows a selected reference using the declared base schema
     const auto inspect = node([](In<TSB<ValidityBaseBundle>, all_valid> input, Out<TS<i64>> output) {
         output.set(*input->value);
     });
-    const auto graph = [&](wp<TS<i64>> choose_second) {
-        return inspect(select(choose_second, first(i64{1}).as<REF<TSB<ValidityDerivedBundle>>>(),
+    const auto graph = [&](wp<TS<i64>> choose_second, wp<TSB<ValidityDerivedBundle>> first) {
+        return inspect(select(choose_second, first.as<REF<TSB<ValidityDerivedBundle>>>(),
                               second().as<REF<TSB<ValidityDerivedBundle>>>()));
     };
 
-    CHECK(testing::test_graph(graph, std::array<i64, 3>{0, 1, 1}).equals({1, std::nullopt, 3}));
+    CHECK(testing::test_graph(graph, {0, 1, 1}, {{{"value", 1}}})
+              .equals({1, std::nullopt, 3}));
 }
 
 TEST_CASE("all_valid ignores removed TSD items and accepts an empty live set",
           "[evaluation][validity][feature:validity][validity:all-valid][series:tsd][feature:collection-change]"
           "[transition:invalidation][transition:removal]") {
-    const auto source = node<partially_valid_dictionary_source>();
     const auto sum = node([](In<TS<i64>, all_valid> constant, In<TS<i64>> value, i64 adjustment,
                              In<TSD<i64, TS<i64>>, all_valid> input, Out<TS<i64>> output) {
         auto total = i64{};
         input.for_each_value([&](const auto &item_value) { total += *item_value; });
         output.set(*constant + *value + adjustment + total);
     });
-    const auto graph = [&](wp<TS<i64>> value) {
-        return sum(operators::const_(i64{42}), value, i64{1}, source());
+    const auto graph = [&](wp<TS<i64>> value, wp<TSD<i64, TS<i64>>> input) {
+        return sum(operators::const_(i64{42}), value, i64{1}, input);
     };
 
-    const auto actual = testing::test_graph(graph, std::array<i64, 4>{0, 0, 0, 0});
+    const auto actual = testing::test_graph(graph, {0, 0, 0, 0}, {{{1, 10}, {2, 20}},
+                                                                  {{1, literal::INVALID}},
+                                                                  {{1, literal::REMOVE}},
+                                                                  {{2, literal::REMOVE}}});
 
     CHECK(actual.equals({73, std::nullopt, 63, 43}));
 }
@@ -461,32 +340,17 @@ TEST_CASE("all_valid ignores removed TSD items and accepts an empty live set",
 TEST_CASE("all_valid descriptors stay aligned across collection inputs, constants, and scalars",
           "[evaluation][validity][feature:validity][validity:all-valid][series:fixed-tsl][series:tsd]"
           "[guarantee:const][transition:start]") {
-    struct valid_list_source {
-        Out<TSL<TS<i64>, 2>> output;
-
-        void start() const {
-            output[0].set(10);
-            output[1].set(20);
-        }
-    };
-    struct valid_dictionary_source {
-        Out<TSD<i64, TS<i64>>> output;
-
-        void start() const { output[1].set(30); }
-    };
-
-    const auto list_source = node<valid_list_source>();
-    const auto dictionary_source = node<valid_dictionary_source>();
     const auto sum = node([](In<TS<i64>, all_valid> constant, In<TSL<TS<i64>, 2>, all_valid> list,
                              In<TS<i64>> pulse, i64 adjustment, In<TSD<i64, TS<i64>>, all_valid> dictionary,
                              Out<TS<i64>> output) {
         output.set(*constant + *list[0] + *list[1] + *pulse + adjustment + *dictionary[1]);
     });
-    const auto graph = [&](wp<TS<i64>> pulse) {
-        return sum(operators::const_(i64{42}), list_source(), pulse, i64{2}, dictionary_source());
+    const auto graph = [&](wp<TS<i64>> pulse, wp<TSL<TS<i64>, 2>> list, wp<TSD<i64, TS<i64>>> dictionary) {
+        return sum(operators::const_(i64{42}), list, pulse, i64{2}, dictionary);
     };
 
-    CHECK(testing::test_graph(graph, std::array<i64, 1>{1}).equals({105}));
+    CHECK(testing::test_graph(graph, {1}, {{{0, 10}, {1, 20}}}, {{{1, 30}}})
+              .equals({105}));
 }
 
 TEST_CASE("all_valid accepts a constant leaf time series",
@@ -511,18 +375,15 @@ TEST_CASE("all_valid ignores a retained but missing dictionary key",
           "[evaluation][validity][feature:validity][validity:all-valid][feature:getitem][series:tsd]"
           "[series:reference]"
           "[transition:update]") {
-    const auto make_dictionary = node(
-        [](In<TS<i64>> input, Out<TSD<i64, TS<i64>>> output) { output[1].set(*input); });
     const auto inspect = node([](In<TSD<i64, TS<i64>>, all_valid> dictionary,
                                  In<REF<TS<i64>>, optional> missing, Out<TS<i64>> output) {
         output.set(static_cast<i64>(dictionary.size() * 10) + static_cast<i64>(missing.valid()));
     });
-    const auto graph = [&](wp<TS<i64>> input) {
-        const auto dictionary = make_dictionary(input);
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> dictionary) {
         return inspect(dictionary, dictionary[2]);
     };
 
-    CHECK(testing::test_graph(graph, std::array<i64, 2>{10, 20}).equals({10, 10}));
+    CHECK(testing::test_graph(graph, {{{1, 10}}, {{1, 20}}}).equals({10, 10}));
 }
 
 TEST_CASE("all_valid checks sampled TSD item values as they invalidate and revalidate",
@@ -546,45 +407,9 @@ TEST_CASE("all_valid checks sampled TSD item values as they invalidate and reval
     CHECK(testing::test_graph(graph).equals({true, false, true}));
 }
 
-struct changing_dictionary_source {
-    static constexpr bool uses_timed_scheduling = true;
-
-    State<int> step;
-    Out<TSD<i64, TS<i64>>> output;
-
-    void start(EvaluationContext *context) const {
-        output[1].set(30);
-        output[2].set(40);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
-    }
-
-    void evaluate(EvaluationContext *context) const {
-        if (*step == 0) {
-            output[2].invalidate();
-        } else {
-            output[2].set(42);
-        }
-
-        if ((*step)++ == 0) {
-            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-        }
-    }
-};
-
 TEST_CASE("all_valid checks live items in sampled native dictionaries",
           "[evaluation][validity][feature:validity][validity:all-valid][series:tsd][series:reference]"
           "[feature:sampling][transition:invalidation][transition:revalidation]") {
-    struct valid_dictionary_source {
-        Out<TSD<i64, TS<i64>>> output;
-
-        void start() const {
-            output[1].set(10);
-            output[2].set(20);
-        }
-    };
-
-    const auto first = node<valid_dictionary_source>();
-    const auto second = node<changing_dictionary_source>();
     const auto select = node([](In<TS<i64>> choose_second, In<REF<TSD<i64, TS<i64>>>> first,
                                 In<REF<TSD<i64, TS<i64>>>> second, Out<TSD<i64, REF<TSD<i64, TS<i64>>>>> output) {
         output[0].copy(*choose_second == 0 ? first : second);
@@ -598,76 +423,17 @@ TEST_CASE("all_valid checks live items in sampled native dictionaries",
         const auto value = (inner_is_valid ? i64{1000} : i64{}) + total;
         output.set(value * 10 + static_cast<i64>(inner_is_valid));
     });
-    const auto graph = [&](wp<TS<i64>> selection) {
-        const auto selected = select(selection, first().as<REF<TSD<i64, TS<i64>>>>(),
-                                     second().as<REF<TSD<i64, TS<i64>>>>());
+    const auto graph = [&](wp<TS<i64>> selection, wp<TSD<i64, TS<i64>>> first,
+                           wp<TSD<i64, TS<i64>>> second) {
+        const auto selected = select(selection, first.as<REF<TSD<i64, TS<i64>>>>(),
+                                     second.as<REF<TSD<i64, TS<i64>>>>());
         return inspect(selected);
     };
 
-    CHECK(testing::test_graph(graph, std::array<i64, 4>{0, 0, 1, 1}).equals({10301, std::nullopt, 300, 10721}));
+    CHECK(testing::test_graph(graph, {0, 0, 1, 1}, {{{1, 10}, {2, 20}}},
+                              {{{1, 30}, {2, 40}}, literal::SKIP, {{2, literal::INVALID}}, {{2, 42}}})
+              .equals({10301, std::nullopt, 300, 10721}));
 }
-
-struct repeated_list_validity_changes_source {
-    static constexpr bool uses_timed_scheduling = true;
-
-    State<int> step;
-    Out<TSL<TS<i64>, 2>> output;
-
-    void start(EvaluationContext *context) const {
-        output[0].set(1);
-        output[1].set(10);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate(EvaluationContext *context) const {
-        switch (*step) {
-        case 0:
-            output[1].invalidate();
-            break;
-        case 1:
-            output[0].set(2);
-            break;
-        case 2:
-            output[1].set(12);
-            break;
-        case 3:
-            output[0].invalidate();
-            break;
-        case 4:
-            output[1].set(13);
-            break;
-        default:
-            return;
-        }
-
-        if (++*step < 5) {
-            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-        }
-    }
-};
-
-struct deferred_list_validity_source {
-    static constexpr bool uses_timed_scheduling = true;
-
-    State<int> step;
-    Out<TSL<TS<i64>, 2>> output;
-
-    void start(EvaluationContext *context) const {
-        output[0].set(1);
-        output[1].set(10);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate(EvaluationContext *context) const {
-        if ((*step)++ == 0) {
-            output[1].invalidate();
-            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
-            return;
-        }
-
-        output[1].set(12);
-    }
-};
 
 struct timed_all_valid_input_gate {
     static constexpr bool uses_timed_scheduling = true;
@@ -700,68 +466,62 @@ TEST_CASE("an all_valid invalidation handler runs once per failed transition",
         }
     };
 
-    const auto source = node<repeated_list_validity_changes_source>();
     const auto observe = node<invalidation_counting_node>();
-    const auto graph = [&] { return observe(source()); };
+    const auto graph = [&](wp<TSL<TS<i64>, 2>> input) { return observe(input); };
 
-    CHECK(testing::test_graph(graph).equals({1000, 1, std::nullopt, 1001, 2}));
+    CHECK(testing::test_graph(graph, {{{0, 1}, {1, 10}},
+                                      {{1, literal::INVALID}},
+                                      {{0, 2}},
+                                      {{1, 12}},
+                                      {{0, literal::INVALID}},
+                                      {{1, 13}}})
+              .equals({1000, 1, std::nullopt, 1001, 2, std::nullopt}));
 }
 
 TEST_CASE("all_valid checks immediate nested items without recursively checking them",
           "[evaluation][validity][feature:validity][validity:all-valid][series:fixed-tsl]"
           "[feature:collection-change]") {
-    struct nested_list_source {
-        Out<TSL<TSL<TS<i64>, 2>, 1>> output;
-
-        void start() const { output[0][0].set(10); }
-    };
-
-    const auto source = node<nested_list_source>();
     const auto inspect = node([](In<TSL<TSL<TS<i64>, 2>, 1>, all_valid> input, Out<TS<bool>> output) {
         output.set(input[0].valid() && !input[0].all_valid());
     });
-    const auto graph = [&] { return inspect(source()); };
+    const auto graph = [&](wp<TSL<TSL<TS<i64>, 2>, 1>> input) { return inspect(input); };
 
-    CHECK(testing::test_graph(graph).equals({true}));
+    CHECK(testing::test_graph(graph, {{{0, {{0, 10}}}}}).equals({true}));
 }
 
 TEST_CASE("all_valid on a reference checks the reference rather than its target items",
           "[evaluation][validity][feature:validity][validity:all-valid][series:reference]"
           "[series:fixed-tsl]") {
-    struct partially_valid_list_source {
-        Out<TSL<TS<i64>, 2>> output;
-
-        void start() const { output[0].set(10); }
-    };
-
-    const auto source = node<partially_valid_list_source>();
     const auto inspect = node([](In<REF<TSL<TS<i64>, 2>>, all_valid> input, Out<TS<bool>> output) {
         output.set(input.valid());
     });
-    const auto graph = [&] { return inspect(source().as<REF<TSL<TS<i64>, 2>>>()); };
+    const auto graph = [&](wp<TSL<TS<i64>, 2>> input) {
+        return inspect(input.as<REF<TSL<TS<i64>, 2>>>());
+    };
 
-    CHECK(testing::test_graph(graph).equals({true}));
+    CHECK(testing::test_graph(graph, {{{0, 10}}}).equals({true}));
 }
 
 TEST_CASE("a passive all_valid input checks items on scheduled evaluation attempts",
           "[evaluation][validity][feature:validity][validity:all-valid][feature:input-activity][series:fixed-tsl]"
           "[activity:passive][transition:invalidation]") {
-    const auto source = node<deferred_list_validity_source>();
     const auto combine = node([](In<TSL<TS<i64>, 2>, passive, all_valid> input, In<TS<i64>> pulse,
                                  Out<TS<i64>> output) { output.set(*input[0] + *input[1] + *pulse); });
     const auto observe = node([](In<TS<i64>, optional> input, Out<TS<bool>> output) {
         output.set(input.valid());
     });
-    const auto graph = [&](wp<TS<i64>> pulse) { return observe(combine(source(), pulse)); };
+    const auto graph = [&](wp<TS<i64>> pulse, wp<TSL<TS<i64>, 2>> input) {
+        return observe(combine(input, pulse));
+    };
 
-    const auto pulses = std::array<std::optional<i64>, 5>{100, std::nullopt, 200, std::nullopt, 300};
-    CHECK(testing::test_graph(graph, pulses).equals({true, std::nullopt, false, std::nullopt, true}));
+    CHECK(testing::test_graph(graph, {100, literal::SKIP, 200, literal::SKIP, 300},
+                              {{{0, 1}, {1, 10}}, {{1, literal::INVALID}}, literal::SKIP, {{1, 12}}})
+              .equals({true, std::nullopt, false, std::nullopt, true}));
 }
 
 TEST_CASE("dynamic activity defers all_valid item checks until a scheduled attempt",
           "[evaluation][validity][feature:validity][validity:all-valid][feature:input-activity]"
           "[series:fixed-tsl][activity:active][transition:invalidation][transition:revalidation]") {
-    const auto source = node<deferred_list_validity_source>();
     const auto observe = node([](In<TSL<TS<i64>, 2>, all_valid, dynamic_activity> input, In<TS<i64>> pulse,
                                  Out<TS<i64>> output) {
         output.set(*input[0] + *input[1] + *pulse);
@@ -770,21 +530,24 @@ TEST_CASE("dynamic activity defers all_valid item checks until a scheduled attem
     const auto report = node([](In<TS<i64>, optional> input, Out<TS<bool>> output) {
         output.set(input.valid());
     });
-    const auto graph = [&](wp<TS<i64>> pulse) { return report(observe(source(), pulse)); };
+    const auto graph = [&](wp<TS<i64>> pulse, wp<TSL<TS<i64>, 2>> input) {
+        return report(observe(input, pulse));
+    };
 
-    const auto pulses = std::array<std::optional<i64>, 5>{1, std::nullopt, 2, std::nullopt, 3};
-    CHECK(testing::test_graph(graph, pulses).equals({true, std::nullopt, false, std::nullopt, true}));
+    CHECK(testing::test_graph(graph, {1, literal::SKIP, 2, literal::SKIP, 3},
+                              {{{0, 1}, {1, 10}}, {{1, literal::INVALID}}, literal::SKIP, {{1, 12}}})
+              .equals({true, std::nullopt, false, std::nullopt, true}));
 }
 
 TEST_CASE("a timer evaluation checks passive all_valid items",
           "[evaluation][validity][feature:validity][validity:all-valid][series:fixed-tsl]"
           "[activity:passive][feature:timed-scheduling][transition:invalidation][transition:revalidation]") {
-    const auto source = node<deferred_list_validity_source>();
     const auto gate = node<timed_all_valid_input_gate>();
     const auto observe = node([](In<TS<i64>, optional> input, Out<TS<bool>> output) {
         output.set(input.valid());
     });
-    const auto graph = [&] { return observe(gate(source())); };
+    const auto graph = [&](wp<TSL<TS<i64>, 2>> input) { return observe(gate(input)); };
 
-    CHECK(testing::test_graph(graph).equals({true, std::nullopt, false, std::nullopt, std::nullopt, true}));
+    CHECK(testing::test_graph(graph, {{{0, 1}, {1, 10}}, {{1, literal::INVALID}}, literal::SKIP, {{1, 12}}})
+              .equals({true, std::nullopt, false, std::nullopt, std::nullopt, true}));
 }

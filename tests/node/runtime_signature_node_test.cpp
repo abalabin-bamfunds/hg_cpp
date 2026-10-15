@@ -134,12 +134,6 @@ struct RuntimeValidityDerivedBundle : bg::bundle_extends<RuntimeValidityBaseBund
     Field<bg::i64> extra;
 };
 
-struct RuntimeValidityDerivedSource {
-    bg::Out<bg::TSB<RuntimeValidityDerivedBundle>> output;
-
-    void start() const { output->value.set(42); }
-};
-
 struct RuntimeNodeState {
     std::int64_t evaluations{};
 };
@@ -531,40 +525,18 @@ struct RuntimeAllValidDefinition {
     bg::Signature signature_;
 };
 
-struct RuntimePartiallyValidListDefinition {
-    static constexpr bool uses_timed_scheduling = true;
-
-    bg::State<int> step;
-    bg::Out<bg::TSL<bg::TS<bg::i64>, 2>> output;
-
-    void start(bg::EvaluationContext *context) const {
-        output[0].set(10);
-        output[1].set(20);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate(bg::EvaluationContext *context) const {
-        if (*step == 0) {
-            output[1].invalidate();
-            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-        } else {
-            output[1].set(22);
-        }
-
-        ++*step;
-    }
-};
-
 TEST_CASE("a runtime-signature node applies all_valid using invocation metadata",
           "[node][runtime-signature][definition:runtime][feature:validity][validity:all-valid]"
           "[series:fixed-tsl][scalar:i64]") {
     const auto runtime_node = bg::node(RuntimeAllValidDefinition{});
-    const auto list_source = bg::node<RuntimePartiallyValidListDefinition>();
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> known) -> bg::wp<bg::TS<bg::i64>> {
-        return bg::wp<bg::TS<bg::i64>>{*runtime_node(known, bg::i64{7}, list_source())};
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> known,
+                           bg::wp<bg::TSL<bg::TS<bg::i64>, 2>> input) -> bg::wp<bg::TS<bg::i64>> {
+        return bg::wp<bg::TS<bg::i64>>{*runtime_node(known, bg::i64{7}, input)};
     };
 
-    CHECK(bg::testing::test_graph(graph, std::array<bg::i64, 3>{1, 2, 3}).equals({7, std::nullopt, 7}));
+    CHECK(bg::testing::test_graph(graph, {1, 2, 3},
+                                  {{{0, 10}, {1, 20}}, {{1, literal::INVALID}}, {{1, 22}}})
+              .equals({7, std::nullopt, 7}));
 }
 
 struct RuntimeBundleAllValidDefinition {
@@ -592,10 +564,11 @@ TEST_CASE("a runtime-signature input checks the declared base bundle schema",
           "[node][runtime-signature][definition:runtime][feature:validity][validity:all-valid]"
           "[series:tsb][schema:named][binding:covariant][representation:native]") {
     const auto runtime_node = bg::node(RuntimeBundleAllValidDefinition{});
-    const auto source = bg::node<RuntimeValidityDerivedSource>();
-    const auto graph = [&] { return bg::wp<bg::TS<bg::i64>>{*runtime_node(source())}; };
+    const auto graph = [&](bg::wp<bg::TSB<RuntimeValidityDerivedBundle>> input) {
+        return bg::wp<bg::TS<bg::i64>>{*runtime_node(input)};
+    };
 
-    CHECK(bg::testing::test_graph(graph).equals({1}));
+    CHECK(bg::testing::test_graph(graph, {{{"value", 42}}}).equals({1}));
 }
 
 struct RuntimeDictionarySourceDefinition {

@@ -282,7 +282,6 @@ TEST_CASE("filter reflects TSS membership changes made while closed",
         return inspect(operators::filter_(condition, input));
     };
 
-    const auto condition = std::array{true, false, false, true, true};
     CHECK(testing::test_graph(filter, {true, false, false, true, true},
                               {{1, 2}, {literal::REMOVED(2)}, {3}, literal::SKIP, {literal::REMOVED(1), 4}})
               .equals<i64>({1, std::nullopt, std::nullopt, 2, 3}));
