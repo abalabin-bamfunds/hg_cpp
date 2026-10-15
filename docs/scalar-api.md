@@ -181,10 +181,11 @@ a literal does not extend their lifetime. Scalar views delivered by its DDV
 visitor are callback-scoped. Extension behavior belongs to the visitor consumer
 and the source's scalar storage traits.
 
-`<bg/literal/construct.hpp>` provides `literal::construct<T>(literal)` and
-`literal::construct(runtime_type, literal)`. Both return an owning `ScalarValue`
-and have overloads taking an allocator as the final argument. Destination runtime
-types interpret sequences recursively and own their construction and cleanup:
+`<bg/scalar/literal.hpp>` provides `ScalarValue<T>::from_literal(literal)` and
+`ScalarValue<>::from_literal(runtime_type, literal)`. Both return an owning
+`ScalarValue` and have overloads taking an allocator as the final argument.
+The scalar consumer interprets sequences through DDV dispatch. Destination
+runtime types construct and destroy storage through source-neutral callbacks:
 
 | Destination | Sequence syntax | Conditions |
 | --- | --- | --- |
@@ -202,7 +203,7 @@ explicit allocator, including bundles nested in collections. See the
 [ownership contract](#ownership).
 
 ```cpp
-auto values = literal::construct<bg::List<bg::List<bg::i64>>>({{1, 2}, {}, {3}});
+auto values = bg::ScalarValue<bg::List<bg::List<bg::i64>>>::from_literal({{1, 2}, {}, {3}});
 ```
 
 ## Lists

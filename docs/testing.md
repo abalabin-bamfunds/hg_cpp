@@ -113,7 +113,8 @@ graph compilation or evaluation.
 ### Value system
 
 - canonical scalar conversion
-- borrowed and owning scalar lifetime
+- borrowed and owning scalar lifetime, including owning copies retained across
+  successful and failed time series scalar replacement
 - typed and erased scalar access, casts, equality, and hashing
 - fixed, variable, inline, and graph-accounted storage
 - construction, assignment, copy, and destruction

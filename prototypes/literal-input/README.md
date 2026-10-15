@@ -1,6 +1,7 @@
 # Literal probes
 
-The shared headers live in `include/bg/literal/`. See the
+The literal carriers live in `include/bg/literal/`. Scalar construction and
+replacement live in `include/bg/scalar/literal.hpp`. See the
 [literal API](../../docs/scalar-api.md#literals) for source lifetimes and scalar
 construction, and the [node API](../../docs/node-api.md) for `Out::apply()`.
 
@@ -34,32 +35,32 @@ auto &scalar_types = static_cast<bg::ScalarVisitTypes &>(visitor);
 item.accept(scalar_types);
 ```
 
-`construct<T>(literal)` builds a typed owning scalar in its final storage. The
-runtime-only overload takes the destination runtime type. Both use the engine's
+`ScalarValue<T>::from_literal(literal)` builds a typed owning scalar in its final
+storage. The erased overload takes the destination runtime type. Both use the engine's
 borrowed construction callbacks and recursively initialize lists, sets,
 dictionaries, compound scalars, and bundles:
 
 ```cpp
-auto nested = literal::construct<bg::List<bg::List<bg::i64>>>(
+auto nested = bg::ScalarValue<bg::List<bg::List<bg::i64>>>::from_literal(
     {{1, 2}, {}, {3}});
 
-auto dictionary = literal::construct<bg::Dict<bg::string, bg::List<bg::i64>>>(
+auto dictionary = bg::ScalarValue<bg::Dict<bg::string, bg::List<bg::i64>>>::from_literal(
     {{"a", {1, 2}}, {"b", {3, 4}}});
 
-auto set = literal::construct<bg::Set<bg::i64>>({1, 2, 2});
+auto set = bg::ScalarValue<bg::Set<bg::i64>>::from_literal({1, 2, 2});
 
 struct Point {
     bg::i64 x;
     const bg::i64 y;
 };
-auto point = literal::construct<Point>({{"y", 2}, {"x", 1}});
+auto point = bg::ScalarValue<Point>::from_literal({{"y", 2}, {"x", 1}});
 
 template <template <typename, auto...> typename Field> struct Record {
     Field<bg::List<bg::i64>> values;
     Field<bg::i64, bg::optional> note;
 };
 auto memory = bg::allocator{};
-auto record = literal::construct<bg::Bundle<Record>>(
+auto record = bg::ScalarValue<bg::Bundle<Record>>::from_literal(
     {{"values", {1, 2}}}, memory);
 
 const auto &item_runtime = bg::cpp_scalar_runtime_type<bg::i64>();
@@ -69,7 +70,7 @@ const auto &inner_runtime = bg::resolve_scalar_runtime_type(inner_type, inner_av
 const auto &outer_type = bg::list_scalar_type(inner_type);
 const auto outer_available = std::array<const bg::ScalarRuntimeType *, 1>{&inner_runtime};
 const auto &runtime_type = bg::resolve_scalar_runtime_type(outer_type, outer_available);
-auto erased = literal::construct(runtime_type, {{1, 2}, {}, {3}});
+auto erased = bg::ScalarValue<>::from_literal(runtime_type, {{1, 2}, {}, {3}});
 ```
 
 Sequence syntax, field validation, allocator ownership, and failure cleanup
@@ -92,9 +93,10 @@ literal::apply(list_output, {{0, 10}, {2, 30}});
 literal::apply(nested_list_output, {{1, {{0, 10}}}});
 ```
 
-Scalar TS outputs delegate to `Out::apply()`. Scalar leaves use `set_value()`
-without an owning intermediate; scalar list sequences replace the complete list
-through the actual destination runtime.
+Scalar TS outputs delegate to `Out::apply()`, which uses the scalar construction
+consumer for replacement and publishes successful updates. Scalar leaves use
+runtime assignment without an owning intermediate; scalar list sequences replace
+the complete list through the actual destination runtime.
 TSL entries are `{index, child_delta}` pairs. Indices must be nonnegative
 integers other than Boolean values. At each list, the consumer validates entry
 shape, index range, and duplicate indices before applying that list's children.
@@ -116,6 +118,9 @@ items, and failed later-item construction preserving previous values and
 timestamps. Native and composed replacements each construct two supplied items
 with exactly two item copies and one collection allocation. The scalar storage
 regression checks the default provider assignment fallback and its cleanup.
+Retained owning copies of nested lists and shared strings preserve their values
+across replacement, failed construction, and destruction of the source output
+storage.
 
 The probe reports object layout and counts global `operator new` calls for
 source construction, first visit, warmed visit, and recursive construction

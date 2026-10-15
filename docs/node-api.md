@@ -442,12 +442,14 @@ the behavior defined by the [validity design](time-series-validity.md).
 `Out<TSS<T>>::clear()` and `Out<TSD<K, TS_T>>::clear()` remove all entries and
 produce a valid empty collection.
 
-`Out<TS<T>>::set_value()` accepts a compatible scalar view. It assigns the value
-before it sets the last updated time.
+`Out<TS<T>>::set_value()` accepts a compatible scalar view. It replaces the
+complete scalar value before it sets the last updated time. Owning scalar
+copies retained by downstream nodes preserve their previous values. Shared
+immutable storage remains alive until its last owner releases it.
 
-`Out<TS<T>>::apply(const literal::ScalarLiteral&)` assigns a borrowed scalar
-leaf through `set_value()`. For a scalar list output, a brace sequence replaces
-the complete list; nested items use the actual destination runtime types.
+`Out<TS<T>>::apply(const literal::ScalarLiteral&)` delegates replacement to the
+scalar consumer. A scalar leaf replaces the value. For a scalar list output, a
+brace sequence replaces the complete list; nested items use the actual destination runtime types.
 An empty sequence publishes a valid empty list. Equal replacements are
 suppressed only while a deduplicated output is valid, so applying an equal value
 after invalidation revalidates it. Concrete and generic TS outputs preserve the

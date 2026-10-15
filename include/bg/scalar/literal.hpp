@@ -20,17 +20,19 @@
 #include <string_view>
 #include <type_traits>
 
-namespace literal {
-namespace details {
+namespace bg::details {
 
-class ScalarConstructionContext {
+using literal::ScalarLiteral;
+using literal::ScalarLiteralItem;
+
+class ScalarLiteralConstructionContext {
   public:
-    explicit ScalarConstructionContext(const ScalarLiteral &literal, bool explicit_allocator = false) noexcept
+    explicit ScalarLiteralConstructionContext(const ScalarLiteral &literal, bool explicit_allocator = false) noexcept
         : literal_{&literal}, explicit_allocator_{explicit_allocator} {}
 
     static void callback(void *context, const bg::ScalarRuntimeType &runtime_type, void *destination,
                          bg::allocator &memory) {
-        static_cast<const ScalarConstructionContext *>(context)->construct(runtime_type, destination, memory);
+        static_cast<const ScalarLiteralConstructionContext *>(context)->construct(runtime_type, destination, memory);
     }
 
     void construct(const bg::ScalarRuntimeType &runtime_type, void *destination, bg::allocator &memory) const {
@@ -48,9 +50,9 @@ class ScalarConstructionContext {
                         auto rollback = bg::util::scope_exit{
                             [&]() noexcept { list_runtime_type.destroy(destination, memory); }};
                         for (const auto &child : children) {
-                            auto child_context = ScalarConstructionContext{child, explicit_allocator_};
+                            auto child_context = ScalarLiteralConstructionContext{child, explicit_allocator_};
                             list_runtime_type.emplace_back_with(
-                                destination, memory, {&child_context, &ScalarConstructionContext::callback});
+                                destination, memory, {&child_context, &ScalarLiteralConstructionContext::callback});
                         }
                         rollback.release();
                     },
@@ -71,12 +73,12 @@ class ScalarConstructionContext {
                                             "dictionary literal entries must contain exactly two values"};
                                     }
 
-                                    auto key_context = ScalarConstructionContext{fields[0], explicit_allocator_};
-                                    auto mapped_context = ScalarConstructionContext{fields[1], explicit_allocator_};
+                                    auto key_context = ScalarLiteralConstructionContext{fields[0], explicit_allocator_};
+                                    auto mapped_context = ScalarLiteralConstructionContext{fields[1], explicit_allocator_};
                                     if (!dict_runtime_type.try_emplace_with(
                                             destination, memory,
-                                            {&key_context, &ScalarConstructionContext::callback},
-                                            {&mapped_context, &ScalarConstructionContext::callback})) {
+                                            {&key_context, &ScalarLiteralConstructionContext::callback},
+                                            {&mapped_context, &ScalarLiteralConstructionContext::callback})) {
                                         throw std::invalid_argument{"dictionary literal contains duplicate keys"};
                                     }
                                 });
@@ -89,9 +91,9 @@ class ScalarConstructionContext {
                         auto rollback = bg::util::scope_exit{
                             [&]() noexcept { set_runtime_type.destroy(destination, memory); }};
                         for (const auto &child : children) {
-                            auto child_context = ScalarConstructionContext{child, explicit_allocator_};
+                            auto child_context = ScalarLiteralConstructionContext{child, explicit_allocator_};
                             (void)set_runtime_type.insert_with(
-                                destination, memory, {&child_context, &ScalarConstructionContext::callback});
+                                destination, memory, {&child_context, &ScalarLiteralConstructionContext::callback});
                         }
                         rollback.release();
                     },
@@ -119,6 +121,41 @@ class ScalarConstructionContext {
             });
     }
 
+    bool assign_to(const bg::ScalarRuntimeType &runtime_type, void *destination, bool suppress_equal) {
+        auto assigned = false;
+        literal_->visit(
+            [&](const ScalarLiteralItem &item) {
+                item.visit(
+                    [&](auto *source) {
+                        const auto &input = bg::details::scalar_data(*source);
+                        if (suppress_equal) {
+                            if (!runtime_type.accepts_input(input.runtime_type())) {
+                                throw std::invalid_argument{"incompatible scalar runtime representations"};
+                            }
+                            if (runtime_type.equals(destination, input)) {
+                                return;
+                            }
+                        }
+
+                        runtime_type.assign_from_input(destination, input);
+                        assigned = true;
+                    },
+                    ddv::noop);
+            },
+            [&](std::span<const ScalarLiteral>) {
+                runtime_type.type().visit(
+                    [&](const bg::ListScalarType *) {
+                        const auto &list_runtime_type = static_cast<const bg::ScalarListRuntimeType &>(runtime_type);
+                        assigned = list_runtime_type.assign_with(
+                            destination, {this, &ScalarLiteralConstructionContext::callback}, suppress_equal);
+                    },
+                    [&](const auto *) {
+                        throw std::invalid_argument{"a scalar list literal requires a list scalar destination"};
+                    });
+            });
+        return assigned;
+    }
+
   private:
     template <typename Value, typename ScalarView, typename Function>
     static bool read_name(const ScalarView &source, Function &&function) {
@@ -136,7 +173,7 @@ class ScalarConstructionContext {
     };
 
     struct NamedFieldConstructionContext {
-        const ScalarConstructionContext &parent;
+        const ScalarLiteralConstructionContext &parent;
         std::span<const ScalarLiteral> entries;
         const bg::StructScalarType *struct_type;
         const bg::ResolvedHierarchicalScalarType *hierarchical_type;
@@ -161,7 +198,7 @@ class ScalarConstructionContext {
             for (const auto &entry : fields.entries) {
                 const auto supplied = parse_entry(entry);
                 if (name_matches(*supplied.name, expected_name)) {
-                    auto child = ScalarConstructionContext{*supplied.value, fields.parent.explicit_allocator_};
+                    auto child = ScalarLiteralConstructionContext{*supplied.value, fields.parent.explicit_allocator_};
                     child.construct(runtime_type, destination, memory);
                     return true;
                 }
@@ -252,28 +289,32 @@ class ScalarConstructionContext {
 
 } // namespace details
 
-template <typename T> [[nodiscard]] bg::ScalarValue<T> construct(const ScalarLiteral &literal) {
-    auto context = details::ScalarConstructionContext{literal};
-    return bg::ScalarValue<T>::from_construction({&context, &details::ScalarConstructionContext::callback});
+namespace bg {
+
+template <typename T>
+ScalarValue<T> ScalarValue<T>::from_literal(const literal::ScalarLiteral &literal)
+    requires(!details::generic_scalar<T>) {
+    auto context = details::ScalarLiteralConstructionContext{literal};
+    return from_construction({&context, &details::ScalarLiteralConstructionContext::callback});
 }
 
-template <typename T> [[nodiscard]] bg::ScalarValue<T> construct(const ScalarLiteral &literal, bg::allocator &memory) {
-    auto context = details::ScalarConstructionContext{literal, true};
-    return bg::ScalarValue<T>::from_construction({&context, &details::ScalarConstructionContext::callback}, memory);
+template <typename T>
+ScalarValue<T> ScalarValue<T>::from_literal(const literal::ScalarLiteral &literal, allocator &memory)
+    requires(!details::generic_scalar<T>) {
+    auto context = details::ScalarLiteralConstructionContext{literal, true};
+    return from_construction({&context, &details::ScalarLiteralConstructionContext::callback}, memory);
 }
 
-[[nodiscard]] inline bg::ScalarValue<> construct(const bg::ScalarRuntimeType &runtime_type,
-                                                 const ScalarLiteral &literal) {
-    auto context = details::ScalarConstructionContext{literal};
-    return bg::ScalarValue<>::from_construction(
-        runtime_type, {&context, &details::ScalarConstructionContext::callback});
+inline ScalarValue<> ScalarValue<>::from_literal(const ScalarRuntimeType &runtime_type,
+                                                const literal::ScalarLiteral &literal) {
+    auto context = details::ScalarLiteralConstructionContext{literal};
+    return from_construction(runtime_type, {&context, &details::ScalarLiteralConstructionContext::callback});
 }
 
-[[nodiscard]] inline bg::ScalarValue<> construct(const bg::ScalarRuntimeType &runtime_type,
-                                                 const ScalarLiteral &literal, bg::allocator &memory) {
-    auto context = details::ScalarConstructionContext{literal, true};
-    return bg::ScalarValue<>::from_construction(runtime_type, {&context, &details::ScalarConstructionContext::callback},
-                                                memory);
+inline ScalarValue<> ScalarValue<>::from_literal(const ScalarRuntimeType &runtime_type,
+                                                const literal::ScalarLiteral &literal, allocator &memory) {
+    auto context = details::ScalarLiteralConstructionContext{literal, true};
+    return from_construction(runtime_type, {&context, &details::ScalarLiteralConstructionContext::callback}, memory);
 }
 
-} // namespace literal
+} // namespace bg

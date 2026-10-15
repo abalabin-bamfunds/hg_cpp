@@ -1,14 +1,12 @@
 #pragma once
 
 #include <bg/evaluation_context.hpp>
-#include <bg/literal/construct.hpp>
 #include <bg/node/details/output_factory.hpp>
 #include <bg/time_series/output_binding.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
+#include <bg/scalar/literal.hpp>
 #include <bg/scalar/details/value_storage.hpp>
-#include <bg/scalar/list/runtime_type.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/scalar.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/details/output_state.hpp>
@@ -53,28 +51,12 @@ class Out<TS<Variable, Properties...>> {
     void invalidate() const { state_->invalidate(); }
 
     void apply(const literal::ScalarLiteral &literal) const {
-        const auto &scalar_runtime_type =
+        const auto &runtime_type =
             static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
-        literal.visit(
-            [&](const literal::ScalarLiteralItem &item) {
-                item.visit([&](const auto *source) { set_value(*source); }, ddv::noop);
-            },
-            [&](std::span<const literal::ScalarLiteral>) {
-                scalar_runtime_type.type().visit(
-                    [&](const ListScalarType *) {
-                        const auto &list_runtime_type = static_cast<const ScalarListRuntimeType &>(scalar_runtime_type);
-                        auto construction = literal::details::ScalarConstructionContext{literal, true};
-                        if (list_runtime_type.assign_with(
-                                state_->mutable_data(),
-                                {&construction, &literal::details::ScalarConstructionContext::callback},
-                                state_->suppresses_equal_updates() && valid())) {
-                            state_->publish();
-                        }
-                    },
-                    [&](const auto *) {
-                        throw std::invalid_argument{"a scalar list literal requires a list time-series output"};
-                    });
-            });
+        auto construction = details::ScalarLiteralConstructionContext{literal, true};
+        if (construction.assign_to(runtime_type, state_->mutable_data(), state_->suppresses_equal_updates() && valid())) {
+            state_->publish();
+        }
     }
 
     template <typename Input, auto... TimeSeriesProperties, auto... InputProperties>

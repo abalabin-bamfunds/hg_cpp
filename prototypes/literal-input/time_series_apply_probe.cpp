@@ -22,6 +22,7 @@
 #include <source_location>
 #include <string>
 #include <memory_resource>
+#include <optional>
 #include <vector>
 
 namespace {
@@ -348,6 +349,122 @@ void verify_direct_list_output(const bg::ScalarListRuntimeType &list_runtime, co
     allocation_owner->release();
 }
 
+template <typename Verify>
+void verify_retained_list_snapshot(const bg::ScalarListRuntimeType &list_runtime, const bg::ScalarType &list_type,
+                                   const literal::ScalarLiteral &initial, const literal::ScalarLiteral &replacement,
+                                   const literal::ScalarLiteral &invalid_replacement, Verify &&verify) {
+    const auto &time_series_type = bg::time_series_value_type(list_type, bg::TimeSeriesGuarantee::ordinary);
+    const auto &time_series_runtime = bg::time_series_value_runtime_type(time_series_type, list_runtime);
+    auto scalar_memory = AllocationCounter{};
+    auto scalar_allocator = bg::allocator{scalar_memory};
+    auto owner_resource = std::pmr::unsynchronized_pool_resource{};
+    auto owner_allocator = bg::allocator{owner_resource};
+    auto *allocation_owner = bg::details::BundleAllocationOwner::create(owner_allocator);
+    auto release_allocation_owner = bg::util::scope_exit{[&]() noexcept { allocation_owner->release(); }};
+    auto snapshot_resource = std::pmr::unsynchronized_pool_resource{};
+    auto snapshot_allocator = bg::allocator{snapshot_resource};
+    auto snapshot = std::optional<bg::ScalarValue<>>{};
+    auto output_storage_resource = std::pmr::unsynchronized_pool_resource{};
+    auto output_allocator = bg::allocator{output_storage_resource};
+    auto *storage = output_allocator.allocate_bytes(list_runtime.size(), list_runtime.alignment());
+    list_runtime.construct_initial_value(storage);
+
+    {
+        auto context = bg::details::ScalarAllocationContext{scalar_allocator, *allocation_owner, nullptr, 0};
+        auto time_series_state = bg::TimeSeriesState{};
+        auto output_state = bg::details::OutputState{time_series_runtime};
+        auto evaluation_time = bg::EvaluationTime{bg::EvaluationTime::duration{1}};
+        output_state.bind(time_series_state, storage, evaluation_time);
+        auto output = bg::Out<bg::TS_T>{bg::TimeSeriesOutputBinding{output_state}};
+        auto release_storage = bg::util::scope_exit{[&]() noexcept {
+            list_runtime.destroy(storage, scalar_allocator);
+            output_allocator.deallocate_bytes(storage, list_runtime.size(), list_runtime.alignment());
+        }};
+
+        output.apply(initial);
+        verify(list_runtime, storage, 0, false);
+        snapshot.emplace(bg::Scalar<>::from(list_runtime, storage), snapshot_allocator);
+        verify(snapshot->runtime_type(), snapshot->view().data(), 0, true);
+
+        evaluation_time = bg::EvaluationTime{bg::EvaluationTime::duration{2}};
+        output_state.bind(time_series_state, storage, evaluation_time);
+        output.apply(replacement);
+        verify(list_runtime, storage, 1, false);
+        verify(snapshot->runtime_type(), snapshot->view().data(), 0, true);
+
+        const auto last_updated = output.last_updated();
+        evaluation_time = bg::EvaluationTime{bg::EvaluationTime::duration{3}};
+        output_state.bind(time_series_state, storage, evaluation_time);
+        auto failed = false;
+        try {
+            output.apply(invalid_replacement);
+        } catch (const std::invalid_argument &) {
+            failed = true;
+        }
+        require(failed);
+        require(output.last_updated() == last_updated);
+        verify(list_runtime, storage, 1, false);
+        verify(snapshot->runtime_type(), snapshot->view().data(), 0, true);
+    }
+
+    verify(snapshot->runtime_type(), snapshot->view().data(), 0, true);
+    snapshot.reset();
+    require(scalar_memory.outstanding_allocations() == 0);
+    release_allocation_owner.release();
+    allocation_owner->release();
+}
+
+void verify_nested_list_replacement_snapshots(const bg::ScalarListRuntimeType &runtime, const bg::ScalarType &type) {
+    const auto initial = std::vector<std::vector<i64>>{{1, 2}, {3}};
+    const auto replacement = std::vector<std::vector<i64>>{{4}, {5, 6}};
+    const auto verify = [&](const bg::ScalarRuntimeType &runtime_type, const void *storage, std::size_t version,
+                            bool) {
+        const auto &outer = static_cast<const bg::ScalarListRuntimeType &>(runtime_type);
+        const auto &inner = static_cast<const bg::ScalarListRuntimeType &>(outer.item_runtime_type());
+        const auto &expected = version == 0 ? initial : replacement;
+        require(outer.item_count(storage) == expected.size());
+        for (auto outer_index = std::size_t{}; outer_index < expected.size(); ++outer_index) {
+            const auto *inner_storage = outer.item(storage, outer_index);
+            require(inner.item_count(inner_storage) == expected[outer_index].size());
+            for (auto inner_index = std::size_t{}; inner_index < expected[outer_index].size(); ++inner_index) {
+                require(*static_cast<const i64 *>(inner.item(inner_storage, inner_index)) ==
+                        expected[outer_index][inner_index]);
+            }
+        }
+    };
+
+    verify_retained_list_snapshot(runtime, type, {{1, 2}, {3}}, {{4}, {5, 6}}, {{7, 8}, {9, "bad"}}, verify);
+}
+
+void verify_shared_string_list_snapshot() {
+    const auto &runtime = static_cast<const bg::ScalarListRuntimeType &>(
+        bg::cpp_scalar_runtime_type<bg::List<bg::string>>());
+    auto original_data = static_cast<const char *>(nullptr);
+    const auto verify = [&](const bg::ScalarRuntimeType &runtime_type, const void *storage, std::size_t version,
+                            bool snapshot) {
+        const auto list = bg::Scalar<bg::List<bg::string>>::from(runtime_type, storage);
+        const auto expected = version == 0 ? std::array<std::string_view, 2>{"old one", "old two"}
+                                           : std::array<std::string_view, 2>{"new value", {}};
+        const auto expected_size = version == 0 ? std::size_t{2} : std::size_t{1};
+        require(list.size() == expected_size);
+        if (version == 0) {
+            if (snapshot) {
+                require(list[0].value().data() == original_data);
+            } else if (original_data == nullptr) {
+                original_data = list[0].value().data();
+            }
+        } else {
+            require(list[0].value().data() != original_data);
+        }
+        for (auto index = std::size_t{}; index < expected_size; ++index) {
+            require(list[index].value() == expected[index]);
+        }
+    };
+
+    verify_retained_list_snapshot(runtime, runtime.type(), {"old one", "old two"}, {"new value"},
+                                  {"later value", 3}, verify);
+}
+
 void verify_composed_and_nested_list_outputs() {
     const auto &integer_runtime = bg::cpp_scalar_runtime_type<i64>();
     const auto &integer_list_type = bg::list_scalar_type(integer_runtime.type());
@@ -425,6 +542,13 @@ void verify_composed_and_nested_list_outputs() {
         require(*static_cast<const i64 *>(inner_runtime.item(second_inner, 0)) == 3);
         require(*static_cast<const i64 *>(inner_runtime.item(third_inner, 0)) == 4);
     });
+
+    verify_nested_list_replacement_snapshots(
+        static_cast<const bg::ScalarListRuntimeType &>(bg::cpp_scalar_runtime_type<bg::List<bg::List<i64>>>()),
+        bg::cpp_scalar_type<bg::List<bg::List<i64>>>());
+    verify_nested_list_replacement_snapshots(
+        static_cast<const bg::ScalarListRuntimeType &>(outer_runtime.item_runtime_type()), middle_type);
+    verify_shared_string_list_snapshot();
 }
 
 void verify_provider_list_output() {

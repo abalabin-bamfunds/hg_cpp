@@ -14,6 +14,12 @@
 #include <type_traits>
 #include <utility>
 
+namespace literal {
+template <typename Leaf> class Literal;
+class ScalarLiteralItem;
+using ScalarLiteral = Literal<ScalarLiteralItem>;
+} // namespace literal
+
 namespace bg {
 
 namespace details {
@@ -58,6 +64,12 @@ template <typename T> class ScalarValue {
             construction.construct(construction.context, runtime_type, destination, resource);
         })};
     }
+
+    // Definitions are provided by <bg/scalar/literal.hpp>.
+    [[nodiscard]] static ScalarValue from_literal(const literal::ScalarLiteral &literal)
+        requires(!details::generic_scalar<T>);
+    [[nodiscard]] static ScalarValue from_literal(const literal::ScalarLiteral &literal, allocator &memory)
+        requires(!details::generic_scalar<T>);
 
     template <scalar_source Source>
         requires std::same_as<canonical_scalar_t<Source>, T>
@@ -167,6 +179,11 @@ template <> class ScalarValue<> {
             construction.construct(construction.context, runtime_type, destination, resource);
         })};
     }
+
+    [[nodiscard]] static ScalarValue from_literal(const ScalarRuntimeType &runtime_type,
+                                                  const literal::ScalarLiteral &literal);
+    [[nodiscard]] static ScalarValue from_literal(const ScalarRuntimeType &runtime_type,
+                                                  const literal::ScalarLiteral &literal, allocator &memory);
 
     template <scalar_source Source>
     explicit ScalarValue(Source &&source)
