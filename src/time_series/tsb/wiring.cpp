@@ -4,11 +4,13 @@
 #include <bg/evaluation_context.hpp>
 #include <bg/graph/compiled_node.hpp>
 #include <bg/graph/details/variadic_wiring_operations.hpp>
+#include <bg/graph/details/variadic_wiring_record.hpp>
 #include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_argument.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_arguments.hpp>
+#include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/node/node_template.hpp>
 #include <bg/operators.hpp>
@@ -190,6 +192,10 @@ class TimeSeriesBundleVariadicWiringOperations final : public VariadicWiringOper
                 continue;
             }
 
+            if (mode == VariadicMode::named && !argument.name()) {
+                throw WiringError{"a variadic TSB field requires a name"};
+            }
+
             const auto name = mode == VariadicMode::positional
                                   ? util::symbol{std::to_string(fields.size())}
                                   : *argument.name();
@@ -348,6 +354,15 @@ WiringPoint time_series_bundle_field(WiringPoint bundle, std::size_t index) {
     if (const auto *free = dynamic_cast<const FreeTimeSeriesBundleWiringRecord *>(&record)) {
         return free->field(index);
     }
+    if (const auto *variadic = variadic_wiring_record(bundle)) {
+        const auto argument = variadic->argument(index);
+        if (argument.is_time_series()) {
+            return argument.time_series();
+        }
+        if (argument.is_scalar()) {
+            return operators::const_(argument);
+        }
+    }
 
     const auto field = type->item_id(index);
     auto selected = std::make_unique<TimeSeriesBundleFieldWiringRecord>(bundle, *type, index);
@@ -379,19 +394,12 @@ const VariadicWiringOperations &time_series_bundle_variadic_wiring_operations() 
 namespace bg {
 
 wp<> bundle(std::span<const WiringArgument> fields) {
-    auto points = std::vector<details::NamedBundleWiringPoint>{};
-    points.reserve(fields.size());
-    for (const auto &field : fields) {
-        if (!field.name()) {
-            throw WiringError{"a free TSB field requires a name"};
-        }
-        if (!field.is_time_series()) {
-            throw WiringError{"a free TSB field requires a time series"};
-        }
-        points.push_back({*field.name(), field.time_series()});
-    }
-
-    return wp<>{details::make_free_time_series_bundle(points)};
+    auto &memory = WiringContext::current().wiring().allocation();
+    auto arguments = std::vector<WiringArgument>{fields.begin(), fields.end()};
+    auto record = std::make_unique<details::VariadicWiringRecord>(
+        TSB<SCHEMA>::type(), details::VariadicMode::named, details::time_series_bundle_variadic_wiring_operations(),
+        std::move(arguments), &memory);
+    return wp<>{details::add_wiring_record(std::move(record))};
 }
 
 } // namespace bg

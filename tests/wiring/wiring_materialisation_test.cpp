@@ -836,17 +836,17 @@ TEST_CASE("variadic materialisation callback results retain graph-owned captured
     const auto result = wiring.expand_materialisation(deferred, bg::TSB<OneValue>::type());
 
     CHECK(result.record()->graph_owned());
+    const auto materialized_bundle = wiring.complete_pending_wiring(result);
+    const auto bundle_output = wiring.outputs()[wiring.output_index(materialized_bundle)];
+    const auto &bundle_node = wiring.nodes()[bundle_output.node_index];
+    REQUIRE(bundle_node.inputs().size() == 1);
+    CHECK(bundle_node.inputs()[0].index() == wiring.output_index(input));
+
     const auto value = result.as<bg::TSB<OneValue>>()->value;
     CHECK(&value.graph() == &wiring);
     CHECK(static_cast<bg::WiringPoint>(value).record()->graph_owned());
     CHECK(bg::TS<bg::i64>::type().accepts(value.type()));
-    const auto materialized_field = wiring.complete_pending_wiring(value);
-    const auto field_output = wiring.outputs()[wiring.output_index(materialized_field)];
-    REQUIRE(field_output.parent != bg::WiredOutput::npos);
-    const auto bundle_output = wiring.outputs()[field_output.parent];
-    const auto &bundle_node = wiring.nodes()[bundle_output.node_index];
-    REQUIRE(bundle_node.inputs().size() == 1);
-    CHECK(bundle_node.inputs()[0].index() == wiring.output_index(input));
+    CHECK(wiring.output_index(value) == wiring.output_index(input));
 }
 
 TEST_CASE("signature materialisation cost counts each point and target once",

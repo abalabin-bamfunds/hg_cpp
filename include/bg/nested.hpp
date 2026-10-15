@@ -11,7 +11,6 @@
 #include <bg/node/node_template.hpp>
 #include <bg/time_series/time_series_type.hpp>
 
-#include <array>
 #include <concepts>
 #include <memory>
 #include <utility>
@@ -26,11 +25,11 @@ template <typename Graph, details::graph_code_argument Run, details::graph_code_
     static_assert(details::is_typed_wiring_point<Result>, "a nested graph must have an output");
     using Target = typename details::typed_wiring_point<Result>::time_series_type;
 
-    auto supplied =
-        std::array<WiringArgument, sizeof...(Arguments)>{WiringArgument{std::forward<Arguments>(arguments)}...};
+    auto supplied = details::make_wiring_arguments(std::forward<Arguments>(arguments)...);
     auto &outer_wiring = WiringContext::current().wiring();
     auto temporary_records = details::WiringRecordOverlay{outer_wiring};
-    auto normalized_result = details::probe_wiring_arguments(graph.signature(), supplied, temporary_records);
+    auto normalized_result = details::probe_wiring_arguments(
+        graph.signature(), std::span<const WiringArgument>{supplied}, temporary_records);
     auto &normalized = normalized_result.arguments;
     auto resolution = graph.signature().resolve_wiring_arguments(normalized, normalized_result.descriptors);
     const auto &resolved = resolution.signature;

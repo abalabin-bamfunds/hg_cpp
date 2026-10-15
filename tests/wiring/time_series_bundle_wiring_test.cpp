@@ -1,3 +1,4 @@
+#include <bg/graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
@@ -14,6 +15,8 @@
 #include <vector>
 
 namespace {
+
+using namespace bg::literals;
 
 template <template <typename, auto...> typename> struct EmptyBundle {};
 
@@ -34,6 +37,16 @@ template <template <typename, auto...> typename Field> struct OptionalFieldBundl
 template <template <typename, auto...> typename Field> struct SharedBundle {
     Field<bg::i64> count;
     Field<double> value;
+};
+
+struct NamedScalarFixedGraph {
+    bg::i64 count;
+    bg::wp<bg::TS<float>, "value"_n> value;
+
+    void wire() const {
+        CHECK(count == 7);
+        CHECK(&value.type() == &bg::TS<float>::type());
+    }
 };
 
 } // namespace
@@ -228,9 +241,9 @@ TEST_CASE("a free TSB span rejects duplicate field names",
     });
 }
 
-TEST_CASE("a free TSB span requires named time-series fields",
+TEST_CASE("a free TSB span requires named fields and projects scalars to const time series",
           "[feature:wiring][series:tsb][schema:named][representation:free]") {
-    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
 
     bg::testing::test_wiring([&] {
         auto unnamed = std::vector<bg::WiringArgument>{};
@@ -238,9 +251,38 @@ TEST_CASE("a free TSB span requires named time-series fields",
         CHECK_THROWS_AS(bg::bundle(std::span<const bg::WiringArgument>{unnamed}), bg::WiringError);
 
         auto scalar = std::vector<bg::WiringArgument>{};
-        scalar.emplace_back(bg::util::symbol{"value"}, bg::i64{1});
-        CHECK_THROWS_AS(bg::bundle(std::span<const bg::WiringArgument>{scalar}), bg::WiringError);
+        scalar.emplace_back(bg::util::symbol{"count"}, bg::i64{7});
+        scalar.emplace_back(bg::util::symbol{"value"}, source());
+        const auto fields = bg::bundle(std::span<const bg::WiringArgument>{scalar});
+        const auto &type = static_cast<const bg::TimeSeriesBundleType &>(fields.type());
+        CHECK(&type.item_type(0) == &bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>::type());
+
+        const auto fixed = bg::graph<NamedScalarFixedGraph>();
+        fixed(bg::kwargs(fields));
+
+        const auto sink = bg::node([](bg::In<bg::TSB<TestBundle>>) {});
+        sink(fields.as<bg::TSB<TestBundle>>());
     });
+}
+
+TEST_CASE("field selection from an argument-backed TSB does not materialize the bundle",
+          "[feature:wiring][feature:getattr][series:tsb][schema:named][representation:free]") {
+    const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+
+    auto fields = std::vector<bg::WiringArgument>{};
+    fields.emplace_back(bg::util::symbol{"count"}, bg::i64{7});
+    fields.emplace_back(bg::util::symbol{"value"}, source());
+    const auto bundle = bg::bundle(std::span<const bg::WiringArgument>{fields});
+    const auto value = bg::details::time_series_bundle_field(bundle, bg::util::symbol{"value"});
+    const auto count = bg::details::time_series_bundle_field(bundle, bg::util::symbol{"count"});
+    CHECK(&count.type() == &bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>::type());
+
+    (void)wiring.complete_pending_wiring(value);
+    (void)wiring.complete_pending_wiring(count);
+    CHECK(wiring.nodes().size() == 2);
+    CHECK(wiring.outputs().size() == 2);
 }
 
 TEST_CASE("getattr on a TSB reference returns a reference to a value field",

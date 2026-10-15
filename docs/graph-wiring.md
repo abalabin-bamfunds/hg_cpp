@@ -80,12 +80,15 @@ creates one TSB output over the selected fields and reports their field
 changes.
 
 `bg::bundle(fields)` accepts a vector or span of named `WiringArgument`
-values containing time series. Field names can be determined during wiring:
+values containing scalars and time series. Scalar fields project to const time
+series when the TSB is consumed. `args(bundle)` and `kwargs(bundle)` preserve
+scalar arguments when expanding the wiring record. Field names can be
+determined during wiring:
 
 ```cpp
 auto fields = std::vector<bg::WiringArgument>{};
 fields.emplace_back(bg::util::symbol{"price"}, price);
-fields.emplace_back(bg::util::symbol{"quantity"}, quantity);
+fields.emplace_back(bg::util::symbol{"quantity"}, 10);
 auto result = bg::bundle(fields);
 ```
 

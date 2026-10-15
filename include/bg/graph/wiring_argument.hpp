@@ -213,6 +213,7 @@ class WiringArgument {
     }
 
     void clear_name() noexcept { name_.reset(); }
+    void set_name(util::symbol name) noexcept { name_ = name; }
     void require_optional() {
         if (!is_time_series()) {
             throw WiringError{"only a time-series wiring argument can require an optional input"};
@@ -228,6 +229,7 @@ class WiringArgument {
     }
 
     details::VariadicMode variadic_capture_mode() const noexcept { return variadic_capture_mode_; }
+    void clear_variadic_capture_mode() noexcept { variadic_capture_mode_ = details::VariadicMode::none; }
     void set_variadic_name(util::symbol name, details::VariadicMode mode) noexcept {
         name_ = name;
         variadic_capture_mode_ = mode;

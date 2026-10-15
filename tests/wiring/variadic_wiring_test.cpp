@@ -1065,3 +1065,53 @@ TEST_CASE("a variadic graph preserves fixed parameters and time series entries",
 
     testing::test_wiring([&] { tested(3, source(), 4); });
 }
+
+TEST_CASE("nested expands scalar and time-series arguments from TSB wiring records",
+          "[feature:wiring][feature:variadic-wiring][feature:nested-graph][series:tsb][schema:named]"
+          "[definition:function][representation:free][shape:nested]") {
+    const auto inner = graph(
+        "name"_n = "inner",
+        [](i64 fixed, wp<TS<i64>, "value"_n> value, wp<TSB<SCHEMA>, var_args> extras) {
+            CHECK(fixed == 7);
+            CHECK(TS<i64>::type().accepts(value.type()));
+            REQUIRE(extras.size() == 2);
+            CHECK(extras[0].is_scalar());
+            CHECK(scalar_cast<i64>(extras[0].scalar()).value() == 23);
+            CHECK(extras[1].is_time_series());
+            CHECK(&extras[1].type() == &TS<i64>::type());
+            return value;
+        });
+    const auto run_source = node([](Out<TS<bool>>) {});
+    const auto series_source = node([](Out<TS<i64>>) {});
+
+    testing::test_wiring([&] {
+        auto named_fields = std::vector<WiringArgument>{};
+        named_fields.emplace_back(util::symbol{"0"}, i64{7});
+        named_fields.emplace_back(util::symbol{"value"}, series_source());
+        const auto named = bundle(std::span<const WiringArgument>{named_fields});
+
+        auto positional_fields = std::vector<WiringArgument>{};
+        positional_fields.emplace_back(util::symbol{"scalar"}, i64{23});
+        positional_fields.emplace_back(util::symbol{"series"}, series_source());
+        const auto positional = bundle(std::span<const WiringArgument>{positional_fields});
+
+        (void)nested(inner, run_source(), kwargs(named), args(positional));
+    });
+}
+
+TEST_CASE("kwargs preserves optional qualifiers from a TSB wiring record",
+          "[feature:wiring][feature:variadic-wiring][validity:optional][series:tsb][schema:named]") {
+    const auto source = node([](Out<TS<i64>>) {});
+    const auto optional_receiver =
+        graph("name"_n = "optional_receiver", [](wp<TS<i64>, "value"_n, optional>) {});
+    const auto required_receiver = graph("name"_n = "required_receiver", [](wp<TS<i64>, "value"_n>) {});
+
+    const auto pack = [&] {
+        auto fields = std::vector<WiringArgument>{};
+        fields.emplace_back(util::symbol{"value"}, opt(source()));
+        return bundle(std::span<const WiringArgument>{fields});
+    };
+
+    testing::test_wiring([&] { optional_receiver(kwargs(pack())); });
+    CHECK_THROWS_AS(testing::test_wiring([&] { required_receiver(kwargs(pack())); }), TypeResolutionError);
+}

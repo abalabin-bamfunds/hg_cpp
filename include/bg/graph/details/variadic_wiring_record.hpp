@@ -23,6 +23,7 @@ class VariadicWiringRecord final : public WiringRecord {
     std::size_t size() const noexcept;
     util::symbol item_name(std::size_t index) const;
     WiringArgument argument(std::size_t index) const;
+    WiringArgument expanded_argument(std::size_t index, VariadicMode mode) const;
     std::vector<WiringArgumentDescriptor> argument_descriptors() const;
     VariadicMode mode() const noexcept { return mode_; }
     std::optional<WiringPoint> direct_collection() const noexcept { return direct_; }
