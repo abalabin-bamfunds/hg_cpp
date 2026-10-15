@@ -29,6 +29,7 @@
 #include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
+#include <bg/util/occupancy_index.hpp>
 
 #include <algorithm>
 #include <array>
@@ -263,12 +264,20 @@ class ServiceRequestClient {
 
                         const auto reference =
                             invocation.input<In<REF<SERVICE_ARGUMENT>>>(parameter * 2 + 1).value();
-                        if (!reference) {
-                            throw std::logic_error{"a valid service input has no reference"};
+                        if (!reference && dictionary->item_id(key) == util::occupancy_index::npos) {
+                            changed = true;
                         }
                         auto item = (*dictionary)[key];
                         item.visit(
                             [&](Out<REF<TS_T>> *output) {
+                                if (!reference) {
+                                    if (output->valid()) {
+                                        output->invalidate();
+                                        changed = true;
+                                    }
+                                    return;
+                                }
+
                                 if (!output->valid() || output->value() != reference) {
                                     output->set_value(reference);
                                     changed = true;

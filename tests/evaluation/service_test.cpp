@@ -114,6 +114,63 @@ TEST_CASE("service keeps a client active while any input is valid",
     CHECK(fraction_request_sizes == std::vector<std::size_t>{1, 1, 1, 0});
 }
 
+TEST_CASE("service keeps an unbound reference request as an invalid item",
+          "[feature:service][series:reference][shape:multiple]") {
+    const auto service = bg::service<auto(TS<std::int64_t>, TS<std::int64_t>)->TS<std::int64_t>>{
+        "reference_status", {"stable", "selected"}};
+    auto implementation_evaluations = std::size_t{};
+    auto request_states = std::vector<std::array<bool, 5>>{};
+
+    const auto implement = node([&](In<TSD<service_client_id_t, TS<std::int64_t>>> stable,
+                                    In<TSD<service_client_id_t, TS<std::int64_t>>> selected,
+                                    Out<TSD<service_client_id_t, TS<std::int64_t>>> responses) {
+        ++implementation_evaluations;
+        stable.for_each_key([&](const auto &client_id) {
+            const auto stable_value = stable[client_id];
+            const auto selected_value = selected[client_id];
+            request_states.push_back({stable.contains(client_id), selected.contains(client_id), stable_value.valid(),
+                                      selected_value.valid(), selected.modified()});
+            responses[client_id].set(selected_value.valid() ? 1 : 0);
+        });
+    });
+    const auto implementation =
+        graph("name"_n = "reference_status_impl",
+              [&](wp<TSD<service_client_id_t, TS<std::int64_t>>, "stable"_n> stable,
+                  wp<TSD<service_client_id_t, TS<std::int64_t>>, "selected"_n> selected) {
+                  return implement(stable, selected);
+              });
+
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(service, implementation);
+
+    const auto select_reference = node([](In<TS<bool>> select, In<REF<TS<std::int64_t>>> target,
+                                          Out<REF<TS<std::int64_t>>> output) {
+        if (*select) {
+            output.copy(target);
+        } else {
+            output.invalidate();
+        }
+    });
+    const auto tested = [&](wp<TS<std::int64_t>> stable, wp<TS<std::int64_t>> target, wp<TS<bool>> select) {
+        const auto selected = select_reference(select, target.as<REF<TS<std::int64_t>>>());
+        return service(stable, selected).as<TS<std::int64_t>>();
+    };
+
+    const auto actual = testing::test_graph(tested, catalogue, std::array<std::int64_t, 6>{10, 20, 30, 40, 50, 60},
+                                            std::array<std::int64_t, 6>{101, 102, 103, 104, 105, 106},
+                                            std::array<bool, 6>{false, false, true, false, false, true});
+
+    CHECK(actual.equals<std::int64_t>({0, 0, 1, 0, 0, 1}));
+    CHECK(implementation_evaluations == 6);
+    REQUIRE(request_states.size() == 6);
+    CHECK((request_states[0] == std::array<bool, 5>{true, true, true, false, true}));
+    CHECK((request_states[1] == std::array<bool, 5>{true, true, true, false, false}));
+    CHECK((request_states[2] == std::array<bool, 5>{true, true, true, true, true}));
+    CHECK((request_states[3] == std::array<bool, 5>{true, true, true, false, true}));
+    CHECK((request_states[4] == std::array<bool, 5>{true, true, true, false, false}));
+    CHECK((request_states[5] == std::array<bool, 5>{true, true, true, true, true}));
+}
+
 TEST_CASE("sink service receives and withdraws valid client inputs",
           "[feature:service][series:tsd][shape:sink]") {
     const auto service = bg::service<auto(TS<std::int64_t>)->void>{"audit", {"value"}};
