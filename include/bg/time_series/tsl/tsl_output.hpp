@@ -4,6 +4,7 @@
 #include <bg/node/details/output_factory.hpp>
 #include <bg/time_series/output_binding.hpp>
 #include <bg/time_series/details/output_state.hpp>
+#include <bg/time_series/details/scalar_literal.hpp>
 #include <bg/time_series/time_series_output.hpp>
 #include <bg/time_series/tsl/tsl_input.hpp>
 #include <bg/time_series/tsl/tsl_runtime_type.hpp>
@@ -39,6 +40,32 @@ template <typename Item, auto Size, auto... Properties> class Out<TSL<Item, Size
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
     std::size_t size() const noexcept { return state_->runtime_type().item_count(state_->data()); }
+
+    void apply(const literal::ScalarLiteral &literal) const {
+        const auto values = details::scalar_literal::sequence(literal);
+        for (auto position = std::size_t{}; position < values.size(); ++position) {
+            const auto current = details::scalar_literal::pair(
+                values[position], "a TSL update entry requires an index and a value");
+            const auto index = details::scalar_literal::list_index(*current.first);
+            if (index >= size() || !std::in_range<item_id_t>(index)) {
+                throw std::invalid_argument{"a TSL update index is out of range"};
+            }
+
+            for (auto previous = std::size_t{}; previous < position; ++previous) {
+                const auto prior = details::scalar_literal::pair(
+                    values[previous], "a TSL update entry requires an index and a value");
+                if (details::scalar_literal::list_index(*prior.first) == index) {
+                    throw std::invalid_argument{"a TSL update contains a duplicate index"};
+                }
+            }
+        }
+
+        for (const auto &value : values) {
+            const auto current = details::scalar_literal::pair(
+                value, "a TSL update entry requires an index and a value");
+            details::apply_scalar_literal((*this)[details::scalar_literal::list_index(*current.first)], *current.second);
+        }
+    }
 
     Out<Item> operator[](std::size_t index) const {
         const auto id = static_cast<item_id_t>(index);

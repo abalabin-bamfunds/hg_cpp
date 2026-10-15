@@ -267,11 +267,4 @@ class Out<TS<T, Properties...>> {
 
 static_assert(sizeof(Out<TS<i64>>) == sizeof(void *));
 
-template <details::time_series_variable Variable>
-void Out<Variable>::apply(const literal::ScalarLiteral &literal) const {
-    visit([&](Out<TS<SCALAR>> *output) { output->apply(literal); }, [](const auto *) {
-        throw std::invalid_argument{"a scalar list literal requires a scalar time-series output"};
-    });
-}
-
 } // namespace bg

@@ -77,6 +77,12 @@ static_assert(sizeof(Out<TS_T>) == sizeof(void *));
 
 } // namespace bg
 
+namespace bg::details {
+
+template <typename Output> void apply_scalar_literal(const Output &output, const literal::ScalarLiteral &literal);
+
+} // namespace bg::details
+
 #include <bg/time_series/ref/ref_output.hpp>
 #include <bg/time_series/ts/ts_output.hpp>
 #include <bg/time_series/tsb/tsb_output.hpp>
@@ -149,5 +155,27 @@ auto Out<Variable>::visit(Visitor &&visitor, Arguments &&...arguments) const {
         return *dispatch;
     }
 }
+
+template <details::time_series_variable Variable>
+void Out<Variable>::apply(const literal::ScalarLiteral &literal) const {
+    details::apply_scalar_literal(*this, literal);
+}
+
+namespace details {
+
+template <typename Output> void apply_scalar_literal(const Output &output, const literal::ScalarLiteral &literal) {
+    output.visit([&](auto *typed_output) {
+        using TypedOutput = std::remove_cvref_t<decltype(*typed_output)>;
+        if constexpr (std::same_as<TypedOutput, Out<TS_T>>) {
+            throw std::invalid_argument{"this time-series type does not support literal updates"};
+        } else if constexpr (requires { typed_output->apply(literal); }) {
+            typed_output->apply(literal);
+        } else {
+            throw std::invalid_argument{"this time-series type does not support literal updates"};
+        }
+    }, ddv::noop);
+}
+
+} // namespace details
 
 } // namespace bg

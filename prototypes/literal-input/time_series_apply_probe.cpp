@@ -46,6 +46,40 @@ template <template <typename, auto...> typename Field> struct ProbeBundle {
     Field<TS<i64>> item;
 };
 
+template <template <typename, auto...> typename Field> struct CollectionBundle {
+    Field<TS<i64>> scalar;
+    Field<TSL<TS<i64>, 2>> list;
+    Field<bg::TSD<i64, TS<i64>>> dictionary;
+    Field<bg::TSS<i64>> set;
+};
+
+template <template <typename, auto...> typename Field> struct ReferenceLiteralBundle {
+    Field<bg::REF<TS<i64>>> reference;
+    Field<TS<i64>> status;
+};
+
+struct NestedRuntimeDictionarySourceDefinition {
+    NestedRuntimeDictionarySourceDefinition()
+        : output_type_{&bg::TSD<bg::string, bg::TSB<CollectionBundle>>::type()},
+          signature_{bg::util::symbol{"nested_runtime_dictionary_source"}, {}, *output_type_} {}
+
+    const bg::Signature &signature() const { return signature_; }
+
+    static void start(bg::NodeInvocation<> invocation) {
+        invocation.output().visit(
+            [](bg::Out<bg::TSD<bg::SCALAR, bg::TS_T>> *output) {
+                output->apply({{"outer", {{"scalar", 1},
+                                           {"list", {{1, 3}}},
+                                           {"dictionary", {{2, 42}}},
+                                           {"set", {8}}}}});
+            },
+            ddv::noop);
+    }
+
+    const bg::TimeSeriesDictionaryType *output_type_;
+    bg::Signature signature_;
+};
+
 struct alignas(64) LiteralCompound {
     i64 first{};
     const i64 second{};
@@ -924,6 +958,268 @@ void verify_scalar_view_leaf() {
     require(actual.equals<i64>({21, 34}));
 }
 
+struct CollectionObservation {
+    i64 scalar{};
+    std::array<i64, 2> list{};
+    i64 dictionary_first{};
+    i64 dictionary_second{};
+    bool set_seven{};
+    bool set_eight{};
+    bool set_nine{};
+};
+
+void verify_nested_collection_bundle_literal_updates() {
+    auto observations = std::vector<CollectionObservation>{};
+
+    const auto update = bg::node([](In<TS<i64>> command, Out<bg::TSB<CollectionBundle>> output) {
+        if (*command == 1) {
+            literal::apply(output, {{"scalar", 10},
+                                    {"list", {{0, 11}, {1, 12}}},
+                                    {"dictionary", {{1, 13}, {2, 14}}},
+                                    {"set", {7, 8}}});
+            return;
+        }
+        if (*command == 2) {
+            output.apply({{"scalar", 20},
+                          {"list", {{1, 22}}},
+                          {"dictionary", {{1, 15}, {1, 16}}},
+                          {"set", {8, 9, 9}}});
+            return;
+        }
+        literal::apply(output, {{"scalar", 30}, {"dictionary", {}}, {"set", {}}});
+    });
+    const auto observe = bg::node([&](In<bg::TSB<CollectionBundle>> input, Out<TS<i64>> output) {
+        const auto dictionary = input->dictionary;
+        const auto set = input->set;
+        observations.push_back({.scalar = *input->scalar,
+                                .list = {*input->list[0], *input->list[1]},
+                                .dictionary_first = *dictionary[1],
+                                .dictionary_second = *dictionary[2],
+                                .set_seven = set.contains(7),
+                                .set_eight = set.contains(8),
+                                .set_nine = set.contains(9)});
+        output.set(*input->scalar);
+    });
+    const auto graph = [&](bg::wp<TS<i64>> command) { return observe(update(command)); };
+    const auto actual = bg::testing::test_graph(graph, std::array<i64, 3>{1, 2, 3});
+
+    require(actual.equals<i64>({10, 20, 30}));
+    require(observations.size() == 3);
+    require(observations[0].scalar == 10 && observations[0].list == std::array<i64, 2>{11, 12});
+    require(observations[0].dictionary_first == 13 && observations[0].dictionary_second == 14);
+    require(observations[0].set_seven && observations[0].set_eight && !observations[0].set_nine);
+    require(observations[1].scalar == 20 && observations[1].list == std::array<i64, 2>{11, 22});
+    require(observations[1].dictionary_first == 16 && observations[1].dictionary_second == 14);
+    require(observations[1].set_seven && observations[1].set_eight && observations[1].set_nine);
+    require(observations[2].dictionary_first == 16 && observations[2].dictionary_second == 14);
+    require(observations[2].set_seven && observations[2].set_eight && observations[2].set_nine);
+}
+
+void verify_erased_nested_bundle_literal_dispatch() {
+    auto observed = std::vector<CollectionObservation>{};
+
+    const auto seed = bg::node([](In<TS<i64>> command, Out<bg::TSB<CollectionBundle>> output) {
+        if (*command == 1) {
+            literal::apply(output, {{"scalar", 1},
+                                    {"list", {{0, 2}, {1, 3}}},
+                                    {"dictionary", {{1, 4}, {2, 5}}},
+                                    {"set", {7}}});
+        }
+    });
+    const auto patch = bg::node([](In<bg::TS_T> source, In<TS<i64>> command, Out<bg::TS_T> output) {
+        if (source.valid()) {
+            if (!output.valid()) {
+                output.copy(source);
+            }
+            output.apply({{"scalar", *command},
+                          {"list", {{1, *command}}},
+                          {"dictionary", {{1, *command}, {1, *command + 1}}},
+                          {"set", *command == 1 ? literal::ScalarLiteral{8, 8}
+                                                  : literal::ScalarLiteral{9, 9}}});
+        }
+    });
+    const auto observe = bg::node([&](In<bg::TSB<CollectionBundle>> input, Out<TS<i64>> output) {
+        const auto dictionary = input->dictionary;
+        const auto set = input->set;
+        observed.push_back({.scalar = *input->scalar,
+                            .list = {*input->list[0], *input->list[1]},
+                            .dictionary_first = *dictionary[1],
+                            .dictionary_second = *dictionary[2],
+                            .set_seven = set.contains(7),
+                            .set_eight = set.contains(8),
+                            .set_nine = set.contains(9)});
+        output.set(*input->scalar);
+    });
+    const auto graph = [&](bg::wp<TS<i64>> command) { return observe(patch(seed(command), command)); };
+    const auto actual = bg::testing::test_graph(graph, std::array<i64, 2>{1, 2});
+
+    require(actual.equals<i64>({1, 2}));
+    require(observed.size() == 2);
+    require(observed[0].scalar == 1 && observed[0].list == std::array<i64, 2>{2, 1});
+    require(observed[0].dictionary_first == 2 && observed[0].dictionary_second == 5);
+    require(observed[0].set_seven && observed[0].set_eight && !observed[0].set_nine);
+    require(observed[1].scalar == 2 && observed[1].list == std::array<i64, 2>{2, 2});
+    require(observed[1].dictionary_first == 3 && observed[1].dictionary_second == 5);
+    require(observed[1].set_seven && observed[1].set_eight && observed[1].set_nine);
+}
+
+void verify_empty_dynamic_collection_updates() {
+    const auto dictionary_update = bg::node([](In<TS<i64>> command, Out<bg::TSD<i64, TS<i64>>> output) {
+        if (*command == 2) {
+            literal::apply(output, {{1, 10}});
+            return;
+        }
+        literal::apply(output, {});
+    });
+    const auto dictionary_observe = bg::node([](In<bg::TSD<i64, TS<i64>>> input, Out<TS<i64>> output) {
+        output.set((input.valid() ? 100 : 0) + (input.contains(1) ? 1 : 0));
+    });
+    const auto dictionary_graph = [&](bg::wp<TS<i64>> command) {
+        return dictionary_observe(dictionary_update(command));
+    };
+    const auto dictionary_actual = bg::testing::test_graph(dictionary_graph, std::array<i64, 3>{1, 2, 3});
+    require(dictionary_actual.equals<i64>({100, 101, std::nullopt}));
+
+    const auto set_update = bg::node([](In<TS<i64>> command, Out<bg::TSS<i64>> output) {
+        if (*command == 2) {
+            literal::apply(output, {10});
+            return;
+        }
+        literal::apply(output, {});
+    });
+    const auto set_observe = bg::node([](In<bg::TSS<i64>> input, Out<TS<i64>> output) {
+        output.set((input.valid() ? 100 : 0) + (input.contains(10) ? 1 : 0));
+    });
+    const auto set_graph = [&](bg::wp<TS<i64>> command) { return set_observe(set_update(command)); };
+    const auto set_actual = bg::testing::test_graph(set_graph, std::array<i64, 3>{1, 2, 3});
+    require(set_actual.equals<i64>({100, 101, std::nullopt}));
+}
+
+void verify_nested_runtime_dictionary_literal_application() {
+    const auto source = bg::node(NestedRuntimeDictionarySourceDefinition{});
+    const auto observe = bg::node([](In<bg::TSD<bg::string, bg::TSB<CollectionBundle>>> input,
+                                     Out<TS<i64>> output) {
+        const auto bundle = input["outer"];
+        output.set(*bundle->scalar + *bundle->list[1] + *bundle->dictionary[2] +
+                   (bundle->set.contains(8) ? 1 : 0));
+    });
+    const auto graph = [&] {
+        return observe(bg::wp<bg::TSD<bg::string, bg::TSB<CollectionBundle>>>{*source()});
+    };
+    const auto actual = bg::testing::test_graph(graph);
+    require(actual.equals<i64>({47}));
+}
+
+void verify_composite_dictionary_keys_and_set_items() {
+    const auto dictionary_update = bg::node([](In<TS<i64>>, Out<bg::TSD<bg::List<i64>, TS<i64>>> output) {
+        literal::apply(output, {{{1, 2}, 11}, {{1, 2}, 12}, {{3, 4}, 13}});
+    });
+    const auto dictionary_observe = bg::node([](In<bg::TSD<bg::List<i64>, TS<i64>>> input, Out<TS<i64>> output) {
+        auto total = i64{};
+        input.for_each_value([&](const auto &value) { total += *value; });
+        output.set(static_cast<i64>(input.size()) * 100 + total);
+    });
+    const auto dictionary_graph = [&](bg::wp<TS<i64>> command) {
+        return dictionary_observe(dictionary_update(command));
+    };
+    const auto dictionary_actual = bg::testing::test_graph(dictionary_graph, std::array<i64, 1>{1});
+    require(dictionary_actual.equals<i64>({225}));
+
+    const auto set_update = bg::node([](In<TS<i64>>, Out<bg::TSS<bg::List<i64>>> output) {
+        literal::apply(output, {{1, 2}, {1, 2}, {3, 4}});
+    });
+    const auto set_observe = bg::node([](In<bg::TSS<bg::List<i64>>> input, Out<TS<i64>> output) {
+        output.set(static_cast<i64>(input.size()));
+    });
+    const auto set_graph = [&](bg::wp<TS<i64>> command) { return set_observe(set_update(command)); };
+    const auto set_actual = bg::testing::test_graph(set_graph, std::array<i64, 1>{1});
+    require(set_actual.equals<i64>({2}));
+}
+
+void verify_provider_temporary_dictionary_values() {
+    const auto update = bg::node([](In<TS<i64>> input,
+                                    Out<bg::TSD<bg::string, TS<test_scalar_provider::value>>> output) {
+        literal::apply(output, {{"first", test_scalar_provider::value{static_cast<int>(*input)}},
+                                {"second", test_scalar_provider::value{static_cast<int>(*input + 2)}}});
+    });
+    const auto observe = bg::node([](In<bg::TSD<bg::string, TS<test_scalar_provider::value>>> input,
+                                    Out<TS<i64>> output) {
+        auto total = i64{};
+        input.for_each_value([&](const auto &value) { total += (*value).get(); });
+        output.set(static_cast<i64>(input.size()) * 10 + total);
+    });
+    const auto graph = [&](bg::wp<TS<i64>> input) { return observe(update(input)); };
+    const auto actual = bg::testing::test_graph(graph, std::array<i64, 1>{17});
+    require(actual.equals<i64>({56}));
+}
+
+void verify_malformed_bundle_and_dictionary_literals() {
+    auto bundle_rejections = std::array<bool, 2>{};
+    const auto malformed_bundle = bg::node([&](In<TS<i64>> command, Out<bg::TSB<CollectionBundle>> output) {
+        try {
+            if (*command == 1) {
+                literal::apply(output, {{"scalar", 10}, {"unknown", 20}});
+            } else {
+                literal::apply(output, {{"scalar", 10}, {"scalar", 20}});
+            }
+        } catch (const std::invalid_argument &) {
+            bundle_rejections[static_cast<std::size_t>(*command - 1)] = !output.fields().scalar.valid();
+        }
+    });
+    const auto bundle_observe = bg::node([](In<TS<i64>> command, In<bg::TSB<CollectionBundle>, bg::optional> input,
+                                           Out<TS<i64>> output) {
+        output.set(input->scalar.valid() ? 1 : 0);
+        static_cast<void>(command);
+    });
+    const auto bundle_graph = [&](bg::wp<TS<i64>> command) {
+        return bundle_observe(command, malformed_bundle(command));
+    };
+    const auto bundle_actual = bg::testing::test_graph(bundle_graph, std::array<i64, 2>{1, 2});
+    require(bundle_actual.equals<i64>({0, 0}));
+    require((bundle_rejections == std::array{true, true}));
+
+    auto dictionary_rejection_preserved_output = false;
+    const auto malformed_dictionary = bg::node([&](In<TS<i64>> command,
+                                                   Out<bg::TSD<i64, TS<i64>>> output) {
+        try {
+            literal::apply(output, {{1, *command}, {2}});
+        } catch (const std::invalid_argument &) {
+            dictionary_rejection_preserved_output = !output.valid();
+        }
+    });
+    const auto dictionary_observe = bg::node([](In<TS<i64>> command,
+                                                In<bg::TSD<i64, TS<i64>>, bg::optional> input,
+                                                Out<TS<i64>> output) {
+        output.set(input.valid() ? static_cast<i64>(input.size()) : 0);
+        static_cast<void>(command);
+    });
+    const auto dictionary_graph = [&](bg::wp<TS<i64>> command) {
+        return dictionary_observe(command, malformed_dictionary(command));
+    };
+    const auto dictionary_actual = bg::testing::test_graph(dictionary_graph, std::array<i64, 1>{1});
+    require(dictionary_actual.equals<i64>({0}));
+    require(dictionary_rejection_preserved_output);
+}
+
+void verify_nested_reference_literal_rejection() {
+    auto rejected = false;
+    const auto update = bg::node([&](In<TS<i64>> command, Out<bg::TSB<ReferenceLiteralBundle>> output) {
+        try {
+            literal::apply(output, {{"reference", *command}});
+        } catch (const std::invalid_argument &) {
+            rejected = true;
+        }
+        output.fields().status.set(rejected ? 1 : 0);
+    });
+    const auto observe = bg::node([](In<bg::TSB<ReferenceLiteralBundle>> input, Out<TS<i64>> output) {
+        output.set(*input->status);
+    });
+    const auto graph = [&](bg::wp<TS<i64>> command) { return observe(update(command)); };
+    const auto actual = bg::testing::test_graph(graph, std::array<i64, 1>{1});
+    require(actual.equals<i64>({1}));
+    require(rejected);
+}
+
 void verify_invalid_list_deltas() {
     const auto observe = bg::node([](In<bg::TS_T, bg::optional> input, Out<TS<i64>> output) {
         output.set(input.valid() ? 1 : 0);
@@ -1006,46 +1302,13 @@ void verify_invalid_list_deltas() {
     }
     require(scalar_sequence_rejected);
 
-    const auto unsupported_set = bg::node([](In<TS<i64>> input, Out<bg::TSS<i64>> output) {
+    const auto empty_bundle = bg::node([](In<TS<i64>> input, Out<bg::TSB<ProbeBundle>> output) {
         static_cast<void>(input);
         literal::apply(output, {});
     });
-    const auto unsupported_set_graph = [&](bg::wp<TS<i64>> input) { return observe(unsupported_set(input)); };
-    auto set_rejected = false;
-    try {
-        static_cast<void>(bg::testing::test_graph(unsupported_set_graph, std::array<i64, 1>{1}));
-    } catch (const std::invalid_argument &) {
-        set_rejected = true;
-    }
-    require(set_rejected);
-
-    const auto unsupported_dictionary = bg::node([](In<TS<i64>> input, Out<bg::TSD<i64, TS<i64>>> output) {
-        static_cast<void>(input);
-        literal::apply(output, {});
-    });
-    const auto unsupported_dictionary_graph = [&](bg::wp<TS<i64>> input) {
-        return observe(unsupported_dictionary(input));
-    };
-    auto dictionary_rejected = false;
-    try {
-        static_cast<void>(bg::testing::test_graph(unsupported_dictionary_graph, std::array<i64, 1>{1}));
-    } catch (const std::invalid_argument &) {
-        dictionary_rejected = true;
-    }
-    require(dictionary_rejected);
-
-    const auto unsupported_bundle = bg::node([](In<TS<i64>> input, Out<bg::TSB<ProbeBundle>> output) {
-        static_cast<void>(input);
-        literal::apply(output, {});
-    });
-    const auto unsupported_bundle_graph = [&](bg::wp<TS<i64>> input) { return observe(unsupported_bundle(input)); };
-    auto bundle_rejected = false;
-    try {
-        static_cast<void>(bg::testing::test_graph(unsupported_bundle_graph, std::array<i64, 1>{1}));
-    } catch (const std::invalid_argument &) {
-        bundle_rejected = true;
-    }
-    require(bundle_rejected);
+    const auto empty_bundle_graph = [&](bg::wp<TS<i64>> input) { return observe(empty_bundle(input)); };
+    const auto bundle_actual = bg::testing::test_graph(empty_bundle_graph, std::array<i64, 1>{1});
+    require(bundle_actual.equals<i64>({std::nullopt}));
 }
 
 void verify_duplicate_prevalidation_and_partial_failure() {
@@ -1101,6 +1364,14 @@ int main() {
     verify_provider_list_output();
     verify_provider_scalar_leaf();
     verify_scalar_view_leaf();
+    verify_nested_collection_bundle_literal_updates();
+    verify_erased_nested_bundle_literal_dispatch();
+    verify_empty_dynamic_collection_updates();
+    verify_nested_runtime_dictionary_literal_application();
+    verify_composite_dictionary_keys_and_set_items();
+    verify_provider_temporary_dictionary_values();
+    verify_malformed_bundle_and_dictionary_literals();
+    verify_nested_reference_literal_rejection();
     verify_invalid_list_deltas();
     verify_duplicate_prevalidation_and_partial_failure();
 }

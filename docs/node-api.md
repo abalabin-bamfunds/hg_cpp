@@ -466,9 +466,38 @@ void replace_list(Out<TS<List<i64>>> output) {
 }
 ```
 
-`Out<TS_T>::apply()` dispatches to its resolved scalar time series output.
-Other time series kinds throw `std::invalid_argument`.
-Follow the [literal lifetime and construction contract](scalar-api.md#literals).
+Collection outputs accept the same borrowed `ScalarLiteral` syntax and apply
+selected changes:
+
+| Output | Literal sequence | Operation |
+| --- | --- | --- |
+| Fixed TSL | `{{index, child_delta}, ...}` | Update selected indices |
+| TSB | `{{field_name, child_delta}, ...}` | Update selected fields |
+| TSD | `{{key, child_delta}, ...}` | Insert or update selected keys |
+| TSS | `{item, ...}` | Insert supplied items |
+
+Omitted children retain their state. Child deltas use each child's actual
+runtime type and output path. Scalar keys and set items use the
+[scalar literal construction rules](scalar-api.md#literals), including nested
+scalar collections. TSD entries and TSS items apply in written order; repeated
+keys or items use normal output mutation behavior.
+
+TSL validates entry shape, nonnegative integral indices, bounds, and duplicate
+indices before applying that list's children. Boolean indices are rejected.
+TSB validates entry shape, string or symbol field names, unknown fields, and
+duplicate fields before applying that bundle's children. A later child failure
+can leave earlier mutations applied, following [evaluation failure
+behavior](evaluation.md#exceptions).
+
+An empty TSL or TSB literal performs no updates. An empty TSD or TSS literal
+establishes validity on its first tick and preserves an already-valid
+collection. `ScalarLiteral` provides additions and child updates; use `erase()`
+and `invalidate()` for removals and invalidation.
+
+`Out<TS_T>::apply()` dispatches through DDV to its resolved output kind.
+Reference and extension time series literal structures throw
+`std::invalid_argument`. Follow the [literal lifetime and construction
+contract](scalar-api.md#literals).
 
 `Out<>::copy_tick(input)` applies the input's current-cycle changes to the output.
 It does nothing when the input has no change in the current evaluation cycle.

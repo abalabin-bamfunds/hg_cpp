@@ -310,6 +310,8 @@ graph compilation or evaluation.
 - dictionary key, item, and validity changes
 - nested dictionary representations and shared key sets
 - output mutation paths and parent notifications
+- literal application through typed and erased outputs, mixed nested collections,
+  selected updates, empty first ticks, scalar keys and items, and malformed input
 - provider-defined children accessed through built-in collections
 
 ### Nodes and graphs

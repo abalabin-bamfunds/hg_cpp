@@ -82,37 +82,32 @@ structural types to their generic views. Other declarations reach the
 `Scalar<>` extension callback, where the consumer owns extension behavior,
 optionally through `ScalarDispatch`; see [the scalar API](../../docs/scalar-api.md#optional-operations).
 
-`time_series_apply.hpp` provides `literal::apply(output, literal)` for typed
-and runtime-selected scalar time series and fixed TSL outputs:
+`Out::apply()` accepts typed and runtime-selected scalar time series, fixed
+TSL, TSB, TSD, and TSS outputs:
 
 ```cpp
 #include <bg/literal/scalar_literal.hpp>
-#include "literal_input/time_series_apply.hpp"
 
-literal::apply(scalar_output, 42);
-literal::apply(list_output, {{0, 10}, {2, 30}});
-literal::apply(nested_list_output, {{1, {{0, 10}}}});
+scalar_output.apply(42);
+list_output.apply({{0, 10}, {2, 30}});
+nested_list_output.apply({{1, {{0, 10}}}});
+bundle_output.apply({{"price", 100}});
+dictionary_output.apply({{"a", 10}, {"b", 20}});
+set_output.apply({1, 2, 3});
 ```
 
-Scalar TS outputs delegate to `Out::apply()`, which constructs an owning
+Scalar TS application constructs an owning
 `ScalarValue` through `from_literal()` and passes it to the consuming
 `set_value()` overload. Scalar sequences construct complete replacements through
 the actual destination runtime. Compatible storage transfers without another
 collection element copy.
-TSL entries are `{index, child_delta}` pairs. Indices must be nonnegative
-integers other than Boolean values. At each list, the consumer validates entry
-shape, index range, and duplicate indices before applying that list's children.
-Validation uses an allocation-free scan of earlier entries. Omitted indices
-retain their state. Empty deltas perform no updates. Child outputs own validity,
-guarantees, notifications, and containing paths. Nested deltas apply recursively;
-a child application failure can leave earlier children published, as defined
-by [evaluation](../../docs/evaluation.md#exceptions).
-
-Scalar time series accept replacement sequences for lists, sets, dictionaries,
-compound scalars, and bundles. TSB, TSD, and TSS output updates remain unsupported.
+Collection deltas follow the [output API](../../docs/node-api.md#output-parameters).
+Child outputs own validity, guarantees, notifications, and containing paths.
+Literal interpretation lives in the time series consumer. The prototype
+`literal::apply` function forwards to the public output API.
 
 The `literal_time_series_apply_probe` target checks typed and generic output
-dispatch, nested TSL updates, notifications, validity, deduplicated outputs,
+dispatch, nested collection updates, notifications, validity, deduplicated outputs,
 borrowed scalar views, provider-backed rvalue leaves, malformed deltas, and
 unsupported output types. Scalar list checks cover native and composed runtimes,
 three nested list levels, empty replacements, deduplicated revalidation, provider

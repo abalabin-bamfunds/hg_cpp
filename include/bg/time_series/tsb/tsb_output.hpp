@@ -4,12 +4,15 @@
 #include <bg/node/details/output_factory.hpp>
 #include <bg/time_series/output_binding.hpp>
 #include <bg/time_series/details/output_state.hpp>
+#include <bg/time_series/details/scalar_literal.hpp>
 #include <bg/time_series/time_series_output.hpp>
 #include <bg/time_series/tsb/tsb_input.hpp>
 #include <bg/time_series/tsb/tsb_runtime_type.hpp>
 #include <bg/time_series/tsb/tsb_type.hpp>
 #include <bg/time_series/schema_variable.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
+
+#include <stdexcept>
 
 namespace bg {
 namespace details {
@@ -63,6 +66,10 @@ class Out<TSB<Schema, Properties...>> {
     const fields_type &fields() const noexcept { return fields_; }
     void invalidate() const { state_->invalidate(); }
 
+    void apply(const literal::ScalarLiteral &literal) const {
+        details::apply_scalar_literal(details::output_factory::make<Out<TS_T>>(state_.get()), literal);
+    }
+
     template <template <template <typename, auto...> typename> typename InputSchema,
               auto... InputTimeSeriesProperties, auto... InputProperties>
     void copy_tick(const In<TSB<InputSchema, InputTimeSeriesProperties...>, InputProperties...> &input) const {
@@ -108,6 +115,40 @@ class Out<TSB<Schema, Properties...>> {
     }
 
     void invalidate() const { state_->invalidate(); }
+
+    void apply(const literal::ScalarLiteral &literal) const {
+        const auto values = details::scalar_literal::sequence(literal);
+        const auto field_index = [&](std::string_view expected) {
+            for (auto index = std::size_t{}; index < size(); ++index) {
+                if (item_name(index).text() == expected) {
+                    return index;
+                }
+            }
+            throw std::invalid_argument{"a TSB update contains an unknown field"};
+        };
+
+        for (auto position = std::size_t{}; position < values.size(); ++position) {
+            const auto current = details::scalar_literal::pair(
+                values[position], "a TSB update entry requires a field name and a value");
+            const auto current_name = details::scalar_literal::field_name(*current.first);
+            (void)field_index(current_name);
+
+            for (auto previous = std::size_t{}; previous < position; ++previous) {
+                const auto prior = details::scalar_literal::pair(
+                    values[previous], "a TSB update entry requires a field name and a value");
+                if (details::scalar_literal::field_name(*prior.first) == current_name) {
+                    throw std::invalid_argument{"a TSB update contains a duplicate field"};
+                }
+            }
+        }
+
+        for (const auto &value : values) {
+            const auto current = details::scalar_literal::pair(
+                value, "a TSB update entry requires a field name and a value");
+            const auto index = field_index(details::scalar_literal::field_name(*current.first));
+            details::apply_scalar_literal((*this)[index], *current.second);
+        }
+    }
 
     template <template <template <typename, auto...> typename> typename InputSchema,
               auto... InputTimeSeriesProperties, auto... InputProperties>
