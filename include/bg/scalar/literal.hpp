@@ -25,9 +25,9 @@ namespace bg::details {
 using literal::ScalarLiteral;
 using literal::ScalarLiteralItem;
 
-class ScalarLiteralConstructionContext {
+template <typename LiteralType> class ScalarLiteralConstructionContext {
   public:
-    explicit ScalarLiteralConstructionContext(const ScalarLiteral &literal, bool explicit_allocator = false) noexcept
+    explicit ScalarLiteralConstructionContext(const LiteralType &literal, bool explicit_allocator = false) noexcept
         : literal_{&literal}, explicit_allocator_{explicit_allocator} {}
 
     static void callback(void *context, const bg::ScalarRuntimeType &runtime_type, void *destination,
@@ -37,12 +37,12 @@ class ScalarLiteralConstructionContext {
 
     void construct(const bg::ScalarRuntimeType &runtime_type, void *destination, bg::allocator &memory) const {
         literal_->visit(
-            [&](const ScalarLiteralItem &item) {
-                item.visit([&](auto *source) {
+            [&](const typename LiteralType::leaf_type &item) {
+                item.visit_scalar([&](auto *source) {
                     runtime_type.construct_from_input(destination, bg::details::scalar_data(*source), memory);
                 });
             },
-            [&](std::span<const ScalarLiteral> children) {
+            [&](std::span<const LiteralType> children) {
                 runtime_type.type().visit(
                     [&](const bg::ListScalarType *) {
                         const auto &list_runtime_type = static_cast<const bg::ScalarListRuntimeType &>(runtime_type);
@@ -63,11 +63,11 @@ class ScalarLiteralConstructionContext {
                             [&]() noexcept { dict_runtime_type.destroy(destination, memory); }};
                         for (const auto &entry : children) {
                             entry.visit(
-                                [&](const ScalarLiteralItem &) {
+                                [&](const typename LiteralType::leaf_type &) {
                                     throw std::invalid_argument{
                                         "dictionary literal entries must contain a key and mapped value"};
                                 },
-                                [&](std::span<const ScalarLiteral> fields) {
+                                [&](std::span<const LiteralType> fields) {
                                     if (fields.size() != 2) {
                                         throw std::invalid_argument{
                                             "dictionary literal entries must contain exactly two values"};
@@ -123,12 +123,12 @@ class ScalarLiteralConstructionContext {
 
     [[nodiscard]] OwnedScalarData make_value(const ScalarRuntimeType &runtime_type, allocator *memory) const {
         return literal_->visit(
-            [&](const ScalarLiteralItem &item) {
-                return item.visit([&](auto *source) {
+            [&](const typename LiteralType::leaf_type &item) {
+                return item.visit_scalar([&](auto *source) {
                     return copy_scalar_value(scalar_data(*source), runtime_type, memory);
                 }).value();
             },
-            [&](std::span<const ScalarLiteral>) {
+            [&](std::span<const LiteralType>) {
                 return allocate_scalar_value(runtime_type, memory, [&](void *destination, allocator &resource) {
                     construct(runtime_type, destination, resource);
                 });
@@ -147,13 +147,13 @@ class ScalarLiteralConstructionContext {
     }
 
     struct NamedField {
-        const ScalarLiteral *name;
-        const ScalarLiteral *value;
+        const LiteralType *name;
+        const LiteralType *value;
     };
 
     struct NamedFieldConstructionContext {
         const ScalarLiteralConstructionContext &parent;
-        std::span<const ScalarLiteral> entries;
+        std::span<const LiteralType> entries;
         const bg::StructScalarType *struct_type;
         const bg::ResolvedHierarchicalScalarType *hierarchical_type;
 
@@ -215,10 +215,10 @@ class ScalarLiteralConstructionContext {
         }
     };
 
-    template <typename Function> static bool visit_name(const ScalarLiteral &literal, Function &&function) {
+    template <typename Function> static bool visit_name(const LiteralType &literal, Function &&function) {
         return literal.visit(
-            [&](const ScalarLiteralItem &item) {
-                return item.visit([&](auto *source) -> bool {
+            [&](const typename LiteralType::leaf_type &item) {
+                return item.visit_scalar([&](auto *source) -> bool {
                     using View = std::remove_cvref_t<decltype(*source)>;
                     if constexpr (std::same_as<View, bg::Scalar<bg::string>>) {
                         return read_name<std::string_view>(*source, std::forward<Function>(function));
@@ -233,27 +233,27 @@ class ScalarLiteralConstructionContext {
                     }
                 });
             },
-            [](std::span<const ScalarLiteral>) -> bool {
+            [](std::span<const LiteralType>) -> bool {
                 throw std::invalid_argument{"named scalar literal field name must be a string or symbol"};
             }).value();
     }
 
-    static bool name_matches(const ScalarLiteral &literal, std::string_view expected) {
+    static bool name_matches(const LiteralType &literal, std::string_view expected) {
         return visit_name(literal, [&](std::string_view actual) { return actual == expected; });
     }
 
-    static bool same_name(const ScalarLiteral &left, const ScalarLiteral &right) {
+    static bool same_name(const LiteralType &left, const LiteralType &right) {
         return visit_name(left, [&](std::string_view left_name) {
             return visit_name(right, [&](std::string_view right_name) { return left_name == right_name; });
         });
     }
 
-    static NamedField parse_entry(const ScalarLiteral &entry) {
+    static NamedField parse_entry(const LiteralType &entry) {
         return entry.visit(
-            [](const ScalarLiteralItem &) -> NamedField {
+            [](const typename LiteralType::leaf_type &) -> NamedField {
                 throw std::invalid_argument{"named scalar literal entries must contain a field name and value"};
             },
-            [](std::span<const ScalarLiteral> fields) -> NamedField {
+            [](std::span<const LiteralType> fields) -> NamedField {
                 if (fields.size() != 2) {
                     throw std::invalid_argument{"named scalar literal entries must contain exactly two values"};
                 }
@@ -262,7 +262,7 @@ class ScalarLiteralConstructionContext {
             }).value();
     }
 
-    const ScalarLiteral *literal_;
+    const LiteralType *literal_;
     bool explicit_allocator_;
 };
 
@@ -284,6 +284,22 @@ ScalarValue<T> ScalarValue<T>::from_literal(const literal::ScalarLiteral &litera
     return ScalarValue<T>{context.make_value(cpp_scalar_runtime_type<T>(), &memory)};
 }
 
+template <typename T>
+template <typename Leaf>
+ScalarValue<T> ScalarValue<T>::from_literal(const literal::Literal<Leaf> &literal)
+    requires(!details::generic_scalar<T>) {
+    auto context = details::ScalarLiteralConstructionContext{literal};
+    return ScalarValue<T>{context.make_value(cpp_scalar_runtime_type<T>(), nullptr)};
+}
+
+template <typename T>
+template <typename Leaf>
+ScalarValue<T> ScalarValue<T>::from_literal(const literal::Literal<Leaf> &literal, allocator &memory)
+    requires(!details::generic_scalar<T>) {
+    auto context = details::ScalarLiteralConstructionContext{literal, true};
+    return ScalarValue<T>{context.make_value(cpp_scalar_runtime_type<T>(), &memory)};
+}
+
 inline ScalarValue<> ScalarValue<>::from_literal(const ScalarRuntimeType &runtime_type,
                                                 const literal::ScalarLiteral &literal) {
     auto context = details::ScalarLiteralConstructionContext{literal};
@@ -292,6 +308,20 @@ inline ScalarValue<> ScalarValue<>::from_literal(const ScalarRuntimeType &runtim
 
 inline ScalarValue<> ScalarValue<>::from_literal(const ScalarRuntimeType &runtime_type,
                                                 const literal::ScalarLiteral &literal, allocator &memory) {
+    auto context = details::ScalarLiteralConstructionContext{literal, true};
+    return ScalarValue<>{context.make_value(runtime_type, &memory)};
+}
+
+template <typename Leaf>
+ScalarValue<> ScalarValue<>::from_literal(const ScalarRuntimeType &runtime_type,
+                                         const literal::Literal<Leaf> &literal) {
+    auto context = details::ScalarLiteralConstructionContext{literal};
+    return ScalarValue<>{context.make_value(runtime_type, nullptr)};
+}
+
+template <typename Leaf>
+ScalarValue<> ScalarValue<>::from_literal(const ScalarRuntimeType &runtime_type,
+                                         const literal::Literal<Leaf> &literal, allocator &memory) {
     auto context = details::ScalarLiteralConstructionContext{literal, true};
     return ScalarValue<>{context.make_value(runtime_type, &memory)};
 }

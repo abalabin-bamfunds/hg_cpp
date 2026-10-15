@@ -70,6 +70,12 @@ template <typename T> class ScalarValue {
         requires(!details::generic_scalar<T>);
     [[nodiscard]] static ScalarValue from_literal(const literal::ScalarLiteral &literal, allocator &memory)
         requires(!details::generic_scalar<T>);
+    template <typename Leaf>
+    [[nodiscard]] static ScalarValue from_literal(const literal::Literal<Leaf> &literal)
+        requires(!details::generic_scalar<T>);
+    template <typename Leaf>
+    [[nodiscard]] static ScalarValue from_literal(const literal::Literal<Leaf> &literal, allocator &memory)
+        requires(!details::generic_scalar<T>);
 
     template <scalar_source Source>
         requires std::same_as<canonical_scalar_t<Source>, T>
@@ -192,6 +198,12 @@ template <> class ScalarValue<> {
                                                   const literal::ScalarLiteral &literal);
     [[nodiscard]] static ScalarValue from_literal(const ScalarRuntimeType &runtime_type,
                                                   const literal::ScalarLiteral &literal, allocator &memory);
+    template <typename Leaf>
+    [[nodiscard]] static ScalarValue from_literal(const ScalarRuntimeType &runtime_type,
+                                                  const literal::Literal<Leaf> &literal);
+    template <typename Leaf>
+    [[nodiscard]] static ScalarValue from_literal(const ScalarRuntimeType &runtime_type,
+                                                  const literal::Literal<Leaf> &literal, allocator &memory);
 
     template <scalar_source Source>
     explicit ScalarValue(Source &&source)

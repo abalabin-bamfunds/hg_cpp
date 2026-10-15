@@ -450,8 +450,14 @@ It replaces the complete scalar value before it sets the last updated time.
 Owning scalar copies retained by downstream nodes preserve their previous values. Shared
 immutable storage remains alive until its last owner releases it.
 
-`Out<TS<T>>::apply(const literal::ScalarLiteral&)` constructs a `ScalarValue`
-through `from_literal()` and passes it to the consuming `set_value()` overload.
+`Out::apply(const literal::TimeSeriesLiteral&)` consumes a borrowed time series
+delta. `<bg/literal/time_series_literal.hpp>` defines this carrier as
+`literal::Literal<literal::TimeSeriesLiteralItem>`. Its items describe scalar
+sources and update markers. Explicit `literal::ScalarLiteral` arguments remain
+supported.
+
+`Out<TS<T>>::apply()` constructs a `ScalarValue` through `from_literal()` and
+passes it to the consuming `set_value()` overload.
 A scalar leaf replaces the value. A brace sequence constructs
 a complete replacement using the [scalar literal syntax](scalar-api.md#literals);
 nested values use the actual destination runtime types. An empty collection
@@ -466,15 +472,15 @@ void replace_list(Out<TS<List<i64>>> output) {
 }
 ```
 
-Collection outputs accept the same borrowed `ScalarLiteral` syntax and apply
+Collection outputs accept the same borrowed literal syntax and apply
 selected changes:
 
 | Output | Literal sequence | Operation |
 | --- | --- | --- |
 | Fixed TSL | `{{index, child_delta}, ...}` | Update selected indices |
 | TSB | `{{field_name, child_delta}, ...}` | Update selected fields |
-| TSD | `{{key, child_delta}, ...}` | Insert or update selected keys |
-| TSS | `{item, ...}` | Insert supplied items |
+| TSD | `{{key, child_delta}, ...}` or `{{key, literal::REMOVE}, ...}` | Insert, update, or remove selected keys |
+| TSS | `{item, literal::REMOVED(other_item), ...}` | Insert or remove supplied items |
 
 Omitted children retain their state. Child deltas use each child's actual
 runtime type and output path. Scalar keys and set items use the
@@ -491,8 +497,22 @@ behavior](evaluation.md#exceptions).
 
 An empty TSL or TSB literal performs no updates. An empty TSD or TSS literal
 establishes validity on its first tick and preserves an already-valid
-collection. `ScalarLiteral` provides additions and child updates; use `erase()`
-and `invalidate()` for removals and invalidation.
+collection.
+
+`literal::SKIP` performs no update. A skipped TSD child does not create a missing
+key. `literal::INVALID` calls the destination's normal `invalidate()` operation;
+TSD and TSS roots reject it because their output APIs do not support
+invalidation. These markers also work at nested time series positions.
+
+`literal::REMOVE` removes a TSD entry. `literal::REMOVED(item)` removes a TSS
+item, including an item described by a composite scalar literal. Removal uses
+the destination's normal `erase()` behavior. Scalar values, collection keys,
+set item payloads, and field or index selectors reject update markers.
+
+```cpp
+dictionary_output.apply({{"a", 10}, {"b", literal::REMOVE}});
+set_output.apply({1, literal::REMOVED(2)});
+```
 
 `Out<TS_T>::apply()` dispatches through DDV to its resolved output kind.
 Reference and extension time series literal structures throw

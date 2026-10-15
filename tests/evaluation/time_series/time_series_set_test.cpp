@@ -91,6 +91,65 @@ TEST_CASE("a time series set becomes valid on its first empty tick and remains v
 
 namespace {
 
+struct composite_literal_set_source_definition {
+    static constexpr bool uses_timed_scheduling = true;
+
+    bg::Out<bg::TSS<bg::List<bg::i64>>> output;
+
+    void start(bg::EvaluationContext *context) const {
+        output.apply({{1, 2}});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate() const { output.apply({literal::REMOVED({1, 2})}); }
+};
+
+struct composite_literal_set_size_definition {
+    bg::In<bg::TSS<bg::List<bg::i64>>> input;
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void evaluate() const { output.set(static_cast<bg::i64>(input.size())); }
+};
+
+} // namespace
+
+TEST_CASE("a TSS update removes a composite key with an rvalue REMOVED payload",
+          "[evaluation][series:tss][feature:collection-change][transition:removal][scalar:list]") {
+    const auto source = bg::node<composite_literal_set_source_definition>();
+    const auto size = bg::node<composite_literal_set_size_definition>();
+    const auto graph = [&] { return size(source()); };
+
+    const auto actual = bg::testing::test_graph(graph);
+
+    CHECK(actual.equals<bg::i64>({1, 0}));
+}
+
+TEST_CASE("a TSS update applies scalar REMOVED entries in written order",
+          "[evaluation][series:tss][feature:collection-change][transition:removal][scalar:integer]") {
+    const auto update = bg::node([](bg::Out<bg::TSS<bg::i64>> output) {
+        output.apply({1, 2, literal::REMOVED(2), 3});
+    });
+    const auto project = bg::node([](bg::In<bg::TSS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
+        const auto result = (input.contains(1) ? 1 : 0) + (input.contains(2) ? 10 : 0) +
+                            (input.contains(3) ? 100 : 0);
+        output.set(result);
+    });
+    const auto graph = [&] { return project(update()); };
+
+    const auto actual = bg::testing::test_graph(graph);
+
+    CHECK(actual.equals<bg::i64>({101}));
+}
+
+TEST_CASE("a TSS update rejects a root INVALID marker",
+          "[evaluation][series:tss][feature:collection-change][validity]") {
+    const auto source = bg::node([](bg::Out<bg::TSS<bg::i64>> output) { output.apply(literal::INVALID); });
+
+    CHECK_THROWS_AS(bg::run_graph([&] { source(); }), std::invalid_argument);
+}
+
+namespace {
+
 struct inverse_set_mutation_source_definition {
     bg::Out<bg::TSS<std::int64_t>> output;
 

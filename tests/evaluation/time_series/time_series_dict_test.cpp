@@ -89,6 +89,85 @@ TEST_CASE("a time series dictionary publishes item and key changes",
 
 namespace {
 
+struct literal_dict_source_definition {
+    static constexpr bool uses_timed_scheduling = true;
+
+    bg::State<int> step;
+    bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output;
+
+    void start(bg::EvaluationContext *context) const {
+        output.apply({{99, literal::SKIP}, {1, 10}, {2, 20}});
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate(bg::EvaluationContext *context) const {
+        if (*step == 0) {
+            output.apply({{1, literal::REMOVE}});
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        } else {
+            output.apply({{1, 11}});
+        }
+        ++*step;
+    }
+};
+
+struct literal_dict_snapshot_definition {
+    bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input;
+
+    void evaluate() const {
+        present.push_back({input.contains(1), input.contains(2), input.contains(99)});
+
+        auto added_count = std::size_t{};
+        input.for_each_added([&](const auto &) { ++added_count; });
+        added.push_back(added_count);
+
+        auto removed_keys = std::vector<std::int64_t>{};
+        input.for_each_removed([&](const auto &key) { removed_keys.push_back(key.value()); });
+        removed.push_back(std::move(removed_keys));
+
+        auto modified_count = std::size_t{};
+        input.for_each_modified([&](const auto &) { ++modified_count; });
+        modified.push_back(modified_count);
+    }
+
+    inline static std::vector<std::array<bool, 3>> present;
+    inline static std::vector<std::size_t> added;
+    inline static std::vector<std::vector<std::int64_t>> removed;
+    inline static std::vector<std::size_t> modified;
+};
+
+} // namespace
+
+TEST_CASE("a TSD update removes an entry with REMOVE",
+          "[evaluation][tsd][series:tsd][feature:collection-change][transition:removal]") {
+    const auto source = bg::node<literal_dict_source_definition>();
+    const auto snapshot = bg::node<literal_dict_snapshot_definition>();
+    literal_dict_snapshot_definition::present.clear();
+    literal_dict_snapshot_definition::added.clear();
+    literal_dict_snapshot_definition::removed.clear();
+    literal_dict_snapshot_definition::modified.clear();
+
+    bg::run_graph([&] { snapshot(source()); });
+
+    CHECK(literal_dict_snapshot_definition::present ==
+          std::vector<std::array<bool, 3>>{{true, true, false}, {false, true, false}, {true, true, false}});
+    CHECK(literal_dict_snapshot_definition::added == std::vector<std::size_t>{2, 0, 1});
+    CHECK(literal_dict_snapshot_definition::removed ==
+          std::vector<std::vector<std::int64_t>>{{}, {1}, {}});
+    CHECK(literal_dict_snapshot_definition::modified == std::vector<std::size_t>{0, 0, 0});
+}
+
+TEST_CASE("a TSD update rejects a root INVALID marker",
+          "[evaluation][tsd][series:tsd][feature:collection-change][validity]") {
+    const auto source = bg::node([](bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output) {
+        output.apply(literal::INVALID);
+    });
+
+    CHECK_THROWS_AS(bg::run_graph([&] { source(); }), std::invalid_argument);
+}
+
+namespace {
+
 struct dictionary_cursor_definition {
     bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input;
 

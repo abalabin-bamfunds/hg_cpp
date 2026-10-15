@@ -191,6 +191,9 @@ and the source's scalar storage traits.
 `<bg/scalar/literal.hpp>` provides `ScalarValue<T>::from_literal(literal)` and
 `ScalarValue<>::from_literal(runtime_type, literal)`. Both return an owning
 `ScalarValue` and have overloads taking an allocator as the final argument.
+The same construction accepts `Literal<Leaf>` when the leaf provides scalar
+views through `visit_scalar()`. The leaf rejects alternatives that do not
+represent a scalar source.
 The scalar consumer interprets sequences through DDV dispatch. Destination
 runtime types construct and destroy storage through source-neutral callbacks:
 

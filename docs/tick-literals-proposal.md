@@ -1,6 +1,8 @@
 # C++ tick construction and application
 
-Status: proposal for discussion. The interfaces below are not implemented.
+Status: proposal for discussion.
+The [scalar API](scalar-api.md#literals) and [output API](node-api.md#output-parameters)
+define the implemented literal interfaces.
 Collection test results use deltas. Concurrent writes measure their payloads,
 write directly into reservations, and publish failed reservations with recipient
 `0xFFFFFFFFu` after cleanup.
@@ -120,18 +122,18 @@ collections remain complete scalar values.
 
 The proposed markers are:
 
-- `skip`: perform no operation at this position
-- `invalid`: invalidate this time series through its output API
-- `removed`: erase the enclosing TSD key
-- `remove(value)`: erase a TSS item
+- `SKIP`: perform no operation at this position
+- `INVALID`: invalidate this time series through its output API
+- `REMOVE`: erase the enclosing TSD key
+- `REMOVED(value)`: erase a TSS item
 
-`removed` is accepted only as a TSD entry value. `remove(value)` is accepted
+`REMOVE` is accepted only as a TSD entry value. `REMOVED(value)` is accepted
 only as a TSS operation. Time series markers are rejected inside scalar values.
 Invalidation follows the [validity rules](time-series-validity.md); TSD and TSS
 root invalidation is rejected.
 
 Omitted TSD keys and TSB fields retain their current state. Omitted TSL suffix
-positions retain their state; `skip` preserves an interior position. Reject
+positions retain their state; `SKIP` preserves an interior position. Reject
 positions beyond the declared fixed size and unknown TSB fields.
 Skipping a TSD entry preserves absence when its key is not present; application
 must check the marker before accessing a child output that would create the key.
@@ -167,7 +169,7 @@ output.apply({
 
 output.apply({
     {"order", {
-        {"children", {{"a", 11}, {"b", removed}}},
+        {"children", {{"a", 11}, {"b", REMOVE}}},
     }},
 });
 ```
@@ -357,7 +359,7 @@ Measurement computes the exact payload byte count and alignment using the same
 ordered encoding operations as emission. Check structure, markers, size
 overflow, and unsupported alignment before reserving. Include typed-payload
 padding and establish a known payload-start alignment. Keep input and runtime
-metadata valid and unchanged between measurement and emission. A root `skip`
+metadata valid and unchanged between measurement and emission. A root `SKIP`
 produces no record and makes no reservation; skipped TSD entries produce no key
 operation.
 
@@ -418,13 +420,13 @@ queue policy nor a graph wakeup mechanism.
 ### Test graphs
 
 ```cpp
-test_graph(add, {1, 2, skip}, {10, 20, 30});
+test_graph(add, {1, 2, SKIP}, {10, 20, 30});
 
 test_graph(dictionary_sum, {
     {{"a", 10}, {"b", 20}},
     {{"a", 11}},
-    {{"b", removed}},
-    skip,
+    {{"b", REMOVE}},
+    SKIP,
 });
 ```
 
@@ -440,7 +442,7 @@ sequence, and per-runtime state stores the next cycle index. The test run keeps
 all borrowed data alive until its runtime and compiled graphs are destroyed.
 Each source declares the resolved graph input type. At each scheduled cycle,
 it calls `output.apply` with the next literal and advances its index. It
-advances past `skip` entries and schedules the next update at its cycle's
+advances past `SKIP` entries and schedules the next update at its cycle's
 evaluation time. The source uses the same nested application as production
 outputs.
 

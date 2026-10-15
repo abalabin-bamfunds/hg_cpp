@@ -42,19 +42,31 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
     void invalidate() const { state_->invalidate(); }
 
-    void apply(const literal::ScalarLiteral &literal) const {
-        const auto values = details::scalar_literal::sequence(literal);
-        if (values.empty()) {
-            if (!valid()) {
-                clear();
-            }
-            return;
-        }
+    template <typename Leaf = literal::ScalarLiteralItem>
+        requires std::same_as<Leaf, literal::ScalarLiteralItem>
+    void apply(const literal::Literal<Leaf> &literal) const {
+        apply_values(details::scalar_literal::sequence(literal));
+    }
 
-        for (const auto &value : values) {
-            details::scalar_literal::with_scalar_data(key_runtime_type(), value,
-                                                      [&](const details::ScalarData &item) { insert(item); });
-        }
+    void apply(const literal::TimeSeriesLiteral &literal) const {
+        literal.visit(
+            [&](const literal::TimeSeriesLiteralItem &item) {
+                item.visit_item(
+                    [](const literal::ScalarLiteralItem *) {
+                        throw std::invalid_argument{"a time-series collection update requires a sequence"};
+                    },
+                    [](const literal::SkipLiteral *) {},
+                    [](const literal::InvalidLiteral *) {
+                        throw std::invalid_argument{"INVALID is not valid as a TSS update"};
+                    },
+                    [](const literal::RemoveLiteral *) {
+                        throw std::invalid_argument{"REMOVE is only valid as a TSD value"};
+                    },
+                    [](const literal::RemovedLiteral *) {
+                        throw std::invalid_argument{"a time-series collection update requires a sequence"};
+                    });
+            },
+            [&](std::span<const literal::TimeSeriesLiteral> values) { apply_values(values); });
     }
 
     bool insert(const Scalar<K> &item) const { return insert(details::scalar_data(item)); }
@@ -156,6 +168,48 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
     using item_type = K;
 
   private:
+    template <typename LiteralType> void apply_values(std::span<const LiteralType> values) const {
+        if (values.empty()) {
+            if (!valid()) {
+                clear();
+            }
+            return;
+        }
+
+        for (const auto &value : values) {
+            if constexpr (std::same_as<typename LiteralType::leaf_type, literal::ScalarLiteralItem>) {
+                details::scalar_literal::with_scalar_data(
+                    key_runtime_type(), value, [&](const details::ScalarData &item) { (void)insert(item); });
+            } else {
+                value.visit(
+                    [&](const typename LiteralType::leaf_type &leaf) {
+                        leaf.visit_item(
+                            [&](const literal::ScalarLiteralItem *scalar) {
+                                details::scalar_literal::with_scalar_data(
+                                    key_runtime_type(), literal::ScalarLiteral(*scalar),
+                                    [&](const details::ScalarData &item) { (void)insert(item); });
+                            },
+                            [](const literal::SkipLiteral *) {},
+                            [](const literal::InvalidLiteral *) {
+                                throw std::invalid_argument{"INVALID is not a TSS item"};
+                            },
+                            [](const literal::RemoveLiteral *) {
+                                throw std::invalid_argument{"REMOVE is only valid as a TSD value"};
+                            },
+                            [&](const literal::RemovedLiteral *removed) {
+                                details::scalar_literal::with_scalar_data(
+                                    key_runtime_type(), *removed->value,
+                                    [&](const details::ScalarData &item) { (void)erase(item); });
+                            });
+                    },
+                    [&](std::span<const LiteralType>) {
+                        details::scalar_literal::with_scalar_data(
+                            key_runtime_type(), value, [&](const details::ScalarData &item) { (void)insert(item); });
+                    });
+            }
+        }
+    }
+
     details::time_series_set_storage &storage() const noexcept {
         return *static_cast<details::time_series_set_storage *>(state_->mutable_data());
     }

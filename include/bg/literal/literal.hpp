@@ -14,6 +14,7 @@ namespace literal {
 
 template <typename Leaf> class Literal {
   public:
+    using leaf_type = Leaf;
     using sequence_type = std::span<const Literal>;
 
     Literal() noexcept = default;

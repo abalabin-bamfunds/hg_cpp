@@ -41,30 +41,29 @@ template <typename Item, auto Size, auto... Properties> class Out<TSL<Item, Size
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
     std::size_t size() const noexcept { return state_->runtime_type().item_count(state_->data()); }
 
-    void apply(const literal::ScalarLiteral &literal) const {
-        const auto values = details::scalar_literal::sequence(literal);
-        for (auto position = std::size_t{}; position < values.size(); ++position) {
-            const auto current = details::scalar_literal::pair(
-                values[position], "a TSL update entry requires an index and a value");
-            const auto index = details::scalar_literal::list_index(*current.first);
-            if (index >= size() || !std::in_range<item_id_t>(index)) {
-                throw std::invalid_argument{"a TSL update index is out of range"};
-            }
+    template <typename Leaf = literal::ScalarLiteralItem>
+        requires std::same_as<Leaf, literal::ScalarLiteralItem>
+    void apply(const literal::Literal<Leaf> &literal) const {
+        apply_values(details::scalar_literal::sequence(literal));
+    }
 
-            for (auto previous = std::size_t{}; previous < position; ++previous) {
-                const auto prior = details::scalar_literal::pair(
-                    values[previous], "a TSL update entry requires an index and a value");
-                if (details::scalar_literal::list_index(*prior.first) == index) {
-                    throw std::invalid_argument{"a TSL update contains a duplicate index"};
-                }
-            }
-        }
-
-        for (const auto &value : values) {
-            const auto current = details::scalar_literal::pair(
-                value, "a TSL update entry requires an index and a value");
-            details::apply_scalar_literal((*this)[details::scalar_literal::list_index(*current.first)], *current.second);
-        }
+    void apply(const literal::TimeSeriesLiteral &literal) const {
+        literal.visit(
+            [&](const literal::TimeSeriesLiteralItem &item) {
+                item.visit_item(
+                    [](const literal::ScalarLiteralItem *) {
+                        throw std::invalid_argument{"a time-series collection update requires a sequence"};
+                    },
+                    [](const literal::SkipLiteral *) {},
+                    [&](const literal::InvalidLiteral *) { invalidate(); },
+                    [](const literal::RemoveLiteral *) {
+                        throw std::invalid_argument{"REMOVE is not valid for a TSL item"};
+                    },
+                    [](const literal::RemovedLiteral *) {
+                        throw std::invalid_argument{"REMOVED is not valid for a TSL item"};
+                    });
+            },
+            [&](std::span<const literal::TimeSeriesLiteral> values) { apply_values(values); });
     }
 
     Out<Item> operator[](std::size_t index) const {
@@ -113,6 +112,31 @@ template <typename Item, auto Size, auto... Properties> class Out<TSL<Item, Size
     using item_type = Item;
 
   private:
+    template <typename LiteralType> void apply_values(std::span<const LiteralType> values) const {
+        for (auto position = std::size_t{}; position < values.size(); ++position) {
+            const auto current = details::scalar_literal::pair(
+                values[position], "a TSL update entry requires an index and a value");
+            const auto index = details::scalar_literal::list_index(*current.first);
+            if (index >= size() || !std::in_range<item_id_t>(index)) {
+                throw std::invalid_argument{"a TSL update index is out of range"};
+            }
+
+            for (auto previous = std::size_t{}; previous < position; ++previous) {
+                const auto prior = details::scalar_literal::pair(
+                    values[previous], "a TSL update entry requires an index and a value");
+                if (details::scalar_literal::list_index(*prior.first) == index) {
+                    throw std::invalid_argument{"a TSL update contains a duplicate index"};
+                }
+            }
+        }
+
+        for (const auto &value : values) {
+            const auto current = details::scalar_literal::pair(
+                value, "a TSL update entry requires an index and a value");
+            details::apply_time_series_literal((*this)[details::scalar_literal::list_index(*current.first)],
+                                               *current.second);
+        }
+    }
     TimeSeriesOutputBinding state_;
 };
 

@@ -86,7 +86,7 @@ optionally through `ScalarDispatch`; see [the scalar API](../../docs/scalar-api.
 TSL, TSB, TSD, and TSS outputs:
 
 ```cpp
-#include <bg/literal/scalar_literal.hpp>
+#include <bg/literal/time_series_literal.hpp>
 
 scalar_output.apply(42);
 list_output.apply({{0, 10}, {2, 30}});
@@ -94,6 +94,9 @@ nested_list_output.apply({{1, {{0, 10}}}});
 bundle_output.apply({{"price", 100}});
 dictionary_output.apply({{"a", 10}, {"b", 20}});
 set_output.apply({1, 2, 3});
+dictionary_output.apply({{"a", literal::REMOVE}, {"b", literal::SKIP}});
+set_output.apply({literal::REMOVED(2), 4});
+scalar_output.apply(literal::INVALID);
 ```
 
 Scalar TS application constructs an owning

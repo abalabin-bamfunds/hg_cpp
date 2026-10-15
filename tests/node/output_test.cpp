@@ -44,6 +44,25 @@ TEST_CASE("a value output publishes at the evaluation time", "[node_api][feature
     CHECK(output.value() == 1.25F);
 }
 
+TEST_CASE("an erased output applies a root INVALID marker through its runtime type",
+          "[node_api][feature:node-api][declaration:generic][transition:invalidation]") {
+    bg::TimeSeriesState last_updated;
+    bg::i64 value{};
+    const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
+    auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>()};
+    state.bind(last_updated, &value, evaluation_time);
+    auto typed_output = bg::details::output_factory::make<bg::Out<bg::TS<bg::i64>>>(state);
+    typed_output.set(5);
+    const auto erased_output = bg::Out<bg::TS_T>{bg::TimeSeriesOutputBinding{state}};
+
+    erased_output.apply(literal::INVALID);
+
+    CHECK_FALSE(erased_output.valid());
+    CHECK(last_updated.became_invalid());
+    CHECK(last_updated.time() == evaluation_time);
+    CHECK(value == 5);
+}
+
 TEST_CASE("invalidating a value output retains its storage", "[node_api][feature:node-api]") {
     bg::TimeSeriesState last_updated{bg::MIN_DT + std::chrono::microseconds{1}};
     float value = 1.25F;

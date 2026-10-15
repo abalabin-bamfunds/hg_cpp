@@ -66,8 +66,14 @@ class Out<TSB<Schema, Properties...>> {
     const fields_type &fields() const noexcept { return fields_; }
     void invalidate() const { state_->invalidate(); }
 
-    void apply(const literal::ScalarLiteral &literal) const {
+    template <typename Leaf = literal::ScalarLiteralItem>
+        requires std::same_as<Leaf, literal::ScalarLiteralItem>
+    void apply(const literal::Literal<Leaf> &literal) const {
         details::apply_scalar_literal(details::output_factory::make<Out<TS_T>>(state_.get()), literal);
+    }
+
+    void apply(const literal::TimeSeriesLiteral &literal) const {
+        details::apply_time_series_literal(details::output_factory::make<Out<TS_T>>(state_.get()), literal);
     }
 
     template <template <template <typename, auto...> typename> typename InputSchema,
@@ -116,8 +122,33 @@ class Out<TSB<Schema, Properties...>> {
 
     void invalidate() const { state_->invalidate(); }
 
-    void apply(const literal::ScalarLiteral &literal) const {
-        const auto values = details::scalar_literal::sequence(literal);
+    template <typename Leaf = literal::ScalarLiteralItem>
+        requires std::same_as<Leaf, literal::ScalarLiteralItem>
+    void apply(const literal::Literal<Leaf> &literal) const {
+        apply_values(details::scalar_literal::sequence(literal));
+    }
+
+    void apply(const literal::TimeSeriesLiteral &literal) const {
+        literal.visit(
+            [&](const literal::TimeSeriesLiteralItem &item) {
+                item.visit_item(
+                    [](const literal::ScalarLiteralItem *) {
+                        throw std::invalid_argument{"a TSB update requires a sequence"};
+                    },
+                    [](const literal::SkipLiteral *) {},
+                    [&](const literal::InvalidLiteral *) { invalidate(); },
+                    [](const literal::RemoveLiteral *) {
+                        throw std::invalid_argument{"REMOVE is not valid for a TSB field"};
+                    },
+                    [](const literal::RemovedLiteral *) {
+                        throw std::invalid_argument{"REMOVED is only valid as a TSS item"};
+                    });
+            },
+            [&](std::span<const literal::TimeSeriesLiteral> values) { apply_values(values); });
+    }
+
+  private:
+    template <typename LiteralType> void apply_values(std::span<const LiteralType> values) const {
         const auto field_index = [&](std::string_view expected) {
             for (auto index = std::size_t{}; index < size(); ++index) {
                 if (item_name(index).text() == expected) {
@@ -146,10 +177,11 @@ class Out<TSB<Schema, Properties...>> {
             const auto current = details::scalar_literal::pair(
                 value, "a TSB update entry requires a field name and a value");
             const auto index = field_index(details::scalar_literal::field_name(*current.first));
-            details::apply_scalar_literal((*this)[index], *current.second);
+            details::apply_time_series_literal((*this)[index], *current.second);
         }
     }
 
+  public:
     template <template <template <typename, auto...> typename> typename InputSchema,
               auto... InputTimeSeriesProperties, auto... InputProperties>
         requires details::bundle_schema_variable_declaration<InputSchema<details::bundle_schema_field>>

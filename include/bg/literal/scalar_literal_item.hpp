@@ -58,6 +58,17 @@ class ScalarLiteralItem {
         return visit(ddv::serial{std::forward<Function>(function), std::forward<Functions>(functions)...});
     }
 
+    template <typename Visitor, typename... Arguments>
+        requires ddv::SerialVisitorType<std::remove_cvref_t<Visitor>>
+    auto visit_scalar(Visitor &&visitor, Arguments &&...arguments) const {
+        return visit(std::forward<Visitor>(visitor), std::forward<Arguments>(arguments)...);
+    }
+
+    template <typename Function, typename... Functions>
+    decltype(auto) visit_scalar(Function &&function, Functions &&...functions) const {
+        return visit(std::forward<Function>(function), std::forward<Functions>(functions)...);
+    }
+
   private:
     template <typename ScalarType, typename Source>
     static void visit_value(const Source &source, bg::ScalarVisitTypes &visitor) {

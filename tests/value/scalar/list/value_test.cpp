@@ -1,3 +1,5 @@
+#include <bg/literal/time_series_literal.hpp>
+#include <bg/scalar/literal.hpp>
 #include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/list/type.hpp>
 #include <bg/scalar/value.hpp>
@@ -6,6 +8,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -50,6 +53,13 @@ TEST_CASE("a scalar list can contain scalar lists", "[value][scalar][list][scala
     REQUIRE(list.size() == 2);
     CHECK(list[0] == first_value.view());
     CHECK(list[1] == second_value.view());
+}
+
+TEST_CASE("scalar list construction rejects time-series markers",
+          "[value][scalar][list][scalar:list][feature:scalar-collection]") {
+    CHECK_THROWS_AS((bg::ScalarValue<bg::List<bg::i64>>::from_literal(
+                        literal::TimeSeriesLiteral{1, literal::INVALID})),
+                    std::invalid_argument);
 }
 
 TEST_CASE("a scalar list can contain evaluation times",

@@ -489,7 +489,8 @@ void verify_direct_scalar_output(const ScalarRuntime &scalar_runtime, const bg::
         if (scalar_type.supports_equality()) {
             auto construction_context = bg::details::ScalarLiteralConstructionContext{literal, true};
             const auto construction = bg::ScalarConstruction{
-                &construction_context, &bg::details::ScalarLiteralConstructionContext::callback};
+                &construction_context,
+                &bg::details::ScalarLiteralConstructionContext<literal::ScalarLiteral>::callback};
             const auto outstanding_before_assignment = scalar_memory.outstanding_allocations();
             require(!scalar_runtime.assign_with(storage, construction, true));
             require(scalar_memory.outstanding_allocations() == outstanding_before_assignment);
@@ -920,7 +921,8 @@ void verify_bundle_base_assignment_fallback() {
             auto context = bg::details::ScalarAllocationContext{scalar_allocator, *allocation_owner, nullptr, 0};
             auto construction_context = bg::details::ScalarLiteralConstructionContext{literal, true};
             const auto construction = bg::ScalarConstruction{
-                &construction_context, &bg::details::ScalarLiteralConstructionContext::callback};
+                &construction_context,
+                &bg::details::ScalarLiteralConstructionContext<literal::ScalarLiteral>::callback};
             auto &base_runtime = static_cast<const bg::ScalarRuntimeType &>(runtime);
             require(base_runtime.bg::ScalarRuntimeType::assign_with(storage, construction, true));
             snapshot.emplace(bg::Scalar<>::from(runtime, storage), snapshot_allocator);

@@ -67,10 +67,33 @@ class Out<TS<Variable, Properties...>> {
 
     void invalidate() const { state_->invalidate(); }
 
-    void apply(const literal::ScalarLiteral &literal) const {
+    template <typename Leaf = literal::ScalarLiteralItem>
+        requires std::same_as<Leaf, literal::ScalarLiteralItem>
+    void apply(const literal::Literal<Leaf> &literal) const {
         const auto &runtime_type =
             static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
         set_value(ScalarValue<>::from_literal(runtime_type, literal));
+    }
+
+    void apply(const literal::TimeSeriesLiteral &literal) const {
+        literal.visit(
+            [&](const literal::TimeSeriesLiteralItem &item) {
+                item.visit_item(
+                    [&](const literal::ScalarLiteralItem *scalar) { apply(literal::ScalarLiteral(*scalar)); },
+                    [](const literal::SkipLiteral *) {},
+                    [&](const literal::InvalidLiteral *) { invalidate(); },
+                    [](const literal::RemoveLiteral *) {
+                        throw std::invalid_argument{"REMOVE is not valid for a scalar time series"};
+                    },
+                    [](const literal::RemovedLiteral *) {
+                        throw std::invalid_argument{"REMOVED is not valid for a scalar time series"};
+                    });
+            },
+            [&](std::span<const literal::TimeSeriesLiteral>) {
+                const auto &runtime_type =
+                    static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
+                set_value(ScalarValue<>::from_literal(runtime_type, literal));
+            });
     }
 
     template <typename Input, auto... TimeSeriesProperties, auto... InputProperties>
@@ -205,7 +228,14 @@ class Out<TS<T, Properties...>> {
         output.set_value(std::move(value));
     }
 
-    void apply(const literal::ScalarLiteral &literal) const {
+    template <typename Leaf = literal::ScalarLiteralItem>
+        requires std::same_as<Leaf, literal::ScalarLiteralItem>
+    void apply(const literal::Literal<Leaf> &literal) const {
+        auto output = details::output_factory::make<Out<TS<SCALAR>>>(state_.get());
+        output.apply(literal);
+    }
+
+    void apply(const literal::TimeSeriesLiteral &literal) const {
         auto output = details::output_factory::make<Out<TS<SCALAR>>>(state_.get());
         output.apply(literal);
     }
