@@ -175,7 +175,7 @@ graph compilation or evaluation.
 - erased owning-copy runtime selection, typed selector priority, independent snapshot storage, destination
   size and alignment, and construction-failure cleanup
 - scalar buffer provider writes through reserved contexts, byte and typed field alignment, and owning value replay and
-  discard lifetime
+  discard lifetime; value-dependent provider projection, write-handler selection, and missing projection rejection
 - time series validity, update time, mutation, and invalidation
 - global state ownership, replacement, lookup, and allocation
 
@@ -314,6 +314,8 @@ graph compilation or evaluation.
 - retained tick writing and replay through a one-cycle delay node, current-cycle filtering, delta-only collection
   replay from a matching baseline, nested key changes, empty first ticks, validity transitions, payload cleanup,
   provider scalar handlers, and unsupported references
+- queue message serialization for scalar and collection literals, frame targets and sizes, root skip, malformed
+  selectors and markers, scalar ownership, concurrent reservation rollover, and failure cleanup
 - feedback source and sink wiring, next-cycle replay, first ticks, validity changes, guarantee compatibility,
   separate handles, and same-graph binding
 - `default_` fallback selection, timestamps, modified state, and source validity transitions

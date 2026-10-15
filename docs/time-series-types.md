@@ -145,3 +145,32 @@ its reader with that same type; individual records do not repeat the type header
 The buffer does not destroy owned tick payloads when its final handle is
 released. Create a `TimeSeriesTickReader` for a buffer containing records. It
 discards unread records on destruction, releasing their scalar payloads.
+
+## Queue messages
+
+`bg::details::QueueMessageWriter` is an engine-only writer. It serializes a
+`TimeSeriesLiteral` for a destination node into a concurrent buffer. Each frame
+starts with a typed `QueueMessageHeader` containing a 32-bit destination node
+ID and a 32-bit total frame size, followed by one tick record using the grammar
+above. The header uses `alignof(std::max_align_t)`, and the frame size is rounded
+to that alignment. The size includes header padding and trailing padding; it
+excludes alignment before the header.
+Destination node IDs must be smaller than `UINT32_MAX`. Root `SKIP` writes no frame.
+
+If serialization fails after reserving a frame, the writer destroys completed
+typed payloads, commits the frame with destination `UINT32_MAX`, and
+rethrows the error. Consumers skip a sentinel frame using its size without
+parsing a tick payload.
+
+Frame consumers read the header with `buffer_reader::read<QueueMessageHeader>()`
+to skip alignment before the header. They use its size to bound the message,
+read or discard the tick payload with the semantic time-series type, then
+advance over the frame's trailing padding. They must not construct a
+`TimeSeriesTickReader` over the framed buffer.
+
+Queue message serialization supports `TS`, fixed-size `TSL`, `TSB`, `TSS`, and
+`TSD` literals. It rejects references, sparse `TSL`, and provider-defined
+time-series types. Custom scalar encodings require a projection handler on the
+selected write registration and semantic read and discard handlers. Projection
+uses the [scalar buffer operation contract](scalar-api.md#optional-operations).
+Missing handlers fail before reservation.

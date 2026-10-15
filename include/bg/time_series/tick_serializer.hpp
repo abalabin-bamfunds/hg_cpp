@@ -3,6 +3,7 @@
 #include <bg/allocator.hpp>
 #include <bg/scalar/buffer_operations.hpp>
 #include <bg/scalar/value.hpp>
+#include <bg/literal/time_series_literal.hpp>
 #include <bg/time_series/dispatch.hpp>
 #include <bg/time_series/tick_operations.hpp>
 #include <bg/time_series/time_series_input.hpp>
@@ -19,6 +20,7 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <type_traits>
@@ -27,6 +29,11 @@
 namespace bg {
 
 namespace details {
+
+struct alignas(std::max_align_t) QueueMessageHeader {
+    std::uint32_t target;
+    std::uint32_t size;
+};
 
 enum class TickOperation : std::uint8_t { add, tick, remove, end };
 
@@ -426,6 +433,27 @@ class TimeSeriesTickDiscard {
 
     util::buffer_reader *reader_;
     const TimeSeriesDispatch<TimeSeriesTickOperations> *dispatch_;
+};
+
+class QueueMessageWriter {
+  public:
+    // The runtime type must outlive the writer. The buffer must be a concurrent buffer chain.
+    QueueMessageWriter(util::buffer buffer, std::size_t target, const TimeSeriesRuntimeType &runtime_type,
+                       allocator memory = {});
+
+    QueueMessageWriter(const QueueMessageWriter &) = delete;
+    QueueMessageWriter &operator=(const QueueMessageWriter &) = delete;
+
+    // Write one framed message. Root SKIP returns false without reserving a frame.
+    bool write(const literal::TimeSeriesLiteral &literal);
+
+  private:
+    std::optional<std::size_t> project(const literal::TimeSeriesLiteral &literal);
+
+    util::concurrent_buffer_writer writer_;
+    std::uint32_t target_;
+    const TimeSeriesRuntimeType *runtime_type_;
+    allocator memory_;
 };
 
 } // namespace details
