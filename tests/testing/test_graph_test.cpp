@@ -2,6 +2,7 @@
 #include <bg/evaluation_profiler.hpp>
 #include <bg/node.hpp>
 #include <bg/testing/test_graph.hpp>
+#include <bg/time_series/tsd/tsd_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -9,6 +10,7 @@
 #include <chrono>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -25,6 +27,10 @@ struct Add {
 };
 
 const auto add = bg::node<Add>();
+
+template <template <typename, auto...> typename Field> struct LiteralNestedDictionaryBundle {
+    Field<bg::TSD<bg::i64, bg::TSS<bg::i64>>> items;
+};
 
 TEST_CASE("test_graph evaluates a node over input ticks",
           "[testing][evaluation][feature:test-graph][transition:update][series:value][scalar:integer]") {
@@ -92,6 +98,213 @@ TEST_CASE("test_graph supports skipped input ticks",
     const auto actual = bg::testing::test_graph(add_graph, lhs, rhs);
 
     CHECK(actual.equals<float>({11.0F, 21.0F, 33.0F}));
+}
+
+TEST_CASE("test_graph accepts literal time-series dictionary updates",
+          "[testing][evaluation][feature:test-graph][series:tsd][transition:update][scalar:integer]") {
+    const auto observe = bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input,
+                                    bg::Out<bg::TS<bg::i64>> output) {
+        output.set(input.contains(7) ? *input[7] : 0);
+    });
+    const auto graph = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) { return observe(input); };
+
+    const auto actual =
+        bg::testing::test_graph(graph, {literal::SKIP, {{7, 10}}, literal::SKIP, {{7, 15}}, {{7, literal::REMOVE}}});
+
+    CHECK(actual.equals<bg::i64>({std::nullopt, 10, std::nullopt, 15, 0}));
+}
+
+TEST_CASE("test_graph accepts literals for deeply nested collection inputs",
+          "[testing][evaluation][feature:test-graph][series:tsd][shape:deeply-nested][transition:removal]"
+          "[scalar:integer]") {
+    const auto observe = bg::node([](bg::In<bg::TSD<bg::i64, bg::TSB<LiteralNestedDictionaryBundle>>> input,
+                                    bg::Out<bg::TS<bg::i64>> output) {
+        output.set(static_cast<bg::i64>(input[1]->items[2].size()));
+    });
+    const auto graph = [&](bg::wp<bg::TSD<bg::i64, bg::TSB<LiteralNestedDictionaryBundle>>> input) {
+        return observe(input);
+    };
+
+    const auto actual = bg::testing::test_graph(
+        graph, {{{1, {{"items", {{2, {1, 2}}}}}}}, {{1, {{"items", {{2, {literal::REMOVED(2)}}}}}}}});
+
+    CHECK(actual.equals<bg::i64>({2, 1}));
+}
+
+TEST_CASE("test_graph literal annotations support generic and multiple inputs",
+          "[testing][evaluation][feature:test-graph][declaration:generic][series:value]") {
+    const auto identity = bg::graph("name"_n = "identity", [](bg::wp<> input) { return bg::wp<>{input}; });
+    const auto typed_result = bg::testing::test_graph(identity, bg::testing::input<bg::TS<bg::i64>>({1, 2}));
+    const auto runtime_result =
+        bg::testing::test_graph(identity, bg::testing::input(bg::TS<bg::i64>::type(), {3, 4}));
+
+    const auto add_i64 = bg::node([](bg::In<bg::TS<bg::i64>> lhs, bg::In<bg::TS<bg::i64>> rhs,
+                                     bg::Out<bg::TS<bg::i64>> output) { output.set(*lhs + *rhs); });
+    const auto add_graph = [&](bg::wp<bg::TS<bg::i64>> lhs,
+                               bg::wp<bg::TS<bg::i64>> rhs) -> bg::wp<bg::TS<bg::i64>> {
+        return add_i64(lhs, rhs);
+    };
+    const auto multiple_result = bg::testing::test_graph(
+        add_graph, bg::testing::input<bg::TS<bg::i64>>({1, 2}), bg::testing::input<bg::TS<bg::i64>>({10, 20}));
+    const auto raw_multiple_result = bg::testing::test_graph(add_graph, {1, 2}, {10, 20});
+    const auto generic_rhs = [&](bg::wp<bg::TS<bg::i64>> lhs, bg::wp<> rhs) {
+        return add_i64(lhs, rhs.as<bg::TS<bg::i64>>());
+    };
+    const auto annotated_second_result =
+        bg::testing::test_graph(generic_rhs, {1, 2}, bg::testing::input<bg::TS<bg::i64>>({10, 20}));
+    const auto generic_lhs = [&](bg::wp<> lhs, bg::wp<bg::TS<bg::i64>> rhs) {
+        return add_i64(lhs.as<bg::TS<bg::i64>>(), rhs);
+    };
+    const auto annotated_first_result =
+        bg::testing::test_graph(generic_lhs, bg::testing::input<bg::TS<bg::i64>>({1, 2}), {10, 20});
+
+    const auto select_second = [](bg::wp<bg::TS<bg::i64>>, bg::wp<bg::TS<bg::i64>> rhs) { return rhs; };
+    const auto empty_first_result = bg::testing::test_graph(select_second, {}, {30});
+
+    const auto observe_dictionary = bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input,
+                                                bg::Out<bg::TS<bg::i64>> output) {
+        output.set(input.contains(7) ? *input[7] : 0);
+    });
+    const auto generic_dictionary = bg::graph("name"_n = "generic_dictionary", [&](bg::wp<> input) {
+        return observe_dictionary(input.as<bg::TSD<bg::i64, bg::TS<bg::i64>>>());
+    });
+    const auto generic_dictionary_result = bg::testing::test_graph(
+        generic_dictionary, bg::testing::input<bg::TSD<bg::i64, bg::TS<bg::i64>>>({{{7, 40}}}));
+
+    CHECK(typed_result.equals<bg::i64>({1, 2}));
+    CHECK(runtime_result.equals<bg::i64>({3, 4}));
+    CHECK(multiple_result.equals<bg::i64>({11, 22}));
+    CHECK(raw_multiple_result.equals<bg::i64>({11, 22}));
+    CHECK(annotated_first_result.equals<bg::i64>({11, 22}));
+    CHECK(annotated_second_result.equals<bg::i64>({11, 22}));
+    CHECK(empty_first_result.equals<bg::i64>({30}));
+    CHECK(generic_dictionary_result.equals<bg::i64>({40}));
+    CHECK_THROWS_AS((bg::testing::test_graph(identity, {1, 2}, {3, 4})), std::invalid_argument);
+}
+
+TEST_CASE("test_graph accepts raw nested scalar list literals",
+          "[testing][evaluation][feature:test-graph][series:value][scalar:list]") {
+    const auto observe = bg::node([](bg::In<bg::TS<bg::List<bg::i64>>> input,
+                                    bg::Out<bg::TS<bg::i64>> output) {
+        output.set(static_cast<bg::i64>(input.value_view().size()));
+    });
+    const auto graph = [&](bg::wp<bg::TS<bg::List<bg::i64>>> input) { return observe(input); };
+
+    const auto actual = bg::testing::test_graph(graph, {{1, 2}, {3, 4, 5}});
+
+    CHECK(actual.equals<bg::i64>({2, 3}));
+}
+
+TEST_CASE("test_graph accepts fixed time-series list literals",
+          "[testing][evaluation][feature:test-graph][series:fixed-tsl][scalar:integer]") {
+    const auto observe = bg::node([](bg::In<bg::TSL<bg::TS<bg::i64>, 2>> input,
+                                    bg::Out<bg::TS<bg::i64>> output) {
+        output.set(*input[0] + *input[1]);
+    });
+    const auto graph = [&](bg::wp<bg::TSL<bg::TS<bg::i64>, 2>> input) { return observe(input); };
+
+    const auto actual = bg::testing::test_graph(graph, {{{0, 1}, {1, 10}}, {{0, 2}, {1, 20}}});
+
+    CHECK(actual.equals<bg::i64>({11, 22}));
+}
+
+TEST_CASE("test_graph runs literal sources when every tick is skipped",
+          "[testing][evaluation][feature:test-graph][series:value]") {
+    const auto identity = [](bg::wp<bg::TS<bg::i64>> input) { return input; };
+
+    const auto actual = bg::testing::test_graph(identity, {literal::SKIP, literal::SKIP, literal::SKIP});
+
+    CHECK(actual.equals<bg::i64>({std::nullopt, std::nullopt, std::nullopt}));
+}
+
+TEST_CASE("test_graph accepts empty raw inputs for functions and wiring templates",
+          "[testing][evaluation][feature:test-graph][series:value][scalar:list]") {
+    const auto count_items = bg::node([](bg::In<bg::TS<bg::List<bg::i64>>> input,
+                                         bg::Out<bg::TS<bg::i64>> output) {
+        output.set(static_cast<bg::i64>(input.value_view().size()));
+    });
+    const auto function = [&](bg::wp<bg::TS<bg::List<bg::i64>>> input) { return count_items(input); };
+
+    CHECK(bg::testing::test_graph(function, {}).equals<bg::i64>({std::nullopt}));
+    CHECK(bg::testing::test_graph(function, {{}}).equals<bg::i64>({0}));
+    CHECK(bg::testing::test_graph(count_items, {}).equals<bg::i64>({std::nullopt}));
+    CHECK(bg::testing::test_graph(count_items, {{}}).equals<bg::i64>({0}));
+}
+
+TEST_CASE("test_graph literal inputs coerce values and revalidate after INVALID",
+          "[testing][evaluation][feature:test-graph][transition:invalidation][transition:revalidation]") {
+    const auto float_identity = [](bg::wp<bg::TS<float>> input) { return input; };
+    const auto float_result = bg::testing::test_graph(float_identity, {1, 2});
+    const auto integer_identity = [](bg::wp<bg::TS<bg::i64>> input) { return input; };
+    const auto integer_result =
+        bg::testing::test_graph(integer_identity, {1, literal::INVALID, 3});
+
+    CHECK(float_result.equals<float>({1.0F, 2.0F}));
+    CHECK(integer_result.equals<bg::i64>({1, std::nullopt, 3}));
+}
+
+TEST_CASE("test_graph accepts descriptor spans with more than four inputs",
+          "[testing][evaluation][feature:test-graph][declaration:generic][series:value]") {
+    const auto fifth = bg::graph("name"_n = "fifth", [](bg::wp<bg::TS<bg::i64>>, bg::wp<bg::TS<bg::i64>>,
+                                                          bg::wp<bg::TS<bg::i64>>, bg::wp<bg::TS<bg::i64>>,
+                                                          bg::wp<bg::TS<bg::i64>> last) { return last; });
+    const auto payloads = std::array<bg::i64, 5>{1, 2, 3, 4, 5};
+    const auto values = std::array{
+        std::array<literal::TimeSeriesLiteral, 1>{payloads[0]},
+        std::array<literal::TimeSeriesLiteral, 1>{payloads[1]},
+        std::array<literal::TimeSeriesLiteral, 1>{payloads[2]},
+        std::array<literal::TimeSeriesLiteral, 1>{payloads[3]},
+        std::array<literal::TimeSeriesLiteral, 1>{payloads[4]},
+    };
+    const auto inputs = std::array{
+        bg::testing::input<bg::TS<bg::i64>>(
+            bg::testing::TestGraphLiteralInput{std::span<const literal::TimeSeriesLiteral>{values[0]}}),
+        bg::testing::input<bg::TS<bg::i64>>(
+            bg::testing::TestGraphLiteralInput{std::span<const literal::TimeSeriesLiteral>{values[1]}}),
+        bg::testing::input<bg::TS<bg::i64>>(
+            bg::testing::TestGraphLiteralInput{std::span<const literal::TimeSeriesLiteral>{values[2]}}),
+        bg::testing::input<bg::TS<bg::i64>>(
+            bg::testing::TestGraphLiteralInput{std::span<const literal::TimeSeriesLiteral>{values[3]}}),
+        bg::testing::input<bg::TS<bg::i64>>(
+            bg::testing::TestGraphLiteralInput{std::span<const literal::TimeSeriesLiteral>{values[4]}}),
+    };
+
+    const auto actual = bg::testing::test_graph(fifth, std::span<const bg::testing::TestGraphLiteralInput>{inputs});
+
+    CHECK(actual.equals<bg::i64>({5}));
+}
+
+TEST_CASE("test_graph preserves zero-input wiring template option calls",
+          "[testing][evaluation][feature:test-graph][feature:profiling]") {
+    const auto produce = bg::node([](bg::Out<bg::TS<bg::i64>> output) { output.set(42); });
+    const auto zero_input = bg::graph("name"_n = "zero_input", [&] { return produce(); });
+    const auto services = bg::ServiceCatalogue{};
+    auto profiler = bg::EvaluationProfiler{};
+    auto services_profiler = bg::EvaluationProfiler{};
+
+    CHECK(bg::testing::test_graph(zero_input).equals<bg::i64>({42}));
+    CHECK(bg::testing::test_graph(zero_input, services).equals<bg::i64>({42}));
+    CHECK(bg::testing::test_graph(zero_input, profiler.recorder()).equals<bg::i64>({42}));
+    CHECK(bg::testing::test_graph(zero_input, services_profiler.recorder(), services).equals<bg::i64>({42}));
+    REQUIRE(profiler.root_graph_id());
+    CHECK(profiler.graph(*profiler.root_graph_id()) != nullptr);
+}
+
+TEST_CASE("test_graph accepts literal inputs with profiler and services",
+          "[testing][evaluation][feature:test-graph][feature:profiling]") {
+    const auto observe = bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input,
+                                    bg::Out<bg::TS<bg::i64>> output) {
+        output.set(input.contains(7) ? *input[7] : 0);
+    });
+    const auto graph = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) { return observe(input); };
+    auto profiler = bg::EvaluationProfiler{};
+    auto services = bg::ServiceCatalogue{};
+
+    const auto actual = bg::testing::test_graph(graph, profiler.recorder(), services, {{{7, 10}}, {{7, 20}}});
+
+    CHECK(actual.equals<bg::i64>({10, 20}));
+    REQUIRE(profiler.root_graph_id());
+    CHECK(profiler.graph(*profiler.root_graph_id()) != nullptr);
 }
 
 struct Increment {

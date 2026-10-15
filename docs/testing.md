@@ -89,6 +89,35 @@ result has one position per cycle and uses an empty position when the output did
 not update. Pass a `ServiceCatalogue` after the tested wiring template or function
 to finalize [graph services](services.md) before compilation.
 
+Literal input sequences use the [output literal syntax](node-api.md#output-parameters).
+Each sequence element describes one cycle's delta. Source nodes borrow the
+sequences for the synchronous test run and call `Out::apply()` for each tick.
+Use `literal::SKIP` for a skipped cycle:
+
+```cpp
+auto actual = test_graph(dictionary_sum, {
+    {{"a", 10}, {"b", 20}},
+    {{"b", literal::REMOVE}},
+    literal::SKIP,
+    {{"a", 11}},
+});
+CHECK(actual.equals<i64>({30, 10, std::nullopt, 11}));
+```
+
+`{}` supplies no ticks; `{{}}` supplies one empty collection tick.
+
+Literal inputs require a non-variadic parameter list. Concrete graph parameters supply input types. Use
+`input<TSD<string, TS<i64>>>({...})` for an unresolved input declaration, or
+`input(runtime_type, {...})` to supply a time series runtime type explicitly.
+Graph functions with non-collection scalar inputs preserve their existing
+brace-input C++ element conversions and `std::nullopt` support. Result capture
+supports scalar time series outputs; graphs receiving collections can return
+scalar observations for comparison.
+Raw brace calls support one through four inputs. Pass `TestGraphLiteralInput`
+descriptors or a contiguous range of descriptors for more inputs. Construct
+descriptors from temporary values in the `test_graph` call so their sources and
+nested initializer lists remain alive throughout evaluation.
+
 `test_wiring` creates a `GraphWiring` and `WiringContext` for a `void` callable.
 Use it when the behavior under test ends during wiring and does not require
 graph compilation or evaluation.
@@ -244,6 +273,9 @@ graph compilation or evaluation.
 
 ### Evaluation
 
+- `test_graph` input sequencing through brace literals, typed ranges, and runtime-selected types;
+  scalar construction, nested collection deltas, removal, skip, invalidation, and revalidation;
+  explicit generic input types, cycle positions, services, profiling, and existing scalar input compatibility
 - start, evaluation, and stop order
 - rejection of user lifecycle functions with time-series-resolved plain fields;
   invalidation placeholders, revalidation, and automatic state and dynamic-input cleanup

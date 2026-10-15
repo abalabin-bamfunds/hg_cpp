@@ -18,6 +18,9 @@
 #include <bg/service_catalogue.hpp>
 #include <bg/simulation_evaluation_engine.hpp>
 #include <bg/testing/test_graph_input.hpp>
+#include <bg/testing/test_graph_literal_input.hpp>
+#include <bg/type/type_map.hpp>
+#include <bg/type/type_resolution_error.hpp>
 
 #include <algorithm>
 #include <array>
@@ -146,6 +149,69 @@ class RuntimeSource {
     Signature signature_;
 };
 
+class LiteralSource {
+  public:
+    struct CompiledData {
+        std::span<const literal::TimeSeriesLiteral> ticks;
+        EvaluationTime start_time;
+    };
+
+    using compiled_data_type = CompiledData;
+    using state_type = std::size_t;
+    using Invocation = NodeInvocation<CompiledData, state_type>;
+    static constexpr bool uses_timed_scheduling = true;
+    static constexpr bool deduplicate_wiring = false;
+
+    LiteralSource(const TestGraphLiteralInput &input, const TimeSeriesRuntimeType &runtime_type,
+                  EvaluationTime start_time)
+        : ticks_{input.ticks}, runtime_type_{&runtime_type}, start_time_{start_time},
+          signature_{util::symbol{"test_literal_source"}, {}, runtime_type.type()} {}
+
+    const Signature &signature() const noexcept { return signature_; }
+    CompiledData compile(const ResolvedSignature &, allocator &) const noexcept { return {ticks_, start_time_}; }
+    const TimeSeriesRuntimeType &output_runtime_type(const WiringArguments &) const noexcept { return *runtime_type_; }
+
+    static void start(Invocation invocation) { publish(invocation); }
+    static void evaluate(Invocation invocation) { publish(invocation); }
+
+  private:
+    static bool is_skip(const literal::TimeSeriesLiteral &tick) {
+        return tick.visit(
+            [](const literal::TimeSeriesLiteralItem &item) {
+                auto skip = false;
+                item.visit_item(
+                    [&](const literal::SkipLiteral *) { skip = true; },
+                    [](const auto *) {});
+                return skip;
+            },
+            [](std::span<const literal::TimeSeriesLiteral>) { return false; })
+            .value();
+    }
+
+    static void publish(Invocation invocation) {
+        const auto &data = invocation.compiled_data();
+        auto &next = invocation.state();
+
+        if (next < data.ticks.size() && invocation.context().evaluation_time() ==
+                                             data.start_time + EvaluationTime::duration{next}) {
+            invocation.output().apply(data.ticks[next]);
+            ++next;
+        }
+
+        while (next < data.ticks.size() && is_skip(data.ticks[next])) {
+            ++next;
+        }
+        if (next < data.ticks.size()) {
+            invocation.context().schedule_at(data.start_time + EvaluationTime::duration{next});
+        }
+    }
+
+    std::span<const literal::TimeSeriesLiteral> ticks_;
+    const TimeSeriesRuntimeType *runtime_type_;
+    EvaluationTime start_time_;
+    Signature signature_;
+};
+
 template <typename T> struct optional_value : std::false_type {};
 template <typename T> struct optional_value<std::optional<T>> : std::true_type {};
 
@@ -214,6 +280,146 @@ template <typename Function> struct test_function {
     template <std::size_t Index> using input_scalar = typename input_time_series<Index>::value_type;
 };
 
+inline auto finish_test_graph(GraphWiring &wiring, CapturedValues &captured, EvaluationTime start_time,
+                              const ServiceCatalogue *service_catalogue,
+                              EvaluationProfiler::Recorder *recorder) {
+    if (service_catalogue != nullptr) {
+        wiring.finalize(*service_catalogue);
+    } else {
+        wiring.finalize();
+    }
+
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
+    if (recorder != nullptr) {
+        recorder->run(runtime, start_time);
+    } else {
+        SimulationEvaluationEngine{}.run(runtime, start_time);
+    }
+
+    return std::move(captured.values);
+}
+
+inline auto literal_runtime_type(const TestGraphLiteralInput &input, const Signature &signature,
+                                std::size_t parameter_index) -> const TimeSeriesRuntimeType & {
+    if (input.runtime_type != nullptr) {
+        return *input.runtime_type;
+    }
+
+    const auto *time_series_type = type_cast<TimeSeriesType>(signature.parameter(parameter_index).type);
+    if (time_series_type == nullptr) {
+        throw std::invalid_argument{"a generic test_graph literal input requires an explicit time-series type"};
+    }
+
+    if (time_series_type->is_resolved()) {
+        return resolve_time_series_runtime_type(*time_series_type);
+    }
+
+    auto type_map = TypeMap{};
+    if (const auto *guarantee = time_series_type->guarantee().variable()) {
+        type_map.set(*guarantee, guarantee->minimum().value_or(TimeSeriesGuarantee::ordinary));
+    }
+
+    try {
+        const auto &resolved_type = type_cast<TimeSeriesType>(time_series_type->resolve(type_map));
+        return resolve_time_series_runtime_type(resolved_type);
+    } catch (const TypeResolutionError &error) {
+        if (error.code() != TypeResolutionErrorCode::unmapped_variable) {
+            throw;
+        }
+
+        throw std::invalid_argument{"a generic test_graph literal input requires an explicit time-series type"};
+    }
+}
+
+template <typename TimeSeries>
+auto literal_runtime_type(const TestGraphLiteralInput &input) -> const TimeSeriesRuntimeType & {
+    if (input.runtime_type != nullptr) {
+        return *input.runtime_type;
+    }
+
+    if constexpr (bg::details::generic_time_series<TimeSeries>) {
+        throw std::invalid_argument{"a generic test_graph literal input requires an explicit time-series type"};
+    } else {
+        return cpp_time_series_runtime_type<TimeSeries>();
+    }
+}
+
+inline WiringPoint wire_literal_source(const TestGraphLiteralInput &input,
+                                      const TimeSeriesRuntimeType &runtime_type, EvaluationTime start_time) {
+    auto definition = LiteralSource{input, runtime_type, start_time};
+    auto &wiring = WiringContext::current().wiring();
+    const auto &source_template = wiring.own_node_template(
+        std::make_unique<RuntimeSignatureNodeTemplate<LiteralSource>>(std::move(definition)));
+    return *static_cast<const WiringTemplate &>(source_template)();
+}
+
+template <typename Function, typename Inputs, std::size_t... Index>
+[[nodiscard]] auto run_function_literals(const Function &function, const ServiceCatalogue *service_catalogue,
+                                         EvaluationProfiler::Recorder *recorder, const Inputs &inputs,
+                                         std::index_sequence<Index...>) {
+    using FunctionInfo = test_function<Function>;
+    const auto start_time = MIN_DT + EvaluationTime::duration{1};
+    auto captured = CapturedValues{.start_time = start_time, .values = {}};
+    auto cycle_count = std::size_t{1};
+    for (const auto &input : inputs) {
+        cycle_count = std::max(cycle_count, input.ticks.size());
+    }
+    captured.values.resize(cycle_count);
+
+    auto wiring = GraphWiring{};
+    {
+        auto context = WiringContext{wiring};
+        const auto sources = std::array<WiringPoint, sizeof...(Index)>{
+            wire_literal_source(inputs[Index], literal_runtime_type<typename FunctionInfo::template input_time_series<Index>>(
+                                                   inputs[Index]),
+                                start_time)...};
+        const auto output = std::invoke(
+            function, typename FunctionInfo::template argument<Index>{sources[Index]}...);
+        sink(output, ScalarValue<Opaque<CapturedValues *>>{&captured});
+    }
+
+    return finish_test_graph(wiring, captured, start_time, service_catalogue, recorder);
+}
+
+inline auto run_template_literals(const WiringTemplate &tested, const ServiceCatalogue *service_catalogue,
+                                  EvaluationProfiler::Recorder *recorder,
+                                  std::span<const TestGraphLiteralInput> inputs) {
+    if (tested.signature().has_variadic_parameters()) {
+        throw std::invalid_argument{"test_graph literal inputs do not support variadic wiring templates"};
+    }
+    if (inputs.size() != tested.signature().parameter_count()) {
+        throw std::invalid_argument{"test_graph literal input count does not match the wiring template"};
+    }
+
+    const auto start_time = MIN_DT + EvaluationTime::duration{1};
+    auto captured = CapturedValues{.start_time = start_time, .values = {}};
+    auto cycle_count = std::size_t{1};
+    for (const auto &input : inputs) {
+        cycle_count = std::max(cycle_count, input.ticks.size());
+    }
+    captured.values.resize(cycle_count);
+
+    auto wiring = GraphWiring{};
+    {
+        auto context = WiringContext{wiring};
+        auto sources = std::vector<WiringPoint>{};
+        sources.reserve(inputs.size());
+        for (auto index = std::size_t{}; index < inputs.size(); ++index) {
+            sources.push_back(wire_literal_source(
+                inputs[index], literal_runtime_type(inputs[index], tested.signature(), index), start_time));
+        }
+
+        const auto output = tested(std::span<const WiringPoint>{sources});
+        if (output) {
+            sink(*output, ScalarValue<Opaque<CapturedValues *>>{&captured});
+        }
+    }
+
+    return finish_test_graph(wiring, captured, start_time, service_catalogue, recorder);
+}
+
 template <typename Function, typename Inputs, std::size_t... Index>
 [[nodiscard]] auto run_function(const Function &function, const ServiceCatalogue *service_catalogue,
                                 EvaluationProfiler::Recorder *recorder, const Inputs &inputs,
@@ -233,21 +439,7 @@ template <typename Function, typename Inputs, std::size_t... Index>
         sink(output, ScalarValue<Opaque<CapturedValues *>>{&captured});
     }
 
-    if (service_catalogue != nullptr) {
-        wiring.finalize(*service_catalogue);
-    } else {
-        wiring.finalize();
-    }
-    const auto compiled = CompiledGraph{wiring};
-    auto global_state = GlobalState{};
-    auto runtime = RuntimeGraph{compiled, global_state};
-    if (recorder != nullptr) {
-        recorder->run(runtime, start_time);
-    } else {
-        SimulationEvaluationEngine{}.run(runtime, start_time);
-    }
-
-    return std::move(captured.values);
+    return finish_test_graph(wiring, captured, start_time, service_catalogue, recorder);
 }
 
 template <std::ranges::contiguous_range... Inputs>
@@ -269,22 +461,7 @@ template <std::ranges::contiguous_range... Inputs>
         }
     }
 
-    if (service_catalogue != nullptr) {
-        wiring.finalize(*service_catalogue);
-    } else {
-        wiring.finalize();
-    }
-
-    const auto compiled = CompiledGraph{wiring};
-    auto global_state = GlobalState{};
-    auto runtime = RuntimeGraph{compiled, global_state};
-    if (recorder != nullptr) {
-        recorder->run(runtime, start_time);
-    } else {
-        SimulationEvaluationEngine{}.run(runtime, start_time);
-    }
-
-    return std::move(captured.values);
+    return finish_test_graph(wiring, captured, start_time, service_catalogue, recorder);
 }
 
 [[nodiscard]] inline auto run_runtime_template(const WiringTemplate &tested, const ServiceCatalogue *service_catalogue,
@@ -320,22 +497,7 @@ template <std::ranges::contiguous_range... Inputs>
 
     captured.values.resize(cycle_count);
 
-    if (service_catalogue != nullptr) {
-        wiring.finalize(*service_catalogue);
-    } else {
-        wiring.finalize();
-    }
-
-    const auto compiled = CompiledGraph{wiring};
-    auto global_state = GlobalState{};
-    auto runtime = RuntimeGraph{compiled, global_state};
-    if (recorder != nullptr) {
-        recorder->run(runtime, start_time);
-    } else {
-        SimulationEvaluationEngine{}.run(runtime, start_time);
-    }
-
-    return std::move(captured.values);
+    return finish_test_graph(wiring, captured, start_time, service_catalogue, recorder);
 }
 
 } // namespace bg::testing::details

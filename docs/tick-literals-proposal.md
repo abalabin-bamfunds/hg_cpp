@@ -1,8 +1,8 @@
 # C++ tick construction and application
 
 Status: proposal for discussion.
-The [scalar API](scalar-api.md#literals) and [output API](node-api.md#output-parameters)
-define the implemented literal interfaces.
+The [scalar API](scalar-api.md#literals), [output API](node-api.md#output-parameters),
+and [test utilities](testing.md#test-layout) define the implemented literal interfaces.
 Collection test results use deltas. Concurrent writes measure their payloads,
 write directly into reservations, and publish failed reservations with recipient
 `0xFFFFFFFFu` after cleanup.
@@ -418,6 +418,9 @@ form and schedules graph evaluation. The construction utility owns neither
 queue policy nor a graph wakeup mechanism.
 
 ### Test graphs
+
+The [test utility API](testing.md#test-layout) defines literal inputs.
+Collection output capture described below remains proposed.
 
 ```cpp
 test_graph(add, {1, 2, SKIP}, {10, 20, 30});
