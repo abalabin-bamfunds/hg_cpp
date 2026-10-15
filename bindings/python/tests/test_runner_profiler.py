@@ -58,6 +58,20 @@ def test_run_graph_propagates_python_callback_exception_identity():
     assert raised.value is error
 
 
+@pytest.mark.parametrize("with_recorder", [False, True])
+def test_run_graph_propagates_python_graph_wiring_exception_identity(with_recorder):
+    error = LookupError("graph wiring callback failed")
+
+    @bg.graph
+    def graph() -> bg.TS[int]:
+        raise error
+
+    recorder = bg.EvaluationProfiler().recorder() if with_recorder else None
+    with pytest.raises(LookupError, match="graph wiring callback failed") as raised:
+        bg.run_graph(graph, recorder=recorder)
+    assert raised.value is error
+
+
 def test_run_graph_records_profile_and_exposes_post_run_queries():
     @bg.compute_node
     def increment(value: bg.TS[int]) -> bg.TS[int]:

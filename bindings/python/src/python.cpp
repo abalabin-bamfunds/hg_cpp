@@ -367,11 +367,15 @@ void run_graph(const PythonGraphDefinition &definition, nb::sequence fixed_value
         (void)wire_graph(definition, fixed_values, positional_values, named_values);
     };
 
-    auto release_gil = nb::gil_scoped_release{};
-    if (recorder != nullptr) {
-        bg::run_graph(run, *recorder);
-    } else {
-        bg::run_graph(run);
+    try {
+        auto release_gil = nb::gil_scoped_release{};
+        if (recorder != nullptr) {
+            bg::run_graph(run, *recorder);
+        } else {
+            bg::run_graph(run);
+        }
+    } catch (const WiringError &error) {
+        rethrow_python_error(error);
     }
 }
 
@@ -491,6 +495,11 @@ nb::object wire_graph(const PythonGraphDefinition &definition, nb::sequence fixe
             message += ')';
         }
         throw std::invalid_argument{std::move(message)};
+    } catch (const WiringError &error) {
+        if (python_error_cause(error.cause()) != nullptr) {
+            rethrow_python_error(error);
+        }
+        throw std::invalid_argument{std::string{"cannot wire Python graph: "} + error.what()};
     } catch (const std::exception &error) {
         throw std::invalid_argument{std::string{"cannot wire Python graph: "} + error.what()};
     }
