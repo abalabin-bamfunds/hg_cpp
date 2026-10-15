@@ -182,10 +182,11 @@ assert bg.test_graph(client, catalogue=catalogue) == [42]
 ```
 
 For a request/reply service, the implementation graph receives the request
-time series as a `TSD` keyed by client id and returns a `TSD` delta with the
-same keys. A named registration argument matching a scalar service parameter
-filters the implementation by that parameter's value. Other registration
-arguments are passed to the implementation graph as installation arguments.
+time series as a `TSD` keyed by client id. When the service has an output, the
+implementation returns a `TSD` delta with the same keys. A named registration
+argument matching a scalar service parameter filters the implementation by
+that parameter's value. Other registration arguments are passed to the
+implementation graph as installation arguments.
 The catalogue retains the Python service and graph wrappers while its native
 registrations are in use.
 

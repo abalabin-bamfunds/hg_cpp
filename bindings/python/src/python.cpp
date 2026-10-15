@@ -193,9 +193,9 @@ class PythonServiceCatalogue {
         }
 
         auto graph = std::make_shared<PythonGraphDefinition>(implementation);
-        catalogue_.register_impl(service.service(), std::move(graph), arguments);
         keep_alive_.emplace_back(service_owner);
         keep_alive_.emplace_back(implementation_owner);
+        catalogue_.register_impl(service.service(), std::move(graph), arguments);
     }
 
     const ServiceCatalogue &catalogue() const noexcept { return catalogue_; }
