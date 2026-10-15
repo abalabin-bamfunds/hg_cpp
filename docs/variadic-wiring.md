@@ -88,12 +88,12 @@ to an ordinary TSB parameter materializes the normalized TSB. Positional fields
 use their decimal positions as names in that TSB schema.
 
 `args(bundle)` expands a TSB into positional wiring arguments in schema order.
-`kwargs(bundle)` expands it into named wiring arguments. Expanding a
-record created by variadic capture or `bundle(fields)` emits its original
-arguments, including scalars and per-argument optional qualifiers; it does not
-materialize the TSB. Expanding another TSB emits its time-series fields. Named
-fields satisfy fixed parameters by name before remaining fields enter
-`var_kwargs`. Expansion happens before signature resolution.
+`kwargs(bundle)` expands it into named wiring arguments. Expanding a free TSB
+or a captured variadic pack emits its original arguments, including scalars and
+per-argument optional qualifiers; it does not materialize the TSB. Expanding
+another TSB emits its time-series fields. Named fields satisfy fixed parameters
+by name before remaining fields enter `var_kwargs`. Expansion happens before
+signature resolution.
 
 Resolvers and requirements see fixed arguments, positional arguments, then
 named arguments. They do not see the TSB wiring records. Positional captures

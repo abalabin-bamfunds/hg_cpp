@@ -29,7 +29,9 @@ template <typename T> struct named_bundle_wiring_field : std::false_type {};
 
 template <util::compile_time_string Name, typename Value>
 struct named_bundle_wiring_field<named_argument<Name, Value>>
-    : std::bool_constant<std::same_as<Value, WiringPoint> || is_typed_wiring_point<Value>> {};
+    : std::bool_constant<wiring_point_argument<Value> || supported_scalar_argument<Value> ||
+                         supported_optional_scalar_argument<Value> || supported_scalar_value_argument<Value> ||
+                         std::same_as<std::remove_cvref_t<Value>, WiringArgument>> {};
 
 template <typename T>
 inline constexpr bool is_named_bundle_wiring_field = named_bundle_wiring_field<std::remove_cvref_t<T>>::value;
@@ -134,8 +136,8 @@ class TypedBundleConstruction<TSB<Schema, Properties...>> {
     }
 
     template <std::size_t... Index> wp<TimeSeries> finish(std::index_sequence<Index...>) {
-        const auto fields = std::array<NamedBundleWiringPoint, sizeof...(Index)>{
-            NamedBundleWiringPoint{type().item_name(Index), fields_[Index]}...};
+        const auto fields = std::array<WiringArgument, sizeof...(Index)>{
+            WiringArgument{type().item_name(Index), fields_[Index]}...};
         return wp<TimeSeries>::from_validated(make_free_time_series_bundle(fields));
     }
 
@@ -330,9 +332,9 @@ template <typename TimeSeries, typename... Arguments>
 template <typename... Fields>
     requires(sizeof...(Fields) != 0 && (details::is_named_bundle_wiring_field<Fields> && ...))
 [[nodiscard]] wp<> bundle(Fields &&...fields) {
-    auto points = std::array<details::NamedBundleWiringPoint, sizeof...(Fields)>{details::NamedBundleWiringPoint{
-        util::symbol{std::remove_cvref_t<Fields>::name.view()}, static_cast<WiringPoint>(fields.value)}...};
-    return wp<>{details::make_free_time_series_bundle(points)};
+    auto arguments = std::array<WiringArgument, sizeof...(Fields)>{
+        WiringArgument{std::forward<Fields>(fields)}...};
+    return bundle(std::span<const WiringArgument>{arguments});
 }
 
 static_assert(sizeof(wp<TSB<SCHEMA>, var_args>) == sizeof(WiringPoint));

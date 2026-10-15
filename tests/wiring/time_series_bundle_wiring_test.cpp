@@ -65,10 +65,13 @@ TEST_CASE("free TSB materialization rejects borrowed input bindings",
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
     const auto input = wiring.borrowed_input(bg::TS<bg::i64>::type());
-    const auto fields = std::array{bg::details::NamedBundleWiringPoint{bg::util::symbol{"value"}, input}};
+    const auto fields = std::array{bg::WiringArgument{bg::util::symbol{"count"}, bg::i64{7}},
+                                   bg::WiringArgument{bg::util::symbol{"value"}, input}};
     const auto bundle = bg::details::make_free_time_series_bundle(fields);
+    const auto node_count = wiring.nodes().size();
 
     CHECK_THROWS_AS(wiring.materialize(bundle, bundle.type()), bg::WiringError);
+    CHECK(wiring.nodes().size() == node_count);
 }
 
 TEST_CASE("a typed TSB wiring point exposes typed fields",
@@ -262,6 +265,12 @@ TEST_CASE("a free TSB span requires named fields and projects scalars to const t
 
         const auto sink = bg::node([](bg::In<bg::TSB<TestBundle>>) {});
         sink(fields.as<bg::TSB<TestBundle>>());
+
+        const auto named_fields = bg::bundle("count"_n = bg::i64{7}, "value"_n = source());
+        const auto &named_type = static_cast<const bg::TimeSeriesBundleType &>(named_fields.type());
+        CHECK(&named_type.item_type(0) == &bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>::type());
+        fixed(bg::kwargs(named_fields));
+        sink(named_fields.as<bg::TSB<TestBundle>>());
     });
 }
 

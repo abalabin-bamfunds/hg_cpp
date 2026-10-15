@@ -74,16 +74,12 @@ an explicit item type: `bg::tsl<TS<i64>>()` or `bg::tsl(item_type)`, where
 The logical output preserves dependency ordering. Item updates schedule it as a
 normal node. It combines updates from the same cycle and copies no item value.
 
-`bg::bundle("name"_n = a, "value"_n = b)` creates a wiring point for an
-unnamed TSB. A named TSB parameter accepts a compatible field set. Wiring
-creates one TSB output over the selected fields and reports their field
-changes.
-
-`bg::bundle(fields)` accepts a vector or span of named `WiringArgument`
-values containing scalars and time series. Scalar fields project to const time
-series when the TSB is consumed. `args(bundle)` and `kwargs(bundle)` preserve
-scalar arguments when expanding the wiring record. Field names can be
-determined during wiring:
+`bg::bundle("name"_n = a, "value"_n = b)` and `bg::bundle(fields)` create the
+same free TSB wiring point. Both forms accept named time series and scalar
+fields. Wiring creates one TSB output when the bundle is consumed; scalar
+fields project to const time series. `args(bundle)` and `kwargs(bundle)` retain
+the original scalar arguments and optional qualifiers when expanding the
+bundle. Field names can be determined during wiring:
 
 ```cpp
 auto fields = std::vector<bg::WiringArgument>{};
@@ -92,9 +88,10 @@ fields.emplace_back(bg::util::symbol{"quantity"}, 10);
 auto result = bg::bundle(fields);
 ```
 
-Both collection constructors retain the supplied wiring points; the vector
-or span's underlying storage need not outlive the call. An empty field range
-constructs an empty TSB.
+The bundle retains its time-series wiring points and owns scalar values; the
+vector or span's underlying storage need not outlive the call. An absent
+optional scalar field is omitted. An empty field range constructs an empty
+TSB.
 
 `bg::bundle<Schema>(arguments...)` uses the declared schema. When every
 argument is a scalar and `Schema` is a valid hierarchical scalar schema, it

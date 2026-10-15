@@ -17,25 +17,17 @@ void append_wiring_arguments(std::vector<WiringArgument> &result, WiringArgument
         throw WiringError{"wiring argument expansion requires a TSB"};
     }
 
-    if (const auto *record = variadic_wiring_record(expansion.bundle)) {
-        result.reserve(result.size() + record->size());
-        for (auto index = std::size_t{}; index < record->size(); ++index) {
-            result.push_back(record->expanded_argument(index, expansion.mode));
-            if (expansion.requires_optional && result.back().is_time_series()) {
-                result.back().require_optional();
-            }
-        }
-        return;
-    }
-
     result.reserve(result.size() + type->item_count());
     for (auto index = std::size_t{}; index < type->item_count(); ++index) {
-        const auto field = time_series_bundle_field(expansion.bundle, index);
+        auto field = time_series_bundle_argument(expansion.bundle, index);
+        field.clear_variadic_capture_mode();
         if (expansion.mode == VariadicMode::named) {
-            result.emplace_back(type->item_name(index), field);
+            field.set_name(type->item_name(index));
+            result.push_back(std::move(field));
             result.back().match_fixed_parameter_by_name();
         } else {
-            result.emplace_back(field);
+            field.clear_name();
+            result.push_back(std::move(field));
         }
         if (expansion.requires_optional && result.back().is_time_series()) {
             result.back().require_optional();

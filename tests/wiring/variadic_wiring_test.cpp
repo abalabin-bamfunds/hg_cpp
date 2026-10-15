@@ -1099,6 +1099,25 @@ TEST_CASE("nested expands scalar and time-series arguments from TSB wiring recor
     });
 }
 
+TEST_CASE("free TSB bundle syntax binds identically to a named variadic parameter",
+          "[feature:wiring][feature:variadic-wiring][series:tsb][schema:named][definition:function]") {
+    const auto source = node([](Out<TS<i64>>) {});
+    const auto receiver = graph("name"_n = "receiver", [](wp<TSB<SCHEMA>, "values"_n, var_kwargs> values) {
+        REQUIRE(values.size() == 1);
+        REQUIRE(values[0].name());
+        CHECK(values[0].name()->text() == "field");
+        CHECK(values[0].is_time_series());
+        CHECK(&values[0].type() == &TS<i64>::type());
+    });
+
+    testing::test_wiring([&] {
+        auto fields = std::vector<WiringArgument>{};
+        fields.emplace_back(util::symbol{"field"}, source());
+        receiver("values"_n = bundle(std::span<const WiringArgument>{fields}));
+    });
+    testing::test_wiring([&] { receiver("values"_n = bundle("field"_n = source())); });
+}
+
 TEST_CASE("kwargs preserves optional qualifiers from a TSB wiring record",
           "[feature:wiring][feature:variadic-wiring][validity:optional][series:tsb][schema:named]") {
     const auto source = node([](Out<TS<i64>>) {});

@@ -47,18 +47,6 @@ WiringArgument VariadicWiringRecord::argument(std::size_t index) const {
     return result;
 }
 
-WiringArgument VariadicWiringRecord::expanded_argument(std::size_t index, VariadicMode mode) const {
-    auto result = argument(index);
-    result.clear_variadic_capture_mode();
-    if (mode == VariadicMode::named) {
-        result.set_name(item_name(index));
-        result.match_fixed_parameter_by_name();
-    } else {
-        result.clear_name();
-    }
-    return result;
-}
-
 std::vector<WiringArgumentDescriptor> VariadicWiringRecord::argument_descriptors() const {
     auto result = std::vector<WiringArgumentDescriptor>{};
     result.reserve(size());
