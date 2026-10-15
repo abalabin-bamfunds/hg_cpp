@@ -30,7 +30,6 @@
 #include <bg/type/type_registry.hpp>
 #include <bg/type/type.hpp>
 #include <bg/type/type_variable.hpp>
-#include <bg/type/type_variable.hpp>
 #include <bg/type/variable_registry.hpp>
 #include <bg/util/scope_exit.hpp>
 #include <bg/version.hpp>
