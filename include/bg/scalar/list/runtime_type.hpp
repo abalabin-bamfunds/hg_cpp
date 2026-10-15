@@ -26,10 +26,6 @@ class ScalarListRuntimeType : public ScalarRuntimeType {
 
     virtual void emplace_back_with(void *storage, allocator &memory, ScalarConstruction construction) const = 0;
 
-    // Constructs a replacement through the active scalar allocator. Returns false when equal suppression skips it.
-    [[nodiscard]] virtual bool assign_with(void *destination, ScalarConstruction construction,
-                                           bool suppress_equal) const;
-
     virtual void append(void *storage, const details::ScalarData &value, allocator &memory) const = 0;
     template <typename Value>
         requires requires(const Value &value) { details::scalar_data(value); }

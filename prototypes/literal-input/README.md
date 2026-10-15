@@ -95,8 +95,8 @@ literal::apply(nested_list_output, {{1, {{0, 10}}}});
 
 Scalar TS outputs delegate to `Out::apply()`, which uses the scalar construction
 consumer for replacement and publishes successful updates. Scalar leaves use
-runtime assignment without an owning intermediate; scalar list sequences replace
-the complete list through the actual destination runtime.
+runtime assignment without an owning intermediate; scalar sequences construct
+complete replacements through the actual destination runtime.
 TSL entries are `{index, child_delta}` pairs. Indices must be nonnegative
 integers other than Boolean values. At each list, the consumer validates entry
 shape, index range, and duplicate indices before applying that list's children.
@@ -106,8 +106,8 @@ guarantees, notifications, and containing paths. Nested deltas apply recursively
 a child application failure can leave earlier children published, as defined
 by [evaluation](../../docs/evaluation.md#exceptions).
 
-Scalar time series accept list replacement sequences. Other scalar sequence
-destinations, TSB, TSD, and TSS output updates remain unsupported.
+Scalar time series accept replacement sequences for lists, sets, dictionaries,
+compound scalars, and bundles. TSB, TSD, and TSS output updates remain unsupported.
 
 The `literal_time_series_apply_probe` target checks typed and generic output
 dispatch, nested TSL updates, notifications, validity, deduplicated outputs,
@@ -121,6 +121,12 @@ regression checks the default provider assignment fallback and its cleanup.
 Retained owning copies of nested lists and shared strings preserve their values
 across replacement, failed construction, and destruction of the source output
 storage.
+
+Scalar replacement checks also cover native and composed sets and dictionaries,
+nested dictionary/list values, over-aligned compounds with const fields, and
+bundles containing dictionaries and compounds. They verify retained owning copies,
+failed replacement cleanup, and equality suppression. The default scalar provider
+fallback is exercised with a shared bundle representation.
 
 The probe reports object layout and counts global `operator new` calls for
 source construction, first visit, warmed visit, and recursive construction

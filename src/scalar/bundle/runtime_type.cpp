@@ -34,6 +34,7 @@ class ComposedHierarchicalScalarRuntimeType final : public HierarchicalScalarRun
     details::ScalarData field(const details::ScalarData &value, std::size_t index) const override;
     bool field_present(const details::ScalarData &value, std::size_t index) const override;
     bool accepts_input(const ScalarRuntimeType &source) const noexcept override;
+    bool assign_with(void *destination, ScalarConstruction construction, bool suppress_equal) const override;
     std::uintptr_t construct_shared(std::span<const details::ScalarData *const> fields,
                                     details::BundleAllocationOwner &owner) const;
 
@@ -326,6 +327,25 @@ void ComposedHierarchicalScalarRuntimeType::do_assign_from_input(
     if (previous != nullptr) {
         previous->runtime_type->release_shared(reinterpret_cast<std::uintptr_t>(previous));
     }
+}
+
+bool ComposedHierarchicalScalarRuntimeType::assign_with(void *destination, ScalarConstruction construction,
+                                                        bool suppress_equal) const {
+    auto memory = details::current_scalar_allocator();
+    alignas(Storage *) std::byte replacement_bytes[sizeof(Storage *)];
+    construction.construct(construction.context, *this, replacement_bytes, memory);
+    auto *replacement = std::launder(reinterpret_cast<Storage **>(replacement_bytes));
+    auto release_replacement = util::scope_exit{[&]() noexcept { destroy(replacement, memory); }};
+    const auto source = borrow(replacement);
+
+    if (suppress_equal && equals(destination, source)) {
+        return false;
+    }
+
+    auto *previous = stored_handle(destination);
+    store_handle(destination, stored_handle(replacement));
+    store_handle(replacement, previous);
+    return true;
 }
 
 std::size_t ComposedHierarchicalScalarRuntimeType::hash(details::ScalarDataMode mode,

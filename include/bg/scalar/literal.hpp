@@ -143,15 +143,8 @@ class ScalarLiteralConstructionContext {
                     ddv::noop);
             },
             [&](std::span<const ScalarLiteral>) {
-                runtime_type.type().visit(
-                    [&](const bg::ListScalarType *) {
-                        const auto &list_runtime_type = static_cast<const bg::ScalarListRuntimeType &>(runtime_type);
-                        assigned = list_runtime_type.assign_with(
-                            destination, {this, &ScalarLiteralConstructionContext::callback}, suppress_equal);
-                    },
-                    [&](const auto *) {
-                        throw std::invalid_argument{"a scalar list literal requires a list scalar destination"};
-                    });
+                assigned = runtime_type.assign_with(
+                    destination, {this, &ScalarLiteralConstructionContext::callback}, suppress_equal);
             });
         return assigned;
     }

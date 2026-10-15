@@ -103,14 +103,14 @@ valid until it returns. `ScalarListRuntimeType::emplace_back_with` applies the
 same callback contract to an item slot and commits the slot only after successful
 construction.
 
-`ScalarListRuntimeType::assign_with(destination, construction, suppress_equal)`
+`ScalarRuntimeType::assign_with(destination, construction, suppress_equal)`
 constructs a replacement with the active scalar allocator and the same callback
 contract. It returns `false` when equality suppression skips assignment and
 `true` after assignment. Construction or comparison failure preserves the
-existing list and releases candidate storage. Native and composed list runtimes
-construct items once and swap their storage headers. The default provider
+existing value and releases candidate storage. Native and composed collection
+runtimes construct items once and swap their storage headers. The default provider
 implementation allocates runtime-sized, aligned candidate storage and calls
-`assign_from_input`; this fallback can copy the completed list once more.
+`assign_from_input`; this fallback can copy the completed scalar once more.
 
 `ScalarDictRuntimeType::try_emplace_with(storage, memory, key, mapped)` uses
 these callbacks to construct a key and mapped value in their final slots. It

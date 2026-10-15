@@ -6,9 +6,16 @@
 
 #include <bg/node.hpp>
 #include <bg/scalar/bundle/details/allocation_owner.hpp>
+#include <bg/scalar/bundle/scalar.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
+#include <bg/scalar/dict/scalar.hpp>
+#include <bg/scalar/dict/scalar_type.hpp>
 #include <bg/scalar/list/runtime_type.hpp>
 #include <bg/scalar/list/scalar_type.hpp>
+#include <bg/scalar/literal.hpp>
+#include <bg/scalar/set/scalar.hpp>
+#include <bg/scalar/set/scalar_type.hpp>
+#include <bg/scalar/struct/scalar.hpp>
 #include <bg/time_series/details/output_state.hpp>
 #include <bg/time_series/output_binding.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
@@ -35,6 +42,16 @@ using bg::i64;
 
 template <template <typename, auto...> typename Field> struct ProbeBundle {
     Field<TS<i64>> item;
+};
+
+struct alignas(64) LiteralCompound {
+    i64 first{};
+    const i64 second{};
+};
+
+template <template <typename, auto...> typename Field> struct LiteralBundle {
+    Field<bg::Dict<bg::string, bg::List<i64>>> nested;
+    Field<LiteralCompound> compound;
 };
 
 void require(bool condition, std::source_location location = std::source_location::current()) {
@@ -285,12 +302,13 @@ void verify_scalar_list_output() {
     require(nested_actual.equals<i64>({7, 8}));
 }
 
-template <typename Verify>
-void verify_direct_list_output(const bg::ScalarListRuntimeType &list_runtime, const bg::ScalarType &list_type,
-                               const literal::ScalarLiteral &literal, std::size_t expected_allocations,
-                               Verify &&verify, bool verify_failed_replacement = false) {
-    const auto &time_series_type = bg::time_series_value_type(list_type, bg::TimeSeriesGuarantee::ordinary);
-    const auto &time_series_runtime = bg::time_series_value_runtime_type(time_series_type, list_runtime);
+template <typename ScalarRuntime, typename Verify>
+void verify_direct_scalar_output(const ScalarRuntime &scalar_runtime, const bg::ScalarType &scalar_type,
+                                 const literal::ScalarLiteral &literal,
+                                 std::optional<std::size_t> expected_allocations, Verify &&verify,
+                                 bool verify_failed_replacement = false) {
+    const auto &time_series_type = bg::time_series_value_type(scalar_type, bg::TimeSeriesGuarantee::ordinary);
+    const auto &time_series_runtime = bg::time_series_value_runtime_type(time_series_type, scalar_runtime);
     auto scalar_memory = AllocationCounter{};
     auto scalar_allocator = bg::allocator{scalar_memory};
     auto owner_resource = std::pmr::unsynchronized_pool_resource{};
@@ -299,8 +317,8 @@ void verify_direct_list_output(const bg::ScalarListRuntimeType &list_runtime, co
     auto release_allocation_owner = bg::util::scope_exit{[&]() noexcept { allocation_owner->release(); }};
     auto output_storage_resource = std::pmr::unsynchronized_pool_resource{};
     auto output_allocator = bg::allocator{output_storage_resource};
-    auto *storage = output_allocator.allocate_bytes(list_runtime.size(), list_runtime.alignment());
-    list_runtime.construct_initial_value(storage);
+    auto *storage = output_allocator.allocate_bytes(scalar_runtime.size(), scalar_runtime.alignment());
+    scalar_runtime.construct_initial_value(storage);
 
     auto time_series_state = bg::TimeSeriesState{};
     const auto evaluation_time = bg::EvaluationTime{bg::EvaluationTime::duration{1}};
@@ -311,14 +329,26 @@ void verify_direct_list_output(const bg::ScalarListRuntimeType &list_runtime, co
     {
         auto context = bg::details::ScalarAllocationContext{scalar_allocator, *allocation_owner, nullptr, 0};
         auto release_storage = bg::util::scope_exit{[&]() noexcept {
-            list_runtime.destroy(storage, scalar_allocator);
-            output_allocator.deallocate_bytes(storage, list_runtime.size(), list_runtime.alignment());
+            scalar_runtime.destroy(storage, scalar_allocator);
+            output_allocator.deallocate_bytes(storage, scalar_runtime.size(), scalar_runtime.alignment());
         }};
         const auto allocations_before = scalar_memory.allocations();
         output.apply(literal);
-        require(scalar_memory.allocations() - allocations_before == expected_allocations);
+        if (expected_allocations) {
+            require(scalar_memory.allocations() - allocations_before == *expected_allocations);
+        }
         require(output.valid());
-        verify(list_runtime, storage);
+        verify(scalar_runtime, storage);
+
+        if (scalar_type.supports_equality()) {
+            auto construction_context = bg::details::ScalarLiteralConstructionContext{literal, true};
+            const auto construction = bg::ScalarConstruction{
+                &construction_context, &bg::details::ScalarLiteralConstructionContext::callback};
+            const auto outstanding_before_assignment = scalar_memory.outstanding_allocations();
+            require(!scalar_runtime.assign_with(storage, construction, true));
+            require(scalar_memory.outstanding_allocations() == outstanding_before_assignment);
+            verify(scalar_runtime, storage);
+        }
 
         if (verify_failed_replacement) {
             const auto next_evaluation_time = bg::EvaluationTime{bg::EvaluationTime::duration{2}};
@@ -341,7 +371,7 @@ void verify_direct_list_output(const bg::ScalarListRuntimeType &list_runtime, co
             require(time_series_state.time() == state_time_before_failure);
             require(scalar_memory.allocations() > allocations_before_failure);
             require(scalar_memory.outstanding_allocations() == outstanding_before_failure);
-            verify(list_runtime, storage);
+            verify(scalar_runtime, storage);
         }
     }
 
@@ -350,11 +380,11 @@ void verify_direct_list_output(const bg::ScalarListRuntimeType &list_runtime, co
 }
 
 template <typename Verify>
-void verify_retained_list_snapshot(const bg::ScalarListRuntimeType &list_runtime, const bg::ScalarType &list_type,
+void verify_retained_scalar_snapshot(const bg::ScalarRuntimeType &scalar_runtime, const bg::ScalarType &scalar_type,
                                    const literal::ScalarLiteral &initial, const literal::ScalarLiteral &replacement,
                                    const literal::ScalarLiteral &invalid_replacement, Verify &&verify) {
-    const auto &time_series_type = bg::time_series_value_type(list_type, bg::TimeSeriesGuarantee::ordinary);
-    const auto &time_series_runtime = bg::time_series_value_runtime_type(time_series_type, list_runtime);
+    const auto &time_series_type = bg::time_series_value_type(scalar_type, bg::TimeSeriesGuarantee::ordinary);
+    const auto &time_series_runtime = bg::time_series_value_runtime_type(time_series_type, scalar_runtime);
     auto scalar_memory = AllocationCounter{};
     auto scalar_allocator = bg::allocator{scalar_memory};
     auto owner_resource = std::pmr::unsynchronized_pool_resource{};
@@ -366,8 +396,8 @@ void verify_retained_list_snapshot(const bg::ScalarListRuntimeType &list_runtime
     auto snapshot = std::optional<bg::ScalarValue<>>{};
     auto output_storage_resource = std::pmr::unsynchronized_pool_resource{};
     auto output_allocator = bg::allocator{output_storage_resource};
-    auto *storage = output_allocator.allocate_bytes(list_runtime.size(), list_runtime.alignment());
-    list_runtime.construct_initial_value(storage);
+    auto *storage = output_allocator.allocate_bytes(scalar_runtime.size(), scalar_runtime.alignment());
+    scalar_runtime.construct_initial_value(storage);
 
     {
         auto context = bg::details::ScalarAllocationContext{scalar_allocator, *allocation_owner, nullptr, 0};
@@ -377,19 +407,19 @@ void verify_retained_list_snapshot(const bg::ScalarListRuntimeType &list_runtime
         output_state.bind(time_series_state, storage, evaluation_time);
         auto output = bg::Out<bg::TS_T>{bg::TimeSeriesOutputBinding{output_state}};
         auto release_storage = bg::util::scope_exit{[&]() noexcept {
-            list_runtime.destroy(storage, scalar_allocator);
-            output_allocator.deallocate_bytes(storage, list_runtime.size(), list_runtime.alignment());
+            scalar_runtime.destroy(storage, scalar_allocator);
+            output_allocator.deallocate_bytes(storage, scalar_runtime.size(), scalar_runtime.alignment());
         }};
 
         output.apply(initial);
-        verify(list_runtime, storage, 0, false);
-        snapshot.emplace(bg::Scalar<>::from(list_runtime, storage), snapshot_allocator);
+        verify(scalar_runtime, storage, 0, false);
+        snapshot.emplace(bg::Scalar<>::from(scalar_runtime, storage), snapshot_allocator);
         verify(snapshot->runtime_type(), snapshot->view().data(), 0, true);
 
         evaluation_time = bg::EvaluationTime{bg::EvaluationTime::duration{2}};
         output_state.bind(time_series_state, storage, evaluation_time);
         output.apply(replacement);
-        verify(list_runtime, storage, 1, false);
+        verify(scalar_runtime, storage, 1, false);
         verify(snapshot->runtime_type(), snapshot->view().data(), 0, true);
 
         const auto last_updated = output.last_updated();
@@ -403,7 +433,7 @@ void verify_retained_list_snapshot(const bg::ScalarListRuntimeType &list_runtime
         }
         require(failed);
         require(output.last_updated() == last_updated);
-        verify(list_runtime, storage, 1, false);
+        verify(scalar_runtime, storage, 1, false);
         verify(snapshot->runtime_type(), snapshot->view().data(), 0, true);
     }
 
@@ -414,7 +444,7 @@ void verify_retained_list_snapshot(const bg::ScalarListRuntimeType &list_runtime
     allocation_owner->release();
 }
 
-void verify_nested_list_replacement_snapshots(const bg::ScalarListRuntimeType &runtime, const bg::ScalarType &type) {
+void verify_nested_list_replacement_snapshots(const bg::ScalarRuntimeType &runtime, const bg::ScalarType &type) {
     const auto initial = std::vector<std::vector<i64>>{{1, 2}, {3}};
     const auto replacement = std::vector<std::vector<i64>>{{4}, {5, 6}};
     const auto verify = [&](const bg::ScalarRuntimeType &runtime_type, const void *storage, std::size_t version,
@@ -433,7 +463,7 @@ void verify_nested_list_replacement_snapshots(const bg::ScalarListRuntimeType &r
         }
     };
 
-    verify_retained_list_snapshot(runtime, type, {{1, 2}, {3}}, {{4}, {5, 6}}, {{7, 8}, {9, "bad"}}, verify);
+    verify_retained_scalar_snapshot(runtime, type, {{1, 2}, {3}}, {{4}, {5, 6}}, {{7, 8}, {9, "bad"}}, verify);
 }
 
 void verify_shared_string_list_snapshot() {
@@ -461,8 +491,8 @@ void verify_shared_string_list_snapshot() {
         }
     };
 
-    verify_retained_list_snapshot(runtime, runtime.type(), {"old one", "old two"}, {"new value"},
-                                  {"later value", 3}, verify);
+    verify_retained_scalar_snapshot(runtime, runtime.type(), {"old one", "old two"}, {"new value"},
+                                    {"later value", 3}, verify);
 }
 
 void verify_composed_and_nested_list_outputs() {
@@ -471,7 +501,7 @@ void verify_composed_and_nested_list_outputs() {
     const auto integer_available = std::array<const bg::ScalarRuntimeType *, 1>{&integer_runtime};
     const auto &composed_integers = static_cast<const bg::ScalarListRuntimeType &>(
         bg::resolve_scalar_runtime_type(integer_list_type, integer_available));
-    verify_direct_list_output(composed_integers, integer_list_type, {1, 2}, 1,
+    verify_direct_scalar_output(composed_integers, integer_list_type, {1, 2}, 1,
                               [](const auto &runtime, const void *storage) {
         require(runtime.item_count(storage) == 2);
         require(*static_cast<const i64 *>(runtime.item(storage, 0)) == 1);
@@ -487,7 +517,7 @@ void verify_composed_and_nested_list_outputs() {
     auto first = bg::ScalarValue<Item>{RuntimeListItem{11, 12}};
     auto second = bg::ScalarValue<Item>{RuntimeListItem{21, 22}};
     RuntimeListItem::copy_count = 0;
-    verify_direct_list_output(composed, list_type, {first, second}, 1, [](const auto &runtime, const void *storage) {
+    verify_direct_scalar_output(composed, list_type, {first, second}, 1, [](const auto &runtime, const void *storage) {
         require(runtime.item_count(storage) == 2);
         const auto *first_value = static_cast<const RuntimeListItem *>(runtime.item(storage, 0));
         const auto *second_value = static_cast<const RuntimeListItem *>(runtime.item(storage, 1));
@@ -499,7 +529,7 @@ void verify_composed_and_nested_list_outputs() {
     const auto &native = static_cast<const bg::ScalarListRuntimeType &>(
         bg::cpp_scalar_runtime_type<bg::List<Item>>());
     RuntimeListItem::copy_count = 0;
-    verify_direct_list_output(native, list_type, {first, second}, 1, [](const auto &runtime, const void *storage) {
+    verify_direct_scalar_output(native, list_type, {first, second}, 1, [](const auto &runtime, const void *storage) {
         require(runtime.item_count(storage) == 2);
         const auto *first_value = static_cast<const RuntimeListItem *>(runtime.item(storage, 0));
         const auto *second_value = static_cast<const RuntimeListItem *>(runtime.item(storage, 1));
@@ -510,7 +540,7 @@ void verify_composed_and_nested_list_outputs() {
 
     const auto &native_integers = static_cast<const bg::ScalarListRuntimeType &>(
         bg::cpp_scalar_runtime_type<bg::List<i64>>());
-    verify_direct_list_output(native_integers, native_integers.type(), {1, 2}, 1,
+    verify_direct_scalar_output(native_integers, native_integers.type(), {1, 2}, 1,
                               [](const auto &runtime, const void *storage) {
         require(runtime.item_count(storage) == 2);
         require(*static_cast<const i64 *>(runtime.item(storage, 0)) == 1);
@@ -523,7 +553,7 @@ void verify_composed_and_nested_list_outputs() {
     const auto nested_available = std::array<const bg::ScalarRuntimeType *, 1>{&integer_runtime};
     const auto &outer_runtime = static_cast<const bg::ScalarListRuntimeType &>(
         bg::resolve_scalar_runtime_type(outer_type, nested_available));
-    verify_direct_list_output(outer_runtime, outer_type, {{{1, 2}, {3}}, {{4}}}, 6,
+    verify_direct_scalar_output(outer_runtime, outer_type, {{{1, 2}, {3}}, {{4}}}, 6,
                               [](const auto &runtime, const void *storage) {
         require(runtime.item_count(storage) == 2);
         const auto &middle_runtime = static_cast<const bg::ScalarListRuntimeType &>(runtime.item_runtime_type());
@@ -549,6 +579,201 @@ void verify_composed_and_nested_list_outputs() {
     verify_nested_list_replacement_snapshots(
         static_cast<const bg::ScalarListRuntimeType &>(outer_runtime.item_runtime_type()), middle_type);
     verify_shared_string_list_snapshot();
+}
+
+void verify_native_and_composed_set_outputs() {
+    const auto &integer_runtime = bg::cpp_scalar_runtime_type<i64>();
+    using IntegerSet = bg::Set<i64>;
+    const auto verify = [](const bg::ScalarRuntimeType &runtime, const void *storage, std::size_t version,
+                           bool) {
+        const auto values = bg::Scalar<IntegerSet>::from(runtime, storage);
+        if (version == 0) {
+            require(values.size() == 2 && values.contains(1) && values.contains(2));
+        } else {
+            require(values.size() == 1 && values.contains(4));
+        }
+    };
+
+    const auto &native = bg::cpp_scalar_runtime_type<IntegerSet>();
+    verify_direct_scalar_output(native, native.type(), {1, 2}, std::nullopt,
+                                [&](const auto &runtime, const void *storage) { verify(runtime, storage, 0, false); },
+                                true);
+    verify_retained_scalar_snapshot(native, native.type(), {1, 2}, {4}, {7, "bad"}, verify);
+
+    const auto &set_type = bg::set_scalar_type(integer_runtime.type());
+    const auto available = std::array<const bg::ScalarRuntimeType *, 1>{&integer_runtime};
+    const auto &composed = bg::resolve_scalar_runtime_type(set_type, available);
+    verify_direct_scalar_output(composed, set_type, {1, 2}, std::nullopt,
+                                [&](const auto &runtime, const void *storage) { verify(runtime, storage, 0, false); },
+                                true);
+    verify_retained_scalar_snapshot(composed, set_type, {1, 2}, {4}, {7, "bad"}, verify);
+}
+
+void verify_native_and_composed_dictionary_outputs() {
+    const auto &integer_runtime = bg::cpp_scalar_runtime_type<i64>();
+    using IntegerDictionary = bg::Dict<i64, i64>;
+    const auto verify_integer_dictionary = [](const bg::ScalarRuntimeType &runtime, const void *storage,
+                                               std::size_t version, bool) {
+        const auto values = bg::Scalar<IntegerDictionary>::from(runtime, storage);
+        if (version == 0) {
+            require(values.size() == 2 && values.at(1).value() == 2 && values.at(3).value() == 4);
+        } else {
+            require(values.size() == 1 && values.at(4).value() == 5);
+        }
+    };
+
+    const auto &native = bg::cpp_scalar_runtime_type<IntegerDictionary>();
+    verify_direct_scalar_output(native, native.type(), {{1, 2}, {3, 4}}, std::nullopt,
+                                [&](const auto &runtime, const void *storage) {
+                                    verify_integer_dictionary(runtime, storage, 0, false);
+                                });
+    verify_retained_scalar_snapshot(native, native.type(), {{1, 2}, {3, 4}}, {{4, 5}}, {{6, "bad"}},
+                                    verify_integer_dictionary);
+
+    const auto &integer_dictionary_type = bg::dict_scalar_type(integer_runtime.type(), integer_runtime.type());
+    const auto available = std::array<const bg::ScalarRuntimeType *, 1>{&integer_runtime};
+    const auto &composed = bg::resolve_scalar_runtime_type(integer_dictionary_type, available);
+    verify_direct_scalar_output(composed, integer_dictionary_type, {{1, 2}, {3, 4}}, std::nullopt,
+                                [&](const auto &runtime, const void *storage) {
+                                    verify_integer_dictionary(runtime, storage, 0, false);
+                                });
+    verify_retained_scalar_snapshot(composed, integer_dictionary_type, {{1, 2}, {3, 4}}, {{4, 5}}, {{6, "bad"}},
+                                    verify_integer_dictionary);
+
+    using NestedDictionary = bg::Dict<i64, bg::List<i64>>;
+    const auto &integer_list_type = bg::list_scalar_type(integer_runtime.type());
+    const auto list_available = std::array<const bg::ScalarRuntimeType *, 1>{&integer_runtime};
+    const auto &composed_list = bg::resolve_scalar_runtime_type(integer_list_type, list_available);
+    const auto &nested_dictionary_type = bg::dict_scalar_type(integer_runtime.type(), integer_list_type);
+    const auto nested_available =
+        std::array<const bg::ScalarRuntimeType *, 2>{&integer_runtime, &composed_list};
+    const auto &composed_nested = bg::resolve_scalar_runtime_type(nested_dictionary_type, nested_available);
+    const auto verify_nested_dictionary = [](const bg::ScalarRuntimeType &runtime, const void *storage,
+                                             std::size_t version, bool) {
+        const auto values = bg::Scalar<NestedDictionary>::from(runtime, storage);
+        if (version == 0) {
+            require(values.size() == 2 && values.at(1).size() == 2 && values.at(1)[1].value() == 2 &&
+                    values.at(3)[0].value() == 4);
+        } else {
+            require(values.size() == 1 && values.at(4).size() == 2 && values.at(4)[1].value() == 6);
+        }
+    };
+
+    const auto verify_nested_runtime = [&](const bg::ScalarRuntimeType &runtime,
+                                           const literal::ScalarLiteral &initial,
+                                           const literal::ScalarLiteral &invalid) {
+        verify_direct_scalar_output(runtime, nested_dictionary_type, initial, std::nullopt,
+                                    [&](const auto &type, const void *storage) {
+                                        verify_nested_dictionary(type, storage, 0, false);
+                                    });
+        verify_retained_scalar_snapshot(runtime, nested_dictionary_type, initial, {{4, {5, 6}}}, invalid,
+                                        verify_nested_dictionary);
+    };
+    verify_nested_runtime(bg::cpp_scalar_runtime_type<NestedDictionary>(), {{1, {1, 2}}, {3, {4}}},
+                          {{7, {8, "bad"}}});
+    verify_nested_runtime(composed_nested, {{1, {1, 2}}, {3, {4}}}, {{7, {8, "bad"}}});
+}
+
+void verify_native_compound_and_bundle_outputs() {
+    const auto &compound_runtime = bg::cpp_scalar_runtime_type<LiteralCompound>();
+    const auto verify_compound = [](const bg::ScalarRuntimeType &, const void *storage, std::size_t version, bool) {
+        const auto &value = *static_cast<const LiteralCompound *>(storage);
+        require(reinterpret_cast<std::uintptr_t>(std::addressof(value)) % alignof(LiteralCompound) == 0);
+        if (version == 0) {
+            require(value.first == 10 && value.second == 20);
+        } else {
+            require(value.first == 30 && value.second == 40);
+        }
+    };
+    verify_direct_scalar_output(compound_runtime, compound_runtime.type(), {{"first", 10}, {"second", 20}}, 0,
+                                [&](const auto &runtime, const void *storage) {
+                                    verify_compound(runtime, storage, 0, false);
+                                });
+    verify_retained_scalar_snapshot(compound_runtime, compound_runtime.type(), {{"first", 10}, {"second", 20}},
+                                    {{"first", 30}, {"second", 40}}, {{"first", 50}, {"second", "bad"}},
+                                    verify_compound);
+
+    using BundleValue = bg::Bundle<LiteralBundle>;
+    using NestedDictionary = bg::Dict<bg::string, bg::List<i64>>;
+    const auto &bundle_runtime = bg::cpp_scalar_runtime_type<BundleValue>();
+    const auto verify_bundle = [](const bg::ScalarRuntimeType &runtime, const void *storage, std::size_t version,
+                                  bool) {
+        const auto bundle = bg::Scalar<BundleValue>::from(runtime, storage);
+        const auto nested = bg::scalar_cast<NestedDictionary>(bundle[0]);
+        const auto compound = bg::scalar_cast<LiteralCompound>(bundle[1]);
+        if (version == 0) {
+            require(nested.size() == 2 && nested.at("old").size() == 2 && nested.at("old")[1].value() == 2 &&
+                    nested.at("keep")[0].value() == 3 && compound.value().first == 10 &&
+                    compound.value().second == 20);
+        } else {
+            require(nested.size() == 1 && nested.at("new").size() == 2 && nested.at("new")[1].value() == 6 &&
+                    compound.value().first == 30 && compound.value().second == 40);
+        }
+    };
+    const auto verify_bundle_literals = [&](const literal::ScalarLiteral &initial,
+                                           const literal::ScalarLiteral &replacement,
+                                           const literal::ScalarLiteral &invalid) {
+        verify_direct_scalar_output(bundle_runtime, bundle_runtime.type(), initial, std::nullopt,
+                                    [&](const auto &runtime, const void *storage) {
+                                        verify_bundle(runtime, storage, 0, false);
+                                    });
+        verify_retained_scalar_snapshot(bundle_runtime, bundle_runtime.type(), initial, replacement, invalid,
+                                        verify_bundle);
+    };
+    verify_bundle_literals(
+        {{"nested", {{"old", {1, 2}}, {"keep", {3}}}}, {"compound", {{"first", 10}, {"second", 20}}}},
+        {{"nested", {{"new", {5, 6}}}}, {"compound", {{"first", 30}, {"second", 40}}}},
+        {{"nested", {{"broken", {7, "bad"}}}}, {"compound", {{"first", 50}, {"second", 60}}}});
+}
+
+void verify_bundle_base_assignment_fallback() {
+    using BundleValue = bg::Bundle<LiteralBundle>;
+    using NestedDictionary = bg::Dict<bg::string, bg::List<i64>>;
+    const auto &runtime = bg::cpp_scalar_runtime_type<BundleValue>();
+    const auto verify_literal = [&](const literal::ScalarLiteral &literal) {
+        auto scalar_memory = AllocationCounter{};
+        auto scalar_allocator = bg::allocator{scalar_memory};
+        auto owner_resource = std::pmr::unsynchronized_pool_resource{};
+        auto owner_allocator = bg::allocator{owner_resource};
+        auto *allocation_owner = bg::details::BundleAllocationOwner::create(owner_allocator);
+        auto release_owner = bg::util::scope_exit{[&]() noexcept { allocation_owner->release(); }};
+        auto storage_resource = std::pmr::unsynchronized_pool_resource{};
+        auto storage_allocator = bg::allocator{storage_resource};
+        auto *storage = storage_allocator.allocate_bytes(runtime.size(), runtime.alignment());
+        runtime.construct_initial_value(storage);
+        auto release_storage = bg::util::scope_exit{[&]() noexcept {
+            runtime.destroy(storage, scalar_allocator);
+            storage_allocator.deallocate_bytes(storage, runtime.size(), runtime.alignment());
+        }};
+        auto snapshot_resource = std::pmr::unsynchronized_pool_resource{};
+        auto snapshot_allocator = bg::allocator{snapshot_resource};
+        auto snapshot = std::optional<bg::ScalarValue<>>{};
+
+        {
+            auto context = bg::details::ScalarAllocationContext{scalar_allocator, *allocation_owner, nullptr, 0};
+            auto construction_context = bg::details::ScalarLiteralConstructionContext{literal, true};
+            const auto construction = bg::ScalarConstruction{
+                &construction_context, &bg::details::ScalarLiteralConstructionContext::callback};
+            auto &base_runtime = static_cast<const bg::ScalarRuntimeType &>(runtime);
+            require(base_runtime.bg::ScalarRuntimeType::assign_with(storage, construction, true));
+            snapshot.emplace(bg::Scalar<>::from(runtime, storage), snapshot_allocator);
+            require(!base_runtime.bg::ScalarRuntimeType::assign_with(storage, construction, true));
+            const auto bundle = bg::Scalar<BundleValue>::from(runtime, storage);
+            const auto snapshot_bundle = bg::scalar_cast<BundleValue>(snapshot->view());
+            const auto current_nested = bg::scalar_cast<NestedDictionary>(bundle[0]);
+            const auto old_nested = bg::scalar_cast<NestedDictionary>(snapshot_bundle[0]);
+            require(current_nested.at("fallback")[1].value() == 2 && old_nested.at("fallback")[1].value() == 2);
+        }
+
+        snapshot.reset();
+        release_storage.release();
+        runtime.destroy(storage, scalar_allocator);
+        storage_allocator.deallocate_bytes(storage, runtime.size(), runtime.alignment());
+        require(scalar_memory.outstanding_allocations() == 0);
+        release_owner.release();
+        allocation_owner->release();
+    };
+    verify_literal({{"nested", {{"fallback", {1, 2}}}}, {"compound", {{"first", 11}, {"second", 22}}}});
 }
 
 void verify_provider_list_output() {
@@ -757,6 +982,10 @@ int main() {
     verify_equal_deduplicated_value_revalidates();
     verify_scalar_list_output();
     verify_composed_and_nested_list_outputs();
+    verify_native_and_composed_set_outputs();
+    verify_native_and_composed_dictionary_outputs();
+    verify_native_compound_and_bundle_outputs();
+    verify_bundle_base_assignment_fallback();
     verify_provider_list_output();
     verify_provider_scalar_leaf();
     verify_scalar_view_leaf();

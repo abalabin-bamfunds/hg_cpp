@@ -235,6 +235,22 @@ class CppScalarRuntimeType<T> final : public CppScalarRuntimeTypeBase<T, StructS
         static_assert(sizeof(CppScalarRuntimeType) == sizeof(StructScalarRuntimeType));
     }
 
+    bool assign_with(void *destination, ScalarConstruction construction, bool suppress_equal) const override {
+        auto memory = current_scalar_allocator();
+        alignas(T) std::byte replacement_bytes[sizeof(T)];
+        construction.construct(construction.context, *this, replacement_bytes, memory);
+        auto *replacement = std::launder(reinterpret_cast<T *>(replacement_bytes));
+        auto release_replacement = util::scope_exit{[&]() noexcept { this->destroy(replacement, memory); }};
+        const auto source = this->borrow(replacement);
+
+        if (suppress_equal && this->ScalarRuntimeType::equals(destination, source)) {
+            return false;
+        }
+
+        this->assign_from_input(destination, source);
+        return true;
+    }
+
     void construct_fields_with(void *destination, allocator &memory,
                                ScalarFieldConstruction construction) const override {
         constexpr auto indices = std::make_index_sequence<util::aggregate_member_count<T>>{};

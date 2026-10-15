@@ -42,8 +42,8 @@ bool ScalarListRuntimeType::accepts_input(const ScalarRuntimeType &source) const
     return item_runtime_type().accepts_input(source_list.item_runtime_type());
 }
 
-bool ScalarListRuntimeType::assign_with(void *destination, ScalarConstruction construction,
-                                        bool suppress_equal) const {
+bool ScalarRuntimeType::assign_with(void *destination, ScalarConstruction construction,
+                                   bool suppress_equal) const {
     auto memory = details::current_scalar_allocator();
     auto *replacement = memory.allocate_bytes(size(), alignment());
     auto release_replacement = util::scope_exit{[&]() noexcept {
@@ -51,7 +51,7 @@ bool ScalarListRuntimeType::assign_with(void *destination, ScalarConstruction co
     }};
     construction.construct(construction.context, *this, replacement, memory);
     auto destroy_replacement = util::scope_exit{[&]() noexcept { destroy(replacement, memory); }};
-    const auto source = details::ScalarData{*this, replacement};
+    const auto source = borrow(replacement);
 
     if (suppress_equal && equals(destination, source)) {
         return false;
@@ -336,6 +336,22 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
         storage(destination).swap(replacement);
     }
 
+    bool assign_with(void *destination, ScalarConstruction construction, bool suppress_equal) const override {
+        auto memory = details::current_scalar_allocator();
+        alignas(RuntimeSetStorage) std::byte replacement_bytes[sizeof(RuntimeSetStorage)];
+        construction.construct(construction.context, *this, replacement_bytes, memory);
+        auto *replacement = std::launder(reinterpret_cast<RuntimeSetStorage *>(replacement_bytes));
+        auto release_replacement = util::scope_exit{[&]() noexcept { destroy(replacement, memory); }};
+        const auto source = borrow(replacement);
+
+        if (suppress_equal && equals(destination, source)) {
+            return false;
+        }
+
+        storage(destination).swap(*replacement);
+        return true;
+    }
+
     std::size_t hash(const void *value) const override {
         auto result = std::size_t{};
         for (const auto position : storage(value).positions) {
@@ -581,6 +597,22 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
             });
 
         storage(destination).swap(replacement);
+    }
+
+    bool assign_with(void *destination, ScalarConstruction construction, bool suppress_equal) const override {
+        auto memory = details::current_scalar_allocator();
+        alignas(RuntimeDictStorage) std::byte replacement_bytes[sizeof(RuntimeDictStorage)];
+        construction.construct(construction.context, *this, replacement_bytes, memory);
+        auto *replacement = std::launder(reinterpret_cast<RuntimeDictStorage *>(replacement_bytes));
+        auto release_replacement = util::scope_exit{[&]() noexcept { destroy(replacement, memory); }};
+        const auto source = borrow(replacement);
+
+        if (suppress_equal && equals(destination, source)) {
+            return false;
+        }
+
+        storage(destination).swap(*replacement);
+        return true;
     }
 
     std::size_t hash(const void *value) const override {

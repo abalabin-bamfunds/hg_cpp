@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/allocator.hpp>
+#include <bg/scalar/construction.hpp>
 #include <bg/runtime_type.hpp>
 #include <bg/type/scalar_type.hpp>
 
@@ -81,6 +82,10 @@ class ScalarRuntimeType : public RuntimeType {
     void assign_from_input(void *destination, const Value &value) const {
         assign_from_input(destination, details::scalar_data(value));
     }
+    // Constructs a staged replacement before comparing or assigning it. Construction and equality failures leave
+    // destination unchanged. Returns false when equality suppression skips assignment.
+    [[nodiscard]] virtual bool assign_with(void *destination, ScalarConstruction construction,
+                                           bool suppress_equal) const;
     virtual std::size_t hash(const void *value) const = 0;
     virtual bool equals(const void *value, const ScalarData &other) const;
     template <typename Value>

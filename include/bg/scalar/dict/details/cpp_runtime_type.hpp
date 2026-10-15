@@ -45,6 +45,24 @@ class CppScalarRuntimeType<Dict<K, V>> final : public CppScalarRuntimeTypeBase<D
         static_cast<details::scalar_dict_storage<K, V> *>(destination)->items.swap(replacement.items);
     }
 
+    bool assign_with(void *destination, ScalarConstruction construction, bool suppress_equal) const override {
+        auto memory = current_scalar_allocator();
+        alignas(details::scalar_dict_storage<K, V>)
+            std::byte replacement_bytes[sizeof(details::scalar_dict_storage<K, V>)];
+        construction.construct(construction.context, *this, replacement_bytes, memory);
+        auto *replacement = std::launder(
+            reinterpret_cast<details::scalar_dict_storage<K, V> *>(replacement_bytes));
+        auto release_replacement = util::scope_exit{[&]() noexcept { this->destroy(replacement, memory); }};
+        const auto source = this->borrow(replacement);
+
+        if (suppress_equal && this->ScalarRuntimeType::equals(destination, source)) {
+            return false;
+        }
+
+        static_cast<details::scalar_dict_storage<K, V> *>(destination)->items.swap(replacement->items);
+        return true;
+    }
+
     bool equals_same_type(const void *storage, const details::ScalarData &other) const override {
         const auto &source_type = static_cast<const ScalarDictRuntimeType &>(other.runtime_type());
         if (item_count(storage) != source_type.item_count(other.data())) {

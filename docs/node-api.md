@@ -448,10 +448,11 @@ copies retained by downstream nodes preserve their previous values. Shared
 immutable storage remains alive until its last owner releases it.
 
 `Out<TS<T>>::apply(const literal::ScalarLiteral&)` delegates replacement to the
-scalar consumer. A scalar leaf replaces the value. For a scalar list output, a
-brace sequence replaces the complete list; nested items use the actual destination runtime types.
-An empty sequence publishes a valid empty list. Equal replacements are
-suppressed only while a deduplicated output is valid, so applying an equal value
+scalar consumer. A scalar leaf replaces the value. A brace sequence constructs
+a complete replacement using the [scalar literal syntax](scalar-api.md#literals);
+nested values use the actual destination runtime types. An empty collection
+sequence publishes a valid empty collection. Equal replacements are suppressed
+only while a deduplicated output is valid, so applying an equal value
 after invalidation revalidates it. Concrete and generic TS outputs preserve the
 selected runtime representation and their containing output path.
 
@@ -462,8 +463,7 @@ void replace_list(Out<TS<List<i64>>> output) {
 ```
 
 `Out<TS_T>::apply()` dispatches to its resolved scalar time series output.
-Sequence assignment currently requires a scalar list; other sequence destinations
-and other time series kinds throw `std::invalid_argument`.
+Other time series kinds throw `std::invalid_argument`.
 Follow the [literal lifetime and construction contract](scalar-api.md#literals).
 
 `Out<>::copy_tick(input)` applies the input's current-cycle changes to the output.
