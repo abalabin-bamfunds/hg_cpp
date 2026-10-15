@@ -334,8 +334,8 @@ TEST_CASE("resolved time-series value types are reused", "[type_system][feature:
 
 TEST_CASE("signature resolution uses reference target types",
           "[type_system][reference][feature:type-system][binding:reference-to-value]") {
-    const auto &target = bg::TS<std::int64_t>::type();
-    const auto &reference = bg::REF<bg::TS<std::int64_t>>::type();
+    const auto &target = bg::TS<bg::i64>::type();
+    const auto &reference = bg::REF<bg::TS<bg::i64>>::type();
     const auto value_input = bg::Signature{bg::util::symbol{"value_input"}, {{bg::util::symbol{"value"}, &target}}};
     const auto reference_input =
         bg::Signature{bg::util::symbol{"reference_input"}, {{bg::util::symbol{"value"}, &reference}}};

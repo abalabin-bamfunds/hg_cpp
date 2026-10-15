@@ -60,26 +60,26 @@ struct ReferenceGuaranteeDerived : bg::schema_extends<ReferenceGuaranteeBase, Fi
 
 TEST_CASE("reference declarations are neutral and outputs default to deduplicated",
           "[type][reference][feature:type-system][guarantee:ordinary][guarantee:deduplicated]") {
-    const auto &reference = bg::REF<bg::TS<std::int64_t>>::type();
+    const auto &reference = bg::REF<bg::TS<bg::i64>>::type();
     CHECK(reference.is_resolved());
     CHECK(reference.guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
-    CHECK(&reference == &bg::REF<bg::TS<std::int64_t>>::type());
+    CHECK(&reference == &bg::REF<bg::TS<bg::i64>>::type());
 
     const auto explicit_ordinary =
-        bg::REF<bg::TS<std::int64_t>, bg::TimeSeriesGuarantee::ordinary>::type().guarantee().value();
+        bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::ordinary>::type().guarantee().value();
     CHECK(explicit_ordinary == bg::TimeSeriesGuarantee::ordinary);
 
-    const auto producer = bg::node([](bg::Out<bg::REF<bg::TS<std::int64_t>>>) {});
+    const auto producer = bg::node([](bg::Out<bg::REF<bg::TS<bg::i64>>>) {});
     CHECK(producer.signature().output()->guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
 
-    using Dictionary = bg::TSD<std::int64_t, bg::REF<bg::TS<std::int64_t>>>;
+    using Dictionary = bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>;
     const auto &dictionary = Dictionary::type();
     CHECK(dictionary.is_resolved());
     CHECK(dictionary.value_type().guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
     CHECK(&dictionary == &Dictionary::type());
 
     const auto dictionary_producer = bg::node(
-        [](bg::Out<bg::TSD<std::int64_t, bg::REF<bg::TS<std::int64_t>>>>) {});
+        [](bg::Out<bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>>) {});
     const auto &output = static_cast<const bg::TimeSeriesDictionaryType &>(*dictionary_producer.signature().output());
     CHECK(output.value_type().guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
 }
@@ -87,7 +87,7 @@ TEST_CASE("reference declarations are neutral and outputs default to deduplicate
 TEST_CASE("an omitted reference input guarantee remains unconstrained",
           "[type][reference][feature:type-system][declaration:generic][guarantee:ordinary]"
           "[guarantee:deduplicated]") {
-    const auto sink = bg::node([](bg::In<bg::REF<bg::TS<std::int64_t>>>) {});
+    const auto sink = bg::node([](bg::In<bg::REF<bg::TS<bg::i64>>>) {});
     const auto &input = static_cast<const bg::TimeSeriesType &>(*sink.signature().parameter(0).type);
 
     CHECK_FALSE(input.guarantee().is_resolved());
@@ -95,12 +95,12 @@ TEST_CASE("an omitted reference input guarantee remains unconstrained",
 
 TEST_CASE("time series reference types retain their target and guarantee",
           "[type][reference][feature:type-system][guarantee:ordinary][guarantee:const]") {
-    const auto &target = bg::TS<std::int64_t>::type();
-    const auto &reference = bg::REF<bg::TS<std::int64_t>, bg::TimeSeriesGuarantee::const_>::type();
+    const auto &target = bg::TS<bg::i64>::type();
+    const auto &reference = bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::const_>::type();
 
     CHECK(&reference.target_type() == &target);
     CHECK(reference.guarantee().value() == bg::TimeSeriesGuarantee::const_);
-    CHECK(&bg::REF<bg::TS<std::int64_t>, bg::TimeSeriesGuarantee::const_>::type() == &reference);
+    CHECK(&bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::const_>::type() == &reference);
 }
 
 TEST_CASE("common references combine target and reference guarantees separately",
@@ -147,8 +147,8 @@ TEST_CASE("common reference targets combine nested collection guarantees",
 TEST_CASE("a generic reference accepts a reference or its target",
           "[type][reference][resolution][feature:type-system][declaration:generic][guarantee:ordinary]"
           "[guarantee:const][binding:value-to-reference][binding:reference-to-reference]") {
-    const auto &target = bg::TS<std::int64_t>::type();
-    const auto &reference = bg::REF<bg::TS<std::int64_t>, bg::TimeSeriesGuarantee::const_>::type();
+    const auto &target = bg::TS<bg::i64>::type();
+    const auto &reference = bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::const_>::type();
     static const auto generic_target =
         bg::GenericTimeSeriesValueType{bg::int64_type(), bg::GuaranteeParameter{bg::TimeSeriesGuarantee::ordinary}};
     [[maybe_unused]] static const auto &generic_target_registration = bg::TypeRegistry::register_static(generic_target);
@@ -171,12 +171,12 @@ TEST_CASE("generic time series references have process-owned type identity",
     CHECK(&generic_reference == &bg::generic_time_series_reference_type(
                                     bg::TS_T::type(), bg::TimeSeriesGuarantee::ordinary));
 
-    const auto &reference = bg::REF<bg::TS<std::int64_t>, bg::TimeSeriesGuarantee::ordinary>::type();
+    const auto &reference = bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::ordinary>::type();
     auto type_map = bg::TypeMap{};
     REQUIRE(generic_reference.match(reference, type_map));
 
     const auto &resolved = static_cast<const bg::TimeSeriesReferenceType &>(generic_reference.resolve(type_map));
-    CHECK(&resolved.target_type() == &bg::TS<std::int64_t>::type());
+    CHECK(&resolved.target_type() == &bg::TS<bg::i64>::type());
     CHECK(resolved.guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
 }
 
@@ -184,7 +184,7 @@ TEST_CASE("reference matching maps target and reference guarantees separately",
           "[type][reference][resolution][feature:type-system][guarantee:deduplicated][guarantee:final]"
           "[binding:reference-to-reference]") {
     const auto &reference =
-        bg::REF<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::deduplicated>::type();
+        bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::deduplicated>::type();
     static const auto target_guarantee = bg::GuaranteeVariable{bg::util::symbol{"target guarantee"}};
     [[maybe_unused]] static const auto &target_guarantee_registration =
         bg::VariableRegistry::register_static(target_guarantee);
@@ -214,11 +214,11 @@ TEST_CASE("dereferenced matching enforces the effective guarantee minimum",
     static const auto parameter = bg::GenericTimeSeriesValueType{bg::int64_type(), minimum};
     [[maybe_unused]] static const auto &parameter_registration = bg::TypeRegistry::register_static(parameter);
 
-    const auto &final_target = bg::TS<std::int64_t, bg::TimeSeriesGuarantee::final>::type();
+    const auto &final_target = bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type();
     const auto &weak_reference =
-        bg::REF<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::ordinary>::type();
+        bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::ordinary>::type();
     const auto &strong_reference =
-        bg::REF<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::final>::type();
+        bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::final>::type();
     auto type_map = bg::TypeMap{};
 
     CHECK_FALSE(parameter.match(weak_reference, type_map));
@@ -371,27 +371,27 @@ TEST_CASE("dereferenced type variables resolve to the observed time series type"
           "[type][reference][resolution][feature:type-system][declaration:generic]"
           "[guarantee:ordinary][guarantee:final][binding:reference-to-value]") {
     const auto &reference =
-        bg::REF<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::ordinary>::type();
+        bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::ordinary>::type();
     auto type_map = bg::TypeMap{};
 
     REQUIRE(bg::TS_T::type().match(reference, type_map));
-    CHECK(&bg::TS_T::type().resolve(type_map) == &bg::TS<std::int64_t>::type());
+    CHECK(&bg::TS_T::type().resolve(type_map) == &bg::TS<bg::i64>::type());
 }
 
 TEST_CASE("nested reference item matching combines its own guarantees",
           "[type][reference][resolution][feature:type-system][declaration:generic]"
           "[series:tsd][guarantee:ordinary][guarantee:final][binding:reference-to-value]") {
     using VALUE = bg::TS<double, bg::guarantee_variable<"Item guarantee">>;
-    using DICTIONARY = bg::TSD<std::int64_t, VALUE, bg::guarantee_variable<"Dictionary guarantee">>;
+    using DICTIONARY = bg::TSD<bg::i64, VALUE, bg::guarantee_variable<"Dictionary guarantee">>;
     using TARGET_ITEM = bg::REF<bg::TS<double, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::ordinary>;
-    using ARGUMENT = bg::TSD<std::int64_t, TARGET_ITEM>;
+    using ARGUMENT = bg::TSD<bg::i64, TARGET_ITEM>;
     const auto &parameter = DICTIONARY::type();
     const auto &argument = ARGUMENT::type();
     auto type_map = bg::TypeMap{};
 
     REQUIRE(parameter.match(argument, type_map));
     CHECK(&parameter.resolve(type_map) ==
-          &bg::TSD<std::int64_t, bg::TS<double>>::type());
+          &bg::TSD<bg::i64, bg::TS<double>>::type());
 }
 
 TEST_CASE("a reference limit preserves nested reference targets and caps their guarantees",
@@ -716,9 +716,9 @@ TEST_CASE("limiting an unnamed bundle recursively limits its fields",
 TEST_CASE("reference matching enforces the reference guarantee",
           "[type][reference][resolution][feature:type-system][guarantee:ordinary][guarantee:final]"
           "[binding:value-to-reference][binding:reference-to-reference]") {
-    const auto &target = bg::TS<std::int64_t>::type();
-    const auto &required = bg::REF<bg::TS<std::int64_t>, bg::TimeSeriesGuarantee::final>::type();
-    const auto &deduplicated = bg::REF<bg::TS<std::int64_t>>::type();
+    const auto &target = bg::TS<bg::i64>::type();
+    const auto &required = bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::final>::type();
+    const auto &deduplicated = bg::REF<bg::TS<bg::i64>>::type();
     auto type_map = bg::TypeMap{};
 
     CHECK_FALSE(required.match(deduplicated, type_map));
@@ -728,5 +728,5 @@ TEST_CASE("reference matching enforces the reference guarantee",
 }
 
 TEST_CASE("a reference cannot target another reference", "[type][reference][feature:type-system]") {
-    CHECK_THROWS_AS((bg::REF<bg::REF<bg::TS<std::int64_t>>>::type()), std::invalid_argument);
+    CHECK_THROWS_AS((bg::REF<bg::REF<bg::TS<bg::i64>>>::type()), std::invalid_argument);
 }

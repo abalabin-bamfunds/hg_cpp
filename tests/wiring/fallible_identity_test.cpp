@@ -22,15 +22,15 @@ inline bool throw_on_equality{};
 inline bool throw_on_cacheability{};
 
 struct fallible_value {
-    explicit fallible_value(std::int64_t value) : value{value} {}
+    explicit fallible_value(bg::i64 value) : value{value} {}
 
-    std::int64_t value;
+    bg::i64 value;
 
     std::size_t hash() const {
         if (throw_on_hash) {
             throw std::runtime_error{"hash failed"};
         }
-        return std::hash<std::int64_t>{}(value);
+        return std::hash<bg::i64>{}(value);
     }
 
     bool cacheable() const {
@@ -57,7 +57,7 @@ template <> struct hash<test_identity::fallible_value> {
         if (test_identity::throw_on_hash) {
             throw std::runtime_error{"hash failed"};
         }
-        return std::hash<std::int64_t>{}(value.value);
+        return std::hash<bg::i64>{}(value.value);
     }
 };
 

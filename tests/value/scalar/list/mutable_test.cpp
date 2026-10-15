@@ -8,11 +8,11 @@
 TEST_CASE("a mutable scalar list appends and replaces items",
           "[value][scalar][list][scalar:list][mutable][feature:scalar-collection]") {
     auto state = bg::GlobalState{};
-    const auto initial = bg::ScalarValue<bg::List<std::int64_t>>{std::array<std::int64_t, 1>{1}};
+    const auto initial = bg::ScalarValue<bg::List<bg::i64>>{std::array<bg::i64, 1>{1}};
     state.write([&](bg::GlobalState::WriteAccess &values) {
         values.set(bg::util::symbol{"items"}, initial);
 
-        const auto items = values.mutable_at<bg::List<std::int64_t>>("items");
+        const auto items = values.mutable_at<bg::List<bg::i64>>("items");
         items.append(3);
         items.set(1, 2);
 
@@ -25,11 +25,11 @@ TEST_CASE("a mutable scalar list appends and replaces items",
 TEST_CASE("a mutable scalar list erases and clears items",
           "[value][scalar][list][scalar:list][mutable][feature:scalar-collection][transition:removal]") {
     auto state = bg::GlobalState{};
-    const auto initial = bg::ScalarValue<bg::List<std::int64_t>>{std::array<std::int64_t, 3>{1, 2, 3}};
+    const auto initial = bg::ScalarValue<bg::List<bg::i64>>{std::array<bg::i64, 3>{1, 2, 3}};
     state.write([&](bg::GlobalState::WriteAccess &values) {
         values.set(bg::util::symbol{"items"}, initial);
 
-        const auto items = values.mutable_at<bg::List<std::int64_t>>("items");
+        const auto items = values.mutable_at<bg::List<bg::i64>>("items");
         items.erase(1);
 
         REQUIRE(items.size() == 2);

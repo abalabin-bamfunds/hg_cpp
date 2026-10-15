@@ -11,7 +11,7 @@
 namespace {
 
 struct inspect_scalar_list {
-    bg::Scalar<bg::List<std::int64_t>> values;
+    bg::Scalar<bg::List<bg::i64>> values;
 
     void start(bg::EvaluationContext *context) const {
         context->global_state().write([&](auto &state) {
@@ -25,16 +25,16 @@ struct inspect_scalar_list {
 TEST_CASE("a scalar list is available from packed graph scalar storage",
           "[node][scalar][list][scalar:list][feature:state]") {
     const auto inspect = bg::node<inspect_scalar_list>();
-    const auto input = bg::ScalarValue<bg::List<std::int64_t>>{std::array<std::int64_t, 2>{1, 2}};
+    const auto input = bg::ScalarValue<bg::List<bg::i64>>{std::array<bg::i64, 2>{1, 2}};
     auto state = bg::GlobalState{};
 
     bg::run_graph([&] { inspect(input); }, bg::GraphRunOptions{.global_state = &state});
 
-    state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 3); });
+    state.read([](const auto &values) { CHECK(bg::scalar_cast<bg::i64>(values.at("result")).value() == 3); });
 }
 
 struct inspect_scalar_list_state {
-    bg::State<bg::List<std::int64_t>> values;
+    bg::State<bg::List<bg::i64>> values;
 
     void start(bg::EvaluationContext *context) const {
         values->append(1);
@@ -55,19 +55,19 @@ TEST_CASE("scalar list state is available during node start",
 
     bg::run_graph([&] { inspect(); }, bg::GraphRunOptions{.global_state = &state});
 
-    state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 3); });
+    state.read([](const auto &values) { CHECK(bg::scalar_cast<bg::i64>(values.at("result")).value() == 3); });
 }
 
 struct scalar_list_source {
-    bg::Scalar<bg::List<std::int64_t>> value;
-    bg::Out<bg::TS<bg::List<std::int64_t>>> output;
+    bg::Scalar<bg::List<bg::i64>> value;
+    bg::Out<bg::TS<bg::List<bg::i64>>> output;
 
     void start() const { output.set_value(value); }
     void evaluate() const {}
 };
 
 struct scalar_list_sink {
-    bg::In<bg::TS<bg::List<std::int64_t>>> input;
+    bg::In<bg::TS<bg::List<bg::i64>>> input;
 
     void evaluate(bg::EvaluationContext *context) const {
         const auto values = input.value_view();
@@ -81,18 +81,18 @@ TEST_CASE("a scalar list propagates through a value time series",
           "[node][time_series][scalar][list][scalar:list][feature:state]") {
     const auto source = bg::node<scalar_list_source>();
     const auto sink = bg::node<scalar_list_sink>();
-    const auto input = bg::ScalarValue<bg::List<std::int64_t>>{std::array<std::int64_t, 2>{1, 2}};
+    const auto input = bg::ScalarValue<bg::List<bg::i64>>{std::array<bg::i64, 2>{1, 2}};
     auto state = bg::GlobalState{};
 
     bg::run_graph([&] { sink(source(input)); }, bg::GraphRunOptions{.global_state = &state});
 
-    state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 3); });
+    state.read([](const auto &values) { CHECK(bg::scalar_cast<bg::i64>(values.at("result")).value() == 3); });
 }
 
 TEST_CASE("a runtime graph releases scalar list time-series storage",
           "[node][time_series][scalar][list][scalar:list][allocation][feature:state]") {
     const auto source = bg::node<scalar_list_source>();
-    const auto input = bg::ScalarValue<bg::List<std::int64_t>>{std::array<std::int64_t, 2>{1, 2}};
+    const auto input = bg::ScalarValue<bg::List<bg::i64>>{std::array<bg::i64, 2>{1, 2}};
     auto wiring = bg::GraphWiring{};
     {
         const auto context = bg::WiringContext{wiring};

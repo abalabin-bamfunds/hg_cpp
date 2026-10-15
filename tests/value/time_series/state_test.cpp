@@ -1,9 +1,9 @@
+#include <bg/scalar/builtins.hpp>
 #include <bg/time_series/time_series_state.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
-#include <cstdint>
 
 TEST_CASE("a time series state records validity transitions",
           "[feature:validity][series:generic][transition:update][transition:invalidation]"
@@ -61,7 +61,7 @@ TEST_CASE("a time series state records validity transitions",
 TEST_CASE("a time series state represents supported timestamps", "[feature:validity][series:generic]") {
     const auto first_time = bg::MIN_DT + std::chrono::microseconds{1};
     const auto largest_time =
-        bg::EvaluationTime{bg::EvaluationTime::duration{(std::int64_t{1} << 62) - 1}};
+        bg::EvaluationTime{bg::EvaluationTime::duration{(bg::i64{1} << 62) - 1}};
     const auto too_large = largest_time + std::chrono::microseconds{1};
 
     CHECK_FALSE(bg::TimeSeriesState::can_represent(bg::MIN_DT));
@@ -75,7 +75,7 @@ TEST_CASE("a time series state orders change times", "[feature:validity][series:
     const auto time = early_time + std::chrono::microseconds{1};
     const auto later_time = time + std::chrono::microseconds{1};
     const auto largest_time =
-        bg::EvaluationTime{bg::EvaluationTime::duration{(std::int64_t{1} << 62) - 1}};
+        bg::EvaluationTime{bg::EvaluationTime::duration{(bg::i64{1} << 62) - 1}};
 
     const auto never_valid = bg::TimeSeriesState{};
     const auto ordinary_early = bg::TimeSeriesState{early_time};

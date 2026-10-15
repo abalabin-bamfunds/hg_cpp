@@ -118,8 +118,8 @@ TEST_CASE("the default scalar list assignment constructs before replacing provid
 namespace {
 
 struct RuntimeListItem {
-    std::int64_t first;
-    std::int64_t second;
+    bg::i64 first;
+    bg::i64 second;
 };
 
 } // namespace

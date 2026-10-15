@@ -12,7 +12,7 @@
 
 TEST_CASE("dictionary runtime items use stable sparse IDs",
           "[value][time_series][tsd][series:tsd][runtime_type][feature:time-series-storage]") {
-    using Dictionary = bg::TSD<std::int64_t, bg::TS<bg::i64>>;
+    using Dictionary = bg::TSD<bg::i64, bg::TS<bg::i64>>;
 
     const auto &runtime_type = bg::cpp_time_series_runtime_type<Dictionary>();
     const auto &dictionary_runtime_type =
@@ -32,7 +32,7 @@ TEST_CASE("dictionary runtime items use stable sparse IDs",
     const auto update_time = bg::MIN_DT + std::chrono::microseconds{1};
     storage.reset_change_tracking(update_time, key_runtime_type, key_layout, item_runtime_type, item_layout,
                                   item_value_offset, allocator);
-    const auto key = bg::ScalarValue<std::int64_t>{7};
+    const auto key = bg::ScalarValue<bg::i64>{7};
     const auto inserted =
         storage.item(key, key_runtime_type, key_layout, item_runtime_type, item_layout, item_value_offset, allocator);
     storage.key_storage().last_updated.publish(update_time);

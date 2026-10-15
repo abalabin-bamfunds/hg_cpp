@@ -62,8 +62,8 @@ struct RecordingSink {
 
 const auto recording_sink = node<RecordingSink>();
 
-const auto optional_key = node([](In<TS<std::int64_t>> value,
-                                  Out<TS<std::int64_t>> output) {
+const auto optional_key = node([](In<TS<i64>> value,
+                                  Out<TS<i64>> output) {
     if (*value < 0) {
         output.invalidate();
     } else {
@@ -103,44 +103,6 @@ struct MappedSwitchCase {
 
 const auto mapped_switch_case = node<MappedSwitchCase>();
 
-const auto mapped_values = node([](In<TS<i64>> trigger,
-                                   Out<TSD<std::int64_t, TS<i64>>> output) {
-    output[1].set(*trigger);
-    output[2].set(*trigger);
-});
-
-const auto mapped_selectors = node([](In<TS<std::int64_t>> first,
-                                      In<TS<std::int64_t>> second,
-                                      Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
-    output[1].set(*first);
-    output[2].set(*second);
-});
-
-const auto optional_mapped_values = node([](In<TS<i64>> trigger, In<TS<bool>> present,
-                                            Out<TSD<std::int64_t, TS<i64>>> output) {
-    if (*present) {
-        output[1].set(*trigger);
-    } else {
-        output.erase(1);
-    }
-});
-
-const auto optional_mapped_selectors = node(
-    [](In<TS<std::int64_t>> selector, In<TS<bool>> present,
-       Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
-        if (*present) {
-            output[1].set(*selector);
-        } else {
-            output.erase(1);
-        }
-    });
-
-const auto selectors_at_key_one = node(
-    [](In<TS<std::int64_t>> selector,
-       Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
-        output[1].set(*selector);
-    });
-
 const auto add_mapped_results = node([](In<TS<i64>, optional> first,
                                         In<TS<i64>, optional> second,
                                         Out<TS<i64>> output) {
@@ -153,7 +115,7 @@ const auto add_mapped_results = node([](In<TS<i64>, optional> first,
 
 const auto mapped_switch = graph(
     "name"_n = "mapped_switch",
-    [](wp<TS<i64>> trigger, wp<TS<std::int64_t>> selector) {
+    [](wp<TS<i64>> trigger, wp<TS<i64>> selector) {
         return switch_(
                    selector,
                    cases{
@@ -166,7 +128,7 @@ const auto mapped_switch = graph(
 
 const auto delayed_mapped_switch = graph(
     "name"_n = "delayed_mapped_switch",
-    [](wp<TS<std::int64_t>> selector) {
+    [](wp<TS<i64>> selector) {
         return switch_(
                    selector,
                    cases{case_(1, []() -> wp<TS<i64>> { return delayed_case(); })})
@@ -176,18 +138,18 @@ const auto delayed_mapped_switch = graph(
 TEST_CASE("switch selects a case graph from its key",
           "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
           "[series:value][definition:function]") {
-    const auto tested = [](wp<TS<std::int64_t>> key, wp<TS<i64>> value) {
+    const auto tested = [](wp<TS<i64>> key, wp<TS<i64>> value) {
         return switch_(
                    key,
                    cases{
-                       case_(std::int64_t{1}, [](auto input) { return add(input, 10); }),
-                       case_(std::int64_t{2}, [](auto input) { return add(input, 20); }),
+                       case_(i64{1}, [](auto input) { return add(input, 10); }),
+                       case_(i64{2}, [](auto input) { return add(input, 20); }),
                    },
                    value)
             .as<TS<i64>>();
     };
 
-    const auto actual = testing::test_graph(tested, std::array<std::int64_t, 4>{1, 2, 2, 1},
+    const auto actual = testing::test_graph(tested, std::array<i64, 4>{1, 2, 2, 1},
                                             std::array{3, 3, 4, 5});
 
     CHECK(actual.equals<bg::i64>({13, 23, 24, 15}));
@@ -196,13 +158,13 @@ TEST_CASE("switch selects a case graph from its key",
 TEST_CASE("switch accepts an optional wiring argument as its key",
           "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
           "[series:value][validity:optional][definition:function]") {
-    const auto tested = [](wp<TS<std::int64_t>> key, wp<TS<i64>> value) {
+    const auto tested = [](wp<TS<i64>> key, wp<TS<i64>> value) {
         return switch_(opt(key), cases{case_(1, [](auto input) { return add(input, 10); })}, value)
             .as<TS<i64>>();
     };
 
-    const auto actual = testing::test_graph(tested, std::array<std::int64_t, 2>{1, 1},
-                                            std::array<std::int64_t, 2>{3, 4});
+    const auto actual = testing::test_graph(tested, std::array<i64, 2>{1, 1},
+                                            std::array<i64, 2>{3, 4});
 
     CHECK(actual.equals<bg::i64>({13, 14}));
 }
@@ -216,14 +178,14 @@ TEST_CASE("switch uses DEFAULT for invalid and unmatched keys",
     const auto fallback = graph("name"_n = "fallback", [](wp<TS<i64>> value) {
         return add(value, 100);
     });
-    const auto tested = [&](wp<TS<std::int64_t>> key, wp<TS<i64>> value) {
+    const auto tested = [&](wp<TS<i64>> key, wp<TS<i64>> value) {
         return switch_(key,
-                       cases{case_(std::int64_t{1}, selected), case_(DEFAULT, fallback)},
+                       cases{case_(i64{1}, selected), case_(DEFAULT, fallback)},
                        value)
             .as<TS<i64>>();
     };
 
-    const auto actual = testing::test_graph(tested, std::array<std::int64_t, 2>{1, 9},
+    const auto actual = testing::test_graph(tested, std::array<i64, 2>{1, 9},
                                             std::array{2, 3});
 
     CHECK(actual.equals<bg::i64>({12, 103}));
@@ -232,26 +194,26 @@ TEST_CASE("switch uses DEFAULT for invalid and unmatched keys",
 TEST_CASE("switch reports an unmatched or invalid key without DEFAULT",
           "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
           "[series:value][feature:validity][transition:invalidation][definition:function]") {
-    const auto tested = [](wp<TS<std::int64_t>> key, wp<TS<i64>> value) {
+    const auto tested = [](wp<TS<i64>> key, wp<TS<i64>> value) {
         return switch_(key,
-                       cases{case_(std::int64_t{1}, [](auto input) { return add(input, 1); })},
+                       cases{case_(i64{1}, [](auto input) { return add(input, 1); })},
                        value)
             .as<TS<i64>>();
     };
 
     CHECK_THROWS_WITH(
-        (void)testing::test_graph(tested, std::array<std::int64_t, 2>{1, 9},
+        (void)testing::test_graph(tested, std::array<i64, 2>{1, 9},
                                   std::array{5, 6}),
         "switch_ key does not match a case and no DEFAULT case is defined");
 
-    const auto invalid_tested = [](wp<TS<std::int64_t>> key, wp<TS<i64>> value) {
+    const auto invalid_tested = [](wp<TS<i64>> key, wp<TS<i64>> value) {
         return switch_(optional_key(key),
-                       cases{case_(std::int64_t{1}, [](auto input) { return add(input, 1); })},
+                       cases{case_(i64{1}, [](auto input) { return add(input, 1); })},
                        value)
             .as<TS<i64>>();
     };
     CHECK_THROWS_WITH(
-        (void)testing::test_graph(invalid_tested, std::array<std::int64_t, 1>{-1},
+        (void)testing::test_graph(invalid_tested, std::array<i64, 1>{-1},
                                   std::array{5}),
         "switch_ key does not match a case and no DEFAULT case is defined");
 }
@@ -261,7 +223,7 @@ TEST_CASE("an outputless DEFAULT explicitly invalidates a switch output",
           "[shape:sink][series:value][transition:invalidation][definition:function]") {
     RecordingSink::count = 0;
     RecordingSink::last_value = 0;
-    const auto tested = [](wp<TS<std::int64_t>> key, wp<TS<i64>> value) {
+    const auto tested = [](wp<TS<i64>> key, wp<TS<i64>> value) {
         return switch_(
                    key,
                    cases{
@@ -272,7 +234,7 @@ TEST_CASE("an outputless DEFAULT explicitly invalidates a switch output",
             .as<TS<i64>>();
     };
 
-    const auto actual = testing::test_graph(tested, std::array<std::int64_t, 2>{1, 9},
+    const auto actual = testing::test_graph(tested, std::array<i64, 2>{1, 9},
                                             std::array{2, 3});
 
     CHECK(actual.equals<bg::i64>({12, std::nullopt}));
@@ -284,15 +246,15 @@ TEST_CASE("switch matches named graph arguments and omits unused named arguments
           "[feature:switch][feature:nested-graph][feature:operator][feature:variadic-wiring]"
           "[shape:nested][series:value][definition:aggregate]") {
     const auto selected = graph<SelectedArgumentGraph>();
-    const auto tested = [&](wp<TS<std::int64_t>> key, wp<TS<i64>> value,
+    const auto tested = [&](wp<TS<i64>> key, wp<TS<i64>> value,
                             wp<TS<i64>> unused) {
-        return switch_(key, cases{case_(std::int64_t{1}, selected)},
+        return switch_(key, cases{case_(i64{1}, selected)},
                        "selected"_n = value, "unused"_n = unused)
             .as<TS<i64>>();
     };
 
     const auto actual = testing::test_graph(
-        tested, std::array<std::int64_t, 2>{1, 1}, std::array{3, 5}, std::array{40, 60});
+        tested, std::array<i64, 2>{1, 1}, std::array{3, 5}, std::array{40, 60});
 
     CHECK(actual.equals<bg::i64>({4, 6}));
 }
@@ -305,13 +267,13 @@ TEST_CASE("switch forwards positional arguments to a variadic case graph",
         [](wp<TSB<SCHEMA>, var_args> arguments) {
             return wp<TS<i64>>{arguments[1].time_series()};
         });
-    const auto tested = [&](wp<TS<std::int64_t>> key, wp<TS<i64>> first,
+    const auto tested = [&](wp<TS<i64>> key, wp<TS<i64>> first,
                             wp<TS<i64>> second) {
         return switch_(key, cases{case_(1, select_second)}, first, second).as<TS<i64>>();
     };
 
     const auto actual = testing::test_graph(
-        tested, std::array<std::int64_t, 2>{1, 1}, std::array{3, 5}, std::array{40, 60});
+        tested, std::array<i64, 2>{1, 1}, std::array{3, 5}, std::array{40, 60});
 
     CHECK(actual.equals<bg::i64>({40, 60}));
 }
@@ -324,12 +286,12 @@ TEST_CASE("switch forwards named arguments to a variadic case graph",
         [](wp<TSB<SCHEMA>, var_kwargs> arguments) {
             return wp<TS<i64>>{arguments["item"].time_series()};
         });
-    const auto tested = [&](wp<TS<std::int64_t>> key, wp<TS<i64>> value) {
+    const auto tested = [&](wp<TS<i64>> key, wp<TS<i64>> value) {
         return switch_(key, cases{case_(1, select_item)}, "item"_n = value).as<TS<i64>>();
     };
 
     const auto actual = testing::test_graph(
-        tested, std::array<std::int64_t, 2>{1, 1}, std::array{3, 5});
+        tested, std::array<i64, 2>{1, 1}, std::array{3, 5});
 
     CHECK(actual.equals<bg::i64>({3, 5}));
 }
@@ -337,7 +299,7 @@ TEST_CASE("switch forwards named arguments to a variadic case graph",
 TEST_CASE("switch captures scalar case arguments at wiring time",
           "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
           "[series:value][definition:function]") {
-    const auto tested = [](wp<TS<std::int64_t>> key, wp<TS<i64>> value) {
+    const auto tested = [](wp<TS<i64>> key, wp<TS<i64>> value) {
         return switch_(
                    key,
                    cases{case_(1, [](auto input, int amount) { return add(input, amount); })},
@@ -346,7 +308,7 @@ TEST_CASE("switch captures scalar case arguments at wiring time",
     };
 
     const auto actual = testing::test_graph(
-        tested, std::array<std::int64_t, 2>{1, 1}, std::array{3, 5});
+        tested, std::array<i64, 2>{1, 1}, std::array{3, 5});
 
     CHECK(actual.equals<bg::i64>({13, 15}));
 }
@@ -355,18 +317,18 @@ TEST_CASE("equal switch key ticks retain inner graph state and returning recreat
           "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
           "[series:value][transition:update][transition:removal][definition:function]") {
     StatefulCase::start_count = 0;
-    const auto tested = [](wp<TS<std::int64_t>> key, wp<TS<i64>> value) {
+    const auto tested = [](wp<TS<i64>> key, wp<TS<i64>> value) {
         return switch_(
                    key,
                    cases{
-                       case_(std::int64_t{1}, [](auto input) { return stateful_case(input); }),
-                       case_(std::int64_t{2}, [](auto input) { return stateful_case(input); }),
+                       case_(i64{1}, [](auto input) { return stateful_case(input); }),
+                       case_(i64{2}, [](auto input) { return stateful_case(input); }),
                    },
                    value)
             .as<TS<i64>>();
     };
 
-    const auto actual = testing::test_graph(tested, std::array<std::int64_t, 4>{1, 1, 2, 1},
+    const auto actual = testing::test_graph(tested, std::array<i64, 4>{1, 1, 2, 1},
                                             std::array{1, 2, 3, 4});
 
     CHECK(actual.equals<bg::i64>({101, 102, 203, 304}));
@@ -377,7 +339,7 @@ TEST_CASE("switching between tuple keys recreates the case graph",
           "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
           "[series:value][transition:update][transition:removal][definition:function]") {
     StatefulCase::start_count = 0;
-    const auto tested = [](wp<TS<std::int64_t>> key, wp<TS<i64>> value) {
+    const auto tested = [](wp<TS<i64>> key, wp<TS<i64>> value) {
         return switch_(
                    key,
                    cases{
@@ -388,7 +350,7 @@ TEST_CASE("switching between tuple keys recreates the case graph",
             .as<TS<i64>>();
     };
 
-    const auto actual = testing::test_graph(tested, std::array<std::int64_t, 4>{1, 1, 2, 2},
+    const auto actual = testing::test_graph(tested, std::array<i64, 4>{1, 1, 2, 2},
                                             std::array{1, 2, 3, 4});
 
     CHECK(actual.equals<bg::i64>({101, 102, 203, 204}));
@@ -398,27 +360,27 @@ TEST_CASE("switching between tuple keys recreates the case graph",
 TEST_CASE("switch supports source and sink case graphs",
           "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
           "[shape:source][shape:sink][series:value][definition:function]") {
-    const auto source_tested = [](wp<TS<std::int64_t>> key) {
+    const auto source_tested = [](wp<TS<i64>> key) {
         return switch_(key,
-                       cases{case_(std::int64_t{1}, []() -> wp<TS<std::int64_t,
+                       cases{case_(i64{1}, []() -> wp<TS<i64,
                                                                   TimeSeriesGuarantee::const_>> {
-                           return operators::const_(42).as<TS<std::int64_t,
+                           return operators::const_(42).as<TS<i64,
                                                                TimeSeriesGuarantee::const_>>();
                        })})
-            .as<REF<TS<std::int64_t, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::deduplicated>>();
+            .as<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::deduplicated>>();
     };
-    CHECK(testing::test_graph(source_tested, std::array<std::int64_t, 1>{1})
-              .equals<std::int64_t>({42}));
+    CHECK(testing::test_graph(source_tested, std::array<i64, 1>{1})
+              .equals<i64>({42}));
 
     RecordingSink::count = 0;
     RecordingSink::last_value = 0;
-    const auto sink_tested = [](wp<TS<std::int64_t>> key, wp<TS<i64>> value) {
+    const auto sink_tested = [](wp<TS<i64>> key, wp<TS<i64>> value) {
         (void)switch_(key,
-                      cases{case_(std::int64_t{1}, [](auto input) { recording_sink(input); })},
+                      cases{case_(i64{1}, [](auto input) { recording_sink(input); })},
                       value);
         return value;
     };
-    CHECK(testing::test_graph(sink_tested, std::array<std::int64_t, 2>{1, 1},
+    CHECK(testing::test_graph(sink_tested, std::array<i64, 2>{1, 1},
                               std::array{7, 9})
               .equals<bg::i64>({7, 9}));
     CHECK(RecordingSink::count == 2);
@@ -431,9 +393,9 @@ TEST_CASE("switch accepts fully runtime cases and arguments",
     const auto branch = graph("name"_n = "runtime_switch_branch", [](wp<TS<i64>> value) {
         return add(value, 3);
     });
-    const auto tested = [&](wp<TS<std::int64_t>> key, wp<TS<i64>> value) {
+    const auto tested = [&](wp<TS<i64>> key, wp<TS<i64>> value) {
         const auto runtime_keys = std::array{
-            WiringArgument{std::int64_t{1}}, WiringArgument{std::int64_t{2}}};
+            WiringArgument{i64{1}}, WiringArgument{i64{2}}};
         const auto runtime_cases = std::array{
             SwitchCaseArgument{std::span<const WiringArgument>{runtime_keys}, branch},
         };
@@ -444,7 +406,7 @@ TEST_CASE("switch accepts fully runtime cases and arguments",
             .as<TS<i64>>();
     };
 
-    CHECK(testing::test_graph(tested, std::array<std::int64_t, 2>{1, 2}, std::array{2, 5})
+    CHECK(testing::test_graph(tested, std::array<i64, 2>{1, 2}, std::array{2, 5})
               .equals<bg::i64>({5, 8}));
 }
 
@@ -468,8 +430,8 @@ TEST_CASE("runtime switch preserves an optional key qualifier",
     const auto combine = node([](In<TS<i64>> left, In<TS<i64>> right, Out<TS<i64>> output) {
         output.set(left.value() + right.value());
     });
-    const auto tested = [&](wp<TS<std::int64_t>> key, wp<TS<i64>> value) {
-        const auto runtime_keys = std::array{WiringArgument{std::int64_t{1}}};
+    const auto tested = [&](wp<TS<i64>> key, wp<TS<i64>> value) {
+        const auto runtime_keys = std::array{WiringArgument{i64{1}}};
         const auto runtime_cases = std::array{
             SwitchCaseArgument{std::span<const WiringArgument>{runtime_keys}, branch},
         };
@@ -485,14 +447,14 @@ TEST_CASE("runtime switch preserves an optional key qualifier",
         return combine(required, optional);
     };
 
-    CHECK(testing::test_graph(tested, std::array<std::int64_t, 2>{1, 1}, std::array{2, 5})
+    CHECK(testing::test_graph(tested, std::array<i64, 2>{1, 1}, std::array{2, 5})
               .equals<bg::i64>({34, 40}));
 }
 
 TEST_CASE("switch forwards optional positional and named inputs only to optional branch parameters",
           "[feature:switch][feature:nested-graph][feature:operator][feature:wiring]"
           "[validity:optional][definition:function]") {
-    const auto keys = node([](Out<TS<std::int64_t>>) {});
+    const auto keys = node([](Out<TS<i64>>) {});
     const auto values = node([](Out<TS<i64>>) {});
     const auto optional_positional = graph(
         "name"_n = "optional_positional_switch_branch",
@@ -522,35 +484,35 @@ TEST_CASE("switch forwards optional positional and named inputs only to optional
 TEST_CASE("switch DEFAULT handles an invalid key",
           "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
           "[series:value][transition:invalidation][definition:function]") {
-    const auto tested = [](wp<TS<std::int64_t>> key, wp<TS<i64>> value) {
+    const auto tested = [](wp<TS<i64>> key, wp<TS<i64>> value) {
         return switch_(optional_key(key),
                        cases{
-                           case_(std::int64_t{1}, [](auto input) { return add(input, 10); }),
+                           case_(i64{1}, [](auto input) { return add(input, 10); }),
                            case_(DEFAULT, [](auto input) { return add(input, 100); }),
                        },
                        value)
             .as<TS<i64>>();
     };
 
-    CHECK(testing::test_graph(tested, std::array<std::int64_t, 2>{1, -1}, std::array{2, 3})
+    CHECK(testing::test_graph(tested, std::array<i64, 2>{1, -1}, std::array{2, 3})
               .equals<bg::i64>({12, 103}));
 }
 
 TEST_CASE("switch starts a DEFAULT source when its key is initially invalid",
           "[feature:switch][feature:nested-graph][feature:operator][shape:source]"
           "[series:value][transition:invalidation][definition:function]") {
-    const auto tested = [](wp<TS<std::int64_t>> key) {
+    const auto tested = [](wp<TS<i64>> key) {
         return switch_(
                    optional_key(key),
                    cases{case_(DEFAULT, [] {
-                       return operators::const_(7).as<TS<std::int64_t,
+                       return operators::const_(7).as<TS<i64,
                                                           TimeSeriesGuarantee::const_>>();
                    })})
-            .as<REF<TS<std::int64_t, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::deduplicated>>();
+            .as<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::deduplicated>>();
     };
 
-    CHECK(testing::test_graph(tested, std::array<std::int64_t, 1>{-1})
-              .equals<std::int64_t>({7}));
+    CHECK(testing::test_graph(tested, std::array<i64, 1>{-1})
+              .equals<i64>({7}));
 }
 
 TEST_CASE("a switch inner graph reports timed work through its owner",
@@ -561,9 +523,9 @@ TEST_CASE("a switch inner graph reports timed work through its owner",
                               []() -> wp<TS<i64>> { return delayed_case(); });
 
     run_graph([&] {
-        const auto key = operators::const_(std::int64_t{1})
-                             .as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
-        (void)switch_(key, cases{case_(std::int64_t{1}, branch)});
+        const auto key = operators::const_(i64{1})
+                             .as<TS<i64, TimeSeriesGuarantee::const_>>();
+        (void)switch_(key, cases{case_(i64{1}, branch)});
     });
 
     CHECK(DelayedCase::evaluation_count == 1);
@@ -573,17 +535,16 @@ TEST_CASE("switches inside a map retain and replace state independently",
           "[feature:switch][feature:map][feature:nested-graph][feature:operator]"
           "[shape:doubly-nested][series:value][series:tsd][transition:update]"
           "[definition:function]") {
-    const auto tested = [](wp<TS<i64>> trigger, wp<TS<std::int64_t>> first,
-                           wp<TS<std::int64_t>> second) {
-        const auto result = map(mapped_switch, mapped_values(trigger),
-                                mapped_selectors(first, second));
-        return add_mapped_results(result[std::int64_t{1}].as<TS<i64>>(),
-                                  result[std::int64_t{2}].as<TS<i64>>());
+    const auto tested = [](wp<TSD<i64, TS<i64>>> values,
+                           wp<TSD<i64, TS<i64>>> selectors) {
+        const auto result = map(mapped_switch, values, selectors);
+        return add_mapped_results(result[i64{1}].as<TS<i64>>(),
+                                  result[i64{2}].as<TS<i64>>());
     };
 
     const auto actual = testing::test_graph(
-        tested, std::array{0, 0, 0, 0}, std::array<std::int64_t, 4>{1, 1, 2, 2},
-        std::array<std::int64_t, 4>{2, 2, 2, 1});
+        tested, {{{1, 0}, {2, 0}}, {{1, 0}, {2, 0}}, {{1, 0}, {2, 0}}, {{1, 0}, {2, 0}}},
+        {{{1, 1}, {2, 2}}, {{1, 1}, {2, 2}}, {{1, 2}, {2, 2}}, {{1, 2}, {2, 1}}});
 
     CHECK(actual.equals<bg::i64>({32, 34, 44, 33}));
 }
@@ -592,16 +553,15 @@ TEST_CASE("removing and recreating a map entry recreates its switch graph",
           "[feature:switch][feature:map][feature:nested-graph][feature:operator]"
           "[shape:doubly-nested][series:value][series:tsd][transition:addition]"
           "[transition:removal][definition:function]") {
-    const auto tested = [](wp<TS<i64>> trigger, wp<TS<std::int64_t>> selector,
-                           wp<TS<bool>> present) {
-        const auto result = map(mapped_switch, optional_mapped_values(trigger, present),
-                                optional_mapped_selectors(selector, present));
-        return result[std::int64_t{1}].as<TS<i64>>();
+    const auto tested = [](wp<TSD<i64, TS<i64>>> values,
+                           wp<TSD<i64, TS<i64>>> selectors) {
+        const auto result = map(mapped_switch, values, selectors);
+        return result[i64{1}].as<TS<i64>>();
     };
 
     const auto actual = testing::test_graph(
-        tested, std::array{0, 0, 0, 0}, std::array<std::int64_t, 4>{1, 1, 1, 1},
-        std::array{true, true, false, true});
+        tested, {{{1, 0}}, {{1, 0}}, {{1, literal::REMOVE}}, {{1, 0}}},
+        {{{1, 1}}, {{1, 1}}, {{1, literal::REMOVE}}, {{1, 1}}});
 
     CHECK(actual.equals<bg::i64>({11, 12, std::nullopt, 11}));
 }
@@ -610,16 +570,14 @@ TEST_CASE("an unmatched switch key inside a map fails the outer graph",
           "[feature:switch][feature:map][feature:nested-graph][feature:operator]"
           "[feature:lifecycle][shape:doubly-nested][series:value][series:tsd]"
           "[definition:function]") {
-    const auto tested = [](wp<TS<i64>> trigger, wp<TS<std::int64_t>> selector,
-                           wp<TS<bool>> present) {
-        const auto result = map(mapped_switch, optional_mapped_values(trigger, present),
-                                optional_mapped_selectors(selector, present));
-        return result[std::int64_t{1}].as<TS<i64>>();
+    const auto tested = [](wp<TSD<i64, TS<i64>>> values,
+                           wp<TSD<i64, TS<i64>>> selectors) {
+        const auto result = map(mapped_switch, values, selectors);
+        return result[i64{1}].as<TS<i64>>();
     };
 
     CHECK_THROWS_WITH(
-        (void)testing::test_graph(tested, std::array{0},
-                                  std::array<std::int64_t, 1>{9}, std::array{true}),
+        (void)testing::test_graph(tested, {{{1, 0}}}, {{{1, 9}}}),
         "switch_ key does not match a case and no DEFAULT case is defined");
 }
 
@@ -629,11 +587,10 @@ TEST_CASE("timed scheduling propagates through a switch inside a map",
           "[series:value][series:tsd][definition:function]") {
     DelayedCase::evaluation_count = 0;
 
-    run_graph([] {
-        const auto selector = operators::const_(std::int64_t{1})
-                                  .as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
-        (void)map(delayed_mapped_switch, selectors_at_key_one(selector));
+    const auto tested = graph("name"_n = "timed_map_switch", [](wp<TSD<i64, TS<i64>>> selectors) {
+        (void)map(delayed_mapped_switch, selectors);
     });
+    (void)testing::test_graph(tested, {{{1, 1}}});
 
     CHECK(DelayedCase::evaluation_count == 1);
 }
@@ -644,20 +601,20 @@ TEST_CASE("switch crosses an additional nested graph boundary",
           "[definition:function]") {
     const auto inner = graph(
         "name"_n = "nested_switch",
-        [](wp<TS<std::int64_t>> key, wp<TS<i64>> value) {
+        [](wp<TS<i64>> key, wp<TS<i64>> value) {
             return switch_(key,
                            cases{case_(1, [](auto input) { return add(input, 10); }),
                                  case_(2, [](auto input) { return add(input, 20); })},
                            value)
                 .as<TS<i64>>();
         });
-    const auto tested = [&](wp<TS<std::int64_t>> key, wp<TS<i64>> value,
+    const auto tested = [&](wp<TS<i64>> key, wp<TS<i64>> value,
                             wp<TS<bool>> run) {
         return nested(inner, run, key, value);
     };
 
     const auto actual = testing::test_graph(
-        tested, std::array<std::int64_t, 4>{1, 2, 2, 1}, std::array{3, 3, 4, 5},
+        tested, std::array<i64, 4>{1, 2, 2, 1}, std::array{3, 3, 4, 5},
         std::array{true, true, true, true});
 
     CHECK(actual.equals<bg::i64>({13, 23, 24, 15}));

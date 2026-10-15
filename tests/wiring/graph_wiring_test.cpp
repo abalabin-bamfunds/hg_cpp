@@ -382,8 +382,8 @@ struct bound_reference_source {
 
 TEST_CASE("a node call can seed type resolution", "[graph_wiring][type_system][feature:wiring]") {
     const auto source = bg::node<bound_reference_source>();
-    const auto &target = bg::TS<std::int64_t>::type();
-    const auto &expected = bg::REF<bg::TS<std::int64_t>, bg::TimeSeriesGuarantee::deduplicated>::type();
+    const auto &target = bg::TS<bg::i64>::type();
+    const auto &expected = bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::deduplicated>::type();
     auto type_map = bg::TypeMap{};
     type_map.set(bg::details::TimeSeriesVariableInstance<BOUND_TIME_SERIES>::get(), &target);
     auto wiring = bg::GraphWiring{};
@@ -420,8 +420,8 @@ class scale_template final : public bg::NodeTemplate {
 class union_input_node_template final : public bg::NodeTemplate {
   public:
     [[nodiscard]] const bg::Signature &signature() const override {
-        using FORM = bg::Union<"NODE_MULTIPLE_SERIES_FORMS", std::int64_t,
-                               bg::TS<std::int64_t>, bg::TS<float>>;
+        using FORM = bg::Union<"NODE_MULTIPLE_SERIES_FORMS", bg::i64,
+                               bg::TS<bg::i64>, bg::TS<float>>;
         static const auto value = bg::Signature{
             bg::util::symbol{"union_input_node"}, {{bg::util::symbol{"input"}, &FORM::type()}}};
         return value;

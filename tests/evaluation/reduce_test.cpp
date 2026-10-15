@@ -17,46 +17,6 @@ namespace {
 using namespace bg;
 using namespace bg::literals;
 
-const auto dictionary_from_two_values = node([](In<TS<i64>> left, In<TS<i64>> right,
-                                                 In<TS<bool>> include_left, In<TS<bool>> include_right,
-                                                 Out<TSD<std::int64_t, TS<i64>>> output) {
-    if (*include_left) {
-        output[1].set(*left);
-    } else {
-        output.erase(1);
-    }
-    if (*include_right) {
-        output[2].set(*right);
-    } else {
-        output.erase(2);
-    }
-});
-
-const auto dictionary_from_three_values = node([](In<TS<i64>> first, In<TS<i64>> second, In<TS<i64>> third,
-                                                   Out<TSD<std::int64_t, TS<i64>>> output) {
-    output[1].set(*first);
-    output[2].set(*second);
-    output[3].set(*third);
-});
-
-const auto dictionary_from_validity_state = node([](In<TS<i64>> first, In<TS<i64>> second, In<TS<i64>> state,
-                                                     Out<TSD<std::int64_t, TS<i64>>> output) {
-    switch (*state) {
-    case 0:
-        output[1].set(*first);
-        output[2].set(*second);
-        output[2].invalidate();
-        break;
-    case 1:
-        output[1].invalidate();
-        output[2].invalidate();
-        break;
-    case 2:
-        output.clear();
-        break;
-    }
-});
-
 const auto add_values = node([](In<TS<i64>> left, In<TS<i64>> right, Out<TS<i64>> output) {
     output.set(*left + *right);
 });
@@ -90,67 +50,46 @@ const auto context_add_graph = graph("name"_n = "context_add_for_reduce", [](wp<
 });
 
 const auto namespace_scope_reduce_with_default = graph(
-    "name"_n = "namespace_scope_reduce_with_default", [](wp<TS<i64>> first, wp<TS<i64>> second,
-                                                           wp<TS<i64>> state) -> wp<TS<i64>> {
-        return wp<TS<i64>>{
-            reduce(add_graph, dictionary_from_validity_state(first, second, state), "default"_n = std::int64_t{20})};
+    "name"_n = "namespace_scope_reduce_with_default",
+    [](wp<TSD<i64, TS<i64>>> dictionary) -> wp<TS<i64>> {
+        return wp<TS<i64>>{reduce(add_graph, dictionary, "default"_n = i64{20})};
     });
 
 TEST_CASE("reduce combines all valid TSD items through nested reducer graphs",
           "[feature:reduce][feature:nested-graph][series:tsd][shape:nested]") {
-    const auto tested = [](wp<TS<i64>> left, wp<TS<i64>> right, wp<TS<bool>> include_left,
-                           wp<TS<bool>> include_right) {
-        return reduce(add_graph, dictionary_from_two_values(left, right, include_left, include_right));
+    const auto tested = [](wp<TSD<i64, TS<i64>>> values) {
+        return reduce(add_graph, values);
     };
 
-    const auto actual = testing::test_graph(tested, std::array{1, 2, 3}, std::array{4, 5, 6},
-                                            std::array{true, true, true}, std::array{true, true, true});
+    const auto actual = testing::test_graph(tested, {{{1, 1}, {2, 4}}, {{1, 2}, {2, 5}}, {{1, 3}, {2, 6}}});
 
     CHECK(actual.equals<i64>({5, 7, 9}));
 }
 
 TEST_CASE("reduce carries an odd item to the next level of its tree",
           "[feature:reduce][feature:nested-graph][series:tsd][shape:nested]") {
-    const auto tested = [](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<i64>> third) {
-        return reduce(add_graph, dictionary_from_three_values(first, second, third));
+    const auto tested = [](wp<TSD<i64, TS<i64>>> values) {
+        return reduce(add_graph, values);
     };
 
-    const auto actual = testing::test_graph(tested, std::array{1, 2}, std::array{4, 5}, std::array{7, 8});
+    const auto actual = testing::test_graph(tested, {{{1, 1}, {2, 4}, {3, 7}}, {{1, 2}, {2, 5}, {3, 8}}});
 
     CHECK(actual.equals<i64>({12, 15}));
 }
 
 TEST_CASE("reduce combines final TSD items with a nested reducer",
           "[feature:reduce][feature:nested-graph][series:tsd][shape:nested][guarantee:final]") {
-    const auto final_dictionary_from_values = node(
-        [](In<TS<i64>> left, In<TS<i64>> right,
-           Out<TSD<std::int64_t, TS<i64, TimeSeriesGuarantee::final>>> output) {
-            output[1].set(*left);
-            output[2].set(*right);
-        });
-    const auto tested = [=](wp<TS<i64>> left, wp<TS<i64>> right) {
-        return reduce(add_graph, final_dictionary_from_values(left, right));
+    const auto tested = [](wp<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> values) {
+        return reduce(add_graph, values);
     };
 
-    const auto actual = testing::test_graph(tested, std::array{3}, std::array{4});
+    const auto actual = testing::test_graph(tested, {{{1, 3}, {2, 4}}});
 
     CHECK(actual.equals<i64>({7}));
 }
 
 TEST_CASE("compact reduce does not propagate a dirty path when a child reducer does not publish",
           "[feature:reduce][series:tsd][shape:single-node][transition:update][notification:suppressed]") {
-    const auto make_dictionary = node([](In<TS<i64>> first, In<TS<i64>> second, In<TS<i64>> third,
-                                         In<TS<i64>> fourth, In<TS<bool>> initialize,
-                                         In<TS<bool>> update_first, Out<TSD<std::int64_t, TS<i64>>> output) {
-        if (*initialize) {
-            output[1].set(*first);
-            output[2].set(*second);
-            output[3].set(*third);
-            output[4].set(*fourth);
-        } else if (*update_first) {
-            output[1].set(*first);
-        }
-    });
     const auto suppress_selected_value = graph(
         "name"_n = "suppress_selected_reduce_value", [](wp<TS<i64>> left, wp<TS<i64>> right) -> wp<TS<i64>> {
             const auto selected = node([](In<TS<i64>> left_value, In<TS<i64>> right_value, Out<TS<i64>> output) {
@@ -160,22 +99,18 @@ TEST_CASE("compact reduce does not propagate a dirty path when a child reducer d
             })(left, right);
             return wp<TS<i64>>{*selected};
         });
-    const auto tested = [=](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<i64>> third,
-                            wp<TS<i64>> fourth, wp<TS<bool>> initialize, wp<TS<bool>> update_first) {
-        return reduce(suppress_selected_value,
-                      make_dictionary(first, second, third, fourth, initialize, update_first));
+    const auto tested = [=](wp<TSD<i64, TS<i64>>> dictionary) {
+        return reduce(suppress_selected_value, dictionary);
     };
 
-    const auto actual = testing::test_graph(tested, std::array{1, 99}, std::array{2, 2}, std::array{3, 3},
-                                            std::array{4, 4}, std::array{true, false},
-                                            std::array{false, true});
+    const auto actual = testing::test_graph(tested, {{{1, 1}, {2, 2}, {3, 3}, {4, 4}}, {{1, 99}}});
 
     CHECK(actual.equals<i64>({10, std::nullopt}));
 }
 
 TEST_CASE("compact reduce does not republish an unchanged root when membership changes",
           "[feature:reduce][series:tsd][shape:single-node][transition:removal][notification:suppressed]") {
-    const auto make_dictionary = node([](In<TS<bool>> initialize, Out<TSD<std::int64_t, TS<i64>>> output) {
+    const auto make_dictionary = node([](In<TS<bool>> initialize, Out<TSD<i64, TS<i64>>> output) {
         if (*initialize) {
             output[10].set(1);
             output[20].set(2);
@@ -215,8 +150,8 @@ TEST_CASE("compact reduce does not republish an unchanged root when membership c
         auto context_scope = with_context("factor"_n = factor);
         return reduce(suppress_selected_value_with_context, make_dictionary(initialize));
     };
-    const auto compact_output = testing::test_graph(compact_graph, std::array{true, false});
-    const auto fallback_output = testing::test_graph(fallback_graph, std::array{true, false}, std::array{0, 0});
+    const auto compact_output = testing::test_graph(compact_graph, {true, false});
+    const auto fallback_output = testing::test_graph(fallback_graph, {true, false}, {0, 0});
 
     CHECK(compact_output.equals<i64>({10, std::nullopt}));
     CHECK(fallback_output.equals<i64>({10, std::nullopt}));
@@ -224,12 +159,11 @@ TEST_CASE("compact reduce does not republish an unchanged root when membership c
 
 TEST_CASE("nested reduce preserves the reducer selected for reference-backed inputs",
           "[feature:reduce][series:tsd][shape:nested][binding:reference-to-value]") {
-    const auto tested = [](wp<TS<i64>> left, wp<TS<i64>> right) {
-        return reduce(representation_sensitive_graph,
-                      dictionary_from_two_values(left, right, operators::const_(true), operators::const_(true)));
+    const auto tested = [](wp<TSD<i64, TS<i64>>> dictionary) {
+        return reduce(representation_sensitive_graph, dictionary);
     };
 
-    const auto actual = testing::test_graph(tested, std::array{3}, std::array{4});
+    const auto actual = testing::test_graph(tested, {{{1, 3}, {2, 4}}});
 
     CHECK(actual.equals<i64>({7}));
 }
@@ -237,37 +171,31 @@ TEST_CASE("nested reduce preserves the reducer selected for reference-backed inp
 TEST_CASE("nested reduce tracks keys when a sampled TSD reassigns physical item IDs",
           "[feature:reduce][series:tsd][series:reference][feature:item-id-remapping][transition:rebind]"
           "[shape:nested]") {
-    const auto first_dictionary = node([](In<TS<bool>>, Out<TSD<std::int64_t, TS<i64>>> output) {
-        output[10].set(2);
-        output[20].set(3);
-        output[30].set(5);
-    });
-    const auto second_dictionary = node([](In<TS<bool>>, Out<TSD<std::int64_t, TS<i64>>> output) {
-        output[30].set(6);
-        output[20].set(4);
-        output[10].set(3);
-    });
     const auto select_dictionary = node(
-        [](In<TS<bool>> use_second, In<REF<TSD<std::int64_t, TS<i64>>>> first,
-           In<REF<TSD<std::int64_t, TS<i64>>>> second, Out<REF<TSD<std::int64_t, TS<i64>>>> output) {
+        [](In<TS<bool>> use_second, In<REF<TSD<i64, TS<i64>>>> first,
+           In<REF<TSD<i64, TS<i64>>>> second, Out<REF<TSD<i64, TS<i64>>>> output) {
             output.copy(*use_second ? second : first);
         });
-    const auto tested = [=](wp<TS<bool>> use_second) {
-        const auto first = first_dictionary(use_second);
-        const auto second = second_dictionary(use_second);
-        const auto selected = select_dictionary(use_second, first.as<REF<TSD<std::int64_t, TS<i64>>>>(),
-                                                second.as<REF<TSD<std::int64_t, TS<i64>>>>());
+    const auto tested = [=](wp<TSD<i64, TS<i64>>> first, wp<TSD<i64, TS<i64>>> second,
+                            wp<TS<bool>> use_second) {
+        const auto selected = select_dictionary(use_second, first.as<REF<TSD<i64, TS<i64>>>>(),
+                                                second.as<REF<TSD<i64, TS<i64>>>>());
         return reduce(add_graph, selected);
     };
 
-    const auto actual = testing::test_graph(tested, std::array{false, true, false, true});
+    const auto actual = testing::test_graph(
+        tested, {{{10, 2}, {20, 3}, {30, 5}}, {{10, 2}, {20, 3}, {30, 5}},
+                 {{10, 2}, {20, 3}, {30, 5}}, {{10, 2}, {20, 3}, {30, 5}}},
+        {{{30, 6}, {20, 4}, {10, 3}}, {{30, 6}, {20, 4}, {10, 3}},
+         {{30, 6}, {20, 4}, {10, 3}}, {{30, 6}, {20, 4}, {10, 3}}},
+        {false, true, false, true});
 
     CHECK(actual.equals<i64>({10, 13, 10, 13}));
 }
 
 TEST_CASE("compact reduce handles addition that reuses an expired physical item ID",
           "[feature:reduce][series:tsd][transition:removal][transition:addition][storage:item-id-reuse]") {
-    const auto make_dictionary = node([](In<TS<i64>> phase, Out<TSD<std::int64_t, TS<i64>>> output) {
+    const auto make_dictionary = node([](In<TS<i64>> phase, Out<TSD<i64, TS<i64>>> output) {
         if (*phase == 0) {
             output[10].set(2);
             output[20].set(3);
@@ -298,9 +226,9 @@ TEST_CASE("compact reduce handles addition that reuses an expired physical item 
 TEST_CASE("compact reduce updates a sparse path in a larger TSD",
           "[feature:reduce][series:tsd][shape:single-node][transition:update][activity:sparse]") {
     const auto make_dictionary = node([](In<TS<bool>> initialize, In<TS<i64>> changed_key,
-                                         In<TS<i64>> changed_value, Out<TSD<std::int64_t, TS<i64>>> output) {
+                                         In<TS<i64>> changed_value, Out<TSD<i64, TS<i64>>> output) {
         if (*initialize) {
-            for (auto key = std::int64_t{1}; key <= 64; ++key) {
+            for (auto key = i64{1}; key <= 64; ++key) {
                 output[key].set(key);
             }
             return;
@@ -320,17 +248,6 @@ TEST_CASE("compact reduce updates a sparse path in a larger TSD",
 
 TEST_CASE("compact reduce timestamps a replacement input in its cycle and leaves it unchanged afterward",
           "[feature:reduce][series:tsd][shape:single-node][transition:removal][transition:update]") {
-    const auto make_dictionary = node([](In<TS<i64>> phase, Out<TSD<std::int64_t, TS<i64>>> output) {
-        if (*phase == 0) {
-            output[1].set(1);
-            output[2].set(2);
-            output[3].set(3);
-        } else if (*phase == 1) {
-            output.erase(1);
-        } else {
-            output[3].set(30);
-        }
-    });
     const auto cycle_two = MIN_DT + EvaluationTime::duration{2};
     const auto cycle_three = MIN_DT + EvaluationTime::duration{3};
     auto retained_cycle_two_timestamp = false;
@@ -343,7 +260,9 @@ TEST_CASE("compact reduce timestamps a replacement input in its cycle and leaves
                                                                                      wp<TS<i64>> right) {
         return observe_inputs(left, right);
     });
-    const auto tested = [=](wp<TS<i64>> phase) { return reduce(timestamp_reducer, make_dictionary(phase)); };
+    const auto tested = [=](wp<TSD<i64, TS<i64>>> dictionary) {
+        return reduce(timestamp_reducer, dictionary);
+    };
 
     testing::test_wiring([&] {
         const auto candidate = details::build_reduce_graph_argument_wiring(
@@ -351,7 +270,8 @@ TEST_CASE("compact reduce timestamps a replacement input in its cycle and leaves
         CHECK(candidate.graph.compact_graph.has_value());
     });
 
-    const auto actual = testing::test_graph(tested, std::array{0, 1, 2});
+    const auto actual = testing::test_graph(
+        tested, {{{1, 1}, {2, 2}, {3, 3}}, {{1, literal::REMOVE}}, {{3, 30}}});
 
     CHECK(actual.equals<i64>({6, 5, 32}));
     CHECK(retained_cycle_two_timestamp);
@@ -360,36 +280,19 @@ TEST_CASE("compact reduce timestamps a replacement input in its cycle and leaves
 TEST_CASE("reduce combines final TSD items through a context-dependent fallback reducer",
           "[feature:reduce][feature:context-time-series][feature:nested-graph][series:tsd][shape:nested]"
           "[guarantee:final]") {
-    const auto final_dictionary_from_values = node(
-        [](In<TS<i64>> left, In<TS<i64>> right,
-           Out<TSD<std::int64_t, TS<i64, TimeSeriesGuarantee::final>>> output) {
-            output[1].set(*left);
-            output[2].set(*right);
-        });
-    const auto tested = [=](wp<TS<i64>> left, wp<TS<i64>> right, wp<TS<i64>> factor) {
+    const auto tested = [=](wp<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> dictionary,
+                            wp<TS<i64>> factor) {
         auto context_scope = with_context("factor"_n = factor);
-        return reduce(context_add_graph, final_dictionary_from_values(left, right));
+        return reduce(context_add_graph, dictionary);
     };
 
-    const auto actual = testing::test_graph(tested, std::array{3}, std::array{4}, std::array{10});
+    const auto actual = testing::test_graph(tested, {{{1, 3}, {2, 4}}}, {10});
 
     CHECK(actual.equals<i64>({17}));
 }
 
 TEST_CASE("reduce retains untouched multi-node results and passive input state",
           "[feature:reduce][series:tsd][shape:chain][activity:passive][validity:optional][transition:update]") {
-    const auto dictionary_from_four_values_with_one_update =
-        node([](In<TS<i64>> first, In<TS<i64>> second, In<TS<i64>> third, In<TS<i64>> fourth,
-                In<TS<bool>> initialize, In<TS<bool>> update_first, Out<TSD<std::int64_t, TS<i64>>> output) {
-            if (*initialize) {
-                output[1].set(*first);
-                output[2].set(*second);
-                output[3].set(*third);
-                output[4].set(*fourth);
-            } else if (*update_first) {
-                output[1].set(*first);
-            }
-        });
     // Add a sentinel when the passive input is modified so stale modification state is observable.
     const auto sum_active_left_and_passive_right = node(
         [](In<TS<i64>> left, In<TS<i64>, passive, optional> right, Out<TS<i64>> output) {
@@ -404,45 +307,35 @@ TEST_CASE("reduce retains untouched multi-node results and passive input state",
             return copy_reduce_intermediate(sum_active_left_and_passive_right(left, opt(right)));
         });
 
-    const auto tested = [=](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<i64>> third, wp<TS<i64>> fourth,
-                            wp<TS<bool>> initialize, wp<TS<bool>> update_first) {
-        return reduce(multi_node_passive_reducer,
-                      dictionary_from_four_values_with_one_update(first, second, third, fourth, initialize,
-                                                                  update_first));
+    const auto tested = [=](wp<TSD<i64, TS<i64>>> dictionary) {
+        return reduce(multi_node_passive_reducer, dictionary);
     };
 
-    const auto actual = testing::test_graph(tested, std::array{1, 10}, std::array{2, 2}, std::array{3, 3},
-                                            std::array{4, 4}, std::array{true, false},
-                                            std::array{false, true});
+    const auto actual = testing::test_graph(tested, {{{1, 1}, {2, 2}, {3, 3}, {4, 4}}, {{1, 10}}});
 
     CHECK(actual.equals<i64>({310, 119}));
 }
 
 TEST_CASE("reduce adapts a generic lambda to the TSD item type",
           "[feature:reduce][feature:operator][series:tsd][definition:function]") {
-    const auto tested = [](wp<TS<i64>> left, wp<TS<i64>> right, wp<TS<bool>> include_left,
-                           wp<TS<bool>> include_right) {
-        return reduce([](auto first, auto second) { return add_values(first, second); },
-                      dictionary_from_two_values(left, right, include_left, include_right));
+    const auto tested = [](wp<TSD<i64, TS<i64>>> values) {
+        return reduce([](auto first, auto second) { return add_values(first, second); }, values);
     };
 
-    const auto actual = testing::test_graph(tested, std::array{1, 2}, std::array{4, 5},
-                                            std::array{true, true}, std::array{true, true});
+    const auto actual = testing::test_graph(tested, {{{1, 1}, {2, 4}}, {{1, 2}, {2, 5}}});
 
     CHECK(actual.equals<i64>({5, 7}));
 }
 
 TEST_CASE("reduce carries inherited context references into its reducer graphs",
           "[feature:reduce][feature:context-time-series][feature:nested-graph]") {
-    const auto tested = [](wp<TS<i64>> left, wp<TS<i64>> right, wp<TS<bool>> include_left,
-                           wp<TS<bool>> include_right, wp<TS<i64>> factor) {
+    const auto tested = [](wp<TSD<i64, TS<i64>>> dictionary, wp<TS<i64>> factor) {
         auto context_scope = with_context("factor"_n = factor);
-        return reduce(context_add_graph, dictionary_from_two_values(left, right, include_left, include_right));
+        return reduce(context_add_graph, dictionary);
     };
 
-    const auto actual = testing::test_graph(tested, std::array{1, 2}, std::array{4, 5},
-                                            std::array{true, true}, std::array{true, true},
-                                            std::array{10, 20});
+    const auto actual = testing::test_graph(tested, {{{1, 1}, {2, 4}}, {{1, 2}, {2, 5}}},
+                                            {10, 20});
 
     CHECK(actual.equals<i64>({15, 27}));
 }
@@ -453,7 +346,7 @@ TEST_CASE("reduce fallback reads values from reference TSD items with inherited 
     const auto make_target = node([](In<TS<i64>> value, Out<TS<i64>> output) { output.set(*value); });
     const auto retain_references = node([](In<TS<bool>> install, In<REF<TS<i64>>, passive> first,
                                            In<REF<TS<i64>>, passive> second,
-                                           Out<TSD<std::int64_t, REF<TS<i64>>>> output) {
+                                           Out<TSD<i64, REF<TS<i64>>>> output) {
         if (*install) {
             output[1].copy(first);
             output[2].copy(second);
@@ -476,23 +369,14 @@ TEST_CASE("reduce fallback reads values from reference TSD items with inherited 
 TEST_CASE("reduce publishes a singleton fallback value after retiring a pair graph",
           "[feature:reduce][feature:nested-graph][series:tsd][shape:nested]"
           "[transition:removal][transition:update]") {
-    const auto make_dictionary = node([](In<TS<i64>> left, In<TS<i64>> right, In<TS<bool>> include_right,
-                                         Out<TSD<std::int64_t, TS<i64>>> output) {
-        output[1].set(*left);
-        if (*include_right) {
-            output[2].set(*right);
-        } else {
-            output.erase(2);
-        }
-    });
-    const auto tested = [=](wp<TS<i64>> left, wp<TS<i64>> right, wp<TS<bool>> include_right,
-                           wp<TS<i64>> factor) {
+    const auto tested = [=](wp<TSD<i64, TS<i64>>> dictionary, wp<TS<i64>> factor) {
         auto context_scope = with_context("factor"_n = factor);
-        return reduce(context_add_graph, make_dictionary(left, right, include_right));
+        return reduce(context_add_graph, dictionary);
     };
 
-    const auto actual = testing::test_graph(tested, std::array{3, 4, 7}, std::array{5, 6, 8},
-                                            std::array{true, false, false}, std::array{2, 2, 2});
+    const auto actual = testing::test_graph(tested,
+                                            {{{1, 3}, {2, 5}}, {{1, 4}, {2, literal::REMOVE}}, {{1, 7}}},
+                                            {2, 2, 2});
 
     CHECK(actual.equals<i64>({10, 4, 7}));
 }
@@ -509,7 +393,7 @@ TEST_CASE("reduce fallback refreshes a singleton reference item after selection 
         }
     });
     const auto retain_reference = node([](In<TS<bool>> install, In<REF<TS<i64>>, passive> target,
-                                          Out<TSD<std::int64_t, REF<TS<i64>>>> output) {
+                                          Out<TSD<i64, REF<TS<i64>>>> output) {
         if (*install) {
             output[1].copy(target);
         }
@@ -528,15 +412,13 @@ TEST_CASE("reduce fallback refreshes a singleton reference item after selection 
 
 TEST_CASE("reduce updates its tree when TSD membership changes and uses the default only when empty",
           "[feature:reduce][feature:nested-graph][series:tsd][validity:optional]") {
-    const auto tested = [](wp<TS<i64>> left, wp<TS<i64>> right, wp<TS<bool>> include_left,
-                           wp<TS<bool>> include_right) {
-        return reduce(add_graph, dictionary_from_two_values(left, right, include_left, include_right),
-                      "default"_n = std::int64_t{20});
+    const auto tested = [](wp<TSD<i64, TS<i64>>> dictionary) {
+        return reduce(add_graph, dictionary, "default"_n = i64{20});
     };
 
-    const auto actual = testing::test_graph(tested, std::array{1, 2, 3, 4}, std::array{4, 5, 6, 7},
-                                            std::array{true, true, true, false},
-                                            std::array{true, false, true, false});
+    const auto actual = testing::test_graph(
+        tested, {{{1, 1}, {2, 4}}, {{1, 2}, {2, literal::REMOVE}}, {{1, 3}, {2, 6}},
+                 {{1, literal::REMOVE}, {2, literal::REMOVE}}});
 
     REQUIRE(actual.size() == 4);
     CHECK(actual[0].has_value());
@@ -551,42 +433,37 @@ TEST_CASE("reduce updates its tree when TSD membership changes and uses the defa
 
 TEST_CASE("reduce omits invalid items while valid items remain",
           "[feature:reduce][series:tsd][validity:optional][transition:invalidation]") {
-    const auto tested = [](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<i64>> state) {
-        return reduce(add_graph, dictionary_from_validity_state(first, second, state),
-                      "default"_n = std::int64_t{20});
+    const auto tested = [](wp<TSD<i64, TS<i64>>> dictionary) {
+        return reduce(add_graph, dictionary, "default"_n = i64{20});
     };
-    const auto actual = testing::test_graph(tested, std::array{5}, std::array{9}, std::array{0});
+    const auto actual = testing::test_graph(tested, {{{1, 5}, {2, literal::INVALID}}});
 
     CHECK(actual.equals<i64>({5}));
 }
 
 TEST_CASE("reduce uses the default when a valid TSD has keys but no valid items",
           "[feature:reduce][series:tsd][validity:optional][transition:invalidation]") {
-    const auto tested = [](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<i64>> state) {
-        return reduce(add_graph, dictionary_from_validity_state(first, second, state),
-                      "default"_n = std::int64_t{20});
+    const auto tested = [](wp<TSD<i64, TS<i64>>> dictionary) {
+        return reduce(add_graph, dictionary, "default"_n = i64{20});
     };
-    const auto actual = testing::test_graph(tested, std::array{5}, std::array{9}, std::array{1});
+    const auto actual = testing::test_graph(tested, {{{1, literal::INVALID}, {2, literal::INVALID}}});
 
     CHECK(actual.equals<i64>({20}));
 }
 
 TEST_CASE("reduce uses the default when a valid TSD is empty",
           "[feature:reduce][series:tsd][validity:optional][transition:removal]") {
-    const auto actual = testing::test_graph(namespace_scope_reduce_with_default, std::array{5}, std::array{9},
-                                            std::array{2});
+    const auto actual = testing::test_graph(namespace_scope_reduce_with_default, {{}});
 
     CHECK(actual.equals<i64>({20}));
 }
 
 TEST_CASE("reduce does not use the default when the TSD is invalid",
           "[feature:reduce][series:tsd][validity:optional][transition:invalidation]") {
-    const auto tested = [](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<i64>> state) {
-        return reduce(add_graph, dictionary_from_validity_state(first, second, state),
-                      "default"_n = std::int64_t{20});
+    const auto tested = [](wp<TSD<i64, TS<i64>>> dictionary) {
+        return reduce(add_graph, dictionary, "default"_n = i64{20});
     };
-    const auto actual = testing::test_graph(tested, std::array{5}, std::array{9},
-                                            std::array<std::optional<int>, 1>{std::nullopt});
+    const auto actual = testing::test_graph(tested, {literal::SKIP});
 
     CHECK(actual.equals<i64>({std::nullopt}));
 }
@@ -602,7 +479,7 @@ TEST_CASE("reduce follows a stable reference to a single TSD item",
         }
     });
     const auto retain_reference = node([](In<TS<bool>> install, In<REF<TS<i64>>, passive> target,
-                                          Out<TSD<std::int64_t, REF<TS<i64>>>> output) {
+                                          Out<TSD<i64, REF<TS<i64>>>> output) {
         if (*install) {
             output[1].copy(target);
         }
@@ -631,7 +508,7 @@ TEST_CASE("reduce follows stable TSD references as initially invalid items becom
     });
     const auto retain_references = node([](In<TS<bool>> install, In<REF<TS<i64>>, passive> first,
                                            In<REF<TS<i64>>, passive> second,
-                                           Out<TSD<std::int64_t, REF<TS<i64>>>> output) {
+                                           Out<TSD<i64, REF<TS<i64>>>> output) {
         if (*install) {
             output[1].copy(first);
             output[2].copy(second);

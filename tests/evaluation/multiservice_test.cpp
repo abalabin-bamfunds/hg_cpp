@@ -2,8 +2,8 @@
 
 TEST_CASE("one multiservice graph wires several reference service replies once",
           "[feature:service][feature:multiservice][series:value][shape:multiple]") {
-    const auto left = reference_service<auto(std::int64_t)->TS<std::int64_t>>{"left", {"path"}};
-    const auto right = reference_service<auto()->TS<std::int64_t>>{"right"};
+    const auto left = reference_service<auto(bg::i64)->TS<bg::i64>>{"left", {"path"}};
+    const auto right = reference_service<auto()->TS<bg::i64>>{"right"};
     const auto source = node<ServiceOutputSource>();
     auto graph_wirings = std::size_t{};
     const auto implementation = graph("name"_n = "shared_services", [&] {
@@ -17,25 +17,25 @@ TEST_CASE("one multiservice graph wires several reference service replies once",
     registration.register_impl(left);
     registration.register_impl(right);
 
-    const auto add = node([](In<TS<std::int64_t>> left, In<TS<std::int64_t>> right, In<TS<std::int64_t>> tick,
-                             Out<TS<std::int64_t>> output) { output.set(*left + *right + *tick); });
-    const auto tested = [&](wp<TS<std::int64_t>> tick) {
-        return add(left(1).as<TS<std::int64_t>>(), right().as<TS<std::int64_t>>(), tick);
+    const auto add = node([](In<TS<bg::i64>> left, In<TS<bg::i64>> right, In<TS<bg::i64>> tick,
+                             Out<TS<bg::i64>> output) { output.set(*left + *right + *tick); });
+    const auto tested = [&](wp<TS<bg::i64>> tick) {
+        return add(left(1).as<TS<bg::i64>>(), right().as<TS<bg::i64>>(), tick);
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 2>{1, 2});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 2>{1, 2});
 
-    CHECK(actual.equals<std::int64_t>({85, 86}));
+    CHECK(actual.equals<bg::i64>({85, 86}));
     CHECK(graph_wirings == 1);
 }
 
 TEST_CASE("a multiservice graph receives subscription requests beside a reference reply",
           "[feature:service][feature:multiservice][series:tss][series:tsd][shape:multiple]") {
-    const auto clock = reference_service<auto()->TS<std::int64_t, TimeSeriesGuarantee::final>>{"clock"};
-    const auto lookup = subscription_service<auto(TS<std::int64_t, TimeSeriesGuarantee::final>)->TS<std::int64_t>>{
+    const auto clock = reference_service<auto()->TS<bg::i64, TimeSeriesGuarantee::final>>{"clock"};
+    const auto lookup = subscription_service<auto(TS<bg::i64, TimeSeriesGuarantee::final>)->TS<bg::i64>>{
         "lookup", {"key"}};
-    const auto source = node<FinalKeySource<std::int64_t>>();
-    const auto respond = node([](In<TSS<std::int64_t>> requests, Out<TSD<std::int64_t, TS<std::int64_t>>> responses) {
+    const auto source = node<FinalKeySource<bg::i64>>();
+    const auto respond = node([](In<TSS<bg::i64>> requests, Out<TSD<bg::i64, TS<bg::i64>>> responses) {
         requests.for_each_removed([&](const auto &key) { responses.erase(key); });
         requests.for_each_added([&](const auto &key) { responses[key].set(*key + 1); });
     });
@@ -49,25 +49,25 @@ TEST_CASE("a multiservice graph receives subscription requests beside a referenc
     registration.register_impl(clock);
     registration.register_impl(lookup);
 
-    const auto add_tick = node([](In<TS<std::int64_t>> value, In<TS<std::int64_t>> tick, Out<TS<std::int64_t>> output) {
+    const auto add_tick = node([](In<TS<bg::i64>> value, In<TS<bg::i64>> tick, Out<TS<bg::i64>> output) {
         output.set(*value + *tick);
     });
-    const auto tested = [&](wp<TS<std::int64_t>> tick) {
-        return add_tick(lookup(clock().as<TS<std::int64_t, TimeSeriesGuarantee::final>>()).as<TS<std::int64_t>>(),
+    const auto tested = [&](wp<TS<bg::i64>> tick) {
+        return add_tick(lookup(clock().as<TS<bg::i64, TimeSeriesGuarantee::final>>()).as<TS<bg::i64>>(),
                         tick);
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 2>{2, 3});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 2>{2, 3});
 
-    CHECK(actual.equals<std::int64_t>({45, 46}));
+    CHECK(actual.equals<bg::i64>({45, 46}));
 }
 
 TEST_CASE("multiservice service requests are addressable by declared parameter name",
           "[feature:service][feature:multiservice][series:tsd][shape:multiple]") {
     const auto combine =
-        service<auto(TS<std::int64_t>, TS<float>)->TS<float>>{"combine", {"integer", "fraction"}};
+        service<auto(TS<bg::i64>, TS<float>)->TS<float>>{"combine", {"integer", "fraction"}};
     const auto respond =
-        node([](In<TSD<service_client_id_t, TS<std::int64_t>>> integers,
+        node([](In<TSD<service_client_id_t, TS<bg::i64>>> integers,
                 In<TSD<service_client_id_t, TS<float>>> fractions, Out<TSD<service_client_id_t, TS<float>>> responses) {
             integers.for_each_removed([&](const auto &client_id) { responses.erase(client_id); });
             integers.for_each_key_value([&](const auto &client_id, const auto &integer) {
@@ -91,7 +91,7 @@ TEST_CASE("multiservice service requests are addressable by declared parameter n
     auto registration = catalogue.register_multiservice(implementation);
     registration.register_impl(combine);
 
-    const auto tested = [&](wp<TS<std::int64_t>> integer, wp<TS<float>> fraction) {
+    const auto tested = [&](wp<TS<bg::i64>> integer, wp<TS<float>> fraction) {
         return combine(integer, fraction).as<TS<float>>();
     };
 
@@ -99,7 +99,7 @@ TEST_CASE("multiservice service requests are addressable by declared parameter n
         testing::test_graph(
             tested,
             bg::GraphRunOptions{.services = &catalogue},
-            std::array<std::int64_t,
+            std::array<bg::i64,
             2>{2, 5},
             std::array<float,
             2>{1.5F, 3.5F}
@@ -111,17 +111,17 @@ TEST_CASE("multiservice service requests are addressable by declared parameter n
 
 TEST_CASE("one multiservice graph handles subscription and service requests",
           "[feature:service][feature:multiservice][series:tss][series:tsd][shape:multiple]") {
-    const auto lookup = subscription_service<auto(TS<std::int64_t, TimeSeriesGuarantee::final>)->TS<std::int64_t>>{
+    const auto lookup = subscription_service<auto(TS<bg::i64, TimeSeriesGuarantee::final>)->TS<bg::i64>>{
         "lookup", {"key"}};
-    const auto transform = service<auto(TS<std::int64_t>)->TS<std::int64_t>>{"transform", {"value"}};
+    const auto transform = service<auto(TS<bg::i64>)->TS<bg::i64>>{"transform", {"value"}};
 
     const auto answer_lookup =
-        node([](In<TSS<std::int64_t>> requests, Out<TSD<std::int64_t, TS<std::int64_t>>> replies) {
+        node([](In<TSS<bg::i64>> requests, Out<TSD<bg::i64, TS<bg::i64>>> replies) {
             requests.for_each_added([&](const auto &key) { replies[key].set(*key * 10); });
             requests.for_each_removed([&](const auto &key) { replies.erase(key); });
         });
-    const auto answer_transform = node([](In<TSD<service_client_id_t, TS<std::int64_t>>> requests,
-                                          Out<TSD<service_client_id_t, TS<std::int64_t>>> replies) {
+    const auto answer_transform = node([](In<TSD<service_client_id_t, TS<bg::i64>>> requests,
+                                          Out<TSD<service_client_id_t, TS<bg::i64>>> replies) {
         requests.for_each_removed([&](const auto &client_id) { replies.erase(client_id); });
         requests.for_each_key_value(
             [&](const auto &client_id, const auto &value) { replies[client_id].set(*value + 100); });
@@ -137,22 +137,22 @@ TEST_CASE("one multiservice graph handles subscription and service requests",
     registration.register_impl(lookup);
     registration.register_impl(transform);
 
-    const auto add = node([](In<TS<std::int64_t>> lookup_result, In<TS<std::int64_t>> transform_result,
-                             Out<TS<std::int64_t>> output) { output.set(*lookup_result + *transform_result); });
-    const auto key_source = node<FinalKeySource<std::int64_t>>();
-    const auto tested = [&](wp<TS<std::int64_t>> value) {
-        return add(lookup(key_source(1)).as<TS<std::int64_t>>(), transform(value).as<TS<std::int64_t>>());
+    const auto add = node([](In<TS<bg::i64>> lookup_result, In<TS<bg::i64>> transform_result,
+                             Out<TS<bg::i64>> output) { output.set(*lookup_result + *transform_result); });
+    const auto key_source = node<FinalKeySource<bg::i64>>();
+    const auto tested = [&](wp<TS<bg::i64>> value) {
+        return add(lookup(key_source(1)).as<TS<bg::i64>>(), transform(value).as<TS<bg::i64>>());
     };
 
-    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 3>{1, 2, 3})
-              .equals<std::int64_t>({111, 112, 113}));
+    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 3>{1, 2, 3})
+              .equals<bg::i64>({111, 112, 113}));
 }
 
 TEST_CASE("multiservice outputless service publishes requests",
           "[feature:service][feature:multiservice][series:tsd][shape:sink]") {
-    const auto audit = service<auto(TS<std::int64_t>)->void>{"audit", {"value"}};
-    auto received = std::vector<std::int64_t>{};
-    const auto observe = node([&](In<TSD<service_client_id_t, TS<std::int64_t>>> requests) {
+    const auto audit = service<auto(TS<bg::i64>)->void>{"audit", {"value"}};
+    auto received = std::vector<bg::i64>{};
+    const auto observe = node([&](In<TSD<service_client_id_t, TS<bg::i64>>> requests) {
         requests.for_each_key_value([&](const auto &, const auto &value) { received.push_back(*value); });
     });
     const auto implementation = graph("name"_n = "audit_service", [&] {
@@ -164,24 +164,24 @@ TEST_CASE("multiservice outputless service publishes requests",
     auto registration = catalogue.register_multiservice(implementation);
     registration.register_impl(audit);
 
-    const auto tested = [&](wp<TS<std::int64_t>> value) {
+    const auto tested = [&](wp<TS<bg::i64>> value) {
         audit(value);
         return value;
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 3>{4, 6, 8});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 3>{4, 6, 8});
 
-    CHECK(actual.equals<std::int64_t>({4, 6, 8}));
-    CHECK(received == std::vector<std::int64_t>{4, 6, 8});
+    CHECK(actual.equals<bg::i64>({4, 6, 8}));
+    CHECK(received == std::vector<bg::i64>{4, 6, 8});
 }
 
 TEST_CASE("an unused multiservice service request port can be wired",
           "[feature:service][feature:multiservice][series:tsd][shape:sink]") {
-    const auto clock = reference_service<auto()->TS<std::int64_t>>{"clock"};
-    const auto audit = service<auto(TS<std::int64_t>)->void>{"audit", {"value"}};
+    const auto clock = reference_service<auto()->TS<bg::i64>>{"clock"};
+    const auto audit = service<auto(TS<bg::i64>)->void>{"audit", {"value"}};
     auto implementation_wirings = std::size_t{};
     const auto source = node<ServiceOutputSource>();
-    const auto observe = node([](In<TSD<service_client_id_t, TS<std::int64_t>>>) {});
+    const auto observe = node([](In<TSD<service_client_id_t, TS<bg::i64>>>) {});
     const auto implementation = graph("name"_n = "clock_and_audit", [&] {
         ++implementation_wirings;
         const auto requests = audit.implementation_requests();
@@ -194,21 +194,21 @@ TEST_CASE("an unused multiservice service request port can be wired",
     registration.register_impl(clock);
     registration.register_impl(audit);
 
-    const auto add = node([](In<TS<std::int64_t>> value, In<TS<std::int64_t>> tick, Out<TS<std::int64_t>> output) {
+    const auto add = node([](In<TS<bg::i64>> value, In<TS<bg::i64>> tick, Out<TS<bg::i64>> output) {
         output.set(*value + *tick);
     });
-    const auto tested = [&](wp<TS<std::int64_t>> tick) { return add(clock().as<TS<std::int64_t>>(), tick); };
+    const auto tested = [&](wp<TS<bg::i64>> tick) { return add(clock().as<TS<bg::i64>>(), tick); };
 
-    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 1>{0}).equals<std::int64_t>({42}));
+    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 1>{0}).equals<bg::i64>({42}));
     CHECK(implementation_wirings == 1);
 }
 
 TEST_CASE("multiservice request bindings cross map graph boundaries",
           "[feature:service][feature:multiservice][feature:map][feature:nested-graph]"
           "[series:tsd][shape:nested][shape:sink]") {
-    const auto audit = service<auto(TS<std::int64_t>)->void>{"audit", {"value"}};
+    const auto audit = service<auto(TS<bg::i64>)->void>{"audit", {"value"}};
     auto request_sizes = std::vector<std::size_t>{};
-    const auto collect = node([&](In<TSD<service_client_id_t, TS<std::int64_t>>> requests) {
+    const auto collect = node([&](In<TSD<service_client_id_t, TS<bg::i64>>> requests) {
         request_sizes.push_back(requests.size());
         requests.for_each_key_value([&](const auto &, const auto &value) { CHECK(value.valid()); });
     });
@@ -221,21 +221,20 @@ TEST_CASE("multiservice request bindings cross map graph boundaries",
     auto registration = catalogue.register_multiservice(implementation);
     registration.register_impl(audit);
 
-    const auto values = node(
-        [](In<TS<std::int64_t>> value, Out<TSD<std::int64_t, TS<std::int64_t>>> output) { output[1].set(*value); });
-    const auto tested = [&](wp<TS<std::int64_t>> value) {
+    const auto tested = [&](wp<TSD<bg::i64, TS<bg::i64>>> values) {
         const auto mapped = map(
             [&](auto item) {
                 audit(item);
                 return item;
             },
-            values(value));
-        return mapped[std::int64_t{1}].as<TS<std::int64_t>>();
+            values);
+        return mapped[bg::i64{1}].as<TS<bg::i64>>();
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 2>{3, 8});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue},
+                                            {{{1, 3}}, {{1, 8}}});
 
-    CHECK(actual.equals<std::int64_t>({3, 8}));
+    CHECK(actual.equals<bg::i64>({3, 8}));
     CHECK(request_sizes == std::vector<std::size_t>{1, 1});
 }
 
@@ -252,38 +251,38 @@ TEST_CASE("multiservice claims select generic service signatures",
     const auto integer_source = node<ServiceOutputSource>();
     const auto floating_source = node<FloatingServiceOutputSource>();
     const auto implementation = graph("name"_n = "typed_identities", [&] {
-        identity[type<TS<std::int64_t>>].implementation_replies(integer_source());
+        identity[type<TS<bg::i64>>].implementation_replies(integer_source());
         identity[type<TS<float>>].implementation_replies(floating_source());
     });
 
     auto catalogue = ServiceCatalogue{};
     auto registration = catalogue.register_multiservice(implementation);
-    registration.register_impl(identity[type<TS<std::int64_t>>]);
+    registration.register_impl(identity[type<TS<bg::i64>>]);
     registration.register_impl(identity[type<TS<float>>]);
 
     const auto add = node(
-        [](In<TS<std::int64_t>> integer, In<TS<float>> fraction, In<TS<std::int64_t>> tick, Out<TS<float>> output) {
+        [](In<TS<bg::i64>> integer, In<TS<float>> fraction, In<TS<bg::i64>> tick, Out<TS<float>> output) {
             output.set(static_cast<float>(*integer) + *fraction + static_cast<float>(*tick));
         });
-    const auto tested = [&](wp<TS<std::int64_t>> tick) {
-        return add(identity[type<TS<std::int64_t>>]().as<TS<std::int64_t>>(),
+    const auto tested = [&](wp<TS<bg::i64>> tick) {
+        return add(identity[type<TS<bg::i64>>]().as<TS<bg::i64>>(),
                    identity[type<TS<float>>]().as<TS<float>>(), tick);
     };
 
-    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 1>{0}).equals<float>({42.5F}));
+    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 1>{0}).equals<float>({42.5F}));
 }
 
 TEST_CASE("multiservice claims separate service scalar values",
           "[feature:service][feature:multiservice][shape:multiple]") {
-    const auto selected = reference_service<auto(std::int64_t)->TS<std::int64_t>>{"selected", {"path"}};
+    const auto selected = reference_service<auto(bg::i64)->TS<bg::i64>>{"selected", {"path"}};
     struct FirstServiceOutputSource {
-        Out<TS<std::int64_t>> output;
+        Out<TS<bg::i64>> output;
 
         void start() const { output.set(10); }
         void evaluate() const noexcept {}
     };
     struct SecondServiceOutputSource {
-        Out<TS<std::int64_t>> output;
+        Out<TS<bg::i64>> output;
 
         void start() const { output.set(20); }
         void evaluate() const noexcept {}
@@ -300,11 +299,11 @@ TEST_CASE("multiservice claims separate service scalar values",
     registration.register_impl(selected, "path"_n = 1);
     registration.register_impl(selected, "path"_n = 2);
 
-    const auto add = node([](In<TS<std::int64_t>> first, In<TS<std::int64_t>> second, In<TS<std::int64_t>> tick,
-                             Out<TS<std::int64_t>> output) { output.set(*first + *second + *tick); });
-    const auto tested = [&](wp<TS<std::int64_t>> tick) {
-        return add(selected(1).as<TS<std::int64_t>>(), selected(2).as<TS<std::int64_t>>(), tick);
+    const auto add = node([](In<TS<bg::i64>> first, In<TS<bg::i64>> second, In<TS<bg::i64>> tick,
+                             Out<TS<bg::i64>> output) { output.set(*first + *second + *tick); });
+    const auto tested = [&](wp<TS<bg::i64>> tick) {
+        return add(selected(1).as<TS<bg::i64>>(), selected(2).as<TS<bg::i64>>(), tick);
     };
 
-    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 1>{1}).equals<std::int64_t>({31}));
+    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 1>{1}).equals<bg::i64>({31}));
 }

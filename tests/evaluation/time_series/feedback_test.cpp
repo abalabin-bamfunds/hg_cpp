@@ -178,40 +178,26 @@ TEST_CASE("separate feedback handles retain separate ticks",
 TEST_CASE("feedback replays TSD item changes",
           "[evaluation][feature:feedback][series:tsd][scalar:i64][transition:addition]"
           "[transition:update][transition:removal]") {
-    const auto update = bg::node([](bg::In<bg::TS<bg::i64>> input,
-                                     bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output) {
-        if (*input == 0) {
-            output.erase(1);
-            return;
-        }
-        output[1].set(*input);
-    });
     const auto sum = bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input,
                                 bg::Out<bg::TS<bg::i64>> output) {
         auto total = bg::i64{};
         input.for_each_value([&](const auto &item) { total += *item; });
         output.set(total);
     });
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) {
+    const auto graph = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) {
         auto loop = bg::feedback<bg::TSD<bg::i64, bg::TS<bg::i64>>>();
         auto output = sum(static_cast<bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>>>(loop));
-        loop = update(input);
+        loop = input;
         return output;
     };
 
-    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 3>{1, 2, 0});
+    const auto actual = bg::testing::test_graph(graph, {{{1, 1}}, {{1, 2}}, {{1, literal::REMOVE}}});
     CHECK(actual.equals({std::nullopt, 1, 2, 0}));
 }
 
 TEST_CASE("feedback samples switched dictionary references before retaining their deltas",
           "[evaluation][feature:feedback][feature:reference][feature:sampling][series:tsd]"
           "[scalar:i64][binding:reference-to-value][transition:addition][transition:removal]") {
-    const auto make_first = bg::node([](bg::In<bg::TS<bool>>, bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output) {
-        output[1].set(10);
-    });
-    const auto make_second = bg::node([](bg::In<bg::TS<bool>>, bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output) {
-        output[2].set(20);
-    });
     const auto select = bg::node([](bg::In<bg::TS<bool>> use_second,
                                     bg::In<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> first,
                                     bg::In<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> second,
@@ -226,14 +212,17 @@ TEST_CASE("feedback samples switched dictionary references before retaining thei
         input.for_each_removed([&](const auto &key) { removed += *key; });
         output.set(added * 100 + removed);
     });
-    const auto graph = [&](bg::wp<bg::TS<bool>> use_second) {
+    const auto graph = [&](bg::wp<bg::TS<bool>> use_second,
+                           bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> first,
+                           bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> second) {
         auto loop = bg::feedback<bg::TSD<bg::i64, bg::TS<bg::i64>>>();
         const auto output = changes(loop);
-        loop = select(use_second, make_first(use_second), make_second(use_second));
+        loop = select(use_second, first, second);
         return output;
     };
 
-    const auto actual = bg::testing::test_graph(graph, std::array<bool, 2>{false, true});
+    const auto actual = bg::testing::test_graph(
+        graph, {false, true}, {{{1, 10}}, {{1, 10}}}, {{{2, 20}}, {{2, 20}}});
     CHECK(actual.equals({std::nullopt, 100, 201}));
 }
 

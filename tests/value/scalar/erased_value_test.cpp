@@ -29,12 +29,12 @@ TEST_CASE("an erased scalar value copies a borrowed value",
 
 TEST_CASE("an erased scalar value stores a pointer-sized borrowed value inline",
           "[value][scalar][erased][feature:scalar-api][scalar:generic][scalar:integer][storage:inline]") {
-    const auto source_value = std::int64_t{42};
-    const auto source = bg::Scalar<std::int64_t>::from(source_value);
+    const auto source_value = bg::i64{42};
+    const auto source = bg::Scalar<bg::i64>::from(source_value);
     auto allocator = bg::allocator{*std::pmr::null_memory_resource()};
     const auto value = bg::ScalarValue<>{source, allocator};
 
-    CHECK(*bg::scalar_cast<std::int64_t>(value) == source_value);
+    CHECK(*bg::scalar_cast<bg::i64>(value) == source_value);
 }
 
 TEST_CASE("an erased scalar value can replace its value",
@@ -46,30 +46,30 @@ TEST_CASE("an erased scalar value can replace its value",
     value = second;
 
     const auto view = value.view();
-    CHECK(*bg::scalar_cast<std::int64_t>(view) == 42);
+    CHECK(*bg::scalar_cast<bg::i64>(view) == 42);
 }
 
 TEST_CASE("an erased scalar value can replace its value from a borrowed view",
           "[value][scalar][erased][feature:scalar-api][scalar:generic]") {
-    const auto source_value = std::int64_t{42};
-    const auto source = bg::Scalar<std::int64_t>::from(source_value);
+    const auto source_value = bg::i64{42};
+    const auto source = bg::Scalar<bg::i64>::from(source_value);
     const auto initial = bg::ScalarValue{std::string_view{"first"}};
     auto value = bg::ScalarValue<>{initial};
 
     value = source;
 
     const auto view = value.view();
-    CHECK(*bg::scalar_cast<std::int64_t>(view) == source_value);
+    CHECK(*bg::scalar_cast<bg::i64>(view) == source_value);
 }
 
 TEST_CASE("scalar handles compare by type and value", "[value][scalar][erased][feature:scalar-api]") {
-    const auto left_value = std::int64_t{42};
-    const auto equal_value = std::int64_t{42};
-    const auto unequal_value = std::int64_t{43};
+    const auto left_value = bg::i64{42};
+    const auto equal_value = bg::i64{42};
+    const auto unequal_value = bg::i64{43};
     const auto double_value = 42.0;
-    const auto left = bg::Scalar<std::int64_t>::from(left_value);
-    const auto equal = bg::Scalar<std::int64_t>::from(equal_value);
-    const auto different_value = bg::Scalar<std::int64_t>::from(unequal_value);
+    const auto left = bg::Scalar<bg::i64>::from(left_value);
+    const auto equal = bg::Scalar<bg::i64>::from(equal_value);
+    const auto different_value = bg::Scalar<bg::i64>::from(unequal_value);
     const auto different_type = bg::Scalar<double>::from(double_value);
 
     CHECK(left == equal);
@@ -82,12 +82,12 @@ TEST_CASE("a constrained scalar variable exposes its required operations",
           "[value][scalar][erased][feature:scalar-api][scalar:generic]") {
     using KEY = bg::ScalarVariable<"KEY", bg::EqualityComparable, bg::Hashable>;
 
-    const auto left_value = std::int64_t{42};
-    const auto equal_value = std::int64_t{42};
-    const auto different_value = std::int64_t{43};
-    const auto left = bg::Scalar<KEY>::from<std::int64_t>(left_value);
-    const auto equal = bg::Scalar<KEY>::from<std::int64_t>(equal_value);
-    const auto different = bg::Scalar<KEY>::from<std::int64_t>(different_value);
+    const auto left_value = bg::i64{42};
+    const auto equal_value = bg::i64{42};
+    const auto different_value = bg::i64{43};
+    const auto left = bg::Scalar<KEY>::from<bg::i64>(left_value);
+    const auto equal = bg::Scalar<KEY>::from<bg::i64>(equal_value);
+    const auto different = bg::Scalar<KEY>::from<bg::i64>(different_value);
 
     CHECK(left == equal);
     CHECK_FALSE(left == different);
@@ -99,9 +99,9 @@ TEST_CASE("scalar variable equality rejects a different semantic type",
           "[value][scalar][erased][feature:scalar-api][scalar:generic]") {
     using VALUE = bg::ScalarVariable<"VALUE", bg::EqualityComparable>;
 
-    const auto integer_value = std::int64_t{42};
+    const auto integer_value = bg::i64{42};
     const auto string_value = bg::ScalarValue<bg::string>{"42"};
-    const auto integer = bg::Scalar<VALUE>::from<std::int64_t>(integer_value);
+    const auto integer = bg::Scalar<VALUE>::from<bg::i64>(integer_value);
     const auto string_view = string_value.view();
     const auto string = bg::Scalar<VALUE>::from(string_view);
 
@@ -110,10 +110,10 @@ TEST_CASE("scalar variable equality rejects a different semantic type",
 }
 
 TEST_CASE("checked scalar casts reject an incompatible value", "[value][scalar][erased][feature:scalar-api]") {
-    const auto value = std::int64_t{42};
-    const auto erased = bg::Scalar<>::from<std::int64_t>(value);
+    const auto value = bg::i64{42};
+    const auto erased = bg::Scalar<>::from<bg::i64>(value);
 
-    CHECK(*bg::scalar_cast<std::int64_t>(erased) == value);
-    CHECK(*bg::unchecked_scalar_cast<std::int64_t>(erased) == value);
+    CHECK(*bg::scalar_cast<bg::i64>(erased) == value);
+    CHECK(*bg::unchecked_scalar_cast<bg::i64>(erased) == value);
     CHECK_THROWS_AS(bg::scalar_cast<double>(erased), std::bad_cast);
 }

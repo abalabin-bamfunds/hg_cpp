@@ -211,7 +211,7 @@ TEST_CASE("type registry concurrent misses publish one owned descriptor", "[type
 }
 
 TEST_CASE("type variable declarations participate in the type registry", "[type_system][feature:type-system]") {
-    using Declaration = bg::TypeVariable<"registered", std::int64_t>;
+    using Declaration = bg::TypeVariable<"registered", bg::i64>;
     const auto &type = Declaration::type();
 
     CHECK(bg::TypeRegistry::instance().contains(type));

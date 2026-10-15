@@ -142,7 +142,7 @@ TEST_CASE("evaluation time storage supports byte-copy initialization",
 
 TEST_CASE("resolved collection storage prefers a registered concrete runtime_type",
           "[scalar][storage][collection][feature:scalar-storage]") {
-    const auto &concrete = bg::cpp_scalar_runtime_type<bg::Dict<std::int64_t, bg::string>>();
+    const auto &concrete = bg::cpp_scalar_runtime_type<bg::Dict<bg::i64, bg::string>>();
 
     const auto &resolved = bg::resolve_scalar_runtime_type(concrete.type(), {});
 

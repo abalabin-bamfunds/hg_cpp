@@ -19,7 +19,7 @@ namespace {
 
 template <typename T> concept has_optional_wrapper = requires(T value) { opt(value); };
 
-static_assert(!has_optional_wrapper<std::int64_t>);
+static_assert(!has_optional_wrapper<i64>);
 
 } // namespace
 

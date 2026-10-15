@@ -29,7 +29,7 @@ TEST_CASE("an evaluation context exposes the outer global state",
 
     bg::run_graph([&] { (void)global_state_source(); }, bg::GraphRunOptions{.global_state = &state});
 
-    state.read([](const auto &values) { CHECK(*bg::scalar_cast<std::int64_t>(values.at("result")) == 42); });
+    state.read([](const auto &values) { CHECK(*bg::scalar_cast<bg::i64>(values.at("result")) == 42); });
 }
 
 struct scratch_pad_source_definition {

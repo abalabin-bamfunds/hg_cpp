@@ -32,7 +32,7 @@ TEST_CASE("global state replaces values and supports heterogeneous lookup",
         values.set(key, second);
 
         CHECK(values.contains("result"));
-        CHECK(*bg::scalar_cast<std::int64_t>(values.at(key)) == 2);
+        CHECK(*bg::scalar_cast<bg::i64>(values.at(key)) == 2);
         CHECK(values.erase("result"));
         CHECK_FALSE(values.contains(key));
     });
@@ -41,15 +41,15 @@ TEST_CASE("global state replaces values and supports heterogeneous lookup",
 TEST_CASE("global state write access mutates collection values",
           "[global_state][scalar][collection][feature:global-state]") {
     auto state = bg::GlobalState{};
-    const auto initial = bg::ScalarValue<bg::List<std::int64_t>>{std::array<std::int64_t, 1>{1}};
+    const auto initial = bg::ScalarValue<bg::List<bg::i64>>{std::array<bg::i64, 1>{1}};
 
     state.write([&](bg::GlobalState::WriteAccess &values) {
         values.set(bg::util::symbol{"items"}, initial);
-        values.mutable_at<bg::List<std::int64_t>>("items").append(2);
+        values.mutable_at<bg::List<bg::i64>>("items").append(2);
     });
 
     state.read([](const auto &values) {
-        const auto items = bg::scalar_cast<bg::List<std::int64_t>>(values.at("items"));
+        const auto items = bg::scalar_cast<bg::List<bg::i64>>(values.at("items"));
         CHECK(items.size() == 2);
         CHECK(items[1].value() == 2);
     });

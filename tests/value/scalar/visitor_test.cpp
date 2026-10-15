@@ -45,10 +45,10 @@ TEST_CASE("one scalar visitor handles multiple built-in scalar types",
 
 TEST_CASE("a scalar visitor identifies each collection type",
           "[value][scalar][visitor][feature:visitor][scalar:list][scalar:set][scalar:dict]") {
-    const auto list = bg::ScalarValue<bg::List<std::int64_t>>{std::vector<std::int64_t>{1}};
-    const auto set = bg::ScalarValue<bg::Set<std::int64_t>>{std::vector<std::int64_t>{2}};
-    const auto dict = bg::ScalarValue<bg::Dict<std::int64_t, std::int64_t>>{
-        std::vector<std::pair<std::int64_t, std::int64_t>>{{3, 4}}};
+    const auto list = bg::ScalarValue<bg::List<bg::i64>>{std::vector<bg::i64>{1}};
+    const auto set = bg::ScalarValue<bg::Set<bg::i64>>{std::vector<bg::i64>{2}};
+    const auto dict = bg::ScalarValue<bg::Dict<bg::i64, bg::i64>>{
+        std::vector<std::pair<bg::i64, bg::i64>>{{3, 4}}};
     auto list_called = false;
     auto set_called = false;
     auto dict_called = false;

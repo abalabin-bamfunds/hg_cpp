@@ -21,18 +21,18 @@ using namespace bg::literals;
 
 TEST_CASE("compiled root graph contains its service binding provider",
           "[feature:service][feature:graph-compilation][shape:nested]") {
-    const auto clock = reference_service<auto()->TS<std::int64_t, TimeSeriesGuarantee::final>>{"clock"};
-    const auto lookup = subscription_service<auto(TS<std::int64_t, TimeSeriesGuarantee::final>)->TS<float>>{
+    const auto clock = reference_service<auto()->TS<i64, TimeSeriesGuarantee::final>>{"clock"};
+    const auto lookup = subscription_service<auto(TS<i64, TimeSeriesGuarantee::final>)->TS<float>>{
         "lookup", {"key"}};
 
-    const auto clock_source = node([](Out<TS<std::int64_t, TimeSeriesGuarantee::final>> output) { output.set(1); });
+    const auto clock_source = node([](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(1); });
     const auto clock_implementation = graph("name"_n = "clock_impl", [&] { return clock_source(); });
-    const auto lookup_response = node([](In<TSS<std::int64_t>> requests,
-                                         Out<TSD<std::int64_t, TS<float>>> output) {
+    const auto lookup_response = node([](In<TSS<i64>> requests,
+                                         Out<TSD<i64, TS<float>>> output) {
         requests.for_each_added([&](const auto &key) { output[key].set(static_cast<float>(*key)); });
     });
     const auto consume = node([](In<TS<float>>) {});
-    const auto lookup_implementation = graph("name"_n = "lookup_impl", [&](wp<TSS<std::int64_t>> requests) {
+    const auto lookup_implementation = graph("name"_n = "lookup_impl", [&](wp<TSS<i64>> requests) {
         return lookup_response(requests);
     });
 
@@ -43,7 +43,7 @@ TEST_CASE("compiled root graph contains its service binding provider",
     auto wiring = GraphWiring{};
     {
         const auto context = WiringContext{wiring};
-        consume(lookup(clock().as<TS<std::int64_t, TimeSeriesGuarantee::final>>()));
+        consume(lookup(clock().as<TS<i64, TimeSeriesGuarantee::final>>()));
         catalogue.build(wiring);
         wiring.finalize();
     }
@@ -56,15 +56,15 @@ TEST_CASE("compiled root graph contains its service binding provider",
 
 TEST_CASE("service request ordering points at the service client after input materialization",
           "[feature:service][feature:graph-compilation]") {
-    const auto audit = service<auto(TS<std::int64_t>)->void>{"audit", {"value"}};
-    const auto receive = node([](In<TSD<service_client_id_t, TS<std::int64_t>>>) {});
+    const auto audit = service<auto(TS<i64>)->void>{"audit", {"value"}};
+    const auto receive = node([](In<TSD<service_client_id_t, TS<i64>>>) {});
     const auto implementation = graph(
         "name"_n = "audit_impl",
-        [&](wp<TSD<service_client_id_t, TS<std::int64_t>>, "value"_n> requests) { receive(requests); });
+        [&](wp<TSD<service_client_id_t, TS<i64>>, "value"_n> requests) { receive(requests); });
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(audit, implementation);
 
-    const auto make_reference = node([](Out<REF<TS<std::int64_t>>>) {});
+    const auto make_reference = node([](Out<REF<TS<i64>>>) {});
     auto wiring = GraphWiring{};
     {
         const auto context = WiringContext{wiring};

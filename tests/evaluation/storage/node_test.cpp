@@ -32,7 +32,7 @@ struct runtime_node_sink {
     void evaluate() const {}
 };
 
-[[nodiscard]] bg::EvaluationTime time(std::int64_t microseconds) {
+[[nodiscard]] bg::EvaluationTime time(bg::i64 microseconds) {
     return bg::MIN_DT + std::chrono::microseconds{microseconds};
 }
 

@@ -24,7 +24,7 @@ struct value_from_scalar {
 TEST_CASE("a scalar value maps signed integers to int64", "[value][scalar][feature:scalar-api][scalar:integer]") {
     const auto value = bg::ScalarValue{42};
 
-    STATIC_CHECK(std::same_as<decltype(value), const bg::ScalarValue<std::int64_t>>);
+    STATIC_CHECK(std::same_as<decltype(value), const bg::ScalarValue<bg::i64>>);
     CHECK(value.view().value() == 42);
 }
 
@@ -32,7 +32,7 @@ TEST_CASE("a scalar value accepts lossless unsigned integer conversion",
           "[value][scalar][feature:scalar-api][scalar:integer]") {
     const auto value = bg::ScalarValue{42U};
 
-    STATIC_CHECK(std::same_as<decltype(value), const bg::ScalarValue<std::int64_t>>);
+    STATIC_CHECK(std::same_as<decltype(value), const bg::ScalarValue<bg::i64>>);
     CHECK(value.view().value() == 42);
 }
 
@@ -41,16 +41,16 @@ TEST_CASE("a pointer-sized scalar value uses inline storage",
     auto allocator = bg::allocator{*std::pmr::null_memory_resource()};
     const auto value = bg::ScalarValue{42, allocator};
 
-    CHECK(&value.view().runtime_type() == &bg::cpp_scalar_runtime_type<std::int64_t>());
+    CHECK(&value.view().runtime_type() == &bg::cpp_scalar_runtime_type<bg::i64>());
     CHECK(value.view().value() == 42);
 }
 
 TEST_CASE("a pointer-sized scalar value copies a borrowed value inline",
           "[value][scalar][feature:scalar-api][scalar:integer][storage:inline]") {
-    const auto source_value = std::int64_t{42};
-    const auto source = bg::Scalar<std::int64_t>::from(source_value);
+    const auto source_value = bg::i64{42};
+    const auto source = bg::Scalar<bg::i64>::from(source_value);
     auto allocator = bg::allocator{*std::pmr::null_memory_resource()};
-    const auto value = bg::ScalarValue<std::int64_t>{source, allocator};
+    const auto value = bg::ScalarValue<bg::i64>{source, allocator};
 
     CHECK(value.view().value() == source_value);
 }

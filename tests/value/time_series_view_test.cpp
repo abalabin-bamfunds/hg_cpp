@@ -76,22 +76,22 @@ TEST_CASE("time series input visitors select every resolved interface",
           "[series:generic][series:value][series:reference][series:fixed-tsl][series:tss][series:tsd][series:tsb]") {
     const auto value = bg::In<bg::TS_T>{bg::initial_time_series_state,
                                         nullptr,
-                                        bg::cpp_time_series_runtime_type<bg::TS<std::int64_t>>()};
+                                        bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>()};
     const auto reference =
         bg::In<bg::TS_T>{bg::initial_time_series_state,
                           nullptr,
-                          bg::cpp_time_series_runtime_type<bg::REF<bg::TS<std::int64_t>>>()};
+                          bg::cpp_time_series_runtime_type<bg::REF<bg::TS<bg::i64>>>()};
     const auto list =
         bg::In<bg::TS_T>{bg::initial_time_series_state,
                           nullptr,
-                          bg::cpp_time_series_runtime_type<bg::TSL<bg::TS<std::int64_t>, 2>>()};
+                          bg::cpp_time_series_runtime_type<bg::TSL<bg::TS<bg::i64>, 2>>()};
     const auto set = bg::In<bg::TS_T>{bg::initial_time_series_state,
                                       nullptr,
-                                      bg::cpp_time_series_runtime_type<bg::TSS<std::int64_t>>()};
+                                      bg::cpp_time_series_runtime_type<bg::TSS<bg::i64>>()};
     const auto dict =
         bg::In<bg::TS_T>{bg::initial_time_series_state,
                           nullptr,
-                          bg::cpp_time_series_runtime_type<bg::TSD<std::int64_t, bg::TS<bg::i64>>>()};
+                          bg::cpp_time_series_runtime_type<bg::TSD<bg::i64, bg::TS<bg::i64>>>()};
     const auto bundle =
         bg::In<bg::TS_T>{bg::initial_time_series_state,
                           nullptr,
@@ -125,7 +125,7 @@ TEST_CASE("a time series visitor returns its result by value",
     const auto updated_state = bg::TimeSeriesState{updated};
     const auto input = bg::In<bg::TS_T>{updated_state,
                                         nullptr,
-                                        bg::cpp_time_series_runtime_type<bg::TS<std::int64_t>>()};
+                                        bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>()};
 
     const auto result =
         input.visit([](const bg::In<bg::TS<bg::SCALAR>> *value) { return value->last_updated(); }, ddv::noop);
@@ -137,11 +137,11 @@ TEST_CASE("a time series visitor returns its result by value",
 TEST_CASE("time series output visitors select every resolved interface",
           "[time_series][visitor][feature:time-series-view][feature:visitor][declaration:generic]"
           "[series:generic][series:value][series:reference][series:fixed-tsl][series:tss][series:tsd][series:tsb]") {
-    auto value_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TS<std::int64_t>>()};
-    auto reference_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::REF<bg::TS<std::int64_t>>>()};
-    auto list_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TSL<bg::TS<std::int64_t>, 2>>()};
-    auto set_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TSS<std::int64_t>>()};
-    auto dict_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TSD<std::int64_t, bg::TS<bg::i64>>>()};
+    auto value_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>()};
+    auto reference_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::REF<bg::TS<bg::i64>>>()};
+    auto list_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TSL<bg::TS<bg::i64>, 2>>()};
+    auto set_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TSS<bg::i64>>()};
+    auto dict_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TSD<bg::i64, bg::TS<bg::i64>>>()};
     auto bundle_state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TSB<VisitorBundle>>()};
     auto value = bg::details::output_factory::make<bg::Out<bg::TS_T>>(value_state);
     auto reference = bg::details::output_factory::make<bg::Out<bg::TS_T>>(reference_state);
@@ -166,11 +166,11 @@ TEST_CASE("a time series output visitor exposes the resolved output interface",
           "[series:generic][series:value]") {
     const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
     auto last_updated = bg::TimeSeriesState{};
-    auto stored = std::int64_t{};
-    auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TS<std::int64_t>>()};
+    auto stored = bg::i64{};
+    auto state = bg::details::OutputState{bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>()};
     state.bind(last_updated, &stored, evaluation_time);
     auto output = bg::details::output_factory::make<bg::Out<bg::TS_T>>(state);
-    const auto value = bg::ScalarValue<std::int64_t>{42};
+    const auto value = bg::ScalarValue<bg::i64>{42};
     auto called = false;
 
     output.visit(

@@ -195,9 +195,9 @@ TEST_CASE("a time series list size variable participates in type resolution",
           "[type_system][tsl][series:fixed-tsl][generic][declaration:generic][feature:type-system]") {
     const auto &parameter =
         bg::details::time_series_type_for<ListVariableScope, 0, bg::TimeSeriesTypeRole::input,
-                                          bg::TSL<bg::TS<std::int64_t>, bg::SIZE>>(
+                                          bg::TSL<bg::TS<bg::i64>, bg::SIZE>>(
             bg::TimeSeriesGuarantee::ordinary);
-    const auto &argument = bg::TSL<bg::TS<std::int64_t>, 3>::type();
+    const auto &argument = bg::TSL<bg::TS<bg::i64>, 3>::type();
     auto type_map = bg::TypeMap{};
 
     REQUIRE(parameter.match(argument, type_map));
@@ -208,9 +208,9 @@ TEST_CASE("an output time series list can capture its size",
           "[type_system][tsl][series:fixed-tsl][generic][declaration:generic][feature:type-system]") {
     const auto &parameter =
         bg::details::time_series_type_for<ListVariableScope, 0, bg::TimeSeriesTypeRole::output,
-                                          bg::TSL<bg::TS<std::int64_t>, bg::SIZE>>(
+                                          bg::TSL<bg::TS<bg::i64>, bg::SIZE>>(
             bg::TimeSeriesGuarantee::ordinary);
-    const auto &argument = bg::TSL<bg::TS<std::int64_t>, 3>::type();
+    const auto &argument = bg::TSL<bg::TS<bg::i64>, 3>::type();
     auto type_map = bg::TypeMap{};
 
     REQUIRE(parameter.match(argument, type_map));
@@ -221,14 +221,14 @@ TEST_CASE("repeated time series list size variables require equal sizes",
           "[type_system][tsl][series:fixed-tsl][generic][declaration:generic][feature:type-system]") {
     const auto &first =
         bg::details::time_series_type_for<ListVariableScope, 0, bg::TimeSeriesTypeRole::input,
-                                          bg::TSL<bg::TS<std::int64_t>, bg::SIZE>>(
+                                          bg::TSL<bg::TS<bg::i64>, bg::SIZE>>(
             bg::TimeSeriesGuarantee::ordinary);
     const auto &second =
         bg::details::time_series_type_for<ListVariableScope, 1, bg::TimeSeriesTypeRole::input,
-                                          bg::TSL<bg::TS<std::int64_t>, bg::SIZE>>(
+                                          bg::TSL<bg::TS<bg::i64>, bg::SIZE>>(
             bg::TimeSeriesGuarantee::ordinary);
-    const auto &size_three = bg::TSL<bg::TS<std::int64_t>, 3>::type();
-    const auto &size_four = bg::TSL<bg::TS<std::int64_t>, 4>::type();
+    const auto &size_three = bg::TSL<bg::TS<bg::i64>, 3>::type();
+    const auto &size_four = bg::TSL<bg::TS<bg::i64>, 4>::type();
     auto type_map = bg::TypeMap{};
 
     REQUIRE(first.match(size_three, type_map));

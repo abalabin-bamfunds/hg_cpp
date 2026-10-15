@@ -14,12 +14,12 @@
 #include <utility>
 
 TEST_CASE("getitem leaves unsupported collection results generic", "[wiring][coverage-exempt]") {
-    STATIC_CHECK(std::same_as<decltype(std::declval<bg::wp<bg::TSS<bg::i64>>>()[std::int64_t{}]), bg::wp<>>);
+    STATIC_CHECK(std::same_as<decltype(std::declval<bg::wp<bg::TSS<bg::i64>>>()[bg::i64{}]), bg::wp<>>);
 }
 
 TEST_CASE("getitem selects a dictionary item through a reference",
           "[wiring][series:tsd][feature:getitem][feature:operator][binding:value-to-reference]") {
-    const auto source = bg::node([](bg::Out<bg::TSD<std::int64_t, bg::TS<float>>>) {});
+    const auto source = bg::node([](bg::Out<bg::TSD<bg::i64, bg::TS<float>>>) {});
     const auto sink = bg::node([](bg::In<bg::TS<float>>) {});
     auto wiring = bg::GraphWiring{};
 
@@ -36,7 +36,7 @@ TEST_CASE("getitem selects a dictionary item through a reference",
 
 TEST_CASE("repeated dictionary item selection reuses its node",
           "[wiring][series:tsd][feature:getitem][feature:operator][shape:fan-out]") {
-    const auto source = bg::node([](bg::Out<bg::TSD<std::int64_t, bg::TS<float>>>) {});
+    const auto source = bg::node([](bg::Out<bg::TSD<bg::i64, bg::TS<float>>>) {});
     auto wiring = bg::GraphWiring{};
 
     const auto context = bg::WiringContext{wiring};
@@ -50,8 +50,8 @@ TEST_CASE("repeated dictionary item selection reuses its node",
 
 TEST_CASE("getitem accepts a time series dictionary key",
           "[wiring][series:tsd][series:value][feature:getitem][feature:operator]") {
-    const auto dictionary_source = bg::node([](bg::Out<bg::TSD<std::int64_t, bg::TS<float>>>) {});
-    const auto key_source = bg::node([](bg::Out<bg::TS<std::int64_t>>) {});
+    const auto dictionary_source = bg::node([](bg::Out<bg::TSD<bg::i64, bg::TS<float>>>) {});
+    const auto key_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
     auto wiring = bg::GraphWiring{};
 
     const auto context = bg::WiringContext{wiring};
@@ -63,7 +63,7 @@ TEST_CASE("getitem accepts a time series dictionary key",
 
 TEST_CASE("getitem preserves a dictionary reference item's target type",
           "[wiring][series:tsd][reference][feature:getitem][feature:operator]") {
-    const auto source = bg::node([](bg::Out<bg::TSD<std::int64_t, bg::REF<bg::TS<float>>>>) {});
+    const auto source = bg::node([](bg::Out<bg::TSD<bg::i64, bg::REF<bg::TS<float>>>>) {});
     auto wiring = bg::GraphWiring{};
 
     const auto context = bg::WiringContext{wiring};
@@ -77,7 +77,7 @@ TEST_CASE("getitem preserves a dictionary reference item's target type",
 TEST_CASE("getitem preserves value item guarantees",
           "[wiring][series:tsd][series:value][reference][feature:getitem][feature:operator][guarantee:final]") {
     const auto source = bg::node(
-        [](bg::Out<bg::TSD<std::int64_t, bg::TS<float, bg::TimeSeriesGuarantee::final>,
+        [](bg::Out<bg::TSD<bg::i64, bg::TS<float, bg::TimeSeriesGuarantee::final>,
                            bg::TimeSeriesGuarantee::final>>) {});
 
     bg::testing::test_wiring([&] {
@@ -89,7 +89,7 @@ TEST_CASE("getitem preserves value item guarantees",
 TEST_CASE("getitem preserves reference item guarantees",
           "[wiring][series:tsd][series:reference][feature:getitem][feature:operator][guarantee:final]") {
     const auto source = bg::node(
-        [](bg::Out<bg::TSD<std::int64_t,
+        [](bg::Out<bg::TSD<bg::i64,
                            bg::REF<bg::TS<float, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::final>,
                            bg::TimeSeriesGuarantee::final>>) {});
 
@@ -109,10 +109,10 @@ TEST_CASE("getitem preserves reference item guarantees",
 TEST_CASE("a time series key limits the getitem reference guarantee",
           "[wiring][series:tsd][series:reference][feature:getitem][feature:operator][guarantee:ordinary]") {
     const auto source = bg::node(
-        [](bg::Out<bg::TSD<std::int64_t,
+        [](bg::Out<bg::TSD<bg::i64,
                            bg::REF<bg::TS<float, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::final>,
                            bg::TimeSeriesGuarantee::final>>) {});
-    const auto key = bg::node([](bg::Out<bg::TS<std::int64_t>>) {});
+    const auto key = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
 
     bg::testing::test_wiring([&] {
         CHECK(&source()[key()].type() ==

@@ -20,13 +20,13 @@
 
 namespace {
 
-bg::EvaluationTime minute(std::int64_t index) {
+bg::EvaluationTime minute(bg::i64 index) {
     return bg::EvaluationTime{std::chrono::minutes{index}};
 }
 
 bg::EvaluationProfileCycle cycle(bg::GraphInstanceId graph_id, bg::EvaluationProfileCycle::Boundary boundary,
                                  bg::EvaluationTime wall_time, std::uint64_t checkpoint,
-                                 std::int64_t steady_nanoseconds = 0) {
+                                 bg::i64 steady_nanoseconds = 0) {
     return {graph_id, boundary, wall_time, wall_time, checkpoint, steady_nanoseconds};
 }
 

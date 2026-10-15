@@ -28,7 +28,7 @@ namespace {
 
 struct AddKey {
     In<TS<i64>> value;
-    In<TS<std::int64_t>> key;
+    In<TS<i64>> key;
     Out<TS<i64>> output;
 
     inline static std::array<std::size_t, 3> evaluations{};
@@ -93,7 +93,7 @@ struct MapSink {
 const auto map_sink = node<MapSink>();
 
 struct ControlledKeys {
-    Out<TSS<std::int64_t>> output;
+    Out<TSS<i64>> output;
 
     inline static bool present{};
 
@@ -109,11 +109,11 @@ struct ControlledKeys {
 
 const auto controlled_keys = node<ControlledKeys>();
 
-EvaluationTime time(std::int64_t microseconds) {
+EvaluationTime time(i64 microseconds) {
     return MIN_DT + std::chrono::microseconds{microseconds};
 }
 
-wp<TSD<std::int64_t, REF<TS<i64>>>> wire_map(wp<TSD<std::int64_t, REF<TS<i64>>>> values) {
+wp<TSD<i64, REF<TS<i64>>>> wire_map(wp<TSD<i64, REF<TS<i64>>>> values) {
     auto inner = std::make_shared<GraphWiring>();
     auto value_node = std::size_t{};
     auto key_node = std::size_t{};
@@ -122,11 +122,11 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_map(wp<TSD<std::int64_t, REF<TS<i64>>>>
         auto context = WiringContext{*inner};
         const auto value = details::wire_nested_input(REF<TS<i64>, TimeSeriesGuarantee::ordinary>::type());
 
-        const auto key = details::wire_nested_constant_input(TS<std::int64_t, TimeSeriesGuarantee::const_>::type());
+        const auto key = details::wire_nested_constant_input(TS<i64, TimeSeriesGuarantee::const_>::type());
 
         const auto result = add_key(
             wp<REF<TS<i64>, TimeSeriesGuarantee::ordinary>>{value},
-            wp<TS<std::int64_t, TimeSeriesGuarantee::const_>>{key});
+            wp<TS<i64, TimeSeriesGuarantee::const_>>{key});
         const auto output = details::wire_nested_output(result, TS<i64>::type());
         const auto concrete_output = inner->complete_pending_wiring(output);
         value_node = inner->output_node_index(value);
@@ -141,7 +141,7 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_map(wp<TSD<std::int64_t, REF<TS<i64>>>>
                         .type = &values.type().dereferenced_type(),
                         .activity = active,
                         .validity = required}},
-        .output = &TSD<std::int64_t, REF<TS<i64>, TimeSeriesGuarantee::deduplicated>>::type(),
+        .output = &TSD<i64, REF<TS<i64>, TimeSeriesGuarantee::deduplicated>>::type(),
     };
     auto node_template = details::make_map_node(
         {.wiring = std::move(inner),
@@ -151,11 +151,11 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_map(wp<TSD<std::int64_t, REF<TS<i64>>>>
         signature);
     auto &wiring = WiringContext::current().wiring();
     const auto &owned = wiring.own_node_template(std::move(node_template));
-    return wp<TSD<std::int64_t, REF<TS<i64>>>>{*owned(values)};
+    return wp<TSD<i64, REF<TS<i64>>>>{*owned(values)};
 }
 
-wp<TSD<std::int64_t, REF<TS<i64>>>> wire_union_map(wp<TSD<std::int64_t, REF<TS<i64>>>> left,
-                                                   wp<TSD<std::int64_t, REF<TS<i64>>>> right) {
+wp<TSD<i64, REF<TS<i64>>>> wire_union_map(wp<TSD<i64, REF<TS<i64>>>> left,
+                                                   wp<TSD<i64, REF<TS<i64>>>> right) {
     auto inner = std::make_shared<GraphWiring>();
     auto left_node = std::size_t{};
     auto right_node = std::size_t{};
@@ -185,7 +185,7 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_union_map(wp<TSD<std::int64_t, REF<TS<i
                         .type = &right.type().dereferenced_type(),
                         .activity = active,
                         .validity = required}},
-        .output = &TSD<std::int64_t, REF<TS<i64>>>::type(),
+        .output = &TSD<i64, REF<TS<i64>>>::type(),
     };
     auto node_template = details::make_map_node(
         {.wiring = std::move(inner),
@@ -195,18 +195,18 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_union_map(wp<TSD<std::int64_t, REF<TS<i
         signature);
     auto &wiring = WiringContext::current().wiring();
     const auto &owned = wiring.own_node_template(std::move(node_template));
-    return wp<TSD<std::int64_t, REF<TS<i64>>>>{*owned(left, right)};
+    return wp<TSD<i64, REF<TS<i64>>>>{*owned(left, right)};
 }
 
 template <typename KeySet>
-wp<TSD<std::int64_t, REF<TS<std::int64_t, TimeSeriesGuarantee::const_>>>> wire_source_map(wp<KeySet> keys) {
+wp<TSD<i64, REF<TS<i64, TimeSeriesGuarantee::const_>>>> wire_source_map(wp<KeySet> keys) {
     auto inner = std::make_shared<GraphWiring>();
     auto key_node = std::size_t{};
     auto output_node = std::size_t{};
     {
         auto context = WiringContext{*inner};
-        const auto key = details::wire_nested_constant_input(TS<std::int64_t, TimeSeriesGuarantee::const_>::type());
-        const auto output = details::wire_nested_output(key, TS<std::int64_t, TimeSeriesGuarantee::const_>::type());
+        const auto key = details::wire_nested_constant_input(TS<i64, TimeSeriesGuarantee::const_>::type());
+        const auto output = details::wire_nested_output(key, TS<i64, TimeSeriesGuarantee::const_>::type());
         const auto concrete_output = inner->complete_pending_wiring(output);
         key_node = inner->output_node_index(key);
         output_node = inner->output_node_index(concrete_output);
@@ -219,22 +219,22 @@ wp<TSD<std::int64_t, REF<TS<std::int64_t, TimeSeriesGuarantee::const_>>>> wire_s
                         .type = &keys.type().dereferenced_type(),
                         .activity = active,
                         .validity = required}},
-        .output = &TSD<std::int64_t, REF<TS<std::int64_t, TimeSeriesGuarantee::const_>>>::type(),
+        .output = &TSD<i64, REF<TS<i64, TimeSeriesGuarantee::const_>>>::type(),
     };
     auto node_template = details::make_map_node(
         {.wiring = std::move(inner), .key_input_node = key_node, .output_node = output_node, .key_set_parameter = 0},
         signature);
     auto &wiring = WiringContext::current().wiring();
     const auto &owned = wiring.own_node_template(std::move(node_template));
-    return wp<TSD<std::int64_t, REF<TS<std::int64_t, TimeSeriesGuarantee::const_>>>>{*owned(keys)};
+    return wp<TSD<i64, REF<TS<i64, TimeSeriesGuarantee::const_>>>>{*owned(keys)};
 }
 
-void wire_source_sink_map(wp<TSS<std::int64_t>> keys) {
+void wire_source_sink_map(wp<TSS<i64>> keys) {
     auto inner = std::make_shared<GraphWiring>();
     auto key_node = std::size_t{};
     {
         auto context = WiringContext{*inner};
-        const auto key = details::wire_nested_constant_input(TS<std::int64_t, TimeSeriesGuarantee::const_>::type());
+        const auto key = details::wire_nested_constant_input(TS<i64, TimeSeriesGuarantee::const_>::type());
         (void)inner->complete_pending_wiring();
         key_node = inner->output_node_index(key);
     }
@@ -256,7 +256,7 @@ void wire_source_sink_map(wp<TSS<std::int64_t>> keys) {
     REQUIRE_FALSE(output);
 }
 
-wp<TSD<std::int64_t, REF<TS<i64>>>> wire_delayed_map(wp<TSD<std::int64_t, REF<TS<i64>>>> values) {
+wp<TSD<i64, REF<TS<i64>>>> wire_delayed_map(wp<TSD<i64, REF<TS<i64>>>> values) {
     auto inner = std::make_shared<GraphWiring>();
     auto value_node = std::size_t{};
     auto output_node = std::size_t{};
@@ -277,7 +277,7 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_delayed_map(wp<TSD<std::int64_t, REF<TS
                         .type = &values.type().dereferenced_type(),
                         .activity = active,
                         .validity = required}},
-        .output = &TSD<std::int64_t, REF<TS<i64>>>::type(),
+        .output = &TSD<i64, REF<TS<i64>>>::type(),
     };
     auto node_template = details::make_map_node(
         {.wiring = std::move(inner),
@@ -286,10 +286,10 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_delayed_map(wp<TSD<std::int64_t, REF<TS
         signature);
     auto &wiring = WiringContext::current().wiring();
     const auto &owned = wiring.own_node_template(std::move(node_template));
-    return wp<TSD<std::int64_t, REF<TS<i64>>>>{*owned(values)};
+    return wp<TSD<i64, REF<TS<i64>>>>{*owned(values)};
 }
 
-wp<TSD<std::int64_t, REF<TS<i64>>>> wire_variable_delayed_map(wp<TSD<std::int64_t, REF<TS<i64>>>> values) {
+wp<TSD<i64, REF<TS<i64>>>> wire_variable_delayed_map(wp<TSD<i64, REF<TS<i64>>>> values) {
     auto inner = std::make_shared<GraphWiring>();
     auto value_node = std::size_t{};
     auto output_node = std::size_t{};
@@ -310,7 +310,7 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_variable_delayed_map(wp<TSD<std::int64_
                         .type = &values.type().dereferenced_type(),
                         .activity = active,
                         .validity = required}},
-        .output = &TSD<std::int64_t, REF<TS<i64>>>::type(),
+        .output = &TSD<i64, REF<TS<i64>>>::type(),
     };
     auto node_template = details::make_map_node(
         {.wiring = std::move(inner),
@@ -319,10 +319,10 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_variable_delayed_map(wp<TSD<std::int64_
         signature);
     auto &wiring = WiringContext::current().wiring();
     const auto &owned = wiring.own_node_template(std::move(node_template));
-    return wp<TSD<std::int64_t, REF<TS<i64>>>>{*owned(values)};
+    return wp<TSD<i64, REF<TS<i64>>>>{*owned(values)};
 }
 
-void wire_sink_map(wp<TSD<std::int64_t, REF<TS<i64>>>> values) {
+void wire_sink_map(wp<TSD<i64, REF<TS<i64>>>> values) {
     auto inner = std::make_shared<GraphWiring>();
     auto value_node = std::size_t{};
     {
@@ -352,7 +352,7 @@ void wire_sink_map(wp<TSD<std::int64_t, REF<TS<i64>>>> values) {
     REQUIRE_FALSE(output);
 }
 
-wp<TSD<std::int64_t, REF<TS<i64>>>> wire_pass_through_map(wp<TSD<std::int64_t, REF<TS<i64>>>> values,
+wp<TSD<i64, REF<TS<i64>>>> wire_pass_through_map(wp<TSD<i64, REF<TS<i64>>>> values,
                                                           wp<REF<TS<i64>>> factor) {
     auto inner = std::make_shared<GraphWiring>();
     auto value_node = std::size_t{};
@@ -380,7 +380,7 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_pass_through_map(wp<TSD<std::int64_t, R
               .activity = active,
               .validity = required},
              {.name = util::symbol{"factor"}, .type = &factor.type(), .activity = active, .validity = required}},
-        .output = &TSD<std::int64_t, REF<TS<i64>>>::type(),
+        .output = &TSD<i64, REF<TS<i64>>>::type(),
     };
     auto node_template = details::make_map_node(
         {.wiring = std::move(inner),
@@ -390,7 +390,7 @@ wp<TSD<std::int64_t, REF<TS<i64>>>> wire_pass_through_map(wp<TSD<std::int64_t, R
         signature);
     auto &wiring = WiringContext::current().wiring();
     const auto &owned = wiring.own_node_template(std::move(node_template));
-    return wp<TSD<std::int64_t, REF<TS<i64>>>>{*owned(values, factor)};
+    return wp<TSD<i64, REF<TS<i64>>>>{*owned(values, factor)};
 }
 
 } // namespace
@@ -400,7 +400,7 @@ TEST_CASE("map starts and stops one inner graph repeatedly",
           "[transition:removal][transition:resurrection]") {
     const auto target = node([](In<TS<i64>> command, Out<TS<i64>> output) { output.set(std::abs(*command)); });
     const auto make_values =
-        node([](In<TS<i64>> command, In<REF<TS<i64>>> value, Out<TSD<std::int64_t, REF<TS<i64>>>> output) {
+        node([](In<TS<i64>> command, In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) {
             if (*command < 0) {
                 output.erase(1);
             } else {
@@ -409,7 +409,7 @@ TEST_CASE("map starts and stops one inner graph repeatedly",
         });
     const auto graph = [&](wp<TS<i64>> command) {
         const auto values = make_values(command, target(command));
-        return wire_map(values)[std::int64_t{1}];
+        return wire_map(values)[i64{1}];
     };
 
     const auto actual = testing::test_graph(graph, std::array{1, 2, -1, 3, -1, 4});
@@ -420,27 +420,18 @@ TEST_CASE("map starts and stops one inner graph repeatedly",
 TEST_CASE("mapped target ticks evaluate only the selected inner graph",
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[transition:update]") {
-    const auto targets = node([](In<TS<i64>> command, Out<TSD<std::int64_t, TS<i64>>> output) {
-        if (*command == 0) {
-            output[1].set(10);
-            output[2].set(20);
-        } else {
-            output[*command].set(*command * 10);
-        }
-    });
     const auto rekey =
-        node([](In<REF<TS<i64>>> first, In<REF<TS<i64>>> second, Out<TSD<std::int64_t, REF<TS<i64>>>> output) {
+        node([](In<REF<TS<i64>>> first, In<REF<TS<i64>>> second, Out<TSD<i64, REF<TS<i64>>>> output) {
             output[1].copy(first);
             output[2].copy(second);
         });
-    const auto graph = [&](wp<TS<i64>> command) {
-        const auto values = targets(command);
-        const auto mapped = wire_map(rekey(values[std::int64_t{1}], values[std::int64_t{2}]));
-        return mapped[std::int64_t{2}];
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> values) {
+        const auto mapped = wire_map(rekey(values[i64{1}], values[i64{2}]));
+        return mapped[i64{2}];
     };
     AddKey::evaluations.fill(0);
 
-    const auto actual = testing::test_graph(graph, std::array{0, 2});
+    const auto actual = testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{2, 20}}});
 
     CHECK(actual.equals<bg::i64>({22, 22}));
     CHECK(AddKey::evaluations == std::array<std::size_t, 3>{0, 1, 2});
@@ -448,8 +439,8 @@ TEST_CASE("mapped target ticks evaluate only the selected inner graph",
 
 TEST_CASE("map evaluates more inner graphs than the ready bitmap inline capacity",
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]") {
-    const auto make_values = node([](In<REF<TS<i64>>> value, Out<TSD<std::int64_t, REF<TS<i64>>>> output) {
-        for (auto key = std::int64_t{}; key < 100; ++key) {
+    const auto make_values = node([](In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) {
+        for (auto key = i64{}; key < 100; ++key) {
             output[key].copy(value);
         }
     });
@@ -504,7 +495,7 @@ TEST_CASE("map uses the union of mapped dictionary key sets and binds missing va
           "[transition:addition][transition:removal]") {
     const auto target = node([](In<TS<i64>> value, Out<TS<i64>> output) { output.set(std::abs(*value)); });
     const auto make_values =
-        node([](In<TS<i64>> command, In<REF<TS<i64>>> value, Out<TSD<std::int64_t, REF<TS<i64>>>> output) {
+        node([](In<TS<i64>> command, In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) {
             if (*command < 0) {
                 output.clear();
             } else {
@@ -514,7 +505,7 @@ TEST_CASE("map uses the union of mapped dictionary key sets and binds missing va
     const auto graph = [&](wp<TS<i64>> left, wp<TS<i64>> right) {
         const auto left_values = make_values(left, target(left));
         const auto right_values = make_values(right, target(right));
-        return wire_union_map(left_values, right_values)[std::int64_t{1}];
+        return wire_union_map(left_values, right_values)[i64{1}];
     };
 
     const auto actual = testing::test_graph(graph, std::array{1, -1, -1, 4}, std::array{-1, 2, -1, 3});
@@ -525,35 +516,21 @@ TEST_CASE("map uses the union of mapped dictionary key sets and binds missing va
 TEST_CASE("map uses a TSS key set for a source graph",
           "[feature:map][feature:nested-graph][feature:reference][series:tss][series:tsd][shape:nested]"
           "[transition:addition][transition:removal]") {
-    const auto make_keys = node([](In<TS<bool>> present, Out<TSS<std::int64_t>> output) {
-        if (*present) {
-            output.insert(1);
-        } else {
-            output.erase(1);
-        }
-    });
-    const auto graph = [&](wp<TS<bool>> present) { return wire_source_map(make_keys(present))[std::int64_t{1}]; };
+    const auto graph = [&](wp<TSS<i64>> keys) { return wire_source_map(keys)[i64{1}]; };
 
-    const auto actual = testing::test_graph(graph, std::array{true, false, true});
+    const auto actual = testing::test_graph(graph, {{1}, {literal::REMOVED(1)}, {1}});
 
-    CHECK(actual.equals<std::int64_t>({1, std::nullopt, 1}));
+    CHECK(actual.equals<i64>({1, std::nullopt, 1}));
 }
 
 TEST_CASE("map uses a selected TSD key set for a source graph",
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[transition:addition][transition:removal]") {
-    const auto make_keys = node([](In<TS<bool>> present, Out<TSD<std::int64_t, TS<i64>>> output) {
-        if (*present) {
-            output[1].set(0);
-        } else {
-            output.erase(1);
-        }
-    });
-    const auto graph = [&](wp<TS<bool>> present) { return wire_source_map(make_keys(present))[std::int64_t{1}]; };
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> keys) { return wire_source_map(keys)[i64{1}]; };
 
-    const auto actual = testing::test_graph(graph, std::array{true, false, true});
+    const auto actual = testing::test_graph(graph, {{{1, 0}}, {{1, literal::REMOVE}}, {{1, 0}}});
 
-    CHECK(actual.equals<std::int64_t>({1, std::nullopt, 1}));
+    CHECK(actual.equals<i64>({1, std::nullopt, 1}));
 }
 
 TEST_CASE("a sink map evaluates one inner graph for each live key",
@@ -561,7 +538,7 @@ TEST_CASE("a sink map evaluates one inner graph for each live key",
           "[transition:addition][transition:update][transition:removal]") {
     const auto target = node([](In<TS<i64>> command, Out<TS<i64>> output) { output.set(std::abs(*command)); });
     const auto make_values =
-        node([](In<TS<i64>> command, In<REF<TS<i64>>> value, Out<TSD<std::int64_t, REF<TS<i64>>>> output) {
+        node([](In<TS<i64>> command, In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) {
             if (*command < 0) {
                 output.erase(1);
             } else {
@@ -588,11 +565,11 @@ TEST_CASE("a pass-through reference replacement updates each running map inner g
     const auto choose = node([](In<TS<bool>> condition, In<REF<TS<i64>>> left, In<REF<TS<i64>>> right,
                                 Out<REF<TS<i64>>> output) { output.copy(*condition ? left : right); });
     const auto make_values =
-        node([](In<REF<TS<i64>>> value, Out<TSD<std::int64_t, REF<TS<i64>>>> output) { output[1].copy(value); });
+        node([](In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) { output[1].copy(value); });
     const auto graph = [&](wp<TS<i64>> value, wp<TS<bool>> use_left) {
         const auto mapped = make_values(target(value, 1));
         const auto factor = choose(use_left, target(value, 10), target(value, 100));
-        return wire_pass_through_map(mapped, factor)[std::int64_t{1}].as<TS<i64>>();
+        return wire_pass_through_map(mapped, factor)[i64{1}].as<TS<i64>>();
     };
 
     const auto actual = testing::test_graph(graph, std::array{1, 2, 3}, std::array{true, false, true});
@@ -605,9 +582,9 @@ TEST_CASE("a map inner graph reports timed work through the map owner",
           "[feature:timed-scheduling]") {
     const auto target = node([](In<TS<i64>> value, Out<TS<i64>> output) { output.set(*value); });
     const auto make_values =
-        node([](In<REF<TS<i64>>> value, Out<TSD<std::int64_t, REF<TS<i64>>>> output) { output[1].copy(value); });
+        node([](In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) { output[1].copy(value); });
     const auto graph = [&](wp<TS<i64>> value) {
-        return wire_delayed_map(make_values(target(value)))[std::int64_t{1}].as<TS<i64>>();
+        return wire_delayed_map(make_values(target(value)))[i64{1}].as<TS<i64>>();
     };
 
     const auto actual = testing::test_graph(graph, std::array{5});
@@ -622,23 +599,18 @@ TEST_CASE("a map inner graph reports timed work through the map owner",
 TEST_CASE("map schedules the next scheduled time after one inner graph becomes due",
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[feature:timed-scheduling]") {
-    const auto targets = node([](In<TS<i64>>, Out<TSD<std::int64_t, TS<i64>>> output) {
-        output[1].set(2);
-        output[2].set(4);
-    });
     const auto rekey =
-        node([](In<REF<TS<i64>>> first, In<REF<TS<i64>>> second, Out<TSD<std::int64_t, REF<TS<i64>>>> output) {
+        node([](In<REF<TS<i64>>> first, In<REF<TS<i64>>> second, Out<TSD<i64, REF<TS<i64>>>> output) {
             output[1].copy(first);
             output[2].copy(second);
         });
-    const auto graph = [&](wp<TS<i64>> command) {
-        const auto values = targets(command);
-        const auto mapped = wire_variable_delayed_map(rekey(values[std::int64_t{1}], values[std::int64_t{2}]));
-        return mapped[std::int64_t{2}].as<TS<i64>>();
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> values) {
+        const auto mapped = wire_variable_delayed_map(rekey(values[i64{1}], values[i64{2}]));
+        return mapped[i64{2}].as<TS<i64>>();
     };
     VariableDelay::evaluations.clear();
 
-    const auto actual = testing::test_graph(graph, std::array{0});
+    const auto actual = testing::test_graph(graph, {{{1, 2}, {2, 4}}});
 
     CHECK(VariableDelay::evaluations == std::vector{2, 4});
     REQUIRE(actual[actual.size() - 1]);
@@ -649,19 +621,19 @@ TEST_CASE("a map consumes and produces TSD references across two nested graph bo
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:doubly-nested]"
           "[binding:reference-to-reference][transition:stop][transition:restart]") {
     const auto make_values =
-        node([](In<REF<TS<i64>>> value, Out<TSD<std::int64_t, REF<TS<i64>>>> output) { output[1].copy(value); });
+        node([](In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) { output[1].copy(value); });
     const auto build_dictionary =
-        graph("name"_n = "build_dictionary", [&](wp<TS<i64>> value) -> wp<TSD<std::int64_t, REF<TS<i64>>>> {
+        graph("name"_n = "build_dictionary", [&](wp<TS<i64>> value) -> wp<TSD<i64, REF<TS<i64>>>> {
             return make_values(value.as<REF<TS<i64>>>());
         });
     const auto apply_map = graph("name"_n = "apply_map",
-                                 [](wp<TSD<std::int64_t, REF<TS<i64>>>> values) -> wp<TSD<std::int64_t, REF<TS<i64>>>> {
+                                 [](wp<TSD<i64, REF<TS<i64>>>> values) -> wp<TSD<i64, REF<TS<i64>>>> {
                                      return wire_map(values);
                                  });
     const auto outer = [&](wp<TS<i64>> value, wp<TS<bool>> run) {
         const auto first = nested(build_dictionary, run, value);
         const auto second = nested(apply_map, run, first);
-        return second[std::int64_t{1}];
+        return second[i64{1}];
     };
 
     const auto actual =

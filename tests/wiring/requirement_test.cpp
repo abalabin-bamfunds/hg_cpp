@@ -55,7 +55,7 @@ struct flat_positional_requirement_definition {
         CHECK(arguments.argument_name(1).text() == "1");
         CHECK_FALSE(arguments.present(0));
         CHECK(arguments.present(1));
-        CHECK(bg::scalar_cast<std::int64_t>(*arguments.scalar(1)).value() == 7);
+        CHECK(bg::scalar_cast<bg::i64>(*arguments.scalar(1)).value() == 7);
 
         return bg::accept;
     }
@@ -119,9 +119,9 @@ TEST_CASE("requirements find direct and forwarded named captures",
             CHECK(arguments.argument_index("first") == 0);
             CHECK(arguments.argument_index("second") == 1);
             CHECK(arguments.argument_name(0).text() == "first");
-            CHECK(&arguments.original_type("first") == &bg::cpp_scalar_type<std::int64_t>());
-            CHECK(&arguments.resolved_type("first") == &bg::cpp_scalar_type<std::int64_t>());
-            CHECK(bg::scalar_cast<std::int64_t>(*arguments.scalar("second")).value() == 2);
+            CHECK(&arguments.original_type("first") == &bg::cpp_scalar_type<bg::i64>());
+            CHECK(&arguments.resolved_type("first") == &bg::cpp_scalar_type<bg::i64>());
+            CHECK(bg::scalar_cast<bg::i64>(*arguments.scalar("second")).value() == 2);
 
             return bg::accept;
         }));
@@ -154,7 +154,7 @@ struct zero_mode_copy_definition {
 
     static bg::RequirementResult require(const bg::WiringArguments &arguments) {
         ++requirement_calls;
-        return bg::scalar_cast<std::int64_t>(*arguments.scalar("mode")).value() == 0 ? bg::accept : bg::reject();
+        return bg::scalar_cast<bg::i64>(*arguments.scalar("mode")).value() == 0 ? bg::accept : bg::reject();
     }
 
     void evaluate() const { output.set(*input); }
@@ -169,7 +169,7 @@ struct nonzero_mode_copy_definition {
 
     static bg::RequirementResult require(const bg::WiringArguments &arguments) {
         ++requirement_calls;
-        return bg::scalar_cast<std::int64_t>(*arguments.scalar("mode")).value() != 0 ? bg::accept : bg::reject();
+        return bg::scalar_cast<bg::i64>(*arguments.scalar("mode")).value() != 0 ? bg::accept : bg::reject();
     }
 
     void evaluate() const { output.set(-*input); }
@@ -213,14 +213,14 @@ TEST_CASE("callable requirements control overload applicability",
         bg::require =
             [&](const bg::WiringArguments &arguments) {
                 ++zero_requirement_calls;
-                return bg::scalar_cast<std::int64_t>(*arguments.scalar(1)).value() == 0;
+                return bg::scalar_cast<bg::i64>(*arguments.scalar(1)).value() == 0;
             }));
     operation.overload(bg::node(
         bg::eval = [](bg::In<bg::TS<float>> input, int, bg::Out<bg::TS<float>> output) { output.set(-*input); },
         bg::require =
             [&](const bg::WiringArguments &arguments) {
                 ++nonzero_requirement_calls;
-                return bg::scalar_cast<std::int64_t>(*arguments.scalar(1)).value() != 0
+                return bg::scalar_cast<bg::i64>(*arguments.scalar(1)).value() != 0
                            ? bg::accept
                            : bg::reject("mode must be nonzero");
             }));
@@ -275,7 +275,7 @@ TEST_CASE("an unread scalar does not participate in the operator cache key",
         bg::require =
             [&](const bg::WiringArguments &arguments) {
                 ++requirement_calls;
-                return bg::scalar_cast<std::int64_t>(*arguments.scalar(2)).value() == 0;
+                return bg::scalar_cast<bg::i64>(*arguments.scalar(2)).value() == 0;
             }));
     const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
 

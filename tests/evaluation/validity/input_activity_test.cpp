@@ -50,7 +50,7 @@ struct float_sink_definition {
     inline static float last_value{};
 };
 
-[[nodiscard]] bg::EvaluationTime time(std::int64_t microseconds) {
+[[nodiscard]] bg::EvaluationTime time(bg::i64 microseconds) {
     return bg::MIN_DT + std::chrono::microseconds{microseconds};
 }
 
@@ -621,16 +621,15 @@ TEST_CASE("a dynamic optional input applies its current activity to validity cha
 TEST_CASE("a dynamic input connected to a collection item controls its scheduling",
           "[feature:input-activity][feature:collection-change][series:fixed-tsl][definition:function]"
           "[activity:active][shape:chain]") {
-    const auto make_list = bg::node(
-        [](bg::In<bg::TS<bg::i64>> input, bg::Out<bg::TSL<bg::TS<bg::i64>, 1>> output) { output[0].set(*input); });
     const auto gate =
         bg::node([](bg::In<bg::TS<bg::i64>, bg::dynamic_activity> input, bg::Out<bg::TS<bg::i64>> output) {
             output.set(*input);
             input.make_passive();
         });
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return gate(make_list(input)[0]); };
+    const auto graph = [&](bg::wp<bg::TSL<bg::TS<bg::i64>, 1>> input) { return gate(input[0]); };
 
-    CHECK(bg::testing::test_graph(graph, {1, 2}).equals<bg::i64>({1, std::nullopt}));
+    CHECK(bg::testing::test_graph(graph, {{{0, 1}}, {{0, 2}}})
+              .equals<bg::i64>({1, std::nullopt}));
 }
 
 struct runtime_local_activity_definition {

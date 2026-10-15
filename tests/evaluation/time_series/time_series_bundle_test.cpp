@@ -51,15 +51,6 @@ template <template <typename, auto...> typename Field> struct Equity : bg::schem
     Field<bg::i64> lot_size;
 };
 
-struct bundle_source_definition {
-    bg::Out<bg::TSB<DerivedBundle>> output;
-
-    void start() const {
-        output->count.set(2);
-        output->value.set(3.5F);
-    }
-};
-
 struct bundle_sink_definition {
     bg::In<bg::TSB<DerivedBundle>> input;
 
@@ -86,22 +77,17 @@ struct bundle_sum_definition {
     void evaluate() const { output.set(static_cast<float>(*input->count) + *input->value); }
 };
 
-struct bundle_list_source_definition {
-    bg::Out<bg::TSL<bg::TSB<DerivedBundle>, 2>> output;
-
-    void start() const { output[1]->value.set(4.5F); }
-};
-
 } // namespace
 
 TEST_CASE("a typed bundle publishes inherited and direct fields",
           "[evaluation][tsb][series:tsb][feature:collection-change][transition:update][scalar:integer]"
           "[scalar:floating-point][representation:native][declaration:concrete][binding:direct]"
           "[schema:named]") {
-    const auto source = bg::node<bundle_source_definition>();
+    using namespace bg::literals;
     const auto sink = bg::node<bundle_sink_definition>();
-
-    bg::run_graph([&] { sink(source()); });
+    const auto graph = bg::graph("name"_n = "bundle_input",
+                                 [&](bg::wp<bg::TSB<DerivedBundle>> input) { sink(input); });
+    (void)bg::testing::test_graph(graph, {{{"count", 2}, {"value", 3.5F}}});
 
     CHECK(bundle_sink_definition::values == std::array{2.0F, 3.5F});
     CHECK(bundle_sink_definition::updated == std::array{true, true});
@@ -416,13 +402,12 @@ TEST_CASE("fixed time series lists can contain runtime-sized time series",
           "[evaluation][tsl][series:fixed-tsl][tsb][series:tsb][feature:collection-change]"
           "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
           "[binding:direct][schema:named]") {
-    const auto source = bg::node<bundle_list_source_definition>();
     const auto value = bg::node([](bg::In<bg::TSL<bg::TSB<DerivedBundle>, 2>> input, bg::Out<bg::TS<float>> output) {
         output.set(*input[1]->value);
     });
-    const auto graph = [&] { return value(source()); };
+    const auto graph = [&](bg::wp<bg::TSL<bg::TSB<DerivedBundle>, 2>> input) { return value(input); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {{{1, {{"value", 4.5F}}}}});
 
     CHECK(actual.equals({4.5F}));
 }
@@ -430,12 +415,11 @@ TEST_CASE("fixed time series lists can contain runtime-sized time series",
 TEST_CASE("node code selects a named bundle field",
           "[evaluation][tsb][feature:getitem][series:tsb][schema:named][scalar:integer][scalar:floating-point]"
           "[representation:native][declaration:concrete][binding:direct]") {
-    const auto source = bg::node<bundle_source_definition>();
     const auto count =
         bg::node([](bg::In<bg::TSB<DerivedBundle>> input, bg::Out<bg::TS<bg::i64>> output) { output.set(*input->count); });
-    const auto graph = [&] { return count(source()); };
+    const auto graph = [&](bg::wp<bg::TSB<DerivedBundle>> input) { return count(input); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {{{"count", 2}, {"value", 3.5F}}});
 
     CHECK(actual.equals({2}));
 }
@@ -444,11 +428,10 @@ TEST_CASE("a base bundle input accepts a derived bundle",
           "[evaluation][tsb][series:tsb][inheritance][feature:collection-change][scalar:integer]"
           "[scalar:floating-point][representation:native][declaration:concrete][binding:covariant]"
           "[schema:named]") {
-    const auto source = bg::node<bundle_source_definition>();
     const auto value = bg::node<base_bundle_value_definition>();
-    const auto graph = [&] { return value(source()); };
+    const auto graph = [&](bg::wp<bg::TSB<DerivedBundle>> input) { return value(input); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {{{"count", 2}, {"value", 3.5F}}});
 
     CHECK(actual.equals({2}));
 }
@@ -456,10 +439,9 @@ TEST_CASE("a base bundle input accepts a derived bundle",
 TEST_CASE("a typed TSB wiring point selects an inherited field",
           "[evaluation][series:tsb][feature:getattr][schema:named][representation:native]"
           "[transition:update]") {
-    const auto source = bg::node<bundle_source_definition>();
-    const auto graph = [&] { return source()->count; };
+    const auto graph = [](bg::wp<bg::TSB<DerivedBundle>> input) { return input->count; };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {{{"count", 2}, {"value", 3.5F}}});
 
     CHECK(actual.equals({2}));
 }
@@ -625,26 +607,16 @@ template <template <typename, auto...> typename Field> struct RedefinedBundle : 
     Field<bg::TS<float>> value;
 };
 
-struct redefined_bundle_source_definition {
-    bg::Out<bg::TSB<RedefinedBundle>> output;
-
-    void start() const {
-        output->count.set(4);
-        output->value.set(2.5F);
-    }
-};
-
 } // namespace
 
 TEST_CASE("a redefined bundle field shares its inherited storage",
           "[evaluation][tsb][series:tsb][inheritance][feature:collection-change][schema:named]"
           "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
           "[binding:direct]") {
-    const auto source = bg::node<redefined_bundle_source_definition>();
     const auto value = bg::node<base_bundle_value_definition>();
-    const auto graph = [&] { return value(source()); };
+    const auto graph = [&](bg::wp<bg::TSB<RedefinedBundle>> input) { return value(input); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {{{"count", 4}, {"value", 2.5F}}});
 
     CHECK(actual.equals({4}));
 }
@@ -654,15 +626,6 @@ namespace {
 template <template <typename, auto...> typename Field> struct NestedBundle {
     Field<bg::TSB<BaseBundle>> nested;
     Field<bg::TS<float>> value;
-};
-
-struct nested_bundle_source_definition {
-    bg::Out<bg::TSB<NestedBundle>> output;
-
-    void start() const {
-        output->nested->count.set(3);
-        output->value.set(1.5F);
-    }
 };
 
 struct nested_bundle_sum_definition {
@@ -678,30 +641,15 @@ TEST_CASE("a bundle field can contain another bundle",
           "[evaluation][tsb][series:tsb][nested][feature:collection-change][schema:named]"
           "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
           "[binding:direct]") {
-    const auto source = bg::node<nested_bundle_source_definition>();
     const auto sum = bg::node<nested_bundle_sum_definition>();
-    const auto graph = [&] { return sum(source()); };
+    const auto graph = [&](bg::wp<bg::TSB<NestedBundle>> input) { return sum(input); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {{{"nested", {{"count", 3}}}, {"value", 1.5F}}});
 
     CHECK(actual.equals({4.5F}));
 }
 
 namespace {
-
-struct invalidating_bundle_source_definition {
-    static constexpr bool uses_timed_scheduling = true;
-
-    bg::Out<bg::TSB<DerivedBundle>> output;
-
-    void start(bg::EvaluationContext *context) const {
-        output->count.set(2);
-        output->value.set(3.5F);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate() const { output.invalidate(); }
-};
 
 struct optional_bundle_sink_definition {
     bg::In<bg::TSB<DerivedBundle>, bg::optional> input;
@@ -729,18 +677,18 @@ TEST_CASE("invalidating a bundle invalidates every field",
           "[evaluation][tsb][series:tsb][validity][feature:collection-change][transition:invalidation]"
           "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
           "[binding:direct][schema:named]") {
-    const auto source = bg::node<invalidating_bundle_source_definition>();
+    using namespace bg::literals;
     const auto sink = bg::node<optional_bundle_sink_definition>();
     const auto transition_sink = bg::node<bundle_transition_sink_definition>();
     optional_bundle_sink_definition::validity.clear();
     optional_bundle_sink_definition::modified.clear();
     bundle_transition_sink_definition::transitions.clear();
 
-    bg::run_graph([&] {
-        const auto bundle = source();
+    const auto graph = bg::graph("name"_n = "invalidating_bundle_input", [&](bg::wp<bg::TSB<DerivedBundle>> bundle) {
         sink(bundle);
         transition_sink(bundle);
     });
+    (void)bg::testing::test_graph(graph, {{{"count", 2}, {"value", 3.5F}}, literal::INVALID});
 
     CHECK(optional_bundle_sink_definition::validity ==
           std::vector<std::array<bool, 3>>{{true, true, true}, {false, false, false}});

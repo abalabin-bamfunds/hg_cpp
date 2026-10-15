@@ -2,11 +2,11 @@
 
 TEST_CASE("service publishes each valid client input and selects its response",
           "[feature:service][series:tsd][shape:single-node]") {
-    const auto service = bg::service<auto(TS<std::int64_t>)->TS<std::int64_t>>{"double", {"value"}};
+    const auto service = bg::service<auto(TS<bg::i64>)->TS<bg::i64>>{"double", {"value"}};
     auto client_ids = std::vector<service_client_id_t>{};
 
-    const auto implement = node([&](In<TSD<service_client_id_t, TS<std::int64_t>>> requests,
-                                    Out<TSD<service_client_id_t, TS<std::int64_t>>> responses) {
+    const auto implement = node([&](In<TSD<service_client_id_t, TS<bg::i64>>> requests,
+                                    Out<TSD<service_client_id_t, TS<bg::i64>>> responses) {
         requests.for_each_removed([&](const auto &client_id) { responses.erase(client_id); });
         requests.for_each_key_value([&](const auto &client_id, const auto &value) {
             client_ids.push_back(*client_id);
@@ -14,27 +14,27 @@ TEST_CASE("service publishes each valid client input and selects its response",
         });
     });
     const auto implementation =
-        graph("name"_n = "double_impl", [&](wp<TSD<service_client_id_t, TS<std::int64_t>>, "value"_n> values) {
+        graph("name"_n = "double_impl", [&](wp<TSD<service_client_id_t, TS<bg::i64>>, "value"_n> values) {
             return implement(values);
         });
 
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
 
-    const auto invalidate_zero = node([](In<TS<std::int64_t>> input, Out<TS<std::int64_t>> output) {
+    const auto invalidate_zero = node([](In<TS<bg::i64>> input, Out<TS<bg::i64>> output) {
         if (*input == 0) {
             output.invalidate();
         } else {
             output.set(*input);
         }
     });
-    const auto tested = [&](wp<TS<std::int64_t>> input) {
-        return service(invalidate_zero(input)).as<TS<std::int64_t>>();
+    const auto tested = [&](wp<TS<bg::i64>> input) {
+        return service(invalidate_zero(input)).as<TS<bg::i64>>();
     };
 
     const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, {2, 3, 0, 4, 0});
 
-    CHECK(actual.equals<std::int64_t>({4, 6, std::nullopt, 8, std::nullopt}));
+    CHECK(actual.equals<bg::i64>({4, 6, std::nullopt, 8, std::nullopt}));
     REQUIRE(client_ids.size() == 3);
     CHECK(client_ids[0] == client_ids[1]);
     CHECK(client_ids[1] == client_ids[2]);
@@ -42,11 +42,11 @@ TEST_CASE("service publishes each valid client input and selects its response",
 
 TEST_CASE("service keeps a client active while any input is valid",
           "[feature:service][series:tsd][shape:multiple]") {
-    const auto service = bg::service<auto(TS<std::int64_t>, TS<float>)->TS<float>>{"sum", {"integer", "fraction"}};
+    const auto service = bg::service<auto(TS<bg::i64>, TS<float>)->TS<float>>{"sum", {"integer", "fraction"}};
 
     auto integer_request_sizes = std::vector<std::size_t>{};
     auto fraction_request_sizes = std::vector<std::size_t>{};
-    const auto implement = node([&](In<TSD<service_client_id_t, TS<std::int64_t>>> integers,
+    const auto implement = node([&](In<TSD<service_client_id_t, TS<bg::i64>>> integers,
                                     In<TSD<service_client_id_t, TS<float>>> fractions,
                                     Out<TSD<service_client_id_t, TS<float>>> responses) {
         integer_request_sizes.push_back(integers.size());
@@ -77,14 +77,14 @@ TEST_CASE("service keeps a client active while any input is valid",
     const auto implementation =
         graph("name"_n = "sum_impl",
               [&](wp<TSD<service_client_id_t, TS<float>>, "fraction"_n> fractions,
-                  wp<TSD<service_client_id_t, TS<std::int64_t>>, "integer"_n> integers) {
+                  wp<TSD<service_client_id_t, TS<bg::i64>>, "integer"_n> integers) {
                   return implement(integers, fractions);
               });
 
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
 
-    const auto invalidate_zero = node([](In<TS<std::int64_t>> input, Out<TS<std::int64_t>> output) {
+    const auto invalidate_zero = node([](In<TS<bg::i64>> input, Out<TS<bg::i64>> output) {
         if (*input == 0) {
             output.invalidate();
         } else {
@@ -98,14 +98,14 @@ TEST_CASE("service keeps a client active while any input is valid",
             output.set(*input);
         }
     });
-    const auto tested = [&](wp<TS<std::int64_t>> integer, wp<TS<float>> fraction) {
+    const auto tested = [&](wp<TS<bg::i64>> integer, wp<TS<float>> fraction) {
         return service(invalidate_zero(integer), invalidate_negative(fraction)).as<TS<float>>();
     };
 
     const auto actual = testing::test_graph(
         tested,
         bg::GraphRunOptions{.services = &catalogue},
-        std::array<std::int64_t,
+        std::array<bg::i64,
         4>{2, 0, 6, 0},
         std::array<float,
         4>{-1.0F, 3.0F, 4.0F, -1.0F}
@@ -122,14 +122,14 @@ TEST_CASE("service keeps a client active while any input is valid",
 
 TEST_CASE("service keeps an unbound reference request as an invalid item",
           "[feature:service][series:reference][shape:multiple]") {
-    const auto service = bg::service<auto(TS<std::int64_t>, TS<std::int64_t>)->TS<std::int64_t>>{
+    const auto service = bg::service<auto(TS<bg::i64>, TS<bg::i64>)->TS<bg::i64>>{
         "reference_status", {"stable", "selected"}};
     auto implementation_evaluations = std::size_t{};
     auto request_states = std::vector<std::array<bool, 5>>{};
 
-    const auto implement = node([&](In<TSD<service_client_id_t, TS<std::int64_t>>> stable,
-                                    In<TSD<service_client_id_t, TS<std::int64_t>>> selected,
-                                    Out<TSD<service_client_id_t, TS<std::int64_t>>> responses) {
+    const auto implement = node([&](In<TSD<service_client_id_t, TS<bg::i64>>> stable,
+                                    In<TSD<service_client_id_t, TS<bg::i64>>> selected,
+                                    Out<TSD<service_client_id_t, TS<bg::i64>>> responses) {
         ++implementation_evaluations;
         stable.for_each_key([&](const auto &client_id) {
             const auto stable_value = stable[client_id];
@@ -141,39 +141,39 @@ TEST_CASE("service keeps an unbound reference request as an invalid item",
     });
     const auto implementation =
         graph("name"_n = "reference_status_impl",
-              [&](wp<TSD<service_client_id_t, TS<std::int64_t>>, "stable"_n> stable,
-                  wp<TSD<service_client_id_t, TS<std::int64_t>>, "selected"_n> selected) {
+              [&](wp<TSD<service_client_id_t, TS<bg::i64>>, "stable"_n> stable,
+                  wp<TSD<service_client_id_t, TS<bg::i64>>, "selected"_n> selected) {
                   return implement(stable, selected);
               });
 
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
 
-    const auto select_reference = node([](In<TS<bool>> select, In<REF<TS<std::int64_t>>> target,
-                                          Out<REF<TS<std::int64_t>>> output) {
+    const auto select_reference = node([](In<TS<bool>> select, In<REF<TS<bg::i64>>> target,
+                                          Out<REF<TS<bg::i64>>> output) {
         if (*select) {
             output.copy(target);
         } else {
             output.invalidate();
         }
     });
-    const auto tested = [&](wp<TS<std::int64_t>> stable, wp<TS<std::int64_t>> target, wp<TS<bool>> select) {
-        const auto selected = select_reference(select, target.as<REF<TS<std::int64_t>>>());
-        return service(stable, selected).as<TS<std::int64_t>>();
+    const auto tested = [&](wp<TS<bg::i64>> stable, wp<TS<bg::i64>> target, wp<TS<bool>> select) {
+        const auto selected = select_reference(select, target.as<REF<TS<bg::i64>>>());
+        return service(stable, selected).as<TS<bg::i64>>();
     };
 
     const auto actual = testing::test_graph(
         tested,
         bg::GraphRunOptions{.services = &catalogue},
-        std::array<std::int64_t,
+        std::array<bg::i64,
         6>{10, 20, 30, 40, 50, 60},
-        std::array<std::int64_t,
+        std::array<bg::i64,
         6>{101, 102, 103, 104, 105, 106},
         std::array<bool,
         6>{false, false, true, false, false, true}
     );
 
-    CHECK(actual.equals<std::int64_t>({0, 0, 1, 0, 0, 1}));
+    CHECK(actual.equals<bg::i64>({0, 0, 1, 0, 0, 1}));
     CHECK(implementation_evaluations == 6);
     REQUIRE(request_states.size() == 6);
     CHECK((request_states[0] == std::array<bool, 5>{true, true, true, false, true}));
@@ -186,51 +186,51 @@ TEST_CASE("service keeps an unbound reference request as an invalid item",
 
 TEST_CASE("sink service receives and withdraws valid client inputs",
           "[feature:service][series:tsd][shape:sink]") {
-    const auto service = bg::service<auto(TS<std::int64_t>)->void>{"audit", {"value"}};
-    auto received = std::vector<std::int64_t>{};
+    const auto service = bg::service<auto(TS<bg::i64>)->void>{"audit", {"value"}};
+    auto received = std::vector<bg::i64>{};
     auto removed = std::size_t{};
     auto sizes = std::vector<std::size_t>{};
 
-    const auto observe = node([&](In<TSD<service_client_id_t, TS<std::int64_t>>> requests) {
+    const auto observe = node([&](In<TSD<service_client_id_t, TS<bg::i64>>> requests) {
         sizes.push_back(requests.size());
         requests.for_each_removed([&](const auto &) { ++removed; });
         requests.for_each_key_value([&](const auto &, const auto &value) { received.push_back(*value); });
     });
     const auto implementation =
-        graph("name"_n = "audit_impl", [&](wp<TSD<service_client_id_t, TS<std::int64_t>>, "value"_n> values) {
+        graph("name"_n = "audit_impl", [&](wp<TSD<service_client_id_t, TS<bg::i64>>, "value"_n> values) {
             observe(values);
         });
 
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
 
-    const auto invalidate_zero = node([](In<TS<std::int64_t>> input, Out<TS<std::int64_t>> output) {
+    const auto invalidate_zero = node([](In<TS<bg::i64>> input, Out<TS<bg::i64>> output) {
         if (*input == 0) {
             output.invalidate();
         } else {
             output.set(*input);
         }
     });
-    const auto tested = [&](wp<TS<std::int64_t>> input) {
+    const auto tested = [&](wp<TS<bg::i64>> input) {
         const auto valid = invalidate_zero(input);
         service(valid);
         return valid;
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 4>{5, 7, 0, 9});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 4>{5, 7, 0, 9});
 
-    CHECK(actual.equals<std::int64_t>({5, 7, std::nullopt, 9}));
-    CHECK(received == std::vector<std::int64_t>{5, 7, 9});
+    CHECK(actual.equals<bg::i64>({5, 7, std::nullopt, 9}));
+    CHECK(received == std::vector<bg::i64>{5, 7, 9});
     CHECK(sizes == std::vector<std::size_t>{1, 1, 0, 1});
     CHECK(removed == 1);
 }
 
 TEST_CASE("service scalar arguments select separate implementations", "[feature:service][shape:multiple]") {
     const auto service =
-        bg::service<auto(TS<std::int64_t>, std::int64_t)->TS<std::int64_t>>{"add_offset", {"value", "offset"}};
+        bg::service<auto(TS<bg::i64>, bg::i64)->TS<bg::i64>>{"add_offset", {"value", "offset"}};
 
-    const auto implement = node([](In<TSD<service_client_id_t, TS<std::int64_t>>> requests, std::int64_t offset,
-                                   Out<TSD<service_client_id_t, TS<std::int64_t>>> responses) {
+    const auto implement = node([](In<TSD<service_client_id_t, TS<bg::i64>>> requests, bg::i64 offset,
+                                   Out<TSD<service_client_id_t, TS<bg::i64>>> responses) {
         requests.for_each_removed([&](const auto &client_id) { responses.erase(client_id); });
         requests.for_each_key_value([&](const auto &client_id, const auto &value) {
             if (value.valid()) {
@@ -240,61 +240,61 @@ TEST_CASE("service scalar arguments select separate implementations", "[feature:
     });
     const auto implementation =
         graph("name"_n = "add_offset_impl",
-              [&](wp<TSD<service_client_id_t, TS<std::int64_t>>, "value"_n> values, std::int64_t offset) {
+              [&](wp<TSD<service_client_id_t, TS<bg::i64>>, "value"_n> values, bg::i64 offset) {
                   return implement(values, offset);
               });
 
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation, "offset"_n = 10);
     catalogue.register_impl(service, implementation, "offset"_n = 20);
-    const auto sum = node([](In<TS<std::int64_t>> first, In<TS<std::int64_t>> second, Out<TS<std::int64_t>> output) {
+    const auto sum = node([](In<TS<bg::i64>> first, In<TS<bg::i64>> second, Out<TS<bg::i64>> output) {
         output.set(*first + *second);
     });
 
-    const auto tested = [&](wp<TS<std::int64_t>> input) {
-        const auto first = service(input, 10).as<TS<std::int64_t>>();
-        const auto second = service(input, 20).as<TS<std::int64_t>>();
+    const auto tested = [&](wp<TS<bg::i64>> input) {
+        const auto first = service(input, 10).as<TS<bg::i64>>();
+        const auto second = service(input, 20).as<TS<bg::i64>>();
         return sum(first, second);
     };
 
-    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 2>{1, 4}).equals<std::int64_t>({32, 38}));
+    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 2>{1, 4}).equals<bg::i64>({32, 38}));
 }
 
 TEST_CASE("subscription implementation receives named installation inputs after service scalars",
           "[feature:service][shape:multiple]") {
     const auto service =
-        subscription_service<auto(TS<std::int64_t, TimeSeriesGuarantee::final>, std::int64_t)->TS<std::int64_t>>{
+        subscription_service<auto(TS<bg::i64, TimeSeriesGuarantee::final>, bg::i64)->TS<bg::i64>>{
             "lookup", {"key", "route"}};
 
-    const auto respond = node([](In<TSS<std::int64_t>> requests, std::int64_t route, In<TS<std::int64_t>> factor,
-                                 std::int64_t offset, Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
+    const auto respond = node([](In<TSS<bg::i64>> requests, bg::i64 route, In<TS<bg::i64>> factor,
+                                 bg::i64 offset, Out<TSD<bg::i64, TS<bg::i64>>> output) {
         requests.for_each_removed([&](const auto &key) { output.erase(key); });
         requests.for_each([&](const auto &key) { output[key].set(*key + route + *factor + offset); });
     });
     const auto implementation = graph(
-        "name"_n = "lookup_impl", [&](wp<TSS<std::int64_t>> requests, std::int64_t route, wp<TS<std::int64_t>> factor,
-                                      std::int64_t offset) { return respond(requests, route, factor, offset); });
+        "name"_n = "lookup_impl", [&](wp<TSS<bg::i64>> requests, bg::i64 route, wp<TS<bg::i64>> factor,
+                                      bg::i64 offset) { return respond(requests, route, factor, offset); });
 
     auto catalogue = ServiceCatalogue{};
-    const auto key_source = node<FinalKeySource<std::int64_t>>();
-    const auto tested = [&](wp<TS<std::int64_t>> factor) {
+    const auto key_source = node<FinalKeySource<bg::i64>>();
+    const auto tested = [&](wp<TS<bg::i64>> factor) {
         catalogue.register_impl(service, implementation, "route"_n = 10, factor, 100);
-        return service(key_source(1), 10).as<TS<std::int64_t>>();
+        return service(key_source(1), 10).as<TS<bg::i64>>();
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 3>{2, 3, 4});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 3>{2, 3, 4});
 
-    CHECK(actual.equals<std::int64_t>({113, 114, 115}));
+    CHECK(actual.equals<bg::i64>({113, 114, 115}));
 }
 
 TEST_CASE("service clients in map branches withdraw requests when branches stop",
           "[feature:service][feature:map][series:tsd][shape:nested]") {
-    const auto service = bg::service<auto(TS<std::int64_t>)->void>{"audit", {"value"}};
+    const auto service = bg::service<auto(TS<bg::i64>)->void>{"audit", {"value"}};
     auto request_sizes = std::vector<std::size_t>{};
     auto added_counts = std::vector<std::size_t>{};
     auto removed_counts = std::vector<std::size_t>{};
 
-    const auto implement = node([&](In<TSD<service_client_id_t, TS<std::int64_t>>> requests) {
+    const auto implement = node([&](In<TSD<service_client_id_t, TS<bg::i64>>> requests) {
         request_sizes.push_back(requests.size());
         auto added = std::size_t{};
         requests.for_each_added([&](const auto &) { ++added; });
@@ -304,32 +304,26 @@ TEST_CASE("service clients in map branches withdraw requests when branches stop"
         removed_counts.push_back(removed);
     });
     const auto implementation = graph(
-        "name"_n = "audit_impl", [&](wp<TSD<service_client_id_t, TS<std::int64_t>>, "value"_n> values) {
+        "name"_n = "audit_impl", [&](wp<TSD<service_client_id_t, TS<bg::i64>>, "value"_n> values) {
             implement(values);
         });
 
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
-    const auto values = node([](In<TS<bool>> present, Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
-        if (*present) {
-            output[5].set(7);
-        } else {
-            output.erase(5);
-        }
-    });
-    const auto tested = [&](wp<TS<bool>> present) {
+    const auto tested = [&](wp<TSD<bg::i64, TS<bg::i64>>> values) {
         const auto mapped = map(
             [&](auto value) {
                 service(value);
                 return value;
             },
-            values(present));
-        return mapped[std::int64_t{5}].as<TS<std::int64_t>>();
+            values);
+        return mapped[bg::i64{5}].as<TS<bg::i64>>();
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array{true, false, true});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue},
+                                            {{{5, 7}}, {{5, literal::REMOVE}}, {{5, 7}}});
 
-    CHECK(actual.equals<std::int64_t>({7, std::nullopt, 7}));
+    CHECK(actual.equals<bg::i64>({7, std::nullopt, 7}));
     CHECK(request_sizes == std::vector<std::size_t>{1, 0, 1});
     CHECK(added_counts == std::vector<std::size_t>{1, 0, 1});
     CHECK(removed_counts == std::vector<std::size_t>{0, 1, 0});
@@ -338,12 +332,12 @@ TEST_CASE("service clients in map branches withdraw requests when branches stop"
 TEST_CASE("service clients follow repeated switch changes after a map branch returns",
           "[feature:service][feature:map][feature:switch][feature:nested-graph]"
           "[series:tsd][shape:nested][transition:removal]") {
-    const auto service = bg::service<auto(TS<std::int64_t>)->void>{"audit", {"value"}};
+    const auto service = bg::service<auto(TS<bg::i64>)->void>{"audit", {"value"}};
     auto request_sizes = std::vector<std::size_t>{};
     auto added_counts = std::vector<std::size_t>{};
     auto removed_counts = std::vector<std::size_t>{};
 
-    const auto collect = node([&](In<TSD<service_client_id_t, TS<std::int64_t>>> requests) {
+    const auto collect = node([&](In<TSD<service_client_id_t, TS<bg::i64>>> requests) {
         request_sizes.push_back(requests.size());
 
         auto added = std::size_t{};
@@ -355,23 +349,17 @@ TEST_CASE("service clients follow repeated switch changes after a map branch ret
         removed_counts.push_back(removed);
     });
     const auto implementation = graph(
-        "name"_n = "audit_impl", [&](wp<TSD<service_client_id_t, TS<std::int64_t>>, "value"_n> values) {
+        "name"_n = "audit_impl", [&](wp<TSD<service_client_id_t, TS<bg::i64>>, "value"_n> values) {
             collect(values);
         });
 
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
 
-    const auto values = node([](In<TS<bool>> present, Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
-        if (present.value()) {
-            output[5].set(7);
-        } else {
-            output.erase(5);
-        }
-    });
-    const auto add_offset = node([](In<TS<std::int64_t>> value, std::int64_t offset,
-                                    Out<TS<std::int64_t>> output) { output.set(value.value() + offset); });
-    const auto tested = [&](wp<TS<bool>> present, wp<TS<std::int64_t>> selected_case) {
+    const auto add_offset = node([](In<TS<bg::i64>> value, bg::i64 offset,
+                                    Out<TS<bg::i64>> output) { output.set(value.value() + offset); });
+    const auto tested = [&](wp<TSD<bg::i64, TS<bg::i64>>> values,
+                            wp<TS<bg::i64>> selected_case) {
         const auto mapped = map(
             [&](auto value, auto selector) {
                 return switch_(
@@ -387,21 +375,20 @@ TEST_CASE("service clients follow repeated switch changes after a map branch ret
                                }),
                            },
                            value)
-                    .template as<TS<std::int64_t>>();
+                    .template as<TS<bg::i64>>();
             },
-            values(present), selected_case);
-        return mapped[std::int64_t{5}].as<TS<std::int64_t>>();
+            values, selected_case);
+        return mapped[bg::i64{5}].as<TS<bg::i64>>();
     };
 
     const auto actual = testing::test_graph(
         tested,
         bg::GraphRunOptions{.services = &catalogue},
-        std::array{true, true, true, false, true, true},
-        std::array<std::int64_t,
-        6>{1, 2, 1, 1, 2, 1}
+        {{{5, 7}}, {{5, 7}}, {{5, 7}}, {{5, literal::REMOVE}}, {{5, 7}}, {{5, 7}}},
+        {1, 2, 1, 1, 2, 1}
     );
 
-    CHECK(actual.equals<std::int64_t>({107, 207, 107, std::nullopt, 207, 107}));
+    CHECK(actual.equals<bg::i64>({107, 207, 107, std::nullopt, 207, 107}));
     CHECK(request_sizes == std::vector<std::size_t>{1, 1, 1, 0, 1, 1});
     CHECK(added_counts == std::vector<std::size_t>{1, 1, 1, 0, 1, 1});
     CHECK(removed_counts == std::vector<std::size_t>{0, 1, 1, 1, 0, 1});
@@ -409,28 +396,28 @@ TEST_CASE("service clients follow repeated switch changes after a map branch ret
 
 TEST_CASE("service rejects a response cycle through a client input",
           "[feature:service][feature:graph-compilation]") {
-    const auto service = bg::service<auto(TS<std::int64_t>)->TS<std::int64_t>>{"identity", {"value"}};
-    const auto implement = node([](In<TSD<service_client_id_t, TS<std::int64_t>>> requests,
-                                   Out<TSD<service_client_id_t, TS<std::int64_t>>> responses) {
+    const auto service = bg::service<auto(TS<bg::i64>)->TS<bg::i64>>{"identity", {"value"}};
+    const auto implement = node([](In<TSD<service_client_id_t, TS<bg::i64>>> requests,
+                                   Out<TSD<service_client_id_t, TS<bg::i64>>> responses) {
         requests.for_each_removed([&](const auto &client_id) { responses.erase(client_id); });
         requests.for_each_key_value(
             [&](const auto &client_id, const auto &value) { responses[client_id].set(*value); });
     });
     const auto implementation =
-        graph("name"_n = "identity_impl", [&](wp<TSD<service_client_id_t, TS<std::int64_t>>, "value"_n> values) {
+        graph("name"_n = "identity_impl", [&](wp<TSD<service_client_id_t, TS<bg::i64>>, "value"_n> values) {
             return implement(values);
         });
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
 
-    const auto tested = [&](wp<TS<std::int64_t>> input) {
-        const auto first = service(input).as<TS<std::int64_t>>();
-        return service(first).as<TS<std::int64_t>>();
+    const auto tested = [&](wp<TS<bg::i64>> input) {
+        const auto first = service(input).as<TS<bg::i64>>();
+        return service(first).as<TS<bg::i64>>();
     };
 
     auto diagnostic = std::string{};
     try {
-        (void)testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 1>{1});
+        (void)testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 1>{1});
     } catch (const std::exception &error) {
         diagnostic = error.what();
     }

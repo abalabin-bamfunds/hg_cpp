@@ -21,9 +21,9 @@ inline bool throw_on_hash{};
 inline bool throw_on_equality{};
 
 struct fallible_value {
-    explicit fallible_value(std::int64_t value) : value{value} {}
+    explicit fallible_value(bg::i64 value) : value{value} {}
 
-    std::int64_t value;
+    bg::i64 value;
 
     friend bool operator==(fallible_value left, fallible_value right) {
         if (throw_on_equality) {
@@ -40,7 +40,7 @@ template <> struct std::hash<test_scalar::fallible_value> {
         if (test_scalar::throw_on_hash) {
             throw std::runtime_error{"hash failed"};
         }
-        return std::hash<std::int64_t>{}(value.value);
+        return std::hash<bg::i64>{}(value.value);
     }
 };
 
@@ -72,10 +72,10 @@ TEST_CASE("scalar collections propagate hash and equality exceptions",
     const auto set_copy = bg::ScalarValue<bg::Set<Value>>{std::array{Value{1}}};
     const auto list = bg::ScalarValue<bg::List<Value>>{std::array{Value{1}}};
     const auto list_copy = bg::ScalarValue<bg::List<Value>>{std::array{Value{1}}};
-    const auto dictionary = bg::ScalarValue<bg::Dict<Value, std::int64_t>>{
-        std::array{std::pair{Value{1}, std::int64_t{10}}}};
-    const auto dictionary_copy = bg::ScalarValue<bg::Dict<Value, std::int64_t>>{
-        std::array{std::pair{Value{1}, std::int64_t{10}}}};
+    const auto dictionary = bg::ScalarValue<bg::Dict<Value, bg::i64>>{
+        std::array{std::pair{Value{1}, bg::i64{10}}}};
+    const auto dictionary_copy = bg::ScalarValue<bg::Dict<Value, bg::i64>>{
+        std::array{std::pair{Value{1}, bg::i64{10}}}};
 
     const auto scalar = bg::ScalarValue<Value>{Value{1}};
 

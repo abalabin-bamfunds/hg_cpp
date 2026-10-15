@@ -35,7 +35,7 @@ template <template <typename, auto...> typename Field> struct ServiceKey {
 };
 
 struct ServiceOutputSource {
-    Out<TS<std::int64_t>> output;
+    Out<TS<i64>> output;
 
     void start() const { output.set(42); }
     void evaluate() const noexcept {}
@@ -46,17 +46,6 @@ template <typename KEY> struct FinalKeySource {
     Out<TS<KEY, TimeSeriesGuarantee::final>> output;
 
     void start() const { output.set_value(value); }
-    void evaluate() const noexcept {}
-};
-
-struct FinalValueDictionarySource {
-    Out<TSD<std::int64_t, TS<std::int64_t, TimeSeriesGuarantee::final>>> output;
-
-    void start() const {
-        output[1].set(4);
-        output[2].set(9);
-    }
-
     void evaluate() const noexcept {}
 };
 

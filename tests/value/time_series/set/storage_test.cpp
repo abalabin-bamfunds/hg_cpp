@@ -13,9 +13,9 @@ TEST_CASE("canceling a time series set addition reclaims its position immediatel
     auto resource = counting_memory_resource{};
     auto memory = bg::allocator{resource};
     auto storage = bg::details::time_series_set_storage{};
-    const auto &key_runtime_type = bg::cpp_scalar_runtime_type<std::int64_t>();
+    const auto &key_runtime_type = bg::cpp_scalar_runtime_type<bg::i64>();
     const auto key_layout = bg::util::runtime_item_layout{key_runtime_type.size(), key_runtime_type.alignment()};
-    const auto key = bg::ScalarValue<std::int64_t>{1};
+    const auto key = bg::ScalarValue<bg::i64>{1};
     auto constructed_items = 0;
 
     storage.reset_change_tracking(bg::MIN_DT + bg::EvaluationTime::duration{1}, key_runtime_type, key_layout, memory,
@@ -49,9 +49,9 @@ TEST_CASE("removing an existing time series set item retains it until reclamatio
     auto resource = counting_memory_resource{};
     auto memory = bg::allocator{resource};
     auto storage = bg::details::time_series_set_storage{};
-    const auto &key_runtime_type = bg::cpp_scalar_runtime_type<std::int64_t>();
+    const auto &key_runtime_type = bg::cpp_scalar_runtime_type<bg::i64>();
     const auto key_layout = bg::util::runtime_item_layout{key_runtime_type.size(), key_runtime_type.alignment()};
-    const auto key = bg::ScalarValue<std::int64_t>{1};
+    const auto key = bg::ScalarValue<bg::i64>{1};
     auto constructed_items = 0;
     const auto first_time = bg::MIN_DT + bg::EvaluationTime::duration{1};
 
@@ -94,9 +94,9 @@ TEST_CASE("retaining a time series set key preserves its non-live position",
     auto resource = counting_memory_resource{};
     auto memory = bg::allocator{resource};
     auto storage = bg::details::time_series_set_storage{};
-    const auto &key_runtime_type = bg::cpp_scalar_runtime_type<std::int64_t>();
+    const auto &key_runtime_type = bg::cpp_scalar_runtime_type<bg::i64>();
     const auto key_layout = bg::util::runtime_item_layout{key_runtime_type.size(), key_runtime_type.alignment()};
-    const auto key = bg::ScalarValue<std::int64_t>{1};
+    const auto key = bg::ScalarValue<bg::i64>{1};
     const auto first_time = bg::MIN_DT + bg::EvaluationTime::duration{1};
     auto constructed_items = 0;
 
@@ -145,10 +145,10 @@ TEST_CASE("clearing time series set storage retains only previously visible item
     auto resource = counting_memory_resource{};
     auto memory = bg::allocator{resource};
     auto storage = bg::details::time_series_set_storage{};
-    const auto &key_runtime_type = bg::cpp_scalar_runtime_type<std::int64_t>();
+    const auto &key_runtime_type = bg::cpp_scalar_runtime_type<bg::i64>();
     const auto key_layout = bg::util::runtime_item_layout{key_runtime_type.size(), key_runtime_type.alignment()};
-    const auto existing_key = bg::ScalarValue<std::int64_t>{1};
-    const auto new_key = bg::ScalarValue<std::int64_t>{2};
+    const auto existing_key = bg::ScalarValue<bg::i64>{1};
+    const auto new_key = bg::ScalarValue<bg::i64>{2};
     auto constructed_items = 0;
     const auto first_time = bg::MIN_DT + bg::EvaluationTime::duration{1};
 

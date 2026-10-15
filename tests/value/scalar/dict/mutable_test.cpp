@@ -8,14 +8,14 @@
 
 TEST_CASE("a mutable scalar dictionary inserts and replaces entries",
           "[value][scalar][dict][scalar:dict][mutable][feature:scalar-collection][transition:addition]") {
-    using Entry = std::pair<std::int64_t, std::int64_t>;
+    using Entry = std::pair<bg::i64, bg::i64>;
 
     auto state = bg::GlobalState{};
-    const auto initial = bg::ScalarValue<bg::Dict<std::int64_t, std::int64_t>>{std::array{Entry{1, 2}}};
+    const auto initial = bg::ScalarValue<bg::Dict<bg::i64, bg::i64>>{std::array{Entry{1, 2}}};
     state.write([&](bg::GlobalState::WriteAccess &values) {
         values.set(bg::util::symbol{"items"}, initial);
 
-        const auto items = values.mutable_at<bg::Dict<std::int64_t, std::int64_t>>("items");
+        const auto items = values.mutable_at<bg::Dict<bg::i64, bg::i64>>("items");
         items.insert_or_assign(1, 3);
         items.insert_or_assign(2, 4);
 
@@ -27,14 +27,14 @@ TEST_CASE("a mutable scalar dictionary inserts and replaces entries",
 
 TEST_CASE("a mutable scalar dictionary erases and clears entries",
           "[value][scalar][dict][scalar:dict][mutable][feature:scalar-collection][transition:removal]") {
-    using Entry = std::pair<std::int64_t, std::int64_t>;
+    using Entry = std::pair<bg::i64, bg::i64>;
 
     auto state = bg::GlobalState{};
-    const auto initial = bg::ScalarValue<bg::Dict<std::int64_t, std::int64_t>>{std::array{Entry{1, 2}, Entry{3, 4}}};
+    const auto initial = bg::ScalarValue<bg::Dict<bg::i64, bg::i64>>{std::array{Entry{1, 2}, Entry{3, 4}}};
     state.write([&](bg::GlobalState::WriteAccess &values) {
         values.set(bg::util::symbol{"items"}, initial);
 
-        const auto items = values.mutable_at<bg::Dict<std::int64_t, std::int64_t>>("items");
+        const auto items = values.mutable_at<bg::Dict<bg::i64, bg::i64>>("items");
         CHECK(items.erase(1));
         CHECK_FALSE(items.erase(1));
         CHECK_FALSE(items.contains(1));

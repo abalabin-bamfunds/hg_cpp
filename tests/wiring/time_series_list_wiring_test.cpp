@@ -57,7 +57,7 @@ TEST_CASE("a free fixed TSL accepts vectors and spans of wiring points",
     const auto second = second_source();
     const auto typed_items = std::array{first, second};
     const auto span_list = bg::tsl(std::span{typed_items});
-    const auto selected = span_list[std::int64_t{1}];
+    const auto selected = span_list[bg::i64{1}];
 
     CHECK(static_cast<bg::WiringPoint>(selected).record() == static_cast<bg::WiringPoint>(second).record());
 
@@ -215,7 +215,7 @@ TEST_CASE("getitem selects an item from a free fixed time series list without ma
     const auto first = source();
     const auto second = source();
     const auto list = bg::tsl(first, second);
-    const auto selected = list[std::int64_t{1}];
+    const auto selected = list[bg::i64{1}];
 
     STATIC_CHECK(std::same_as<decltype(selected), const bg::wp<>>);
     (void)wiring.complete_pending_wiring();
@@ -232,7 +232,7 @@ TEST_CASE("getitem creates a contained wired output when a stored list item is c
 
     const auto context = bg::WiringContext{wiring};
     const auto list = source();
-    const auto selected = list[std::int64_t{1}];
+    const auto selected = list[bg::i64{1}];
 
     CHECK(&selected.type() == &bg::TS<float>::type());
     (void)wiring.complete_pending_wiring();
@@ -255,8 +255,8 @@ TEST_CASE("getitem reuses a contained wired output",
 
     const auto context = bg::WiringContext{wiring};
     const auto list = source();
-    sink(list[std::int64_t{1}]);
-    sink(list[std::int64_t{1}]);
+    sink(list[bg::i64{1}]);
+    sink(list[bg::i64{1}]);
 
     (void)wiring.complete_pending_wiring();
     CHECK(wiring.outputs().size() == 2);
@@ -270,8 +270,8 @@ TEST_CASE("getitem distinguishes items belonging to different wired outputs",
     auto wiring = bg::GraphWiring{};
 
     const auto context = bg::WiringContext{wiring};
-    sink(first_source()[std::int64_t{1}]);
-    sink(second_source()[std::int64_t{1}]);
+    sink(first_source()[bg::i64{1}]);
+    sink(second_source()[bg::i64{1}]);
 
     (void)wiring.complete_pending_wiring();
     REQUIRE(wiring.outputs().size() == 4);
@@ -287,7 +287,7 @@ TEST_CASE("getitem selects an item through a reference-backed fixed list",
     auto wiring = bg::GraphWiring{};
 
     const auto context = bg::WiringContext{wiring};
-    const auto selected = source()[std::int64_t{1}];
+    const auto selected = source()[bg::i64{1}];
 
     CHECK(&selected.type() == &bg::REF<bg::TS<float>, bg::TimeSeriesGuarantee::ordinary>::type());
     sink(selected);

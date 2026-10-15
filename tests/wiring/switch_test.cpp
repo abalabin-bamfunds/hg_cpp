@@ -28,7 +28,7 @@ class SwitchCacheOverload final : public WiringTemplate {
   public:
     explicit SwitchCacheOverload(int &requirement_calls)
         : signature_{util::symbol{"cached_switch"},
-                     {{util::symbol{"key"}, &TS<std::int64_t>::type()},
+                     {{util::symbol{"key"}, &TS<i64>::type()},
                       {util::symbol{"cases"}, &GraphArgument::type()}},
                      TS<i64>::type()},
           requirement_calls_{&requirement_calls} {}
@@ -53,7 +53,7 @@ class SwitchCacheOverload final : public WiringTemplate {
 TEST_CASE("switch validates its case set",
           "[feature:switch][feature:wiring][feature:operator][series:value]"
           "[definition:function]") {
-    const auto key = node([](Out<TS<std::int64_t>>) {});
+    const auto key = node([](Out<TS<i64>>) {});
     const auto value = node([](Out<TS<i64>>) {});
     const auto identity = graph("name"_n = "switch_identity",
                                 [](wp<TS<i64>> input) { return input; });
@@ -63,8 +63,8 @@ TEST_CASE("switch validates its case set",
                           "switch_ requires at least one case");
         CHECK_THROWS_WITH(
             (void)switch_(key(),
-                          cases{case_(std::int64_t{1}, identity),
-                                case_(std::int64_t{1}, identity)},
+                          cases{case_(i64{1}, identity),
+                                case_(i64{1}, identity)},
                           value()),
             "switch_ has duplicate case keys");
         CHECK_THROWS_WITH(
@@ -97,7 +97,7 @@ TEST_CASE("switch validates its case set",
 TEST_CASE("switch rejects incompatible case output shapes",
           "[feature:switch][feature:wiring][feature:operator][series:value]"
           "[definition:function]") {
-    const auto key = node([](Out<TS<std::int64_t>>) {});
+    const auto key = node([](Out<TS<i64>>) {});
     const auto integers = graph(
         "name"_n = "integer_switch_source",
         []() -> wp<TS<i64>> { return integer_source(); });
@@ -109,18 +109,18 @@ TEST_CASE("switch rejects incompatible case output shapes",
     testing::test_wiring([&] {
         CHECK_THROWS_WITH(
             (void)switch_(key(),
-                          cases{case_(std::int64_t{1}, integers),
-                                case_(std::int64_t{2}, floats)}),
+                          cases{case_(i64{1}, integers),
+                                case_(i64{2}, floats)}),
             "switch case output types are incompatible");
         CHECK_THROWS_WITH(
             (void)switch_(key(),
-                          cases{case_(std::int64_t{1}, integers),
-                                case_(std::int64_t{2}, sink)}),
+                          cases{case_(i64{1}, integers),
+                                case_(i64{2}, sink)}),
             "switch_ cannot mix sink and output cases");
         CHECK_THROWS_WITH(
             (void)switch_(key(),
                           cases{case_(DEFAULT, integers),
-                                case_(std::int64_t{1}, sink)}),
+                                case_(i64{1}, sink)}),
             "switch_ cannot mix sink and output cases");
     });
 }
@@ -129,13 +129,13 @@ TEST_CASE("switch output is a deduplicated reference to the common case output",
           "[feature:switch][feature:wiring][feature:operator][feature:reference]"
           "[series:value][binding:value-to-reference][guarantee:deduplicated]"
           "[definition:function]") {
-    const auto key = node([](Out<TS<std::int64_t>>) {});
+    const auto key = node([](Out<TS<i64>>) {});
     const auto value = node([](Out<TS<i64>>) {});
     const auto identity = graph("name"_n = "typed_switch_identity",
                                 [](wp<TS<i64>> input) { return input; });
 
     testing::test_wiring([&] {
-        const auto result = switch_(key(), cases{case_(std::int64_t{1}, identity)}, value());
+        const auto result = switch_(key(), cases{case_(i64{1}, identity)}, value());
 
         CHECK(&result.type() ==
               &REF<TS<i64>, TimeSeriesGuarantee::deduplicated>::type());
@@ -145,7 +145,7 @@ TEST_CASE("switch output is a deduplicated reference to the common case output",
 TEST_CASE("switch uses the weakest compatible case output guarantee",
           "[feature:switch][feature:wiring][feature:operator][feature:type-system]"
           "[series:value][guarantee:ordinary][guarantee:final][definition:function]") {
-    const auto key = node([](Out<TS<std::int64_t>>) {});
+    const auto key = node([](Out<TS<i64>>) {});
     const auto final_source = graph(
         "name"_n = "final_integer_switch_source",
         []() -> wp<TS<i64, TimeSeriesGuarantee::final>> { return final_integer_source(); });
@@ -165,7 +165,7 @@ TEST_CASE("switch uses the weakest compatible case output guarantee",
 TEST_CASE("switch resolves bundles whose matching fields have different guarantees",
           "[feature:switch][feature:wiring][feature:operator][feature:type-system]"
           "[series:tsb][schema:named][guarantee:ordinary][guarantee:final][definition:function]") {
-    const auto key = node([](Out<TS<std::int64_t>>) {});
+    const auto key = node([](Out<TS<i64>>) {});
     const auto final_source = node([](Out<TSB<switch_bundle, TimeSeriesGuarantee::final>>) {});
     const auto ordinary_source = node([](Out<TSB<switch_bundle>>) {});
     const auto final_graph = graph(
@@ -184,7 +184,7 @@ TEST_CASE("switch resolves bundles whose matching fields have different guarante
 TEST_CASE("switch resolution cache includes every case graph",
           "[feature:switch][feature:wiring][feature:operator][feature:graph-argument]"
           "[series:value][definition:function]") {
-    const auto key = node([](Out<TS<std::int64_t>>) {});
+    const auto key = node([](Out<TS<i64>>) {});
     const auto first = graph("name"_n = "first_switch_source",
                              [] { return integer_source(); });
     const auto second = graph("name"_n = "second_switch_source",
