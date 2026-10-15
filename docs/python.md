@@ -35,6 +35,7 @@ The package exports time-series annotations, node and graph decorators,
 
 ```python
 import bg
+from typing import TypeVar
 
 @bg.source_node
 def source() -> bg.TS[int]:
@@ -50,6 +51,29 @@ def example() -> bg.TS[int]:
 
 assert bg.test_graph(example) == [3]
 ```
+
+Use standard `typing.TypeVar` declarations for generic graph signatures. An
+unbounded or scalar-constrained TypeVar represents a scalar type; use it inside
+`TS[...]` or as a plain scalar graph parameter. Bind a TypeVar to
+`bg.TimeSeries` when it represents an entire time-series type:
+
+```python
+VALUE = TypeVar("VALUE")
+SERIES = TypeVar("SERIES", bound=bg.TimeSeries)
+
+@bg.graph
+def identity(value: bg.TS[VALUE]) -> bg.TS[VALUE]:
+    return value
+
+@bg.graph
+def forward(value: SERIES) -> SERIES:
+    return value
+```
+
+TypeVar identity determines which occurrences share a type mapping. Names are
+descriptive only, so separate TypeVar objects with the same name remain
+independent. `bg.TimeSeries` is a typing marker for the TypeVar bound; it is not
+a value annotation.
 
 `bg.operators` is the shared namespace for engine and library operators,
 including higher-order graph operators. Native operators use C++ overload

@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 import types
 from functools import update_wrapper
-from typing import Annotated, Any, get_args, get_origin, get_type_hints
+from typing import Annotated, Any, Generic, TypeVar, get_args, get_origin, get_type_hints
 
 from . import operators
 from ._bg import (
@@ -29,6 +29,7 @@ from ._bg import (
     _register_symbol_type,
     _run_graph,
     _scalar_type,
+    _scalar_variable_type,
     _test_graph,
     _make_service,
     _make_service_catalogue,
@@ -41,6 +42,7 @@ from ._bg import (
     _variadic_time_series_list_type,
     _time_series_set_type,
     _time_series_type,
+    _time_series_variable_type,
     _switch,
     _wire_graph,
     _wire_node,
@@ -165,6 +167,19 @@ final = _TimeSeriesGuarantee.final
 const_ = _TimeSeriesGuarantee.const_
 
 
+class TimeSeries:
+    """Typing marker for TypeVars that represent any time-series type."""
+
+
+_SCALAR_T = TypeVar("_SCALAR_T")
+_TIME_SERIES_T = TypeVar("_TIME_SERIES_T", bound=TimeSeries)
+_ITEM_T = TypeVar("_ITEM_T")
+_SIZE_T = TypeVar("_SIZE_T")
+_SCHEMA_T = TypeVar("_SCHEMA_T")
+
+_type_variables: dict[TypeVar, _Type] = {}
+
+
 def _annotation_arguments(arguments: Any, required: int, name: str) -> tuple[Any, Any]:
     if isinstance(arguments, tuple):
         if len(arguments) not in (required, required + 1):
@@ -181,7 +196,7 @@ def _with_guarantee(annotation: Any, guarantee: Any) -> Any:
     return Annotated[annotation, guarantee]
 
 
-class TS:
+class TS(TimeSeries, Generic[_SCALAR_T]):
     """A time-series type annotation."""
 
     def __class_getitem__(cls, arguments: Any) -> Any:
@@ -200,14 +215,14 @@ class _ScalarOnly:
     pass
 
 
-class Scalar:
+class Scalar(Generic[_SCALAR_T]):
     """A scalar-only input annotation for nodes and graphs."""
 
     def __class_getitem__(cls, scalar_type: type) -> Any:
         return Annotated[scalar_type, _ScalarOnly]
 
 
-class REF:
+class REF(TimeSeries, Generic[_TIME_SERIES_T]):
     """A time-series reference type annotation."""
 
     def __class_getitem__(cls, arguments: Any) -> Any:
@@ -215,7 +230,7 @@ class REF:
         return _with_guarantee(_reference_type(_native_type(target_type)), guarantee)
 
 
-class TSS:
+class TSS(TimeSeries, Generic[_SCALAR_T]):
     """A time-series set type annotation."""
 
     def __class_getitem__(cls, arguments: Any) -> Any:
@@ -223,7 +238,7 @@ class TSS:
         return _with_guarantee(_time_series_set_type(_native_type(item_type)), guarantee)
 
 
-class TSL:
+class TSL(TimeSeries, Generic[_TIME_SERIES_T, _SIZE_T]):
     """A fixed time-series list type annotation."""
 
     def __class_getitem__(cls, arguments: Any) -> Any:
@@ -231,13 +246,15 @@ class TSL:
             raise TypeError("TSL[...] requires an item type and size, with an optional guarantee")
         item_type, size, *guarantee = arguments
         if size is SIZE:
+            if guarantee:
+                raise ValueError("a time-series guarantee requires a concrete time-series type")
             time_series_type = _variadic_time_series_list_type(_native_type(item_type))
         else:
             time_series_type = _time_series_list_type(_native_type(item_type), size)
         return _with_guarantee(time_series_type, guarantee[0] if guarantee else None)
 
 
-class TSD:
+class TSD(TimeSeries, Generic[_SCALAR_T, _TIME_SERIES_T]):
     """A time-series dictionary type annotation."""
 
     def __class_getitem__(cls, arguments: Any) -> Any:
@@ -274,12 +291,14 @@ class TimeSeriesSchema:
         cls._native_schema = _make_time_series_schema(qualified_name, cls, base, fields)
 
 
-class TSB:
+class TSB(TimeSeries, Generic[_SCHEMA_T]):
     """A time-series bundle type annotation."""
 
     def __class_getitem__(cls, arguments: Any) -> Any:
         schema, guarantee = _annotation_arguments(arguments, 1, "TSB")
         if schema is TS_SCHEMA:
+            if guarantee is not None:
+                raise ValueError("a time-series guarantee requires a concrete time-series type")
             return _with_guarantee(_variadic_time_series_bundle_type(), guarantee)
         if not isinstance(schema, type) or not issubclass(schema, TimeSeriesSchema):
             raise TypeError("TSB[...] requires a TimeSeriesSchema")
@@ -637,9 +656,43 @@ def _define_service(function: Any, kind: str) -> _ServiceDefinition:
     return _ServiceDefinition(function, native_definition)
 
 
+def _is_time_series_type_variable(annotation: TypeVar) -> bool:
+    bound = annotation.__bound__
+    return isinstance(bound, type) and issubclass(bound, TimeSeries)
+
+
 def _native_type(annotation: Any) -> Any:
     if isinstance(annotation, _Type):
         return annotation
+    if annotation is TimeSeries:
+        raise TypeError("bg.TimeSeries is only valid as a TypeVar bound")
+    if isinstance(annotation, TypeVar):
+        existing = _type_variables.get(annotation)
+        if existing is not None:
+            return existing
+
+        if _is_time_series_type_variable(annotation):
+            descriptor = _time_series_variable_type(annotation.__name__)
+            _type_variables[annotation] = descriptor
+            return descriptor
+
+        alternatives = annotation.__constraints__
+        if not alternatives and annotation.__bound__ is not None:
+            alternatives = (annotation.__bound__,)
+        if any(
+            candidate is TimeSeries or (isinstance(candidate, type) and issubclass(candidate, TimeSeries))
+            for candidate in alternatives
+        ):
+            raise TypeError(f"TypeVar {annotation.__name__!r} must use bound=bg.TimeSeries")
+        try:
+            scalar_alternatives = [_native_type(candidate) for candidate in alternatives]
+        except TypeError as error:
+            raise TypeError(f"TypeVar {annotation.__name__!r} must be bounded by scalar types") from error
+        if any(candidate.is_time_series for candidate in scalar_alternatives):
+            raise TypeError(f"TypeVar {annotation.__name__!r} must be bounded by scalar types")
+        descriptor = _scalar_variable_type(annotation.__name__, scalar_alternatives)
+        _type_variables[annotation] = descriptor
+        return descriptor
     if get_origin(annotation) is Annotated:
         value_type, *metadata = get_args(annotation)
         native_type = _native_type(value_type)
@@ -791,6 +844,7 @@ __all__ = [
     "TSL",
     "TSS",
     "TimeSeriesSchema",
+    "TimeSeries",
     "compute_node",
     "graph",
     "map",
