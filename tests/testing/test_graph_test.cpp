@@ -46,7 +46,8 @@ TEST_CASE("test_graph records a profile for a graph function", "[testing][evalua
     const auto graph = [](bg::wp<bg::TS<bg::i64>> input) { return input; };
     auto profiler = bg::EvaluationProfiler{};
 
-    const auto actual = bg::testing::test_graph(graph, profiler.recorder(), {1, 2, 3});
+    const auto actual = bg::testing::test_graph[
+        bg::testing::TestGraphOptions{.recorder = profiler.recorder()}](graph, {1, 2, 3});
 
     CHECK(actual.equals({1, 2, 3}));
     const auto root = profiler.root_graph_id();
@@ -67,8 +68,9 @@ TEST_CASE("test_graph records a profile for runtime-typed inputs", "[testing][ev
     const auto inputs = std::array{bg::testing::TestGraphInput{bg::cpp_scalar_runtime_type<bg::i64>(), ticks}};
     auto profiler = bg::EvaluationProfiler{};
 
-    const auto actual = bg::testing::test_graph(identity, profiler.recorder(),
-                                                 std::span<const bg::testing::TestGraphInput>{inputs});
+    const auto actual = bg::testing::test_graph[
+        bg::testing::TestGraphOptions{.recorder = profiler.recorder()}](
+        identity, std::span<const bg::testing::TestGraphInput>{inputs});
 
     CHECK(actual.equals<bg::i64>({1, 2}));
     REQUIRE(profiler.root_graph_id());
@@ -80,7 +82,8 @@ TEST_CASE("test_graph records a profile for a wiring template", "[testing][evalu
     const auto ticks = std::vector<bg::i64>{1, 2};
     auto profiler = bg::EvaluationProfiler{};
 
-    const auto actual = bg::testing::test_graph(identity, profiler.recorder(), ticks);
+    const auto actual = bg::testing::test_graph[
+        bg::testing::TestGraphOptions{.recorder = profiler.recorder()}](identity, ticks);
 
     CHECK(actual.equals<bg::i64>({1, 2}));
     REQUIRE(profiler.root_graph_id());
@@ -147,6 +150,10 @@ TEST_CASE("test_graph literal annotations support generic and multiple inputs",
     const auto multiple_result = bg::testing::test_graph(
         add_graph, bg::testing::input<bg::TS<bg::i64>>({1, 2}), bg::testing::input<bg::TS<bg::i64>>({10, 20}));
     const auto raw_multiple_result = bg::testing::test_graph(add_graph, {1, 2}, {10, 20});
+    auto configured_profiler = bg::EvaluationProfiler{};
+    const auto configured_raw_multiple_result =
+        bg::testing::test_graph[bg::testing::TestGraphOptions{.recorder = configured_profiler.recorder()}](
+            add_graph, {1, 2}, {10, 20});
     const auto generic_rhs = [&](bg::wp<bg::TS<bg::i64>> lhs, bg::wp<> rhs) {
         return add_i64(lhs, rhs.as<bg::TS<bg::i64>>());
     };
@@ -175,6 +182,8 @@ TEST_CASE("test_graph literal annotations support generic and multiple inputs",
     CHECK(runtime_result.equals<bg::i64>({3, 4}));
     CHECK(multiple_result.equals<bg::i64>({11, 22}));
     CHECK(raw_multiple_result.equals<bg::i64>({11, 22}));
+    CHECK(configured_raw_multiple_result.equals<bg::i64>({11, 22}));
+    REQUIRE(configured_profiler.root_graph_id());
     CHECK(annotated_first_result.equals<bg::i64>({11, 22}));
     CHECK(annotated_second_result.equals<bg::i64>({11, 22}));
     CHECK(empty_first_result.equals<bg::i64>({30}));
@@ -283,9 +292,14 @@ TEST_CASE("test_graph preserves zero-input wiring template option calls",
     auto services_profiler = bg::EvaluationProfiler{};
 
     CHECK(bg::testing::test_graph(zero_input).equals<bg::i64>({42}));
-    CHECK(bg::testing::test_graph(zero_input, services).equals<bg::i64>({42}));
-    CHECK(bg::testing::test_graph(zero_input, profiler.recorder()).equals<bg::i64>({42}));
-    CHECK(bg::testing::test_graph(zero_input, services_profiler.recorder(), services).equals<bg::i64>({42}));
+    CHECK(bg::testing::test_graph[bg::testing::TestGraphOptions{.services = &services}](zero_input)
+              .equals<bg::i64>({42}));
+    CHECK(bg::testing::test_graph[
+              bg::testing::TestGraphOptions{.recorder = profiler.recorder()}](zero_input)
+              .equals<bg::i64>({42}));
+    CHECK(bg::testing::test_graph[bg::testing::TestGraphOptions{.services = &services,
+                                                               .recorder = services_profiler.recorder()}](zero_input)
+              .equals<bg::i64>({42}));
     REQUIRE(profiler.root_graph_id());
     CHECK(profiler.graph(*profiler.root_graph_id()) != nullptr);
 }
@@ -300,7 +314,9 @@ TEST_CASE("test_graph accepts literal inputs with profiler and services",
     auto profiler = bg::EvaluationProfiler{};
     auto services = bg::ServiceCatalogue{};
 
-    const auto actual = bg::testing::test_graph(graph, profiler.recorder(), services, {{{7, 10}}, {{7, 20}}});
+    const auto actual = bg::testing::test_graph[
+        bg::testing::TestGraphOptions{.services = &services, .recorder = profiler.recorder()}](
+        graph, {{{7, 10}}, {{7, 20}}});
 
     CHECK(actual.equals<bg::i64>({10, 20}));
     REQUIRE(profiler.root_graph_id());

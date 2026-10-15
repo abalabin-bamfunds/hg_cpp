@@ -25,8 +25,9 @@ TEST_CASE("reference service output crosses switch boundaries",
         return result;
     };
 
-    const auto actual = testing::test_graph(tested, catalogue, std::array<std::int64_t, 3>{1, 2, 1},
-                                            std::array<std::int64_t, 3>{4, 8, 3});
+    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
+        tested, std::array<std::int64_t, 3>{1, 2, 1},
+        std::array<std::int64_t, 3>{4, 8, 3});
 
     CHECK(actual.equals<std::int64_t>({46, 50, 45}));
 }
@@ -39,7 +40,7 @@ TEST_CASE("reference service output is available at the root graph",
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
 
-    const auto actual = testing::test_graph(service, catalogue);
+    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](service);
 
     CHECK(actual.equals<std::int64_t>({42}));
 }
@@ -58,7 +59,7 @@ TEST_CASE("reference service implementation can return a changing reference",
     catalogue.register_impl(service, implementation);
 
     CHECK(testing::test_graph(implementation).equals<std::int64_t>({42}));
-    const auto actual = testing::test_graph(service, catalogue);
+    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](service);
 
     CHECK(actual.equals<std::int64_t>({42}));
 }

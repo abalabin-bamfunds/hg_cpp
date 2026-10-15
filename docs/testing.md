@@ -86,8 +86,22 @@ scope only when multiple test cases share them.
 `test_graph` accepts a wiring template or a graph function. Each input range
 defines updates by outer cycle. An empty `std::optional` skips its cycle. The
 result has one position per cycle and uses an empty position when the output did
-not update. Pass a `ServiceCatalogue` after the tested wiring template or function
-to finalize [graph services](services.md) before compilation.
+not update.
+
+`test_graph` is a callable object. Configure [graph services](services.md) and
+profiling with `TestGraphOptions`:
+
+```cpp
+auto options = TestGraphOptions{
+    .services = &catalogue,
+    .recorder = profiler.recorder(),
+};
+auto actual = test_graph[options](graph, {1, 2}, {10, 20});
+```
+
+Both options are optional. The configured callable borrows the catalogue and
+profiler; they must remain alive throughout the synchronous run. Services are
+finalized before graph compilation.
 
 Literal input sequences use the [output literal syntax](node-api.md#output-parameters).
 Each sequence element describes one cycle's delta. Source nodes borrow the

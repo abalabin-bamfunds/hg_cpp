@@ -448,25 +448,15 @@ nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_
         input_views.push_back({runtime_type, owned_inputs.back()});
     }
 
+    const auto options = testing::TestGraphOptions{
+        .services = service_catalogue != nullptr ? &service_catalogue->catalogue() : nullptr,
+        .recorder = recorder != nullptr ? std::optional<EvaluationProfiler::Recorder>{*recorder} : std::nullopt,
+    };
     auto results = [&] {
         try {
             auto release_gil = nb::gil_scoped_release{};
-            if (service_catalogue != nullptr && recorder != nullptr) {
-                return testing::test_graph(static_cast<const WiringTemplate &>(definition), *recorder,
-                                           service_catalogue->catalogue(),
-                                           std::span<const testing::TestGraphInput>{input_views});
-            }
-            if (service_catalogue != nullptr) {
-                return testing::test_graph(static_cast<const WiringTemplate &>(definition),
-                                           service_catalogue->catalogue(),
-                                           std::span<const testing::TestGraphInput>{input_views});
-            }
-            if (recorder != nullptr) {
-                return testing::test_graph(static_cast<const WiringTemplate &>(definition), *recorder,
-                                           std::span<const testing::TestGraphInput>{input_views});
-            }
-            return testing::test_graph(static_cast<const WiringTemplate &>(definition),
-                                       std::span<const testing::TestGraphInput>{input_views});
+            return testing::test_graph[options](static_cast<const WiringTemplate &>(definition),
+                                                std::span<const testing::TestGraphInput>{input_views});
         } catch (const WiringError &error) {
             rethrow_python_error(error);
         }

@@ -19,6 +19,7 @@
 #include <bg/simulation_evaluation_engine.hpp>
 #include <bg/testing/test_graph_input.hpp>
 #include <bg/testing/test_graph_literal_input.hpp>
+#include <bg/testing/test_graph_options.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
 
@@ -281,10 +282,9 @@ template <typename Function> struct test_function {
 };
 
 inline auto finish_test_graph(GraphWiring &wiring, CapturedValues &captured, EvaluationTime start_time,
-                              const ServiceCatalogue *service_catalogue,
-                              EvaluationProfiler::Recorder *recorder) {
-    if (service_catalogue != nullptr) {
-        wiring.finalize(*service_catalogue);
+                              const TestGraphOptions &options) {
+    if (options.services != nullptr) {
+        wiring.finalize(*options.services);
     } else {
         wiring.finalize();
     }
@@ -292,8 +292,8 @@ inline auto finish_test_graph(GraphWiring &wiring, CapturedValues &captured, Eva
     const auto compiled = CompiledGraph{wiring};
     auto global_state = GlobalState{};
     auto runtime = RuntimeGraph{compiled, global_state};
-    if (recorder != nullptr) {
-        recorder->run(runtime, start_time);
+    if (options.recorder) {
+        options.recorder->run(runtime, start_time);
     } else {
         SimulationEvaluationEngine{}.run(runtime, start_time);
     }
@@ -356,8 +356,8 @@ inline WiringPoint wire_literal_source(const TestGraphLiteralInput &input,
 }
 
 template <typename Function, typename Inputs, std::size_t... Index>
-[[nodiscard]] auto run_function_literals(const Function &function, const ServiceCatalogue *service_catalogue,
-                                         EvaluationProfiler::Recorder *recorder, const Inputs &inputs,
+[[nodiscard]] auto run_function_literals(const Function &function, const TestGraphOptions &options,
+                                         const Inputs &inputs,
                                          std::index_sequence<Index...>) {
     using FunctionInfo = test_function<Function>;
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
@@ -380,11 +380,10 @@ template <typename Function, typename Inputs, std::size_t... Index>
         sink(output, ScalarValue<Opaque<CapturedValues *>>{&captured});
     }
 
-    return finish_test_graph(wiring, captured, start_time, service_catalogue, recorder);
+    return finish_test_graph(wiring, captured, start_time, options);
 }
 
-inline auto run_template_literals(const WiringTemplate &tested, const ServiceCatalogue *service_catalogue,
-                                  EvaluationProfiler::Recorder *recorder,
+inline auto run_template_literals(const WiringTemplate &tested, const TestGraphOptions &options,
                                   std::span<const TestGraphLiteralInput> inputs) {
     if (tested.signature().has_variadic_parameters()) {
         throw std::invalid_argument{"test_graph literal inputs do not support variadic wiring templates"};
@@ -417,12 +416,12 @@ inline auto run_template_literals(const WiringTemplate &tested, const ServiceCat
         }
     }
 
-    return finish_test_graph(wiring, captured, start_time, service_catalogue, recorder);
+    return finish_test_graph(wiring, captured, start_time, options);
 }
 
 template <typename Function, typename Inputs, std::size_t... Index>
-[[nodiscard]] auto run_function(const Function &function, const ServiceCatalogue *service_catalogue,
-                                EvaluationProfiler::Recorder *recorder, const Inputs &inputs,
+[[nodiscard]] auto run_function(const Function &function, const TestGraphOptions &options,
+                                const Inputs &inputs,
                                 std::index_sequence<Index...>) {
     using FunctionInfo = test_function<Function>;
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
@@ -439,12 +438,12 @@ template <typename Function, typename Inputs, std::size_t... Index>
         sink(output, ScalarValue<Opaque<CapturedValues *>>{&captured});
     }
 
-    return finish_test_graph(wiring, captured, start_time, service_catalogue, recorder);
+    return finish_test_graph(wiring, captured, start_time, options);
 }
 
 template <std::ranges::contiguous_range... Inputs>
-[[nodiscard]] auto run_template(const WiringTemplate &tested, const ServiceCatalogue *service_catalogue,
-                                EvaluationProfiler::Recorder *recorder, const Inputs &...inputs) {
+[[nodiscard]] auto run_template(const WiringTemplate &tested, const TestGraphOptions &options,
+                                const Inputs &...inputs) {
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
     auto captured = CapturedValues{.start_time = start_time, .values = {}};
     captured.values.resize(std::max({std::size_t{1}, std::ranges::size(inputs)...}));
@@ -461,11 +460,10 @@ template <std::ranges::contiguous_range... Inputs>
         }
     }
 
-    return finish_test_graph(wiring, captured, start_time, service_catalogue, recorder);
+    return finish_test_graph(wiring, captured, start_time, options);
 }
 
-[[nodiscard]] inline auto run_runtime_template(const WiringTemplate &tested, const ServiceCatalogue *service_catalogue,
-                                               EvaluationProfiler::Recorder *recorder,
+[[nodiscard]] inline auto run_runtime_template(const WiringTemplate &tested, const TestGraphOptions &options,
                                                std::span<const TestGraphInput> inputs) {
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
     auto captured = CapturedValues{.start_time = start_time, .values = {}};
@@ -497,7 +495,7 @@ template <std::ranges::contiguous_range... Inputs>
 
     captured.values.resize(cycle_count);
 
-    return finish_test_graph(wiring, captured, start_time, service_catalogue, recorder);
+    return finish_test_graph(wiring, captured, start_time, options);
 }
 
 } // namespace bg::testing::details

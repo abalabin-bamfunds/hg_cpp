@@ -79,9 +79,10 @@ and repeats until implementation graphs introduce no new requirements. It report
 missing, incompatible, ambiguous, and cyclic requirements with the service call paths
 that produced them.
 
-`run_graph` and `test_graph` accept an optional `ServiceCatalogue`. They finalize
-services after root wiring and before graph compilation. Code that manages wiring and
-compilation directly calls `ServiceCatalogue::build` at the same point.
+`run_graph` accepts an optional `ServiceCatalogue`.
+[`test_graph`](testing.md#test-layout) selects a catalogue through `TestGraphOptions::services`.
+Both finalize services after root wiring and before graph compilation. Code that
+manages wiring and compilation directly calls `ServiceCatalogue::build` at the same point.
 
 The compiler topologically sorts the completed graph after service finalization.
 Implementation insertion order does not define evaluation order.

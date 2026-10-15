@@ -296,8 +296,9 @@ ticks include nested graph execution; node checkpoint ticks exclude nested graph
 execution and include other work between checkpoints in that graph. Checkpoint
 ticks use the reader's clock.
 
-Pass `profiler.recorder()` to `run_graph` or `testing::test_graph` to record one
-simulation run. The helper starts the reader thread, finishes the recording,
+Pass `profiler.recorder()` to `run_graph`, or set `TestGraphOptions::recorder` for
+[`testing::test_graph`](testing.md#test-layout), to record one simulation run.
+The helper starts the reader thread, finishes the recording,
 and joins the reader before destroying the compiled graph. Query the profiler
 after the helper returns. `root_graph_id()` identifies the outer graph, and the
 final periods are closed before return. `outer_totals()` and `outer_periods()`
