@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/evaluation_time.hpp>
+#include <bg/evaluation_profiler.hpp>
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/details/wiring_callable.hpp>
 #include <bg/graph/graph_wiring.hpp>
@@ -215,7 +216,8 @@ template <typename Function> struct test_function {
 
 template <typename Function, typename Inputs, std::size_t... Index>
 [[nodiscard]] auto run_function(const Function &function, const ServiceCatalogue *service_catalogue,
-                                const Inputs &inputs, std::index_sequence<Index...>) {
+                                EvaluationProfiler::Recorder *recorder, const Inputs &inputs,
+                                std::index_sequence<Index...>) {
     using FunctionInfo = test_function<Function>;
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
     auto captured = CapturedValues{.start_time = start_time, .values = {}};
@@ -239,14 +241,18 @@ template <typename Function, typename Inputs, std::size_t... Index>
     const auto compiled = CompiledGraph{wiring};
     auto global_state = GlobalState{};
     auto runtime = RuntimeGraph{compiled, global_state};
-    SimulationEvaluationEngine{}.run(runtime, start_time);
+    if (recorder != nullptr) {
+        recorder->run(runtime, start_time);
+    } else {
+        SimulationEvaluationEngine{}.run(runtime, start_time);
+    }
 
     return std::move(captured.values);
 }
 
 template <std::ranges::contiguous_range... Inputs>
 [[nodiscard]] auto run_template(const WiringTemplate &tested, const ServiceCatalogue *service_catalogue,
-                                const Inputs &...inputs) {
+                                EvaluationProfiler::Recorder *recorder, const Inputs &...inputs) {
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
     auto captured = CapturedValues{.start_time = start_time, .values = {}};
     captured.values.resize(std::max({std::size_t{1}, std::ranges::size(inputs)...}));
@@ -272,12 +278,17 @@ template <std::ranges::contiguous_range... Inputs>
     const auto compiled = CompiledGraph{wiring};
     auto global_state = GlobalState{};
     auto runtime = RuntimeGraph{compiled, global_state};
-    SimulationEvaluationEngine{}.run(runtime, start_time);
+    if (recorder != nullptr) {
+        recorder->run(runtime, start_time);
+    } else {
+        SimulationEvaluationEngine{}.run(runtime, start_time);
+    }
 
     return std::move(captured.values);
 }
 
-[[nodiscard]] inline auto run_runtime_template(const WiringTemplate &tested, std::span<const TestGraphInput> inputs) {
+[[nodiscard]] inline auto run_runtime_template(const WiringTemplate &tested, std::span<const TestGraphInput> inputs,
+                                               EvaluationProfiler::Recorder *recorder) {
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
     auto captured = CapturedValues{.start_time = start_time, .values = {}};
     auto cycle_count = std::size_t{1};
@@ -313,7 +324,11 @@ template <std::ranges::contiguous_range... Inputs>
     const auto compiled = CompiledGraph{wiring};
     auto global_state = GlobalState{};
     auto runtime = RuntimeGraph{compiled, global_state};
-    SimulationEvaluationEngine{}.run(runtime, start_time);
+    if (recorder != nullptr) {
+        recorder->run(runtime, start_time);
+    } else {
+        SimulationEvaluationEngine{}.run(runtime, start_time);
+    }
 
     return std::move(captured.values);
 }

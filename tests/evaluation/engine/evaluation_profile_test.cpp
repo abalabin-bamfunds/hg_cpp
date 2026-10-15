@@ -540,7 +540,7 @@ TEST_CASE("runtime graph profiling exposes committed cycles and releases consume
     while (reader.read()) {
         ++record_count;
     }
-    CHECK(record_count > 4);
+    CHECK(record_count == 4);
     CHECK(memory.allocated_bytes() < allocated_bytes_before_drain);
 
     runtime.stop(profile);

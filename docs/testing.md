@@ -266,6 +266,8 @@ graph compilation or evaluation.
 - system and injected wall-clock access during lifecycle, nested evaluation, invalidation, and failure cleanup
 - profile records for completed outer cycles, nested graph instances, graph lifetime, polling visibility,
   and rollback after evaluation failure; plain evaluation without a profile
+- profiler node and outer-cycle histories with independent periods and retention, steady-clock durations,
+  post-run enumeration and reporting, graph-ID reuse, and final-period closure
 - outer and inner graph failure behavior
 - cycle callbacks and deferred storage reclamation
 - global state shared by outer and inner graphs

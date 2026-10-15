@@ -267,9 +267,48 @@ The caller calls `finish()` after stop to publish remaining lifecycle records
 and checks `failed()` to detect an incomplete recording. Recording failure or
 an aborted outer cycle does not stop graph evaluation; later evaluations use
 the plain path. The committed stream may end without stop records. The reader
-does not aggregate records or retain performance history; a monitoring
-consumer can compute cumulative and time-window reports
-from the committed stream.
+does not aggregate records or retain performance history.
+
+`EvaluationProfiler` polls the reader on one thread. It keeps directly indexed
+cumulative node counters for each active graph. `EvaluationProfilerConfig`
+sets independent node and outer-cycle histories. Node history defaults to
+one-minute periods retained for 30 minutes. Outer-cycle timing defaults to
+one-second periods retained for 24 hours. Both histories keep their current
+period in addition to the configured closed periods. Periods align to
+the clock epoch. Results use the graph instance ID; successive uses of a
+compact-reduce slot contribute to the same graph results. Node period records
+are 16 bytes; the current period uses one activity bit per node to capture a
+counter baseline only on its first evaluation. On stop, the profiler releases
+node counters and retains period records, graph-level cumulative counters, and
+the label until expiry.
+
+The outer cycle's start wall-clock time selects both periods. Its records become
+visible to the profiler only after that cycle commits. A later committed cycle
+closes earlier periods. An idle graph leaves its current period open. The caller
+may call `advance_to()` after it knows that no earlier cycle can still commit,
+such as after the recording finishes. An empty reader alone does not establish
+that condition. Period queries return closed periods. Outer-cycle timing uses
+the steady-clock interval between cycle start and end, including all inner graph
+work. Each timing record contains cycle count, total duration, minimum, and
+maximum in nanoseconds. Empty outer periods are omitted from enumeration;
+missing periods represent no completed cycles. Graph-level checkpoint
+ticks include nested graph execution; node checkpoint ticks exclude nested graph
+execution and include other work between checkpoints in that graph. Checkpoint
+ticks use the reader's clock.
+
+Pass `profiler.recorder()` to `run_graph` or `testing::test_graph` to record one
+simulation run. The helper starts the reader thread, finishes the recording,
+and joins the reader before destroying the compiled graph. Query the profiler
+after the helper returns. `root_graph_id()` identifies the outer graph, and the
+final periods are closed before return. `outer_totals()` and `outer_periods()`
+provide cumulative and retained cycle timing. `graph_ids()`,
+`node_period_starts()`, and `node_periods()` enumerate retained node results;
+`graph()` and `graph_period()` provide graph metadata and counters. `report()`
+formats a short outer-cycle summary with recent period timing and UTC period
+starts. Stopped graphs no longer have live `node_totals()`. Node results use
+compiled node indices. The profiler does not retain compiled
+graph metadata after the run.
+A profiler recorder accepts one run.
 
 ## Deferred cleanup
 

@@ -39,6 +39,7 @@ add_library(
     src/compiled_graph.cpp
     src/context.cpp
     src/evaluation_profile.cpp
+    src/evaluation_profiler.cpp
     src/global_state.cpp
     src/graph_instance_id.cpp
     src/graph_argument.cpp

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/evaluation_profiler.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/testing/details/test_graph.hpp>
 #include <bg/testing/test_graph_input.hpp>
@@ -82,20 +83,38 @@ template <typename T = void> class TestGraphResult {
 // integrations that do not have C++ range element types, including the Python bindings.
 [[nodiscard]] inline TestGraphResult<> test_graph(const WiringTemplate &tested,
                                                   std::span<const TestGraphInput> inputs) {
-    return TestGraphResult<>{details::run_runtime_template(tested, inputs)};
+    return TestGraphResult<>{details::run_runtime_template(tested, inputs, nullptr)};
+}
+
+[[nodiscard]] inline TestGraphResult<> test_graph(const WiringTemplate &tested,
+                                                  EvaluationProfiler::Recorder recorder,
+                                                  std::span<const TestGraphInput> inputs) {
+    return TestGraphResult<>{details::run_runtime_template(tested, inputs, &recorder)};
 }
 
 // Each input range defines updates by outer cycle. An empty optional skips its cycle.
 // Each result position owns the output update from the corresponding cycle, if any.
 template <std::ranges::contiguous_range... Inputs>
 [[nodiscard]] TestGraphResult<> test_graph(const WiringTemplate &tested, const Inputs &...inputs) {
-    return TestGraphResult<>{details::run_template(tested, nullptr, inputs...)};
+    return TestGraphResult<>{details::run_template(tested, nullptr, nullptr, inputs...)};
 }
 
 template <std::ranges::contiguous_range... Inputs>
 [[nodiscard]] TestGraphResult<> test_graph(const WiringTemplate &tested, const ServiceCatalogue &service_catalogue,
                                            const Inputs &...inputs) {
-    return TestGraphResult<>{details::run_template(tested, &service_catalogue, inputs...)};
+    return TestGraphResult<>{details::run_template(tested, &service_catalogue, nullptr, inputs...)};
+}
+
+template <std::ranges::contiguous_range... Inputs>
+[[nodiscard]] TestGraphResult<> test_graph(const WiringTemplate &tested, EvaluationProfiler::Recorder recorder,
+                                          const Inputs &...inputs) {
+    return TestGraphResult<>{details::run_template(tested, nullptr, &recorder, inputs...)};
+}
+
+template <std::ranges::contiguous_range... Inputs>
+[[nodiscard]] TestGraphResult<> test_graph(const WiringTemplate &tested, EvaluationProfiler::Recorder recorder,
+                                          const ServiceCatalogue &service_catalogue, const Inputs &...inputs) {
+    return TestGraphResult<>{details::run_template(tested, &service_catalogue, &recorder, inputs...)};
 }
 
 template <typename Function, std::ranges::contiguous_range... Inputs>
@@ -106,7 +125,7 @@ template <typename Function, std::ranges::contiguous_range... Inputs>
     static_assert(bg::details::is_typed_wiring_point<typename FunctionInfo::result>);
 
     const auto ranges = std::tie(inputs...);
-    auto values = details::run_function(function, nullptr, ranges, std::index_sequence_for<Inputs...>{});
+    auto values = details::run_function(function, nullptr, nullptr, ranges, std::index_sequence_for<Inputs...>{});
 
     return TestGraphResult<typename FunctionInfo::output_scalar>{std::move(values)};
 }
@@ -120,7 +139,37 @@ template <typename Function, std::ranges::contiguous_range... Inputs>
     static_assert(bg::details::is_typed_wiring_point<typename FunctionInfo::result>);
 
     const auto ranges = std::tie(inputs...);
-    auto values = details::run_function(function, &service_catalogue, ranges, std::index_sequence_for<Inputs...>{});
+    auto values = details::run_function(function, &service_catalogue, nullptr, ranges,
+                                        std::index_sequence_for<Inputs...>{});
+
+    return TestGraphResult<typename FunctionInfo::output_scalar>{std::move(values)};
+}
+
+template <typename Function, std::ranges::contiguous_range... Inputs>
+    requires(!std::derived_from<std::remove_cvref_t<Function>, WiringTemplate>)
+[[nodiscard]] auto test_graph(const Function &function, EvaluationProfiler::Recorder recorder,
+                              const Inputs &...inputs) {
+    using FunctionInfo = details::test_function<Function>;
+    static_assert(FunctionInfo::callable::argument_count == sizeof...(Inputs));
+    static_assert(bg::details::is_typed_wiring_point<typename FunctionInfo::result>);
+
+    const auto ranges = std::tie(inputs...);
+    auto values = details::run_function(function, nullptr, &recorder, ranges, std::index_sequence_for<Inputs...>{});
+
+    return TestGraphResult<typename FunctionInfo::output_scalar>{std::move(values)};
+}
+
+template <typename Function, std::ranges::contiguous_range... Inputs>
+    requires(!std::derived_from<std::remove_cvref_t<Function>, WiringTemplate>)
+[[nodiscard]] auto test_graph(const Function &function, EvaluationProfiler::Recorder recorder,
+                              const ServiceCatalogue &service_catalogue, const Inputs &...inputs) {
+    using FunctionInfo = details::test_function<Function>;
+    static_assert(FunctionInfo::callable::argument_count == sizeof...(Inputs));
+    static_assert(bg::details::is_typed_wiring_point<typename FunctionInfo::result>);
+
+    const auto ranges = std::tie(inputs...);
+    auto values = details::run_function(function, &service_catalogue, &recorder, ranges,
+                                        std::index_sequence_for<Inputs...>{});
 
     return TestGraphResult<typename FunctionInfo::output_scalar>{std::move(values)};
 }
@@ -134,7 +183,7 @@ template <typename Function>
     static_assert(FunctionInfo::callable::argument_count == 1);
 
     const auto inputs = std::tie(input);
-    auto values = details::run_function(function, nullptr, inputs, std::index_sequence<0>{});
+    auto values = details::run_function(function, nullptr, nullptr, inputs, std::index_sequence<0>{});
 
     return TestGraphResult<typename FunctionInfo::output_scalar>{std::move(values)};
 }
@@ -148,7 +197,35 @@ template <typename Function>
     static_assert(FunctionInfo::callable::argument_count == 1);
 
     const auto inputs = std::tie(input);
-    auto values = details::run_function(function, &service_catalogue, inputs, std::index_sequence<0>{});
+    auto values = details::run_function(function, &service_catalogue, nullptr, inputs, std::index_sequence<0>{});
+
+    return TestGraphResult<typename FunctionInfo::output_scalar>{std::move(values)};
+}
+
+template <typename Function>
+    requires(!std::derived_from<std::remove_cvref_t<Function>, WiringTemplate>)
+[[nodiscard]] auto test_graph(
+    const Function &function, EvaluationProfiler::Recorder recorder,
+    std::initializer_list<std::optional<typename details::test_function<Function>::template input_scalar<0>>> input) {
+    using FunctionInfo = details::test_function<Function>;
+    static_assert(FunctionInfo::callable::argument_count == 1);
+
+    const auto inputs = std::tie(input);
+    auto values = details::run_function(function, nullptr, &recorder, inputs, std::index_sequence<0>{});
+
+    return TestGraphResult<typename FunctionInfo::output_scalar>{std::move(values)};
+}
+
+template <typename Function>
+    requires(!std::derived_from<std::remove_cvref_t<Function>, WiringTemplate>)
+[[nodiscard]] auto test_graph(
+    const Function &function, EvaluationProfiler::Recorder recorder, const ServiceCatalogue &service_catalogue,
+    std::initializer_list<std::optional<typename details::test_function<Function>::template input_scalar<0>>> input) {
+    using FunctionInfo = details::test_function<Function>;
+    static_assert(FunctionInfo::callable::argument_count == 1);
+
+    const auto inputs = std::tie(input);
+    auto values = details::run_function(function, &service_catalogue, &recorder, inputs, std::index_sequence<0>{});
 
     return TestGraphResult<typename FunctionInfo::output_scalar>{std::move(values)};
 }
