@@ -21,6 +21,7 @@
 #include <bg/type/size_variable.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
+#include <bg/type/time_series_guarantee.hpp>
 #include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_set_type.hpp>
@@ -110,24 +111,27 @@ std::exception_ptr python_error_cause(std::exception_ptr cause) {
 
 class TypeDescriptor {
   public:
-    explicit TypeDescriptor(const Type &type, bool accepts_absent_scalar = false) noexcept
-        : type_{&type}, accepts_absent_scalar_{accepts_absent_scalar} {}
+    explicit TypeDescriptor(const Type &type, bool accepts_absent_scalar = false,
+                            std::optional<TimeSeriesGuarantee> minimum_guarantee = std::nullopt) noexcept
+        : type_{&type}, accepts_absent_scalar_{accepts_absent_scalar}, minimum_guarantee_{minimum_guarantee} {}
     explicit TypeDescriptor(const Schema &schema) noexcept : type_{&schema}, schema_{&schema} {}
     TypeDescriptor(const TypeDescriptor &value, bool accepts_time_series_value) noexcept
         : type_{value.type_}, schema_{value.schema_},
           accepts_absent_scalar_{value.accepts_absent_scalar_},
-          accepts_time_series_value_{accepts_time_series_value} {}
+          accepts_time_series_value_{accepts_time_series_value}, minimum_guarantee_{value.minimum_guarantee_} {}
 
     const Type &type() const noexcept { return *type_; }
     const Schema *schema() const noexcept { return schema_; }
     bool accepts_absent_scalar() const noexcept { return accepts_absent_scalar_; }
     bool accepts_time_series_value() const noexcept { return accepts_time_series_value_; }
+    std::optional<TimeSeriesGuarantee> minimum_guarantee() const noexcept { return minimum_guarantee_; }
 
   private:
     const Type *type_;
     const Schema *schema_{};
     bool accepts_absent_scalar_{};
     bool accepts_time_series_value_{};
+    std::optional<TimeSeriesGuarantee> minimum_guarantee_;
 };
 
 using PythonParameter = std::tuple<std::string, TypeDescriptor, std::string>;
@@ -280,7 +284,7 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
         }
         if (const auto *time_series = type_cast<TimeSeriesType>(type); time_series != nullptr && variadic.empty()) {
             const auto &guarantee = VariableRegistry::instance().register_owned(
-                std::make_unique<GuaranteeVariable>(util::symbol{parameter_name}));
+                std::make_unique<GuaranteeVariable>(util::symbol{parameter_name}, parameter_type.minimum_guarantee()));
             type = &TypeRegistry::instance().register_owned(generic_time_series_type(*time_series, guarantee));
         }
 
@@ -343,6 +347,9 @@ PythonServiceDefinition make_service(std::string name, std::string kind,
         }
         if (kind == "request_reply") {
             return std::make_unique<Service>(signature->signature);
+        }
+        if (kind == "subscription") {
+            return std::make_unique<SubscriptionService>(signature->signature);
         }
         throw std::invalid_argument{"unknown Python service kind"};
     }();
@@ -648,6 +655,12 @@ void bind_core(nb::module_ &module) {
         nb::raise_python_error();
     }
 
+    nb::enum_<TimeSeriesGuarantee>(module, "_TimeSeriesGuarantee")
+        .value("ordinary", TimeSeriesGuarantee::ordinary)
+        .value("deduplicated", TimeSeriesGuarantee::deduplicated)
+        .value("final", TimeSeriesGuarantee::final)
+        .value("const_", TimeSeriesGuarantee::const_);
+
     module.def("version", [] { return std::string{bg::version()}; });
     nb::class_<PythonServiceDefinition>(module, "_PythonServiceDefinition");
     nb::class_<PythonServiceCatalogue>(module, "_ServiceCatalogue").def(nb::init<>());
@@ -677,6 +690,22 @@ void bind_core(nb::module_ &module) {
             throw std::invalid_argument{"REF[...] requires a time-series annotation"};
         }
         return TypeDescriptor{time_series_reference_type(*target, TimeSeriesGuarantee::ordinary)};
+    });
+    module.def("_with_time_series_guarantee", [](const TypeDescriptor &value, TimeSeriesGuarantee guarantee) {
+        if (!value.type().is_time_series()) {
+            throw std::invalid_argument{"a time-series guarantee requires a time-series annotation"};
+        }
+
+        const auto *time_series = type_cast<TimeSeriesType>(&value.type());
+        const auto minimum = value.minimum_guarantee()
+                                 ? strongest(*value.minimum_guarantee(), guarantee)
+                                 : guarantee;
+        if (!time_series->is_resolved()) {
+            throw std::invalid_argument{"a time-series guarantee requires a concrete time-series type"};
+        }
+
+        const auto &annotated_type = time_series->with_guarantee(minimum);
+        return TypeDescriptor{annotated_type, value.accepts_absent_scalar(), minimum};
     });
     module.def("_time_series_set_type", [](const TypeDescriptor &value) {
         const auto *item = type_cast<ScalarType>(&value.type());

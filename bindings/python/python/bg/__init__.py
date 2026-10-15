@@ -12,6 +12,7 @@ from ._bg import (
     Dict,
     EvaluationProfiler,
     EvaluationProfilerRecorder as _EvaluationProfilerRecorder,
+    _TimeSeriesGuarantee,
     WiringPoint as _WiringPoint,
     _Type,
     _make_graph,
@@ -43,6 +44,7 @@ from ._bg import (
     _switch,
     _wire_graph,
     _wire_node,
+    _with_time_series_guarantee,
     version,
 )
 
@@ -157,11 +159,34 @@ class Removed:
 _register_delta_types(SetDelta, Removed, REMOVE)
 
 
+ordinary = _TimeSeriesGuarantee.ordinary
+deduplicated = _TimeSeriesGuarantee.deduplicated
+final = _TimeSeriesGuarantee.final
+const_ = _TimeSeriesGuarantee.const_
+
+
+def _annotation_arguments(arguments: Any, required: int, name: str) -> tuple[Any, Any]:
+    if isinstance(arguments, tuple):
+        if len(arguments) not in (required, required + 1):
+            raise TypeError(f"{name}[...] accepts {required} type argument(s) and an optional guarantee")
+        return arguments[0], arguments[1] if len(arguments) == required + 1 else None
+    return arguments, None
+
+
+def _with_guarantee(annotation: Any, guarantee: Any) -> Any:
+    if guarantee is None:
+        return annotation
+    if not isinstance(guarantee, _TimeSeriesGuarantee):
+        raise TypeError("time-series guarantees must be bg.ordinary, bg.deduplicated, bg.final, or bg.const_")
+    return Annotated[annotation, guarantee]
+
+
 class TS:
     """A time-series type annotation."""
 
-    def __class_getitem__(cls, scalar_type: type) -> Any:
-        return _time_series_type(_native_type(scalar_type))
+    def __class_getitem__(cls, arguments: Any) -> Any:
+        scalar_type, guarantee = _annotation_arguments(arguments, 1, "TS")
+        return _with_guarantee(_time_series_type(_native_type(scalar_type)), guarantee)
 
 
 class _ScalarAnnotation:
@@ -185,33 +210,42 @@ class Scalar:
 class REF:
     """A time-series reference type annotation."""
 
-    def __class_getitem__(cls, target_type: Any) -> Any:
-        return _reference_type(_native_type(target_type))
+    def __class_getitem__(cls, arguments: Any) -> Any:
+        target_type, guarantee = _annotation_arguments(arguments, 1, "REF")
+        return _with_guarantee(_reference_type(_native_type(target_type)), guarantee)
 
 
 class TSS:
     """A time-series set type annotation."""
 
-    def __class_getitem__(cls, item_type: type) -> Any:
-        return _time_series_set_type(_native_type(item_type))
+    def __class_getitem__(cls, arguments: Any) -> Any:
+        item_type, guarantee = _annotation_arguments(arguments, 1, "TSS")
+        return _with_guarantee(_time_series_set_type(_native_type(item_type)), guarantee)
 
 
 class TSL:
     """A fixed time-series list type annotation."""
 
     def __class_getitem__(cls, arguments: Any) -> Any:
-        item_type, size = arguments
+        if not isinstance(arguments, tuple) or len(arguments) not in (2, 3):
+            raise TypeError("TSL[...] requires an item type and size, with an optional guarantee")
+        item_type, size, *guarantee = arguments
         if size is SIZE:
-            return _variadic_time_series_list_type(_native_type(item_type))
-        return _time_series_list_type(_native_type(item_type), size)
+            time_series_type = _variadic_time_series_list_type(_native_type(item_type))
+        else:
+            time_series_type = _time_series_list_type(_native_type(item_type), size)
+        return _with_guarantee(time_series_type, guarantee[0] if guarantee else None)
 
 
 class TSD:
     """A time-series dictionary type annotation."""
 
     def __class_getitem__(cls, arguments: Any) -> Any:
-        key_type, item_type = arguments
-        return _time_series_dict_type(_native_type(key_type), _native_type(item_type))
+        if not isinstance(arguments, tuple) or len(arguments) not in (2, 3):
+            raise TypeError("TSD[...] requires key and item types, with an optional guarantee")
+        key_type, item_type, *guarantee = arguments
+        time_series_type = _time_series_dict_type(_native_type(key_type), _native_type(item_type))
+        return _with_guarantee(time_series_type, guarantee[0] if guarantee else None)
 
 
 class TimeSeriesSchema:
@@ -222,7 +256,7 @@ class TimeSeriesSchema:
     def __init_subclass__(cls) -> None:
         super().__init_subclass__()
         direct_annotations = cls.__dict__.get("__annotations__", {})
-        resolved_annotations = get_type_hints(cls)
+        resolved_annotations = get_type_hints(cls, include_extras=True)
         fields = [
             (name, _native_type(resolved_annotations.get(name, annotation)))
             for name, annotation in direct_annotations.items()
@@ -243,12 +277,13 @@ class TimeSeriesSchema:
 class TSB:
     """A time-series bundle type annotation."""
 
-    def __class_getitem__(cls, schema: type[TimeSeriesSchema]) -> Any:
+    def __class_getitem__(cls, arguments: Any) -> Any:
+        schema, guarantee = _annotation_arguments(arguments, 1, "TSB")
         if schema is TS_SCHEMA:
-            return _variadic_time_series_bundle_type()
+            return _with_guarantee(_variadic_time_series_bundle_type(), guarantee)
         if not isinstance(schema, type) or not issubclass(schema, TimeSeriesSchema):
             raise TypeError("TSB[...] requires a TimeSeriesSchema")
-        return _time_series_bundle_type(schema._native_schema)
+        return _with_guarantee(_time_series_bundle_type(schema._native_schema), guarantee)
 
 
 class _TypeVariable:
@@ -427,7 +462,7 @@ class ServiceCatalogue:
         self, service: _ServiceDefinition, implementation: GraphDefinition, *args: Any, **kwargs: Any
     ) -> None:
         if not isinstance(service, _ServiceDefinition):
-            raise TypeError("register_impl expects a @service or @reference_service declaration")
+            raise TypeError("register_impl expects a Python service declaration")
         if not isinstance(implementation, GraphDefinition):
             raise TypeError("register_impl expects a decorated @graph implementation")
         _register_service_impl(self._native_catalogue, service, implementation, args, kwargs)
@@ -610,6 +645,9 @@ def _native_type(annotation: Any) -> Any:
         native_type = _native_type(value_type)
         if _ScalarOnly in metadata:
             return _ScalarAnnotation(native_type)
+        for item in metadata:
+            if isinstance(item, _TimeSeriesGuarantee):
+                native_type = _with_time_series_guarantee(native_type, item)
         return native_type
     if isinstance(annotation, type):
         return _scalar_type(annotation)
@@ -641,6 +679,11 @@ def service(function: Any) -> _ServiceDefinition:
     return _define_service(function, "request_reply")
 
 
+def subscription_service(function: Any) -> _ServiceDefinition:
+    """Declare a service that requests values for final time-series keys."""
+    return _define_service(function, "subscription")
+
+
 def node(function: Any) -> NodeDefinition:
     """Declare a Python node whose scalar annotations accept scalar or TS[T] inputs."""
     return _define_node(function, schedule_on_start=True, scalar_or_time_series_inputs=True)
@@ -654,7 +697,8 @@ def source_node(function: Any) -> NodeDefinition:
 
     annotations = get_type_hints(function, include_extras=True)
     output = annotations.get("return", signature.return_annotation)
-    if output is inspect.Signature.empty or not isinstance(output, _Type) or not output.is_time_series:
+    output_type = _native_type(output) if output is not inspect.Signature.empty else None
+    if output_type is None or not output_type.is_time_series:
         raise TypeError("Python source nodes must return a time-series value")
 
     return _define_node(function, schedule_on_start=True)
@@ -725,9 +769,13 @@ operators.switch_ = switch_
 
 __all__ = [
     "EvaluationProfiler",
+    "const_",
+    "deduplicated",
+    "final",
     "GraphDefinition",
     "DEFAULT",
     "NodeDefinition",
+    "ordinary",
     "REF",
     "REMOVE",
     "Removed",
@@ -754,6 +802,7 @@ __all__ = [
     "run_graph",
     "reference_service",
     "service",
+    "subscription_service",
     "source_node",
     "symbol",
     "switch_",

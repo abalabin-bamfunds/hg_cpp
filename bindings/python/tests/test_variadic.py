@@ -49,6 +49,36 @@ def test_graph_var_args_are_packed_as_a_tsl():
     assert bg.test_graph(graph, [1, 2], [3, 4]) == [3, 4]
 
 
+def test_variadic_collection_guarantee_requires_a_concrete_collection():
+    with pytest.raises(ValueError, match="guarantee requires a concrete time-series type"):
+
+        @bg.graph
+        def positional(*values: bg.TSL[bg.TS[int], bg.SIZE, bg.final]) -> bg.TS[int]:
+            return values[0]
+
+    with pytest.raises(ValueError, match="guarantee requires a concrete time-series type"):
+
+        @bg.graph
+        def named(**values: bg.TSB[bg.TS_SCHEMA, bg.final]) -> bg.TS[int]:
+            return values["value"]
+
+
+def test_variadic_tsl_accepts_a_qualified_item_type():
+    @bg.source_node
+    def final_value() -> bg.TS[int, bg.final]:
+        return 13
+
+    @bg.graph
+    def consume(*values: bg.TSL[bg.TS[int, bg.final], bg.SIZE]) -> bg.TS[int]:
+        return values[0]
+
+    @bg.graph
+    def graph() -> bg.TS[int]:
+        return consume(final_value())
+
+    assert bg.test_graph(graph) == [13]
+
+
 def test_variadic_tsl_retains_a_generic_bundle_item_annotation():
     class Pair(bg.TimeSeriesSchema):
         left: bg.TS[int]

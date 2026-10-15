@@ -152,6 +152,95 @@ def test_request_reply_service_supports_scalar_filter_and_installation_argument(
     assert bg.test_graph(client, [2, 4], catalogue=catalogue) == [6, 12]
 
 
+def test_subscription_service_accepts_final_and_const_keys():
+    @bg.subscription_service
+    def lookup(key: bg.TS[int, bg.final]) -> bg.TS[int]:
+        """Look up a value for a key that cannot change."""
+
+    @bg.compute_node
+    def make_responses(requests: bg.TSS[int]) -> bg.TSD[int, bg.TS[int]]:
+        return {key: key * 10 for key in requests.value}
+
+    @bg.graph
+    def implementation(requests: bg.TSS[int]) -> bg.TSD[int, bg.TS[int]]:
+        return make_responses(requests)
+
+    @bg.source_node
+    def final_key() -> bg.TS[int, bg.final]:
+        return 9
+
+    @bg.graph
+    def client() -> bg.TS[int]:
+        constant_result = lookup(bg.operators.const_(7))
+        final_result = lookup(final_key())
+        return bg.operators.add(constant_result, final_result)
+
+    catalogue = bg.ServiceCatalogue()
+    catalogue.register_impl(lookup, implementation)
+
+    assert bg.test_graph(client, catalogue=catalogue) == [160]
+
+
+def test_subscription_service_rejects_ordinary_key_at_call_site():
+    @bg.subscription_service
+    def lookup(key: bg.TS[int, bg.final]) -> bg.TS[int]:
+        """Look up a value for a key that cannot change."""
+
+    @bg.compute_node
+    def make_responses(requests: bg.TSS[int]) -> bg.TSD[int, bg.TS[int]]:
+        return {key: key for key in requests.value}
+
+    @bg.graph
+    def implementation(requests: bg.TSS[int]) -> bg.TSD[int, bg.TS[int]]:
+        return make_responses(requests)
+
+    @bg.source_node
+    def ordinary_key() -> bg.TS[int]:
+        return 7
+
+    @bg.graph
+    def client() -> bg.TS[int]:
+        return lookup(ordinary_key())
+
+    catalogue = bg.ServiceCatalogue()
+    catalogue.register_impl(lookup, implementation)
+
+    with pytest.raises(RuntimeError, match="argument does not satisfy its generic type"):
+        bg.test_graph(client, catalogue=catalogue)
+
+
+def test_guarantee_annotations_apply_to_each_time_series_shape():
+    class Schema(bg.TimeSeriesSchema):
+        value: bg.TS[int, bg.final]
+
+    @bg.graph
+    def shaped_inputs(
+        values: bg.TSS[int, bg.final],
+        items: bg.TSL[bg.TS[int], 2, bg.final],
+        mapping: bg.TSD[int, bg.TS[int], bg.final],
+        bundle: bg.TSB[Schema, bg.final],
+        reference: bg.REF[bg.TS[int], bg.final],
+    ) -> None:
+        pass
+
+    assert isinstance(shaped_inputs, bg.GraphDefinition)
+
+    @bg.source_node
+    def make_bundle() -> bg.TSB[Schema]:
+        return {"value": 13}
+
+    @bg.compute_node
+    def read_final_field(value: bg.TS[int, bg.final]) -> bg.TS[int]:
+        return value.value
+
+    @bg.graph
+    def read_schema_field() -> bg.TS[int]:
+        field = bg.operators.getattr(make_bundle(), bg.symbol("value"))
+        return read_final_field(field)
+
+    assert bg.test_graph(read_schema_field) == [13]
+
+
 def test_service_without_registered_implementation_fails_during_wiring():
     catalogue = bg.ServiceCatalogue()
     with pytest.raises(RuntimeError, match="no matching implementation"):
