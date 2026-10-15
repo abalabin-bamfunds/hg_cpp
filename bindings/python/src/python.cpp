@@ -25,6 +25,7 @@
 #include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_set_type.hpp>
+#include <bg/type/time_series_value_type.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/type/type_registry.hpp>
 #include <bg/type/type.hpp>
@@ -232,8 +233,7 @@ class PythonServiceCatalogue {
     ServiceCatalogue catalogue_;
 };
 
-std::unique_ptr<TimeSeriesType> generic_time_series_type(const TimeSeriesType &type,
-                                                         const GuaranteeVariable &guarantee) {
+std::unique_ptr<TimeSeriesType> generic_time_series_type(const TimeSeriesType &type, GuaranteeParameter guarantee) {
     if (const auto *value = type_cast<TimeSeriesValueType>(&type)) {
         return std::make_unique<GenericTimeSeriesValueType>(value->value_type(), guarantee);
     }
@@ -282,7 +282,9 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
             type = &input_type;
             wiring_type = scalar;
         }
-        if (const auto *time_series = type_cast<TimeSeriesType>(type); time_series != nullptr && variadic.empty()) {
+        if (const auto *time_series = type_cast<TimeSeriesType>(type);
+            time_series != nullptr && variadic.empty() &&
+            dynamic_cast<const TypeVariableType<TimeSeriesType> *>(time_series) == nullptr) {
             const auto &guarantee = VariableRegistry::instance().register_owned(
                 std::make_unique<GuaranteeVariable>(util::symbol{parameter_name}, parameter_type.minimum_guarantee()));
             type = &TypeRegistry::instance().register_owned(generic_time_series_type(*time_series, guarantee));
@@ -651,6 +653,26 @@ void bind_core(nb::module_ &module) {
     nb::class_<PythonServiceCatalogue>(module, "_ServiceCatalogue").def(nb::init<>());
     module.def("_scalar_type",
                [](nb::handle value) { return TypeDescriptor{scalar_conversions().type_from_python(value)}; });
+    module.def("_scalar_variable_type", [](std::string name, const std::vector<TypeDescriptor> &alternatives) {
+        auto scalar_alternatives = std::vector<const ScalarType *>{};
+        scalar_alternatives.reserve(alternatives.size());
+        for (const auto &alternative : alternatives) {
+            const auto *scalar = type_cast<ScalarType>(&alternative.type());
+            if (scalar == nullptr) {
+                throw std::invalid_argument{"a scalar TypeVar requires scalar bounds or constraints"};
+            }
+            scalar_alternatives.push_back(scalar);
+        }
+
+        const auto &variable = TypeRegistry::instance().register_owned(
+            std::make_unique<TypeVariableType<ScalarType>>(util::symbol{name}, std::move(scalar_alternatives)));
+        return TypeDescriptor{variable};
+    });
+    module.def("_time_series_variable_type", [](std::string name) {
+        const auto &variable = TypeRegistry::instance().register_owned(
+            std::make_unique<TypeVariableType<TimeSeriesType>>(util::symbol{name}));
+        return TypeDescriptor{variable};
+    });
     module.def("_dict_scalar_type", [](const TypeDescriptor &key_value, const TypeDescriptor &mapped_value) {
         const auto *key = type_cast<ScalarType>(&key_value.type());
         const auto *mapped = type_cast<ScalarType>(&mapped_value.type());
@@ -667,14 +689,22 @@ void bind_core(nb::module_ &module) {
         if (scalar == nullptr) {
             throw std::invalid_argument{"TS[...] requires a scalar annotation"};
         }
-        return TypeDescriptor{time_series_value_type(*scalar, TimeSeriesGuarantee::ordinary)};
+        if (scalar->is_resolved()) {
+            return TypeDescriptor{time_series_value_type(*scalar, TimeSeriesGuarantee::ordinary)};
+        }
+        const auto &type = TypeRegistry::instance().register_owned(
+            std::make_unique<GenericTimeSeriesValueType>(*scalar, TimeSeriesGuarantee::ordinary));
+        return TypeDescriptor{type};
     });
     module.def("_reference_type", [](const TypeDescriptor &value) {
         const auto *target = type_cast<TimeSeriesType>(&value.type());
         if (target == nullptr) {
             throw std::invalid_argument{"REF[...] requires a time-series annotation"};
         }
-        return TypeDescriptor{time_series_reference_type(*target, TimeSeriesGuarantee::ordinary)};
+        if (target->is_resolved()) {
+            return TypeDescriptor{time_series_reference_type(*target, TimeSeriesGuarantee::ordinary)};
+        }
+        return TypeDescriptor{generic_time_series_reference_type(*target, TimeSeriesGuarantee::ordinary)};
     });
     module.def("_with_time_series_guarantee", [](const TypeDescriptor &value, TimeSeriesGuarantee guarantee) {
         if (!value.type().is_time_series()) {
@@ -685,11 +715,10 @@ void bind_core(nb::module_ &module) {
         const auto minimum = value.minimum_guarantee()
                                  ? strongest(*value.minimum_guarantee(), guarantee)
                                  : guarantee;
-        if (!time_series->is_resolved()) {
-            throw std::invalid_argument{"a time-series guarantee requires a concrete time-series type"};
-        }
-
-        const auto &annotated_type = time_series->with_guarantee(minimum);
+        const auto &annotated_type = time_series->is_resolved()
+                                         ? time_series->with_guarantee(minimum)
+                                         : TypeRegistry::instance().register_owned(
+                                               generic_time_series_type(*time_series, minimum));
         return TypeDescriptor{annotated_type, value.accepts_absent_scalar(), minimum};
     });
     module.def("_time_series_set_type", [](const TypeDescriptor &value) {
@@ -697,14 +726,24 @@ void bind_core(nb::module_ &module) {
         if (item == nullptr) {
             throw std::invalid_argument{"TSS[...] requires a scalar annotation"};
         }
-        return TypeDescriptor{time_series_set_type(*item, TimeSeriesGuarantee::ordinary)};
+        if (item->is_resolved()) {
+            return TypeDescriptor{time_series_set_type(*item, TimeSeriesGuarantee::ordinary)};
+        }
+        const auto &type = TypeRegistry::instance().register_owned(
+            std::make_unique<GenericTimeSeriesSetType>(*item, TimeSeriesGuarantee::ordinary));
+        return TypeDescriptor{type};
     });
     module.def("_time_series_list_type", [](const TypeDescriptor &value, std::size_t size) {
         const auto *item = type_cast<TimeSeriesType>(&value.type());
         if (item == nullptr) {
             throw std::invalid_argument{"TSL[...] requires a time-series item annotation"};
         }
-        return TypeDescriptor{time_series_list_type(*item, size, TimeSeriesGuarantee::ordinary)};
+        if (item->is_resolved()) {
+            return TypeDescriptor{time_series_list_type(*item, size, TimeSeriesGuarantee::ordinary)};
+        }
+        const auto &type = TypeRegistry::instance().register_owned(
+            std::make_unique<GenericTimeSeriesListType>(*item, size, TimeSeriesGuarantee::ordinary));
+        return TypeDescriptor{type};
     });
     module.def("_variadic_time_series_list_type", [](const TypeDescriptor &value) {
         const auto *item = type_cast<TimeSeriesType>(&value.type());
@@ -723,7 +762,18 @@ void bind_core(nb::module_ &module) {
         if (key == nullptr || item == nullptr) {
             throw std::invalid_argument{"TSD[...] requires a scalar key and a time-series item annotation"};
         }
-        return TypeDescriptor{time_series_dictionary_type(*key, *item, TimeSeriesGuarantee::ordinary)};
+        if (key->is_resolved() && item->is_resolved()) {
+            return TypeDescriptor{time_series_dictionary_type(*key, *item, TimeSeriesGuarantee::ordinary)};
+        }
+
+        const auto &key_set = key->is_resolved()
+                                  ? time_series_set_type(*key, TimeSeriesGuarantee::ordinary)
+                                  : static_cast<const TimeSeriesSetType &>(TypeRegistry::instance().register_owned(
+                                        std::make_unique<GenericTimeSeriesSetType>(*key,
+                                                                                   TimeSeriesGuarantee::ordinary)));
+        const auto &type = TypeRegistry::instance().register_owned(std::make_unique<GenericTimeSeriesDictionaryType>(
+            *key, *item, key_set, TimeSeriesGuarantee::ordinary));
+        return TypeDescriptor{type};
     });
     module.def("_make_time_series_schema", [](std::string name, nb::handle identity, std::optional<TypeDescriptor> base,
                                               const std::vector<std::pair<std::string, TypeDescriptor>> &fields) {
@@ -753,7 +803,12 @@ void bind_core(nb::module_ &module) {
         if (schema == nullptr) {
             throw std::invalid_argument{"TSB[...] requires a TimeSeriesSchema"};
         }
-        return TypeDescriptor{time_series_bundle_type(*schema, TimeSeriesGuarantee::ordinary)};
+        if (schema->is_resolved()) {
+            return TypeDescriptor{time_series_bundle_type(*schema, TimeSeriesGuarantee::ordinary)};
+        }
+        const auto &type = TypeRegistry::instance().register_owned(
+            std::make_unique<GenericTimeSeriesBundleType>(*schema, TimeSeriesGuarantee::ordinary));
+        return TypeDescriptor{type};
     });
     module.def("_variadic_time_series_bundle_type", [] {
         const auto &schema = TypeRegistry::instance().register_owned(
