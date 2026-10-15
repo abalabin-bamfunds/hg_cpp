@@ -46,6 +46,7 @@ from ._bg import (
     _time_series_type,
     _time_series_variable_type,
     _switch,
+    _specialize_graph,
     _wire_graph,
     _wire_node,
     _with_time_series_guarantee,
@@ -115,6 +116,14 @@ _register_symbol_type(Symbol)
 symbol = Symbol
 
 
+class _Invalid:
+    def __repr__(self) -> str:
+        return "INVALID"
+
+
+INVALID = _Invalid()
+
+
 class _Remove:
     def __repr__(self) -> str:
         return "REMOVE"
@@ -160,7 +169,7 @@ class Removed:
         return f"Removed({self.item!r})"
 
 
-_register_delta_types(SetDelta, Removed, REMOVE)
+_register_delta_types(SetDelta, Removed, REMOVE, INVALID)
 
 
 ordinary = _TimeSeriesGuarantee.ordinary
@@ -459,6 +468,12 @@ class GraphDefinition:
             self.signature, self._fixed_parameters, args, kwargs
         )
         return _wire_graph(self._native_definition, fixed, positional, named)
+
+    def __getitem__(self, input_types: Any) -> GraphDefinition:
+        if not isinstance(input_types, tuple):
+            input_types = (input_types,)
+        native = _specialize_graph(self._native_definition, input_types)
+        return GraphDefinition(self.function, native, self._fixed_parameters, self._callback)
 
 
 class _ServiceDefinition:
@@ -831,6 +846,7 @@ __all__ = [
     "final",
     "GraphDefinition",
     "DEFAULT",
+    "INVALID",
     "NodeDefinition",
     "ordinary",
     "REF",

@@ -78,6 +78,13 @@ descriptive only, so separate TypeVar objects with the same name remain
 independent. `bg.TimeSeries` is a typing marker for the TypeVar bound; it is not
 a value annotation.
 
+Specialize a generic graph with its fully resolved input types. The resulting
+graph definition can be called from normal wiring and passed to `test_graph`:
+
+```python
+specialized = graph[bg.TS[int], bg.TSD[int, bg.TS[str]]]
+```
+
 `bg.operators` is the shared namespace for engine and library operators,
 including higher-order graph operators. Native operators use C++ overload
 resolution for both explicit calls and wiring-point special methods.
@@ -160,10 +167,20 @@ A prebuilt TSL or TSB supplied with the variadic parameter's name binds as the
 complete collection.
 
 `test_graph` accepts one update sequence for every graph parameter and wires
-each sequence as a `TS[T]` input. Plain scalar annotations accept this
-time-series form. `Scalar[T]` parameters require scalar arguments during graph
-construction; call them from a graph function to test that form. Each sequence
-element is a value or `None`; `None` skips that input's update for the cycle.
+each sequence according to the parameter's declared time-series type. Plain
+scalar annotations accept this time-series form. `Scalar[T]` parameters require
+scalar arguments during graph construction; call them from a graph function to
+test that form. Each sequence element is a value or `None`; `None` skips that
+input's update for the cycle.
+Collection annotations interpret sequence elements as deltas: TSD uses key-to-
+item mappings with `REMOVE` for key removal; TSS uses sets or `SetDelta`, with
+`Removed(value)` marking removals; TSL uses index-to-item mappings; TSB uses
+field-name-to-item mappings. Nested collection deltas follow the declared item
+type. `INVALID` invalidates TS, TSL, or TSB inputs; TSS and TSD do not support
+invalidation. A scalar collection such as `TS[dict[int, str]]` remains one
+scalar value and is not interpreted as a TSD delta. Generic graph definitions
+require explicit, fully resolved input types, for example
+`test_graph(graph[bg.TS[int], bg.TSD[int, bg.TS[str]]], ...)`.
 The graph must return a `TS[T]`. The result has one entry per cycle: an output
 value when the graph publishes one, otherwise `None`.
 

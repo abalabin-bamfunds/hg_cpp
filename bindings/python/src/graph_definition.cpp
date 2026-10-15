@@ -61,6 +61,29 @@ PythonGraphDefinition::PythonGraphDefinition(
     }
 }
 
+PythonGraphDefinition PythonGraphDefinition::specialize(std::span<const Type *const> input_types) const {
+    auto resolution = signature_->signature.resolve(input_types);
+    auto parameters = std::vector<Parameter>{};
+    parameters.reserve(signature_->signature.parameter_count());
+    auto wiring_parameter_types = std::vector<const Type *>{};
+    wiring_parameter_types.reserve(signature_->signature.parameter_count());
+
+    for (auto index = std::size_t{}; index < signature_->signature.parameter_count(); ++index) {
+        auto parameter = signature_->signature.parameter(index);
+        parameter.type = resolution.parameters[index].type;
+        wiring_parameter_types.push_back(parameter.type);
+        parameters.push_back(std::move(parameter));
+    }
+
+    auto specialized_signature = resolution.output == nullptr
+                                     ? Signature{resolution.name, std::move(parameters)}
+                                     : Signature{resolution.name, std::move(parameters), *resolution.output};
+    auto definition = std::make_shared<PythonNodeDefinition::SignatureDefinition>(
+        std::move(wiring_parameter_types), std::move(specialized_signature));
+    auto function = function_.lock();
+    return {std::move(definition), function.get(), lift_scalar_output_};
+}
+
 std::optional<WiringPoint> PythonGraphDefinition::wire(GraphWiring &wiring, ResolvedSignature resolved_signature,
                                                        const WiringArguments &,
                                                        std::span<const WiringArgument> arguments) const {

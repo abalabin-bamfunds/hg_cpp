@@ -35,6 +35,7 @@
 #include <bg/version.hpp>
 
 #include "delta.hpp"
+#include "test_graph_input.hpp"
 #include "dict_view.hpp"
 #include "higher_order.hpp"
 #include "operator_binding.hpp"
@@ -411,44 +412,7 @@ nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_
         }
     }};
     const auto &signature = definition.signature();
-    if (nb::len(input_sequences) != signature.parameter_count()) {
-        throw std::invalid_argument{"test_graph requires one update sequence per graph parameter"};
-    }
-
-    auto input_memory = std::pmr::unsynchronized_pool_resource{};
-    auto memory = allocator{input_memory};
-    auto owned_inputs = std::vector<std::vector<std::optional<ScalarValue<>>>>{};
-    owned_inputs.reserve(signature.parameter_count());
-    auto input_views = std::vector<testing::TestGraphInput>{};
-    input_views.reserve(signature.parameter_count());
-
-    for (auto index = std::size_t{}; index < signature.parameter_count(); ++index) {
-        const auto &input_type = *definition.wiring_parameter_types()[index];
-        const auto *scalar_type = type_cast<ScalarType>(&input_type);
-        if (scalar_type == nullptr) {
-            if (const auto *time_series = type_cast<TimeSeriesValueType>(&input_type)) {
-                scalar_type = &time_series->value_type();
-            }
-        }
-        if (scalar_type == nullptr) {
-            throw std::invalid_argument{
-                "test_graph currently requires every graph parameter to be a scalar or TS[scalar] type"};
-        }
-
-        auto ticks = nb::cast<nb::sequence>(input_sequences[index]);
-        auto values = std::vector<std::optional<ScalarValue<>>>{};
-        values.reserve(nb::len(ticks));
-        for (const auto tick : ticks) {
-            if (tick.is_none()) {
-                values.emplace_back(std::nullopt);
-                continue;
-            }
-            values.emplace_back(scalar_conversions().from_python(*scalar_type, tick, memory));
-        }
-        const auto &runtime_type = resolve_scalar_runtime_type(*scalar_type, {});
-        owned_inputs.push_back(std::move(values));
-        input_views.push_back({runtime_type, owned_inputs.back()});
-    }
+    auto inputs = details::TestGraphInputs{signature, definition.wiring_parameter_types(), input_sequences};
 
     const auto options = bg::GraphRunOptions{
         .services = service_catalogue != nullptr ? &service_catalogue->catalogue() : nullptr,
@@ -457,7 +421,8 @@ nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_
     auto results = [&] {
         try {
             auto release_gil = nb::gil_scoped_release{};
-            return testing::test_graph(static_cast<const WiringTemplate &>(definition), options, std::span<const testing::TestGraphInput>{input_views});
+            return testing::test_graph(static_cast<const WiringTemplate &>(definition), options,
+                                       inputs.inputs());
         } catch (const WiringError &error) {
             rethrow_python_error(error);
         }
@@ -857,6 +822,23 @@ void bind_core(nb::module_ &module) {
                });
     module.def("_wire_node", &wire_node);
     module.def("_wire_graph", &wire_graph);
+    module.def("_specialize_graph", [](const PythonGraphDefinition &definition, nb::sequence input_types) {
+        auto resolved_input_types = std::vector<const Type *>{};
+        resolved_input_types.reserve(nb::len(input_types));
+        for (auto index = std::size_t{}; index < nb::len(input_types); ++index) {
+            const auto &type = details::python_type_argument(input_types[index]);
+            if (!type.is_resolved()) {
+                throw std::invalid_argument{"graph specialization requires fully resolved input types"};
+            }
+            resolved_input_types.push_back(&type);
+        }
+
+        try {
+            return definition.specialize(resolved_input_types);
+        } catch (const TypeResolutionError &error) {
+            throw std::invalid_argument{std::string{"cannot specialize Python graph: "} + error.what()};
+        }
+    });
     nb::class_<EvaluationProfiler::Recorder>(module, "EvaluationProfilerRecorder");
 
     nb::class_<EvaluationProfiler>(module, "EvaluationProfiler")

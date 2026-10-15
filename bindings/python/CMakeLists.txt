@@ -27,6 +27,7 @@ add_library(
     src/higher_order.cpp
     src/operator.cpp
     src/wiring_argument.cpp
+    src/test_graph_input.cpp
     src/python.cpp
 )
 add_library(bg::python ALIAS bg_python)

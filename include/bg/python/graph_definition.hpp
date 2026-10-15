@@ -21,6 +21,7 @@ class BG_PYTHON_API PythonGraphDefinition final : public WiringTemplate {
     std::span<const Type *const> wiring_parameter_types() const noexcept {
         return signature_->wiring_parameter_types;
     }
+    PythonGraphDefinition specialize(std::span<const Type *const> input_types) const;
 
   private:
     std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const WiringArguments &,

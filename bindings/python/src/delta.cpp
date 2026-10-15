@@ -13,6 +13,7 @@ struct DeltaTypes {
     Object set_delta_type;
     Object removed_type;
     Object remove_sentinel;
+    Object invalid_sentinel;
 };
 
 DeltaTypes &delta_types() {
@@ -22,22 +23,32 @@ DeltaTypes &delta_types() {
 
 } // namespace
 
-void register_delta_types(nb::handle set_delta_type, nb::handle removed_type, nb::handle remove_sentinel) {
+void register_delta_types(nb::handle set_delta_type, nb::handle removed_type, nb::handle remove_sentinel,
+                          nb::handle invalid_sentinel) {
     if (!PyType_Check(set_delta_type.ptr()) || !PyType_Check(removed_type.ptr())) {
         throw std::invalid_argument{"delta registration requires Python types"};
     }
     if (remove_sentinel.is_none()) {
         throw std::invalid_argument{"REMOVE registration requires a Python object"};
     }
+    if (invalid_sentinel.is_none()) {
+        throw std::invalid_argument{"INVALID registration requires a Python object"};
+    }
 
     auto &types = delta_types();
     types.set_delta_type = Object{set_delta_type};
     types.removed_type = Object{removed_type};
     types.remove_sentinel = Object{remove_sentinel};
+    types.invalid_sentinel = Object{invalid_sentinel};
 }
 
 bool is_remove(nb::handle value) {
     const auto &sentinel = delta_types().remove_sentinel;
+    return sentinel && value.ptr() == sentinel.get().ptr();
+}
+
+bool is_invalid(nb::handle value) {
+    const auto &sentinel = delta_types().invalid_sentinel;
     return sentinel && value.ptr() == sentinel.get().ptr();
 }
 
