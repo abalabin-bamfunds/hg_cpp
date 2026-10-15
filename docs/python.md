@@ -210,6 +210,16 @@ Wiring failures preserve an underlying Python exception's identity, type, and
 traceback. Exception notes include the context described by
 [wiring errors](graph-wiring.md#wiring-errors).
 
+## Graph services
+
+`@reference_service`, `@subscription_service`, and `@service` declare graph
+services. Register a decorated `@graph` implementation with
+`ServiceCatalogue.register_impl`, then pass the catalogue to `run_graph` or
+`test_graph`. A subscription key uses a final-or-stronger time series, for
+example `bg.TS[int, bg.final]`; its implementation receives `bg.TSS[int]` and
+returns `bg.TSD[int, R]` for the declared result type `R`. See
+[graph services](services.md) for the signatures and request behavior.
+
 ## Time-series types
 
 Python declaration types and their referenced variables follow the
@@ -227,6 +237,15 @@ bg.TSL[bg.TS[int], 4]
 bg.TSD[int, bg.TS[float]]
 bg.TSB[Quote]
 ```
+
+A time-series annotation can add a root guarantee, for example
+`bg.TS[int, bg.final]` or `bg.TSD[int, bg.TS[float], bg.deduplicated]`.
+The available values are `bg.ordinary`, `bg.deduplicated`, `bg.final`, and
+`bg.const_`. An explicit input guarantee is a minimum: stronger sources also
+match. An omitted input guarantee accepts and retains the source guarantee.
+Guarantees can also qualify concrete collection items and schema fields.
+The outer collection of a variadic `TSL[..., SIZE]` or `TSB[TS_SCHEMA]`
+cannot be qualified. See [time series guarantees](type-system.md#time-series-guarantees).
 
 A non-variadic TSL requires a fixed size. A TSB uses a Python schema:
 
