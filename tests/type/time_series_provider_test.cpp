@@ -702,10 +702,11 @@ bool register_provider_scalar_buffer_handlers() {
             [](auto &reader, auto consume) { read_provider_scalar(reader, consume); });
         semantic.set_discard(discard_provider_scalar);
         semantic.set_project<test_scalar_provider::value>(project_provider_scalar_semantic);
-        auto runtime = bg::ScalarBufferOperations::for_write<test_scalar_provider::value>(
-            write_provider_scalar, project_provider_scalar);
-        auto unprojected_runtime = bg::ScalarBufferOperations::for_write<test_scalar_provider::value>(
-            write_provider_scalar);
+        auto runtime = bg::ScalarBufferOperations{};
+        runtime.set_write<test_scalar_provider::value>(write_provider_scalar);
+        runtime.set_project<test_scalar_provider::value>(project_provider_scalar);
+        auto unprojected_runtime = bg::ScalarBufferOperations{};
+        unprojected_runtime.set_write<test_scalar_provider::value>(write_provider_scalar);
         auto &dispatch = bg::ScalarDispatch<bg::ScalarBufferOperations>::instance();
         return dispatch.add(bg::cpp_scalar_type<test_scalar_provider::value>(), std::move(semantic)) &&
                dispatch.add(bg::cpp_scalar_runtime_type<test_scalar_provider::value>(), std::move(runtime)) &&

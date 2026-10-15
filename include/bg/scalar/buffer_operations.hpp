@@ -97,39 +97,6 @@ struct ScalarBufferOperations {
     using Read = std::function<void(util::buffer_reader &, details::ScalarBufferValueConsumer)>;
     using Discard = std::function<void(util::buffer_reader &)>;
 
-    template <typename ScalarType, typename WriteHandler, typename ReadHandler, typename DiscardHandler>
-    static ScalarBufferOperations for_type(WriteHandler &&write, ReadHandler &&read, DiscardHandler &&discard) {
-        auto operations = ScalarBufferOperations{};
-        operations.set_write<ScalarType>(std::forward<WriteHandler>(write));
-        operations.set_read<ScalarType>(std::forward<ReadHandler>(read));
-        operations.set_discard(std::forward<DiscardHandler>(discard));
-        return operations;
-    }
-
-    template <typename ScalarType, typename WriteHandler, typename ReadHandler, typename DiscardHandler,
-              typename ProjectHandler>
-    static ScalarBufferOperations for_type(WriteHandler &&write, ReadHandler &&read, DiscardHandler &&discard,
-                                           ProjectHandler &&project) {
-        auto operations = for_type<ScalarType>(std::forward<WriteHandler>(write), std::forward<ReadHandler>(read),
-                                               std::forward<DiscardHandler>(discard));
-        operations.template set_project<ScalarType>(std::forward<ProjectHandler>(project));
-        return operations;
-    }
-
-    template <typename ScalarType, typename Function> static ScalarBufferOperations for_write(Function &&function) {
-        auto operations = ScalarBufferOperations{};
-        operations.set_write<ScalarType>(std::forward<Function>(function));
-        return operations;
-    }
-
-    template <typename ScalarType, typename WriteHandler, typename ProjectHandler>
-    static ScalarBufferOperations for_write(WriteHandler &&write, ProjectHandler &&project) {
-        auto operations = ScalarBufferOperations{};
-        operations.set_write<ScalarType>(std::forward<WriteHandler>(write));
-        operations.set_project<ScalarType>(std::forward<ProjectHandler>(project));
-        return operations;
-    }
-
     template <typename ScalarType, typename Function> static ScalarBufferOperations for_read(Function &&function) {
         auto operations = ScalarBufferOperations{};
         operations.set_read<ScalarType>(std::forward<Function>(function));
