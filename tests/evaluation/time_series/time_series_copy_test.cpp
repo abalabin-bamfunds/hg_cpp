@@ -71,13 +71,6 @@ TEST_CASE("a generic output copies and copies a tick from a time series value",
 TEST_CASE("copy_tick applies a current invalidation but ignores its stale state",
           "[feature:node-api][feature:test-graph][series:value]"
           "[transition:update][transition:invalidation][transition:revalidation]") {
-    const auto source = node([](In<TS<i64>> input, Out<TS<i64>> output) {
-        if (*input == 0) {
-            output.invalidate();
-            return;
-        }
-        output.set(*input);
-    });
     const auto copy_tick = node([](In<TS<i64>, passive, optional> input, In<TS<i64>> trigger,
                                    Out<TS<i64>> output) {
         if (*trigger == 2) {
@@ -86,11 +79,10 @@ TEST_CASE("copy_tick applies a current invalidation but ignores its stale state"
         output.copy_tick(input);
     });
     const auto graph = [&](wp<TS<i64>> input, wp<TS<i64>> trigger) {
-        return copy_tick(source(input), trigger);
+        return copy_tick(input, trigger);
     };
 
-    const auto input = std::array<std::optional<i64>, 4>{1, 0, std::nullopt, 2};
-    const auto actual = testing::test_graph(graph, input, std::array{0, 1, 2, 3});
+    const auto actual = testing::test_graph(graph, {1, literal::INVALID, literal::SKIP, 2}, {0, 1, 2, 3});
 
     CHECK(actual.equals({1, std::nullopt, 99, 2}));
 }
@@ -98,17 +90,10 @@ TEST_CASE("copy_tick applies a current invalidation but ignores its stale state"
 TEST_CASE("copy propagates value invalidation and revalidation",
           "[feature:node-api][feature:test-graph][series:value]"
           "[transition:invalidation][transition:revalidation]") {
-    const auto source = node([](In<TS<i64>> input, Out<TS<i64>> output) {
-        if (*input == 0) {
-            output.invalidate();
-            return;
-        }
-        output.set(*input);
-    });
     const auto copy = node([](In<TS<i64>, optional> input, Out<TS<i64>> output) { output.copy(input); });
-    const auto graph = [&](wp<TS<i64>> input) { return copy(source(input)); };
+    const auto graph = [&](wp<TS<i64>> input) { return copy(input); };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 0, 2});
+    const auto actual = testing::test_graph(graph, {1, literal::INVALID, 2});
 
     CHECK(actual.equals({1, std::nullopt, 2}));
 }
@@ -202,22 +187,14 @@ TEST_CASE("copy copies every field of a time series bundle",
 
 TEST_CASE("copy_tick modifies only updated fields of a time series bundle",
           "[feature:node-api][feature:test-graph][series:generic][series:tsb][transition:update]") {
-    const auto source = node([](In<TS<i64>> cycle, Out<TSB<copy_bundle>> output) {
-        if (*cycle == 0) {
-            output->first.set(1);
-            output->second.set(10);
-            return;
-        }
-        output->first.set(2);
-    });
     const auto copy_tick = node([](In<TS_T> input, Out<TS_T> output) { output.copy_tick(input); });
     const auto inspect = node([](In<TSB<copy_bundle>> input, Out<TS<i64>> output) {
         const auto modified = static_cast<i64>(input.item_updated(0)) + 2 * static_cast<i64>(input.item_updated(1));
         output.set(modified * 10000 + *input->first * 100 + *input->second);
     });
-    const auto graph = [&](wp<TS<i64>> cycle) { return inspect(copy_tick(source(cycle))); };
+    const auto graph = [&](wp<TSB<copy_bundle>> input) { return inspect(copy_tick(input)); };
 
-    const auto actual = testing::test_graph(graph, std::array{0, 1});
+    const auto actual = testing::test_graph(graph, {{{"first", 1}, {"second", 10}}, {{"first", 2}}});
 
     CHECK(actual.equals({30110, 10210}));
 }
@@ -281,14 +258,6 @@ TEST_CASE("a fixed list copy accepts a different child guarantee",
 
 TEST_CASE("copy reconciles a time series dictionary snapshot",
           "[feature:node-api][feature:test-graph][series:tsd][transition:update][transition:removal]") {
-    const auto source = node([](In<TS<i64>> value, Out<TSD<i64, TS<i64>>> output) {
-        output[1].set(*value);
-        if (*value == 3) {
-            output.erase(2);
-        } else {
-            output[2].set(*value + 10);
-        }
-    });
     const auto copy = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
         output.copy(input);
     });
@@ -297,9 +266,9 @@ TEST_CASE("copy reconciles a time series dictionary snapshot",
         const auto second = input.contains(2) ? *input[2] : 0;
         output.set(static_cast<i64>(input.size() * 100) + first * 10 + second);
     });
-    const auto graph = [&](wp<TS<i64>> value) { return summarize(copy(source(value))); };
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return summarize(copy(input)); };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2, 3});
+    const auto actual = testing::test_graph(graph, {{{1, 1}, {2, 11}}, {{1, 2}, {2, 12}}, {{1, 3}, {2, literal::REMOVE}}});
 
     CHECK(actual.equals({221, 232, 130}));
 }
@@ -307,18 +276,15 @@ TEST_CASE("copy reconciles a time series dictionary snapshot",
 TEST_CASE("a dictionary copy accepts a different child guarantee",
           "[feature:node-api][feature:test-graph][series:tsd]"
           "[guarantee:ordinary][guarantee:deduplicated][transition:update]") {
-    const auto source = node([](In<TS<i64>> value, Out<TSD<i64, TS<i64>>> output) {
-        output[1].set(*value);
-    });
     const auto copy = node([](In<TSD<i64, TS<i64>>> input,
                               Out<TSD<i64, TS<i64, TimeSeriesGuarantee::deduplicated>>> output) {
         output.copy(input);
     });
     const auto read = node([](In<TSD<i64, TS<i64, TimeSeriesGuarantee::deduplicated>>> input,
                               Out<TS<i64>> output) { output.set(*input[1]); });
-    const auto graph = [&](wp<TS<i64>> value) { return read(copy(source(value))); };
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return read(copy(input)); };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 1, 2});
+    const auto actual = testing::test_graph(graph, {{{1, 1}}, {{1, 1}}, {{1, 2}}});
 
     CHECK(actual.equals({1, std::nullopt, 2}));
 }
@@ -326,22 +292,15 @@ TEST_CASE("a dictionary copy accepts a different child guarantee",
 TEST_CASE("copy_tick publishes an initially empty time series dictionary",
           "[feature:node-api][feature:test-graph][series:tsd][transition:first-tick]"
           "[transition:addition]") {
-    const auto source = node([](In<TS<i64>> cycle, Out<TSD<i64, TS<i64>>> output) {
-        if (*cycle == 0) {
-            output.clear();
-            return;
-        }
-        output[1].set(*cycle);
-    });
     const auto copy = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
         output.copy_tick(input);
     });
     const auto size = node([](In<TSD<i64, TS<i64>>> input, Out<TS<i64>> output) {
         output.set(static_cast<i64>(input.size()));
     });
-    const auto graph = [&](wp<TS<i64>> cycle) { return size(copy(source(cycle))); };
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return size(copy(input)); };
 
-    const auto actual = testing::test_graph(graph, std::array{0, 1});
+    const auto actual = testing::test_graph(graph, {{}, {{1, 1}}});
 
     CHECK(actual.equals({0, 1}));
 }
@@ -349,9 +308,6 @@ TEST_CASE("copy_tick publishes an initially empty time series dictionary",
 TEST_CASE("copy handles an invalid erased input without runtime type metadata",
           "[feature:node-api][feature:test-graph][series:generic][series:tsd][declaration:generic]"
           "[transition:invalidation]") {
-    const auto source = node([](In<TS<i64>> value, Out<TSD<i64, TS<i64>>> output) {
-        output[1].set(*value);
-    });
     const auto copy_invalid = node([](In<TS_T> trigger, Out<TS_T> output) {
         output.copy(trigger);
         output.copy(In<TS_T>{TimeSeriesInputData{}});
@@ -359,26 +315,15 @@ TEST_CASE("copy handles an invalid erased input without runtime type metadata",
     const auto size = node([](In<TSD<i64, TS<i64>>> input, Out<TS<i64>> output) {
         output.set(static_cast<i64>(input.size()));
     });
-    const auto graph = [&](wp<TS<i64>> value) { return size(copy_invalid(source(value))); };
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return size(copy_invalid(input)); };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2});
+    const auto actual = testing::test_graph(graph, {{{1, 1}}, {{1, 2}}});
 
     CHECK(actual.equals({0, 0}));
 }
 
 TEST_CASE("copy reconciles a time series set snapshot",
           "[feature:node-api][feature:test-graph][series:tss][transition:addition][transition:removal]") {
-    const auto source = node([](In<TS<i64>> value, Out<TSS<i64>> output) {
-        if (*value == 0) {
-            output.insert(1);
-            output.insert(2);
-        } else if (*value == 1) {
-            output.erase(2);
-            output.insert(3);
-        } else {
-            output.erase(3);
-        }
-    });
     const auto copy = node([](In<TSS<i64>> input, Out<TSS<i64>> output) {
         output.copy(input);
     });
@@ -387,9 +332,10 @@ TEST_CASE("copy reconciles a time series set snapshot",
                                 3 * static_cast<int>(input.contains(3));
         output.set(static_cast<i64>(input.size() * 10 + membership));
     });
-    const auto graph = [&](wp<TS<i64>> value) { return summarize(copy(source(value))); };
+    const auto graph = [&](wp<TSS<i64>> input) { return summarize(copy(input)); };
 
-    const auto actual = testing::test_graph(graph, std::array{0, 1, 2});
+    const auto actual = testing::test_graph(
+        graph, {{1, 2}, {literal::REMOVED(2), 3}, {literal::REMOVED(3)}});
 
     CHECK(actual.equals({23, 24, 11}));
 }
@@ -397,17 +343,6 @@ TEST_CASE("copy reconciles a time series set snapshot",
 TEST_CASE("a generic output copies time series set snapshots and changes",
           "[feature:node-api][feature:test-graph][series:generic][series:tss]"
           "[transition:addition][transition:removal]") {
-    const auto source = node([](In<TS<i64>> cycle, Out<TSS<i64>> output) {
-        if (*cycle == 0) {
-            output.insert(1);
-            output.insert(2);
-        } else if (*cycle == 1) {
-            output.erase(2);
-            output.insert(3);
-        } else {
-            output.erase(3);
-        }
-    });
     const auto copy = node([](In<TS_T> input, Out<TS_T> output) { output.copy(input); });
     const auto copy_tick = node([](In<TS_T> input, Out<TS_T> output) { output.copy_tick(input); });
     const auto summary = node([](In<TSS<i64>> input, Out<TS<i64>> output) {
@@ -415,11 +350,11 @@ TEST_CASE("a generic output copies time series set snapshots and changes",
                                 3 * static_cast<int>(input.contains(3));
         output.set(static_cast<i64>(input.size() * 10 + membership));
     });
-    const auto copy_graph = [&](wp<TS<i64>> cycle) { return summary(copy(source(cycle))); };
-    const auto copy_tick_graph = [&](wp<TS<i64>> cycle) { return summary(copy_tick(source(cycle))); };
+    const auto copy_graph = [&](wp<TSS<i64>> input) { return summary(copy(input)); };
+    const auto copy_tick_graph = [&](wp<TSS<i64>> input) { return summary(copy_tick(input)); };
 
-    const auto copied = testing::test_graph(copy_graph, std::array{0, 1, 2});
-    const auto copied_tick = testing::test_graph(copy_tick_graph, std::array{0, 1, 2});
+    const auto copied = testing::test_graph(copy_graph, {{1, 2}, {literal::REMOVED(2), 3}, {literal::REMOVED(3)}});
+    const auto copied_tick = testing::test_graph(copy_tick_graph, {{1, 2}, {literal::REMOVED(2), 3}, {literal::REMOVED(3)}});
 
     CHECK(copied.equals({23, 24, 11}));
     CHECK(copied_tick.equals({23, 24, 11}));

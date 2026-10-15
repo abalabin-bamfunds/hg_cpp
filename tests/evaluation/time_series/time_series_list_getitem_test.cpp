@@ -17,15 +17,12 @@ using namespace bg::literals;
 TEST_CASE("fixed TSL getitem changes selection with a time series index",
           "[evaluation][series:fixed-tsl][series:value][feature:getitem][feature:operator]"
           "[representation:native][binding:value-to-reference][binding:reference-to-value]") {
-    const auto make_list = node([](In<TS<i64>> input, Out<TSL<TS<i64>, 2>> output) {
-        output[0].set(*input);
-        output[1].set(*input * 10);
-    });
-    const auto graph = [&](wp<TS<i64>> input, wp<TS<std::int64_t>> index) -> wp<TS<i64>> {
-        return make_list(input)[index].as<TS<i64>>();
+    const auto graph = [](wp<TSL<TS<i64>, 2>> input, wp<TS<std::int64_t>> index) -> wp<TS<i64>> {
+        return input[index].as<TS<i64>>();
     };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2, 3}, std::array<std::int64_t, 3>{0, 1, 0});
+    const auto actual = testing::test_graph(graph, {{{0, 1}, {1, 10}}, {{0, 2}, {1, 20}}, {{0, 3}, {1, 30}}},
+                                            {0, 1, 0});
 
     CHECK(actual.equals({1, 20, 3}));
 }
@@ -50,22 +47,13 @@ TEST_CASE("fixed TSL getitem invalidates for an invalid or out-of-range time ser
           "[evaluation][series:fixed-tsl][series:value][feature:getitem][feature:operator]"
           "[representation:native][binding:value-to-reference][binding:reference-to-value]"
           "[transition:invalidation][transition:revalidation]") {
-    const auto make_list = node([](In<TS<i64>> input, Out<TSL<TS<i64>, 2>> output) {
-        output[0].set(*input);
-        output[1].set(*input * 10);
-    });
-    const auto make_index = node([](In<TS<std::int64_t>> input, Out<TS<std::int64_t>> output) {
-        if (*input < 0) {
-            output.invalidate();
-        } else {
-            output.set(*input);
-        }
-    });
-    const auto graph = [&](wp<TS<i64>> input, wp<TS<std::int64_t>> index) -> wp<TS<i64>> {
-        return make_list(input)[make_index(index)].as<TS<i64>>();
+    const auto graph = [](wp<TSL<TS<i64>, 2>> input, wp<TS<std::int64_t>> index) -> wp<TS<i64>> {
+        return input[index].as<TS<i64>>();
     };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2, 3, 4}, std::array<std::int64_t, 4>{0, -1, 2, 1});
+    const auto actual = testing::test_graph(
+        graph, {{{0, 1}, {1, 10}}, {{0, 2}, {1, 20}}, {{0, 3}, {1, 30}}, {{0, 4}, {1, 40}}},
+        {0, literal::INVALID, 2, 1});
 
     CHECK(actual.equals<bg::i64>({1, std::nullopt, std::nullopt, 40}));
 }
@@ -112,21 +100,12 @@ TEST_CASE("fixed TSL getitem follows selected item invalidation and revalidation
           "[evaluation][series:fixed-tsl][series:value][feature:getitem][feature:reference]"
           "[representation:native][binding:value-to-reference][binding:reference-to-value]"
           "[transition:invalidation][transition:revalidation]") {
-    const auto make_list = node([](In<TS<i64>> input, Out<TSL<TS<i64>, 2>> output) {
-        if (*input < 0) {
-            output[0].invalidate();
-        } else {
-            output[0].set(*input);
-        }
-        output[1].set(*input * 10);
-    });
-    const auto graph = [&](wp<TS<i64>> input, wp<TS<std::int64_t>> index) -> wp<TS<i64>> {
-        return make_list(input)[index].as<TS<i64>>();
+    const auto graph = [](wp<TSL<TS<i64>, 2>> input, wp<TS<std::int64_t>> index) -> wp<TS<i64>> {
+        return input[index].as<TS<i64>>();
     };
-    const auto index =
-        std::array{std::optional<std::int64_t>{0}, std::optional<std::int64_t>{}, std::optional<std::int64_t>{}};
-
-    const auto actual = testing::test_graph(graph, std::array{1, -1, 2}, index);
+    const auto actual = testing::test_graph(
+        graph, {{{0, 1}, {1, 10}}, {{0, literal::INVALID}, {1, 20}}, {{0, 2}, {1, 30}}},
+        {0, literal::SKIP, literal::SKIP});
 
     CHECK(actual.equals<bg::i64>({1, std::nullopt, 2}));
 }
@@ -144,8 +123,7 @@ TEST_CASE("fixed TSL getitem follows a list across a nested graph boundary",
         return nested(inner, run, input)[index].as<TS<i64>>();
     };
 
-    const auto actual = testing::test_graph(outer, std::array{1, 2, 3, 4}, std::array<std::int64_t, 4>{0, 1, 0, 1},
-                                            std::array{true, false, true, true});
+    const auto actual = testing::test_graph(outer, {1, 2, 3, 4}, {0, 1, 0, 1}, {true, false, true, true});
 
     CHECK(actual.equals<bg::i64>({1, std::nullopt, 3, 40}));
 }
@@ -162,7 +140,7 @@ TEST_CASE("scalar getitem reads a reference-backed fixed list",
         return nested(inner, run, input)[std::int64_t{1}].as<TS<i64>>();
     };
 
-    const auto actual = testing::test_graph(outer, std::array{1, 2, 3}, std::array{true, true, true});
+    const auto actual = testing::test_graph(outer, {1, 2, 3}, {true, true, true});
 
     CHECK(actual.equals({10, 20, 30}));
 }

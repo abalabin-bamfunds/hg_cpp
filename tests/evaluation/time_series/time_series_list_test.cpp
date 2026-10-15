@@ -18,20 +18,9 @@
 #include <optional>
 #include <vector>
 
-namespace {} // namespace
+using namespace bg::literals;
 
 namespace {
-
-struct list_source_definition {
-    bg::Out<bg::TSL<bg::TS<bg::i64>, 3>> output;
-
-    void start() const {
-        output[0].set(10);
-        output[2].set(30);
-    }
-
-    void evaluate() const {}
-};
 
 struct generic_list_copy_definition {
     bg::In<bg::TSL<bg::TS<bg::SCALAR>, 3>> input;
@@ -65,12 +54,13 @@ struct list_sink_definition {
 TEST_CASE("a fixed time series list publishes changed items",
           "[evaluation][tsl][series:fixed-tsl][feature:collection-change][transition:update]"
           "[scalar:integer][representation:native][declaration:concrete][binding:direct]") {
-    const auto source = bg::node<list_source_definition>();
     const auto copy = bg::node<generic_list_copy_definition>();
     const auto list_sink = bg::node<list_sink_definition>();
     list_sink_definition::evaluation_count = 0;
+    const auto graph = bg::graph("name"_n = "literal_list_input",
+                                 [&](bg::wp<bg::TSL<bg::TS<bg::i64>, 3>> input) { list_sink(copy(input)); });
 
-    bg::run_graph([&] { list_sink(copy(source())); });
+    (void)bg::testing::test_graph(graph, {{{0, 10}, {2, 30}}});
 
     CHECK(list_sink_definition::evaluation_count == 1);
     CHECK(list_sink_definition::values == std::array<bg::i64, 3>{10, 0, 30});
@@ -109,9 +99,7 @@ TEST_CASE("a free fixed time series list coalesces source changes",
         return sum(bg::tsl(first, second));
     };
 
-    const auto first = std::vector{1, 2};
-    const auto second = std::vector<std::optional<int>>{10, std::nullopt};
-    const auto result = bg::testing::test_graph(graph, first, second);
+    const auto result = bg::testing::test_graph(graph, {1, 2}, {10, literal::SKIP});
 
     CHECK(result.equals({11, 12}));
     CHECK(free_list_sum_definition::updates == std::vector<std::array<bool, 2>>{{true, true}, {true, false}});
@@ -125,10 +113,7 @@ TEST_CASE("a free fixed time series list follows the receiving item runtime_type
     const auto graph = [&](bg::wp<bg::TS<bg::i64>> first, bg::wp<bg::TS<bg::i64>> second) {
         return sum(bg::tsl(reference(first), second));
     };
-    const auto first = std::vector{1, 2};
-    const auto second = std::vector{10, 20};
-
-    const auto result = bg::testing::test_graph(graph, first, second);
+    const auto result = bg::testing::test_graph(graph, {1, 2}, {10, 20});
 
     CHECK(result.equals({11, 22}));
 }
@@ -141,10 +126,7 @@ TEST_CASE("a node can select an item from a free fixed time series list",
     const auto graph = [&](bg::wp<bg::TS<bg::i64>> first, bg::wp<bg::TS<bg::i64>> second_value) {
         return second(bg::tsl(first, second_value));
     };
-    const auto first = std::vector{1, 2};
-    const auto second_values = std::vector{10, 20};
-
-    const auto result = bg::testing::test_graph(graph, first, second_values);
+    const auto result = bg::testing::test_graph(graph, {1, 2}, {10, 20});
 
     CHECK(result.equals({10, 20}));
 }
@@ -164,8 +146,7 @@ TEST_CASE("a span-backed free TSL retains its items through materialisation and 
         return sum(collection);
     };
 
-    const auto result = bg::testing::test_graph(graph, std::array<bg::i64, 2>{1, 2},
-                                                 std::array<bg::i64, 2>{10, 20});
+    const auto result = bg::testing::test_graph(graph, {1, 2}, {10, 20});
 
     CHECK(result.equals({11, 22}));
 }
@@ -183,20 +164,6 @@ TEST_CASE("an empty typed TSL publishes valid at graph start",
 }
 
 namespace {
-
-struct changing_list_source_definition {
-    static constexpr bool uses_timed_scheduling = true;
-
-    bg::Out<bg::TSL<bg::TS<bg::i64>, 3>> output;
-
-    void start(bg::EvaluationContext *context) const {
-        output[0].set(10);
-        output[1].set(15);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate() const { output[1].set(20); }
-};
 
 struct first_item_sink_definition {
     bg::In<bg::TS<bg::i64>> input;
@@ -220,7 +187,6 @@ TEST_CASE("a fixed time series list schedules subscribers of changed items",
           "[evaluation][tsl][series:fixed-tsl][scheduling][feature:collection-change]"
           "[transition:update][scalar:integer][representation:native][declaration:concrete]"
           "[binding:direct]") {
-    const auto source = bg::node<changing_list_source_definition>();
     const auto first_sink = bg::node<first_item_sink_definition>();
     const auto second_sink = bg::node<second_item_sink_definition>();
     const auto first = bg::node([](bg::In<bg::TSL<bg::TS<bg::i64>, 3>> input, bg::Out<bg::TS<bg::i64>> output) {
@@ -236,30 +202,18 @@ TEST_CASE("a fixed time series list schedules subscribers of changed items",
     first_item_sink_definition::evaluation_count = 0;
     second_item_sink_definition::evaluation_count = 0;
 
-    bg::run_graph([&] {
-        const auto list = source();
+    const auto graph = bg::graph("name"_n = "literal_list_input", [&](bg::wp<bg::TSL<bg::TS<bg::i64>, 3>> list) {
         first_sink(first(list));
         second_sink(second(list));
     });
+
+    (void)bg::testing::test_graph(graph, {{{0, 10}, {1, 15}}, {{1, 20}}});
 
     CHECK(first_item_sink_definition::evaluation_count == 1);
     CHECK(second_item_sink_definition::evaluation_count == 2);
 }
 
 namespace {
-
-struct nested_list_source_definition {
-    static constexpr bool uses_timed_scheduling = true;
-
-    bg::Out<bg::TSL<bg::TSL<bg::TS<bg::i64>, 2>, 2>> output;
-
-    void start(bg::EvaluationContext *context) const {
-        output[0][0].set(10);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate() const { output[1][1].set(20); }
-};
 
 struct nested_first_sink_definition {
     bg::In<bg::TS<bg::i64>> input;
@@ -283,7 +237,6 @@ TEST_CASE("nested time series lists schedule subscribers of changed items",
           "[evaluation][tsl][series:fixed-tsl][scheduling][feature:collection-change]"
           "[transition:update][scalar:integer][representation:native][declaration:concrete]"
           "[binding:direct]") {
-    const auto source = bg::node<nested_list_source_definition>();
     const auto first_sink = bg::node<nested_first_sink_definition>();
     const auto second_sink = bg::node<nested_second_sink_definition>();
     const auto first = bg::node([](bg::In<bg::TSL<bg::TSL<bg::TS<bg::i64>, 2>, 2>> input, bg::Out<bg::TS<bg::i64>> output) {
@@ -299,39 +252,19 @@ TEST_CASE("nested time series lists schedule subscribers of changed items",
     nested_first_sink_definition::evaluation_count = 0;
     nested_second_sink_definition::evaluation_count = 0;
 
-    bg::run_graph([&] {
-        const auto list = source();
-        first_sink(first(list));
-        second_sink(second(list));
-    });
+    const auto graph = bg::graph("name"_n = "literal_nested_list_input",
+                                 [&](bg::wp<bg::TSL<bg::TSL<bg::TS<bg::i64>, 2>, 2>> list) {
+                                     first_sink(first(list));
+                                     second_sink(second(list));
+                                 });
+
+    (void)bg::testing::test_graph(graph, {{{0, {{0, 10}}}}, {{1, {{1, 20}}}}});
 
     CHECK(nested_first_sink_definition::evaluation_count == 1);
     CHECK(nested_second_sink_definition::evaluation_count == 1);
 }
 
 namespace {
-
-struct invalidating_list_source_definition {
-    static constexpr bool uses_timed_scheduling = true;
-
-    bg::State<int> step;
-    bg::Out<bg::TSL<bg::TS<bg::i64>, 3>> output;
-
-    void start(bg::EvaluationContext *context) const {
-        output[0].set(10);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate(bg::EvaluationContext *context) const {
-        if (*step == 0) {
-            output.invalidate();
-            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-        } else {
-            output[1].set(20);
-        }
-        ++*step;
-    }
-};
 
 struct optional_item_sink_definition {
     bg::In<bg::TS<bg::i64>, bg::optional> input;
@@ -367,7 +300,6 @@ TEST_CASE("invalidating a list invalidates its items",
           "[evaluation][tsl][series:fixed-tsl][validity][feature:collection-change]"
           "[transition:invalidation][scalar:integer][representation:native][declaration:concrete]"
           "[binding:direct]") {
-    const auto source = bg::node<invalidating_list_source_definition>();
     const auto optional_sink = bg::node<optional_item_sink_definition>();
     const auto required_sink = bg::node<required_item_sink_definition>();
     const auto list_sink = bg::node<revalidation_list_sink_definition>();
@@ -382,13 +314,14 @@ TEST_CASE("invalidating a list invalidates its items",
     required_item_sink_definition::evaluation_count = 0;
     revalidation_list_sink_definition::updated_item_counts.clear();
 
-    bg::run_graph([&] {
-        const auto list = source();
+    const auto graph = bg::graph("name"_n = "literal_list_input", [&](bg::wp<bg::TSL<bg::TS<bg::i64>, 3>> list) {
         const auto item = first(list);
         optional_sink(item);
         required_sink(item);
         list_sink(list);
     });
+
+    (void)bg::testing::test_graph(graph, {{{0, 10}}, literal::INVALID, {{1, 20}}});
 
     CHECK(optional_item_sink_definition::validity == std::vector{true, false});
     CHECK(required_item_sink_definition::evaluation_count == 1);
@@ -397,26 +330,11 @@ TEST_CASE("invalidating a list invalidates its items",
 
 namespace {
 
-struct partially_invalidating_list_source_definition {
-    static constexpr bool uses_timed_scheduling = true;
-
-    bg::Out<bg::TSL<bg::TS<bg::i64>, 3>> output;
-
-    void start(bg::EvaluationContext *context) const {
-        output[0].set(10);
-        output[1].set(20);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate() const { output[0].invalidate(); }
-};
-
 } // namespace
 
 TEST_CASE("a list remains valid while one item remains valid",
           "[evaluation][tsl][series:fixed-tsl][validity][feature:collection-change][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct]") {
-    const auto source = bg::node<partially_invalidating_list_source_definition>();
     const auto item_sink = bg::node<optional_item_sink_definition>();
     const auto list_sink = bg::node<revalidation_list_sink_definition>();
     const auto first = bg::node([](bg::In<bg::TSL<bg::TS<bg::i64>, 3>> input, bg::Out<bg::TS<bg::i64>> output) {
@@ -429,30 +347,18 @@ TEST_CASE("a list remains valid while one item remains valid",
     optional_item_sink_definition::validity.clear();
     revalidation_list_sink_definition::updated_item_counts.clear();
 
-    bg::run_graph([&] {
-        const auto list = source();
+    const auto graph = bg::graph("name"_n = "literal_list_input", [&](bg::wp<bg::TSL<bg::TS<bg::i64>, 3>> list) {
         item_sink(first(list));
         list_sink(list);
     });
+
+    (void)bg::testing::test_graph(graph, {{{0, 10}, {1, 20}}, {{0, literal::INVALID}}});
 
     CHECK(optional_item_sink_definition::validity == std::vector{true, false});
     CHECK(revalidation_list_sink_definition::updated_item_counts == std::vector<std::size_t>{2, 1});
 }
 
 namespace {
-
-struct invalidating_value_source_definition {
-    static constexpr bool uses_timed_scheduling = true;
-
-    bg::Out<bg::TS<bg::i64>> output;
-
-    void start(bg::EvaluationContext *context) const {
-        output.set(10);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate() const { output.invalidate(); }
-};
 
 struct list_from_value_definition {
     bg::In<bg::TS<bg::i64>> input;
@@ -467,40 +373,17 @@ TEST_CASE("required-input invalidation invalidates list items",
           "[evaluation][tsl][series:fixed-tsl][validity][feature:collection-change][validity:required]"
           "[transition:invalidation][scalar:integer][representation:native][declaration:concrete]"
           "[binding:direct]") {
-    const auto source = bg::node<invalidating_value_source_definition>();
     const auto list = bg::node<list_from_value_definition>();
     const auto first =
         bg::node([](bg::In<bg::TSL<bg::TS<bg::i64>, 3>> input, bg::Out<bg::TS<bg::i64>> output) { output.set(*input[0]); });
-    const auto graph = [&] { return first(list(source())); };
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return first(list(input)); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {10, literal::INVALID});
 
     CHECK(actual.equals({10, std::nullopt}));
 }
 
 namespace {
-
-struct invalidating_nested_list_source_definition {
-    static constexpr bool uses_timed_scheduling = true;
-
-    bg::State<int> step;
-    bg::Out<bg::TSL<bg::TSL<bg::TS<bg::i64>, 2>, 2>> output;
-
-    void start(bg::EvaluationContext *context) const {
-        output[0][0].set(10);
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate(bg::EvaluationContext *context) const {
-        if (*step == 0) {
-            output.invalidate();
-            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-        } else {
-            output[0][0].set(20);
-        }
-        ++*step;
-    }
-};
 
 } // namespace
 
@@ -508,14 +391,16 @@ TEST_CASE("nested list invalidation and revalidation propagate through each leve
           "[evaluation][tsl][series:fixed-tsl][validity][feature:collection-change]"
           "[transition:invalidation][transition:revalidation][scalar:integer][representation:native]"
           "[declaration:concrete][binding:direct]") {
-    const auto source = bg::node<invalidating_nested_list_source_definition>();
     auto validity = std::vector<std::array<bool, 3>>{};
     const auto sink = bg::node([&](bg::In<bg::TSL<bg::TSL<bg::TS<bg::i64>, 2>, 2>, bg::optional> input) {
         validity.push_back({input.valid(), input.valid() && input[0].valid(),
                             input.valid() && input[0].valid() && input[0][0].valid()});
     });
 
-    bg::run_graph([&] { sink(source()); });
+    const auto graph = bg::graph("name"_n = "literal_nested_list_input",
+                                 [&](bg::wp<bg::TSL<bg::TSL<bg::TS<bg::i64>, 2>, 2>> input) { sink(input); });
+
+    (void)bg::testing::test_graph(graph, {{{0, {{0, 10}}}}, literal::INVALID, {{0, {{0, 20}}}}});
 
     CHECK(validity == std::vector<std::array<bool, 3>>{{true, true, true}, {false, false, false}, {true, true, true}});
 }
