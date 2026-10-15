@@ -71,7 +71,7 @@ struct optional_reference_consumer {
 };
 
 template <template <typename, auto...> typename Field> struct DictionaryBundle {
-    Field<bg::TSD<std::int64_t, bg::TS<bg::i64>>> dictionary;
+    Field<bg::TSD<bg::i64, bg::TS<bg::i64>>> dictionary;
 };
 
 } // namespace
@@ -194,9 +194,9 @@ TEST_CASE("a materialized free TSL samples retargeted ordinary references",
            bg::Out<bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>, bg::TimeSeriesGuarantee::ordinary>>
                output) { output.copy(*use_second ? second : first); });
     const auto graph = [&](bg::wp<bg::TS<bool>> use_second) {
-        const auto first = bg::operators::const_(std::int64_t{4}).as<
+        const auto first = bg::operators::const_(bg::i64{4}).as<
             bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
-        const auto second = bg::operators::const_(std::int64_t{7}).as<
+        const auto second = bg::operators::const_(bg::i64{7}).as<
             bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
         const auto values = bg::tsl(select(use_second, first, second));
         const auto &type = dynamic_cast<const bg::TimeSeriesListType &>(values.type());
@@ -246,26 +246,26 @@ TEST_CASE("plain and notifying inputs share one sampled dictionary",
           "[evaluation][reference][series:tsd][series:tsb][feature:sampling][transition:update]"
           "[binding:reference-to-value]") {
     const auto select = bg::node(
-        [](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TSD<std::int64_t, bg::TS<bg::i64>>>> first,
-           bg::In<bg::REF<bg::TSD<std::int64_t, bg::TS<bg::i64>>>> second,
-           bg::Out<bg::REF<bg::TSD<std::int64_t, bg::TS<bg::i64>>>> output) {
+        [](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> first,
+           bg::In<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> second,
+           bg::Out<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> output) {
             output.copy(*use_second ? second : first);
         });
     const auto store_reference = bg::node(
-        [](bg::In<bg::REF<bg::TSD<std::int64_t, bg::TS<bg::i64>>>> input,
-           bg::Out<bg::TSD<std::int64_t, bg::REF<bg::TSD<std::int64_t, bg::TS<bg::i64>>>>> output) {
+        [](bg::In<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> input,
+           bg::Out<bg::TSD<bg::i64, bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>>> output) {
             output[0].copy(input);
         });
     const auto compare = bg::node(
-        [](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> direct,
+        [](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> direct,
            bg::In<bg::TSB<DictionaryBundle>> packaged, bg::Out<bg::TS<bool>> output) {
             output.set(direct.data() == packaged->dictionary.data());
         });
-    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> first,
-                           bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> second,
+    const auto graph = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> first,
+                           bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> second,
                            bg::wp<bg::TS<bool>> use_second) {
         const auto selected = store_reference(select(use_second, first, second));
-        const auto item = selected[std::int64_t{0}];
+        const auto item = selected[bg::i64{0}];
         return compare(item, bg::bundle<DictionaryBundle>(item));
     };
 
@@ -279,13 +279,13 @@ TEST_CASE("a nested graph releases its sampled reference change when it stops",
           "[evaluation][nested][reference][series:tsd][feature:sampling][feature:nested-graph]"
           "[transition:update][transition:stop][transition:restart][binding:reference-to-value]") {
     const auto select = bg::node(
-        [](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TSD<std::int64_t, bg::TS<bg::i64>>>> first,
-           bg::In<bg::REF<bg::TSD<std::int64_t, bg::TS<bg::i64>>>> second,
-           bg::Out<bg::REF<bg::TSD<std::int64_t, bg::TS<bg::i64>>>> output) {
+        [](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> first,
+           bg::In<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> second,
+           bg::Out<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> output) {
             output.copy(*use_second ? second : first);
         });
     const auto inspect = bg::node(
-        [](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input, bg::Out<bg::TS<bg::i64>> output) {
+        [](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input, bg::Out<bg::TS<bg::i64>> output) {
             auto added = 0;
             auto removed = 0;
             input.for_each_added([&](const auto &key) { added |= 1 << *key; });
@@ -299,11 +299,11 @@ TEST_CASE("a nested graph releases its sampled reference change when it stops",
         });
     const auto inner = bg::graph(
         "name"_n = "inspect_sampled_dictionary",
-        [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) -> bg::wp<bg::TS<bg::i64>> {
+        [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) -> bg::wp<bg::TS<bg::i64>> {
             return inspect(input);
         });
-    const auto outer = [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> first,
-                           bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> second,
+    const auto outer = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> first,
+                           bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> second,
                            bg::wp<bg::TS<bool>> use_second, bg::wp<bg::TS<bool>> run) {
         const auto selected = select(use_second, first, second);
         return combine(bg::nested(inner, run, selected), inspect(selected));

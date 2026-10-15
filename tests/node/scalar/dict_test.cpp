@@ -8,14 +8,14 @@
 
 namespace {
 
-using IntDictionary = bg::Dict<std::int64_t, std::int64_t>;
-using IntDictionaryEntry = std::pair<std::int64_t, std::int64_t>;
+using IntDictionary = bg::Dict<bg::i64, bg::i64>;
+using IntDictionaryEntry = std::pair<bg::i64, bg::i64>;
 
 struct inspect_scalar_dict {
     bg::Scalar<IntDictionary> values;
 
     void start(bg::EvaluationContext *context) const {
-        auto result = std::int64_t{};
+        auto result = bg::i64{};
         values.for_each([&](const auto, const auto value) { result += value.value(); });
 
         context->global_state().write(
@@ -33,7 +33,7 @@ TEST_CASE("a scalar dictionary is available from packed graph scalar storage",
 
     bg::run_graph([&] { inspect(input); }, bg::GraphRunOptions{.global_state = &state});
 
-    state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 6); });
+    state.read([](const auto &values) { CHECK(bg::scalar_cast<bg::i64>(values.at("result")).value() == 6); });
 }
 
 struct inspect_scalar_dict_state {
@@ -58,7 +58,7 @@ TEST_CASE("scalar dictionary state is available during node start",
 
     bg::run_graph([&] { inspect(); }, bg::GraphRunOptions{.global_state = &state});
 
-    state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 6); });
+    state.read([](const auto &values) { CHECK(bg::scalar_cast<bg::i64>(values.at("result")).value() == 6); });
 }
 
 struct scalar_dict_source {
@@ -73,7 +73,7 @@ struct scalar_dict_sink {
     bg::In<bg::TS<IntDictionary>> input;
 
     void evaluate(bg::EvaluationContext *context) const {
-        auto result = std::int64_t{};
+        auto result = bg::i64{};
         input.value_view().for_each([&](const auto, const auto value) { result += value.value(); });
 
         context->global_state().write(
@@ -90,7 +90,7 @@ TEST_CASE("a scalar dictionary propagates through a value time series",
 
     bg::run_graph([&] { sink(source(input)); }, bg::GraphRunOptions{.global_state = &state});
 
-    state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 6); });
+    state.read([](const auto &values) { CHECK(bg::scalar_cast<bg::i64>(values.at("result")).value() == 6); });
 }
 
 } // namespace

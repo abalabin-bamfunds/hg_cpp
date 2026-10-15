@@ -78,7 +78,7 @@ class RecordingVisitor {
 
 void visit_external_type(RecordingVisitor &visitor, bg::Scalar<test_scalar_provider::value> value) {
     visitor.record(-1);
-    const auto nested = bg::ScalarValue{static_cast<std::int64_t>(value.value().get())};
+    const auto nested = bg::ScalarValue{static_cast<bg::i64>(value.value().get())};
     const auto nested_view = nested.view();
     visitor.visit(bg::Scalar<>::from(nested_view));
 }

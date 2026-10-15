@@ -34,7 +34,7 @@ struct double_sink_definition {
     inline static double last_value{};
 };
 
-[[nodiscard]] bg::EvaluationTime time(std::int64_t microseconds) {
+[[nodiscard]] bg::EvaluationTime time(bg::i64 microseconds) {
     return bg::MIN_DT + std::chrono::microseconds{microseconds};
 }
 
@@ -164,10 +164,10 @@ TEST_CASE("runtime graphs keep separate runtime storage", "[evaluation][storage]
 namespace {
 
 struct string_dictionary_source_definition {
-    bg::Out<bg::TSD<std::int64_t, bg::TS<bg::string>>> output;
+    bg::Out<bg::TSD<bg::i64, bg::TS<bg::string>>> output;
 
     void start() const {
-        for (auto key = std::int64_t{}; key != 16; ++key) {
+        for (auto key = bg::i64{}; key != 16; ++key) {
             output[key].set("a string long enough to require allocated storage");
         }
     }

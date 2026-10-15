@@ -41,8 +41,8 @@ using RESOLVED_TIME_SERIES = bg::TimeSeriesVariable<"RESOLVED_TIME_SERIES">;
 using NESTED_RESULT = bg::ScalarVariable<"NESTED_RESULT">;
 using VARIADIC_RESULT = bg::ScalarVariable<"VARIADIC_RESULT">;
 using UNMATCHED_FORM_VALUE = bg::ScalarVariable<"UNMATCHED_FORM_VALUE">;
-using STATE_ONLY_VALUE = bg::ScalarVariable<"STATE_ONLY_VALUE", std::int64_t, float>;
-using REQUIREMENT_ONLY_VALUE = bg::ScalarVariable<"REQUIREMENT_ONLY_VALUE", std::int64_t, float>;
+using STATE_ONLY_VALUE = bg::ScalarVariable<"STATE_ONLY_VALUE", bg::i64, float>;
+using REQUIREMENT_ONLY_VALUE = bg::ScalarVariable<"REQUIREMENT_ONLY_VALUE", bg::i64, float>;
 
 template <template <typename, auto...> typename Field> struct ResolvedBundle {
     Field<bg::TS<bg::i64>> value;
@@ -64,7 +64,7 @@ struct resolved_source_definition {
 
     static const bg::ScalarType *resolve(RESOLVED_SCALAR, const bg::WiringArguments &arguments) {
         ++resolver_calls;
-        const auto kind = bg::scalar_cast<std::int64_t>(*arguments.scalar("kind")).value();
+        const auto kind = bg::scalar_cast<bg::i64>(*arguments.scalar("kind")).value();
 
         if (kind == 0) {
             return &bg::int64_type();
@@ -117,7 +117,7 @@ struct resolved_graph_definition {
 
     static const bg::ScalarType *resolve(RESOLVED_SCALAR, const bg::WiringArguments &arguments) {
         ++resolver_calls;
-        return bg::scalar_cast<std::int64_t>(*arguments.scalar("kind")).value() == 0 ? &bg::int64_type()
+        return bg::scalar_cast<bg::i64>(*arguments.scalar("kind")).value() == 0 ? &bg::int64_type()
                                                                                       : &bg::float_type();
     }
 
@@ -182,7 +182,7 @@ struct flat_positional_resolver_definition {
         CHECK_FALSE(arguments.present("fixed"));
         CHECK(arguments.argument_name(1).text() == "1");
 
-        return bg::scalar_cast<std::int64_t>(*arguments.scalar(1)).value() == 7 ? bg::int64_type()
+        return bg::scalar_cast<bg::i64>(*arguments.scalar(1)).value() == 7 ? bg::int64_type()
                                                                                 : bg::float_type();
     }
 
@@ -278,12 +278,12 @@ TEST_CASE("requirements demand auxiliary resolvers and their scalar reads partic
           "[feature:operator][feature:wiring][definition:function]") {
     auto resolver_calls = 0;
     auto requirement_calls = 0;
-    auto operation = bg::operator_<void(std::int64_t, bg::TS<bg::i64>)>{"consume", {"kind", "input"}};
+    auto operation = bg::operator_<void(bg::i64, bg::TS<bg::i64>)>{"consume", {"kind", "input"}};
     operation.overload(bg::node(
-        bg::eval = [](std::int64_t, bg::In<bg::TS<bg::i64>>) {},
+        bg::eval = [](bg::i64, bg::In<bg::TS<bg::i64>>) {},
         bg::resolve<REQUIREMENT_ONLY_VALUE> = [&](const bg::WiringArguments &arguments) -> const bg::ScalarType & {
             ++resolver_calls;
-            return bg::scalar_cast<std::int64_t>(*arguments.scalar(0)).value() == 0 ? bg::int64_type()
+            return bg::scalar_cast<bg::i64>(*arguments.scalar(0)).value() == 0 ? bg::int64_type()
                                                                                    : bg::float_type();
         },
         bg::require = [&](const bg::WiringArguments &arguments) {
@@ -429,7 +429,7 @@ TEST_CASE("resolvers find direct and forwarded named captures",
             CHECK(arguments.argument_index("kind") == 0);
             CHECK(arguments.argument_index("value") == 1);
 
-            return bg::scalar_cast<std::int64_t>(*arguments.scalar("kind")).value() == 0 ? bg::int64_type()
+            return bg::scalar_cast<bg::i64>(*arguments.scalar("kind")).value() == 0 ? bg::int64_type()
                                                                                           : bg::float_type();
         }));
     const auto sender = bg::graph(
@@ -453,7 +453,7 @@ TEST_CASE("a callable resolver completes an output type", "[feature:operator][fe
         bg::eval = [](int, bg::Out<bg::TS<RESOLVED_SCALAR>>) {},
         bg::resolve<RESOLVED_SCALAR> = [&](const bg::WiringArguments &arguments) -> const bg::ScalarType * {
             ++resolver_calls;
-            return bg::scalar_cast<std::int64_t>(*arguments.scalar(0)).value() == 0 ? &bg::int64_type()
+            return bg::scalar_cast<bg::i64>(*arguments.scalar(0)).value() == 0 ? &bg::int64_type()
                                                                                     : &bg::float_type();
         }));
 
@@ -767,12 +767,12 @@ TEST_CASE("nested graph resolution provides wiring arguments to resolvers",
     auto resolvers = std::vector<bg::VariableResolver>{};
     auto resolve_result = [&](const bg::TypeMap &, const bg::WiringArguments &arguments) -> bg::TypeMapValue {
         ++resolver_calls;
-        const auto kind = bg::scalar_cast<std::int64_t>(*arguments.scalar("kind")).value();
+        const auto kind = bg::scalar_cast<bg::i64>(*arguments.scalar("kind")).value();
         return static_cast<const bg::Type *>(kind == 0 ? &bg::int64_type() : &bg::float_type());
     };
     resolvers.emplace_back(&NESTED_RESULT::type(), resolve_result);
     auto parameters = std::vector<bg::Parameter>{
-        {bg::util::symbol{"kind"}, &bg::cpp_scalar_type<std::int64_t>()},
+        {bg::util::symbol{"kind"}, &bg::cpp_scalar_type<bg::i64>()},
         {bg::util::symbol{"input"}, &bg::TS<bg::i64>::type()},
     };
     auto signature = bg::Signature{bg::util::symbol{"inner"}, std::move(parameters),

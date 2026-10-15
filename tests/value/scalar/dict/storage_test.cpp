@@ -16,7 +16,7 @@
 
 TEST_CASE("resolved scalar dictionary storage supports mutation",
           "[value][scalar][dict][scalar:dict][storage][feature:scalar-storage]") {
-    const auto &key_storage = bg::cpp_scalar_runtime_type<std::int64_t>();
+    const auto &key_storage = bg::cpp_scalar_runtime_type<bg::i64>();
     const auto &value_storage = bg::cpp_scalar_runtime_type<bg::string>();
     const auto available = std::array<const bg::ScalarRuntimeType *, 2>{&key_storage, &value_storage};
     const auto &type = bg::dict_scalar_type(key_storage.type(), value_storage.type());
@@ -47,7 +47,7 @@ TEST_CASE("resolved scalar dictionary storage supports mutation",
 
 TEST_CASE("resolved dictionary storage owns nested collection values",
           "[value][scalar][dict][scalar:dict][storage][feature:scalar-storage]") {
-    const auto &key_storage = bg::cpp_scalar_runtime_type<std::int64_t>();
+    const auto &key_storage = bg::cpp_scalar_runtime_type<bg::i64>();
     const auto &item_storage = bg::cpp_scalar_runtime_type<bg::string>();
     const auto available = std::array<const bg::ScalarRuntimeType *, 2>{&key_storage, &item_storage};
     const auto &list_type = bg::list_scalar_type(item_storage.type());
@@ -75,8 +75,8 @@ TEST_CASE("resolved dictionary storage owns nested collection values",
 namespace {
 
 struct RuntimeDictValue {
-    std::int64_t first;
-    std::int64_t second;
+    bg::i64 first;
+    bg::i64 second;
 };
 
 } // namespace
@@ -84,16 +84,16 @@ struct RuntimeDictValue {
 TEST_CASE("a scalar dictionary copies between composed and C++ storage",
           "[value][scalar][dict][scalar:dict][storage][feature:scalar-storage]") {
     using Value = bg::Opaque<RuntimeDictValue>;
-    using Dict = bg::Dict<std::int64_t, Value>;
+    using Dict = bg::Dict<bg::i64, Value>;
 
-    const auto &key = bg::cpp_scalar_runtime_type<std::int64_t>();
+    const auto &key = bg::cpp_scalar_runtime_type<bg::i64>();
     const auto &mapped = bg::cpp_scalar_runtime_type<Value>();
     const auto &type = bg::dict_scalar_type(key.type(), mapped.type());
     const auto available = std::array<const bg::ScalarRuntimeType *, 2>{&key, &mapped};
     const auto &composed =
         static_cast<const bg::ScalarDictRuntimeType &>(bg::resolve_scalar_runtime_type(type, available));
     const auto source =
-        bg::ScalarValue<Dict>{std::vector<std::pair<std::int64_t, RuntimeDictValue>>{{1, {.first = 2, .second = 3}}}};
+        bg::ScalarValue<Dict>{std::vector<std::pair<bg::i64, RuntimeDictValue>>{{1, {.first = 2, .second = 3}}}};
     auto memory = std::pmr::unsynchronized_pool_resource{};
     auto allocator = bg::allocator{memory};
     auto *storage = allocator.allocate_bytes(composed.size(), composed.alignment());
@@ -107,7 +107,7 @@ TEST_CASE("a scalar dictionary copies between composed and C++ storage",
     auto cursor = composed_view.make_cursor();
     auto batch = std::array<bg::ScalarDictRuntimeType::BatchEntry, 2>{};
     REQUIRE(cursor->next_batch(batch) == 1);
-    CHECK(bg::Scalar<std::int64_t>::from(composed.key_runtime_type(), batch[0].key).value() == 1);
+    CHECK(bg::Scalar<bg::i64>::from(composed.key_runtime_type(), batch[0].key).value() == 1);
     CHECK(bg::Scalar<Value>::from(composed.mapped_runtime_type(), batch[0].mapped).value().second == 3);
     CHECK(cursor->next_batch(batch) == 0);
 
@@ -125,10 +125,10 @@ TEST_CASE("a scalar dictionary copies nested keys between composed and C++ stora
           "[value][scalar][dict][scalar:dict][storage][feature:scalar-storage]") {
     using InnerKey = bg::List<bg::EvaluationTime>;
     using Key = bg::List<InnerKey>;
-    using Dict = bg::Dict<Key, std::int64_t>;
+    using Dict = bg::Dict<Key, bg::i64>;
 
     const auto &time = bg::cpp_scalar_runtime_type<bg::EvaluationTime>();
-    const auto &integer = bg::cpp_scalar_runtime_type<std::int64_t>();
+    const auto &integer = bg::cpp_scalar_runtime_type<bg::i64>();
     const auto available = std::array<const bg::ScalarRuntimeType *, 2>{&time, &integer};
     const auto &inner_type = bg::list_scalar_type(time.type());
     const auto &inner =
@@ -165,7 +165,7 @@ TEST_CASE("a scalar dictionary copies nested keys between composed and C++ stora
     const auto &native_dict = static_cast<const bg::ScalarDictRuntimeType &>(native);
 
     REQUIRE(native_dict.contains(native_storage, key_view));
-    CHECK(*static_cast<const std::int64_t *>(native_dict.at(native_storage, key_view).data) == 42);
+    CHECK(*static_cast<const bg::i64 *>(native_dict.at(native_storage, key_view).data) == 42);
 
     native.destroy(native_storage, allocator);
     allocator.deallocate_bytes(native_storage, native.size(), native.alignment());

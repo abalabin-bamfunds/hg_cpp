@@ -441,7 +441,7 @@ namespace {
 struct canceled_nested_dictionary_source_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::Out<bg::TSL<bg::TSD<std::int64_t, bg::TS<bg::i64>>, 2>> output;
+    bg::Out<bg::TSL<bg::TSD<bg::i64, bg::TS<bg::i64>>, 2>> output;
 
     void start(bg::EvaluationContext *context) const {
         output[1][0].set(1);
@@ -455,7 +455,7 @@ struct canceled_nested_dictionary_source_definition {
 };
 
 struct list_evaluation_marker_definition {
-    bg::In<bg::TSL<bg::TSD<std::int64_t, bg::TS<bg::i64>>, 2>> input;
+    bg::In<bg::TSL<bg::TSD<bg::i64, bg::TS<bg::i64>>, 2>> input;
     bg::Out<bg::TS<bool>> output;
 
     void evaluate() const { output.set(true); }

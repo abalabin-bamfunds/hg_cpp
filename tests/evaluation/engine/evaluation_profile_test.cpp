@@ -38,7 +38,7 @@ struct profile_source {
         output.set(++evaluations);
     }
 
-    inline static std::int64_t evaluations{};
+    inline static bg::i64 evaluations{};
 };
 
 struct profile_start_only {
@@ -87,7 +87,7 @@ const auto profile_increment = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Ou
 
 std::vector<int> profile_mesh_events;
 
-bg::EvaluationTime time(std::int64_t microseconds) {
+bg::EvaluationTime time(bg::i64 microseconds) {
     return bg::MIN_DT + std::chrono::microseconds{microseconds};
 }
 
@@ -218,12 +218,12 @@ TEST_CASE("runtime graph profiling records nested graph ownership",
 TEST_CASE("runtime graph profiling balances graph entries while resuming pending mesh dependencies",
           "[evaluation][profile][feature:profiling][feature:mesh][feature:nested-graph]") {
     const auto values = bg::node([](bg::In<bg::TS<bg::i64>>,
-                                    bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output) {
+                                    bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output) {
         output[2].set(20);
         output[1].set(10);
     });
     const auto dependencies = bg::node([](bg::In<bg::TS<bg::i64>>,
-                                          bg::Out<bg::TSD<std::int64_t, bg::TS<std::int64_t>>> output) {
+                                          bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output) {
         output[2].set(1);
     });
     const auto record_dependency_key = bg::node([](
@@ -322,7 +322,7 @@ TEST_CASE("runtime graph profiling balances graph entries while resuming pending
 TEST_CASE("map profiling stores a key label until the reader consumes it",
           "[evaluation][profile][feature:profiling][feature:map]") {
     const auto keys = bg::node([](bg::In<bg::TS<bg::i64>> value,
-                                  bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output) {
+                                  bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output) {
         if (*value == 1) {
             output[41].set(*value);
         } else {
@@ -362,7 +362,7 @@ TEST_CASE("map profiling stores a key label until the reader consumes it",
 
         ++labelled_graphs;
         CHECK(graph->parent_graph_id.value != 0);
-        CHECK(*bg::scalar_cast<std::int64_t>(*graph->label) == 41);
+        CHECK(*bg::scalar_cast<bg::i64>(*graph->label) == 41);
     }
     CHECK(labelled_graphs == 1);
 }
@@ -370,7 +370,7 @@ TEST_CASE("map profiling stores a key label until the reader consumes it",
 TEST_CASE("compact reduce profiles pair-slot reuse as stop then start of the same graph ID",
           "[evaluation][profile][feature:profiling][feature:reduce]") {
     const auto values = bg::node([](bg::In<bg::TS<bg::i64>> input,
-                                    bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output) {
+                                    bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output) {
         if (*input == 1) {
             output[1].set(10);
             output[2].set(20);

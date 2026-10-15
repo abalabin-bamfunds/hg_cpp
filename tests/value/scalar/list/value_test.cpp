@@ -82,8 +82,8 @@ TEST_CASE("a generic scalar list exposes its declared comparison operations",
           "[scalar:generic]") {
     using ITEM = bg::ScalarVariable<"ITEM", bg::EqualityComparable, bg::Hashable>;
 
-    const auto first = bg::ScalarValue<bg::List<std::int64_t>>{std::vector<std::int64_t>{1, 2}};
-    const auto second = bg::ScalarValue<bg::List<std::int64_t>>{std::vector<std::int64_t>{1, 2}};
+    const auto first = bg::ScalarValue<bg::List<bg::i64>>{std::vector<bg::i64>{1, 2}};
+    const auto second = bg::ScalarValue<bg::List<bg::i64>>{std::vector<bg::i64>{1, 2}};
     const auto left = bg::Scalar<bg::List<ITEM>>::from(first);
     const auto right = bg::Scalar<bg::List<ITEM>>::from(second);
 

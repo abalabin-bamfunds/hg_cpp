@@ -92,7 +92,7 @@ TEST_CASE("deferred wiring points retain arguments and expand lazily once",
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
     const auto input = source();
-    auto scalar_argument = std::int64_t{41};
+    auto scalar_argument = bg::i64{41};
     auto deferred = wiring.create_wp<bg::TS<bg::i64>>(input, scalar_argument);
     scalar_argument = 99;
 
@@ -100,7 +100,7 @@ TEST_CASE("deferred wiring points retain arguments and expand lazily once",
     std::weak_ptr<int> builder_lifetime = builder_calls;
     deferred.materialisation_option<bg::TSB<OneValue>>(
         [input_record = static_cast<bg::WiringPoint>(input).record(), builder_calls](
-            bg::wp<bg::TS<bg::i64>> value, std::int64_t scalar) {
+            bg::wp<bg::TS<bg::i64>> value, bg::i64 scalar) {
             CHECK(static_cast<bg::WiringPoint>(value).record() == input_record);
             CHECK(scalar == 41);
             ++*builder_calls;

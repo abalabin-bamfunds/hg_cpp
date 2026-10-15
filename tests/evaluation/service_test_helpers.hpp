@@ -35,7 +35,7 @@ template <template <typename, auto...> typename Field> struct ServiceKey {
 };
 
 struct ServiceOutputSource {
-    Out<TS<std::int64_t>> output;
+    Out<TS<i64>> output;
 
     void start() const { output.set(42); }
     void evaluate() const noexcept {}

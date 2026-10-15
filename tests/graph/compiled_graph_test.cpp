@@ -271,23 +271,23 @@ TEST_CASE("compiled callable captures are destroyed when a later node fails comp
 TEST_CASE("sampled reference bindings keep their mode and aligned metadata",
           "[compiled_graph][feature:reference][feature:sampling][binding:reference-to-value]") {
     struct dictionary_source {
-        bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output;
+        bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output;
 
         void evaluate() const {}
     };
 
     const auto source = bg::node<dictionary_source>();
-    const auto retain_reference = bg::node([](bg::In<bg::REF<bg::TSD<std::int64_t, bg::TS<bg::i64>>>> input,
-                                              bg::Out<bg::REF<bg::TSD<std::int64_t, bg::TS<bg::i64>>>> output) {
+    const auto retain_reference = bg::node([](bg::In<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> input,
+                                              bg::Out<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> output) {
         output.copy(input);
     });
-    const auto inspect = bg::node([](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input,
+    const auto inspect = bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input,
                                      bg::Out<bg::TS<bg::i64>> output) {
         if (input.valid()) {
             output.set(1);
         }
     });
-    const auto inspect_dynamic = bg::node([](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>,
+    const auto inspect_dynamic = bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>,
                                                      bg::dynamic_activity> input,
                                              bg::Out<bg::TS<bg::i64>> output) {
         if (input.valid()) {

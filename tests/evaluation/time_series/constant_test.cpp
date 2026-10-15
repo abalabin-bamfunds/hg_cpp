@@ -18,7 +18,7 @@
 namespace {
 
 struct constant_sink {
-    bg::In<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::const_>> input;
+    bg::In<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>> input;
 
     void evaluate(bg::EvaluationContext *context) const {
         ++evaluations;
@@ -29,14 +29,14 @@ struct constant_sink {
     }
 
     inline static int evaluations{};
-    inline static std::int64_t value{};
+    inline static bg::i64 value{};
     inline static bg::EvaluationTime last_updated{bg::MIN_DT};
     inline static bg::EvaluationTime evaluation_time{bg::MIN_DT};
     inline static bool modified{};
 };
 
 struct passive_constant_sink {
-    bg::In<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::const_>, bg::passive> input;
+    bg::In<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>, bg::passive> input;
 
     void evaluate() const { ++evaluations; }
 
@@ -56,7 +56,7 @@ struct string_constant_sink {
 };
 
 struct constant_reference_sink {
-    bg::In<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::const_>> input;
+    bg::In<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>> input;
 
     void evaluate() const {
         ++evaluations;
@@ -66,20 +66,20 @@ struct constant_reference_sink {
 
     inline static int evaluations{};
     inline static bool valid{};
-    inline static std::int64_t value{};
+    inline static bg::i64 value{};
 };
 
 struct constant_reference_pass {
-    bg::In<bg::REF<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::const_>, bg::TimeSeriesGuarantee::const_>> input;
-    bg::Out<bg::REF<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::const_>, bg::TimeSeriesGuarantee::const_>> output;
+    bg::In<bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>, bg::TimeSeriesGuarantee::const_>> input;
+    bg::Out<bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>, bg::TimeSeriesGuarantee::const_>> output;
 
     void evaluate() const { output.copy(input); }
 };
 
 struct constant_required_sum {
-    bg::In<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::const_>> constant;
-    bg::In<bg::TS<std::int64_t>> input;
-    bg::Out<bg::TS<std::int64_t>> output;
+    bg::In<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>> constant;
+    bg::In<bg::TS<bg::i64>> input;
+    bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const {
         ++evaluations;
@@ -90,13 +90,13 @@ struct constant_required_sum {
 };
 
 struct constant_timestamp_sink {
-    bg::In<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::const_>> input;
-    bg::Out<bg::TS<std::int64_t>> output;
+    bg::In<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>> input;
+    bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const { output.set((input.last_updated() - bg::MIN_DT).count()); }
 };
 
-[[nodiscard]] bg::EvaluationTime time(std::int64_t microseconds) {
+[[nodiscard]] bg::EvaluationTime time(bg::i64 microseconds) {
     return bg::MIN_DT + std::chrono::microseconds{microseconds};
 }
 
@@ -112,7 +112,7 @@ TEST_CASE("a scalar constant binds directly to its active consumer",
     const auto sink = bg::node<constant_sink>();
     {
         auto context = bg::WiringContext{wiring};
-        const auto value = const_(42).as<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::const_>>();
+        const auto value = const_(42).as<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
         sink(value);
     }
 
@@ -147,11 +147,11 @@ TEST_CASE("a scalar constant binds directly to its active consumer",
 TEST_CASE("a constant value updates only in the first test graph cycle",
           "[feature:constant][feature:test-graph][series:value][scalar:integer][guarantee:const]"
           "[shape:single-node][transition:first-tick]") {
-    const auto graph = [](bg::wp<bg::TS<std::int64_t>>) {
-        return bg::operators::const_(3).as<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::const_>>();
+    const auto graph = [](bg::wp<bg::TS<bg::i64>>) {
+        return bg::operators::const_(3).as<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
     };
 
-    CHECK(bg::testing::test_graph(graph, std::array<std::int64_t, 2>{1, 2}).equals({3, std::nullopt}));
+    CHECK(bg::testing::test_graph(graph, std::array<bg::i64, 2>{1, 2}).equals({3, std::nullopt}));
 }
 
 TEST_CASE("one constant serves active and passive consumers",
@@ -166,7 +166,7 @@ TEST_CASE("one constant serves active and passive consumers",
     const auto passive_sink = bg::node<passive_constant_sink>();
     {
         auto context = bg::WiringContext{wiring};
-        const auto value = const_(7).as<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::const_>>();
+        const auto value = const_(7).as<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
         active_sink(value);
         passive_sink(value);
     }
@@ -218,7 +218,7 @@ TEST_CASE("a constant value-to-reference binding keeps the reference node in the
     const auto sink = bg::node<constant_reference_sink>();
     {
         auto context = bg::WiringContext{wiring};
-        sink(pass(const_(9).as<bg::TS<std::int64_t, bg::TimeSeriesGuarantee::const_>>()));
+        sink(pass(const_(9).as<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>()));
     }
 
     wiring.finalize();
@@ -237,12 +237,12 @@ TEST_CASE("a constant value-to-reference binding keeps the reference node in the
 TEST_CASE("a constant waits for another required input",
           "[feature:constant][feature:scheduling][feature:validity][transition:revalidation]") {
     const auto sum = bg::node<constant_required_sum>();
-    const auto graph = [&](bg::wp<bg::TS<std::int64_t>> input) {
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) {
         return sum(bg::operators::const_(4), input);
     };
 
     constant_required_sum::evaluations = 0;
-    const auto actual = bg::testing::test_graph(graph, std::array<std::optional<std::int64_t>, 2>{std::nullopt, 3});
+    const auto actual = bg::testing::test_graph(graph, std::array<std::optional<bg::i64>, 2>{std::nullopt, 3});
 
     CHECK(actual.equals({std::nullopt, 7}));
     CHECK(constant_required_sum::evaluations == 1);

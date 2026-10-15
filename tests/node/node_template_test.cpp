@@ -68,7 +68,7 @@ using ITEM = bg::TimeSeriesVariable<"ITEM">;
 inline constexpr auto G = bg::guarantee_variable<"G">;
 
 struct dynamic_reference_input_node {
-    bg::In<bg::REF<bg::TSD<std::int64_t, ITEM, G>, G>> dictionary;
+    bg::In<bg::REF<bg::TSD<bg::i64, ITEM, G>, G>> dictionary;
     bg::In<bg::REF<ITEM, G>, bg::dynamic_binding, bg::optional, "selected"_n> item;
     bg::Out<bg::REF<ITEM, G>> output;
 
@@ -81,7 +81,7 @@ struct dynamic_reference_input_node {
 TEST_CASE("a dynamic reference input is internal to an aggregate node",
           "[node_template][feature:node-api][feature:reference][definition:aggregate]") {
     const auto node = bg::node<dynamic_input_test::dynamic_reference_input_node>();
-    const std::array<const bg::Type *, 1> arguments{&bg::TSD<std::int64_t, bg::TS<float>>::type()};
+    const std::array<const bg::Type *, 1> arguments{&bg::TSD<bg::i64, bg::TS<float>>::type()};
 
     const auto resolution = node.signature().resolve_with_type_map(arguments);
     const auto dynamic_inputs = node.dynamic_reference_input_types(resolution.type_map);

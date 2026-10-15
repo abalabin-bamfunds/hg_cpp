@@ -17,7 +17,7 @@
 namespace {
 
 struct dict_sink_definition {
-    bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input;
+    bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input;
 
     void evaluate() const {
         sizes.push_back(input.size());
@@ -57,7 +57,7 @@ TEST_CASE("a time series dictionary publishes item and key changes",
     dict_sink_definition::modified.clear();
 
     const auto graph = bg::graph("name"_n = "dictionary_change_input",
-                                 [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { dict_sink(input); });
+                                 [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) { dict_sink(input); });
     (void)bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
     CHECK(dict_sink_definition::sizes == std::vector<std::size_t>{2, 2, 1});
@@ -73,7 +73,7 @@ struct literal_dict_source_definition {
     static constexpr bool uses_timed_scheduling = true;
 
     bg::State<int> step;
-    bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output;
+    bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output;
 
     void start(bg::EvaluationContext *context) const {
         output.apply({{99, literal::SKIP}, {1, 10}, {2, 20}});
@@ -92,7 +92,7 @@ struct literal_dict_source_definition {
 };
 
 struct literal_dict_snapshot_definition {
-    bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input;
+    bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input;
 
     void evaluate() const {
         present.push_back({input.contains(1), input.contains(2), input.contains(99)});
@@ -101,7 +101,7 @@ struct literal_dict_snapshot_definition {
         input.for_each_added([&](const auto &) { ++added_count; });
         added.push_back(added_count);
 
-        auto removed_keys = std::vector<std::int64_t>{};
+        auto removed_keys = std::vector<bg::i64>{};
         input.for_each_removed([&](const auto &key) { removed_keys.push_back(key.value()); });
         removed.push_back(std::move(removed_keys));
 
@@ -112,7 +112,7 @@ struct literal_dict_snapshot_definition {
 
     inline static std::vector<std::array<bool, 3>> present;
     inline static std::vector<std::size_t> added;
-    inline static std::vector<std::vector<std::int64_t>> removed;
+    inline static std::vector<std::vector<bg::i64>> removed;
     inline static std::vector<std::size_t> modified;
 };
 
@@ -133,13 +133,13 @@ TEST_CASE("a TSD update removes an entry with REMOVE",
           std::vector<std::array<bool, 3>>{{true, true, false}, {false, true, false}, {true, true, false}});
     CHECK(literal_dict_snapshot_definition::added == std::vector<std::size_t>{2, 0, 1});
     CHECK(literal_dict_snapshot_definition::removed ==
-          std::vector<std::vector<std::int64_t>>{{}, {1}, {}});
+          std::vector<std::vector<bg::i64>>{{}, {1}, {}});
     CHECK(literal_dict_snapshot_definition::modified == std::vector<std::size_t>{0, 0, 0});
 }
 
 TEST_CASE("a TSD update rejects a root INVALID marker",
           "[evaluation][tsd][series:tsd][feature:collection-change][validity]") {
-    const auto source = bg::node([](bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output) {
+    const auto source = bg::node([](bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output) {
         output.apply(literal::INVALID);
     });
 
@@ -149,21 +149,21 @@ TEST_CASE("a TSD update rejects a root INVALID marker",
 namespace {
 
 struct dictionary_cursor_definition {
-    bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input;
+    bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input;
 
     void evaluate() const {
-        current.push_back(collect(&bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::next_item_id));
-        valid.push_back(collect(&bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::next_valid_id));
-        added.push_back(collect(&bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::next_added_id));
-        removed.push_back(collect(&bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::next_removed_id));
-        modified.push_back(collect(&bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::next_modified_id));
+        current.push_back(collect(&bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>>::next_item_id));
+        valid.push_back(collect(&bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>>::next_valid_id));
+        added.push_back(collect(&bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>>::next_added_id));
+        removed.push_back(collect(&bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>>::next_removed_id));
+        modified.push_back(collect(&bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>>::next_modified_id));
 
         auto removed_physical_ids = std::vector<bg::item_id_t>{};
         input.for_each_removed_physical_id([&](bg::item_id_t id) { removed_physical_ids.push_back(id); });
         removed_physical.push_back(std::move(removed_physical_ids));
     }
 
-    using Next = bg::item_id_t (bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>::*)(bg::item_id_t) const;
+    using Next = bg::item_id_t (bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>>::*)(bg::item_id_t) const;
 
     std::vector<bg::item_id_t> collect(Next next) const {
         auto result = std::vector<bg::item_id_t>{};
@@ -200,7 +200,7 @@ TEST_CASE("a time series dictionary cursor enumerates current and changed items"
     dictionary_cursor_definition::removed_physical.clear();
 
     const auto graph = bg::graph("name"_n = "dictionary_cursor_input",
-                                 [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { sink(input); });
+                                 [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) { sink(input); });
     (void)bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
     CHECK(dictionary_cursor_definition::current ==
@@ -214,7 +214,7 @@ TEST_CASE("a time series dictionary cursor enumerates current and changed items"
 
 TEST_CASE("an invalid dictionary cursor has no item IDs",
           "[feature:collection-change][series:tsd]") {
-    const auto input = bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>{};
+    const auto input = bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>>{};
 
     CHECK_FALSE(input.key_set().valid());
     CHECK(input.next_item_id(0) == bg::util::occupancy_index::npos);
@@ -231,10 +231,10 @@ TEST_CASE("an invalid dictionary cursor has no item IDs",
 namespace {
 
 struct valid_dictionary_cursor_definition {
-    bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input;
+    bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input;
 
     void evaluate() const {
-        auto keys = std::vector<std::int64_t>{};
+        auto keys = std::vector<bg::i64>{};
         for (auto id = input.next_valid_id(0); id != bg::util::occupancy_index::npos;
              id = input.next_valid_id(id + 1)) {
             keys.push_back(*input.key_at(id));
@@ -242,7 +242,7 @@ struct valid_dictionary_cursor_definition {
         snapshots.push_back(std::move(keys));
     }
 
-    inline static std::vector<std::vector<std::int64_t>> snapshots;
+    inline static std::vector<std::vector<bg::i64>> snapshots;
 };
 
 } // namespace
@@ -254,16 +254,16 @@ TEST_CASE("a time series dictionary valid cursor skips invalid items",
     valid_dictionary_cursor_definition::snapshots.clear();
 
     const auto graph = bg::graph("name"_n = "valid_dictionary_cursor_input",
-                                 [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { sink(input); });
+                                 [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) { sink(input); });
     (void)bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, literal::INVALID}}});
 
-    CHECK(valid_dictionary_cursor_definition::snapshots == std::vector<std::vector<std::int64_t>>{{1, 2}, {2}});
+    CHECK(valid_dictionary_cursor_definition::snapshots == std::vector<std::vector<bg::i64>>{{1, 2}, {2}});
 }
 
 namespace {
 
 struct item_modified_value_definition {
-    bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input;
+    bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input;
     bg::Out<bg::TS<bool>> output;
 
     void evaluate() const { output.set(input.item_modified(1)); }
@@ -275,7 +275,7 @@ TEST_CASE("dictionary item queries distinguish addition from modification",
           "[evaluation][tsd][feature:collection-change][series:tsd][scalar:integer]"
           "[transition:addition][transition:update][binding:direct]") {
     const auto modified = bg::node<item_modified_value_definition>();
-    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { return modified(input); };
+    const auto graph = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) { return modified(input); };
 
     const auto actual = bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
@@ -285,7 +285,7 @@ TEST_CASE("dictionary item queries distinguish addition from modification",
 namespace {
 
 struct reference_dictionary_summary_definition {
-    bg::In<bg::TSD<std::int64_t, bg::REF<bg::TS<bg::i64>>>> input;
+    bg::In<bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>> input;
     bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const {
@@ -304,7 +304,7 @@ TEST_CASE("a value dictionary provides a source-backed reference representation"
           "[binding:value-to-reference][transition:update]") {
     const auto summarize = bg::node<reference_dictionary_summary_definition>();
     reference_dictionary_summary_definition::item_became_valid.clear();
-    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { return summarize(input); };
+    const auto graph = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) { return summarize(input); };
 
     const auto actual = bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
@@ -316,8 +316,8 @@ TEST_CASE("a value dictionary provides a source-backed reference representation"
 namespace {
 
 struct reference_dictionary_rekey_definition {
-    bg::In<bg::TSD<std::int64_t, bg::REF<bg::TS<bg::i64>>>> input;
-    bg::Out<bg::TSD<std::int64_t, bg::REF<bg::TS<bg::i64>>>> output;
+    bg::In<bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>> input;
+    bg::Out<bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>> output;
 
     void evaluate() const {
         input.for_each_added([&](const auto &key) { output[key.value() * 10].copy(input[key]); });
@@ -326,21 +326,21 @@ struct reference_dictionary_rekey_definition {
 };
 
 struct dereferenced_dictionary_summary_definition {
-    bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input;
+    bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input;
     bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const { output.set(static_cast<int>(input.size() * 100) + (input.contains(10) ? *input[10] : -1)); }
 };
 
 struct explicit_reference_dictionary_pass_definition {
-    bg::In<bg::REF<bg::TSD<std::int64_t, bg::REF<bg::TS<bg::i64>>>>> input;
-    bg::Out<bg::REF<bg::TSD<std::int64_t, bg::REF<bg::TS<bg::i64>>>>> output;
+    bg::In<bg::REF<bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>>> input;
+    bg::Out<bg::REF<bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>>> output;
 
     void evaluate() const { output.copy(input); }
 };
 
 struct dictionary_summary_definition {
-    bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input;
+    bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input;
     bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const { output.set(static_cast<int>(input.size() * 100) + *input[1]); }
@@ -353,7 +353,7 @@ TEST_CASE("rekeying a reference dictionary preserves item updates and removals",
           "[binding:reference-to-value][binding:value-to-reference][transition:update][transition:removal]") {
     const auto rekey = bg::node<reference_dictionary_rekey_definition>();
     const auto summarize = bg::node<dereferenced_dictionary_summary_definition>();
-    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { return summarize(rekey(input)); };
+    const auto graph = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) { return summarize(rekey(input)); };
 
     const auto actual = bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
@@ -364,8 +364,8 @@ TEST_CASE("source dictionary item routes batch fan-out to reference dictionaries
           "[evaluation][tsd][reference][feature:reference][series:tsd][scalar:integer]"
           "[binding:reference-to-value][binding:value-to-reference][shape:fan-out][transition:update]") {
     const auto source = bg::node(
-        [](bg::In<bg::TS<bg::i64>> input, bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output) {
-            for (auto key = std::int64_t{}; key != 31; ++key) {
+        [](bg::In<bg::TS<bg::i64>> input, bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output) {
+            for (auto key = bg::i64{}; key != 31; ++key) {
                 output[key].set(*input + static_cast<int>(key));
             }
             if (*input == 2) {
@@ -375,13 +375,13 @@ TEST_CASE("source dictionary item routes batch fan-out to reference dictionaries
             }
         });
     const auto rekey = bg::node(
-        [](bg::In<bg::TSD<std::int64_t, bg::REF<bg::TS<bg::i64>>>> input, bg::Scalar<std::int64_t> offset,
-           bg::Out<bg::TSD<std::int64_t, bg::REF<bg::TS<bg::i64>>>> output) {
+        [](bg::In<bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>> input, bg::Scalar<bg::i64> offset,
+           bg::Out<bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>> output) {
             input.for_each_added([&](const auto &key) { output[key.value() + *offset].copy(input[key]); });
             input.for_each_removed([&](const auto &key) { output.erase(key.value() + *offset); });
         });
     const auto sum = bg::node(
-        [](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input, bg::Out<bg::TS<bg::i64>> output) {
+        [](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input, bg::Out<bg::TS<bg::i64>> output) {
             auto result = 0;
             input.for_each_value([&](const auto &value) { result += *value; });
             output.set(result);
@@ -392,7 +392,7 @@ TEST_CASE("source dictionary item routes batch fan-out to reference dictionaries
         });
     const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) {
         const auto values = source(input);
-        return add(sum(rekey(values, std::int64_t{100})), sum(rekey(values, std::int64_t{200})));
+        return add(sum(rekey(values, bg::i64{100})), sum(rekey(values, bg::i64{200})));
     };
 
     const auto actual = bg::testing::test_graph(graph, std::array{1, 2, 3});
@@ -419,7 +419,7 @@ struct scale_reference_target_definition {
 struct standalone_reference_dictionary_definition {
     bg::In<bg::REF<bg::TS<bg::i64>>> first;
     bg::In<bg::REF<bg::TS<bg::i64>>> second;
-    bg::Out<bg::TSD<std::int64_t, bg::REF<bg::TS<bg::i64>>>> output;
+    bg::Out<bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>> output;
 
     void evaluate() const {
         output[1].copy(first);
@@ -428,7 +428,7 @@ struct standalone_reference_dictionary_definition {
 };
 
 struct sum_dictionary_definition {
-    bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input;
+    bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input;
     bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const { output.set(*input[1] + *input[2]); }
@@ -456,7 +456,7 @@ TEST_CASE("an explicit dictionary reference input receives a recursively adapted
           "[transition:update][transition:removal]") {
     const auto pass = bg::node<explicit_reference_dictionary_pass_definition>();
     const auto summarize = bg::node<dictionary_summary_definition>();
-    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { return summarize(pass(input)); };
+    const auto graph = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) { return summarize(pass(input)); };
 
     const auto actual = bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
@@ -465,14 +465,14 @@ TEST_CASE("an explicit dictionary reference input receives a recursively adapted
 
 TEST_CASE("a node can read one dictionary item",
           "[evaluation][tsd][feature:getitem][series:tsd][scalar:integer][binding:direct][transition:update]") {
-    const auto select = bg::node([](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input, bg::Out<bg::TS<bg::i64>> output) {
+    const auto select = bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input, bg::Out<bg::TS<bg::i64>> output) {
         auto changed = input.item_modified(1);
         input.for_each_added([&](const auto &key) { changed = changed || key.value() == 1; });
         if (input.contains(1) && changed) {
             output.set(*input[1]);
         }
     });
-    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { return select(input); };
+    const auto graph = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) { return select(input); };
 
     const auto actual = bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
@@ -482,14 +482,14 @@ TEST_CASE("a node can read one dictionary item",
 TEST_CASE("a node observes dictionary item addition, removal, and restoration",
           "[evaluation][tsd][feature:getitem][series:tsd][scalar:integer][binding:direct][transition:addition]"
           "[transition:removal][transition:resurrection]") {
-    const auto select = bg::node([](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input, bg::Out<bg::TS<bg::i64>> output) {
+    const auto select = bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input, bg::Out<bg::TS<bg::i64>> output) {
         if (input.contains(3)) {
             output.set(*input[3]);
         } else {
             output.invalidate();
         }
     });
-    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { return select(input); };
+    const auto graph = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) { return select(input); };
 
     const auto actual = bg::testing::test_graph(graph, {literal::SKIP, {{3, 30}}, {{3, literal::REMOVE}}, {{3, 31}}});
 
@@ -500,9 +500,9 @@ TEST_CASE("a node can publish a contained dictionary reference",
           "[evaluation][tsd][reference][feature:getitem][series:tsd][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value][transition:update]") {
     const auto rekey = bg::node<reference_dictionary_rekey_definition>();
-    const auto select = bg::node([](bg::In<bg::TSD<std::int64_t, bg::REF<bg::TS<bg::i64>>>> input,
+    const auto select = bg::node([](bg::In<bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>> input,
                                     bg::Out<bg::REF<bg::TS<bg::i64>>> output) { output.copy(input[10]); });
-    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { return select(rekey(input)); };
+    const auto graph = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) { return select(rekey(input)); };
 
     const auto actual = bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
@@ -525,12 +525,12 @@ TEST_CASE("a node can read a collection-valued dictionary item",
           "[binding:direct][transition:update]") {
     const auto sum = bg::node<selected_list_sum_definition>();
     const auto select = bg::node(
-        [](bg::In<bg::TSD<std::int64_t, bg::TSL<bg::TS<bg::i64>, 2>>> input, bg::Out<bg::TSL<bg::TS<bg::i64>, 2>> output) {
+        [](bg::In<bg::TSD<bg::i64, bg::TSL<bg::TS<bg::i64>, 2>>> input, bg::Out<bg::TSL<bg::TS<bg::i64>, 2>> output) {
             const auto item = input[1];
             output[0].set(*item[0]);
             output[1].set(*item[1]);
         });
-    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TSL<bg::TS<bg::i64>, 2>>> input) {
+    const auto graph = [&](bg::wp<bg::TSD<bg::i64, bg::TSL<bg::TS<bg::i64>, 2>>> input) {
         return sum(select(input));
     };
 
@@ -543,10 +543,10 @@ TEST_CASE("a node can read a collection-valued dictionary item",
 TEST_CASE("a node can select a dictionary item using a time series key",
           "[evaluation][tsd][feature:getitem][series:tsd][series:value][scalar:integer]"
           "[binding:direct][transition:update]") {
-    const auto select = bg::node([](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input, bg::In<bg::TS<std::int64_t>> key,
+    const auto select = bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input, bg::In<bg::TS<bg::i64>> key,
                                     bg::Out<bg::TS<bg::i64>> output) { output.set(*input[*key]); });
 
-    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input, bg::wp<bg::TS<std::int64_t>> key) {
+    const auto graph = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input, bg::wp<bg::TS<bg::i64>> key) {
         return select(input, key);
     };
 
@@ -560,7 +560,7 @@ namespace {
 struct resurrecting_selected_item_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output;
+    bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output;
 
     void start(bg::EvaluationContext *context) const {
         output[3].set(30);
@@ -580,7 +580,7 @@ TEST_CASE("a node observes same-cycle dictionary item resurrection",
           "[transition:resurrection]") {
     const auto source = bg::node<resurrecting_selected_item_definition>();
     const auto select = bg::node(
-        [](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input, bg::Out<bg::TS<bg::i64>> output) { output.set(*input[3]); });
+        [](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input, bg::Out<bg::TS<bg::i64>> output) { output.set(*input[3]); });
     const auto graph = [&] { return select(source()); };
 
     const auto actual = bg::testing::test_graph(graph);
@@ -591,9 +591,9 @@ TEST_CASE("a node observes same-cycle dictionary item resurrection",
 TEST_CASE("time series dictionaries can contain time series dictionaries",
           "[evaluation][tsd][series:tsd][feature:collection-change][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct]") {
-    const auto select = bg::node([](bg::In<bg::TSD<std::int64_t, bg::TSD<std::int64_t, bg::TS<bg::i64>>>> input,
+    const auto select = bg::node([](bg::In<bg::TSD<bg::i64, bg::TSD<bg::i64, bg::TS<bg::i64>>>> input,
                                     bg::Out<bg::TS<bg::i64>> output) { output.set(*input[1][2]); });
-    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TSD<std::int64_t, bg::TS<bg::i64>>>> input) {
+    const auto graph = [&](bg::wp<bg::TSD<bg::i64, bg::TSD<bg::i64, bg::TS<bg::i64>>>> input) {
         return select(input);
     };
 
@@ -609,7 +609,7 @@ template <template <typename, auto...> typename Field> struct DictionaryBundle {
 };
 
 struct bundle_dict_value_definition {
-    bg::In<bg::TSD<std::int64_t, bg::TSB<DictionaryBundle>>> input;
+    bg::In<bg::TSD<bg::i64, bg::TSB<DictionaryBundle>>> input;
     bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const { output.set(*input[1]->value); }
@@ -621,7 +621,7 @@ TEST_CASE("time series dictionaries can contain runtime-sized time series",
           "[evaluation][tsd][series:tsd][tsb][series:tsb][feature:collection-change][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct][schema:named]") {
     const auto extract = bg::node<bundle_dict_value_definition>();
-    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TSB<DictionaryBundle>>> input) { return extract(input); };
+    const auto graph = [&](bg::wp<bg::TSD<bg::i64, bg::TSB<DictionaryBundle>>> input) { return extract(input); };
 
     const auto actual = bg::testing::test_graph(graph, {{{1, {{"value", 12}}}}});
 
@@ -631,7 +631,7 @@ TEST_CASE("time series dictionaries can contain runtime-sized time series",
 namespace {
 
 struct canceled_add_source_definition {
-    bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output;
+    bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output;
 
     void start() const {
         output[1].set(10);
@@ -642,7 +642,7 @@ struct canceled_add_source_definition {
 };
 
 struct evaluation_marker_definition {
-    bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input;
+    bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input;
     bg::Out<bg::TS<bool>> output;
 
     void evaluate() const { output.set(true); }
@@ -668,7 +668,7 @@ namespace {
 struct resurrecting_source_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output;
+    bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output;
 
     void start(bg::EvaluationContext *context) const {
         output[1].set(10);
@@ -707,7 +707,7 @@ namespace {
 struct nested_item_resurrecting_source_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::Out<bg::TSD<std::int64_t, bg::TSD<std::int64_t, bg::TS<bg::i64>>>> output;
+    bg::Out<bg::TSD<bg::i64, bg::TSD<bg::i64, bg::TS<bg::i64>>>> output;
 
     void start(bg::EvaluationContext *context) const {
         output[1][2].set(12);
@@ -721,7 +721,7 @@ struct nested_item_resurrecting_source_definition {
 };
 
 struct nested_item_resurrection_count_definition {
-    bg::In<bg::TSD<std::int64_t, bg::TSD<std::int64_t, bg::TS<bg::i64>>>> input;
+    bg::In<bg::TSD<bg::i64, bg::TSD<bg::i64, bg::TS<bg::i64>>>> input;
     bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const {
@@ -748,8 +748,8 @@ TEST_CASE("resurrecting a dictionary collection item reports a modification",
 namespace {
 
 struct generic_dict_copy_definition {
-    bg::In<bg::TSD<std::int64_t, bg::TS<bg::SCALAR>>> input;
-    bg::Out<bg::TSD<std::int64_t, bg::TS<bg::SCALAR>>> output;
+    bg::In<bg::TSD<bg::i64, bg::TS<bg::SCALAR>>> input;
+    bg::Out<bg::TSD<bg::i64, bg::TS<bg::SCALAR>>> output;
 
     void evaluate() const {
         input.for_each([&](const auto &key, const auto &item) { output[key].set_value(item.value_view()); });
@@ -762,9 +762,9 @@ TEST_CASE("a generic dictionary view uses its resolved item type",
           "[evaluation][tsd][series:tsd][generic][declaration:generic][feature:collection-change]"
           "[scalar:integer][representation:native][binding:direct]") {
     const auto copy = bg::node<generic_dict_copy_definition>();
-    const auto select = bg::node([](bg::In<bg::TSD<std::int64_t, bg::TS<bg::SCALAR>>> input,
+    const auto select = bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::SCALAR>>> input,
                                     bg::Out<bg::TS<bg::SCALAR>> output) { output.set_value(input[1].value_view()); });
-    const auto graph = [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { return select(copy(input)); };
+    const auto graph = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) { return select(copy(input)); };
 
     const auto actual = bg::testing::test_graph(graph, {{{1, 10}}});
 
@@ -774,7 +774,7 @@ TEST_CASE("a generic dictionary view uses its resolved item type",
 namespace {
 
 struct optional_dict_sink_definition {
-    bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>, bg::optional> input;
+    bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>, bg::optional> input;
 
     void evaluate() const {
         validity.push_back(input.valid());
@@ -808,7 +808,7 @@ TEST_CASE("a dictionary becomes valid on its first empty tick and remains valid"
 
     using namespace bg::literals;
     const auto graph = bg::graph("name"_n = "empty_dictionary_input",
-                                 [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { dict_sink(input); });
+                                 [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) { dict_sink(input); });
     (void)bg::testing::test_graph(graph, {{}, {{1, 10}, {2, 20}}, {{1, literal::REMOVE}, {2, literal::REMOVE}}});
 
     CHECK(optional_dict_sink_definition::validity == std::vector{true, true, true});
@@ -834,7 +834,7 @@ struct invalidating_dict_input_definition {
 
 struct dict_from_value_definition {
     bg::In<bg::TS<bg::i64>> input;
-    bg::Out<bg::TSD<std::int64_t, bg::TS<bg::i64>>> output;
+    bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output;
 
     void evaluate() const { output[1].set(*input); }
 };
@@ -847,7 +847,7 @@ TEST_CASE("a dictionary preserves its value when a required input becomes invali
     const auto source = bg::node<invalidating_dict_input_definition>();
     const auto dict_from_value = bg::node<dict_from_value_definition>();
     const auto select = bg::node(
-        [](bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input, bg::Out<bg::TS<bg::i64>> output) { output.set(*input[1]); });
+        [](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input, bg::Out<bg::TS<bg::i64>> output) { output.set(*input[1]); });
     const auto graph = [&] { return select(dict_from_value(source())); };
 
     const auto actual = bg::testing::test_graph(graph);
@@ -858,15 +858,15 @@ TEST_CASE("a dictionary preserves its value when a required input becomes invali
 namespace {
 
 struct dictionary_enumeration_snapshot {
-    std::vector<std::int64_t> keys;
+    std::vector<bg::i64> keys;
     std::vector<bg::item_id_t> ids;
     std::vector<int> values;
-    std::vector<std::pair<std::int64_t, int>> key_values;
+    std::vector<std::pair<bg::i64, int>> key_values;
     std::vector<std::pair<bg::item_id_t, int>> id_values;
 };
 
 struct dictionary_enumeration_sink_definition {
-    bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input;
+    bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input;
 
     void evaluate() const {
         auto snapshot = dictionary_enumeration_snapshot{};
@@ -893,7 +893,7 @@ TEST_CASE("dictionary enumeration exposes keys, ids, values, and their associati
     dictionary_enumeration_sink_definition::snapshots.clear();
 
     const auto graph = bg::graph("name"_n = "dictionary_enumeration_input",
-                                 [&](bg::wp<bg::TSD<std::int64_t, bg::TS<bg::i64>>> input) { sink(input); });
+                                 [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) { sink(input); });
     (void)bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
     REQUIRE(dictionary_enumeration_sink_definition::snapshots.size() == 3);
@@ -912,9 +912,9 @@ TEST_CASE("dictionary enumeration exposes keys, ids, values, and their associati
     std::ranges::sort(id_value_ids);
     std::ranges::sort(id_values);
 
-    CHECK(first.keys == std::vector<std::int64_t>{1, 2});
+    CHECK(first.keys == std::vector<bg::i64>{1, 2});
     CHECK(first.values == std::vector{10, 20});
-    CHECK(first.key_values == std::vector<std::pair<std::int64_t, int>>{{1, 10}, {2, 20}});
+    CHECK(first.key_values == std::vector<std::pair<bg::i64, int>>{{1, 10}, {2, 20}});
     REQUIRE(first.ids.size() == 2);
     CHECK(first.ids[0] != first.ids[1]);
     CHECK(id_value_ids == first.ids);
@@ -923,13 +923,13 @@ TEST_CASE("dictionary enumeration exposes keys, ids, values, and their associati
     auto last = dictionary_enumeration_sink_definition::snapshots.back();
     std::ranges::sort(last.keys);
     std::ranges::sort(last.values);
-    CHECK(last.keys == std::vector<std::int64_t>{1});
+    CHECK(last.keys == std::vector<bg::i64>{1});
     CHECK(last.values == std::vector{11});
 }
 
 TEST_CASE("an invalid dictionary input has no entries to enumerate",
           "[value][series:tsd][feature:time-series-view][validity:optional]") {
-    const auto input = bg::In<bg::TSD<std::int64_t, bg::TS<bg::i64>>>{};
+    const auto input = bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>>{};
     auto calls = std::array<std::size_t, 5>{};
 
     input.for_each_key([&](const auto &) { ++calls[0]; });

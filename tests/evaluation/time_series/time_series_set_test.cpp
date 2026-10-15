@@ -20,7 +20,7 @@ using namespace bg::literals;
 namespace {
 
 struct set_sink_definition {
-    bg::In<bg::TSS<std::int64_t>, bg::optional> input;
+    bg::In<bg::TSS<bg::i64>, bg::optional> input;
 
     void evaluate() const {
         validity.push_back(input.valid());
@@ -53,7 +53,7 @@ TEST_CASE("a time series set becomes valid on its first empty tick and remains v
     set_sink_definition::removed.clear();
 
     const auto graph = bg::graph("name"_n = "literal_set_input",
-                                 [&](bg::wp<bg::TSS<std::int64_t>> input) { sink(input); });
+                                 [&](bg::wp<bg::TSS<bg::i64>> input) { sink(input); });
     (void)bg::testing::test_graph(graph, {{}, {1, 2}, {literal::REMOVED(1), literal::REMOVED(2)}});
 
     CHECK(set_sink_definition::validity == std::vector{true, true, true});
@@ -124,7 +124,7 @@ TEST_CASE("a TSS update rejects a root INVALID marker",
 namespace {
 
 struct inverse_set_mutation_source_definition {
-    bg::Out<bg::TSS<std::int64_t>> output;
+    bg::Out<bg::TSS<bg::i64>> output;
 
     void start() const {
         output.insert(1);
@@ -186,13 +186,13 @@ struct clearing_referenced_set_source_definition {
 
 struct set_from_value_definition {
     bg::In<bg::TS<bg::i64>> input;
-    bg::Out<bg::TSS<std::int64_t>> output;
+    bg::Out<bg::TSS<bg::i64>> output;
 
     void evaluate() const { output.insert(*input); }
 };
 
 struct set_size_definition {
-    bg::In<bg::TSS<std::int64_t>> input;
+    bg::In<bg::TSS<bg::i64>> input;
     bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const { output.set(static_cast<int>(input.size())); }
@@ -298,17 +298,17 @@ struct referenced_set_observer_definition {
         validity.push_back(input.valid());
         sizes.push_back(input.size());
 
-        auto added_items = std::vector<std::int64_t>{};
+        auto added_items = std::vector<bg::i64>{};
         input.for_each_added([&](const auto &item) { added_items.push_back(item.value()); });
         added.push_back(std::move(added_items));
 
-        auto removed_items = std::vector<std::int64_t>{};
+        auto removed_items = std::vector<bg::i64>{};
         input.for_each_removed([&](const auto &item) { removed_items.push_back(item.value()); });
         removed.push_back(std::move(removed_items));
         const auto removed_key = bg::i64{11};
         was_removed.push_back(input.was_removed(bg::Scalar<bg::i64>::from(removed_key)));
 
-        auto cursor_items = std::vector<std::int64_t>{};
+        auto cursor_items = std::vector<bg::i64>{};
         for (auto id = input.next_removed_id(0); id != bg::util::occupancy_index::npos;
              id = input.next_removed_id(id + 1)) {
             cursor_items.push_back(input.item_at(id).value());
@@ -318,10 +318,10 @@ struct referenced_set_observer_definition {
 
     inline static std::vector<bool> validity;
     inline static std::vector<std::size_t> sizes;
-    inline static std::vector<std::vector<std::int64_t>> added;
-    inline static std::vector<std::vector<std::int64_t>> removed;
+    inline static std::vector<std::vector<bg::i64>> added;
+    inline static std::vector<std::vector<bg::i64>> removed;
     inline static std::vector<bool> was_removed;
-    inline static std::vector<std::vector<std::int64_t>> removed_cursor;
+    inline static std::vector<std::vector<bg::i64>> removed_cursor;
 };
 
 struct invalidating_set_reference_definition {
@@ -359,14 +359,14 @@ struct passive_referenced_set_observer_definition {
         validity.push_back(input.valid());
         sizes.push_back(input.size());
 
-        auto removed_items = std::vector<std::int64_t>{};
+        auto removed_items = std::vector<bg::i64>{};
         input.for_each_removed([&](const auto &item) { removed_items.push_back(item.value()); });
         removed.push_back(std::move(removed_items));
     }
 
     inline static std::vector<bool> validity;
     inline static std::vector<std::size_t> sizes;
-    inline static std::vector<std::vector<std::int64_t>> removed;
+    inline static std::vector<std::vector<bg::i64>> removed;
 };
 
 struct generic_referenced_set_observer_definition {
@@ -413,12 +413,12 @@ TEST_CASE("a TSS input reports removed items when its reference selects an inval
     CHECK(referenced_set_observer_definition::validity == std::vector{true, false});
     CHECK(referenced_set_observer_definition::sizes == std::vector<std::size_t>{2, 0});
     CHECK(referenced_set_observer_definition::added ==
-          std::vector<std::vector<std::int64_t>>{{11, 12}, {}});
+          std::vector<std::vector<bg::i64>>{{11, 12}, {}});
     CHECK(referenced_set_observer_definition::removed ==
-          std::vector<std::vector<std::int64_t>>{{}, {11, 12}});
+          std::vector<std::vector<bg::i64>>{{}, {11, 12}});
     CHECK(referenced_set_observer_definition::was_removed == std::vector{false, true});
     CHECK(referenced_set_observer_definition::removed_cursor ==
-          std::vector<std::vector<std::int64_t>>{{}, {11, 12}});
+          std::vector<std::vector<bg::i64>>{{}, {11, 12}});
 }
 
 TEST_CASE("a TSS input reports item changes when its reference selects another valid target",
@@ -444,9 +444,9 @@ TEST_CASE("a TSS input reports item changes when its reference selects another v
     CHECK(referenced_set_observer_definition::validity == std::vector{true, true});
     CHECK(referenced_set_observer_definition::sizes == std::vector<std::size_t>{2, 2});
     CHECK(referenced_set_observer_definition::added ==
-          std::vector<std::vector<std::int64_t>>{{11, 12}, {13}});
+          std::vector<std::vector<bg::i64>>{{11, 12}, {13}});
     CHECK(referenced_set_observer_definition::removed ==
-          std::vector<std::vector<std::int64_t>>{{}, {11}});
+          std::vector<std::vector<bg::i64>>{{}, {11}});
 }
 
 TEST_CASE("a sampled TSS reports item ID exchanges across a reference rebind",
@@ -489,7 +489,7 @@ TEST_CASE("a sampled TSS reports item ID exchanges across a reference rebind",
 
     const auto actual = bg::testing::test_graph(graph, {{11, 12}}, {{12, 11}});
 
-    CHECK(actual.equals<std::int64_t>({1, 2}));
+    CHECK(actual.equals<bg::i64>({1, 2}));
 }
 
 TEST_CASE("a sampled TSS does not report remapping for additions and removals at unchanged IDs",
@@ -554,7 +554,7 @@ TEST_CASE("a TSS input does not report stale removals after an invalid target is
     CHECK(referenced_set_observer_definition::validity == std::vector{true, true, false});
     CHECK(referenced_set_observer_definition::sizes == std::vector<std::size_t>{2, 0, 0});
     CHECK(referenced_set_observer_definition::removed ==
-          std::vector<std::vector<std::int64_t>>{{}, {11, 12}, {}});
+          std::vector<std::vector<bg::i64>>{{}, {11, 12}, {}});
     CHECK(referenced_set_observer_definition::was_removed == std::vector{false, true, false});
 }
 
@@ -579,9 +579,9 @@ TEST_CASE("a TSS reference transition uses the old target's current state after 
     CHECK(referenced_set_observer_definition::validity == std::vector{true, false});
     CHECK(referenced_set_observer_definition::sizes == std::vector<std::size_t>{2, 0});
     CHECK(referenced_set_observer_definition::added ==
-          std::vector<std::vector<std::int64_t>>{{11, 12}, {}});
+          std::vector<std::vector<bg::i64>>{{11, 12}, {}});
     CHECK(referenced_set_observer_definition::removed ==
-          std::vector<std::vector<std::int64_t>>{{}, {}});
+          std::vector<std::vector<bg::i64>>{{}, {}});
     CHECK(referenced_set_observer_definition::was_removed == std::vector{false, false});
 }
 
@@ -604,10 +604,10 @@ TEST_CASE("a TSS input reports removed items when its reference becomes null",
     CHECK(referenced_set_observer_definition::validity == std::vector{true, false});
     CHECK(referenced_set_observer_definition::sizes == std::vector<std::size_t>{2, 0});
     CHECK(referenced_set_observer_definition::removed ==
-          std::vector<std::vector<std::int64_t>>{{}, {11, 12}});
+          std::vector<std::vector<bg::i64>>{{}, {11, 12}});
     CHECK(referenced_set_observer_definition::was_removed == std::vector{false, true});
     CHECK(referenced_set_observer_definition::removed_cursor ==
-          std::vector<std::vector<std::int64_t>>{{}, {11, 12}});
+          std::vector<std::vector<bg::i64>>{{}, {11, 12}});
 }
 
 TEST_CASE("a passive TSS input does not retain a stale removal sample",
@@ -629,7 +629,7 @@ TEST_CASE("a passive TSS input does not retain a stale removal sample",
     CHECK(passive_referenced_set_observer_definition::validity == std::vector{true, false});
     CHECK(passive_referenced_set_observer_definition::sizes == std::vector<std::size_t>{2, 0});
     CHECK(passive_referenced_set_observer_definition::removed ==
-          std::vector<std::vector<std::int64_t>>{{}, {}});
+          std::vector<std::vector<bg::i64>>{{}, {}});
 }
 
 TEST_CASE("a generic input visitor sees TSS removals on reference invalidation",

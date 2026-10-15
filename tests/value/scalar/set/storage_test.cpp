@@ -13,7 +13,7 @@
 
 TEST_CASE("resolved scalar set storage supports mutation",
           "[value][scalar][set][scalar:set][storage][feature:scalar-storage]") {
-    const auto &item = bg::cpp_scalar_runtime_type<std::int64_t>();
+    const auto &item = bg::cpp_scalar_runtime_type<bg::i64>();
     const auto &type = bg::set_scalar_type(item.type());
     const auto available = std::array<const bg::ScalarRuntimeType *, 1>{&item};
     const auto &set = static_cast<const bg::ScalarSetRuntimeType &>(bg::resolve_scalar_runtime_type(type, available));

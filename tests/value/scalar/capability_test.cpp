@@ -48,9 +48,9 @@ TEST_CASE("scalar collection handles propagate item capabilities",
 
 TEST_CASE("mutable collection views require a resolved scalar type",
           "[value][scalar][capability][collection][feature:scalar-api]") {
-    STATIC_CHECK(bg::details::mutable_scalar<bg::List<std::int64_t>>);
-    STATIC_CHECK(bg::details::mutable_scalar<bg::Set<std::int64_t>>);
-    STATIC_CHECK((bg::details::mutable_scalar<bg::Dict<std::int64_t, std::int64_t>>));
+    STATIC_CHECK(bg::details::mutable_scalar<bg::List<bg::i64>>);
+    STATIC_CHECK(bg::details::mutable_scalar<bg::Set<bg::i64>>);
+    STATIC_CHECK((bg::details::mutable_scalar<bg::Dict<bg::i64, bg::i64>>));
 
     STATIC_CHECK_FALSE(bg::details::mutable_scalar<bg::List<bg::SCALAR>>);
     STATIC_CHECK_FALSE(bg::details::mutable_scalar<bg::Set<bg::SCALAR>>);
@@ -61,12 +61,12 @@ TEST_CASE("scalar type interfaces expose only supported operations",
           "[value][scalar][capability][feature:scalar-api]") {
     STATIC_CHECK_FALSE(HashableScalarHandle<bg::Scalar<bg::Opaque<int>>>);
     STATIC_CHECK_FALSE(EqualityComparableScalarHandle<bg::Scalar<bg::Opaque<int>>>);
-    STATIC_CHECK_FALSE(HasValueMember<bg::Scalar<bg::List<std::int64_t>>>);
-    STATIC_CHECK_FALSE(HasValueMember<bg::Scalar<bg::Set<std::int64_t>>>);
-    STATIC_CHECK_FALSE((HasValueMember<bg::Scalar<bg::Dict<std::int64_t, std::int64_t>>>));
+    STATIC_CHECK_FALSE(HasValueMember<bg::Scalar<bg::List<bg::i64>>>);
+    STATIC_CHECK_FALSE(HasValueMember<bg::Scalar<bg::Set<bg::i64>>>);
+    STATIC_CHECK_FALSE((HasValueMember<bg::Scalar<bg::Dict<bg::i64, bg::i64>>>));
     STATIC_CHECK_FALSE(HasArrowOperator<bg::Scalar<bg::SCALAR>>);
-    STATIC_CHECK_FALSE(HasArrowOperator<bg::Scalar<bg::List<std::int64_t>>>);
-    STATIC_CHECK_FALSE(HasArrowOperator<bg::Scalar<bg::Set<std::int64_t>>>);
-    STATIC_CHECK_FALSE((HasArrowOperator<bg::Scalar<bg::Dict<std::int64_t, std::int64_t>>>));
+    STATIC_CHECK_FALSE(HasArrowOperator<bg::Scalar<bg::List<bg::i64>>>);
+    STATIC_CHECK_FALSE(HasArrowOperator<bg::Scalar<bg::Set<bg::i64>>>);
+    STATIC_CHECK_FALSE((HasArrowOperator<bg::Scalar<bg::Dict<bg::i64, bg::i64>>>));
     STATIC_CHECK_FALSE(std::default_initializable<bg::List<bg::SCALAR>>);
 }

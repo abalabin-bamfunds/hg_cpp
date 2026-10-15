@@ -19,7 +19,7 @@ using namespace bg::literals;
 TEST_CASE("map validates collection key types for every graph form",
           "[feature:map][feature:wiring][feature:type-system][series:tsd]"
           "[definition:function][definition:runtime]") {
-    const auto integers = node([](Out<TSD<std::int64_t, TS<float>>>) {});
+    const auto integers = node([](Out<TSD<i64, TS<float>>>) {});
     const auto booleans = node([](Out<TSD<bool, TS<float>>>) {});
     const auto function = [](wp<TS<float>> left, wp<TS<float>>) { return left; };
     const auto graph_template = graph("name"_n = "map_key_types", function);
@@ -42,7 +42,7 @@ TEST_CASE("map validates collection key types for every graph form",
 
 TEST_CASE("map rejects a graph template with an unmatched argument count",
           "[feature:map][feature:wiring][series:tsd][definition:runtime]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<float>>>) {});
+    const auto values = node([](Out<TSD<i64, TS<float>>>) {});
     const auto two_parameters = graph(
         "name"_n = "two_map_parameters",
         [](wp<TS<float>> value, wp<TS<float>>) { return value; });
@@ -52,9 +52,9 @@ TEST_CASE("map rejects a graph template with an unmatched argument count",
 
 TEST_CASE("map requires one selected TSS for every graph form",
           "[feature:map][feature:wiring][series:tss][definition:function][definition:runtime]") {
-    const auto first = node([](Out<TSS<std::int64_t>>) {});
-    const auto second = node([](Out<TSS<std::int64_t>>) {});
-    const auto function = [](wp<TSS<std::int64_t>>) {};
+    const auto first = node([](Out<TSS<i64>>) {});
+    const auto second = node([](Out<TSS<i64>>) {});
+    const auto function = [](wp<TSS<i64>>) {};
     const auto graph_template = graph("name"_n = "map_key_sets", function);
 
     testing::test_wiring([&] {
@@ -80,12 +80,12 @@ TEST_CASE("map passes reference items and pass-through collections consistently"
           "[feature:map][feature:wiring][feature:reference][series:tsd]"
           "[definition:function][definition:runtime][guarantee:final]") {
     const auto values =
-        node([](Out<TSD<std::int64_t, REF<TS<float>, TimeSeriesGuarantee::final>>>) {});
+        node([](Out<TSD<i64, REF<TS<float>, TimeSeriesGuarantee::final>>>) {});
     const auto factors = node([](Out<TSD<bool, TS<i64>>>) {});
     const auto function = [](wp<TS<float>> value, wp<TSD<bool, TS<i64>>>) { return value; };
     const auto graph_template = graph("name"_n = "map_reference_items", function);
     const auto &expected = TSD<
-        std::int64_t,
+        i64,
         REF<TS<float>, TimeSeriesGuarantee::deduplicated>>::type();
 
     testing::test_wiring([&] {
@@ -108,13 +108,13 @@ TEST_CASE("map passes reference items and pass-through collections consistently"
 TEST_CASE("map resolves explicit and inferred key arguments for every graph form",
           "[feature:map][feature:wiring][series:tsd][definition:function]"
           "[definition:runtime][guarantee:const]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<float>>>) {});
-    const auto function = [](wp<TS<std::int64_t, TimeSeriesGuarantee::const_>> key,
+    const auto values = node([](Out<TSD<i64, TS<float>>>) {});
+    const auto function = [](wp<TS<i64, TimeSeriesGuarantee::const_>> key,
                              wp<TS<float>>) { return key; };
     const auto graph_template = graph("name"_n = "map_keys", function);
     const auto &expected = TSD<
-        std::int64_t,
-        REF<TS<std::int64_t, TimeSeriesGuarantee::const_>,
+        i64,
+        REF<TS<i64, TimeSeriesGuarantee::const_>,
             TimeSeriesGuarantee::deduplicated>>::type();
 
     testing::test_wiring([&] {
@@ -123,7 +123,7 @@ TEST_CASE("map resolves explicit and inferred key arguments for every graph form
 
         const auto arguments = std::array{
             MapArgument{WiringArgument{values()}},
-            MapArgument{WiringArgument{util::symbol{"__key_arg__"}, std::int64_t{0}}},
+            MapArgument{WiringArgument{util::symbol{"__key_arg__"}, i64{0}}},
         };
         const WiringTemplate &runtime_graph = graph_template;
         CHECK(&map(runtime_graph, std::span<const MapArgument>{arguments}).type() == &expected);
@@ -132,7 +132,7 @@ TEST_CASE("map resolves explicit and inferred key arguments for every graph form
 
 TEST_CASE("map reports option errors through its public call forms",
           "[feature:map][feature:wiring][series:tsd][definition:function][definition:runtime]") {
-    const auto values = node([](Out<TSD<std::int64_t, TS<float>>>) {});
+    const auto values = node([](Out<TSD<i64, TS<float>>>) {});
     const auto function = [](wp<TS<float>> value) { return value; };
     const auto graph_template = graph("name"_n = "map_options", function);
 
@@ -159,12 +159,12 @@ TEST_CASE("map reports option errors through its public call forms",
         };
         const auto duplicate_key_arguments = std::array{
             MapArgument{WiringArgument{values()}},
-            MapArgument{WiringArgument{util::symbol{"__key_arg__"}, std::int64_t{0}}},
-            MapArgument{WiringArgument{util::symbol{"__key_arg__"}, std::int64_t{0}}},
+            MapArgument{WiringArgument{util::symbol{"__key_arg__"}, i64{0}}},
+            MapArgument{WiringArgument{util::symbol{"__key_arg__"}, i64{0}}},
         };
         const auto pass_through_option = std::array{
             MapArgument{WiringArgument{values()}},
-            MapArgument{WiringArgument{util::symbol{"__key_set_arg__"}, std::int64_t{0}}, true},
+            MapArgument{WiringArgument{util::symbol{"__key_set_arg__"}, i64{0}}, true},
         };
         const WiringTemplate &runtime_graph = graph_template;
         CHECK_THROWS_WITH(map(runtime_graph, std::span<const MapArgument>{invalid_selector}),

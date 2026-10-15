@@ -135,11 +135,11 @@ struct RuntimeValidityDerivedBundle : bg::bundle_extends<RuntimeValidityBaseBund
 };
 
 struct RuntimeNodeState {
-    std::int64_t evaluations{};
+    bg::i64 evaluations{};
 };
 
 struct RuntimeNodeData {
-    std::int64_t factor;
+    bg::i64 factor;
 };
 
 struct RuntimeNodeDefinition {
@@ -148,8 +148,8 @@ struct RuntimeNodeDefinition {
 
     RuntimeNodeDefinition()
         : signature_{bg::util::symbol{"runtime_node"},
-                     {{bg::util::symbol{"input"}, &bg::TS<std::int64_t>::type()}},
-                     bg::TS<std::int64_t>::type()} {}
+                     {{bg::util::symbol{"input"}, &bg::TS<bg::i64>::type()}},
+                     bg::TS<bg::i64>::type()} {}
 
     [[nodiscard]] const bg::Signature &signature() const { return signature_; }
 
@@ -166,11 +166,11 @@ struct RuntimeNodeDefinition {
         const auto value = input.value();
         const auto number = *value.visit(
             [](const bg::In<bg::TS<bg::SCALAR>> *input) {
-                return bg::scalar_cast<std::int64_t>(input->value_view()).value();
+                return bg::scalar_cast<bg::i64>(input->value_view()).value();
             },
             ddv::noop);
         const auto result = number * invocation.compiled_data().factor + ++invocation.state().evaluations;
-        const auto scalar = bg::Scalar<std::int64_t>::from(result);
+        const auto scalar = bg::Scalar<bg::i64>::from(result);
         invocation.output().visit([&](bg::Out<bg::TS<bg::SCALAR>> *output) { output->set_value(scalar); }, ddv::noop);
     }
 
@@ -181,8 +181,8 @@ TEST_CASE("a runtime-signature node exposes resolved parameters, compiled data, 
           "[node][runtime-signature][definition:runtime][feature:node-api][declaration:runtime]") {
     const auto runtime_node = bg::node(RuntimeNodeDefinition{});
 
-    const auto graph = [&](bg::wp<bg::TS<std::int64_t>> input) -> bg::wp<bg::TS<std::int64_t>> {
-        return bg::wp<bg::TS<std::int64_t>>{*runtime_node(input)};
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) -> bg::wp<bg::TS<bg::i64>> {
+        return bg::wp<bg::TS<bg::i64>>{*runtime_node(input)};
     };
 
     CHECK(bg::testing::test_graph(graph, {1, 2, 3}).equals({3, 6, 9}));
@@ -362,8 +362,8 @@ TEST_CASE("a runtime-signature definition can select an output runtime type from
 TEST_CASE("graph wiring owns a temporary runtime-signature node template",
           "[node][runtime-signature][definition:runtime][lifetime][feature:node-api]"
           "[declaration:runtime]") {
-    const auto graph = [](bg::wp<bg::TS<std::int64_t>> input) -> bg::wp<bg::TS<std::int64_t>> {
-        return bg::wp<bg::TS<std::int64_t>>{*bg::node(RuntimeNodeDefinition{})(input)};
+    const auto graph = [](bg::wp<bg::TS<bg::i64>> input) -> bg::wp<bg::TS<bg::i64>> {
+        return bg::wp<bg::TS<bg::i64>>{*bg::node(RuntimeNodeDefinition{})(input)};
     };
 
     CHECK(bg::testing::test_graph(graph, {1, 2}).equals({3, 6}));
@@ -371,7 +371,7 @@ TEST_CASE("graph wiring owns a temporary runtime-signature node template",
 
 struct RuntimeSinkDefinition {
     RuntimeSinkDefinition()
-        : signature_{bg::util::symbol{"runtime_sink"}, {{bg::util::symbol{"input"}, &bg::TS<std::int64_t>::type()}}} {}
+        : signature_{bg::util::symbol{"runtime_sink"}, {{bg::util::symbol{"input"}, &bg::TS<bg::i64>::type()}}} {}
 
     [[nodiscard]] const bg::Signature &signature() const { return signature_; }
 
@@ -412,7 +412,7 @@ TEST_CASE("a runtime-signature node with no parameters exposes empty input and s
 TEST_CASE("a runtime-signature node can omit its output",
           "[node][runtime-signature][definition:runtime][output][feature:node-api][declaration:runtime]") {
     const auto sink = bg::node(RuntimeSinkDefinition{});
-    const auto graph = [&](bg::wp<bg::TS<std::int64_t>> input) -> bg::wp<bg::TS<std::int64_t>> {
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) -> bg::wp<bg::TS<bg::i64>> {
         CHECK_FALSE(sink(input).has_value());
         return input;
     };
@@ -423,14 +423,14 @@ TEST_CASE("a runtime-signature node can omit its output",
 struct RuntimeDynamicActivityDefinition {
     RuntimeDynamicActivityDefinition()
         : signature_{bg::util::symbol{"runtime_dynamic_activity"},
-                     {{bg::util::symbol{"input"}, &bg::TS<std::int64_t>::type(), bg::active, bg::required, false,
+                     {{bg::util::symbol{"input"}, &bg::TS<bg::i64>::type(), bg::active, bg::required, false,
                        bg::details::VariadicMode::none, nullptr, false, true}},
-                     bg::TS<std::int64_t>::type()} {}
+                     bg::TS<bg::i64>::type()} {}
 
     [[nodiscard]] const bg::Signature &signature() const { return signature_; }
 
     static void evaluate(bg::NodeInvocation<> invocation) {
-        auto input = invocation.template input<bg::In<bg::TS<std::int64_t>, bg::dynamic_activity>>(0);
+        auto input = invocation.template input<bg::In<bg::TS<bg::i64>, bg::dynamic_activity>>(0);
         input.make_passive();
         invocation.output().visit([&](bg::Out<bg::TS<bg::SCALAR>> *output) { output->set_value(input.value_view()); },
                                   ddv::noop);
@@ -442,8 +442,8 @@ struct RuntimeDynamicActivityDefinition {
 TEST_CASE("a runtime-signature input changes its activity",
           "[feature:input-activity][series:value][definition:runtime][activity:active][transition:update]") {
     const auto dynamic = bg::node(RuntimeDynamicActivityDefinition{});
-    const auto graph = [&](bg::wp<bg::TS<std::int64_t>> input) -> bg::wp<bg::TS<std::int64_t>> {
-        return bg::wp<bg::TS<std::int64_t>>{*dynamic(input)};
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) -> bg::wp<bg::TS<bg::i64>> {
+        return bg::wp<bg::TS<bg::i64>>{*dynamic(input)};
     };
 
     CHECK(bg::testing::test_graph(graph, {1, 2}).equals({1, std::nullopt}));
@@ -453,9 +453,9 @@ struct OptionalScalarDefinition {
     OptionalScalarDefinition()
         : signature_{
               bg::util::symbol{"optional_scalar"},
-              {{bg::util::symbol{"input"}, &bg::TS<std::int64_t>::type()},
-               {bg::util::symbol{"fallback"}, &bg::cpp_scalar_type<std::int64_t>(), bg::active, bg::required, true}},
-              bg::TS<std::int64_t>::type()} {}
+              {{bg::util::symbol{"input"}, &bg::TS<bg::i64>::type()},
+               {bg::util::symbol{"fallback"}, &bg::cpp_scalar_type<bg::i64>(), bg::active, bg::required, true}},
+              bg::TS<bg::i64>::type()} {}
 
     [[nodiscard]] const bg::Signature &signature() const { return signature_; }
 
@@ -467,11 +467,11 @@ struct OptionalScalarDefinition {
         const auto input = (*invocation.inputs().begin()).value();
         const auto number = *input.visit(
             [](const bg::In<bg::TS<bg::SCALAR>> *value) {
-                return bg::scalar_cast<std::int64_t>(value->value_view()).value();
+                return bg::scalar_cast<bg::i64>(value->value_view()).value();
             },
             ddv::noop);
         const auto result = scalar.has_value() ? -1 : number;
-        const auto value = bg::Scalar<std::int64_t>::from(result);
+        const auto value = bg::Scalar<bg::i64>::from(result);
         invocation.output().visit([&](bg::Out<bg::TS<bg::SCALAR>> *output) { output->set_value(value); }, ddv::noop);
     }
 
@@ -482,8 +482,8 @@ TEST_CASE("an absent optional scalar remains enumerable",
           "[node][runtime-signature][definition:runtime][scalar][feature:node-api]") {
     const auto runtime_node = bg::node(OptionalScalarDefinition{});
 
-    const auto graph = [&](bg::wp<bg::TS<std::int64_t>> input) -> bg::wp<bg::TS<std::int64_t>> {
-        return bg::wp<bg::TS<std::int64_t>>{*runtime_node(input, std::optional<std::int64_t>{})};
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) -> bg::wp<bg::TS<bg::i64>> {
+        return bg::wp<bg::TS<bg::i64>>{*runtime_node(input, std::optional<bg::i64>{})};
     };
 
     CHECK(bg::testing::test_graph(graph, {1, 2}).equals({1, 2}));
@@ -573,15 +573,15 @@ TEST_CASE("a runtime-signature input checks the declared base bundle schema",
 
 struct RuntimeDictionarySourceDefinition {
     RuntimeDictionarySourceDefinition()
-        : output_type_{&bg::TSD<std::int64_t, bg::TS<std::int64_t>>::type()},
+        : output_type_{&bg::TSD<bg::i64, bg::TS<bg::i64>>::type()},
           signature_{bg::util::symbol{"runtime_dictionary_source"}, {}, *output_type_} {}
 
     [[nodiscard]] const bg::Signature &signature() const { return signature_; }
 
     static void start(bg::NodeInvocation<> invocation) {
         auto output = invocation.output();
-        const auto key = bg::ScalarValue<std::int64_t>{1};
-        const auto value = bg::ScalarValue<std::int64_t>{42};
+        const auto key = bg::ScalarValue<bg::i64>{1};
+        const auto value = bg::ScalarValue<bg::i64>{42};
         output.visit(
             [&](bg::Out<bg::TSD<bg::SCALAR, bg::TS_T>> *dictionary) {
                 auto item = (*dictionary)[bg::Scalar<bg::SCALAR>::from(key)];
@@ -596,11 +596,11 @@ struct RuntimeDictionarySourceDefinition {
 };
 
 struct RuntimeDictionarySinkDefinition {
-    bg::In<bg::TSD<std::int64_t, bg::TS<std::int64_t>>> input;
+    bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input;
 
     void evaluate() const { value = *input[1]; }
 
-    inline static std::int64_t value{};
+    inline static bg::i64 value{};
 };
 
 TEST_CASE("a runtime-signature node constructs runtime-defined dictionary storage",
@@ -610,7 +610,7 @@ TEST_CASE("a runtime-signature node constructs runtime-defined dictionary storag
     const auto sink = bg::node<RuntimeDictionarySinkDefinition>();
     RuntimeDictionarySinkDefinition::value = 0;
 
-    bg::run_graph([&] { sink(bg::wp<bg::TSD<std::int64_t, bg::TS<std::int64_t>>>{*source()}); });
+    bg::run_graph([&] { sink(bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>>{*source()}); });
 
     CHECK(RuntimeDictionarySinkDefinition::value == 42);
 }
