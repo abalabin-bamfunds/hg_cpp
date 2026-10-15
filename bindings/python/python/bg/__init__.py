@@ -10,6 +10,8 @@ from typing import Annotated, Any, get_args, get_origin, get_type_hints
 from . import operators
 from ._bg import (
     Dict,
+    EvaluationProfiler,
+    EvaluationProfilerRecorder as _EvaluationProfilerRecorder,
     WiringPoint as _WiringPoint,
     _Type,
     _make_graph,
@@ -24,6 +26,7 @@ from ._bg import (
     _reference_type,
     _register_delta_types,
     _register_symbol_type,
+    _run_graph,
     _scalar_type,
     _test_graph,
     _time_series_dict_type,
@@ -608,11 +611,28 @@ def graph(function: Any) -> GraphDefinition:
     return GraphDefinition(function, native, fixed_parameters, callback)
 
 
-def test_graph(definition: GraphDefinition, *inputs: Any) -> Any:
+def run_graph(definition: GraphDefinition, *args: Any, recorder: _EvaluationProfilerRecorder | None = None,
+              **kwargs: Any) -> None:
+    """Wire and run a graph to completion, using scalar arguments as wiring-time constants."""
+    if not isinstance(definition, GraphDefinition):
+        raise TypeError("run_graph expects a decorated @graph definition")
+    if recorder is not None and not isinstance(recorder, _EvaluationProfilerRecorder):
+        raise TypeError("recorder must be created by EvaluationProfiler.recorder()")
+
+    fixed, positional, named = _bind_definition_arguments(
+        definition.signature, definition._fixed_parameters, args, kwargs
+    )
+    _run_graph(definition._native_definition, fixed, positional, named, recorder)
+
+
+def test_graph(definition: GraphDefinition, *inputs: Any,
+               recorder: _EvaluationProfilerRecorder | None = None) -> Any:
     """Run a graph definition with one update sequence for each time-series input."""
     if not isinstance(definition, GraphDefinition):
         raise TypeError("test_graph expects a decorated @graph definition")
-    return _test_graph(definition._native_definition, inputs)
+    if recorder is not None and not isinstance(recorder, _EvaluationProfilerRecorder):
+        raise TypeError("recorder must be created by EvaluationProfiler.recorder()")
+    return _test_graph(definition._native_definition, inputs, recorder)
 
 
 operators.map = map
@@ -621,6 +641,7 @@ operators.switch_ = switch_
 
 
 __all__ = [
+    "EvaluationProfiler",
     "GraphDefinition",
     "DEFAULT",
     "NodeDefinition",
@@ -646,6 +667,7 @@ __all__ = [
     "opt",
     "operators",
     "pass_through",
+    "run_graph",
     "source_node",
     "symbol",
     "switch_",

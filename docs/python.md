@@ -140,6 +140,28 @@ element is a value or `None`; `None` skips that input's update for the cycle.
 The graph must return a `TS[T]`. The result has one entry per cycle: an output
 value when the graph publishes one, otherwise `None`.
 
+`run_graph` wires a graph with normal Python arguments and runs the simulation
+to completion. Scalar arguments become wiring-time constants. Use `test_graph`
+when the graph needs update sequences or its output values. Pass an optional
+recorder created by `EvaluationProfiler.recorder()` through the `recorder`
+keyword.
+
+```python
+profiler = bg.EvaluationProfiler()
+bg.run_graph(example, recorder=profiler.recorder())
+print(profiler.report())
+```
+
+An `EvaluationProfiler` recorder records one graph run. Its `report()` formats
+outer graph timing with UTC period labels. `outer_totals()` and `outer_periods()`
+return outer-cycle timing. `root_graph_id()`, `graph_ids()`, and `graph(id)`
+provide stable graph metadata and cumulative graph evaluation totals after the
+run. `node_period_starts()` and `node_periods(graph_id, start)` query retained
+node evaluation counts and checkpoint ticks. `graph_period(...)` and
+`node_period(...)` query closed periods. Period lengths and retention counts
+are configurable with `node_period`, `retained_node_periods`, `outer_period`,
+and `retained_outer_periods`; period values are `datetime.timedelta` objects.
+
 Wiring failures preserve an underlying Python exception's identity, type, and
 traceback. Exception notes include the context described by
 [wiring errors](graph-wiring.md#wiring-errors).

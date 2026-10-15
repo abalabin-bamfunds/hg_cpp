@@ -3,6 +3,8 @@
 #include <bg/library/operators.hpp>
 #include <bg/node/runtime_signature_node_template.hpp>
 #include <bg/operators.hpp>
+#include <bg/run_graph.hpp>
+#include <bg/evaluation_profiler.hpp>
 #include <bg/python/graph_definition.hpp>
 #include <bg/python/module.hpp>
 #include <bg/python/node_definition.hpp>
@@ -35,6 +37,7 @@
 #include "wiring_argument.hpp"
 
 #include <nanobind/stl/optional.h>
+#include <nanobind/stl/chrono.h>
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/tuple.h>
@@ -273,7 +276,11 @@ std::vector<WiringArgument> wiring_arguments(const Signature &signature, nb::seq
     return arguments;
 }
 
-nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_sequences) {
+nb::object wire_graph(const PythonGraphDefinition &definition, nb::sequence fixed_values,
+                     nb::sequence positional_values, nb::dict named_values);
+
+nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_sequences,
+                    EvaluationProfiler::Recorder *recorder) {
     Object::drain_deferred_releases();
     auto drain_on_exit = util::scope_exit{[]() noexcept {
         if (Py_IsInitialized() && PyGILState_Check()) {
@@ -323,6 +330,10 @@ nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_
     auto results = [&] {
         try {
             auto release_gil = nb::gil_scoped_release{};
+            if (recorder != nullptr) {
+                return testing::test_graph(static_cast<const WiringTemplate &>(definition), *recorder,
+                                           std::span<const testing::TestGraphInput>{input_views});
+            }
             return testing::test_graph(static_cast<const WiringTemplate &>(definition),
                                        std::span<const testing::TestGraphInput>{input_views});
         } catch (const WiringError &error) {
@@ -339,6 +350,82 @@ nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_
         output.append(scalar_conversions().to_python(*tick));
     }
     return output;
+}
+
+void run_graph(const PythonGraphDefinition &definition, nb::sequence fixed_values, nb::sequence positional_values,
+               nb::dict named_values, EvaluationProfiler::Recorder *recorder) {
+    Object::drain_deferred_releases();
+    auto drain_on_exit = util::scope_exit{[]() noexcept {
+        if (Py_IsInitialized() && PyGILState_Check()) {
+            Object::drain_deferred_releases();
+        }
+    }};
+
+    auto run = [&] {
+        auto acquire_gil = nb::gil_scoped_acquire{};
+        auto scope = PythonWiringScope{WiringContext::current().wiring()};
+        (void)wire_graph(definition, fixed_values, positional_values, named_values);
+    };
+
+    auto release_gil = nb::gil_scoped_release{};
+    if (recorder != nullptr) {
+        bg::run_graph(run, *recorder);
+    } else {
+        bg::run_graph(run);
+    }
+}
+
+nb::dict profiler_stats(EvaluationProfilerStats stats) {
+    auto result = nb::dict{};
+    result["evaluations"] = stats.evaluations;
+    result["checkpoint_ticks"] = stats.checkpoint_ticks;
+    return result;
+}
+
+nb::dict profiler_cycle_stats(EvaluationProfilerCycleStats stats) {
+    auto result = nb::dict{};
+    result["cycles"] = stats.cycles;
+    result["total_nanoseconds"] = stats.total_nanoseconds;
+    result["min_nanoseconds"] = stats.min_nanoseconds;
+    result["max_nanoseconds"] = stats.max_nanoseconds;
+    return result;
+}
+
+nb::dict profiler_graph(const EvaluationProfilerGraph &graph) {
+    auto result = nb::dict{};
+    result["graph_id"] = graph.graph_id.value;
+    result["parent_graph_id"] = graph.parent_graph_id.value;
+    result["owner_node_index"] = graph.owner_node_index;
+    result["node_count"] = graph.node_count;
+    result["evaluations"] = graph.totals.evaluations;
+    result["checkpoint_ticks"] = graph.totals.checkpoint_ticks;
+    result["active"] = graph.active;
+    if (graph.label) {
+        result["label"] = scalar_conversions().to_python(graph.label->view());
+    } else {
+        result["label"] = nb::none();
+    }
+    if (graph.last_updated) {
+        result["last_updated"] = nb::cast(*graph.last_updated);
+    } else {
+        result["last_updated"] = nb::none();
+    }
+    return result;
+}
+
+nb::dict profiler_node_period(EvaluationProfilerNodePeriod period) {
+    auto result = nb::dict{};
+    result["node_index"] = period.node_index;
+    result["evaluations"] = period.totals.evaluations;
+    result["checkpoint_ticks"] = period.totals.checkpoint_ticks;
+    return result;
+}
+
+nb::dict profiler_outer_period(EvaluationProfilerCyclePeriod period) {
+    auto result = nb::dict{};
+    result["start"] = nb::cast(period.start);
+    result["timing"] = profiler_cycle_stats(period.timing);
+    return result;
 }
 
 nb::object wire_node(const PythonNodeDefinition &definition, nb::sequence fixed_values, nb::sequence positional_values,
@@ -546,7 +633,95 @@ void bind_core(nb::module_ &module) {
     });
     module.def("_wire_node", &wire_node);
     module.def("_wire_graph", &wire_graph);
-    module.def("_test_graph", &test_graph);
+    nb::class_<EvaluationProfiler::Recorder>(module, "EvaluationProfilerRecorder");
+
+    nb::class_<EvaluationProfiler>(module, "EvaluationProfiler")
+        .def(nb::new_([](std::chrono::microseconds node_period, std::size_t retained_node_periods,
+                         std::chrono::microseconds outer_period, std::size_t retained_outer_periods) {
+                 auto config = EvaluationProfilerConfig{};
+                 config.node_period = node_period;
+                 config.retained_node_periods = retained_node_periods;
+                 config.outer_period = outer_period;
+                 config.retained_outer_periods = retained_outer_periods;
+                 return new EvaluationProfiler(config);
+             }),
+             "node_period"_a = std::chrono::minutes{1}, "retained_node_periods"_a = 30,
+             "outer_period"_a = std::chrono::seconds{1}, "retained_outer_periods"_a = 24 * 60 * 60)
+        .def("recorder", &EvaluationProfiler::recorder, nb::keep_alive<0, 1>())
+        .def("root_graph_id", [](const EvaluationProfiler &profiler) -> nb::object {
+            const auto id = profiler.root_graph_id();
+            if (!id) {
+                return nb::none();
+            }
+            return nb::int_(id->value);
+        })
+        .def("graph_ids", [](const EvaluationProfiler &profiler) {
+            auto result = nb::list{};
+            for (const auto id : profiler.graph_ids()) {
+                result.append(id.value);
+            }
+            return result;
+        })
+        .def("graph", [](const EvaluationProfiler &profiler, std::uint64_t graph_id) -> nb::object {
+            const auto *value = profiler.graph(GraphInstanceId{graph_id});
+            if (value == nullptr) {
+                return nb::none();
+            }
+            return profiler_graph(*value);
+        })
+        .def("node_period_starts", [](const EvaluationProfiler &profiler) {
+            auto result = nb::list{};
+            for (const auto start : profiler.node_period_starts()) {
+                result.append(nb::cast(start));
+            }
+            return result;
+        })
+        .def("node_periods", [](const EvaluationProfiler &profiler, std::uint64_t graph_id,
+                                 EvaluationTime period_start) {
+            auto result = nb::list{};
+            for (const auto period : profiler.node_periods(GraphInstanceId{graph_id}, period_start)) {
+                result.append(profiler_node_period(period));
+            }
+            return result;
+        })
+        .def("graph_period", [](const EvaluationProfiler &profiler, std::uint64_t graph_id,
+                                EvaluationTime period_start) -> nb::object {
+            const auto stats = profiler.graph_period(GraphInstanceId{graph_id}, period_start);
+            if (!stats) {
+                return nb::none();
+            }
+            return profiler_stats(*stats);
+        })
+        .def("node_period", [](const EvaluationProfiler &profiler, std::uint64_t graph_id,
+                               std::uint32_t node_index, EvaluationTime period_start) -> nb::object {
+            const auto stats = profiler.node_period(GraphInstanceId{graph_id}, node_index, period_start);
+            if (!stats) {
+                return nb::none();
+            }
+            return profiler_stats(*stats);
+        })
+        .def("outer_totals", [](const EvaluationProfiler &profiler) {
+            return profiler_cycle_stats(profiler.outer_totals());
+        })
+        .def("outer_periods", [](const EvaluationProfiler &profiler) {
+            auto result = nb::list{};
+            for (const auto period : profiler.outer_periods()) {
+                result.append(profiler_outer_period(period));
+            }
+            return result;
+        })
+        .def("outer_period", [](const EvaluationProfiler &profiler, EvaluationTime period_start) -> nb::object {
+            const auto stats = profiler.outer_period(period_start);
+            if (!stats) {
+                return nb::none();
+            }
+            return profiler_cycle_stats(*stats);
+        }, "period_start"_a)
+        .def("report", &EvaluationProfiler::report, "recent_outer_periods"_a = 10);
+
+    module.def("_test_graph", &test_graph, "definition"_a, "input_sequences"_a, "recorder"_a = nullptr);
+    module.def("_run_graph", &run_graph, "definition"_a, "fixed_values"_a, "positional_values"_a,
+               "named_values"_a, "recorder"_a = nullptr);
     module.def("_register_delta_types", &details::register_delta_types);
     module.def("_scalar_conversions_address", [] { return reinterpret_cast<std::uintptr_t>(&scalar_conversions()); });
     module.def("_register_symbol_type", [](nb::handle python_type) {
