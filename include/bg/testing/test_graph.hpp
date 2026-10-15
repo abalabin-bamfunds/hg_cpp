@@ -1,11 +1,11 @@
 #pragma once
 
 #include <bg/evaluation_profiler.hpp>
+#include <bg/graph_run_options.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/testing/details/test_graph.hpp>
 #include <bg/testing/test_graph_literal_input.hpp>
 #include <bg/testing/test_graph_input.hpp>
-#include <bg/testing/test_graph_options.hpp>
 
 #include <array>
 #include <cstddef>
@@ -118,7 +118,7 @@ template <typename T = void> class TestGraphResult {
 namespace details {
 
 template <typename Tested>
-[[nodiscard]] auto run_literal_inputs(const Tested &tested, const TestGraphOptions &options,
+[[nodiscard]] auto run_literal_inputs(const Tested &tested, const GraphRunOptions &options,
                                      std::span<const TestGraphLiteralInput> inputs) {
     if constexpr (std::derived_from<std::remove_cvref_t<Tested>, WiringTemplate>) {
         return TestGraphResult<>{run_template_literals(tested, options, inputs)};
@@ -136,7 +136,7 @@ template <typename Tested>
 }
 
 template <typename Tested, typename... Inputs>
-[[nodiscard]] auto run_literal_inputs(const Tested &tested, const TestGraphOptions &options,
+[[nodiscard]] auto run_literal_inputs(const Tested &tested, const GraphRunOptions &options,
                                      const Inputs &...inputs) {
     static_assert((std::same_as<std::remove_cvref_t<Inputs>, TestGraphLiteralInput> && ...));
     const auto values = std::array<TestGraphLiteralInput, sizeof...(Inputs)>{inputs...};
@@ -144,93 +144,164 @@ template <typename Tested, typename... Inputs>
                               std::span<const TestGraphLiteralInput>{values});
 }
 
-} // namespace details
+template <test_graph_target Tested, std::ranges::contiguous_range... Inputs>
+[[nodiscard]] auto run_range_inputs(const Tested &tested, const GraphRunOptions &options, const Inputs &...inputs) {
+    if constexpr (std::derived_from<std::remove_cvref_t<Tested>, WiringTemplate>) {
+        return TestGraphResult<>{run_template(tested, options, inputs...)};
+    } else {
+        using FunctionInfo = test_function<Tested>;
+        static_assert(FunctionInfo::callable::argument_count == sizeof...(Inputs));
+        static_assert(bg::details::is_typed_wiring_point<typename FunctionInfo::result>);
 
-struct TestGraph {
-    TestGraphOptions options{};
-
-    [[nodiscard]] constexpr auto operator[](TestGraphOptions selected) const noexcept -> TestGraph {
-        return TestGraph{selected};
-    }
-
-    template <details::runtime_input_range Inputs>
-    [[nodiscard]] TestGraphResult<> operator()(const WiringTemplate &tested, const Inputs &inputs) const {
-        return TestGraphResult<>{details::run_runtime_template(
-            tested, options,
-            std::span<const TestGraphInput>{std::ranges::data(inputs), std::ranges::size(inputs)})};
-    }
-
-    template <details::test_graph_target Tested, details::literal_input_range Inputs>
-    [[nodiscard]] auto operator()(const Tested &tested, const Inputs &inputs) const {
-        return details::run_literal_inputs(
-            tested, options,
-            std::span<const TestGraphLiteralInput>{std::ranges::data(inputs), std::ranges::size(inputs)});
-    }
-
-    template <details::test_graph_target Tested, typename... Inputs>
-        requires(sizeof...(Inputs) > 0 &&
-                 (std::same_as<std::remove_cvref_t<Inputs>, TestGraphLiteralInput> && ...))
-    [[nodiscard]] auto operator()(const Tested &tested, const Inputs &...inputs) const {
-        return details::run_literal_inputs(tested, options, inputs...);
-    }
-
-    template <details::test_graph_target Tested>
-    [[nodiscard]] auto operator()(const Tested &tested, TestGraphLiteralInput input) const {
-        return details::run_literal_inputs(tested, options, input);
-    }
-
-    template <details::test_graph_target Tested>
-    [[nodiscard]] auto operator()(const Tested &tested, TestGraphLiteralInput first,
-                                  TestGraphLiteralInput second) const {
-        return details::run_literal_inputs(tested, options, first, second);
-    }
-
-    template <details::test_graph_target Tested>
-    [[nodiscard]] auto operator()(const Tested &tested, TestGraphLiteralInput first,
-                                  TestGraphLiteralInput second, TestGraphLiteralInput third) const {
-        return details::run_literal_inputs(tested, options, first, second, third);
-    }
-
-    template <details::test_graph_target Tested>
-    [[nodiscard]] auto operator()(const Tested &tested, TestGraphLiteralInput first,
-                                  TestGraphLiteralInput second, TestGraphLiteralInput third,
-                                  TestGraphLiteralInput fourth) const {
-        return details::run_literal_inputs(tested, options, first, second, third, fourth);
-    }
-
-    template <details::test_graph_target Tested, std::ranges::contiguous_range... Inputs>
-        requires((!details::literal_input_range<Inputs>) && ...) &&
-                ((!details::runtime_input_range<Inputs>) && ...)
-    [[nodiscard]] auto operator()(const Tested &tested, const Inputs &...inputs) const {
-        if constexpr (std::derived_from<std::remove_cvref_t<Tested>, WiringTemplate>) {
-            return TestGraphResult<>{details::run_template(tested, options, inputs...)};
-        } else {
-            using FunctionInfo = details::test_function<Tested>;
-            static_assert(FunctionInfo::callable::argument_count == sizeof...(Inputs));
-            static_assert(bg::details::is_typed_wiring_point<typename FunctionInfo::result>);
-
-            const auto ranges = std::tie(inputs...);
-            auto values = details::run_function(tested, options, ranges,
-                                                std::make_index_sequence<sizeof...(Inputs)>{});
-            return TestGraphResult<typename FunctionInfo::output_scalar>{std::move(values)};
-        }
-    }
-
-    template <typename Function>
-        requires(!std::derived_from<std::remove_cvref_t<Function>, WiringTemplate> &&
-                 details::legacy_scalar_test_input<Function>)
-    [[nodiscard]] auto operator()(
-        const Function &function,
-        std::initializer_list<std::optional<typename details::test_function<Function>::template input_scalar<0>>>
-            input) const {
-        using FunctionInfo = details::test_function<Function>;
-
-        const auto inputs = std::tie(input);
-        auto values = details::run_function(function, options, inputs, std::index_sequence<0>{});
+        const auto ranges = std::tie(inputs...);
+        auto values = run_function(tested, options, ranges, std::make_index_sequence<sizeof...(Inputs)>{});
         return TestGraphResult<typename FunctionInfo::output_scalar>{std::move(values)};
     }
-};
+}
 
-inline constexpr TestGraph test_graph{};
+template <typename Function>
+    requires(!std::derived_from<std::remove_cvref_t<Function>, WiringTemplate> &&
+             legacy_scalar_test_input<Function>)
+[[nodiscard]] auto run_legacy_scalar_input(const Function &function, const GraphRunOptions &options,
+                                           std::initializer_list<
+                                               std::optional<typename test_function<Function>::template input_scalar<0>>>
+                                               input) {
+    using FunctionInfo = test_function<Function>;
+
+    const auto inputs = std::tie(input);
+    auto values = run_function(function, options, inputs, std::index_sequence<0>{});
+    return TestGraphResult<typename FunctionInfo::output_scalar>{std::move(values)};
+}
+
+template <typename Options>
+concept graph_run_options = std::same_as<std::remove_cvref_t<Options>, GraphRunOptions>;
+
+} // namespace details
+
+template <details::test_graph_target Tested, std::ranges::contiguous_range... Inputs>
+    requires((!details::literal_input_range<Inputs>) && ...) &&
+            ((!details::runtime_input_range<Inputs>) && ...)
+[[nodiscard]] auto test_graph(const Tested &tested, const Inputs &...inputs) {
+    return details::run_range_inputs(tested, GraphRunOptions{}, inputs...);
+}
+
+template <details::test_graph_target Tested, details::graph_run_options Options,
+          std::ranges::contiguous_range... Inputs>
+    requires((!details::literal_input_range<Inputs>) && ...) &&
+            ((!details::runtime_input_range<Inputs>) && ...)
+[[nodiscard]] auto test_graph(const Tested &tested, const Options &options, const Inputs &...inputs) {
+    return details::run_range_inputs(tested, options, inputs...);
+}
+
+template <details::test_graph_target Tested, details::runtime_input_range Inputs>
+[[nodiscard]] auto test_graph(const Tested &tested, const Inputs &inputs) {
+    static_assert(std::derived_from<std::remove_cvref_t<Tested>, WiringTemplate>);
+    const auto options = GraphRunOptions{};
+    return TestGraphResult<>{details::run_runtime_template(
+        tested, options,
+        std::span<const TestGraphInput>{std::ranges::data(inputs), std::ranges::size(inputs)})};
+}
+
+template <details::test_graph_target Tested, details::graph_run_options Options,
+          details::runtime_input_range Inputs>
+[[nodiscard]] auto test_graph(const Tested &tested, const Options &options, const Inputs &inputs) {
+    static_assert(std::derived_from<std::remove_cvref_t<Tested>, WiringTemplate>);
+    return TestGraphResult<>{details::run_runtime_template(
+        tested, options,
+        std::span<const TestGraphInput>{std::ranges::data(inputs), std::ranges::size(inputs)})};
+}
+
+template <details::test_graph_target Tested, details::literal_input_range Inputs>
+[[nodiscard]] auto test_graph(const Tested &tested, const Inputs &inputs) {
+    return details::run_literal_inputs(
+        tested, GraphRunOptions{},
+        std::span<const TestGraphLiteralInput>{std::ranges::data(inputs), std::ranges::size(inputs)});
+}
+
+template <details::test_graph_target Tested, details::graph_run_options Options,
+          details::literal_input_range Inputs>
+[[nodiscard]] auto test_graph(const Tested &tested, const Options &options, const Inputs &inputs) {
+    return details::run_literal_inputs(
+        tested, options,
+        std::span<const TestGraphLiteralInput>{std::ranges::data(inputs), std::ranges::size(inputs)});
+}
+
+template <details::test_graph_target Tested>
+[[nodiscard]] auto test_graph(const Tested &tested, TestGraphLiteralInput input) {
+    return details::run_literal_inputs(tested, GraphRunOptions{}, input);
+}
+
+template <details::test_graph_target Tested, details::graph_run_options Options>
+[[nodiscard]] auto test_graph(const Tested &tested, const Options &options, TestGraphLiteralInput input) {
+    return details::run_literal_inputs(tested, options, input);
+}
+
+template <details::test_graph_target Tested>
+[[nodiscard]] auto test_graph(const Tested &tested, TestGraphLiteralInput first, TestGraphLiteralInput second) {
+    return details::run_literal_inputs(tested, GraphRunOptions{}, first, second);
+}
+
+template <details::test_graph_target Tested, details::graph_run_options Options>
+[[nodiscard]] auto test_graph(const Tested &tested, const Options &options, TestGraphLiteralInput first,
+                              TestGraphLiteralInput second) {
+    return details::run_literal_inputs(tested, options, first, second);
+}
+
+template <details::test_graph_target Tested>
+[[nodiscard]] auto test_graph(const Tested &tested, TestGraphLiteralInput first, TestGraphLiteralInput second,
+                              TestGraphLiteralInput third) {
+    return details::run_literal_inputs(tested, GraphRunOptions{}, first, second, third);
+}
+
+template <details::test_graph_target Tested, details::graph_run_options Options>
+[[nodiscard]] auto test_graph(const Tested &tested, const Options &options, TestGraphLiteralInput first,
+                              TestGraphLiteralInput second, TestGraphLiteralInput third) {
+    return details::run_literal_inputs(tested, options, first, second, third);
+}
+
+template <details::test_graph_target Tested>
+[[nodiscard]] auto test_graph(const Tested &tested, TestGraphLiteralInput first, TestGraphLiteralInput second,
+                              TestGraphLiteralInput third, TestGraphLiteralInput fourth) {
+    return details::run_literal_inputs(tested, GraphRunOptions{}, first, second, third, fourth);
+}
+
+template <details::test_graph_target Tested, details::graph_run_options Options>
+[[nodiscard]] auto test_graph(const Tested &tested, const Options &options, TestGraphLiteralInput first,
+                              TestGraphLiteralInput second, TestGraphLiteralInput third,
+                              TestGraphLiteralInput fourth) {
+    return details::run_literal_inputs(tested, options, first, second, third, fourth);
+}
+
+template <details::test_graph_target Tested, typename... Inputs>
+    requires(sizeof...(Inputs) > 0 &&
+             (std::same_as<std::remove_cvref_t<Inputs>, TestGraphLiteralInput> && ...))
+[[nodiscard]] auto test_graph(const Tested &tested, const Inputs &...inputs) {
+    return details::run_literal_inputs(tested, GraphRunOptions{}, inputs...);
+}
+
+template <details::test_graph_target Tested, details::graph_run_options Options, typename... Inputs>
+    requires(sizeof...(Inputs) > 0 &&
+             (std::same_as<std::remove_cvref_t<Inputs>, TestGraphLiteralInput> && ...))
+[[nodiscard]] auto test_graph(const Tested &tested, const Options &options, const Inputs &...inputs) {
+    return details::run_literal_inputs(tested, options, inputs...);
+}
+
+template <typename Function>
+    requires(!std::derived_from<std::remove_cvref_t<Function>, WiringTemplate> &&
+             details::legacy_scalar_test_input<Function>)
+[[nodiscard]] auto test_graph(
+    const Function &function,
+    std::initializer_list<std::optional<typename details::test_function<Function>::template input_scalar<0>>> input) {
+    return details::run_legacy_scalar_input(function, GraphRunOptions{}, input);
+}
+
+template <typename Function, details::graph_run_options Options>
+    requires(!std::derived_from<std::remove_cvref_t<Function>, WiringTemplate> &&
+             details::legacy_scalar_test_input<Function>)
+[[nodiscard]] auto test_graph(
+    const Function &function, const Options &options,
+    std::initializer_list<std::optional<typename details::test_function<Function>::template input_scalar<0>>> input) {
+    return details::run_legacy_scalar_input(function, options, input);
+}
 
 } // namespace bg::testing

@@ -25,9 +25,14 @@ TEST_CASE("reference service output crosses switch boundaries",
         return result;
     };
 
-    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array<std::int64_t, 3>{1, 2, 1},
-        std::array<std::int64_t, 3>{4, 8, 3});
+    const auto actual = testing::test_graph(
+        tested,
+        bg::GraphRunOptions{.services = &catalogue},
+        std::array<std::int64_t,
+        3>{1, 2, 1},
+        std::array<std::int64_t,
+        3>{4, 8, 3}
+    );
 
     CHECK(actual.equals<std::int64_t>({46, 50, 45}));
 }
@@ -40,7 +45,7 @@ TEST_CASE("reference service output is available at the root graph",
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
 
-    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](service);
+    const auto actual = testing::test_graph(service, bg::GraphRunOptions{.services = &catalogue});
 
     CHECK(actual.equals<std::int64_t>({42}));
 }
@@ -59,7 +64,7 @@ TEST_CASE("reference service implementation can return a changing reference",
     catalogue.register_impl(service, implementation);
 
     CHECK(testing::test_graph(implementation).equals<std::int64_t>({42}));
-    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](service);
+    const auto actual = testing::test_graph(service, bg::GraphRunOptions{.services = &catalogue});
 
     CHECK(actual.equals<std::int64_t>({42}));
 }
@@ -107,7 +112,8 @@ TEST_CASE("a changing service reference reaches clients through two nested bound
     auto values = std::vector<std::int64_t>{};
     const auto observe = node([&](In<TS<std::int64_t>> value) { values.push_back(*value); });
 
-    run_graph([&] { observe(nested(middle, operators::const_(true)).as<TS<std::int64_t>>()); }, catalogue);
+    run_graph([&] { observe(nested(middle, operators::const_(true)).as<TS<std::int64_t>>()); },
+              bg::GraphRunOptions{.services = &catalogue});
 
     CHECK(values == std::vector<std::int64_t>{42, 84});
 }
@@ -124,10 +130,10 @@ TEST_CASE("run_graph builds registered services before compilation",
     const auto observe = node([&](In<TS<std::int64_t>> input) { values.push_back(*input); });
     const auto wire = [&] { observe(service().as<TS<std::int64_t>>()); };
 
-    run_graph(wire, catalogue);
+    run_graph(wire, bg::GraphRunOptions{.services = &catalogue});
 
     auto global_state = GlobalState{};
-    run_graph(wire, global_state, catalogue);
+    run_graph(wire, bg::GraphRunOptions{.global_state = &global_state, .services = &catalogue});
 
     CHECK(values == std::vector<std::int64_t>{42, 42});
 }

@@ -28,7 +28,7 @@ TEST_CASE("a scalar list is available from packed graph scalar storage",
     const auto input = bg::ScalarValue<bg::List<std::int64_t>>{std::array<std::int64_t, 2>{1, 2}};
     auto state = bg::GlobalState{};
 
-    bg::run_graph([&] { inspect(input); }, state);
+    bg::run_graph([&] { inspect(input); }, bg::GraphRunOptions{.global_state = &state});
 
     state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 3); });
 }
@@ -53,7 +53,7 @@ TEST_CASE("scalar list state is available during node start",
     const auto inspect = bg::node<inspect_scalar_list_state>();
     auto state = bg::GlobalState{};
 
-    bg::run_graph([&] { inspect(); }, state);
+    bg::run_graph([&] { inspect(); }, bg::GraphRunOptions{.global_state = &state});
 
     state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 3); });
 }
@@ -84,7 +84,7 @@ TEST_CASE("a scalar list propagates through a value time series",
     const auto input = bg::ScalarValue<bg::List<std::int64_t>>{std::array<std::int64_t, 2>{1, 2}};
     auto state = bg::GlobalState{};
 
-    bg::run_graph([&] { sink(source(input)); }, state);
+    bg::run_graph([&] { sink(source(input)); }, bg::GraphRunOptions{.global_state = &state});
 
     state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 3); });
 }

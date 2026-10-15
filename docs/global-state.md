@@ -8,8 +8,9 @@ graph invocation.
 
 One outer graph evaluation uses one `GlobalState`. Every evaluation context in
 that evaluation provides the same object. The outer graph's caller owns it and
-keeps it alive until the runtime graph is destroyed. `run_graph(function, state)`
-uses the caller's object; `run_graph(function)` creates one for the run.
+keeps it alive until the runtime graph is destroyed. `run_graph` and
+`testing::test_graph` borrow the object selected by `GraphRunOptions::global_state`.
+When that field is null or options are omitted, the runner creates one for the run.
 
 ## Values
 

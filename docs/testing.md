@@ -88,20 +88,22 @@ defines updates by outer cycle. An empty `std::optional` skips its cycle. The
 result has one position per cycle and uses an empty position when the output did
 not update.
 
-`test_graph` is a callable object. Configure [graph services](services.md) and
-profiling with `TestGraphOptions`:
+Pass shared [graph run options](graph-wiring.md#direct-execution) immediately
+after the graph to configure [graph services](services.md) and profiling:
 
 ```cpp
-auto options = TestGraphOptions{
+auto options = GraphRunOptions{
     .services = &catalogue,
     .recorder = profiler.recorder(),
 };
-auto actual = test_graph[options](graph, {1, 2}, {10, 20});
+auto actual = test_graph(graph, options, {1, 2}, {10, 20});
 ```
 
-Both options are optional. The configured callable borrows the catalogue and
-profiler; they must remain alive throughout the synchronous run. Services are
-finalized before graph compilation.
+Omit the options argument to use the defaults:
+
+```cpp
+auto actual = test_graph(graph, {1, 2}, {10, 20});
+```
 
 Literal input sequences use the [output literal syntax](node-api.md#output-parameters).
 Each sequence element describes one cycle's delta. Source nodes borrow the

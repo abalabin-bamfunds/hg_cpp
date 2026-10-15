@@ -440,12 +440,23 @@ inline const auto scaled_graph = bg::graph<scaled>();
 ## Direct execution
 
 `run_graph(function)` wires and compiles the graph, then runs it as a simulation
-until no scheduled evaluation remains. `run_graph(function, state)` uses the
-supplied [global state](global-state.md), which can outlive the run.
+until no scheduled evaluation remains. Pass `GraphRunOptions` from
+`<bg/graph_run_options.hpp>` as the second argument to configure the run:
 
-`run_graph(function, catalogue)` finalizes [graph services](services.md) after
-root wiring and before compilation. Use `run_graph(function, state, catalogue)`
-when the run also needs global state.
+```cpp
+auto options = GraphRunOptions{
+    .global_state = &state,
+    .services = &catalogue,
+    .recorder = profiler.recorder(),
+};
+run_graph(function, options);
+```
+
+All fields are optional. `global_state` selects the [global state](global-state.md),
+`services` selects the [service catalogue](services.md), and `recorder` enables
+[profiling](evaluation.md#evaluation-profiling). The options borrow these objects; keep them
+alive throughout the synchronous run. [`testing::test_graph`](testing.md#test-layout)
+accepts the same options immediately after the graph.
 
 ## Wiring paths
 

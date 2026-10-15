@@ -23,8 +23,7 @@ TEST_CASE("one multiservice graph wires several reference service replies once",
         return add(left(1).as<TS<std::int64_t>>(), right().as<TS<std::int64_t>>(), tick);
     };
 
-    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array<std::int64_t, 2>{1, 2});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 2>{1, 2});
 
     CHECK(actual.equals<std::int64_t>({85, 86}));
     CHECK(graph_wirings == 1);
@@ -58,8 +57,7 @@ TEST_CASE("a multiservice graph receives subscription requests beside a referenc
                         tick);
     };
 
-    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array<std::int64_t, 2>{2, 3});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 2>{2, 3});
 
     CHECK(actual.equals<std::int64_t>({45, 46}));
 }
@@ -98,8 +96,14 @@ TEST_CASE("multiservice service requests are addressable by declared parameter n
     };
 
     const auto actual =
-        testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-            tested, std::array<std::int64_t, 2>{2, 5}, std::array<float, 2>{1.5F, 3.5F});
+        testing::test_graph(
+            tested,
+            bg::GraphRunOptions{.services = &catalogue},
+            std::array<std::int64_t,
+            2>{2, 5},
+            std::array<float,
+            2>{1.5F, 3.5F}
+        );
 
     CHECK(actual.equals<float>({3.5F, 8.5F}));
     CHECK(graph_wirings == 1);
@@ -140,8 +144,7 @@ TEST_CASE("one multiservice graph handles subscription and service requests",
         return add(lookup(key_source(1)).as<TS<std::int64_t>>(), transform(value).as<TS<std::int64_t>>());
     };
 
-    CHECK(testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array<std::int64_t, 3>{1, 2, 3})
+    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 3>{1, 2, 3})
               .equals<std::int64_t>({111, 112, 113}));
 }
 
@@ -166,8 +169,7 @@ TEST_CASE("multiservice outputless service publishes requests",
         return value;
     };
 
-    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array<std::int64_t, 3>{4, 6, 8});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 3>{4, 6, 8});
 
     CHECK(actual.equals<std::int64_t>({4, 6, 8}));
     CHECK(received == std::vector<std::int64_t>{4, 6, 8});
@@ -197,8 +199,7 @@ TEST_CASE("an unused multiservice service request port can be wired",
     });
     const auto tested = [&](wp<TS<std::int64_t>> tick) { return add(clock().as<TS<std::int64_t>>(), tick); };
 
-    CHECK(testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array<std::int64_t, 1>{0}).equals<std::int64_t>({42}));
+    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 1>{0}).equals<std::int64_t>({42}));
     CHECK(implementation_wirings == 1);
 }
 
@@ -232,8 +233,7 @@ TEST_CASE("multiservice request bindings cross map graph boundaries",
         return mapped[std::int64_t{1}].as<TS<std::int64_t>>();
     };
 
-    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array<std::int64_t, 2>{3, 8});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 2>{3, 8});
 
     CHECK(actual.equals<std::int64_t>({3, 8}));
     CHECK(request_sizes == std::vector<std::size_t>{1, 1});
@@ -270,8 +270,7 @@ TEST_CASE("multiservice claims select generic service signatures",
                    identity[type<TS<float>>]().as<TS<float>>(), tick);
     };
 
-    CHECK(testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array<std::int64_t, 1>{0}).equals<float>({42.5F}));
+    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 1>{0}).equals<float>({42.5F}));
 }
 
 TEST_CASE("multiservice claims separate service scalar values",
@@ -307,6 +306,5 @@ TEST_CASE("multiservice claims separate service scalar values",
         return add(selected(1).as<TS<std::int64_t>>(), selected(2).as<TS<std::int64_t>>(), tick);
     };
 
-    CHECK(testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array<std::int64_t, 1>{1}).equals<std::int64_t>({31}));
+    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 1>{1}).equals<std::int64_t>({31}));
 }

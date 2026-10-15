@@ -27,7 +27,7 @@ TEST_CASE("an evaluation context exposes the outer global state",
     const auto global_state_source = bg::node<global_state_source_definition>();
     auto state = bg::GlobalState{};
 
-    bg::run_graph([&] { (void)global_state_source(); }, state);
+    bg::run_graph([&] { (void)global_state_source(); }, bg::GraphRunOptions{.global_state = &state});
 
     state.read([](const auto &values) { CHECK(*bg::scalar_cast<std::int64_t>(values.at("result")) == 42); });
 }

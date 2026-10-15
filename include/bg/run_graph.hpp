@@ -2,7 +2,7 @@
 
 #include <bg/evaluation_time.hpp>
 #include <bg/evaluation_profiler.hpp>
-#include <bg/global_state.hpp>
+#include <bg/graph_run_options.hpp>
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
@@ -15,11 +15,9 @@
 #include <utility>
 
 namespace bg {
-namespace details {
 
 template <std::invocable Function>
-void run_graph(Function &&function, GlobalState *global_state, const ServiceCatalogue *service_catalogue,
-               EvaluationProfiler::Recorder *recorder) {
+void run_graph(Function &&function, const GraphRunOptions &options = {}) {
     auto wiring = GraphWiring{};
 
     {
@@ -27,8 +25,8 @@ void run_graph(Function &&function, GlobalState *global_state, const ServiceCata
         (void)std::invoke(std::forward<Function>(function));
     }
 
-    if (service_catalogue != nullptr) {
-        wiring.finalize(*service_catalogue);
+    if (options.services != nullptr) {
+        wiring.finalize(*options.services);
     } else {
         wiring.finalize();
     }
@@ -36,64 +34,21 @@ void run_graph(Function &&function, GlobalState *global_state, const ServiceCata
     auto compiled = CompiledGraph{wiring};
     const auto evaluation_time = MIN_DT + EvaluationTime::duration{1};
 
-    if (global_state != nullptr) {
-        auto runtime = RuntimeGraph{compiled, *global_state};
-        if (recorder != nullptr) {
-            recorder->run(runtime, evaluation_time);
+    auto run = [&](GlobalState &global_state) {
+        auto runtime = RuntimeGraph{compiled, global_state};
+        if (options.recorder) {
+            options.recorder->run(runtime, evaluation_time);
         } else {
             SimulationEvaluationEngine{}.run(runtime, evaluation_time);
         }
-        return;
-    }
+    };
 
-    auto local_state = GlobalState{};
-    auto runtime = RuntimeGraph{compiled, local_state};
-    if (recorder != nullptr) {
-        recorder->run(runtime, evaluation_time);
+    if (options.global_state != nullptr) {
+        run(*options.global_state);
     } else {
-        SimulationEvaluationEngine{}.run(runtime, evaluation_time);
+        auto local_state = GlobalState{};
+        run(local_state);
     }
-}
-
-} // namespace details
-
-template <std::invocable Function> void run_graph(Function &&function) {
-    details::run_graph(std::forward<Function>(function), nullptr, nullptr, nullptr);
-}
-
-template <std::invocable Function> void run_graph(Function &&function, GlobalState &global_state) {
-    details::run_graph(std::forward<Function>(function), &global_state, nullptr, nullptr);
-}
-
-template <std::invocable Function> void run_graph(Function &&function, const ServiceCatalogue &service_catalogue) {
-    details::run_graph(std::forward<Function>(function), nullptr, &service_catalogue, nullptr);
-}
-
-template <std::invocable Function>
-void run_graph(Function &&function, GlobalState &global_state, const ServiceCatalogue &service_catalogue) {
-    details::run_graph(std::forward<Function>(function), &global_state, &service_catalogue, nullptr);
-}
-
-template <std::invocable Function>
-void run_graph(Function &&function, EvaluationProfiler::Recorder recorder) {
-    details::run_graph(std::forward<Function>(function), nullptr, nullptr, &recorder);
-}
-
-template <std::invocable Function>
-void run_graph(Function &&function, GlobalState &global_state, EvaluationProfiler::Recorder recorder) {
-    details::run_graph(std::forward<Function>(function), &global_state, nullptr, &recorder);
-}
-
-template <std::invocable Function>
-void run_graph(Function &&function, const ServiceCatalogue &service_catalogue,
-               EvaluationProfiler::Recorder recorder) {
-    details::run_graph(std::forward<Function>(function), nullptr, &service_catalogue, &recorder);
-}
-
-template <std::invocable Function>
-void run_graph(Function &&function, GlobalState &global_state, const ServiceCatalogue &service_catalogue,
-               EvaluationProfiler::Recorder recorder) {
-    details::run_graph(std::forward<Function>(function), &global_state, &service_catalogue, &recorder);
 }
 
 } // namespace bg

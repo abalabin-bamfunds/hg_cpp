@@ -345,7 +345,9 @@ TEST_CASE("run_graph records a completed profile", "[evaluation][profile][featur
     auto global_state = bg::GlobalState{};
     auto services = bg::ServiceCatalogue{};
 
-    bg::run_graph([&] { (void)source(); }, global_state, services, profiler.recorder());
+    bg::run_graph([&] { (void)source(); },
+                  bg::GraphRunOptions{.global_state = &global_state, .services = &services,
+                                      .recorder = profiler.recorder()});
 
     const auto root = profiler.root_graph_id();
     REQUIRE(root);
@@ -375,8 +377,9 @@ TEST_CASE("run_graph joins the profile reader after graph failure", "[evaluation
     const auto failing = bg::node([](bg::Out<bg::TS<bg::i64>>) { throw std::runtime_error{"graph failure"}; });
     auto profiler = bg::EvaluationProfiler{};
 
-    CHECK_THROWS_AS(bg::run_graph([&] { (void)failing(); }, profiler.recorder()), std::runtime_error);
-    CHECK_THROWS_AS(bg::run_graph([&] { (void)failing(); }, profiler.recorder()), std::logic_error);
+    const auto options = bg::GraphRunOptions{.recorder = profiler.recorder()};
+    CHECK_THROWS_AS(bg::run_graph([&] { (void)failing(); }, options), std::runtime_error);
+    CHECK_THROWS_AS(bg::run_graph([&] { (void)failing(); }, options), std::logic_error);
 }
 
 struct profiler_failing_after_tick {
@@ -402,7 +405,8 @@ TEST_CASE("run_graph releases compiled metadata after a later-cycle failure",
     const auto failing = bg::node<profiler_failing_after_tick>();
     auto profiler = bg::EvaluationProfiler{};
 
-    CHECK_THROWS_AS(bg::run_graph([&] { (void)failing(); }, profiler.recorder()), std::runtime_error);
+    CHECK_THROWS_AS(bg::run_graph([&] { (void)failing(); }, bg::GraphRunOptions{.recorder = profiler.recorder()}),
+                    std::runtime_error);
 
     const auto root = profiler.root_graph_id();
     REQUIRE(root);

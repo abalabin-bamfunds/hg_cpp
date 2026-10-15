@@ -448,15 +448,14 @@ nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_
         input_views.push_back({runtime_type, owned_inputs.back()});
     }
 
-    const auto options = testing::TestGraphOptions{
+    const auto options = bg::GraphRunOptions{
         .services = service_catalogue != nullptr ? &service_catalogue->catalogue() : nullptr,
         .recorder = recorder != nullptr ? std::optional<EvaluationProfiler::Recorder>{*recorder} : std::nullopt,
     };
     auto results = [&] {
         try {
             auto release_gil = nb::gil_scoped_release{};
-            return testing::test_graph[options](static_cast<const WiringTemplate &>(definition),
-                                                std::span<const testing::TestGraphInput>{input_views});
+            return testing::test_graph(static_cast<const WiringTemplate &>(definition), options, std::span<const testing::TestGraphInput>{input_views});
         } catch (const WiringError &error) {
             rethrow_python_error(error);
         }
@@ -490,16 +489,12 @@ void run_graph(const PythonGraphDefinition &definition, nb::sequence fixed_value
     };
 
     try {
+        const auto options = bg::GraphRunOptions{
+            .services = service_catalogue != nullptr ? &service_catalogue->catalogue() : nullptr,
+            .recorder = recorder != nullptr ? std::optional<EvaluationProfiler::Recorder>{*recorder} : std::nullopt,
+        };
         auto release_gil = nb::gil_scoped_release{};
-        if (service_catalogue != nullptr && recorder != nullptr) {
-            bg::run_graph(run, service_catalogue->catalogue(), *recorder);
-        } else if (service_catalogue != nullptr) {
-            bg::run_graph(run, service_catalogue->catalogue());
-        } else if (recorder != nullptr) {
-            bg::run_graph(run, *recorder);
-        } else {
-            bg::run_graph(run);
-        }
+        bg::run_graph(run, options);
     } catch (const WiringError &error) {
         rethrow_python_error(error);
     }

@@ -31,7 +31,7 @@ TEST_CASE("a scalar dictionary is available from packed graph scalar storage",
     const auto input = bg::ScalarValue<IntDictionary>{std::array{IntDictionaryEntry{1, 2}, IntDictionaryEntry{3, 4}}};
     auto state = bg::GlobalState{};
 
-    bg::run_graph([&] { inspect(input); }, state);
+    bg::run_graph([&] { inspect(input); }, bg::GraphRunOptions{.global_state = &state});
 
     state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 6); });
 }
@@ -56,7 +56,7 @@ TEST_CASE("scalar dictionary state is available during node start",
     const auto inspect = bg::node<inspect_scalar_dict_state>();
     auto state = bg::GlobalState{};
 
-    bg::run_graph([&] { inspect(); }, state);
+    bg::run_graph([&] { inspect(); }, bg::GraphRunOptions{.global_state = &state});
 
     state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 6); });
 }
@@ -88,7 +88,7 @@ TEST_CASE("a scalar dictionary propagates through a value time series",
     const auto input = bg::ScalarValue<IntDictionary>{std::array{IntDictionaryEntry{1, 2}, IntDictionaryEntry{3, 4}}};
     auto state = bg::GlobalState{};
 
-    bg::run_graph([&] { sink(source(input)); }, state);
+    bg::run_graph([&] { sink(source(input)); }, bg::GraphRunOptions{.global_state = &state});
 
     state.read([](const auto &values) { CHECK(bg::scalar_cast<std::int64_t>(values.at("result")).value() == 6); });
 }

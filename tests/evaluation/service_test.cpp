@@ -32,8 +32,7 @@ TEST_CASE("service publishes each valid client input and selects its response",
         return service(invalidate_zero(input)).as<TS<std::int64_t>>();
     };
 
-    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, {2, 3, 0, 4, 0});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, {2, 3, 0, 4, 0});
 
     CHECK(actual.equals<std::int64_t>({4, 6, std::nullopt, 8, std::nullopt}));
     REQUIRE(client_ids.size() == 3);
@@ -103,9 +102,14 @@ TEST_CASE("service keeps a client active while any input is valid",
         return service(invalidate_zero(integer), invalidate_negative(fraction)).as<TS<float>>();
     };
 
-    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array<std::int64_t, 4>{2, 0, 6, 0},
-        std::array<float, 4>{-1.0F, 3.0F, 4.0F, -1.0F});
+    const auto actual = testing::test_graph(
+        tested,
+        bg::GraphRunOptions{.services = &catalogue},
+        std::array<std::int64_t,
+        4>{2, 0, 6, 0},
+        std::array<float,
+        4>{-1.0F, 3.0F, 4.0F, -1.0F}
+    );
 
     CHECK(actual.equals<float>({2.0F, 3.0F, 10.0F, std::nullopt}));
     CHECK((actual[0] && actual[0]->value() == 2.0F));
@@ -158,10 +162,16 @@ TEST_CASE("service keeps an unbound reference request as an invalid item",
         return service(stable, selected).as<TS<std::int64_t>>();
     };
 
-    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array<std::int64_t, 6>{10, 20, 30, 40, 50, 60},
-        std::array<std::int64_t, 6>{101, 102, 103, 104, 105, 106},
-        std::array<bool, 6>{false, false, true, false, false, true});
+    const auto actual = testing::test_graph(
+        tested,
+        bg::GraphRunOptions{.services = &catalogue},
+        std::array<std::int64_t,
+        6>{10, 20, 30, 40, 50, 60},
+        std::array<std::int64_t,
+        6>{101, 102, 103, 104, 105, 106},
+        std::array<bool,
+        6>{false, false, true, false, false, true}
+    );
 
     CHECK(actual.equals<std::int64_t>({0, 0, 1, 0, 0, 1}));
     CHECK(implementation_evaluations == 6);
@@ -207,8 +217,7 @@ TEST_CASE("sink service receives and withdraws valid client inputs",
         return valid;
     };
 
-    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array<std::int64_t, 4>{5, 7, 0, 9});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 4>{5, 7, 0, 9});
 
     CHECK(actual.equals<std::int64_t>({5, 7, std::nullopt, 9}));
     CHECK(received == std::vector<std::int64_t>{5, 7, 9});
@@ -248,8 +257,7 @@ TEST_CASE("service scalar arguments select separate implementations", "[feature:
         return sum(first, second);
     };
 
-    CHECK(testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array<std::int64_t, 2>{1, 4}).equals<std::int64_t>({32, 38}));
+    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 2>{1, 4}).equals<std::int64_t>({32, 38}));
 }
 
 TEST_CASE("subscription implementation receives named installation inputs after service scalars",
@@ -274,8 +282,7 @@ TEST_CASE("subscription implementation receives named installation inputs after 
         return service(key_source(1), 10).as<TS<std::int64_t>>();
     };
 
-    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array<std::int64_t, 3>{2, 3, 4});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 3>{2, 3, 4});
 
     CHECK(actual.equals<std::int64_t>({113, 114, 115}));
 }
@@ -320,8 +327,7 @@ TEST_CASE("service clients in map branches withdraw requests when branches stop"
         return mapped[std::int64_t{5}].as<TS<std::int64_t>>();
     };
 
-    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array{true, false, true});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array{true, false, true});
 
     CHECK(actual.equals<std::int64_t>({7, std::nullopt, 7}));
     CHECK(request_sizes == std::vector<std::size_t>{1, 0, 1});
@@ -387,10 +393,13 @@ TEST_CASE("service clients follow repeated switch changes after a map branch ret
         return mapped[std::int64_t{5}].as<TS<std::int64_t>>();
     };
 
-    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
+    const auto actual = testing::test_graph(
         tested,
+        bg::GraphRunOptions{.services = &catalogue},
         std::array{true, true, true, false, true, true},
-        std::array<std::int64_t, 6>{1, 2, 1, 1, 2, 1});
+        std::array<std::int64_t,
+        6>{1, 2, 1, 1, 2, 1}
+    );
 
     CHECK(actual.equals<std::int64_t>({107, 207, 107, std::nullopt, 207, 107}));
     CHECK(request_sizes == std::vector<std::size_t>{1, 1, 1, 0, 1, 1});
@@ -421,8 +430,7 @@ TEST_CASE("service rejects a response cycle through a client input",
 
     auto diagnostic = std::string{};
     try {
-        (void)testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-            tested, std::array<std::int64_t, 1>{1});
+        (void)testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 1>{1});
     } catch (const std::exception &error) {
         diagnostic = error.what();
     }

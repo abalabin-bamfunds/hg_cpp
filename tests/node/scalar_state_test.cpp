@@ -41,7 +41,7 @@ TEST_CASE("collection state is mutable during a node invocation", "[node][state]
     const auto collection_state = bg::node<collection_state_node>();
     auto state = bg::GlobalState{};
 
-    bg::run_graph([&] { collection_state(); }, state);
+    bg::run_graph([&] { collection_state(); }, bg::GraphRunOptions{.global_state = &state});
 
     state.read([](const auto &values) { CHECK(*bg::scalar_cast<std::int64_t>(values.at("result")) == 12); });
 }
@@ -120,7 +120,7 @@ TEST_CASE("compiled graph collection copies retain their string items",
             collection_copy(list, set, dict, nested_dict, list_item_data, set_item_data, dict_key_data,
                             dict_value_data, nested_item_data);
         },
-        global_state);
+        bg::GraphRunOptions{.global_state = &global_state});
 
     global_state.read([](const auto &values) {
         CHECK(*bg::scalar_cast<bool>(values.at("list_item_matches")));
@@ -181,7 +181,7 @@ TEST_CASE("generic collection state uses its resolved storage",
     const auto input = bg::ScalarValue<bg::List<std::int64_t>>{std::array<std::int64_t, 2>{3, 4}};
     auto state = bg::GlobalState{};
 
-    bg::run_graph([&] { generic_list_state(input); }, state);
+    bg::run_graph([&] { generic_list_state(input); }, bg::GraphRunOptions{.global_state = &state});
 
     state.read([](const auto &values) { CHECK(*bg::scalar_cast<std::int64_t>(values.at("generic_result")) == 4); });
 }
@@ -232,7 +232,7 @@ TEST_CASE("generic set and dictionary state use resolved storage",
     const auto value = bg::ScalarValue{"two"};
     auto state = bg::GlobalState{};
 
-    bg::run_graph([&] { generic_set_dict_state(set_type, dict_type, key, value); }, state);
+    bg::run_graph([&] { generic_set_dict_state(set_type, dict_type, key, value); }, bg::GraphRunOptions{.global_state = &state});
 
     state.read([](const auto &values) {
         CHECK(*bg::scalar_cast<bg::string>(values.at("dict_input")) == "one");
@@ -268,7 +268,7 @@ TEST_CASE("generic dictionary state composes storage from separate resolved type
     const auto value = bg::ScalarValue{"two"};
     auto state = bg::GlobalState{};
 
-    bg::run_graph([&] { composed_dict_state(key, value); }, state);
+    bg::run_graph([&] { composed_dict_state(key, value); }, bg::GraphRunOptions{.global_state = &state});
 
     state.read(
         [](const auto &values) { CHECK(*bg::scalar_cast<bg::string>(values.at("composed_dict_result")) == "two"); });
@@ -305,7 +305,7 @@ TEST_CASE("generic list and set state compose storage from their resolved item t
     const auto value = bg::ScalarValue{std::int64_t{3}};
     auto state = bg::GlobalState{};
 
-    bg::run_graph([&] { composed_list_set_state(value); }, state);
+    bg::run_graph([&] { composed_list_set_state(value); }, bg::GraphRunOptions{.global_state = &state});
 
     state.read(
         [](const auto &values) { CHECK(*bg::scalar_cast<std::int64_t>(values.at("composed_list_result")) == 3); });
@@ -364,7 +364,7 @@ TEST_CASE("generic nested collection state returns mutable resolved items",
     const auto items = bg::ScalarValue<bg::List<bg::string>>{std::array<std::string_view, 2>{"one", "two"}};
     auto state = bg::GlobalState{};
 
-    bg::run_graph([&] { generic_nested_state(key, items); }, state);
+    bg::run_graph([&] { generic_nested_state(key, items); }, bg::GraphRunOptions{.global_state = &state});
 
     state.read(
         [](const auto &values) { CHECK(*bg::scalar_cast<bg::string>(values.at("generic_nested_result")) == "one"); });
@@ -397,7 +397,7 @@ TEST_CASE("nested collection state returns mutable child views", "[node][state][
     const auto initial = bg::ScalarValue<bg::List<std::int64_t>>{std::array<std::int64_t, 1>{7}};
     auto state = bg::GlobalState{};
 
-    bg::run_graph([&] { nested_collection_state(initial); }, state);
+    bg::run_graph([&] { nested_collection_state(initial); }, bg::GraphRunOptions{.global_state = &state});
 
     state.read([](const auto &values) { CHECK(*bg::scalar_cast<std::int64_t>(values.at("nested_result")) == 1); });
 }

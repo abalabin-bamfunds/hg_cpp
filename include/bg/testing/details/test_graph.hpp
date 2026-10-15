@@ -17,9 +17,9 @@
 #include <bg/scalar/value.hpp>
 #include <bg/service_catalogue.hpp>
 #include <bg/simulation_evaluation_engine.hpp>
+#include <bg/graph_run_options.hpp>
 #include <bg/testing/test_graph_input.hpp>
 #include <bg/testing/test_graph_literal_input.hpp>
-#include <bg/testing/test_graph_options.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
 
@@ -282,7 +282,7 @@ template <typename Function> struct test_function {
 };
 
 inline auto finish_test_graph(GraphWiring &wiring, CapturedValues &captured, EvaluationTime start_time,
-                              const TestGraphOptions &options) {
+                              const GraphRunOptions &options) {
     if (options.services != nullptr) {
         wiring.finalize(*options.services);
     } else {
@@ -290,12 +290,20 @@ inline auto finish_test_graph(GraphWiring &wiring, CapturedValues &captured, Eva
     }
 
     const auto compiled = CompiledGraph{wiring};
-    auto global_state = GlobalState{};
-    auto runtime = RuntimeGraph{compiled, global_state};
-    if (options.recorder) {
-        options.recorder->run(runtime, start_time);
+    auto run = [&](GlobalState &global_state) {
+        auto runtime = RuntimeGraph{compiled, global_state};
+        if (options.recorder) {
+            options.recorder->run(runtime, start_time);
+        } else {
+            SimulationEvaluationEngine{}.run(runtime, start_time);
+        }
+    };
+
+    if (options.global_state != nullptr) {
+        run(*options.global_state);
     } else {
-        SimulationEvaluationEngine{}.run(runtime, start_time);
+        auto global_state = GlobalState{};
+        run(global_state);
     }
 
     return std::move(captured.values);
@@ -356,7 +364,7 @@ inline WiringPoint wire_literal_source(const TestGraphLiteralInput &input,
 }
 
 template <typename Function, typename Inputs, std::size_t... Index>
-[[nodiscard]] auto run_function_literals(const Function &function, const TestGraphOptions &options,
+[[nodiscard]] auto run_function_literals(const Function &function, const GraphRunOptions &options,
                                          const Inputs &inputs,
                                          std::index_sequence<Index...>) {
     using FunctionInfo = test_function<Function>;
@@ -383,7 +391,7 @@ template <typename Function, typename Inputs, std::size_t... Index>
     return finish_test_graph(wiring, captured, start_time, options);
 }
 
-inline auto run_template_literals(const WiringTemplate &tested, const TestGraphOptions &options,
+inline auto run_template_literals(const WiringTemplate &tested, const GraphRunOptions &options,
                                   std::span<const TestGraphLiteralInput> inputs) {
     if (tested.signature().has_variadic_parameters()) {
         throw std::invalid_argument{"test_graph literal inputs do not support variadic wiring templates"};
@@ -420,7 +428,7 @@ inline auto run_template_literals(const WiringTemplate &tested, const TestGraphO
 }
 
 template <typename Function, typename Inputs, std::size_t... Index>
-[[nodiscard]] auto run_function(const Function &function, const TestGraphOptions &options,
+[[nodiscard]] auto run_function(const Function &function, const GraphRunOptions &options,
                                 const Inputs &inputs,
                                 std::index_sequence<Index...>) {
     using FunctionInfo = test_function<Function>;
@@ -442,7 +450,7 @@ template <typename Function, typename Inputs, std::size_t... Index>
 }
 
 template <std::ranges::contiguous_range... Inputs>
-[[nodiscard]] auto run_template(const WiringTemplate &tested, const TestGraphOptions &options,
+[[nodiscard]] auto run_template(const WiringTemplate &tested, const GraphRunOptions &options,
                                 const Inputs &...inputs) {
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
     auto captured = CapturedValues{.start_time = start_time, .values = {}};
@@ -463,7 +471,7 @@ template <std::ranges::contiguous_range... Inputs>
     return finish_test_graph(wiring, captured, start_time, options);
 }
 
-[[nodiscard]] inline auto run_runtime_template(const WiringTemplate &tested, const TestGraphOptions &options,
+[[nodiscard]] inline auto run_runtime_template(const WiringTemplate &tested, const GraphRunOptions &options,
                                                std::span<const TestGraphInput> inputs) {
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
     auto captured = CapturedValues{.start_time = start_time, .values = {}};

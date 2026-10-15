@@ -1,5 +1,7 @@
 #include <bg/graph.hpp>
+#include <bg/evaluation_context.hpp>
 #include <bg/evaluation_profiler.hpp>
+#include <bg/global_state.hpp>
 #include <bg/node.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
@@ -46,8 +48,7 @@ TEST_CASE("test_graph records a profile for a graph function", "[testing][evalua
     const auto graph = [](bg::wp<bg::TS<bg::i64>> input) { return input; };
     auto profiler = bg::EvaluationProfiler{};
 
-    const auto actual = bg::testing::test_graph[
-        bg::testing::TestGraphOptions{.recorder = profiler.recorder()}](graph, {1, 2, 3});
+    const auto actual = bg::testing::test_graph(graph, bg::GraphRunOptions{.recorder = profiler.recorder()}, {1, 2, 3});
 
     CHECK(actual.equals({1, 2, 3}));
     const auto root = profiler.root_graph_id();
@@ -68,9 +69,11 @@ TEST_CASE("test_graph records a profile for runtime-typed inputs", "[testing][ev
     const auto inputs = std::array{bg::testing::TestGraphInput{bg::cpp_scalar_runtime_type<bg::i64>(), ticks}};
     auto profiler = bg::EvaluationProfiler{};
 
-    const auto actual = bg::testing::test_graph[
-        bg::testing::TestGraphOptions{.recorder = profiler.recorder()}](
-        identity, std::span<const bg::testing::TestGraphInput>{inputs});
+    const auto actual = bg::testing::test_graph(
+        identity,
+        bg::GraphRunOptions{.recorder = profiler.recorder()},
+        std::span<const bg::testing::TestGraphInput>{inputs}
+    );
 
     CHECK(actual.equals<bg::i64>({1, 2}));
     REQUIRE(profiler.root_graph_id());
@@ -82,8 +85,7 @@ TEST_CASE("test_graph records a profile for a wiring template", "[testing][evalu
     const auto ticks = std::vector<bg::i64>{1, 2};
     auto profiler = bg::EvaluationProfiler{};
 
-    const auto actual = bg::testing::test_graph[
-        bg::testing::TestGraphOptions{.recorder = profiler.recorder()}](identity, ticks);
+    const auto actual = bg::testing::test_graph(identity, bg::GraphRunOptions{.recorder = profiler.recorder()}, ticks);
 
     CHECK(actual.equals<bg::i64>({1, 2}));
     REQUIRE(profiler.root_graph_id());
@@ -152,8 +154,7 @@ TEST_CASE("test_graph literal annotations support generic and multiple inputs",
     const auto raw_multiple_result = bg::testing::test_graph(add_graph, {1, 2}, {10, 20});
     auto configured_profiler = bg::EvaluationProfiler{};
     const auto configured_raw_multiple_result =
-        bg::testing::test_graph[bg::testing::TestGraphOptions{.recorder = configured_profiler.recorder()}](
-            add_graph, {1, 2}, {10, 20});
+        bg::testing::test_graph(add_graph, bg::GraphRunOptions{.recorder = configured_profiler.recorder()}, {1, 2}, {10, 20});
     const auto generic_rhs = [&](bg::wp<bg::TS<bg::i64>> lhs, bg::wp<> rhs) {
         return add_i64(lhs, rhs.as<bg::TS<bg::i64>>());
     };
@@ -167,6 +168,8 @@ TEST_CASE("test_graph literal annotations support generic and multiple inputs",
 
     const auto select_second = [](bg::wp<bg::TS<bg::i64>>, bg::wp<bg::TS<bg::i64>> rhs) { return rhs; };
     const auto empty_first_result = bg::testing::test_graph(select_second, {}, {30});
+    const auto configured_empty_first_result =
+        bg::testing::test_graph(select_second, bg::GraphRunOptions{}, {}, {30});
 
     const auto observe_dictionary = bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input,
                                                 bg::Out<bg::TS<bg::i64>> output) {
@@ -187,6 +190,7 @@ TEST_CASE("test_graph literal annotations support generic and multiple inputs",
     CHECK(annotated_first_result.equals<bg::i64>({11, 22}));
     CHECK(annotated_second_result.equals<bg::i64>({11, 22}));
     CHECK(empty_first_result.equals<bg::i64>({30}));
+    CHECK(configured_empty_first_result.equals<bg::i64>({30}));
     CHECK(generic_dictionary_result.equals<bg::i64>({40}));
     CHECK_THROWS_AS((bg::testing::test_graph(identity, {1, 2}, {3, 4})), std::invalid_argument);
 }
@@ -238,6 +242,10 @@ TEST_CASE("test_graph accepts empty raw inputs for functions and wiring template
     CHECK(bg::testing::test_graph(function, {{}}).equals<bg::i64>({0}));
     CHECK(bg::testing::test_graph(count_items, {}).equals<bg::i64>({std::nullopt}));
     CHECK(bg::testing::test_graph(count_items, {{}}).equals<bg::i64>({0}));
+    CHECK(bg::testing::test_graph(function, bg::GraphRunOptions{}, {}).equals<bg::i64>({std::nullopt}));
+    CHECK(bg::testing::test_graph(function, bg::GraphRunOptions{}, {{}}).equals<bg::i64>({0}));
+    CHECK(bg::testing::test_graph(count_items, bg::GraphRunOptions{}, {}).equals<bg::i64>({std::nullopt}));
+    CHECK(bg::testing::test_graph(count_items, bg::GraphRunOptions{}, {{}}).equals<bg::i64>({0}));
 }
 
 TEST_CASE("test_graph literal inputs coerce values and revalidate after INVALID",
@@ -247,9 +255,12 @@ TEST_CASE("test_graph literal inputs coerce values and revalidate after INVALID"
     const auto integer_identity = [](bg::wp<bg::TS<bg::i64>> input) { return input; };
     const auto integer_result =
         bg::testing::test_graph(integer_identity, {1, literal::INVALID, 3});
+    const auto configured_integer_result =
+        bg::testing::test_graph(integer_identity, bg::GraphRunOptions{}, {1, std::nullopt, 3});
 
     CHECK(float_result.equals<float>({1.0F, 2.0F}));
     CHECK(integer_result.equals<bg::i64>({1, std::nullopt, 3}));
+    CHECK(configured_integer_result.equals<bg::i64>({1, std::nullopt, 3}));
 }
 
 TEST_CASE("test_graph accepts descriptor spans with more than four inputs",
@@ -279,8 +290,11 @@ TEST_CASE("test_graph accepts descriptor spans with more than four inputs",
     };
 
     const auto actual = bg::testing::test_graph(fifth, std::span<const bg::testing::TestGraphLiteralInput>{inputs});
+    const auto configured_actual = bg::testing::test_graph(
+        fifth, bg::GraphRunOptions{}, inputs[0], inputs[1], inputs[2], inputs[3], inputs[4]);
 
     CHECK(actual.equals<bg::i64>({5}));
+    CHECK(configured_actual.equals<bg::i64>({5}));
 }
 
 TEST_CASE("test_graph preserves zero-input wiring template option calls",
@@ -292,16 +306,41 @@ TEST_CASE("test_graph preserves zero-input wiring template option calls",
     auto services_profiler = bg::EvaluationProfiler{};
 
     CHECK(bg::testing::test_graph(zero_input).equals<bg::i64>({42}));
-    CHECK(bg::testing::test_graph[bg::testing::TestGraphOptions{.services = &services}](zero_input)
+    CHECK(bg::testing::test_graph(zero_input, bg::GraphRunOptions{.services = &services})
               .equals<bg::i64>({42}));
-    CHECK(bg::testing::test_graph[
-              bg::testing::TestGraphOptions{.recorder = profiler.recorder()}](zero_input)
+    CHECK(bg::testing::test_graph(zero_input, bg::GraphRunOptions{.recorder = profiler.recorder()})
               .equals<bg::i64>({42}));
-    CHECK(bg::testing::test_graph[bg::testing::TestGraphOptions{.services = &services,
-                                                               .recorder = services_profiler.recorder()}](zero_input)
+    CHECK(bg::testing::test_graph(zero_input, bg::GraphRunOptions{.services = &services,
+                                                               .recorder = services_profiler.recorder()})
               .equals<bg::i64>({42}));
     REQUIRE(profiler.root_graph_id());
     CHECK(profiler.graph(*profiler.root_graph_id()) != nullptr);
+}
+
+struct global_state_test_source {
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void start(bg::EvaluationContext *context) const {
+        const auto value = bg::ScalarValue{42};
+        context->global_state().write([&](auto &state) { state.set(bg::util::symbol{"test_graph"}, value); });
+        output.set(1);
+    }
+
+    void evaluate() const {}
+};
+
+TEST_CASE("test_graph uses the supplied global state",
+          "[testing][evaluation][feature:test-graph][feature:global-state]") {
+    const auto source = bg::node<global_state_test_source>();
+    const auto graph = [&] { return source(); };
+    auto global_state = bg::GlobalState{};
+
+    const auto actual = bg::testing::test_graph(graph, bg::GraphRunOptions{.global_state = &global_state});
+
+    CHECK(actual.equals<bg::i64>({1}));
+    global_state.read([](const auto &values) {
+        CHECK(*bg::scalar_cast<bg::i64>(values.at("test_graph")) == 42);
+    });
 }
 
 TEST_CASE("test_graph accepts literal inputs with profiler and services",
@@ -314,9 +353,11 @@ TEST_CASE("test_graph accepts literal inputs with profiler and services",
     auto profiler = bg::EvaluationProfiler{};
     auto services = bg::ServiceCatalogue{};
 
-    const auto actual = bg::testing::test_graph[
-        bg::testing::TestGraphOptions{.services = &services, .recorder = profiler.recorder()}](
-        graph, {{{7, 10}}, {{7, 20}}});
+    const auto actual = bg::testing::test_graph(
+        graph,
+        bg::GraphRunOptions{.services = &services, .recorder = profiler.recorder()},
+        {{{7, 10}}, {{7, 20}}}
+    );
 
     CHECK(actual.equals<bg::i64>({10, 20}));
     REQUIRE(profiler.root_graph_id());

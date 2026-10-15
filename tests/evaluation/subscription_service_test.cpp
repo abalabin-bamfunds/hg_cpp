@@ -42,8 +42,7 @@ TEST_CASE("subscription services deduplicate requests and return values by key",
         (void)service(key);
         return service(key).as<TS<float>>();
     };
-    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array<std::int64_t, 1>{0});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 1>{0});
 
     CHECK(actual.equals<float>({7.0F}));
     CHECK(log.sizes == std::vector<std::size_t>{1});
@@ -111,8 +110,7 @@ TEST_CASE("subscription service clients inside map branches update one root requ
         return mapped[std::int64_t{1}].as<TS<std::int64_t>>();
     };
 
-    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array<std::int64_t, 1>{0});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 1>{0});
 
     CHECK(actual.equals<std::int64_t>({4}));
     CHECK(log.sizes == std::vector<std::size_t>{2});
@@ -157,8 +155,7 @@ TEST_CASE("subscription service request bindings cross nested graph boundaries",
         return inner(key_source(3));
     };
 
-    CHECK(testing::test_graph[testing::TestGraphOptions{.services = &logged_catalogue}](
-        tested, std::array<std::int64_t, 1>{0})
+    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &logged_catalogue}, std::array<std::int64_t, 1>{0})
               .equals<std::int64_t>({3}));
     CHECK(log.sizes == std::vector<std::size_t>{1});
     CHECK(log.added == std::vector<std::size_t>{1});
@@ -199,8 +196,7 @@ TEST_CASE("subscription service clients inside mesh branches update one root req
         return mapped[std::int64_t{1}].as<TS<std::int64_t>>();
     };
 
-    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array<std::int64_t, 1>{0});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 1>{0});
 
     CHECK(actual.equals<std::int64_t>({4}));
     CHECK(log.sizes == std::vector<std::size_t>{2});
@@ -235,8 +231,7 @@ TEST_CASE("subscription service multiplicity includes scalar parameters",
         return sum(first, second);
     };
 
-    CHECK(testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array<std::int64_t, 1>{0}).equals<float>({9.0F}));
+    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 1>{0}).equals<float>({9.0F}));
 }
 
 TEST_CASE("removing a map branch removes its subscription request",
@@ -286,8 +281,7 @@ TEST_CASE("removing a map branch removes its subscription request",
         return mapped[std::int64_t{5}].as<TS<std::int64_t>>();
     };
 
-    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array{true, false});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array{true, false});
 
     CHECK(actual.equals<std::int64_t>({7, std::nullopt}));
     CHECK(log.sizes == std::vector<std::size_t>{1, 0});
@@ -318,8 +312,7 @@ TEST_CASE("response-producing subscription clients inside a map reject dependenc
 
     auto diagnostic = std::string{};
     try {
-        (void)testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-            tested, std::array<std::int64_t, 1>{0});
+        (void)testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 1>{0});
     } catch (const std::exception &error) {
         diagnostic = error.what();
     }
@@ -371,8 +364,7 @@ TEST_CASE("subscription request keys compare complete hierarchical scalar values
         return input;
     };
 
-    const auto actual = testing::test_graph[testing::TestGraphOptions{.services = &catalogue}](
-        tested, std::array<std::int64_t, 1>{1});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 1>{1});
 
     CHECK(actual.equals<std::int64_t>({1}));
     CHECK(log.sizes.back() == 1);
