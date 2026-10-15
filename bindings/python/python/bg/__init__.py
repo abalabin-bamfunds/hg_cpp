@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import atexit
 import inspect
 import types
 from functools import update_wrapper
 from typing import Annotated, Any, Generic, TypeVar, get_args, get_origin, get_type_hints
+from weakref import WeakKeyDictionary
 
 from . import operators
 from ._bg import (
@@ -177,7 +179,9 @@ _ITEM_T = TypeVar("_ITEM_T")
 _SIZE_T = TypeVar("_SIZE_T")
 _SCHEMA_T = TypeVar("_SCHEMA_T")
 
-_type_variables: dict[TypeVar, _Type] = {}
+_type_variables: WeakKeyDictionary[TypeVar, _Type] = WeakKeyDictionary()
+# Release nanobind wrappers before its shutdown leak check runs.
+atexit.register(_type_variables.clear)
 
 
 def _annotation_arguments(arguments: Any, required: int, name: str) -> tuple[Any, Any]:

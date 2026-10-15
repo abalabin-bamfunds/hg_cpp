@@ -1,8 +1,26 @@
+import subprocess
+import sys
 from typing import TypeVar
 
 import pytest
 
 import bg
+
+
+def test_type_variable_descriptors_are_released_at_shutdown():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from typing import TypeVar; import bg; VALUE = TypeVar('VALUE'); bg.TS[VALUE]",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "nanobind: leaked" not in result.stderr
 
 
 def test_scalar_type_variable_in_time_series_input_and_output():
