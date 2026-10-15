@@ -221,19 +221,18 @@ TEST_CASE("multiservice request bindings cross map graph boundaries",
     auto registration = catalogue.register_multiservice(implementation);
     registration.register_impl(audit);
 
-    const auto values = node(
-        [](In<TS<std::int64_t>> value, Out<TSD<std::int64_t, TS<std::int64_t>>> output) { output[1].set(*value); });
-    const auto tested = [&](wp<TS<std::int64_t>> value) {
+    const auto tested = [&](wp<TSD<std::int64_t, TS<std::int64_t>>> values) {
         const auto mapped = map(
             [&](auto item) {
                 audit(item);
                 return item;
             },
-            values(value));
+            values);
         return mapped[std::int64_t{1}].as<TS<std::int64_t>>();
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 2>{3, 8});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue},
+                                            {{{1, 3}}, {{1, 8}}});
 
     CHECK(actual.equals<std::int64_t>({3, 8}));
     CHECK(request_sizes == std::vector<std::size_t>{1, 1});

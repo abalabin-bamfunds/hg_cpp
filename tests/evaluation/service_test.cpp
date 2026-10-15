@@ -385,8 +385,7 @@ TEST_CASE("service clients follow repeated switch changes after a map branch ret
         tested,
         bg::GraphRunOptions{.services = &catalogue},
         {{{5, 7}}, {{5, 7}}, {{5, 7}}, {{5, literal::REMOVE}}, {{5, 7}}, {{5, 7}}},
-        std::array<std::int64_t,
-        6>{1, 2, 1, 1, 2, 1}
+        {1, 2, 1, 1, 2, 1}
     );
 
     CHECK(actual.equals<std::int64_t>({107, 207, 107, std::nullopt, 207, 107}));

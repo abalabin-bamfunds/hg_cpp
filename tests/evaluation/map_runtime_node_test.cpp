@@ -420,27 +420,18 @@ TEST_CASE("map starts and stops one inner graph repeatedly",
 TEST_CASE("mapped target ticks evaluate only the selected inner graph",
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[transition:update]") {
-    const auto targets = node([](In<TS<i64>> command, Out<TSD<std::int64_t, TS<i64>>> output) {
-        if (*command == 0) {
-            output[1].set(10);
-            output[2].set(20);
-        } else {
-            output[*command].set(*command * 10);
-        }
-    });
     const auto rekey =
         node([](In<REF<TS<i64>>> first, In<REF<TS<i64>>> second, Out<TSD<std::int64_t, REF<TS<i64>>>> output) {
             output[1].copy(first);
             output[2].copy(second);
         });
-    const auto graph = [&](wp<TS<i64>> command) {
-        const auto values = targets(command);
+    const auto graph = [&](wp<TSD<std::int64_t, TS<i64>>> values) {
         const auto mapped = wire_map(rekey(values[std::int64_t{1}], values[std::int64_t{2}]));
         return mapped[std::int64_t{2}];
     };
     AddKey::evaluations.fill(0);
 
-    const auto actual = testing::test_graph(graph, std::array{0, 2});
+    const auto actual = testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{2, 20}}});
 
     CHECK(actual.equals<bg::i64>({22, 22}));
     CHECK(AddKey::evaluations == std::array<std::size_t, 3>{0, 1, 2});
@@ -527,7 +518,7 @@ TEST_CASE("map uses a TSS key set for a source graph",
           "[transition:addition][transition:removal]") {
     const auto graph = [&](wp<TSS<std::int64_t>> keys) { return wire_source_map(keys)[std::int64_t{1}]; };
 
-    const auto actual = testing::test_graph(graph, {{{1}}, {literal::REMOVED(1)}, {{1}}});
+    const auto actual = testing::test_graph(graph, {{1}, {literal::REMOVED(1)}, {1}});
 
     CHECK(actual.equals<std::int64_t>({1, std::nullopt, 1}));
 }
@@ -537,7 +528,7 @@ TEST_CASE("map uses a selected TSD key set for a source graph",
           "[transition:addition][transition:removal]") {
     const auto graph = [&](wp<TSD<std::int64_t, TS<i64>>> keys) { return wire_source_map(keys)[std::int64_t{1}]; };
 
-    const auto actual = testing::test_graph(graph, {{{1, 0}}, {literal::REMOVED(1)}, {{1, 0}}});
+    const auto actual = testing::test_graph(graph, {{{1, 0}}, {{1, literal::REMOVE}}, {{1, 0}}});
 
     CHECK(actual.equals<std::int64_t>({1, std::nullopt, 1}));
 }
@@ -608,23 +599,18 @@ TEST_CASE("a map inner graph reports timed work through the map owner",
 TEST_CASE("map schedules the next scheduled time after one inner graph becomes due",
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[feature:timed-scheduling]") {
-    const auto targets = node([](In<TS<i64>>, Out<TSD<std::int64_t, TS<i64>>> output) {
-        output[1].set(2);
-        output[2].set(4);
-    });
     const auto rekey =
         node([](In<REF<TS<i64>>> first, In<REF<TS<i64>>> second, Out<TSD<std::int64_t, REF<TS<i64>>>> output) {
             output[1].copy(first);
             output[2].copy(second);
         });
-    const auto graph = [&](wp<TS<i64>> command) {
-        const auto values = targets(command);
+    const auto graph = [&](wp<TSD<std::int64_t, TS<i64>>> values) {
         const auto mapped = wire_variable_delayed_map(rekey(values[std::int64_t{1}], values[std::int64_t{2}]));
         return mapped[std::int64_t{2}].as<TS<i64>>();
     };
     VariableDelay::evaluations.clear();
 
-    const auto actual = testing::test_graph(graph, std::array{0});
+    const auto actual = testing::test_graph(graph, {{{1, 2}, {2, 4}}});
 
     CHECK(VariableDelay::evaluations == std::vector{2, 4});
     REQUIRE(actual[actual.size() - 1]);

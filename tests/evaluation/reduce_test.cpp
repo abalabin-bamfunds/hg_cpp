@@ -110,6 +110,20 @@ TEST_CASE("compact reduce does not propagate a dirty path when a child reducer d
 
 TEST_CASE("compact reduce does not republish an unchanged root when membership changes",
           "[feature:reduce][series:tsd][shape:single-node][transition:removal][notification:suppressed]") {
+    const auto make_dictionary = node([](In<TS<bool>> initialize, Out<TSD<std::int64_t, TS<i64>>> output) {
+        if (*initialize) {
+            output[10].set(1);
+            output[20].set(2);
+            output[30].set(3);
+            output[40].set(4);
+            return;
+        }
+
+        const auto updated_key = output.key(1);
+        const auto removed_key = output.key(0);
+        output[updated_key].set(99);
+        output.erase(removed_key);
+    });
     const auto suppress_item = node([](In<TS<i64>> left, In<TS<i64>> right, Out<TS<i64>> output) {
         if (*left != 99) {
             output.set(*left + *right);
@@ -129,18 +143,15 @@ TEST_CASE("compact reduce does not republish an unchanged root when membership c
     const auto suppress_selected_value_with_context = graph(
         "name"_n = "suppress_selected_reduce_value_with_context",
         [=](wp<TS<i64>> left, wp<TS<i64>> right) { return suppress_item_with_context(left, right); });
-    const auto compact_graph = [=](wp<TSD<std::int64_t, TS<i64>>> dictionary) {
-        return reduce(suppress_selected_value, dictionary);
+    const auto compact_graph = [=](wp<TS<bool>> initialize) {
+        return reduce(suppress_selected_value, make_dictionary(initialize));
     };
-    const auto fallback_graph = [=](wp<TSD<std::int64_t, TS<i64>>> dictionary, wp<TS<i64>> factor) {
+    const auto fallback_graph = [=](wp<TS<bool>> initialize, wp<TS<i64>> factor) {
         auto context_scope = with_context("factor"_n = factor);
-        return reduce(suppress_selected_value_with_context, dictionary);
+        return reduce(suppress_selected_value_with_context, make_dictionary(initialize));
     };
-    const auto compact_output = testing::test_graph(
-        compact_graph, {{{10, 1}, {20, 2}, {30, 3}, {40, 4}}, {{20, 99}, {10, literal::REMOVE}}});
-    const auto fallback_output = testing::test_graph(
-        fallback_graph, {{{10, 1}, {20, 2}, {30, 3}, {40, 4}}, {{20, 99}, {10, literal::REMOVE}}},
-        std::array{0, 0});
+    const auto compact_output = testing::test_graph(compact_graph, {true, false});
+    const auto fallback_output = testing::test_graph(fallback_graph, {true, false}, {0, 0});
 
     CHECK(compact_output.equals<i64>({10, std::nullopt}));
     CHECK(fallback_output.equals<i64>({10, std::nullopt}));
@@ -165,16 +176,19 @@ TEST_CASE("nested reduce tracks keys when a sampled TSD reassigns physical item 
            In<REF<TSD<std::int64_t, TS<i64>>>> second, Out<REF<TSD<std::int64_t, TS<i64>>>> output) {
             output.copy(*use_second ? second : first);
         });
-    const auto tested = [=](wp<TS<bool>> use_second, wp<TSD<std::int64_t, TS<i64>>> first,
-                            wp<TSD<std::int64_t, TS<i64>>> second) {
+    const auto tested = [=](wp<TSD<std::int64_t, TS<i64>>> first, wp<TSD<std::int64_t, TS<i64>>> second,
+                            wp<TS<bool>> use_second) {
         const auto selected = select_dictionary(use_second, first.as<REF<TSD<std::int64_t, TS<i64>>>>(),
                                                 second.as<REF<TSD<std::int64_t, TS<i64>>>>());
         return reduce(add_graph, selected);
     };
 
-    const auto actual = testing::test_graph(tested, std::array{false, true, false, true},
-                                            {{{10, 2}, {20, 3}, {30, 5}}},
-                                            {{{30, 6}, {20, 4}, {10, 3}}});
+    const auto actual = testing::test_graph(
+        tested, {{{10, 2}, {20, 3}, {30, 5}}, {{10, 2}, {20, 3}, {30, 5}},
+                 {{10, 2}, {20, 3}, {30, 5}}, {{10, 2}, {20, 3}, {30, 5}}},
+        {{{30, 6}, {20, 4}, {10, 3}}, {{30, 6}, {20, 4}, {10, 3}},
+         {{30, 6}, {20, 4}, {10, 3}}, {{30, 6}, {20, 4}, {10, 3}}},
+        {false, true, false, true});
 
     CHECK(actual.equals<i64>({10, 13, 10, 13}));
 }
@@ -272,7 +286,7 @@ TEST_CASE("reduce combines final TSD items through a context-dependent fallback 
         return reduce(context_add_graph, dictionary);
     };
 
-    const auto actual = testing::test_graph(tested, {{{1, 3}, {2, 4}}}, std::array{10});
+    const auto actual = testing::test_graph(tested, {{{1, 3}, {2, 4}}}, {10});
 
     CHECK(actual.equals<i64>({17}));
 }
@@ -321,7 +335,7 @@ TEST_CASE("reduce carries inherited context references into its reducer graphs",
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 1}, {2, 4}}, {{1, 2}, {2, 5}}},
-                                            std::array{10, 20});
+                                            {10, 20});
 
     CHECK(actual.equals<i64>({15, 27}));
 }
@@ -362,7 +376,7 @@ TEST_CASE("reduce publishes a singleton fallback value after retiring a pair gra
 
     const auto actual = testing::test_graph(tested,
                                             {{{1, 3}, {2, 5}}, {{1, 4}, {2, literal::REMOVE}}, {{1, 7}}},
-                                            std::array{2, 2, 2});
+                                            {2, 2, 2});
 
     CHECK(actual.equals<i64>({10, 4, 7}));
 }
@@ -449,7 +463,7 @@ TEST_CASE("reduce does not use the default when the TSD is invalid",
     const auto tested = [](wp<TSD<std::int64_t, TS<i64>>> dictionary) {
         return reduce(add_graph, dictionary, "default"_n = std::int64_t{20});
     };
-    const auto actual = testing::test_graph(tested, {literal::INVALID});
+    const auto actual = testing::test_graph(tested, {literal::SKIP});
 
     CHECK(actual.equals<i64>({std::nullopt}));
 }

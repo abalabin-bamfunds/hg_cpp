@@ -257,7 +257,7 @@ TEST_CASE("a context time series is available to map branches",
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 1}}, {{1, 2}}, {{1, 3}}},
-                                            std::array<std::int64_t, 3>{10, 20, 30});
+                                            {10, 20, 30});
 
     CHECK(actual.equals({10, 20, 30}));
 }
@@ -351,7 +351,7 @@ TEST_CASE("a context time series is available to mesh branches",
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 1}}, {{1, 2}}, {{1, 3}}},
-                                            std::array<std::int64_t, 3>{10, 20, 30});
+                                            {10, 20, 30});
 
     CHECK(actual.equals({10, 20, 30}));
 }
@@ -456,7 +456,7 @@ TEST_CASE("a new map branch samples an existing context value",
         });
     };
 
-    const auto actual = testing::test_graph(tested, {{}, {{1, 1}}});
+    const auto actual = testing::test_graph(tested, {literal::SKIP, {{1, 1}}});
 
     CHECK(actual.equals({std::nullopt, 42}));
 }
@@ -469,7 +469,7 @@ TEST_CASE("a collection context preserves item change notifications",
         return with_context("values"_n = values, [&] { return nested(inner, run); });
     };
 
-    const auto actual = testing::test_graph(tested, {{{1, 7}}, {{1, 8}}, {{1, 9}}}, std::array{true, true, true});
+    const auto actual = testing::test_graph(tested, {{{1, 7}}, {{1, 8}}, {{1, 9}}}, {true, true, true});
 
     CHECK(actual.equals({7, 8, 9}));
 }

@@ -155,15 +155,6 @@ TEST_CASE("a generic time-series view preserves its resolved time-series type",
 
 namespace {
 
-struct generic_list_view_source_definition {
-    bg::Out<bg::TSL<bg::TS<bg::i64>, 2>> output;
-
-    void start() const {
-        output[0].set(3);
-        output[1].set(7);
-    }
-};
-
 struct generic_list_view_copy_definition {
     bg::In<bg::TSL<bg::TS_T, bg::SIZE>> input;
     bg::Out<bg::TSL<bg::TS_T, bg::SIZE>> output;
@@ -198,14 +189,13 @@ struct generic_list_view_value_definition {
 
 TEST_CASE("generic time-series list views expose their resolved size and items",
           "[evaluation][views][tsl][series:fixed-tsl][feature:time-series-view][declaration:generic]") {
-    const auto source = bg::node<generic_list_view_source_definition>();
     const auto copy = bg::node<generic_list_view_copy_definition>();
     const auto value = bg::node<generic_list_view_value_definition>();
     generic_list_view_copy_definition::input_size = 0;
     generic_list_view_copy_definition::output_size = 0;
-    const auto graph = [&] { return value(copy(source())); };
+    const auto graph = [&](bg::wp<bg::TSL<bg::TS<bg::i64>, 2>> input) { return value(copy(input)); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {{{0, 3}, {1, 7}}});
 
     CHECK(generic_list_view_copy_definition::input_size == 2);
     CHECK(generic_list_view_copy_definition::output_size == 2);
@@ -217,15 +207,6 @@ namespace {
 template <template <typename, auto...> typename Field> struct RuntimeViewBundle {
     Field<bg::TS<bg::i64>> count;
     Field<bg::TS<float>> value;
-};
-
-struct generic_bundle_view_source_definition {
-    bg::Out<bg::TSB<RuntimeViewBundle>> output;
-
-    void start() const {
-        output->count.set(4);
-        output->value.set(2.5F);
-    }
 };
 
 struct generic_bundle_view_copy_definition {
@@ -267,16 +248,15 @@ struct generic_bundle_view_value_definition {
 TEST_CASE("generic bundle views expose their resolved schema and items",
           "[evaluation][views][tsb][series:tsb][feature:time-series-view][declaration:generic]"
           "[schema:generic]") {
-    const auto source = bg::node<generic_bundle_view_source_definition>();
     const auto copy = bg::node<generic_bundle_view_copy_definition>();
     const auto value = bg::node<generic_bundle_view_value_definition>();
     generic_bundle_view_copy_definition::input_size = 0;
     generic_bundle_view_copy_definition::output_size = 0;
     generic_bundle_view_copy_definition::first_name = bg::util::symbol{""};
     generic_bundle_view_copy_definition::second_name = bg::util::symbol{""};
-    const auto graph = [&] { return value(copy(source())); };
+    const auto graph = [&](bg::wp<bg::TSB<RuntimeViewBundle>> input) { return value(copy(input)); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::testing::test_graph(graph, {{{"count", 4}, {"value", 2.5F}}});
 
     CHECK(generic_bundle_view_copy_definition::input_size == 2);
     CHECK(generic_bundle_view_copy_definition::output_size == 2);

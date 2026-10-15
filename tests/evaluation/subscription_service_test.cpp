@@ -258,26 +258,19 @@ TEST_CASE("removing a map branch removes its subscription request",
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
 
-    const auto optional_values = node([](In<TS<bool>> present,
-                                         Out<TSD<std::int64_t, TS<std::int64_t, TimeSeriesGuarantee::final>>> output) {
-        if (*present) {
-            output[5].set(7);
-        } else {
-            output.erase(5);
-        }
-    });
-    const auto tested = [&](wp<TS<bool>> present) {
+    const auto tested = [&](wp<TSD<std::int64_t, TS<std::int64_t, TimeSeriesGuarantee::final>>> values) {
         const auto mapped = map(
             [&](auto key, auto item) {
                 (void)service(key);
 
                 return item;
             },
-            optional_values(present), "__key_arg__"_n = 0);
+            values, "__key_arg__"_n = 0);
         return mapped[std::int64_t{5}].as<TS<std::int64_t>>();
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array{true, false});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue},
+                                            {{{5, 7}}, {{5, literal::REMOVE}}});
 
     CHECK(actual.equals<std::int64_t>({7, std::nullopt}));
     CHECK(log.sizes == std::vector<std::size_t>{1, 0});

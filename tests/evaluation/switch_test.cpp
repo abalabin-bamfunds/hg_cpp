@@ -103,44 +103,6 @@ struct MappedSwitchCase {
 
 const auto mapped_switch_case = node<MappedSwitchCase>();
 
-const auto mapped_values = node([](In<TS<i64>> trigger,
-                                   Out<TSD<std::int64_t, TS<i64>>> output) {
-    output[1].set(*trigger);
-    output[2].set(*trigger);
-});
-
-const auto mapped_selectors = node([](In<TS<std::int64_t>> first,
-                                      In<TS<std::int64_t>> second,
-                                      Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
-    output[1].set(*first);
-    output[2].set(*second);
-});
-
-const auto optional_mapped_values = node([](In<TS<i64>> trigger, In<TS<bool>> present,
-                                            Out<TSD<std::int64_t, TS<i64>>> output) {
-    if (*present) {
-        output[1].set(*trigger);
-    } else {
-        output.erase(1);
-    }
-});
-
-const auto optional_mapped_selectors = node(
-    [](In<TS<std::int64_t>> selector, In<TS<bool>> present,
-       Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
-        if (*present) {
-            output[1].set(*selector);
-        } else {
-            output.erase(1);
-        }
-    });
-
-const auto selectors_at_key_one = node(
-    [](In<TS<std::int64_t>> selector,
-       Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
-        output[1].set(*selector);
-    });
-
 const auto add_mapped_results = node([](In<TS<i64>, optional> first,
                                         In<TS<i64>, optional> second,
                                         Out<TS<i64>> output) {
@@ -573,17 +535,16 @@ TEST_CASE("switches inside a map retain and replace state independently",
           "[feature:switch][feature:map][feature:nested-graph][feature:operator]"
           "[shape:doubly-nested][series:value][series:tsd][transition:update]"
           "[definition:function]") {
-    const auto tested = [](wp<TS<i64>> trigger, wp<TS<std::int64_t>> first,
-                           wp<TS<std::int64_t>> second) {
-        const auto result = map(mapped_switch, mapped_values(trigger),
-                                mapped_selectors(first, second));
+    const auto tested = [](wp<TSD<std::int64_t, TS<i64>>> values,
+                           wp<TSD<std::int64_t, TS<std::int64_t>>> selectors) {
+        const auto result = map(mapped_switch, values, selectors);
         return add_mapped_results(result[std::int64_t{1}].as<TS<i64>>(),
                                   result[std::int64_t{2}].as<TS<i64>>());
     };
 
     const auto actual = testing::test_graph(
-        tested, std::array{0, 0, 0, 0}, std::array<std::int64_t, 4>{1, 1, 2, 2},
-        std::array<std::int64_t, 4>{2, 2, 2, 1});
+        tested, {{{1, 0}, {2, 0}}, {{1, 0}, {2, 0}}, {{1, 0}, {2, 0}}, {{1, 0}, {2, 0}}},
+        {{{1, 1}, {2, 2}}, {{1, 1}, {2, 2}}, {{1, 2}, {2, 2}}, {{1, 2}, {2, 1}}});
 
     CHECK(actual.equals<bg::i64>({32, 34, 44, 33}));
 }
@@ -592,16 +553,15 @@ TEST_CASE("removing and recreating a map entry recreates its switch graph",
           "[feature:switch][feature:map][feature:nested-graph][feature:operator]"
           "[shape:doubly-nested][series:value][series:tsd][transition:addition]"
           "[transition:removal][definition:function]") {
-    const auto tested = [](wp<TS<i64>> trigger, wp<TS<std::int64_t>> selector,
-                           wp<TS<bool>> present) {
-        const auto result = map(mapped_switch, optional_mapped_values(trigger, present),
-                                optional_mapped_selectors(selector, present));
+    const auto tested = [](wp<TSD<std::int64_t, TS<i64>>> values,
+                           wp<TSD<std::int64_t, TS<std::int64_t>>> selectors) {
+        const auto result = map(mapped_switch, values, selectors);
         return result[std::int64_t{1}].as<TS<i64>>();
     };
 
     const auto actual = testing::test_graph(
-        tested, std::array{0, 0, 0, 0}, std::array<std::int64_t, 4>{1, 1, 1, 1},
-        std::array{true, true, false, true});
+        tested, {{{1, 0}}, {{1, 0}}, {{1, literal::REMOVE}}, {{1, 0}}},
+        {{{1, 1}}, {{1, 1}}, {{1, literal::REMOVE}}, {{1, 1}}});
 
     CHECK(actual.equals<bg::i64>({11, 12, std::nullopt, 11}));
 }
@@ -610,16 +570,14 @@ TEST_CASE("an unmatched switch key inside a map fails the outer graph",
           "[feature:switch][feature:map][feature:nested-graph][feature:operator]"
           "[feature:lifecycle][shape:doubly-nested][series:value][series:tsd]"
           "[definition:function]") {
-    const auto tested = [](wp<TS<i64>> trigger, wp<TS<std::int64_t>> selector,
-                           wp<TS<bool>> present) {
-        const auto result = map(mapped_switch, optional_mapped_values(trigger, present),
-                                optional_mapped_selectors(selector, present));
+    const auto tested = [](wp<TSD<std::int64_t, TS<i64>>> values,
+                           wp<TSD<std::int64_t, TS<std::int64_t>>> selectors) {
+        const auto result = map(mapped_switch, values, selectors);
         return result[std::int64_t{1}].as<TS<i64>>();
     };
 
     CHECK_THROWS_WITH(
-        (void)testing::test_graph(tested, std::array{0},
-                                  std::array<std::int64_t, 1>{9}, std::array{true}),
+        (void)testing::test_graph(tested, {{{1, 0}}}, {{{1, 9}}}),
         "switch_ key does not match a case and no DEFAULT case is defined");
 }
 
@@ -629,11 +587,10 @@ TEST_CASE("timed scheduling propagates through a switch inside a map",
           "[series:value][series:tsd][definition:function]") {
     DelayedCase::evaluation_count = 0;
 
-    run_graph([] {
-        const auto selector = operators::const_(std::int64_t{1})
-                                  .as<TS<std::int64_t, TimeSeriesGuarantee::const_>>();
-        (void)map(delayed_mapped_switch, selectors_at_key_one(selector));
+    const auto tested = graph("name"_n = "timed_map_switch", [](wp<TSD<std::int64_t, TS<std::int64_t>>> selectors) {
+        (void)map(delayed_mapped_switch, selectors);
     });
+    (void)testing::test_graph(tested, {{{1, 1}}});
 
     CHECK(DelayedCase::evaluation_count == 1);
 }

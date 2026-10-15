@@ -98,7 +98,7 @@ TEST_CASE("map generic graph functions preserve optional reference arguments",
 
     const auto actual = testing::test_graph(
         tested, {{{1, 2}}, {{1, 5}}, {{1, 9}}},
-        testing::input<TS<i64>>({1, literal::SKIP, 3}));
+        {1, literal::SKIP, 3});
 
     CHECK(actual.equals<bg::i64>({3, 6, 10}));
 }
@@ -221,7 +221,7 @@ TEST_CASE("map retains a named reference collection as a variadic graph argument
         return result[std::int64_t{1}].as<TS<i64>>();
     };
 
-    const auto actual = testing::test_graph(tested, {{{1, 2}}, {{1, 5}}}, std::array{10, 20}, std::array{true, true});
+    const auto actual = testing::test_graph(tested, {{{1, 2}}, {{1, 5}}}, {10, 20}, {true, true});
 
     CHECK(actual.equals<bg::i64>({2, 5}));
 }
@@ -297,7 +297,7 @@ TEST_CASE("map runs a source graph for keys selected by a TSS",
             .as<REF<TS<std::int64_t, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::ordinary>>();
     };
 
-    const auto actual = testing::test_graph(tested, {{{7}}, {literal::REMOVED(7)}, {{7}}});
+    const auto actual = testing::test_graph(tested, {{7}, {literal::REMOVED(7)}, {7}});
 
     CHECK(actual.equals<std::int64_t>({7, std::nullopt, 7}));
 }
@@ -310,7 +310,7 @@ TEST_CASE("map infers a leading key for a source graph function",
             .as<REF<TS<std::int64_t, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::ordinary>>();
     };
 
-    const auto actual = testing::test_graph(tested, {{{3}}, {literal::REMOVED(3)}, {{3}}});
+    const auto actual = testing::test_graph(tested, {{3}, {literal::REMOVED(3)}, {3}});
 
     CHECK(actual.equals<std::int64_t>({3, std::nullopt, 3}));
 }
@@ -326,7 +326,7 @@ TEST_CASE("a map key schedules its consumer when a branch starts",
         return map([&](auto key) { return copy_key(key); }, keys)[std::int64_t{5}].as<TS<std::int64_t>>();
     };
 
-    const auto actual = testing::test_graph(tested, {{{5}}, {literal::REMOVED(5)}, {{5}}});
+    const auto actual = testing::test_graph(tested, {{5}, {literal::REMOVED(5)}, {5}});
 
     CHECK(actual.equals<std::int64_t>({5, std::nullopt, 5}));
 }
@@ -422,13 +422,16 @@ TEST_CASE("map passes direct and reference TSD inputs through to every mapped gr
             const auto reference = reference_factors[std::int64_t{9}].as<TS<i64>>();
             return add_values(add_values(value, direct), reference);
         });
-    const auto make_factors = graph("name"_n = "make_factors", [](wp<TSD<std::int64_t, TS<i64>>> factors) {
-        return factors;
+    const auto factors = node([](In<TS<i64>> factor, Out<TSD<std::int64_t, TS<i64>>> output) {
+        output[9].set(*factor);
+    });
+    const auto make_factors = graph("name"_n = "make_factors", [&](wp<TS<i64>> factor) {
+        return factors(factor);
     });
     const auto tested = [&](wp<TSD<std::int64_t, TS<i64>>> values,
                             wp<TSD<std::int64_t, TS<i64>>> direct_factors,
-                            wp<TSD<std::int64_t, TS<i64>>> reference_factors, wp<TS<bool>> run) {
-        const auto reference = nested(make_factors, run, reference_factors);
+                            wp<TS<i64>> reference_factor, wp<TS<bool>> run) {
+        const auto reference = nested(make_factors, run, reference_factor);
         const auto result = map(add_factor, values, pass_through(direct_factors),
                                 pass_through(reference));
         return result[std::int64_t{1}].as<TS<i64>>();
@@ -436,8 +439,8 @@ TEST_CASE("map passes direct and reference TSD inputs through to every mapped gr
 
     const auto actual = testing::test_graph(tested, {{{1, 2}}, {{1, 3}}, {{1, 4}}},
                                             {{{9, 10}}, {{9, 20}}, {{9, 30}}},
-                                            {{{9, 100}}, {{9, 200}}, {{9, 300}}},
-                                            std::array{true, true, true});
+                                            {100, 200, 300},
+                                            {true, true, true});
 
     CHECK(actual.equals<bg::i64>({112, 223, 334}));
 }
@@ -539,16 +542,16 @@ TEST_CASE("map reads a TSD through a nested graph reference",
           "[shape:doubly-nested][binding:reference-to-reference]") {
     const auto build_values = graph(
         "name"_n = "build_values",
-        [](wp<TSD<std::int64_t, TS<i64>>> values) { return values; });
-    const auto tested = [&](wp<TSD<std::int64_t, TS<i64>>> values, wp<TS<bool>> run) {
-        const auto nested_values = nested(build_values, run, values);
+        [](wp<TS<i64>> value) { return values_at_key_one(value); });
+    const auto tested = [&](wp<TS<i64>> value, wp<TS<bool>> run) {
+        const auto nested_values = nested(build_values, run, value);
         const auto result = map(
             [](auto item) { return increment(item); }, nested_values);
         return result[std::int64_t{1}].as<TS<i64>>();
     };
 
     const auto actual = testing::test_graph(
-        tested, {{{1, 2}}, {{1, 5}}}, std::array{true, true});
+        tested, {2, 5}, {true, true});
 
     CHECK(actual.equals<bg::i64>({3, 6}));
 }
@@ -556,19 +559,25 @@ TEST_CASE("map reads a TSD through a nested graph reference",
 TEST_CASE("map reads a TSS through a nested graph reference",
           "[feature:map][feature:nested-graph][feature:operator][series:tss][series:reference]"
           "[shape:doubly-nested][binding:reference-to-value][guarantee:const]") {
-    const auto build_keys = graph(
-        "name"_n = "build_keys",
-        [](wp<TSS<std::int64_t>> keys) { return keys; });
-    const auto tested = [&](wp<TSS<std::int64_t>> source_keys, wp<TS<bool>> run) {
-        const auto keys = nested(build_keys, run, source_keys);
+    const auto keys = node([](In<TS<bool>> condition, Out<TSS<std::int64_t>> output) {
+        if (*condition) {
+            output.insert(1);
+        } else {
+            output.erase(1);
+        }
+    });
+    const auto build_keys = graph("name"_n = "build_keys", [&](wp<TS<bool>> present) {
+        return keys(present);
+    });
+    const auto tested = [&](wp<TS<bool>> present, wp<TS<bool>> run) {
+        const auto nested_keys = nested(build_keys, run, present);
         const auto result = map(
-            [](auto key) { return key; }, keys, "__key_arg__"_n = 0);
+            [](auto key) { return key; }, nested_keys, "__key_arg__"_n = 0);
         return result[std::int64_t{1}]
             .as<REF<TS<std::int64_t, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::ordinary>>();
     };
 
-    const auto actual = testing::test_graph(
-        tested, {{{1}}, {literal::REMOVED(1)}, {{1}}}, std::array{true, true, true});
+    const auto actual = testing::test_graph(tested, {true, false, true}, {true, true, true});
 
     CHECK(actual.equals<std::int64_t>({1, std::nullopt, 1}));
 }
@@ -576,20 +585,25 @@ TEST_CASE("map reads a TSS through a nested graph reference",
 TEST_CASE("map reads values using a nested TSS reference as its key set",
           "[feature:map][feature:nested-graph][feature:reference][series:tss][series:tsd]"
           "[shape:doubly-nested][binding:reference-to-reference]") {
-    const auto build_keys = graph("name"_n = "build_generic_keys", [](wp<TSS<std::int64_t>> keys) {
-        return keys;
+    const auto keys = node([](In<TS<bool>> condition, Out<TSS<std::int64_t>> output) {
+        if (*condition) {
+            output.insert(1);
+        } else {
+            output.erase(1);
+        }
     });
-    const auto tested = [&](wp<TSD<std::int64_t, TS<i64>>> values, wp<TSS<std::int64_t>> source_keys,
-                            wp<TS<bool>> run) {
-        const auto reference_keys = nested(build_keys, run, source_keys);
+    const auto build_keys = graph("name"_n = "build_generic_keys", [&](wp<TS<bool>> present) {
+        return keys(present);
+    });
+    const auto tested = [&](wp<TSD<std::int64_t, TS<i64>>> values, wp<TS<bool>> present, wp<TS<bool>> run) {
+        const auto reference_keys = nested(build_keys, run, present);
         const auto result = map([](auto, auto item) { return item; }, values, reference_keys,
                                 "__key_arg__"_n = 0, "__key_set_arg__"_n = 1);
         return result[std::int64_t{1}].as<TS<i64>>();
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 10}}, {{1, 20}}, {{1, 30}}},
-                                            {{{1}}, {literal::REMOVED(1)}, {{1}}},
-                                            std::array{true, true, true});
+                                            {true, false, true}, {true, true, true});
 
     CHECK(actual.equals<bg::i64>({10, std::nullopt, 30}));
 }
