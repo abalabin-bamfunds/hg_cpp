@@ -26,6 +26,7 @@
 
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -940,6 +941,89 @@ TEST_CASE("provider scalar buffer actions can use different exact type registrat
     CHECK(output_storage.number == 17);
     CHECK(provider::scalar_tick_state.discards == 1);
     CHECK_FALSE(reader.has_next());
+}
+
+TEST_CASE("a provider scalar write handler uses a concurrent reservation context",
+          "[feature:scalar-storage][scalar:generic]") {
+    using Value = test_scalar_provider::value;
+    REQUIRE(provider::register_provider_scalar_buffer_handlers());
+    auto &dispatch = bg::ScalarDispatch<bg::ScalarBufferOperations>::instance();
+    const auto *semantic = dispatch.find_exact(bg::cpp_scalar_type<Value>());
+    const auto *runtime = dispatch.find_exact(bg::cpp_scalar_runtime_type<Value>());
+    REQUIRE(semantic != nullptr);
+    REQUIRE(runtime != nullptr);
+
+    provider::scalar_tick_state = {};
+    const auto buffer = bg::util::buffer::concurrent_chain(32, 4);
+    auto writer = bg::util::concurrent_buffer_writer{buffer};
+    auto memory = bg::allocator{};
+    const auto write = [&](int number) {
+        const auto source = test_scalar_provider::storage{number};
+        const auto value = bg::Scalar<Value>::from(source);
+        auto reservation = writer.reserve(sizeof(int));
+        auto context = bg::ScalarBufferWriteContext{reservation};
+        runtime->write(bg::Scalar<>::from(value), context, memory);
+        reservation.commit();
+    };
+    write(17);
+    write(29);
+
+    auto reader = bg::util::buffer_reader{buffer};
+    auto replay = reader.fork();
+    auto observed = 0;
+    const auto consume = [](void *context, bg::Scalar<> value) {
+        *static_cast<int *>(context) = bg::scalar_cast<Value>(value).value().get();
+    };
+    semantic->read(replay, {&observed, consume});
+    CHECK(observed == 17);
+
+    semantic->discard(reader);
+    semantic->discard(reader);
+    CHECK(provider::scalar_tick_state.writes == 2);
+    CHECK(provider::scalar_tick_state.discards == 2);
+    CHECK(reader.readable().empty());
+}
+
+TEST_CASE("a reserved scalar context aligns typed fields and retains owned values",
+          "[feature:scalar-storage][scalar:string][storage:variable]") {
+    struct alignas(std::max_align_t) aligned_value {
+        explicit aligned_value(int number) : number{number} {}
+        int number;
+    };
+
+    constexpr auto text = std::string_view{"an owned scalar payload that requires allocated storage"};
+    auto resource = provider::allocation_counter{};
+    auto memory = bg::allocator{resource};
+    const auto buffer = bg::util::buffer::concurrent_chain(256, 32);
+    auto writer = bg::util::concurrent_buffer_writer{buffer};
+    auto reservation = writer.reserve(128);
+    const auto marker = std::byte{'x'};
+
+    {
+        const auto source = bg::ScalarValue<bg::string>{text, memory};
+        auto context = bg::ScalarBufferWriteContext{reservation};
+        context.write_bytes(std::span{&marker, std::size_t{1}});
+        context.emplace<aligned_value>(42);
+        context.write(bg::ScalarValue<>{source.view(), memory});
+        context.write_bytes(std::span{&marker, std::size_t{1}});
+        context.write(bg::ScalarValue<>{source.view(), memory});
+        reservation.commit();
+    }
+
+    CHECK(resource.allocations > resource.deallocations);
+    {
+        auto reader = bg::util::buffer_reader{buffer};
+        CHECK(reader.read_raw<std::byte>() == marker);
+        CHECK(reader.read<aligned_value>().number == 42);
+        {
+            auto replayed = reader.read<bg::ScalarValue<>>();
+            CHECK(bg::scalar_cast<bg::string>(replayed.view()).value() == text);
+        }
+        CHECK(reader.read_raw<std::byte>() == marker);
+        reader.skip<bg::ScalarValue<>>();
+        CHECK(resource.allocations == resource.deallocations);
+    }
+    CHECK(resource.allocations == resource.deallocations);
 }
 
 TEST_CASE("discarding a provider scalar tick uses its registered handlers",

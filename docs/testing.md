@@ -129,6 +129,8 @@ graph compilation or evaluation.
   and publication through time-series outputs
 - erased owning-copy runtime selection, typed selector priority, independent snapshot storage, destination
   size and alignment, and construction-failure cleanup
+- scalar buffer provider writes through reserved contexts, byte and typed field alignment, and owning value replay and
+  discard lifetime
 - time series validity, update time, mutation, and invalidation
 - global state ownership, replacement, lookup, and allocation
 

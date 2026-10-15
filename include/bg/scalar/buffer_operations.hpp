@@ -16,14 +16,26 @@ namespace bg {
 
 class ScalarBufferWriteContext {
   public:
+    // The context borrows its writer or reservation; the caller keeps it alive and commits a reservation.
     explicit ScalarBufferWriteContext(util::buffer_writer &writer) noexcept : writer_{&writer} {}
+    explicit ScalarBufferWriteContext(util::concurrent_buffer_reservation &reservation) noexcept
+        : reservation_{&reservation} {}
 
     ScalarBufferWriteContext(const ScalarBufferWriteContext &) = delete;
     ScalarBufferWriteContext &operator=(const ScalarBufferWriteContext &) = delete;
 
-    void write_bytes(std::span<const std::byte> bytes) { writer_->write_bytes(bytes); }
+    void write_bytes(std::span<const std::byte> bytes) {
+        if (reservation_ != nullptr) {
+            reservation_->write_bytes(bytes);
+            return;
+        }
+        writer_->write_bytes(bytes);
+    }
 
     template <typename T, typename... Args> T &emplace(Args &&...args) {
+        if (reservation_ != nullptr) {
+            return reservation_->emplace<T>(std::forward<Args>(args)...);
+        }
         return writer_->emplace<T>(std::forward<Args>(args)...);
     }
 
@@ -32,7 +44,8 @@ class ScalarBufferWriteContext {
     }
 
   private:
-    util::buffer_writer *writer_;
+    util::buffer_writer *writer_{};
+    util::concurrent_buffer_reservation *reservation_{};
 };
 
 namespace details {
