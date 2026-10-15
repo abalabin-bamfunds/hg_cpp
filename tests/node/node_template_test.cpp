@@ -524,9 +524,6 @@ TEST_CASE("collection inputs retain their resolved runtime layout", "[node_templ
 
 TEST_CASE("direct TSS inputs keep concrete and resolved key runtime types",
           "[node_template][time_series][feature:node-api]") {
-    const auto make_set = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<bg::TSS<bg::i64>> output) {
-        output.insert(*input);
-    });
     const auto read_concrete = bg::node([](bg::In<bg::TSS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
         output.set(input.item_at(0).value());
     });
@@ -544,13 +541,13 @@ TEST_CASE("direct TSS inputs keep concrete and resolved key runtime types",
         output.set(input.item_at(0).value());
     });
 
-    const auto concrete_graph = [&](bg::wp<bg::TS<bg::i64>> input) { return read_concrete(make_set(input)); };
-    const auto generic_graph = [&](bg::wp<bg::TS<bg::i64>> input) { return read_generic(make_set(input)); };
-    const auto guarantee_graph = [&](bg::wp<bg::TS<bg::i64>> input) { return read_guarantee(make_set(input)); };
+    const auto concrete_graph = [&](bg::wp<bg::TSS<bg::i64>> input) { return read_concrete(input); };
+    const auto generic_graph = [&](bg::wp<bg::TSS<bg::i64>> input) { return read_generic(input); };
+    const auto guarantee_graph = [&](bg::wp<bg::TSS<bg::i64>> input) { return read_guarantee(input); };
 
-    CHECK(bg::testing::test_graph(concrete_graph, std::array<bg::i64, 1>{42}).equals<bg::i64>({42}));
-    CHECK(bg::testing::test_graph(generic_graph, std::array<bg::i64, 1>{42}).equals<bg::i64>({42}));
-    CHECK(bg::testing::test_graph(guarantee_graph, std::array<bg::i64, 1>{42}).equals<bg::i64>({42}));
+    CHECK(bg::testing::test_graph(concrete_graph, {{42}}).equals<bg::i64>({42}));
+    CHECK(bg::testing::test_graph(generic_graph, {{42}}).equals<bg::i64>({42}));
+    CHECK(bg::testing::test_graph(guarantee_graph, {{42}}).equals<bg::i64>({42}));
 }
 
 TEST_CASE("native collection outputs bind directly only for concrete declarations",
