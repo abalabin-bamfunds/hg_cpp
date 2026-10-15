@@ -19,6 +19,9 @@ template <typename Leaf> class Literal {
 
     Literal() noexcept = default;
 
+    Literal(sequence_type elements) noexcept
+        : value_{std::in_place_index<1>, SequenceStorage{elements.data(), elements.size()}} {}
+
     Literal(std::initializer_list<Literal> elements) noexcept
         : value_{std::in_place_index<1>, SequenceStorage{elements.begin(), elements.size()}} {}
 

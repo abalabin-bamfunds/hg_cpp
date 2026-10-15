@@ -86,6 +86,7 @@ add_executable(
     utils/hash_set_test.cpp
     utils/index_test.cpp
     utils/linear_hash_table_test.cpp
+    utils/literal_test.cpp
     utils/occupancy_index_test.cpp
     utils/reflection_test.cpp
     utils/runtime_bunch_test.cpp
