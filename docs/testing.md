@@ -101,7 +101,7 @@ graph compilation or evaluation.
 - exact-type schema field offsets, const field references, shadowed fields, empty bases, multilevel inheritance,
   aligned and tail-padded layouts, concurrent first use, and construction without intermediate base moves
 - buffer allocation, contiguous chunks, chain rollover, concurrent reservations, ordered commit visibility,
-  ring-full rollover, and allocation-failure rollback
+  ring-full rollover, allocation-failure rollback, and reservation-scoped reads of completed prefixes for cleanup
 - constant-size scalar value handles
 - visitor dispatch for concrete and generic scalar and time series views, including base-interface fallback, no
   matching overload, external scalar and time series dispatch, runtime-type precedence, and recursion through collections

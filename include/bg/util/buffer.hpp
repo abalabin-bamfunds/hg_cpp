@@ -460,6 +460,10 @@ class concurrent_buffer_reservation {
         return emplace<std::remove_cvref_t<T>>(std::forward<T>(value));
     }
 
+    // Inspect completed writes before publication. The reader is valid only during the callback; keep this reservation
+    // and its writer alive and unchanged until it returns.
+    template <typename Callback> void read_written(Callback &&callback) const;
+
     void commit() {
         if (block_ == nullptr) {
             throw std::logic_error{"buffer reservation already committed"};
@@ -485,6 +489,7 @@ class concurrent_buffer_reservation {
     std::uint32_t cursor_{};
     std::uint32_t end_{};
     friend class concurrent_buffer_writer;
+    friend class buffer_reader;
 };
 
 class concurrent_buffer_writer {
@@ -563,6 +568,9 @@ class buffer_reader {
     buffer_reader &operator=(buffer_reader &&) = delete;
 
     buffer_reader fork() const {
+        if (mode_ == mode::reservation_write) {
+            throw std::logic_error{"cannot fork a reader over a reservation's unpublished writes"};
+        }
         if (mode_ == mode::pending_write) {
             throw std::logic_error{"cannot fork a reader over uncommitted buffer data"};
         }
@@ -578,6 +586,12 @@ class buffer_reader {
 
         while (block_) {
             auto *block = block_.pointer().base_block();
+            if (mode_ == mode::reservation_write) {
+                if (position_ < limit_) {
+                    return {block->at(position_), limit_ - position_};
+                }
+                return {};
+            }
             if (mode_ == mode::pending_write) {
                 const auto &writer = *writer_;
                 const auto *root = writer.block_.pointer().base_block();
@@ -621,6 +635,9 @@ class buffer_reader {
     }
 
     buffer current_buffer() {
+        if (mode_ == mode::reservation_write) {
+            throw std::logic_error{"cannot create a buffer handle over a reservation's unpublished writes"};
+        }
         const auto available = readable();
         if (available.empty()) {
             throw std::logic_error{"the reader has no committed bytes"};
@@ -629,7 +646,12 @@ class buffer_reader {
     }
 
     // The returned handle resumes a reader at this position; writers start at the block's write mark.
-    buffer current_block() { return buffer{block_.pointer(), position_, 0}; }
+    buffer current_block() {
+        if (mode_ == mode::reservation_write) {
+            throw std::logic_error{"cannot create a buffer handle over a reservation's unpublished writes"};
+        }
+        return buffer{block_.pointer(), position_, 0};
+    }
 
     void consume(std::size_t size) {
         while (size != 0) {
@@ -710,6 +732,11 @@ class buffer_reader {
         writer_ = &writer;
     }
 
+    explicit buffer_reader(const concurrent_buffer_reservation &reservation)
+        : block_{reservation.block_},
+          position_{reservation.block_->data_offset() + reservation.begin_},
+          limit_{reservation.block_->data_offset() + reservation.cursor_}, mode_{mode::reservation_write} {}
+
     template <typename T> T *value_at_cursor(std::size_t &end) {
         details::require_supported_alignment(alignof(T));
         const auto available = readable();
@@ -723,7 +750,7 @@ class buffer_reader {
         return std::launder(reinterpret_cast<T *>(block->at(begin)));
     }
 
-    enum class mode : std::uint8_t { contiguous, chain, pending_write };
+    enum class mode : std::uint8_t { contiguous, chain, pending_write, reservation_write };
 
     details::block_reference block_;
     std::size_t position_{};
@@ -734,6 +761,7 @@ class buffer_reader {
     mode mode_{mode::contiguous};
 
     friend class buffer_writer;
+    friend class concurrent_buffer_reservation;
 };
 
 static_assert(sizeof(buffer_reader) ==
@@ -751,6 +779,14 @@ template <typename Cleanup> void buffer_writer::rollback(Cleanup &&cleanup) {
         throw;
     }
     rollback();
+}
+
+template <typename Callback> void concurrent_buffer_reservation::read_written(Callback &&callback) const {
+    if (block_ == nullptr) {
+        throw std::logic_error{"buffer reservation is no longer active"};
+    }
+    auto reader = buffer_reader{*this};
+    std::invoke(std::forward<Callback>(callback), reader);
 }
 
 using concurrent_buffer_reader = buffer_reader;

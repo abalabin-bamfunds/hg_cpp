@@ -866,6 +866,120 @@ TEST_CASE("reader spans contain payload bytes only", "[coverage-exempt]") {
     CHECK(std::memcmp(bytes.data(), "abcde", 5) == 0);
 }
 
+TEST_CASE("a concurrent reservation reads its completed prefix for cleanup", "[coverage-exempt]") {
+    struct owned_value {
+        owned_value(std::unique_ptr<int> value, int &destructions)
+            : value{std::move(value)}, destructions{&destructions} {}
+        ~owned_value() { ++*destructions; }
+
+        std::unique_ptr<int> value;
+        int *destructions;
+    };
+    struct throwing_value {
+        throwing_value() { throw std::runtime_error{"construction failed"}; }
+    };
+
+    auto data = bg::util::buffer::concurrent_chain(64, 4);
+    bg::util::concurrent_buffer_writer writer{data};
+    auto reservation = writer.reserve(64);
+    auto destructions = 0;
+    reservation.emplace<owned_value>(std::make_unique<int>(42), destructions);
+    CHECK_THROWS_AS(reservation.emplace<throwing_value>(), std::runtime_error);
+
+    reservation.read_written([&](bg::util::buffer_reader &reader) {
+        CHECK_THROWS_AS(reader.fork(), std::logic_error);
+        CHECK_THROWS_AS(reader.current_buffer(), std::logic_error);
+        CHECK_THROWS_AS(reader.current_block(), std::logic_error);
+        reader.skip<owned_value>();
+        CHECK(reader.readable().empty());
+    });
+
+    CHECK(destructions == 1);
+    reservation.commit();
+}
+
+TEST_CASE("a reservation reader excludes its tail and neighboring writes", "[coverage-exempt]") {
+    auto data = bg::util::buffer::concurrent_chain(32, 4);
+    bg::util::concurrent_buffer_writer first_writer{data};
+    bg::util::concurrent_buffer_writer second_writer{data};
+    auto first = first_writer.reserve(8);
+    auto second = second_writer.reserve(8);
+    constexpr auto first_prefix = std::string_view{"abc"};
+    constexpr auto second_prefix = std::string_view{"XYZ"};
+    first.write_bytes(std::as_bytes(std::span{first_prefix.data(), first_prefix.size()}));
+    second.write_bytes(std::as_bytes(std::span{second_prefix.data(), second_prefix.size()}));
+    second.commit();
+
+    bg::util::concurrent_buffer_reader reader{data};
+    CHECK(reader.readable().empty());
+    first.read_written([&](bg::util::buffer_reader &written) {
+        auto bytes = written.readable();
+        REQUIRE(bytes.size() == first_prefix.size());
+        CHECK(std::memcmp(bytes.data(), first_prefix.data(), bytes.size()) == 0);
+        written.consume(bytes.size());
+        CHECK(written.readable().empty());
+    });
+    CHECK(reader.readable().empty());
+
+    constexpr auto first_tail = std::string_view{"defgh"};
+    first.write_bytes(std::as_bytes(std::span{first_tail.data(), first_tail.size()}));
+    first.commit();
+
+    std::array<char, 3> actual_first{};
+    reader.read_bytes(std::as_writable_bytes(std::span{actual_first}));
+    CHECK(std::string_view{actual_first.data(), actual_first.size()} == first_prefix);
+    reader.consume(5);
+    std::array<char, 3> actual_second{};
+    reader.read_bytes(std::as_writable_bytes(std::span{actual_second}));
+    CHECK(std::string_view{actual_second.data(), actual_second.size()} == second_prefix);
+}
+
+TEST_CASE("a reservation reader aligns typed values from the absolute block position", "[coverage-exempt]") {
+    struct alignas(std::max_align_t) aligned_value {
+        explicit aligned_value(int value) : value{value} {}
+        int value;
+    };
+
+    auto data = bg::util::buffer::concurrent_chain(128, 4);
+    bg::util::concurrent_buffer_writer writer{data};
+    auto prefix = writer.reserve(1);
+    const auto prefix_byte = std::array{std::byte{0x7f}};
+    prefix.write_bytes(prefix_byte);
+    prefix.commit();
+
+    auto reservation = writer.reserve(64);
+    reservation.emplace<aligned_value>(73);
+    reservation.read_written([](bg::util::buffer_reader &reader) {
+        CHECK(reader.read<aligned_value>().value == 73);
+        CHECK(reader.readable().empty());
+    });
+    reservation.commit();
+}
+
+TEST_CASE("empty and failed reservation reads leave reservations available", "[coverage-exempt]") {
+    auto data = bg::util::buffer::concurrent_chain(32, 4);
+    bg::util::concurrent_buffer_writer writer{data};
+    auto empty = writer.reserve(8);
+    empty.read_written([](bg::util::buffer_reader &reader) { CHECK(reader.readable().empty()); });
+    empty.commit();
+
+    auto failed = writer.reserve(8);
+    const auto first = std::array{std::byte{0x11}};
+    failed.write_bytes(first);
+    CHECK_THROWS_AS(
+        failed.read_written([](bg::util::buffer_reader &reader) { static_cast<void>(reader.read<std::uint64_t>()); }),
+        std::out_of_range);
+    const auto rest = std::array<std::byte, 7>{};
+    failed.write_bytes(rest);
+    failed.commit();
+    CHECK_THROWS_AS(failed.read_written([](bg::util::buffer_reader &) {}), std::logic_error);
+
+    auto moved_from = writer.reserve(8);
+    auto active = std::move(moved_from);
+    CHECK_THROWS_AS(moved_from.read_written([](bg::util::buffer_reader &) {}), std::logic_error);
+    active.commit();
+}
+
 TEST_CASE("a concurrent chain preserves committed bytes across rollover contention", "[coverage-exempt]") {
     constexpr auto thread_count = 8;
     constexpr auto writes_per_thread = 500;
