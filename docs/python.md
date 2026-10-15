@@ -70,6 +70,9 @@ def forward(value: SERIES) -> SERIES:
     return value
 ```
 
+A whole-time-series TypeVar captures the complete resolved type, including its
+root guarantee, so repeated occurrences require that same type.
+
 TypeVar identity determines which occurrences share a type mapping. Names are
 descriptive only, so separate TypeVar objects with the same name remain
 independent. `bg.TimeSeries` is a typing marker for the TypeVar bound; it is not
