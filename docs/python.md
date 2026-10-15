@@ -146,14 +146,35 @@ when the graph needs update sequences or its output values. Pass an optional
 recorder created by `EvaluationProfiler.recorder()` through the `recorder`
 keyword.
 
+```python
+profiler = bg.EvaluationProfiler()
+bg.run_graph(example, recorder=profiler.recorder())
+print(profiler.report())
+```
+
+An `EvaluationProfiler` recorder records one graph run. Its `report()` formats
+outer graph timing with UTC period labels. `outer_totals()` and `outer_periods()`
+return outer-cycle timing. `root_graph_id()`, `graph_ids()`, and `graph(id)`
+provide stable graph metadata and cumulative graph evaluation totals after the
+run. `node_period_starts()` and `node_periods(graph_id, start)` query retained
+node evaluation counts and checkpoint ticks. `graph_period(...)` and
+`node_period(...)` query closed periods. Period lengths and retention counts
+are configurable with `node_period`, `retained_node_periods`, `outer_period`,
+and `retained_outer_periods`; period values are `datetime.timedelta` objects.
+
+Wiring failures preserve an underlying Python exception's identity, type, and
+traceback. Exception notes include the context described by
+[wiring errors](graph-wiring.md#wiring-errors).
+
 ## Services
 
-`@reference_service` declares a source-like service. `@service` declares a
-request/reply service. Service inputs require annotations; scalar inputs use
-their scalar annotation and time-series inputs use `TS[...]`. Service outputs
-must use an explicit `TS[...]` annotation. An outputless `@service` declaration
-is a sink. A reference service requires an output. Calling a declaration wires
-a service request and returns its output wiring point, or `None` for a sink.
+`@reference_service` declares a source-like service, `@subscription_service`
+declares a keyed subscription, and `@service` declares a request/reply service.
+Service inputs require annotations; scalar inputs use their scalar annotation
+and time-series inputs use `TS[...]`. Service outputs must use an explicit
+`TS[...]` annotation. An outputless `@service` declaration is a sink. Reference
+and subscription services require an output. Calling a declaration wires a
+service request and returns its output wiring point, or `None` for a sink.
 
 Register graph implementations with `ServiceCatalogue.register_impl`, then
 pass the catalogue to `run_graph` or `test_graph`:
@@ -186,38 +207,12 @@ time series as a `TSD` keyed by client id. When the service has an output, the
 implementation returns a `TSD` delta with the same keys. A named registration
 argument matching a scalar service parameter filters the implementation by
 that parameter's value. Other registration arguments are passed to the
-implementation graph as installation arguments.
-The catalogue retains the Python service and graph wrappers while its native
-registrations are in use.
+implementation graph as installation arguments. The catalogue retains the
+Python service and graph wrappers while its native registrations are in use.
 
-```python
-profiler = bg.EvaluationProfiler()
-bg.run_graph(example, recorder=profiler.recorder())
-print(profiler.report())
-```
-
-An `EvaluationProfiler` recorder records one graph run. Its `report()` formats
-outer graph timing with UTC period labels. `outer_totals()` and `outer_periods()`
-return outer-cycle timing. `root_graph_id()`, `graph_ids()`, and `graph(id)`
-provide stable graph metadata and cumulative graph evaluation totals after the
-run. `node_period_starts()` and `node_periods(graph_id, start)` query retained
-node evaluation counts and checkpoint ticks. `graph_period(...)` and
-`node_period(...)` query closed periods. Period lengths and retention counts
-are configurable with `node_period`, `retained_node_periods`, `outer_period`,
-and `retained_outer_periods`; period values are `datetime.timedelta` objects.
-
-Wiring failures preserve an underlying Python exception's identity, type, and
-traceback. Exception notes include the context described by
-[wiring errors](graph-wiring.md#wiring-errors).
-
-## Graph services
-
-`@reference_service`, `@subscription_service`, and `@service` declare graph
-services. Register a decorated `@graph` implementation with
-`ServiceCatalogue.register_impl`, then pass the catalogue to `run_graph` or
-`test_graph`. A subscription key uses a final-or-stronger time series, for
-example `bg.TS[int, bg.final]`; its implementation receives `bg.TSS[int]` and
-returns `bg.TSD[int, R]` for the declared result type `R`. See
+A subscription key uses a final-or-stronger time series, for example
+`bg.TS[int, bg.final]`. Its implementation receives `bg.TSS[int]` and returns
+`bg.TSD[int, R]` for the declared result type `R`. See
 [graph services](services.md) for the signatures and request behavior.
 
 ## Time-series types
