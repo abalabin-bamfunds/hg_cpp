@@ -41,6 +41,8 @@ using bg::Out;
 using bg::TS;
 using bg::TSL;
 using bg::i64;
+using MYKEYVAR = bg::ScalarVariable<"MYKEYVAR", bg::Hashable>;
+using MYTSVAR = bg::TimeSeriesVariable<"MYTSVAR">;
 
 template <template <typename, auto...> typename Field> struct ProbeBundle {
     Field<TS<i64>> item;
@@ -818,6 +820,27 @@ void verify_native_and_composed_dictionary_outputs() {
     verify_nested_runtime(composed_nested, {{1, {1, 2}}, {3, {4}}}, {{7, {8, "bad"}}});
 }
 
+void verify_named_variable_dictionary_and_set_apply() {
+    const auto update_dictionary = bg::node([](In<TS<MYKEYVAR>>, In<MYTSVAR>,
+                                               Out<bg::TSD<MYKEYVAR, MYTSVAR>> output) {
+        output.apply({{"key", 42}});
+    });
+    const auto update_set = bg::node([](In<TS<MYKEYVAR>>, Out<bg::TSS<MYKEYVAR>> output) {
+        output.apply({"key"});
+    });
+    const auto observe = bg::node([](In<bg::TSD<bg::string, TS<i64>>> dictionary,
+                                     In<bg::TSS<bg::string>> set, Out<TS<i64>> output) {
+        output.set(*dictionary["key"] + (set.contains("key") ? 100 : 0));
+    });
+    const auto graph = [&](bg::wp<TS<bg::string>> key, bg::wp<TS<i64>> value) {
+        return observe(update_dictionary(key, value), update_set(key));
+    };
+    const auto actual = bg::testing::test_graph(graph, std::array<std::string_view, 2>{"first", "second"},
+                                                std::array<i64, 2>{1, 2});
+
+    require(actual.equals<i64>({142, 142}));
+}
+
 void verify_native_compound_and_bundle_outputs() {
     const auto &compound_runtime = bg::cpp_scalar_runtime_type<LiteralCompound>();
     const auto verify_compound = [](const bg::ScalarRuntimeType &, const void *storage, std::size_t version, bool) {
@@ -1359,6 +1382,7 @@ int main() {
     verify_composed_and_nested_list_outputs();
     verify_native_and_composed_set_outputs();
     verify_native_and_composed_dictionary_outputs();
+    verify_named_variable_dictionary_and_set_apply();
     verify_native_compound_and_bundle_outputs();
     verify_bundle_base_assignment_fallback();
     verify_provider_list_output();

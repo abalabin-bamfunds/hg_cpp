@@ -43,24 +43,17 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
     void invalidate() const { state_->invalidate(); }
 
     void apply(const literal::ScalarLiteral &literal) const {
-        if constexpr (std::same_as<K, SCALAR>) {
-            const auto values = details::scalar_literal::sequence(literal);
-            if (values.empty()) {
-                if (!valid()) {
-                    clear();
-                }
-                return;
+        const auto values = details::scalar_literal::sequence(literal);
+        if (values.empty()) {
+            if (!valid()) {
+                clear();
             }
+            return;
+        }
 
-            const auto &runtime = static_cast<const details::TimeSeriesSetRuntimeType &>(state_->runtime_type());
-            for (const auto &value : values) {
-                details::scalar_literal::with_scalar_data(runtime.key_runtime_type(), value,
-                                                          [&](const details::ScalarData &item) {
-                    insert(Scalar<>::from(item));
-                });
-            }
-        } else {
-            details::apply_scalar_literal(details::output_factory::make<Out<TS_T>>(state_.get()), literal);
+        for (const auto &value : values) {
+            details::scalar_literal::with_scalar_data(key_runtime_type(), value,
+                                                      [&](const details::ScalarData &item) { insert(item); });
         }
     }
 

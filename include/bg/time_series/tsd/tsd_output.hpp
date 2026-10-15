@@ -45,30 +45,24 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
     void invalidate() const { state_->invalidate(); }
 
     void apply(const literal::ScalarLiteral &literal) const {
-        if constexpr (std::same_as<K, SCALAR> && std::same_as<Item, TS_T>) {
-            const auto values = details::scalar_literal::sequence(literal);
-            for (const auto &value : values) {
-                (void)details::scalar_literal::pair(value, "a TSD update entry requires a key and a value");
-            }
+        const auto values = details::scalar_literal::sequence(literal);
+        for (const auto &value : values) {
+            (void)details::scalar_literal::pair(value, "a TSD update entry requires a key and a value");
+        }
 
-            if (values.empty()) {
-                if (!valid()) {
-                    clear();
-                }
-                return;
+        if (values.empty()) {
+            if (!valid()) {
+                clear();
             }
+            return;
+        }
 
-            const auto &runtime = static_cast<const details::TimeSeriesDictionaryRuntimeType &>(state_->runtime_type());
-            for (const auto &value : values) {
-                const auto current =
-                    details::scalar_literal::pair(value, "a TSD update entry requires a key and a value");
-                details::scalar_literal::with_scalar_data(runtime.key_runtime_type(), *current.first,
-                                                          [&](const details::ScalarData &key) {
-                    details::apply_scalar_literal((*this)[Scalar<>::from(key)], *current.second);
-                });
-            }
-        } else {
-            details::apply_scalar_literal(details::output_factory::make<Out<TS_T>>(state_.get()), literal);
+        for (const auto &value : values) {
+            const auto current = details::scalar_literal::pair(value, "a TSD update entry requires a key and a value");
+            details::scalar_literal::with_scalar_data(key_runtime_type(), *current.first,
+                                                      [&](const details::ScalarData &key) {
+                details::apply_scalar_literal(item(key), *current.second);
+            });
         }
     }
 
