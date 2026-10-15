@@ -83,6 +83,13 @@ its type, equality, and hashing operations when its scalar type supports them.
 `ScalarValue<T>::view()` returns a `Scalar<T>`. The returned view remains valid
 while the owner retains that value.
 
+Engine consumers use `std::move(value).move_to(runtime_type, destination)` to
+consume an owning value into initialized scalar storage. The destination runtime type selects
+storage transfer or compatible assignment. Transfer preserves owning copies of
+the previous value. The active scalar allocator must own the destination's
+dynamic storage.
+Successful assignment empties the owner. Assignment failure leaves the owner unchanged.
+
 `ScalarHash` and `ScalarEqual` provide transparent hashing and equality for
 containers that accept any combination of `Scalar` and `ScalarValue` handles.
 

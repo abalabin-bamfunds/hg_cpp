@@ -13,6 +13,7 @@
 #include <functional>
 #include <memory>
 #include <memory_resource>
+#include <optional>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -102,6 +103,22 @@ inline std::size_t allocation_alignment(const ScalarRuntimeType &runtime_type,
     const auto header_alignment =
         mode == ScalarDataMode::owned_explicit_allocator ? alignof(ScalarValueAllocator) : std::size_t{1};
     return std::max(header_alignment, runtime_type.alignment());
+}
+
+inline std::optional<allocator> scalar_value_allocator(const ScalarData &value) {
+    switch (value.mode()) {
+    case ScalarDataMode::owned_explicit_allocator: {
+        const auto offset = allocation_value_offset(value.runtime_type(), value.mode());
+        const auto *allocation = static_cast<const std::byte *>(value.data()) - offset;
+        return reinterpret_cast<const ScalarValueAllocator *>(allocation)->memory;
+    }
+    case ScalarDataMode::owned_context_allocator:
+        return current_scalar_allocator();
+    case ScalarDataMode::owned_default_allocator:
+        return allocator{};
+    default:
+        return std::nullopt;
+    }
 }
 
 template <typename Construct>

@@ -121,32 +121,18 @@ class ScalarLiteralConstructionContext {
             });
     }
 
-    bool assign_to(const bg::ScalarRuntimeType &runtime_type, void *destination, bool suppress_equal) {
-        auto assigned = false;
-        literal_->visit(
+    [[nodiscard]] OwnedScalarData make_value(const ScalarRuntimeType &runtime_type, allocator *memory) const {
+        return literal_->visit(
             [&](const ScalarLiteralItem &item) {
-                item.visit(
-                    [&](auto *source) {
-                        const auto &input = bg::details::scalar_data(*source);
-                        if (suppress_equal) {
-                            if (!runtime_type.accepts_input(input.runtime_type())) {
-                                throw std::invalid_argument{"incompatible scalar runtime representations"};
-                            }
-                            if (runtime_type.equals(destination, input)) {
-                                return;
-                            }
-                        }
-
-                        runtime_type.assign_from_input(destination, input);
-                        assigned = true;
-                    },
-                    ddv::noop);
+                return item.visit([&](auto *source) {
+                    return copy_scalar_value(scalar_data(*source), runtime_type, memory);
+                }).value();
             },
             [&](std::span<const ScalarLiteral>) {
-                assigned = runtime_type.assign_with(
-                    destination, {this, &ScalarLiteralConstructionContext::callback}, suppress_equal);
-            });
-        return assigned;
+                return allocate_scalar_value(runtime_type, memory, [&](void *destination, allocator &resource) {
+                    construct(runtime_type, destination, resource);
+                });
+            }).value();
     }
 
   private:
@@ -288,26 +274,26 @@ template <typename T>
 ScalarValue<T> ScalarValue<T>::from_literal(const literal::ScalarLiteral &literal)
     requires(!details::generic_scalar<T>) {
     auto context = details::ScalarLiteralConstructionContext{literal};
-    return from_construction({&context, &details::ScalarLiteralConstructionContext::callback});
+    return ScalarValue<T>{context.make_value(cpp_scalar_runtime_type<T>(), nullptr)};
 }
 
 template <typename T>
 ScalarValue<T> ScalarValue<T>::from_literal(const literal::ScalarLiteral &literal, allocator &memory)
     requires(!details::generic_scalar<T>) {
     auto context = details::ScalarLiteralConstructionContext{literal, true};
-    return from_construction({&context, &details::ScalarLiteralConstructionContext::callback}, memory);
+    return ScalarValue<T>{context.make_value(cpp_scalar_runtime_type<T>(), &memory)};
 }
 
 inline ScalarValue<> ScalarValue<>::from_literal(const ScalarRuntimeType &runtime_type,
                                                 const literal::ScalarLiteral &literal) {
     auto context = details::ScalarLiteralConstructionContext{literal};
-    return from_construction(runtime_type, {&context, &details::ScalarLiteralConstructionContext::callback});
+    return ScalarValue<>{context.make_value(runtime_type, nullptr)};
 }
 
 inline ScalarValue<> ScalarValue<>::from_literal(const ScalarRuntimeType &runtime_type,
                                                 const literal::ScalarLiteral &literal, allocator &memory) {
     auto context = details::ScalarLiteralConstructionContext{literal, true};
-    return from_construction(runtime_type, {&context, &details::ScalarLiteralConstructionContext::callback}, memory);
+    return ScalarValue<>{context.make_value(runtime_type, &memory)};
 }
 
 } // namespace bg

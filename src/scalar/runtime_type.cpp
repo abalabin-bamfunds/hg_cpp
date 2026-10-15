@@ -88,6 +88,26 @@ void ScalarRuntimeType::assign_from_input(void *destination, const details::Scal
     do_assign_from_input(destination, value);
 }
 
+void ScalarRuntimeType::assign_from_owned(void *destination, details::ScalarData &value,
+                                          std::optional<allocator> source_memory) const {
+    if (!accepts_input(value.runtime_type())) {
+        throw std::invalid_argument{"incompatible scalar runtime representations"};
+    }
+
+    const auto owns_storage = value.mode() == ScalarDataMode::owned_explicit_allocator ||
+                              value.mode() == ScalarDataMode::owned_context_allocator ||
+                              value.mode() == ScalarDataMode::owned_default_allocator;
+    if (this == &value.runtime_type() && owns_storage && source_memory) {
+        auto &destination_memory = details::current_scalar_allocator();
+        if (try_assign_from_owned(destination, const_cast<void *>(value.data()), *source_memory,
+                                  destination_memory)) {
+            return;
+        }
+    }
+
+    do_assign_from_input(destination, value);
+}
+
 details::ScalarData ScalarRuntimeType::borrow(const void *storage) const noexcept {
     if (has_runtime_type_flag(shared_handle_flag)) {
         return borrow_shared(storage);
@@ -173,6 +193,16 @@ class ComposedListRuntimeType final : public ScalarListRuntimeType {
         }
 
         storage(destination).swap(*replacement);
+        return true;
+    }
+
+    bool try_assign_from_owned(void *destination, void *source, allocator &source_memory,
+                               allocator &destination_memory) const noexcept override {
+        if (!source_memory.memory_resource().is_equal(destination_memory.memory_resource())) {
+            return false;
+        }
+
+        storage(destination).swap(*static_cast<RuntimeListStorage *>(source));
         return true;
     }
 
@@ -349,6 +379,16 @@ class ComposedSetRuntimeType final : public ScalarSetRuntimeType {
         }
 
         storage(destination).swap(*replacement);
+        return true;
+    }
+
+    bool try_assign_from_owned(void *destination, void *source, allocator &source_memory,
+                               allocator &destination_memory) const noexcept override {
+        if (!source_memory.memory_resource().is_equal(destination_memory.memory_resource())) {
+            return false;
+        }
+
+        storage(destination).swap(*static_cast<RuntimeSetStorage *>(source));
         return true;
     }
 
@@ -612,6 +652,16 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
         }
 
         storage(destination).swap(*replacement);
+        return true;
+    }
+
+    bool try_assign_from_owned(void *destination, void *source, allocator &source_memory,
+                               allocator &destination_memory) const noexcept override {
+        if (!source_memory.memory_resource().is_equal(destination_memory.memory_resource())) {
+            return false;
+        }
+
+        storage(destination).swap(*static_cast<RuntimeDictStorage *>(source));
         return true;
     }
 

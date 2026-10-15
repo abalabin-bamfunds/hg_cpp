@@ -1018,6 +1018,19 @@ void verify_literal_construction() {
         }
         require(shape_mismatch_threw, "a sequence accepted a scalar destination");
 
+        auto null_allocator = bg::allocator{*std::pmr::null_memory_resource()};
+        const auto inline_integer = bg::ScalarValue<bg::i64>::from_literal(ScalarLiteral(43), null_allocator);
+        require(inline_integer.view().value() == 43,
+                "a typed inline leaf could not be constructed without an explicit allocator");
+
+        auto typed_leaf_mismatch_threw = false;
+        try {
+            (void)bg::ScalarValue<bg::i64>::from_literal(ScalarLiteral(std::string{"not an integer"}));
+        } catch (const std::invalid_argument &) {
+            typed_leaf_mismatch_threw = true;
+        }
+        require(typed_leaf_mismatch_threw, "a typed scalar accepted an incompatible literal leaf");
+
         auto child_failure_threw = false;
         try {
             (void)bg::ScalarValue<bg::List<bg::i64>>::from_literal(

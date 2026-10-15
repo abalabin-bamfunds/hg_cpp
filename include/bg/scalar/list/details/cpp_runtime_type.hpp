@@ -99,6 +99,18 @@ class CppScalarRuntimeType<List<T>> final : public CppScalarRuntimeTypeBase<List
         return true;
     }
 
+    bool try_assign_from_owned(void *destination, void *source, allocator &source_memory,
+                               allocator &destination_memory) const noexcept override {
+        if (!source_memory.memory_resource().is_equal(destination_memory.memory_resource())) {
+            return false;
+        }
+
+        auto &target_items = static_cast<details::scalar_list_storage<T> *>(destination)->items;
+        auto &source_items = static_cast<details::scalar_list_storage<T> *>(source)->items;
+        target_items.swap(source_items);
+        return true;
+    }
+
     void append(void *storage, const details::ScalarData &value, allocator &memory) const override {
         auto &items = static_cast<details::scalar_list_storage<T> *>(storage)->items;
         items.emplace_back_with(

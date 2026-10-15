@@ -115,6 +115,8 @@ graph compilation or evaluation.
 - canonical scalar conversion
 - borrowed and owning scalar lifetime, including owning copies retained across
   successful and failed time series scalar replacement
+- consuming scalar transfer, compatible allocator resources, representation
+  conversion, and assignment failure cleanup
 - typed and erased scalar access, casts, equality, and hashing
 - fixed, variable, inline, and graph-accounted storage
 - construction, assignment, copy, and destruction

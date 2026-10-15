@@ -35,6 +35,7 @@ class ComposedHierarchicalScalarRuntimeType final : public HierarchicalScalarRun
     bool field_present(const details::ScalarData &value, std::size_t index) const override;
     bool accepts_input(const ScalarRuntimeType &source) const noexcept override;
     bool assign_with(void *destination, ScalarConstruction construction, bool suppress_equal) const override;
+    bool try_assign_from_owned(void *destination, void *source, allocator &, allocator &) const noexcept override;
     std::uintptr_t construct_shared(std::span<const details::ScalarData *const> fields,
                                     details::BundleAllocationOwner &owner) const;
 
@@ -345,6 +346,14 @@ bool ComposedHierarchicalScalarRuntimeType::assign_with(void *destination, Scala
     auto *previous = stored_handle(destination);
     store_handle(destination, stored_handle(replacement));
     store_handle(replacement, previous);
+    return true;
+}
+
+bool ComposedHierarchicalScalarRuntimeType::try_assign_from_owned(void *destination, void *source, allocator &,
+                                                                  allocator &) const noexcept {
+    auto *previous = stored_handle(destination);
+    store_handle(destination, stored_handle(source));
+    store_handle(source, previous);
     return true;
 }
 

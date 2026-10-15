@@ -1,7 +1,8 @@
 # Literal probes
 
-The literal carriers live in `include/bg/literal/`. Scalar construction and
-replacement live in `include/bg/scalar/literal.hpp`. See the
+The literal carriers live in `include/bg/literal/`. Scalar construction lives in
+`include/bg/scalar/literal.hpp`; owning value transfer lives in
+`include/bg/scalar/value.hpp`. See the
 [literal API](../../docs/scalar-api.md#literals) for source lifetimes and scalar
 construction, and the [node API](../../docs/node-api.md) for `Out::apply()`.
 
@@ -93,10 +94,11 @@ literal::apply(list_output, {{0, 10}, {2, 30}});
 literal::apply(nested_list_output, {{1, {{0, 10}}}});
 ```
 
-Scalar TS outputs delegate to `Out::apply()`, which uses the scalar construction
-consumer for replacement and publishes successful updates. Scalar leaves use
-runtime assignment without an owning intermediate; scalar sequences construct
-complete replacements through the actual destination runtime.
+Scalar TS outputs delegate to `Out::apply()`, which constructs an owning
+`ScalarValue` through `from_literal()` and passes it to the consuming
+`set_value()` overload. Scalar sequences construct complete replacements through
+the actual destination runtime. Compatible storage transfers without another
+collection element copy.
 TSL entries are `{index, child_delta}` pairs. Indices must be nonnegative
 integers other than Boolean values. At each list, the consumer validates entry
 shape, index range, and duplicate indices before applying that list's children.
@@ -116,7 +118,8 @@ unsupported output types. Scalar list checks cover native and composed runtimes,
 three nested list levels, empty replacements, deduplicated revalidation, provider
 items, and failed later-item construction preserving previous values and
 timestamps. Native and composed replacements each construct two supplied items
-with exactly two item copies and one collection allocation. The scalar storage
+with exactly two item copies, one collection allocation, and one temporary
+allocation for the owning value's storage block. The scalar storage
 regression checks the default provider assignment fallback and its cleanup.
 Retained owning copies of nested lists and shared strings preserve their values
 across replacement, failed construction, and destruction of the source output

@@ -442,13 +442,17 @@ the behavior defined by the [validity design](time-series-validity.md).
 `Out<TSS<T>>::clear()` and `Out<TSD<K, TS_T>>::clear()` remove all entries and
 produce a valid empty collection.
 
-`Out<TS<T>>::set_value()` accepts a compatible scalar view. It replaces the
-complete scalar value before it sets the last updated time. Owning scalar
-copies retained by downstream nodes preserve their previous values. Shared
+`Out<TS<T>>::set_value()` accepts a compatible scalar view or an owning
+`ScalarValue` rvalue. The rvalue overload transfers compatible storage and
+copies when the runtime representation or allocator requires conversion.
+It consumes the owner even when equality suppression skips publication.
+It replaces the complete scalar value before it sets the last updated time.
+Owning scalar copies retained by downstream nodes preserve their previous values. Shared
 immutable storage remains alive until its last owner releases it.
 
-`Out<TS<T>>::apply(const literal::ScalarLiteral&)` delegates replacement to the
-scalar consumer. A scalar leaf replaces the value. A brace sequence constructs
+`Out<TS<T>>::apply(const literal::ScalarLiteral&)` constructs a `ScalarValue`
+through `from_literal()` and passes it to the consuming `set_value()` overload.
+A scalar leaf replaces the value. A brace sequence constructs
 a complete replacement using the [scalar literal syntax](scalar-api.md#literals);
 nested values use the actual destination runtime types. An empty collection
 sequence publishes a valid empty collection. Equal replacements are suppressed

@@ -25,11 +25,13 @@
 
 #include <array>
 #include <cstdint>
+#include <new>
 #include <stdexcept>
 #include <source_location>
 #include <string>
 #include <memory_resource>
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -81,9 +83,13 @@ class AllocationCounter final : public std::pmr::memory_resource {
   public:
     std::size_t allocations() const noexcept { return allocations_; }
     std::size_t outstanding_allocations() const noexcept { return outstanding_allocations_; }
+    void fail_next_allocation() noexcept { fail_next_allocation_ = true; }
 
   private:
     void *do_allocate(std::size_t bytes, std::size_t alignment) override {
+        if (std::exchange(fail_next_allocation_, false)) {
+            throw std::bad_alloc{};
+        }
         auto *result = upstream_->allocate(bytes, alignment);
         ++allocations_;
         ++outstanding_allocations_;
@@ -100,6 +106,7 @@ class AllocationCounter final : public std::pmr::memory_resource {
     std::pmr::memory_resource *upstream_{std::pmr::new_delete_resource()};
     std::size_t allocations_{};
     std::size_t outstanding_allocations_{};
+    bool fail_next_allocation_{};
 };
 
 std::vector<ListObservation> list_observations;
@@ -274,12 +281,16 @@ void verify_equal_deduplicated_value_revalidates() {
 
 void verify_scalar_list_output() {
     const auto seed = bg::node([](In<TS<i64>> command, Out<TS<bg::List<i64>>> output) {
-        output.apply({0, 1});
+        auto value = bg::ScalarValue<bg::List<i64>>::from_literal({0, 1});
+        output.set_value(std::move(value));
         static_cast<void>(command);
     });
     const auto patch = bg::node([](In<bg::TS_T> source, In<TS<i64>> command, Out<bg::TS_T> output) {
         if (source.valid()) {
-            output.apply({*command, 2});
+            auto value = bg::ScalarValue<>::from_literal(bg::cpp_scalar_runtime_type<bg::List<i64>>(),
+                                                         literal::ScalarLiteral{*command, 2});
+            output.visit([&](Out<TS<bg::SCALAR>> *typed_output) { typed_output->set_value(std::move(value)); },
+                         ddv::noop);
         }
     });
     const auto read_runtime = bg::node([](In<TS<bg::List<i64>>> input, Out<TS<i64>> output) {
@@ -300,6 +311,105 @@ void verify_scalar_list_output() {
     const auto nested_graph = [&](bg::wp<TS<i64>> command) { return read_nested(nested_patch(command)); };
     const auto nested_actual = bg::testing::test_graph(nested_graph, std::array<i64, 2>{5, 6});
     require(nested_actual.equals<i64>({7, 8}));
+}
+
+void verify_deduplicated_consuming_setter() {
+    const auto update = bg::node([](In<TS<i64>> command,
+                                    Out<TS<i64, bg::TimeSeriesGuarantee::deduplicated>> output) {
+        auto value = bg::ScalarValue<i64>{5};
+        output.set_value(std::move(value));
+        require(bg::details::scalar_data(value).empty());
+        static_cast<void>(command);
+    });
+    const auto graph = [&](bg::wp<TS<i64>> command) { return update(command); };
+    const auto actual = bg::testing::test_graph(graph, std::array<i64, 2>{1, 2});
+
+    require(actual.equals<i64>({5, std::nullopt}));
+}
+
+void verify_owned_collection_assignment_fallback(const bg::ScalarListRuntimeType &target_runtime,
+                                                bool fail_before_retry) {
+    using Item = bg::Opaque<RuntimeListItem>;
+    using List = bg::List<Item>;
+
+    const auto &native_runtime = bg::cpp_scalar_runtime_type<List>();
+    const auto first = bg::ScalarValue<Item>{RuntimeListItem{11, 12}};
+    const auto second = bg::ScalarValue<Item>{RuntimeListItem{21, 22}};
+    auto source_resource = AllocationCounter{};
+    auto source_allocator = bg::allocator{source_resource};
+    auto destination_resource = AllocationCounter{};
+    auto destination_allocator = bg::allocator{destination_resource};
+    auto owner_resource = std::pmr::unsynchronized_pool_resource{};
+    auto owner_allocator = bg::allocator{owner_resource};
+    auto *allocation_owner = bg::details::BundleAllocationOwner::create(owner_allocator);
+    auto release_owner = bg::util::scope_exit{[&]() noexcept { allocation_owner->release(); }};
+    auto storage_allocator = bg::allocator{};
+    auto *storage = storage_allocator.allocate_bytes(target_runtime.size(), target_runtime.alignment());
+    target_runtime.construct_initial_value(storage);
+    auto release_storage = bg::util::scope_exit{[&]() noexcept {
+        target_runtime.destroy(storage, destination_allocator);
+        storage_allocator.deallocate_bytes(storage, target_runtime.size(), target_runtime.alignment());
+    }};
+
+    {
+        auto destination_context =
+            bg::details::ScalarAllocationContext{destination_allocator, *allocation_owner, nullptr, 0};
+        RuntimeListItem::copy_count = 0;
+        auto source = bg::ScalarValue<List>::from_literal({first, second}, source_allocator);
+        require(RuntimeListItem::copy_count == 2);
+        require(&source.runtime_type() == &native_runtime);
+
+        if (fail_before_retry) {
+            destination_resource.fail_next_allocation();
+            auto allocation_failed = false;
+            try {
+                std::move(source).move_to(target_runtime, storage);
+            } catch (const std::bad_alloc &) {
+                allocation_failed = true;
+            }
+
+            require(allocation_failed);
+            require(!bg::details::scalar_data(source).empty());
+            require(source.view().size() == 2 && source.view()[0].value().first == 11 &&
+                    source.view()[1].value().second == 22);
+            require(bg::Scalar<List>::from(target_runtime, storage).empty());
+            require(source_resource.outstanding_allocations() != 0);
+            require(destination_resource.outstanding_allocations() == 0);
+            require(RuntimeListItem::copy_count == 2);
+        }
+
+        std::move(source).move_to(target_runtime, storage);
+        require(bg::details::scalar_data(source).empty());
+        require(RuntimeListItem::copy_count == 4);
+        require(source_resource.outstanding_allocations() == 0);
+
+        const auto values = bg::Scalar<List>::from(target_runtime, storage);
+        require(values.size() == 2);
+        require(values[0].value().first == 11 && values[1].value().second == 22);
+        require(destination_resource.outstanding_allocations() != 0);
+    }
+
+    release_storage.release();
+    target_runtime.destroy(storage, destination_allocator);
+    storage_allocator.deallocate_bytes(storage, target_runtime.size(), target_runtime.alignment());
+    require(destination_resource.outstanding_allocations() == 0);
+    release_owner.release();
+    allocation_owner->release();
+}
+
+void verify_collection_transfer_paths() {
+    using Item = bg::Opaque<RuntimeListItem>;
+    using List = bg::List<Item>;
+
+    const auto &item_runtime = bg::cpp_scalar_runtime_type<Item>();
+    const auto &list_type = bg::list_scalar_type(item_runtime.type());
+    const auto available = std::array<const bg::ScalarRuntimeType *, 1>{&item_runtime};
+    const auto &composed_runtime = static_cast<const bg::ScalarListRuntimeType &>(
+        bg::resolve_scalar_runtime_type(list_type, available));
+
+    verify_owned_collection_assignment_fallback(
+        static_cast<const bg::ScalarListRuntimeType &>(bg::cpp_scalar_runtime_type<List>()), true);
+    verify_owned_collection_assignment_fallback(composed_runtime, false);
 }
 
 template <typename ScalarRuntime, typename Verify>
@@ -501,7 +611,7 @@ void verify_composed_and_nested_list_outputs() {
     const auto integer_available = std::array<const bg::ScalarRuntimeType *, 1>{&integer_runtime};
     const auto &composed_integers = static_cast<const bg::ScalarListRuntimeType &>(
         bg::resolve_scalar_runtime_type(integer_list_type, integer_available));
-    verify_direct_scalar_output(composed_integers, integer_list_type, {1, 2}, 1,
+    verify_direct_scalar_output(composed_integers, integer_list_type, {1, 2}, 2,
                               [](const auto &runtime, const void *storage) {
         require(runtime.item_count(storage) == 2);
         require(*static_cast<const i64 *>(runtime.item(storage, 0)) == 1);
@@ -517,7 +627,7 @@ void verify_composed_and_nested_list_outputs() {
     auto first = bg::ScalarValue<Item>{RuntimeListItem{11, 12}};
     auto second = bg::ScalarValue<Item>{RuntimeListItem{21, 22}};
     RuntimeListItem::copy_count = 0;
-    verify_direct_scalar_output(composed, list_type, {first, second}, 1, [](const auto &runtime, const void *storage) {
+    verify_direct_scalar_output(composed, list_type, {first, second}, 2, [](const auto &runtime, const void *storage) {
         require(runtime.item_count(storage) == 2);
         const auto *first_value = static_cast<const RuntimeListItem *>(runtime.item(storage, 0));
         const auto *second_value = static_cast<const RuntimeListItem *>(runtime.item(storage, 1));
@@ -529,7 +639,7 @@ void verify_composed_and_nested_list_outputs() {
     const auto &native = static_cast<const bg::ScalarListRuntimeType &>(
         bg::cpp_scalar_runtime_type<bg::List<Item>>());
     RuntimeListItem::copy_count = 0;
-    verify_direct_scalar_output(native, list_type, {first, second}, 1, [](const auto &runtime, const void *storage) {
+    verify_direct_scalar_output(native, list_type, {first, second}, 2, [](const auto &runtime, const void *storage) {
         require(runtime.item_count(storage) == 2);
         const auto *first_value = static_cast<const RuntimeListItem *>(runtime.item(storage, 0));
         const auto *second_value = static_cast<const RuntimeListItem *>(runtime.item(storage, 1));
@@ -540,7 +650,7 @@ void verify_composed_and_nested_list_outputs() {
 
     const auto &native_integers = static_cast<const bg::ScalarListRuntimeType &>(
         bg::cpp_scalar_runtime_type<bg::List<i64>>());
-    verify_direct_scalar_output(native_integers, native_integers.type(), {1, 2}, 1,
+    verify_direct_scalar_output(native_integers, native_integers.type(), {1, 2}, 2,
                               [](const auto &runtime, const void *storage) {
         require(runtime.item_count(storage) == 2);
         require(*static_cast<const i64 *>(runtime.item(storage, 0)) == 1);
@@ -553,7 +663,7 @@ void verify_composed_and_nested_list_outputs() {
     const auto nested_available = std::array<const bg::ScalarRuntimeType *, 1>{&integer_runtime};
     const auto &outer_runtime = static_cast<const bg::ScalarListRuntimeType &>(
         bg::resolve_scalar_runtime_type(outer_type, nested_available));
-    verify_direct_scalar_output(outer_runtime, outer_type, {{{1, 2}, {3}}, {{4}}}, 6,
+    verify_direct_scalar_output(outer_runtime, outer_type, {{{1, 2}, {3}}, {{4}}}, 7,
                               [](const auto &runtime, const void *storage) {
         require(runtime.item_count(storage) == 2);
         const auto &middle_runtime = static_cast<const bg::ScalarListRuntimeType &>(runtime.item_runtime_type());
@@ -685,7 +795,7 @@ void verify_native_compound_and_bundle_outputs() {
             require(value.first == 30 && value.second == 40);
         }
     };
-    verify_direct_scalar_output(compound_runtime, compound_runtime.type(), {{"first", 10}, {"second", 20}}, 0,
+    verify_direct_scalar_output(compound_runtime, compound_runtime.type(), {{"first", 10}, {"second", 20}}, 1,
                                 [&](const auto &runtime, const void *storage) {
                                     verify_compound(runtime, storage, 0, false);
                                 });
@@ -981,6 +1091,8 @@ int main() {
     verify_empty_root_and_nested_deltas();
     verify_equal_deduplicated_value_revalidates();
     verify_scalar_list_output();
+    verify_deduplicated_consuming_setter();
+    verify_collection_transfer_paths();
     verify_composed_and_nested_list_outputs();
     verify_native_and_composed_set_outputs();
     verify_native_and_composed_dictionary_outputs();

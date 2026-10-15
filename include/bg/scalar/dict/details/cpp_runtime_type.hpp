@@ -63,6 +63,18 @@ class CppScalarRuntimeType<Dict<K, V>> final : public CppScalarRuntimeTypeBase<D
         return true;
     }
 
+    bool try_assign_from_owned(void *destination, void *source, allocator &source_memory,
+                               allocator &destination_memory) const noexcept override {
+        if (!source_memory.memory_resource().is_equal(destination_memory.memory_resource())) {
+            return false;
+        }
+
+        auto &target_items = static_cast<details::scalar_dict_storage<K, V> *>(destination)->items;
+        auto &source_items = static_cast<details::scalar_dict_storage<K, V> *>(source)->items;
+        target_items.swap(source_items);
+        return true;
+    }
+
     bool equals_same_type(const void *storage, const details::ScalarData &other) const override {
         const auto &source_type = static_cast<const ScalarDictRuntimeType &>(other.runtime_type());
         if (item_count(storage) != source_type.item_count(other.data())) {

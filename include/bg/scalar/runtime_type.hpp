@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <optional>
 #include <span>
 
 namespace bg {
@@ -82,10 +83,14 @@ class ScalarRuntimeType : public RuntimeType {
     void assign_from_input(void *destination, const Value &value) const {
         assign_from_input(destination, details::scalar_data(value));
     }
+    // Replaces initialized storage from an owning ScalarValue. The default path copies through assign_from_input.
+    void assign_from_owned(void *destination, ScalarData &value, std::optional<allocator> source_memory) const;
     // Constructs a staged replacement before comparing or assigning it. Construction and equality failures leave
     // destination unchanged. Returns false when equality suppression skips assignment.
     [[nodiscard]] virtual bool assign_with(void *destination, ScalarConstruction construction,
                                            bool suppress_equal) const;
+    // On true, source remains valid and may contain the previous destination value. On false, neither value changes.
+    virtual bool try_assign_from_owned(void *, void *, allocator &, allocator &) const noexcept { return false; }
     virtual std::size_t hash(const void *value) const = 0;
     virtual bool equals(const void *value, const ScalarData &other) const;
     template <typename Value>

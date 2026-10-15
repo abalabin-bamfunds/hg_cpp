@@ -141,6 +141,14 @@ template <typename T> class ScalarValue {
     Scalar<T> view() const & noexcept { return Scalar<T>::from(*this); }
     Scalar<T> view() const && = delete;
 
+    void move_to(const ScalarRuntimeType &runtime_type, void *destination) && {
+        if (value_.empty()) {
+            throw std::logic_error{"cannot move an empty scalar value"};
+        }
+        runtime_type.assign_from_owned(destination, value_, details::scalar_value_allocator(value_));
+        release();
+    }
+
     using scalar_type = T;
 
   private:
@@ -251,6 +259,14 @@ template <> class ScalarValue<> {
 
     Scalar<> view() const & noexcept { return Scalar<>::from(*this); }
     Scalar<> view() const && = delete;
+
+    void move_to(const ScalarRuntimeType &runtime_type, void *destination) && {
+        if (value_.empty()) {
+            throw std::logic_error{"cannot move an empty scalar value"};
+        }
+        runtime_type.assign_from_owned(destination, value_, details::scalar_value_allocator(value_));
+        release();
+    }
 
     using scalar_type = void;
 

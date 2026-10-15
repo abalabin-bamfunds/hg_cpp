@@ -48,15 +48,29 @@ class Out<TS<Variable, Properties...>> {
         state_->publish();
     }
 
+    template <typename Value> void set_value(ScalarValue<Value> value) const {
+        const auto &source = details::scalar_data(value);
+        const auto &runtime_type =
+            static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
+        if (state_->suppresses_equal_updates()) {
+            if (!runtime_type.accepts_input(source.runtime_type())) {
+                throw std::invalid_argument{"incompatible scalar runtime representations"};
+            }
+            if (valid() && runtime_type.equals(state_->data(), source)) {
+                return;
+            }
+        }
+
+        std::move(value).move_to(runtime_type, state_->mutable_data());
+        state_->publish();
+    }
+
     void invalidate() const { state_->invalidate(); }
 
     void apply(const literal::ScalarLiteral &literal) const {
         const auto &runtime_type =
             static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
-        auto construction = details::ScalarLiteralConstructionContext{literal, true};
-        if (construction.assign_to(runtime_type, state_->mutable_data(), state_->suppresses_equal_updates() && valid())) {
-            state_->publish();
-        }
+        set_value(ScalarValue<>::from_literal(runtime_type, literal));
     }
 
     template <typename Input, auto... TimeSeriesProperties, auto... InputProperties>
@@ -184,6 +198,11 @@ class Out<TS<T, Properties...>> {
 
     template <typename Value> void set_value(const Scalar<Value> &value) const {
         set_scalar_data(details::scalar_data(value));
+    }
+
+    template <typename Value> void set_value(ScalarValue<Value> value) const {
+        auto output = details::output_factory::make<Out<TS<SCALAR>>>(state_.get());
+        output.set_value(std::move(value));
     }
 
     void apply(const literal::ScalarLiteral &literal) const {
