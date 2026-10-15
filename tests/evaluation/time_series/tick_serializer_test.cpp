@@ -147,6 +147,71 @@ template <template <typename, auto...> typename Field> struct TickPair {
     Field<bg::TS<bg::i64>> second;
 };
 
+struct queue_retry_storage {
+    explicit queue_retry_storage(bg::util::buffer buffer) : buffer{std::move(buffer)} {}
+
+    bg::util::buffer buffer;
+    bg::util::buffer_reader *reader{};
+};
+
+struct queue_string_key_retry_definition {
+    bg::In<bg::TS<bg::i64>> command;
+    bg::Out<bg::TS_T> output;
+    bg::State<queue_retry_storage *> storage;
+
+    void start(bg::EvaluationContext *context) const {
+        auto memory = context->runtime_graph().allocation();
+        *storage = memory.new_object<queue_retry_storage>(bg::util::buffer::concurrent_chain(512, 512, memory));
+    }
+
+    void evaluate(bg::EvaluationContext *context) const {
+        auto memory = context->runtime_graph().allocation();
+        auto dictionary = output.as<bg::TSD<bg::string, bg::TS<bg::i64>>>();
+        const auto key = std::string{"an owned scalar key that remains pending after inspection"};
+        if (*command == 0) {
+            dictionary[key].set(10);
+            return;
+        }
+
+        if (*command == 1) {
+            dictionary[key].set(11);
+            auto writer = bg::details::QueueMessageWriter{(*storage)->buffer, 4, output.runtime_type(), memory};
+            if (!writer.write(literal::TimeSeriesLiteral{{key, 20}})) {
+                throw std::logic_error{"queue writer skipped a scalar bundle message"};
+            }
+
+            auto message_reader = bg::util::concurrent_buffer_reader{(*storage)->buffer};
+            const auto frame = message_reader.read<bg::details::QueueMessageHeader>();
+            const auto body = message_reader.current_buffer().chunk(0, frame.size - sizeof(frame));
+            (*storage)->reader = memory.new_object<bg::util::buffer_reader>(body);
+            const auto pending_before = (*storage)->reader->readable().size();
+            const auto applied = bg::details::QueueTickApply{*(*storage)->reader, bg::QueueMode::standard}
+                                     .apply(output.output_state());
+            first_attempt_pending = !applied && (*storage)->reader->readable().size() == pending_before;
+            return;
+        }
+
+        const auto applied = bg::details::QueueTickApply{*(*storage)->reader, bg::QueueMode::standard}
+                                 .apply(output.output_state());
+        retry_applied = applied;
+        if (applied) {
+            (*storage)->reader->consume((*storage)->reader->readable().size());
+        }
+        retry_consumed = (*storage)->reader->readable().empty();
+    }
+
+    void stop(bg::EvaluationContext *context) const noexcept {
+        auto memory = context->runtime_graph().allocation();
+        memory.delete_object((*storage)->reader);
+        memory.delete_object(*storage);
+        *storage = nullptr;
+    }
+
+    inline static bool first_attempt_pending{};
+    inline static bool retry_applied{};
+    inline static bool retry_consumed{};
+};
+
 struct bundle_sum_definition {
     bg::In<bg::TSB<TickPair>> input;
     bg::Out<bg::TS<bg::i64>> output;
@@ -156,6 +221,17 @@ struct bundle_sum_definition {
 
 struct dictionary_sum_definition {
     bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input;
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void evaluate() const {
+        auto sum = bg::i64{};
+        input.for_each_key_value([&](const auto &, const auto &value) { sum += *value; });
+        output.set(sum);
+    }
+};
+
+struct string_dictionary_sum_definition {
+    bg::In<bg::TSD<bg::string, bg::TS<bg::i64>>> input;
     bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const {
@@ -241,6 +317,39 @@ class allocation_counter : public std::pmr::memory_resource {
 
 allocation_counter retained_value_memory;
 
+struct queue_apply_result {
+    bool applied;
+    std::size_t pending_before;
+    std::size_t pending_after;
+};
+
+template <typename Variable>
+queue_apply_result apply_queue_literal(const bg::Out<Variable> &output, const literal::TimeSeriesLiteral &value) {
+    const auto buffer = bg::util::buffer::concurrent_chain(512, 4);
+    auto writer = bg::details::QueueMessageWriter{buffer, 1, output.runtime_type()};
+    if (!writer.write(value)) {
+        return {false, 0, 0};
+    }
+
+    auto message_reader = bg::util::concurrent_buffer_reader{buffer};
+    const auto frame = message_reader.read<bg::details::QueueMessageHeader>();
+    const auto body = message_reader.current_buffer().chunk(0, frame.size - sizeof(frame));
+    auto tick_reader = bg::util::buffer_reader{body};
+    const auto pending_before = tick_reader.readable().size();
+    const auto applied = bg::details::QueueTickApply{tick_reader, bg::QueueMode::standard}.apply(output.output_state());
+    if (applied) {
+        tick_reader.consume(tick_reader.readable().size());
+        return {true, pending_before, 0};
+    }
+
+    const auto pending_after = tick_reader.readable().size();
+    bg::details::TimeSeriesTickDiscard{tick_reader,
+                                       bg::TimeSeriesDispatch<bg::TimeSeriesTickOperations>::instance()}
+        .apply(output.runtime_type().type());
+    tick_reader.consume(tick_reader.readable().size());
+    return {false, pending_before, pending_after};
+}
+
 template <typename T> void check_builtin_scalar_tick(const typename bg::scalar_storage_traits<T>::stored_type &value) {
     const auto time = bg::MIN_DT + std::chrono::microseconds{1};
     const auto input_state = bg::TimeSeriesState{time};
@@ -295,6 +404,359 @@ TEST_CASE("a scalar integer tick uses a nine-byte record", "[feature:time-series
     auto reader = bg::TimeSeriesTickReader{buffer, bg::TS<bg::i64>::type()};
     CHECK(reader.discard());
     CHECK_FALSE(reader.has_next());
+}
+
+TEST_CASE("queue tick application accepts no-ops and leaves an effective tick pending",
+          "[feature:time-series-storage][series:value][queue][transition:update]") {
+    using Series = bg::TS<bg::i64, bg::TimeSeriesGuarantee::deduplicated>;
+
+    auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto input_state = bg::TimeSeriesState{evaluation_time};
+    auto source_value = bg::i64{5};
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<Series>();
+    const auto buffer = bg::util::buffer::contiguous(64);
+    auto writer = bg::TimeSeriesTickWriter{buffer};
+    const auto input = [&] {
+        return bg::In<Series>{bg::TimeSeriesInputData{runtime_type, input_state, &source_value, true}};
+    };
+
+    REQUIRE(writer.write(input(), evaluation_time));
+    REQUIRE(writer.write(input(), evaluation_time));
+    source_value = 7;
+    REQUIRE(writer.write(input(), evaluation_time));
+    REQUIRE(writer.write(input(), evaluation_time));
+    source_value = 9;
+    REQUIRE(writer.write(input(), evaluation_time));
+
+    auto output_state = bg::TimeSeriesState{};
+    auto output_value = bg::i64{};
+    auto output = bg::OutputState{runtime_type};
+    output.bind(output_state, &output_value, evaluation_time);
+    auto reader = bg::util::buffer_reader{buffer};
+    auto apply = bg::details::QueueTickApply{reader, bg::QueueMode::standard};
+
+    REQUIRE(apply.apply(output));
+    CHECK(output_value == 5);
+    CHECK(output.last_updated() == evaluation_time);
+
+    evaluation_time += std::chrono::microseconds{1};
+    const auto last_updated_after_change = output.last_updated();
+    REQUIRE(apply.apply(output));
+    CHECK(output_value == 5);
+    CHECK(output.last_updated() == last_updated_after_change);
+
+    REQUIRE(apply.apply(output));
+    CHECK(output_value == 7);
+    CHECK(output.last_updated() == evaluation_time);
+
+    const auto last_updated_after_effective_update = output.last_updated();
+    REQUIRE(apply.apply(output));
+    CHECK(output_value == 7);
+    CHECK(output.last_updated() == last_updated_after_effective_update);
+
+    const auto pending_size = reader.readable().size();
+    CHECK_FALSE(apply.apply(output));
+    CHECK(reader.readable().size() == pending_size);
+    CHECK(output_value == 7);
+    CHECK(output.last_updated() == last_updated_after_effective_update);
+
+    evaluation_time += std::chrono::microseconds{1};
+    REQUIRE(apply.apply(output));
+    CHECK(output_value == 9);
+    CHECK(output.last_updated() == evaluation_time);
+    CHECK(reader.readable().empty());
+}
+
+TEST_CASE("queue tick application invalidates only untouched collection items",
+          "[feature:time-series-storage][series:fixed-tsl][queue][transition:invalidation]") {
+    const auto source = bg::node([](bg::In<bg::TS<bool>> initialize,
+                                    bg::Out<bg::TSL<bg::TS<bg::i64>, 2>> output) {
+        if (*initialize) {
+            output[0].set(1);
+            output[1].set(10);
+        } else {
+            output[0].invalidate();
+        }
+    });
+    auto queue_applied = false;
+    auto sibling_invalidated = false;
+    const auto invalidate = bg::node<bg::TS_T>([&](bg::In<bg::TS_T> input, bg::Out<bg::TS_T> output) {
+        auto list = output.as<bg::TSL<bg::TS<bg::i64>, 2>>();
+        auto input_list = input.as<bg::TSL<bg::TS<bg::i64>, 2>>();
+        if (input_list.all_valid()) {
+            list.copy(input_list);
+            return;
+        }
+
+        list[0].invalidate();
+        const auto buffer = bg::util::buffer::chain(32);
+        auto writer = bg::util::buffer_writer{buffer};
+        auto context = bg::ScalarBufferWriteContext{writer};
+        bg::details::TickHeader{bg::details::TickOperation::tick, false}.write(context);
+        writer.commit();
+
+        auto reader = bg::util::buffer_reader{buffer};
+        queue_applied = bg::details::QueueTickApply{reader, bg::QueueMode::standard}.apply(output.output_state());
+        sibling_invalidated = !list[1].valid();
+        if (!queue_applied) {
+            list[1].set(-1);
+        }
+    });
+    const auto observe = bg::node([](bg::In<bg::TSL<bg::TS<bg::i64>, 2>> input,
+                                     bg::Out<bg::TS<bool>> output) {
+        output.set(!input[1].valid());
+    });
+    const auto graph = [&](bg::wp<bg::TS<bool>> initialize) {
+        return observe(invalidate(source(initialize)));
+    };
+
+    const auto actual = bg::testing::test_graph(graph, std::array{true, false});
+    CHECK(queue_applied);
+    CHECK(sibling_invalidated);
+    CHECK(actual.size() == 2);
+}
+
+TEST_CASE("queue tick application treats equal ordinary assignments as effective",
+          "[feature:time-series-storage][series:value][queue][transition:update]") {
+    const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto input_state = bg::TimeSeriesState{evaluation_time};
+    auto value = bg::i64{5};
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>();
+    const auto buffer = bg::util::buffer::contiguous(64);
+    auto writer = bg::TimeSeriesTickWriter{buffer};
+    const auto input = [&] {
+        return bg::In<bg::TS<bg::i64>>{bg::TimeSeriesInputData{runtime_type, input_state, &value, true}};
+    };
+
+    REQUIRE(writer.write(input(), evaluation_time));
+    REQUIRE(writer.write(input(), evaluation_time));
+
+    auto output_state = bg::TimeSeriesState{};
+    auto output_value = bg::i64{};
+    auto output = bg::OutputState{runtime_type};
+    output.bind(output_state, &output_value, evaluation_time);
+    auto reader = bg::util::buffer_reader{buffer};
+    auto apply = bg::details::QueueTickApply{reader, bg::QueueMode::standard};
+
+    REQUIRE(apply.apply(output));
+    const auto pending_size = reader.readable().size();
+    CHECK_FALSE(apply.apply(output));
+    CHECK(reader.readable().size() == pending_size);
+    CHECK(output_value == 5);
+    CHECK(output.last_updated() == evaluation_time);
+}
+
+TEST_CASE("standard queue admission isolates TSD keys and rejects same-cycle tick-removal conflicts",
+          "[evaluation][feature:test-graph][feature:time-series-storage][series:tsd][scalar:i64][queue]"
+          "[shape:single-node][transition:update]") {
+    auto different_key_admitted = false;
+    const auto update_different_key = bg::node<bg::TS_T>([&](bg::In<bg::TS<bool>>, bg::Out<bg::TS_T> output) {
+        auto dictionary = output.as<bg::TSD<bg::i64, bg::TS<bg::i64>>>();
+        dictionary[1].set(10);
+        different_key_admitted = apply_queue_literal(output, literal::TimeSeriesLiteral{{2, 20}}).applied;
+    });
+    const auto sum = bg::node<dictionary_sum_definition>();
+    const auto different_key_graph = [&](bg::wp<bg::TS<bool>> input) {
+        return sum(update_different_key[bg::type<bg::TSD<bg::i64, bg::TS<bg::i64>>>](input));
+    };
+    const auto different_key_result = bg::testing::test_graph(different_key_graph, std::array{true});
+    CHECK(different_key_admitted);
+    CHECK(different_key_result.equals({30}));
+
+    auto same_cycle_tick_conflicted = false;
+    auto same_cycle_tick_pending = false;
+    const auto separate_cycles = bg::node<bg::TS_T>([&](bg::In<bg::TS<bg::i64>> command, bg::Out<bg::TS_T> output) {
+        auto dictionary = output.as<bg::TSD<bg::i64, bg::TS<bg::i64>>>();
+        if (*command == 0) {
+            dictionary[1].set(10);
+            return;
+        }
+        if (*command == 1) {
+            dictionary.erase(1);
+            const auto result = apply_queue_literal(output, literal::TimeSeriesLiteral{{1, 20}});
+            same_cycle_tick_conflicted = !result.applied;
+            same_cycle_tick_pending = result.pending_before == result.pending_after;
+            return;
+        }
+
+        dictionary[1].set(30);
+        const auto result = apply_queue_literal(output, literal::TimeSeriesLiteral{{1, literal::REMOVE}});
+        same_cycle_tick_conflicted = same_cycle_tick_conflicted && !result.applied;
+        same_cycle_tick_pending = same_cycle_tick_pending && result.pending_before == result.pending_after;
+    });
+    const auto separate_cycles_graph = [&](bg::wp<bg::TS<bg::i64>> command) {
+        return sum(separate_cycles[bg::type<bg::TSD<bg::i64, bg::TS<bg::i64>>>](command));
+    };
+    const auto separate_cycles_result = bg::testing::test_graph(separate_cycles_graph, std::array{0, 1, 2});
+    CHECK(same_cycle_tick_conflicted);
+    CHECK(same_cycle_tick_pending);
+    CHECK(separate_cycles_result.equals({10, 0, 30}));
+}
+
+TEST_CASE("standard queue admission accepts independent nested TSD leaves and checks whole messages",
+          "[evaluation][feature:test-graph][feature:time-series-storage][series:tsd][scalar:i64][queue]"
+          "[shape:single-node][transition:update]") {
+    auto nested_key_admitted = false;
+    const auto update_nested_key = bg::node<bg::TS_T>([&](bg::In<bg::TS<bool>>, bg::Out<bg::TS_T> output) {
+        auto dictionary = output.as<bg::TSD<bg::i64, bg::TSD<bg::i64, bg::TS<bg::i64>>>>();
+        dictionary[1][1].set(10);
+        nested_key_admitted = apply_queue_literal(output, literal::TimeSeriesLiteral{{1, {{2, 20}}}}).applied;
+    });
+    const auto nested_sum = bg::node<nested_dictionary_sum_definition>();
+    const auto nested_graph = [&](bg::wp<bg::TS<bool>> input) {
+        return nested_sum(update_nested_key[bg::type<bg::TSD<bg::i64, bg::TSD<bg::i64, bg::TS<bg::i64>>>>](input));
+    };
+    const auto nested_result = bg::testing::test_graph(nested_graph, std::array{true});
+    CHECK(nested_key_admitted);
+    CHECK(nested_result.equals({30}));
+
+    auto whole_message_pending = false;
+    const auto reject_whole_message = bg::node<bg::TS_T>([&](bg::In<bg::TS<bool>>, bg::Out<bg::TS_T> output) {
+        auto dictionary = output.as<bg::TSD<bg::i64, bg::TS<bg::i64>>>();
+        dictionary[1].set(10);
+        const auto result = apply_queue_literal(output, literal::TimeSeriesLiteral{{2, 20}, {1, 21}});
+        whole_message_pending = !result.applied && result.pending_before == result.pending_after;
+    });
+    const auto sum = bg::node<dictionary_sum_definition>();
+    const auto atomic_graph = [&](bg::wp<bg::TS<bool>> input) {
+        return sum(reject_whole_message[bg::type<bg::TSD<bg::i64, bg::TS<bg::i64>>>](input));
+    };
+    const auto atomic_result = bg::testing::test_graph(atomic_graph, std::array{true});
+    CHECK(whole_message_pending);
+    CHECK(atomic_result.equals({10}));
+}
+
+TEST_CASE("standard queue replay keeps ordered repeated TSD keys and ignores missing-key removal",
+          "[evaluation][feature:test-graph][feature:time-series-storage][series:tsd][scalar:i64][queue]"
+          "[shape:single-node][transition:update]") {
+    auto repeated_key_admitted = false;
+    const auto apply_repeated_key = bg::node<bg::TS_T>([&](bg::In<bg::TS<bool>>, bg::Out<bg::TS_T> output) {
+        const auto result = apply_queue_literal(
+            output, literal::TimeSeriesLiteral{{1, 10}, {1, literal::REMOVE}, {1, 11}});
+        repeated_key_admitted = result.applied && result.pending_after == 0;
+    });
+    const auto sum = bg::node<dictionary_sum_definition>();
+    const auto repeated_graph = [&](bg::wp<bg::TS<bool>> input) {
+        return sum(apply_repeated_key[bg::type<bg::TSD<bg::i64, bg::TS<bg::i64>>>](input));
+    };
+    const auto repeated_result = bg::testing::test_graph(repeated_graph, std::array{true});
+    CHECK(repeated_key_admitted);
+    CHECK(repeated_result.equals({11}));
+
+    auto missing_removal_admitted = false;
+    const auto remove_missing_key = bg::node<bg::TS_T>([&](bg::In<bg::TS<bool>>, bg::Out<bg::TS_T> output) {
+        output.as<bg::TSD<bg::i64, bg::TS<bg::i64>>>().clear();
+        missing_removal_admitted =
+            apply_queue_literal(output, literal::TimeSeriesLiteral{{8, literal::REMOVE}}).applied;
+    });
+    const auto missing_key_graph = [&](bg::wp<bg::TS<bool>> input) {
+        return sum(remove_missing_key[bg::type<bg::TSD<bg::i64, bg::TS<bg::i64>>>](input));
+    };
+    const auto missing_key_result = bg::testing::test_graph(missing_key_graph, std::array{true});
+    CHECK(missing_removal_admitted);
+    CHECK(missing_key_result.equals({0}));
+}
+
+TEST_CASE("standard queue admission applies TSS no-ops and leaves a same-cycle update pending",
+          "[evaluation][feature:test-graph][feature:time-series-storage][series:tss][scalar:i64][queue]"
+          "[shape:single-node][transition:addition][transition:removal]") {
+    auto no_ops_admitted = false;
+    auto no_ops_preserved_time = false;
+    auto effective_update_admitted = false;
+    auto same_cycle_no_ops_admitted = false;
+    auto effective_update_pending = false;
+    const auto update = bg::node<bg::TS_T>([&](bg::In<bg::TS<bg::i64>> command, bg::Out<bg::TS_T> output) {
+        auto set = output.as<bg::TSS<bg::i64>>();
+        if (*command == 0) {
+            set.insert(1);
+            return;
+        }
+
+        const auto previous_time = output.last_updated();
+        const auto existing_key = apply_queue_literal(output, literal::TimeSeriesLiteral{1});
+        const auto absent_key = apply_queue_literal(output, literal::TimeSeriesLiteral{literal::REMOVED(99)});
+        no_ops_admitted = existing_key.applied && absent_key.applied;
+        no_ops_preserved_time = output.last_updated() == previous_time;
+
+        const auto added_key = apply_queue_literal(output, literal::TimeSeriesLiteral{2});
+        effective_update_admitted = added_key.applied && added_key.pending_after == 0;
+
+        const auto existing_key_after_update = apply_queue_literal(output, literal::TimeSeriesLiteral{2});
+        const auto absent_key_after_update =
+            apply_queue_literal(output, literal::TimeSeriesLiteral{literal::REMOVED(99)});
+        same_cycle_no_ops_admitted = existing_key_after_update.applied && absent_key_after_update.applied;
+
+        const auto new_key = apply_queue_literal(output, literal::TimeSeriesLiteral{3});
+        effective_update_pending = !new_key.applied && new_key.pending_before == new_key.pending_after;
+    });
+    const auto sum = bg::node<set_sum_definition>();
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> command) {
+        return sum(update[bg::type<bg::TSS<bg::i64>>](command));
+    };
+    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 2>{0, 1});
+
+    CHECK(no_ops_admitted);
+    CHECK(no_ops_preserved_time);
+    CHECK(effective_update_admitted);
+    CHECK(same_cycle_no_ops_admitted);
+    CHECK(effective_update_pending);
+    CHECK(actual.equals({1, 3}));
+}
+
+TEST_CASE("a pending TSD message retries with its encoded owning key",
+          "[evaluation][feature:test-graph][feature:time-series-storage][series:tsd][scalar:string][queue]"
+          "[shape:single-node][transition:update]") {
+    queue_string_key_retry_definition::first_attempt_pending = false;
+    queue_string_key_retry_definition::retry_applied = false;
+    queue_string_key_retry_definition::retry_consumed = false;
+
+    const auto retry = bg::node<bg::TS_T, queue_string_key_retry_definition>();
+    const auto sum = bg::node<string_dictionary_sum_definition>();
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> command) {
+        return sum(retry[bg::type<bg::TSD<bg::string, bg::TS<bg::i64>>>](command));
+    };
+    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 3>{0, 1, 2});
+
+    CHECK(queue_string_key_retry_definition::first_attempt_pending);
+    CHECK(queue_string_key_retry_definition::retry_applied);
+    CHECK(queue_string_key_retry_definition::retry_consumed);
+    CHECK(actual.equals({10, 11, 20}));
+}
+
+TEST_CASE("eliding queue replay preserves a same-cycle validity transition",
+          "[evaluation][feature:time-series-storage][feature:validity][series:value][scalar:i64][queue]"
+          "[transition:invalidation][transition:revalidation]") {
+    const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
+    auto input_state = bg::TimeSeriesState{evaluation_time};
+    auto value = bg::i64{5};
+    const auto &runtime_type =
+        bg::cpp_time_series_runtime_type<bg::TS<bg::i64, bg::TimeSeriesGuarantee::deduplicated>>();
+    const auto buffer = bg::util::buffer::contiguous(128);
+    auto writer = bg::TimeSeriesTickWriter{buffer};
+    const auto input = [&] {
+        return bg::In<bg::TS<bg::i64, bg::TimeSeriesGuarantee::deduplicated>>{
+            bg::TimeSeriesInputData{runtime_type, input_state, &value, true}};
+    };
+
+    REQUIRE(writer.write(input(), evaluation_time));
+    REQUIRE(writer.write(input(), evaluation_time));
+    value = 7;
+    REQUIRE(writer.write(input(), evaluation_time));
+
+    auto output_state = bg::TimeSeriesState{};
+    auto output_value = bg::i64{};
+    auto output = bg::OutputState{runtime_type};
+    output.bind(output_state, &output_value, evaluation_time);
+    auto reader = bg::util::buffer_reader{buffer};
+    auto apply = bg::details::QueueTickApply{reader, bg::QueueMode::elide};
+
+    REQUIRE(apply.apply(output));
+    REQUIRE(apply.apply(output));
+    REQUIRE(apply.apply(output));
+    CHECK(output_value == 7);
+    CHECK(output.last_updated() == evaluation_time);
+    CHECK(output.mutable_last_updated().became_valid());
+    CHECK(reader.readable().empty());
 }
 
 TEST_CASE("built-in scalar ticks replay through their typed storage",

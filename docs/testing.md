@@ -316,6 +316,9 @@ graph compilation or evaluation.
   provider scalar handlers, and unsupported references
 - queue message serialization for scalar and collection literals, frame targets and sizes, root skip, malformed
   selectors and markers, scalar ownership, concurrent reservation rollover, and failure cleanup
+- queue tick application in standard and eliding modes, independent collection items, complete-message pending,
+  first-conflict stopping, no-op timestamps, invalidation, revalidation, per-key dictionary tick/removal separation,
+  and encoded scalar ownership during inspection and replay
 - feedback source and sink wiring, next-cycle replay, first ticks, validity changes, guarantee compatibility,
   separate handles, and same-graph binding
 - `default_` fallback selection, timestamps, modified state, and source validity transitions

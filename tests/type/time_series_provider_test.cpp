@@ -13,6 +13,7 @@
 #include <bg/time_series/tick_operations.hpp>
 #include <bg/time_series/time_series_type_traits.hpp>
 #include <bg/time_series/tick_serializer.hpp>
+#include <bg/time_series/tsb/tsb_runtime_type.hpp>
 #include <bg/time_series/tsd/tsd_input.hpp>
 #include <bg/time_series/tsd/tsd_output.hpp>
 #include <bg/time_series/tsd/tsd_runtime_type.hpp>
@@ -21,6 +22,7 @@
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -51,6 +53,7 @@ inline int discarded_tick_count{};
 
 struct ScalarTickState {
     int writes{};
+    int reads{};
     int discards{};
     int fail_on_write{};
 };
@@ -59,6 +62,13 @@ inline ScalarTickState scalar_tick_state;
 inline int failed_tsd_write_count{};
 inline int payload_write_count{};
 inline bool incompatible_replay_called{};
+
+template <template <typename, auto...> typename Field> struct QueueConflictBundle {
+    Field<bg::TS<bg::i64>> first;
+    Field<bg::TS<test_scalar_provider::value>> later;
+};
+
+using QueueConflictSeries = bg::TSB<QueueConflictBundle>;
 
 template <typename Input>
 void write_tick(const Input &input, bg::ScalarBufferWriteContext &writer, bg::allocator &) {
@@ -670,6 +680,7 @@ void project_provider_scalar_semantic(bg::Scalar<test_scalar_provider::value> va
 }
 
 void read_provider_scalar(bg::util::buffer_reader &reader, auto consume) {
+    ++scalar_tick_state.reads;
     const auto number = reader.read_raw<int>();
     if (number == 73 || number == 91) {
         reader.consume<owned_provider_payload>();
@@ -985,6 +996,62 @@ TEST_CASE("provider scalar buffer actions can use different exact type registrat
     CHECK(output_storage.number == 17);
     CHECK(provider::scalar_tick_state.discards == 1);
     CHECK_FALSE(reader.has_next());
+}
+
+TEST_CASE("queue collection inspection stops at its first conflict",
+          "[feature:time-series-storage][series:tsb][queue][transition:update]") {
+    REQUIRE(provider::register_provider_scalar_buffer_handlers());
+    provider::scalar_tick_state = {};
+
+    using Series = provider::QueueConflictSeries;
+    const auto previous_time = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto evaluation_time = previous_time + std::chrono::microseconds{1};
+    auto memory_resource = std::pmr::monotonic_buffer_resource{};
+    auto allocator = bg::allocator{memory_resource};
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<Series>();
+
+    auto *input_storage = allocator.allocate_bytes(runtime_type.value_size(), runtime_type.value_alignment());
+    runtime_type.construct_runtime_value(input_storage, allocator);
+    auto destroy_input = bg::util::scope_exit{[&]() noexcept {
+        runtime_type.destroy_value(input_storage, allocator);
+        allocator.deallocate_bytes(input_storage, runtime_type.value_size(), runtime_type.value_alignment());
+    }};
+    auto input_time = bg::TimeSeriesState{evaluation_time};
+    auto first_input = runtime_type.item(input_storage, 0);
+    first_input.last_updated.publish(evaluation_time);
+    *static_cast<bg::i64 *>(first_input.value) = 42;
+    auto later_input = runtime_type.item(input_storage, 1);
+    later_input.last_updated.publish(evaluation_time);
+    static_cast<test_scalar_provider::storage *>(later_input.value)->number = 17;
+    REQUIRE(runtime_type.mark_item_modified(input_storage, 0, evaluation_time, input_time, allocator));
+    REQUIRE(runtime_type.mark_item_modified(input_storage, 1, evaluation_time, input_time, allocator));
+
+    const auto input = bg::In<Series>{bg::TimeSeriesInputData{runtime_type, input_time, input_storage, true}};
+    const auto buffer = bg::util::buffer::contiguous(128);
+    auto writer = bg::TimeSeriesTickWriter{buffer};
+    REQUIRE(writer.write(input, evaluation_time));
+
+    auto *output_storage = allocator.allocate_bytes(runtime_type.value_size(), runtime_type.value_alignment());
+    runtime_type.construct_runtime_value(output_storage, allocator);
+    auto destroy_output = bg::util::scope_exit{[&]() noexcept {
+        runtime_type.destroy_value(output_storage, allocator);
+        allocator.deallocate_bytes(output_storage, runtime_type.value_size(), runtime_type.value_alignment());
+    }};
+    auto output_time = bg::TimeSeriesState{evaluation_time};
+    auto first_output = runtime_type.item(output_storage, 0);
+    first_output.last_updated.publish(evaluation_time);
+    auto later_output = runtime_type.item(output_storage, 1);
+    later_output.last_updated.publish(previous_time);
+
+    auto output = bg::OutputState{runtime_type};
+    output.bind(output_time, output_storage, evaluation_time);
+    auto reader = bg::util::buffer_reader{buffer};
+    const auto pending_size = reader.readable().size();
+    const auto reads_before = provider::scalar_tick_state.reads;
+
+    CHECK_FALSE(bg::details::QueueTickApply{reader, bg::QueueMode::standard}.apply(output));
+    CHECK(reader.readable().size() == pending_size);
+    CHECK(provider::scalar_tick_state.reads == reads_before);
 }
 
 TEST_CASE("queue message projection selects the runtime provider projection and follows its value",

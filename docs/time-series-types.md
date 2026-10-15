@@ -174,3 +174,27 @@ time-series types. Custom scalar encodings require a projection handler on the
 selected write registration and semantic read and discard handlers. Projection
 uses the [scalar buffer operation contract](scalar-api.md#optional-operations).
 Missing handlers fail before reservation.
+
+`bg::details::QueueTickApply::apply(output)` reads one tick payload from the
+current reader position. In standard mode, it returns `false` when an effective
+change targets a time series already changed at the current evaluation time.
+Inspection stops at the first conflict. The entire payload remains pending:
+the reader position, output, and encoded objects stay unchanged. Fixed-list and
+bundle items are checked independently.
+Eliding mode applies successive changes in order.
+
+TSD keys are independent in standard mode. Across messages, an effective item
+update and removal of the same key use separate cycles. A removed key cannot
+be recreated by a later message in the same cycle. Removing an absent key is a
+no-op when the TSD is already valid. Updates to distinct time series under one
+key remain independent.
+
+Admission checks the complete message against changes already applied in the
+cycle. Accepted messages replay all entries in order, including repeated TSD
+keys. Replay provides no rollback.
+
+An accepted payload returns `true` and destroys its encoded objects after
+replay. This includes no-op payloads. A no-op leaves the output and its last
+updated time unchanged; it does not use a standard-mode cycle slot. An ordinary
+equal-value assignment publishes a change. A deduplicated equal-value assignment
+is a no-op.

@@ -1,5 +1,6 @@
 #include <bg/time_series/tick_serializer.hpp>
 
+#include <bg/node/details/output_factory.hpp>
 #include <bg/time_series/details/scalar_literal.hpp>
 #include <bg/time_series/tsd/tsd_runtime_type.hpp>
 #include <bg/time_series/tss/tss_runtime_type.hpp>
@@ -527,6 +528,265 @@ void TimeSeriesTickDiscard::discard_scalar(const ScalarType &type) {
     }
 
     reader_->skip<ScalarValue<>>();
+}
+
+namespace {
+
+class QueueTickInspect {
+  public:
+    explicit QueueTickInspect(util::buffer_reader &reader) noexcept : reader_{reader} {}
+
+    bool conflicts(const OutputState &output) {
+        evaluation_time_ = output.evaluation_time();
+        const auto header = TickHeader::read(reader_);
+        if (header.operation != TickOperation::tick) {
+            throw std::logic_error{"time series tick record does not start with a tick header"};
+        }
+        return inspect(output.runtime_type().type(), output.runtime_type(), output.mutable_last_updated(),
+                       output.data(), header);
+    }
+
+  private:
+    bool inspect(const TimeSeriesType &type, const TimeSeriesRuntimeType &runtime_type,
+                 const TimeSeriesState &last_updated, const void *value, TickHeader header) {
+        if (runtime_type.is_reference()) {
+            throw std::invalid_argument{"retained reference time series ticks are not supported"};
+        }
+
+        if (type_cast<TimeSeriesValueType>(&type) != nullptr) {
+            return inspect_value(runtime_type, last_updated, value, header);
+        }
+        if (type_cast<TimeSeriesListType>(&type) != nullptr || type_cast<TimeSeriesBundleType>(&type) != nullptr) {
+            return inspect_items(runtime_type, value, header);
+        }
+        if (const auto *set = type_cast<TimeSeriesSetType>(&type)) {
+            return inspect_set(*set, runtime_type, last_updated, value, header);
+        }
+        if (const auto *dictionary = type_cast<TimeSeriesDictionaryType>(&type)) {
+            return inspect_dictionary(*dictionary, runtime_type, last_updated, value, header);
+        }
+        throw std::invalid_argument{"standard queue inspection does not support this time series type"};
+    }
+
+    bool inspect_value(const TimeSeriesRuntimeType &runtime_type, const TimeSeriesState &last_updated,
+                       const void *value, TickHeader header) {
+        if (!header.valid) {
+            return last_updated.valid() && last_updated.time() == evaluation_time_;
+        }
+
+        const auto deduplicated = runtime_type.type().guarantee().value() == TimeSeriesGuarantee::deduplicated;
+        if (!deduplicated && last_updated.time() == evaluation_time_) {
+            return true;
+        }
+
+        const auto &scalar_runtime_type =
+            static_cast<const TimeSeriesValueRuntimeType &>(runtime_type).scalar_runtime_type();
+        auto changes_value = true;
+        TimeSeriesTickScalarRead::visit(reader_, type_cast<TimeSeriesValueType>(runtime_type.type()).value_type(),
+                                        [&](const Scalar<> &incoming) {
+                                            if (deduplicated && last_updated.valid() &&
+                                                scalar_runtime_type.equals(value, scalar_data(incoming))) {
+                                                changes_value = false;
+                                            }
+                                        });
+        return changes_value && last_updated.time() == evaluation_time_;
+    }
+
+    bool inspect_items(const TimeSeriesRuntimeType &runtime_type, const void *value, TickHeader header) {
+        if (!header.valid) {
+            return inspect_invalidation(runtime_type, value);
+        }
+
+        for (;;) {
+            const auto item_header = TickHeader::read(reader_);
+            if (item_header.operation == TickOperation::end) {
+                return false;
+            }
+            if (item_header.operation != TickOperation::tick) {
+                throw std::logic_error{"invalid time series collection tick entry"};
+            }
+            const auto id = reader_.read_raw<item_id_t>();
+            if (value == nullptr) {
+                const auto &item_runtime_type = runtime_type.item_layout(id).runtime_type;
+                if (inspect(item_runtime_type.type(), item_runtime_type, initial_time_series_state, nullptr,
+                            item_header)) {
+                    return true;
+                }
+                continue;
+            }
+
+            const auto item = runtime_type.item(value, id);
+            if (inspect(item.runtime_type.type(), item.runtime_type, item.last_updated, item.value, item_header)) {
+                return true;
+            }
+        }
+    }
+
+    bool inspect_invalidation(const TimeSeriesRuntimeType &runtime_type, const void *value) {
+        if (value == nullptr) {
+            return false;
+        }
+
+        const auto *list = type_cast<TimeSeriesListType>(&runtime_type.type());
+        const auto *bundle = type_cast<TimeSeriesBundleType>(&runtime_type.type());
+        if (type_cast<TimeSeriesSetType>(&runtime_type.type()) != nullptr ||
+            type_cast<TimeSeriesDictionaryType>(&runtime_type.type()) != nullptr) {
+            return false;
+        }
+        if (list == nullptr && bundle == nullptr) {
+            throw std::invalid_argument{"standard queue inspection does not support this invalidation"};
+        }
+
+        const auto count = runtime_type.item_count(value);
+        for (auto id = item_id_t{}; id < count; ++id) {
+            const auto item = runtime_type.item(value, id);
+            if (inspect_invalidation_item(item.runtime_type.type(), item.runtime_type, item.last_updated,
+                                          item.value)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool inspect_invalidation_item(const TimeSeriesType &type, const TimeSeriesRuntimeType &runtime_type,
+                                   const TimeSeriesState &last_updated, const void *value) {
+        if (type_cast<TimeSeriesValueType>(&type) != nullptr) {
+            return last_updated.valid() && last_updated.time() == evaluation_time_;
+        }
+        if (type_cast<TimeSeriesSetType>(&type) != nullptr ||
+            type_cast<TimeSeriesDictionaryType>(&type) != nullptr) {
+            return false;
+        }
+        return inspect_invalidation(runtime_type, value);
+    }
+
+    bool inspect_set(const TimeSeriesSetType &, const TimeSeriesRuntimeType &runtime_type,
+                     const TimeSeriesState &last_updated, const void *value, TickHeader header) {
+        if (!header.valid) {
+            throw std::logic_error{"TSS invalidation cannot be replayed through its output API"};
+        }
+
+        const auto &set_runtime = static_cast<const TimeSeriesSetRuntimeType &>(runtime_type);
+        auto changes_set = !last_updated.valid();
+
+        for (;;) {
+            const auto entry_header = TickHeader::read(reader_);
+            if (entry_header.operation == TickOperation::end) {
+                return changes_set && last_updated.time() == evaluation_time_;
+            }
+            if (entry_header.operation != TickOperation::add && entry_header.operation != TickOperation::remove) {
+                throw std::logic_error{"invalid TSS tick entry"};
+            }
+
+            TimeSeriesTickScalarRead::visit(reader_, type_cast<TimeSeriesSetType>(runtime_type.type()).item_type(),
+                                            [&](const Scalar<> &key) {
+                                                const auto present = last_updated.valid() &&
+                                                                     set_runtime.set_contains(value, scalar_data(key));
+                                                const auto present_after = entry_header.operation == TickOperation::add;
+                                                changes_set = changes_set || present != present_after;
+                                            });
+            if (changes_set && last_updated.time() == evaluation_time_) {
+                return true;
+            }
+        }
+    }
+
+    bool inspect_dictionary(const TimeSeriesDictionaryType &dictionary_type,
+                            const TimeSeriesRuntimeType &runtime_type, const TimeSeriesState &last_updated,
+                            const void *value, TickHeader header) {
+        if (!header.valid) {
+            throw std::logic_error{"TSD invalidation cannot be replayed through its output API"};
+        }
+
+        const auto &dictionary_runtime = static_cast<const TimeSeriesDictionaryRuntimeType &>(runtime_type);
+        for (;;) {
+            const auto entry_header = TickHeader::read(reader_);
+            if (entry_header.operation == TickOperation::end) {
+                return false;
+            }
+            if (entry_header.operation != TickOperation::add && entry_header.operation != TickOperation::tick &&
+                entry_header.operation != TickOperation::remove) {
+                throw std::logic_error{"invalid TSD tick entry"};
+            }
+
+            auto entry_conflicts = false;
+            TimeSeriesTickScalarRead::visit(reader_, dictionary_type.key_type(), [&](const Scalar<> &key) {
+                const auto key_data = scalar_data(key);
+                const auto id = value == nullptr ? util::occupancy_index::npos
+                                                 : dictionary_runtime.find_item(value, key_data);
+                if (entry_header.operation == TickOperation::remove) {
+                    entry_conflicts = id != util::occupancy_index::npos && last_updated.valid() &&
+                                      last_updated.time() == evaluation_time_ &&
+                                      runtime_type.item_updated(last_updated, value, id);
+                    return;
+                }
+
+                if (id == util::occupancy_index::npos) {
+                    entry_conflicts = value != nullptr && last_updated.valid() &&
+                                      last_updated.time() == evaluation_time_ &&
+                                      dictionary_runtime.find_removed(last_updated, value, key_data) !=
+                                          util::occupancy_index::npos;
+                    if (!entry_conflicts) {
+                        const auto &item_runtime_type = dictionary_runtime.item_runtime_type();
+                        entry_conflicts = inspect(item_runtime_type.type(), item_runtime_type,
+                                                  initial_time_series_state, nullptr, entry_header);
+                    }
+                    return;
+                }
+
+                const auto item = runtime_type.item(value, id);
+                entry_conflicts = inspect(item.runtime_type.type(), item.runtime_type, item.last_updated, item.value,
+                                          entry_header);
+            });
+            if (entry_conflicts) {
+                return true;
+            }
+        }
+    }
+
+    util::buffer_reader &reader_;
+    EvaluationTime evaluation_time_{MIN_DT};
+};
+
+} // namespace
+
+QueueTickApply::QueueTickApply(util::buffer_reader &reader, QueueMode mode) noexcept
+    : reader_{&reader}, mode_{mode} {}
+
+bool QueueTickApply::apply(OutputState &output) {
+    if (mode_ == QueueMode::batch) {
+        throw std::invalid_argument{"batch queue mode does not apply individual ticks"};
+    }
+    if (reader_->readable().empty()) {
+        return false;
+    }
+
+    const auto &type = output.runtime_type().type();
+    if (mode_ == QueueMode::standard) {
+        auto inspection_reader = reader_->fork();
+        auto inspection = QueueTickInspect{inspection_reader};
+        if (inspection.conflicts(output)) {
+            return false;
+        }
+    }
+
+    auto replay_reader = reader_->fork();
+    auto replay = TimeSeriesTickReplay{replay_reader, TimeSeriesDispatch<TimeSeriesTickOperations>::instance()};
+    try {
+        auto erased_output = output_factory::make<Out<TS_T>>(output);
+        replay.apply_erased(type, erased_output);
+    } catch (...) {
+        const auto failure = std::current_exception();
+        try {
+            TimeSeriesTickDiscard{*reader_, TimeSeriesDispatch<TimeSeriesTickOperations>::instance()}.apply(type);
+        } catch (...) {
+            std::terminate();
+        }
+        std::rethrow_exception(failure);
+    }
+
+    TimeSeriesTickDiscard{*reader_, TimeSeriesDispatch<TimeSeriesTickOperations>::instance()}.apply(type);
+    return true;
 }
 
 QueueMessageWriter::QueueMessageWriter(util::buffer buffer, std::size_t target,

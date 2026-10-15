@@ -518,6 +518,12 @@ that representation. A caller can use `find_exact()` to select each action
 independently and fall back to the semantic registration when that action is
 absent.
 
+Read handlers advance the reader without moving or destroying encoded objects.
+They must support repeated reads through reader forks. Discard handlers destroy
+the encoded objects.
+Read handlers advance past the scalar before invoking the consumer, which can
+read a nested payload from the same reader.
+
 Bounded reservations require a projection handler on the same registration as
 the selected write handler. The handler receives the scalar value and a
 `ScalarBufferProjectionContext`. It counts each raw byte write with

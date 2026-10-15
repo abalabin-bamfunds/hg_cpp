@@ -4,6 +4,7 @@
 #include <bg/scalar/buffer_operations.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/literal/time_series_literal.hpp>
+#include <bg/queue_mode.hpp>
 #include <bg/time_series/dispatch.hpp>
 #include <bg/time_series/tick_operations.hpp>
 #include <bg/time_series/time_series_input.hpp>
@@ -220,6 +221,48 @@ class TimeSeriesTickWrite {
     const TimeSeriesDispatch<TimeSeriesTickOperations> *dispatch_;
 };
 
+class TimeSeriesTickScalarRead {
+  public:
+    template <typename Function>
+    static void visit(util::buffer_reader &reader, const ScalarType &type, Function &&function) {
+        if (const auto *builtin = type_cast<BuiltinScalarType>(&type)) {
+            builtin->visit_builtin_type([&]<typename Builtin>() {
+                using Stored = details::scalar_stored_t<Builtin>;
+                if constexpr (std::is_trivially_copyable_v<Stored> &&
+                              !scalar_storage_traits<Builtin>::uses_shared_handle) {
+                    const auto stored = reader.template read_raw<Stored>();
+                    const auto value = Scalar<Builtin>::from(stored);
+                    std::invoke(function, Scalar<>::from(value));
+                } else {
+                    const auto &value = reader.template peek<ScalarValue<>>();
+                    [[maybe_unused]] const auto value_reader = reader.fork();
+                    reader.template consume<ScalarValue<>>();
+                    std::invoke(function, value.view());
+                }
+            });
+            return;
+        }
+
+        const auto &dispatch = ScalarDispatch<ScalarBufferOperations>::instance();
+        const auto *type_operations = dispatch.find_exact(type);
+        if (type_operations != nullptr && type_operations->has_read()) {
+            using FunctionType = std::remove_reference_t<Function>;
+            const auto consume = details::ScalarBufferValueConsumer{
+                const_cast<void *>(static_cast<const void *>(std::addressof(function))),
+                [](void *context, Scalar<> value) {
+                    std::invoke(*static_cast<FunctionType *>(context), value);
+                }};
+            type_operations->read(reader, consume);
+            return;
+        }
+
+        const auto &value = reader.template peek<ScalarValue<>>();
+        [[maybe_unused]] const auto value_reader = reader.fork();
+        reader.template consume<ScalarValue<>>();
+        std::invoke(function, value.view());
+    }
+};
+
 class TimeSeriesTickReplay {
   public:
     TimeSeriesTickReplay(util::buffer_reader &reader,
@@ -381,39 +424,7 @@ class TimeSeriesTickReplay {
     }
 
     template <typename Function> void visit_scalar(const ScalarType &type, Function &&function) {
-        if (const auto *builtin = type_cast<BuiltinScalarType>(&type)) {
-            builtin->visit_builtin_type([&]<typename Builtin>() {
-                using Stored = details::scalar_stored_t<Builtin>;
-                if constexpr (std::is_trivially_copyable_v<Stored> &&
-                              !scalar_storage_traits<Builtin>::uses_shared_handle) {
-                    const auto stored = reader_->template read_raw<Stored>();
-                    const auto value = Scalar<Builtin>::from(stored);
-                    std::invoke(function, Scalar<>::from(value));
-                } else {
-                    const auto &value = reader_->template peek<ScalarValue<>>();
-                    std::invoke(function, value.view());
-                    reader_->template consume<ScalarValue<>>();
-                }
-            });
-            return;
-        }
-
-        const auto &dispatch = ScalarDispatch<ScalarBufferOperations>::instance();
-        const auto *type_operations = dispatch.find_exact(type);
-        if (type_operations != nullptr && type_operations->has_read()) {
-            using FunctionType = std::remove_reference_t<Function>;
-            const auto consume = details::ScalarBufferValueConsumer{
-                const_cast<void *>(static_cast<const void *>(std::addressof(function))),
-                [](void *context, Scalar<> value) {
-                    std::invoke(*static_cast<FunctionType *>(context), value);
-                }};
-            type_operations->read(*reader_, consume);
-            return;
-        }
-
-        const auto &value = reader_->template peek<ScalarValue<>>();
-        std::invoke(function, value.view());
-        reader_->template consume<ScalarValue<>>();
+        TimeSeriesTickScalarRead::visit(*reader_, type, std::forward<Function>(function));
     }
 
     util::buffer_reader *reader_;
@@ -433,6 +444,16 @@ class TimeSeriesTickDiscard {
 
     util::buffer_reader *reader_;
     const TimeSeriesDispatch<TimeSeriesTickOperations> *dispatch_;
+};
+
+class QueueTickApply {
+  public:
+    QueueTickApply(util::buffer_reader &reader, QueueMode mode) noexcept;
+    bool apply(OutputState &output);
+
+  private:
+    util::buffer_reader *reader_;
+    QueueMode mode_;
 };
 
 class QueueMessageWriter {
