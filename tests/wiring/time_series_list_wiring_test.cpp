@@ -8,7 +8,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <cstdint>
+#include <span>
+#include <vector>
 
 TEST_CASE("a free fixed time series list is materialized when consumed",
           "[wiring][tsl][series:fixed-tsl][free][representation:free][feature:wiring]"
@@ -41,6 +44,72 @@ TEST_CASE("a free fixed time series list reports incompatible item types as a wi
     CHECK_THROWS_AS(bg::tsl(integer(), floating()), bg::WiringError);
 }
 
+TEST_CASE("a free fixed TSL accepts vectors and spans of wiring points",
+          "[wiring][tsl][series:fixed-tsl][representation:free][feature:wiring]"
+          "[feature:wiring-materialisation][binding:representation]") {
+    const auto first_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    const auto second_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    const auto sink = bg::node([](bg::In<bg::TSL<bg::TS<bg::i64>, 2>>) {});
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    const auto first = first_source();
+    const auto second = second_source();
+    const auto typed_items = std::array{first, second};
+    const auto span_list = bg::tsl(std::span{typed_items});
+    const auto selected = span_list[std::int64_t{1}];
+
+    CHECK(static_cast<bg::WiringPoint>(selected).record() == static_cast<bg::WiringPoint>(second).record());
+
+    const auto make_vector_list = [](bg::wp<bg::TS<bg::i64>> first_item,
+                                     bg::wp<bg::TS<bg::i64>> second_item) {
+        auto vector_items = std::vector<bg::wp<bg::TS<bg::i64>>>{};
+        vector_items.push_back(first_item);
+        vector_items.push_back(second_item);
+        return bg::tsl(vector_items);
+    };
+    const auto vector_list = make_vector_list(first, second);
+    const auto erased_items = std::vector<bg::WiringPoint>{static_cast<bg::WiringPoint>(first),
+                                                           static_cast<bg::WiringPoint>(second)};
+    const auto erased_list = bg::tsl(erased_items);
+    CHECK(&erased_list.type() == &span_list.type());
+    sink(vector_list);
+
+    (void)wiring.complete_pending_wiring();
+    REQUIRE(wiring.nodes().size() == 4);
+}
+
+TEST_CASE("a free fixed TSL rejects incompatible vector item types",
+          "[wiring][tsl][series:fixed-tsl][representation:free][feature:wiring]") {
+    const auto integer = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    const auto floating = bg::node([](bg::Out<bg::TS<float>>) {});
+
+    bg::testing::test_wiring([&] {
+        auto items = std::vector<bg::wp<>>{};
+        items.emplace_back(integer());
+        items.emplace_back(floating());
+        CHECK_THROWS_AS(bg::tsl(items), bg::WiringError);
+    });
+}
+
+TEST_CASE("an empty fixed TSL requires a resolved item type",
+          "[wiring][tsl][series:fixed-tsl][representation:free][feature:wiring]") {
+    bg::testing::test_wiring([] {
+        const auto inferred = bg::tsl<bg::TS<bg::i64>>();
+        const auto explicit_type = bg::tsl(bg::TS<bg::i64>::type());
+        const auto &inferred_type = static_cast<const bg::TimeSeriesListType &>(inferred.type());
+        const auto &explicit_type_type = static_cast<const bg::TimeSeriesListType &>(explicit_type.type());
+
+        CHECK(inferred_type.is_resolved());
+        CHECK(inferred_type.item_count() == 0);
+        CHECK(&inferred_type.item_type() == &bg::TS<bg::i64>::type());
+        CHECK(inferred_type.guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+        CHECK(&explicit_type_type == &inferred_type);
+        CHECK_THROWS_AS(bg::tsl(bg::TS<bg::SCALAR>::type()), bg::WiringError);
+        CHECK_THROWS_AS(bg::tsl(std::span<const bg::WiringPoint>{}), bg::WiringError);
+    });
+}
+
 TEST_CASE("free fixed TSL inference uses reference guarantees",
           "[wiring][tsl][reference][feature:wiring][guarantee:ordinary][guarantee:deduplicated]"
           "[guarantee:final][guarantee:const]") {
@@ -68,6 +137,16 @@ TEST_CASE("free fixed TSL inference uses reference guarantees",
         CHECK(deduplicated.item_type().guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
         CHECK(final.item_type().guarantee().value() == bg::TimeSeriesGuarantee::final);
         CHECK(constant.item_type().guarantee().value() == bg::TimeSeriesGuarantee::const_);
+
+        const auto ordinary_point = ordinary_reference();
+        const auto points = std::vector{ordinary_point};
+        const auto typed_range = bg::tsl(points);
+        const auto erased_points = std::vector<bg::WiringPoint>{ordinary_point};
+        const auto span_conversion = bg::tsl(erased_points);
+        const auto &typed_range_type = static_cast<const bg::TimeSeriesListType &>(typed_range.type());
+        const auto &span_conversion_type = static_cast<const bg::TimeSeriesListType &>(span_conversion.type());
+        CHECK(&typed_range_type.item_type() == &ordinary.item_type());
+        CHECK(&span_conversion_type.item_type() == &ordinary.item_type());
     });
 }
 

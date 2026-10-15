@@ -19,6 +19,7 @@
 #include <array>
 #include <chrono>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -104,6 +105,50 @@ TEST_CASE("a typed bundle publishes inherited and direct fields",
 
     CHECK(bundle_sink_definition::values == std::array{2.0F, 3.5F});
     CHECK(bundle_sink_definition::updated == std::array{true, true});
+}
+
+TEST_CASE("a span-backed free TSB retains its fields through materialisation and evaluation",
+          "[evaluation][tsb][series:tsb][free][representation:free][feature:wiring-materialisation]"
+          "[schema:named]") {
+    const auto sum = bg::node<bundle_sum_definition>();
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> count, bg::wp<bg::TS<float>> value) {
+        const auto collection = [&] {
+            auto fields = std::vector<bg::WiringArgument>{};
+            fields.emplace_back(bg::util::symbol{"count"}, count);
+            fields.emplace_back(bg::util::symbol{"value"}, value);
+            return bg::bundle(std::span<const bg::WiringArgument>{fields}).as<bg::TSB<DerivedBundle>>();
+        }();
+        return sum(collection);
+    };
+
+    const auto result = bg::testing::test_graph(graph, std::array<bg::i64, 2>{1, 2},
+                                                 std::array{10.0F, 20.0F});
+
+    CHECK(result.equals({11.0F, 22.0F}));
+}
+
+namespace {
+
+template <template <typename, auto...> typename> struct EmptyBundle {};
+
+} // namespace
+
+TEST_CASE("an empty free TSB publishes valid at graph start",
+          "[evaluation][tsb][series:tsb][free][feature:wiring-materialisation][representation:free]"
+          "[transition:start]") {
+    const auto observe = bg::node([](bg::In<bg::TSB<EmptyBundle>> input,
+                                     bg::Out<bg::TS<bg::i64>> output) {
+        output.set(input.valid() ? 1 : 0);
+    });
+    const auto graph = [&] {
+        const auto collection = [&] {
+            const auto fields = std::vector<bg::WiringArgument>{};
+            return bg::bundle(fields).as<bg::TSB<EmptyBundle>>();
+        }();
+        return observe(collection);
+    };
+
+    CHECK(bg::testing::test_graph(graph).equals({1}));
 }
 
 TEST_CASE("a scalar schema lifts mixed scalar and time series fields into a TSB",

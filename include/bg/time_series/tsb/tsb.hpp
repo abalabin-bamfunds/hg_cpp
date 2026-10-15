@@ -17,6 +17,7 @@
 #include <concepts>
 #include <functional>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string_view>
 #include <type_traits>
@@ -323,6 +324,8 @@ template <typename TimeSeries, typename... Arguments>
 [[nodiscard]] wp<TimeSeries> bundle(Arguments &&...arguments) {
     return details::make_typed_bundle<TimeSeries>(std::forward<Arguments>(arguments)...);
 }
+
+[[nodiscard]] wp<> bundle(std::span<const WiringArgument> fields);
 
 template <typename... Fields>
     requires(sizeof...(Fields) != 0 && (details::is_named_bundle_wiring_field<Fields> && ...))

@@ -8,8 +8,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <span>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -189,6 +191,56 @@ TEST_CASE("getattr selects a field from an unnamed free TSB",
     CHECK(&count.type() == &bg::TS<bg::i64>::type());
     CHECK(wiring.nodes().size() == 2);
     CHECK(wiring.outputs().size() == 2);
+}
+
+TEST_CASE("a free TSB accepts a span of named wiring arguments",
+          "[feature:wiring][series:tsb][schema:named][representation:free]") {
+    const auto count_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    const auto value_source = bg::node([](bg::Out<bg::TS<float>>) {});
+    const auto sink = bg::node([](bg::In<bg::TSB<TestBundle>>) {});
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+
+    const auto count = count_source();
+    const auto value = value_source();
+    const auto free_bundle = [&] {
+        auto fields = std::vector<bg::WiringArgument>{};
+        fields.emplace_back(bg::util::symbol{"count"}, count);
+        fields.emplace_back(bg::util::symbol{"value"}, value);
+        return bg::bundle(fields);
+    }();
+
+    sink(free_bundle.as<bg::TSB<TestBundle>>());
+    (void)wiring.complete_pending_wiring();
+
+    CHECK(wiring.outputs().size() == 3);
+}
+
+TEST_CASE("a free TSB span rejects duplicate field names",
+          "[feature:wiring][series:tsb][schema:named][representation:free]") {
+    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
+    bg::testing::test_wiring([&] {
+        auto fields = std::vector<bg::WiringArgument>{};
+        fields.emplace_back(bg::util::symbol{"value"}, source());
+        fields.emplace_back(bg::util::symbol{"value"}, source());
+        CHECK_THROWS_AS(bg::bundle(std::span<const bg::WiringArgument>{fields}), bg::WiringError);
+    });
+}
+
+TEST_CASE("a free TSB span requires named time-series fields",
+          "[feature:wiring][series:tsb][schema:named][representation:free]") {
+    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
+    bg::testing::test_wiring([&] {
+        auto unnamed = std::vector<bg::WiringArgument>{};
+        unnamed.emplace_back(source());
+        CHECK_THROWS_AS(bg::bundle(std::span<const bg::WiringArgument>{unnamed}), bg::WiringError);
+
+        auto scalar = std::vector<bg::WiringArgument>{};
+        scalar.emplace_back(bg::util::symbol{"value"}, bg::i64{1});
+        CHECK_THROWS_AS(bg::bundle(std::span<const bg::WiringArgument>{scalar}), bg::WiringError);
+    });
 }
 
 TEST_CASE("getattr on a TSB reference returns a reference to a value field",

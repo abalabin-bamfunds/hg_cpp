@@ -5,11 +5,15 @@
 #include <bg/graph/wiring_error.hpp>
 #include <bg/time_series/tsl/details/wiring.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
+#include <bg/type/details/time_series_type_traits.hpp>
 
 #include <array>
 #include <cstddef>
+#include <ranges>
+#include <span>
 #include <string_view>
 #include <type_traits>
+#include <vector>
 
 namespace bg {
 
@@ -71,10 +75,33 @@ class wp<TSL<Item, Size, TimeSeriesProperties...>, WiringProperties...> {
     WiringPoint point_;
 };
 
+[[nodiscard]] wp<> tsl(std::span<const WiringPoint> items);
+[[nodiscard]] wp<> tsl(const TimeSeriesType &item_type);
+
+template <typename ITEM>
+    requires(details::supported_time_series<ITEM> && !details::generic_time_series<ITEM>)
+[[nodiscard]] wp<> tsl() {
+    return tsl(ITEM::type());
+}
+
+template <std::ranges::contiguous_range Range>
+    requires std::ranges::sized_range<Range> &&
+             details::is_typed_wiring_point<std::ranges::range_value_t<Range>> &&
+             (std::ranges::range_value_t<Range>::validity != optional) &&
+             (std::ranges::range_value_t<Range>::variadic_mode == details::VariadicMode::none)
+[[nodiscard]] wp<> tsl(Range &&items) {
+    auto points = std::vector<WiringPoint>{};
+    points.reserve(std::ranges::size(items));
+    for (const auto &item : items) {
+        points.push_back(static_cast<WiringPoint>(item));
+    }
+    return tsl(points);
+}
+
 template <typename... TimeSeries> [[nodiscard]] wp<> tsl(wp<TimeSeries>... items) {
     static_assert(sizeof...(TimeSeries) != 0);
     const auto points = std::array<WiringPoint, sizeof...(TimeSeries)>{static_cast<WiringPoint>(items)...};
-    return wp<>{details::make_free_fixed_time_series_list(points)};
+    return tsl(std::span<const WiringPoint>{points});
 }
 
 static_assert(sizeof(wp<TSL<TS_T, SIZE>, var_args>) == sizeof(WiringPoint));

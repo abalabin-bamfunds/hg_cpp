@@ -9,12 +9,14 @@
 namespace bg {
 
 class TimeSeriesListType;
+class TimeSeriesType;
 
 namespace details {
 
 class VariadicWiringOperations;
 
 WiringPoint make_free_fixed_time_series_list(std::span<const WiringPoint> items);
+WiringPoint make_empty_fixed_time_series_list(const TimeSeriesType &item_type);
 WiringPoint time_series_list_item(WiringPoint list, std::size_t index);
 const VariadicWiringOperations &time_series_list_variadic_wiring_operations() noexcept;
 

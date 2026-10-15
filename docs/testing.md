@@ -204,6 +204,8 @@ graph compilation or evaluation.
 - graph signature types shared across different structures, constraint specificity, captured-value cache separation,
   and release of argument and overload constraint values
 - incompatible types, graph ownership errors, and invalid results
+- free TSL and TSB construction from vectors and spans, inferred types and
+  guarantees, explicit empty TSL item types, named fields, and argument-storage lifetime
 - variadic capture by TSB and homogeneous TSL, forwarding, materialization, exact-name direct collection binding,
   nested boundaries, and operator selection
 - deferred wiring points, retained arguments, advertised materialisation options, signature form matching and completion,

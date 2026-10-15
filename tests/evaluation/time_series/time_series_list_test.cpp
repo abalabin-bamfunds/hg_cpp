@@ -149,6 +149,39 @@ TEST_CASE("a node can select an item from a free fixed time series list",
     CHECK(result.equals({10, 20}));
 }
 
+TEST_CASE("a span-backed free TSL retains its items through materialisation and evaluation",
+          "[evaluation][tsl][series:fixed-tsl][free][representation:free][feature:wiring-materialisation]"
+          "[scalar:integer]") {
+    const auto sum = bg::node([](bg::In<bg::TSL<bg::TS<bg::i64>, 2>> input,
+                                 bg::Out<bg::TS<bg::i64>> output) {
+        output.set(*input[0] + *input[1]);
+    });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> first, bg::wp<bg::TS<bg::i64>> second) {
+        const auto collection = [&] {
+            const auto items = std::vector<bg::WiringPoint>{first, second};
+            return bg::tsl(std::span<const bg::WiringPoint>{items});
+        }();
+        return sum(collection);
+    };
+
+    const auto result = bg::testing::test_graph(graph, std::array<bg::i64, 2>{1, 2},
+                                                 std::array<bg::i64, 2>{10, 20});
+
+    CHECK(result.equals({11, 22}));
+}
+
+TEST_CASE("an empty typed TSL publishes valid at graph start",
+          "[evaluation][tsl][series:fixed-tsl][feature:wiring-materialisation][representation:free]"
+          "[transition:start]") {
+    const auto observe = bg::node([](bg::In<bg::TSL<bg::TS<bg::i64>, 0>> input,
+                                     bg::Out<bg::TS<bg::i64>> output) {
+        output.set(input.valid() && input.size() == 0 ? 1 : 0);
+    });
+    const auto graph = [&] { return observe(bg::tsl<bg::TS<bg::i64>>()); };
+
+    CHECK(bg::testing::test_graph(graph).equals({1}));
+}
+
 namespace {
 
 struct changing_list_source_definition {

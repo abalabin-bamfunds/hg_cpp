@@ -1,4 +1,5 @@
 #include <bg/time_series/tsb/details/wiring.hpp>
+#include <bg/time_series/tsb/tsb.hpp>
 
 #include <bg/evaluation_context.hpp>
 #include <bg/graph/compiled_node.hpp>
@@ -374,3 +375,23 @@ const VariadicWiringOperations &time_series_bundle_variadic_wiring_operations() 
 }
 
 } // namespace bg::details
+
+namespace bg {
+
+wp<> bundle(std::span<const WiringArgument> fields) {
+    auto points = std::vector<details::NamedBundleWiringPoint>{};
+    points.reserve(fields.size());
+    for (const auto &field : fields) {
+        if (!field.name()) {
+            throw WiringError{"a free TSB field requires a name"};
+        }
+        if (!field.is_time_series()) {
+            throw WiringError{"a free TSB field requires a time series"};
+        }
+        points.push_back({*field.name(), field.time_series()});
+    }
+
+    return wp<>{details::make_free_time_series_bundle(points)};
+}
+
+} // namespace bg

@@ -1,4 +1,5 @@
 #include <bg/time_series/tsl/details/wiring.hpp>
+#include <bg/time_series/tsl/tsl.hpp>
 
 #include <bg/evaluation_context.hpp>
 #include <bg/graph/compiled_node.hpp>
@@ -331,6 +332,15 @@ WiringPoint make_free_fixed_time_series_list(std::span<const WiringPoint> items)
     return add_wiring_record(std::make_unique<FreeFixedTimeSeriesListWiringRecord>(*type, items));
 }
 
+WiringPoint make_empty_fixed_time_series_list(const TimeSeriesType &item_type) {
+    if (!item_type.is_resolved()) {
+        throw WiringError{"an empty fixed TSL requires a resolved item type"};
+    }
+
+    const auto &type = time_series_list_type(item_type, 0, TimeSeriesGuarantee::ordinary);
+    return add_wiring_record(std::make_unique<FreeFixedTimeSeriesListWiringRecord>(type, std::span<const WiringPoint>{}));
+}
+
 WiringPoint time_series_list_item(WiringPoint list, std::size_t index) {
     const auto *semantic_type = type_cast<TimeSeriesListType>(&list.type().target_type());
     if (semantic_type == nullptr) {
@@ -362,3 +372,15 @@ const VariadicWiringOperations &time_series_list_variadic_wiring_operations() no
 }
 
 } // namespace bg::details
+
+namespace bg {
+
+wp<> tsl(std::span<const WiringPoint> items) {
+    return wp<>{details::make_free_fixed_time_series_list(items)};
+}
+
+wp<> tsl(const TimeSeriesType &item_type) {
+    return wp<>{details::make_empty_fixed_time_series_list(item_type)};
+}
+
+} // namespace bg
