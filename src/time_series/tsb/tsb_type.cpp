@@ -143,6 +143,54 @@ const TimeSeriesType &TimeSeriesBundleType::with_guarantee_limit(TimeSeriesGuara
     return time_series_bundle_type(limited_schema, limited_guarantee);
 }
 
+const TimeSeriesType *TimeSeriesBundleType::common_type(const TimeSeriesType &other) const {
+    const auto *bundle = type_cast<TimeSeriesBundleType>(&other);
+    if (bundle == nullptr || !is_resolved() || !bundle->is_resolved()) {
+        return nullptr;
+    }
+
+    const auto *common = common_schema(schema(), bundle->schema());
+    if (common == nullptr) {
+        return nullptr;
+    }
+
+    const auto common_guarantee = weakest(*guarantee().value(), *bundle->guarantee().value());
+    return &time_series_bundle_type(*common, common_guarantee);
+}
+
+const Schema *TimeSeriesBundleType::common_schema(const Schema &left, const Schema &right) {
+    if (left.name() != right.name() || left.identity() != right.identity() ||
+        left.direct_fields().size() != right.direct_fields().size() ||
+        (left.base() == nullptr) != (right.base() == nullptr)) {
+        return nullptr;
+    }
+
+    const auto *common_base = left.base() == nullptr ? nullptr : common_schema(*left.base(), *right.base());
+    if (left.base() != nullptr && common_base == nullptr) {
+        return nullptr;
+    }
+
+    auto fields = std::vector<SchemaField>{};
+    fields.reserve(left.direct_fields().size());
+    for (auto index = std::size_t{}; index < left.direct_fields().size(); ++index) {
+        const auto &left_field = left.direct_fields()[index];
+        const auto &right_field = right.direct_fields()[index];
+        if (left_field.name != right_field.name) {
+            return nullptr;
+        }
+
+        const auto &left_type = static_cast<const TimeSeriesType &>(*left_field.type);
+        const auto &right_type = static_cast<const TimeSeriesType &>(*right_field.type);
+        const auto *common_field_type = left_type.common_type(right_type);
+        if (common_field_type == nullptr) {
+            return nullptr;
+        }
+        fields.push_back({left_field.name, common_field_type, false});
+    }
+
+    return &bg::schema(left.name(), left.identity(), common_base, fields);
+}
+
 const Schema &TimeSeriesBundleType::limit_schema_guarantees(const Schema &descriptor,
                                                             TimeSeriesGuarantee limit) {
     auto fields = std::vector<SchemaField>{};

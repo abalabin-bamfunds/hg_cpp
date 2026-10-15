@@ -138,6 +138,24 @@ deduplicated, final, or const are returned without adding a node. Invalidation
 and revalidation follow the normal output rules. Collection outputs apply the
 guarantee recursively and retain stronger contained guarantees.
 
+`filter_(condition, value)` forwards changes while the condition is valid and
+true. It preserves its output while closed. Opening publishes the current value
+if it has changed since the last forwarding; repeated true condition ticks do
+not republish an unchanged value. Reopening reconciles the complete collection,
+including removals while closed. Input invalidation propagates while open;
+TSS and TSD outputs become valid empty collections rather than root-invalid.
+The output retains the input's root guarantee up to `final`. Contained time
+series are limited to that same guarantee because reopening can copy unchanged
+items. A const input becomes final because its first forwarding can be delayed.
+
+`if_then_else(condition, true_value, false_value)` selects an input by reference.
+Changing the condition exposes the selected input's current value. Updates to
+that input remain observable without copying. An invalid condition or selected
+input makes the observed result invalid. Updates to the other input and
+repeated identical condition values do not publish additional ticks. Selection
+applies to the whole collection. Both inputs must have a
+[common time series type](type-system.md#time-series-guarantees).
+
 These operators are available under `bg::operators` in C++ and `bg.operators`
 in Python.
 

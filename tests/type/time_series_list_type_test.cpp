@@ -39,6 +39,64 @@ TEST_CASE("resolved time series list types are canonical",
     CHECK_THROWS_AS(list.item_type(3), std::out_of_range);
 }
 
+TEST_CASE("common list types combine root and item guarantees recursively",
+          "[feature:type-system][series:fixed-tsl][guarantee:ordinary][guarantee:final][guarantee:const]") {
+    const auto &final_list =
+        bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, 2, bg::TimeSeriesGuarantee::final>::type();
+    const auto &constant_items = bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>, 2>::type();
+    const auto *common = final_list.common_type(constant_items);
+    const auto &expected = bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, 2>::type();
+
+    REQUIRE(common != nullptr);
+    CHECK(common == &expected);
+    CHECK(constant_items.common_type(final_list) == common);
+}
+
+TEST_CASE("common sparse lists preserve their size form and combine item guarantees",
+          "[feature:type-system][storage:variable][guarantee:ordinary][guarantee:final]") {
+    const auto &final_items = bg::time_series_list_type(bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type(),
+                                                        std::dynamic_extent, bg::TimeSeriesGuarantee::ordinary);
+    const auto &ordinary_items = bg::time_series_list_type(bg::TS<bg::i64>::type(), std::dynamic_extent,
+                                                           bg::TimeSeriesGuarantee::ordinary);
+    const auto *common = final_items.common_type(ordinary_items);
+
+    REQUIRE(common != nullptr);
+    const auto &list = bg::type_cast<bg::TimeSeriesListType>(*common);
+    CHECK(list.item_count() == std::dynamic_extent);
+    CHECK(list.guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+    CHECK(list.item_type().guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+    const auto &fixed = bg::TSL<bg::TS<bg::i64>, 2>::type();
+    CHECK(fixed.common_type(ordinary_items) == nullptr);
+    CHECK(ordinary_items.common_type(fixed) == nullptr);
+    const auto &i64_items = bg::time_series_list_type(bg::TS<bg::i64>::type(), std::dynamic_extent,
+                                                      bg::TimeSeriesGuarantee::ordinary);
+    const auto &float_items = bg::time_series_list_type(bg::TS<float>::type(), std::dynamic_extent,
+                                                        bg::TimeSeriesGuarantee::ordinary);
+    CHECK(i64_items.common_type(float_items) == nullptr);
+    CHECK(float_items.common_type(i64_items) == nullptr);
+
+    const auto &unresolved = bg::TSL<bg::TS<bg::SCALAR>, 2>::type();
+    const auto &resolved = bg::TSL<bg::TS<bg::i64>, 2>::type();
+    CHECK(unresolved.common_type(resolved) == nullptr);
+    CHECK(resolved.common_type(unresolved) == nullptr);
+}
+
+TEST_CASE("common nested list types combine each guarantee independently",
+          "[feature:type-system][series:fixed-tsl][guarantee:ordinary][guarantee:final][guarantee:const]") {
+    const auto &left = bg::TSL<bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>, 2,
+                                        bg::TimeSeriesGuarantee::final>,
+                              3, bg::TimeSeriesGuarantee::final>::type();
+    const auto &right = bg::TSL<bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, 2>, 3>::type();
+    const auto *common = left.common_type(right);
+
+    REQUIRE(common != nullptr);
+    const auto &outer = bg::type_cast<bg::TimeSeriesListType>(*common);
+    const auto &inner = bg::type_cast<bg::TimeSeriesListType>(outer.item_type());
+    CHECK(outer.guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+    CHECK(inner.guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+    CHECK(inner.item_type().guarantee().value() == bg::TimeSeriesGuarantee::final);
+}
+
 TEST_CASE("a time series list type derives its shape from resolved items",
           "[type_system][tsl][series:fixed-tsl][feature:type-system]"
           "[guarantee:ordinary][guarantee:final]") {

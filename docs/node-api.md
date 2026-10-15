@@ -457,8 +457,10 @@ Use it when sampling a value rather than forwarding a tick.
 The input must have a compatible value shape. Its time series guarantees need
 not match the output's guarantees. Both operations use normal output mutation
 and guarantee behavior. Invalid inputs invalidate outputs that support
-invalidation. TSS and TSD outputs preserve their values, following the
-[validity design](time-series-validity.md).
+invalidation. For an invalid TSS or TSD input, `copy_tick()` applies reported
+removals and `copy()` clears an existing output. Neither operation initializes
+an invalid output from an invalid input. A cleared output remains valid,
+following the [validity design](time-series-validity.md).
 Reference copies copy the reference, not its target value.
 `Out<REF<TS_T>>::set_value(reference)` assigns a `Reference` directly.
 

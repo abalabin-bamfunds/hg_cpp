@@ -522,9 +522,15 @@ An input accepts a source with the same or a stronger guarantee. A guarantee
 variable can declare a literal minimum. When several inputs map the same
 variable, it resolves to their weakest guarantee. A scalar contributes `const`.
 
-Compatible time series that differ only in their top-level guarantee have a
-common type with the weakest guarantee. This lets one output represent several
-alternative producers without discarding their shared time series structure.
+`TimeSeriesType::common_type()` combines resolved time series with matching
+structure. It selects the weakest guarantee at each corresponding time series,
+including collection items and reference targets. Reference guarantees and
+target guarantees combine independently. List sizes, dictionary key types, and
+bundle schema identities, bases, and field order must match. Scalar types must
+match exactly, and references combine only with references. The operation
+returns a canonical type, or null for unresolved or incompatible types. This
+lets one output represent alternative producers without discarding their shared
+time series structure.
 
 An omitted input guarantee accepts and preserves the source guarantee. An
 omitted output guarantee resolves to `ordinary`, except that a `REF` output

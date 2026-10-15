@@ -26,8 +26,8 @@ template <typename Target, auto... Properties> class Out<REF<Target, Properties.
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
     Reference value() const noexcept { return stored_reference(); }
 
-    template <auto... ReferenceProperties, auto... InputProperties>
-    void copy_tick(const In<REF<Target, ReferenceProperties...>, InputProperties...> &input) const {
+    template <typename InputTarget, auto... ReferenceProperties, auto... InputProperties>
+    void copy_tick(const In<REF<InputTarget, ReferenceProperties...>, InputProperties...> &input) const {
         if (input.last_updated() != state_->evaluation_time() ||
             (!input.modified() && !input.became_invalid())) {
             return;
@@ -35,8 +35,8 @@ template <typename Target, auto... Properties> class Out<REF<Target, Properties.
         copy(input);
     }
 
-    template <auto... ReferenceProperties, auto... InputProperties>
-    void copy(const In<REF<Target, ReferenceProperties...>, InputProperties...> &input) const {
+    template <typename InputTarget, auto... ReferenceProperties, auto... InputProperties>
+    void copy(const In<REF<InputTarget, ReferenceProperties...>, InputProperties...> &input) const {
         if (!input.valid()) {
             invalidate();
             return;

@@ -64,6 +64,22 @@ const TimeSeriesType &TimeSeriesDictionaryType::with_guarantee_limit(TimeSeriesG
     return time_series_dictionary_type(key_type(), limited_value, limited_guarantee);
 }
 
+const TimeSeriesType *TimeSeriesDictionaryType::common_type(const TimeSeriesType &other) const {
+    const auto *dictionary = type_cast<TimeSeriesDictionaryType>(&other);
+    if (dictionary == nullptr || !is_resolved() || !dictionary->is_resolved() ||
+        &key_type() != &dictionary->key_type()) {
+        return nullptr;
+    }
+
+    const auto *common_value = value_type().common_type(dictionary->value_type());
+    if (common_value == nullptr) {
+        return nullptr;
+    }
+
+    const auto common_guarantee = weakest(*guarantee().value(), *dictionary->guarantee().value());
+    return &time_series_dictionary_type(key_type(), *common_value, common_guarantee);
+}
+
 bool TimeSeriesDictionaryType::requires_reference_representation_for(const TimeSeriesType &supplied) const noexcept {
     const auto *tsd = type_cast<TimeSeriesDictionaryType>(&supplied);
     if (tsd == nullptr) {

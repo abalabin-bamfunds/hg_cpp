@@ -188,6 +188,8 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "all_valid", operators::all_valid);
     export_operator(operators_module, "sample", operators::sample);
     export_operator(operators_module, "dedup", operators::dedup);
+    export_operator(operators_module, "filter_", operators::filter_);
+    export_operator(operators_module, "if_then_else", operators::if_then_else);
     export_operator(operators_module, "const_", operators::const_);
     export_operator(operators_module, "default_", operators::default_);
     export_operator(operators_module, "getitem", operators::getitem);

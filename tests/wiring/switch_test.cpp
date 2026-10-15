@@ -2,6 +2,7 @@
 #include <bg/node.hpp>
 #include <bg/switch.hpp>
 #include <bg/testing/test_wiring.hpp>
+#include <bg/time_series/tsb/tsb_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -13,6 +14,10 @@ namespace {
 
 using namespace bg;
 using namespace bg::literals;
+
+template <template <typename, auto...> typename Field> struct switch_bundle {
+    Field<TS<i64>> value;
+};
 
 const auto integer_source = node([](Out<TS<i64>>) {});
 const auto float_source = node([](Out<TS<float>>) {});
@@ -154,6 +159,25 @@ TEST_CASE("switch uses the weakest compatible case output guarantee",
 
         CHECK(&output.type() ==
               &REF<TS<i64>, TimeSeriesGuarantee::deduplicated>::type());
+    });
+}
+
+TEST_CASE("switch resolves bundles whose matching fields have different guarantees",
+          "[feature:switch][feature:wiring][feature:operator][feature:type-system]"
+          "[series:tsb][schema:named][guarantee:ordinary][guarantee:final][definition:function]") {
+    const auto key = node([](Out<TS<std::int64_t>>) {});
+    const auto final_source = node([](Out<TSB<switch_bundle, TimeSeriesGuarantee::final>>) {});
+    const auto ordinary_source = node([](Out<TSB<switch_bundle>>) {});
+    const auto final_graph = graph(
+        "name"_n = "final_bundle_switch_source",
+        [&]() -> wp<TSB<switch_bundle, TimeSeriesGuarantee::final>> { return final_source(); });
+    const auto ordinary_graph = graph(
+        "name"_n = "ordinary_bundle_switch_source",
+        [&]() -> wp<TSB<switch_bundle>> { return ordinary_source(); });
+
+    testing::test_wiring([&] {
+        const auto output = switch_(key(), cases{case_(1, final_graph), case_(2, ordinary_graph)});
+        CHECK(&output.type() == &REF<TSB<switch_bundle>, TimeSeriesGuarantee::deduplicated>::type());
     });
 }
 

@@ -27,6 +27,8 @@ valid = _native.valid
 all_valid = _native.all_valid
 sample = _native.sample
 dedup = _native.dedup
+filter_ = _native.filter_
+if_then_else = _native.if_then_else
 const_ = _native.const_
 default_ = _native.default_
 getitem = _native.getitem
@@ -44,9 +46,11 @@ __all__ = [
     "div",
     "eq",
     "floordiv",
+    "filter_",
     "ge",
     "getattr",
     "getitem",
+    "if_then_else",
     "gt",
     "le",
     "lt",

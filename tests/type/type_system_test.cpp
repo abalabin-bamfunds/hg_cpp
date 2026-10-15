@@ -236,6 +236,8 @@ TEST_CASE("compatible time-series types have a common weakest guarantee",
     CHECK(final.common_type(ordinary) == &ordinary);
     CHECK(final.common_type(constant) == &final);
     CHECK(ordinary.common_type(bg::TS<float>::type()) == nullptr);
+    CHECK(bg::TS<bg::SCALAR>::type().common_type(ordinary) == nullptr);
+    CHECK(ordinary.common_type(bg::TS<bg::SCALAR>::type()) == nullptr);
 }
 
 TEST_CASE("an ordinary time-series input accepts final and const values",

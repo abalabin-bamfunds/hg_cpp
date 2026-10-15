@@ -20,6 +20,8 @@ using NUMERIC = ScalarVariable<"NUMERIC", i64, double>;
 
 using CONVERT_RESULT = TimeSeriesVariable<"CONVERT_RESULT">;
 using SIGNAL = TimeSeriesVariable<"SIGNAL">;
+using TRUE_TS = TimeSeriesVariable<"TRUE_TS">;
+using FALSE_TS = TimeSeriesVariable<"FALSE_TS">;
 
 // Arithmetic and unary operators.
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR, SCALAR) -> SCALAR> add;
@@ -57,6 +59,8 @@ extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> bool> all_valid;
 // Tick selection.
 extern BG_LIBRARY_EXPORT operator_<auto(SIGNAL, TS_T) -> TS_T> sample;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> TS_T> dedup;
+extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TS_T) -> TS_T> filter_;
+extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TRUE_TS, FALSE_TS) -> OUT> if_then_else;
 
 // Nested graph operators.
 using ::bg::map;

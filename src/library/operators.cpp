@@ -34,6 +34,8 @@ decltype(all_valid) all_valid{"all_valid", {"value"}};
 
 decltype(sample) sample{"sample", {"signal", "value"}};
 decltype(dedup) dedup{"dedup", {"value"}};
+decltype(filter_) filter_{"filter_", {"condition", "value"}};
+decltype(if_then_else) if_then_else{"if_then_else", {"condition", "true_value", "false_value"}};
 
 namespace {
 

@@ -88,6 +88,9 @@ aggregate definition immediately before its registration member. Put callable
 and graph implementations directly in their registration initializers. Keep
 implementation helpers beside the definitions that use them.
 
+Name default implementation aggregates `<operator>_impl`, for example
+`sample_impl` and `filter_impl`.
+
 Give callback captures a lifetime independent of the temporary registration
 class.
 

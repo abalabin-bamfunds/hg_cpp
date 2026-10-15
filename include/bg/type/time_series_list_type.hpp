@@ -26,6 +26,7 @@ class TimeSeriesListType : public FixedItemTimeSeriesType {
     const TimeSeriesType &item_type(std::size_t index) const final;
     [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
     const TimeSeriesType &with_guarantee_limit(TimeSeriesGuarantee limit) const override;
+    const TimeSeriesType *common_type(const TimeSeriesType &other) const override;
     [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
     [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map,
                                 std::optional<TimeSeriesGuarantee> reference_limit) const override;

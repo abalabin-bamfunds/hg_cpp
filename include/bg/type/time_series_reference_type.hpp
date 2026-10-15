@@ -15,6 +15,7 @@ class TimeSeriesReferenceType : public TimeSeriesType {
     const TimeSeriesType &dereferenced_type() const override;
     TimeSeriesGuarantee reference_limit() const;
     [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
+    const TimeSeriesType *common_type(const TimeSeriesType &other) const override;
 
   protected:
     TimeSeriesReferenceType(const TimeSeriesType &target_type, GuaranteeParameter guarantee)

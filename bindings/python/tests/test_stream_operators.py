@@ -1,3 +1,5 @@
+import pytest
+
 import bg
 
 
@@ -34,6 +36,58 @@ def test_sample_uses_passive_value_at_signal_ticks():
         return bg.operators.sample(signal, value)
 
     assert bg.test_graph(sample, [0, None, 2, None, 4], [10, 20, None, 30, None]) == [10, None, 20, None, 30]
+
+
+def test_filter_preserves_output_while_closed_and_skips_unchanged_value_on_reopening():
+    @bg.graph
+    def filter(condition: bg.TS[bool], value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.filter_(condition, value)
+
+    @bg.graph
+    def constant_value(condition: bg.TS[bool]) -> bg.TS[int]:
+        return bg.operators.filter_(condition, bg.operators.const_(10))
+
+    assert bg.test_graph(filter, [True, False, False, True, True], [10, 20, 30, 30, 40]) == [
+        10,
+        None,
+        None,
+        30,
+        40,
+    ]
+    assert bg.test_graph(constant_value, [True, False, True, True]) == [10, None, None, None]
+
+
+def test_if_then_else_switches_references_and_follows_only_the_selected_value():
+    @bg.graph
+    def select(condition: bg.TS[bool], true_value: bg.TS[int], false_value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.if_then_else(condition, true_value, false_value)
+
+    assert bg.test_graph(select, [True, True, False, False, True], [10, 11, 12, 13, 14], [1, 2, 3, 4, 5]) == [
+        10,
+        11,
+        3,
+        4,
+        14,
+    ]
+
+    @bg.graph
+    def repeated_selection(condition: bg.TS[bool]) -> bg.TS[int]:
+        return bg.operators.if_then_else(condition, bg.operators.const_(10), bg.operators.const_(20))
+
+    assert bg.test_graph(repeated_selection, [True, True, False, False, True]) == [10, None, 20, None, 10]
+
+
+def test_if_then_else_rejects_incompatible_branch_structures():
+    @bg.compute_node
+    def make_set(value: bg.TS[int]) -> bg.TSS[int]:
+        return {value.value}
+
+    @bg.graph
+    def select(condition: bg.TS[bool], value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.if_then_else(condition, value, make_set(value))
+
+    with pytest.raises(ValueError, match="Cannot resolve operator if_then_else"):
+        bg.test_graph(select, [True], [1])
 
 
 def test_sample_copies_the_current_dictionary_value_at_signal_ticks():

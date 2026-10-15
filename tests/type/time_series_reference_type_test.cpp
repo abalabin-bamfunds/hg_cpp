@@ -103,6 +103,47 @@ TEST_CASE("time series reference types retain their target and guarantee",
     CHECK(&bg::REF<bg::TS<std::int64_t>, bg::TimeSeriesGuarantee::const_>::type() == &reference);
 }
 
+TEST_CASE("common references combine target and reference guarantees separately",
+          "[feature:type-system][series:reference][guarantee:deduplicated][guarantee:final][guarantee:const]"
+          "[binding:reference-to-reference]") {
+    const auto &left = bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>,
+                               bg::TimeSeriesGuarantee::final>::type();
+    const auto &right = bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>,
+                                bg::TimeSeriesGuarantee::deduplicated>::type();
+    const auto *common = left.common_type(right);
+
+    REQUIRE(common != nullptr);
+    const auto &reference = bg::type_cast<bg::TimeSeriesReferenceType>(*common);
+    CHECK(reference.guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
+    CHECK(reference.target_type().guarantee().value() == bg::TimeSeriesGuarantee::final);
+    CHECK(right.common_type(left) == common);
+    CHECK(left.common_type(bg::TS<bg::i64>::type()) == nullptr);
+    CHECK(bg::TS<bg::i64>::type().common_type(left) == nullptr);
+    CHECK(bg::REF<bg::TS<bg::i64>>::type().common_type(bg::REF<bg::TS<float>>::type()) == nullptr);
+    CHECK(bg::REF<bg::TS<float>>::type().common_type(bg::REF<bg::TS<bg::i64>>::type()) == nullptr);
+
+    const auto &unresolved = bg::REF<bg::TS<bg::SCALAR>>::type();
+    const auto &resolved = bg::REF<bg::TS<bg::i64>>::type();
+    CHECK(unresolved.common_type(resolved) == nullptr);
+    CHECK(resolved.common_type(unresolved) == nullptr);
+}
+
+TEST_CASE("common reference targets combine nested collection guarantees",
+          "[feature:type-system][series:reference][series:tsd][guarantee:ordinary][guarantee:final]"
+          "[binding:reference-to-reference]") {
+    const auto &left = bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>,
+                                      bg::TimeSeriesGuarantee::final>>::type();
+    const auto &right = bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>::type();
+    const auto *common = left.common_type(right);
+
+    REQUIRE(common != nullptr);
+    const auto &reference = bg::type_cast<bg::TimeSeriesReferenceType>(*common);
+    const auto &dictionary = bg::type_cast<bg::TimeSeriesDictionaryType>(reference.target_type());
+    CHECK(reference.guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+    CHECK(dictionary.guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+    CHECK(dictionary.value_type().guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+}
+
 TEST_CASE("a generic reference accepts a reference or its target",
           "[type][reference][resolution][feature:type-system][declaration:generic][guarantee:ordinary]"
           "[guarantee:const][binding:value-to-reference][binding:reference-to-reference]") {

@@ -25,7 +25,9 @@ class TimeSeriesType : public Type {
     // Returns a canonical resolved type capped at limit, including contained time series. A reference caps only
     // its own guarantee and preserves its target. The receiver and its contained time series must be resolved.
     virtual const TimeSeriesType &with_guarantee_limit(TimeSeriesGuarantee limit) const;
-    const TimeSeriesType *common_type(const TimeSeriesType &other) const;
+    // Returns the canonical resolved type with weakest matching guarantees, or nullptr for incompatible or
+    // unresolved types.
+    virtual const TimeSeriesType *common_type(const TimeSeriesType &other) const;
     virtual bool supports_invalidation() const noexcept { return true; }
     virtual bool contains_reference() const;
     virtual bool reference_changes_require_cycle_cleanup() const noexcept { return false; }

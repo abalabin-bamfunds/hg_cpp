@@ -155,6 +155,8 @@ graph compilation or evaluation.
 - types passed as scalars
 - guarantee compatibility, propagation, and enforcement; C++ variable minima,
   preservation of stronger guarantees, repeated-variable resolution, and overload ordering
+- recursive common types, independent root and item guarantees, reference targets,
+  schema identity and inheritance, and rejection of incompatible structures
 - callable scalar-return guarantee inference across scalars, time series,
   references, passive inputs, optional values, explicit outputs, startup
   scheduling, equality support, and nested graph boundaries
@@ -328,6 +330,10 @@ For each reusable node and graph, test:
   const collection items
 - exact deduplication, output guarantees, unchanged guaranteed inputs without
   added nodes, reference-observed guarantees, and invalidation/revalidation
+- conditional filtering, reopening after missed changes and removals,
+  invalidation, revalidation, and recursive output guarantee limits
+- whole-input reference selection, selected-reference retargeting, unchanged
+  selections, and unselected-input updates
 - arithmetic across scalar and time series arguments, exact type matching,
   integer and temporal wraparound, and borrowed string construction
 - conversion between scalar time series, full target type matching including

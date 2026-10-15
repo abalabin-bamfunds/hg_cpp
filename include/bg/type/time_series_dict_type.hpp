@@ -19,6 +19,7 @@ class TimeSeriesDictionaryType : public FixedItemTimeSeriesType {
     bool contains_reference() const override { return value_type().contains_reference(); }
     [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
     const TimeSeriesType &with_guarantee_limit(TimeSeriesGuarantee limit) const override;
+    const TimeSeriesType *common_type(const TimeSeriesType &other) const override;
 
     std::size_t item_count() const noexcept final { return 1; }
     const TimeSeriesType &item_type(std::size_t index) const final;

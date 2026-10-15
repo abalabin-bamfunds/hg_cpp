@@ -96,6 +96,21 @@ const TimeSeriesType &TimeSeriesReferenceType::with_guarantee(TimeSeriesGuarante
     return time_series_reference_type(target_type(), guarantee);
 }
 
+const TimeSeriesType *TimeSeriesReferenceType::common_type(const TimeSeriesType &other) const {
+    const auto *reference = type_cast<TimeSeriesReferenceType>(&other);
+    if (reference == nullptr || !is_resolved() || !reference->is_resolved()) {
+        return nullptr;
+    }
+
+    const auto *common_target = target_type().common_type(reference->target_type());
+    if (common_target == nullptr) {
+        return nullptr;
+    }
+
+    const auto common_guarantee = weakest(*guarantee().value(), *reference->guarantee().value());
+    return &time_series_reference_type(*common_target, common_guarantee);
+}
+
 const Type &GenericTimeSeriesReferenceType::resolve(const TypeMap &type_map) const {
     const auto &resolved_target = target_type().resolve(type_map);
     const auto *target = type_cast<TimeSeriesType>(&resolved_target);

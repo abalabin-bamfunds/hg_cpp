@@ -113,6 +113,46 @@ TEST_CASE("copy propagates value invalidation and revalidation",
     CHECK(actual.equals({1, std::nullopt, 2}));
 }
 
+TEST_CASE("reference copy accepts independent declarations and propagates invalidation",
+          "[feature:node-api][feature:test-graph][series:reference]"
+          "[transition:invalidation][transition:revalidation]") {
+    const auto value = node([](Out<TS<i64>> output) { output.set(10); });
+    const auto reference = node([](In<TS<i64>> cycle, In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) {
+        if (*cycle == 1) {
+            output.invalidate();
+        } else {
+            output.copy(input);
+        }
+    });
+    const auto copy = node([](In<REF<TS_T>, optional> input,
+                              Out<REF<TS<i64>>> output) { output.copy(input); });
+    const auto copy_tick = node([](In<REF<TS_T>, optional> input,
+                                   Out<REF<TS<i64>>> output) { output.copy_tick(input); });
+    const auto read = node([](In<TS<i64>, optional> input, Out<TS<i64>> output) { output.copy(input); });
+    const auto observe_validity = node([](In<TS<i64>, optional> input, Out<TS<bool>> output) {
+        output.set(input.valid());
+    });
+    const auto copy_graph = [&](wp<TS<i64>> cycle) {
+        return read(copy(reference(cycle, value())));
+    };
+    const auto copy_validity_graph = [&](wp<TS<i64>> cycle) {
+        return observe_validity(copy(reference(cycle, value())));
+    };
+    const auto copy_tick_graph = [&](wp<TS<i64>> cycle) {
+        return read(copy_tick(reference(cycle, value())));
+    };
+    const auto copy_tick_validity_graph = [&](wp<TS<i64>> cycle) {
+        return observe_validity(copy_tick(reference(cycle, value())));
+    };
+
+    const auto cycles = std::array{0, 1, 2};
+
+    CHECK(testing::test_graph(copy_graph, cycles).equals<i64>({10, std::nullopt, 10}));
+    CHECK(testing::test_graph(copy_validity_graph, cycles).equals<bool>({true, false, true}));
+    CHECK(testing::test_graph(copy_tick_graph, cycles).equals<i64>({10, std::nullopt, 10}));
+    CHECK(testing::test_graph(copy_tick_validity_graph, cycles).equals<bool>({true, false, true}));
+}
+
 TEST_CASE("copy of a string time series retains its storage",
           "[feature:node-api][series:value][scalar:string][transition:update]") {
     const auto time = MIN_DT + std::chrono::microseconds{1};

@@ -110,6 +110,21 @@ const TimeSeriesType &TimeSeriesListType::with_guarantee_limit(TimeSeriesGuarant
     return time_series_list_type(limited_item, item_count(), limited_guarantee);
 }
 
+const TimeSeriesType *TimeSeriesListType::common_type(const TimeSeriesType &other) const {
+    const auto *list = type_cast<TimeSeriesListType>(&other);
+    if (list == nullptr || !is_resolved() || !list->is_resolved() || item_count() != list->item_count()) {
+        return nullptr;
+    }
+
+    const auto *common_item = item_type().common_type(list->item_type());
+    if (common_item == nullptr) {
+        return nullptr;
+    }
+
+    const auto common_guarantee = weakest(*guarantee().value(), *list->guarantee().value());
+    return &time_series_list_type(*common_item, item_count(), common_guarantee);
+}
+
 bool TimeSeriesListType::do_match(const Type &supplied, TypeMap &type_map) const {
     return do_match(supplied, type_map, std::nullopt);
 }
