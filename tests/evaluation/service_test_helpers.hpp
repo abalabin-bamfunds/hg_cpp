@@ -49,15 +49,4 @@ template <typename KEY> struct FinalKeySource {
     void evaluate() const noexcept {}
 };
 
-struct FinalValueDictionarySource {
-    Out<TSD<std::int64_t, TS<std::int64_t, TimeSeriesGuarantee::final>>> output;
-
-    void start() const {
-        output[1].set(4);
-        output[2].set(9);
-    }
-
-    void evaluate() const noexcept {}
-};
-
 } // namespace

@@ -23,17 +23,6 @@ using namespace bg::literals;
 const auto copy_context =
     node([](In<TS<std::int64_t>, "value"_n, context> value, Out<TS<std::int64_t>> output) { output.set(*value); });
 
-const auto dictionary_at_one =
-    node([](In<TS<std::int64_t>> value, Out<TSD<std::int64_t, TS<std::int64_t>>> output) { output[1].set(*value); });
-
-const auto optional_dictionary_at_one = node([](In<TS<bool>> present, Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
-    if (*present) {
-        output[1].set(1);
-    } else {
-        output.erase(1);
-    }
-});
-
 const auto optional_value = node([](In<TS<std::int64_t>> value, In<TS<bool>> valid, Out<TS<std::int64_t>> output) {
     if (*valid) {
         output.set(*value);
@@ -260,15 +249,15 @@ TEST_CASE("an explicitly supplied context reference propagates target ticks",
 
 TEST_CASE("a context time series is available to map branches",
           "[feature:context-time-series][feature:map][feature:nested-graph]") {
-    const auto tested = [&](wp<TS<std::int64_t>> mapped, wp<TS<std::int64_t>> value) {
+    const auto tested = [&](wp<TSD<std::int64_t, TS<std::int64_t>>> mapped, wp<TS<std::int64_t>> value) {
         return with_context("value"_n = value, [&] {
-            return map([](auto) { return copy_context(); }, dictionary_at_one(mapped))[std::int64_t{1}]
+            return map([](auto) { return copy_context(); }, mapped)[std::int64_t{1}]
                 .as<TS<std::int64_t>>();
         });
     };
 
-    const auto actual =
-        testing::test_graph(tested, std::array<std::int64_t, 3>{1, 2, 3}, std::array<std::int64_t, 3>{10, 20, 30});
+    const auto actual = testing::test_graph(tested, {{{1, 1}}, {{1, 2}}, {{1, 3}}},
+                                            std::array<std::int64_t, 3>{10, 20, 30});
 
     CHECK(actual.equals({10, 20, 30}));
 }
@@ -354,15 +343,15 @@ TEST_CASE("a context time series is available to switch branches",
 
 TEST_CASE("a context time series is available to mesh branches",
           "[feature:context-time-series][feature:mesh][feature:nested-graph]") {
-    const auto tested = [&](wp<TS<std::int64_t>> mapped, wp<TS<std::int64_t>> value) {
+    const auto tested = [&](wp<TSD<std::int64_t, TS<std::int64_t>>> mapped, wp<TS<std::int64_t>> value) {
         return with_context("value"_n = value, [&] {
-            return mesh([](auto) { return copy_context(); }, dictionary_at_one(mapped))[std::int64_t{1}]
+            return mesh([](auto) { return copy_context(); }, mapped)[std::int64_t{1}]
                 .as<TS<std::int64_t>>();
         });
     };
 
-    const auto actual =
-        testing::test_graph(tested, std::array<std::int64_t, 3>{1, 2, 3}, std::array<std::int64_t, 3>{10, 20, 30});
+    const auto actual = testing::test_graph(tested, {{{1, 1}}, {{1, 2}}, {{1, 3}}},
+                                            std::array<std::int64_t, 3>{10, 20, 30});
 
     CHECK(actual.equals({10, 20, 30}));
 }
@@ -460,14 +449,14 @@ TEST_CASE("a restarted nested graph samples the current context value",
 
 TEST_CASE("a new map branch samples an existing context value",
           "[feature:context-time-series][feature:map][feature:nested-graph][feature:sampling]") {
-    const auto tested = [](wp<TS<bool>> present) {
+    const auto tested = [](wp<TSD<std::int64_t, TS<std::int64_t>>> values) {
         return with_context("value"_n = std::int64_t{42}, [&] {
-            return map([](auto) { return copy_context(); }, optional_dictionary_at_one(present))[std::int64_t{1}]
+            return map([](auto) { return copy_context(); }, values)[std::int64_t{1}]
                 .as<TS<std::int64_t>>();
         });
     };
 
-    const auto actual = testing::test_graph(tested, std::array{false, true});
+    const auto actual = testing::test_graph(tested, {{}, {{1, 1}}});
 
     CHECK(actual.equals({std::nullopt, 42}));
 }
@@ -476,11 +465,11 @@ TEST_CASE("a collection context preserves item change notifications",
           "[feature:context-time-series][feature:nested-graph][series:tsd]") {
     const auto inner =
         graph("name"_n = "dictionary_context_consumer", []() -> wp<TS<std::int64_t>> { return copy_context_item(); });
-    const auto tested = [&](wp<TS<std::int64_t>> value, wp<TS<bool>> run) {
-        return with_context("values"_n = dictionary_at_one(value), [&] { return nested(inner, run); });
+    const auto tested = [&](wp<TSD<std::int64_t, TS<std::int64_t>>> values, wp<TS<bool>> run) {
+        return with_context("values"_n = values, [&] { return nested(inner, run); });
     };
 
-    const auto actual = testing::test_graph(tested, std::array<std::int64_t, 3>{7, 8, 9}, std::array{true, true, true});
+    const auto actual = testing::test_graph(tested, {{{1, 7}}, {{1, 8}}, {{1, 9}}}, std::array{true, true, true});
 
     CHECK(actual.equals({7, 8, 9}));
 }

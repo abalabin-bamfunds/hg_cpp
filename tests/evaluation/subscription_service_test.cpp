@@ -98,19 +98,17 @@ TEST_CASE("subscription service clients inside map branches update one root requ
     });
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
-    const auto values = node<FinalValueDictionarySource>();
-    const auto tested = [&](wp<TS<std::int64_t>> tick) {
-        (void)tick;
+    const auto tested = [&](wp<TSD<std::int64_t, TS<std::int64_t, TimeSeriesGuarantee::final>>> values) {
         const auto mapped = map(
             [&](auto key, auto item) {
                 (void)service(key);
                 return item;
             },
-            values(), "__key_arg__"_n = 0);
+            values, "__key_arg__"_n = 0);
         return mapped[std::int64_t{1}].as<TS<std::int64_t>>();
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 1>{0});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, {{{1, 4}, {2, 9}}});
 
     CHECK(actual.equals<std::int64_t>({4}));
     CHECK(log.sizes == std::vector<std::size_t>{2});
@@ -184,19 +182,17 @@ TEST_CASE("subscription service clients inside mesh branches update one root req
     });
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
-    const auto values = node<FinalValueDictionarySource>();
-    const auto tested = [&](wp<TS<std::int64_t>> tick) {
-        (void)tick;
+    const auto tested = [&](wp<TSD<std::int64_t, TS<std::int64_t, TimeSeriesGuarantee::final>>> values) {
         const auto mapped = mesh(
             [&](auto key, auto item) {
                 (void)service(key);
                 return item;
             },
-            values(), "__key_arg__"_n = 0);
+            values, "__key_arg__"_n = 0);
         return mapped[std::int64_t{1}].as<TS<std::int64_t>>();
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 1>{0});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, {{{1, 4}, {2, 9}}});
 
     CHECK(actual.equals<std::int64_t>({4}));
     CHECK(log.sizes == std::vector<std::size_t>{2});
@@ -301,18 +297,16 @@ TEST_CASE("response-producing subscription clients inside a map reject dependenc
         graph("name"_n = "lookup_impl", [&](wp<TSS<std::int64_t>> requests) { return respond(requests); });
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
-    const auto values = node<FinalValueDictionarySource>();
-    const auto tested = [&](wp<TS<std::int64_t>> tick) {
-        (void)tick;
+    const auto tested = [&](wp<TSD<std::int64_t, TS<std::int64_t, TimeSeriesGuarantee::final>>> values) {
         const auto mapped = map(
-            [&](auto key, auto) { return service(key).template as<TS<std::int64_t>>(); }, values(),
+            [&](auto key, auto) { return service(key).template as<TS<std::int64_t>>(); }, values,
             "__key_arg__"_n = 0);
         return mapped[std::int64_t{1}].as<TS<std::int64_t>>();
     };
 
     auto diagnostic = std::string{};
     try {
-        (void)testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<std::int64_t, 1>{0});
+        (void)testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, {{{1, 4}, {2, 9}}});
     } catch (const std::exception &error) {
         diagnostic = error.what();
     }

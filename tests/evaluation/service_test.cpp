@@ -310,24 +310,18 @@ TEST_CASE("service clients in map branches withdraw requests when branches stop"
 
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
-    const auto values = node([](In<TS<bool>> present, Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
-        if (*present) {
-            output[5].set(7);
-        } else {
-            output.erase(5);
-        }
-    });
-    const auto tested = [&](wp<TS<bool>> present) {
+    const auto tested = [&](wp<TSD<std::int64_t, TS<std::int64_t>>> values) {
         const auto mapped = map(
             [&](auto value) {
                 service(value);
                 return value;
             },
-            values(present));
+            values);
         return mapped[std::int64_t{5}].as<TS<std::int64_t>>();
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array{true, false, true});
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue},
+                                            {{{5, 7}}, {{5, literal::REMOVE}}, {{5, 7}}});
 
     CHECK(actual.equals<std::int64_t>({7, std::nullopt, 7}));
     CHECK(request_sizes == std::vector<std::size_t>{1, 0, 1});
@@ -362,16 +356,10 @@ TEST_CASE("service clients follow repeated switch changes after a map branch ret
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
 
-    const auto values = node([](In<TS<bool>> present, Out<TSD<std::int64_t, TS<std::int64_t>>> output) {
-        if (present.value()) {
-            output[5].set(7);
-        } else {
-            output.erase(5);
-        }
-    });
     const auto add_offset = node([](In<TS<std::int64_t>> value, std::int64_t offset,
                                     Out<TS<std::int64_t>> output) { output.set(value.value() + offset); });
-    const auto tested = [&](wp<TS<bool>> present, wp<TS<std::int64_t>> selected_case) {
+    const auto tested = [&](wp<TSD<std::int64_t, TS<std::int64_t>>> values,
+                            wp<TS<std::int64_t>> selected_case) {
         const auto mapped = map(
             [&](auto value, auto selector) {
                 return switch_(
@@ -389,14 +377,14 @@ TEST_CASE("service clients follow repeated switch changes after a map branch ret
                            value)
                     .template as<TS<std::int64_t>>();
             },
-            values(present), selected_case);
+            values, selected_case);
         return mapped[std::int64_t{5}].as<TS<std::int64_t>>();
     };
 
     const auto actual = testing::test_graph(
         tested,
         bg::GraphRunOptions{.services = &catalogue},
-        std::array{true, true, true, false, true, true},
+        {{{5, 7}}, {{5, 7}}, {{5, 7}}, {{5, literal::REMOVE}}, {{5, 7}}, {{5, 7}}},
         std::array<std::int64_t,
         6>{1, 2, 1, 1, 2, 1}
     );

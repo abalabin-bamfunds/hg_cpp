@@ -525,16 +525,9 @@ TEST_CASE("map uses the union of mapped dictionary key sets and binds missing va
 TEST_CASE("map uses a TSS key set for a source graph",
           "[feature:map][feature:nested-graph][feature:reference][series:tss][series:tsd][shape:nested]"
           "[transition:addition][transition:removal]") {
-    const auto make_keys = node([](In<TS<bool>> present, Out<TSS<std::int64_t>> output) {
-        if (*present) {
-            output.insert(1);
-        } else {
-            output.erase(1);
-        }
-    });
-    const auto graph = [&](wp<TS<bool>> present) { return wire_source_map(make_keys(present))[std::int64_t{1}]; };
+    const auto graph = [&](wp<TSS<std::int64_t>> keys) { return wire_source_map(keys)[std::int64_t{1}]; };
 
-    const auto actual = testing::test_graph(graph, std::array{true, false, true});
+    const auto actual = testing::test_graph(graph, {{{1}}, {literal::REMOVED(1)}, {{1}}});
 
     CHECK(actual.equals<std::int64_t>({1, std::nullopt, 1}));
 }
@@ -542,16 +535,9 @@ TEST_CASE("map uses a TSS key set for a source graph",
 TEST_CASE("map uses a selected TSD key set for a source graph",
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[transition:addition][transition:removal]") {
-    const auto make_keys = node([](In<TS<bool>> present, Out<TSD<std::int64_t, TS<i64>>> output) {
-        if (*present) {
-            output[1].set(0);
-        } else {
-            output.erase(1);
-        }
-    });
-    const auto graph = [&](wp<TS<bool>> present) { return wire_source_map(make_keys(present))[std::int64_t{1}]; };
+    const auto graph = [&](wp<TSD<std::int64_t, TS<i64>>> keys) { return wire_source_map(keys)[std::int64_t{1}]; };
 
-    const auto actual = testing::test_graph(graph, std::array{true, false, true});
+    const auto actual = testing::test_graph(graph, {{{1, 0}}, {literal::REMOVED(1)}, {{1, 0}}});
 
     CHECK(actual.equals<std::int64_t>({1, std::nullopt, 1}));
 }
