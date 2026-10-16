@@ -140,9 +140,9 @@ TEST_CASE("lag retains owned collection scalar snapshots",
 
     CHECK_FALSE(actual[0]);
     REQUIRE(actual[1]);
-    CHECK(scalar_cast<Dict<i64, string>>(*actual[1]).at(1).value() == "old");
+    CHECK(scalar_cast<Dict<i64, string>>(actual[1]->view()).at(1).value() == "old");
     REQUIRE(actual[2]);
-    CHECK(scalar_cast<Dict<i64, string>>(*actual[2]).at(1).value() == "new");
+    CHECK(scalar_cast<Dict<i64, string>>(actual[2]->view()).at(1).value() == "new");
 }
 
 TEST_CASE("lag releases runtime-resolved collection state at runtime graph teardown",

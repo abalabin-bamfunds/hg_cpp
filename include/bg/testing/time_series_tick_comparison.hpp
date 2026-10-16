@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/export.hpp>
 #include <bg/literal/time_series_literal.hpp>
 #include <bg/time_series/dispatch.hpp>
 #include <bg/util/buffer.hpp>
@@ -22,10 +23,7 @@ struct TickLiteralComparison {
 
 namespace bg {
 
-template <> inline TimeSeriesDispatch<testing::TickLiteralComparison> &
-TimeSeriesDispatch<testing::TickLiteralComparison>::instance() noexcept {
-    static auto dispatch = TimeSeriesDispatch<testing::TickLiteralComparison>{};
-    return dispatch;
-}
+template <> BG_EXPORT TimeSeriesDispatch<testing::TickLiteralComparison> &
+TimeSeriesDispatch<testing::TickLiteralComparison>::instance() noexcept;
 
 } // namespace bg
