@@ -25,6 +25,7 @@ class ServiceRequestBinding;
 } // namespace details
 
 class NestedGraph;
+class Queue;
 class RuntimeGraphEvaluator;
 class TimeSeriesRuntimeType;
 class EvaluationProfile;
@@ -88,6 +89,9 @@ class RuntimeGraph {
     Node node(std::size_t index) noexcept { return {compiled_graph_->node(index), storage_}; }
     Node node(const CompiledNode &compiled_node) noexcept { return {compiled_node, storage_}; }
     const CompiledNode &compiled_node(std::size_t index) const noexcept { return compiled_graph_->node(index); }
+    // Engine API. The graph must declare queue use and be started, active, and outer. The target must identify a queue
+    // node with a retained output runtime type.
+    [[nodiscard]] Queue make_queue(std::size_t target);
 
     void start(EvaluationContext &context, const RuntimeGraphInput *inputs = nullptr,
                std::optional<Scalar<>> label = std::nullopt);
@@ -134,6 +138,7 @@ class RuntimeGraph {
     class TimedSchedule;
     class CycleCallbacks;
     class OutputChangePublisher;
+    struct QueueState;
 
     SchedulingInfo &scheduling_info(std::size_t word_index) noexcept {
         if (word_index == 0) {
@@ -157,6 +162,9 @@ class RuntimeGraph {
     void notify_owner_scheduled() noexcept;
     CycleCallbacks *&cycle_callbacks() noexcept;
     CycleCallbacks *cycle_callbacks() const noexcept;
+    QueueState *&queue_state() noexcept;
+    void close_queue() noexcept;
+    void discard_queue() noexcept;
     RuntimeGraph &outer_graph() noexcept;
     CycleCallbacks &require_cycle_callbacks();
     void run_cycle_callbacks(EvaluationContext &context) noexcept;

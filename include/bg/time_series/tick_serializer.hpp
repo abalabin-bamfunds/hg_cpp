@@ -637,6 +637,9 @@ class QueueMessageReader {
     std::optional<std::uint32_t> next_target();
     bool apply(OutputState &output, QueueMode mode);
     bool discard(const TimeSeriesType &type);
+    // Returns a handle at the reader position, including when no bytes are committed. Writers use the block's write
+    // position and retain the chain independently of the reader.
+    util::buffer current_block();
 
   private:
     struct Frame {

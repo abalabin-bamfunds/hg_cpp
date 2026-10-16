@@ -836,6 +836,8 @@ bool QueueMessageReader::discard(const TimeSeriesType &type) {
     return true;
 }
 
+util::buffer QueueMessageReader::current_block() { return reader_.current_block(); }
+
 std::optional<QueueMessageReader::Frame> QueueMessageReader::next_frame() {
     while (!reader_.readable().empty()) {
         // Bound the snapshot so concurrent commits cannot change the header extent calculation.

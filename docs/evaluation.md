@@ -343,6 +343,13 @@ work. Stop code must be `noexcept`.
 The engine invokes stop once for each node whose start completed, including
 after graph failure.
 
+An outer runtime graph owns one push queue when its nodes declare queue use.
+Before invoking stop functions, it closes queue admission and waits for accepted
+writes to finish. After stop functions and cleanup callbacks complete, its reader
+discards unread messages using each target node's output type. Startup failure
+and evaluation failure use the same cleanup order. Finalization also closes and
+discards the queue before destroying node state or outputs.
+
 State-destruction functions run before runtime graph storage is destroyed.
 Nested graph owners pass their evaluation context when finalizing inner graphs.
 The outer graph creates a context with `SystemWallClock` when it is destroyed.

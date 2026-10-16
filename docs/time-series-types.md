@@ -163,6 +163,13 @@ closure, the reader discards unread messages before their runtime types are
 destroyed. Retained handles remain safe to copy, move, destroy, or write through.
 The controller does not destroy encoded payloads.
 
+`RuntimeGraph::make_queue(target)` creates a handle for an outer graph node.
+The node template declares `uses_queue` and `uses_output_runtime_type` so the
+compiled graph reserves queue storage and retains the target's runtime type.
+The graph creates one shared stream on first use. Handle creation requires a
+started graph that has not stopped or finalized. Inner graphs reject it.
+[Graph shutdown](evaluation.md#stop) defines closure and unread-message cleanup.
+
 Queue handles allocate scalar payloads through `std::pmr::new_delete_resource()`.
 The concurrent buffer's allocator must support concurrent allocation and
 deallocation and outlive every retained handle. Each handle retains its writer

@@ -10,12 +10,14 @@
 #include <bg/graph/details/node_scheduler.hpp>
 #include <bg/graph/details/service_binding_section.hpp>
 #include <bg/graph/dynamic_subscribers.hpp>
+#include <bg/queue.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/time_series/ref/ref_input_storage.hpp>
 #include <bg/time_series/ref/ref_input_sample.hpp>
 #include <bg/time_series/ref/ref_provider.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
+#include <bg/time_series/tick_serializer.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <algorithm>
@@ -24,10 +26,17 @@
 #include <cstring>
 #include <iterator>
 #include <memory>
+#include <memory_resource>
 #include <stdexcept>
 #include <vector>
 
 namespace bg {
+
+struct RuntimeGraph::QueueState {
+    details::QueueControl control;
+    details::QueueMessageReader reader{util::buffer::concurrent_chain(
+        4096, 64, allocator{*std::pmr::new_delete_resource()})};
+};
 
 details::NodeScheduler::NodeScheduler(const EvaluationContext &context) noexcept
     : graph_{context.runtime_graph_}, node_index_{context.node_index_} {}
@@ -633,6 +642,10 @@ RuntimeGraph::~RuntimeGraph() {
         allocator_.delete_object(cycle_callbacks());
     }
 
+    if (compiled_graph_->has_queue() && queue_state() != nullptr) {
+        allocator_.delete_object(queue_state());
+    }
+
     if (owns_storage_ && storage_ != nullptr) {
         allocator_.deallocate_bytes(storage_, runtime_allocation_size(), runtime_allocation_alignment());
     }
@@ -659,7 +672,9 @@ void RuntimeGraph::finalize(EvaluationContext &parent_context) noexcept {
         return;
     }
 
+    close_queue();
     clear_cycle_callbacks(parent_context);
+    discard_queue();
     if (storage_ != nullptr) {
         for (auto node_index = compiled_graph_->node_count(); node_index != 0;) {
             const auto &node = compiled_graph_->node(--node_index);
@@ -897,6 +912,46 @@ RuntimeGraph::CycleCallbacks *&RuntimeGraph::cycle_callbacks() noexcept {
 
 RuntimeGraph::CycleCallbacks *RuntimeGraph::cycle_callbacks() const noexcept {
     return *reinterpret_cast<CycleCallbacks *const *>(storage_ + compiled_graph_->cycle_callbacks_offset());
+}
+
+RuntimeGraph::QueueState *&RuntimeGraph::queue_state() noexcept {
+    return *reinterpret_cast<QueueState **>(storage_ + compiled_graph_->queue_offset());
+}
+
+void RuntimeGraph::close_queue() noexcept {
+    if (compiled_graph_->has_queue() && queue_state() != nullptr) {
+        queue_state()->control.close();
+    }
+}
+
+void RuntimeGraph::discard_queue() noexcept {
+    if (!compiled_graph_->has_queue() || queue_state() == nullptr) {
+        return;
+    }
+
+    while (const auto target = queue_state()->reader.next_target()) {
+        const auto &runtime_type = compiled_graph_->node(*target).output_runtime_type();
+        queue_state()->reader.discard(runtime_type.type());
+    }
+}
+
+Queue RuntimeGraph::make_queue(std::size_t target) {
+    if (!compiled_graph_->has_queue()) {
+        throw std::logic_error{"the compiled graph does not declare queue use"};
+    }
+    if (evaluator_ == nullptr || evaluator_->owner_bound()) {
+        throw std::logic_error{"only an outer runtime graph can create a queue"};
+    }
+    if (!started_ || stopped_ || finalized_) {
+        throw std::logic_error{"a queue requires a started, active runtime graph"};
+    }
+    const auto &compiled_node = compiled_graph_->node(target);
+    if (queue_state() == nullptr) {
+        queue_state() = allocator_.new_object<QueueState>();
+    }
+
+    return queue_state()->control.make_queue(queue_state()->reader.current_block(), target,
+                                              compiled_node.output_runtime_type());
 }
 
 RuntimeGraph &RuntimeGraph::outer_graph() noexcept {
@@ -1213,6 +1268,8 @@ void RuntimeGraphEvaluator::start(RuntimeGraph &graph, EvaluationContext &parent
 }
 
 void RuntimeGraph::stop_nodes(std::size_t node_count, EvaluationContext &parent_context) noexcept {
+    close_queue();
+
     const auto stops = compiled_graph_->stop_functions();
     auto i = static_cast<std::size_t>(std::ranges::lower_bound(stops.nodes, node_count) - stops.nodes.begin());
 
@@ -1230,6 +1287,7 @@ void RuntimeGraph::stop_nodes(std::size_t node_count, EvaluationContext &parent_
 
     clear_timed_schedule();
     clear_cycle_callbacks(parent_context);
+    discard_queue();
 }
 
 void RuntimeGraph::stop(const RuntimeGraphInput *inputs) noexcept {
@@ -1272,22 +1330,7 @@ void RuntimeGraphEvaluator::stop(RuntimeGraph &graph, EvaluationContext &parent_
     auto binding_context = ServiceBindingContext{run_context, graph.service_bindings()};
     auto context = EvaluationContext{graph, binding_context.context(), inputs};
     graph.stopped_ = true;
-
-    const auto stops = graph.compiled_graph_->stop_functions();
-    auto i = stops.nodes.size();
-    while (i != 0) {
-        --i;
-        const auto node_index = stops.nodes[i];
-        const auto &node = graph.compiled_graph_->node(node_index);
-        context.node_index_ = node_index;
-        const auto allocation_context = details::ScalarAllocationContext{
-            graph.allocator_, context.global_state().scalar_allocation_pool(), &graph, node_index};
-        stops.functions[i](node, graph.storage_, &context);
-        context.node_index_ = 0;
-    }
-
-    graph.clear_timed_schedule();
-    graph.clear_cycle_callbacks(context);
+    graph.stop_nodes(graph.compiled_graph_->node_count(), context);
     if (profile_ != nullptr) {
         profile_->stop_graph(graph.instance_id());
     }

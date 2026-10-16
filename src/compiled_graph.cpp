@@ -377,6 +377,7 @@ struct CompilationPlan {
     bool uses_variable_memory{};
     bool uses_timed_scheduling{};
     bool uses_cycle_callbacks{};
+    bool uses_queue{};
     bool supports_borrowed_evaluation{};
 
     bool has_lifecycle() const noexcept { return !starts.nodes.empty() || !stops.nodes.empty(); }
@@ -933,6 +934,9 @@ void plan_runtime_storage(CompilationPlan &plan) {
     if (plan.uses_cycle_callbacks) {
         (void)storage.add<void *>();
     }
+    if (plan.uses_queue) {
+        (void)storage.add<void *>();
+    }
     if (!plan.constants.empty()) {
         plan.runtime.constant_start_time_offset =
             packed_offset(storage.add<TimeSeriesState>().offset, "runtime storage reaches 1 GiB");
@@ -1486,6 +1490,7 @@ void plan_fixed_storage(CompilationPlan &plan) {
         result.stops.add(node.node_template().stop_function(node.signature()), compiled_node);
         result.uses_timed_scheduling |= node.node_template().uses_timed_scheduling();
         result.uses_cycle_callbacks |= node.node_template().uses_cycle_callbacks();
+        result.uses_queue |= node.node_template().uses_queue();
         result.node_plans[i].compiled_data = node.node_template().compiled_data_layout(node.signature());
     }
     for (const auto &constant : result.constants) {
@@ -1532,7 +1537,7 @@ void plan_fixed_storage(CompilationPlan &plan) {
     }
 
     result.supports_borrowed_evaluation = !result.has_lifecycle() && !result.uses_timed_scheduling &&
-                                          !result.uses_cycle_callbacks && result.constants.empty() &&
+                                          !result.uses_cycle_callbacks && !result.uses_queue && result.constants.empty() &&
                                           result.constant_notifications.empty() &&
                                           result.inherited_time_series.empty() && result.service_bindings.empty() &&
                                           result.output_destruction_count == 0;
@@ -1672,6 +1677,7 @@ class CompiledGraphBuilder {
             details::CompiledStorageHeader{
                 .wiring_paths_offset_and_flags =
                     offset(plan.fixed.wiring_paths) |
+                    (plan.uses_queue ? details::CompiledStorageHeader::queue_flag : std::uint32_t{}) |
                     (plan.supports_borrowed_evaluation
                          ? details::CompiledStorageHeader::borrowed_evaluation_flag
                          : std::uint32_t{}),

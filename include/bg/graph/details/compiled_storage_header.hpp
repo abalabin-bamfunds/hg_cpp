@@ -109,6 +109,8 @@ struct CompiledStorageHeader {
         return (wiring_paths_offset_and_flags & borrowed_evaluation_flag) != 0;
     }
 
+    bool has_queue() const noexcept { return (wiring_paths_offset_and_flags & queue_flag) != 0; }
+
     std::uint32_t wiring_paths_offset() const noexcept { return wiring_paths_offset_and_flags & offset_mask; }
 
     std::uint32_t wiring_paths_offset_and_flags;
@@ -124,6 +126,7 @@ struct CompiledStorageHeader {
     std::uint32_t borrowed_input_metadata_offset;
 
     // Fixed-storage offsets stay below 1 GiB, leaving high bits for metadata flags.
+    static constexpr std::uint32_t queue_flag = std::uint32_t{1} << 31;
     static constexpr std::uint32_t borrowed_evaluation_flag = std::uint32_t{1} << 30;
     static constexpr std::uint32_t offset_mask = borrowed_evaluation_flag - 1;
 };

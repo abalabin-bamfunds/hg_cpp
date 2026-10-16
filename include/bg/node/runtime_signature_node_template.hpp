@@ -311,6 +311,13 @@ class RuntimeSignatureNodeTemplate final
         return false;
     }
 
+    bool uses_queue() const noexcept override {
+        if constexpr (requires { Definition::uses_queue; }) {
+            return Definition::uses_queue;
+        }
+        return false;
+    }
+
     NodeStateLayout state_layout(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
                                  std::span<const ScalarType *const>) const override {
         if constexpr (std::is_void_v<State>) {

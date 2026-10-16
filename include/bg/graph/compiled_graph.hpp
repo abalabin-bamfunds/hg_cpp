@@ -84,9 +84,23 @@ class CompiledGraph {
         return (storage_header().variable_memory_offset & cycle_callbacks_flag) != 0;
     }
 
+    bool has_queue() const noexcept { return storage_header().has_queue(); }
+
     std::size_t cycle_callbacks_offset() const noexcept {
         auto offset = std::size_t{};
         if (has_timed_scheduling()) {
+            offset += sizeof(void *);
+        }
+
+        return (offset + alignof(void *) - 1) & ~(alignof(void *) - 1);
+    }
+
+    std::size_t queue_offset() const noexcept {
+        auto offset = std::size_t{};
+        if (has_timed_scheduling()) {
+            offset += sizeof(void *);
+        }
+        if (has_cycle_callbacks()) {
             offset += sizeof(void *);
         }
 

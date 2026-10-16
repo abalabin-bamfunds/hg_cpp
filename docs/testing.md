@@ -419,6 +419,9 @@ graph compilation or evaluation.
   selectors and markers, scalar ownership, concurrent reservation rollover, and failure cleanup
 - queue handle copying and moving, independent concurrent writers, closed-write rejection before serialization,
   retained handles after controller destruction, and shutdown waiting for accepted writes, including failures
+- outer runtime graph queue ownership, shared admission across target nodes, closure before stop callbacks,
+  typed unread-message cleanup after stop, startup and evaluation failure, finalization without stop,
+  retained handles after graph destruction, inner graph rejection, and optional runtime storage
 - queue message reading for sentinel skipping, target order, padding, block rollover, committed reservation order,
   standard retry, batch rejection, no-op advancement, typed discard, replay failure, and concurrent watermark growth
 - queue tick application in standard and eliding modes, independent collection items, complete-message pending,
