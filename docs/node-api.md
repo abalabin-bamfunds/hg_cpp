@@ -461,9 +461,9 @@ immutable storage remains alive until its last owner releases it.
 
 `Out::apply(const literal::TimeSeriesLiteral&)` consumes a borrowed time series
 delta. `<bg/literal/time_series_literal.hpp>` defines this carrier as
-`literal::Literal<literal::TimeSeriesLiteralItem>`. Its items describe scalar
-sources and update markers. Explicit `literal::ScalarLiteral` arguments remain
-supported.
+an alias of `literal::ScalarLiteral`. Leaves carry scalar sources, including
+[sentinel instructions](scalar-api.md#sentinels). The receiving output
+interprets the update.
 
 `Out<TS<T>>::apply()` constructs a `ScalarValue` through `from_literal()` and
 passes it to the consuming `set_value()` overload.
@@ -511,12 +511,13 @@ collection.
 `literal::SKIP` performs no update. A skipped TSD child does not create a missing
 key. `literal::INVALID` calls the destination's normal `invalidate()` operation;
 TSD and TSS roots reject it because their output APIs do not support
-invalidation. These markers also work at nested time series positions.
+invalidation. These sentinels also work at nested time series positions.
 
 `literal::REMOVE` removes a TSD entry. `literal::REMOVED(item)` removes a TSS
 item, including an item described by a composite scalar literal. Removal uses
-the destination's normal `erase()` behavior. Scalar values, collection keys,
-set item payloads, and field or index selectors reject update markers.
+the destination's normal `erase()` behavior. `SKIP`, `INVALID`, and `REMOVE`
+take no argument; `REMOVED` requires one. Built-in consumers reject unsupported
+sentinels, invalid argument placement, and incompatible scalar payloads.
 
 ```cpp
 dictionary_output.apply({{"a", 10}, {"b", literal::REMOVE}});
@@ -524,7 +525,7 @@ set_output.apply({1, literal::REMOVED(2)});
 ```
 
 `Out<TS_T>::apply()` dispatches through DDV to its resolved output kind.
-For `TimeSeriesLiteral` updates, extension time series use their registered
+Extension time series use their registered
 [literal operation](time-series-providers.md#literal-updates).
 Reference outputs and extension outputs without a handler throw
 `std::invalid_argument`. Follow the [literal lifetime and construction

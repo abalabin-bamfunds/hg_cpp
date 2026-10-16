@@ -178,6 +178,8 @@ graph compilation or evaluation.
   discard lifetime; value-dependent provider projection, write-handler selection, and missing projection rejection
 - provider scalar literal construction through typed and erased values, runtime registration precedence,
   nested construction, unsupported destinations, and construction-failure cleanup
+- shared literal sentinel constants and scalar types across libraries, scalar-wrapper recognition,
+  and borrowed argument identity
 - time series validity, update time, mutation, and invalidation
 - global state ownership, replacement, lookup, and allocation
 
@@ -377,7 +379,8 @@ graph compilation or evaluation.
   removal and readdition, written operation order, and malformed marker placement
 - provider-defined children accessed through built-in collections
 - provider time series literal application through erased outputs, runtime registration precedence,
-  nested publication, unsupported destinations, and provider-defined marker handling
+  nested publication, unsupported destinations, extension-defined sentinel instances,
+  sentinel arguments, and provider scalar construction inside scalar time series
 
 ### Nodes and graphs
 

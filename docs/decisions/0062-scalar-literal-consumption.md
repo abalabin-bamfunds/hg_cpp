@@ -1,6 +1,8 @@
 # Scalar consumers own literal interpretation
 
-Status: accepted
+Status: superseded in part by [0066](0066-shared-literal-sentinels.md).
+Scalar construction and replacement ownership remain in effect; 0066 replaces
+the separate-carrier decision.
 
 ## Decision
 

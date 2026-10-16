@@ -67,33 +67,32 @@ class Out<TS<Variable, Properties...>> {
 
     void invalidate() const { state_->invalidate(); }
 
-    template <typename Leaf = literal::ScalarLiteralItem>
-        requires std::same_as<Leaf, literal::ScalarLiteralItem>
-    void apply(const literal::Literal<Leaf> &literal) const {
+    void apply(const literal::TimeSeriesLiteral &literal) const {
+        if (const auto sentinel = literal::Sentinel::from(literal)) {
+            if (sentinel->name == literal::SKIP.name) {
+                if (sentinel->argument != nullptr) {
+                    throw std::invalid_argument{"SKIP does not accept an argument"};
+                }
+                return;
+            }
+            if (sentinel->name == literal::INVALID.name) {
+                if (sentinel->argument != nullptr) {
+                    throw std::invalid_argument{"INVALID does not accept an argument"};
+                }
+                invalidate();
+                return;
+            }
+            if (sentinel->name == literal::REMOVE.name) {
+                throw std::invalid_argument{"REMOVE is not valid for a scalar time series"};
+            }
+            if (sentinel->name == literal::REMOVED.name) {
+                throw std::invalid_argument{"REMOVED is not valid for a scalar time series"};
+            }
+        }
+
         const auto &runtime_type =
             static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
         set_value(ScalarValue<>::from_literal(runtime_type, literal));
-    }
-
-    void apply(const literal::TimeSeriesLiteral &literal) const {
-        literal.visit(
-            [&](const literal::TimeSeriesLiteralItem &item) {
-                item.visit_item(
-                    [&](const literal::ScalarLiteralItem *scalar) { apply(literal::ScalarLiteral(*scalar)); },
-                    [](const literal::SkipLiteral *) {},
-                    [&](const literal::InvalidLiteral *) { invalidate(); },
-                    [](const literal::RemoveLiteral *) {
-                        throw std::invalid_argument{"REMOVE is not valid for a scalar time series"};
-                    },
-                    [](const literal::RemovedLiteral *) {
-                        throw std::invalid_argument{"REMOVED is not valid for a scalar time series"};
-                    });
-            },
-            [&](std::span<const literal::TimeSeriesLiteral>) {
-                const auto &runtime_type =
-                    static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
-                set_value(ScalarValue<>::from_literal(runtime_type, literal));
-            });
     }
 
     template <typename Input, auto... TimeSeriesProperties, auto... InputProperties>

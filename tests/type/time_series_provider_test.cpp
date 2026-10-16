@@ -1,9 +1,11 @@
 #include "../value/scalar/test_scalar_provider.hpp"
 #include "../utils/counting_memory_resource.hpp"
+#include "test_shared_literal_sentinel.hpp"
 
 #include <bg/feedback.hpp>
 #include <bg/graph.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/literal/sentinel.hpp>
 #include <bg/node.hpp>
 #include <bg/scalar/bundle/details/allocation_owner.hpp>
 #include <bg/scalar/bundle/value.hpp>
@@ -83,6 +85,8 @@ template <template <typename, auto...> typename Field> struct QueueConflictBundl
 using QueueConflictSeries = bg::TSB<QueueConflictBundle>;
 inline int scalar_literal_semantic_calls{};
 inline int scalar_literal_runtime_calls{};
+inline const literal::ScalarLiteral *expected_scalar_literal{};
+inline bool scalar_literal_address_matches{};
 inline int time_series_literal_semantic_calls{};
 inline int time_series_literal_runtime_calls{};
 inline int time_series_literal_skip_calls{};
@@ -267,24 +271,35 @@ struct SeriesViewStorage {
 };
 
 bg::i64 scalar_literal_number(const literal::ScalarLiteral &literal, bg::allocator &memory) {
-    return literal.visit(
-        [](const literal::ScalarLiteralItem &) -> bg::i64 {
+    const auto fields = literal.visit(
+        [](const literal::ScalarLiteralItem &) -> std::span<const literal::ScalarLiteral> {
             throw std::invalid_argument{"provider scalar literal requires a one-field sequence"};
         },
-        [&](std::span<const literal::ScalarLiteral> fields) -> bg::i64 {
-            if (fields.size() != 1) {
-                throw std::invalid_argument{"provider scalar literal requires exactly one field"};
-            }
-            const auto value = bg::ScalarValue<bg::i64>::from_literal(fields.front(), memory);
-            return value.view().value();
-        }).value();
+        [](std::span<const literal::ScalarLiteral> values) { return values; }).value();
+    if (fields.size() != 1) {
+        throw std::invalid_argument{"provider scalar literal requires exactly one field"};
+    }
+
+    const auto sentinel = literal::Sentinel::from(fields.front());
+    if (sentinel) {
+        if (sentinel->name != test_shared_literal_sentinel::extension()->name ||
+            sentinel->argument != test_shared_literal_sentinel::extension_argument()) {
+            throw std::invalid_argument{"provider received an unsupported literal sentinel"};
+        }
+        const auto value = bg::ScalarValue<bg::i64>::from_literal(*sentinel->argument, memory);
+        return value.view().value();
+    }
+    const auto value = bg::ScalarValue<bg::i64>::from_literal(fields.front(), memory);
+    return value.view().value();
 }
 
 void construct_scalar_literal_semantic(const literal::ScalarLiteral &literal,
                                        const bg::ScalarRuntimeType &runtime_type, void *destination,
                                        bg::allocator &memory) {
     ++scalar_literal_semantic_calls;
-    const auto storage = test_scalar_provider::storage{static_cast<int>(scalar_literal_number(literal, memory) + 10)};
+    scalar_literal_address_matches = &literal == expected_scalar_literal;
+    const auto storage =
+        test_scalar_provider::storage{static_cast<int>(scalar_literal_number(literal, memory) + 10)};
     runtime_type.construct_from_input(destination, bg::Scalar<test_scalar_provider::value>::from(storage), memory);
 }
 
@@ -292,7 +307,9 @@ void construct_scalar_literal_runtime(const literal::ScalarLiteral &literal,
                                       const bg::ScalarRuntimeType &runtime_type, void *destination,
                                       bg::allocator &memory) {
     ++scalar_literal_runtime_calls;
-    const auto storage = test_scalar_provider::storage{static_cast<int>(scalar_literal_number(literal, memory) + 100)};
+    scalar_literal_address_matches = &literal == expected_scalar_literal;
+    const auto storage =
+        test_scalar_provider::storage{static_cast<int>(scalar_literal_number(literal, memory) + 100)};
     runtime_type.construct_from_input(destination, bg::Scalar<test_scalar_provider::value>::from(storage), memory);
 }
 
@@ -331,28 +348,40 @@ bg::i64 time_series_literal_number(const literal::ScalarLiteralItem &literal) {
 }
 
 SeriesLiteralUpdate read_series_literal(const literal::TimeSeriesLiteral &literal) {
+    if (const auto sentinel = literal::Sentinel::from(literal)) {
+        if (sentinel->name == literal::SKIP.name) {
+            if (sentinel->argument != nullptr) {
+                throw std::invalid_argument{"SKIP does not accept an argument"};
+            }
+            return {SeriesLiteralUpdate::Kind::skip, 0};
+        }
+        if (sentinel->name == literal::INVALID.name) {
+            if (sentinel->argument != nullptr) {
+                throw std::invalid_argument{"INVALID does not accept an argument"};
+            }
+            return {SeriesLiteralUpdate::Kind::invalid, 0};
+        }
+        if (sentinel->name == literal::REMOVE.name) {
+            if (sentinel->argument != nullptr) {
+                throw std::invalid_argument{"REMOVE does not accept an argument"};
+            }
+            throw std::invalid_argument{"REMOVE is not valid for a provider scalar time series"};
+        }
+        if (sentinel->name == literal::REMOVED.name) {
+            throw std::invalid_argument{"REMOVED is not valid for a provider scalar time series"};
+        }
+        if (sentinel->name == test_shared_literal_sentinel::extension()->name &&
+            sentinel->argument == test_shared_literal_sentinel::extension_argument()) {
+            const auto value = bg::ScalarValue<bg::i64>::from_literal(*sentinel->argument);
+            return {SeriesLiteralUpdate::Kind::value, value.view().value()};
+        }
+        throw std::invalid_argument{"provider scalar time series literal must contain one item"};
+    }
     return literal.visit(
-        [](const literal::TimeSeriesLiteralItem &item) {
-            auto update = SeriesLiteralUpdate{SeriesLiteralUpdate::Kind::skip, 0};
-            item.visit_item(
-                [&](const literal::ScalarLiteralItem *scalar) {
-                    update = {SeriesLiteralUpdate::Kind::value, time_series_literal_number(*scalar)};
-                },
-                [&](const literal::SkipLiteral *) {
-                    update = {SeriesLiteralUpdate::Kind::skip, 0};
-                },
-                [&](const literal::InvalidLiteral *) {
-                    update = {SeriesLiteralUpdate::Kind::invalid, 0};
-                },
-                [](const literal::RemoveLiteral *) {
-                    throw std::invalid_argument{"REMOVE is not valid for a provider scalar time series"};
-                },
-                [](const literal::RemovedLiteral *) {
-                    throw std::invalid_argument{"REMOVED is not valid for a provider scalar time series"};
-                });
-            return update;
+        [](const literal::ScalarLiteralItem &item) {
+            return SeriesLiteralUpdate{SeriesLiteralUpdate::Kind::value, time_series_literal_number(item)};
         },
-        [](std::span<const literal::TimeSeriesLiteral>) -> SeriesLiteralUpdate {
+        [](std::span<const literal::ScalarLiteral>) -> SeriesLiteralUpdate {
             throw std::invalid_argument{"provider scalar time series literal must contain one item"};
         }).value();
 }
@@ -1065,6 +1094,69 @@ TEST_CASE("scalar literal extension handlers construct nested collection items",
     REQUIRE(list.size() == 2);
     CHECK(list[0].value().get() == 13);
     CHECK(list[1].value().get() == 19);
+}
+
+TEST_CASE("extension sentinels reach scalar literal providers through time-series and nested payloads",
+          "[feature:scalar-api][feature:time-series-storage][series:value][scalar:opaque]") {
+    using Value = test_scalar_provider::value;
+    REQUIRE(provider::register_scalar_literal_handlers());
+
+    const auto instruction = literal::ScalarLiteral(*test_shared_literal_sentinel::extension());
+    const auto extension_fields = std::array{instruction};
+    const auto extension_literal = literal::ScalarLiteral{std::span{extension_fields}};
+    provider::expected_scalar_literal = &extension_literal;
+    provider::scalar_literal_address_matches = false;
+    const auto scalar = bg::ScalarValue<Value>::from_literal(extension_literal);
+    CHECK(scalar.view().value().get() == 81);
+    CHECK(provider::scalar_literal_address_matches);
+
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<Value>>();
+    auto last_updated = bg::TimeSeriesState{};
+    auto output_storage = test_scalar_provider::storage{};
+    auto output_state = bg::OutputState{runtime_type};
+    output_state.bind(last_updated, &output_storage, bg::MIN_DT + std::chrono::microseconds{1});
+    auto output = bg::Out<bg::TS<Value>>{bg::TimeSeriesOutputBinding{output_state}};
+    provider::expected_scalar_literal = &extension_literal;
+    provider::scalar_literal_address_matches = false;
+    auto memory = bg::allocator{};
+    auto *allocation_owner = bg::details::BundleAllocationOwner::create(memory);
+    auto release_allocation_owner = bg::util::scope_exit{[&]() noexcept { allocation_owner->release(); }};
+    const auto allocation_context = bg::details::ScalarAllocationContext{memory, *allocation_owner, &output_storage, 0};
+    output.apply(extension_literal);
+    CHECK(output_storage.number == 81);
+    CHECK(provider::scalar_literal_address_matches);
+
+    const auto nested_instruction = literal::ScalarLiteral(*test_shared_literal_sentinel::extension());
+    const auto nested_payload_fields = std::array{nested_instruction};
+    const auto nested_payload = literal::ScalarLiteral{std::span{nested_payload_fields}};
+    const auto nested_fields = std::array{nested_payload};
+    const auto nested_literal = literal::ScalarLiteral{std::span{nested_fields}};
+    provider::expected_scalar_literal = &nested_fields.front();
+    provider::scalar_literal_address_matches = false;
+    const auto nested = bg::ScalarValue<bg::List<Value>>::from_literal(nested_literal);
+    REQUIRE(nested.view().size() == 1);
+    CHECK(nested.view()[0].value().get() == 81);
+    CHECK(provider::scalar_literal_address_matches);
+}
+
+TEST_CASE("extension time-series handlers consume shared sentinel instructions",
+          "[feature:time-series-view][feature:test-graph][series:value]") {
+    using Series = provider::RuntimeOutputSeries;
+    REQUIRE(provider::register_time_series_literal_handlers());
+
+    const auto &runtime_type = provider::series_view_runtime_type(Series::type());
+    auto last_updated = bg::TimeSeriesState{};
+    auto value = provider::SeriesViewStorage{};
+    auto state = bg::OutputState{runtime_type};
+    state.bind(last_updated, &value, bg::MIN_DT + std::chrono::microseconds{1});
+    auto output = bg::Out<bg::TS_T>{bg::TimeSeriesOutputBinding{state}};
+
+    provider::time_series_literal_runtime_calls = 0;
+    output.apply(literal::TimeSeriesLiteral(*test_shared_literal_sentinel::extension()));
+
+    CHECK(value.value == 71);
+    CHECK(last_updated.valid());
+    CHECK(provider::time_series_literal_runtime_calls == 1);
 }
 
 TEST_CASE("scalar literal construction rejects unsupported destinations and releases failed allocations",

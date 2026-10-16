@@ -175,9 +175,15 @@ runtime registration, then its semantic type.
 The handler receives the complete update and the destination's `OutputState`.
 It can construct `Out<TS_T>{TimeSeriesOutputBinding{state}}` and call
 `as_output<Output>()` to obtain its typed output with the containing output path.
-The handler interprets its literal syntax and markers, mutates through that
+The handler interprets its literal syntax and sentinels, mutates through that
 output, and uses its normal publication and invalidation operations. Borrowed
 literal sources and output views remain valid for the call.
+
+Providers define additional instructions as instances of
+[`literal::Sentinel`](scalar-api.md#sentinels). Their handler compares the
+sentinel's symbol identity and validates any borrowed argument. Scalar and time
+series handlers receive the same carrier; a provider can pass scalar payloads
+directly to scalar construction.
 
 Node authors use `Out::apply()`; registration and `OutputState` are
 extension-facing APIs. Scalar literal construction has its own

@@ -74,6 +74,7 @@ add_library(
     src/scalar/allocation.cpp
     src/scalar/buffer_operations.cpp
     src/scalar/literal_operations.cpp
+    src/scalar/literal_sentinel.cpp
     src/scalar/bundle/allocation_owner.cpp
     src/scalar/bundle/runtime_type.cpp
     src/scalar/dict/type.cpp

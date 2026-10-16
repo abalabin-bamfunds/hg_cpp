@@ -1,4 +1,5 @@
 #include <bg/scalar/details/cpp_runtime_type.hpp>
+#include <bg/literal/sentinel.hpp>
 #include <bg/util/symbol.hpp>
 
 namespace bg {
@@ -13,5 +14,6 @@ template const ScalarRuntimeType &cpp_scalar_runtime_type<date_time_t>();
 template const ScalarRuntimeType &cpp_scalar_runtime_type<timedelta_t>();
 template const ScalarRuntimeType &cpp_scalar_runtime_type<string>();
 template const ScalarRuntimeType &cpp_scalar_runtime_type<symbol>();
+template BG_EXPORT const ScalarRuntimeType &cpp_scalar_runtime_type<literal::Sentinel>();
 
 } // namespace bg

@@ -54,19 +54,36 @@ namespace {
 enum class LiteralMarker { value, skip, invalid, remove, removed };
 
 LiteralMarker marker(const literal::TimeSeriesLiteral &literal) {
-    return literal.visit(
-        [](const literal::TimeSeriesLiteralItem &item) {
-            auto result = LiteralMarker::value;
-            item.visit_item(
-                [&](const literal::ScalarLiteralItem *) { result = LiteralMarker::value; },
-                [&](const literal::SkipLiteral *) { result = LiteralMarker::skip; },
-                [&](const literal::InvalidLiteral *) { result = LiteralMarker::invalid; },
-                [&](const literal::RemoveLiteral *) { result = LiteralMarker::remove; },
-                [&](const literal::RemovedLiteral *) { result = LiteralMarker::removed; });
-            return result;
-        },
-        [](std::span<const literal::TimeSeriesLiteral>) { return LiteralMarker::value; })
-        .value();
+    const auto sentinel = literal::Sentinel::from(literal);
+    if (!sentinel) {
+        return LiteralMarker::value;
+    }
+
+    if (sentinel->name == literal::SKIP.name) {
+        if (sentinel->argument != nullptr) {
+            throw std::invalid_argument{"SKIP does not accept an argument"};
+        }
+        return LiteralMarker::skip;
+    }
+    if (sentinel->name == literal::INVALID.name) {
+        if (sentinel->argument != nullptr) {
+            throw std::invalid_argument{"INVALID does not accept an argument"};
+        }
+        return LiteralMarker::invalid;
+    }
+    if (sentinel->name == literal::REMOVE.name) {
+        if (sentinel->argument != nullptr) {
+            throw std::invalid_argument{"REMOVE does not accept an argument"};
+        }
+        return LiteralMarker::remove;
+    }
+    if (sentinel->name == literal::REMOVED.name) {
+        if (sentinel->argument == nullptr) {
+            throw std::invalid_argument{"REMOVED requires an argument"};
+        }
+        return LiteralMarker::removed;
+    }
+    return LiteralMarker::value;
 }
 
 class QueueMessageCodec {
@@ -173,10 +190,11 @@ class QueueMessageCodec {
         return nullptr;
     }
 
-    template <typename LiteralType, typename Function>
-    void with_scalar_value(const ScalarRuntimeType &runtime_type, const LiteralType &literal, Function &&function) {
+    template <typename Function>
+    void with_scalar_value(const ScalarRuntimeType &runtime_type, const literal::ScalarLiteral &literal,
+                           Function &&function) {
         literal.visit(
-            [&](const typename LiteralType::leaf_type &item) {
+            [&](const literal::ScalarLiteralItem &item) {
                 item.visit_scalar([&](const auto *source) {
                     const auto &source_data = details::scalar_data(*source);
                     if (&source_data.runtime_type() == &runtime_type) {
@@ -188,14 +206,13 @@ class QueueMessageCodec {
                     std::invoke(function, Scalar<>::from(value));
                 });
             },
-            [&](std::span<const LiteralType>) {
+            [&](std::span<const literal::ScalarLiteral>) {
                 auto value = ScalarValue<>::from_literal(runtime_type, literal, *memory_);
                 std::invoke(function, Scalar<>::from(value));
             });
     }
 
-    template <typename ScalarLiteralType>
-    void write_scalar(const ScalarRuntimeType &runtime_type, const ScalarLiteralType &literal) {
+    void write_scalar(const ScalarRuntimeType &runtime_type, const literal::ScalarLiteral &literal) {
         if (type_cast<BuiltinScalarType>(&runtime_type.type()) == nullptr) {
             const auto *operations = write_operations(runtime_type);
             if (operations != nullptr) {
@@ -237,13 +254,13 @@ class QueueMessageCodec {
         }
     }
 
-    static std::span<const literal::TimeSeriesLiteral> sequence(const literal::TimeSeriesLiteral &literal,
-                                                                const char *message) {
+    static std::span<const literal::ScalarLiteral> sequence(const literal::ScalarLiteral &literal,
+                                                           const char *message) {
         return literal.visit(
-            [message](const literal::TimeSeriesLiteralItem &) -> std::span<const literal::TimeSeriesLiteral> {
+            [message](const literal::ScalarLiteralItem &) -> std::span<const literal::ScalarLiteral> {
                 throw std::invalid_argument{message};
             },
-            [](std::span<const literal::TimeSeriesLiteral> values) { return values; })
+            [](std::span<const literal::ScalarLiteral> values) { return values; })
             .value();
     }
 
@@ -355,12 +372,7 @@ class QueueMessageCodec {
                         throw std::invalid_argument{"invalid marker in TSS update"};
                     }
                     if (value_marker == LiteralMarker::removed) {
-                        auto removed = static_cast<const literal::ScalarLiteral *>(nullptr);
-                        value.visit([&](const literal::TimeSeriesLiteralItem &item) {
-                            item.visit_item(
-                                [&](const literal::RemovedLiteral *removed_literal) { removed = removed_literal->value; },
-                                [](const auto *) {});
-                        }, [](std::span<const literal::TimeSeriesLiteral>) {});
+                        const auto removed = literal::Sentinel::from(value)->argument;
                         write_header({TickOperation::remove});
                         write_scalar(set_runtime.key_runtime_type(), *removed);
                         continue;

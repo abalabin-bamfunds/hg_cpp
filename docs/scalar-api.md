@@ -178,7 +178,9 @@ ownership of the pointed-to object remains with the caller.
 ## Literals
 
 `<bg/literal/scalar_literal.hpp>` defines `literal::ScalarLiteral` as
-`literal::Literal<literal::ScalarLiteralItem>`. A scalar item borrows a C++ source,
+`literal::Literal<literal::ScalarLiteralItem>`. `literal::TimeSeriesLiteral` names
+the same type. Scalar construction and time series application interpret this
+carrier through separate operations. A scalar item borrows a C++ source,
 `Scalar`, `ScalarValue`, or `ScalarData`. A sequence borrows its recursive
 initializer-list storage. `Literal` allocates no owning tree.
 
@@ -216,6 +218,8 @@ from `<bg/scalar/literal_operations.hpp>` with
 allocator. It follows the [scalar construction contract](#ownership): return
 with one complete value, or throw after releasing any resources it acquired.
 Scalar leaves use the destination runtime's ordinary input construction.
+Scalar time series replacements pass the same carrier to scalar construction,
+including provider sequence handlers.
 The extension callback accepts `ScalarLiteral`; generic `Literal<Leaf>` sources
 retain the built-in sequence rules above. Missing handlers throw
 `std::invalid_argument`.
@@ -227,6 +231,49 @@ explicit allocator, including bundles nested in collections. See the
 ```cpp
 auto values = bg::ScalarValue<bg::List<bg::List<bg::i64>>>::from_literal({{1, 2}, {}, {3}});
 ```
+
+### Sentinels
+
+`<bg/literal/sentinel.hpp>` defines one scalar type, `literal::Sentinel`:
+
+```cpp
+struct Sentinel {
+    bg::symbol name;
+    const ScalarLiteral* argument = nullptr;
+
+    Sentinel operator()(const ScalarLiteral& value) const noexcept;
+};
+```
+
+`name` identifies an instruction. `argument` optionally borrows a literal;
+calling a sentinel returns a copy with that argument. Copying a sentinel does
+not extend the argument's lifetime. The instruction's consumer validates its
+identity, placement, and argument requirements.
+
+Literal consumers use `Sentinel::from(literal)` to inspect the root. It returns
+an optional sentinel descriptor; an ordinary scalar or sequence returns
+`std::nullopt`. It does not traverse children.
+
+BG exports `SKIP`, `INVALID`, `REMOVE`, and `REMOVED` as instances defined once
+in its library. Their symbol names are `bg.skip`, `bg.invalid`, `bg.remove`, and
+`bg.removed`. BG also provides the canonical sentinel semantic type and runtime.
+Sentinels have no implicit graph-argument or time series declaration support.
+
+Extensions add instructions by defining instances of the same type with
+qualified names. An extension can export its instances from its own library:
+
+```cpp
+// Extension header; EXAMPLE_EXPORT is the extension's export macro.
+extern EXAMPLE_EXPORT const literal::Sentinel RESET;
+
+// Extension source, after including that header.
+const literal::Sentinel RESET{bg::symbol{"example_extension.reset"}};
+```
+
+The extension's literal consumer interprets its instructions. Ordinary scalar
+destinations reject incompatible sentinel sources through normal type checks.
+Time series instruction behavior is defined by the
+[output API](node-api.md#output-parameters).
 
 ## Lists
 

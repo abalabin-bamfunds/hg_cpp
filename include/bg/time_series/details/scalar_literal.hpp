@@ -16,23 +16,23 @@ namespace bg::details::scalar_literal {
 
 using Literal = literal::ScalarLiteral;
 
-template <typename LiteralType> struct Pair {
-    const LiteralType *first;
-    const LiteralType *second;
+struct Pair {
+    const Literal *first;
+    const Literal *second;
 };
 
-template <typename LiteralType> std::span<const LiteralType> sequence(const LiteralType &value) {
+inline std::span<const Literal> sequence(const Literal &value) {
     return value.visit(
-        [](const typename LiteralType::leaf_type &) -> std::span<const LiteralType> {
+        [](const Literal::leaf_type &) -> std::span<const Literal> {
             throw std::invalid_argument{"a time-series collection update requires a sequence"};
         },
-        [](std::span<const LiteralType> values) { return values; }).value();
+        [](std::span<const Literal> values) { return values; }).value();
 }
 
-template <typename LiteralType> Pair<LiteralType> pair(const LiteralType &value, const char *message) {
+inline Pair pair(const Literal &value, const char *message) {
     return value.visit(
-        [message](const typename LiteralType::leaf_type &) -> Pair<LiteralType> { throw std::invalid_argument{message}; },
-        [message](std::span<const LiteralType> values) -> Pair<LiteralType> {
+        [message](const Literal::leaf_type &) -> Pair { throw std::invalid_argument{message}; },
+        [message](std::span<const Literal> values) -> Pair {
             if (values.size() != 2) {
                 throw std::invalid_argument{message};
             }
@@ -40,10 +40,10 @@ template <typename LiteralType> Pair<LiteralType> pair(const LiteralType &value,
         }).value();
 }
 
-template <typename LiteralType> std::size_t list_index(const LiteralType &value) {
+inline std::size_t list_index(const Literal &value) {
     auto result = std::optional<std::size_t>{};
     value.visit(
-        [&](const typename LiteralType::leaf_type &item) {
+        [&](const Literal::leaf_type &item) {
             item.visit_scalar(
                 [&](const auto *source) {
                     using Scalar = std::remove_cvref_t<decltype(*source)>;
@@ -63,7 +63,7 @@ template <typename LiteralType> std::size_t list_index(const LiteralType &value)
                 },
                 ddv::noop);
         },
-        [](std::span<const LiteralType>) {});
+        [](std::span<const Literal>) {});
 
     if (!result) {
         throw std::invalid_argument{"a TSL update index must be an integral scalar"};
@@ -71,9 +71,9 @@ template <typename LiteralType> std::size_t list_index(const LiteralType &value)
     return *result;
 }
 
-template <typename LiteralType> std::string_view field_name(const LiteralType &value) {
+inline std::string_view field_name(const Literal &value) {
     return value.visit(
-        [](const typename LiteralType::leaf_type &item) {
+        [](const Literal::leaf_type &item) {
             return item.visit_scalar([](const auto *source) -> std::string_view {
                 using Scalar = std::remove_cvref_t<decltype(*source)>;
                 if constexpr (std::same_as<typename Scalar::scalar_type, string>) {
@@ -85,18 +85,18 @@ template <typename LiteralType> std::string_view field_name(const LiteralType &v
                 }
             }).value();
         },
-        [](std::span<const LiteralType>) -> std::string_view {
+        [](std::span<const Literal>) -> std::string_view {
             throw std::invalid_argument{"a TSB field name must be a string or symbol"};
         }).value();
 }
 
-template <typename LiteralType, typename Function>
-void with_scalar_data(const ScalarRuntimeType &runtime_type, const LiteralType &value, Function &&function) {
+template <typename Function>
+void with_scalar_data(const ScalarRuntimeType &runtime_type, const Literal &value, Function &&function) {
     value.visit(
-        [&](const typename LiteralType::leaf_type &item) {
+        [&](const Literal::leaf_type &item) {
             item.visit_scalar([&](const auto *source) { std::invoke(function, details::scalar_data(*source)); });
         },
-        [&](std::span<const LiteralType>) {
+        [&](std::span<const Literal>) {
             auto owned = ScalarValue<>::from_literal(runtime_type, value);
             std::invoke(function, details::scalar_data(owned));
         });
