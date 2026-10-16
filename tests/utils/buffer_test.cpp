@@ -1,5 +1,6 @@
 #include <bg/util/buffer.hpp>
 
+#include <catch2/generators/catch_generators.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "counting_memory_resource.hpp"
@@ -1029,6 +1030,7 @@ TEST_CASE("a concurrent chain preserves committed bytes across rollover contenti
 
 TEST_CASE("a concurrent reader drains records during rollover and retained chunks outlive the root",
           "[coverage-exempt]") {
+    const auto force_completion_after_empty_read = GENERATE(false, true);
     constexpr auto writer_count = std::size_t{4};
     constexpr auto writes_per_writer = std::size_t{400};
     using record = std::array<std::uint32_t, 3>;
@@ -1045,6 +1047,8 @@ TEST_CASE("a concurrent reader drains records during rollover and retained chunk
             bg::util::concurrent_buffer_reader reader{data};
             auto start_block = reader.current_block();
             auto start = std::barrier{static_cast<std::ptrdiff_t>(writer_count + 1)};
+            auto reader_observed_empty = std::barrier{static_cast<std::ptrdiff_t>(writer_count + 1)};
+            auto writers_completed = std::barrier{static_cast<std::ptrdiff_t>(writer_count + 1)};
             auto writers_finished = std::atomic<std::size_t>{};
             std::vector<std::thread> writers;
 
@@ -1052,6 +1056,9 @@ TEST_CASE("a concurrent reader drains records during rollover and retained chunk
                 writers.emplace_back([&, id] {
                     bg::util::concurrent_buffer_writer writer{start_block};
                     start.arrive_and_wait();
+                    if (force_completion_after_empty_read) {
+                        reader_observed_empty.arrive_and_wait();
+                    }
                     for (std::size_t sequence = 0; sequence < writes_per_writer; ++sequence) {
                         const auto value =
                             record{static_cast<std::uint32_t>(id), static_cast<std::uint32_t>(sequence),
@@ -1061,6 +1068,9 @@ TEST_CASE("a concurrent reader drains records during rollover and retained chunk
                         reservation.commit();
                     }
                     writers_finished.fetch_add(1, std::memory_order_release);
+                    if (force_completion_after_empty_read) {
+                        writers_completed.arrive_and_wait();
+                    }
                 });
             }
 
@@ -1068,23 +1078,10 @@ TEST_CASE("a concurrent reader drains records during rollover and retained chunk
             std::array<std::uint32_t, writer_count> next_sequence{};
             auto records_read = std::size_t{};
             auto records_valid = true;
+            auto forced_snapshot_taken = false;
+            auto forced_snapshot_was_empty = false;
 
-            while (records_read < writer_count * writes_per_writer) {
-                const auto bytes = reader.readable();
-                if (bytes.empty()) {
-                    if (writers_finished.load(std::memory_order_acquire) == writer_count) {
-                        break;
-                    }
-                    std::this_thread::yield();
-                    continue;
-                }
-
-                if (!retained_chunk) {
-                    auto current = reader.current_buffer();
-                    retained_chunk = current.chunk(0, record_size);
-                    std::memcpy(&retained_value, retained_chunk->bytes().data(), record_size);
-                }
-
+            const auto process_readable = [&](std::span<const std::byte> bytes) {
                 records_valid &= bytes.size() % record_size == 0;
                 for (auto offset = std::size_t{}; offset + record_size <= bytes.size(); offset += record_size) {
                     auto value = record{};
@@ -1100,12 +1097,55 @@ TEST_CASE("a concurrent reader drains records during rollover and retained chunk
                     ++records_read;
                 }
                 reader.consume(bytes.size());
+            };
+
+            while (records_read < writer_count * writes_per_writer) {
+                const auto bytes = reader.readable();
+
+                if (force_completion_after_empty_read && !forced_snapshot_taken) {
+                    forced_snapshot_taken = true;
+                    forced_snapshot_was_empty = bytes.empty();
+                    reader_observed_empty.arrive_and_wait();
+                    writers_completed.arrive_and_wait();
+                }
+
+                if (bytes.empty()) {
+                    // Completion does not refresh the earlier readable() snapshot.
+                    if (writers_finished.load(std::memory_order_acquire) == writer_count &&
+                        reader.readable().empty()) {
+                        break;
+                    }
+                    std::this_thread::yield();
+                    continue;
+                }
+
+                if (!retained_chunk) {
+                    auto current = reader.current_buffer();
+                    retained_chunk = current.chunk(0, record_size);
+                    std::memcpy(&retained_value, retained_chunk->bytes().data(), record_size);
+                }
+
+                process_readable(bytes);
             }
 
+            const auto records_read_before_join = records_read;
             for (auto &thread : writers) {
                 thread.join();
             }
 
+            for (;;) {
+                const auto bytes = reader.readable();
+                if (bytes.empty()) {
+                    break;
+                }
+                process_readable(bytes);
+            }
+
+            if (force_completion_after_empty_read) {
+                CHECK(forced_snapshot_was_empty);
+            }
+            CHECK(records_read_before_join == writer_count * writes_per_writer);
+            CHECK(records_read == records_read_before_join);
             CHECK(records_valid);
             CHECK(records_read == writer_count * writes_per_writer);
             for (const auto sequence : next_sequence) {
