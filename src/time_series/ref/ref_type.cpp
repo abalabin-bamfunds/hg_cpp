@@ -71,6 +71,10 @@ const TimeSeriesType &TimeSeriesReferenceType::dereferenced_type() const {
     return target_type().with_guarantee_limit(reference_limit());
 }
 
+const TimeSeriesType &TimeSeriesReferenceType::reference_free_type() const {
+    return dereferenced_type().reference_free_type();
+}
+
 TimeSeriesGuarantee TimeSeriesReferenceType::reference_limit() const {
     const auto reference_guarantee = guarantee().value();
     if (!reference_guarantee) {

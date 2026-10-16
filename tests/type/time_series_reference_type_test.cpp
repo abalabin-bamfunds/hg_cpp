@@ -56,6 +56,23 @@ struct ReferenceGuaranteeDerived : bg::schema_extends<ReferenceGuaranteeBase, Fi
     Field<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>> derived_value;
 };
 
+template <template <typename, auto...> typename Field> struct ReferenceFreeBase {
+    Field<bg::REF<bg::TS<bg::i64>>> base_value;
+};
+
+template <template <typename, auto...> typename Field>
+struct ReferenceFreeDerived : bg::schema_extends<ReferenceFreeBase, Field> {
+    Field<bg::TSL<bg::REF<bg::TS<float>>, 2>> derived_value;
+};
+
+class ReferenceContainingExtensionType final : public bg::TimeSeriesType {
+  public:
+    bool is_resolved() const noexcept override { return true; }
+    const bg::Type &resolve(const bg::TypeMap &) const override { return *this; }
+    void format_name(std::string &result) const override { result += "ReferenceContainingExtension"; }
+    bool contains_reference() const override { return true; }
+};
+
 } // namespace
 
 TEST_CASE("reference declarations are neutral and outputs default to deduplicated",
@@ -781,4 +798,32 @@ TEST_CASE("reference matching enforces the reference guarantee",
 
 TEST_CASE("a reference cannot target another reference", "[type][reference][feature:type-system]") {
     CHECK_THROWS_AS((bg::REF<bg::REF<bg::TS<bg::i64>>>::type()), std::invalid_argument);
+}
+
+TEST_CASE("reference-free types remove references recursively through collections",
+          "[type][reference][feature:type-system][series:tsd][series:tsl]") {
+    using SOURCE = bg::TSD<bg::i64, bg::TSL<bg::REF<bg::TS<bg::i64>>, 2>>;
+    using EXPECTED = bg::TSD<bg::i64, bg::TSL<bg::TS<bg::i64>, 2>>;
+
+    CHECK(&SOURCE::type().reference_free_type() == &EXPECTED::type());
+    CHECK(&bg::TS<bg::i64>::type().reference_free_type() == &bg::TS<bg::i64>::type());
+    CHECK_THROWS_AS(bg::TS<bg::SCALAR>::type().reference_free_type(), bg::TypeResolutionError);
+
+    const auto extension_type = ReferenceContainingExtensionType{};
+    CHECK_THROWS_AS(extension_type.reference_free_type(), std::invalid_argument);
+}
+
+TEST_CASE("reference-free TSB types preserve their named schema and base",
+          "[type][reference][feature:type-system][series:tsb][schema:named]") {
+    const auto &source = bg::TSB<ReferenceFreeDerived>::type();
+    const auto &result = static_cast<const bg::TimeSeriesBundleType &>(source.reference_free_type());
+
+    CHECK(result.schema().name() == source.schema().name());
+    CHECK(result.schema().identity() == source.schema().identity());
+    REQUIRE(result.schema().base() != nullptr);
+    REQUIRE(source.schema().base() != nullptr);
+    CHECK(result.schema().base()->identity() == source.schema().base()->identity());
+    CHECK(&result.item_type(0) == &bg::TS<bg::i64>::type());
+    const auto &items = static_cast<const bg::TimeSeriesListType &>(result.item_type(1));
+    CHECK(&items.item_type() == &bg::TS<float>::type());
 }

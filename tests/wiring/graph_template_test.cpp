@@ -2,6 +2,7 @@
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/operator.hpp>
 #include <bg/testing/test_graph.hpp>
@@ -47,6 +48,8 @@ const auto scale_graph = bg::graph(
 
 static_assert(std::same_as<decltype(scale_graph(std::declval<bg::WiringPoint>(), 2.0F)), bg::wp<bg::TS<float>>>);
 
+using NESTED_OUTPUT = bg::TimeSeriesVariable<"NESTED_OUTPUT">;
+
 } // namespace
 
 TEST_CASE("a lambda graph function supplies its signature", "[graph_template][feature:wiring][definition:function]") {
@@ -59,6 +62,58 @@ TEST_CASE("a lambda graph function supplies its signature", "[graph_template][fe
     CHECK(resolved.parameters[0].name.text() == "0");
     CHECK(resolved.parameters[1].name.text() == "1");
     CHECK(resolved.output == &time_series);
+}
+
+TEST_CASE("a graph function can receive wiring arguments without adding a graph parameter",
+          "[graph_template][feature:wiring]") {
+    auto observed_argument_count = std::size_t{};
+    auto observed_scalar = bg::i64{};
+    auto observed_output_type = static_cast<const bg::TimeSeriesType *>(nullptr);
+    const auto inspect = bg::graph(
+        "name"_n = "inspect_wiring_arguments",
+        [&](const bg::WiringArguments &arguments, bg::i64 value,
+            bg::wp<bg::TS<float>> input) -> bg::wp<bg::TS<float>> {
+            observed_argument_count = arguments.size();
+            observed_scalar = bg::scalar_cast<bg::i64>(*arguments.scalar(0)).value();
+            observed_output_type = arguments.resolved_output_type();
+            CHECK(&arguments.resolved_type(0) == &bg::cpp_scalar_type<bg::i64>());
+            return input;
+        });
+
+    auto wiring = bg::GraphWiring{};
+    {
+        const auto context = bg::WiringContext{wiring};
+        (void)inspect(42, source());
+    }
+
+    CHECK(inspect.signature().parameter_count() == 2);
+    CHECK(observed_argument_count == 2);
+    CHECK(observed_scalar == 42);
+    CHECK(observed_output_type == &bg::TS<float>::type());
+}
+
+TEST_CASE("a graph can map its output type into a nested implementation",
+          "[graph_template][feature:wiring][feature:type-system]") {
+    const auto integer_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    const auto generic_output = bg::graph<NESTED_OUTPUT>(
+        "name"_n = "generic_output",
+        [=]() -> bg::wp<NESTED_OUTPUT> { return bg::wp<NESTED_OUTPUT>{integer_source()}; });
+    const auto run = bg::node([](bg::Out<bg::TS<bool>>) {});
+    const auto wrapper = bg::graph<NESTED_OUTPUT>(
+        "name"_n = "generic_wrapper",
+        [=](const bg::WiringArguments &arguments,
+            bg::wp<bg::TS<bool>> run_input) -> bg::wp<bg::REF<NESTED_OUTPUT>> {
+            const auto mapped_output = generic_output[arguments.type_map()];
+            return bg::nested(mapped_output, run_input);
+        });
+
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    const auto output = wrapper[bg::type<NESTED_OUTPUT> = bg::type<bg::TS<bg::i64>>](run());
+
+    auto output_name = std::string{};
+    output.type().format_name(output_name);
+    CHECK(output_name == "REF<TS<i64>, deduplicated>");
 }
 
 TEST_CASE("a graph template expands into the active graph", "[graph_template][feature:wiring]") {

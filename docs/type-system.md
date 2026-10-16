@@ -268,6 +268,11 @@ returns the time series type that it references.
 `TimeSeriesType::dereferenced_type()` returns the type that a non-reference
 consumer observes, applying the [reference guarantee limit](#reference-guarantees)
 when the supplied type is a reference. TSL item inference uses this operation.
+`TimeSeriesType::reference_free_type()` removes references recursively from
+resolved built-in `REF`, `TSD`, `TSL`, and `TSB` types. A reference first exposes
+its dereferenced target. The base implementation returns a reference-free type
+unchanged and rejects reference-containing types; an extension type that
+supports reference removal must override this operation.
 
 A variable scalar component provides a type-erased scalar view. A variable time
 series component provides a type-erased time series view. This lets one compiled

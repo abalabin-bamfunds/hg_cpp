@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/graph/wiring_argument.hpp>
+#include <bg/graph/wiring_arguments.hpp>
 #include <bg/graph/wiring_point.hpp>
 #include <bg/type/details/time_series_type.hpp>
 #include <bg/type/signature.hpp>
@@ -42,6 +43,44 @@ template <typename Class, typename Result, typename... Arguments>
 struct callable<Result (Class::*)(Arguments...) const noexcept> : callable<Result(Arguments...)> {};
 
 template <typename Function> struct callable : callable<decltype(&Function::operator())> {};
+
+template <typename Function, std::size_t... Index>
+consteval bool has_wiring_arguments_parameter(std::index_sequence<Index...>) {
+    return (std::same_as<std::remove_cvref_t<typename callable<Function>::template argument_type<Index>>,
+                         WiringArguments> || ...);
+}
+
+template <typename Function, std::size_t... Index>
+consteval bool has_wiring_arguments_parameter_after_first(std::index_sequence<Index...>) {
+    return (std::same_as<std::remove_cvref_t<typename callable<Function>::template argument_type<Index + 1>>,
+                         WiringArguments> || ...);
+}
+
+template <typename Function, bool HasWiringArguments =
+                                  has_wiring_arguments_parameter<Function>(
+                                      std::make_index_sequence<callable<Function>::argument_count>{})>
+struct graph_callable : callable<Function> {
+    using Base = callable<Function>;
+    static constexpr std::size_t argument_count = Base::argument_count;
+    static constexpr bool receives_wiring_arguments = false;
+
+    template <std::size_t Index> using argument_type = typename Base::template argument_type<Index>;
+};
+
+template <typename Function> struct graph_callable<Function, true> : callable<Function> {
+    using Base = callable<Function>;
+    static_assert(Base::argument_count > 0);
+    static_assert(std::same_as<typename Base::template argument_type<0>, const WiringArguments &>,
+                  "const WiringArguments& must be the first graph function parameter");
+    static_assert(!has_wiring_arguments_parameter_after_first<Function>(
+                      std::make_index_sequence<Base::argument_count - 1>{}),
+                  "a graph function accepts one const WiringArguments& parameter");
+
+    static constexpr std::size_t argument_count = Base::argument_count - 1;
+    static constexpr bool receives_wiring_arguments = true;
+
+    template <std::size_t Index> using argument_type = typename Base::template argument_type<Index + 1>;
+};
 
 template <typename Parameter> [[nodiscard]] decltype(auto) graph_argument(const WiringArgument &argument) {
     using Value = std::remove_cvref_t<Parameter>;
@@ -108,9 +147,28 @@ decltype(auto) invoke_graph_function(const Function &function, std::span<const W
     return invoke_graph_function(function, arguments, std::make_index_sequence<callable<Function>::argument_count>{});
 }
 
+template <typename Function, std::size_t... Index>
+decltype(auto) invoke_graph_function(const Function &function, const WiringArguments &wiring_arguments,
+                                     std::span<const WiringArgument> arguments, std::index_sequence<Index...>) {
+    return std::invoke(function, wiring_arguments,
+                       graph_argument<typename graph_callable<Function>::template argument_type<Index>>(
+                           arguments[Index])...);
+}
+
+template <typename Function>
+decltype(auto) invoke_graph_function(const Function &function, const WiringArguments &wiring_arguments,
+                                     std::span<const WiringArgument> arguments) {
+    if constexpr (graph_callable<Function>::receives_wiring_arguments) {
+        return invoke_graph_function(function, wiring_arguments, arguments,
+                                     std::make_index_sequence<graph_callable<Function>::argument_count>{});
+    } else {
+        return invoke_graph_function(function, arguments);
+    }
+}
+
 template <typename Function, std::size_t Index>
 bool wiring_parameter_matches(const Parameter &declaration, const ResolvedParameter &parameter) {
-    using Parameter = typename callable<Function>::template argument_type<Index>;
+    using Parameter = typename graph_callable<Function>::template argument_type<Index>;
     using Value = std::remove_cvref_t<Parameter>;
 
     if constexpr (is_typed_wiring_point<Value>) {
@@ -171,7 +229,7 @@ template <typename Function, std::size_t... Index>
 template <typename Function>
 [[nodiscard]] bool wiring_parameters_match(const Signature &declaration, const ResolvedSignature &signature) {
     return wiring_parameters_match<Function>(declaration, signature,
-                                             std::make_index_sequence<callable<Function>::argument_count>{});
+                                             std::make_index_sequence<graph_callable<Function>::argument_count>{});
 }
 
 template <typename Value> util::symbol wiring_label(Value &&value) {

@@ -17,6 +17,7 @@ class TimeSeriesDictionaryType : public FixedItemTimeSeriesType {
     const TimeSeriesType &value_type() const noexcept { return *value_type_; }
     const TimeSeriesType &key_set_type() const noexcept { return *key_set_type_; }
     bool contains_reference() const override { return value_type().contains_reference(); }
+    const TimeSeriesType &reference_free_type() const override;
     [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
     const TimeSeriesType &with_guarantee_limit(TimeSeriesGuarantee limit) const override;
     const TimeSeriesType *common_type(const TimeSeriesType &other) const override;

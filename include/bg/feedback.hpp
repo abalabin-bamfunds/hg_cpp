@@ -11,6 +11,7 @@
 #include <bg/time_series/tick_serializer.hpp>
 #include <bg/time_series/time_series_variable.hpp>
 #include <bg/time_series/ts/ts_output.hpp>
+#include <bg/type/time_series_variable.hpp>
 #include <bg/util/buffer.hpp>
 #include <bg/util/symbol.hpp>
 
@@ -56,7 +57,7 @@ template <typename SERIES> struct FeedbackSource {
     void start(EvaluationContext *context) const {
         auto memory = context->runtime_graph().allocation();
         auto storage = util::buffer::chain(256, memory);
-        *stream = memory.new_object<FeedbackTickStream>(std::move(storage), memory, SERIES::type());
+        *stream = memory.new_object<FeedbackTickStream>(std::move(storage), memory, output.runtime_type().type());
     }
 
     void evaluate() const {
@@ -115,11 +116,24 @@ template <typename SERIES> class Feedback {
             return true;
         }(), "feedback output cannot have the const guarantee");
 
-        auto &wiring = WiringContext::current().wiring();
-        using SourceTemplate = AggregateNodeTemplate<details::FeedbackSource<SERIES>, details::FeedbackSourceLabel>;
-        const auto &source_template =
-            wiring.own_node_template(std::make_unique<SourceTemplate>(details::FeedbackSourceLabel{label_}));
-        source_ = *source_template();
+        initialize_source();
+    }
+
+    explicit Feedback(const TimeSeriesType &series_type, std::string_view name)
+        requires details::time_series_variable<SERIES>
+        : label_{name.empty() ? util::symbol{"feedback"} : util::symbol{name}} {
+        if (!series_type.is_resolved()) {
+            throw WiringError{"feedback requires a resolved time series type"};
+        }
+        if (series_type.contains_reference()) {
+            throw WiringError{"feedback does not support time series types containing references"};
+        }
+        if (series_type.guarantee().value() == TimeSeriesGuarantee::const_) {
+            throw WiringError{"feedback output cannot have the const guarantee"};
+        }
+
+        type_map_.set(details::TimeSeriesVariableInstance<SERIES>::get(), &series_type);
+        initialize_source();
     }
 
     Feedback(const Feedback &) = delete;
@@ -143,6 +157,14 @@ template <typename SERIES> class Feedback {
     }
 
   private:
+    void initialize_source() {
+        auto &wiring = WiringContext::current().wiring();
+        using SourceTemplate = AggregateNodeTemplate<details::FeedbackSource<SERIES>, details::FeedbackSourceLabel>;
+        const auto &source_template =
+            wiring.own_node_template(std::make_unique<SourceTemplate>(details::FeedbackSourceLabel{label_}));
+        source_ = *source_template(type_map_);
+    }
+
     template <typename SOURCE> void bind(SOURCE &&input) {
         if (assigned_) {
             throw std::logic_error{"a feedback sink can be assigned only once"};
@@ -156,17 +178,30 @@ template <typename SERIES> class Feedback {
         using SinkTemplate = AggregateNodeTemplate<details::FeedbackSink<SERIES>, details::FeedbackSinkLabel>;
         const auto &sink_template =
             wiring.own_node_template(std::make_unique<SinkTemplate>(details::FeedbackSinkLabel{label_}));
-        (void)sink_template(std::forward<SOURCE>(input), source_);
+        (void)sink_template(type_map_, std::forward<SOURCE>(input), source_);
         assigned_ = true;
     }
 
     util::symbol label_;
+    TypeMap type_map_;
     WiringPoint source_;
     bool assigned_{};
 };
 
 template <typename SERIES> [[nodiscard]] auto feedback(std::string_view name = {}) {
     return Feedback<SERIES>{name};
+}
+
+[[nodiscard]] inline auto feedback(const TimeSeriesType &series_type, std::string_view name = {}) {
+    return Feedback<TS_T>{series_type, name};
+}
+
+template <details::wiring_point_argument SOURCE>
+[[nodiscard]] WiringPoint feedback(SOURCE &&source, std::string_view name = {}) {
+    const auto input = static_cast<WiringPoint>(source);
+    auto result = Feedback<TS_T>{input.type().reference_free_type(), name};
+    result = input;
+    return static_cast<WiringPoint>(result);
 }
 
 } // namespace bg

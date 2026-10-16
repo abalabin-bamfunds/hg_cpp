@@ -24,6 +24,7 @@ class TimeSeriesListType : public FixedItemTimeSeriesType {
     const SizeParameter &size() const noexcept { return size_; }
     std::size_t item_count() const noexcept final { return size_.value().value_or(std::dynamic_extent); }
     const TimeSeriesType &item_type(std::size_t index) const final;
+    const TimeSeriesType &reference_free_type() const override;
     [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
     const TimeSeriesType &with_guarantee_limit(TimeSeriesGuarantee limit) const override;
     const TimeSeriesType *common_type(const TimeSeriesType &other) const override;

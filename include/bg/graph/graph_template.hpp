@@ -43,7 +43,7 @@ template <typename Function, typename Options = details::default_wiring_label, t
 class GraphTemplate final
     : public WiringTemplate,
       public details::TypeParameterizedWiring<GraphTemplate<Function, Options, TypeParameters...>, TypeParameters...> {
-    using FunctionInfo = details::callable<Function>;
+    using FunctionInfo = details::graph_callable<Function>;
     using Result = typename FunctionInfo::result_type;
     using LabelFunction = details::callable_graph_label_t<Options>;
 
@@ -125,7 +125,7 @@ class GraphTemplate final
     }
 
     [[nodiscard]] std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature signature,
-                                                  const WiringArguments &,
+                                                  const WiringArguments &argument_view,
                                                   std::span<const WiringArgument> arguments) const override {
         if (!details::wiring_parameters_match<Function>(signature_, signature)) {
             throw WiringError{"a graph function does not match its resolved signature"};
@@ -135,11 +135,11 @@ class GraphTemplate final
         auto context_scopes = details::ContextScopes::activate_context_parameters(signature, arguments);
 
         if constexpr (std::same_as<Result, void>) {
-            details::invoke_graph_function(function_, arguments);
+            details::invoke_graph_function(function_, argument_view, arguments);
 
             return std::nullopt;
         } else {
-            return static_cast<WiringPoint>(details::invoke_graph_function(function_, arguments));
+            return static_cast<WiringPoint>(details::invoke_graph_function(function_, argument_view, arguments));
         }
     }
 

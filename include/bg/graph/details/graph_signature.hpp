@@ -41,7 +41,7 @@ struct graph_time_series_union<TypeVariable<Name, Alternatives...>>
     : std::bool_constant<(supported_time_series<Alternatives> && ...)> {};
 
 template <typename Function, std::size_t Index> const Type &graph_parameter_type(util::symbol name) {
-    using Parameter = std::remove_cvref_t<typename callable<Function>::template argument_type<Index>>;
+    using Parameter = std::remove_cvref_t<typename graph_callable<Function>::template argument_type<Index>>;
 
     if constexpr (is_typed_wiring_point<Parameter>) {
         using TimeSeries = typename typed_wiring_point<Parameter>::time_series_type;
@@ -78,7 +78,7 @@ template <typename Function, std::size_t Index> const Type &graph_parameter_type
 
 template <typename Function, std::size_t Index>
 void add_graph_parameter(std::vector<Parameter> &parameters, std::span<const std::string_view> parameter_names) {
-    using Value = std::remove_cvref_t<typename callable<Function>::template argument_type<Index>>;
+    using Value = std::remove_cvref_t<typename graph_callable<Function>::template argument_type<Index>>;
 
     if constexpr (is_typed_wiring_point<Value>) {
         if constexpr (Value::context && Value::name.empty()) {
@@ -140,7 +140,7 @@ template <typename Function> const TimeSeriesType &graph_output_type() {
     if constexpr (time_series_variable<TimeSeries>) {
         return time_series_variable_instance<TimeSeries>();
     } else {
-        return time_series_type_for<Function, callable<Function>::argument_count, TimeSeriesTypeRole::output,
+        return time_series_type_for<Function, graph_callable<Function>::argument_count, TimeSeriesTypeRole::output,
                                     TimeSeries>(
             TimeSeriesGuarantee::ordinary);
     }
@@ -163,7 +163,7 @@ template <typename Function>
 [[nodiscard]] Signature make_graph_signature(util::symbol name, std::span<const std::string_view> parameter_names,
                                              std::vector<VariableResolver> resolvers) {
     return make_graph_signature<Function>(name, parameter_names, std::move(resolvers),
-                                          std::make_index_sequence<callable<Function>::argument_count>{});
+                                          std::make_index_sequence<graph_callable<Function>::argument_count>{});
 }
 
 template <typename Function>
@@ -184,7 +184,7 @@ template <typename Function>
 [[nodiscard]] Signature make_graph_input_signature(util::symbol name,
                                                    std::span<const std::string_view> parameter_names = {}) {
     return make_graph_input_signature<Function>(
-        name, parameter_names, std::make_index_sequence<callable<Function>::argument_count>{});
+        name, parameter_names, std::make_index_sequence<graph_callable<Function>::argument_count>{});
 }
 
 } // namespace bg::details

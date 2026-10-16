@@ -56,6 +56,19 @@ void TimeSeriesListType::format_name(std::string &result) const {
     result += '>';
 }
 
+const TimeSeriesType &TimeSeriesListType::reference_free_type() const {
+    if (!is_resolved()) {
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"TSL"},
+                                  "an unresolved time series type cannot be made reference-free"};
+    }
+    const auto &item = item_type().reference_free_type();
+    if (&item == &item_type()) {
+        return *this;
+    }
+
+    return time_series_list_type(item, item_count(), *guarantee().value());
+}
+
 const TimeSeriesListType &TimeSeriesListType::from_items(std::span<const TimeSeriesType *const> items,
                                                         TimeSeriesGuarantee collection_guarantee) {
     if (items.empty()) {

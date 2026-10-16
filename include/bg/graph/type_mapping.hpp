@@ -176,6 +176,14 @@ template <typename Target, typename... Parameters> class OwningMappedWiring {
 
 template <typename Target, typename... Parameters> class TypeParameterizedWiring {
   public:
+    auto operator[](const TypeMap &type_map) const & {
+        return MappedWiring<Target, Parameters...>{static_cast<const Target &>(*this), type_map.copy()};
+    }
+
+    auto operator[](const TypeMap &type_map) && {
+        return OwningMappedWiring<Target, Parameters...>{static_cast<Target &&>(*this), type_map.copy()};
+    }
+
     template <typename... Mappings> auto operator[](Mappings... mappings) const & {
         return MappedWiring<Target, Parameters...>{
             static_cast<const Target &>(*this), make_type_map<Parameters...>(mappings...)};

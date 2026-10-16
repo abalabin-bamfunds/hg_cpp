@@ -124,6 +124,36 @@ std::optional<std::size_t> TimeSeriesBundleType::find_item_index(util::symbol na
     return std::nullopt;
 }
 
+const TimeSeriesType &TimeSeriesBundleType::reference_free_type() const {
+    if (!is_resolved()) {
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"TSB"},
+                                  "an unresolved time series type cannot be made reference-free"};
+    }
+
+    const auto rewrite_schema = [](auto &&self, const Schema &source) -> const Schema & {
+        auto fields = std::vector<SchemaField>{};
+        fields.reserve(source.direct_fields().size());
+        for (const auto &field : source.direct_fields()) {
+            const auto &type = static_cast<const TimeSeriesType &>(*field.type).reference_free_type();
+            fields.push_back({field.name, &type, field.optional});
+        }
+
+        const auto *base = source.base() == nullptr ? nullptr : &self(self, *source.base());
+        if (base == source.base() && std::ranges::equal(fields, source.direct_fields())) {
+            return source;
+        }
+
+        return bg::schema(source.name(), source.identity(), base, fields);
+    };
+
+    const auto &reference_free_schema = rewrite_schema(rewrite_schema, schema());
+    if (&reference_free_schema == &schema()) {
+        return *this;
+    }
+
+    return time_series_bundle_type(reference_free_schema, *guarantee().value());
+}
+
 const TimeSeriesType &TimeSeriesBundleType::with_guarantee(TimeSeriesGuarantee guarantee) const {
     return time_series_bundle_type(schema(), guarantee);
 }

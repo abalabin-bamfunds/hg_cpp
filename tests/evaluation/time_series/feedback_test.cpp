@@ -46,6 +46,19 @@ TEST_CASE("feedback waits for its first input tick",
     CHECK(actual.equals({std::nullopt, std::nullopt, 3, std::nullopt, 8}));
 }
 
+TEST_CASE("feedback accepts an explicit resolved output type",
+          "[evaluation][feature:feedback][feature:type-system][series:value][scalar:i64]") {
+    const auto graph = [](bg::wp<bg::TS<bg::i64>> input) {
+        auto loop = bg::feedback(bg::TS<bg::i64>::type());
+        auto output = static_cast<bg::wp<bg::TS<bg::i64>>>(loop);
+        loop = input;
+        return output;
+    };
+
+    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 3>{2, 5, 7});
+    CHECK(actual.equals({std::nullopt, 2, 5, 7}));
+}
+
 TEST_CASE("feedback can drive a bounded computation loop",
           "[evaluation][feature:feedback][feature:timed-scheduling][feature:test-graph]"
           "[series:value][scalar:i64][shape:chain][transition:update]") {
@@ -253,4 +266,27 @@ TEST_CASE("feedback rejects collections containing references",
     auto context = bg::WiringContext{wiring};
 
     CHECK_THROWS_AS((bg::feedback<bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>>()), bg::WiringError);
+}
+
+TEST_CASE("inferred feedback removes references contained in a collection",
+          "[evaluation][feature:feedback][feature:reference][feature:type-system]"
+          "[series:tsd][scalar:i64][binding:reference-to-value]") {
+    CHECK(bg::TSD<bg::i64, bg::TS<bg::i64>>::type().accepts(
+        bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>::type()));
+
+    const auto make_reference_dictionary = bg::node(
+        [](bg::In<bg::REF<bg::TS<bg::i64>>> input,
+           bg::Out<bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>> output) { output[1].copy(input); });
+    const auto sum = bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input,
+                                bg::Out<bg::TS<bg::i64>> output) {
+        auto total = bg::i64{};
+        input.for_each_value([&](const auto &value) { total += *value; });
+        output.set(total);
+    });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) {
+        return sum(bg::feedback(make_reference_dictionary(input)));
+    };
+
+    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 3>{2, 4, 6});
+    CHECK(actual.equals({std::nullopt, 2, 4, 6}));
 }

@@ -362,6 +362,13 @@ auto aggregate_node = bg::node<RESULT, NodeDefinition>();
 auto aggregate_graph = bg::graph<RESULT, GraphDefinition>();
 ```
 
+A callable graph may take `const WiringArguments&` as its first function
+parameter. Wiring supplies the resolved invocation metadata; this parameter is
+not part of the graph signature. A graph can pass its resolved type map to
+another type-parameterized wiring construct with `implementation[arguments.type_map()]`.
+`nested()` accepts that mapped graph and resolves its output-only type
+parameters from the supplied map.
+
 Declarations without ordered type parameters keep their existing form. The
 [type system](type-system.md#signature-resolution) defines explicit type
 arguments and named mappings on calls.

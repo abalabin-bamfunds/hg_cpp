@@ -28,6 +28,17 @@ bool TimeSeriesType::requires_reference_representation_for(const TimeSeriesType 
 
 const TimeSeriesType &TimeSeriesType::dereferenced_type() const { return *this; }
 
+const TimeSeriesType &TimeSeriesType::reference_free_type() const {
+    if (!is_resolved()) {
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"time series"},
+                                  "an unresolved time series type cannot be made reference-free"};
+    }
+    if (contains_reference()) {
+        throw std::invalid_argument{"a time series type containing references must define its reference-free type"};
+    }
+    return *this;
+}
+
 void TimeSeriesType::append_guarantee(std::string &result) const {
     if (const auto value = guarantee().value(); value && *value != TimeSeriesGuarantee::ordinary) {
         constexpr auto names = std::array<std::string_view, 4>{"", "deduplicated", "final", "const"};

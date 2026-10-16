@@ -36,6 +36,19 @@ void TimeSeriesDictionaryType::format_name(std::string &result) const {
     result += '>';
 }
 
+const TimeSeriesType &TimeSeriesDictionaryType::reference_free_type() const {
+    if (!is_resolved()) {
+        throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, util::symbol{"TSD"},
+                                  "an unresolved time series type cannot be made reference-free"};
+    }
+    const auto &value = value_type().reference_free_type();
+    if (&value == &value_type()) {
+        return *this;
+    }
+
+    return time_series_dictionary_type(key_type(), value, *guarantee().value());
+}
+
 const TimeSeriesType &TimeSeriesDictionaryType::item_type(std::size_t index) const {
     if (index != 0) {
         throw std::out_of_range{"time series dictionary component index is out of range"};
