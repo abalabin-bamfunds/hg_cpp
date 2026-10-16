@@ -161,18 +161,10 @@ TEST_CASE("floating floor division preserves Python quotient and modulo rules",
                                  -0.1 + std::fmod(1.0, 0.1), -std::fmod(1.0, 0.1)}));
 }
 
-TEST_CASE("power and round preserve numeric result types and decimal rules",
+TEST_CASE("power preserves numeric result types",
           "[feature:operator][series:value][scalar:i64][scalar:floating-point]") {
     const auto integer_power = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::pow(lhs, rhs); };
     const auto floating_power = [](wp<TS<double>> lhs, wp<TS<double>> rhs) { return operators::pow(lhs, rhs); };
-    const auto round_two = [](wp<TS<double>> value) { return operators::round(value, 2); };
-    const auto round_negative = [](wp<TS<double>> value) { return operators::round(value, -23); };
-    const auto round_negative_24 = [](wp<TS<double>> value) { return operators::round(value, -24); };
-    const auto round_negative_25 = [](wp<TS<double>> value) { return operators::round(value, -25); };
-    const auto round_negative_308 = [](wp<TS<double>> value) { return operators::round(value, -308); };
-    const auto round_tens = [](wp<TS<double>> value) { return operators::round(value, -1); };
-    const auto round_hundreds = [](wp<TS<double>> value) { return operators::round(value, -2); };
-    const auto round_scalar = [] { return operators::round(2.675, 2); };
 
     CHECK(testing::test_graph(integer_power, std::array<i64, 3>{2, -2, 3}, std::array<i64, 3>{10, 3, 0})
               .equals<i64>({1024, -8, 1}));
@@ -180,29 +172,6 @@ TEST_CASE("power and round preserve numeric result types and decimal rules",
     CHECK(testing::test_graph(wrapping_power).equals<i64>({std::numeric_limits<i64>::min()}));
     CHECK(testing::test_graph(floating_power, std::array{2.0, -2.0}, std::array{3.0, 4.0})
               .equals<double>({8.0, 16.0}));
-    CHECK(testing::test_graph(round_scalar).equals<double>({2.67}));
-    CHECK(testing::test_graph(round_two, std::array{2.675, 1.125, 1.375}).equals<double>({2.67, 1.12, 1.38}));
-    CHECK(testing::test_graph(round_negative, std::array{5.0000000000000004e22}).equals<double>({1e23}));
-    CHECK(testing::test_graph(round_negative_24, std::array{1.5e24}).equals<double>({1e24}));
-    CHECK(testing::test_graph(round_negative_25, std::array{2.5e25}).equals<double>({3e25}));
-    CHECK(testing::test_graph(round_negative, std::array{1.5e23}).equals<double>({2e23}));
-    CHECK_THROWS_AS(testing::test_graph(round_negative_308, std::array{1.79e308}), std::overflow_error);
-    CHECK_THROWS_AS(testing::test_graph(round_negative_308, std::array{1.5e308}), std::overflow_error);
-    const auto infinity = std::numeric_limits<double>::infinity();
-    CHECK(testing::test_graph(round_tens,
-                              std::array{std::nextafter(5.0, 0.0), 5.0, std::nextafter(5.0, infinity),
-                                         std::nextafter(25.0, 0.0), 25.0, std::nextafter(25.0, infinity),
-                                         std::nextafter(35.0, 0.0), 35.0, std::nextafter(35.0, infinity)})
-              .equals<double>({0.0, 0.0, 10.0, 20.0, 20.0, 30.0, 30.0, 40.0, 40.0}));
-    CHECK(testing::test_graph(round_hundreds,
-                              std::array{std::nextafter(50.0, 0.0), 50.0, std::nextafter(50.0, infinity)})
-              .equals<double>({0.0, 0.0, 100.0}));
-    const auto round_signed_zero = [](wp<TS<double>> value) { return operators::round(value, 0); };
-    const auto rounded_zero = testing::test_graph(round_signed_zero, std::array{-0.0, -0.1, 0.1});
-    REQUIRE(rounded_zero.size() == 3);
-    CHECK(std::signbit(scalar_cast<double>(*rounded_zero[0]).value()));
-    CHECK(std::signbit(scalar_cast<double>(*rounded_zero[1]).value()));
-    CHECK_FALSE(std::signbit(scalar_cast<double>(*rounded_zero[2]).value()));
 
     const auto negative_integer_exponent = [] { return operators::pow(i64{2}, i64{-1}); };
     const auto zero_to_negative_power = [] { return operators::pow(0.0, -1.0); };
@@ -210,6 +179,60 @@ TEST_CASE("power and round preserve numeric result types and decimal rules",
     CHECK_THROWS_AS(testing::test_graph(negative_integer_exponent), std::domain_error);
     CHECK_THROWS_AS(testing::test_graph(zero_to_negative_power), std::domain_error);
     CHECK_THROWS_AS(testing::test_graph(complex_power), std::domain_error);
+}
+
+TEST_CASE("round uses numeric scaling and ties-to-even",
+          "[feature:operator][series:value][scalar:floating-point]") {
+    const auto round_value = [](wp<TS<double>> value, wp<TS<i64>> digits) { return operators::round(value, digits); };
+    const auto round_whole = [](wp<TS<double>> value) { return operators::round(value); };
+    const auto round_scalar = [] { return operators::round(2.675, 2); };
+
+    CHECK(testing::test_graph(round_scalar).equals<double>({2.68}));
+    CHECK(testing::test_graph(round_value, std::array{2.675, 1.125, 1.375, -1.125, -1.375},
+                              std::array<i64, 5>{2, 2, 2, 2, 2})
+              .equals<double>({2.68, 1.12, 1.38, -1.12, -1.38}));
+    CHECK(testing::test_graph(round_whole, std::array{2.5, 3.5, -2.5, -3.5}).equals<double>({2.0, 4.0, -2.0, -4.0}));
+    CHECK(testing::test_graph(round_value, std::array{25.0, 35.0, -25.0, -35.0, 250.0, 350.0},
+                              std::array<i64, 6>{-1, -1, -1, -1, -2, -2})
+              .equals<double>({20.0, 40.0, -20.0, -40.0, 200.0, 400.0}));
+
+    const auto largest_digits = testing::test_graph(
+        round_value, std::array{1.25, -1.25},
+        std::array<i64, 2>{std::numeric_limits<i64>::max(), std::numeric_limits<i64>::min()});
+    REQUIRE(largest_digits.size() == 2);
+    CHECK(scalar_cast<double>(*largest_digits[0]).value() == 1.25);
+    CHECK(scalar_cast<double>(*largest_digits[1]).value() == 0.0);
+    CHECK(std::signbit(scalar_cast<double>(*largest_digits[1]).value()));
+
+    const auto infinity = std::numeric_limits<double>::infinity();
+    const auto nonfinite = testing::test_graph(round_value, std::array{infinity, -infinity,
+                                                                       std::numeric_limits<double>::quiet_NaN()},
+                                               std::array<i64, 3>{2, -1, 0});
+    REQUIRE(nonfinite.size() == 3);
+    CHECK(std::isinf(scalar_cast<double>(*nonfinite[0]).value()));
+    CHECK(std::isinf(scalar_cast<double>(*nonfinite[1]).value()));
+    CHECK(std::isnan(scalar_cast<double>(*nonfinite[2]).value()));
+
+    const auto signed_zero = testing::test_graph(round_value, std::array{-0.0, -0.1, 0.1},
+                                                  std::array<i64, 3>{2, 0, 0});
+    REQUIRE(signed_zero.size() == 3);
+    CHECK(std::signbit(scalar_cast<double>(*signed_zero[0]).value()));
+    CHECK(std::signbit(scalar_cast<double>(*signed_zero[1]).value()));
+    CHECK_FALSE(std::signbit(scalar_cast<double>(*signed_zero[2]).value()));
+
+    const auto subnormal = std::numeric_limits<double>::denorm_min();
+    const auto high_precision = testing::test_graph(round_value, std::array{1.23e-310, subnormal, subnormal},
+                                                     std::array<i64, 3>{310, 323, 324});
+    REQUIRE(high_precision.size() == 3);
+    CHECK(scalar_cast<double>(*high_precision[0]).value() == 1e-310);
+    CHECK(scalar_cast<double>(*high_precision[1]).value() == 0.0);
+    CHECK(scalar_cast<double>(*high_precision[2]).value() == subnormal);
+
+    const auto largest_value = std::numeric_limits<double>::max();
+    CHECK(testing::test_graph(round_value, std::array{largest_value}, std::array<i64, 1>{308})
+              .equals<double>({largest_value}));
+    CHECK_THROWS_AS(testing::test_graph(round_value, std::array{1.5e308}, std::array<i64, 1>{-308}),
+                    std::overflow_error);
 }
 
 TEST_CASE("convert maps a full target type and permits collection overloads",

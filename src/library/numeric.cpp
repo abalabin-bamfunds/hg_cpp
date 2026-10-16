@@ -7,16 +7,11 @@
 #include <bg/type/time_series_value_type.hpp>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
-#include <charconv>
 #include <cstdint>
 #include <limits>
 #include <optional>
 #include <stdexcept>
-#include <string>
-#include <string_view>
-#include <system_error>
 #include <variant>
 
 namespace bg::operators::details {
@@ -216,30 +211,10 @@ struct arithmetic_overloads {
 
 struct transform_overloads {
     // Rounding.
-    static constexpr auto max_round_decimal_places = 323;
-    static constexpr auto round_positive_buffer_size = static_cast<std::size_t>(
-        std::numeric_limits<double>::max_exponent10 + max_round_decimal_places + 3);
-    static constexpr auto round_integer_buffer_size =
-        static_cast<std::size_t>(std::numeric_limits<double>::max_exponent10 + 1);
-
-    template <std::size_t SIZE>
-    static std::string_view format_fixed(double value, int precision, std::array<char, SIZE> &buffer) {
-        const auto [end, error] =
-            std::to_chars(buffer.data(), buffer.data() + buffer.size(), value, std::chars_format::fixed, precision);
-        if (error != std::errc{}) {
-            throw std::runtime_error{"failed to format a rounded floating-point value"};
-        }
-        return {buffer.data(), static_cast<std::size_t>(end - buffer.data())};
-    }
-
-    static double parse_rounded(std::string_view text) {
-        auto rounded = 0.0;
-        const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), rounded);
-        if (error == std::errc::result_out_of_range) {
-            throw std::overflow_error{"rounded result is outside the double range"};
-        }
-        if (error != std::errc{} || end != text.data() + text.size()) {
-            throw std::runtime_error{"failed to parse a rounded floating-point value"};
+    static double round_ties_to_even(double value) {
+        auto rounded = std::round(value);
+        if (std::abs(value - rounded) == 0.5) {
+            rounded = 2.0 * std::round(value / 2.0);
         }
         return rounded;
     }
@@ -248,62 +223,38 @@ struct transform_overloads {
         if (!std::isfinite(value) || value == 0.0) {
             return value;
         }
-        if (ndigits > max_round_decimal_places) {
+        if (ndigits == 0) {
+            return round_ties_to_even(value);
+        }
+        if (ndigits > 323) {
+            return value;
+        }
+        if (ndigits < -308) {
+            return std::copysign(0.0, value);
+        }
+
+        if (ndigits < 0) {
+            const auto scale = std::pow(10.0, static_cast<int>(-ndigits));
+            const auto rounded = round_ties_to_even(value / scale);
+            const auto result = rounded * scale;
+            if (!std::isfinite(result)) {
+                throw std::overflow_error{"rounded result is outside the double range"};
+            }
+            return result;
+        }
+
+        const auto precision = static_cast<int>(ndigits);
+        const auto scale_precision = std::min(precision, 308);
+        const auto scale = std::pow(10.0, scale_precision);
+        // Split the scale so subnormal values support precision above 308 digits.
+        const auto remaining_precision = precision - scale_precision;
+        const auto remaining_scale = remaining_precision == 0 ? 1.0 : std::pow(10.0, remaining_precision);
+        const auto scaled = (value * scale) * remaining_scale;
+        if (!std::isfinite(scaled)) {
             return value;
         }
 
-        if (ndigits >= 0) {
-            auto buffer = std::array<char, round_positive_buffer_size>{};
-            return parse_rounded(format_fixed(value, static_cast<int>(ndigits), buffer));
-        }
-
-        const auto magnitude = std::abs(value);
-        const auto integer = std::trunc(magnitude);
-        if (integer == 0.0) {
-            return std::copysign(0.0, value);
-        }
-
-        auto buffer = std::array<char, round_integer_buffer_size>{};
-        auto digits = std::string{format_fixed(integer, 0, buffer)};
-        const auto significant_integer_size = digits.size();
-        if (ndigits < -static_cast<i64>(significant_integer_size)) {
-            return std::copysign(0.0, value);
-        }
-
-        const auto discarded_digits = static_cast<std::size_t>(-ndigits);
-        const auto retained_digits = significant_integer_size - discarded_digits;
-        const auto rounding_digit = digits[retained_digits];
-        const auto has_nonzero_tail = std::ranges::any_of(
-            std::string_view{digits}.substr(retained_digits + 1), [](char digit) { return digit != '0'; }) ||
-                                     magnitude != integer;
-        const auto round_up = rounding_digit > '5' ||
-                              (rounding_digit == '5' &&
-                               (has_nonzero_tail || (retained_digits != 0 &&
-                                                     (digits[retained_digits - 1] - '0') % 2 != 0)));
-
-        auto result = retained_digits == 0 ? std::string{"0"} : digits.substr(0, retained_digits);
-        if (round_up && retained_digits != 0) {
-            auto position = retained_digits;
-            while (position != 0 && result[position - 1] == '9') {
-                result[position - 1] = '0';
-                --position;
-            }
-            if (position == 0) {
-                result.insert(result.begin(), '1');
-            } else {
-                ++result[position - 1];
-            }
-        } else if (round_up) {
-            result = "1";
-        }
-        result.append(discarded_digits, '0');
-        if (result.find_first_not_of('0') == std::string::npos) {
-            return std::copysign(0.0, value);
-        }
-        if (std::signbit(value)) {
-            result.insert(result.begin(), '-');
-        }
-        return parse_rounded(result);
+        return (round_ties_to_even(scaled) / remaining_scale) / scale;
     }
 
     overload<round> round_double{[](double value) { return round_decimal(value, 0); }};
