@@ -503,7 +503,8 @@ class concurrent_buffer_writer {
         block_ = details::block_reference::adopt(buffer.detach_block());
     }
 
-    concurrent_buffer_writer(const concurrent_buffer_writer &) = delete;
+    // Copy only when this writer has no active reservation and is not being mutated.
+    concurrent_buffer_writer(const concurrent_buffer_writer &other) : block_{other.block_} {}
     concurrent_buffer_writer &operator=(const concurrent_buffer_writer &) = delete;
     concurrent_buffer_writer(concurrent_buffer_writer &&) = delete;
     concurrent_buffer_writer &operator=(concurrent_buffer_writer &&) = delete;

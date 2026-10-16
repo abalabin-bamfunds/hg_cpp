@@ -652,11 +652,13 @@ class QueueMessageReader {
 
 class QueueMessageWriter {
   public:
-    // The runtime type must outlive the writer. The buffer must be a concurrent buffer chain.
+    // The runtime type must outlive each write call. The buffer must be a concurrent buffer chain.
     QueueMessageWriter(util::buffer buffer, std::size_t target, const TimeSeriesRuntimeType &runtime_type,
                        allocator memory = {});
 
-    QueueMessageWriter(const QueueMessageWriter &) = delete;
+    // Copy only when the source has no active reservation and is not being mutated.
+    QueueMessageWriter(const QueueMessageWriter &other)
+        : writer_{other.writer_}, target_{other.target_}, runtime_type_{other.runtime_type_}, memory_{other.memory_} {}
     QueueMessageWriter &operator=(const QueueMessageWriter &) = delete;
 
     // Write one framed message. Root SKIP returns false without reserving a frame.

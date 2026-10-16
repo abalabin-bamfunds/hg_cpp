@@ -63,6 +63,7 @@ add_library(
     src/normalized_wiring_arguments.cpp
     src/operator.cpp
     src/operators.cpp
+    src/queue.cpp
     src/node/aggregate_node_template_base.cpp
     src/node/node_template.cpp
     src/guarantee_parameter.cpp

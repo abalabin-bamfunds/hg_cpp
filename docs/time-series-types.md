@@ -148,6 +148,26 @@ discards unread records on destruction, releasing their scalar payloads.
 
 ## Queue messages
 
+`bg::Queue::write(literal)` returns whether it committed a message. Root `SKIP`
+and writes after closure return `false`. Closed writes do not project or serialize
+the literal. Serialization errors propagate while the queue is open.
+
+Copying a `Queue` creates an independent writer for the same destination. Use
+distinct copies on distinct threads. Do not write through a handle while copying
+or using that same handle on another thread. Default-constructed and moved-from
+handles reject writes.
+
+The engine owns `bg::details::QueueControl`. Its `close()` rejects new writes and
+waits for accepted writes to finish. Destroying the controller closes it. After
+closure, the reader discards unread messages before their runtime types are
+destroyed. Retained handles remain safe to copy, move, destroy, or write through.
+The controller does not destroy encoded payloads.
+
+Queue handles allocate scalar payloads through `std::pmr::new_delete_resource()`.
+The concurrent buffer's allocator must support concurrent allocation and
+deallocation and outlive every retained handle. Each handle retains its writer
+block until destruction; the controller does not retain a root buffer handle.
+
 `bg::details::QueueMessageWriter` is an engine-only writer. It serializes a
 `TimeSeriesLiteral` for a destination node into a concurrent buffer. Each frame
 starts with a typed `QueueMessageHeader` containing a 32-bit destination node

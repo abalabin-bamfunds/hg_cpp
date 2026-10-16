@@ -417,6 +417,8 @@ graph compilation or evaluation.
   provider scalar handlers, and unsupported references
 - queue message serialization for scalar and collection literals, frame targets and sizes, root skip, malformed
   selectors and markers, scalar ownership, concurrent reservation rollover, and failure cleanup
+- queue handle copying and moving, independent concurrent writers, closed-write rejection before serialization,
+  retained handles after controller destruction, and shutdown waiting for accepted writes, including failures
 - queue message reading for sentinel skipping, target order, padding, block rollover, committed reservation order,
   standard retry, batch rejection, no-op advancement, typed discard, replay failure, and concurrent watermark growth
 - queue tick application in standard and eliding modes, independent collection items, complete-message pending,
