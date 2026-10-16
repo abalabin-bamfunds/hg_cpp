@@ -5,6 +5,11 @@ target_link_libraries(test_shared_schema_provider PRIVATE bg::bg)
 target_include_directories(test_shared_schema_provider PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/type")
 set_target_properties(test_shared_schema_provider PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
+add_library(test_shared_literal_sentinel SHARED type/test_shared_literal_sentinel.cpp)
+target_link_libraries(test_shared_literal_sentinel PRIVATE bg::bg)
+target_include_directories(test_shared_literal_sentinel PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/type")
+set_target_properties(test_shared_literal_sentinel PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+
 add_executable(
     bg_tests
     evaluation/context/evaluation_context_test.cpp
@@ -98,6 +103,7 @@ add_executable(
     utils/version_test.cpp
     value/global_state_test.cpp
     value/scalar/builtins_test.cpp
+    value/scalar/literal_sentinel_test.cpp
     value/scalar/bundle_test.cpp
     value/scalar/capability_test.cpp
     value/scalar/dict/mutable_test.cpp
@@ -154,7 +160,8 @@ add_executable(
     wiring/time_series_reference_wiring_test.cpp
     wiring/type_mapping_test.cpp
 )
-target_link_libraries(bg_tests PRIVATE bg::bg Catch2::Catch2WithMain test_shared_schema_provider)
+target_link_libraries(bg_tests PRIVATE bg::bg Catch2::Catch2WithMain test_shared_schema_provider
+                                      test_shared_literal_sentinel)
 target_compile_options(bg_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj>)
 target_compile_definitions(bg_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:CATCH_CONFIG_NO_CPP17_STRING_VIEW>)
 

@@ -41,29 +41,18 @@ template <typename Item, auto Size, auto... Properties> class Out<TSL<Item, Size
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
     std::size_t size() const noexcept { return state_->runtime_type().item_count(state_->data()); }
 
-    template <typename Leaf = literal::ScalarLiteralItem>
-        requires std::same_as<Leaf, literal::ScalarLiteralItem>
-    void apply(const literal::Literal<Leaf> &literal) const {
-        apply_values(details::scalar_literal::sequence(literal));
-    }
-
     void apply(const literal::TimeSeriesLiteral &literal) const {
-        literal.visit(
-            [&](const literal::TimeSeriesLiteralItem &item) {
-                item.visit_item(
-                    [](const literal::ScalarLiteralItem *) {
-                        throw std::invalid_argument{"a time-series collection update requires a sequence"};
-                    },
-                    [](const literal::SkipLiteral *) {},
-                    [&](const literal::InvalidLiteral *) { invalidate(); },
-                    [](const literal::RemoveLiteral *) {
-                        throw std::invalid_argument{"REMOVE is not valid for a TSL item"};
-                    },
-                    [](const literal::RemovedLiteral *) {
-                        throw std::invalid_argument{"REMOVED is not valid for a TSL item"};
-                    });
-            },
-            [&](std::span<const literal::TimeSeriesLiteral> values) { apply_values(values); });
+        const auto sentinel = literal::Sentinel::from(literal);
+        if (sentinel) {
+            if (*sentinel == literal::SKIP) {
+                return;
+            }
+            if (*sentinel == literal::INVALID) {
+                invalidate();
+                return;
+            }
+        }
+        apply_values(details::scalar_literal::sequence(literal));
     }
 
     Out<Item> operator[](std::size_t index) const {
@@ -112,7 +101,7 @@ template <typename Item, auto Size, auto... Properties> class Out<TSL<Item, Size
     using item_type = Item;
 
   private:
-    template <typename LiteralType> void apply_values(std::span<const LiteralType> values) const {
+    void apply_values(std::span<const literal::ScalarLiteral> values) const {
         for (auto position = std::size_t{}; position < values.size(); ++position) {
             const auto current = details::scalar_literal::pair(
                 values[position], "a TSL update entry requires an index and a value");

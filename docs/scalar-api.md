@@ -178,7 +178,9 @@ ownership of the pointed-to object remains with the caller.
 ## Literals
 
 `<bg/literal/scalar_literal.hpp>` defines `literal::ScalarLiteral` as
-`literal::Literal<literal::ScalarLiteralItem>`. A scalar item borrows a C++ source,
+`literal::Literal<literal::ScalarLiteralItem>`. `literal::TimeSeriesLiteral` names
+the same type. Scalar construction and time series application interpret this
+carrier through separate operations. A scalar item borrows a C++ source,
 `Scalar`, `ScalarValue`, or `ScalarData`. A sequence borrows its recursive
 initializer-list storage. `Literal` allocates no owning tree.
 
@@ -208,6 +210,20 @@ Named fields can appear in any order. Required fields must be supplied; omitted
 optional bundle fields remain absent. Malformed sequences throw
 `std::invalid_argument`.
 
+Providers support extension sequences by registering `ScalarLiteralOperations`
+from `<bg/scalar/literal_operations.hpp>` with
+`ScalarDispatch<ScalarLiteralOperations>::instance()` using the
+[optional operation registry](#optional-operations). The handler receives the complete
+`ScalarLiteral`, destination runtime type, uninitialized destination storage, and
+allocator. It follows the [scalar construction contract](#ownership): return
+with one complete value, or throw after releasing any resources it acquired.
+Scalar leaves use the destination runtime's ordinary input construction.
+Scalar time series replacements pass the same carrier to scalar construction,
+including provider sequence handlers.
+The extension callback accepts `ScalarLiteral`; generic `Literal<Leaf>` sources
+retain the built-in sequence rules above. Missing handlers throw
+`std::invalid_argument`.
+
 Bundle sequence construction outside a scalar allocation context requires an
 explicit allocator, including bundles nested in collections. See the
 [ownership contract](#ownership).
@@ -215,6 +231,47 @@ explicit allocator, including bundles nested in collections. See the
 ```cpp
 auto values = bg::ScalarValue<bg::List<bg::List<bg::i64>>>::from_literal({{1, 2}, {}, {3}});
 ```
+
+### Sentinels
+
+`<bg/literal/sentinel.hpp>` defines `literal::Sentinel` and `literal::TaggedLiteral`.
+Each `Sentinel` instance is a noncopyable instruction with a diagnostic symbol
+name. Sentinel equality compares object addresses. Names support diagnostics.
+BG exports `SKIP`, `INVALID`, `REMOVE`, and `REMOVED` as singleton instances.
+`ScalarValue<Sentinel>` stores and copies a singleton pointer.
+
+```cpp
+const literal::Sentinel *instruction = literal::Sentinel::from(literal);
+literal::TaggedLiteral call = literal::REMOVED(key_literal);
+```
+
+`Sentinel::operator()` creates a `TaggedLiteral` that borrows the sentinel and
+argument. Copying a tagged literal copies those references. The caller keeps
+both objects alive while a literal or consumer refers to them.
+
+`Sentinel::from(literal)` returns the root singleton pointer for a bare sentinel.
+An ordinary scalar, tagged literal, or sequence returns `nullptr`. It does not
+traverse children. `TaggedLiteral::from(literal)` returns
+`std::optional<TaggedLiteral>`. A present result borrows the sentinel and
+argument; the function does not traverse children. Consumers compare sentinel
+instances with `==` and interpret only the instructions and tagged arguments
+they support.
+
+Sentinel instances have static storage duration. Extensions export one instance
+per instruction from their library so scalar values can safely retain its
+address:
+
+```cpp
+// Extension header; EXAMPLE_EXPORT is the extension's export macro.
+extern EXAMPLE_EXPORT const literal::Sentinel RESET;
+
+// Extension source.
+const literal::Sentinel RESET{bg::symbol{"example_extension.reset"}};
+```
+
+Sentinels and tagged literals have canonical scalar types and runtimes. They do
+not support implicit graph arguments or time series declarations. Time series
+instruction behavior is defined by the [output API](node-api.md#output-parameters).
 
 ## Lists
 

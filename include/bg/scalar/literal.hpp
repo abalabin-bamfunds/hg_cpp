@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/literal/scalar_literal.hpp>
+#include <bg/scalar/literal_operations.hpp>
 
 #include <bg/scalar/dict/runtime_type.hpp>
 #include <bg/scalar/dict/type.hpp>
@@ -115,8 +116,15 @@ template <typename LiteralType> class ScalarLiteralConstructionContext {
                             destination, memory, {&fields, &NamedFieldConstructionContext::callback});
                     },
                     [&](auto *) {
-                        throw std::invalid_argument{
-                            "literal sequence requires a list, set, dictionary, struct, or Bundle scalar destination"};
+                        if constexpr (std::same_as<LiteralType, literal::ScalarLiteral>) {
+                            const auto *operations =
+                                bg::ScalarDispatch<bg::ScalarLiteralOperations>::instance().find(runtime_type);
+                            if (operations != nullptr) {
+                                operations->construct(*literal_, runtime_type, destination, memory);
+                                return;
+                            }
+                        }
+                        throw std::invalid_argument{"scalar runtime type does not support literal construction"};
                     });
             });
     }

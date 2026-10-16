@@ -176,6 +176,10 @@ graph compilation or evaluation.
   size and alignment, and construction-failure cleanup
 - scalar buffer provider writes through reserved contexts, byte and typed field alignment, and owning value replay and
   discard lifetime; value-dependent provider projection, write-handler selection, and missing projection rejection
+- provider scalar literal construction through typed and erased values, runtime registration precedence,
+  nested construction, unsupported destinations, and construction-failure cleanup
+- shared literal sentinel constants and scalar types across libraries, scalar-wrapper recognition,
+  and borrowed argument identity
 - time series validity, update time, mutation, and invalidation
 - global state ownership, replacement, lookup, and allocation
 
@@ -374,6 +378,9 @@ graph compilation or evaluation.
   selected updates, empty first ticks, scalar keys and items, skip, invalidation,
   removal and readdition, written operation order, and malformed marker placement
 - provider-defined children accessed through built-in collections
+- provider time series literal application through erased outputs, runtime registration precedence,
+  nested publication, unsupported destinations, extension-defined sentinel instances,
+  tagged sentinel arguments, and provider scalar construction inside scalar time series
 
 ### Nodes and graphs
 

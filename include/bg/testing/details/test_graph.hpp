@@ -177,16 +177,8 @@ class LiteralSource {
 
   private:
     static bool is_skip(const literal::TimeSeriesLiteral &tick) {
-        return tick.visit(
-            [](const literal::TimeSeriesLiteralItem &item) {
-                auto skip = false;
-                item.visit_item(
-                    [&](const literal::SkipLiteral *) { skip = true; },
-                    [](const auto *) {});
-                return skip;
-            },
-            [](std::span<const literal::TimeSeriesLiteral>) { return false; })
-            .value();
+        const auto sentinel = literal::Sentinel::from(tick);
+        return sentinel != nullptr && *sentinel == literal::SKIP;
     }
 
     static void publish(Invocation invocation) {

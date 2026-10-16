@@ -230,6 +230,15 @@ TEST_CASE("test_graph runs literal sources when every tick is skipped",
     CHECK(actual.equals<bg::i64>({std::nullopt, std::nullopt, std::nullopt}));
 }
 
+TEST_CASE("test_graph rejects tagged SKIP as an incompatible scalar payload",
+          "[testing][evaluation][feature:test-graph][series:value]") {
+    const auto identity = [](bg::wp<bg::TS<bg::i64>> input) { return input; };
+
+    CHECK_THROWS_AS(
+        (bg::testing::test_graph(identity, {1, (literal::SKIP)(literal::ScalarLiteral{bg::i64{2}})})),
+        std::invalid_argument);
+}
+
 TEST_CASE("test_graph accepts empty raw inputs for functions and wiring templates",
           "[testing][evaluation][feature:test-graph][series:value][scalar:list]") {
     const auto count_items = bg::node([](bg::In<bg::TS<bg::List<bg::i64>>> input,

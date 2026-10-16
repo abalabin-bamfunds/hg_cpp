@@ -44,31 +44,11 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
     void invalidate() const { state_->invalidate(); }
 
-    template <typename Leaf = literal::ScalarLiteralItem>
-        requires std::same_as<Leaf, literal::ScalarLiteralItem>
-    void apply(const literal::Literal<Leaf> &literal) const {
-        apply_values(details::scalar_literal::sequence(literal));
-    }
-
     void apply(const literal::TimeSeriesLiteral &literal) const {
-        literal.visit(
-            [&](const literal::TimeSeriesLiteralItem &item) {
-                item.visit_item(
-                    [](const literal::ScalarLiteralItem *) {
-                        throw std::invalid_argument{"a time-series collection update requires a sequence"};
-                    },
-                    [](const literal::SkipLiteral *) {},
-                    [](const literal::InvalidLiteral *) {
-                        throw std::invalid_argument{"INVALID is not valid as a TSD update"};
-                    },
-                    [](const literal::RemoveLiteral *) {
-                        throw std::invalid_argument{"REMOVE requires a TSD entry"};
-                    },
-                    [](const literal::RemovedLiteral *) {
-                        throw std::invalid_argument{"REMOVED is only valid as a TSS item"};
-                    });
-            },
-            [&](std::span<const literal::TimeSeriesLiteral> values) { apply_values(values); });
+        if (const auto sentinel = literal::Sentinel::from(literal); sentinel && *sentinel == literal::SKIP) {
+            return;
+        }
+        apply_values(details::scalar_literal::sequence(literal));
     }
 
     Out<Item> operator[](const Scalar<K> &key) const { return item(details::scalar_data(key)); }
@@ -193,7 +173,7 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
     using item_type = Item;
 
   private:
-    template <typename LiteralType> void apply_values(std::span<const LiteralType> values) const {
+    void apply_values(std::span<const literal::ScalarLiteral> values) const {
         for (const auto &value : values) {
             (void)details::scalar_literal::pair(value, "a TSD update entry requires a key and a value");
         }
@@ -209,19 +189,12 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
             const auto current = details::scalar_literal::pair(value, "a TSD update entry requires a key and a value");
             auto skip = false;
             auto remove = false;
-            if constexpr (std::same_as<typename LiteralType::leaf_type, literal::TimeSeriesLiteralItem>) {
-                current.second->visit(
-                    [&](const typename LiteralType::leaf_type &leaf) {
-                        leaf.visit_item(
-                            [](const literal::ScalarLiteralItem *) {},
-                            [&](const literal::SkipLiteral *) { skip = true; },
-                            [](const literal::InvalidLiteral *) {},
-                            [&](const literal::RemoveLiteral *) { remove = true; },
-                            [](const literal::RemovedLiteral *) {
-                                throw std::invalid_argument{"REMOVED is only valid as a TSS item"};
-                            });
-                    },
-                    [](std::span<const LiteralType>) {});
+            if (const auto sentinel = literal::Sentinel::from(*current.second)) {
+                if (*sentinel == literal::SKIP) {
+                    skip = true;
+                } else if (*sentinel == literal::REMOVE) {
+                    remove = true;
+                }
             }
             details::scalar_literal::with_scalar_data(key_runtime_type(), *current.first,
                                                       [&](const details::ScalarData &key) {

@@ -7,6 +7,7 @@
 #include <bg/node/input_fwd.hpp>
 #include <bg/scalar/storage_traits.hpp>
 #include <bg/time_series/output_binding.hpp>
+#include <bg/time_series/literal_operations.hpp>
 #include <bg/time_series/time_series_type.hpp>
 
 #include <ddv/serial_visitor.h>
@@ -49,9 +50,6 @@ template <details::time_series_variable Variable> class Out<Variable> {
 
     void invalidate() const { state_->invalidate(); }
 
-    template <typename Leaf = literal::ScalarLiteralItem>
-        requires std::same_as<Leaf, literal::ScalarLiteralItem>
-    void apply(const literal::Literal<Leaf> &literal) const;
     void apply(const literal::TimeSeriesLiteral &literal) const;
 
     template <typename Input, auto... Properties>
@@ -85,11 +83,8 @@ static_assert(sizeof(Out<TS_T>) == sizeof(void *));
 
 namespace bg::details {
 
-template <typename Output> void apply_scalar_literal(const Output &output, const literal::ScalarLiteral &literal);
 template <typename Output>
 void apply_time_series_literal(const Output &output, const literal::TimeSeriesLiteral &literal);
-template <typename Output>
-void apply_time_series_literal(const Output &output, const literal::ScalarLiteral &literal);
 
 } // namespace bg::details
 
@@ -167,13 +162,6 @@ auto Out<Variable>::visit(Visitor &&visitor, Arguments &&...arguments) const {
 }
 
 template <details::time_series_variable Variable>
-template <typename Leaf>
-    requires std::same_as<Leaf, literal::ScalarLiteralItem>
-void Out<Variable>::apply(const literal::Literal<Leaf> &literal) const {
-    details::apply_scalar_literal(*this, literal);
-}
-
-template <details::time_series_variable Variable>
 void Out<Variable>::apply(const literal::TimeSeriesLiteral &literal) const {
     details::apply_time_series_literal(*this, literal);
 }
@@ -186,7 +174,12 @@ void apply_time_series_literal(const Output &output, const literal::TimeSeriesLi
         [&](auto *typed_output) {
             using TypedOutput = std::remove_cvref_t<decltype(*typed_output)>;
             if constexpr (std::same_as<TypedOutput, Out<TS_T>>) {
-                throw std::invalid_argument{"this time-series type does not support literal updates"};
+                const auto *operations = TimeSeriesDispatch<TimeSeriesLiteralOperations>::instance().find(
+                    typed_output->runtime_type());
+                if (operations == nullptr) {
+                    throw std::invalid_argument{"this time-series type does not support literal updates"};
+                }
+                operations->apply(literal, typed_output->output_state());
             } else if constexpr (requires { typed_output->apply(literal); }) {
                 typed_output->apply(literal);
             } else {
@@ -194,24 +187,6 @@ void apply_time_series_literal(const Output &output, const literal::TimeSeriesLi
             }
         },
         ddv::noop);
-}
-
-template <typename Output>
-void apply_time_series_literal(const Output &output, const literal::ScalarLiteral &literal) {
-    apply_scalar_literal(output, literal);
-}
-
-template <typename Output> void apply_scalar_literal(const Output &output, const literal::ScalarLiteral &literal) {
-    output.visit([&](auto *typed_output) {
-        using TypedOutput = std::remove_cvref_t<decltype(*typed_output)>;
-        if constexpr (std::same_as<TypedOutput, Out<TS_T>>) {
-            throw std::invalid_argument{"this time-series type does not support literal updates"};
-        } else if constexpr (requires { typed_output->apply(literal); }) {
-            typed_output->apply(literal);
-        } else {
-            throw std::invalid_argument{"this time-series type does not support literal updates"};
-        }
-    }, ddv::noop);
 }
 
 } // namespace details

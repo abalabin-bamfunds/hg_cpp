@@ -66,12 +66,6 @@ class Out<TSB<Schema, Properties...>> {
     const fields_type &fields() const noexcept { return fields_; }
     void invalidate() const { state_->invalidate(); }
 
-    template <typename Leaf = literal::ScalarLiteralItem>
-        requires std::same_as<Leaf, literal::ScalarLiteralItem>
-    void apply(const literal::Literal<Leaf> &literal) const {
-        details::apply_scalar_literal(details::output_factory::make<Out<TS_T>>(state_.get()), literal);
-    }
-
     void apply(const literal::TimeSeriesLiteral &literal) const {
         details::apply_time_series_literal(details::output_factory::make<Out<TS_T>>(state_.get()), literal);
     }
@@ -122,33 +116,22 @@ class Out<TSB<Schema, Properties...>> {
 
     void invalidate() const { state_->invalidate(); }
 
-    template <typename Leaf = literal::ScalarLiteralItem>
-        requires std::same_as<Leaf, literal::ScalarLiteralItem>
-    void apply(const literal::Literal<Leaf> &literal) const {
+    void apply(const literal::TimeSeriesLiteral &literal) const {
+        const auto sentinel = literal::Sentinel::from(literal);
+        if (sentinel) {
+            if (*sentinel == literal::SKIP) {
+                return;
+            }
+            if (*sentinel == literal::INVALID) {
+                invalidate();
+                return;
+            }
+        }
         apply_values(details::scalar_literal::sequence(literal));
     }
 
-    void apply(const literal::TimeSeriesLiteral &literal) const {
-        literal.visit(
-            [&](const literal::TimeSeriesLiteralItem &item) {
-                item.visit_item(
-                    [](const literal::ScalarLiteralItem *) {
-                        throw std::invalid_argument{"a TSB update requires a sequence"};
-                    },
-                    [](const literal::SkipLiteral *) {},
-                    [&](const literal::InvalidLiteral *) { invalidate(); },
-                    [](const literal::RemoveLiteral *) {
-                        throw std::invalid_argument{"REMOVE is not valid for a TSB field"};
-                    },
-                    [](const literal::RemovedLiteral *) {
-                        throw std::invalid_argument{"REMOVED is only valid as a TSS item"};
-                    });
-            },
-            [&](std::span<const literal::TimeSeriesLiteral> values) { apply_values(values); });
-    }
-
   private:
-    template <typename LiteralType> void apply_values(std::span<const LiteralType> values) const {
+    void apply_values(std::span<const literal::ScalarLiteral> values) const {
         const auto field_index = [&](std::string_view expected) {
             for (auto index = std::size_t{}; index < size(); ++index) {
                 if (item_name(index).text() == expected) {
