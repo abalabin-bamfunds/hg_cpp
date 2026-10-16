@@ -65,10 +65,6 @@ LiteralMarker marker(const literal::TimeSeriesLiteral &literal) {
         return LiteralMarker::remove;
     }
 
-    if (sentinel != nullptr && *sentinel == literal::REMOVED) {
-        throw std::invalid_argument{"REMOVED requires an argument"};
-    }
-
     if (const auto tagged = literal::TaggedLiteral::from(literal)) {
         if (tagged->sentinel == literal::REMOVED) {
             return LiteralMarker::removed;

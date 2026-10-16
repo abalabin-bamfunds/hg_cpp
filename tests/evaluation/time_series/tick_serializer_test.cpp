@@ -1576,8 +1576,9 @@ TEST_CASE("queue message writers skip bare SKIP and reject invalid payloads",
     const auto set_buffer = bg::util::buffer::concurrent_chain(128, 2);
     auto set_writer = bg::details::QueueMessageWriter{
         set_buffer, 1, bg::cpp_time_series_runtime_type<bg::TSS<bg::i64>>()};
+    auto set_reader = bg::util::concurrent_buffer_reader{set_buffer};
     CHECK_THROWS_AS(set_writer.write(literal::TimeSeriesLiteral{literal::REMOVED}), std::invalid_argument);
-    CHECK(bg::util::concurrent_buffer_reader{set_buffer}.readable().empty());
+    consume_tombstone(set_reader);
     CHECK_THROWS_AS((bg::details::QueueMessageWriter{
                         buffer, std::uint64_t{1} + std::numeric_limits<std::uint32_t>::max(),
                         bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>()}),

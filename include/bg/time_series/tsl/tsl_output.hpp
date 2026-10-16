@@ -51,13 +51,6 @@ template <typename Item, auto Size, auto... Properties> class Out<TSL<Item, Size
                 invalidate();
                 return;
             }
-            if (*sentinel == literal::REMOVE) {
-                throw std::invalid_argument{"REMOVE is not valid for a TSL item"};
-            }
-            if (*sentinel == literal::REMOVED) {
-                throw std::invalid_argument{"REMOVED is not valid for a TSL item"};
-            }
-            throw std::invalid_argument{"a time-series collection update requires a sequence"};
         }
         apply_values(details::scalar_literal::sequence(literal));
     }

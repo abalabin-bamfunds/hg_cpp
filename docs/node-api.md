@@ -509,17 +509,18 @@ establishes validity on its first tick and preserves an already-valid
 collection.
 
 `literal::SKIP` performs no update. A skipped TSD child does not create a missing
-key. `literal::INVALID` calls the destination's normal `invalidate()` operation;
-TSD and TSS roots reject it because their output APIs do not support
-invalidation. These sentinels also work at nested time series positions.
+key. `literal::INVALID` calls the destination's normal `invalidate()` operation
+where the output supports invalidation. These sentinels also work at nested
+time series positions where the child output supports them.
 
 `literal::REMOVE` removes a TSD entry. `literal::REMOVED(item)` removes a TSS
 item, including an item described by a composite scalar literal. Removal uses
-the destination's normal `erase()` behavior. `SKIP`, `INVALID`, and `REMOVE`
-take no argument; `REMOVED` requires one. Built-in consumers reject unsupported
-sentinels, invalid argument placement, and incompatible scalar payloads.
-Calling a sentinel with a scalar literal creates a borrowed `TaggedLiteral`;
-the sentinel and argument must remain alive through `apply()`.
+the destination's normal `erase()` behavior. Outputs interpret these
+instructions at the positions listed above. Other children use normal child
+application or scalar literal construction, which checks sequence shape and
+destination type compatibility. Calling a sentinel with a scalar literal
+creates a borrowed `TaggedLiteral`; the sentinel and argument must remain alive
+through `apply()`.
 
 ```cpp
 dictionary_output.apply({{"a", 10}, {"b", literal::REMOVE}});

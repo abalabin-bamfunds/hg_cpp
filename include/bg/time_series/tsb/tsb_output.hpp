@@ -126,13 +126,6 @@ class Out<TSB<Schema, Properties...>> {
                 invalidate();
                 return;
             }
-            if (*sentinel == literal::REMOVE) {
-                throw std::invalid_argument{"REMOVE is not valid for a TSB field"};
-            }
-            if (*sentinel == literal::REMOVED) {
-                throw std::invalid_argument{"REMOVED is only valid as a TSS item"};
-            }
-            throw std::invalid_argument{"a TSB update requires a sequence"};
         }
         apply_values(details::scalar_literal::sequence(literal));
     }

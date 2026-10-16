@@ -363,13 +363,6 @@ SeriesLiteralUpdate read_series_literal(const literal::TimeSeriesLiteral &litera
         if (*sentinel == literal::INVALID) {
             return {SeriesLiteralUpdate::Kind::invalid, 0};
         }
-        if (*sentinel == literal::REMOVE) {
-            throw std::invalid_argument{"REMOVE is not valid for a provider scalar time series"};
-        }
-        if (*sentinel == literal::REMOVED) {
-            throw std::invalid_argument{"REMOVED is not valid for a provider scalar time series"};
-        }
-        throw std::invalid_argument{"provider scalar time series literal must contain one item"};
     }
     if (const auto tagged = literal::TaggedLiteral::from(literal)) {
         if (tagged->sentinel != *test_shared_literal_sentinel::extension() ||

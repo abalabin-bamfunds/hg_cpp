@@ -45,21 +45,8 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
     void invalidate() const { state_->invalidate(); }
 
     void apply(const literal::TimeSeriesLiteral &literal) const {
-        const auto sentinel = literal::Sentinel::from(literal);
-        if (sentinel) {
-            if (*sentinel == literal::SKIP) {
-                return;
-            }
-            if (*sentinel == literal::INVALID) {
-                throw std::invalid_argument{"INVALID is not valid as a TSD update"};
-            }
-            if (*sentinel == literal::REMOVE) {
-                throw std::invalid_argument{"REMOVE requires a TSD entry"};
-            }
-            if (*sentinel == literal::REMOVED) {
-                throw std::invalid_argument{"REMOVED is only valid as a TSS item"};
-            }
-            throw std::invalid_argument{"a time-series collection update requires a sequence"};
+        if (const auto sentinel = literal::Sentinel::from(literal); sentinel && *sentinel == literal::SKIP) {
+            return;
         }
         apply_values(details::scalar_literal::sequence(literal));
     }
@@ -207,8 +194,6 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
                     skip = true;
                 } else if (*sentinel == literal::REMOVE) {
                     remove = true;
-                } else if (*sentinel == literal::REMOVED) {
-                    throw std::invalid_argument{"REMOVED is only valid as a TSS item"};
                 }
             }
             details::scalar_literal::with_scalar_data(key_runtime_type(), *current.first,
