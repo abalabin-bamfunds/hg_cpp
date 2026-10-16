@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/frame/expression.hpp>
 #include <bg/frame/tsc.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
@@ -22,6 +23,7 @@
 #include <bg/scalar/bundle/details/allocation_owner.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/util/compile_time_string.hpp>
+#include <bg/util/contiguous_bunch.hpp>
 #include <bg/util/reflection.hpp>
 
 #include <algorithm>
@@ -1692,6 +1694,7 @@ class RuntimeFrameViewOutputStorage {
     const RuntimeFrameViewLayout *layout{};
     SelectedRows previous_rows;
     SelectedRows selected_rows;
+    util::contiguous_bunch<row_id_t> selected_order;
     RowSet source_rows{};
     util::index<> changed_columns;
     util::index<> added_rows;
@@ -1728,6 +1731,46 @@ class RuntimeFrameViewOutputStorage {
     const FieldState &field_state(const void *base, std::size_t index) const noexcept {
         const auto *bytes = static_cast<const std::byte *>(base);
         return *reinterpret_cast<const FieldState *>(bytes + layout->fields[index].bookkeeping_offset);
+    }
+
+    RowSet filter_rows() const noexcept {
+        return RowSet{
+            .context = this,
+            .native_rows = nullptr,
+            .identity = source_rows.identity,
+            .size = [](const void *context) noexcept {
+                return static_cast<std::size_t>(
+                    static_cast<const RuntimeFrameViewOutputStorage *>(context)->selected_order.size());
+            },
+            .contains = [](const void *context, row_id_t id) noexcept {
+                const auto &storage = *static_cast<const RuntimeFrameViewOutputStorage *>(context);
+                return storage.source_rows.has(id) && storage.selected_rows.contains(id);
+            },
+            .id_at = [](const void *context, std::size_t position) {
+                const auto &storage = *static_cast<const RuntimeFrameViewOutputStorage *>(context);
+                if (position >= storage.selected_order.size())
+                    throw std::out_of_range{"filtered row position"};
+                return storage.selected_order[static_cast<util::contiguous_bunch<row_id_t>::size_type>(position)];
+            },
+            .for_each = [](const void *context, void *target, RowSet::visit_function visit) {
+                const auto &storage = *static_cast<const RuntimeFrameViewOutputStorage *>(context);
+                for (auto position = util::contiguous_bunch<row_id_t>::size_type{};
+                     position != storage.selected_order.size(); ++position)
+                    visit(target, storage.selected_order[position]);
+            }};
+    }
+
+    void rebuild_selected_order(RowSet rows, allocator memory) {
+        clear_selected_order(memory);
+        rows.each([&](row_id_t id) {
+            if (selected_rows.contains(id))
+                selected_order.emplace_back(memory.memory_resource(), id);
+        });
+    }
+
+    void clear_selected_order(allocator memory) noexcept {
+        while (!selected_order.empty())
+            selected_order.pop_back(memory.memory_resource());
     }
     TimeSeriesState &child_state(void *base, std::size_t index) const noexcept {
         auto *bytes = static_cast<std::byte *>(base);
@@ -1860,6 +1903,7 @@ class RuntimeFrameViewOutputStorage {
                                        (!valid || row_set_rebound || row_domain_changed ||
                                         predicate_mapping_changed ||
                                         (input.modified && !input_delta_current));
+        auto selected_order_dirty = predicate_index.has_value() && rebuild_predicate;
         if (new_cycle) {
             added_rows.clear();
             removed_rows.clear();
@@ -1881,6 +1925,7 @@ class RuntimeFrameViewOutputStorage {
         const auto remove_filter_row = [&](row_id_t id, bool preserve_domain_removal) {
             if (!selected_rows.exclude(id))
                 return;
+            selected_order_dirty = true;
             remove_computed_row(id, memory);
             if (preserve_domain_removal || !added_rows.reset(id))
                 removed_rows.set(id, memory.memory_resource());
@@ -1890,6 +1935,7 @@ class RuntimeFrameViewOutputStorage {
         const auto add_filter_row = [&](row_id_t id, bool preserve_domain_addition) {
             if (!selected_rows.include(id, memory))
                 return;
+            selected_order_dirty = true;
             add_computed_row(id, memory);
             if (preserve_domain_addition || !removed_rows.reset(id))
                 added_rows.set(id, memory.memory_resource());
@@ -1984,11 +2030,13 @@ class RuntimeFrameViewOutputStorage {
                     remove_filter_row(id, false);
                 }
             }
+            if (selected_order_dirty)
+                rebuild_selected_order(input.rows, memory);
         }
         previous_rows.bind(input.rows);
         source_rows = input.rows;
 
-        const auto output_rows = predicate_index.has_value() ? selected_rows.rows() : input.rows;
+        const auto output_rows = predicate_index.has_value() ? filter_rows() : input.rows;
         const auto membership_changed = !added_rows.empty() || !removed_rows.empty();
         auto any_change = !valid || row_domain_changed || membership_changed;
         for (std::size_t index = 0; index != layout->fields.size(); ++index) {
@@ -2051,6 +2099,7 @@ class RuntimeFrameViewOutputStorage {
         previous_rows.bind({});
         selected_rows.clear();
         selected_rows.bind({});
+        clear_selected_order(memory);
         source_rows = {};
         added_rows.clear();
         removed_rows.clear();
@@ -2070,6 +2119,7 @@ class RuntimeFrameViewOutputStorage {
     void release(allocator memory) noexcept {
         previous_rows.release(memory);
         selected_rows.release(memory);
+        selected_order.release(memory.memory_resource());
         added_rows.release(memory.memory_resource());
         removed_rows.release(memory.memory_resource());
         changed_rows.release(memory.memory_resource());
@@ -2172,6 +2222,18 @@ auto select_column(wp<TSF<Schema, Properties...>> source, std::size_t index) {
     if (index >= schema->field_count())
         throw std::out_of_range{"frame column selection index is outside the resolved schema"};
     return select_column<Cell>(source, schema->field(index).name);
+}
+
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties,
+          typename... Arguments>
+    requires(bg::details::graph_code_argument<Arguments> && ...)
+wp<> bind_expression(wp<TSF<Schema, Properties...>> source, const Expression &expression,
+                     Arguments &&...arguments) {
+    auto bindings = bg::details::make_wiring_arguments(std::forward<Arguments>(arguments)...);
+    const auto column_resolver = [source](util::symbol name) {
+        return WiringArgument{select_column<SCALAR>(source, name)};
+    };
+    return wp<>{details::bind_expression(expression, bindings, column_resolver)};
 }
 
 template <std::size_t Index, template <template <typename, auto...> typename> typename Schema, auto... Properties>
@@ -2380,7 +2442,7 @@ class RuntimeSchemaFrameViewSeriesRuntimeType final : public FrameSeriesRuntimeT
         auto result = FrameReadStorage{};
         result.schema = layout_.schema;
         result.rows = storage.valid
-                          ? (storage.filtering ? storage.selected_rows.rows() : storage.source_rows)
+                          ? (storage.filtering ? storage.filter_rows() : storage.source_rows)
                           : RowSet{};
         result.valid = storage.valid;
         result.modified = storage.delta_time != MIN_DT && !storage.changed_columns.empty();

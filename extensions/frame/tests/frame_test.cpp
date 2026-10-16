@@ -1,14 +1,16 @@
 #include <bg/frame/frame.hpp>
+#include <bg/frame/expression.hpp>
 #include <bg/bg.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/util/scope_exit.hpp>
-#include <bg/graph/borrowed_input.hpp>
+#include <bg/graph/runtime_graph_input.hpp>
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/runtime_graph_evaluator.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/library.hpp>
 #include <bg/type/type_registry.hpp>
 
 #include <array>
@@ -1303,12 +1305,11 @@ struct borrowed_frame_runner {
                                                              context->node_index());
 
         const auto data = input.input_data();
-        const auto inputs = std::array{BorrowedInput{std::addressof(data.last_updated_ref()), data.data(),
-                                                     std::addressof(data.runtime_type()),
-                                                     BorrowedInputChange::unchanged}};
-        auto section = bg::details::BorrowedInputSection{*child, inputs};
-        auto child_context = context->child(section);
-        child->start(child_context);
+        const auto inputs = std::array{RuntimeGraphInput{std::addressof(data.last_updated_ref()), data.data(),
+                                                         std::addressof(data.runtime_type()),
+                                                         RuntimeGraphInputChange::unchanged}};
+        auto child_context = context->child(*child, inputs.data());
+        child->start(child_context, inputs.data());
     }
 
     void evaluate(EvaluationContext *context) const {
@@ -1320,19 +1321,19 @@ struct borrowed_frame_runner {
                 borrowed_frame_sink::expected_bid_values = batch.values;
         });
 
-        auto change = BorrowedInputChange::unchanged;
+        auto change = RuntimeGraphInputChange::unchanged;
         if (input.became_invalid())
-            change = BorrowedInputChange::invalidation;
+            change = RuntimeGraphInputChange::invalidation;
         else if (input.became_valid())
-            change = BorrowedInputChange::revalidation;
+            change = RuntimeGraphInputChange::revalidation;
         else if (input.modified())
-            change = BorrowedInputChange::update;
+            change = RuntimeGraphInputChange::update;
 
-        const auto inputs = std::array{BorrowedInput{std::addressof(input_data.last_updated_ref()), input_data.data(),
-                                                     std::addressof(input_data.runtime_type()), change}};
-        auto section = bg::details::BorrowedInputSection{*child, inputs};
-        auto child_context = context->child(section);
-        child->evaluate(child_context);
+        const auto inputs = std::array{RuntimeGraphInput{std::addressof(input_data.last_updated_ref()),
+                                                         input_data.data(),
+                                                         std::addressof(input_data.runtime_type()), change}};
+        auto child_context = context->child(*child, inputs.data());
+        child->evaluate(child_context, inputs.data());
     }
 
     void stop(EvaluationContext *context) const noexcept {
@@ -1340,12 +1341,11 @@ struct borrowed_frame_runner {
             return;
 
         const auto data = input.input_data();
-        const auto inputs = std::array{BorrowedInput{std::addressof(data.last_updated_ref()), data.data(),
-                                                     std::addressof(data.runtime_type()),
-                                                     BorrowedInputChange::unchanged}};
-        auto section = bg::details::BorrowedInputSection{*child, inputs};
-        auto child_context = context->child(section);
-        child->stop(child_context);
+        const auto inputs = std::array{RuntimeGraphInput{std::addressof(data.last_updated_ref()), data.data(),
+                                                         std::addressof(data.runtime_type()),
+                                                         RuntimeGraphInputChange::unchanged}};
+        auto child_context = context->child(*child, inputs.data());
+        child->stop(child_context, inputs.data());
         child->finalize(child_context);
         context->runtime_graph().allocation().delete_object(child);
         child = nullptr;
@@ -1779,11 +1779,1027 @@ struct filter_writer {
         case 11:
             output.set(state->second, Quotes<PatchCell>{.bid = 22.0});
             return;
+        case 12:
+            static_cast<void>(output.add(Quotes<Cell>{.size = Cell<i64>{10}, .bid = Cell<double>{std::nullopt},
+                                                       .ask = Cell<double>{std::nullopt}}));
+            return;
+        case 13:
+            static_cast<void>(output.add(Quotes<Cell>{.size = Cell<i64>{11}, .bid = Cell<double>{30.0},
+                                                       .ask = Cell<double>{std::nullopt}}));
+            return;
         default:
             throw std::runtime_error{"unknown filter writer command"};
         }
     }
 };
+
+struct wide_column_writer_state {
+    std::array<row_id_t, 257> rows{};
+};
+
+struct wide_column_writer {
+    In<TS<i64>> command;
+    State<wide_column_writer_state> state;
+    Out<TSF<Quotes>> output;
+
+    void evaluate() const {
+        if (*command == 0) {
+            for (auto index = std::size_t{}; index != 257; ++index) {
+                const auto bid = index == 126 || index == 128 ? Cell<double>{std::nullopt}
+                                                               : Cell<double>{static_cast<double>(index * 10)};
+                const auto ask = index == 127 || index == 129 ? Cell<double>{std::nullopt}
+                                                               : Cell<double>{static_cast<double>(index) + 0.5};
+                state->rows[index] = output.add(Quotes<Cell>{.size = Cell<i64>{static_cast<i64>(index)},
+                                                             .bid = bid, .ask = ask});
+            }
+            return;
+        }
+        if (*command == 1) {
+            output.set(state->rows[128], Quotes<PatchCell>{.bid = 1280.0});
+            return;
+        }
+        throw std::runtime_error{"unknown wide column writer command"};
+    }
+};
+
+void test_double_column_addition_updates_and_nulls() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    struct observation {
+        bool valid{};
+        bool became_valid{};
+        bool became_invalid{};
+        std::vector<row_id_t> rows;
+        std::vector<std::optional<double>> values;
+        std::vector<row_id_t> changed;
+        std::vector<row_id_t> removed;
+    };
+
+    auto observations = std::vector<observation>{};
+    const auto write = node<filter_writer>();
+    const auto observe = node([&](In<TSC<double>, optional> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto result = observation{.valid = input.valid(), .became_valid = input.became_valid(),
+                                  .became_invalid = input.became_invalid()};
+        input.for_each_row([&](row_id_t id, std::size_t) {
+            result.rows.push_back(id);
+            result.values.push_back(input.cell(id));
+        });
+        input.for_each_changed([&](row_id_t id) { result.changed.push_back(id); });
+        input.for_each_removed([&](row_id_t id) { result.removed.push_back(id); });
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto frame = write(command);
+        return observe(operators::add(select_column<"bid">(frame), select_column<"ask">(frame)), tick);
+    };
+
+    const auto commands = std::array<i64, 10>{0, 1, 2, 10, 3, 6, 7, 8, 9, 1};
+    const auto ticks = std::array<i64, 10>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+    static_cast<void>(testing::test_graph(graph, commands, ticks));
+
+    require(observations.size() == commands.size(), "double column addition observer missed a cycle");
+    require(observations[0].valid && observations[0].rows.empty(),
+            "double column addition did not materialize an empty row domain");
+    require(observations[1].rows == std::vector<row_id_t>{0} &&
+                observations[1].values == std::vector<std::optional<double>>{20.5} &&
+                observations[1].changed == std::vector<row_id_t>{0},
+            "double column addition did not compute the first row");
+    require(observations[2].rows == std::vector<row_id_t>{0, 1} &&
+                observations[2].values == std::vector<std::optional<double>>{20.5, 40.5} &&
+                observations[2].changed == std::vector<row_id_t>{1},
+            "double column addition did not compute an added row");
+    require(observations[3].values == std::vector<std::optional<double>>{20.5, 34.0} &&
+                observations[3].changed == std::vector<row_id_t>{1},
+            "double column addition did not propagate a sparse operand update");
+    require(observations[4].values == std::vector<std::optional<double>>{21.5, 34.0} &&
+                observations[4].changed == std::vector<row_id_t>{0},
+            "double column addition did not update the changed row alone");
+    require(observations[5].rows == std::vector<row_id_t>{1} &&
+                observations[5].removed == std::vector<row_id_t>{0},
+            "double column addition did not propagate row removal");
+    require(observations[6].rows == std::vector<row_id_t>{0, 1} &&
+                observations[6].values == std::vector<std::optional<double>>{24.5, 34.0} &&
+                observations[6].changed == std::vector<row_id_t>{0},
+            "double column addition did not recompute after row identity reuse");
+    require(!observations[7].valid && observations[7].became_invalid,
+            "double column addition did not invalidate its output with its inputs");
+    require(observations[8].valid && observations[8].became_valid && observations[8].rows.empty(),
+            "double column addition did not revalidate its output after an empty source bind");
+    require(observations[9].rows == std::vector<row_id_t>{0} &&
+                observations[9].values == std::vector<std::optional<double>>{20.5} &&
+                observations[9].changed == std::vector<row_id_t>{0},
+            "double column addition did not rebuild after revalidation");
+}
+
+void test_double_column_addition_crosses_scratch_batch_boundaries() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    struct observation {
+        std::vector<std::optional<double>> values;
+        std::vector<row_id_t> changed;
+    };
+    auto observations = std::vector<observation>{};
+    const auto write = node<wide_column_writer>();
+    const auto observe = node([&](In<TSC<double>> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto result = observation{};
+        input.for_each_row([&](row_id_t id, std::size_t) { result.values.push_back(input.cell(id)); });
+        input.for_each_changed([&](row_id_t id) { result.changed.push_back(id); });
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto frame = write(command);
+        const auto sum = operators::add(select_column<"bid">(frame), select_column<"ask">(frame));
+        return observe(operators::add(sum, sum), tick);
+    };
+
+    const auto commands = std::array<i64, 2>{0, 1};
+    const auto ticks = std::array<i64, 2>{0, 1};
+    static_cast<void>(testing::test_graph(graph, commands, ticks));
+
+    require(observations.size() == commands.size(), "wide column addition observer missed a cycle");
+    require(observations[0].values.size() == 257 && observations[0].values[125] == 2751.0 &&
+                !observations[0].values[126] && !observations[0].values[127] &&
+                !observations[0].values[128] && !observations[0].values[129] &&
+                observations[0].values[130] == 2861.0 && observations[0].values[256] == 5633.0,
+            "column addition mishandled values or nulls across scratch batch boundaries");
+    require(observations[1].values.size() == 257 && observations[1].values[128] == 2817.0 &&
+                observations[1].changed == std::vector<row_id_t>{128},
+            "column addition did not propagate one sparse update across a scratch batch boundary");
+}
+
+void test_double_column_subtraction_order_nulls_and_updates() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    struct observation {
+        std::array<std::vector<std::optional<double>>, 4> values;
+        std::array<std::vector<row_id_t>, 4> changed;
+    };
+    auto observations = std::vector<observation>{};
+    const auto write = node<wide_column_writer>();
+    const auto observe = node([&](In<TSC<double>> column_minus_parameter, In<TSC<double>> parameter_minus_column,
+                                  In<TSC<double>> constant_minus_column, In<TSC<double>> column_minus_constant,
+                                  In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto result = observation{};
+        const auto collect = [&](const auto &input, auto &values, auto &changed) {
+            input.for_each_row([&](row_id_t id, std::size_t) { values.push_back(input.cell(id)); });
+            input.for_each_changed([&](row_id_t id) { changed.push_back(id); });
+        };
+        collect(column_minus_parameter, result.values[0], result.changed[0]);
+        collect(parameter_minus_column, result.values[1], result.changed[1]);
+        collect(constant_minus_column, result.values[2], result.changed[2]);
+        collect(column_minus_constant, result.values[3], result.changed[3]);
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<double>> parameter, wp<TS<i64>> tick) {
+        const auto frame = write(command);
+        const auto difference = operators::sub(select_column<"bid">(frame), select_column<"ask">(frame));
+        return observe(operators::sub(difference, parameter), operators::sub(parameter, difference),
+                       operators::sub(3.0, difference), operators::sub(difference, 3.0), tick);
+    };
+
+    const auto commands = std::array<std::optional<i64>, 4>{0, 1, std::nullopt, std::nullopt};
+    const auto parameters = std::array<std::optional<double>, 4>{2.0, std::nullopt, std::nullopt, 3.0};
+    const auto ticks = std::array<i64, 4>{0, 1, 2, 3};
+    static_cast<void>(testing::test_graph(graph, commands, parameters, ticks));
+
+    require(observations.size() == commands.size(), "column subtraction observer missed a cycle");
+    const auto &initial = observations[0].values;
+    require(initial[0].size() == 257 && initial[0][0] == -2.5 && initial[1][0] == 2.5 &&
+                initial[2][0] == 3.5 && initial[3][0] == -3.5 && initial[0][130] == 1167.5 &&
+                initial[1][130] == -1167.5 && initial[0][256] == 2301.5 && initial[1][256] == -2301.5,
+            "column subtraction did not preserve operand order across block boundaries");
+    for (auto row = std::size_t{126}; row != 130; ++row)
+        for (const auto &values : initial)
+            require(!values[row], "column subtraction did not propagate a null operand");
+
+    const auto &sparse = observations[1];
+    require(sparse.values[0][128] == 1149.5 && sparse.values[1][128] == -1149.5 &&
+                sparse.values[2][128] == -1148.5 && sparse.values[3][128] == 1148.5 &&
+                std::ranges::all_of(sparse.changed, [](const auto &rows) {
+                    return rows == std::vector<row_id_t>{128};
+                }),
+            "column subtraction did not update one changed row sparsely");
+    require(std::ranges::all_of(observations[2].changed, [](const auto &rows) { return rows.empty(); }),
+            "unchanged subtraction inputs published output changes");
+
+    const auto &parameter_update = observations[3];
+    require(parameter_update.values[0][0] == -3.5 && parameter_update.values[1][0] == 3.5 &&
+                parameter_update.values[0][128] == 1148.5 && parameter_update.values[1][128] == -1148.5 &&
+                parameter_update.changed[0].size() == 257 && parameter_update.changed[1].size() == 257 &&
+                parameter_update.changed[2].empty() && parameter_update.changed[3].empty(),
+            "column subtraction did not recompute broadcast parameter outputs on a parameter tick");
+}
+
+void test_double_column_addition_accepts_projected_columns_with_shared_selection() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    struct observation {
+        std::vector<row_id_t> rows;
+        std::vector<std::optional<double>> values;
+        std::vector<row_id_t> changed;
+    };
+    auto observations = std::vector<observation>{};
+    const auto write = node<filter_writer>();
+    const auto observe = node([&](In<TSC<double>> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto result = observation{};
+        input.for_each_row([&](row_id_t id, std::size_t) {
+            result.rows.push_back(id);
+            result.values.push_back(input.cell(id));
+        });
+        input.for_each_changed([&](row_id_t id) { result.changed.push_back(id); });
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto frame = write(command);
+        const auto filtered = filter_greater_than<"size">(frame, i64{4});
+        const auto projected = project<BidOnly, "bid">(filtered);
+        const auto sum = operators::add(select_column<"price">(projected), select_column<"ask">(filtered));
+        return observe(operators::add(sum, sum), tick);
+    };
+
+    const auto commands = std::array<i64, 4>{0, 1, 2, 3};
+    const auto ticks = std::array<i64, 4>{0, 1, 2, 3};
+    static_cast<void>(testing::test_graph(graph, commands, ticks));
+
+    require(observations.size() == commands.size() && observations[1].rows == std::vector<row_id_t>{0} &&
+                observations[1].values == std::vector<std::optional<double>>{41.0} &&
+                observations[2].rows == std::vector<row_id_t>{0, 1} &&
+                observations[2].values == std::vector<std::optional<double>>{41.0, 81.0} &&
+                observations[3].values == std::vector<std::optional<double>>{43.0, 81.0} &&
+                observations[3].changed == std::vector<row_id_t>{0},
+            "column addition did not reuse a computed expression over one filtered selection");
+}
+
+void test_double_column_addition_rejects_different_domains_and_membership() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto observe = node([](In<TSC<double>>, In<TS<i64>> tick, Out<TS<i64>> output) { output.set(*tick); });
+    const auto first_writer = node<filter_writer>();
+    const auto second_writer = node<filter_writer>();
+    const auto domain_graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto first = first_writer(command);
+        const auto second = second_writer(command);
+        return observe(operators::add(select_column<"bid">(first), select_column<"bid">(second)), tick);
+    };
+
+    auto domain_rejected = false;
+    try {
+        static_cast<void>(testing::test_graph(domain_graph, std::array<i64, 1>{1}, std::array<i64, 1>{1}));
+    } catch (const std::invalid_argument &) {
+        domain_rejected = true;
+    }
+    require(domain_rejected, "column addition accepted inputs from different row domains");
+
+    const auto write = node<filter_writer>();
+    const auto membership_graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto frame = write(command);
+        const auto filtered = filter_greater_than<"size">(frame, i64{4});
+        return observe(operators::add(select_column<"bid">(frame), select_column<"bid">(filtered)), tick);
+    };
+    auto membership_rejected = false;
+    try {
+        static_cast<void>(testing::test_graph(membership_graph, std::array<i64, 1>{1}, std::array<i64, 1>{1}));
+    } catch (const std::invalid_argument &) {
+        membership_rejected = true;
+    }
+    require(membership_rejected, "column addition accepted a native column and filter with equal contents");
+
+    const auto distinct_filters_write = node<filter_writer>();
+    const auto distinct_filters_graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto frame = distinct_filters_write(command);
+        const auto first = filter_greater_than<"size">(frame, i64{4});
+        const auto second = filter_greater_than<"size">(frame, i64{3});
+        return observe(operators::add(select_column<"bid">(first), select_column<"ask">(second)), tick);
+    };
+    auto distinct_filters_rejected = false;
+    try {
+        static_cast<void>(testing::test_graph(distinct_filters_graph, std::array<i64, 1>{1},
+                                              std::array<i64, 1>{1}));
+    } catch (const std::invalid_argument &) {
+        distinct_filters_rejected = true;
+    }
+    require(distinct_filters_rejected,
+            "column addition accepted distinct filters with equal contents");
+}
+
+void test_double_column_addition_rejects_mixed_integer_columns() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto rejected = false;
+    try {
+        auto wiring = GraphWiring{};
+        auto context = WiringContext{wiring};
+        const auto integer_column = wiring.borrowed_input(TSC<i64>::type());
+        const auto double_column = wiring.borrowed_input(TSC<double>::type());
+        static_cast<void>(operators::add(integer_column, double_column));
+    } catch (const WiringError &) {
+        rejected = true;
+    }
+    require(rejected, "column addition promoted a mixed i64 and double operand pair");
+}
+
+void test_double_column_addition_leaves_scalar_addition_to_bg() {
+    using namespace bg;
+
+    auto wiring = GraphWiring{};
+    auto context = WiringContext{wiring};
+    const auto lhs = wiring.borrowed_input(TS<double>::type());
+    const auto rhs = wiring.borrowed_input(TS<double>::type());
+    const auto result = operators::add(lhs, rhs);
+
+    require(std::addressof(result.type()) == std::addressof(TS<double>::type()),
+            "frame column addition claimed an ordinary TS<double> addition");
+}
+
+void test_double_column_addition_broadcasts_owned_scalar_values() {
+    using namespace bg;
+
+    struct observation {
+        std::vector<std::optional<double>> column_plus_scalar;
+        std::vector<std::optional<double>> scalar_plus_column;
+        std::vector<row_id_t> column_plus_scalar_changed;
+        std::vector<row_id_t> scalar_plus_column_changed;
+    };
+    auto observations = std::vector<observation>{};
+    const auto write = node<filter_writer>();
+    const auto observe = node([&](In<TSC<double>> lhs, In<TSC<double>> rhs, In<TS<i64>> tick,
+                                  Out<TS<i64>> output) {
+        auto result = observation{};
+        lhs.for_each_row([&](row_id_t id, std::size_t) { result.column_plus_scalar.push_back(lhs.cell(id)); });
+        rhs.for_each_row([&](row_id_t id, std::size_t) { result.scalar_plus_column.push_back(rhs.cell(id)); });
+        lhs.for_each_changed([&](row_id_t id) { result.column_plus_scalar_changed.push_back(id); });
+        rhs.for_each_changed([&](row_id_t id) { result.scalar_plus_column_changed.push_back(id); });
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto frame = write(command);
+        const auto column = select_column<"bid">(frame);
+        return observe(operators::add(column, 2.0), operators::add(2.0, column), tick);
+    };
+
+    const auto commands = std::array<i64, 3>{1, 2, 10};
+    const auto ticks = std::array<i64, 3>{0, 1, 2};
+    static_cast<void>(testing::test_graph(graph, commands, ticks));
+
+    require(observations.size() == commands.size(), "scalar column addition observer missed a cycle");
+    require(observations[0].column_plus_scalar == std::vector<std::optional<double>>{12.5} &&
+                observations[0].scalar_plus_column == std::vector<std::optional<double>>{12.5},
+            "column scalar addition did not retain a temporary scalar value");
+    require(observations[1].column_plus_scalar == std::vector<std::optional<double>>{12.5, 22.5} &&
+                observations[1].scalar_plus_column == std::vector<std::optional<double>>{12.5, 22.5} &&
+                observations[1].column_plus_scalar_changed == std::vector<row_id_t>{1} &&
+                observations[1].scalar_plus_column_changed == std::vector<row_id_t>{1},
+            "column scalar addition did not sparsely update a new row");
+    require(observations[2].column_plus_scalar == std::vector<std::optional<double>>{12.5, 16.0} &&
+                observations[2].scalar_plus_column == std::vector<std::optional<double>>{12.5, 16.0} &&
+                observations[2].column_plus_scalar_changed == std::vector<row_id_t>{1} &&
+                observations[2].scalar_plus_column_changed == std::vector<row_id_t>{1},
+            "column scalar addition did not update a modified row");
+}
+
+void test_double_column_addition_parameter_updates_recompute_rows() {
+    using namespace bg;
+
+    struct observation {
+        std::vector<std::optional<double>> values;
+        std::vector<row_id_t> changed;
+    };
+    auto observations = std::vector<observation>{};
+    const auto write = node<filter_writer>();
+    const auto observe = node([&](In<TSC<double>> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto result = observation{};
+        input.for_each_row([&](row_id_t id, std::size_t) { result.values.push_back(input.cell(id)); });
+        input.for_each_changed([&](row_id_t id) { result.changed.push_back(id); });
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<double>> parameter, wp<TS<i64>> tick) {
+        const auto frame = write(command);
+        return observe(operators::add(select_column<"bid">(frame), parameter), tick);
+    };
+
+    const auto commands = std::array<std::optional<i64>, 5>{1, 2, std::nullopt, 10, std::nullopt};
+    const auto parameters = std::array<std::optional<double>, 5>{2.0, std::nullopt, 5.0, 7.0, std::nullopt};
+    const auto ticks = std::array<i64, 5>{0, 1, 2, 3, 4};
+    static_cast<void>(testing::test_graph(graph, commands, parameters, ticks));
+
+    require(observations.size() == commands.size(), "parameterized column addition observer missed a cycle");
+    require(observations[0].values == std::vector<std::optional<double>>{12.5} &&
+                observations[0].changed == std::vector<row_id_t>{0},
+            "parameterized column addition did not compute the first row");
+    require(observations[1].values == std::vector<std::optional<double>>{12.5, 22.5} &&
+                observations[1].changed == std::vector<row_id_t>{1},
+            "column-only update did not recompute only the added row");
+    require(observations[2].values == std::vector<std::optional<double>>{15.5, 25.5} &&
+                observations[2].changed == std::vector<row_id_t>{0, 1},
+            "parameter-only update did not recompute every visible row");
+    require(observations[3].values == std::vector<std::optional<double>>{17.5, 21.0} &&
+                observations[3].changed == std::vector<row_id_t>{0, 1},
+            "simultaneous parameter and column updates did not recompute every visible row");
+    require(observations[4].values == std::vector<std::optional<double>>{17.5, 21.0} &&
+                observations[4].changed.empty(),
+            "an unchanged parameter and column set produced output changes");
+}
+
+struct invalidating_double_source {
+    In<TS<double>> value;
+    In<TS<bool>> invalidate;
+    Out<TS<double>> output;
+
+    void evaluate() const {
+        if (*invalidate) {
+            output.invalidate();
+            return;
+        }
+        output.copy(value);
+    }
+};
+
+void test_double_column_addition_parameter_invalidation_and_revalidation() {
+    using namespace bg;
+
+    struct observation {
+        bool valid{};
+        bool became_valid{};
+        bool became_invalid{};
+        std::vector<std::optional<double>> values;
+    };
+    auto observations = std::vector<observation>{};
+    const auto write = node<filter_writer>();
+    const auto parameter_source = node<invalidating_double_source>();
+    const auto observe = node([&](In<TSC<double>, optional> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto result = observation{.valid = input.valid(), .became_valid = input.became_valid(),
+                                  .became_invalid = input.became_invalid()};
+        input.for_each_row([&](row_id_t id, std::size_t) { result.values.push_back(input.cell(id)); });
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<double>> value, wp<TS<bool>> invalidate,
+                           wp<TS<i64>> tick) {
+        const auto frame = write(command);
+        const auto parameter = parameter_source(value, invalidate);
+        const auto stable_parameter = operators::const_(10.0).as<TS<double>>();
+        const auto first_sum = operators::add(select_column<"bid">(frame), parameter);
+        return observe(operators::add(first_sum, stable_parameter), tick);
+    };
+
+    const auto commands = std::array<std::optional<i64>, 4>{1, std::nullopt, std::nullopt, std::nullopt};
+    const auto values = std::array<double, 4>{2.0, 3.0, 3.0, 4.0};
+    const auto invalidations = std::array<bool, 4>{false, true, false, false};
+    const auto ticks = std::array<i64, 4>{0, 1, 2, 3};
+    static_cast<void>(testing::test_graph(graph, commands, values, invalidations, ticks));
+
+    require(observations.size() == commands.size(), "parameter validity observer missed a cycle");
+    require(observations[0].valid && observations[0].values == std::vector<std::optional<double>>{22.5},
+            "parameterized column addition did not become valid with two scalar inputs");
+    require(!observations[1].valid && observations[1].became_invalid,
+            "parameter invalidation did not invalidate column addition output");
+    require(observations[2].valid && observations[2].became_valid &&
+                observations[2].values == std::vector<std::optional<double>>{23.5},
+            "parameter revalidation did not rebuild column addition output");
+    require(observations[3].valid && observations[3].values == std::vector<std::optional<double>>{24.5},
+            "column addition did not update after parameter revalidation");
+}
+
+void test_double_column_addition_deduplicates_repeated_parameter_inputs() {
+    using namespace bg;
+
+    const auto consume = node([](In<TSC<double>>) {});
+    const auto frame_source = node([](Out<TSF<Quotes>> output) {
+        static_cast<void>(output.add(Quotes<Cell>{.size = Cell<i64>{1}, .bid = Cell<double>{10.0},
+                                                  .ask = Cell<double>{std::nullopt}}));
+    });
+    const auto parameter_source = node([](Out<TS<double>> output) { output.set(2.0); });
+    auto wiring = GraphWiring{};
+    {
+        auto context = WiringContext{wiring};
+        const auto column = select_column<"bid">(frame_source());
+        const auto parameter = parameter_source();
+        const auto first = operators::add(column, parameter);
+        consume(operators::add(first, parameter));
+    }
+    wiring.finalize();
+
+    auto parameter_snapshot_size = std::size_t{};
+    for (const auto &candidate : wiring.nodes()) {
+        const auto &signature = candidate.signature();
+        if (signature.parameters.size() != 1 || signature.parameters[0].name.text() != "parameters" ||
+            signature.output == nullptr)
+            continue;
+        const auto *bundle = type_cast<TimeSeriesBundleType>(signature.parameters[0].type);
+        if (bundle != nullptr)
+            parameter_snapshot_size = bundle->item_count();
+    }
+    require(parameter_snapshot_size == 1, "repeated scalar expression inputs were not deduplicated");
+}
+
+void test_bound_column_expression_owns_captures_and_binds_parameters() {
+    using namespace bg;
+    using namespace bg::literals;
+
+    struct observation {
+        std::vector<std::optional<double>> named_parameter;
+        std::vector<std::optional<double>> captured_time_series;
+        std::vector<std::optional<double>> captured_scalar;
+        std::vector<std::optional<double>> captured_time_series_minus_parameter;
+        std::vector<std::optional<double>> captured_parameter_minus_time_series;
+        std::vector<std::optional<double>> captured_scalar_minus_column;
+        std::vector<std::optional<double>> captured_column_minus_scalar;
+    };
+    auto observations = std::vector<observation>{};
+    const auto write = node<filter_writer>();
+    const auto observe = node([&](In<TSC<double>> named, In<TSC<double>> captured_series,
+                                  In<TSC<double>> captured_scalar,
+                                  In<TSC<double>> captured_time_series_minus_parameter,
+                                  In<TSC<double>> captured_parameter_minus_time_series,
+                                  In<TSC<double>> captured_scalar_minus_column,
+                                  In<TSC<double>> captured_column_minus_scalar, In<TS<i64>> tick,
+                                  Out<TS<i64>> output) {
+        auto result = observation{};
+        named.for_each_row([&](row_id_t id, std::size_t) { result.named_parameter.push_back(named.cell(id)); });
+        captured_series.for_each_row(
+            [&](row_id_t id, std::size_t) { result.captured_time_series.push_back(captured_series.cell(id)); });
+        captured_scalar.for_each_row(
+            [&](row_id_t id, std::size_t) { result.captured_scalar.push_back(captured_scalar.cell(id)); });
+        captured_time_series_minus_parameter.for_each_row([&](row_id_t id, std::size_t) {
+            result.captured_time_series_minus_parameter.push_back(captured_time_series_minus_parameter.cell(id));
+        });
+        captured_parameter_minus_time_series.for_each_row([&](row_id_t id, std::size_t) {
+            result.captured_parameter_minus_time_series.push_back(captured_parameter_minus_time_series.cell(id));
+        });
+        captured_scalar_minus_column.for_each_row([&](row_id_t id, std::size_t) {
+            result.captured_scalar_minus_column.push_back(captured_scalar_minus_column.cell(id));
+        });
+        captured_column_minus_scalar.for_each_row([&](row_id_t id, std::size_t) {
+            result.captured_column_minus_scalar.push_back(captured_column_minus_scalar.cell(id));
+        });
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<double>> parameter, wp<TS<i64>> tick) {
+        const auto frame = write(command);
+        const auto named = wp<TSC<double>>{
+            bind_expression(frame, col("bid") + param("offset"), "offset"_n = parameter)};
+        const auto direct_capture = wp<TSC<double>>{bind_expression(frame, col("ask") + parameter)};
+        const auto scalar_capture = [&] {
+            const auto scalar = ScalarValue<double>{3.0};
+            return col("bid") + col("ask") - col("ask") + capture(scalar);
+        }();
+        const auto captured_scalar = wp<TSC<double>>{bind_expression(frame, scalar_capture)};
+        const auto time_series_minus_parameter =
+            wp<TSC<double>>{bind_expression(frame, col("ask") - parameter)};
+        const auto parameter_minus_time_series =
+            wp<TSC<double>>{bind_expression(frame, parameter - col("ask"))};
+        const auto scalar_minus_column = wp<TSC<double>>{bind_expression(frame, 20.0 - col("ask"))};
+        const auto column_minus_scalar = wp<TSC<double>>{bind_expression(frame, col("ask") - 3.0)};
+        return observe(named, direct_capture, captured_scalar, time_series_minus_parameter,
+                       parameter_minus_time_series, scalar_minus_column, column_minus_scalar, tick);
+    };
+
+    const auto commands = std::array<std::optional<i64>, 3>{1, 2, std::nullopt};
+    const auto parameters = std::array<std::optional<double>, 3>{2.0, std::nullopt, 5.0};
+    const auto ticks = std::array<i64, 3>{0, 1, 2};
+    static_cast<void>(testing::test_graph(graph, commands, parameters, ticks));
+
+    require(observations.size() == commands.size(), "bound column expression observer missed a cycle");
+    require(observations[0].named_parameter == std::vector<std::optional<double>>{12.5} &&
+                observations[0].captured_time_series == std::vector<std::optional<double>>{12.0} &&
+                observations[0].captured_scalar == std::vector<std::optional<double>>{13.5} &&
+                observations[0].captured_time_series_minus_parameter == std::vector<std::optional<double>>{8.0} &&
+                observations[0].captured_parameter_minus_time_series == std::vector<std::optional<double>>{-8.0} &&
+                observations[0].captured_scalar_minus_column == std::vector<std::optional<double>>{10.0} &&
+                observations[0].captured_column_minus_scalar == std::vector<std::optional<double>>{7.0},
+            "bound column expression did not read its parameter and owned captures");
+    require(observations[1].named_parameter == std::vector<std::optional<double>>{12.5, 22.5} &&
+                observations[1].captured_time_series == std::vector<std::optional<double>>{12.0, 22.0} &&
+                observations[1].captured_scalar == std::vector<std::optional<double>>{13.5, 23.5} &&
+                observations[1].captured_time_series_minus_parameter == std::vector<std::optional<double>>{8.0, 18.0} &&
+                observations[1].captured_parameter_minus_time_series ==
+                    std::vector<std::optional<double>>{-8.0, -18.0} &&
+                observations[1].captured_scalar_minus_column == std::vector<std::optional<double>>{10.0, 0.0} &&
+                observations[1].captured_column_minus_scalar == std::vector<std::optional<double>>{7.0, 17.0},
+            "bound column expression did not update captured inputs for an added row");
+    require(observations[2].named_parameter == std::vector<std::optional<double>>{15.5, 25.5} &&
+                observations[2].captured_time_series == std::vector<std::optional<double>>{15.0, 25.0} &&
+                observations[2].captured_scalar == std::vector<std::optional<double>>{13.5, 23.5} &&
+                observations[2].captured_time_series_minus_parameter ==
+                    std::vector<std::optional<double>>{5.0, 15.0} &&
+                observations[2].captured_parameter_minus_time_series ==
+                    std::vector<std::optional<double>>{-5.0, -15.0} &&
+                observations[2].captured_scalar_minus_column == std::vector<std::optional<double>>{10.0, 0.0} &&
+                observations[2].captured_column_minus_scalar == std::vector<std::optional<double>>{7.0, 17.0},
+            "bound column expression did not recompute named parameters or retain a temporary scalar capture");
+}
+
+std::size_t counted_column_expression_calls{};
+std::size_t counted_column_expression_rows{};
+std::size_t double_column_materializer_rows{};
+std::size_t mixed_i64_parameter_calls{};
+std::size_t mixed_double_parameter_calls{};
+
+void add_i64_parameter_to_double(std::span<const row_id_t> ids, const ColumnOperandBatch<i64> &column,
+                                 const ColumnOperandBatch<i64> &parameter,
+                                 MutableColumnBatch<double> output) {
+    ++mixed_i64_parameter_calls;
+    for (auto row = std::size_t{}; row != ids.size(); ++row) {
+        const auto valid = column.is_valid(row) && parameter.is_valid(row);
+        output.set_valid(row, valid);
+        if (valid)
+            output.values[row] = static_cast<double>(column.value(row) + parameter.value(row));
+    }
+}
+
+void add_double_parameter(std::span<const row_id_t> ids, const ColumnOperandBatch<double> &column,
+                          const ColumnOperandBatch<double> &parameter, MutableColumnBatch<double> output) {
+    ++mixed_double_parameter_calls;
+    for (auto row = std::size_t{}; row != ids.size(); ++row) {
+        const auto valid = column.is_valid(row) && parameter.is_valid(row);
+        output.set_valid(row, valid);
+        if (valid)
+            output.values[row] = column.value(row) + parameter.value(row);
+    }
+}
+
+void test_mixed_column_expression_fuses_and_collects_parameters() {
+    using namespace bg;
+
+    register_column_block_function<double, i64, i64>();
+    register_column_block_function<double, double, double>();
+
+    auto observations = std::vector<std::vector<std::optional<double>>>{};
+    const auto write = node<filter_writer>();
+    const auto make_result = [](auto frame, auto integer_parameter, auto double_parameter) {
+        const auto integer_expression = make_column_expression(
+            ColumnBlockFunction<double, i64, i64>{&add_i64_parameter_to_double},
+            select_column<"size">(frame), integer_parameter);
+        const auto double_expression = make_column_expression(
+            ColumnBlockFunction<double, double, double>{&add_double_parameter},
+            select_column<"bid">(frame), double_parameter);
+        return operators::add(integer_expression, double_expression);
+    };
+    const auto observe = node([&](In<TSC<double>> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto values = std::vector<std::optional<double>>{};
+        input.for_each_row([&](row_id_t id, std::size_t) { values.push_back(input.cell(id)); });
+        observations.push_back(std::move(values));
+        output.set(*tick);
+    });
+    const auto command_source = node([](Out<TS<i64>>) {});
+    const auto integer_source = node([](Out<TS<i64>>) {});
+    const auto double_source = node([](Out<TS<double>>) {});
+    const auto consume = node([](In<TSC<double>>) {});
+
+    auto wiring = GraphWiring{};
+    {
+        auto context = WiringContext{wiring};
+        const auto frame = write(command_source());
+        consume(make_result(frame, integer_source(), double_source()));
+    }
+    wiring.finalize();
+    const auto &nodes = wiring.nodes();
+    const auto expression_nodes = static_cast<std::size_t>(std::ranges::count_if(
+        nodes, [](const auto &candidate) {
+            const auto &signature = candidate.signature();
+            return signature.parameters.size() == 3 && signature.parameters[0].name.text() == "expression" &&
+                   signature.parameters[1].name.text() == "columns" &&
+                   signature.parameters[2].name.text() == "parameters" && signature.output != nullptr &&
+                   signature.output == std::addressof(TSC<double>::type());
+        }));
+    require(expression_nodes == 1, "mixed column expression did not fuse into one expression computation");
+
+    auto parameter_collectors = std::size_t{};
+    for (const auto &candidate : nodes) {
+        const auto &signature = candidate.signature();
+        if (signature.parameters.size() != 1 || signature.parameters[0].name.text() != "parameters" ||
+            signature.output == nullptr)
+            continue;
+        const auto *output_type = type_cast<TimeSeriesType>(signature.output);
+        if (output_type == nullptr)
+            continue;
+        const auto *value = dynamic_cast<const TimeSeriesValueType *>(
+            std::addressof(output_type->dereferenced_type()));
+        if (value == nullptr)
+            continue;
+        const auto *bundle = dynamic_cast<const ResolvedHierarchicalScalarType *>(
+            std::addressof(value->value_type()));
+        if (bundle == nullptr)
+            continue;
+        ++parameter_collectors;
+        require(bundle->field_count() == 2 && bundle->field(0).type == std::addressof(cpp_scalar_type<i64>()) &&
+                    bundle->field(1).type == std::addressof(cpp_scalar_type<double>()),
+                "mixed column expression collector did not preserve both parameter types in one snapshot");
+    }
+    require(parameter_collectors == 1,
+            "mixed column expression did not use one heterogeneous parameter collector");
+
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> integer_parameter, wp<TS<double>> double_parameter,
+                           wp<TS<i64>> tick) {
+        const auto frame = write(command);
+        return observe(make_result(frame, integer_parameter, double_parameter), tick);
+    };
+
+    mixed_i64_parameter_calls = 0;
+    mixed_double_parameter_calls = 0;
+    const auto commands = std::array<i64, 1>{1};
+    const auto integer_parameters = std::array<i64, 1>{7};
+    const auto double_parameters = std::array{0.5};
+    const auto ticks = std::array<i64, 1>{0};
+    static_cast<void>(testing::test_graph(graph, commands, integer_parameters, double_parameters, ticks));
+
+    require(observations == std::vector<std::vector<std::optional<double>>>{{23.0}} &&
+                mixed_i64_parameter_calls == 1 && mixed_double_parameter_calls == 1,
+            "fused mixed column expression did not evaluate both typed parameters on their shared row domain");
+}
+
+void count_column_expression(std::span<const row_id_t> ids, const ColumnOperandBatch<double> &lhs,
+                             const ColumnOperandBatch<double> &rhs, MutableColumnBatch<double> output) {
+    ++counted_column_expression_calls;
+    counted_column_expression_rows += ids.size();
+    for (auto row = std::size_t{}; row != ids.size(); ++row) {
+        const auto valid = lhs.is_valid(row) && rhs.is_valid(row);
+        output.set_valid(row, valid);
+        if (valid)
+            output.values[row] = lhs.value(row) + rhs.value(row);
+    }
+}
+
+struct double_column_materializer {
+    In<TSC<double>> lhs;
+    In<TSC<double>> rhs;
+    Out<TSC<double>, computed<>> output;
+
+    void evaluate() const {
+        static_cast<void>(output.bind(lhs));
+        lhs.for_each_row([&](row_id_t id, std::size_t) {
+            ++double_column_materializer_rows;
+            const auto left = lhs.cell(id);
+            const auto right = rhs.cell(id);
+            output.set(id, left && right ? std::optional<double>{*left + *right} : std::nullopt);
+        });
+    }
+};
+
+void test_double_column_addition_reuses_expression_and_sparse_rows() {
+    using namespace bg;
+    using namespace bg::literals;
+    using namespace bg::frame;
+
+    using Expression = TSB<BinaryColumnExpression<TSC<double>, TSC<double>, double>::template schema>;
+
+    const auto deferred_add = graph("name"_n = "test_counted_column_add", [](wp<TSC<double>> lhs,
+                                                                              wp<TSC<double>> rhs) {
+        auto &wiring = WiringContext::current().wiring();
+        auto result = wiring.create_wp<TSC<double>>(lhs, rhs);
+        result.materialisation_option<Expression>([](wp<TSC<double>> left, wp<TSC<double>> right) {
+            return bundle<Expression>(
+                "lhs"_n = left,
+                "rhs"_n = right,
+                "compute"_n = operators::const_(
+                                 ScalarValue<ColumnBlockFunction<double, double, double>>{
+                                     ColumnBlockFunction<double, double, double>{&count_column_expression}})
+                                 .as<TS<ColumnBlockFunction<double, double, double>, TimeSeriesGuarantee::const_>>());
+        }, 0.0);
+        return result;
+    });
+
+    struct observation {
+        std::vector<std::optional<double>> values;
+        std::size_t callback_calls{};
+        std::size_t callback_rows{};
+    };
+    auto observations = std::vector<observation>{};
+    const auto write = node<filter_writer>();
+    const auto observe = node([&](In<TSC<double>> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto result = observation{.callback_calls = counted_column_expression_calls,
+                                  .callback_rows = counted_column_expression_rows};
+        input.for_each_row([&](row_id_t id, std::size_t) { result.values.push_back(input.cell(id)); });
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto frame = write(command);
+        const auto expression = deferred_add(select_column<"bid">(frame), select_column<"ask">(frame));
+        const auto selected = WiringContext::current().wiring().materialisation_form(expression, Expression::type());
+        const auto expression_bundle = wp<Expression>{selected};
+        return observe(operators::add(expression_bundle, expression_bundle), tick);
+    };
+
+    counted_column_expression_calls = 0;
+    counted_column_expression_rows = 0;
+    double_column_materializer_rows = 0;
+    const auto commands = std::array<i64, 4>{0, 1, 2, 10};
+    const auto ticks = std::array<i64, 4>{0, 1, 2, 3};
+    static_cast<void>(testing::test_graph(graph, commands, ticks));
+
+    require(observations.size() == commands.size(), "column expression observer missed a cycle");
+    require(observations[0].callback_calls == 0 && observations[0].callback_rows == 0,
+            "column expression evaluated an empty row set");
+    require(observations[1].values == std::vector<std::optional<double>>{41.0} &&
+                observations[1].callback_calls == 1 && observations[1].callback_rows == 1,
+            "column addition did not evaluate one shared expression row once");
+    require(observations[2].values == std::vector<std::optional<double>>{41.0, 81.0} &&
+                observations[2].callback_calls == 2 && observations[2].callback_rows == 2,
+            "column addition did not evaluate only the added expression row");
+    require(observations[3].values == std::vector<std::optional<double>>{41.0, 68.0} &&
+                observations[3].callback_calls == 3 && observations[3].callback_rows == 3,
+            "column addition did not evaluate only the modified expression row");
+}
+
+void test_double_column_addition_reuses_forced_materialisation_form() {
+    using namespace bg;
+    using namespace bg::literals;
+    using namespace bg::frame;
+
+    using Expression = TSB<BinaryColumnExpression<TSC<double>, TSC<double>, double>::template schema>;
+
+    const auto concrete_materializer = node<double_column_materializer>();
+    const auto deferred_add = graph("name"_n = "test_forced_counted_column_add",
+                                    [&concrete_materializer](wp<TSC<double>> lhs, wp<TSC<double>> rhs) {
+        auto &wiring = WiringContext::current().wiring();
+        auto result = wiring.create_wp<TSC<double>>(lhs, rhs);
+        result.materialisation_option<Expression>([](wp<TSC<double>> left, wp<TSC<double>> right) {
+            return bundle<Expression>(
+                "lhs"_n = left,
+                "rhs"_n = right,
+                "compute"_n = operators::const_(
+                                 ScalarValue<ColumnBlockFunction<double, double, double>>{
+                                     ColumnBlockFunction<double, double, double>{&count_column_expression}})
+                                 .as<TS<ColumnBlockFunction<double, double, double>, TimeSeriesGuarantee::const_>>());
+        }, 0.0);
+        result.materialisation_option<TSC<double>>([&concrete_materializer](wp<TSC<double>> left,
+                                                                            wp<TSC<double>> right) {
+            return concrete_materializer(left, right);
+        }, 1.0);
+        return result;
+    });
+
+    const auto force_concrete = node([](In<TSC<double>>) {});
+    struct observation {
+        std::vector<std::optional<double>> values;
+        std::size_t callback_calls{};
+        std::size_t callback_rows{};
+        std::size_t materializer_rows{};
+    };
+    auto observations = std::vector<observation>{};
+    const auto observe = node([&](In<TSC<double>> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto result = observation{.callback_calls = counted_column_expression_calls,
+                                  .callback_rows = counted_column_expression_rows,
+                                  .materializer_rows = double_column_materializer_rows};
+        input.for_each_row([&](row_id_t id, std::size_t) { result.values.push_back(input.cell(id)); });
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto write = node<filter_writer>();
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto frame = write(command);
+        const auto expression = deferred_add(select_column<"bid">(frame), select_column<"ask">(frame));
+        const auto selected = WiringContext::current().wiring().materialisation_form(expression, Expression::type());
+        const auto expression_bundle = wp<Expression>{selected};
+        const auto result = operators::add(operators::add(expression_bundle, expression_bundle),
+                                           select_column<"bid">(frame));
+        force_concrete(expression);
+        return observe(result, tick);
+    };
+
+    counted_column_expression_calls = 0;
+    counted_column_expression_rows = 0;
+    double_column_materializer_rows = 0;
+    const auto commands = std::array<i64, 4>{0, 1, 2, 10};
+    const auto ticks = std::array<i64, 4>{0, 1, 2, 3};
+    static_cast<void>(testing::test_graph(graph, commands, ticks));
+
+    require(observations.size() == commands.size(), "forced materialisation observer missed a cycle");
+    require(observations[0].values.empty() && observations[0].callback_calls == 0 &&
+                observations[0].callback_rows == 0,
+            "forced materialisation evaluated an empty row set");
+    require(observations[1].values == std::vector<std::optional<double>>{51.5} &&
+                observations[1].callback_calls == 0 && observations[1].callback_rows == 0 &&
+                observations[1].materializer_rows == 1,
+            "selected expression form repeated its forced concrete materialisation");
+    require(observations[2].values == std::vector<std::optional<double>>{51.5, 101.5} &&
+                observations[2].callback_calls == 0 && observations[2].callback_rows == 0 &&
+                observations[2].materializer_rows == 3,
+            "selected expression form repeated its forced concrete materialisation for an added row");
+    require(observations[3].values == std::vector<std::optional<double>>{51.5, 82.0} &&
+                observations[3].callback_calls == 0 && observations[3].callback_rows == 0 &&
+                observations[3].materializer_rows == 5,
+            "selected expression form repeated its forced concrete materialisation for a changed row");
+}
+
+void test_double_column_arithmetic_fusion_and_forced_materialization() {
+    using namespace bg;
+    using namespace bg::literals;
+    using namespace bg::frame;
+
+    const auto source = node([](Out<TSF<Quotes>>) {});
+    const auto consume = node([](In<TSC<double>>) {});
+    const auto count_expression_nodes = [&](auto build) {
+        auto wiring = GraphWiring{};
+        {
+            auto context = WiringContext{wiring};
+            const auto frame = source();
+            const auto bid = select_column<"bid">(frame);
+            const auto ask = select_column<"ask">(frame);
+            const auto middle = operators::add(bid, ask);
+            build(middle, bid);
+        }
+        wiring.finalize();
+        const auto nodes = wiring.nodes();
+        const auto parameter_inputs = static_cast<std::size_t>(std::ranges::count_if(
+            nodes, [](const auto &candidate) {
+                const auto &signature = candidate.signature();
+                return std::ranges::any_of(signature.parameters, [](const auto &parameter) {
+                    return parameter.name.text() == "parameters";
+                });
+            }));
+        require(parameter_inputs != 0, "column expression topology did not expose its parameter input");
+        const auto parameter_updates = static_cast<std::size_t>(std::ranges::count_if(
+            nodes, [](const auto &candidate) {
+                const auto &signature = candidate.signature();
+                if (signature.parameters.size() != 1 || signature.parameters[0].name.text() != "parameters" ||
+                    signature.output == nullptr)
+                    return false;
+                const auto *output = type_cast<TimeSeriesType>(signature.output);
+                if (output == nullptr)
+                    return false;
+                const auto *value = dynamic_cast<const TimeSeriesValueType *>(
+                    std::addressof(output->dereferenced_type()));
+                return value != nullptr &&
+                       dynamic_cast<const ResolvedHierarchicalScalarType *>(std::addressof(value->value_type())) !=
+                           nullptr;
+            }));
+        require(parameter_updates == 0, "pure column expressions created a parameter update node");
+        return static_cast<std::size_t>(std::ranges::count_if(nodes, [](const auto &candidate) {
+            const auto &signature = candidate.signature();
+            return signature.parameters.size() == 3 && signature.parameters[0].name.text() == "expression" &&
+                   signature.parameters[1].name.text() == "columns" &&
+                   signature.parameters[2].name.text() == "parameters" && signature.output != nullptr &&
+                   signature.output == std::addressof(TSC<double>::type());
+        }));
+    };
+
+    require(count_expression_nodes([&](auto middle, auto bid) { consume(middle + bid); }) == 1,
+            "column addition did not fuse an unforced expression chain");
+    require(count_expression_nodes([&](auto middle, auto bid) { consume(middle - bid + bid); }) == 1,
+            "mixed column arithmetic did not fuse an unforced expression chain");
+    require(count_expression_nodes([&](auto middle, auto bid) {
+                consume(middle);
+                consume(operators::sub(middle, bid));
+            }) == 2,
+            "column subtraction did not reuse a forced concrete intermediate");
+    require(count_expression_nodes([&](auto middle, auto) {
+                consume(middle);
+                consume(operators::add(middle, middle));
+            }) == 2,
+            "column addition did not reuse one forced intermediate for both operands");
+}
+
+void test_double_column_addition_preserves_null_cells() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    struct observation {
+        std::vector<row_id_t> rows;
+        std::vector<std::optional<double>> values;
+    };
+    auto observations = std::vector<observation>{};
+    const auto write = node<filter_writer>();
+    const auto observe = node([&](In<TSC<double>> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto result = observation{};
+        input.for_each_row([&](row_id_t id, std::size_t) {
+            result.rows.push_back(id);
+            result.values.push_back(input.cell(id));
+        });
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto frame = write(command);
+        return observe(operators::add(select_column<"bid">(frame), select_column<"ask">(frame)), tick);
+    };
+
+    const auto commands = std::array<i64, 3>{0, 12, 13};
+    const auto ticks = std::array<i64, 3>{0, 1, 2};
+    static_cast<void>(testing::test_graph(graph, commands, ticks));
+
+    require(observations.size() == commands.size(), "nullable column addition observer missed a cycle");
+    require(observations[1].rows == std::vector<row_id_t>{0} &&
+                observations[1].values == std::vector<std::optional<double>>{std::nullopt},
+            "column addition did not preserve an all-null result cell");
+    require(observations[2].rows == std::vector<row_id_t>{0, 1} &&
+                observations[2].values == std::vector<std::optional<double>>{std::nullopt, std::nullopt},
+            "column addition did not preserve nulls when one operand is valid");
+}
 
 struct computed_frame_writer_state {
     row_id_t first{no_row};
@@ -3141,6 +4157,66 @@ void test_view_updates_do_not_traverse_source_rows() {
     });
 }
 
+void test_filter_row_set_reads_cached_source_order() {
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto source = NativeFrame<Quotes>{};
+    auto release_source = util::scope_exit{[&]() noexcept { source.release(memory); }};
+    const auto first_time = MIN_DT + EvaluationTime::duration{1};
+    const auto first = source.add(Quotes<Cell>{.size = Cell<i64>{5}, .bid = Cell<double>{10.0},
+                                               .ask = Cell<double>{11.0}},
+                                  first_time, memory);
+    const auto second = source.add(Quotes<Cell>{.size = Cell<i64>{6}, .bid = Cell<double>{20.0},
+                                                .ask = Cell<double>{21.0}},
+                                   first_time, memory);
+    const auto row_counter = RowTraversalCounter{std::addressof(source.rows())};
+    auto bindings = FrameReadBindings{};
+    const auto make_input = [&] {
+        auto input = native_frame_input(source);
+        const auto rows = row_counter.row_set();
+        input.rows = rows;
+        bindings.visible_rows = rows;
+        bindings.override_visible_rows = true;
+        bindings.apply(input);
+        return input;
+    };
+    auto input = make_input();
+    const auto all_fields = std::array<std::size_t, 3>{0, 1, 2};
+    const auto predicate_index = input.field_index(util::symbol{"size"});
+    auto predicate = [&](row_id_t id) { return source.cell<0>(id).value_or(0) > 4; };
+    const auto [predicate_context, predicate_function] = runtime_predicate(predicate);
+    with_runtime_view_storage<Quotes>(memory, [&](auto &filter, const auto &runtime) {
+        static_cast<void>(filter.bind(input, all_fields, predicate_index, predicate_context, predicate_function,
+                                      first_time, memory));
+        const auto second_time = first_time + EvaluationTime::duration{1};
+        require(source.erase(first, second_time, memory), "filter ordering test could not remove its first row");
+        const auto reused_slot = source.add(Quotes<Cell>{.size = Cell<i64>{7}, .bid = Cell<double>{30.0},
+                                                         .ask = Cell<double>{31.0}},
+                                            second_time, memory);
+        require(reused_slot != first && reused_slot == 2 && source.rows().slot_of(reused_slot) == 0 &&
+                    source.rows().slot_of(second) == 1,
+                "filter ordering test did not add a later row ID into the earlier physical slot");
+        input = make_input();
+        row_counter.traversals = 0;
+        static_cast<void>(filter.bind(input, all_fields, predicate_index, predicate_context, predicate_function,
+                                      second_time, memory));
+        const auto traversals_after_bind = row_counter.traversals;
+        const auto filtered = static_cast<const FrameSeriesRuntimeType &>(runtime).input_storage(&filter);
+        auto observed = std::vector<row_id_t>{};
+        filtered.rows.each([&](row_id_t id) { observed.push_back(id); });
+        require(observed == std::vector<row_id_t>{reused_slot, second} && filtered.rows.at(0) == reused_slot &&
+                    filtered.rows.at(1) == second,
+                "filter output did not preserve source order after membership changes");
+        for (auto iteration = std::size_t{}; iteration != 3; ++iteration) {
+            filtered.rows.each([](row_id_t) {});
+            static_cast<void>(filtered.rows.at(0));
+            static_cast<void>(filtered.rows.at(1));
+        }
+        require(row_counter.traversals == traversals_after_bind,
+                "filter row reads enumerated the source after bind rebuilt its ordered selection");
+    });
+}
+
 void test_tsf_view_uses_local_physical_rows_incrementally() {
     using namespace bg;
     using namespace bg::frame;
@@ -3961,9 +5037,26 @@ int main() {
         test_tsf_projection_rejects_empty_row_domain_mismatch();
         test_tsf_projection_rejects_native_columns_from_another_logical_domain();
         test_view_updates_do_not_traverse_source_rows();
+        test_filter_row_set_reads_cached_source_order();
         test_tsf_view_uses_local_physical_rows_incrementally();
         test_filtered_column_coverage_rejects_a_different_row_set();
         test_incremental_numeric_filter();
+        test_double_column_addition_updates_and_nulls();
+        test_double_column_addition_crosses_scratch_batch_boundaries();
+        test_double_column_addition_accepts_projected_columns_with_shared_selection();
+        test_double_column_addition_rejects_different_domains_and_membership();
+        test_double_column_addition_rejects_mixed_integer_columns();
+        test_double_column_addition_leaves_scalar_addition_to_bg();
+        test_double_column_addition_broadcasts_owned_scalar_values();
+        test_double_column_addition_parameter_updates_recompute_rows();
+        test_double_column_addition_parameter_invalidation_and_revalidation();
+        test_double_column_addition_deduplicates_repeated_parameter_inputs();
+        test_mixed_column_expression_fuses_and_collects_parameters();
+        test_bound_column_expression_owns_captures_and_binds_parameters();
+        test_double_column_addition_reuses_expression_and_sparse_rows();
+        test_double_column_addition_reuses_forced_materialisation_form();
+        test_double_column_arithmetic_fusion_and_forced_materialization();
+        test_double_column_addition_preserves_null_cells();
         test_filter_greater_than_composes_with_column_projection();
         test_computed_tsf_outputs_and_downstream_views();
         test_all_computed_tsf_publishes_empty_domain_rebinding();

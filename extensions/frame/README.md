@@ -16,7 +16,8 @@ The current cell types are `i64` and `double`. `TSC` and `TSF` use ordinary
 outputs by default. Both support borrowed views; `TSC` and `TSF` also support
 computed outputs. `TSF` supports borrowed projections and row filters. The
 optional Arrow adapter supports numeric scalar imports and exports.
-Previous-cell subscriptions and expression kernels are later work.
+Double-column addition and subtraction support deferred expressions and block evaluation.
+Previous-cell subscriptions and expression-based filtering are later work.
 
 `frame::view` is an output option owned by this extension. Use it with
 `Out<TSC<T>, frame::view>` and `Out<TSF<Schema>, frame::view>`. BG does not
@@ -46,12 +47,13 @@ and validity; native time-series batches additionally contain aligned IDs.
 Raw values at null positions must not be read.
 Every column allows null cells. `SchemaField::optional` describes an absent
 column; frame schemas require all columns and reject that flag.
-Positional cell lookup scans live slots. Filtered row and batch traversal walks
-current source order and tests selection membership. Selected batches combine
-consecutive physical slots within cell and row-ID buffer boundaries.
+Native positional cell lookup scans live slots. A filter maintains its selected
+row sequence in source order; downstream traversal reads that sequence.
+Selected batches combine consecutive physical slots within cell and row-ID
+buffer boundaries.
 Cells, validity, and batch IDs remain borrowed from source storage. Kernels should
 use batches or iterate row IDs and read cells by ID to avoid repeated positional
-scans. Incremental view updates use source deltas without traversing all rows.
+scans. View nodes use source deltas to identify changed cells.
 
 Frame column lengths must match. A zero-column frame can carry an explicit row
 count. `TSF` rows use one internal row domain across columns; schema names do
@@ -114,8 +116,151 @@ prove that both views have the same complete row set. Batch IDs and cell buffers
 are borrowed for the callback. Each column keeps its own validity bitmap, and a
 cell with a false validity bit must not be read. Shared physical mappings use
 source blocks; distinct mappings gather only requested rows into bounded
-scratch batches. Nodes that operate on complete columns must establish equal
-row membership and order separately.
+scratch batches. Complete-column arithmetic uses the shared selection contract
+described below.
+
+## Column arithmetic
+
+Include `<bg/library/operators.hpp>` and link `bg::frame`. The extension
+registers double-column operations on BG's existing `operators::add` and
+`operators::sub`; binary C++ `+` and `-` use those operators. An operand can be
+another double column, a double constant, or a `TS<double>` broadcast across
+the rows.
+
+```cpp
+// q is a wp<TSF<Quotes>> with double bid and ask columns.
+const auto bid = bg::frame::select_column<"bid">(q);
+const auto ask = bg::frame::select_column<"ask">(q);
+const auto sum = bid + ask;
+const auto consume = bg::node([](bg::In<bg::frame::TSC<double>>) {});
+consume(sum + sum);
+```
+
+Each operation returns a deferred `TSC<double>` wiring point. It offers an expression
+TSB at cost zero and a computed TSC at cost one. BG materialisation records
+concrete demands before compiling the expression. The example uses one BG
+compute node and evaluates the shared `sum` once per changed row. A separate
+concrete consumer of `sum` makes downstream expressions read that materialised
+column. Independently constructed equal expressions are not merged.
+
+The compute node receives an immutable operation sequence and a deduplicated
+TSB of concrete columns. It evaluates aligned batches with scratch buffers for
+128 rows, reused across blocks. Inputs must share one live row selection and row
+domain. Projections and computed columns retain their source selection; each
+filter owns a selection. Arithmetic rejects independently filtered columns even
+when their current memberships are equal. It checks selection descriptors
+without comparing row contents. Physical slot mappings may differ. Added and
+modified rows are recomputed; removals update output
+membership. Lost delta continuity, source replacement, parameter changes, and
+revalidation cause a full recomputation. A null operand produces a null result.
+
+Operand types must match exactly. Mixed integer/double arithmetic fails during
+wiring. This checkpoint implements addition and subtraction with double operands; column
+conversion and the remaining arithmetic operators are not implemented.
+Conversion will use BG's explicit `operators::convert` API.
+
+### Expression construction and binding
+
+Include `<bg/frame/expression.hpp>` to construct an expression before its input
+columns are known. `col(name)` selects a column by name. `param(name)` declares
+a named argument. Captures attach existing graph arguments to the same expression
+representation.
+
+```cpp
+using namespace bg::frame;
+using namespace bg::literals;
+
+const auto expression = col("bid") + col("ask");
+const auto sum = bind_expression(q, expression);
+const auto spread = bind_expression(q, col("ask") - col("bid"));
+
+const auto explicit_sum = bind_expression(
+    expression, "bid"_n = bid, "ask"_n = ask);
+
+const auto captured_sum = bind_expression(q, col("bid") + ask);
+const auto parameter_sum = bind_expression(
+    q, col("bid") + param("other"), "other"_n = ask);
+
+// offset is a wp<TS<double>>.
+const auto shifted = bind_expression(q, col("bid") + offset);
+const auto named_shift = bind_expression(
+    q, col("bid") + param("offset"), "offset"_n = offset);
+const auto fixed_shift = bind_expression(q, col("bid") + 0.5);
+```
+
+`bind_expression` returns the deferred wiring point produced by BG's operators.
+It resolves types independently for each binding. Explicit named bindings take
+precedence over frame column lookup. A `col` binding must be a TSC. Missing,
+duplicate, and unused names fail during binding. Frame lookup uses the actual
+schema, including a schema supplied during wiring.
+
+Expressions store operations and owned arguments during graph construction.
+Binding emits ordinary BG operator calls. Shared expression children are emitted
+once per binding. The resulting graph uses the column materialisation and block
+evaluation described above. `apply(wiring_template, operands)` constructs a call
+to an existing wiring template; the template must remain alive through binding
+and graph compilation.
+
+Captured scalar values are copied when the expression is constructed. Captured
+time series remain declared BG inputs. A separate parameter-update node snapshots
+each distinct captured time series into a scalar `Bundle<PARAMETERS>`. Its
+schema preserves each parameter's scalar type. The block node reads the
+snapshot once per invocation and prepares native broadcast values for all
+block calls. A parameter update recomputes all current
+rows. A column update recomputes added and modified rows. An invalid parameter
+invalidates the result; revalidation rebuilds it. Expressions with only column
+operands do not create a parameter-update node.
+
+Expression compilation groups column and parameter inputs in BG free TSBs. These collections
+reject direct `GraphWiring::borrowed_input` bindings. Ordinary node outputs and
+graph arguments supplied by those outputs use the supported path.
+
+### Implementing column operators
+
+These APIs are extension-facing. Graph authors use BG operators and `Expression`.
+
+`ColumnBlockFunction<RESULT, ARGS...>` declares a unary or binary block callback.
+The result and each operand independently select a supported cell type. An
+operand is a `ColumnOperandBatch<T>` containing an aligned column batch or a
+native scalar broadcast. The callback receives a row-ID span and writes a
+`MutableColumnBatch<RESULT>` supplied by the evaluator. It must set every output
+validity bit and write every valid result. The callback defines null behavior.
+Before reading a column operand with `value(position)`, the callback must check
+`is_valid(position)`. Scalar broadcasts are always valid. All batch storage is
+borrowed for that call.
+
+Register each callback signature with
+`register_column_block_function<RESULT, ARGS...>()` before concurrent wiring.
+Different operations with the same signature share the registered adapter.
+The callback remains an ordinary BG scalar whose semantic type records its
+result and ordered operand types. Compilation caches its adapter through BG's
+`ScalarDispatch`; evaluation uses the cached adapter.
+
+A selected operator graph calls the shared factory:
+
+```cpp
+return make_column_expression(
+    ColumnBlockFunction<double, double, double>{&add_double_operands}, lhs, rhs);
+```
+
+The factory retains the operand declarations in its materialisation recipes.
+Graph overloads use Union parameters to preserve upstream expression options.
+The factory supplies a resolved expression TSB and a computed TSC option. The
+TSB contains the immediate operands followed by a constant `compute` callback;
+it does not embed upstream expression schemas.
+
+`materialize_column_expression` compiles the selected callback signatures and
+binds typed input adapters. It deduplicates columns, scalar parameters, and
+shared expression children. A concrete demand stops expression descent and
+reuses that column. Each expression needs a column input to supply its row
+domain; scalar-only expressions fail during wiring.
+
+`ColumnExpressionNode<RESULT>` receives `TSB<COLUMNS>` and a
+`TS<Bundle<PARAMETERS>>` snapshot. Wiring fixes both schemas, callback adapters,
+and temporary buffer layouts. Evaluation reads current inputs, selects changed
+rows, executes aligned blocks, and publishes the typed result. The compiler
+recognises the TSB/callback contract without an operator list. Supported cells
+remain `i64` and `double`; conversion requires an explicit operator.
 
 ## TSF input/output surface
 
@@ -140,7 +285,10 @@ published. `TSF::value_view()` exposes the current scalar frame during the node
 invocation; an owning `ScalarValue<Frame<Schema>>` snapshots its cells.
 
 A `view` output borrows source column storage and keeps the requested rows in
-current source order. `bind_projection` accepts a span of source ordinals, a
+current source order. A filter stores the selected row sequence and rebuilds it
+when selection membership changes or its source binding requires a rebuild.
+Downstream traversal and positional access read the stored sequence without
+walking the source. `bind_projection` accepts a span of source ordinals, a
 span of `util::symbol` names, or `columns<...>()`. Each maps source columns to
 target fields in target schema order. Source and target cell types must match.
 The first binding reports all
@@ -199,8 +347,8 @@ the predicate. A selected column view covers only the filter's visible rows.
 If the source changed but its delta timestamp does not match the input's last
 update, the filter reconciles current membership and reevaluates its predicate.
 The predicate must remain stable while the binding is retained. Changing a
-captured threshold does not signal a rebuild; dynamic thresholds and expression
-kernels are later work.
+captured threshold does not signal a rebuild; dynamic thresholds and
+expression-based filtering are later work.
 The existing `bind_filter` callback and `filter_greater_than` helper are numeric
 probes. The planned filter API belongs to nodes, evaluates expression blocks,
 and uses BG materialisation options.
@@ -445,13 +593,15 @@ directly.
 Configure the extension with a BG installation prefix. The package config also
 finds its `ddvisitor` dependency. Set `BG_INSTALL_PREFIX` to the directory
 containing the installed `lib64/cmake/bg/bgConfig.cmake`.
-The current lane uses installed BG `a8af8eef` and Arrow 24.0.0.
+BG and the extension must use matching Debug or Release build configurations.
+The current lane uses Arrow 24.0.0.
 [HANDOFF.md](HANDOFF.md) lists the exact package prefix, verified checkpoints,
 and remaining foundation work.
 
 ```sh
-BG_INSTALL_PREFIX=/path/to/bg-install
+BG_INSTALL_PREFIX=/path/to/bg-release-install
 cmake -S extensions/frame -B extensions/frame/build-installed \
+  -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH="$BG_INSTALL_PREFIX" \
   -DBUILD_TESTING=ON
 cmake --build extensions/frame/build-installed -j12
@@ -463,6 +613,7 @@ installation prefix to `CMAKE_PREFIX_PATH`:
 
 ```sh
 cmake -S extensions/frame -B extensions/frame/build-arrow \
+  -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH="$BG_INSTALL_PREFIX;$ARROW_INSTALL_PREFIX" \
   -DBG_FRAME_BUILD_ARROW=ON -DBUILD_TESTING=ON
 cmake --build extensions/frame/build-arrow -j12
@@ -475,8 +626,10 @@ disabled by default; native frame builds do not require Arrow.
 The sanitizer build used for lifetime checks is:
 
 ```sh
+BG_DEBUG_INSTALL_PREFIX=/path/to/bg-debug-install
 cmake -S extensions/frame -B extensions/frame/build-sanitizers \
-  -DCMAKE_PREFIX_PATH="$BG_INSTALL_PREFIX;$ARROW_INSTALL_PREFIX" \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_PREFIX_PATH="$BG_DEBUG_INSTALL_PREFIX;$ARROW_INSTALL_PREFIX" \
   -DBG_FRAME_BUILD_ARROW=ON -DBUILD_TESTING=ON \
   -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' \
   -DCMAKE_SHARED_LINKER_FLAGS='-fsanitize=address,undefined' \
@@ -486,11 +639,10 @@ ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
   ctest --test-dir extensions/frame/build-sanitizers --output-on-failure
 ```
 
-The current foundation passed five Arrow-enabled suites, four Arrow-disabled
-suites, and all five Arrow-enabled suites under AddressSanitizer and
-UndefinedBehaviorSanitizer. LeakSanitizer is disabled because of this
-environment's ptrace restriction; allocation-failure tests still verify
-allocator cleanup.
+[HANDOFF.md](HANDOFF.md#verification) records the verified configurations and
+results. Lifetime checks use AddressSanitizer and UndefinedBehaviorSanitizer.
+LeakSanitizer is disabled because of this environment's ptrace restriction;
+allocation-failure tests still verify allocator cleanup.
 
 ## Performance sample
 

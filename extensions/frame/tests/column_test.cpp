@@ -44,6 +44,40 @@ struct RowTraversalCounter {
     }
 };
 
+bg::frame::RowSet selected_row_set(const bg::frame::SelectedRows &selected) noexcept {
+    return {std::addressof(selected), nullptr, selected.source().identity,
+            [](const void *context) noexcept {
+                return static_cast<const bg::frame::SelectedRows *>(context)->size();
+            },
+            [](const void *context, bg::frame::row_id_t id) noexcept {
+                const auto &rows = *static_cast<const bg::frame::SelectedRows *>(context);
+                return rows.contains(id) && rows.source().has(id);
+            },
+            [](const void *context, std::size_t position) {
+                const auto &rows = *static_cast<const bg::frame::SelectedRows *>(context);
+                if (position >= rows.size())
+                    throw std::out_of_range{"selected row position"};
+                auto remaining = position;
+                auto result = bg::frame::no_row;
+                rows.source().each([&](bg::frame::row_id_t id) {
+                    if (result != bg::frame::no_row || !rows.contains(id))
+                        return;
+                    if (remaining-- == 0)
+                        result = id;
+                });
+                if (result == bg::frame::no_row)
+                    throw std::out_of_range{"selected row position"};
+                return result;
+            },
+            [](const void *context, void *target, bg::frame::RowSet::visit_function visit) {
+                const auto &rows = *static_cast<const bg::frame::SelectedRows *>(context);
+                rows.source().each([&](bg::frame::row_id_t id) {
+                    if (rows.contains(id))
+                        visit(target, id);
+                });
+            }};
+}
+
 class CountingResource final : public std::pmr::memory_resource {
   public:
     std::size_t allocations{};
@@ -220,7 +254,7 @@ void test_selected_batches_coalesce_without_copying() {
     const auto selected_slots = std::array<std::size_t, 12>{0, 1, 2, 4, 5, 7, 8, 9, 10, 23, 24, 25};
     for (auto offset = selected_slots.size(); offset != 0; --offset)
         selected.include(native.id_at(selected_slots[offset - 1]), memory);
-    auto visible = selected.rows();
+    auto visible = selected_row_set(selected);
 
     auto storage = native.scalar_storage();
     storage.visible_rows = visible;
@@ -638,14 +672,14 @@ void test_tsc_view_revalidates_coverage_when_mapping_changes() {
     selected.bind(RowSet::native(*first.scalar_storage().rows));
     selected.include(first_id, memory);
     auto first_input = first.scalar_storage();
-    first_input.visible_rows = selected.rows();
-    first_input.coverage = selected.rows();
+    first_input.visible_rows = selected_row_set(selected);
+    first_input.coverage = selected_row_set(selected);
 
     auto output = ColumnViewOutputStorage<i64>{};
     require(output.bind(first_input, true, time, time, memory), "TSC view did not accept initial covered rows");
 
     auto second_input = second.scalar_storage();
-    second_input.coverage = selected.rows();
+    second_input.coverage = selected_row_set(selected);
     auto rejected = false;
     try {
         static_cast<void>(output.bind(second_input, true, time, time, memory));
@@ -755,11 +789,11 @@ void test_aligned_batches_borrow_shared_mapping_and_accept_requested_subsets() {
         right_visible.include(ids[position], memory);
     request.include(ids[1], memory);
     request.include(ids[3], memory);
-    auto restricted_storage = ColumnStorage<double>{right_cells, rows.slots(), right_visible.rows(), rows.added(),
+    auto restricted_storage = ColumnStorage<double>{right_cells, rows.slots(), selected_row_set(right_visible), rows.added(),
                                                     right_cells.modified(), rows.removed(), time};
     auto restricted = ColumnSeriesView<double>{restricted_storage};
     visited = 0;
-    left.for_each_aligned_batch(restricted, request.rows(), [&](const auto &batch) {
+    left.for_each_aligned_batch(restricted, selected_row_set(request), [&](const auto &batch) {
         for (auto position = std::size_t{}; position != batch.ids.size(); ++position) {
             const auto expected_id = visited == 0 ? ids[1] : ids[3];
             require(batch.ids[position] == expected_id, "aligned batches changed requested row order");
@@ -823,7 +857,7 @@ void test_aligned_batches_stop_at_shared_id_and_cell_block_boundaries() {
     auto scratch = std::pmr::monotonic_buffer_resource{};
     auto observed_batches = std::size_t{};
     auto observed_rows = std::size_t{};
-    ColumnSeriesView<double>::for_each_aligned_batch(columns, selected.rows(), scratch,
+    ColumnSeriesView<double>::for_each_aligned_batch(columns, selected_row_set(selected), scratch,
                                                       [&](std::span<const row_id_t> batch_ids,
                                                           std::span<const ColumnBatch<double>> batches) {
         require(batch_ids.size() == 2 && batches.size() == columns.size(),
@@ -930,7 +964,7 @@ void test_aligned_batches_gather_distinct_mappings_and_validate_before_callback(
     request.include(ids[3], memory);
 
     auto visited = std::size_t{};
-    left.for_each_aligned_batch(right, request.rows(), [&](const auto &batch) {
+    left.for_each_aligned_batch(right, selected_row_set(request), [&](const auto &batch) {
         require(batch.ids.size() == 2 && batch.ids[0] == ids[1] && batch.ids[1] == ids[3],
                 "gathered batches changed requested row order");
         require(!batch.left.is_valid(0) && batch.left.is_valid(1), "gathered left validity is incorrect");
@@ -948,7 +982,7 @@ void test_aligned_batches_gather_distinct_mappings_and_validate_before_callback(
     auto scratch = std::pmr::monotonic_buffer_resource{};
     auto aligned_rows = std::size_t{};
     ColumnSeriesView<i64>::for_each_aligned_batch(
-        std::span<const ColumnSeriesView<i64>>{aligned_columns}, request.rows(), scratch,
+        std::span<const ColumnSeriesView<i64>>{aligned_columns}, selected_row_set(request), scratch,
         [&](std::span<const row_id_t> batch_ids, std::span<const ColumnBatch<i64>> batches) {
             require(batch_ids.size() == 2 && batches.size() == aligned_columns.size() &&
                         batch_ids[0] == ids[1] && batch_ids[1] == ids[3],
@@ -973,7 +1007,7 @@ void test_aligned_batches_gather_distinct_mappings_and_validate_before_callback(
     auto callback_invoked = false;
     auto rejected = false;
     try {
-        left.for_each_aligned_batch(right, request.rows(), [&](const auto &) { callback_invoked = true; });
+        left.for_each_aligned_batch(right, selected_row_set(request), [&](const auto &) { callback_invoked = true; });
     } catch (const std::invalid_argument &) {
         rejected = true;
     }
@@ -983,7 +1017,7 @@ void test_aligned_batches_gather_distinct_mappings_and_validate_before_callback(
     rejected = false;
     try {
         ColumnSeriesView<i64>::for_each_aligned_batch(
-            std::span<const ColumnSeriesView<i64>>{aligned_columns}, request.rows(), scratch,
+            std::span<const ColumnSeriesView<i64>>{aligned_columns}, selected_row_set(request), scratch,
             [&](std::span<const row_id_t>, std::span<const ColumnBatch<i64>>) { callback_invoked = true; });
     } catch (const std::invalid_argument &) {
         rejected = true;

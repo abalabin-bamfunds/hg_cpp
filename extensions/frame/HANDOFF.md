@@ -1,13 +1,15 @@
 # Frame foundation handoff
 
-Updated: 2026-10-14. The active lane is based on integrated main `a16f4761`.
-The generic Row/RowPatch foundation checkpoint is `bd6d9cc5`. Commit `8e6bd52d`
-separates logical row identity from physical slots; `69d1f643` retains native
-owner/domain validation for borrowed views. Mixed computed/view TSF outputs and
-standalone computed TSC outputs are implemented. Arrow-on, Arrow-off, and
-ASan/UBSan consumer suites pass. Computed TSC was committed as `33a660d8`.
-Independent review found and this lane fixes empty-domain publication on a
-row-domain change.
+Updated: 2026-10-16. The active lane is rebased onto main `359e1aee`.
+Release Arrow-on verification against this BG revision passed 6/6 suites.
+The previous Debug and Arrow-off verification used matching BG dependencies
+built from main `19403a4d`. This commit includes double-column addition and subtraction, expression construction,
+scalar broadcasts, shared-selection arithmetic, filter-owned row order, and
+shared heterogeneous expression execution. Independent review
+of the current factory, compiler, evaluator, and mixed-type tests found no
+correctness blockers. Shared-expression and subtraction consumer verification
+passed. See
+[Verification](#verification).
 
 ## Work locations
 
@@ -16,14 +18,25 @@ completed lane retirement, and consumer verification.
 
 | Work | Location / branch | State |
 | --- | --- | --- |
-| Main | `/home/abalabin/_bg`, `main` at `a16f4761` | Scalar copy, output-runtime selection, and borrowed inputs integrated; persistent runtime inputs removed |
-| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Based on main `a16f4761` |
-| Numeric value extraction | Separate work | Held; frame does not depend on it |
+| Main | `/home/abalabin/_bg`, `main` | Rebase target `359e1aee`; literal APIs and wiring source-type matching integrated |
+| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Arithmetic and shared expression execution committed with this handoff |
+| Test graph output capture | `.lanes/test-graph-outputs`, `agent/test-graph-outputs` | Commits `57bf9c34`, `751b2250` and uncommitted sentinel adaptation; unmerged |
+| Numeric value extraction | `.lanes/library-numeric-values` | Held; frame does not depend on it |
 | Historical frame work | `extensions/frame/archive/` | Proposals, probe sources, and benchmark results preserved; see its README |
 | Schema field reflection | Main | Integrated and covered by BG schema reflection tests |
 
-The standalone consumers use `/home/abalabin/_bg/build/frame-dependency/install`
-for BG, ddvisitor, and tpack. Conda provides unrelated dependencies.
+The Release Arrow-on consumer uses BG, ddvisitor, and tpack from
+`extensions/frame/build/dependencies/bg-release-359e1aee-install`, built in
+`extensions/frame/build/dependencies/bg-release-57aa1686`. The Debug and
+Arrow-off consumers retain their previous matching installations under
+`extensions/frame/build/dependencies/bg-debug-install` and
+`extensions/frame/build/dependencies/bg-release-install`. Each extension build
+must match its BG dependency's configuration. Conda provides unrelated
+dependencies.
+
+The Debug dependency build cache is `dependencies/bg-debug`; it is generated
+and untracked. The Release cache is
+`extensions/frame/build/dependencies/bg-release`. Preserve both caches.
 
 Preserve the existing recovery stashes:
 
@@ -32,6 +45,12 @@ Preserve the existing recovery stashes:
 16cbdc77d65d43478e17eccff1f5930dca630415
 f650a30a79bd707b8f566242c7bbe2d48020e578
 ```
+
+The latest 2026-10-16 rebase applied without conflicts and restored the
+uncommitted frame changes. The tracked patch and four untracked source files
+matched their saved hashes after restoration. The temporary rebase stash was
+removed; all preexisting stashes remain unchanged. Recovery copies are under
+`/home/abalabin/_bg/build/frame-lane-recovery/2026-10-16-215427-rebase`.
 
 Root retired eight superseded frame checkouts and branches, plus the scalar-copy
 and output-runtime integration checkouts and branches. The active frame lane is
@@ -158,38 +177,62 @@ runtime descriptors, source and column buffer identity, nullable cells, and
 row and column deltas across invocations. Test checkpoint: `bf4d9483`.
 
 BG main `6051cc63` previously passed its complete C++ and Python suite:
-1,720/1,720. Current verification uses a refreshed Debug BG installation built
-from `a16f4761` in `/home/abalabin/_bg/build/frame-dependency/bg-build`, with
-testing, Python, and benchmarks disabled. The complete BG suite was not repeated.
-Its build and install logs are `build-a16f4761.log` and
-`install-a16f4761.log` under `build/frame-dependency` in the root checkout.
-The rebased frame lane and row-slot commits passed all five Arrow-enabled
-Release suites against this installation.
+1,720/1,720. Earlier verification built Debug and Release BG dependencies from
+`19403a4d`, with testing, Python, and benchmarks disabled. The complete BG suite
+is not repeated for extension verification.
 
-All three consumer caches resolve BG, ddvisitor, and tpack from the installed
-prefix. Conda supplies unrelated dependencies including Arrow 24.0.0. Arrow-on
-Release regenerated its CMake configuration during its build. The other two
-consumers were explicitly reconfigured with their existing settings.
+All three consumer caches resolve BG, ddvisitor, and tpack from the matching
+installed prefix. Conda supplies unrelated dependencies including Arrow 24.0.0. Builds
+regenerated their CMake configuration and CTest metadata as needed.
 
-Previous consumer verification at main `bf338ca5`:
+Baseline consumer verification against installed main `31584c4c`, before
+expression construction and scalar broadcasts:
 
 | Consumer | Build | Test |
 | --- | --- | --- |
-| build/field-access-on, Release, Arrow enabled | Passed with -j12 | 5/5 suites passed |
-| build/cc4-checkpoint-off, Release, Arrow disabled | Passed with -j12 | 4/4 suites passed |
-| build/cc4-lifetime, Debug, Arrow enabled, ASan/UBSan | Passed with -j12 | 5/5 suites passed; no sanitizer diagnostics |
+| build/field-access-on, Release, Arrow enabled | Passed with -j12 | 6/6 suites passed |
+| build/cc4-checkpoint-off, Release, Arrow disabled | Passed with -j12 | 5/5 suites passed |
+| build/cc4-lifetime, Debug, Arrow enabled, ASan/UBSan | Passed with -j12 | 6/6 suites passed; no sanitizer diagnostics |
+
+Expression and broadcast Debug ASan/UBSan verification against installed main
+`1a5ff458` passed 6/6 suites. Final verification against installed main
+`19403a4d` on 2026-10-15 covers the shared expression factory, compiler and
+computation node, heterogeneous column alignment and parameter snapshots,
+stored filter row order, BG-managed parameter validity, and double-column
+subtraction with fused addition/subtraction callbacks:
+
+| Consumer | Build | Test |
+| --- | --- | --- |
+| build/cc4-lifetime, Debug, Arrow enabled, ASan/UBSan | Passed with -j12 | 6/6 suites passed; no sanitizer diagnostics |
+| build/field-access-on, Release, Arrow enabled | Passed with -j12 | 6/6 suites passed |
+| build/cc4-checkpoint-off, Release, Arrow disabled | Passed with -j12 | 5/5 suites passed |
+
+Rebase verification against installed main `359e1aee` on 2026-10-16 rebuilt BG
+and the Release Arrow-on consumer with `--parallel 12`; all 6 suites passed.
+The deferred-column Union matching regression was recovered from
+`.lanes/frame-source-matching-check` into `tests/expression_test.cpp` and passed.
+That checker lane has no other unique implementation changes.
+The frame expression helpers now use public `bg::bundle(span<const WiringArgument>)`.
+Explicit target bundle schemas retain the previous field dereferencing.
+Debug and Arrow-off consumers have not been rerun against this revision.
+
+BG and the extension must use matching build configurations. Debug compiles both
+scalar allocation and deallocation checks; Release compiles neither check.
+
+Sanitizer verification found a fixture that destroyed four node templates
+before `GraphWiring::finalize()`. The fixture now keeps them in its enclosing
+scope. Independent review checked the other new finalization fixtures for
+the same lifetime error. All three configurations were rebuilt and their
+complete consumer suites passed after the correction.
 
 The sanitizer test used ASAN_OPTIONS=detect_leaks=0 and
-UBSAN_OPTIONS=halt_on_error=1. Leak detection remains disabled because of
+UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1. Leak detection remains disabled because of
 environment ptrace restrictions. The sanitizer frame build links the Debug BG
 dependency. Clang and MSVC have not been tested.
 
-The previous build and test logs are `build-bf338ca5.log` and `test-bf338ca5.log` in
-each consumer build directory. Explicit configure logs are
-`configure-bf338ca5.log` in `cc4-checkpoint-off` and `cc4-lifetime`.
-Earlier verification logs remain preserved. No retired-worktree paths occur
-in the three consumer caches. The Arrow-on Release shared-library RPATH uses
-the installed prefix and Conda libraries.
+Current CTest results are in each consumer's `Testing/Temporary/LastTest.log`.
+Earlier verification logs remain preserved. The Arrow-on Release shared-library
+RPATH uses the installed prefix and Conda libraries.
 
 Run builds and tests from the active lane:
 
@@ -201,6 +244,186 @@ conda run --no-capture-output -n bg-build ctest --test-dir extensions/frame/buil
 Use `cc4-checkpoint-off` for Arrow-off Release. For `cc4-lifetime`, prefix the
 CTest command with `ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1`.
 
+## Shared column expression implementation
+
+Committed prerequisites are `5b846d94` (expression scalar and TSB schema),
+`f384f1eb` (n-ary aligned batches), and `1bc4569e` (batch subspan).
+`src/arithmetic.cpp` provides arithmetic callbacks and registrations,
+and `src/column_expression.cpp` provides shared compilation and execution. The extension links
+`bg::library` and registers double-column addition and subtraction on
+`operators::add` and `operators::sub`. It uses exact cell types; mixed
+integer/double operands fail during wiring. Explicit column conversion is
+future work. Preserve the held numeric extraction.
+
+The expression option has cost zero; the computed TSC option has cost one.
+`make_column_expression` creates the expression bundle and concrete recipe
+from a typed callback and operand wiring points. The callback has independently
+typed unary or binary operands and result. `ExpressionCompiler` recognises
+the TSB/callback contract, produces a `CompiledExpression`, and passes
+deduplicated concrete leaves through an ordinary TSB. The runtime evaluates
+aligned blocks, reuses 128-row scratch, and writes
+`Out<TSC<RESULT>, computed<>>`. Repeated
+children reuse instruction results. A forced concrete intermediate stops expression
+descent, including when the concrete demand is recorded after expression-form
+selection. Independently constructed equal expressions need not share a node.
+
+`ColumnExpressionNode<RESULT>` coordinates input preparation, row selection, and result
+publication. `CompiledExpression::for_each_result_batch` owns block evaluation and
+reuses scratch buffers across batches. `ExpressionCompiler` appends the result instruction last.
+Binding state is allocated in `start()` and released in `stop()`.
+Wiring assigns each instruction an aligned result-buffer offset from its
+callback's size and alignment. Evaluation reuses these buffers for 128-row
+blocks. Callbacks set validity for every output position and read only valid
+input cells.
+
+Selected expression wrappers retain the original deferred TSC source identity.
+The expression builder normalizes operands to that source before constructing
+its TSC fields. `ExpressionCompiler` distinguishes ordinary concrete columns from deferred
+points with a concrete recipe. Arithmetic requires a shared live RowSet
+descriptor and row domain. Projection and computed outputs retain their source
+selection; filters own distinct selections. Equal row contents do not make
+independent selections compatible. Physical mappings may differ. Input storage
+replacement, lost delta continuity, parameter updates, and revalidation rebuild
+values.
+
+Filter outputs maintain their selected row sequence in source order. The basic
+implementation rebuilds that sequence upstream when membership changes or the
+source requires a rebuild. `util::contiguous_bunch<row_id_t>` stores one ID per
+selected row. Payload updates that preserve membership retain the sequence.
+Downstream traversal uses the stored sequence. Previous-membership tracking
+remains separate from order storage. Selection storage and update optimisations
+require measurements before further changes.
+
+Tests cover chained and repeated expressions across 257 rows, validity around
+128-row scratch boundaries, sparse updates, null and all-null rows, removal and
+ID reuse, invalidation/revalidation, projection, incompatible
+domains/selections, fusion, and late concrete demands. The late-demand fixture
+combines computed and native columns with distinct physical mappings and
+covers both additions and an existing-row update. Its aggregate node template
+lives in the enclosing test scope through graph compilation, as required by
+[BG's wiring contract](../../docs/graph-wiring.md#wiring-template-call).
+The filter-order test uses the actual output binder and runtime input storage.
+It verifies source order `[2, 1]` after slot reuse and verifies that repeated
+enumeration and positional reads do not traverse the source.
+
+Independent read-only review found no confirmed defects in deferred TSC
+materialisation, binding, capture ownership, or parameter updates. Current
+consumer results are recorded in [Verification](#verification).
+The subtraction review found no correctness blockers in callback dispatch,
+operand order, overload selection, or the expression syntax.
+
+### Expression construction and binding
+
+The approved graph-code API uses one `Expression` representation for operations,
+unresolved names, and attached arguments. `col(name)` identifies a column;
+`param(name)` identifies a named argument. Captures retain owned `WiringArgument`
+values. Expressions can be constructed before a frame or its schema is known.
+
+`bind_expression(expr, named_arguments...)` resolves names from its arguments.
+`bind_expression(frame, expr, named_arguments...)` also resolves column names
+from the frame. Binding invokes the existing BG operators and returns their
+deferred wiring point. Each binding resolves types independently. Runtime
+schemas are already resolved during wiring. Numeric conversion remains explicit.
+
+The syntax tree exists only during graph construction. The internal expression
+TSB is the resolved materialisation form of a BG operation. It retains declared
+upstream dependencies. Block evaluation and concrete intermediate reuse use the
+existing expression compilation path. Manually constructed expression bundles are not the
+graph-author API.
+
+Addition and subtraction support double columns, double constants, and captured `TS<double>`
+values. Constants use the existing `operators::const_` path. Scalar convenience
+graphs declare their `TSC<double>` return type. Overload requirements require a
+column operand; ordinary BG scalar arithmetic keeps its existing overloads.
+
+`ExpressionCompiler` collects distinct captured time series into an ordinary
+TSB. A separate parameter-update node publishes their current values as
+`TS<Bundle<PARAMETERS>>`, preserving each scalar type;
+parameter ticks do not change expression structure. Pure column expressions do
+not create this node. Block computation reads the snapshot once per invocation.
+The parameter-update node declares `all_valid`; the computed-column node requires
+its snapshot input. BG applies input validity and output invalidation through the
+[normal node contract](../../docs/node-api.md#required-input-invalidation).
+Each operand is a column batch or scalar broadcast; broadcasts do not allocate
+column storage. Column changes recompute affected rows; parameter changes
+recompute all current rows. Invalid parameters invalidate the result;
+revalidation rebuilds it. Compiled expressions retain instructions and operand
+indices, without wiring points.
+Parameter validity coverage includes an invalid item while another parameter
+keeps the input collection root valid.
+
+BG free TSBs reject direct borrowed graph inputs. `ExpressionCompiler` uses these collections
+for both column leaves and parameters, so direct `GraphWiring::borrowed_input`
+bindings remain unsupported here. Deduplication topology tests use ordinary
+source nodes.
+
+Comparisons, boolean cell storage, and explicit column conversion
+follow this foundation.
+
+The [shared block-operation contract](block_operation_proposal.md) and
+[computation nodes and input bindings](expression_node_proposal.md) are
+accepted and implemented. Production arithmetic supports double addition and subtraction.
+Tests exercise unary callbacks with a different result type, heterogeneous
+column inputs, and captured scalar types. The mixed-type graph verifies one
+fused computation node and one `Bundle<{i64, double}>` parameter snapshot.
+Scalar-only column expressions fail during wiring because they have no row
+domain. Subtraction uses the shared factory and the same callback adapter as
+addition; it adds no compiler or evaluator behavior. Boolean physical layout
+and expression-based filtering require design review before implementation.
+Subtraction tests cover column, constant, and captured-time-series operand
+order, nulls around block boundaries, sparse row updates, and parameter ticks.
+Mixed addition/subtraction tests verify callback values, fusion, and forced
+intermediate reuse.
+
+## Literal support
+
+BG main includes the literal extension APIs through merge `8fb5bcc0`, including
+the sentinel changes through `ee61d6d6`. The standard `test_graph` literal source
+calls erased `Out::apply`.
+
+`ScalarLiteralOperations::construct` consumes `ScalarLiteral` into uninitialized
+scalar storage, and `TimeSeriesLiteralOperations::apply` consumes
+`TimeSeriesLiteral` through `OutputState`. Their existing `ScalarDispatch` and
+`TimeSeriesDispatch` registries prefer exact runtime registration, then semantic
+registration. These are extension-facing APIs. Nodes use
+`ScalarValue::from_literal()` and `Out::apply()`. Frame handlers will share one
+implementation across concrete and runtime schemas.
+
+`ScalarLiteral` and `TimeSeriesLiteral` are aliases of the same borrowed
+recursive carrier. Scalar time series replacements pass that carrier directly
+to scalar construction. Leaves use ordinary scalar input construction;
+provider sequence handlers receive the original literal without tree copying.
+
+`literal::Sentinel` is noncopyable. Equality compares singleton addresses; its
+qualified symbol name is diagnostic. BG exports `SKIP`, `INVALID`, `REMOVE`, and
+`REMOVED` once from its library. Extensions export their own singleton instances
+with static storage duration. Scalar storage retains and copies a singleton
+pointer; typed reads return `const Sentinel&`.
+
+Calling `REMOVED(value)` produces a separate `literal::TaggedLiteral` scalar
+that borrows the sentinel and `ScalarLiteral` argument. Both scalar types have
+canonical semantic types and runtimes. Extension sentinel instances require no
+additional registration. Each consumer interprets its supported instructions.
+Tagged literal recognition constructs its result inside a void visitor because
+DDV currently assigns visitor results, which reference members cannot support.
+
+Verification passed 1,821 core test cases and 144 library cases. The latest
+focused suite passed 15 cases and 70 assertions, covering literal identity,
+collection updates, provider marker handling, and queue cleanup.
+
+Direct TSC/TSF result capture is a separate testing limitation: the current
+`test_graph` sink accepts only `TS<SCALAR>`. Frame inputs already expose scalar
+snapshots through `value_view()`, but the standard sink cannot consume them.
+The unmerged test-graph output work listed above uses tick serialization and an
+extension literal-comparison operation. Frame has not registered
+`TimeSeriesTickOperations` or `TickLiteralComparison` handlers. These are needed
+for direct frame result capture and assertions after that BG work is integrated.
+
+Frame literal shapes, nullable-cell syntax, and row-update syntax remain
+undecided. Current literal leaves do not support `std::nullopt` as a null cell.
+Insertions must allocate internal row IDs; patch and removal operations use
+existing IDs. Frame literal handlers have not been implemented.
+
 ## Performance artifacts
 
 The preserved active-lane sample is archived at:
@@ -211,11 +434,9 @@ extensions/frame/archive/benchmarks/foundation-benchmark/shared-view.csv
 ```
 
 The workload starts with 100,000 rows and runs source mutation, filtering,
-selection, and sum. Allocation and destruction are included. The extension
-uses Release; installed BG uses Debug. Median borrowed dense Arrow export plus
-sum was 1.255 ms. Exporting 49,168 scattered chunks plus sum was 15.857 ms;
-gathering that selection plus sum was 1.483 ms. These measurements predate the
-current API completion.
+selection, and sum. Allocation and destruction are included. This historical
+sample used a Release extension with Debug BG. Rerun it with matching
+configurations before using its timings as performance evidence.
 
 The earlier schema-hooks comparison and direct sparse-bunch PyArrow probe are
 preserved under `extensions/frame/archive/`. Their source and measurement
@@ -223,6 +444,13 @@ conditions are documented in the archive README. These results inform the
 design; they do not replace the consumer verification recorded above.
 
 ## Status and remaining work
+
+BG test-graph output capture is being completed in its own lane. Add the frame
+literal and result-capture handlers after that work is integrated. Agree
+nullable-cell and row-update literal syntax before implementation.
+
+Boolean storage, comparisons, and expression-based filtering are the next
+frame features and require design review before implementation.
 
 Fixed-name `Out<TSF<Schema>, frame::computed<"mid">>` outputs are implemented
 through the shared runtime-schema view backend. Dedicated Arrow-on tests cover
@@ -253,19 +481,11 @@ and wiring-time output runtime selection. The frame extension uses scalar copy
 selection for owning frame copies and the output hook to select frame layouts.
 Frame output layout options remain extension-owned.
 
-The shared numeric function extraction remains held. Frame expression and
-block-arithmetic design are future work; their design will determine whether
-that extraction is reused.
-
-After the empty-domain publication correction, Arrow-on Release passed all 5
-suites in `build/field-access-on`; Arrow-off Release passed all 4 suites in
-`build/cc4-checkpoint-off`; and Arrow-on Debug with ASan/UBSan passed all 5
-suites in `build/cc4-lifetime`, using `ASAN_OPTIONS=detect_leaks=0` and
-`UBSAN_OPTIONS=halt_on_error=1`.
+The shared numeric function extraction remains held. The arithmetic implementation is
+described above. Other numeric operators, explicit column conversion, and
+expression-based filtering remain later work.
 
 Previous-value subscriptions, strings and symbols, compaction, capacity
 trimming, and delta transport remain later work. Previous-cell capture, if
 needed, is requested from the owning storage through ColumnSource; graph
-back-propagation is not required. For expressions with time-series scalar
-parameters, a separate expression-construction node is intended to simplify
-node code. These features are not implemented.
+back-propagation is not required. These features are not implemented.
