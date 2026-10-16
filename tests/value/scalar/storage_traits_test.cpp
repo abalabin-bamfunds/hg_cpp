@@ -537,8 +537,8 @@ TEST_CASE("a scalar provider read type passes through a time series output",
 
     REQUIRE(result[0]);
     REQUIRE(result[1]);
-    CHECK(result[0]->value().get() == 2);
-    CHECK(result[1]->value().get() == 5);
+    CHECK(result[0]->view().value().get() == 2);
+    CHECK(result[1]->view().value().get() == 5);
 }
 
 TEST_CASE("a typed time-series output reads its provider value",
@@ -653,7 +653,7 @@ TEST_CASE("callable promoted values and aggregate scalar views preserve provider
     auto reads_before = test_scalar_provider::alternative_runtime_read_count();
     const auto callable_result = bg::testing::test_graph(callable_graph);
     REQUIRE(callable_result[0]);
-    CHECK(callable_result[0]->value() == 20);
+    CHECK(callable_result[0]->view().value() == 20);
     CHECK(test_scalar_provider::alternative_runtime_read_count() > reads_before);
 
     const auto aggregate_reader = bg::node<ProviderScalarAggregateReader>();
@@ -661,7 +661,7 @@ TEST_CASE("callable promoted values and aggregate scalar views preserve provider
     reads_before = test_scalar_provider::alternative_runtime_read_count();
     const auto aggregate_result = bg::testing::test_graph(aggregate_graph);
     REQUIRE(aggregate_result[0]);
-    CHECK(aggregate_result[0]->value() == 42);
+    CHECK(aggregate_result[0]->view().value() == 42);
     CHECK(test_scalar_provider::alternative_runtime_read_count() > reads_before);
 }
 
@@ -681,7 +681,7 @@ TEST_CASE("typed callable scalar inputs use the selected snapshot runtime for pr
     const auto result = bg::testing::test_graph(graph);
 
     REQUIRE(result[0]);
-    CHECK(result[0]->value() == 20);
+    CHECK(result[0]->view().value() == 20);
     CHECK(received_runtime == std::addressof(test_scalar_provider::immutable_snapshot_runtime_type()));
     CHECK(test_scalar_provider::alternative_runtime_read_count() > reads_before);
 }
@@ -697,14 +697,14 @@ TEST_CASE("aggregate promoted scalars select runtime metadata for scalar and tim
     auto reads_before = test_scalar_provider::alternative_runtime_read_count();
     const auto scalar_result = bg::testing::test_graph(scalar_graph);
     REQUIRE(scalar_result[0]);
-    CHECK(scalar_result[0]->value() == 42);
+    CHECK(scalar_result[0]->view().value() == 42);
     CHECK(test_scalar_provider::alternative_runtime_read_count() > reads_before);
 
     const auto time_series_graph = [&](bg::wp<bg::TS<Value>> input) { return reader(input, scalar); };
     reads_before = test_scalar_provider::alternative_runtime_read_count();
     const auto time_series_result = bg::testing::test_graph(time_series_graph, std::array{Value{3}});
     REQUIRE(time_series_result[0]);
-    CHECK(time_series_result[0]->value() == 44);
+    CHECK(time_series_result[0]->view().value() == 44);
     CHECK(test_scalar_provider::alternative_runtime_read_count() > reads_before);
 }
 
@@ -727,7 +727,7 @@ TEST_CASE("aggregate scalar views and promoted inputs preserve a copy-only provi
     const auto result = bg::testing::test_graph(graph);
 
     REQUIRE(result[0]);
-    CHECK(result[0]->value() == 40);
+    CHECK(result[0]->view().value() == 40);
 }
 
 TEST_CASE("typed output writes through a prefixed scalar runtime layout",
@@ -759,12 +759,12 @@ TEST_CASE("aggregate optional provider scalars handle present and absent values"
     const auto present_graph = [&] { return reader(std::optional<Value>{Value{17}}); };
     const auto present = bg::testing::test_graph(present_graph);
     REQUIRE(present[0]);
-    CHECK(present[0]->value() == 17);
+    CHECK(present[0]->view().value() == 17);
 
     const auto absent_graph = [&] { return reader(std::optional<Value>{}); };
     const auto absent = bg::testing::test_graph(absent_graph);
     REQUIRE(absent[0]);
-    CHECK(absent[0]->value() == 0);
+    CHECK(absent[0]->view().value() == 0);
 }
 
 TEST_CASE("erased scalar borrowing uses the composed bundle runtime",

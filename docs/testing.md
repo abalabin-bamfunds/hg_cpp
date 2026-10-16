@@ -126,13 +126,54 @@ Literal inputs require a non-variadic parameter list. Concrete graph parameters 
 `input<TSD<string, TS<i64>>>({...})` for an unresolved input declaration, or
 `input(runtime_type, {...})` to supply a time series runtime type explicitly.
 Graph functions with non-collection scalar inputs preserve their existing
-brace-input C++ element conversions and `std::nullopt` support. Result capture
-supports scalar time series outputs; graphs receiving collections can return
-scalar observations for comparison.
+brace-input C++ element conversions and `std::nullopt` support.
 Raw brace calls support one through four inputs. Pass `TestGraphLiteralInput`
 descriptors or a contiguous range of descriptors for more inputs. Construct
+span-backed sequences with `TestGraphLiteralInput(ticks)`. Construct
 descriptors from temporary values in the `test_graph` call so their sources and
 nested initializer lists remain alive throughout evaluation.
+
+Result capture supports `TS`, `TSL`, `TSS`, `TSD`, and `TSB`, including nested
+collections. A result owns the serialized deltas in a shared buffer chain.
+Built-in comparisons read borrowed payloads. Indexed scalar access returns an
+owning `ScalarValue<T>` copy in `std::optional`; call `.view()` to use the
+scalar interface. The copied value can outlive the result.
+
+Top-level reference outputs use ordinary reference-to-value binding. Capture
+rejects reference-valued collection items. Provider-defined time series types
+use their registered `TimeSeriesTickOperations` write and discard handlers.
+Register `TickLiteralComparison` by semantic time-series type to compare their
+literal payloads. The framework handles invalid ticks before calling the
+comparison handler. A handler reads a valid payload from the supplied reader,
+advances past exactly one payload on success, and leaves encoded values intact.
+
+Scalar expectations use [scalar literal construction](scalar-api.md#literals),
+including provider handlers. Collection comparisons interpret removal
+instructions at their defined positions. Other bare and tagged
+[sentinels](scalar-api.md#sentinels) reach the scalar consumer or extension
+comparison handler unchanged.
+
+Compare collection output deltas with the same literal syntax used for inputs:
+
+```cpp
+auto identity = [](wp<TSD<string, TS<i64>>> input) { return input; };
+auto actual = test_graph(identity, {
+    {{"a", 10}, {"b", 20}},
+    {{"b", literal::REMOVE}},
+    literal::SKIP,
+});
+CHECK(actual.equals({
+    {{"a", 10}, {"b", 20}},
+    {{"b", literal::REMOVE}},
+    literal::SKIP,
+}));
+```
+
+Each expected tick describes the complete delta for that cycle. Set item order
+and collection entry order do not affect comparison. Use `literal::SKIP` for no
+publication, `{}` for a published empty collection delta, and `literal::INVALID`
+for invalidation. Scalar `equals<T>()` and indexed scalar access retain their
+existing `std::nullopt` behavior for skipped and invalidated cycles.
 
 `test_wiring` creates a `GraphWiring` and `WiringContext` for a `void` callable.
 Use it when the behavior under test ends during wiring and does not require
@@ -298,6 +339,10 @@ graph compilation or evaluation.
 - `test_graph` input sequencing through brace literals, typed ranges, and runtime-selected types;
   scalar construction, nested collection deltas, removal, skip, invalidation, and revalidation;
   explicit generic input types, cycle positions, services, profiling, and existing scalar input compatibility
+- `test_graph` output capture and literal comparison for scalar and nested collection deltas;
+  scalar ownership after graph destruction, complete delta comparison, entry order independence,
+  empty ticks, skipped cycles, invalidation, revalidation, and removal;
+  provider scalar expectations, extension comparison handlers, and sentinel identity and argument preservation
 - start, evaluation, and stop order
 - rejection of user lifecycle functions with time-series-resolved plain fields;
   invalidation placeholders, revalidation, and automatic state and dynamic-input cleanup

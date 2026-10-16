@@ -59,6 +59,7 @@ inline int copied_series_count{};
 inline int written_tick_count{};
 inline int replayed_tick_count{};
 inline int discarded_tick_count{};
+inline int test_graph_comparison_count{};
 
 struct ScalarTickState {
     int writes{};
@@ -1336,6 +1337,80 @@ TEST_CASE("tick write dispatch reaches provider-defined time series",
     CHECK(output_last_updated.valid());
     CHECK(output_last_updated.time() == output_time);
     CHECK(output_value.value == 17);
+}
+
+TEST_CASE("test_graph captures provider time series with registered literal comparison",
+          "[testing][evaluation][feature:test-graph][series:generic][declaration:concrete]") {
+    using Series = provider::Series<bg::i64>;
+    provider::register_default_tick_handlers();
+
+    auto comparison = bg::testing::TickLiteralComparison{
+        .compare = [](bg::util::buffer_reader &reader, const bg::TimeSeriesType &,
+                      const literal::TimeSeriesLiteral &expected) {
+            ++provider::test_graph_comparison_count;
+            const auto actual = reader.read_raw<bg::i64>();
+            auto memory = bg::allocator{};
+            const auto tagged = literal::TaggedLiteral::from(expected);
+            const auto &value = tagged && tagged->sentinel == literal::REMOVED ? tagged->argument : expected;
+            const auto wanted = bg::ScalarValue<bg::i64>::from_literal(value, memory);
+            return wanted.view().value() == actual;
+        }};
+    auto &comparison_dispatch = bg::TimeSeriesDispatch<bg::testing::TickLiteralComparison>::instance();
+    REQUIRE(comparison_dispatch.add(Series::type(), std::move(comparison)));
+
+    const auto publish = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<Series> output) {
+        if (*input == -1) {
+            output.invalidate();
+            return;
+        }
+        output.set(*input);
+    });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return publish(input); };
+    const auto ticks = std::array<bg::i64, 3>{17, -1, 31};
+    provider::written_tick_count = 0;
+    provider::discarded_tick_count = 0;
+    provider::test_graph_comparison_count = 0;
+
+    {
+        const auto result = bg::testing::test_graph(graph, ticks);
+        CHECK(result.equals({17, literal::INVALID, 31}));
+        CHECK(provider::test_graph_comparison_count == 2);
+        CHECK_FALSE(result.equals({17, literal::INVALID, 32}));
+        CHECK(provider::test_graph_comparison_count == 4);
+        CHECK(result.equals({17, literal::INVALID, 31}));
+        CHECK(provider::test_graph_comparison_count == 6);
+    }
+
+    CHECK(provider::written_tick_count == 2);
+    CHECK(provider::discarded_tick_count == 2);
+
+    const auto publish_dictionary = bg::node([](bg::In<bg::TS<bg::i64>> input,
+                                                bg::Out<bg::TSD<bg::i64, Series>> output) {
+        output[1].set(*input);
+    });
+    const auto dictionary_graph = [&](bg::wp<bg::TS<bg::i64>> input) { return publish_dictionary(input); };
+    const auto dictionary_ticks = std::array<bg::i64, 1>{17};
+    provider::test_graph_comparison_count = 0;
+    const auto dictionary_result = bg::testing::test_graph(dictionary_graph, dictionary_ticks);
+    CHECK(dictionary_result.equals({{{1, literal::REMOVED(17)}}}));
+    CHECK(provider::test_graph_comparison_count == 1);
+}
+
+TEST_CASE("test_graph compares provider scalar values in nested time-series inputs",
+          "[testing][evaluation][feature:test-graph][series:generic][series:tsd][scalar:opaque]") {
+    using Value = test_scalar_provider::value;
+    REQUIRE(provider::register_scalar_literal_handlers());
+    REQUIRE(provider::register_provider_scalar_buffer_handlers());
+
+    const auto identity = [](bg::wp<> input) { return bg::wp<>{input}; };
+    const auto series = bg::testing::test_graph(
+        identity, bg::testing::input<bg::TS<Value>>({{7}, {9}}));
+
+    const auto dictionary = bg::testing::test_graph(
+        identity, bg::testing::input<bg::TSD<bg::i64, bg::TS<Value>>>({{{1, {7}}}, {{1, {9}}}}));
+
+    CHECK(series.equals({{7}, {9}}));
+    CHECK(dictionary.equals({{{1, {7}}}, {{1, {9}}}}));
 }
 
 TEST_CASE("a provider i64 tick uses a nine-byte record",

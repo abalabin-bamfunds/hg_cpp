@@ -109,8 +109,8 @@ TEST_CASE("floating division preserves signed zero",
     const auto result = testing::test_graph(divide, std::array{-7.0, -0.0, 0.0}, std::array{2.0, 2.0, -2.0});
 
     CHECK(result.equals<double>({-3.5, -0.0, -0.0}));
-    CHECK(std::signbit(scalar_cast<double>(*result[1]).value()));
-    CHECK(std::signbit(scalar_cast<double>(*result[2]).value()));
+    CHECK(std::signbit(scalar_cast<double>(result[1]->view()).value()));
+    CHECK(std::signbit(scalar_cast<double>(result[2]->view()).value()));
 }
 
 TEST_CASE("integer division converts its operands to binary64",
@@ -145,7 +145,7 @@ TEST_CASE("integer division converts its operands to binary64",
     CHECK(result.equals<double>({1.0, 1.0 + std::ldexp(1.0, -51), 3002399751580330.5,
                                  std::ldexp(1.0, 54), std::ldexp(1.0, 63), std::ldexp(1.0, 63),
                                  std::ldexp(1.0, -63), -0.0, 0.03125000000000001}));
-    CHECK(std::signbit(scalar_cast<double>(*result[7]).value()));
+    CHECK(std::signbit(scalar_cast<double>(result[7]->view()).value()));
 }
 
 TEST_CASE("floating floor division preserves Python quotient and modulo rules",
@@ -200,33 +200,33 @@ TEST_CASE("round uses numeric scaling and ties-to-even",
         round_value, std::array{1.25, -1.25},
         std::array<i64, 2>{std::numeric_limits<i64>::max(), std::numeric_limits<i64>::min()});
     REQUIRE(largest_digits.size() == 2);
-    CHECK(scalar_cast<double>(*largest_digits[0]).value() == 1.25);
-    CHECK(scalar_cast<double>(*largest_digits[1]).value() == 0.0);
-    CHECK(std::signbit(scalar_cast<double>(*largest_digits[1]).value()));
+    CHECK(scalar_cast<double>(largest_digits[0]->view()).value() == 1.25);
+    CHECK(scalar_cast<double>(largest_digits[1]->view()).value() == 0.0);
+    CHECK(std::signbit(scalar_cast<double>(largest_digits[1]->view()).value()));
 
     const auto infinity = std::numeric_limits<double>::infinity();
     const auto nonfinite = testing::test_graph(round_value, std::array{infinity, -infinity,
                                                                        std::numeric_limits<double>::quiet_NaN()},
                                                std::array<i64, 3>{2, -1, 0});
     REQUIRE(nonfinite.size() == 3);
-    CHECK(std::isinf(scalar_cast<double>(*nonfinite[0]).value()));
-    CHECK(std::isinf(scalar_cast<double>(*nonfinite[1]).value()));
-    CHECK(std::isnan(scalar_cast<double>(*nonfinite[2]).value()));
+    CHECK(std::isinf(scalar_cast<double>(nonfinite[0]->view()).value()));
+    CHECK(std::isinf(scalar_cast<double>(nonfinite[1]->view()).value()));
+    CHECK(std::isnan(scalar_cast<double>(nonfinite[2]->view()).value()));
 
     const auto signed_zero = testing::test_graph(round_value, std::array{-0.0, -0.1, 0.1},
                                                   std::array<i64, 3>{2, 0, 0});
     REQUIRE(signed_zero.size() == 3);
-    CHECK(std::signbit(scalar_cast<double>(*signed_zero[0]).value()));
-    CHECK(std::signbit(scalar_cast<double>(*signed_zero[1]).value()));
-    CHECK_FALSE(std::signbit(scalar_cast<double>(*signed_zero[2]).value()));
+    CHECK(std::signbit(scalar_cast<double>(signed_zero[0]->view()).value()));
+    CHECK(std::signbit(scalar_cast<double>(signed_zero[1]->view()).value()));
+    CHECK_FALSE(std::signbit(scalar_cast<double>(signed_zero[2]->view()).value()));
 
     const auto subnormal = std::numeric_limits<double>::denorm_min();
     const auto high_precision = testing::test_graph(round_value, std::array{1.23e-310, subnormal, subnormal},
                                                      std::array<i64, 3>{310, 323, 324});
     REQUIRE(high_precision.size() == 3);
-    CHECK(scalar_cast<double>(*high_precision[0]).value() == 1e-310);
-    CHECK(scalar_cast<double>(*high_precision[1]).value() == 0.0);
-    CHECK(scalar_cast<double>(*high_precision[2]).value() == subnormal);
+    CHECK(scalar_cast<double>(high_precision[0]->view()).value() == 1e-310);
+    CHECK(scalar_cast<double>(high_precision[1]->view()).value() == 0.0);
+    CHECK(scalar_cast<double>(high_precision[2]->view()).value() == subnormal);
 
     const auto largest_value = std::numeric_limits<double>::max();
     CHECK(testing::test_graph(round_value, std::array{largest_value}, std::array<i64, 1>{308})

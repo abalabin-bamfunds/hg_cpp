@@ -239,7 +239,7 @@ TEST_CASE("a hierarchical time series output accepts a derived scalar representa
 
     REQUIRE(result.has_value());
     CHECK(&result->type() == &equity.type());
-    CHECK(bg::scalar_cast<bg::symbol>((*result)[0]).value().text() == "ABC");
+    CHECK(bg::scalar_cast<bg::symbol>(result->view()[0]).value().text() == "ABC");
 }
 
 TEST_CASE("a generic bundle node forwards a derived runtime scalar through its base schema",
@@ -386,15 +386,19 @@ TEST_CASE("a time series output copies a covariant scalar collection representat
     const auto actual_list = bg::testing::test_graph(list_graph, std::array{1});
     const auto actual_dictionary = bg::testing::test_graph(dictionary_graph, std::array{1});
 
-    REQUIRE(actual_list[0].has_value());
-    REQUIRE(actual_list[0]->size() == 1);
-    CHECK(&(*actual_list[0])[0].type() == &equity.type());
-    CHECK(bg::scalar_cast<bg::symbol>((*actual_list[0])[0][0]).value().text() == "ABC");
+    const auto list_result = actual_list[0];
+    REQUIRE(list_result.has_value());
+    const auto list_value = list_result->view();
+    REQUIRE(list_value.size() == 1);
+    CHECK(&list_value[0].type() == &equity.type());
+    CHECK(bg::scalar_cast<bg::symbol>(list_value[0][0]).value().text() == "ABC");
 
-    REQUIRE(actual_dictionary[0].has_value());
-    REQUIRE(actual_dictionary[0]->size() == 1);
-    CHECK(&actual_dictionary[0]->at(1).type() == &equity.type());
-    const auto stored_equity = bg::scalar_cast<bg::Bundle<Equity>>(actual_dictionary[0]->at(1));
+    const auto dictionary_result = actual_dictionary[0];
+    REQUIRE(dictionary_result.has_value());
+    const auto dictionary_value = dictionary_result->view();
+    REQUIRE(dictionary_value.size() == 1);
+    CHECK(&dictionary_value.at(1).type() == &equity.type());
+    const auto stored_equity = bg::scalar_cast<bg::Bundle<Equity>>(dictionary_value.at(1));
     CHECK(bg::scalar_cast<bg::i64>(stored_equity[1]).value() == 100);
 }
 

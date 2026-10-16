@@ -593,7 +593,7 @@ TEST_CASE("a map inner graph reports timed work through the map owner",
     CHECK_FALSE(actual[0]);
     CHECK_FALSE(actual[1]);
     REQUIRE(actual[2]);
-    CHECK(actual[2]->value() == 5);
+    CHECK(actual[2]->view().value() == 5);
 }
 
 TEST_CASE("map schedules the next scheduled time after one inner graph becomes due",
@@ -614,7 +614,7 @@ TEST_CASE("map schedules the next scheduled time after one inner graph becomes d
 
     CHECK(VariableDelay::evaluations == std::vector{2, 4});
     REQUIRE(actual[actual.size() - 1]);
-    CHECK(actual[actual.size() - 1]->value() == 4);
+    CHECK(actual[actual.size() - 1]->view().value() == 4);
 }
 
 TEST_CASE("a map consumes and produces TSD references across two nested graph boundaries",

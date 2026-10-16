@@ -10,9 +10,9 @@
 #include <bg/graph/wiring_template.hpp>
 #include <bg/node.hpp>
 #include <bg/node/runtime_signature_node_template.hpp>
+#include <bg/scalar/literal.hpp>
 #include <bg/scalar/canonical.hpp>
 #include <bg/scalar/list/type.hpp>
-#include <bg/scalar/opaque.hpp>
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/service_catalogue.hpp>
@@ -20,8 +20,11 @@
 #include <bg/graph_run_options.hpp>
 #include <bg/testing/test_graph_input.hpp>
 #include <bg/testing/test_graph_literal_input.hpp>
+#include <bg/testing/time_series_tick_comparison.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
+#include <bg/time_series/details/scalar_literal.hpp>
+#include <bg/time_series/tick_serializer.hpp>
 
 #include <algorithm>
 #include <array>
@@ -65,39 +68,112 @@ struct Source {
 };
 
 struct CapturedValues {
-    EvaluationTime start_time;
-    std::vector<std::optional<ScalarValue<>>> values;
-
-    void set(EvaluationTime time, Scalar<SCALAR> value) {
-        auto memory = allocator{};
-        at(time).emplace(value, memory);
-    }
-    void reset(EvaluationTime time) { at(time).reset(); }
-
   private:
-    std::optional<ScalarValue<>> &at(EvaluationTime time) {
-        const auto index = static_cast<std::size_t>((time - start_time).count());
-        if (index >= values.size()) {
-            values.resize(index + 1);
+    EvaluationTime start_time;
+    util::buffer bytes;
+    std::unique_ptr<util::buffer_reader> tail;
+    const TimeSeriesType *type_{};
+
+  public:
+    explicit CapturedValues(EvaluationTime start_time)
+        : start_time{start_time}, bytes{util::buffer::chain(128)}, tail{std::make_unique<util::buffer_reader>(bytes)} {}
+
+    CapturedValues(CapturedValues &&other) noexcept
+        : start_time{other.start_time}, bytes{std::move(other.bytes)}, tail{std::move(other.tail)},
+          type_{std::exchange(other.type_, nullptr)}, records{std::move(other.records)} {}
+
+    CapturedValues(const CapturedValues &) = delete;
+    CapturedValues &operator=(const CapturedValues &) = delete;
+    CapturedValues &operator=(CapturedValues &&) = delete;
+
+    ~CapturedValues() {
+        if (type_ != nullptr) {
+            TimeSeriesTickReader reader{std::move(bytes), *type_};
+        }
+    }
+
+    void set_type(const TimeSeriesType &type) noexcept { type_ = &type; }
+    const TimeSeriesType *type() const noexcept { return type_; }
+
+    util::buffer begin_tick() const { return tail->current_block(); }
+
+    void set(EvaluationTime time, util::buffer bytes) {
+        for (;;) {
+            const auto readable = tail->readable();
+            if (readable.empty()) {
+                break;
+            }
+            tail->consume(readable.size());
         }
 
-        return values[index];
-    }
-};
-
-struct Sink {
-    In<TS<SCALAR>> input;
-    Scalar<Opaque<CapturedValues *>> captured;
-
-    void evaluate(EvaluationContext *context) const {
-        captured.value()->set(context->evaluation_time(), input.value_view());
+        const auto index = position(time);
+        records[index].emplace(std::move(bytes));
     }
 
-    void on_invalidation(EvaluationContext *context) const { captured.value()->reset(context->evaluation_time()); }
+    std::vector<std::optional<util::buffer>> records;
+
+  private:
+    std::size_t position(EvaluationTime time) {
+        const auto index = static_cast<std::size_t>((time - start_time).count());
+        if (index >= records.size()) {
+            records.resize(index + 1);
+        }
+
+        return index;
+    }
 };
 
 inline const auto source = node<Source>();
-inline const auto sink = node<Sink>();
+
+class RuntimeSink {
+  public:
+    struct CompiledData {
+        CapturedValues *captured;
+    };
+
+    using compiled_data_type = CompiledData;
+    using Invocation = NodeInvocation<CompiledData>;
+
+    RuntimeSink(const TimeSeriesType &input_type, CapturedValues &captured)
+        : captured_{&captured},
+          signature_{util::symbol{"test_sink"}, {{.name = util::symbol{"input"}, .type = &input_type}}} {}
+
+    const Signature &signature() const noexcept { return signature_; }
+    CompiledData compile(const ResolvedSignature &, allocator &) const noexcept { return {captured_}; }
+
+    static void evaluate(Invocation invocation) {
+        capture(invocation);
+    }
+
+    static void on_invalidation(Invocation invocation) { capture(invocation); }
+
+  private:
+    static void capture(Invocation invocation) {
+        const auto input = invocation.input<In<TS_T>>(0);
+        auto bytes = invocation.compiled_data().captured->begin_tick();
+        auto writer = TimeSeriesTickWriter{bytes};
+        if (writer.write(input, invocation.context().evaluation_time())) {
+            invocation.compiled_data().captured->set(invocation.context().evaluation_time(), std::move(bytes));
+        }
+    }
+
+    CapturedValues *captured_;
+    Signature signature_;
+};
+
+inline void capture_output(WiringPoint output, CapturedValues &captured) {
+    const auto &input_type = output.type().dereferenced_type();
+    if (input_type.contains_reference()) {
+        throw std::invalid_argument{"test_graph output capture does not support nested time-series references"};
+    }
+
+    captured.set_type(input_type);
+    auto definition = RuntimeSink{input_type, captured};
+    auto &wiring = WiringContext::current().wiring();
+    const auto &sink_template = wiring.own_node_template(
+        std::make_unique<RuntimeSignatureNodeTemplate<RuntimeSink>>(std::move(definition)));
+    static_cast<const WiringTemplate &>(sink_template)(output);
+}
 
 class RuntimeSource {
   public:
@@ -298,8 +374,268 @@ inline auto finish_test_graph(GraphWiring &wiring, CapturedValues &captured, Eva
         run(global_state);
     }
 
-    return std::move(captured.values);
+    return std::move(captured);
 }
+
+class LiteralMatcher {
+  public:
+    // Compare one nested child tick and advance past its complete payload on success.
+    static bool matches_child(util::buffer_reader &reader, const TimeSeriesType &type,
+                              const literal::TimeSeriesLiteral &expected) {
+        try {
+            const auto header = bg::details::TickHeader::read(reader);
+            return header.operation == bg::details::TickOperation::tick &&
+                   matches_payload(reader, type, header.valid, expected);
+        } catch (const std::invalid_argument &) {
+            return false;
+        } catch (const std::out_of_range &) {
+            return false;
+        }
+    }
+
+    static bool matches_tick(const std::optional<util::buffer> &actual, const TimeSeriesType *type,
+                             const literal::TimeSeriesLiteral &expected) {
+        if (is_sentinel(expected, literal::SKIP)) {
+            return !actual;
+        }
+        if (!actual || type == nullptr) {
+            return false;
+        }
+        auto reader = util::buffer_reader{*actual};
+        return matches_child(reader, *type, expected);
+    }
+
+  private:
+    static bool is_sentinel(const literal::ScalarLiteral &value, const literal::Sentinel &expected) {
+        const auto *sentinel = literal::Sentinel::from(value);
+        return sentinel != nullptr && *sentinel == expected;
+    }
+
+    static bool matches_payload(util::buffer_reader &reader, const TimeSeriesType &type, bool valid,
+                                const literal::TimeSeriesLiteral &expected) {
+        if (is_sentinel(expected, literal::INVALID)) {
+            return !valid;
+        }
+        if (!valid || is_sentinel(expected, literal::SKIP)) {
+            return false;
+        }
+
+        return type.visit(
+            [&](const TimeSeriesValueType *value_type) { return matches_scalar(reader, *value_type, expected); },
+            [&](const TimeSeriesListType *list_type) { return matches_list(reader, *list_type, expected); },
+            [&](const TimeSeriesSetType *set_type) { return matches_set(reader, *set_type, expected); },
+            [&](const TimeSeriesDictionaryType *dictionary_type) {
+                return matches_dictionary(reader, *dictionary_type, expected);
+            },
+            [&](const TimeSeriesBundleType *bundle_type) {
+                return matches_bundle(reader, *bundle_type, expected);
+            },
+            [&] {
+                const auto *operations =
+                    TimeSeriesDispatch<TickLiteralComparison>::instance().find(type);
+                return operations != nullptr && operations->compare && operations->compare(reader, type, expected);
+            }).value();
+    }
+
+    static bool matches_scalar(util::buffer_reader &reader, const TimeSeriesValueType &type,
+                               const literal::TimeSeriesLiteral &expected) {
+        auto matched = false;
+        const auto read = bg::details::TimeSeriesTickScalarRead::visit(
+            reader, type.value_type(), [&](Scalar<> actual) {
+                matched = matches_scalar_literal(actual, expected);
+            });
+        return read && matched;
+    }
+
+    static bool matches_list(util::buffer_reader &reader, const TimeSeriesListType &type,
+                             const literal::TimeSeriesLiteral &expected_literal) {
+        return matches_indexed(reader, type, expected_literal, "a TSL update entry requires an index and a value",
+                               [&](const literal::TimeSeriesLiteral &selector, item_id_t index) {
+                                   return bg::details::scalar_literal::list_index(selector) == index;
+                               });
+    }
+
+    static bool matches_set(util::buffer_reader &reader, const TimeSeriesSetType &type,
+                            const literal::TimeSeriesLiteral &expected_literal) {
+        const auto expected = bg::details::scalar_literal::sequence(expected_literal);
+
+        auto matched = std::vector<bool>(expected.size());
+        mark_skips(expected, matched, [](const literal::TimeSeriesLiteral &entry) {
+            return is_sentinel(entry, literal::SKIP);
+        });
+        for (;;) {
+            const auto header = bg::details::TickHeader::read(reader);
+            if (header.operation == bg::details::TickOperation::end) {
+                return all_expected_matched(matched);
+            }
+            if (header.operation != bg::details::TickOperation::add &&
+                header.operation != bg::details::TickOperation::remove) {
+                return false;
+            }
+
+            auto candidate = std::optional<std::size_t>{};
+            auto candidate_count = std::size_t{};
+            const auto read = bg::details::TimeSeriesTickScalarRead::visit(
+                reader, type.item_type(), [&](Scalar<> actual_key) {
+                    for (auto expected_index = std::size_t{}; expected_index < expected.size(); ++expected_index) {
+                        const auto &value = expected[expected_index];
+                        if (is_sentinel(value, literal::SKIP)) {
+                            continue;
+                        }
+
+                        const auto removed = literal::TaggedLiteral::from(value);
+                        const auto is_removal = removed && removed->sentinel == literal::REMOVED;
+                        const auto expected_operation = is_removal ? bg::details::TickOperation::remove
+                                                                   : bg::details::TickOperation::add;
+                        if (expected_operation != header.operation) {
+                            continue;
+                        }
+
+                        const auto &key_literal = is_removal ? removed->argument : value;
+                        if (matches_scalar_literal(actual_key, key_literal)) {
+                            candidate = expected_index;
+                            ++candidate_count;
+                        }
+                    }
+                });
+            if (!read || candidate_count != 1 || matched[*candidate]) {
+                return false;
+            }
+            matched[*candidate] = true;
+        }
+    }
+
+    static bool matches_dictionary(util::buffer_reader &reader, const TimeSeriesDictionaryType &type,
+                                   const literal::TimeSeriesLiteral &expected_literal) {
+        const auto expected = bg::details::scalar_literal::sequence(expected_literal);
+
+        auto matched = std::vector<bool>(expected.size());
+        mark_skips(expected, matched, [](const literal::TimeSeriesLiteral &entry) {
+            const auto pair = bg::details::scalar_literal::pair(
+                entry, "a TSD update entry requires a key and a value");
+            return is_sentinel(*pair.second, literal::SKIP);
+        });
+        for (;;) {
+            const auto header = bg::details::TickHeader::read(reader);
+            if (header.operation == bg::details::TickOperation::end) {
+                return all_expected_matched(matched);
+            }
+            if (header.operation != bg::details::TickOperation::add &&
+                header.operation != bg::details::TickOperation::tick &&
+                header.operation != bg::details::TickOperation::remove) {
+                return false;
+            }
+
+            auto candidate = std::optional<std::size_t>{};
+            auto candidate_count = std::size_t{};
+            const auto read = bg::details::TimeSeriesTickScalarRead::visit(
+                reader, type.key_type(), [&](Scalar<> actual_key) {
+                    for (auto expected_index = std::size_t{}; expected_index < expected.size(); ++expected_index) {
+                        const auto pair = bg::details::scalar_literal::pair(
+                            expected[expected_index], "a TSD update entry requires a key and a value");
+                        if (is_sentinel(*pair.second, literal::SKIP)) {
+                            continue;
+                        }
+                        const auto expected_removal = is_sentinel(*pair.second, literal::REMOVE);
+                        if (expected_removal != (header.operation == bg::details::TickOperation::remove)) {
+                            continue;
+                        }
+
+                        if (matches_scalar_literal(actual_key, *pair.first)) {
+                            candidate = expected_index;
+                            ++candidate_count;
+                        }
+                    }
+                });
+            if (!read || candidate_count != 1 || matched[*candidate]) {
+                return false;
+            }
+
+            matched[*candidate] = true;
+            const auto pair = bg::details::scalar_literal::pair(
+                expected[*candidate], "a TSD update entry requires a key and a value");
+            if (header.operation != bg::details::TickOperation::remove &&
+                !matches_payload(reader, type.value_type(), header.valid, *pair.second)) {
+                return false;
+            }
+        }
+    }
+
+    static bool matches_bundle(util::buffer_reader &reader, const TimeSeriesBundleType &type,
+                               const literal::TimeSeriesLiteral &expected_literal) {
+        return matches_indexed(reader, type, expected_literal,
+                               "a TSB update entry requires a field name and a value",
+                               [&](const literal::TimeSeriesLiteral &selector, item_id_t index) {
+                                   return bg::details::scalar_literal::field_name(selector) ==
+                                          type.item_name(index).text();
+                               });
+    }
+
+    template <typename SelectorMatches>
+    static bool matches_indexed(util::buffer_reader &reader, const FixedItemTimeSeriesType &type,
+                                const literal::TimeSeriesLiteral &expected_literal, const char *pair_error,
+                                SelectorMatches &&selector_matches) {
+        const auto expected = bg::details::scalar_literal::sequence(expected_literal);
+
+        auto matched = std::vector<bool>(expected.size());
+        mark_skips(expected, matched, [pair_error](const literal::TimeSeriesLiteral &entry) {
+            const auto pair = bg::details::scalar_literal::pair(
+                entry, pair_error);
+            return is_sentinel(*pair.second, literal::SKIP);
+        });
+        for (;;) {
+            const auto header = bg::details::TickHeader::read(reader);
+            if (header.operation == bg::details::TickOperation::end) {
+                return all_expected_matched(matched);
+            }
+            if (header.operation != bg::details::TickOperation::tick) {
+                return false;
+            }
+
+            const auto index = reader.read_raw<item_id_t>();
+            auto candidate = std::optional<std::size_t>{};
+            const literal::TimeSeriesLiteral *child_literal{};
+            for (auto expected_index = std::size_t{}; expected_index < expected.size(); ++expected_index) {
+                const auto pair = bg::details::scalar_literal::pair(
+                    expected[expected_index], pair_error);
+                if (is_sentinel(*pair.second, literal::SKIP) ||
+                    !std::invoke(selector_matches, *pair.first, index)) {
+                    continue;
+                }
+                if (candidate) {
+                    return false;
+                }
+                candidate = expected_index;
+                child_literal = pair.second;
+            }
+            if (!candidate || matched[*candidate]) {
+                return false;
+            }
+            matched[*candidate] = true;
+            if (!matches_payload(reader, type.item_type(index), header.valid, *child_literal)) {
+                return false;
+            }
+        }
+    }
+
+    static bool matches_scalar_literal(Scalar<> actual, const literal::ScalarLiteral &expected) {
+        auto memory = allocator{};
+        const auto wanted = ScalarValue<>::from_literal(actual.runtime_type(), expected, memory);
+        return actual.equals(wanted);
+    }
+
+    template <typename Predicate>
+    static void mark_skips(std::span<const literal::TimeSeriesLiteral> expected, std::vector<bool> &matched,
+                           Predicate &&is_skip) {
+        for (auto index = std::size_t{}; index < expected.size(); ++index) {
+            matched[index] = std::invoke(is_skip, expected[index]);
+        }
+    }
+
+    static bool all_expected_matched(const std::vector<bool> &matched) {
+        return std::ranges::all_of(matched, [](bool value) { return value; });
+    }
+};
 
 inline auto literal_runtime_type(const TestGraphLiteralInput &input, const Signature &signature,
                                 std::size_t parameter_index) -> const TimeSeriesRuntimeType & {
@@ -361,12 +697,12 @@ template <typename Function, typename Inputs, std::size_t... Index>
                                          std::index_sequence<Index...>) {
     using FunctionInfo = test_function<Function>;
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
-    auto captured = CapturedValues{.start_time = start_time, .values = {}};
+    auto captured = CapturedValues{start_time};
     auto cycle_count = std::size_t{1};
     for (const auto &input : inputs) {
         cycle_count = std::max(cycle_count, input.ticks.size());
     }
-    captured.values.resize(cycle_count);
+    captured.records.resize(cycle_count);
 
     auto wiring = GraphWiring{};
     {
@@ -377,7 +713,7 @@ template <typename Function, typename Inputs, std::size_t... Index>
                                 start_time)...};
         const auto output = std::invoke(
             function, typename FunctionInfo::template argument<Index>{sources[Index]}...);
-        sink(output, ScalarValue<Opaque<CapturedValues *>>{&captured});
+        capture_output(output, captured);
     }
 
     return finish_test_graph(wiring, captured, start_time, options);
@@ -393,12 +729,12 @@ inline auto run_template_literals(const WiringTemplate &tested, const GraphRunOp
     }
 
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
-    auto captured = CapturedValues{.start_time = start_time, .values = {}};
+    auto captured = CapturedValues{start_time};
     auto cycle_count = std::size_t{1};
     for (const auto &input : inputs) {
         cycle_count = std::max(cycle_count, input.ticks.size());
     }
-    captured.values.resize(cycle_count);
+    captured.records.resize(cycle_count);
 
     auto wiring = GraphWiring{};
     {
@@ -412,7 +748,7 @@ inline auto run_template_literals(const WiringTemplate &tested, const GraphRunOp
 
         const auto output = tested(std::span<const WiringPoint>{sources});
         if (output) {
-            sink(*output, ScalarValue<Opaque<CapturedValues *>>{&captured});
+            capture_output(*output, captured);
         }
     }
 
@@ -425,8 +761,8 @@ template <typename Function, typename Inputs, std::size_t... Index>
                                 std::index_sequence<Index...>) {
     using FunctionInfo = test_function<Function>;
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
-    auto captured = CapturedValues{.start_time = start_time, .values = {}};
-    captured.values.resize(std::max({std::size_t{1}, std::ranges::size(std::get<Index>(inputs))...}));
+    auto captured = CapturedValues{start_time};
+    captured.records.resize(std::max({std::size_t{1}, std::ranges::size(std::get<Index>(inputs))...}));
     auto wiring = GraphWiring{};
 
     {
@@ -435,7 +771,7 @@ template <typename Function, typename Inputs, std::size_t... Index>
             wire_source<typename FunctionInfo::template input_scalar<Index>>(std::get<Index>(inputs), start_time)...};
         const auto output =
             std::invoke(function, typename FunctionInfo::template argument<Index>{std::get<Index>(sources)}...);
-        sink(output, ScalarValue<Opaque<CapturedValues *>>{&captured});
+        capture_output(output, captured);
     }
 
     return finish_test_graph(wiring, captured, start_time, options);
@@ -445,8 +781,8 @@ template <std::ranges::contiguous_range... Inputs>
 [[nodiscard]] auto run_template(const WiringTemplate &tested, const GraphRunOptions &options,
                                 const Inputs &...inputs) {
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
-    auto captured = CapturedValues{.start_time = start_time, .values = {}};
-    captured.values.resize(std::max({std::size_t{1}, std::ranges::size(inputs)...}));
+    auto captured = CapturedValues{start_time};
+    captured.records.resize(std::max({std::size_t{1}, std::ranges::size(inputs)...}));
     auto wiring = GraphWiring{};
 
     {
@@ -456,7 +792,7 @@ template <std::ranges::contiguous_range... Inputs>
         const auto output = tested(std::span<const WiringPoint>{sources});
 
         if (output) {
-            sink(*output, ScalarValue<Opaque<CapturedValues *>>{&captured});
+            capture_output(*output, captured);
         }
     }
 
@@ -466,7 +802,7 @@ template <std::ranges::contiguous_range... Inputs>
 [[nodiscard]] inline auto run_runtime_template(const WiringTemplate &tested, const GraphRunOptions &options,
                                                std::span<const TestGraphInput> inputs) {
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
-    auto captured = CapturedValues{.start_time = start_time, .values = {}};
+    auto captured = CapturedValues{start_time};
     auto cycle_count = std::size_t{1};
     auto wiring = GraphWiring{};
 
@@ -489,11 +825,11 @@ template <std::ranges::contiguous_range... Inputs>
 
         const auto output = tested(std::span<const WiringPoint>{sources});
         if (output) {
-            sink(*output, ScalarValue<Opaque<CapturedValues *>>{&captured});
+            capture_output(*output, captured);
         }
     }
 
-    captured.values.resize(cycle_count);
+    captured.records.resize(cycle_count);
 
     return finish_test_graph(wiring, captured, start_time, options);
 }

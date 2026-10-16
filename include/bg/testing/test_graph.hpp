@@ -55,23 +55,25 @@ inline constexpr bool legacy_scalar_test_input = [] {
 
 template <typename T = void> class TestGraphResult {
   public:
-    explicit TestGraphResult(std::vector<std::optional<ScalarValue<>>> values) : values_{std::move(values)} {}
+    explicit TestGraphResult(details::CapturedValues captured) : captured_{std::move(captured)} {}
 
-    std::size_t size() const noexcept { return values_.size(); }
+    std::size_t size() const noexcept { return captured_.records.size(); }
 
     auto operator[](std::size_t index) const {
-        if (!values_[index]) {
-            if constexpr (std::same_as<T, void>) {
-                return std::optional<Scalar<>>{};
-            } else {
-                return std::optional<Scalar<T>>{};
-            }
-        }
-
         if constexpr (std::same_as<T, void>) {
-            return std::optional{values_[index]->view()};
+            auto value = std::optional<ScalarValue<>>{};
+            visit_scalar(index, [&](Scalar<> actual) {
+                auto memory = allocator{};
+                value.emplace(actual, memory);
+            });
+            return value;
         } else {
-            return std::optional{scalar_cast<T>(*values_[index])};
+            auto value = std::optional<ScalarValue<T>>{};
+            visit_scalar(index, [&](Scalar<> actual) {
+                auto memory = allocator{};
+                value.emplace(scalar_cast<T>(actual), memory);
+            });
+            return value;
         }
     }
 
@@ -80,24 +82,24 @@ template <typename T = void> class TestGraphResult {
     bool equals(
         std::initializer_list<std::optional<std::remove_cvref_t<typename bg::scalar_storage_traits<Value>::value_type>>>
             expected) const {
-        if (values_.size() != expected.size()) {
+        if (size() != expected.size()) {
             return false;
         }
 
-        auto actual = values_.begin();
-        for (const auto &value : expected) {
-            if (actual->has_value() != value.has_value()) {
+        for (auto index = std::size_t{}; index < expected.size(); ++index) {
+            const auto &value = *(expected.begin() + static_cast<std::ptrdiff_t>(index));
+            auto matched = false;
+            const auto present = visit_scalar(index, [&](Scalar<> actual) {
+                if (!value) {
+                    return;
+                }
+                const auto actual_scalar = scalar_cast<Value>(actual);
+                decltype(auto) actual_value = actual_scalar.value();
+                matched = scalar_storage_traits<Value>::equals(actual_value, *value);
+            });
+            if (present != value.has_value() || (value && !matched)) {
                 return false;
             }
-            if (value) {
-                const auto actual_scalar = scalar_cast<Value>(**actual);
-                decltype(auto) actual_value = actual_scalar.value();
-                if (!scalar_storage_traits<Value>::equals(actual_value, *value)) {
-                    return false;
-                }
-            }
-
-            ++actual;
         }
 
         return true;
@@ -111,8 +113,59 @@ template <typename T = void> class TestGraphResult {
         return equals(expected);
     }
 
+    bool equals(std::initializer_list<literal::TimeSeriesLiteral> expected) const
+        requires std::same_as<T, void>
+    {
+        if (size() != expected.size()) {
+            return false;
+        }
+        for (auto index = std::size_t{}; index < size(); ++index) {
+            const auto &actual = captured_.records[index];
+            const auto &wanted = *(expected.begin() + static_cast<std::ptrdiff_t>(index));
+            if (!details::LiteralMatcher::matches_tick(actual, captured_.type(), wanted)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    bool operator==(std::initializer_list<literal::TimeSeriesLiteral> expected) const
+        requires std::same_as<T, void>
+    {
+        return equals(expected);
+    }
+
   private:
-    std::vector<std::optional<ScalarValue<>>> values_;
+    template <typename Function> bool visit_scalar(std::size_t index, Function &&function) const {
+        const auto &record = captured_.records[index];
+        if (!record) {
+            return false;
+        }
+
+        auto reader = util::buffer_reader{*record};
+        const auto header = bg::details::TickHeader::read(reader);
+        if (header.operation != bg::details::TickOperation::tick) {
+            throw std::invalid_argument{"test_graph result tick does not start with a tick header"};
+        }
+        if (!header.valid) {
+            return false;
+        }
+
+        const auto *type = captured_.type();
+        if (type == nullptr) {
+            throw std::logic_error{"test_graph result has captured bytes without a time-series type"};
+        }
+
+        const auto *value_type = type_cast<TimeSeriesValueType>(type);
+        if (value_type == nullptr) {
+            throw std::invalid_argument{"test_graph result tick is a collection"};
+        }
+        return bg::details::TimeSeriesTickScalarRead::visit(reader, value_type->value_type(),
+                                                            std::forward<Function>(function));
+    }
+
+    details::CapturedValues captured_;
 };
 
 namespace details {
