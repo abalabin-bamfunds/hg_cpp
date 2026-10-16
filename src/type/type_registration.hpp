@@ -17,6 +17,7 @@ class SemanticTypeRegistration {
     SemanticTypeRegistration &operator=(const SemanticTypeRegistration &) = delete;
 
     static SemanticTypeRegistration *current() noexcept;
+    bool is_committed() const noexcept { return committed_; }
 
     void on_rollback(std::function<void()> rollback);
     void on_finalize(std::function<bool()> finalize);

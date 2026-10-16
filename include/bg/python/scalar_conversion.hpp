@@ -2,6 +2,7 @@
 
 #include <bg/allocator.hpp>
 #include <bg/python/export.hpp>
+#include <bg/type/schema.hpp>
 #include <bg/scalar/dispatch.hpp>
 #include <bg/scalar/scalar.hpp>
 #include <bg/scalar/value.hpp>
@@ -16,7 +17,6 @@ namespace bg::python {
 
 class CallbackLifetime;
 class PythonScalarConversions;
-
 using ScalarToPython = nanobind::object (*)(Scalar<>, const PythonScalarConversions &);
 using ScalarToPythonView = nanobind::object (*)(Scalar<>, const PythonScalarConversions &,
                                                 const std::shared_ptr<CallbackLifetime> &, std::uint64_t);
@@ -38,6 +38,8 @@ class BG_PYTHON_API PythonScalarConversions {
     [[nodiscard]] bool add(const ScalarRuntimeType &runtime_type, ScalarToPythonView conversion);
     [[nodiscard]] const ScalarType &add_python_type(nanobind::handle python_type);
     [[nodiscard]] bool add_python_type(nanobind::handle python_type, const ScalarType &type);
+    [[nodiscard]] const ScalarType &add_python_schema(nanobind::handle python_type, const bg::Schema &schema);
+    nanobind::object python_schema_class(const bg::Schema &schema) const;
     // Selects an exact runtime handler before a semantic-type handler. Other values use structural conversion.
     ScalarToPython to_python_handler(const ScalarRuntimeType &runtime_type) const noexcept;
     nanobind::object to_python(Scalar<> value) const;

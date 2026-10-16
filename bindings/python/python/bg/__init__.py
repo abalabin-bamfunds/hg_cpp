@@ -22,7 +22,8 @@ from ._bg import (
     _Type,
     _make_graph,
     _make_node,
-    _make_time_series_schema,
+    _make_schema,
+    _register_python_schema,
     _dict_scalar_type,
     _map,
     _mesh,
@@ -302,30 +303,105 @@ class TSD(TimeSeries, Generic[_SCALAR_T, _TIME_SERIES_T]):
         return _with_guarantee(time_series_type, guarantee[0] if guarantee else None)
 
 
-class TimeSeriesSchema:
-    """A named schema for a time-series bundle."""
+def _schema_constructor(field_names: tuple[str, ...], optional_fields: dict[str, bool]):
+    def initialize(self: Any, *args: Any, **kwargs: Any) -> None:
+        if len(args) > len(field_names):
+            raise TypeError(f"expected at most {len(field_names)} positional values, received {len(args)}")
 
-    _native_schema: Any
+        values = dict(zip(field_names, args))
+        for name, value in kwargs.items():
+            if name not in optional_fields:
+                raise TypeError(f"unexpected schema field {name!r}")
+            if name in values:
+                raise TypeError(f"schema field {name!r} received more than once")
+            values[name] = value
 
-    def __init_subclass__(cls) -> None:
-        super().__init_subclass__()
-        direct_annotations = cls.__dict__.get("__annotations__", {})
-        resolved_annotations = get_type_hints(cls, include_extras=True)
-        fields = [
-            (name, _native_type(resolved_annotations.get(name, annotation)))
-            for name, annotation in direct_annotations.items()
-            if name != "_native_schema"
-        ]
-        schema_bases = [
-            candidate
-            for candidate in cls.__bases__
-            if issubclass(candidate, TimeSeriesSchema) and hasattr(candidate, "_native_schema")
-        ]
-        if len(schema_bases) > 1:
-            raise TypeError("time-series schemas support one schema base")
-        base = schema_bases[0]._native_schema if schema_bases else None
-        qualified_name = f"{cls.__module__}.{cls.__qualname__}"
-        cls._native_schema = _make_time_series_schema(qualified_name, cls, base, fields)
+        for name in field_names:
+            if name in values:
+                continue
+            if optional_fields[name]:
+                values[name] = None
+                continue
+            raise TypeError(f"missing required schema field {name!r}")
+
+        for name in field_names:
+            setattr(self, name, values[name])
+
+    return initialize
+
+
+def schema(cls: type) -> type:
+    """Declare one scalar and time-series schema from an annotated class."""
+    schema_bases = [base for base in cls.__bases__ if base is not object]
+    if len(schema_bases) > 1:
+        raise TypeError("schemas support one schema base")
+    base = schema_bases[0] if schema_bases else None
+    if base is not None and "_native_schema" not in base.__dict__:
+        raise TypeError("a schema subclass requires a @schema base")
+
+    direct_annotations = cls.__dict__.get("__annotations__", {})
+    try:
+        resolved_annotations = get_type_hints(cls, include_extras=True, localns={cls.__name__: cls})
+    except NameError as error:
+        raise TypeError("schema field annotations must resolve when @schema runs") from error
+
+    fields = []
+    for name, annotation in direct_annotations.items():
+        resolved = resolved_annotations.get(name, annotation)
+        union_arguments = get_args(resolved)
+        if len(union_arguments) == 2 and type(None) in union_arguments:
+            recursive_type = next(value for value in union_arguments if value is not type(None))
+            if recursive_type is cls:
+                fields.append((name, None))
+                continue
+        if resolved is cls:
+            fields.append((name, Ellipsis))
+            continue
+
+        field_type = _native_type(resolved)
+        if isinstance(field_type, _ScalarAnnotation):
+            raise TypeError("schema fields cannot use Scalar[...] annotations")
+        fields.append((name, field_type))
+
+    name = f"{cls.__module__}.{cls.__qualname__}"
+    base_scalar = base._native_schema if base is not None else None
+    base_time_series = base._native_time_series_schema if base is not None else None
+    cls._native_schema, cls._native_time_series_schema = _make_schema(
+        name, base_scalar, base_time_series, fields
+    )
+
+    field_names = list(base._schema_field_names) if base is not None else []
+    optional_fields = dict(base._schema_optional_fields) if base is not None else {}
+    for field_name, field_type in fields:
+        if field_name not in field_names:
+            field_names.append(field_name)
+        optional_fields[field_name] = (
+            field_type is None or field_type.accepts_absent_scalar
+            if field_type is not Ellipsis
+            else False
+        )
+
+    cls._schema_field_names = tuple(field_names)
+    cls._schema_optional_fields = optional_fields
+    cls._bundle_compatible = (base is None or base._bundle_compatible) and all(
+        field_type is None or field_type is Ellipsis or not field_type.is_time_series
+        for _, field_type in fields
+    )
+    if cls._bundle_compatible:
+        cls._native_bundle_type = _register_python_schema(cls, cls._native_schema)
+
+    if "__init__" not in cls.__dict__:
+        cls.__init__ = _schema_constructor(cls._schema_field_names, optional_fields)
+    return cls
+
+
+class Bundle(Generic[_SCHEMA_T]):
+    """A hierarchical scalar type declared by ``@schema``."""
+
+    def __class_getitem__(cls, schema_type: type) -> Any:
+        if not isinstance(schema_type, type) or "_native_schema" not in schema_type.__dict__:
+            raise TypeError("Bundle[...] requires a class declared with @schema")
+        return _register_python_schema(schema_type, schema_type._native_schema)
 
 
 class TSB(TimeSeries, Generic[_SCHEMA_T]):
@@ -337,9 +413,9 @@ class TSB(TimeSeries, Generic[_SCHEMA_T]):
             if guarantee is not None:
                 raise ValueError("a time-series guarantee requires a concrete time-series type")
             return _with_guarantee(_variadic_time_series_bundle_type(), guarantee)
-        if not isinstance(schema, type) or not issubclass(schema, TimeSeriesSchema):
-            raise TypeError("TSB[...] requires a TimeSeriesSchema")
-        return _with_guarantee(_time_series_bundle_type(schema._native_schema), guarantee)
+        if not isinstance(schema, type) or "_native_time_series_schema" not in schema.__dict__:
+            raise TypeError("TSB[...] requires a class declared with @schema")
+        return _with_guarantee(_time_series_bundle_type(schema._native_time_series_schema), guarantee)
 
 
 class _TypeVariable:
@@ -808,6 +884,10 @@ def _native_type(annotation: Any) -> Any:
                 native_type = _with_time_series_guarantee(native_type, item)
         return native_type
     if isinstance(annotation, type):
+        if "_native_schema" in annotation.__dict__:
+            if not annotation._bundle_compatible:
+                raise TypeError("a scalar Bundle schema must contain only scalar fields")
+            return annotation._native_bundle_type
         return _scalar_type(annotation)
     if getattr(annotation, "__origin__", None) is dict:
         key_type, value_type = get_args(annotation)
@@ -935,6 +1015,7 @@ operators.switch_ = switch_
 __all__ = [
     "EvaluationClock",
     "EvaluationProfiler",
+    "Bundle",
     "Scheduler",
     "ScheduleHandle",
     "const_",
@@ -960,7 +1041,6 @@ __all__ = [
     "TSD",
     "TSL",
     "TSS",
-    "TimeSeriesSchema",
     "TimeSeries",
     "compute_node",
     "graph",
@@ -971,6 +1051,7 @@ __all__ = [
     "operators",
     "pass_through",
     "run_graph",
+    "schema",
     "reference_service",
     "service",
     "subscription_service",

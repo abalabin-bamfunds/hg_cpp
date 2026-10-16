@@ -72,7 +72,8 @@ def test_test_graph_tsl_inputs_accept_sparse_index_updates():
 
 
 def test_test_graph_tsb_inputs_accept_named_field_updates():
-    class Pair(bg.TimeSeriesSchema):
+    @bg.schema
+    class Pair:
         left: bg.TS[int]
         right: bg.TS[int]
 

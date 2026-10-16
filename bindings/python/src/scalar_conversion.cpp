@@ -6,6 +6,7 @@
 
 #include <bg/scalar/builtins.hpp>
 #include <bg/scalar/bundle/scalar_type.hpp>
+#include <bg/scalar/bundle/value.hpp>
 #include <bg/scalar/details/string_storage.hpp>
 #include <bg/scalar/dict/scalar_type.hpp>
 #include <bg/scalar/dict/runtime_type.hpp>
@@ -586,7 +587,66 @@ nanobind::object to_python_hierarchical(const Scalar<HIERARCHICAL> &value,
             nanobind::raise_python_error();
         }
     }
+
+    auto python_type = conversions.python_schema_class(value.type().schema());
+    if (python_type) {
+        auto *instance_ptr = PyType_GenericAlloc(reinterpret_cast<PyTypeObject *>(python_type.ptr()), 0);
+        auto instance = nanobind::steal<nanobind::object>(instance_ptr);
+        if (!instance) {
+            nanobind::raise_python_error();
+        }
+        for (auto index = std::size_t{}; index < value.field_count(); ++index) {
+            const auto name = value.field_name(index);
+            const auto key = nanobind::str{name.data(), name.size()};
+            auto *field = PyDict_GetItem(result.ptr(), key.ptr());
+            if (field == nullptr || PyObject_SetAttr(instance.ptr(), key.ptr(), field) < 0) {
+                nanobind::raise_python_error();
+            }
+        }
+        return instance;
+    }
     return result;
+}
+
+ScalarValue<> from_python_hierarchical(const ScalarType &expected, nanobind::handle value, allocator &memory,
+                                      const PythonScalarConversions &conversions) {
+    const auto &actual = conversions.type_from_python(
+        nanobind::handle{reinterpret_cast<PyObject *>(Py_TYPE(value.ptr()))});
+    if (!expected.accepts(actual)) {
+        PyErr_SetString(PyExc_TypeError, "Python schema value is not compatible with the annotated bundle type");
+        nanobind::raise_python_error();
+    }
+
+    const auto *actual_type = type_cast<HierarchicalScalarType>(&actual);
+    if (actual_type == nullptr) {
+        throw std::invalid_argument{"Python schema value has no registered hierarchical scalar schema"};
+    }
+    const auto &actual_schema = static_cast<const Schema &>(actual_type->schema_type());
+
+    auto field_values = std::vector<ScalarValue<>>{};
+    field_values.reserve(actual_schema.field_count());
+    auto fields = std::vector<std::optional<Scalar<>>>(actual_schema.field_count());
+    for (auto index = std::size_t{}; index < actual_schema.field_count(); ++index) {
+        const auto &field = actual_schema.field(index);
+        auto field_value = nanobind::getattr(value, field.name.text().data());
+        if (field_value.is_none()) {
+            if (!field.optional) {
+                PyErr_Format(PyExc_TypeError, "required schema field '%s' cannot be None", field.name.text().data());
+                nanobind::raise_python_error();
+            }
+            continue;
+        }
+
+        const auto *field_type = type_cast<ScalarType>(field.type);
+        if (field_type == nullptr) {
+            throw std::invalid_argument{"Python bundle schemas require scalar fields"};
+        }
+        field_values.push_back(conversions.from_python(*field_type, field_value, memory));
+        fields[index] = Scalar<>::from(field_values.back());
+    }
+
+    auto bundle_value = bundle(memory, actual_schema, fields);
+    return ScalarValue<>{bundle_value};
 }
 
 nanobind::object to_python_byte(Scalar<> value, const PythonScalarConversions &) {
@@ -687,6 +747,7 @@ struct NB_HIDDEN PythonScalarConversions::Impl {
     ScalarDispatch<ScalarToPythonView> to_python_view;
     std::unordered_map<PyTypeObject *, PythonType> python_types;
     std::unordered_map<const ScalarType *, const PythonObjectScalarRuntimeType *> python_object_types;
+    std::unordered_map<const ScalarType *, Object> python_schemas;
     Object symbol_python_type;
 };
 
@@ -777,6 +838,34 @@ bool PythonScalarConversions::add_python_type(nanobind::handle python_type, cons
         impl_->symbol_python_type = Object{python_type};
     }
     return added;
+}
+
+const ScalarType &PythonScalarConversions::add_python_schema(nanobind::handle python_type, const bg::Schema &schema) {
+    if (!PyType_Check(python_type.ptr())) {
+        throw std::invalid_argument{"a Python schema registration requires a Python type"};
+    }
+
+    const auto &scalar_type = hierarchical_scalar_type(schema);
+    auto *type_key = reinterpret_cast<PyTypeObject *>(python_type.ptr());
+    if (const auto found = impl_->python_types.find(type_key); found != impl_->python_types.end()) {
+        if (found->second.scalar_type != &scalar_type) {
+            throw std::invalid_argument{"a Python schema class already has a different scalar type"};
+        }
+        return scalar_type;
+    }
+
+    impl_->python_types.emplace(type_key, Impl::PythonType{Object{python_type}, &scalar_type, true});
+    impl_->python_schemas.emplace(&scalar_type, Object{python_type});
+    return scalar_type;
+}
+
+nanobind::object PythonScalarConversions::python_schema_class(const bg::Schema &schema) const {
+    const auto &scalar_type = hierarchical_scalar_type(schema);
+    const auto found = impl_->python_schemas.find(&scalar_type);
+    if (found == impl_->python_schemas.end()) {
+        return {};
+    }
+    return nanobind::borrow<nanobind::object>(found->second.get());
 }
 
 const ScalarType &PythonScalarConversions::add_python_type(nanobind::handle python_type) {
@@ -909,6 +998,10 @@ ScalarValue<> PythonScalarConversions::from_python(nanobind::handle value, alloc
 
 ScalarValue<> PythonScalarConversions::from_python(const ScalarType &type, nanobind::handle value,
                                                    allocator &memory) const {
+    if (impl_->python_schemas.contains(&type)) {
+        return from_python_hierarchical(type, value, memory, *this);
+    }
+
     if (const auto found = impl_->python_object_types.find(&type); found != impl_->python_object_types.end()) {
         const auto &actual_type = type_from_python(
             nanobind::handle{reinterpret_cast<PyObject *>(Py_TYPE(value.ptr()))});
@@ -943,6 +1036,9 @@ ScalarValue<> PythonScalarConversions::from_python(const ScalarType &type, nanob
 }
 
 bool PythonScalarConversions::can_from_python(const ScalarType &type) const noexcept {
+    if (impl_->python_schemas.contains(&type)) {
+        return true;
+    }
     if (impl_->python_object_types.contains(&type)) {
         return true;
     }

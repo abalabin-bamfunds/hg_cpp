@@ -10,6 +10,7 @@
 #include <catch2/matchers/catch_matchers.hpp>
 
 #include <array>
+#include <stdexcept>
 
 TEST_CASE("runtime schema identities and field metadata key canonical descriptors",
           "[feature:type-system][schema:named][declaration:runtime]") {
@@ -62,6 +63,28 @@ TEST_CASE("schema resolution preserves identity and resolves inherited field typ
     CHECK(resolved.base()->identity() == base.identity());
     CHECK(resolved.base()->field(0).type == &bg::int64_type());
     CHECK(&resolved == &derived.resolve(type_map));
+}
+
+TEST_CASE("schema registration rolls back and retries the same runtime identity",
+          "[feature:type-system][schema:named][declaration:runtime]") {
+    const auto identity = bg::new_runtime_schema_id();
+    const auto name = bg::util::symbol{"RetrySchema"};
+    const auto failed_fields = std::array{bg::SchemaField{bg::util::symbol{"value"}, &bg::float_type()}};
+    const auto fields = std::array{bg::SchemaField{bg::util::symbol{"value"}, &bg::double_type()}};
+
+    CHECK_THROWS([&] {
+        auto registration = bg::SchemaRegistration{};
+        auto &reserved = registration.reserve_schema(name, identity, nullptr);
+        reserved.finalize(failed_fields);
+        throw std::runtime_error{"failed schema registration"};
+    }());
+
+    auto registration = bg::SchemaRegistration{};
+    auto &retried = registration.reserve_schema(name, identity, nullptr);
+    retried.finalize(fields);
+    registration.commit();
+
+    CHECK(&bg::schema(name, identity, nullptr, fields) == &retried);
 }
 
 TEST_CASE("time series bundle types reject common schemas with non-time-series fields",

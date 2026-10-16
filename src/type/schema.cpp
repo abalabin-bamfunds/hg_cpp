@@ -10,6 +10,7 @@
 #include <atomic>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string_view>
 #include <type_traits>
@@ -17,6 +18,63 @@
 #include <utility>
 
 namespace bg {
+namespace {
+
+void cache_reserved_schema(const Schema &schema);
+void uncache_reserved_schema(const Schema &schema) noexcept;
+
+} // namespace
+
+struct SchemaRegistration::Impl {
+    std::unique_lock<std::recursive_mutex> lock{details::semantic_type_registration_mutex()};
+    details::SemanticTypeRegistration registration;
+    bool committed{};
+};
+
+SchemaRegistration::SchemaRegistration() {
+    if (details::SemanticTypeRegistration::current() != nullptr) {
+        throw std::logic_error{"schema registrations cannot be nested"};
+    }
+    impl_ = std::make_unique<Impl>();
+}
+SchemaRegistration::~SchemaRegistration() = default;
+
+Schema &SchemaRegistration::reserve_schema(util::symbol name, SchemaIdentity identity, const Schema *base) {
+    if (impl_->committed) {
+        throw std::logic_error{"a committed schema registration cannot reserve descriptors"};
+    }
+    auto descriptor = std::make_unique<Schema>(name, std::move(identity), base);
+    auto *result = descriptor.get();
+    TypeRegistry::instance().register_owned(std::move(descriptor));
+    auto rollback = util::scope_exit{[result]() noexcept { TypeRegistry::instance().rollback(*result); }};
+    impl_->registration.on_rollback([result] {
+        uncache_reserved_schema(*result);
+        TypeRegistry::instance().rollback(*result);
+    });
+    impl_->registration.on_commit([result] { cache_reserved_schema(*result); });
+    rollback.release();
+    return *result;
+}
+
+const Type &SchemaRegistration::register_owned(std::unique_ptr<Type> type) {
+    if (impl_->committed) {
+        throw std::logic_error{"a committed schema registration cannot own more descriptors"};
+    }
+    const auto &descriptor = TypeRegistry::instance().register_owned(std::move(type));
+    auto rollback = util::scope_exit{[&descriptor]() noexcept { TypeRegistry::instance().rollback(descriptor); }};
+    impl_->registration.on_rollback([&descriptor] { TypeRegistry::instance().rollback(descriptor); });
+    rollback.release();
+    return descriptor;
+}
+
+void SchemaRegistration::commit() {
+    if (impl_->committed) {
+        throw std::logic_error{"a schema registration can be committed only once"};
+    }
+    impl_->registration.commit();
+    impl_->committed = true;
+}
+
 namespace {
 
 struct SchemaKey {
@@ -65,16 +123,52 @@ SchemaCache &schema_cache() {
     return cache;
 }
 
+void cache_reserved_schema(const Schema &schema) {
+    if (!schema.is_finalized()) {
+        throw std::logic_error{"a reserved schema must be finalized before commit"};
+    }
+    auto key = SchemaKey{schema.name(), schema.identity(), schema.base(),
+                         {schema.direct_fields().begin(), schema.direct_fields().end()}};
+    auto &cache = schema_cache();
+    const auto [entry, inserted] = cache.try_emplace(std::move(key), &schema);
+    if (!inserted && entry->second != &schema) {
+        throw std::logic_error{"a schema registration conflicts with an existing canonical descriptor"};
+    }
+}
+
+void uncache_reserved_schema(const Schema &schema) noexcept {
+    auto &cache = schema_cache();
+    std::erase_if(cache, [&schema](const auto &entry) { return entry.second == &schema; });
+}
+
 } // namespace
 
 Schema::Schema(util::symbol name, SchemaIdentity identity, const Schema *base, std::vector<SchemaField> fields)
-    : name_{name}, identity_{std::move(identity)}, base_{base}, direct_fields_{std::move(fields)} {
-    for (auto index = std::size_t{}; index < direct_fields_.size(); ++index) {
-        const auto &field = direct_fields_[index];
+    : name_{name}, identity_{std::move(identity)}, base_{base} {
+    finalize(fields);
+}
+
+Schema::Schema(util::symbol name, SchemaIdentity identity, const Schema *base)
+    : name_{name}, identity_{std::move(identity)}, base_{base} {}
+
+void Schema::finalize(std::span<const SchemaField> fields) {
+    if (finalized_) {
+        throw std::logic_error{"a schema descriptor can be finalized only once"};
+    }
+    const auto *registration = details::SemanticTypeRegistration::current();
+    if (TypeRegistry::instance().contains(*this) &&
+        (registration == nullptr || registration->is_committed())) {
+        throw std::logic_error{"finalizing a reserved schema requires its active schema registration"};
+    }
+
+    auto direct_fields = std::vector<SchemaField>{fields.begin(), fields.end()};
+    auto resolved_fields = std::vector<SchemaField>{};
+    for (auto index = std::size_t{}; index < direct_fields.size(); ++index) {
+        const auto &field = direct_fields[index];
         if (field.type == nullptr) {
             throw std::invalid_argument{"a schema field requires a type"};
         }
-        const auto remaining_fields = std::span{direct_fields_}.subspan(index + 1);
+        const auto remaining_fields = std::span{direct_fields}.subspan(index + 1);
         if (std::ranges::find(remaining_fields, field.name, &SchemaField::name) != remaining_fields.end()) {
             throw std::invalid_argument{"a schema has duplicate field names"};
         }
@@ -93,17 +187,21 @@ Schema::Schema(util::symbol name, SchemaIdentity identity, const Schema *base, s
     }
 
     if (base_ != nullptr) {
-        fields_.assign(base_->fields().begin(), base_->fields().end());
+        resolved_fields.assign(base_->fields().begin(), base_->fields().end());
     }
 
-    for (const auto &field : direct_fields_) {
-        const auto inherited = std::ranges::find(fields_, field.name, &SchemaField::name);
-        if (inherited == fields_.end()) {
-            fields_.push_back(field);
+    for (const auto &field : direct_fields) {
+        const auto inherited = std::ranges::find(resolved_fields, field.name, &SchemaField::name);
+        if (inherited == resolved_fields.end()) {
+            resolved_fields.push_back(field);
         } else {
             *inherited = field;
         }
     }
+
+    direct_fields_ = std::move(direct_fields);
+    fields_ = std::move(resolved_fields);
+    finalized_ = true;
 }
 
 const SchemaField *Schema::find(util::symbol name) const noexcept {
@@ -124,11 +222,14 @@ bool Schema::derives_from(const Schema &schema) const noexcept {
 }
 
 bool Schema::is_resolved() const noexcept {
-    return (base_ == nullptr || base_->is_resolved()) &&
+    return finalized_ && (base_ == nullptr || base_->is_resolved()) &&
            std::ranges::all_of(direct_fields_, [](const auto &field) { return field.type->is_resolved(); });
 }
 
 const Schema &Schema::resolve(const TypeMap &type_map) const {
+    if (!finalized_) {
+        throw std::logic_error{"a reserved schema must be finalized before type resolution"};
+    }
     if (is_resolved()) {
         return *this;
     }
