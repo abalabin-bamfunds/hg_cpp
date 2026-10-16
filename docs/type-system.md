@@ -659,12 +659,12 @@ Changing the reference can sample a different final list and publish another
 item value. A deduplicated reference can also select distinct targets with equal
 values: reference deduplication compares references, not sampled target values.
 
-`TimeSeriesType::with_guarantee_limit()` is the engine and extension operation
-for this calculation. It returns a canonical resolved type. Leaf types use the
-base implementation; collection types override it to limit their contained time
-series recursively. Reference types preserve their target type. This is
-required to resolve signatures from the input behavior defined by
-[reference sampling](time-series-references.md#input-sampling).
+`TimeSeriesType::with_guarantee_limit()` returns a canonical resolved type with
+the requested limit applied to the root and every contained time series.
+Extension types with contained time series must override it to apply the limit
+recursively. Reference types apply the limit only to the reference and preserve
+their target. This is required to resolve signatures from the input behavior
+defined by [reference sampling](time-series-references.md#input-sampling).
 
 ### Enforcement
 

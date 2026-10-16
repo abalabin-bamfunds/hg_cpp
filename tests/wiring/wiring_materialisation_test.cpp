@@ -1226,6 +1226,154 @@ TEST_CASE("an open time series variable keeps the source semantic type",
     const auto &variable = dynamic_cast<const bg::TypeVariableType<bg::TimeSeriesType> &>(bg::TS_T::type());
     conflicting_seed.set(variable, &bg::TS<double>::type());
     CHECK(signature.match_wiring_arguments(arguments, &conflicting_seed).empty());
+
+    auto matching_seed = bg::TypeMap{};
+    matching_seed.set(variable, &bg::TS<bg::i64>::type());
+    CHECK(signature.match_wiring_arguments(arguments, &matching_seed).size() == 1);
+}
+
+TEST_CASE("source matching preserves variables nested in collection parameters",
+          "[feature:wiring-materialisation][feature:wiring][series:fixed-tsl][schema:generic]") {
+    using SOURCE = bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, 2,
+                           bg::TimeSeriesGuarantee::final>;
+    using ALTERNATIVE = bg::TSL<bg::TS<bg::i64>, 2>;
+    using PARAMETER = bg::TSL<bg::TS_T, bg::SIZE>;
+
+    const auto source = bg::node([](bg::Out<SOURCE>) {});
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    const auto input = source();
+    auto deferred = wiring.create_wp<SOURCE>(input);
+    deferred.materialisation_option<SOURCE>([](bg::wp<SOURCE> value) { return static_cast<bg::WiringPoint>(value); },
+                                            0.0);
+    deferred.materialisation_option<ALTERNATIVE>([](bg::wp<SOURCE>) { return bg::WiringPoint{}; }, 0.0);
+    const auto arguments = std::array{bg::WiringArgument{static_cast<bg::WiringPoint>(deferred)}};
+    const auto signature = bg::Signature{bg::util::symbol{"consume_list"},
+                                          {{bg::util::symbol{"values"}, &PARAMETER::type()}}};
+
+    const auto matches = signature.match_wiring_arguments(arguments);
+
+    REQUIRE(matches.size() == 2);
+    CHECK(matches[0].argument_forms[0].offered_type == &SOURCE::type());
+    CHECK(matches[1].argument_forms[0].offered_type == &ALTERNATIVE::type());
+    CHECK(&bg::TS_T::type().resolve(matches[0].type_map) ==
+          &bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type());
+    CHECK(&bg::TS_T::type().resolve(matches[1].type_map) == &bg::TS<bg::i64>::type());
+    for (const auto &match : matches) {
+        CHECK(bg::details::size_variable_instance<bg::SIZE>().resolve(match.type_map) == 2);
+    }
+}
+
+TEST_CASE("a failed source match does not reject an offered bundle materialisation",
+          "[feature:wiring-materialisation][feature:wiring][series:tsb][schema:named]") {
+    using BUNDLE = bg::TSB<OneValue>;
+
+    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    const auto input = source();
+    auto deferred = wiring.create_wp<bg::TS<bg::i64>>(input);
+    deferred.materialisation_option<BUNDLE>([](bg::wp<bg::TS<bg::i64>>) { return bg::WiringPoint{}; }, 0.0);
+    const auto arguments = std::array{bg::WiringArgument{static_cast<bg::WiringPoint>(deferred)}};
+    const auto signature = bg::Signature{bg::util::symbol{"consume_bundle"},
+                                          {{bg::util::symbol{"value"}, &BUNDLE::type()}}};
+
+    const auto matches = signature.match_wiring_arguments(arguments);
+
+    REQUIRE(matches.size() == 1);
+    CHECK(matches[0].argument_forms[0].offered_type == &BUNDLE::type());
+    CHECK(matches[0].argument_forms[0].materialisation_target == &BUNDLE::type());
+}
+
+TEST_CASE("conflicting original inputs leave their shared type variable unpinned",
+          "[feature:wiring-materialisation][feature:wiring][series:value][schema:generic]") {
+    const auto int_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    const auto double_source = bg::node([](bg::Out<bg::TS<double>>) {});
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    const auto int_input = int_source();
+    const auto double_input = double_source();
+    auto int_deferred = wiring.create_wp<bg::TS<bg::i64>>(int_input);
+    int_deferred.materialisation_option<bg::TS<float>>(
+        [](bg::wp<bg::TS<bg::i64>>) { return bg::WiringPoint{}; }, 0.0);
+    auto double_deferred = wiring.create_wp<bg::TS<double>>(double_input);
+    double_deferred.materialisation_option<bg::TS<float>>(
+        [](bg::wp<bg::TS<double>>) { return bg::WiringPoint{}; }, 0.0);
+    const auto arguments = std::array{bg::WiringArgument{static_cast<bg::WiringPoint>(int_deferred)},
+                                      bg::WiringArgument{static_cast<bg::WiringPoint>(double_deferred)}};
+    const auto signature = bg::Signature{
+        bg::util::symbol{"consume_shared"},
+        {{bg::util::symbol{"left"}, &bg::TS_T::type()}, {bg::util::symbol{"right"}, &bg::TS_T::type()}}};
+
+    const auto matches = signature.match_wiring_arguments(arguments);
+    const auto reversed_arguments = std::array{arguments[1], arguments[0]};
+    const auto reversed_matches = signature.match_wiring_arguments(reversed_arguments);
+
+    REQUIRE(matches.size() == 1);
+    CHECK(matches[0].argument_forms[0].offered_type == &bg::TS<float>::type());
+    CHECK(matches[0].argument_forms[1].offered_type == &bg::TS<float>::type());
+    REQUIRE(reversed_matches.size() == 1);
+    CHECK(reversed_matches[0].argument_forms[0].offered_type == &bg::TS<float>::type());
+    CHECK(reversed_matches[0].argument_forms[1].offered_type == &bg::TS<float>::type());
+}
+
+TEST_CASE("reference target matching ignores guarantees but preserves target structure",
+          "[feature:wiring-materialisation][feature:wiring][series:reference][schema:generic]") {
+    using SOURCE = bg::REF<bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, 2>,
+                            bg::TimeSeriesGuarantee::final>;
+    using ALTERNATIVE = bg::REF<bg::TSL<bg::TS<double>, 2>>;
+    using PARAMETER = bg::REF<bg::TS_T>;
+
+    const auto source = bg::node([](bg::Out<SOURCE>) {});
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    const auto input = source();
+    auto deferred = wiring.create_wp<SOURCE>(input);
+    deferred.materialisation_option<SOURCE>([](bg::wp<SOURCE> value) { return static_cast<bg::WiringPoint>(value); },
+                                            0.0);
+    deferred.materialisation_option<ALTERNATIVE>([](bg::wp<SOURCE>) { return bg::WiringPoint{}; }, 0.0);
+    const auto arguments = std::array{bg::WiringArgument{static_cast<bg::WiringPoint>(deferred)}};
+    const auto signature = bg::Signature{bg::util::symbol{"consume_reference"},
+                                          {{bg::util::symbol{"value"}, &PARAMETER::type()}}};
+
+    const auto matches = signature.match_wiring_arguments(arguments);
+
+    REQUIRE(matches.size() == 1);
+    CHECK(matches[0].argument_forms[0].offered_type == &SOURCE::type());
+    CHECK(&bg::TS_T::type().resolve(matches[0].type_map) ==
+          &bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, 2>::type());
+}
+
+TEST_CASE("source matching ignores guarantees in captured bundle schemas",
+          "[feature:wiring-materialisation][feature:wiring][series:tsb][schema:generic]") {
+    using SOURCE = bg::TSB<OneValue, bg::TimeSeriesGuarantee::final>;
+    using ALTERNATIVE = bg::TSB<OneValue>;
+    using PARAMETER = bg::TSB<bg::SCHEMA>;
+
+    const auto source = bg::node([](bg::Out<SOURCE>) {});
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    const auto input = source();
+    auto deferred = wiring.create_wp<SOURCE>(input);
+    deferred.materialisation_option<SOURCE>([](bg::wp<SOURCE> value) { return static_cast<bg::WiringPoint>(value); },
+                                            0.0);
+    deferred.materialisation_option<ALTERNATIVE>([](bg::wp<SOURCE>) { return bg::WiringPoint{}; }, 0.0);
+    const auto arguments = std::array{bg::WiringArgument{static_cast<bg::WiringPoint>(deferred)}};
+    const auto signature = bg::Signature{bg::util::symbol{"consume_bundle"},
+                                          {{bg::util::symbol{"value"}, &PARAMETER::type()}}};
+
+    const auto matches = signature.match_wiring_arguments(arguments);
+
+    REQUIRE(matches.size() == 2);
+    CHECK(matches[0].argument_forms[0].offered_type == &SOURCE::type());
+    CHECK(matches[1].argument_forms[0].offered_type == &ALTERNATIVE::type());
+    const auto &schema_variable = bg::schema_type<bg::SCHEMA>::type();
+    const auto *source_schema = dynamic_cast<const bg::Schema *>(&schema_variable.resolve(matches[0].type_map));
+    const auto *alternative_schema = dynamic_cast<const bg::Schema *>(&schema_variable.resolve(matches[1].type_map));
+    REQUIRE(source_schema != nullptr);
+    REQUIRE(alternative_schema != nullptr);
+    CHECK(source_schema->field(0).type == &bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type());
+    CHECK(alternative_schema->field(0).type == &bg::TS<bg::i64>::type());
 }
 
 TEST_CASE("signature matching does not source-bind a constrained time series variable",
