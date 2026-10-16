@@ -32,7 +32,7 @@ class FreeTimeSeriesBundleNodeTemplate final : public NodeTemplate {
   public:
     explicit FreeTimeSeriesBundleNodeTemplate(const TimeSeriesBundleType &type) : signature_{make_signature(type)} {}
 
-    const Signature &signature() const override { return signature_; }
+    const Signature &default_signature() const override { return signature_; }
     EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override { return &evaluate; }
     NodeFunction start_function(const ResolvedSignature &) const noexcept override { return &start; }
     const TimeSeriesRuntimeType *output_runtime_type(const WiringArguments &arguments) const override {

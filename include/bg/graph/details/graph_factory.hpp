@@ -44,14 +44,20 @@ template <typename T> inline constexpr bool supported_aggregate_graph_argument =
 template <typename... TypeParameters, typename Function, typename... Arguments>
 [[nodiscard]] auto make_callable_graph(Function &&function, Arguments &&...arguments) {
     static_assert((supported_callable_graph_argument<Arguments> && ...), "unsupported named graph argument");
-    static_assert(named_argument_count<"name", Arguments...> == 1, "a lambda graph requires one name argument");
+    static_assert(named_argument_count<"name", Arguments...> <= 1, "a lambda graph accepts one name argument");
     static_assert(named_argument_count<"label", Arguments...> <= 1, "a graph accepts one label metadata argument");
     static_assert(callable_graph_requirement_count<Arguments...> <= 1,
                   "a graph accepts one requirement argument");
 
     using StoredFunction = std::decay_t<Function>;
-    auto signature = make_graph_signature<StoredFunction>(
-        wiring_label(named_argument_value<"name">(std::forward<Arguments>(arguments)...)));
+    const auto name = [&] {
+        if constexpr (named_argument_count<"name", Arguments...> == 1) {
+            return wiring_label(named_argument_value<"name">(std::forward<Arguments>(arguments)...));
+        } else {
+            return util::symbol{util::unqualified_type_name<StoredFunction>()};
+        }
+    }();
+    auto signature = make_graph_signature<StoredFunction>(name);
 
     if constexpr (callable_graph_requirement_count<Arguments...> == 0 &&
                   named_argument_count<"label", Arguments...> == 0) {

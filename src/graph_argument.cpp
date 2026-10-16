@@ -26,7 +26,7 @@ class GraphArgumentBoundaryNode final : public NodeTemplate {
     explicit GraphArgumentBoundaryNode(const TimeSeriesType &type)
         : signature_{util::symbol{"graph_boundary"}, {}, type} {}
 
-    const Signature &signature() const final { return signature_; }
+    const Signature &default_signature() const final { return signature_; }
     bool deduplicate_wiring() const noexcept final { return false; }
     EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept final { return nullptr; }
 

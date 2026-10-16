@@ -15,14 +15,14 @@ class Operator : public WiringTemplate {
     explicit Operator(Signature prototype);
     ~Operator() override;
 
-    const Signature &signature() const final { return prototype_; }
+    const Signature &default_signature() const final { return prototype_; }
 
     template <typename Implementation>
         requires std::derived_from<std::remove_cvref_t<Implementation>, WiringTemplate>
-    const std::remove_cvref_t<Implementation> &overload(Implementation &&implementation) {
+    std::remove_cvref_t<Implementation> &overload(Implementation &&implementation) {
         using Stored = std::remove_cvref_t<Implementation>;
         auto stored = std::make_unique<Stored>(std::forward<Implementation>(implementation));
-        const auto &result = *stored;
+        auto &result = *stored;
         add_overload(std::move(stored));
         return result;
     }

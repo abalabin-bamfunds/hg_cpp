@@ -961,7 +961,7 @@ TEST_CASE("operator cache hits rebind concrete demands to the current source",
                          {{bg::util::symbol{"value"}, &bg::TS<float>::type()}}, bg::TS<float>::type()},
               requirement_calls_{&requirement_calls} {}
 
-        const bg::Signature &signature() const final { return signature_; }
+        const bg::Signature &default_signature() const final { return signature_; }
         bg::RequirementResult requirement(const bg::WiringArguments &) const final {
             ++*requirement_calls_;
             return bg::accept;
@@ -1012,7 +1012,7 @@ TEST_CASE("rejected overload diagnostics distinguish offered forms from the join
                          {{bg::util::symbol{"value"}, &bg::TS<float>::type()}}, bg::TS<float>::type()},
               requirement_calls_{&requirement_calls} {}
 
-        const bg::Signature &signature() const final { return signature_; }
+        const bg::Signature &default_signature() const final { return signature_; }
         bg::RequirementResult requirement(const bg::WiringArguments &) const final {
             ++*requirement_calls_;
             return bg::reject("rejected after form matching");

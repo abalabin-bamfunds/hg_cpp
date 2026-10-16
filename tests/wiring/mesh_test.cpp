@@ -31,7 +31,7 @@ class MeshOverload final : public WiringTemplate {
           signature_{make_signature(graph_constraint_)},
           selected_{&selected} {}
 
-    const Signature &signature() const final { return signature_; }
+    const Signature &default_signature() const final { return signature_; }
 
   private:
     static Signature make_signature(std::shared_ptr<const GraphArgumentConstraint> graph_constraint) {
@@ -79,7 +79,7 @@ class CountingMeshBranch final : public WiringTemplate {
     explicit CountingMeshBranch(std::size_t &requirement_calls)
         : requirement_calls_{&requirement_calls} {}
 
-    const Signature &signature() const final {
+    const Signature &default_signature() const final {
         static const auto value = Signature{
             util::symbol{"counting_mesh_branch"},
             {{util::symbol{"value"}, &TS<i64>::type()}},

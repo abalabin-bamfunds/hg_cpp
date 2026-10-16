@@ -14,12 +14,12 @@ inline constexpr auto DEDUPED = guarantee_variable<"DEDUPED", TimeSeriesGuarante
 
 struct stream_overloads {
     // Validity queries.
-    overload<valid> validity{
+    overload<valid> valid_impl{
         eval = [](In<TS_T, "value"_n, optional> value, Out<TS<bool, TimeSeriesGuarantee::deduplicated>> output) {
             output.set(value.valid());
         },
         schedule_on_start = true};
-    overload<all_valid> immediate_validity{
+    overload<all_valid> all_valid_impl{
         eval = [](In<TS_T, "value"_n, optional> value, Out<TS<bool, TimeSeriesGuarantee::deduplicated>> output) {
             output.set(value.all_valid());
         },
@@ -41,10 +41,9 @@ struct stream_overloads {
         static constexpr auto on_invalidation = preserve_output;
     };
 
-    overload<sample, sample_impl> sampling;
+    overload<sample, sample_impl> sample_impl;
 
-    overload<dedup> deduplicate_identity{
-        graph("name"_n = "deduplicated_identity", [](wp<TS_T::with<DEDUPED>> value) { return value; })};
+    overload<dedup> dedup_identity{graph([](wp<TS_T::with<DEDUPED>> value) { return value; })};
 
     struct dedup_impl {
         In<TS_T> value;
@@ -59,7 +58,7 @@ struct stream_overloads {
         void evaluate() const { output.copy_tick(value); }
     };
 
-    overload<dedup, dedup_impl> deduplicate_node;
+    overload<dedup, dedup_impl> dedup_impl;
 
     struct filter_impl {
         In<TS<bool>, optional> condition;
@@ -93,7 +92,7 @@ struct stream_overloads {
         }
     };
 
-    overload<filter_, filter_impl> filter_node;
+    overload<filter_, filter_impl> filter_impl;
 
     struct if_then_else_impl {
         In<TS<bool>> condition;
@@ -116,13 +115,13 @@ struct stream_overloads {
         }
     };
 
-    overload<if_then_else, if_then_else_impl> if_then_else_node;
+    overload<if_then_else, if_then_else_impl> if_then_else_impl;
 };
 
 } // namespace
 
 void register_stream_operators() {
-    (void)stream_overloads{};
+    register_overloads<stream_overloads>();
 }
 
 } // namespace bg::operators::details

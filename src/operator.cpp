@@ -452,6 +452,7 @@ void Operator::add_overload(std::unique_ptr<WiringTemplate> implementation) {
 
 std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const WiringArgument> arguments,
                                             const TypeMap *seed_type_map) const {
+    const auto &prototype = signature();
     auto cache_key = argument_key(arguments);
     if (cache_key) {
         auto sources = std::vector<const details::WiringRecord *>{};
@@ -527,7 +528,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                         probe = {};
                         temporary_records.clear();
                         probe = details::probe_wiring_arguments(read.implementation->signature(), arguments,
-                                                                temporary_records, &prototype_);
+                                                                temporary_records, &prototype);
                     } catch (const std::exception &) {
                         scalar_values_match = false;
                         break;
@@ -551,7 +552,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
             auto committed = details::NormalizedWiringArguments{};
             try {
                 committed = details::normalize_wiring_arguments(entry.implementation->signature(), arguments,
-                                                                wiring.allocation(), &prototype_);
+                                                                wiring.allocation(), &prototype);
             } catch (const std::exception &) {
                 continue;
             }
@@ -563,7 +564,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
             require_concrete_materialisation_forms(wiring, *entry.implementation, committed.arguments,
                                                    entry.argument_forms);
             return invoke_resolved(wiring, *entry.implementation, std::move(resolution), committed.arguments,
-                                   committed.descriptors, prototype_.name());
+                                   committed.descriptors, prototype.name());
         }
     }
 
@@ -598,7 +599,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
             auto normalized = details::NormalizedWiringArguments{};
             try {
                 temporary_records.clear();
-                normalized = details::probe_wiring_arguments(signature, arguments, temporary_records, &prototype_);
+                normalized = details::probe_wiring_arguments(signature, arguments, temporary_records, &prototype);
             } catch (const std::exception &error) {
                 failures.push_back(failure(*implementation, WiringFailureStage::argument_count, error.what()));
                 continue;
@@ -670,12 +671,12 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                     continue;
                 } catch (const std::exception &error) {
                     failures.push_back(failure(*implementation, WiringFailureStage::callback, error.what()));
-                    throw WiringError{diagnostic(prototype_, current_path(), arguments, std::move(failures)),
+                    throw WiringError{diagnostic(prototype, current_path(), arguments, std::move(failures)),
                                       std::current_exception()};
                 } catch (...) {
                     failures.push_back(failure(*implementation, WiringFailureStage::callback,
                                                "non-standard exception"));
-                    throw WiringError{diagnostic(prototype_, current_path(), arguments, std::move(failures)),
+                    throw WiringError{diagnostic(prototype, current_path(), arguments, std::move(failures)),
                                       std::current_exception()};
                 }
 
@@ -687,7 +688,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                                                            completed->argument_forms,
                                                            completed->materialisation_cost,
                                                            WiringFailureStage::callback, error.what()));
-                        throw WiringError{diagnostic(prototype_, current_path(), arguments, std::move(failures)),
+                        throw WiringError{diagnostic(prototype, current_path(), arguments, std::move(failures)),
                                           requirement_exception};
                     } catch (...) {
                         failures.push_back(matched_failure(*implementation, completed->resolution.signature,
@@ -695,7 +696,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                                                            completed->materialisation_cost,
                                                            WiringFailureStage::callback,
                                                            "non-standard exception"));
-                        throw WiringError{diagnostic(prototype_, current_path(), arguments, std::move(failures)),
+                        throw WiringError{diagnostic(prototype, current_path(), arguments, std::move(failures)),
                                           requirement_exception};
                     }
                 }
@@ -742,7 +743,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                     applicable_failure(candidate, "viable forms resolve to different semantic output types"));
             }
         }
-        throw WiringError{diagnostic(prototype_, current_path(), arguments, std::move(failures), true)};
+        throw WiringError{diagnostic(prototype, current_path(), arguments, std::move(failures), true)};
     }
 
     const auto same_concrete_binding = [&](const Candidate &left, const Candidate &right) {
@@ -808,7 +809,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                 failures.push_back(applicable_failure(candidate, "applicable"));
             }
         }
-        throw WiringError{diagnostic(prototype_, current_path(), arguments, std::move(failures), ambiguous)};
+        throw WiringError{diagnostic(prototype, current_path(), arguments, std::move(failures), ambiguous)};
     }
 
     if (scalar_reads.cacheable && cache_key) {
@@ -827,7 +828,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
     }
 
     auto committed = details::normalize_wiring_arguments(selected->implementation->signature(), arguments,
-                                                         wiring.allocation(), &prototype_);
+                                                         wiring.allocation(), &prototype);
     const auto &signature = selected->implementation->signature();
     auto selected_forms = std::vector<const TimeSeriesType *>{};
     selected_forms.reserve(selected->argument_forms.size());
@@ -837,7 +838,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
     details::bind_materialisation_forms(wiring, *selected->implementation, committed.arguments, selected_forms);
     require_concrete_materialisation_forms(wiring, *selected->implementation, committed.arguments, selected_forms);
     return invoke_resolved(wiring, *selected->implementation, std::move(selected->resolution), committed.arguments,
-                           committed.descriptors, prototype_.name());
+                           committed.descriptors, prototype.name());
 }
 
 std::optional<WiringPoint> Operator::wire(GraphWiring &, ResolvedSignature, const WiringArguments &,

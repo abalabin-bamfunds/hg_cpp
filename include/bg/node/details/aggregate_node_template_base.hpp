@@ -48,7 +48,7 @@ class AggregateNodeTemplateBase : public NodeTemplate {
     explicit AggregateNodeTemplateBase(const AggregateNodeDescriptor &descriptor)
         : NodeTemplate{NodeTemplateIdentity::persistent(&descriptor)}, descriptor_{&descriptor} {}
 
-    const Signature &signature() const final;
+    const Signature &default_signature() const final;
     bool deduplicate_wiring() const noexcept final;
     bool may_pend_evaluation(const ResolvedSignature &) const noexcept final;
     bool schedule_on_start(const ResolvedSignature &) const noexcept final;

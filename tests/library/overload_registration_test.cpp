@@ -6,7 +6,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <algorithm>
 #include <memory>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -20,8 +22,11 @@ inline operator_<auto(i64) -> i64> callable_operator{"callable", {"value"}};
 inline operator_<auto(i64) -> i64> aggregate_operator{"aggregate", {"value"}};
 inline operator_<auto(i64) -> i64> node_template_operator{"node_template", {"value"}};
 inline operator_<auto(i64) -> i64> graph_template_operator{"graph_template", {"value"}};
+inline operator_<auto(i64) -> i64> reflected_graph_operator{"reflected_graph", {"value"}};
+inline operator_<auto(i64) -> i64> reflected_callable_operator{"reflected_callable", {"value"}};
 inline operator_<auto(TS_T) -> TS_T> sink_graph_operator{"sink_graph", {"value"}};
 inline operator_<auto(SCALAR) -> SCALAR> family_operator{"family", {"value"}};
+inline operator_<auto(SCALAR) -> SCALAR> reflected_family_operator{"reflected_family", {"value"}};
 inline operator_<auto(TS_T) -> bool> scheduled_operator{"scheduled", {"value"}};
 inline operator_<auto(TS_T) -> TS_T> resolved_callable_operator{"resolved_callable", {"value"}};
 inline operator_<auto(i64) -> i64> registration_order_operator{"registration_order", {"value"}};
@@ -52,8 +57,8 @@ static_assert(CanConstruct<overload<aggregate_operator, pass_i64>>);
 static_assert(!std::default_initializable<overload<aggregate_operator, i64>>);
 static_assert(CanConstruct<overload<node_template_operator>, AggregateNodeTemplate<pass_i64> &>);
 static_assert(!CanConstruct<overload<callable_operator>, int>);
-static_assert(std::is_empty_v<overload<callable_operator>>);
-static_assert(std::is_empty_v<instantiate_overloads<family_operator, pass_value, i64, double>>);
+static_assert(!std::is_empty_v<overload<callable_operator>>);
+static_assert(!std::is_empty_v<instantiate_overloads<family_operator, pass_value, i64, double>>);
 
 } // namespace overload_registration_tests
 
@@ -75,13 +80,61 @@ TEST_CASE("an overload forwards callable arguments to node and retains the calla
 TEST_CASE("an aggregate overload registers when its declaration object is constructed",
           "[feature:operator][feature:wiring][definition:aggregate]") {
     struct registration_group {
-        overload<aggregate_operator, pass_i64> pass;
+        overload<aggregate_operator, pass_i64> pass_impl;
     };
 
     CHECK_THROWS_AS(testing::test_graph(aggregate_operator, std::array<i64, 1>{3}), WiringError);
 
-    const registration_group registrations{};
+    register_overloads<registration_group>();
     CHECK(testing::test_graph(aggregate_operator, std::array<i64, 1>{3}).equals<i64>({3}));
+
+    testing::test_wiring([&] {
+        const auto source = node([](Out<TS<i64>>) {});
+        aggregate_operator(source());
+        auto &wiring = WiringContext::current().wiring();
+        wiring.finalize();
+        const auto nodes = wiring.nodes();
+        CHECK(std::ranges::any_of(nodes, [](const auto &wired_node) {
+            return wired_node.signature().name.text() == "pass_impl";
+        }));
+    });
+
+    try {
+        testing::test_wiring([&] { aggregate_operator(std::string_view{"invalid"}); });
+        FAIL("expected the aggregate overload to reject the argument type");
+    } catch (const WiringError &error) {
+        REQUIRE(error.diagnostic().has_value());
+        REQUIRE(error.diagnostic()->candidates.size() == 1);
+        CHECK(error.diagnostic()->candidates.front().signature.name.text() == "pass_impl");
+    }
+}
+
+TEST_CASE("callable overload group members name their wired nodes and diagnostics",
+          "[feature:operator][feature:wiring][definition:function]") {
+    struct registration_group {
+        overload<reflected_callable_operator> callable_impl{[](i64 value) { return value; }};
+    };
+
+    register_overloads<registration_group>();
+
+    testing::test_wiring([&] {
+        reflected_callable_operator(i64{3});
+        auto &wiring = WiringContext::current().wiring();
+        wiring.finalize();
+        const auto nodes = wiring.nodes();
+        CHECK(std::ranges::any_of(nodes, [](const auto &wired_node) {
+            return wired_node.signature().name.text() == "callable_impl";
+        }));
+    });
+
+    try {
+        testing::test_wiring([&] { reflected_callable_operator(std::string_view{"invalid"}); });
+        FAIL("expected the callable overload to reject the argument type");
+    } catch (const WiringError &error) {
+        REQUIRE(error.diagnostic().has_value());
+        REQUIRE(error.diagnostic()->candidates.size() == 1);
+        CHECK(error.diagnostic()->candidates.front().signature.name.text() == "callable_impl");
+    }
 }
 
 TEST_CASE("an overload registers an already constructed node template",
@@ -97,11 +150,38 @@ TEST_CASE("an overload registers an already constructed node template",
 TEST_CASE("an overload registers an already constructed graph template",
           "[feature:operator][feature:wiring][definition:function]") {
     {
-        const auto implementation = graph("name"_n = "identity", [](wp<TS<i64>> value) { return value; });
+        const auto implementation = graph([](wp<TS<i64>> value) { return value; });
         overload<graph_template_operator> registration{implementation};
     }
-
     CHECK(testing::test_graph(graph_template_operator, std::array<i64, 1>{8}).equals<i64>({8}));
+}
+
+TEST_CASE("graph overload groups reflect member names and rename copies independently",
+          "[feature:operator][feature:wiring][definition:function]") {
+    struct registration_group {
+        overload<reflected_graph_operator> identity_graph{graph([](wp<TS<i64>> value) { return value; })};
+    };
+
+    register_overloads<registration_group>();
+
+    try {
+        testing::test_wiring([&] { reflected_graph_operator(std::string_view{"invalid"}); });
+        FAIL("expected the graph overload to reject the argument type");
+    } catch (const WiringError &error) {
+        REQUIRE(error.diagnostic().has_value());
+        REQUIRE(error.diagnostic()->candidates.size() == 1);
+        CHECK(error.diagnostic()->candidates.front().signature.name.text() == "identity_graph");
+    }
+
+    auto implementation = graph([](wp<TS<i64>> value) { return value; });
+    auto named = implementation;
+    named.set_name(util::symbol{"identity_graph"});
+    auto renamed = named;
+    renamed.set_name(util::symbol{"renamed_identity"});
+    CHECK(named.signature().name().text() == "identity_graph");
+    CHECK(renamed.signature().name().text() == "renamed_identity");
+    CHECK(implementation.signature().name().text() != "identity_graph");
+    CHECK(testing::test_graph(reflected_graph_operator, std::array<i64, 1>{8}).equals<i64>({8}));
 }
 
 TEST_CASE("instantiate_overloads registers each selected class-template specialization",
@@ -111,6 +191,74 @@ TEST_CASE("instantiate_overloads registers each selected class-template speciali
     }
     CHECK(testing::test_graph(family_operator, std::array<i64, 2>{2, 4}).equals<i64>({2, 4}));
     CHECK(testing::test_graph(family_operator, std::array{1.5, 3.5}).equals<double>({1.5, 3.5}));
+}
+
+TEST_CASE("family overload groups apply one reflected name to each specialization",
+          "[feature:operator][feature:wiring][definition:aggregate]") {
+    struct registration_group {
+        instantiate_overloads<reflected_family_operator, pass_value, i64, double> family_impl;
+    };
+
+    register_overloads<registration_group>();
+
+    try {
+        testing::test_wiring([&] { reflected_family_operator(std::string_view{"invalid"}); });
+        FAIL("expected the family overloads to reject the argument type");
+    } catch (const WiringError &error) {
+        REQUIRE(error.diagnostic().has_value());
+        REQUIRE(error.diagnostic()->candidates.size() == 2);
+        CHECK(error.diagnostic()->candidates[0].signature.name.text() == "family_impl");
+        CHECK(error.diagnostic()->candidates[1].signature.name.text() == "family_impl");
+    }
+}
+
+TEST_CASE("aggregate template renaming keeps shared signatures independent",
+          "[feature:operator][feature:wiring][definition:aggregate]") {
+    auto first = node<pass_i64>();
+    auto second = node<pass_i64>();
+    first.set_name(util::symbol{"first"});
+    second.set_name(util::symbol{"second"});
+
+    CHECK(first.signature().name().text() == "first");
+    CHECK(second.signature().name().text() == "second");
+}
+
+TEST_CASE("library callable implementations use their registered names",
+          "[feature:operator][feature:wiring][library]") {
+    testing::test_wiring([&] {
+        operators::add(1.0, 2.0);
+        operators::len_(std::string_view{"value"});
+        operators::contains_(std::string_view{"value"}, std::string_view{"a"});
+        auto &wiring = WiringContext::current().wiring();
+        wiring.finalize();
+        const auto nodes = wiring.nodes();
+        CHECK(std::ranges::any_of(nodes, [](const auto &wired_node) {
+            return wired_node.signature().name.text() == "add_double";
+        }));
+        CHECK(std::ranges::any_of(nodes, [](const auto &wired_node) {
+            return wired_node.signature().name.text() == "len_string";
+        }));
+        CHECK(std::ranges::any_of(nodes, [](const auto &wired_node) {
+            return wired_node.signature().name.text() == "contains_string";
+        }));
+    });
+}
+
+TEST_CASE("operator diagnostics use the renamed operator signature",
+    "[feature:operator][feature:wiring][diagnostic]") {
+    auto operation = operator_<auto(i64) -> i64>{"before", {"value"}};
+    const auto implementation = node([](i64 value) { return value; });
+    operation.overload(implementation);
+    operation.set_name(util::symbol{"after"});
+
+    CHECK(operation.signature().name().text() == "after");
+    try {
+        testing::test_wiring([&] { operation(std::string_view{"invalid"}); });
+        FAIL("expected the renamed operator to reject the argument type");
+    } catch (const WiringError &error) {
+        REQUIRE(error.diagnostic().has_value());
+        CHECK(error.diagnostic()->operator_name.text() == "after");
+    }
 }
 
 TEST_CASE("an overload forwards node options to node",

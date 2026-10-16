@@ -299,7 +299,7 @@ class DefaultValueMapTemplate final : public WiringTemplate {
   public:
     DefaultValueMapTemplate() : signature_{default_map_signature(true)} {}
 
-    const Signature &signature() const noexcept final { return signature_; }
+    const Signature &default_signature() const noexcept final { return signature_; }
 
   private:
     std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const WiringArguments &,
@@ -314,7 +314,7 @@ class DefaultSinkMapTemplate final : public WiringTemplate {
   public:
     DefaultSinkMapTemplate() : signature_{default_map_signature(false)} {}
 
-    const Signature &signature() const noexcept final { return signature_; }
+    const Signature &default_signature() const noexcept final { return signature_; }
 
     RequirementResult requirement(const WiringArguments &arguments) const final {
         const auto *function = arguments.graph(0);

@@ -58,7 +58,7 @@ struct string_overloads {
         }
     };
 
-    overload<add, add_strings> add_time_series;
+    overload<add, add_strings> add_strings;
 
     struct add_optional_strings {
         std::optional<std::string_view> lhs;
@@ -80,8 +80,8 @@ struct string_overloads {
         }
     };
 
-    overload<add, add_optional_strings> add_optional;
-    overload<add> add_scalars{graph("name"_n = "add_string_scalars", [](std::string_view lhs, std::string_view rhs) {
+    overload<add, add_optional_strings> add_optional_strings;
+    overload<add> add_string_scalars{graph([](std::string_view lhs, std::string_view rhs) {
         auto builder = StringBuilder{};
         builder.reserve(lhs.size() + rhs.size());
         builder.append(lhs);
@@ -91,24 +91,24 @@ struct string_overloads {
     })};
 
     // Equality.
-    overload<eq> equal_strings{[](std::string_view lhs, std::string_view rhs) { return lhs == rhs; }};
-    overload<eq> equal_symbols{[](symbol lhs, symbol rhs) { return lhs == rhs; }};
+    overload<eq> eq_string{[](std::string_view lhs, std::string_view rhs) { return lhs == rhs; }};
+    overload<eq> eq_symbol{[](symbol lhs, symbol rhs) { return lhs == rhs; }};
 
     // Inequality.
-    overload<ne> not_equal_strings{[](std::string_view lhs, std::string_view rhs) { return lhs != rhs; }};
-    overload<ne> not_equal_symbols{[](symbol lhs, symbol rhs) { return lhs != rhs; }};
+    overload<ne> ne_string{[](std::string_view lhs, std::string_view rhs) { return lhs != rhs; }};
+    overload<ne> ne_symbol{[](symbol lhs, symbol rhs) { return lhs != rhs; }};
 
     // Ordering.
-    overload<lt> less_strings{[](std::string_view lhs, std::string_view rhs) { return lhs < rhs; }};
-    overload<le> less_equal_strings{[](std::string_view lhs, std::string_view rhs) { return lhs <= rhs; }};
-    overload<gt> greater_strings{[](std::string_view lhs, std::string_view rhs) { return lhs > rhs; }};
-    overload<ge> greater_equal_strings{[](std::string_view lhs, std::string_view rhs) { return lhs >= rhs; }};
+    overload<lt> lt_string{[](std::string_view lhs, std::string_view rhs) { return lhs < rhs; }};
+    overload<le> le_string{[](std::string_view lhs, std::string_view rhs) { return lhs <= rhs; }};
+    overload<gt> gt_string{[](std::string_view lhs, std::string_view rhs) { return lhs > rhs; }};
+    overload<ge> ge_string{[](std::string_view lhs, std::string_view rhs) { return lhs >= rhs; }};
 };
 
 } // namespace
 
 void register_string_operators() {
-    (void)string_overloads{};
+    register_overloads<string_overloads>();
 }
 
 } // namespace bg::operators::details

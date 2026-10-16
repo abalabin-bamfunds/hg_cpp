@@ -40,7 +40,7 @@ template <typename... Declaration, typename... Arguments, std::size_t... Index>
 template <typename... TypeParameters, typename... Arguments>
     requires((details::type_parameter_declaration<TypeParameters> && ...) &&
              details::unnamed_argument_count<Arguments...> == 1 &&
-             details::named_argument_count<"name", Arguments...> == 1)
+             details::named_argument_count<"name", Arguments...> <= 1)
 [[nodiscard]] auto graph(Arguments &&...arguments) {
     auto &&function = details::unnamed_argument(std::forward<Arguments>(arguments)...);
 

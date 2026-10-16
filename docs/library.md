@@ -66,9 +66,10 @@ Dividing the `i64` minimum by `-1` returns the positive quotient as `double`;
 integer floor division wraps the corresponding quotient, and modulo returns
 zero. Integer power wraps at `i64` width and rejects negative exponents.
 Floating power rejects zero raised to a negative exponent and negative bases
-with fractional exponents. `round` returns `double`, uses ties-to-even rounding
-at the requested decimal position, preserves non-finite values, and preserves
-the sign of zero.
+with fractional exponents. `round` returns `double` and rounds ties to even.
+With a digit count, it scales the value by a power of ten, rounds, and scales
+back. Floating-point scaling can affect the result: `round(2.675, 2)` returns
+`2.68`. It preserves non-finite values and the sign of zero.
 
 `convert` requires an explicit full result time-series type:
 

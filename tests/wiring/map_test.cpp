@@ -39,7 +39,7 @@ class PatternMapOverload final : public WiringTemplate {
           signature_{make_signature(name, graph_constraint_, output_type)},
           forwarded_argument_{forwarded_argument}, requirement_calls_{&requirement_calls} {}
 
-    const Signature &signature() const final { return signature_; }
+    const Signature &default_signature() const final { return signature_; }
 
     RequirementResult requirement(const WiringArguments &) const final {
         ++*requirement_calls_;
@@ -79,7 +79,7 @@ class MapOptionOverload final : public WiringTemplate {
           signature_{make_signature(graph_constraint_)},
           selected_{&selected} {}
 
-    const Signature &signature() const final { return signature_; }
+    const Signature &default_signature() const final { return signature_; }
 
     RequirementResult requirement(const WiringArguments &arguments) const final {
         const auto key_set_argument = arguments.scalar("__key_set_arg__");

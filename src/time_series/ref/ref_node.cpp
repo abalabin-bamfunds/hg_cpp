@@ -27,7 +27,7 @@ class ReferenceNodeTemplate final : public NodeTemplate {
         : signature_{util::symbol{"reference"}, {{util::symbol{"target"}, &input_type, passive, optional}}, type},
           uses_cycle_callbacks_{input_type.reference_changes_require_cycle_cleanup()} {}
 
-    const Signature &signature() const override { return signature_; }
+    const Signature &default_signature() const override { return signature_; }
 
     EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override { return nullptr; }
 

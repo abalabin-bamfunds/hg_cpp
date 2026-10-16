@@ -4,7 +4,7 @@
 
 namespace bg::details {
 
-const Signature &AggregateNodeTemplateBase::signature() const {
+const Signature &AggregateNodeTemplateBase::default_signature() const {
     return *descriptor_->signature;
 }
 

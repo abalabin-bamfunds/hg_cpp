@@ -7,16 +7,11 @@
 #include <bg/type/time_series_value_type.hpp>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
-#include <charconv>
 #include <cstdint>
 #include <limits>
 #include <optional>
 #include <stdexcept>
-#include <string>
-#include <string_view>
-#include <system_error>
 #include <variant>
 
 namespace bg::operators::details {
@@ -39,60 +34,60 @@ i64 wrapping_negate(i64 value) noexcept {
     return static_cast<i64>(std::uint64_t{} - static_cast<std::uint64_t>(value));
 }
 
-struct numeric_overloads {
+struct arithmetic_overloads {
     // Addition.
     overload<add> add_double{[](double lhs, double rhs) { return lhs + rhs; }};
-    overload<add> add_integer{[](i64 lhs, i64 rhs) { return wrapping_add(lhs, rhs); }};
+    overload<add> add_i64{[](i64 lhs, i64 rhs) { return wrapping_add(lhs, rhs); }};
     overload<add> add_timedelta{[](timedelta_t lhs, timedelta_t rhs) {
         return timedelta_t{wrapping_add(lhs.count(), rhs.count())};
     }};
     overload<add> add_optional_double{[](std::optional<double> lhs, std::optional<double> rhs) {
         return lhs.value_or(0.0) + rhs.value_or(0.0);
     }};
-    overload<add> add_optional_integer{[](std::optional<i64> lhs, std::optional<i64> rhs) {
+    overload<add> add_optional_i64{[](std::optional<i64> lhs, std::optional<i64> rhs) {
         return wrapping_add(lhs.value_or(0), rhs.value_or(0));
     }};
     overload<add> add_optional_timedelta{[](std::optional<timedelta_t> lhs, std::optional<timedelta_t> rhs) {
         return timedelta_t{wrapping_add(lhs.value_or(timedelta_t{}).count(), rhs.value_or(timedelta_t{}).count())};
     }};
-    overload<add> add_timestamp_timedelta{[](date_time_t timestamp, timedelta_t duration) {
+    overload<add> add_date_time_timedelta{[](date_time_t timestamp, timedelta_t duration) {
         return date_time_t{timedelta_t{wrapping_add(timestamp.time_since_epoch().count(), duration.count())}};
     }};
-    overload<add> add_timedelta_timestamp{[](timedelta_t duration, date_time_t timestamp) {
+    overload<add> add_timedelta_date_time{[](timedelta_t duration, date_time_t timestamp) {
         return date_time_t{timedelta_t{wrapping_add(timestamp.time_since_epoch().count(), duration.count())}};
     }};
 
     // Subtraction.
-    overload<sub> subtract_integer{[](i64 lhs, i64 rhs) { return wrapping_subtract(lhs, rhs); }};
-    overload<sub> subtract_double{[](double lhs, double rhs) { return lhs - rhs; }};
-    overload<sub> subtract_timedelta{[](timedelta_t lhs, timedelta_t rhs) {
+    overload<sub> sub_i64{[](i64 lhs, i64 rhs) { return wrapping_subtract(lhs, rhs); }};
+    overload<sub> sub_double{[](double lhs, double rhs) { return lhs - rhs; }};
+    overload<sub> sub_timedelta{[](timedelta_t lhs, timedelta_t rhs) {
         return timedelta_t{wrapping_subtract(lhs.count(), rhs.count())};
     }};
-    overload<sub> subtract_timestamp_timedelta{[](date_time_t timestamp, timedelta_t duration) {
+    overload<sub> sub_date_time_timedelta{[](date_time_t timestamp, timedelta_t duration) {
         return date_time_t{timedelta_t{wrapping_subtract(timestamp.time_since_epoch().count(), duration.count())}};
     }};
-    overload<sub> subtract_timestamps{[](date_time_t lhs, date_time_t rhs) {
+    overload<sub> sub_date_time{[](date_time_t lhs, date_time_t rhs) {
         return timedelta_t{wrapping_subtract(lhs.time_since_epoch().count(), rhs.time_since_epoch().count())};
     }};
 
     // Multiplication.
-    overload<mul> multiply_integer{[](i64 lhs, i64 rhs) { return wrapping_multiply(lhs, rhs); }};
-    overload<mul> multiply_double{[](double lhs, double rhs) { return lhs * rhs; }};
-    overload<mul> multiply_optional_integer{[](std::optional<i64> lhs, std::optional<i64> rhs) {
+    overload<mul> mul_i64{[](i64 lhs, i64 rhs) { return wrapping_multiply(lhs, rhs); }};
+    overload<mul> mul_double{[](double lhs, double rhs) { return lhs * rhs; }};
+    overload<mul> mul_optional_i64{[](std::optional<i64> lhs, std::optional<i64> rhs) {
         return wrapping_multiply(lhs.value_or(1), rhs.value_or(1));
     }};
-    overload<mul> multiply_optional_double{[](std::optional<double> lhs, std::optional<double> rhs) {
+    overload<mul> mul_optional_double{[](std::optional<double> lhs, std::optional<double> rhs) {
         return lhs.value_or(1.0) * rhs.value_or(1.0);
     }};
 
     // Division.
-    overload<div> divide_integer{[](i64 lhs, i64 rhs) {
+    overload<div> div_i64{[](i64 lhs, i64 rhs) {
         if (rhs == 0) {
             throw std::domain_error{"division by zero"};
         }
         return static_cast<double>(lhs) / static_cast<double>(rhs);
     }};
-    overload<div> divide_double{[](double lhs, double rhs) {
+    overload<div> div_double{[](double lhs, double rhs) {
         if (rhs == 0.0) {
             throw std::domain_error{"division by zero"};
         }
@@ -140,8 +135,8 @@ struct numeric_overloads {
         return result;
     }
 
-    overload<floordiv> floor_divide_integer{[](i64 lhs, i64 rhs) { return integer_floor_division(lhs, rhs); }};
-    overload<floordiv> floor_divide_double{[](double lhs, double rhs) { return float_floor_division(lhs, rhs); }};
+    overload<floordiv> floordiv_i64{[](i64 lhs, i64 rhs) { return integer_floor_division(lhs, rhs); }};
+    overload<floordiv> floordiv_double{[](double lhs, double rhs) { return float_floor_division(lhs, rhs); }};
 
     // Modulo.
     static i64 integer_modulo(i64 lhs, i64 rhs) {
@@ -175,8 +170,8 @@ struct numeric_overloads {
         return remainder;
     }
 
-    overload<mod> modulo_integer{[](i64 lhs, i64 rhs) { return integer_modulo(lhs, rhs); }};
-    overload<mod> modulo_double{[](double lhs, double rhs) { return float_modulo(lhs, rhs); }};
+    overload<mod> mod_i64{[](i64 lhs, i64 rhs) { return integer_modulo(lhs, rhs); }};
+    overload<mod> mod_double{[](double lhs, double rhs) { return float_modulo(lhs, rhs); }};
 
     // Power.
     static i64 integer_power(i64 lhs, i64 rhs) {
@@ -209,34 +204,17 @@ struct numeric_overloads {
         return std::pow(lhs, rhs);
     }
 
-    overload<pow> power_integer{[](i64 lhs, i64 rhs) { return integer_power(lhs, rhs); }};
-    overload<pow> power_double{[](double lhs, double rhs) { return floating_power(lhs, rhs); }};
+    overload<pow> pow_i64{[](i64 lhs, i64 rhs) { return integer_power(lhs, rhs); }};
+    overload<pow> pow_double{[](double lhs, double rhs) { return floating_power(lhs, rhs); }};
 
+};
+
+struct transform_overloads {
     // Rounding.
-    static constexpr auto max_round_decimal_places = 323;
-    static constexpr auto round_positive_buffer_size = static_cast<std::size_t>(
-        std::numeric_limits<double>::max_exponent10 + max_round_decimal_places + 3);
-    static constexpr auto round_integer_buffer_size =
-        static_cast<std::size_t>(std::numeric_limits<double>::max_exponent10 + 1);
-
-    template <std::size_t SIZE>
-    static std::string_view format_fixed(double value, int precision, std::array<char, SIZE> &buffer) {
-        const auto [end, error] =
-            std::to_chars(buffer.data(), buffer.data() + buffer.size(), value, std::chars_format::fixed, precision);
-        if (error != std::errc{}) {
-            throw std::runtime_error{"failed to format a rounded floating-point value"};
-        }
-        return {buffer.data(), static_cast<std::size_t>(end - buffer.data())};
-    }
-
-    static double parse_rounded(std::string_view text) {
-        auto rounded = 0.0;
-        const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), rounded);
-        if (error == std::errc::result_out_of_range) {
-            throw std::overflow_error{"rounded result is outside the double range"};
-        }
-        if (error != std::errc{} || end != text.data() + text.size()) {
-            throw std::runtime_error{"failed to parse a rounded floating-point value"};
+    static double round_ties_to_even(double value) {
+        auto rounded = std::round(value);
+        if (std::abs(value - rounded) == 0.5) {
+            rounded = 2.0 * std::round(value / 2.0);
         }
         return rounded;
     }
@@ -245,66 +223,42 @@ struct numeric_overloads {
         if (!std::isfinite(value) || value == 0.0) {
             return value;
         }
-        if (ndigits > max_round_decimal_places) {
+        if (ndigits == 0) {
+            return round_ties_to_even(value);
+        }
+        if (ndigits > 323) {
+            return value;
+        }
+        if (ndigits < -308) {
+            return std::copysign(0.0, value);
+        }
+
+        if (ndigits < 0) {
+            const auto scale = std::pow(10.0, static_cast<int>(-ndigits));
+            const auto rounded = round_ties_to_even(value / scale);
+            const auto result = rounded * scale;
+            if (!std::isfinite(result)) {
+                throw std::overflow_error{"rounded result is outside the double range"};
+            }
+            return result;
+        }
+
+        const auto precision = static_cast<int>(ndigits);
+        const auto scale_precision = std::min(precision, 308);
+        const auto scale = std::pow(10.0, scale_precision);
+        // Split the scale so subnormal values support precision above 308 digits.
+        const auto remaining_precision = precision - scale_precision;
+        const auto remaining_scale = remaining_precision == 0 ? 1.0 : std::pow(10.0, remaining_precision);
+        const auto scaled = (value * scale) * remaining_scale;
+        if (!std::isfinite(scaled)) {
             return value;
         }
 
-        if (ndigits >= 0) {
-            auto buffer = std::array<char, round_positive_buffer_size>{};
-            return parse_rounded(format_fixed(value, static_cast<int>(ndigits), buffer));
-        }
-
-        const auto magnitude = std::abs(value);
-        const auto integer = std::trunc(magnitude);
-        if (integer == 0.0) {
-            return std::copysign(0.0, value);
-        }
-
-        auto buffer = std::array<char, round_integer_buffer_size>{};
-        auto digits = std::string{format_fixed(integer, 0, buffer)};
-        const auto significant_integer_size = digits.size();
-        if (ndigits < -static_cast<i64>(significant_integer_size)) {
-            return std::copysign(0.0, value);
-        }
-
-        const auto discarded_digits = static_cast<std::size_t>(-ndigits);
-        const auto retained_digits = significant_integer_size - discarded_digits;
-        const auto rounding_digit = digits[retained_digits];
-        const auto has_nonzero_tail = std::ranges::any_of(
-            std::string_view{digits}.substr(retained_digits + 1), [](char digit) { return digit != '0'; }) ||
-                                     magnitude != integer;
-        const auto round_up = rounding_digit > '5' ||
-                              (rounding_digit == '5' &&
-                               (has_nonzero_tail || (retained_digits != 0 &&
-                                                     (digits[retained_digits - 1] - '0') % 2 != 0)));
-
-        auto result = retained_digits == 0 ? std::string{"0"} : digits.substr(0, retained_digits);
-        if (round_up && retained_digits != 0) {
-            auto position = retained_digits;
-            while (position != 0 && result[position - 1] == '9') {
-                result[position - 1] = '0';
-                --position;
-            }
-            if (position == 0) {
-                result.insert(result.begin(), '1');
-            } else {
-                ++result[position - 1];
-            }
-        } else if (round_up) {
-            result = "1";
-        }
-        result.append(discarded_digits, '0');
-        if (result.find_first_not_of('0') == std::string::npos) {
-            return std::copysign(0.0, value);
-        }
-        if (std::signbit(value)) {
-            result.insert(result.begin(), '-');
-        }
-        return parse_rounded(result);
+        return (round_ties_to_even(scaled) / remaining_scale) / scale;
     }
 
-    overload<round> round_to_integer{[](double value) { return round_decimal(value, 0); }};
-    overload<round> round_to_precision{[](double value, i64 ndigits) { return round_decimal(value, ndigits); }};
+    overload<round> round_double{[](double value) { return round_decimal(value, 0); }};
+    overload<round> round_double_precision{[](double value, i64 ndigits) { return round_decimal(value, ndigits); }};
 
     // Conversion.
     static RequirementResult result_matches(const WiringArguments &arguments) {
@@ -322,10 +276,10 @@ struct numeric_overloads {
         }
         return accept;
     }
-    overload<convert> convert_integer{eval = [](i64 value) { return value; }, require = result_matches};
-    overload<convert> convert_integer_to_double{eval = [](i64 value) { return static_cast<double>(value); },
-                                                require = result_matches};
-    overload<convert> convert_double_to_integer{
+    overload<convert> convert_i64{eval = [](i64 value) { return value; }, require = result_matches};
+    overload<convert> convert_i64_to_double{eval = [](i64 value) { return static_cast<double>(value); },
+                                            require = result_matches};
+    overload<convert> convert_double_to_i64{
         eval = [](double value) {
             const auto limit = std::ldexp(1.0, 63);
             if (std::isnan(value)) {
@@ -340,62 +294,67 @@ struct numeric_overloads {
     overload<convert> convert_double{eval = [](double value) { return value; }, require = result_matches};
 
     // Positive.
-    overload<pos> positive_integer{[](i64 value) { return value; }};
-    overload<pos> positive_double{[](double value) { return value; }};
-    overload<pos> positive_timedelta{[](timedelta_t value) { return value; }};
+    overload<pos> pos_i64{[](i64 value) { return value; }};
+    overload<pos> pos_double{[](double value) { return value; }};
+    overload<pos> pos_timedelta{[](timedelta_t value) { return value; }};
 
     // Negative.
-    overload<neg> negative_integer{[](i64 value) { return wrapping_negate(value); }};
-    overload<neg> negative_double{[](double value) { return -value; }};
-    overload<neg> negative_timedelta{[](timedelta_t value) { return timedelta_t{wrapping_negate(value.count())}; }};
+    overload<neg> neg_i64{[](i64 value) { return wrapping_negate(value); }};
+    overload<neg> neg_double{[](double value) { return -value; }};
+    overload<neg> neg_timedelta{[](timedelta_t value) { return timedelta_t{wrapping_negate(value.count())}; }};
 
     // Absolute value.
-    overload<abs> absolute_integer{[](i64 value) { return value < 0 ? wrapping_negate(value) : value; }};
-    overload<abs> absolute_double{[](double value) { return std::abs(value); }};
-    overload<abs> absolute_timedelta{[](timedelta_t value) {
+    overload<abs> abs_i64{[](i64 value) { return value < 0 ? wrapping_negate(value) : value; }};
+    overload<abs> abs_double{[](double value) { return std::abs(value); }};
+    overload<abs> abs_timedelta{[](timedelta_t value) {
         const auto count = value.count();
         return timedelta_t{count < 0 ? wrapping_negate(count) : count};
     }};
 
+};
+
+struct comparison_overloads {
     // Equality.
-    overload<eq> equal_integer{[](i64 lhs, i64 rhs) { return lhs == rhs; }};
-    overload<eq> equal_double{[](double lhs, double rhs) { return lhs == rhs; }};
-    overload<eq> equal_timestamps{[](date_time_t lhs, date_time_t rhs) { return lhs == rhs; }};
-    overload<eq> equal_timedeltas{[](timedelta_t lhs, timedelta_t rhs) { return lhs == rhs; }};
+    overload<eq> eq_i64{[](i64 lhs, i64 rhs) { return lhs == rhs; }};
+    overload<eq> eq_double{[](double lhs, double rhs) { return lhs == rhs; }};
+    overload<eq> eq_date_time{[](date_time_t lhs, date_time_t rhs) { return lhs == rhs; }};
+    overload<eq> eq_timedelta{[](timedelta_t lhs, timedelta_t rhs) { return lhs == rhs; }};
 
     // Inequality.
-    overload<ne> not_equal_integer{[](i64 lhs, i64 rhs) { return lhs != rhs; }};
-    overload<ne> not_equal_double{[](double lhs, double rhs) { return lhs != rhs; }};
-    overload<ne> not_equal_timestamps{[](date_time_t lhs, date_time_t rhs) { return lhs != rhs; }};
-    overload<ne> not_equal_timedeltas{[](timedelta_t lhs, timedelta_t rhs) { return lhs != rhs; }};
+    overload<ne> ne_i64{[](i64 lhs, i64 rhs) { return lhs != rhs; }};
+    overload<ne> ne_double{[](double lhs, double rhs) { return lhs != rhs; }};
+    overload<ne> ne_date_time{[](date_time_t lhs, date_time_t rhs) { return lhs != rhs; }};
+    overload<ne> ne_timedelta{[](timedelta_t lhs, timedelta_t rhs) { return lhs != rhs; }};
 
     // Ordering.
-    overload<lt> less_integer{[](i64 lhs, i64 rhs) { return lhs < rhs; }};
-    overload<lt> less_double{[](double lhs, double rhs) { return lhs < rhs; }};
-    overload<lt> less_timestamps{[](date_time_t lhs, date_time_t rhs) { return lhs < rhs; }};
-    overload<lt> less_timedeltas{[](timedelta_t lhs, timedelta_t rhs) { return lhs < rhs; }};
+    overload<lt> lt_i64{[](i64 lhs, i64 rhs) { return lhs < rhs; }};
+    overload<lt> lt_double{[](double lhs, double rhs) { return lhs < rhs; }};
+    overload<lt> lt_date_time{[](date_time_t lhs, date_time_t rhs) { return lhs < rhs; }};
+    overload<lt> lt_timedelta{[](timedelta_t lhs, timedelta_t rhs) { return lhs < rhs; }};
 
-    overload<le> less_equal_integer{[](i64 lhs, i64 rhs) { return lhs <= rhs; }};
-    overload<le> less_equal_double{[](double lhs, double rhs) { return lhs <= rhs; }};
-    overload<le> less_equal_timestamps{[](date_time_t lhs, date_time_t rhs) { return lhs <= rhs; }};
-    overload<le> less_equal_timedeltas{[](timedelta_t lhs, timedelta_t rhs) { return lhs <= rhs; }};
+    overload<le> le_i64{[](i64 lhs, i64 rhs) { return lhs <= rhs; }};
+    overload<le> le_double{[](double lhs, double rhs) { return lhs <= rhs; }};
+    overload<le> le_date_time{[](date_time_t lhs, date_time_t rhs) { return lhs <= rhs; }};
+    overload<le> le_timedelta{[](timedelta_t lhs, timedelta_t rhs) { return lhs <= rhs; }};
 
-    overload<gt> greater_integer{[](i64 lhs, i64 rhs) { return lhs > rhs; }};
-    overload<gt> greater_double{[](double lhs, double rhs) { return lhs > rhs; }};
-    overload<gt> greater_timestamps{[](date_time_t lhs, date_time_t rhs) { return lhs > rhs; }};
-    overload<gt> greater_timedeltas{[](timedelta_t lhs, timedelta_t rhs) { return lhs > rhs; }};
+    overload<gt> gt_i64{[](i64 lhs, i64 rhs) { return lhs > rhs; }};
+    overload<gt> gt_double{[](double lhs, double rhs) { return lhs > rhs; }};
+    overload<gt> gt_date_time{[](date_time_t lhs, date_time_t rhs) { return lhs > rhs; }};
+    overload<gt> gt_timedelta{[](timedelta_t lhs, timedelta_t rhs) { return lhs > rhs; }};
 
-    overload<ge> greater_equal_integer{[](i64 lhs, i64 rhs) { return lhs >= rhs; }};
-    overload<ge> greater_equal_double{[](double lhs, double rhs) { return lhs >= rhs; }};
-    overload<ge> greater_equal_timestamps{[](date_time_t lhs, date_time_t rhs) { return lhs >= rhs; }};
-    overload<ge> greater_equal_timedeltas{[](timedelta_t lhs, timedelta_t rhs) { return lhs >= rhs; }};
+    overload<ge> ge_i64{[](i64 lhs, i64 rhs) { return lhs >= rhs; }};
+    overload<ge> ge_double{[](double lhs, double rhs) { return lhs >= rhs; }};
+    overload<ge> ge_date_time{[](date_time_t lhs, date_time_t rhs) { return lhs >= rhs; }};
+    overload<ge> ge_timedelta{[](timedelta_t lhs, timedelta_t rhs) { return lhs >= rhs; }};
 
 };
 
 } // namespace
 
 void register_numeric_operators() {
-    (void)numeric_overloads{};
+    register_overloads<arithmetic_overloads>();
+    register_overloads<transform_overloads>();
+    register_overloads<comparison_overloads>();
 }
 
 } // namespace bg::operators::details

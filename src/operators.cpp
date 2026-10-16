@@ -15,7 +15,7 @@ namespace {
 
 class ConstantNodeTemplate final : public NodeTemplate {
   public:
-    const Signature &signature() const override {
+    const Signature &default_signature() const override {
         static const auto signature = Signature{util::symbol{"const"},
                                                 {{util::symbol{"value"}, &SCALAR::type()}},
                                                 TS<SCALAR, TimeSeriesGuarantee::const_>::type()};
@@ -31,7 +31,7 @@ class ConstantNodeTemplate final : public NodeTemplate {
 
 class DefaultInputNodeTemplate final : public NodeTemplate {
   public:
-    const Signature &signature() const override {
+    const Signature &default_signature() const override {
         static const auto signature =
             Signature{util::symbol{"default input"},
                       {{util::symbol{"value"}, &TS<SCALAR>::type(), active, optional},
@@ -51,7 +51,7 @@ const auto default_input_node = DefaultInputNodeTemplate{};
 
 class DefaultValueTemplate final : public WiringTemplate {
   public:
-    const Signature &signature() const override {
+    const Signature &default_signature() const override {
         static const auto signature =
             Signature{util::symbol{"default"},
                       {{util::symbol{"value"}, &TS<SCALAR>::type(), active, optional},

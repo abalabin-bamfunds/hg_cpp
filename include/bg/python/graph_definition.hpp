@@ -17,7 +17,7 @@ class BG_PYTHON_API PythonGraphDefinition final : public WiringTemplate {
     PythonGraphDefinition(std::shared_ptr<const PythonNodeDefinition::SignatureDefinition> signature,
                           nanobind::handle function, bool lift_scalar_output);
 
-    const Signature &signature() const override { return signature_->signature; }
+    const Signature &default_signature() const override { return signature_->signature; }
     std::span<const Type *const> wiring_parameter_types() const noexcept {
         return signature_->wiring_parameter_types;
     }

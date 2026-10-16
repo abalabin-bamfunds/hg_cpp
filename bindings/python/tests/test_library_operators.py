@@ -174,7 +174,7 @@ def test_numeric_operator_syntax_and_explicit_convert_target():
     assert bg.test_graph(floor_divide, [-7, 7], [3, -3]) == [-3, -3]
     assert bg.test_graph(modulo, [-7, 7], [3, -3]) == [2, -2]
     assert bg.test_graph(power, [-2.0, 3.0]) == [4.0, 9.0]
-    assert bg.test_graph(round_value, [2.675, 1.125, 1.375]) == [2.67, 1.12, 1.38]
+    assert bg.test_graph(round_value, [2.675, 1.125, 1.375]) == [2.68, 1.12, 1.38]
     assert bg.test_graph(convert, [2, -3]) == [2.0, -3.0]
 
 
@@ -269,15 +269,52 @@ def test_mapped_python_operator_wrappers_are_reusable_and_isolated():
     assert bg.test_graph(explicit_constant) == [True]
 
 
-def test_round_matches_python_for_deterministic_binary64_samples():
+def test_round_uses_numeric_scaling_ties_to_even_and_handles_extremes():
     @bg.graph
     def round_value(value: bg.TS[float], digits: bg.TS[int]) -> bg.TS[float]:
         return round(value, digits)
 
-    random_values = random.Random(0xB6_2026)
-    values = [random_values.uniform(-1e120, 1e120) for _ in range(1000)]
-    digits = [random_values.randrange(-100, 101) for _ in values]
-    assert bg.test_graph(round_value, values, digits) == [round(value, ndigits) for value, ndigits in zip(values, digits)]
+    @bg.graph
+    def round_whole(value: bg.TS[float]) -> bg.TS[float]:
+        return round(value)
+
+    assert bg.test_graph(round_value, [2.675, 1.125, 1.375, -1.125, -1.375], [2, 2, 2, 2, 2]) == [
+        2.68,
+        1.12,
+        1.38,
+        -1.12,
+        -1.38,
+    ]
+    assert bg.test_graph(round_whole, [2.5, 3.5, -2.5, -3.5]) == [2.0, 4.0, -2.0, -4.0]
+    assert bg.test_graph(round_value, [25.0, 35.0, -25.0, -35.0, 250.0, 350.0], [-1, -1, -1, -1, -2, -2]) == [
+        20.0,
+        40.0,
+        -20.0,
+        -40.0,
+        200.0,
+        400.0,
+    ]
+
+    huge_digits = bg.test_graph(round_value, [1.25, -1.25], [sys.maxsize, -(1 << 63)])
+    assert huge_digits[0] == 1.25
+    assert huge_digits[1] == 0.0 and math.copysign(1.0, huge_digits[1]) == -1.0
+
+    nonfinite = bg.test_graph(round_value, [math.inf, -math.inf, math.nan], [2, -1, 0])
+    assert math.isinf(nonfinite[0]) and nonfinite[0] > 0
+    assert math.isinf(nonfinite[1]) and nonfinite[1] < 0
+    assert math.isnan(nonfinite[2])
+
+    signed_zero = bg.test_graph(round_value, [-0.0, -0.1, 0.1], [2, 0, 0])
+    assert math.copysign(1.0, signed_zero[0]) == -1.0
+    assert math.copysign(1.0, signed_zero[1]) == -1.0
+    assert math.copysign(1.0, signed_zero[2]) == 1.0
+
+    subnormal = math.ulp(0.0)
+    assert bg.test_graph(round_value, [1.23e-310, subnormal, subnormal], [310, 323, 324]) == [1e-310, 0.0, subnormal]
+    assert bg.test_graph(round_value, [sys.float_info.max], [308]) == [sys.float_info.max]
+
+    with pytest.raises(OverflowError, match="rounded result"):
+        bg.test_graph(round_value, [1.5e308], [-308])
 
 
 def test_convert_requires_a_compatible_explicit_full_time_series_type():
