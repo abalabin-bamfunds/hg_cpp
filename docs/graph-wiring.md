@@ -165,15 +165,26 @@ without running materialisation callbacks or completion callbacks. Each match re
 offered forms, type map, and total materialisation cost. The total counts an
 identical source point and target type once.
 
+Before enumerating offered forms, matching probes each original argument type
+against its parameter in an independent type map. These probes ignore time-series
+guarantees and do not use the explicit seed. A variable other than a guarantee
+variable is constrained by the original arguments only when at least one
+successful probe maps it and every successful probe that maps it produces the
+same mapping after guarantees are removed recursively. Conflicting
+source mappings leave that variable unconstrained. A candidate is retained when
+normal matching with the explicit seed succeeds and its mappings satisfy all
+source constraints. This preserves compatible source structure without rejecting
+a materialisation when the original type cannot match the parameter.
+
 `Signature::complete_wiring_match` consumes one match and completes its
 resolvers and supplied completion callback in the same scoped resolver
 environment as ordinary signature completion. Its argument view retains the
 original descriptors and scalar-read tracking while `resolved_type()` reads the
 match's type map. It returns the resolved signature and map together with the
 selected forms and cost. Operator and graph calls use this matching without
-running materialisation callbacks. A bare unconstrained time series variable
-retains the source's semantic structure, so a different, cheaper target cannot
-change its type mapping.
+running materialisation callbacks. Original argument structure constrains
+compatible mappings, but materialisation forms still determine the concrete
+types offered to the signature.
 
 ## Node construction
 

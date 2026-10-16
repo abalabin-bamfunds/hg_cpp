@@ -8,14 +8,16 @@
 #include <bg/type/guarantee_variable.hpp>
 #include <bg/type/size_variable.hpp>
 #include <bg/type/details/resolver_type_resolution_error.hpp>
+#include <bg/type/schema.hpp>
 #include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/time_series_variable.hpp>
 #include <bg/type/type_variable.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <stdexcept>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace bg {
@@ -60,35 +62,53 @@ bool valid_resolver_mapping(const Variable &variable, const TypeMapValue &mappin
     return false;
 }
 
-struct OpenTimeSeriesVariable {
-    const TypeVariableType<TimeSeriesType> *variable;
-    bool matches_ordinary_structure;
-};
+const Type &source_type_without_guarantees(const Type &type);
 
-std::optional<OpenTimeSeriesVariable> open_time_series_variable(const Type &type) {
-    auto *time_series = type_cast<TimeSeriesType>(&type);
-    while (time_series != nullptr) {
-        if (const auto *reference = type_cast<TimeSeriesReferenceType>(time_series)) {
-            time_series = &reference->target_type();
-            continue;
-        }
-
-        if (const auto *generic = dynamic_cast<const GenericTimeSeriesVariableType *>(time_series)) {
-            const auto &variable = generic->variable();
-            if (variable.alternatives().empty() && variable.constraints().empty()) {
-                return OpenTimeSeriesVariable{&variable, true};
-            }
-            return std::nullopt;
-        }
-
-        const auto *variable = dynamic_cast<const TypeVariableType<TimeSeriesType> *>(time_series);
-        if (variable == nullptr || !variable->alternatives().empty() || !variable->constraints().empty()) {
-            return std::nullopt;
-        }
-        return OpenTimeSeriesVariable{variable, false};
+const Schema &source_schema_without_guarantees(const Schema &schema_type) {
+    if (!schema_type.is_resolved()) {
+        return schema_type;
     }
 
-    return std::nullopt;
+    auto fields = std::vector<SchemaField>{};
+    fields.reserve(schema_type.direct_fields().size());
+    for (const auto &field : schema_type.direct_fields()) {
+        fields.push_back({field.name, &source_type_without_guarantees(*field.type), field.optional});
+    }
+
+    const auto *base = schema_type.base() == nullptr ? nullptr : &source_schema_without_guarantees(*schema_type.base());
+    return bg::schema(schema_type.name(), schema_type.identity(), base, fields);
+}
+
+const Type &source_type_without_guarantees(const Type &type) {
+    if (const auto *schema_type = dynamic_cast<const Schema *>(&type)) {
+        return source_schema_without_guarantees(*schema_type);
+    }
+
+    const auto *time_series = type_cast<TimeSeriesType>(&type);
+    if (time_series == nullptr || !time_series->is_resolved()) {
+        return type;
+    }
+
+    if (const auto *reference = type_cast<TimeSeriesReferenceType>(time_series)) {
+        const auto &target = static_cast<const TimeSeriesType &>(
+            source_type_without_guarantees(reference->target_type()));
+        if (const auto *reference_target = type_cast<TimeSeriesReferenceType>(&target)) {
+            return details::inherited_reference_transport_type(*reference_target);
+        }
+        return time_series_reference_type(target, TimeSeriesGuarantee::ordinary);
+    }
+    return time_series->with_guarantee_limit(TimeSeriesGuarantee::ordinary);
+}
+
+bool same_source_mapping(const TypeMapValue &left, const TypeMapValue &right) {
+    const auto *left_type = std::get_if<const Type *>(&left);
+    const auto *right_type = std::get_if<const Type *>(&right);
+    if (left_type != nullptr && right_type != nullptr) {
+        return *left_type != nullptr && *right_type != nullptr &&
+               &source_type_without_guarantees(**left_type) == &source_type_without_guarantees(**right_type);
+    }
+
+    return left == right;
 }
 
 enum class ResolverState : unsigned char { pending, active, complete };
@@ -390,29 +410,47 @@ Signature::match_wiring_arguments(std::span<const WiringArgument> arguments, con
         }
     }
 
-    auto source_mappings = seed == nullptr ? TypeMap{} : seed->copy();
-    for (auto index = std::size_t{}; index < arguments.size(); ++index) {
-        const auto variable = open_time_series_variable(*parameters_[index].type);
-        if (!variable || !arguments[index].is_time_series()) {
-            continue;
+    auto source_constraints = TypeMap{};
+    const auto has_alternate_form = [&] {
+        for (auto index = std::size_t{}; index < arguments.size(); ++index) {
+            if (std::ranges::any_of(forms[index], [&](const auto &form) {
+                    return form.offered_type != &arguments[index].type();
+                })) {
+                return true;
+            }
+        }
+        return false;
+    }();
+    if (has_alternate_form) {
+        auto source_matches = std::vector<TypeMap>{};
+        for (auto index = std::size_t{}; index < arguments.size(); ++index) {
+            auto source_map = TypeMap{};
+            source_map.matching_structure_only_ = true;
+            const auto &source_type = source_type_without_guarantees(arguments[index].type());
+            if (parameters_[index].type->match(source_type, source_map)) {
+                source_matches.push_back(std::move(source_map));
+            }
         }
 
-        auto source_type = type_cast<TimeSeriesType>(&arguments[index].type());
-        if (source_type == nullptr || !source_type->is_resolved()) {
-            continue;
+        auto source_mappings = std::unordered_map<const Variable *, TypeMapValue>{};
+        auto conflicting_variables = std::unordered_set<const Variable *>{};
+        for (const auto &source_map : source_matches) {
+            for (const auto &[variable, mapping] : source_map.values_) {
+                if (dynamic_cast<const GuaranteeVariable *>(variable) != nullptr) {
+                    continue;
+                }
+
+                const auto [found, inserted] = source_mappings.try_emplace(variable, mapping);
+                if (!inserted && !same_source_mapping(found->second, mapping)) {
+                    conflicting_variables.insert(variable);
+                }
+            }
         }
 
-        if (type_cast<TimeSeriesReferenceType>(parameters_[index].type) != nullptr) {
-            source_type = &source_type->target_type();
-        } else {
-            source_type = &source_type->dereferenced_type();
-        }
-
-        if (variable->matches_ordinary_structure) {
-            source_type = &source_type->with_guarantee(TimeSeriesGuarantee::ordinary);
-        }
-        if (!variable->variable->match(*source_type, source_mappings)) {
-            return {};
+        for (const auto &[variable, mapping] : source_mappings) {
+            if (!conflicting_variables.contains(variable)) {
+                source_constraints.set(*variable, mapping);
+            }
         }
     }
 
@@ -441,8 +479,16 @@ Signature::match_wiring_arguments(std::span<const WiringArgument> arguments, con
     const auto enumerate = [&](auto &&self, std::size_t index) -> void {
         if (index == arguments.size()) {
             try {
-                matches.push_back(
-                    {match_arguments(offered_types, &source_mappings), selected_forms, materialisation_cost()});
+                auto candidate_mappings = match_arguments(offered_types, seed);
+                const auto matches_source = std::ranges::all_of(
+                    source_constraints.values_, [&](const auto &entry) {
+                        const auto *mapping = candidate_mappings.find(*entry.first);
+                        return mapping != nullptr && same_source_mapping(*mapping, entry.second);
+                    });
+                if (matches_source) {
+                    matches.push_back(
+                        {std::move(candidate_mappings), selected_forms, materialisation_cost()});
+                }
             } catch (const TypeResolutionError &error) {
                 if (error.code() != TypeResolutionErrorCode::mismatch) {
                     throw;

@@ -22,8 +22,9 @@ class TimeSeriesType : public Type {
     // target guarantees recursively; a non-reference type returns itself.
     virtual const TimeSeriesType &dereferenced_type() const;
     [[nodiscard]] virtual const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const;
-    // Returns a canonical resolved type capped at limit, including contained time series. A reference caps only
-    // its own guarantee and preserves its target. The receiver and its contained time series must be resolved.
+    // Returns a canonical resolved type capped at limit, including contained time series. Extension types with
+    // contained time series must override this operation to cap them. A reference caps only its own guarantee and
+    // preserves its target. The receiver and its contained time series must be resolved.
     virtual const TimeSeriesType &with_guarantee_limit(TimeSeriesGuarantee limit) const;
     // Returns the canonical resolved type with weakest matching guarantees, or nullptr for incompatible or
     // unresolved types.

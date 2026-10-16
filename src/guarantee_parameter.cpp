@@ -3,6 +3,10 @@
 namespace bg {
 
 bool GuaranteeParameter::match(TimeSeriesGuarantee supplied, TypeMap &type_map) const {
+    if (type_map.matching_structure_only()) {
+        return true;
+    }
+
     if (const auto resolved = value()) {
         return satisfies(supplied, *resolved);
     }

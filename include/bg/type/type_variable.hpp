@@ -37,6 +37,10 @@ template <typename Category> class TypeVariableType final : public Category, pub
     // Alternatives may constrain the reference itself; constraints and mappings observe its limited target.
     [[nodiscard]] bool match(const Type &supplied, TypeMap &type_map,
                              std::optional<TimeSeriesGuarantee> reference_limit) const override {
+        if (type_map.matching_structure_only() && !alternatives_.empty()) {
+            return true;
+        }
+
         auto effective_limit = reference_limit;
         auto observed_type = &supplied;
 
