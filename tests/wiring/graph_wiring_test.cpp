@@ -48,7 +48,7 @@ class OutputRuntimeSelectorNode final : public bg::NodeTemplate {
         : signature_{bg::util::symbol{"output_runtime_selector"}, {}, bg::TS<float>::type()},
           selected_runtime_type_{&selected_runtime_type}, selector_calls_{&selector_calls} {}
 
-    const bg::Signature &signature() const final { return signature_; }
+    const bg::Signature &default_signature() const final { return signature_; }
     bg::EvaluationFunction evaluation_function(const bg::ResolvedSignature &) const noexcept final { return nullptr; }
     bool uses_output_runtime_type() const noexcept final { return true; }
 
@@ -68,7 +68,7 @@ class ThrowingOutputRuntimeSelectorNode final : public bg::NodeTemplate {
     ThrowingOutputRuntimeSelectorNode()
         : signature_{bg::util::symbol{"throwing_output_runtime_selector"}, {}, bg::TS<float>::type()} {}
 
-    const bg::Signature &signature() const final { return signature_; }
+    const bg::Signature &default_signature() const final { return signature_; }
     bg::EvaluationFunction evaluation_function(const bg::ResolvedSignature &) const noexcept final { return nullptr; }
     bool uses_output_runtime_type() const noexcept final { return true; }
 
@@ -398,7 +398,7 @@ namespace {
 
 class scale_template final : public bg::NodeTemplate {
   public:
-    [[nodiscard]] const bg::Signature &signature() const override {
+    [[nodiscard]] const bg::Signature &default_signature() const override {
         static const bg::GenericTimeSeriesValueType input_type{bg::float_type(), bg::TimeSeriesGuarantee::ordinary};
         [[maybe_unused]] static const auto &input_type_registration = bg::TypeRegistry::register_static(input_type);
         static const bg::Signature value{
@@ -419,7 +419,7 @@ class scale_template final : public bg::NodeTemplate {
 
 class union_input_node_template final : public bg::NodeTemplate {
   public:
-    [[nodiscard]] const bg::Signature &signature() const override {
+    [[nodiscard]] const bg::Signature &default_signature() const override {
         using FORM = bg::Union<"NODE_MULTIPLE_SERIES_FORMS", bg::i64,
                                bg::TS<bg::i64>, bg::TS<float>>;
         static const auto value = bg::Signature{
@@ -434,7 +434,7 @@ class union_input_node_template final : public bg::NodeTemplate {
 
 class series_only_union_input_node_template final : public bg::NodeTemplate {
   public:
-    [[nodiscard]] const bg::Signature &signature() const override {
+    [[nodiscard]] const bg::Signature &default_signature() const override {
         using FORM = bg::Union<"NODE_SERIES_ONLY_FORM", bg::TS<float>>;
         static const auto value = bg::Signature{
             bg::util::symbol{"series_only_union_input_node"}, {{bg::util::symbol{"input"}, &FORM::type()}}};
@@ -448,7 +448,7 @@ class series_only_union_input_node_template final : public bg::NodeTemplate {
 
 class scalar_or_time_series_node_template final : public bg::NodeTemplate {
   public:
-    [[nodiscard]] const bg::Signature &signature() const override {
+    [[nodiscard]] const bg::Signature &default_signature() const override {
         using FORM = bg::Union<"NODE_SCALAR_OR_SERIES", float, bg::TS<float>>;
         static const auto value = bg::Signature{
             bg::util::symbol{"scalar_or_time_series_node"}, {{bg::util::symbol{"input"}, &FORM::type()}}};

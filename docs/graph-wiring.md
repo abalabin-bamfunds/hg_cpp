@@ -316,10 +316,17 @@ and can add any number of wired nodes.
 Engine and extension implementations override:
 
 ```cpp
+const Signature &default_signature() const;
+
 std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature,
                                const WiringArguments &argument_view,
                                std::span<const WiringArgument> arguments) const;
 ```
+
+`signature()` returns the template's current signature. `set_name(symbol)`
+creates a renamed copy for this template without changing its definition's
+shared metadata or other template copies. Set the name before wiring calls.
+Custom templates provide their original signature through `default_signature()`.
 
 `argument_view` provides resolved mappings and the fixed and flattened variadic
 arguments used by requirements and resolvers. `arguments` contains one normalized
@@ -393,9 +400,9 @@ template pattern. The signature retains it through shared ownership. `GRAPH`
 declarations attach their constraints automatically. Matching checks both the
 parameter type and its constraint before invoking the graph function.
 
-A lambda graph requires a `"name"_n` argument. Its optional label uses
-`"label"_n`; its optional requirement uses `bg::require`. The graph function is
-the only positional argument:
+A lambda graph infers its name from the callable type unless `"name"_n`
+supplies a name. Its optional label uses `"label"_n`; its optional requirement
+uses `bg::require`. The graph function is the only positional argument:
 
 ```cpp
 using namespace bg::literals;

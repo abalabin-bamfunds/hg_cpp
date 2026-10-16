@@ -382,7 +382,7 @@ class DefaultValueSwitchTemplate final : public WiringTemplate {
   public:
     DefaultValueSwitchTemplate() : signature_{default_switch_signature(true)} {}
 
-    const Signature &signature() const noexcept final { return signature_; }
+    const Signature &default_signature() const noexcept final { return signature_; }
 
   private:
     std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const WiringArguments &,
@@ -397,7 +397,7 @@ class DefaultSinkSwitchTemplate final : public WiringTemplate {
   public:
     DefaultSinkSwitchTemplate() : signature_{default_switch_signature(false)} {}
 
-    const Signature &signature() const noexcept final { return signature_; }
+    const Signature &default_signature() const noexcept final { return signature_; }
 
     RequirementResult requirement(const WiringArguments &arguments) const final {
         const auto *cases = arguments.graph(1);

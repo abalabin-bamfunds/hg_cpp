@@ -140,7 +140,7 @@ class RuntimeSignatureNodeTemplate final
         return owned(type_map, std::forward<Arguments>(arguments)...);
     }
 
-    const Signature &signature() const override { return definition_.signature(); }
+    const Signature &default_signature() const override { return definition_.signature(); }
 
     NodeTemplateIdentity definition_identity() const override {
         if constexpr (requires { { definition_.definition_identity() } -> std::same_as<NodeTemplateIdentity>; }) {

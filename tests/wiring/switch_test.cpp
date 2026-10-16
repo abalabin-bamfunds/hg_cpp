@@ -33,7 +33,7 @@ class SwitchCacheOverload final : public WiringTemplate {
                      TS<i64>::type()},
           requirement_calls_{&requirement_calls} {}
 
-    const Signature &signature() const final { return signature_; }
+    const Signature &default_signature() const final { return signature_; }
 
     RequirementResult requirement(const WiringArguments &) const final {
         ++*requirement_calls_;

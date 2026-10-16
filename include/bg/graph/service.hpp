@@ -18,7 +18,7 @@ class ServiceDefinition : public WiringTemplate {
     explicit ServiceDefinition(Signature signature);
     ~ServiceDefinition() override;
 
-    const Signature &signature() const final { return signature_; }
+    const Signature &default_signature() const final { return signature_; }
 
     WiringPoint implementation_requests(const TypeMap &type_map,
                                         std::span<const WiringArgument> scalar_arguments) const;

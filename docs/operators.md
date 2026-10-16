@@ -116,8 +116,9 @@ behavior runs only after overload selection.
   `node<Definition<T>>()` for each listed type. `Definition` is a C++ class
   template; the list selects separate specializations, not type combinations.
 
-These initialization forms register synchronously. The declaration object
-retains no implementation or handle. The operator owns the registered template.
+These initialization forms register synchronously. The operator owns the
+registered template. The declaration object retains borrowed pointers so a
+registration group can assign its reflected member name.
 
 Place these declarations as ordinary members of a file-local class. Keep each
 aggregate definition beside its registration member and group members by
@@ -125,11 +126,11 @@ operator:
 
 ```cpp
 struct numeric_overloads {
-    bg::overload<bg::operators::add> addition{
+    bg::overload<bg::operators::add> add_double{
         [](double lhs, double rhs) { return lhs + rhs; }
     };
 
-    bg::overload<bg::operators::add> optional_addition{
+    bg::overload<bg::operators::add> add_optional_double{
         [](std::optional<double> lhs, std::optional<double> rhs) {
             return lhs.value_or(0.0) + rhs.value_or(0.0);
         }
@@ -137,14 +138,27 @@ struct numeric_overloads {
 };
 
 void register_numeric_operators() {
-    (void)numeric_overloads{};
+    bg::register_overloads<numeric_overloads>();
 }
 ```
 
+`register_overloads<Group>()` constructs the group, then assigns each reflected
+member name to its registered node or graph template. Every member must be an
+`overload` or `instantiate_overloads` declaration. A class-template family uses
+the member name for each specialization; their signatures distinguish them.
+
+Name a default overload `<operator>_impl` and other overloads
+`<operator>_<what>`, for example `sample_impl`, `add_double`, and `len_tss`.
+Remove a trailing underscore from the operator name before adding the suffix:
+`filter_impl`, not `filter__impl`. Use the same rule for implementation aggregate
+names.
+
 Library initialization calls the file's registration function after constructing
-the operator objects. Constructing the class registers its members in declaration
-order. The temporary class is not a node definition and adds no runtime node
-storage. Declaring the class alone performs no registration.
+the operator objects. Members register in declaration order. Split groups larger
+than the aggregate reflection limit into related operator groups. The temporary
+group adds no runtime node storage. Declaring the class alone performs no
+registration. Standalone registration declarations retain their template's
+inferred or explicitly supplied name.
 
 ## Candidate resolution
 

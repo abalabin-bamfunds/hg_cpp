@@ -113,7 +113,7 @@ class GraphPatternTemplate<Result(Arguments...), Pattern> final : public WiringT
   public:
     GraphPatternTemplate() : signature_{make_signature(std::index_sequence_for<Arguments...>{})} {}
 
-    const Signature &signature() const final { return signature_; }
+    const Signature &default_signature() const final { return signature_; }
 
   private:
     template <std::size_t... Index>

@@ -81,15 +81,17 @@ memory cost that the node can reduce.
 
 ## Keep each operator's implementations together
 
-Use one file-local registration class per implementation file, following
+Use file-local registration groups, following
 [overload implementation declarations](operators.md#overload-implementation-declarations).
-Group its members by operator, with one short comment before each group. Keep an
+Group members by operator, with one short comment before each operator. Keep an
 aggregate definition immediately before its registration member. Put callable
 and graph implementations directly in their registration initializers. Keep
 implementation helpers beside the definitions that use them.
 
-Name default implementation aggregates `<operator>_impl`, for example
-`sample_impl` and `filter_impl`.
+Call `register_overloads<Group>()` to register the group and use member names
+as template names. Follow the naming rule in the linked declaration contract.
+Keep all implementations of an operator in one group when splitting a large
+file into groups within the aggregate reflection limit.
 
 Give callback captures a lifetime independent of the temporary registration
 class.

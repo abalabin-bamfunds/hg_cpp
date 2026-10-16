@@ -12,7 +12,7 @@ template <typename ScopeFactory> class ScopedWiringTemplate final : public Wirin
     ScopedWiringTemplate(const WiringTemplate &target, ScopeFactory scope_factory)
         : target_{&target}, scope_factory_{std::move(scope_factory)} {}
 
-    const Signature &signature() const noexcept final { return target_->signature(); }
+    const Signature &default_signature() const noexcept final { return target_->signature(); }
 
     RequirementResult requirement(const WiringArguments &arguments) const final {
         return target_->requirement(arguments);

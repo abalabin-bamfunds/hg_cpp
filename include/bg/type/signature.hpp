@@ -143,6 +143,12 @@ class Signature {
 
     util::symbol name() const noexcept { return name_; }
 
+    Signature with_name(util::symbol name) const {
+        auto result = *this;
+        result.name_ = name;
+        return result;
+    }
+
     std::size_t parameter_count() const noexcept { return parameters_.size(); }
 
     const Parameter &parameter(std::size_t index) const noexcept { return parameters_[index]; }

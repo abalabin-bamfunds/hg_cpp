@@ -69,7 +69,7 @@ struct controlled_sink_definition {
 
 class scale_template final : public bg::NodeTemplate {
   public:
-    [[nodiscard]] const bg::Signature &signature() const override {
+    [[nodiscard]] const bg::Signature &default_signature() const override {
         static const bg::GenericTimeSeriesValueType input_type{bg::float_type(), bg::TimeSeriesGuarantee::ordinary};
         [[maybe_unused]] static const auto &input_type_registration = bg::TypeRegistry::register_static(input_type);
         static const bg::Signature value{

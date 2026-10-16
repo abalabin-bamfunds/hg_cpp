@@ -156,7 +156,7 @@ class DefaultReduceTemplate final : public WiringTemplate {
   public:
     DefaultReduceTemplate() : signature_{default_reduce_signature()} {}
 
-    const Signature &signature() const noexcept final { return signature_; }
+    const Signature &default_signature() const noexcept final { return signature_; }
 
     RequirementResult requirement(const WiringArguments &arguments) const final {
         const auto *function = arguments.graph(0);

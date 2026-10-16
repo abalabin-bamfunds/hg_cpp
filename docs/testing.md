@@ -236,7 +236,9 @@ graph compilation or evaluation.
 - operator overload applicability, selection, on-demand metadata and requirement resolvers, error handling, and caching
 - declarative overload registration through explicit construction, including
   callable argument forwarding, aggregate definitions, class-template families,
-  existing node and graph templates, registration order, and retained callable ownership
+  existing node and graph templates, registration order, retained callable ownership,
+  reflected template names in wired nodes and diagnostics, and naming isolation
+  between template copies and shared aggregate metadata
 - unsupported output guarantees rejecting candidates without blocking applicable
   overloads in either registration order; resolver callback exceptions remaining fatal
 - graph requirements, including resolved scalar inspection, rejection before body wiring, overload fallback, and diagnostics

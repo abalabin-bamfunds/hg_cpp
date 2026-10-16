@@ -261,7 +261,7 @@ class GraphOverload final : public WiringTemplate {
         : signature_{graph_overload_signature(name, {}, output)},
           output_{output}, selected_{&selected}, requirements_{requirements} {}
 
-    const Signature &signature() const final { return signature_; }
+    const Signature &default_signature() const final { return signature_; }
 
     RequirementResult requirement(const WiringArguments &arguments) const final {
         if (arguments.graph("function") == nullptr) {
@@ -297,7 +297,7 @@ class GraphNode final : public NodeTemplate {
     GraphNode() : signature_{util::symbol{"invalid_graph_node"},
                              {{util::symbol{"function"}, &GraphArgument::type()}}} {}
 
-    const Signature &signature() const final { return signature_; }
+    const Signature &default_signature() const final { return signature_; }
     EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept final { return nullptr; }
 
   private:

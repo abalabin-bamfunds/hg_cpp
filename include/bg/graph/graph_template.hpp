@@ -85,7 +85,7 @@ class GraphTemplate final
         }
     }
 
-    const Signature &signature() const override { return signature_; }
+    const Signature &default_signature() const override { return signature_; }
 
     RequirementResult requirement(const WiringArguments &arguments) const override {
         if constexpr (requires { options_.check_requirement(arguments); }) {

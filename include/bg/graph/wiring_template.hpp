@@ -6,6 +6,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/type/signature.hpp>
 
+#include <memory>
 #include <optional>
 #include <span>
 #include <utility>
@@ -19,7 +20,16 @@ class WiringTemplate {
   public:
     virtual ~WiringTemplate();
 
-    virtual const Signature &signature() const = 0;
+    const Signature &signature() const {
+        return named_signature_ == nullptr ? default_signature() : *named_signature_;
+    }
+
+    // Assign a template-instance name without changing a shared declared signature.
+    // Call before wiring the template.
+    void set_name(util::symbol name) {
+        named_signature_ = std::make_shared<const Signature>(signature().with_name(name));
+    }
+
     [[nodiscard]] virtual RequirementResult requirement(const WiringArguments &) const { return accept; }
     // Engine and extension API. Resolve types outside the input/output signature, such as node state types,
     // while resolver lookup is active and before checking requirements.
@@ -92,6 +102,8 @@ class WiringTemplate {
     std::optional<WiringPoint> operator()(const TypeMap &, std::span<const WiringArgument>) const && = delete;
 
   protected:
+    virtual const Signature &default_signature() const = 0;
+
     [[nodiscard]] std::optional<WiringPoint> invoke_resolved(GraphWiring &wiring, SignatureResolution resolution,
                                                              std::span<const WiringArgument> arguments,
                                                              std::span<const details::WiringArgumentDescriptor> descriptors,
@@ -102,6 +114,8 @@ class WiringTemplate {
                                                              std::span<const details::WiringArgumentDescriptor> descriptors,
                                                              util::symbol path_name) const;
 
+  private:
+    std::shared_ptr<const Signature> named_signature_;
 };
 
 } // namespace bg
