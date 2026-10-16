@@ -160,11 +160,13 @@ template <typename T> struct promoted_field {
 template <typename T> struct state_field {
     static constexpr bool value = false;
     static constexpr bool scalar_collection = false;
+    static constexpr bool runtime_typed = false;
 };
 
 template <typename T> struct state_field<State<T>> {
     static constexpr bool value = true;
     static constexpr bool scalar_collection = scalar_declaration_traits<T>::is_collection;
+    static constexpr bool runtime_typed = generic_scalar_state<T>;
 
     using value_type = T;
     using storage_type = std::conditional_t<scalar_collection, scalar_stored_t<T>, T>;
@@ -185,7 +187,7 @@ std::vector<const ScalarType *> aggregate_state_types(const TypeMap &type_map, s
 
             if constexpr (state_field<Field>::value) {
                 using Value = typename state_field<Field>::value_type;
-                if constexpr (state_field<Field>::scalar_collection && generic_scalar_state<Value>) {
+                if constexpr (state_field<Field>::runtime_typed) {
                     result.push_back(&static_cast<const ScalarType &>(scalar_type_for<Value>().resolve(type_map)));
                 } else {
                     result.push_back(nullptr);
@@ -584,15 +586,8 @@ consteval std::size_t parameter_index(std::index_sequence<Index...>) {
 
 template <typename Definition, std::size_t... Index>
 [[nodiscard]] consteval bool aggregate_has_generic_state(std::index_sequence<Index...>) {
-    return (false || ... || [] {
-        using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
-
-        if constexpr (state_field<Field>::value && state_field<Field>::scalar_collection) {
-            return generic_scalar_state<typename state_field<Field>::value_type>;
-        }
-
-        return false;
-    }());
+    return (false || ... ||
+            state_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::runtime_typed);
 }
 
 template <typename Definition, std::size_t Target, std::size_t... Index>
@@ -620,15 +615,10 @@ consteval std::size_t dynamic_reference_input_index(std::index_sequence<Index...
 
 template <typename Definition, std::size_t Target, std::size_t... Index>
 consteval std::size_t generic_state_index(std::index_sequence<Index...>) {
-    return (std::size_t{} + ... + static_cast<std::size_t>(Index < Target && [] {
-                using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
-
-                if constexpr (state_field<Field>::value && state_field<Field>::scalar_collection) {
-                    return generic_scalar_state<typename state_field<Field>::value_type>;
-                }
-
-                return false;
-            }()));
+    return (std::size_t{} + ... +
+            static_cast<std::size_t>(Index < Target &&
+                                     state_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::
+                                         runtime_typed));
 }
 
 [[nodiscard]] constexpr std::size_t align_up(std::size_t offset, std::size_t alignment) noexcept {
@@ -847,7 +837,6 @@ template <typename Definition, std::size_t Index>
             }
         }
     } else if constexpr (state_field<Field>::value) {
-        using Declared = typename state_field<Field>::value_type;
         constexpr auto MemberCount = util::aggregate_member_count<Definition>;
         constexpr auto StateIndex = state_index<Definition, Index>(std::make_index_sequence<MemberCount>{});
         const auto offset = [&] {
@@ -859,7 +848,7 @@ template <typename Definition, std::size_t Index>
         }();
         auto *value = static_cast<std::byte *>(runtime_node.state()) + offset;
 
-        if constexpr (state_field<Field>::scalar_collection && generic_scalar_state<Declared>) {
+        if constexpr (state_field<Field>::runtime_typed) {
             constexpr auto GenericStateIndex =
                 generic_state_index<Definition, Index>(std::make_index_sequence<MemberCount>{});
             const auto &runtime_type = node.generic_state_runtime_type(GenericStateIndex);
@@ -900,13 +889,15 @@ aggregate_state_layout(const ResolvedSignature &,
             using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
 
             if constexpr (state_field<Field>::value) {
-                using Declared = typename state_field<Field>::value_type;
                 auto size = std::size_t{};
                 auto alignment = std::size_t{};
 
-                if constexpr (state_field<Field>::scalar_collection && generic_scalar_state<Declared>) {
+                if constexpr (state_field<Field>::runtime_typed) {
                     const auto *type = state_types[state];
                     const auto *runtime_type = &resolve_scalar_runtime_type(*type, parameter_runtime_types);
+                    if (!runtime_type->supports_byte_copy_initialization()) {
+                        throw std::invalid_argument{"aggregate scalar state requires byte-copy initialization"};
+                    }
                     size = runtime_type->size();
                     alignment = runtime_type->alignment();
                     result.generic_runtime_types.push_back(runtime_type);
@@ -939,10 +930,9 @@ void construct_aggregate_state(const NodeStateLayout &layout, [[maybe_unused]] v
             using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
 
             if constexpr (state_field<Field>::value) {
-                using Declared = typename state_field<Field>::value_type;
                 auto *address = static_cast<std::byte *>(storage) + layout.field_offsets[state++];
 
-                if constexpr (state_field<Field>::scalar_collection && generic_scalar_state<Declared>) {
+                if constexpr (state_field<Field>::runtime_typed) {
                     layout.generic_runtime_types[generic++]->construct_initial_value(address);
                 } else {
                     using Value = typename state_field<Field>::storage_type;
@@ -975,7 +965,8 @@ void destroy_aggregate_state(const CompiledNode &node, void *runtime_storage, Ev
         [&] {
             using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
 
-            if constexpr (state_field<Field>::value && state_field<Field>::scalar_collection) {
+            if constexpr (state_field<Field>::value &&
+                          (state_field<Field>::scalar_collection || state_field<Field>::runtime_typed)) {
                 using Declared = typename state_field<Field>::value_type;
                 constexpr auto StateIndex = state_index<Definition, Index>(std::make_index_sequence<MemberCount>{});
                 const auto offset = [&] {
@@ -987,7 +978,7 @@ void destroy_aggregate_state(const CompiledNode &node, void *runtime_storage, Ev
                 }();
                 auto *value = static_cast<std::byte *>(runtime_node.state()) + offset;
 
-                if constexpr (generic_scalar_state<Declared>) {
+                if constexpr (state_field<Field>::runtime_typed) {
                     constexpr auto GenericStateIndex =
                         generic_state_index<Definition, Index>(std::make_index_sequence<MemberCount>{});
                     node.generic_state_runtime_type(GenericStateIndex).destroy(value, memory);
@@ -1008,7 +999,8 @@ void destroy_aggregate_state(const CompiledNode &node, void *runtime_storage, Ev
 
 template <typename Definition, std::size_t... Index>
 [[nodiscard]] consteval bool aggregate_state_requires_destruction(std::index_sequence<Index...>) noexcept {
-    return (... || state_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::scalar_collection);
+    return (... || (state_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::scalar_collection ||
+                    state_field<std::remove_cv_t<util::aggregate_member_type<Index, Definition>>>::runtime_typed));
 }
 
 template <typename Definition, std::size_t... Index>

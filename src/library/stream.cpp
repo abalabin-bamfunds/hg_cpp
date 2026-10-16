@@ -5,12 +5,15 @@
 #include <bg/node.hpp>
 #include <bg/overload.hpp>
 
+#include <cstdint>
+
 namespace bg::operators::details {
 namespace {
 
 using namespace bg::literals;
 
 inline constexpr auto DEDUPED = guarantee_variable<"DEDUPED", TimeSeriesGuarantee::deduplicated>;
+inline constexpr auto G = guarantee_variable<"G">;
 
 struct stream_overloads {
     // Validity queries.
@@ -19,11 +22,27 @@ struct stream_overloads {
             output.set(value.valid());
         },
         schedule_on_start = true};
+
     overload<all_valid> all_valid_impl{
         eval = [](In<TS_T, "value"_n, optional> value, Out<TS<bool, TimeSeriesGuarantee::deduplicated>> output) {
             output.set(value.all_valid());
         },
         schedule_on_start = true};
+
+    // Tick counting.
+    struct count_impl {
+        In<TS_T::with<G>> value;
+        Out<TS<i64, G>> output;
+
+        void evaluate() const {
+            const auto next = output.valid()
+                                  ? static_cast<i64>(static_cast<std::uint64_t>(output.value()) + std::uint64_t{1})
+                                  : i64{1};
+            output.set(next);
+        }
+    };
+
+    overload<count, count_impl> count_impl;
 
     // Tick selection.
     struct sample_impl {
@@ -116,6 +135,35 @@ struct stream_overloads {
     };
 
     overload<if_then_else, if_then_else_impl> if_then_else_impl;
+
+    // Stateful operators.
+    struct lag_impl {
+        In<TS<SCALAR>, optional> value;
+        State<SCALAR> previous;
+        State<bool> previous_valid;
+        Out<TS<SCALAR>> output;
+
+        void evaluate() const {
+            if (*previous_valid) {
+                output.set_value(previous.value());
+            } else {
+                output.invalidate();
+            }
+
+            if (!value.valid()) {
+                previous.reset();
+                *previous_valid = false;
+                return;
+            }
+
+            // A failed copy must not mark an older snapshot as the current event's value.
+            *previous_valid = false;
+            previous.set(value.value_view());
+            *previous_valid = true;
+        }
+    };
+
+    overload<lag, lag_impl> lag_impl;
 };
 
 } // namespace

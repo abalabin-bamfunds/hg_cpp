@@ -199,8 +199,9 @@ An aggregate `std::optional<T>` field also accepts a scalar `T` or
 ## Private state
 
 `State<T>` gives node code mutable state that persists between invocations.
-Each runtime graph owns one `T` object for each `State<T>` field.
-`State<T>::operator->` and `operator*` access that object.
+Each runtime graph owns storage for every `State<T>` field. An ordinary C++
+state type provides a `T` object accessed through `operator->` and `operator*`.
+Runtime-resolved scalar state provides `value()`, `set()`, and `reset()`.
 
 A plain function can request `State<T>` as a parameter. The engine supplies it
 independently of graph code.
@@ -212,10 +213,11 @@ true` to assert that its default state supports it. Scalar collection state does
 not retain an allocator. It uses the node allocation context and exposes a
 mutable scalar view.
 
-A collection state declaration can contain scalar type variables. Wiring
-resolves these variables with the node signature. Graph compilation selects a
-registered runtime type when one matches the resolved type. Otherwise, it
-composes a runtime type from the resolved component runtime types.
+A state declaration can contain scalar type variables. Wiring resolves these
+variables from the node signature. Graph compilation selects a registered
+runtime type when one matches the resolved type. Otherwise, it composes a
+runtime type from the resolved component runtime types. Each selected runtime
+type must support byte-copy initialization.
 
 Each initial state must remain valid after byte copying to a different address.
 This is required for the runtime graph construction defined by the
@@ -224,6 +226,13 @@ This is required for the runtime graph construction defined by the
 An aggregate node can define `finalize()` or `finalize(EvaluationContext*)` to
 release resources retained by its state. Finalization runs when the runtime
 graph destroys the state and must be `noexcept`.
+
+`State<SCALAR>` owns one runtime-resolved scalar value. `value()` returns a
+read-only `Scalar<SCALAR>` view, `set()` copies a scalar input into the owned
+storage, and `reset()` releases the current value and restores its initial
+state. It uses the runtime type resolved from the node signature, including
+constrained scalar variables, and releases allocator-owned data when it is
+reset or destroyed.
 
 ## Complete time series access
 

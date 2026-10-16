@@ -186,10 +186,12 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "not_", operators::not_);
     export_operator(operators_module, "valid", operators::valid);
     export_operator(operators_module, "all_valid", operators::all_valid);
+    export_operator(operators_module, "count", operators::count);
     export_operator(operators_module, "sample", operators::sample);
     export_operator(operators_module, "dedup", operators::dedup);
     export_operator(operators_module, "filter_", operators::filter_);
     export_operator(operators_module, "if_then_else", operators::if_then_else);
+    export_operator(operators_module, "lag", operators::lag);
     export_operator(operators_module, "len_", operators::len_);
     export_operator(operators_module, "contains_", operators::contains_);
     export_operator(operators_module, "const_", operators::const_);

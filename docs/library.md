@@ -160,6 +160,28 @@ applies to the whole collection. Both inputs must have a
 These operators are available under `bg::operators` in C++ and `bg.operators`
 in Python.
 
+## Counting and one-event lag
+
+`count(value)` publishes `1` on the first valid input tick and increments on
+each later valid tick. Invalidation invalidates the output and resets the
+count; revalidation starts at `1`. It counts root ticks, not collection items,
+and propagates the observed input's root guarantee. Incrementing uses the
+`i64` wrapping policy described above.
+
+`lag(value)` accepts `TS<T>` and publishes the preceding input event whenever
+the input changes. It retains an owning copy of the scalar value. Invalidation
+is also an event and is delayed by one input event:
+
+```text
+input:   10   20   invalid   30        40
+output:  —    10   20        invalid   30
+```
+
+Neither operator schedules on start. Skipped cycles do not advance either
+operation. Ordinary equal-valued ticks remain separate events. `lag` produces
+an ordinary output; its first event produces no output, and its final retained
+event remains unpublished unless another input event arrives.
+
 ## Collection queries
 
 `len_(value)` returns an `i64` length. It counts current TSS membership or the
