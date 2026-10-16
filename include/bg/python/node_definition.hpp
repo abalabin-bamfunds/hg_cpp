@@ -4,6 +4,7 @@
 #include <bg/node/node_template_identity.hpp>
 #include <bg/python/export.hpp>
 #include <bg/python/input_view.hpp>
+#include <bg/python/python_node_injection.hpp>
 #include <bg/python/object.hpp>
 #include <bg/python/scalar_conversion.hpp>
 #include <bg/type/signature.hpp>
@@ -37,6 +38,7 @@ class BG_PYTHON_API PythonNodeDefinition {
     using compiled_data_type = CompiledData;
 
     enum class ParameterMode : std::uint8_t { scalar, input_view, time_series_value };
+    enum class CallbackParameter : std::uint8_t { input, evaluation_clock, scheduler };
 
     struct ParameterConversion {
         ParameterMode mode;
@@ -45,6 +47,7 @@ class BG_PYTHON_API PythonNodeDefinition {
     struct CompiledData {
         Object function;
         std::vector<ParameterConversion> parameters;
+        std::vector<CallbackParameter> callback_parameters;
         bool has_output{};
         std::shared_ptr<CallbackLifetime> lifetime{std::make_shared<CallbackLifetime>()};
 
@@ -63,7 +66,8 @@ class BG_PYTHON_API PythonNodeDefinition {
     };
 
     PythonNodeDefinition(std::shared_ptr<const SignatureDefinition> signature, nanobind::handle function,
-                         bool schedule_on_start = false, bool pass_time_series_values = false);
+                         bool schedule_on_start, bool pass_time_series_values,
+                         std::vector<CallbackParameter> callback_parameters);
 
     const Signature &signature() const noexcept { return signature_->signature; }
     std::span<const Type *const> wiring_parameter_types() const noexcept { return signature_->wiring_parameter_types; }
@@ -72,13 +76,14 @@ class BG_PYTHON_API PythonNodeDefinition {
     NodeTemplateIdentity definition_identity() const;
     CompiledData compile(const ResolvedSignature &signature, allocator &) const;
     bool schedule_on_start(const ResolvedSignature &signature) const noexcept;
+    bool uses_timed_scheduling() const noexcept;
 
     static void evaluate(NodeInvocation<compiled_data_type> invocation);
 
   private:
     PythonNodeDefinition(std::shared_ptr<const SignatureDefinition> signature, Object function,
                          std::shared_ptr<const char> identity, bool schedule_on_start,
-                         bool pass_time_series_values) noexcept;
+                         bool pass_time_series_values, std::vector<CallbackParameter> callback_parameters) noexcept;
 
     std::shared_ptr<const SignatureDefinition> signature_;
     WeakObject weak_function_;
@@ -86,6 +91,7 @@ class BG_PYTHON_API PythonNodeDefinition {
     std::shared_ptr<const char> identity_;
     bool schedule_on_start_;
     bool pass_time_series_values_;
+    std::vector<CallbackParameter> callback_parameters_;
 };
 
 } // namespace bg::python

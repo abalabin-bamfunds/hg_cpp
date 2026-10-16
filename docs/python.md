@@ -305,6 +305,22 @@ native identity; its qualified name is descriptive.
 cycle. `@compute_node` declares a fixed-input node. Inputs can be any supported
 time-series type or a scalar argument.
 
+Nodes can request `bg.EvaluationClock` or `bg.Scheduler` as parameters. These are injected
+independently of graph inputs and may appear between ordinary input parameters.
+`EvaluationClock.evaluation_time` exposes the evaluation time. `EvaluationClock.now`
+exposes the current time for the engine mode: evaluation time in simulation mode
+and wall-clock time in real-time mode. Both are Python `datetime` values.
+`Scheduler.schedule_at(time)` schedules that node for a later evaluation and
+returns a `bg.ScheduleHandle`; `Scheduler.cancel(handle)` cancels a pending
+handle for the same node. Both injected objects are valid only while the callback
+runs. A schedule handle can be retained and cancelled by a later invocation.
+Only a node that declares `Scheduler` enables timed scheduling; `EvaluationClock`
+alone does not.
+
+`@node`, `@compute_node`, and `@source_node` accept either injectable at any
+declared parameter position. Injected parameters do not appear in the wiring
+signature. Graph definitions cannot request these injected objects.
+
 `@node` declares scalar-valued inputs and output. Each parameter annotated with
 a scalar type accepts either a scalar wiring argument or a matching `TS[T]`
 wiring point. Scalar arguments are passed unchanged. Time-series arguments are

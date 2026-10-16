@@ -796,9 +796,22 @@ void bind_core(nb::module_ &module) {
     });
     module.def("_make_node", [](std::string name, const std::vector<PythonParameter> &parameters,
                                 std::optional<TypeDescriptor> output, nb::handle function, bool schedule_on_start,
-                                bool pass_time_series_values) {
+                                bool pass_time_series_values, const std::vector<std::string> &callback_parameters) {
+        auto callback_parameter_kinds = std::vector<PythonNodeDefinition::CallbackParameter>{};
+        callback_parameter_kinds.reserve(callback_parameters.size());
+        for (const auto &parameter : callback_parameters) {
+            if (parameter == "input") {
+                callback_parameter_kinds.push_back(PythonNodeDefinition::CallbackParameter::input);
+            } else if (parameter == "evaluation_clock") {
+                callback_parameter_kinds.push_back(PythonNodeDefinition::CallbackParameter::evaluation_clock);
+            } else if (parameter == "scheduler") {
+                callback_parameter_kinds.push_back(PythonNodeDefinition::CallbackParameter::scheduler);
+            } else {
+                throw std::invalid_argument{"invalid Python node callback parameter"};
+            }
+        }
         return PythonNodeDefinition{make_signature(name, parameters, output), function, schedule_on_start,
-                                    pass_time_series_values};
+                                    pass_time_series_values, std::move(callback_parameter_kinds)};
     });
     module.def("_make_graph", [](std::string name, const std::vector<PythonParameter> &parameters,
                                  std::optional<TypeDescriptor> output, nb::handle function,
@@ -1160,6 +1173,7 @@ void bind_core(nb::module_ &module) {
         .def_prop_ro("value", &REFInput::value)
         .def_prop_ro("delta_value", &REFInput::delta_value);
     bind_input_iterators(module);
+    bind_node_injectables(module);
     bind_dict_view(module);
     nb::class_<ReferenceValue>(module, "ReferenceValue").def_prop_ro("valid", &ReferenceValue::valid);
     nb::class_<PythonNodeDefinition>(module, "_PythonNodeDefinition");

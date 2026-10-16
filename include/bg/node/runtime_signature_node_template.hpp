@@ -282,7 +282,9 @@ class RuntimeSignatureNodeTemplate final
     }
 
     bool uses_timed_scheduling() const noexcept override {
-        if constexpr (requires { Definition::uses_timed_scheduling; }) {
+        if constexpr (requires { { definition_.uses_timed_scheduling() } -> std::convertible_to<bool>; }) {
+            return static_cast<bool>(definition_.uses_timed_scheduling());
+        } else if constexpr (requires { Definition::uses_timed_scheduling; }) {
             return Definition::uses_timed_scheduling;
         }
         return false;
