@@ -70,15 +70,9 @@ class Out<TS<Variable, Properties...>> {
     void apply(const literal::TimeSeriesLiteral &literal) const {
         if (const auto sentinel = literal::Sentinel::from(literal)) {
             if (sentinel->name == literal::SKIP.name) {
-                if (sentinel->argument != nullptr) {
-                    throw std::invalid_argument{"SKIP does not accept an argument"};
-                }
                 return;
             }
             if (sentinel->name == literal::INVALID.name) {
-                if (sentinel->argument != nullptr) {
-                    throw std::invalid_argument{"INVALID does not accept an argument"};
-                }
                 invalidate();
                 return;
             }

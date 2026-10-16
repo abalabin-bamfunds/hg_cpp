@@ -247,8 +247,8 @@ struct Sentinel {
 
 `name` identifies an instruction. `argument` optionally borrows a literal;
 calling a sentinel returns a copy with that argument. Copying a sentinel does
-not extend the argument's lifetime. The instruction's consumer validates its
-identity, placement, and argument requirements.
+not extend the argument's lifetime. Each literal consumer defines the
+instructions it supports and interprets their arguments.
 
 Literal consumers use `Sentinel::from(literal)` to inspect the root. It returns
 an optional sentinel descriptor; an ordinary scalar or sequence returns
