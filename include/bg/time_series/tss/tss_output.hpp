@@ -45,19 +45,16 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
     void apply(const literal::TimeSeriesLiteral &literal) const {
         const auto sentinel = literal::Sentinel::from(literal);
         if (sentinel) {
-            if (sentinel->name == literal::SKIP.name) {
-                if (sentinel->argument != nullptr) {
-                    throw std::invalid_argument{"SKIP does not accept an argument"};
-                }
+            if (*sentinel == literal::SKIP) {
                 return;
             }
-            if (sentinel->name == literal::INVALID.name) {
+            if (*sentinel == literal::INVALID) {
                 throw std::invalid_argument{"INVALID is not valid as a TSS update"};
             }
-            if (sentinel->name == literal::REMOVE.name) {
+            if (*sentinel == literal::REMOVE) {
                 throw std::invalid_argument{"REMOVE is only valid as a TSD value"};
             }
-            if (sentinel->name == literal::REMOVED.name) {
+            if (*sentinel == literal::REMOVED) {
                 throw std::invalid_argument{"a time-series collection update requires a sequence"};
             }
             throw std::invalid_argument{"a time-series collection update requires a sequence"};
@@ -174,24 +171,23 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
 
         for (const auto &value : values) {
             if (const auto sentinel = literal::Sentinel::from(value)) {
-                if (sentinel->name == literal::SKIP.name) {
-                    if (sentinel->argument != nullptr) {
-                        throw std::invalid_argument{"SKIP does not accept an argument"};
-                    }
+                if (*sentinel == literal::SKIP) {
                     continue;
                 }
-                if (sentinel->name == literal::INVALID.name) {
+                if (*sentinel == literal::INVALID) {
                     throw std::invalid_argument{"INVALID is not a TSS item"};
                 }
-                if (sentinel->name == literal::REMOVE.name) {
+                if (*sentinel == literal::REMOVE) {
                     throw std::invalid_argument{"REMOVE is only valid as a TSD value"};
                 }
-                if (sentinel->name == literal::REMOVED.name) {
-                    if (sentinel->argument == nullptr) {
-                        throw std::invalid_argument{"REMOVED requires an argument"};
-                    }
+                if (*sentinel == literal::REMOVED) {
+                    throw std::invalid_argument{"REMOVED requires an argument"};
+                }
+            }
+            if (const auto tagged = literal::TaggedLiteral::from(value)) {
+                if (tagged->sentinel == literal::REMOVED) {
                     details::scalar_literal::with_scalar_data(
-                        key_runtime_type(), *sentinel->argument,
+                        key_runtime_type(), tagged->argument,
                         [&](const details::ScalarData &item) { (void)erase(item); });
                     continue;
                 }

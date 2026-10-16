@@ -1521,22 +1521,29 @@ TEST_CASE("eliding queue replay drains an owning suffix after a scalar mutation 
     CHECK(resource.allocations == resource.deallocations);
 }
 
-TEST_CASE("queue message writers skip root SKIP and reject invalid targets and markers",
+TEST_CASE("queue message writers skip bare SKIP and reject invalid payloads",
           "[feature:time-series-storage]") {
     const auto buffer = bg::util::buffer::concurrent_chain(128, 2);
     auto writer = bg::details::QueueMessageWriter{
         buffer, 1, bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>()};
+    auto reader = bg::util::concurrent_buffer_reader{buffer};
 
     CHECK_FALSE(writer.write(literal::TimeSeriesLiteral(literal::SKIP)));
-    CHECK(bg::util::concurrent_buffer_reader{buffer}.readable().empty());
+    CHECK(reader.readable().empty());
+    const auto consume_tombstone = [](bg::util::concurrent_buffer_reader &reader) {
+        const auto frame = reader.read<bg::details::QueueMessageHeader>();
+        CHECK(frame.target == std::numeric_limits<std::uint32_t>::max());
+        reader.consume(frame.size - sizeof(frame));
+        CHECK(reader.readable().empty());
+    };
     CHECK_THROWS_AS(writer.write(literal::TimeSeriesLiteral((literal::SKIP)(literal::ScalarLiteral{bg::i64{1}}))),
                     std::invalid_argument);
-    CHECK(bg::util::concurrent_buffer_reader{buffer}.readable().empty());
+    consume_tombstone(reader);
     CHECK_THROWS_AS(writer.write(literal::TimeSeriesLiteral(literal::INVALID(literal::ScalarLiteral{bg::i64{1}}))),
                     std::invalid_argument);
-    CHECK(bg::util::concurrent_buffer_reader{buffer}.readable().empty());
+    consume_tombstone(reader);
     CHECK_THROWS_AS(writer.write(literal::TimeSeriesLiteral(literal::REMOVE)), std::invalid_argument);
-    CHECK(bg::util::concurrent_buffer_reader{buffer}.readable().empty());
+    CHECK(reader.readable().empty());
     CHECK_THROWS_AS((bg::details::QueueMessageWriter{
                         buffer, std::numeric_limits<std::uint32_t>::max(),
                         bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>()}),
@@ -1552,17 +1559,19 @@ TEST_CASE("queue message writers skip root SKIP and reject invalid targets and m
     const auto list_buffer = bg::util::buffer::concurrent_chain(128, 2);
     auto list_writer = bg::details::QueueMessageWriter{
         list_buffer, 1, bg::cpp_time_series_runtime_type<bg::TSL<bg::TS<bg::i64>, 2>>()};
+    auto list_reader = bg::util::concurrent_buffer_reader{list_buffer};
     CHECK_THROWS_AS(list_writer.write(literal::TimeSeriesLiteral{{0, (literal::SKIP)(literal::ScalarLiteral{1})}}),
                     std::invalid_argument);
-    CHECK(bg::util::concurrent_buffer_reader{list_buffer}.readable().empty());
+    consume_tombstone(list_reader);
 
     const auto dictionary_buffer = bg::util::buffer::concurrent_chain(128, 2);
     auto dictionary_writer = bg::details::QueueMessageWriter{
         dictionary_buffer, 1, bg::cpp_time_series_runtime_type<bg::TSD<bg::i64, bg::TS<bg::i64>>>()};
+    auto dictionary_reader = bg::util::concurrent_buffer_reader{dictionary_buffer};
     CHECK_THROWS_AS(dictionary_writer.write(
                         literal::TimeSeriesLiteral{{1, literal::REMOVE(literal::ScalarLiteral{2})}}),
                     std::invalid_argument);
-    CHECK(bg::util::concurrent_buffer_reader{dictionary_buffer}.readable().empty());
+    consume_tombstone(dictionary_reader);
 
     const auto set_buffer = bg::util::buffer::concurrent_chain(128, 2);
     auto set_writer = bg::details::QueueMessageWriter{

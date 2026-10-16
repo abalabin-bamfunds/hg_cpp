@@ -380,7 +380,7 @@ graph compilation or evaluation.
 - provider-defined children accessed through built-in collections
 - provider time series literal application through erased outputs, runtime registration precedence,
   nested publication, unsupported destinations, extension-defined sentinel instances,
-  sentinel arguments, and provider scalar construction inside scalar time series
+  tagged sentinel arguments, and provider scalar construction inside scalar time series
 
 ### Nodes and graphs
 

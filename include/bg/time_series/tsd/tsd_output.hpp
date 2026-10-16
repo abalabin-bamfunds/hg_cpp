@@ -47,19 +47,16 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
     void apply(const literal::TimeSeriesLiteral &literal) const {
         const auto sentinel = literal::Sentinel::from(literal);
         if (sentinel) {
-            if (sentinel->name == literal::SKIP.name) {
-                if (sentinel->argument != nullptr) {
-                    throw std::invalid_argument{"SKIP does not accept an argument"};
-                }
+            if (*sentinel == literal::SKIP) {
                 return;
             }
-            if (sentinel->name == literal::INVALID.name) {
+            if (*sentinel == literal::INVALID) {
                 throw std::invalid_argument{"INVALID is not valid as a TSD update"};
             }
-            if (sentinel->name == literal::REMOVE.name) {
+            if (*sentinel == literal::REMOVE) {
                 throw std::invalid_argument{"REMOVE requires a TSD entry"};
             }
-            if (sentinel->name == literal::REMOVED.name) {
+            if (*sentinel == literal::REMOVED) {
                 throw std::invalid_argument{"REMOVED is only valid as a TSS item"};
             }
             throw std::invalid_argument{"a time-series collection update requires a sequence"};
@@ -206,17 +203,11 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
             auto skip = false;
             auto remove = false;
             if (const auto sentinel = literal::Sentinel::from(*current.second)) {
-                if (sentinel->name == literal::SKIP.name) {
-                    if (sentinel->argument != nullptr) {
-                        throw std::invalid_argument{"SKIP does not accept an argument"};
-                    }
+                if (*sentinel == literal::SKIP) {
                     skip = true;
-                } else if (sentinel->name == literal::REMOVE.name) {
-                    if (sentinel->argument != nullptr) {
-                        throw std::invalid_argument{"REMOVE does not accept an argument"};
-                    }
+                } else if (*sentinel == literal::REMOVE) {
                     remove = true;
-                } else if (sentinel->name == literal::REMOVED.name) {
+                } else if (*sentinel == literal::REMOVED) {
                     throw std::invalid_argument{"REMOVED is only valid as a TSS item"};
                 }
             }

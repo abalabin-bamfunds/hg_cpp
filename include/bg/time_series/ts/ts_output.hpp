@@ -69,10 +69,10 @@ class Out<TS<Variable, Properties...>> {
 
     void apply(const literal::TimeSeriesLiteral &literal) const {
         if (const auto sentinel = literal::Sentinel::from(literal)) {
-            if (sentinel->name == literal::SKIP.name) {
+            if (*sentinel == literal::SKIP) {
                 return;
             }
-            if (sentinel->name == literal::INVALID.name) {
+            if (*sentinel == literal::INVALID) {
                 invalidate();
                 return;
             }

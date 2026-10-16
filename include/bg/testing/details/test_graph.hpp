@@ -178,13 +178,7 @@ class LiteralSource {
   private:
     static bool is_skip(const literal::TimeSeriesLiteral &tick) {
         const auto sentinel = literal::Sentinel::from(tick);
-        if (!sentinel || sentinel->name != literal::SKIP.name) {
-            return false;
-        }
-        if (sentinel->argument != nullptr) {
-            throw std::invalid_argument{"SKIP does not accept an argument"};
-        }
-        return true;
+        return sentinel != nullptr && *sentinel == literal::SKIP;
     }
 
     static void publish(Invocation invocation) {

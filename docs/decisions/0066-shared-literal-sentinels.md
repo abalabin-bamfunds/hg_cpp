@@ -1,6 +1,7 @@
 # Scalar and time series literals share a carrier
 
-Status: accepted
+Status: accepted; the sentinel representation is superseded by
+[0067](0067-literal-sentinel-identity.md)
 
 ## Decision
 

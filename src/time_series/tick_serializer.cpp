@@ -55,33 +55,24 @@ enum class LiteralMarker { value, skip, invalid, remove, removed };
 
 LiteralMarker marker(const literal::TimeSeriesLiteral &literal) {
     const auto sentinel = literal::Sentinel::from(literal);
-    if (!sentinel) {
-        return LiteralMarker::value;
-    }
-
-    if (sentinel->name == literal::SKIP.name) {
-        if (sentinel->argument != nullptr) {
-            throw std::invalid_argument{"SKIP does not accept an argument"};
-        }
+    if (sentinel != nullptr && *sentinel == literal::SKIP) {
         return LiteralMarker::skip;
     }
-    if (sentinel->name == literal::INVALID.name) {
-        if (sentinel->argument != nullptr) {
-            throw std::invalid_argument{"INVALID does not accept an argument"};
-        }
+    if (sentinel != nullptr && *sentinel == literal::INVALID) {
         return LiteralMarker::invalid;
     }
-    if (sentinel->name == literal::REMOVE.name) {
-        if (sentinel->argument != nullptr) {
-            throw std::invalid_argument{"REMOVE does not accept an argument"};
-        }
+    if (sentinel != nullptr && *sentinel == literal::REMOVE) {
         return LiteralMarker::remove;
     }
-    if (sentinel->name == literal::REMOVED.name) {
-        if (sentinel->argument == nullptr) {
-            throw std::invalid_argument{"REMOVED requires an argument"};
+
+    if (sentinel != nullptr && *sentinel == literal::REMOVED) {
+        throw std::invalid_argument{"REMOVED requires an argument"};
+    }
+
+    if (const auto tagged = literal::TaggedLiteral::from(literal)) {
+        if (tagged->sentinel == literal::REMOVED) {
+            return LiteralMarker::removed;
         }
-        return LiteralMarker::removed;
     }
     return LiteralMarker::value;
 }
@@ -372,9 +363,9 @@ class QueueMessageCodec {
                         throw std::invalid_argument{"invalid marker in TSS update"};
                     }
                     if (value_marker == LiteralMarker::removed) {
-                        const auto removed = literal::Sentinel::from(value)->argument;
+                        const auto removed = literal::TaggedLiteral::from(value);
                         write_header({TickOperation::remove});
-                        write_scalar(set_runtime.key_runtime_type(), *removed);
+                        write_scalar(set_runtime.key_runtime_type(), removed->argument);
                         continue;
                     }
                     write_header({TickOperation::add});

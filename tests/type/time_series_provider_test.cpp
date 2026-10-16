@@ -280,13 +280,13 @@ bg::i64 scalar_literal_number(const literal::ScalarLiteral &literal, bg::allocat
         throw std::invalid_argument{"provider scalar literal requires exactly one field"};
     }
 
-    const auto sentinel = literal::Sentinel::from(fields.front());
-    if (sentinel) {
-        if (sentinel->name != test_shared_literal_sentinel::extension()->name ||
-            sentinel->argument != test_shared_literal_sentinel::extension_argument()) {
+    const auto tagged = literal::TaggedLiteral::from(fields.front());
+    if (tagged) {
+        if (tagged->sentinel != *test_shared_literal_sentinel::extension() ||
+            &tagged->argument != test_shared_literal_sentinel::extension_argument()) {
             throw std::invalid_argument{"provider received an unsupported literal sentinel"};
         }
-        const auto value = bg::ScalarValue<bg::i64>::from_literal(*sentinel->argument, memory);
+        const auto value = bg::ScalarValue<bg::i64>::from_literal(tagged->argument, memory);
         return value.view().value();
     }
     const auto value = bg::ScalarValue<bg::i64>::from_literal(fields.front(), memory);
@@ -337,6 +337,14 @@ struct SeriesLiteralUpdate {
 };
 
 bg::i64 time_series_literal_number(const literal::ScalarLiteralItem &literal) {
+    if (const auto tagged = literal::TaggedLiteral::from(literal)) {
+        if (tagged->sentinel != *test_shared_literal_sentinel::extension() ||
+            &tagged->argument != test_shared_literal_sentinel::extension_argument()) {
+            throw std::invalid_argument{"provider received an unsupported literal sentinel"};
+        }
+        const auto value = bg::ScalarValue<bg::i64>::from_literal(tagged->argument);
+        return value.view().value();
+    }
     return literal.visit_scalar([](const auto *value) -> bg::i64 {
         using Value = std::remove_cvref_t<decltype(*value)>;
         if constexpr (std::same_as<Value, bg::Scalar<bg::i64>>) {
@@ -349,33 +357,27 @@ bg::i64 time_series_literal_number(const literal::ScalarLiteralItem &literal) {
 
 SeriesLiteralUpdate read_series_literal(const literal::TimeSeriesLiteral &literal) {
     if (const auto sentinel = literal::Sentinel::from(literal)) {
-        if (sentinel->name == literal::SKIP.name) {
-            if (sentinel->argument != nullptr) {
-                throw std::invalid_argument{"SKIP does not accept an argument"};
-            }
+        if (*sentinel == literal::SKIP) {
             return {SeriesLiteralUpdate::Kind::skip, 0};
         }
-        if (sentinel->name == literal::INVALID.name) {
-            if (sentinel->argument != nullptr) {
-                throw std::invalid_argument{"INVALID does not accept an argument"};
-            }
+        if (*sentinel == literal::INVALID) {
             return {SeriesLiteralUpdate::Kind::invalid, 0};
         }
-        if (sentinel->name == literal::REMOVE.name) {
-            if (sentinel->argument != nullptr) {
-                throw std::invalid_argument{"REMOVE does not accept an argument"};
-            }
+        if (*sentinel == literal::REMOVE) {
             throw std::invalid_argument{"REMOVE is not valid for a provider scalar time series"};
         }
-        if (sentinel->name == literal::REMOVED.name) {
+        if (*sentinel == literal::REMOVED) {
             throw std::invalid_argument{"REMOVED is not valid for a provider scalar time series"};
         }
-        if (sentinel->name == test_shared_literal_sentinel::extension()->name &&
-            sentinel->argument == test_shared_literal_sentinel::extension_argument()) {
-            const auto value = bg::ScalarValue<bg::i64>::from_literal(*sentinel->argument);
-            return {SeriesLiteralUpdate::Kind::value, value.view().value()};
-        }
         throw std::invalid_argument{"provider scalar time series literal must contain one item"};
+    }
+    if (const auto tagged = literal::TaggedLiteral::from(literal)) {
+        if (tagged->sentinel != *test_shared_literal_sentinel::extension() ||
+            &tagged->argument != test_shared_literal_sentinel::extension_argument()) {
+            throw std::invalid_argument{"provider received an unsupported literal sentinel"};
+        }
+        const auto value = bg::ScalarValue<bg::i64>::from_literal(tagged->argument);
+        return {SeriesLiteralUpdate::Kind::value, value.view().value()};
     }
     return literal.visit(
         [](const literal::ScalarLiteralItem &item) {
@@ -1101,7 +1103,7 @@ TEST_CASE("extension sentinels reach scalar literal providers through time-serie
     using Value = test_scalar_provider::value;
     REQUIRE(provider::register_scalar_literal_handlers());
 
-    const auto instruction = literal::ScalarLiteral(*test_shared_literal_sentinel::extension());
+    const auto instruction = literal::ScalarLiteral(*test_shared_literal_sentinel::extension_call());
     const auto extension_fields = std::array{instruction};
     const auto extension_literal = literal::ScalarLiteral{std::span{extension_fields}};
     provider::expected_scalar_literal = &extension_literal;
@@ -1126,7 +1128,7 @@ TEST_CASE("extension sentinels reach scalar literal providers through time-serie
     CHECK(output_storage.number == 81);
     CHECK(provider::scalar_literal_address_matches);
 
-    const auto nested_instruction = literal::ScalarLiteral(*test_shared_literal_sentinel::extension());
+    const auto nested_instruction = literal::ScalarLiteral(*test_shared_literal_sentinel::extension_call());
     const auto nested_payload_fields = std::array{nested_instruction};
     const auto nested_payload = literal::ScalarLiteral{std::span{nested_payload_fields}};
     const auto nested_fields = std::array{nested_payload};
@@ -1152,7 +1154,7 @@ TEST_CASE("extension time-series handlers consume shared sentinel instructions",
     auto output = bg::Out<bg::TS_T>{bg::TimeSeriesOutputBinding{state}};
 
     provider::time_series_literal_runtime_calls = 0;
-    output.apply(literal::TimeSeriesLiteral(*test_shared_literal_sentinel::extension()));
+    output.apply(literal::TimeSeriesLiteral(*test_shared_literal_sentinel::extension_call()));
 
     CHECK(value.value == 71);
     CHECK(last_updated.valid());

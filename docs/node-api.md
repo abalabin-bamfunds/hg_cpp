@@ -518,6 +518,8 @@ item, including an item described by a composite scalar literal. Removal uses
 the destination's normal `erase()` behavior. `SKIP`, `INVALID`, and `REMOVE`
 take no argument; `REMOVED` requires one. Built-in consumers reject unsupported
 sentinels, invalid argument placement, and incompatible scalar payloads.
+Calling a sentinel with a scalar literal creates a borrowed `TaggedLiteral`;
+the sentinel and argument must remain alive through `apply()`.
 
 ```cpp
 dictionary_output.apply({{"a", 10}, {"b", literal::REMOVE}});

@@ -55,8 +55,12 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
     }
 
     void read_value(ScalarDataMode mode, std::uintptr_t data, void *destination) const override {
-        std::construct_at(static_cast<ReadValue *>(destination),
-                          scalar_data_value<T>(ScalarData{*this, data, mode}));
+        if constexpr (std::constructible_from<ReadValue, Value>) {
+            std::construct_at(static_cast<ReadValue *>(destination),
+                              scalar_data_value<T>(ScalarData{*this, data, mode}));
+        } else {
+            Base::read_value(mode, data, destination);
+        }
     }
 
     std::size_t hash(ScalarDataMode mode, std::uintptr_t data) const override {

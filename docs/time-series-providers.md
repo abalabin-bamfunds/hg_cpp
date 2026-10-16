@@ -181,9 +181,9 @@ literal sources and output views remain valid for the call.
 
 Providers define additional instructions as instances of
 [`literal::Sentinel`](scalar-api.md#sentinels). Their handler compares the
-sentinel's symbol identity and validates any borrowed argument. Scalar and time
-series handlers receive the same carrier; a provider can pass scalar payloads
-directly to scalar construction.
+singleton instances and inspects arguments through `literal::TaggedLiteral`.
+Scalar and time series handlers receive the same carrier; a provider can pass
+scalar payloads directly to scalar construction.
 
 Node authors use `Out::apply()`; registration and `OutputState` are
 extension-facing APIs. Scalar literal construction has its own

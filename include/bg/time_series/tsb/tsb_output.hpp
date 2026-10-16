@@ -119,23 +119,17 @@ class Out<TSB<Schema, Properties...>> {
     void apply(const literal::TimeSeriesLiteral &literal) const {
         const auto sentinel = literal::Sentinel::from(literal);
         if (sentinel) {
-            if (sentinel->name == literal::SKIP.name) {
-                if (sentinel->argument != nullptr) {
-                    throw std::invalid_argument{"SKIP does not accept an argument"};
-                }
+            if (*sentinel == literal::SKIP) {
                 return;
             }
-            if (sentinel->name == literal::INVALID.name) {
-                if (sentinel->argument != nullptr) {
-                    throw std::invalid_argument{"INVALID does not accept an argument"};
-                }
+            if (*sentinel == literal::INVALID) {
                 invalidate();
                 return;
             }
-            if (sentinel->name == literal::REMOVE.name) {
+            if (*sentinel == literal::REMOVE) {
                 throw std::invalid_argument{"REMOVE is not valid for a TSB field"};
             }
-            if (sentinel->name == literal::REMOVED.name) {
+            if (*sentinel == literal::REMOVED) {
                 throw std::invalid_argument{"REMOVED is only valid as a TSS item"};
             }
             throw std::invalid_argument{"a TSB update requires a sequence"};
