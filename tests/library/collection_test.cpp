@@ -150,6 +150,17 @@ TEST_CASE("contains_ propagates a final TSS guarantee",
     CHECK(testing::test_graph(graph).equals<bool>({true}));
 }
 
+TEST_CASE("contains_ combines a final TSS with an ordinary time-series key",
+          "[feature:operator][series:tss][scalar:i64][shape:single-node][guarantee:ordinary][transition:update]") {
+    const auto graph = [](wp<TS<i64>> key) {
+        const auto result = operators::contains_("collection"_n = final_keys(), "key"_n = key);
+        CHECK(&result.type() == &TS<bool>::type());
+        return result;
+    };
+
+    CHECK(testing::test_graph(graph, {1, 2, 3}).equals<bool>({true, true, false}));
+}
+
 TEST_CASE("len_ forwards equal sizes for ordinary inputs and suppresses them for deduplicated inputs",
           "[feature:operator][series:tss][scalar:i64][guarantee:ordinary][guarantee:deduplicated]"
           "[transition:update]") {
