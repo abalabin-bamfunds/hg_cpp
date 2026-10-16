@@ -29,6 +29,8 @@ sample = _native.sample
 dedup = _native.dedup
 filter_ = _native.filter_
 if_then_else = _native.if_then_else
+len_ = _native.len_
+contains_ = _native.contains_
 const_ = _native.const_
 default_ = _native.default_
 getitem = _native.getitem
@@ -40,6 +42,7 @@ __all__ = [
     "add",
     "and_",
     "const_",
+    "contains_",
     "convert",
     "default_",
     "dedup",
@@ -53,6 +56,7 @@ __all__ = [
     "if_then_else",
     "gt",
     "le",
+    "len_",
     "lt",
     "map",
     "mesh",

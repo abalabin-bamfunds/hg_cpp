@@ -181,6 +181,7 @@ catch_discover_tests(bg_tests DISCOVERY_MODE PRE_TEST)
 add_executable(
     bg_library_tests
     library/add_test.cpp
+    library/collection_test.cpp
     library/operators_test.cpp
     library/overload_registration_test.cpp
     library/stream_test.cpp)

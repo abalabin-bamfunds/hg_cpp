@@ -159,6 +159,31 @@ applies to the whole collection. Both inputs must have a
 These operators are available under `bg::operators` in C++ and `bg.operators`
 in Python.
 
+## Collection queries
+
+`len_(value)` returns an `i64` length. It counts current TSS membership or the
+items in `TS<List<T>>`, `TS<Set<T>>`, and `TS<Dict<K, V>>`. For fixed TSL and TSB,
+it returns the declared item count as a wiring-time constant, independent of
+item validity. These fixed-size queries add no runtime query node. Sparse TSL
+length is not supplied.
+
+`contains_(collection, key)` tests current membership in TSS or a scalar list,
+set, or dictionary time series. Dictionaries test keys. The key can be a scalar
+or a time series. List membership requires equality; set and dictionary lookup
+also requires hashing.
+
+String and symbol overloads count bytes with `len_` and test substrings with
+`contains_`, including embedded NUL bytes. Both substring operands have the
+same scalar type. These overloads accept scalars and time series.
+
+Runtime queries require valid time series inputs and propagate their weakest
+observed guarantee. An initially invalid collection does not produce a result.
+Ordinary inputs can publish equal query results on successive changes;
+deduplicated outputs suppress equal results.
+
+Use named calls in Python. Its `len()` and `in` syntax cannot return wiring
+points. Python annotations for scalar lists and sets are not yet supplied.
+
 ## Wiring syntax
 
 C++ wiring points support binary `+`, `-`, `*`, `/`, `%`, unary `+` and `-`,

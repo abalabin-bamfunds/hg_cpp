@@ -37,6 +37,9 @@ decltype(dedup) dedup{"dedup", {"value"}};
 decltype(filter_) filter_{"filter_", {"condition", "value"}};
 decltype(if_then_else) if_then_else{"if_then_else", {"condition", "true_value", "false_value"}};
 
+decltype(len_) len_{"len_", {"value"}};
+decltype(contains_) contains_{"contains_", {"collection", "key"}};
+
 namespace {
 
 // Register implementations only after every operator object above has been constructed.
@@ -45,6 +48,7 @@ const auto registered = [] {
     details::register_string_operators();
     details::register_logical_operators();
     details::register_stream_operators();
+    details::register_collection_operators();
     return true;
 }();
 

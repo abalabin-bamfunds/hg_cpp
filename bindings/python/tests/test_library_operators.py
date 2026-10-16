@@ -103,6 +103,48 @@ def test_python_operator_syntax_and_named_boolean_operators():
     assert bg.test_graph(comparison, [1, 4, 3], [2, 3, -1]) == [True, False, False]
 
 
+def test_collection_query_operators_accept_public_keyword_names():
+    class Pair(bg.TimeSeriesSchema):
+        left: bg.TS[int]
+        right: bg.TS[float]
+
+    @bg.graph
+    def fixed_list_length(value: bg.TSL[bg.TS[int], 2]) -> bg.TS[int]:
+        return bg.operators.len_(value=value)
+
+    @bg.graph
+    def fixed_bundle_length(value: bg.TSB[Pair]) -> bg.TS[int]:
+        return bg.operators.len_(value=value)
+
+    @bg.graph
+    def set_length(value: bg.TSS[int]) -> bg.TS[int]:
+        return bg.operators.len_(value=value)
+
+    @bg.graph
+    def set_contains(collection: bg.TSS[int], key: bg.TS[int]) -> bg.TS[bool]:
+        return bg.operators.contains_(collection=collection, key=key)
+
+    @bg.graph
+    def dictionary_length(value: bg.TS[dict[int, int]]) -> bg.TS[int]:
+        return bg.operators.len_(value=value)
+
+    @bg.graph
+    def dictionary_contains(collection: bg.TS[dict[int, int]], key: bg.TS[int]) -> bg.TS[bool]:
+        return bg.operators.contains_(collection=collection, key=key)
+
+    @bg.graph
+    def dictionary_contains_scalar(collection: bg.TS[dict[int, int]]) -> bg.TS[bool]:
+        return bg.operators.contains_(collection=collection, key=2)
+
+    assert bg.test_graph(fixed_list_length, [{0: 10, 1: 20}]) == [2]
+    assert bg.test_graph(fixed_bundle_length, [{"left": 10, "right": 20.0}]) == [2]
+    assert bg.test_graph(set_length, [set(), {1, 2}, bg.SetDelta(added={3}, removed={1})]) == [0, 2, 2]
+    assert bg.test_graph(set_contains, [{1}, {2, bg.Removed(1)}, {3, bg.Removed(2)}], [1, 1, 3]) == [True, False, True]
+    assert bg.test_graph(dictionary_length, [{1: 10, 2: 20}, {}]) == [2, 0]
+    assert bg.test_graph(dictionary_contains, [{1: 10, 2: 20}, {}, {3: 30}], [2, 1, 3]) == [True, False, True]
+    assert bg.test_graph(dictionary_contains_scalar, [{1: 10, 2: 20}, {}, {3: 30}]) == [True, False, False]
+
+
 def test_numeric_operator_syntax_and_explicit_convert_target():
     @bg.graph
     def divide(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[float]:

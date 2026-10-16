@@ -62,6 +62,11 @@ extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> TS_T> dedup;
 extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TS_T) -> TS_T> filter_;
 extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TRUE_TS, FALSE_TS) -> OUT> if_then_else;
 
+// Collection queries.
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> i64> len_;
+extern BG_LIBRARY_EXPORT
+    operator_<auto(COLLECTION, Union<"key", EQUALITY_SCALAR, TS<EQUALITY_SCALAR>>) -> bool> contains_;
+
 // Nested graph operators.
 using ::bg::map;
 using ::bg::mesh;

@@ -165,6 +165,7 @@ add_library(
     src/library/logical.cpp
     src/library/numeric.cpp
     src/library/operators.cpp
+    src/library/collection.cpp
     src/library/string.cpp
     src/library/stream.cpp
 )
