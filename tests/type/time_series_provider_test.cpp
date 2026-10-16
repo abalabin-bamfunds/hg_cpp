@@ -1,4 +1,5 @@
 #include "../value/scalar/test_scalar_provider.hpp"
+#include "../utils/counting_memory_resource.hpp"
 
 #include <bg/feedback.hpp>
 #include <bg/graph.hpp>
@@ -9,9 +10,11 @@
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/data.hpp>
 #include <bg/scalar/opaque.hpp>
+#include <bg/scalar/literal_operations.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/input_data.hpp>
+#include <bg/time_series/literal_operations.hpp>
 #include <bg/time_series/output_binding.hpp>
 #include <bg/time_series/output_state.hpp>
 #include <bg/time_series/tick_operations.hpp>
@@ -78,6 +81,12 @@ template <template <typename, auto...> typename Field> struct QueueConflictBundl
 };
 
 using QueueConflictSeries = bg::TSB<QueueConflictBundle>;
+inline int scalar_literal_semantic_calls{};
+inline int scalar_literal_runtime_calls{};
+inline int time_series_literal_semantic_calls{};
+inline int time_series_literal_runtime_calls{};
+inline int time_series_literal_skip_calls{};
+inline int time_series_literal_invalid_calls{};
 
 template <typename Input>
 void write_tick(const Input &input, bg::ScalarBufferWriteContext &writer, bg::allocator &) {
@@ -256,6 +265,97 @@ struct SeriesViewStorage {
     bg::i64 value{};
     bg::i64 guard{};
 };
+
+bg::i64 scalar_literal_number(const literal::ScalarLiteral &literal, bg::allocator &memory) {
+    return literal.visit(
+        [](const literal::ScalarLiteralItem &) -> bg::i64 {
+            throw std::invalid_argument{"provider scalar literal requires a one-field sequence"};
+        },
+        [&](std::span<const literal::ScalarLiteral> fields) -> bg::i64 {
+            if (fields.size() != 1) {
+                throw std::invalid_argument{"provider scalar literal requires exactly one field"};
+            }
+            const auto value = bg::ScalarValue<bg::i64>::from_literal(fields.front(), memory);
+            return value.view().value();
+        }).value();
+}
+
+void construct_scalar_literal_semantic(const literal::ScalarLiteral &literal,
+                                       const bg::ScalarRuntimeType &runtime_type, void *destination,
+                                       bg::allocator &memory) {
+    ++scalar_literal_semantic_calls;
+    const auto storage = test_scalar_provider::storage{static_cast<int>(scalar_literal_number(literal, memory) + 10)};
+    runtime_type.construct_from_input(destination, bg::Scalar<test_scalar_provider::value>::from(storage), memory);
+}
+
+void construct_scalar_literal_runtime(const literal::ScalarLiteral &literal,
+                                      const bg::ScalarRuntimeType &runtime_type, void *destination,
+                                      bg::allocator &memory) {
+    ++scalar_literal_runtime_calls;
+    const auto storage = test_scalar_provider::storage{static_cast<int>(scalar_literal_number(literal, memory) + 100)};
+    runtime_type.construct_from_input(destination, bg::Scalar<test_scalar_provider::value>::from(storage), memory);
+}
+
+void fail_scalar_literal_construction(const literal::ScalarLiteral &, const bg::ScalarRuntimeType &, void *,
+                                      bg::allocator &) {
+    throw std::runtime_error{"provider scalar literal construction failed"};
+}
+
+bool register_scalar_literal_handlers() {
+    static const auto registered = [] {
+        auto &dispatch = bg::ScalarDispatch<bg::ScalarLiteralOperations>::instance();
+        return dispatch.add(bg::cpp_scalar_type<test_scalar_provider::value>(),
+                            bg::ScalarLiteralOperations{&construct_scalar_literal_semantic}) &&
+               dispatch.add(test_scalar_provider::canonicalizing_runtime_type(),
+                            bg::ScalarLiteralOperations{&construct_scalar_literal_runtime}) &&
+               dispatch.add(test_scalar_provider::copy_only_semantic_type(),
+                            bg::ScalarLiteralOperations{&fail_scalar_literal_construction});
+    }();
+    return registered;
+}
+
+struct SeriesLiteralUpdate {
+    enum class Kind { value, skip, invalid } kind;
+    bg::i64 value;
+};
+
+bg::i64 time_series_literal_number(const literal::ScalarLiteralItem &literal) {
+    return literal.visit_scalar([](const auto *value) -> bg::i64 {
+        using Value = std::remove_cvref_t<decltype(*value)>;
+        if constexpr (std::same_as<Value, bg::Scalar<bg::i64>>) {
+            return value->value();
+        } else {
+            throw std::invalid_argument{"provider time-series literal requires an i64 value"};
+        }
+    }).value();
+}
+
+SeriesLiteralUpdate read_series_literal(const literal::TimeSeriesLiteral &literal) {
+    return literal.visit(
+        [](const literal::TimeSeriesLiteralItem &item) {
+            auto update = SeriesLiteralUpdate{SeriesLiteralUpdate::Kind::skip, 0};
+            item.visit_item(
+                [&](const literal::ScalarLiteralItem *scalar) {
+                    update = {SeriesLiteralUpdate::Kind::value, time_series_literal_number(*scalar)};
+                },
+                [&](const literal::SkipLiteral *) {
+                    update = {SeriesLiteralUpdate::Kind::skip, 0};
+                },
+                [&](const literal::InvalidLiteral *) {
+                    update = {SeriesLiteralUpdate::Kind::invalid, 0};
+                },
+                [](const literal::RemoveLiteral *) {
+                    throw std::invalid_argument{"REMOVE is not valid for a provider scalar time series"};
+                },
+                [](const literal::RemovedLiteral *) {
+                    throw std::invalid_argument{"REMOVED is not valid for a provider scalar time series"};
+                });
+            return update;
+        },
+        [](std::span<const literal::TimeSeriesLiteral>) -> SeriesLiteralUpdate {
+            throw std::invalid_argument{"provider scalar time series literal must contain one item"};
+        }).value();
+}
 
 class SeriesViewRuntimeType final : public bg::TimeSeriesRuntimeType {
   public:
@@ -459,6 +559,49 @@ class Out<provider::Series<Item, Properties...>, provider::view>
 };
 
 } // namespace bg
+
+namespace provider {
+
+template <typename Output> void apply_provider_literal(const literal::TimeSeriesLiteral &literal, bg::OutputState &state) {
+    auto erased = bg::Out<bg::TS_T>{bg::TimeSeriesOutputBinding{state}};
+    auto output = erased.as_output<Output>();
+    const auto update = read_series_literal(literal);
+    if (update.kind == SeriesLiteralUpdate::Kind::skip) {
+        ++time_series_literal_skip_calls;
+        return;
+    }
+    if (update.kind == SeriesLiteralUpdate::Kind::invalid) {
+        ++time_series_literal_invalid_calls;
+        output.invalidate();
+        return;
+    }
+
+    output.set(update.value);
+}
+
+void apply_series_literal_semantic(const literal::TimeSeriesLiteral &literal, bg::OutputState &output) {
+    ++time_series_literal_semantic_calls;
+    apply_provider_literal<bg::Out<RuntimeOutputSeries>>(literal, output);
+}
+
+void apply_series_literal_runtime(const literal::TimeSeriesLiteral &literal, bg::OutputState &output) {
+    ++time_series_literal_runtime_calls;
+    apply_provider_literal<bg::Out<RuntimeOutputSeries, view>>(literal, output);
+}
+
+bool register_time_series_literal_handlers() {
+    using Series = RuntimeOutputSeries;
+    static const auto registered = [] {
+        auto &dispatch = bg::TimeSeriesDispatch<bg::TimeSeriesLiteralOperations>::instance();
+        return dispatch.add(Series::type(),
+                            bg::TimeSeriesLiteralOperations{&apply_series_literal_semantic}) &&
+               dispatch.add(series_view_runtime_type(Series::type()),
+                            bg::TimeSeriesLiteralOperations{&apply_series_literal_runtime});
+    }();
+    return registered;
+}
+
+} // namespace provider
 
 TEST_CASE("generic output copy uses the provider runtime for its output layout",
           "[feature:node-api][feature:test-graph][series:generic][declaration:runtime][transition:update]") {
@@ -883,6 +1026,134 @@ TEST_CASE("a provider declaration exposes public semantic and runtime customizat
         bg::TSD<bg::i64, bg::TS<bg::string>>::type(), bg::cpp_scalar_runtime_type<bg::string>(),
         bg::cpp_time_series_runtime_type<bg::TS<bg::string>>());
     CHECK_THROWS_AS(bg::register_time_series_runtime_type(wrong_dictionary_component), std::invalid_argument);
+}
+
+TEST_CASE("scalar literal construction dispatches by runtime then semantic type",
+          "[feature:scalar-api][scalar:opaque][declaration:runtime]") {
+    using Value = test_scalar_provider::value;
+    REQUIRE(provider::register_scalar_literal_handlers());
+
+    const auto source = bg::i64{7};
+    const auto literal_fields = std::array{literal::ScalarLiteral(source)};
+    const auto literal = literal::ScalarLiteral{std::span{literal_fields}};
+    provider::scalar_literal_semantic_calls = 0;
+    provider::scalar_literal_runtime_calls = 0;
+
+    const auto semantic = bg::ScalarValue<>::from_literal(test_scalar_provider::preserving_runtime_type(), literal);
+    CHECK(bg::scalar_cast<Value>(semantic.view()).value().get() == 17);
+    CHECK(provider::scalar_literal_semantic_calls == 1);
+    CHECK(provider::scalar_literal_runtime_calls == 0);
+
+    const auto exact = bg::ScalarValue<>::from_literal(test_scalar_provider::canonicalizing_runtime_type(), literal);
+    CHECK(bg::scalar_cast<Value>(exact.view()).value().get() == 107);
+    CHECK(provider::scalar_literal_semantic_calls == 1);
+    CHECK(provider::scalar_literal_runtime_calls == 1);
+
+    const auto typed = bg::ScalarValue<Value>::from_literal(literal);
+    CHECK(typed.view().value().get() == 17);
+    CHECK(provider::scalar_literal_semantic_calls == 2);
+}
+
+TEST_CASE("scalar literal extension handlers construct nested collection items",
+          "[feature:scalar-api][scalar:list][declaration:runtime]") {
+    using Value = test_scalar_provider::value;
+    REQUIRE(provider::register_scalar_literal_handlers());
+
+    const auto values = bg::ScalarValue<bg::List<Value>>::from_literal({{bg::i64{3}}, {bg::i64{9}}});
+    const auto list = values.view();
+
+    REQUIRE(list.size() == 2);
+    CHECK(list[0].value().get() == 13);
+    CHECK(list[1].value().get() == 19);
+}
+
+TEST_CASE("scalar literal construction rejects unsupported destinations and releases failed allocations",
+          "[feature:scalar-api][scalar:opaque][declaration:runtime]") {
+    REQUIRE(provider::register_scalar_literal_handlers());
+    const auto source = bg::i64{7};
+    const auto fields = std::array{literal::ScalarLiteral(source)};
+    const auto literal = literal::ScalarLiteral{std::span{fields}};
+
+    CHECK_THROWS_AS((bg::ScalarValue<>::from_literal(bg::cpp_scalar_runtime_type<bg::i64>(), literal)),
+                    std::invalid_argument);
+
+    auto resource = counting_memory_resource{};
+    auto memory = bg::allocator{resource};
+    CHECK_THROWS_AS((bg::ScalarValue<>::from_literal(test_scalar_provider::preserving_copy_only_runtime_type(),
+                                                      literal, memory)),
+                    std::runtime_error);
+    CHECK(resource.allocations() == 0);
+}
+
+TEST_CASE("erased time-series literal updates use runtime handlers and publish through collections",
+          "[feature:time-series-view][feature:test-graph][series:fixed-tsl][declaration:runtime]") {
+    using Series = provider::RuntimeOutputSeries;
+    REQUIRE(provider::register_time_series_literal_handlers());
+
+    const auto &runtime_type = provider::series_view_runtime_type(Series::type());
+    auto last_updated = bg::TimeSeriesState{};
+    auto value = provider::SeriesViewStorage{};
+    auto state = bg::OutputState{runtime_type};
+    const auto time = bg::MIN_DT + std::chrono::microseconds{1};
+    state.bind(last_updated, &value, time);
+    auto output = bg::Out<bg::TS_T>{bg::TimeSeriesOutputBinding{state}};
+
+    provider::time_series_literal_runtime_calls = 0;
+    provider::time_series_literal_semantic_calls = 0;
+    output.apply(literal::TimeSeriesLiteral(bg::i64{12}));
+
+    CHECK(value.value == 12);
+    CHECK(last_updated.valid());
+    CHECK(last_updated.time() == time);
+    CHECK(provider::time_series_literal_runtime_calls == 1);
+    CHECK(provider::time_series_literal_semantic_calls == 0);
+
+    const auto make_list = bg::node([](bg::In<bg::TS<bg::i64>> input,
+                                       bg::Out<bg::TSL<Series, 1>> output) {
+        output.apply({{bg::i64{0}, input.value()}});
+    });
+    const auto consume = bg::node([](bg::In<bg::TSL<Series, 1>> input, bg::Out<bg::TS<bg::i64>> output) {
+        output.set(input[0].value());
+    });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return consume(make_list(input)); };
+
+    provider::time_series_literal_semantic_calls = 0;
+    const auto result = bg::testing::test_graph(graph, std::array<bg::i64, 2>{4, 8});
+    CHECK(result.equals<bg::i64>({4, 8}));
+    CHECK(provider::time_series_literal_semantic_calls == 2);
+}
+
+TEST_CASE("time-series literal providers receive markers and missing handlers fail",
+          "[feature:time-series-view][series:value][declaration:runtime]") {
+    using Series = provider::RuntimeOutputSeries;
+    REQUIRE(provider::register_time_series_literal_handlers());
+
+    auto last_updated = bg::TimeSeriesState{};
+    auto value = bg::i64{};
+    auto state = bg::OutputState{provider::series_runtime_type(Series::type())};
+    const auto time = bg::MIN_DT + std::chrono::microseconds{1};
+    state.bind(last_updated, &value, time);
+    const auto output = bg::Out<bg::TS_T>{bg::TimeSeriesOutputBinding{state}};
+
+    provider::time_series_literal_skip_calls = 0;
+    provider::time_series_literal_invalid_calls = 0;
+    output.apply(literal::TimeSeriesLiteral(literal::SKIP));
+    CHECK(provider::time_series_literal_skip_calls == 1);
+    CHECK_FALSE(last_updated.valid());
+
+    output.apply(literal::TimeSeriesLiteral(bg::i64{12}));
+    CHECK(last_updated.valid());
+    CHECK(value == 12);
+    output.apply(literal::TimeSeriesLiteral(literal::INVALID));
+    CHECK(provider::time_series_literal_invalid_calls == 1);
+    CHECK_FALSE(last_updated.valid());
+
+    using UnsupportedSeries = provider::Series<provider::Number<double>>;
+    auto unsupported_value = bg::i64{};
+    auto unsupported_state = bg::OutputState{provider::series_runtime_type(UnsupportedSeries::type())};
+    unsupported_state.bind(last_updated, &unsupported_value, time);
+    const auto unsupported = bg::Out<bg::TS_T>{bg::TimeSeriesOutputBinding{unsupported_state}};
+    CHECK_THROWS_AS(unsupported.apply(literal::TimeSeriesLiteral(bg::i64{1})), std::invalid_argument);
 }
 
 TEST_CASE("an extension time series limits its leaf guarantee through its factory",

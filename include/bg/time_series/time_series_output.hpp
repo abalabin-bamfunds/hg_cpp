@@ -7,6 +7,7 @@
 #include <bg/node/input_fwd.hpp>
 #include <bg/scalar/storage_traits.hpp>
 #include <bg/time_series/output_binding.hpp>
+#include <bg/time_series/literal_operations.hpp>
 #include <bg/time_series/time_series_type.hpp>
 
 #include <ddv/serial_visitor.h>
@@ -186,7 +187,12 @@ void apply_time_series_literal(const Output &output, const literal::TimeSeriesLi
         [&](auto *typed_output) {
             using TypedOutput = std::remove_cvref_t<decltype(*typed_output)>;
             if constexpr (std::same_as<TypedOutput, Out<TS_T>>) {
-                throw std::invalid_argument{"this time-series type does not support literal updates"};
+                const auto *operations = TimeSeriesDispatch<TimeSeriesLiteralOperations>::instance().find(
+                    typed_output->runtime_type());
+                if (operations == nullptr) {
+                    throw std::invalid_argument{"this time-series type does not support literal updates"};
+                }
+                operations->apply(literal, typed_output->output_state());
             } else if constexpr (requires { typed_output->apply(literal); }) {
                 typed_output->apply(literal);
             } else {

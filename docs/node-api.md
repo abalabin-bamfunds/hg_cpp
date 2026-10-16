@@ -524,7 +524,9 @@ set_output.apply({1, literal::REMOVED(2)});
 ```
 
 `Out<TS_T>::apply()` dispatches through DDV to its resolved output kind.
-Reference and extension time series literal structures throw
+For `TimeSeriesLiteral` updates, extension time series use their registered
+[literal operation](time-series-providers.md#literal-updates).
+Reference outputs and extension outputs without a handler throw
 `std::invalid_argument`. Follow the [literal lifetime and construction
 contract](scalar-api.md#literals).
 

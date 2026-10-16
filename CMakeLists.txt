@@ -73,6 +73,7 @@ add_library(
     src/service_catalogue.cpp
     src/scalar/allocation.cpp
     src/scalar/buffer_operations.cpp
+    src/scalar/literal_operations.cpp
     src/scalar/bundle/allocation_owner.cpp
     src/scalar/bundle/runtime_type.cpp
     src/scalar/dict/type.cpp
@@ -118,6 +119,7 @@ add_library(
     src/time_series/tss/tss_reference_sample.cpp
     src/time_series/output_path.cpp
     src/time_series/time_series_runtime_type.cpp
+    src/time_series/literal_operations.cpp
     src/time_series/tick_serializer.cpp
     src/time_series_type.cpp
     src/time_series_variable.cpp

@@ -208,6 +208,18 @@ Named fields can appear in any order. Required fields must be supplied; omitted
 optional bundle fields remain absent. Malformed sequences throw
 `std::invalid_argument`.
 
+Providers support extension sequences by registering `ScalarLiteralOperations`
+from `<bg/scalar/literal_operations.hpp>` with
+`ScalarDispatch<ScalarLiteralOperations>::instance()` using the
+[optional operation registry](#optional-operations). The handler receives the complete
+`ScalarLiteral`, destination runtime type, uninitialized destination storage, and
+allocator. It follows the [scalar construction contract](#ownership): return
+with one complete value, or throw after releasing any resources it acquired.
+Scalar leaves use the destination runtime's ordinary input construction.
+The extension callback accepts `ScalarLiteral`; generic `Literal<Leaf>` sources
+retain the built-in sequence rules above. Missing handlers throw
+`std::invalid_argument`.
+
 Bundle sequence construction outside a scalar allocation context requires an
 explicit allocator, including bundles nested in collections. See the
 [ownership contract](#ownership).
