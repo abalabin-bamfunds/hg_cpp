@@ -172,6 +172,7 @@ add_library(
     src/library/collection.cpp
     src/library/string.cpp
     src/library/stream.cpp
+    src/library/running.cpp
 )
 add_library(bg::library ALIAS bg_library)
 

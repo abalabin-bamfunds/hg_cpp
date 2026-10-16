@@ -31,6 +31,10 @@ dedup = _native.dedup
 filter_ = _native.filter_
 if_then_else = _native.if_then_else
 lag = _native.lag
+sums = _native.sums
+mins = _native.mins
+maxs = _native.maxs
+means = _native.means
 len_ = _native.len_
 contains_ = _native.contains_
 const_ = _native.const_
@@ -64,6 +68,9 @@ __all__ = [
     "lt",
     "map",
     "mesh",
+    "maxs",
+    "means",
+    "mins",
     "mod",
     "mul",
     "ne",
@@ -76,5 +83,6 @@ __all__ = [
     "sample",
     "sub",
     "switch_",
+    "sums",
     "valid",
 ]

@@ -38,6 +38,10 @@ decltype(dedup) dedup{"dedup", {"value"}};
 decltype(filter_) filter_{"filter_", {"condition", "value"}};
 decltype(if_then_else) if_then_else{"if_then_else", {"condition", "true_value", "false_value"}};
 decltype(lag) lag{"lag", {"value"}};
+decltype(sums) sums{"sums", {"value"}};
+decltype(mins) mins{"mins", {"value"}};
+decltype(maxs) maxs{"maxs", {"value"}};
+decltype(means) means{"means", {"value"}};
 
 decltype(len_) len_{"len_", {"value"}};
 decltype(contains_) contains_{"contains_", {"collection", "key"}};
@@ -50,6 +54,7 @@ const auto registered = [] {
     details::register_string_operators();
     details::register_logical_operators();
     details::register_stream_operators();
+    details::register_running_operators();
     details::register_collection_operators();
     return true;
 }();

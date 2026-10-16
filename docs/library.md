@@ -182,6 +182,45 @@ operation. Ordinary equal-valued ticks remain separate events. `lag` produces
 an ordinary output; its first event produces no output, and its final retained
 event remains unpublished unless another input event arrives.
 
+## Running calculations
+
+`sums(value)`, `mins(value)`, `maxs(value)`, and `means(value)` calculate over
+successive ticks of one `TS<i64>` or `TS<double>`. `sums`, `mins`, and `maxs`
+retain the input scalar type. `means` returns `double` and accumulates in
+`double`, independently of the integer sum's wrapping policy.
+
+Each valid input tick contributes, including equal ordinary ticks. Skipped
+cycles do not advance the calculation. Invalidation clears history and
+invalidates the output; revalidation starts a new history. No operator
+schedules on start. `mins` and `maxs` publish the first value and then publish
+only when a comparison establishes a new extremum.
+
+`mins` and `maxs` use ordinary floating-point comparisons. An initial NaN
+remains the result until history is cleared; a later NaN produces no tick.
+NaN is a valid scalar value, not time series invalidity.
+
+Without reset, `sums` and `means` propagate the observed input guarantee.
+`mins` and `maxs` provide at least `deduplicated` and retain `final` or `const`
+inputs. With reset, `sums` and `means` produce ordinary outputs, while `mins`
+and `maxs` produce deduplicated outputs. Reset can invalidate these outputs
+independently of the value input's guarantee.
+
+Each operator accepts an optional `reset` time series argument. Any valid tick
+on that input clears history, regardless of its value. A simultaneous valid
+`value` tick starts the new history. Reset alone invalidates the output rather
+than sampling an unchanged input. Invalidating `reset` does not clear history
+or contribute another value.
+
+```cpp
+auto total = operators::sums(value);
+auto restarted_total = operators::sums(value, "reset"_n = reset);
+```
+
+```python
+total = bg.operators.sums(value)
+restarted_total = bg.operators.sums(value, reset=reset)
+```
+
 ## Collection queries
 
 `len_(value)` returns an `i64` length. It counts current TSS membership or the

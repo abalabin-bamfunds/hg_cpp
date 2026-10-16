@@ -192,6 +192,10 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "filter_", operators::filter_);
     export_operator(operators_module, "if_then_else", operators::if_then_else);
     export_operator(operators_module, "lag", operators::lag);
+    export_operator(operators_module, "sums", operators::sums);
+    export_operator(operators_module, "mins", operators::mins);
+    export_operator(operators_module, "maxs", operators::maxs);
+    export_operator(operators_module, "means", operators::means);
     export_operator(operators_module, "len_", operators::len_);
     export_operator(operators_module, "contains_", operators::contains_);
     export_operator(operators_module, "const_", operators::const_);

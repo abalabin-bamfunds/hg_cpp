@@ -66,6 +66,12 @@ extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TRUE_TS, FALSE_TS) -> OUT> if_
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> i64> count;
 extern BG_LIBRARY_EXPORT operator_<auto(TS<SCALAR>) -> TS<SCALAR>> lag;
 
+// Running numeric aggregates. A valid reset-input tick clears the current aggregate.
+extern BG_LIBRARY_EXPORT operator_<auto(TS<NUMERIC>) -> OUT> sums;
+extern BG_LIBRARY_EXPORT operator_<auto(TS<NUMERIC>) -> OUT> mins;
+extern BG_LIBRARY_EXPORT operator_<auto(TS<NUMERIC>) -> OUT> maxs;
+extern BG_LIBRARY_EXPORT operator_<auto(TS<NUMERIC>) -> OUT> means;
+
 // Collection queries.
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> i64> len_;
 extern BG_LIBRARY_EXPORT
