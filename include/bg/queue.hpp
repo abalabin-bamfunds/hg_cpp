@@ -68,3 +68,5 @@ class QueueControl {
 } // namespace details
 
 } // namespace bg
+
+#include <bg/queue_node.hpp>

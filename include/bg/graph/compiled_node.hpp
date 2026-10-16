@@ -492,6 +492,8 @@ class CompiledNode {
 
     bool has_output_runtime_type() const noexcept { return (flags_ & output_runtime_type_flag) != 0; }
 
+    QueueMode queue_mode() const noexcept { return static_cast<QueueMode>((flags_ & queue_mode_mask) >> queue_mode_shift); }
+
     const ScalarRuntimeType &scalar_input_runtime_type(std::size_t parameter_index) const noexcept {
         return static_cast<const ScalarRuntimeType &>(parameter_runtime_type(parameter_index));
     }
@@ -536,6 +538,8 @@ class CompiledNode {
     static constexpr std::uint32_t controlled_input_count_mask = parameter_count_mask << controlled_input_count_shift;
     static constexpr std::uint32_t all_valid_input_metadata_flag = std::uint32_t{1} << 21;
     static constexpr std::uint32_t output_runtime_type_flag = std::uint32_t{1} << 22;
+    static constexpr std::uint32_t queue_mode_shift = 23;
+    static constexpr std::uint32_t queue_mode_mask = std::uint32_t{3} << queue_mode_shift;
     static constexpr std::uint32_t input_node_indices_flag = std::uint32_t{1} << 31;
 
     CompiledNode(EvaluationFunction evaluation_function, std::uint32_t output_last_updated_offset,
@@ -543,7 +547,7 @@ class CompiledNode {
                  bool has_output, bool has_state, bool has_output_notification, bool has_item_subscriptions,
                  bool has_node_invocation_metadata, bool has_all_valid_input_metadata,
                  bool has_output_runtime_type, std::uint32_t controlled_input_count,
-                 bool has_input_node_indices, InvalidationMode invalidation_mode) noexcept
+                 bool has_input_node_indices, InvalidationMode invalidation_mode, QueueMode queue_mode) noexcept
         : evaluation_function_(evaluation_function),
           output_last_updated_offset_(output_last_updated_offset | (has_output ? std::uint32_t{} : no_output_flag) |
                                       (has_state ? state_flag : std::uint32_t{})),
@@ -556,6 +560,7 @@ class CompiledNode {
                  (controlled_input_count << controlled_input_count_shift) |
                  (has_all_valid_input_metadata ? all_valid_input_metadata_flag : std::uint32_t{}) |
                  (has_output_runtime_type ? output_runtime_type_flag : std::uint32_t{}) |
+                 (static_cast<std::uint32_t>(queue_mode) << queue_mode_shift) |
                  (has_input_node_indices ? input_node_indices_flag : std::uint32_t{})) {}
 
     bool has_input_node_indices() const noexcept { return (flags_ & input_node_indices_flag) != 0; }

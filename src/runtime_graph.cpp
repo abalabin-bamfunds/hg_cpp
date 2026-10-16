@@ -942,10 +942,13 @@ Queue RuntimeGraph::make_queue(std::size_t target) {
     if (evaluator_ == nullptr || evaluator_->owner_bound()) {
         throw std::logic_error{"only an outer runtime graph can create a queue"};
     }
-    if (!started_ || stopped_ || finalized_) {
-        throw std::logic_error{"a queue requires a started, active runtime graph"};
+    if (!started_ || finalized_) {
+        throw std::logic_error{"a queue requires a started runtime graph that is not finalized"};
     }
     const auto &compiled_node = compiled_graph_->node(target);
+    if (stopped_ && queue_state() == nullptr) {
+        return {};
+    }
     if (queue_state() == nullptr) {
         queue_state() = allocator_.new_object<QueueState>();
     }

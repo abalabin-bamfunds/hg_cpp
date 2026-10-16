@@ -79,6 +79,55 @@ Parameters can be `In<>`, plain values, `Scalar<>`, or one `Out<>`. An `In<>` na
 supplies its signature name. Captures are immutable compiled node data. Use an
 aggregate declaration when the node needs state or lifecycle functions.
 
+## Queue nodes
+
+`queue<TS_T>()` creates a node template whose start callback receives an injected
+`Queue`. Graph code supplies the callback's scalar parameters:
+
+```cpp
+const auto updates = bg::queue<bg::TSD<bg::util::symbol, bg::TS<double>>>(
+    bg::start = [](bg::Queue queue, bg::util::symbol topic) {
+        subscribe(topic, std::move(queue));
+    },
+    bg::stop = [](bg::util::symbol topic) noexcept { unsubscribe(topic); },
+    bg::mode = bg::QueueMode::elide);
+
+auto output = updates(bg::util::symbol{"prices"});
+```
+
+The start callback returns `void` and declares exactly one `Queue` parameter by
+value. The remaining parameters are scalar-only, including plain C++ parameters;
+they cannot resolve to time series inputs. The injected parameter is absent from
+the node signature. The optional stop callback receives only the parameters it
+declares, returns `void`, and must be `noexcept`. It can request a `Queue`; writes
+through that handle return `false` because graph shutdown has closed admission.
+
+Stop scalar parameters match start scalar parameters by canonical scalar type.
+An optional start scalar requires an optional stop scalar. Each match must be
+unique unless selected explicitly. Use
+`bg::start.bind<"a"_n, "topic"_n>(callback)` to name the start scalar parameters.
+`bg::stop.bind<1>(callback)` selects zero-based scalar position 1;
+`bg::stop.bind<"topic"_n>(callback)` selects its name. Selectors follow callback
+scalar order, cover every scalar parameter, and exclude injected parameters.
+`_n` comes from `bg::literals`.
+
+Use a semantic time series type for a runtime output declaration:
+
+```cpp
+const auto updates = bg::queue(
+    bg::start = [](bg::Queue queue) { subscribe(std::move(queue)); },
+    bg::output_type = my_type,
+    bg::mode = bg::QueueMode::elide);
+```
+
+The mode defaults to `QueueMode::standard`. The declaration accepts standard and
+eliding modes. Batch mode is rejected until batch message handling is available.
+Queue nodes have no evaluation function or initial evaluation. They run in the
+outer graph and use the ordinary node lifecycle and wiring deduplication rules.
+[Queue handles](time-series-types.md#queue-messages) define writing and copying.
+[Graph shutdown](evaluation.md#stop) defines admission closure and cleanup.
+Graph-cycle application of queued messages is not connected yet.
+
 ## Runtime-signature declaration
 
 A definition object can provide its signature as runtime data. Use this form

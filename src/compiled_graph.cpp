@@ -2510,7 +2510,8 @@ class CompiledGraphBuilder {
                              layout.all_valid_metadata.count != 0,
                              node.node_template().uses_output_runtime_type(),
                              static_cast<std::uint32_t>(layout.controlled_inputs.count),
-                             !node_plan.input_node_indices.empty(), node_plan.invalidation.mode});
+                             !node_plan.input_node_indices.empty(), node_plan.invalidation.mode,
+                             node.node_template().queue_mode()});
             std::construct_at(node_offsets.data() + compiled_node,
                               packed_offset(layout.offset + layout.compiled_node.offset,
                                             "compiled fixed storage reaches 1 GiB"));

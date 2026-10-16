@@ -314,6 +314,8 @@ graph compilation or evaluation.
 - definition output-runtime hooks for aggregate, callable, and runtime-signature nodes; resolved scalar configuration,
   flattened variadic arguments, operator cache hits, early semantic mismatch, default trait selection, node-call
   deduplication, and descriptor preservation through compilation and evaluation
+- typed and runtime queue-node declarations, scalar-only parameters, injected handle exclusion,
+  lifecycle callback compatibility, output runtime selection, mode validation, and per-node mode metadata
 - default output representations independent of input representations, including collection children
 
 ### Wiring
@@ -422,6 +424,8 @@ graph compilation or evaluation.
 - outer runtime graph queue ownership, shared admission across target nodes, closure before stop callbacks,
   typed unread-message cleanup after stop, startup and evaluation failure, finalization without stop,
   retained handles after graph destruction, inner graph rejection, and optional runtime storage
+- queue-node start and stop callbacks, scalar conversion and optional values, callback captures,
+  destination selection, independent runtime graphs, retained writer copies, and absence of initial evaluation
 - queue message reading for sentinel skipping, target order, padding, block rollover, committed reservation order,
   standard retry, batch rejection, no-op advancement, typed discard, replay failure, and concurrent watermark growth
 - queue tick application in standard and eliding modes, independent collection items, complete-message pending,

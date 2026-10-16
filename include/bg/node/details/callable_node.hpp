@@ -87,6 +87,36 @@ consteval std::size_t callable_dynamic_activity_input_index(std::index_sequence<
             static_cast<std::size_t>(Index < Target && input_field<callable_field<Function, Index>>::dynamic_activity));
 }
 
+template <typename Field, typename Invocation>
+auto make_callable_scalar_argument(Invocation invocation, std::size_t parameter_index) {
+    using Value = typename scalar_field<Field>::value_type;
+    using ParameterScalar = typename scalar_field<Field>::parameter_type;
+    const auto scalar = invocation.scalar(parameter_index);
+
+    if constexpr (scalar_field<Field>::optional) {
+        if (!scalar.has_value()) {
+            return Field{};
+        }
+        if constexpr (scalar_input_requires_runtime_type<ParameterScalar>()) {
+            return Field{scalar_api_value<Value>(scalar_cast<ParameterScalar>(scalar.value()).value())};
+        } else {
+            return Field{scalar_api_value<Value>(scalar.template value<ParameterScalar>())};
+        }
+    } else if constexpr (scalar_view<Field>::value) {
+        if constexpr (scalar_input_requires_runtime_type<ParameterScalar>()) {
+            const auto value = scalar.value();
+            return Field::from(value.runtime_type(), value.data());
+        } else {
+            using Stored = scalar_stored_t<ParameterScalar>;
+            return Field::from(*static_cast<const Stored *>(invocation.scalar_data(parameter_index)));
+        }
+    } else if constexpr (scalar_input_requires_runtime_type<ParameterScalar>()) {
+        return scalar_api_value<Value>(scalar_cast<ParameterScalar>(scalar.value()).value());
+    } else {
+        return scalar_api_value<Value>(scalar.template value<ParameterScalar>());
+    }
+}
+
 template <typename Function, std::size_t Index, typename Invocation>
 auto make_callable_node_argument(Invocation invocation) {
     using Field = callable_field<Function, Index>;
@@ -138,33 +168,8 @@ auto make_callable_node_argument(Invocation invocation) {
     } else if constexpr (output_field<Field>::value) {
         return invocation.template output_as<Field>();
     } else {
-        using Value = typename scalar_field<Field>::value_type;
-        using ParameterScalar = typename scalar_field<Field>::parameter_type;
         constexpr auto ParameterIndex = callable_parameter_index<Function, Index>(Indices);
-        const auto scalar = invocation.scalar(ParameterIndex);
-
-        if constexpr (scalar_field<Field>::optional) {
-            if (!scalar.has_value()) {
-                return Field{};
-            }
-            if constexpr (scalar_input_requires_runtime_type<ParameterScalar>()) {
-                return Field{scalar_api_value<Value>(scalar_cast<ParameterScalar>(scalar.value()).value())};
-            } else {
-                return Field{scalar_api_value<Value>(scalar.template value<ParameterScalar>())};
-            }
-        } else if constexpr (scalar_view<Field>::value) {
-            if constexpr (scalar_input_requires_runtime_type<ParameterScalar>()) {
-                const auto value = scalar.value();
-                return Field::from(value.runtime_type(), value.data());
-            } else {
-                using Stored = scalar_stored_t<ParameterScalar>;
-                return Field::from(*static_cast<const Stored *>(invocation.scalar_data(ParameterIndex)));
-            }
-        } else if constexpr (scalar_input_requires_runtime_type<ParameterScalar>()) {
-            return scalar_api_value<Value>(scalar_cast<ParameterScalar>(scalar.value()).value());
-        } else {
-            return scalar_api_value<Value>(scalar.template value<ParameterScalar>());
-        }
+        return make_callable_scalar_argument<Field>(invocation, ParameterIndex);
     }
 }
 

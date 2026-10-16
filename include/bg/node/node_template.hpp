@@ -7,6 +7,7 @@
 #include <bg/node/invalidation.hpp>
 #include <bg/node/node_template_identity.hpp>
 #include <bg/node/state_layout.hpp>
+#include <bg/queue_mode.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/type/signature.hpp>
 
@@ -65,6 +66,7 @@ class NodeTemplate : public WiringTemplate {
     virtual bool uses_timed_scheduling() const noexcept { return false; }
     virtual bool uses_cycle_callbacks() const noexcept { return false; }
     virtual bool uses_queue() const noexcept { return false; }
+    virtual QueueMode queue_mode() const noexcept { return QueueMode::standard; }
     virtual InputNotification input_notification(std::size_t) const noexcept { return {}; }
     virtual NodeStateLayout state_layout(const ResolvedSignature &, std::span<const ScalarRuntimeType *const>,
                                          std::span<const ScalarType *const>) const {

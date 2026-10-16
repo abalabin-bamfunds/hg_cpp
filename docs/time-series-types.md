@@ -166,8 +166,10 @@ The controller does not destroy encoded payloads.
 `RuntimeGraph::make_queue(target)` creates a handle for an outer graph node.
 The node template declares `uses_queue` and `uses_output_runtime_type` so the
 compiled graph reserves queue storage and retains the target's runtime type.
+`CompiledNode::queue_mode()` supplies the target node's configured mode.
 The graph creates one shared stream on first use. Handle creation requires a
-started graph that has not stopped or finalized. Inner graphs reject it.
+started graph that has not finalized. After stop, it returns a closed handle.
+Inner graphs reject it.
 [Graph shutdown](evaluation.md#stop) defines closure and unread-message cleanup.
 
 Queue handles allocate scalar payloads through `std::pmr::new_delete_resource()`.

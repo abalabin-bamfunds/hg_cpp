@@ -299,6 +299,39 @@ TEST_CASE("an outer runtime graph shares and closes queues before stop callbacks
     QueueNodeDefinition::stop_probe = nullptr;
 }
 
+TEST_CASE("a stopped runtime graph creates closed queue handles",
+          "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][lifecycle]") {
+    auto node = bg::node(QueueNodeDefinition{});
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        (void)node();
+    }
+    wiring.finalize();
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+
+    {
+        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        runtime.start(time(1));
+        auto queue = runtime.make_queue(0);
+        runtime.stop();
+
+        auto closed = runtime.make_queue(0);
+        CHECK_FALSE(closed.write(::literal::TimeSeriesLiteral(bg::i64{1})));
+        CHECK_FALSE(queue.write(::literal::TimeSeriesLiteral(bg::i64{2})));
+    }
+
+    {
+        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        runtime.start(time(2));
+        runtime.stop();
+
+        auto closed = runtime.make_queue(0);
+        CHECK_FALSE(closed.write(::literal::TimeSeriesLiteral(bg::i64{3})));
+    }
+}
+
 TEST_CASE("queue shutdown handles startup and evaluation failures",
           "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][failure]") {
     auto node = bg::node(FailingQueueNodeDefinition{});

@@ -50,6 +50,7 @@ add_executable(
     evaluation/time_series/time_series_value_test.cpp
     evaluation/time_series/time_series_copy_test.cpp
     evaluation/time_series/queue_message_reader_test.cpp
+    evaluation/time_series/queue_node_test.cpp
     evaluation/time_series/queue_test.cpp
     evaluation/time_series/runtime_graph_queue_test.cpp
     evaluation/time_series/tick_serializer_test.cpp
