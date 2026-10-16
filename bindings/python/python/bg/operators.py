@@ -25,10 +25,12 @@ or_ = _native.or_
 not_ = _native.not_
 valid = _native.valid
 all_valid = _native.all_valid
+count = _native.count
 sample = _native.sample
 dedup = _native.dedup
 filter_ = _native.filter_
 if_then_else = _native.if_then_else
+lag = _native.lag
 len_ = _native.len_
 contains_ = _native.contains_
 const_ = _native.const_
@@ -44,6 +46,7 @@ __all__ = [
     "const_",
     "contains_",
     "convert",
+    "count",
     "default_",
     "dedup",
     "div",
@@ -56,6 +59,7 @@ __all__ = [
     "if_then_else",
     "gt",
     "le",
+    "lag",
     "len_",
     "lt",
     "map",

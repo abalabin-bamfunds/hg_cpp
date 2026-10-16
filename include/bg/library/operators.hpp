@@ -62,6 +62,10 @@ extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> TS_T> dedup;
 extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TS_T) -> TS_T> filter_;
 extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TRUE_TS, FALSE_TS) -> OUT> if_then_else;
 
+// Counting and lag.
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> i64> count;
+extern BG_LIBRARY_EXPORT operator_<auto(TS<SCALAR>) -> TS<SCALAR>> lag;
+
 // Collection queries.
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> i64> len_;
 extern BG_LIBRARY_EXPORT

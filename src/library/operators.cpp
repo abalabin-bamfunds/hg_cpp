@@ -31,11 +31,13 @@ decltype(not_) not_{"not_", {"value"}};
 
 decltype(valid) valid{"valid", {"value"}};
 decltype(all_valid) all_valid{"all_valid", {"value"}};
+decltype(count) count{"count", {"value"}};
 
 decltype(sample) sample{"sample", {"signal", "value"}};
 decltype(dedup) dedup{"dedup", {"value"}};
 decltype(filter_) filter_{"filter_", {"condition", "value"}};
 decltype(if_then_else) if_then_else{"if_then_else", {"condition", "true_value", "false_value"}};
+decltype(lag) lag{"lag", {"value"}};
 
 decltype(len_) len_{"len_", {"value"}};
 decltype(contains_) contains_{"contains_", {"collection", "key"}};

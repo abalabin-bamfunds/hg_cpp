@@ -407,6 +407,8 @@ For each reusable node and graph, test:
   rejection of unsupported targets
 - optional addition and multiplication, initial invalidity, invalidation,
   revalidation, startup scheduling, and distinctions from explicit defaults
+- stateful count and one-event lag, including repeated ticks, validity changes,
+  owned scalar snapshots, guarantees, references, and nested graph instances
 - scalar equality through built-in, compound, collection, and extension views;
   ordering and Boolean operations
 - guarantee propagation, equal-result tick selection, reference bindings,

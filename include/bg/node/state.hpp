@@ -44,6 +44,29 @@ template <details::mutable_scalar T> class State<T> {
     View value_;
 };
 
+template <details::scalar_variable T> class State<T> {
+  public:
+    State(const ScalarRuntimeType &runtime_type, void *value) noexcept : runtime_type_{&runtime_type}, value_{value} {}
+
+    Scalar<T> value() const noexcept { return Scalar<T>::from(*runtime_type_, value_); }
+
+    template <typename Source> void set(const Scalar<Source> &value) const {
+        runtime_type_->assign_from_input(value_, value);
+    }
+
+    void reset() const {
+        auto memory = details::current_scalar_allocator();
+        runtime_type_->destroy(value_, memory);
+        runtime_type_->construct_initial_value(value_);
+    }
+
+    using value_type = T;
+
+  private:
+    const ScalarRuntimeType *runtime_type_;
+    void *value_;
+};
+
 template <typename T>
     requires details::generic_scalar<List<T>>
 class State<List<T>> {

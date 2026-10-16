@@ -1,4 +1,5 @@
 #include <bg/bg.hpp>
+#include <bg/testing/test_graph.hpp>
 
 #include "../utils/counting_memory_resource.hpp"
 
@@ -6,6 +7,8 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
+#include <string>
 #include <string_view>
 #include <type_traits>
 
@@ -172,6 +175,33 @@ struct generic_list_state_node {
 
 using K = bg::ScalarVariable<"K", bg::Hashable>;
 using V = bg::ScalarVariable<"V">;
+using TEXT = bg::ScalarVariable<"TEXT", bg::string, bg::EqualityComparable>;
+using OPAQUE = bg::ScalarVariable<"OPAQUE", bg::Opaque<int>>;
+
+struct generic_scalar_state_node {
+    bg::In<bg::TS<TEXT>, bg::optional> input;
+    bg::State<TEXT> state;
+    bg::Out<bg::TS<TEXT>> output;
+
+    void evaluate() const {
+        if (!input.valid()) {
+            state.reset();
+            output.invalidate();
+            return;
+        }
+
+        state.set(input.value_view());
+        output.set_value(state.value());
+    }
+};
+
+struct unsupported_scalar_state_node {
+    bg::Scalar<OPAQUE> input;
+    bg::State<OPAQUE> state;
+
+    void start() const { state.set(input); }
+    void evaluate() const {}
+};
 
 } // namespace
 
@@ -184,6 +214,69 @@ TEST_CASE("generic collection state uses its resolved storage",
     bg::run_graph([&] { generic_list_state(input); }, bg::GraphRunOptions{.global_state = &state});
 
     state.read([](const auto &values) { CHECK(*bg::scalar_cast<bg::i64>(values.at("generic_result")) == 4); });
+}
+
+TEST_CASE("generic scalar state resolves constrained types and owns its value",
+          "[node][state][scalar][generic][declaration:generic][feature:state][scalar:generic]") {
+    const auto state_node = bg::node<generic_scalar_state_node>();
+    const auto retain = [&](bg::wp<bg::TS<bg::string>> value) { return state_node(value); };
+
+    CHECK(bg::testing::test_graph(retain, std::array<std::string, 3>{"first", "second", "third"})
+              .equals<bg::string>({"first", "second", "third"}));
+}
+
+TEST_CASE("runtime-resolved scalar state reset releases its owned storage",
+          "[node][state][scalar][generic][allocation][feature:state][scalar:generic]") {
+    auto memory = counting_memory_resource{};
+    {
+        auto allocation = bg::allocator{memory};
+        auto state = bg::GlobalState{allocation};
+        const auto &runtime_type = bg::cpp_scalar_runtime_type<bg::string>();
+        using Stored = bg::details::scalar_stored_t<bg::string>;
+        auto input = std::optional{bg::ScalarValue<bg::string>{std::string(256, 'x'), allocation}};
+        auto before = std::size_t{};
+        auto after_set = std::size_t{};
+        auto after_input_release = std::size_t{};
+        auto after_reset = std::size_t{};
+
+        state.write([&](auto &) {
+            alignas(Stored) std::byte storage[sizeof(Stored)];
+            runtime_type.construct_initial_value(storage);
+            const auto cleanup = bg::util::scope_exit{[&]() noexcept {
+                auto allocation = bg::details::current_scalar_allocator();
+                runtime_type.destroy(storage, allocation);
+            }};
+            auto value = bg::State<bg::SCALAR>{runtime_type, storage};
+            before = memory.allocations();
+            value.set(input->view());
+            after_set = memory.allocations();
+            input.reset();
+            after_input_release = memory.allocations();
+            CHECK(bg::scalar_cast<bg::string>(value.value()).value() == std::string(256, 'x'));
+            value.reset();
+            after_reset = memory.allocations();
+        });
+
+        CHECK(after_set == before);
+        CHECK(after_input_release == before);
+        CHECK(after_reset < after_input_release);
+    }
+
+    CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("runtime-resolved scalar state rejects types without initial-state support",
+          "[node][state][scalar][generic][feature:state][scalar:generic]") {
+    const auto state_node = bg::node<unsupported_scalar_state_node>();
+    const auto input = bg::ScalarValue<bg::Opaque<int>>{42};
+    auto wiring = bg::GraphWiring{};
+    {
+        const auto context = bg::WiringContext{wiring};
+        state_node(input);
+    }
+
+    wiring.finalize();
+    CHECK_THROWS_AS(static_cast<void>(bg::CompiledGraph{wiring}), std::invalid_argument);
 }
 
 namespace {
