@@ -260,10 +260,10 @@ struct computed_observation {
     std::vector<bg::frame::row_id_t> removed;
 };
 
-void require_snapshot(const std::optional<bg::Scalar<bg::frame::Column<bg::i64>>> &snapshot,
+void require_snapshot(const std::optional<bg::ScalarValue<bg::frame::Column<bg::i64>>> &snapshot,
                       std::initializer_list<std::optional<bg::i64>> expected, const char *message) {
     require(snapshot.has_value(), message);
-    const auto view = snapshot->value();
+    const auto view = snapshot->view().value();
     require(view.size() == expected.size(), message);
     auto position = std::size_t{};
     for (const auto cell : expected) {
@@ -355,7 +355,8 @@ void test_cold_generic_tsc_column_output() {
     const auto values = std::array<bg::i64, 2>{14, -7};
     const auto result = bg::testing::test_graph(graph, values);
     require(result.size() == values.size() && result[0] && result[1] &&
-                result[0]->value().cell<bg::i64>(0) == 14 && result[1]->value().cell<bg::i64>(0) == -7,
+                result[0]->view().value().cell<bg::i64>(0) == 14 &&
+                result[1]->view().value().cell<bg::i64>(0) == -7,
             "cold generic TSC input did not publish its value as a typed column series");
 }
 
@@ -796,8 +797,8 @@ void test_double_tsc_graph() {
     const auto result = bg::testing::test_graph(graph, values);
     require(result.size() == values.size(), "double TSC graph lost cycles");
     for (auto index = std::size_t{}; index != values.size(); ++index) {
-        require(result[index] && result[index]->value().size() == 1 &&
-                    result[index]->value().cell(0) == values[index],
+        require(result[index] && result[index]->view().value().size() == 1 &&
+                    result[index]->view().value().cell(0) == values[index],
                 "double TSC graph changed a value");
     }
 }

@@ -1232,8 +1232,9 @@ void test_scalar_frame_time_series_graph() {
     const auto graph = [&](wp<TS<FrameValue>> input) { return copy(input); };
     const auto result = testing::test_graph(graph, std::vector{first, second});
     require(result.size() == 2 && result[0] && result[1], "TS<Frame> graph lost scalar frame values");
-    require(result[0]->value().columns().bid.cell(0) == 10.5 && !result[0]->value().columns().ask.cell(0) &&
-                result[1]->value().columns().size.cell(0) == 6,
+    require(result[0]->view().value().columns().bid.cell(0) == 10.5 &&
+                !result[0]->view().value().columns().ask.cell(0) &&
+                result[1]->view().value().columns().size.cell(0) == 6,
             "TS<Frame> graph changed the scalar frame data");
 }
 
@@ -3225,11 +3226,14 @@ void test_tsf_graph_behavior() {
     require(snapshots.size() == commands.size() && snapshots[0] && snapshots[1] && snapshots[2] && snapshots[3] &&
                 snapshots[4] && snapshots[5] && snapshots[7] && snapshots[8],
             "TSF did not export valid whole-frame scalar snapshots");
-    require(snapshots[0]->value().size() == 0 && snapshots[1]->value().columns().bid.cell(0) == 10.5 &&
-                snapshots[2]->value().columns().bid.cell(0) == 11.5 &&
-                !snapshots[2]->value().columns().ask.cell(0) && snapshots[3]->value().columns().ask.cell(0) == 12.5 &&
-                snapshots[4]->value().columns().bid.cell(0) == 11.5 && snapshots[5]->value().size() == 0 &&
-                snapshots[7]->value().size() == 0 && snapshots[8]->value().size() == 0,
+    require(snapshots[0]->view().value().size() == 0 &&
+                snapshots[1]->view().value().columns().bid.cell(0) == 10.5 &&
+                snapshots[2]->view().value().columns().bid.cell(0) == 11.5 &&
+                !snapshots[2]->view().value().columns().ask.cell(0) &&
+                snapshots[3]->view().value().columns().ask.cell(0) == 12.5 &&
+                snapshots[4]->view().value().columns().bid.cell(0) == 11.5 &&
+                snapshots[5]->view().value().size() == 0 && snapshots[7]->view().value().size() == 0 &&
+                snapshots[8]->view().value().size() == 0,
             "TSF scalar snapshots changed after later row mutations");
 }
 
@@ -3769,9 +3773,9 @@ void test_inherited_tsf_graph_behavior() {
     require(observations[3].rows.empty() && observations[3].removed == std::vector<row_id_t>{0},
             "inherited TSF removal did not reach typed derived and base inputs");
     require(snapshots.size() == commands.size() && snapshots[1] && snapshots[2] &&
-                snapshots[1]->value().columns().bid.cell(0) == 12.5 &&
-                !snapshots[2]->value().columns().bid.cell(0) &&
-                snapshots[2]->value().columns().ask.cell(0) == 15.5,
+                snapshots[1]->view().value().columns().bid.cell(0) == 12.5 &&
+                !snapshots[2]->view().value().columns().bid.cell(0) &&
+                snapshots[2]->view().value().columns().ask.cell(0) == 15.5,
             "inherited TSF scalar copies did not preserve logical field values");
 }
 
@@ -3796,8 +3800,8 @@ void test_base_frame_output_retains_derived_schema() {
 
     require(snapshots.size() == commands.size() && snapshots[1] && snapshots[2],
             "base frame output did not publish owning snapshots");
-    const auto first = snapshots[1]->value();
-    const auto patched = snapshots[2]->value();
+    const auto first = snapshots[1]->view().value();
+    const auto patched = snapshots[2]->view().value();
     require(first.schema().field_count() == 3 && first.columns().size.cell(0) == 5 &&
                 first.columns().bid.cell(0) == 12.5 && !first.column("ask").view<double>().cell(0),
             "base frame output lost the actual derived schema or initial values");
@@ -4444,9 +4448,9 @@ void test_incremental_numeric_filter() {
             "numeric filter did not propagate source invalidation");
     require(observations[9].valid && observations[9].became_valid && observations[9].rows.empty(),
             "numeric filter did not rebuild after an empty source revalidation");
-    require(snapshots.size() == commands.size() && snapshots[2] && snapshots[2]->value().size() == 2 &&
-                snapshots[2]->value().columns().bid.cell(0) == 10.5 &&
-                snapshots[3]->value().columns().bid.cell(0) == 11.5,
+    require(snapshots.size() == commands.size() && snapshots[2] && snapshots[2]->view().value().size() == 2 &&
+                snapshots[2]->view().value().columns().bid.cell(0) == 10.5 &&
+                snapshots[3]->view().value().columns().bid.cell(0) == 11.5,
             "numeric filter snapshots did not retain stable row data");
 }
 

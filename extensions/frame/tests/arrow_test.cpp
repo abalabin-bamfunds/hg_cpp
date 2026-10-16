@@ -86,7 +86,8 @@ void test_arrow_default_frame_runtime() {
     const auto graph = [&](wp<TS<i64>> command) { return publish(command); };
     const auto commands = std::array<i64, 1>{0};
     const auto snapshots = testing::test_graph(graph, commands);
-    require(snapshots.size() == 1 && snapshots[0] && snapshots[0]->value().columns().bid.cell(0) == 12.5,
+    require(snapshots.size() == 1 && snapshots[0] &&
+                snapshots[0]->view().value().columns().bid.cell(0) == 12.5,
             "generic Frame scalar output failed after Arrow runtime initialization");
 }
 
@@ -405,7 +406,7 @@ void test_imports_and_runtime_lifetime() {
     require(consumed.size() == 1, "BG node did not publish its Arrow-backed frame result");
     const auto consumed_value = consumed[0];
     require(consumed_value.has_value(), "BG node produced an invalid Arrow-backed frame result");
-    require(**consumed_value == 5, "BG node read an incorrect Arrow-backed frame value");
+    require(consumed_value->view().value() == 5, "BG node read an incorrect Arrow-backed frame value");
 }
 
 void test_arrow_scalar_owners() {

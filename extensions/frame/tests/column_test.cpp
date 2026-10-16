@@ -161,8 +161,9 @@ void test_ordinary_time_series_graph() {
     const auto source = std::vector{Column{{bg::i64{1}, std::nullopt}}, Column{{bg::i64{2}, bg::i64{3}}}};
     const auto result = bg::testing::test_graph(graph, source);
     require(result.size() == 2 && result[0] && result[1], "ordinary graph lost column values");
-    require(result[0]->value().cell(0) == 1 && !result[0]->value().cell(1), "ordinary graph changed a column");
-    require(result[1]->value().cell(1) == 3, "ordinary graph changed a column");
+    require(result[0]->view().value().cell(0) == 1 && !result[0]->view().value().cell(1),
+            "ordinary graph changed a column");
+    require(result[1]->view().value().cell(1) == 3, "ordinary graph changed a column");
 }
 
 void test_native_rows_changes_and_batches() {
