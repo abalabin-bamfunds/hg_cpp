@@ -1,7 +1,11 @@
 # Frame foundation handoff
 
-Updated: 2026-10-16. The active lane is rebased onto main `359e1aee`.
-Release Arrow-on verification against this BG revision passed 6/6 suites.
+Updated: 2026-10-16. The active lane is rebased onto main `36eb21fb`.
+The expression implementation is committed as `cadf1c38` on the lane.
+Release Arrow-on verification against main `359e1aee` passed 6/6 suites;
+the rebuild against `36eb21fb` found four test targets that still use
+`ScalarValue::value()` instead of `ScalarValue::view().value()`. Both extension
+libraries compiled, and the expression and provider integration tests passed.
 The previous Debug and Arrow-off verification used matching BG dependencies
 built from main `19403a4d`. This commit includes double-column addition and subtraction, expression construction,
 scalar broadcasts, shared-selection arithmetic, filter-owned row order, and
@@ -18,16 +22,16 @@ completed lane retirement, and consumer verification.
 
 | Work | Location / branch | State |
 | --- | --- | --- |
-| Main | `/home/abalabin/_bg`, `main` | Rebase target `359e1aee`; literal APIs and wiring source-type matching integrated |
+| Main | `/home/abalabin/_bg`, `main` | Rebase target `36eb21fb`; literal APIs, wiring source-type matching, and test-graph output capture integrated |
 | Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Arithmetic and shared expression execution committed with this handoff |
-| Test graph output capture | `.lanes/test-graph-outputs`, `agent/test-graph-outputs` | Commits `57bf9c34`, `751b2250` and uncommitted sentinel adaptation; unmerged |
+| Test graph output capture | Main | Integrated through `36eb21fb`, including shared extension comparison dispatch |
 | Numeric value extraction | `.lanes/library-numeric-values` | Held; frame does not depend on it |
 | Historical frame work | `extensions/frame/archive/` | Proposals, probe sources, and benchmark results preserved; see its README |
 | Schema field reflection | Main | Integrated and covered by BG schema reflection tests |
 
 The Release Arrow-on consumer uses BG, ddvisitor, and tpack from
-`extensions/frame/build/dependencies/bg-release-359e1aee-install`, built in
-`extensions/frame/build/dependencies/bg-release-57aa1686`. The Debug and
+`extensions/frame/build/dependencies/bg-release-36eb21fb-install`, built in
+`extensions/frame/build/dependencies/bg-release-36eb21fb` with testing disabled. The Debug and
 Arrow-off consumers retain their previous matching installations under
 `extensions/frame/build/dependencies/bg-debug-install` and
 `extensions/frame/build/dependencies/bg-release-install`. Each extension build
@@ -411,16 +415,26 @@ Verification passed 1,821 core test cases and 144 library cases. The latest
 focused suite passed 15 cases and 70 assertions, covering literal identity,
 collection updates, provider marker handling, and queue cleanup.
 
-Direct TSC/TSF result capture is a separate testing limitation: the current
-`test_graph` sink accepts only `TS<SCALAR>`. Frame inputs already expose scalar
-snapshots through `value_view()`, but the standard sink cannot consume them.
-The unmerged test-graph output work listed above uses tick serialization and an
-extension literal-comparison operation. Frame has not registered
-`TimeSeriesTickOperations` or `TickLiteralComparison` handlers. These are needed
-for direct frame result capture and assertions after that BG work is integrated.
+Main `36eb21fb` captures provider-defined time series through tick serialization.
+Frame must register `TimeSeriesTickOperations` write and discard handlers, and
+`testing::TickLiteralComparison` by canonical semantic series type. Capture does
+not require replay. The framework handles invalidation and skipped ticks before
+calling a comparison handler; successful comparison consumes one valid payload
+without changing its encoded values. See [BG testing](../../docs/testing.md).
+Frame has not registered these handlers yet.
 
-Frame literal shapes, nullable-cell syntax, and row-update syntax remain
-undecided. Current literal leaves do not support `std::nullopt` as a null cell.
+Scalar `TS<Frame<...>>` and `TS<Column<...>>` use scalar capture and comparison.
+The capture buffer's generic fallback retains an owning `ScalarValue<>`;
+specialized `ScalarBufferOperations` are unnecessary for test capture. Frame
+scalar runtimes return false for equality, and Column storage traits disable
+equality. Content equality is required for scalar result assertions; TSF/TSC
+delta comparison uses the separate time-series handler.
+
+The approved scalar literal format uses a sequence of nullable cells for a
+Column and named column sequences for a Frame. Null cells use the exported
+frame-extension sentinel `frame::NULL_VALUE`. Frame columns have equal lengths.
+Current literal leaves do not support `std::nullopt` as a null cell.
+Time-series row-update syntax remains undecided.
 Insertions must allocate internal row IDs; patch and removal operations use
 existing IDs. Frame literal handlers have not been implemented.
 
@@ -445,9 +459,10 @@ design; they do not replace the consumer verification recorded above.
 
 ## Status and remaining work
 
-BG test-graph output capture is being completed in its own lane. Add the frame
-literal and result-capture handlers after that work is integrated. Agree
-nullable-cell and row-update literal syntax before implementation.
+BG test-graph output capture is integrated. Implement the approved scalar
+literals and content equality first, then add TSF/TSC result-capture handlers
+through the existing extension APIs. Agree row-update literal syntax before
+implementing time-series literal application and delta comparison.
 
 Boolean storage, comparisons, and expression-based filtering are the next
 frame features and require design review before implementation.
