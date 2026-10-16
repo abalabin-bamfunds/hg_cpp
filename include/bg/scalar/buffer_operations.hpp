@@ -8,7 +8,9 @@
 
 #include <functional>
 #include <cstddef>
+#include <limits>
 #include <span>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
@@ -48,6 +50,35 @@ class ScalarBufferWriteContext {
     util::concurrent_buffer_reservation *reservation_{};
 };
 
+class ScalarBufferProjectionContext {
+  public:
+    // The initial position is relative to a max-aligned buffer origin and must match the writer's current position.
+    explicit ScalarBufferProjectionContext(std::size_t initial_position = 0) noexcept
+        : initial_position_{initial_position}, position_{initial_position} {}
+
+    void write_bytes(std::size_t size) { advance(size); }
+
+    template <typename T> void emplace() {
+        util::details::require_supported_alignment(alignof(T));
+        advance(util::details::alignment_padding(position_, alignof(T)));
+        advance(sizeof(T));
+    }
+
+    std::size_t position() const noexcept { return position_; }
+    std::size_t size() const noexcept { return position_ - initial_position_; }
+
+  private:
+    void advance(std::size_t size) {
+        if (size > std::numeric_limits<std::size_t>::max() - position_) {
+            throw std::length_error{"scalar buffer projection size overflows"};
+        }
+        position_ += size;
+    }
+
+    std::size_t initial_position_;
+    std::size_t position_;
+};
+
 namespace details {
 
 struct ScalarBufferValueConsumer {
@@ -62,23 +93,9 @@ struct ScalarBufferValueConsumer {
 // Provider-defined scalar encodings shared by buffer-based facilities.
 struct ScalarBufferOperations {
     using Write = std::function<void(Scalar<>, ScalarBufferWriteContext &, allocator &)>;
+    using Project = std::function<void(Scalar<>, ScalarBufferProjectionContext &)>;
     using Read = std::function<void(util::buffer_reader &, details::ScalarBufferValueConsumer)>;
     using Discard = std::function<void(util::buffer_reader &)>;
-
-    template <typename ScalarType, typename WriteHandler, typename ReadHandler, typename DiscardHandler>
-    static ScalarBufferOperations for_type(WriteHandler &&write, ReadHandler &&read, DiscardHandler &&discard) {
-        auto operations = ScalarBufferOperations{};
-        operations.set_write<ScalarType>(std::forward<WriteHandler>(write));
-        operations.set_read<ScalarType>(std::forward<ReadHandler>(read));
-        operations.set_discard(std::forward<DiscardHandler>(discard));
-        return operations;
-    }
-
-    template <typename ScalarType, typename Function> static ScalarBufferOperations for_write(Function &&function) {
-        auto operations = ScalarBufferOperations{};
-        operations.set_write<ScalarType>(std::forward<Function>(function));
-        return operations;
-    }
 
     template <typename ScalarType, typename Function> static ScalarBufferOperations for_read(Function &&function) {
         auto operations = ScalarBufferOperations{};
@@ -102,6 +119,15 @@ struct ScalarBufferOperations {
     }
 
     template <typename ScalarType, typename Function>
+    bool set_project(Function &&function) {
+        if (project_) {
+            return false;
+        }
+        project_ = typed_project<ScalarType>(std::forward<Function>(function));
+        return true;
+    }
+
+    template <typename ScalarType, typename Function>
     bool set_read(Function &&function) {
         if (read_) {
             return false;
@@ -120,12 +146,15 @@ struct ScalarBufferOperations {
     }
 
     bool has_write() const noexcept { return static_cast<bool>(write_); }
+    bool has_project() const noexcept { return static_cast<bool>(project_); }
     bool has_read() const noexcept { return static_cast<bool>(read_); }
     bool has_discard() const noexcept { return static_cast<bool>(discard_); }
 
     void write(Scalar<> value, ScalarBufferWriteContext &writer, allocator &memory) const {
         write_(value, writer, memory);
     }
+
+    void project(Scalar<> value, ScalarBufferProjectionContext &projection) const { project_(value, projection); }
 
     void read(util::buffer_reader &reader, details::ScalarBufferValueConsumer consume) const {
         read_(reader, consume);
@@ -141,6 +170,13 @@ struct ScalarBufferOperations {
         };
     }
 
+    template <typename ScalarType, typename Function> static Project typed_project(Function &&function) {
+        return [function = std::forward<Function>(function)](Scalar<> value,
+                                                              ScalarBufferProjectionContext &projection) {
+            std::invoke(function, scalar_cast<ScalarType>(value), projection);
+        };
+    }
+
     template <typename ScalarType, typename Function> static Read typed_read(Function &&function) {
         return [function = std::forward<Function>(function)](util::buffer_reader &reader,
                                                               details::ScalarBufferValueConsumer consume) {
@@ -152,6 +188,7 @@ struct ScalarBufferOperations {
     }
 
     Write write_;
+    Project project_;
     Read read_;
     Discard discard_;
 };

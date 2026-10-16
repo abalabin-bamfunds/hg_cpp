@@ -3,6 +3,8 @@
 #include <bg/allocator.hpp>
 #include <bg/scalar/buffer_operations.hpp>
 #include <bg/scalar/value.hpp>
+#include <bg/literal/time_series_literal.hpp>
+#include <bg/queue_mode.hpp>
 #include <bg/time_series/dispatch.hpp>
 #include <bg/time_series/tick_operations.hpp>
 #include <bg/time_series/time_series_input.hpp>
@@ -15,10 +17,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <concepts>
 #include <exception>
 #include <functional>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <type_traits>
@@ -27,6 +31,11 @@
 namespace bg {
 
 namespace details {
+
+struct alignas(std::max_align_t) QueueMessageHeader {
+    std::uint32_t target;
+    std::uint32_t size;
+};
 
 enum class TickOperation : std::uint8_t { add, tick, remove, end };
 
@@ -213,11 +222,143 @@ class TimeSeriesTickWrite {
     const TimeSeriesDispatch<TimeSeriesTickOperations> *dispatch_;
 };
 
+class TimeSeriesTickScalarRead {
+  public:
+    template <typename Function>
+    static bool visit(util::buffer_reader &reader, const ScalarType &type, Function &&function,
+                      bool consume = false, std::exception_ptr *failure = nullptr) {
+        if (const auto *builtin = type_cast<BuiltinScalarType>(&type)) {
+            builtin->visit_builtin_type([&]<typename Builtin>() {
+                using Stored = details::scalar_stored_t<Builtin>;
+                if constexpr (std::is_trivially_copyable_v<Stored> &&
+                              !scalar_storage_traits<Builtin>::uses_shared_handle) {
+                    const auto stored = reader.template read_raw<Stored>();
+                    const auto value = Scalar<Builtin>::from(stored);
+                    invoke(function, Scalar<>::from(value));
+                } else {
+                    if (consume) {
+                        auto value = reader.template read<ScalarValue<>>();
+                        invoke(function, value.view(), std::addressof(value));
+                        return;
+                    }
+                    const auto &value = reader.template peek<ScalarValue<>>();
+                    [[maybe_unused]] const auto value_reader = reader.fork();
+                    reader.template consume<ScalarValue<>>();
+                    invoke(function, value.view());
+                }
+            });
+            return true;
+        }
+
+        const auto &dispatch = ScalarDispatch<ScalarBufferOperations>::instance();
+        const auto *type_operations = dispatch.find_exact(type);
+        if (type_operations != nullptr && type_operations->has_read()) {
+            if (!consume) {
+                using FunctionType = std::remove_reference_t<Function>;
+                const auto consume_value = details::ScalarBufferValueConsumer{
+                    const_cast<void *>(static_cast<const void *>(std::addressof(function))),
+                    [](void *context, Scalar<> value) {
+                        invoke(*static_cast<FunctionType *>(context), value);
+                    }};
+                type_operations->read(reader, consume_value);
+                return true;
+            }
+
+            auto decoded_reader = reader.fork();
+            auto scalar_start_reader = reader.fork();
+            const auto readable_size = decoded_reader.readable().size();
+            auto callback_called = false;
+            using FunctionType = std::remove_reference_t<Function>;
+            struct State {
+                FunctionType *function;
+                util::buffer_reader *reader;
+                util::buffer_reader *original;
+                std::size_t readable_size;
+                bool &callback_called;
+            };
+            const auto state = State{std::addressof(function), std::addressof(decoded_reader),
+                                     std::addressof(reader), readable_size, callback_called};
+            const auto state_consumer = details::ScalarBufferValueConsumer{
+                const_cast<State *>(std::addressof(state)),
+                [](void *context, Scalar<> value) {
+                    auto &state = *static_cast<State *>(context);
+                    state.callback_called = true;
+                    // Queue frames are contiguous, so the fork reports the exact encoded extent.
+                    const auto consumed_size = state.readable_size - state.reader->readable().size();
+                    state.original->consume(consumed_size);
+                    invoke(*state.function, value);
+                }};
+            auto read_failure = std::exception_ptr{};
+            try {
+                type_operations->read(decoded_reader, state_consumer);
+            } catch (...) {
+                read_failure = std::current_exception();
+            }
+
+            const auto unread_size = scalar_start_reader.readable().size();
+            try {
+                type_operations->discard(scalar_start_reader);
+            } catch (...) {
+                std::terminate();
+            }
+            if (!callback_called) {
+                reader.consume(unread_size - scalar_start_reader.readable().size());
+            }
+            if (read_failure) {
+                if (failure != nullptr) {
+                    if (!*failure) {
+                        *failure = read_failure;
+                    }
+                    return callback_called;
+                }
+                std::rethrow_exception(read_failure);
+            }
+            return callback_called;
+        }
+
+        if (consume) {
+            auto value = reader.template read<ScalarValue<>>();
+            invoke(function, value.view(), std::addressof(value));
+            return true;
+        }
+        const auto &value = reader.template peek<ScalarValue<>>();
+        [[maybe_unused]] const auto value_reader = reader.fork();
+        reader.template consume<ScalarValue<>>();
+        invoke(function, value.view());
+        return true;
+    }
+
+  private:
+    template <typename Function>
+    static void invoke(Function &function, Scalar<> value, ScalarValue<> *owned_value = nullptr) {
+        if constexpr (std::invocable<Function &, Scalar<>, ScalarValue<> *>) {
+            std::invoke(function, value, owned_value);
+        } else {
+            std::invoke(function, value);
+        }
+    }
+};
+
+class TimeSeriesTickDiscard {
+  public:
+    TimeSeriesTickDiscard(util::buffer_reader &reader,
+                          const TimeSeriesDispatch<TimeSeriesTickOperations> &dispatch);
+    void apply(const TimeSeriesType &type);
+    void discard_child(const TimeSeriesType &type, TickHeader header);
+    void discard_scalar(const ScalarType &type);
+
+  private:
+    void apply_payload(const TimeSeriesType &type);
+
+    util::buffer_reader *reader_;
+    const TimeSeriesDispatch<TimeSeriesTickOperations> *dispatch_;
+};
+
 class TimeSeriesTickReplay {
   public:
     TimeSeriesTickReplay(util::buffer_reader &reader,
-                         const TimeSeriesDispatch<TimeSeriesTickOperations> &dispatch)
-        : reader_{&reader}, dispatch_{&dispatch} {}
+                         const TimeSeriesDispatch<TimeSeriesTickOperations> &dispatch, bool consume = false)
+        : reader_{&reader}, dispatch_{&dispatch}, consume_{consume} {}
 
     template <typename Variable>
     void apply_erased(const TimeSeriesType &type, const Out<Variable> &output) {
@@ -226,6 +367,9 @@ class TimeSeriesTickReplay {
             throw std::logic_error{"time series tick record does not start with a tick header"};
         }
         apply_payload(type, output, header);
+        if (failure_) {
+            std::rethrow_exception(failure_);
+        }
     }
 
   private:
@@ -242,23 +386,35 @@ class TimeSeriesTickReplay {
         if (header.operation == TickOperation::add && !header.valid && !output.valid()) {
             return;
         }
+        if (failure_) {
+            TimeSeriesTickDiscard{*reader_, *dispatch_}.discard_child(type, header);
+            return;
+        }
         apply_payload(type, output, header);
     }
 
     void apply_concrete(const TimeSeriesType &type, const Out<TS<SCALAR>> &output, TickHeader header) {
         const auto &value_type = type_cast<TimeSeriesValueType>(type);
         if (!header.valid) {
-            output.invalidate();
+            mutate([&] { output.invalidate(); });
             return;
         }
 
-        visit_scalar(value_type.value_type(), [&](const auto &value) { output.set_value(value); });
+        visit_scalar(value_type.value_type(), [&](const Scalar<> &value, ScalarValue<> *owned) {
+            mutate([&] {
+                if (owned != nullptr) {
+                    output.set_value(std::move(*owned));
+                } else {
+                    output.set_value(value);
+                }
+            });
+        });
     }
 
     void apply_concrete(const TimeSeriesType &type, const Out<TSL<TS_T, SIZE>> &output, TickHeader header) {
         const auto &list_type = type_cast<TimeSeriesListType>(type);
         if (!header.valid) {
-            output.invalidate();
+            mutate([&] { output.invalidate(); });
             return;
         }
 
@@ -271,14 +427,14 @@ class TimeSeriesTickReplay {
                 throw std::logic_error{"invalid list tick entry"};
             }
             const auto item_id = reader_->read_raw<bg::item_id_t>();
-            apply_child(list_type.item_type(item_id), output[item_id], item_header);
+            apply_child_at(list_type.item_type(item_id), output, item_id, item_header);
         }
     }
 
     void apply_concrete(const TimeSeriesType &type, const Out<TSB<SCHEMA>> &output, TickHeader header) {
         const auto &bundle_type = type_cast<TimeSeriesBundleType>(type);
         if (!header.valid) {
-            output.invalidate();
+            mutate([&] { output.invalidate(); });
             return;
         }
 
@@ -291,7 +447,7 @@ class TimeSeriesTickReplay {
                 throw std::logic_error{"invalid bundle tick entry"};
             }
             const auto item_id = reader_->read_raw<bg::item_id_t>();
-            apply_child(bundle_type.item_type(item_id), output[item_id], item_header);
+            apply_child_at(bundle_type.item_type(item_id), output, item_id, item_header);
         }
     }
 
@@ -301,7 +457,7 @@ class TimeSeriesTickReplay {
             throw std::logic_error{"TSS invalidation cannot be replayed through its output API"};
         }
         if (!output.valid()) {
-            output.clear();
+            mutate([&] { output.clear(); });
         }
 
         for (;;) {
@@ -312,12 +468,14 @@ class TimeSeriesTickReplay {
             if (entry_header.operation != TickOperation::add && entry_header.operation != TickOperation::remove) {
                 throw std::logic_error{"invalid TSS tick entry"};
             }
-            visit_scalar(set_type.item_type(), [&](const auto &key) {
-                if (entry_header.operation == TickOperation::add) {
-                    output.insert(key);
-                } else {
-                    output.erase(key);
-                }
+            visit_scalar(set_type.item_type(), [&](const Scalar<> &key) {
+                mutate([&] {
+                    if (entry_header.operation == TickOperation::add) {
+                        output.insert(key);
+                    } else {
+                        output.erase(key);
+                    }
+                });
             });
         }
     }
@@ -328,7 +486,7 @@ class TimeSeriesTickReplay {
             throw std::logic_error{"TSD invalidation cannot be replayed through its output API"};
         }
         if (!output.valid()) {
-            output.clear();
+            mutate([&] { output.clear(); });
         }
 
         for (;;) {
@@ -340,13 +498,35 @@ class TimeSeriesTickReplay {
                 entry_header.operation != TickOperation::remove) {
                 throw std::logic_error{"invalid TSD tick entry"};
             }
-            visit_scalar(dictionary_type.key_type(), [&](const auto &key) {
+            const auto key_read = visit_scalar(dictionary_type.key_type(), [&](const Scalar<> &key) {
+                if (failure_) {
+                    return;
+                }
                 if (entry_header.operation == TickOperation::remove) {
-                    output.erase(key);
-                } else {
-                    apply_child(dictionary_type.value_type(), output[key], entry_header);
+                    mutate([&] { output.erase(key); });
+                    return;
+                }
+
+                auto child = [&]() -> std::optional<Out<TS_T>> {
+                    try {
+                        return output[key];
+                    } catch (...) {
+                        if (!consume_) {
+                            throw;
+                        }
+                        record_failure();
+                        TimeSeriesTickDiscard{*reader_, *dispatch_}.discard_child(dictionary_type.value_type(),
+                                                                                   entry_header);
+                        return std::nullopt;
+                    }
+                }();
+                if (child) {
+                    apply_child(dictionary_type.value_type(), *child, entry_header);
                 }
             });
+            if (!key_read && entry_header.operation != TickOperation::remove) {
+                TimeSeriesTickDiscard{*reader_, *dispatch_}.discard_child(dictionary_type.value_type(), entry_header);
+            }
         }
     }
 
@@ -373,59 +553,102 @@ class TimeSeriesTickReplay {
         throw std::invalid_argument{"no tick replay operation is registered for this time series representation"};
     }
 
-    template <typename Function> void visit_scalar(const ScalarType &type, Function &&function) {
-        if (const auto *builtin = type_cast<BuiltinScalarType>(&type)) {
-            builtin->visit_builtin_type([&]<typename Builtin>() {
-                using Stored = details::scalar_stored_t<Builtin>;
-                if constexpr (std::is_trivially_copyable_v<Stored> &&
-                              !scalar_storage_traits<Builtin>::uses_shared_handle) {
-                    const auto stored = reader_->template read_raw<Stored>();
-                    const auto value = Scalar<Builtin>::from(stored);
-                    std::invoke(function, Scalar<>::from(value));
-                } else {
-                    const auto &value = reader_->template peek<ScalarValue<>>();
-                    std::invoke(function, value.view());
-                    reader_->template consume<ScalarValue<>>();
+    template <typename Function> bool visit_scalar(const ScalarType &type, Function &&function) {
+        if (failure_) {
+            TimeSeriesTickDiscard{*reader_, *dispatch_}.discard_scalar(type);
+            return false;
+        }
+        try {
+            return TimeSeriesTickScalarRead::visit(*reader_, type, std::forward<Function>(function), consume_,
+                                                   std::addressof(failure_));
+        } catch (...) {
+            if (!consume_) {
+                throw;
+            }
+            record_failure();
+            return false;
+        }
+    }
+
+    template <typename Function> void mutate(Function &&function) {
+        if (failure_) {
+            return;
+        }
+        try {
+            std::invoke(std::forward<Function>(function));
+        } catch (...) {
+            if (!consume_) {
+                throw;
+            }
+            record_failure();
+        }
+    }
+
+    void record_failure() noexcept {
+        if (!failure_) {
+            failure_ = std::current_exception();
+        }
+    }
+
+    template <typename Output> void apply_child_at(const TimeSeriesType &type, const Output &output, item_id_t item_id,
+                                                   TickHeader header) {
+        if (failure_) {
+            TimeSeriesTickDiscard{*reader_, *dispatch_}.discard_child(type, header);
+            return;
+        }
+        auto child = [&]() -> std::optional<decltype(output[item_id])> {
+            try {
+                return output[item_id];
+            } catch (...) {
+                if (!consume_) {
+                    throw;
                 }
-            });
+                record_failure();
+                return std::nullopt;
+            }
+        }();
+        if (!child) {
+            TimeSeriesTickDiscard{*reader_, *dispatch_}.discard_child(type, header);
             return;
         }
-
-        const auto &dispatch = ScalarDispatch<ScalarBufferOperations>::instance();
-        const auto *type_operations = dispatch.find_exact(type);
-        if (type_operations != nullptr && type_operations->has_read()) {
-            using FunctionType = std::remove_reference_t<Function>;
-            const auto consume = details::ScalarBufferValueConsumer{
-                const_cast<void *>(static_cast<const void *>(std::addressof(function))),
-                [](void *context, Scalar<> value) {
-                    std::invoke(*static_cast<FunctionType *>(context), value);
-                }};
-            type_operations->read(*reader_, consume);
-            return;
-        }
-
-        const auto &value = reader_->template peek<ScalarValue<>>();
-        std::invoke(function, value.view());
-        reader_->template consume<ScalarValue<>>();
+        apply_child(type, *child, header);
     }
 
     util::buffer_reader *reader_;
     const TimeSeriesDispatch<TimeSeriesTickOperations> *dispatch_;
+    bool consume_{};
+    std::exception_ptr failure_;
 };
 
-class TimeSeriesTickDiscard {
+class QueueTickApply {
   public:
-    TimeSeriesTickDiscard(util::buffer_reader &reader,
-                          const TimeSeriesDispatch<TimeSeriesTickOperations> &dispatch);
-    void apply(const TimeSeriesType &type);
+    QueueTickApply(util::buffer_reader &reader, QueueMode mode) noexcept;
+    bool apply(OutputState &output);
 
   private:
-    void apply_payload(const TimeSeriesType &type);
-    void discard_child(const TimeSeriesType &type, TickHeader header);
-    void discard_scalar(const ScalarType &type);
-
     util::buffer_reader *reader_;
-    const TimeSeriesDispatch<TimeSeriesTickOperations> *dispatch_;
+    QueueMode mode_;
+};
+
+class QueueMessageWriter {
+  public:
+    // The runtime type must outlive the writer. The buffer must be a concurrent buffer chain.
+    QueueMessageWriter(util::buffer buffer, std::size_t target, const TimeSeriesRuntimeType &runtime_type,
+                       allocator memory = {});
+
+    QueueMessageWriter(const QueueMessageWriter &) = delete;
+    QueueMessageWriter &operator=(const QueueMessageWriter &) = delete;
+
+    // Write one framed message. Root SKIP returns false without reserving a frame.
+    bool write(const literal::TimeSeriesLiteral &literal);
+
+  private:
+    std::optional<std::size_t> project(const literal::TimeSeriesLiteral &literal);
+
+    util::concurrent_buffer_writer writer_;
+    std::uint32_t target_;
+    const TimeSeriesRuntimeType *runtime_type_;
+    allocator memory_;
 };
 
 } // namespace details

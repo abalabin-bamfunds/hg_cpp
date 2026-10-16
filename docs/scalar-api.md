@@ -508,7 +508,7 @@ Complete registration before concurrent lookup. `ScalarDispatch::add()`
 rejects a duplicate exact registration.
 
 `ScalarBufferOperations` is the shared optional operation set for scalar values
-stored in buffers. It registers independent write, read, and discard handlers
+stored in buffers. It registers independent project, write, read, and discard handlers
 through `ScalarDispatch<ScalarBufferOperations>::instance()`. Scalar extensions
 can use this registry for any buffer-backed facility; retained tick storage is
 one consumer. Write handlers receive `ScalarBufferWriteContext`, which exposes
@@ -517,3 +517,19 @@ writer. A runtime registration can provide only the actions that depend on
 that representation. A caller can use `find_exact()` to select each action
 independently and fall back to the semantic registration when that action is
 absent.
+
+Read handlers advance the reader without moving or destroying encoded objects.
+They must support repeated reads through reader forks. Discard handlers destroy
+the encoded objects.
+Read handlers advance past the scalar before invoking the consumer, which can
+read a nested payload from the same reader.
+
+Bounded reservations require a projection handler on the same registration as
+the selected write handler. The handler receives the scalar value and a
+`ScalarBufferProjectionContext`. It counts each raw byte write with
+`write_bytes(size)` and each typed emplacement with `emplace<T>()`, in encoding
+order. The context includes typed alignment and checks size overflow. Projection
+must produce the exact size of the write handler's encoding at the supplied
+position. It must not construct payload objects or change the scalar value.
+It can be called more than once per write. Sequential buffer writers do not
+require a projection handler.
