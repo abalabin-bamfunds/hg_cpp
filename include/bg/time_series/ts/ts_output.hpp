@@ -82,12 +82,6 @@ class Out<TS<Variable, Properties...>> {
                 invalidate();
                 return;
             }
-            if (sentinel->name == literal::REMOVE.name) {
-                throw std::invalid_argument{"REMOVE is not valid for a scalar time series"};
-            }
-            if (sentinel->name == literal::REMOVED.name) {
-                throw std::invalid_argument{"REMOVED is not valid for a scalar time series"};
-            }
         }
 
         const auto &runtime_type =
