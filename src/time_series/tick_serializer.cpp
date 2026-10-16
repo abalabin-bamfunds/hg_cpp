@@ -791,6 +791,80 @@ bool QueueTickApply::apply(OutputState &output) {
     return true;
 }
 
+QueueMessageReader::QueueMessageReader(util::buffer buffer) : reader_{std::move(buffer)} {}
+
+std::optional<std::uint32_t> QueueMessageReader::next_target() {
+    const auto frame = next_frame();
+    if (!frame) {
+        return std::nullopt;
+    }
+    return frame->header.target;
+}
+
+bool QueueMessageReader::apply(OutputState &output, QueueMode mode) {
+    const auto frame = next_frame();
+    if (!frame) {
+        return false;
+    }
+
+    auto body_reader = util::buffer_reader{frame->body};
+    const auto initial_size = body_reader.readable().size();
+    try {
+        if (!QueueTickApply{body_reader, mode}.apply(output)) {
+            return false;
+        }
+    } catch (...) {
+        if (body_reader.readable().size() != initial_size) {
+            reader_.consume(frame->extent);
+        }
+        throw;
+    }
+
+    reader_.consume(frame->extent);
+    return true;
+}
+
+bool QueueMessageReader::discard(const TimeSeriesType &type) {
+    const auto frame = next_frame();
+    if (!frame) {
+        return false;
+    }
+
+    auto body_reader = util::buffer_reader{frame->body};
+    TimeSeriesTickDiscard{body_reader, TimeSeriesDispatch<TimeSeriesTickOperations>::instance()}.apply(type);
+    reader_.consume(frame->extent);
+    return true;
+}
+
+std::optional<QueueMessageReader::Frame> QueueMessageReader::next_frame() {
+    while (!reader_.readable().empty()) {
+        // Bound the snapshot so concurrent commits cannot change the header extent calculation.
+        auto probe = util::buffer_reader{reader_.current_buffer()};
+        const auto bytes_before_header = probe.readable().size();
+        const auto header = probe.peek<QueueMessageHeader>();
+        probe.consume<QueueMessageHeader>();
+        const auto header_extent = bytes_before_header - probe.readable().size();
+
+        if (header.size < sizeof(QueueMessageHeader) + sizeof(std::uint8_t)) {
+            throw std::logic_error{"queue message frame is smaller than its tick header"};
+        }
+        const auto body_size = static_cast<std::size_t>(header.size - sizeof(QueueMessageHeader));
+        if (body_size > probe.readable().size()) {
+            throw std::logic_error{"queue message frame exceeds its contiguous buffer block"};
+        }
+
+        auto body = probe.current_buffer().chunk(0, body_size);
+        const auto extent = header_extent + body_size;
+        if (header.target == std::numeric_limits<std::uint32_t>::max()) {
+            reader_.consume(extent);
+            continue;
+        }
+
+        return Frame{header, std::move(body), extent};
+    }
+    return std::nullopt;
+}
+
 QueueMessageWriter::QueueMessageWriter(util::buffer buffer, std::size_t target,
                                        const TimeSeriesRuntimeType &runtime_type, allocator memory)
     : writer_{std::move(buffer)}, runtime_type_{&runtime_type}, memory_{memory} {

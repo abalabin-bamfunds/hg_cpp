@@ -162,11 +162,17 @@ typed payloads, commits the frame with destination `UINT32_MAX`, and
 rethrows the error. Consumers skip a sentinel frame using its size without
 parsing a tick payload.
 
-Frame consumers read the header with `buffer_reader::read<QueueMessageHeader>()`
-to skip alignment before the header. They use its size to bound the message,
-read or discard the tick payload with the semantic time-series type, then
-advance over the frame's trailing padding. They must not construct a
-`TimeSeriesTickReader` over the framed buffer.
+Frame consumers align to the header, use its size to bound the message, and
+read or discard the tick payload with the semantic time-series type. They must
+not construct a `TimeSeriesTickReader` over the framed buffer.
+
+`bg::details::QueueMessageReader` returns the next non-sentinel target without
+consuming that frame. Standard apply leaves a conflicting frame pending, and
+inspection exceptions leave it pending. Successful apply and typed discard
+consume the entire frame, including trailing padding. Replay exceptions consume
+the frame. Batch mode rejects an individual frame without consuming it. Call
+`discard(type)` for frames that will not be applied; releasing the reader does
+not destroy unread payloads.
 
 Queue message serialization supports `TS`, fixed-size `TSL`, `TSB`, `TSS`, and
 `TSD` literals. It rejects references, sparse `TSL`, and provider-defined

@@ -1703,6 +1703,88 @@ TEST_CASE("consuming queue replay discards custom scalar payloads when the read 
     provider::throw_after_scalar_read_callback = false;
 }
 
+TEST_CASE("queue inspection leaves a provider frame pending when its scalar read hook throws",
+          "[feature:time-series-storage][series:value][scalar:generic][queue]") {
+    using Value = test_scalar_provider::value;
+    REQUIRE(provider::register_provider_scalar_buffer_handlers());
+    provider::scalar_tick_state = {};
+    provider::throw_before_scalar_read_callback = true;
+    auto reset_read_failure_flag = bg::util::scope_exit{[]() noexcept {
+        provider::throw_before_scalar_read_callback = false;
+    }};
+
+    auto resource = provider::allocation_counter{};
+    auto memory = bg::allocator{resource};
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<Value>>();
+    const auto buffer = bg::util::buffer::concurrent_chain(256, 4);
+    auto first_writer = bg::details::QueueMessageWriter{buffer, 29, runtime_type, memory};
+    auto second_writer = bg::details::QueueMessageWriter{buffer, 30, runtime_type, memory};
+    REQUIRE(first_writer.write(literal::TimeSeriesLiteral(Value{79})));
+    REQUIRE(second_writer.write(literal::TimeSeriesLiteral(Value{17})));
+
+    auto output_time = bg::TimeSeriesState{};
+    auto output_storage = test_scalar_provider::storage{};
+    auto output_state = bg::OutputState{runtime_type};
+    const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
+    output_state.bind(output_time, &output_storage, evaluation_time);
+    auto reader = bg::details::QueueMessageReader{buffer};
+
+    CHECK_THROWS_AS(reader.apply(output_state, bg::QueueMode::standard), std::runtime_error);
+    CHECK_FALSE(output_time.valid());
+    CHECK(output_storage.number == 0);
+    CHECK(reader.next_target() == 29);
+    CHECK(provider::scalar_tick_state.reads == 1);
+    CHECK(provider::scalar_tick_state.discards == 0);
+    CHECK(resource.allocations > resource.deallocations);
+
+    REQUIRE(reader.discard(bg::TS<Value>::type()));
+    CHECK(provider::scalar_tick_state.discards == 1);
+    CHECK(resource.allocations == resource.deallocations);
+    CHECK(reader.next_target() == 30);
+    REQUIRE(reader.apply(output_state, bg::QueueMode::standard));
+    CHECK(output_storage.number == 17);
+    CHECK_FALSE(reader.next_target());
+}
+
+TEST_CASE("eliding queue replay consumes a provider frame when its scalar read hook throws",
+          "[feature:time-series-storage][series:value][scalar:generic][queue]") {
+    using Value = test_scalar_provider::value;
+    REQUIRE(provider::register_provider_scalar_buffer_handlers());
+    provider::scalar_tick_state = {};
+    provider::throw_before_scalar_read_callback = true;
+    auto reset_read_failure_flag = bg::util::scope_exit{[]() noexcept {
+        provider::throw_before_scalar_read_callback = false;
+    }};
+
+    auto resource = provider::allocation_counter{};
+    auto memory = bg::allocator{resource};
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<Value>>();
+    const auto buffer = bg::util::buffer::concurrent_chain(256, 4);
+    auto first_writer = bg::details::QueueMessageWriter{buffer, 29, runtime_type, memory};
+    auto second_writer = bg::details::QueueMessageWriter{buffer, 30, runtime_type, memory};
+    REQUIRE(first_writer.write(literal::TimeSeriesLiteral(Value{79})));
+    REQUIRE(second_writer.write(literal::TimeSeriesLiteral(Value{17})));
+
+    auto output_time = bg::TimeSeriesState{};
+    auto output_storage = test_scalar_provider::storage{};
+    auto output_state = bg::OutputState{runtime_type};
+    const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
+    output_state.bind(output_time, &output_storage, evaluation_time);
+    auto reader = bg::details::QueueMessageReader{buffer};
+
+    CHECK_THROWS_AS(reader.apply(output_state, bg::QueueMode::elide), std::runtime_error);
+    CHECK(reader.next_target() == 30);
+    CHECK(provider::scalar_tick_state.reads == 1);
+    CHECK(provider::scalar_tick_state.discards == 1);
+    CHECK(resource.allocations > 0);
+    CHECK(resource.allocations == resource.deallocations);
+
+    REQUIRE(reader.apply(output_state, bg::QueueMode::elide));
+    CHECK(output_storage.number == 17);
+    CHECK_FALSE(reader.next_target());
+    CHECK(provider::scalar_tick_state.discards == 2);
+}
+
 TEST_CASE("a custom TSD key hook that throws after its callback does not discard the child twice",
           "[feature:time-series-storage][series:tsd][scalar:generic][queue]") {
     using Key = test_scalar_provider::bundle_provider_value;

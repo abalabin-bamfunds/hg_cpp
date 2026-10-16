@@ -630,6 +630,26 @@ class QueueTickApply {
     QueueMode mode_;
 };
 
+class QueueMessageReader {
+  public:
+    explicit QueueMessageReader(util::buffer buffer);
+
+    std::optional<std::uint32_t> next_target();
+    bool apply(OutputState &output, QueueMode mode);
+    bool discard(const TimeSeriesType &type);
+
+  private:
+    struct Frame {
+        QueueMessageHeader header;
+        util::buffer body;
+        std::size_t extent;
+    };
+
+    std::optional<Frame> next_frame();
+
+    util::buffer_reader reader_;
+};
+
 class QueueMessageWriter {
   public:
     // The runtime type must outlive the writer. The buffer must be a concurrent buffer chain.
