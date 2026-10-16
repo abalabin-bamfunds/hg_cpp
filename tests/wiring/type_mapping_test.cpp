@@ -219,6 +219,17 @@ TEST_CASE("a positional type argument resolves an aggregate graph output",
     });
 }
 
+TEST_CASE("a shared guarantee variable resolves from a TSS and a time series input",
+          "[feature:wiring][feature:type-system][series:tss][guarantee:ordinary][guarantee:final]"
+          "[declaration:generic]") {
+    const auto sink = node([](In<TSS<i64, guarantee_variable<"G">>>,
+                              In<TS<i64, guarantee_variable<"G">>>) {});
+    const auto final_set = node([](Out<TSS<i64, TimeSeriesGuarantee::final>>) {});
+    const auto ordinary_key = node([](Out<TS<i64>>) {});
+
+    testing::test_wiring([&] { sink(final_set(), ordinary_key()); });
+}
+
 TEST_CASE("a positional type argument participates in operator overload resolution",
           "[feature:wiring][feature:type-system][feature:operator][definition:function]"
           "[declaration:generic]") {

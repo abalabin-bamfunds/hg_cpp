@@ -36,14 +36,16 @@ const TimeSeriesType &TimeSeriesSetType::with_guarantee(TimeSeriesGuarantee guar
     return time_series_set_type(item_type(), guarantee);
 }
 
-bool GenericTimeSeriesSetType::do_match(const Type &supplied, TypeMap &type_map) const {
+bool TimeSeriesSetType::do_match(const Type &supplied, TypeMap &type_map) const {
     const auto *set = type_cast<TimeSeriesSetType>(&supplied);
     if (set == nullptr || !set->is_resolved()) {
         return false;
     }
 
     auto trial = type_map.overlay();
-    if (!item_type().match(set->item_type(), trial) || !guarantee().match(*set->guarantee().value(), trial)) {
+    const auto item_matches = item_type().is_resolved() ? &item_type() == &set->item_type()
+                                                        : item_type().match(set->item_type(), trial);
+    if (!item_matches || !guarantee().match(*set->guarantee().value(), trial)) {
         return false;
     }
 

@@ -14,6 +14,7 @@ class TimeSeriesSetType : public TimeSeriesType {
     const ScalarType &item_type() const noexcept { return *item_type_; }
     [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
     bool supports_invalidation() const noexcept final { return false; }
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
 
   protected:
     TimeSeriesSetType(const ScalarType &item_type, GuaranteeParameter guarantee)
@@ -30,9 +31,6 @@ class GenericTimeSeriesSetType final : public TimeSeriesSetType {
 
     bool is_resolved() const noexcept override { return false; }
     [[nodiscard]] const Type &resolve(const TypeMap &type_map) const override;
-
-  protected:
-    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
 };
 
 const TimeSeriesSetType &time_series_set_type(const ScalarType &item_type, TimeSeriesGuarantee guarantee);
