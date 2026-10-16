@@ -146,6 +146,13 @@ Register `TickLiteralComparison` by semantic time-series type to compare their
 literal payloads. The framework handles invalid ticks before calling the
 comparison handler. A handler reads a valid payload from the supplied reader,
 advances past exactly one payload on success, and leaves encoded values intact.
+
+Scalar expectations use [scalar literal construction](scalar-api.md#literals),
+including provider handlers. Collection comparisons interpret removal
+instructions at their defined positions. Other bare and tagged
+[sentinels](scalar-api.md#sentinels) reach the scalar consumer or extension
+comparison handler unchanged.
+
 Compare collection output deltas with the same literal syntax used for inputs:
 
 ```cpp
@@ -334,7 +341,8 @@ graph compilation or evaluation.
   explicit generic input types, cycle positions, services, profiling, and existing scalar input compatibility
 - `test_graph` output capture and literal comparison for scalar and nested collection deltas;
   scalar ownership after graph destruction, complete delta comparison, entry order independence,
-  empty ticks, skipped cycles, invalidation, revalidation, and removal
+  empty ticks, skipped cycles, invalidation, revalidation, and removal;
+  provider scalar expectations, extension comparison handlers, and sentinel identity and argument preservation
 - start, evaluation, and stop order
 - rejection of user lifecycle functions with time-series-resolved plain fields;
   invalidation placeholders, revalidation, and automatic state and dynamic-input cleanup

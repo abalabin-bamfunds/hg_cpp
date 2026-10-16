@@ -25,8 +25,6 @@
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/time_series/details/scalar_literal.hpp>
 #include <bg/time_series/tick_serializer.hpp>
-#include <bg/time_series/tsd/tsd_runtime_type.hpp>
-#include <bg/time_series/tss/tss_runtime_type.hpp>
 
 #include <algorithm>
 #include <array>
@@ -41,7 +39,6 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
-#include <variant>
 #include <vector>
 
 namespace bg::testing::details {
@@ -398,7 +395,7 @@ class LiteralMatcher {
 
     static bool matches_tick(const std::optional<util::buffer> &actual, const TimeSeriesType *type,
                              const literal::TimeSeriesLiteral &expected) {
-        if (marker(expected) == Marker::skip) {
+        if (is_sentinel(expected, literal::SKIP)) {
             return !actual;
         }
         if (!actual || type == nullptr) {
@@ -409,30 +406,17 @@ class LiteralMatcher {
     }
 
   private:
-    enum class Marker { value, skip, invalid, remove, removed };
-
-    static Marker marker(const literal::TimeSeriesLiteral &value) {
-        auto result = Marker::value;
-        value.visit(
-            [&](const literal::TimeSeriesLiteralItem &item) {
-                item.visit_item(
-                    [](const literal::ScalarLiteralItem *) {},
-                    [&](const literal::SkipLiteral *) { result = Marker::skip; },
-                    [&](const literal::InvalidLiteral *) { result = Marker::invalid; },
-                    [&](const literal::RemoveLiteral *) { result = Marker::remove; },
-                    [&](const literal::RemovedLiteral *) { result = Marker::removed; });
-            },
-            [](std::span<const literal::TimeSeriesLiteral>) {});
-        return result;
+    static bool is_sentinel(const literal::ScalarLiteral &value, const literal::Sentinel &expected) {
+        const auto *sentinel = literal::Sentinel::from(value);
+        return sentinel != nullptr && *sentinel == expected;
     }
 
     static bool matches_payload(util::buffer_reader &reader, const TimeSeriesType &type, bool valid,
                                 const literal::TimeSeriesLiteral &expected) {
-        const auto expected_marker = marker(expected);
-        if (expected_marker == Marker::invalid) {
+        if (is_sentinel(expected, literal::INVALID)) {
             return !valid;
         }
-        if (expected_marker != Marker::value || !valid) {
+        if (!valid || is_sentinel(expected, literal::SKIP)) {
             return false;
         }
 
@@ -458,9 +442,7 @@ class LiteralMatcher {
         auto matched = false;
         const auto read = bg::details::TimeSeriesTickScalarRead::visit(
             reader, type.value_type(), [&](Scalar<> actual) {
-                auto memory = allocator{};
-                const auto wanted = ScalarValue<>::from_literal(actual.runtime_type(), expected, memory);
-                matched = actual.equals(wanted);
+                matched = matches_scalar_literal(actual, expected);
             });
         return read && matched;
     }
@@ -475,14 +457,11 @@ class LiteralMatcher {
 
     static bool matches_set(util::buffer_reader &reader, const TimeSeriesSetType &type,
                             const literal::TimeSeriesLiteral &expected_literal) {
-        const auto expected = values(expected_literal);
-        if (!expected) {
-            return false;
-        }
+        const auto expected = bg::details::scalar_literal::sequence(expected_literal);
 
-        auto matched = std::vector<bool>(expected->size());
-        mark_skips(*expected, matched, [](const literal::TimeSeriesLiteral &entry) {
-            return marker(entry) == Marker::skip;
+        auto matched = std::vector<bool>(expected.size());
+        mark_skips(expected, matched, [](const literal::TimeSeriesLiteral &entry) {
+            return is_sentinel(entry, literal::SKIP);
         });
         for (;;) {
             const auto header = bg::details::TickHeader::read(reader);
@@ -498,30 +477,22 @@ class LiteralMatcher {
             auto candidate_count = std::size_t{};
             const auto read = bg::details::TimeSeriesTickScalarRead::visit(
                 reader, type.item_type(), [&](Scalar<> actual_key) {
-                    for (auto expected_index = std::size_t{}; expected_index < expected->size(); ++expected_index) {
-                        const auto &value = (*expected)[expected_index];
-                        const auto value_marker = marker(value);
-                        if (value_marker == Marker::skip) {
+                    for (auto expected_index = std::size_t{}; expected_index < expected.size(); ++expected_index) {
+                        const auto &value = expected[expected_index];
+                        if (is_sentinel(value, literal::SKIP)) {
                             continue;
                         }
 
-                        if (value_marker != Marker::value && value_marker != Marker::removed) {
-                            continue;
-                        }
-                        const auto expected_operation = value_marker == Marker::removed
-                                                            ? bg::details::TickOperation::remove
-                                                            : bg::details::TickOperation::add;
+                        const auto removed = literal::TaggedLiteral::from(value);
+                        const auto is_removal = removed && removed->sentinel == literal::REMOVED;
+                        const auto expected_operation = is_removal ? bg::details::TickOperation::remove
+                                                                   : bg::details::TickOperation::add;
                         if (expected_operation != header.operation) {
                             continue;
                         }
 
-                        auto matches_key = false;
-                        if (value_marker == Marker::value) {
-                            matches_key = matches_scalar_literal(actual_key, value);
-                        } else if (const auto *key_literal = removed_value(value)) {
-                            matches_key = matches_scalar_literal(actual_key, *key_literal);
-                        }
-                        if (matches_key) {
+                        const auto &key_literal = is_removal ? removed->argument : value;
+                        if (matches_scalar_literal(actual_key, key_literal)) {
                             candidate = expected_index;
                             ++candidate_count;
                         }
@@ -536,16 +507,13 @@ class LiteralMatcher {
 
     static bool matches_dictionary(util::buffer_reader &reader, const TimeSeriesDictionaryType &type,
                                    const literal::TimeSeriesLiteral &expected_literal) {
-        const auto expected = values(expected_literal);
-        if (!expected) {
-            return false;
-        }
+        const auto expected = bg::details::scalar_literal::sequence(expected_literal);
 
-        auto matched = std::vector<bool>(expected->size());
-        mark_skips(*expected, matched, [](const literal::TimeSeriesLiteral &entry) {
+        auto matched = std::vector<bool>(expected.size());
+        mark_skips(expected, matched, [](const literal::TimeSeriesLiteral &entry) {
             const auto pair = bg::details::scalar_literal::pair(
                 entry, "a TSD update entry requires a key and a value");
-            return marker(*pair.second) == Marker::skip;
+            return is_sentinel(*pair.second, literal::SKIP);
         });
         for (;;) {
             const auto header = bg::details::TickHeader::read(reader);
@@ -562,19 +530,18 @@ class LiteralMatcher {
             auto candidate_count = std::size_t{};
             const auto read = bg::details::TimeSeriesTickScalarRead::visit(
                 reader, type.key_type(), [&](Scalar<> actual_key) {
-                    for (auto expected_index = std::size_t{}; expected_index < expected->size(); ++expected_index) {
+                    for (auto expected_index = std::size_t{}; expected_index < expected.size(); ++expected_index) {
                         const auto pair = bg::details::scalar_literal::pair(
-                            (*expected)[expected_index], "a TSD update entry requires a key and a value");
-                        const auto value_marker = marker(*pair.second);
-                        if (value_marker == Marker::skip || value_marker == Marker::removed ||
-                            (header.operation == bg::details::TickOperation::remove) !=
-                                (value_marker == Marker::remove)) {
+                            expected[expected_index], "a TSD update entry requires a key and a value");
+                        if (is_sentinel(*pair.second, literal::SKIP)) {
+                            continue;
+                        }
+                        const auto expected_removal = is_sentinel(*pair.second, literal::REMOVE);
+                        if (expected_removal != (header.operation == bg::details::TickOperation::remove)) {
                             continue;
                         }
 
-                        auto memory = allocator{};
-                        const auto wanted = ScalarValue<>::from_literal(actual_key.runtime_type(), *pair.first, memory);
-                        if (actual_key.equals(wanted)) {
+                        if (matches_scalar_literal(actual_key, *pair.first)) {
                             candidate = expected_index;
                             ++candidate_count;
                         }
@@ -586,7 +553,7 @@ class LiteralMatcher {
 
             matched[*candidate] = true;
             const auto pair = bg::details::scalar_literal::pair(
-                (*expected)[*candidate], "a TSD update entry requires a key and a value");
+                expected[*candidate], "a TSD update entry requires a key and a value");
             if (header.operation != bg::details::TickOperation::remove &&
                 !matches_payload(reader, type.value_type(), header.valid, *pair.second)) {
                 return false;
@@ -608,16 +575,13 @@ class LiteralMatcher {
     static bool matches_indexed(util::buffer_reader &reader, const FixedItemTimeSeriesType &type,
                                 const literal::TimeSeriesLiteral &expected_literal, const char *pair_error,
                                 SelectorMatches &&selector_matches) {
-        const auto expected = values(expected_literal);
-        if (!expected) {
-            return false;
-        }
+        const auto expected = bg::details::scalar_literal::sequence(expected_literal);
 
-        auto matched = std::vector<bool>(expected->size());
-        mark_skips(*expected, matched, [pair_error](const literal::TimeSeriesLiteral &entry) {
+        auto matched = std::vector<bool>(expected.size());
+        mark_skips(expected, matched, [pair_error](const literal::TimeSeriesLiteral &entry) {
             const auto pair = bg::details::scalar_literal::pair(
                 entry, pair_error);
-            return marker(*pair.second) == Marker::skip;
+            return is_sentinel(*pair.second, literal::SKIP);
         });
         for (;;) {
             const auto header = bg::details::TickHeader::read(reader);
@@ -631,10 +595,11 @@ class LiteralMatcher {
             const auto index = reader.read_raw<item_id_t>();
             auto candidate = std::optional<std::size_t>{};
             const literal::TimeSeriesLiteral *child_literal{};
-            for (auto expected_index = std::size_t{}; expected_index < expected->size(); ++expected_index) {
+            for (auto expected_index = std::size_t{}; expected_index < expected.size(); ++expected_index) {
                 const auto pair = bg::details::scalar_literal::pair(
-                    (*expected)[expected_index], pair_error);
-                if (marker(*pair.second) == Marker::skip || !std::invoke(selector_matches, *pair.first, index)) {
+                    expected[expected_index], pair_error);
+                if (is_sentinel(*pair.second, literal::SKIP) ||
+                    !std::invoke(selector_matches, *pair.first, index)) {
                     continue;
                 }
                 if (candidate) {
@@ -653,33 +618,7 @@ class LiteralMatcher {
         }
     }
 
-    static std::optional<std::span<const literal::TimeSeriesLiteral>> values(
-        const literal::TimeSeriesLiteral &literal_value) {
-        return literal_value.visit(
-            [](const literal::TimeSeriesLiteralItem &)
-                -> std::optional<std::span<const literal::TimeSeriesLiteral>> {
-                return std::nullopt;
-            },
-            [](std::span<const literal::TimeSeriesLiteral> values)
-                -> std::optional<std::span<const literal::TimeSeriesLiteral>> {
-                return values;
-            }).value();
-    }
-
-    static const literal::ScalarLiteral *removed_value(const literal::TimeSeriesLiteral &value) {
-        auto result = static_cast<const literal::ScalarLiteral *>(nullptr);
-        value.visit(
-            [&](const literal::TimeSeriesLiteralItem &item) {
-                item.visit_item(
-                    [&](const literal::RemovedLiteral *removed) { result = removed->value; },
-                    [](const auto *) {});
-            },
-            [](std::span<const literal::TimeSeriesLiteral>) {});
-        return result;
-    }
-
-    template <typename Literal>
-    static bool matches_scalar_literal(Scalar<> actual, const Literal &expected) {
+    static bool matches_scalar_literal(Scalar<> actual, const literal::ScalarLiteral &expected) {
         auto memory = allocator{};
         const auto wanted = ScalarValue<>::from_literal(actual.runtime_type(), expected, memory);
         return actual.equals(wanted);

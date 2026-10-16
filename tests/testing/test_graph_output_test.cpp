@@ -28,6 +28,8 @@ class ExtensionTimeSeriesType final : public bg::TimeSeriesType {
 };
 
 inline int extension_comparison_count{};
+inline const literal::TimeSeriesLiteral *expected_extension_literal{};
+inline bool extension_literal_address_matches{};
 
 const ExtensionTimeSeriesType &extension_time_series_type() {
     static const auto type = ExtensionTimeSeriesType{};
@@ -94,6 +96,13 @@ TEST_CASE("test_graph extension literal comparison delegates nested ticks to the
         .compare = [](bg::util::buffer_reader &reader, const bg::TimeSeriesType &,
                       const literal::TimeSeriesLiteral &expected) {
             ++extension_comparison_count;
+            if (expected_extension_literal != nullptr) {
+                extension_literal_address_matches = &expected == expected_extension_literal;
+                const auto comparison_value = bg::i64{17};
+                const auto comparison_literal = literal::TimeSeriesLiteral(comparison_value);
+                return extension_literal_address_matches &&
+                       Comparison::matches_child(reader, bg::TS<bg::i64>::type(), comparison_literal);
+            }
             return Comparison::matches_child(reader, bg::TS<bg::i64>::type(), expected);
         }};
     REQUIRE(Dispatch::instance().add(extension_time_series_type(), operations));
@@ -109,13 +118,32 @@ TEST_CASE("test_graph extension literal comparison delegates nested ticks to the
     CHECK(Comparison::matches_tick(actual, &extension_time_series_type(), expected));
     CHECK(extension_comparison_count == 3);
 
+    static const auto same_name_sentinel = literal::Sentinel{literal::SKIP.name};
+    const auto same_name_skip = literal::TimeSeriesLiteral(same_name_sentinel);
+    REQUIRE(literal::Sentinel::from(same_name_skip) == &same_name_sentinel);
+    const auto bare_remove = literal::TimeSeriesLiteral(literal::REMOVE);
+    REQUIRE(literal::Sentinel::from(bare_remove) == &literal::REMOVE);
+    const auto tagged_argument_value = bg::i64{17};
+    const auto tagged_argument = literal::ScalarLiteral(tagged_argument_value);
+    const auto removed_instruction = literal::REMOVED(tagged_argument);
+    const auto tagged_removed = literal::TimeSeriesLiteral(removed_instruction);
+    REQUIRE(literal::TaggedLiteral::from(tagged_removed).has_value());
+    for (const auto *literal_value : {&same_name_skip, &bare_remove, &tagged_removed}) {
+        expected_extension_literal = literal_value;
+        extension_literal_address_matches = false;
+        CHECK(Comparison::matches_tick(actual, &extension_time_series_type(), *literal_value));
+        CHECK(extension_literal_address_matches);
+    }
+    CHECK(extension_comparison_count == 6);
+    expected_extension_literal = nullptr;
+
     auto invalid_buffer = bg::util::buffer::contiguous(8);
     auto invalid_writer = bg::util::buffer_writer{invalid_buffer};
     auto invalid_encoded = bg::ScalarBufferWriteContext{invalid_writer};
     bg::details::TickHeader{bg::details::TickOperation::tick, false}.write(invalid_encoded);
     invalid_writer.commit();
     CHECK(Comparison::matches_tick(std::optional{invalid_buffer}, &extension_time_series_type(), literal::INVALID));
-    CHECK(extension_comparison_count == 3);
+    CHECK(extension_comparison_count == 6);
 }
 
 TEST_CASE("test_graph preserves missing and empty collection output ticks",

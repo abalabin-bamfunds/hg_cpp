@@ -14,6 +14,11 @@ operations. They register `TickLiteralComparison` by semantic time-series type
 to compare valid literal payloads. The framework handles invalid ticks before
 calling the comparison handler. See the [test graph result contract](../testing.md).
 
+Scalar expectations use the existing scalar literal construction operations,
+including provider handlers. Comparison consumers interpret only the sentinel
+instructions defined for their positions and pass remaining literals unchanged
+to scalar construction or extension comparison.
+
 ## Reason
 
 Serialized capture preserves the runtime tick format and its provider
