@@ -4,7 +4,11 @@
 #include <bg/graph.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
+#include <bg/scalar/bundle/details/allocation_owner.hpp>
+#include <bg/scalar/bundle/value.hpp>
+#include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/data.hpp>
+#include <bg/scalar/opaque.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/input_data.hpp>
@@ -62,6 +66,11 @@ inline ScalarTickState scalar_tick_state;
 inline int failed_tsd_write_count{};
 inline int payload_write_count{};
 inline bool incompatible_replay_called{};
+inline bool throw_before_scalar_read_callback{};
+inline bool throw_after_scalar_read_callback{};
+inline bool throw_after_bundle_key_read_callback{};
+inline int bundle_key_read_count{};
+inline int bundle_key_discard_count{};
 
 template <template <typename, auto...> typename Field> struct QueueConflictBundle {
     Field<bg::TS<bg::i64>> first;
@@ -646,6 +655,13 @@ void write_provider_scalar(bg::Scalar<test_scalar_provider::value> value,
                            bg::ScalarBufferWriteContext &writer, bg::allocator &memory) {
     const auto number = value.value().get();
     writer.write_bytes(std::as_bytes(std::span{&number, std::size_t{1}}));
+    if (number == 79) {
+        const auto payload_storage = test_scalar_provider::storage{number};
+        auto payload = bg::ScalarValue<>{bg::Scalar<test_scalar_provider::value>::from(
+                                             payload_storage),
+                                         memory};
+        writer.write(owned_provider_payload{std::move(payload)});
+    }
     if (number == 73 || number == 91) {
         const auto text = number == 73 ? "provider payload with value-dependent size"
                                        : "provider payload emitted before a deliberate write failure";
@@ -668,7 +684,7 @@ void project_provider_scalar(bg::Scalar<test_scalar_provider::value> value,
                              bg::ScalarBufferProjectionContext &projection) {
     projection.write_bytes(sizeof(int));
     const auto number = value.value().get();
-    if (number == 73 || number == 91) {
+    if (number == 73 || number == 79 || number == 91) {
         projection.emplace<owned_provider_payload>();
     }
 }
@@ -682,6 +698,19 @@ void project_provider_scalar_semantic(bg::Scalar<test_scalar_provider::value> va
 void read_provider_scalar(bg::util::buffer_reader &reader, auto consume) {
     ++scalar_tick_state.reads;
     const auto number = reader.read_raw<int>();
+    if (number == 79) {
+        const auto &payload = reader.peek<owned_provider_payload>();
+        const auto value = bg::scalar_cast<test_scalar_provider::value>(payload.value.view());
+        reader.consume<owned_provider_payload>();
+        if (throw_before_scalar_read_callback) {
+            throw std::runtime_error{"provider scalar read failed before callback"};
+        }
+        consume(value);
+        if (throw_after_scalar_read_callback) {
+            throw std::runtime_error{"provider scalar read failed after callback"};
+        }
+        return;
+    }
     if (number == 73 || number == 91) {
         reader.consume<owned_provider_payload>();
     }
@@ -691,7 +720,7 @@ void read_provider_scalar(bg::util::buffer_reader &reader, auto consume) {
 
 void discard_provider_scalar(bg::util::buffer_reader &reader) {
     const auto number = reader.read_raw<int>();
-    if (number == 73 || number == 91) {
+    if (number == 73 || number == 79 || number == 91) {
         reader.skip<owned_provider_payload>();
     }
     ++scalar_tick_state.discards;
@@ -795,6 +824,19 @@ struct ViewAggregate {
     bg::Out<Series<bg::i64>, provider::view> output;
 
     void evaluate() const { output.set(*input); }
+};
+
+using ContextAction = std::function<void(bg::EvaluationContext &)>;
+
+struct ContextActionNode {
+    bg::Scalar<bg::Opaque<ContextAction *>> action;
+    bg::In<bg::TS<bg::i64>> trigger;
+    bg::Out<bg::TS<bg::i64>> result;
+
+    void evaluate(bg::EvaluationContext *context) const {
+        (**action)(*context);
+        result.set(*trigger);
+    }
 };
 
 } // namespace provider
@@ -1088,7 +1130,8 @@ TEST_CASE("queue message projection selects the runtime provider projection and 
         auto output_time = bg::TimeSeriesState{};
         auto output_storage = test_scalar_provider::storage{};
         auto output_state = bg::OutputState{runtime_type};
-        output_state.bind(output_time, &output_storage, bg::MIN_DT + std::chrono::microseconds{1});
+        const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
+        output_state.bind(output_time, &output_storage, evaluation_time);
         const auto output = bg::Out<bg::TS<Value>>{bg::TimeSeriesOutputBinding{output_state}};
         auto tick_reader = bg::TimeSeriesTickReader{payload, bg::TS<Value>::type()};
         REQUIRE(tick_reader.replay(output));
@@ -1102,6 +1145,223 @@ TEST_CASE("queue message projection selects the runtime provider projection and 
     CHECK(resource.allocations > 0);
     CHECK(resource.allocations == resource.deallocations);
     CHECK(reader.readable().empty());
+}
+
+TEST_CASE("consuming queue replay keeps a custom scalar owner alive through its read callback",
+          "[feature:time-series-storage][series:value][scalar:generic][declaration:concrete][queue]") {
+    using Value = test_scalar_provider::value;
+    REQUIRE(provider::register_provider_scalar_buffer_handlers());
+    provider::scalar_tick_state = {};
+
+    auto resource = provider::allocation_counter{};
+    auto memory = bg::allocator{resource};
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<Value>>();
+    const auto buffer = bg::util::buffer::concurrent_chain(256, 4);
+    auto writer = bg::details::QueueMessageWriter{buffer, 29, runtime_type, memory};
+    REQUIRE(writer.write(literal::TimeSeriesLiteral(Value{79})));
+
+    auto message_reader = bg::util::concurrent_buffer_reader{buffer};
+    const auto frame = message_reader.read<bg::details::QueueMessageHeader>();
+    constexpr auto value_offset = (1 + alignof(provider::owned_provider_payload) - 1) /
+                                  alignof(provider::owned_provider_payload) *
+                                  alignof(provider::owned_provider_payload);
+    constexpr auto payload_size = value_offset + sizeof(provider::owned_provider_payload);
+    auto tick_reader = bg::util::buffer_reader{
+        message_reader.current_buffer().chunk(0, payload_size)};
+
+    const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
+    auto output_time = bg::TimeSeriesState{};
+    auto output_storage = test_scalar_provider::storage{};
+    auto output_state = bg::OutputState{runtime_type};
+    output_state.bind(output_time, &output_storage, evaluation_time);
+
+    REQUIRE(bg::details::QueueTickApply{tick_reader, bg::QueueMode::elide}.apply(output_state));
+    CHECK(output_storage.number == 79);
+    CHECK(tick_reader.readable().empty());
+    CHECK(provider::scalar_tick_state.reads == 1);
+    CHECK(provider::scalar_tick_state.discards == 1);
+    CHECK(resource.allocations > 0);
+    CHECK(resource.allocations == resource.deallocations);
+    CHECK(frame.target == 29);
+}
+
+TEST_CASE("consuming queue replay discards custom scalar payloads when the read hook throws around its callback",
+          "[feature:time-series-storage][series:value][scalar:generic][queue]") {
+    using Value = test_scalar_provider::value;
+    REQUIRE(provider::register_provider_scalar_buffer_handlers());
+
+    const auto replay_with_failure = [](bool throw_before_callback) {
+        provider::scalar_tick_state = {};
+        provider::throw_before_scalar_read_callback = throw_before_callback;
+        provider::throw_after_scalar_read_callback = !throw_before_callback;
+        auto reset_read_failure_flags = bg::util::scope_exit{[]() noexcept {
+            provider::throw_before_scalar_read_callback = false;
+            provider::throw_after_scalar_read_callback = false;
+        }};
+
+        auto resource = provider::allocation_counter{};
+        auto memory = bg::allocator{resource};
+        const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<Value>>();
+        const auto buffer = bg::util::buffer::concurrent_chain(256, 4);
+        auto writer = bg::details::QueueMessageWriter{buffer, 29, runtime_type, memory};
+        REQUIRE(writer.write(literal::TimeSeriesLiteral(Value{79})));
+
+        auto message_reader = bg::util::concurrent_buffer_reader{buffer};
+        const auto frame = message_reader.read<bg::details::QueueMessageHeader>();
+        constexpr auto value_offset = (1 + alignof(provider::owned_provider_payload) - 1) /
+                                      alignof(provider::owned_provider_payload) *
+                                      alignof(provider::owned_provider_payload);
+        constexpr auto payload_size = value_offset + sizeof(provider::owned_provider_payload);
+        auto tick_reader = bg::util::buffer_reader{
+            message_reader.current_buffer().chunk(0, payload_size)};
+
+        auto output_time = bg::TimeSeriesState{};
+        auto output_storage = test_scalar_provider::storage{};
+        auto output_state = bg::OutputState{runtime_type};
+        const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
+        output_state.bind(output_time, &output_storage, evaluation_time);
+
+        auto failure = std::string{};
+        try {
+            bg::details::QueueTickApply{tick_reader, bg::QueueMode::elide}.apply(output_state);
+        } catch (const std::runtime_error &error) {
+            failure = error.what();
+        }
+
+        CHECK(failure == (throw_before_callback ? "provider scalar read failed before callback"
+                                                : "provider scalar read failed after callback"));
+        CHECK(tick_reader.readable().empty());
+        CHECK(provider::scalar_tick_state.reads == 1);
+        CHECK(provider::scalar_tick_state.discards == 1);
+        CHECK(output_time.valid() == !throw_before_callback);
+        CHECK(output_storage.number == (throw_before_callback ? 0 : 79));
+        CHECK(frame.target == 29);
+        CHECK(resource.allocations > 0);
+        CHECK(resource.allocations == resource.deallocations);
+    };
+
+    replay_with_failure(true);
+    replay_with_failure(false);
+    provider::throw_before_scalar_read_callback = false;
+    provider::throw_after_scalar_read_callback = false;
+}
+
+TEST_CASE("a custom TSD key hook that throws after its callback does not discard the child twice",
+          "[feature:time-series-storage][series:tsd][scalar:generic][queue]") {
+    using Key = test_scalar_provider::bundle_provider_value;
+    using Dictionary = bg::TSD<Key, bg::TS<bg::i64>>;
+    const auto register_bundle_key_read_hook = [] {
+        static const auto registered = [] {
+            auto operations = bg::ScalarBufferOperations::for_read<Key>([](auto &reader, auto consume) {
+                auto value_reader = reader.fork();
+                const auto &value = value_reader.template peek<bg::ScalarValue<>>();
+                reader.template consume<bg::ScalarValue<>>();
+                ++provider::bundle_key_read_count;
+                const auto key_view = value.view();
+                consume(bg::Scalar<Key>::from(key_view));
+                if (provider::throw_after_bundle_key_read_callback) {
+                    throw std::runtime_error{"bundle key read failed after callback"};
+                }
+            });
+            operations.set_discard([](auto &reader) {
+                reader.template skip<bg::ScalarValue<>>();
+                ++provider::bundle_key_discard_count;
+            });
+            return bg::ScalarDispatch<bg::ScalarBufferOperations>::instance().add(
+                bg::cpp_scalar_type<Key>(), std::move(operations));
+        }();
+        return registered;
+    };
+    REQUIRE(register_bundle_key_read_hook());
+    provider::bundle_key_read_count = 0;
+    provider::bundle_key_discard_count = 0;
+    provider::throw_after_bundle_key_read_callback = true;
+    auto reset_read_failure_flag = bg::util::scope_exit{[]() noexcept {
+        provider::throw_after_bundle_key_read_callback = false;
+    }};
+
+    auto resource = provider::allocation_counter{};
+    auto memory = bg::allocator{resource};
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<Dictionary>();
+    const auto buffer = bg::util::buffer::concurrent_chain(256, 4);
+    auto payload = bg::util::buffer::contiguous(256);
+    {
+        auto writer = bg::util::buffer_writer{payload};
+        auto buffer_context = bg::ScalarBufferWriteContext{writer};
+        bg::details::TickHeader{bg::details::TickOperation::tick, true}.write(buffer_context);
+        bg::details::TickHeader{bg::details::TickOperation::add, true}.write(buffer_context);
+        const auto key_bundle = bg::bundle<test_scalar_provider::bundle_provider_derived>(
+            memory, bg::i64{79}, bg::i64{91});
+        const auto key_bundle_view = key_bundle.view();
+        const auto key = test_scalar_provider::bundle_provider_view{
+            .value = bg::Scalar<test_scalar_provider::bundle_provider_base_type>::from(key_bundle_view),
+        };
+        const auto owning_key = bg::ScalarValue<Key>{key};
+        buffer_context.write(bg::ScalarValue<>{owning_key, memory});
+        const auto child_value = bg::i64{17};
+        buffer_context.write_bytes(std::as_bytes(std::span{&child_value, std::size_t{1}}));
+        bg::details::TickHeader{bg::details::TickOperation::end}.write(buffer_context);
+        writer.commit();
+    }
+    auto failure = std::string{};
+    auto reader_empty = false;
+    auto key_read_count = 0;
+    auto key_discard_count = 0;
+    auto child_valid = false;
+    auto child_value = bg::i64{};
+    auto replay_action = provider::ContextAction{[&](bg::EvaluationContext &context) {
+        auto tick_reader = bg::util::buffer_reader{payload};
+        auto *allocation_owner = bg::details::BundleAllocationOwner::create(memory);
+        auto release_allocation_owner = bg::util::scope_exit{[&]() noexcept { allocation_owner->release(); }};
+        const auto allocation_context = bg::details::ScalarAllocationContext{memory, *allocation_owner, &buffer, 0};
+        auto *output_storage = memory.allocate_bytes(runtime_type.value_size(), runtime_type.value_alignment());
+        runtime_type.construct_runtime_value(output_storage, memory);
+        auto destroy_output = bg::util::scope_exit{[&]() noexcept {
+            runtime_type.destroy_value(output_storage, memory);
+            memory.deallocate_bytes(output_storage, runtime_type.value_size(), runtime_type.value_alignment());
+        }};
+        auto output_time = bg::TimeSeriesState{};
+        auto output_state = bg::OutputState{runtime_type};
+        output_state.bind(output_time, output_storage, context);
+        try {
+            bg::details::QueueTickApply{tick_reader, bg::QueueMode::elide}.apply(output_state);
+        } catch (const std::runtime_error &error) {
+            failure = error.what();
+        }
+
+        reader_empty = tick_reader.readable().empty();
+        key_read_count = provider::bundle_key_read_count;
+        key_discard_count = provider::bundle_key_discard_count;
+        const auto output = bg::Out<Dictionary>{bg::TimeSeriesOutputBinding{output_state}};
+        const auto key_value = bg::bundle<test_scalar_provider::bundle_provider_derived>(
+            memory, bg::i64{79}, bg::i64{91});
+        const auto key_value_view = key_value.view();
+        const auto output_key = test_scalar_provider::bundle_provider_view{
+            .value = bg::Scalar<test_scalar_provider::bundle_provider_base_type>::from(key_value_view),
+        };
+        const auto output_key_owner = bg::ScalarValue<Key>{output_key};
+        const auto output_scalar_key = bg::Scalar<Key>::from(output_key_owner);
+        const auto value = output[output_scalar_key];
+        child_valid = value.valid();
+        if (child_valid) {
+            const auto item_id = output.item_id(output_scalar_key);
+            child_value = *static_cast<bg::i64 *>(runtime_type.item(output_storage, item_id).value);
+        }
+    }};
+    auto replay_action_value = bg::ScalarValue<bg::Opaque<provider::ContextAction *>>{&replay_action};
+    const auto replay_node = bg::node<provider::ContextActionNode>();
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> trigger) { return replay_node(replay_action_value, trigger); };
+    const auto graph_result = bg::testing::test_graph(graph, std::array{79});
+
+    CHECK(graph_result.equals<bg::i64>({79}));
+    CHECK(failure == "bundle key read failed after callback");
+    CHECK(reader_empty);
+    CHECK(key_read_count == 1);
+    CHECK(key_discard_count == 1);
+    CHECK(child_valid);
+    CHECK(child_value == 17);
+    CHECK(resource.allocations > 0);
+    CHECK(resource.allocations == resource.deallocations);
 }
 
 TEST_CASE("a failed queue provider write destroys its emitted owned payload",

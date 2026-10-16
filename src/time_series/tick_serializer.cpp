@@ -770,22 +770,24 @@ bool QueueTickApply::apply(OutputState &output) {
         }
     }
 
-    auto replay_reader = reader_->fork();
-    auto replay = TimeSeriesTickReplay{replay_reader, TimeSeriesDispatch<TimeSeriesTickOperations>::instance()};
+    auto replay = TimeSeriesTickReplay{*reader_, TimeSeriesDispatch<TimeSeriesTickOperations>::instance(), true};
+    auto replay_started = false;
     try {
         auto erased_output = output_factory::make<Out<TS_T>>(output);
+        replay_started = true;
         replay.apply_erased(type, erased_output);
     } catch (...) {
         const auto failure = std::current_exception();
-        try {
-            TimeSeriesTickDiscard{*reader_, TimeSeriesDispatch<TimeSeriesTickOperations>::instance()}.apply(type);
-        } catch (...) {
-            std::terminate();
+        if (!replay_started) {
+            try {
+                TimeSeriesTickDiscard{*reader_, TimeSeriesDispatch<TimeSeriesTickOperations>::instance()}.apply(type);
+            } catch (...) {
+                std::terminate();
+            }
         }
         std::rethrow_exception(failure);
     }
 
-    TimeSeriesTickDiscard{*reader_, TimeSeriesDispatch<TimeSeriesTickOperations>::instance()}.apply(type);
     return true;
 }
 

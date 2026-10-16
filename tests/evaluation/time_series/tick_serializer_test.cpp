@@ -3,6 +3,7 @@
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/details/string_storage.hpp>
 #include <bg/scalar/list/scalar.hpp>
+#include <bg/scalar/opaque.hpp>
 #include <bg/time_series/output_binding.hpp>
 #include <bg/time_series/output_state.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
@@ -25,9 +26,11 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <memory_resource>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -316,6 +319,19 @@ class allocation_counter : public std::pmr::memory_resource {
 };
 
 allocation_counter retained_value_memory;
+
+using ContextAction = std::function<void(bg::EvaluationContext &)>;
+
+struct ContextActionNode {
+    bg::Scalar<bg::Opaque<ContextAction *>> action;
+    bg::In<bg::TS<bg::i64>> trigger;
+    bg::Out<bg::TS<bg::i64>> result;
+
+    void evaluate(bg::EvaluationContext *context) const {
+        (**action)(*context);
+        result.set(*trigger);
+    }
+};
 
 struct queue_apply_result {
     bool applied;
@@ -1334,6 +1350,175 @@ TEST_CASE("a queue message writer stores a scalar sequence as one owning value",
         CHECK_FALSE(tick_reader.has_next());
         CHECK(frame.size >= sizeof(frame) + payload_size);
     }
+}
+
+TEST_CASE("queue replay transfers an owning scalar list into output storage",
+          "[feature:time-series-storage][series:value][scalar:list][queue]") {
+    using List = bg::List<bg::string>;
+    retained_value_memory.allocations = 0;
+    retained_value_memory.deallocations = 0;
+
+    auto memory = bg::allocator{retained_value_memory};
+    const auto buffer = bg::util::buffer::concurrent_chain(256, 4);
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<List>>();
+    auto writer = bg::details::QueueMessageWriter{buffer, 24, runtime_type, memory};
+    REQUIRE(writer.write(literal::TimeSeriesLiteral{
+        "first retained list value with allocated string storage",
+        "second retained list value with allocated string storage"}));
+
+    auto message_reader = bg::util::concurrent_buffer_reader{buffer};
+    const auto frame = message_reader.read<bg::details::QueueMessageHeader>();
+    constexpr auto value_offset = (1 + alignof(bg::ScalarValue<>) - 1) / alignof(bg::ScalarValue<>) *
+                                  alignof(bg::ScalarValue<>);
+    constexpr auto payload_size = value_offset + sizeof(bg::ScalarValue<>);
+    auto tick_reader = bg::util::buffer_reader{message_reader.current_buffer().chunk(0, payload_size)};
+
+    auto output_time = bg::TimeSeriesState{};
+    auto output_value = bg::scalar_storage_traits<List>::stored_type{};
+    auto output_state = bg::OutputState{runtime_type};
+    const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
+    output_state.bind(output_time, &output_value, evaluation_time);
+
+    {
+        auto *allocation_owner = bg::details::BundleAllocationOwner::create(memory);
+        auto release_allocation_owner = bg::util::scope_exit{[&]() noexcept { allocation_owner->release(); }};
+        const auto allocation_context =
+            bg::details::ScalarAllocationContext{memory, *allocation_owner, &buffer, 0};
+        auto output_initialized = false;
+        auto destroy_output = bg::util::scope_exit{[&]() noexcept {
+            if (output_initialized) {
+                bg::cpp_scalar_runtime_type<List>().destroy(&output_value, memory);
+            }
+        }};
+        const auto allocations_before_replay = retained_value_memory.allocations;
+
+        REQUIRE(bg::details::QueueTickApply{tick_reader, bg::QueueMode::elide}.apply(output_state));
+        output_initialized = true;
+        CHECK(tick_reader.readable().empty());
+        CHECK(retained_value_memory.allocations == allocations_before_replay);
+
+        const auto value = bg::Scalar<List>::from(output_value);
+        REQUIRE(value.size() == 2);
+        CHECK(value[0].value() == "first retained list value with allocated string storage");
+        CHECK(value[1].value() == "second retained list value with allocated string storage");
+        CHECK(frame.target == 24);
+    }
+
+    CHECK(retained_value_memory.allocations == retained_value_memory.deallocations);
+}
+
+template <template <typename, auto...> typename Field> struct QueuePrefixFailureBundle {
+    Field<bg::TS<bg::i64>> first;
+    Field<bg::TS<bg::string>> middle;
+    Field<bg::TS<bg::List<bg::string>>> last;
+};
+
+TEST_CASE("eliding queue replay drains an owning suffix after a scalar mutation failure",
+          "[feature:time-series-storage][series:tsb][queue][scalar:list]") {
+    using Bundle = bg::TSB<QueuePrefixFailureBundle>;
+    using List = bg::List<bg::string>;
+
+    auto resource = allocation_counter{};
+    auto memory = bg::allocator{resource};
+    const auto make_payload = [&] {
+        auto buffer = bg::util::buffer::contiguous(512);
+        auto writer = bg::util::buffer_writer{buffer};
+        auto context = bg::ScalarBufferWriteContext{writer};
+        bg::details::TickHeader{bg::details::TickOperation::tick, true}.write(context);
+
+        const auto write_field_header = [&](bg::item_id_t id) {
+            bg::details::TickHeader{bg::details::TickOperation::tick, true}.write(context);
+            context.write_bytes(std::as_bytes(std::span{&id, std::size_t{1}}));
+        };
+
+        write_field_header(0);
+        const auto first_value = bg::i64{42};
+        context.write_bytes(std::as_bytes(std::span{&first_value, std::size_t{1}}));
+
+        write_field_header(1);
+        auto incompatible_typed_value = bg::ScalarValue<bg::i64>{bg::i64{79}, memory};
+        auto incompatible_value = bg::ScalarValue<>{incompatible_typed_value, memory};
+        context.write(std::move(incompatible_value));
+
+        write_field_header(2);
+        auto owning_list = bg::ScalarValue<List>::from_literal(
+            literal::TimeSeriesLiteral{"an owning suffix string that needs allocated storage"}, memory);
+        context.write(bg::ScalarValue<>{owning_list, memory});
+        bg::details::TickHeader{bg::details::TickOperation::end}.write(context);
+        writer.commit();
+        return buffer;
+    };
+    const auto queue_payload = make_payload();
+    const auto borrowed_payload = make_payload();
+    const auto capture_failure = [](auto &&operation) {
+        try {
+            std::forward<decltype(operation)>(operation)();
+        } catch (const std::invalid_argument &error) {
+            return std::string{error.what()};
+        }
+        return std::string{};
+    };
+
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<Bundle>();
+    struct ReplayResult {
+        std::string failure;
+        bg::i64 first_value{};
+        bool first_valid{};
+        bool middle_valid{};
+        bool last_valid{};
+        bool reader_empty{};
+    };
+    auto queue_result = ReplayResult{};
+    auto borrowed_result = ReplayResult{};
+    auto replay_action = ContextAction{[&](bg::EvaluationContext &context) {
+        const auto replay_into_output = [&](ReplayResult &replay_result, const auto &replay) {
+            auto *output_storage = memory.allocate_bytes(runtime_type.value_size(), runtime_type.value_alignment());
+            runtime_type.construct_runtime_value(output_storage, memory);
+            auto destroy_output = bg::util::scope_exit{[&]() noexcept {
+                runtime_type.destroy_value(output_storage, memory);
+                memory.deallocate_bytes(output_storage, runtime_type.value_size(), runtime_type.value_alignment());
+            }};
+            auto output_time = bg::TimeSeriesState{};
+            auto output_state = bg::OutputState{runtime_type};
+            output_state.bind(output_time, output_storage, context);
+
+            replay(output_state, replay_result);
+            replay_result.first_value = *static_cast<bg::i64 *>(runtime_type.item(output_storage, 0).value);
+            replay_result.first_valid = runtime_type.item(output_storage, 0).last_updated.valid();
+            replay_result.middle_valid = runtime_type.item(output_storage, 1).last_updated.valid();
+            replay_result.last_valid = runtime_type.item(output_storage, 2).last_updated.valid();
+        };
+
+        replay_into_output(queue_result, [&](bg::OutputState &output, ReplayResult &replay_result) {
+            auto reader = bg::util::buffer_reader{queue_payload};
+            replay_result.failure = capture_failure(
+                [&] { bg::details::QueueTickApply{reader, bg::QueueMode::elide}.apply(output); });
+            replay_result.reader_empty = reader.readable().empty();
+        });
+        replay_into_output(borrowed_result, [&](bg::OutputState &output, ReplayResult &replay_result) {
+            auto reader = bg::TimeSeriesTickReader{borrowed_payload, Bundle::type()};
+            replay_result.failure = capture_failure(
+                [&] { reader.replay(bg::Out<Bundle>{bg::TimeSeriesOutputBinding{output}}); });
+            replay_result.reader_empty = !reader.has_next();
+        });
+    }};
+    auto replay_action_value = bg::ScalarValue<bg::Opaque<ContextAction *>>{&replay_action};
+    const auto replay_node = bg::node<ContextActionNode>();
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> trigger) { return replay_node(replay_action_value, trigger); };
+    const auto graph_result = bg::testing::test_graph(graph, std::array{42});
+
+    CHECK(graph_result.equals<bg::i64>({42}));
+    for (const auto *replay_result : {&queue_result, &borrowed_result}) {
+        CHECK(replay_result->failure == "incompatible scalar runtime representations");
+        CHECK(replay_result->first_value == 42);
+        CHECK(replay_result->first_valid);
+        CHECK_FALSE(replay_result->middle_valid);
+        CHECK_FALSE(replay_result->last_valid);
+        CHECK(replay_result->reader_empty);
+    }
+
+    CHECK(resource.allocations > 0);
+    CHECK(resource.allocations == resource.deallocations);
 }
 
 TEST_CASE("queue message writers skip root SKIP and reject invalid targets and markers",

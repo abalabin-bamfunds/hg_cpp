@@ -191,10 +191,15 @@ key remain independent.
 
 Admission checks the complete message against changes already applied in the
 cycle. Accepted messages replay all entries in order, including repeated TSD
-keys. Replay provides no rollback.
+keys. Replay consumes the payload and moves owning scalar values into outputs.
+No-op values are destroyed locally. Custom scalar encodings use their registered
+read and discard handlers for each scalar.
 
-An accepted payload returns `true` and destroys its encoded objects after
-replay. This includes no-op payloads. A no-op leaves the output and its last
-updated time unchanged; it does not use a standard-mode cycle slot. An ordinary
-equal-value assignment publishes a change. A deduplicated equal-value assignment
-is a no-op.
+If application fails, replay destroys unread values, consumes the rest
+of the message, and rethrows the first error. Earlier output mutations remain
+applied; replay provides no rollback.
+
+Successful application returns `true`, including no-op payloads. A no-op leaves
+the output and its last updated time unchanged; it does not use a standard-mode
+cycle slot. An ordinary equal-value assignment publishes a change. A
+deduplicated equal-value assignment is a no-op.

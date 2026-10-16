@@ -1,6 +1,6 @@
 # Queue readers inspect before replay
 
-Status: accepted
+Status: superseded by [0065](0065-consuming-queue-application.md)
 
 ## Decision
 

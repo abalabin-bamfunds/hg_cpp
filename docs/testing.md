@@ -318,7 +318,8 @@ graph compilation or evaluation.
   selectors and markers, scalar ownership, concurrent reservation rollover, and failure cleanup
 - queue tick application in standard and eliding modes, independent collection items, complete-message pending,
   first-conflict stopping, no-op timestamps, invalidation, revalidation, per-key dictionary tick/removal separation,
-  and encoded scalar ownership during inspection and replay
+  encoded scalar ownership during inspection and replay, consuming ownership transfer, and unread-payload cleanup
+  after application failure
 - feedback source and sink wiring, next-cycle replay, first ticks, validity changes, guarantee compatibility,
   separate handles, and same-graph binding
 - `default_` fallback selection, timestamps, modified state, and source validity transitions
