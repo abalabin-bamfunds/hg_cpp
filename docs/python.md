@@ -286,18 +286,53 @@ Guarantees can also qualify concrete collection items and schema fields.
 The outer collection of a variadic `TSL[..., SIZE]` or `TSB[TS_SCHEMA]`
 cannot be qualified. See [time series guarantees](type-system.md#time-series-guarantees).
 
-A non-variadic TSL requires a fixed size. A TSB uses a Python schema:
+A non-variadic TSL requires a fixed size. A Python schema declares scalar
+bundle fields and their TSB projection:
 
 ```python
-class BaseQuote(bg.TimeSeriesSchema):
-    bid: bg.TS[float]
+from typing import Optional
 
+@bg.schema
+class BaseQuote:
+    bid: float
+
+@bg.schema
 class Quote(BaseQuote):
-    ask: bg.TS[float]
+    ask: Optional[float]
 ```
 
-Schemas support single inheritance. Each schema class receives a distinct
-native identity; its qualified name is descriptive.
+`bg.Bundle[Quote]` is a scalar type for schemas whose fields are all scalar.
+`bg.TSB[Quote]` is a time-series bundle type. A scalar field projects to a
+time series of that scalar type; an explicit time-series field passes through.
+The TSB projection does not preserve optional scalar presence. The scalar
+`Bundle` retains it, and the generated constructor defaults an omitted optional
+field to `None`.
+
+Explicit time-series fields pass through to the TSB projection:
+
+```python
+@bg.schema
+class MarketData:
+    price: float
+    venue: bg.TS[str]
+```
+
+Schemas support single inheritance. Each declaration has one identity shared by
+its scalar and TSB projections. The qualified Python name is descriptive.
+Optional direct self-fields support recursive scalar bundles:
+
+```python
+@bg.schema
+class Node:
+    value: int
+    child: Optional["Node"]
+```
+
+Required recursive fields are rejected because they create an unconstructible
+by-value cycle. Python schema declarations do not currently support recursive
+collections or mutually recursive declarations. Conversion back to Python
+allocates the declared class and assigns its schema fields without calling its
+custom `__init__` method.
 
 ## Python nodes
 
@@ -512,8 +547,7 @@ releases the GIL while native graph evaluation runs. Each Python node callback
 acquires it for argument conversion, callback execution, and output
 conversion.
 
-The current package does not expose scalar bundle schemas or dynamic Python
-node inputs.
+The current package does not expose dynamic Python node inputs.
 
 Python definition wrappers retain their callbacks. A wired runtime graph also
 retains each Python node callback that it uses. Destroy these graphs before

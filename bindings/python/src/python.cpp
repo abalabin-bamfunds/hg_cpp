@@ -13,6 +13,8 @@
 #include <bg/python/wiring_point.hpp>
 #include <bg/service.hpp>
 #include <bg/service_catalogue.hpp>
+#include <bg/scalar/bundle/scalar_type.hpp>
+#include <bg/scalar/bundle/value.hpp>
 #include <bg/scalar/dict/scalar_type.hpp>
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/testing/test_graph.hpp>
@@ -740,33 +742,99 @@ void bind_core(nb::module_ &module) {
             *key, *item, key_set, TimeSeriesGuarantee::ordinary));
         return TypeDescriptor{type};
     });
-    module.def("_make_time_series_schema", [](std::string name, nb::handle identity, std::optional<TypeDescriptor> base,
-                                              const std::vector<std::pair<std::string, TypeDescriptor>> &fields) {
-        (void)identity;
-        const Schema *base_schema = nullptr;
-        if (base) {
-            base_schema = base->schema();
-            if (base_schema == nullptr) {
-                throw std::invalid_argument{"a Python time-series schema base must be a schema"};
-            }
+    module.def("_make_schema", [](std::string name, std::optional<TypeDescriptor> base_scalar,
+                                   std::optional<TypeDescriptor> base_time_series,
+                                   const std::vector<std::pair<std::string, nb::object>> &fields) {
+        const auto *scalar_base = base_scalar ? base_scalar->schema() : nullptr;
+        const auto *time_series_base = base_time_series ? base_time_series->schema() : nullptr;
+        if ((base_scalar && scalar_base == nullptr) || (base_time_series && time_series_base == nullptr)) {
+            throw std::invalid_argument{"a Python schema base must be a schema declaration"};
         }
 
-        auto schema_fields = std::vector<SchemaField>{};
-        schema_fields.reserve(fields.size());
-        for (const auto &[field_name, field_type] : fields) {
+        const auto identity = SchemaIdentity{new_runtime_schema_id()};
+        const auto name_symbol = util::symbol{name};
+        auto registration = SchemaRegistration{};
+        const auto has_recursive_field = std::ranges::any_of(fields, [](const auto &field) {
+            return !nb::isinstance<TypeDescriptor>(field.second);
+        });
+        auto scalar_schema = static_cast<Schema *>(nullptr);
+        auto time_series_schema = static_cast<Schema *>(nullptr);
+        if (has_recursive_field) {
+            scalar_schema = &registration.reserve_schema(name_symbol, identity, scalar_base);
+            time_series_schema = &registration.reserve_schema(name_symbol, identity, time_series_base);
+        }
+        auto recursive_scalar = static_cast<const ScalarType *>(nullptr);
+        if (has_recursive_field) {
+            recursive_scalar = &hierarchical_scalar_type(*scalar_schema);
+        }
+
+        auto scalar_fields = std::vector<SchemaField>{};
+        auto time_series_fields = std::vector<SchemaField>{};
+        scalar_fields.reserve(fields.size());
+        time_series_fields.reserve(fields.size());
+        for (const auto &[field_name, field_value] : fields) {
+            if (!nb::isinstance<TypeDescriptor>(field_value)) {
+                if (recursive_scalar == nullptr || (field_value.ptr() != Py_None && field_value.ptr() != Py_Ellipsis)) {
+                    throw std::invalid_argument{"a recursive Python schema field must be the schema itself"};
+                }
+                const auto optional = field_value.ptr() == Py_None;
+                scalar_fields.push_back({util::symbol{field_name}, recursive_scalar, optional});
+                const auto &projected_type = registration.register_owned(
+                    std::make_unique<GenericTimeSeriesValueType>(*recursive_scalar, TimeSeriesGuarantee::ordinary));
+                time_series_fields.push_back({util::symbol{field_name}, &projected_type, false});
+                continue;
+            }
+            const auto &field_type = nb::cast<const TypeDescriptor &>(field_value);
+            const auto *scalar = type_cast<ScalarType>(&field_type.type());
             const auto *time_series = type_cast<TimeSeriesType>(&field_type.type());
-            if (time_series == nullptr) {
-                throw std::invalid_argument{"a Python time-series schema field must have a time-series type"};
+            if (scalar != nullptr) {
+                scalar_fields.push_back({util::symbol{field_name}, scalar, field_type.accepts_absent_scalar()});
+                const auto &projected_type = scalar->is_resolved()
+                                                 ? static_cast<const Type &>(time_series_value_type(
+                                                       *scalar, TimeSeriesGuarantee::ordinary))
+                                                 : static_cast<const Type &>(TypeRegistry::instance().register_owned(
+                                                       std::make_unique<GenericTimeSeriesValueType>(
+                                                           *scalar, TimeSeriesGuarantee::ordinary)));
+                time_series_fields.push_back({util::symbol{field_name}, &projected_type, false});
+                continue;
             }
-            schema_fields.push_back({util::symbol{field_name}, time_series});
+            if (time_series == nullptr || field_type.accepts_absent_scalar()) {
+                throw std::invalid_argument{"a Python schema field must be a scalar or time-series type"};
+            }
+            scalar_fields.push_back({util::symbol{field_name}, time_series, false});
+            time_series_fields.push_back({util::symbol{field_name}, time_series, false});
         }
 
-        return TypeDescriptor{schema(util::symbol{name}, new_runtime_schema_id(), base_schema, schema_fields)};
+        if (has_recursive_field) {
+            scalar_schema->finalize(scalar_fields);
+            time_series_schema->finalize(time_series_fields);
+            registration.commit();
+        } else {
+            const auto &final_scalar_schema = schema(name_symbol, identity, scalar_base, scalar_fields);
+            const auto &final_time_series_schema = schema(name_symbol, identity, time_series_base, time_series_fields);
+            registration.commit();
+            return std::pair{TypeDescriptor{final_scalar_schema}, TypeDescriptor{final_time_series_schema}};
+        }
+        return std::pair{TypeDescriptor{*scalar_schema}, TypeDescriptor{*time_series_schema}};
+    });
+    module.def("_register_python_schema", [](nb::handle python_type, const TypeDescriptor &schema_type) {
+        const auto *schema = schema_type.schema();
+        if (schema == nullptr) {
+            throw std::invalid_argument{"Bundle[...] requires a schema declaration"};
+        }
+        return TypeDescriptor{scalar_conversions().add_python_schema(python_type, *schema)};
+    });
+    module.def("_bundle_scalar_type", [](const TypeDescriptor &schema_type) {
+        const auto *schema = schema_type.schema();
+        if (schema == nullptr) {
+            throw std::invalid_argument{"Bundle[...] requires a schema declaration"};
+        }
+        return TypeDescriptor{hierarchical_scalar_type(*schema)};
     });
     module.def("_time_series_bundle_type", [](const TypeDescriptor &value) {
         const auto *schema = value.schema();
         if (schema == nullptr) {
-            throw std::invalid_argument{"TSB[...] requires a TimeSeriesSchema"};
+            throw std::invalid_argument{"TSB[...] requires a @schema declaration"};
         }
         if (schema->is_resolved()) {
             return TypeDescriptor{time_series_bundle_type(*schema, TimeSeriesGuarantee::ordinary)};

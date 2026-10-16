@@ -22,7 +22,8 @@ def test_graph_var_kwargs_are_packed_as_a_generic_tsb():
 
 
 def test_graph_var_kwargs_are_packed_as_a_declared_tsb():
-    class Pair(bg.TimeSeriesSchema):
+    @bg.schema
+    class Pair:
         left: bg.TS[int]
         right: bg.TS[int]
 
@@ -80,7 +81,8 @@ def test_variadic_tsl_accepts_a_qualified_item_type():
 
 
 def test_variadic_tsl_retains_a_generic_bundle_item_annotation():
-    class Pair(bg.TimeSeriesSchema):
+    @bg.schema
+    class Pair:
         left: bg.TS[int]
         right: bg.TS[int]
 
@@ -203,7 +205,8 @@ def test_positional_and_named_tsb_packs_can_be_forwarded_together():
 
 
 def test_exact_pack_name_accepts_a_prebuilt_tsb():
-    class Pair(bg.TimeSeriesSchema):
+    @bg.schema
+    class Pair:
         left: bg.TS[int]
         right: bg.TS[int]
 

@@ -127,6 +127,9 @@ and optionality. The factory hashes these components and returns one registered
 descriptor per key. Schema entries created during recursive scalar registration
 commit or roll back with that group.
 
+`SchemaRegistration` reserves runtime schemas, finalizes their descriptors before
+`commit()`, and rolls back the reservations and owned descriptors on failure.
+
 A C++ declaration such as `Quote` is identified by
 `std::type_index{typeid(details::schema_template<Quote>)}`. A runtime declaration
 uses a unique `RuntimeSchemaId` allocated by `new_runtime_schema_id()`. Anonymous

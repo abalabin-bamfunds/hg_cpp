@@ -210,7 +210,8 @@ def test_subscription_service_rejects_ordinary_key_at_call_site():
 
 
 def test_guarantee_annotations_apply_to_each_time_series_shape():
-    class Schema(bg.TimeSeriesSchema):
+    @bg.schema
+    class Schema:
         value: bg.TS[int, bg.final]
 
     @bg.graph

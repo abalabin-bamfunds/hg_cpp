@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <span>
 #include <typeindex>
@@ -45,6 +46,7 @@ struct SchemaField {
 class Schema final : public SchemaType {
   public:
     Schema(util::symbol name, SchemaIdentity identity, const Schema *base, std::vector<SchemaField> fields);
+    Schema(util::symbol name, SchemaIdentity identity, const Schema *base);
 
     util::symbol name() const noexcept { return name_; }
     const SchemaIdentity &identity() const noexcept { return identity_; }
@@ -53,6 +55,8 @@ class Schema final : public SchemaType {
     std::span<const SchemaField> direct_fields() const noexcept { return direct_fields_; }
     std::span<const SchemaField> fields() const noexcept { return fields_; }
     std::size_t field_count() const noexcept override { return fields_.size(); }
+    bool is_finalized() const noexcept { return finalized_; }
+    void finalize(std::span<const SchemaField> fields);
     void format_name(std::string &result) const override { result += name_.text(); }
     const SchemaField &field(std::size_t index) const { return fields_.at(index); }
     const SchemaField *find(util::symbol name) const noexcept;
@@ -67,6 +71,24 @@ class Schema final : public SchemaType {
     const Schema *base_;
     std::vector<SchemaField> direct_fields_;
     std::vector<SchemaField> fields_;
+    bool finalized_{false};
+};
+
+// Owns one atomic schema registration, including reservation, finalization, commit, and rollback.
+class SchemaRegistration {
+  public:
+    SchemaRegistration();
+    ~SchemaRegistration();
+    SchemaRegistration(const SchemaRegistration &) = delete;
+    SchemaRegistration &operator=(const SchemaRegistration &) = delete;
+
+    [[nodiscard]] Schema &reserve_schema(util::symbol name, SchemaIdentity identity, const Schema *base);
+    [[nodiscard]] const Type &register_owned(std::unique_ptr<Type> type);
+    void commit();
+
+  private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
 };
 
 // Engine and extension APIs for runtime schema identity and canonical descriptors.

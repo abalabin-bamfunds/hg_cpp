@@ -104,7 +104,8 @@ def test_python_operator_syntax_and_named_boolean_operators():
 
 
 def test_collection_query_operators_accept_public_keyword_names():
-    class Pair(bg.TimeSeriesSchema):
+    @bg.schema
+    class Pair:
         left: bg.TS[int]
         right: bg.TS[float]
 

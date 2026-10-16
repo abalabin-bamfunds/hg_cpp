@@ -166,9 +166,11 @@ def test_fixed_time_series_list_value_delta_and_item_access():
 
 
 def test_time_series_bundle_value_delta_inheritance_and_item_access():
-    class Base(bg.TimeSeriesSchema):
+    @bg.schema
+    class Base:
         left: bg.TS[int]
 
+    @bg.schema
     class Pair(Base):
         right: bg.TS[int]
 
@@ -198,7 +200,8 @@ def test_time_series_bundle_value_delta_inheritance_and_item_access():
 
 def test_time_series_schemas_keep_nominal_identity_and_support_inheritance():
     def make_pair_schema():
-        class Pair(bg.TimeSeriesSchema):
+        @bg.schema
+        class Pair:
             value: bg.TS[int]
 
         return Pair
@@ -221,9 +224,11 @@ def test_time_series_schemas_keep_nominal_identity_and_support_inheritance():
     with pytest.raises(ValueError):
         bg.test_graph(incompatible_graph)
 
-    class Base(bg.TimeSeriesSchema):
+    @bg.schema
+    class Base:
         value: bg.TS[int]
 
+    @bg.schema
     class Derived(Base):
         extra: bg.TS[int]
 
@@ -243,7 +248,8 @@ def test_time_series_schemas_keep_nominal_identity_and_support_inheritance():
 
 
 def test_collection_lookup_defaults_and_missing_bundle_attributes():
-    class Pair(bg.TimeSeriesSchema):
+    @bg.schema
+    class Pair:
         left: bg.TS[int]
 
     @bg.compute_node
@@ -271,13 +277,16 @@ def test_collection_lookup_defaults_and_missing_bundle_attributes():
 
 
 def test_time_series_schema_rejects_multiple_schema_bases():
-    class Left(bg.TimeSeriesSchema):
+    @bg.schema
+    class Left:
         left: bg.TS[int]
 
-    class Right(bg.TimeSeriesSchema):
+    @bg.schema
+    class Right:
         right: bg.TS[int]
 
     with pytest.raises(TypeError, match="one schema base"):
+        @bg.schema
         class Invalid(Left, Right):
             pass
 
@@ -488,7 +497,8 @@ def test_fixed_list_of_references_can_be_dereferenced_as_one_collection():
 
 
 def test_bundle_reference_field_can_be_dereferenced():
-    class ReferenceBundle(bg.TimeSeriesSchema):
+    @bg.schema
+    class ReferenceBundle:
         value: bg.REF[bg.TS[int]]
 
     @bg.compute_node
@@ -804,7 +814,8 @@ def test_tsl_input_exposes_child_traversal_and_lazy_values():
 
 
 def test_tsb_input_exposes_named_child_access_and_lazy_values():
-    class Pair(bg.TimeSeriesSchema):
+    @bg.schema
+    class Pair:
         left: bg.TS[int]
         right: bg.TS[int]
 
@@ -839,7 +850,8 @@ def test_tsb_input_exposes_named_child_access_and_lazy_values():
 
 
 def test_lazy_values_expose_only_their_collection_protocol():
-    class Pair(bg.TimeSeriesSchema):
+    @bg.schema
+    class Pair:
         left: bg.TS[int]
 
     @bg.compute_node

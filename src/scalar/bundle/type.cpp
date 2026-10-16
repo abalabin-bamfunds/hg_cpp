@@ -83,12 +83,6 @@ const Type &GenericHierarchicalScalarType::resolve(const TypeMap &type_map) cons
 }
 
 void ResolvedHierarchicalScalarType::initialize(const Schema &schema) {
-    if (!schema.is_resolved() || std::ranges::any_of(schema.fields(), [](const auto &field) {
-            return type_cast<ScalarType>(field.type) == nullptr;
-        })) {
-        throw std::invalid_argument{"a hierarchical scalar schema requires resolved scalar fields"};
-    }
-
     schema_ = &schema;
 }
 
@@ -261,9 +255,10 @@ const ResolvedHierarchicalScalarType &canonical_hierarchical_scalar_type(const S
     if (std::holds_alternative<std::type_index>(schema.identity())) {
         throw std::logic_error{"a C++-identified schema requires prior hierarchical scalar registration"};
     }
-    if (!schema.is_resolved() || std::ranges::any_of(schema.fields(), [](const auto &field) {
-            return type_cast<ScalarType>(field.type) == nullptr;
-        })) {
+    if ((!schema.is_finalized() && SemanticTypeRegistration::current() == nullptr) ||
+        (schema.is_finalized() && (!schema.is_resolved() || std::ranges::any_of(schema.fields(), [](const auto &field) {
+             return type_cast<ScalarType>(field.type) == nullptr;
+         })))) {
         throw std::invalid_argument{"a hierarchical scalar schema requires resolved scalar fields"};
     }
 
@@ -294,6 +289,13 @@ const ResolvedHierarchicalScalarType &canonical_hierarchical_scalar_type(const S
 
         auto &registration = *SemanticTypeRegistration::current();
         registration.on_finalize([type] { return type->finalize_capabilities(); });
+        registration.on_validate([type] {
+            if (!type->schema().is_resolved() || std::ranges::any_of(type->fields(), [](const auto &field) {
+                    return type_cast<ScalarType>(field.type) == nullptr;
+                })) {
+                throw std::invalid_argument{"a hierarchical scalar schema requires resolved scalar fields"};
+            }
+        });
         registration.on_validate([type] { validate_required_field_cycles(*type); });
         registration.on_rollback([&associations, schema = &schema, type] {
             const auto found = associations.find(schema);
