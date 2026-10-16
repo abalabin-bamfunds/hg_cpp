@@ -55,12 +55,13 @@ inline constexpr bool legacy_scalar_test_input = [] {
 
 template <typename T = void> class TestGraphResult {
   public:
-    explicit TestGraphResult(std::vector<std::optional<ScalarValue<>>> values) : values_{std::move(values)} {}
+    explicit TestGraphResult(details::CapturedValues captured) : captured_{std::move(captured)} {}
 
-    std::size_t size() const noexcept { return values_.size(); }
+    std::size_t size() const noexcept { return captured_.records.size(); }
 
     auto operator[](std::size_t index) const {
-        if (!values_[index]) {
+        const auto *value = scalar_value(index);
+        if (value == nullptr) {
             if constexpr (std::same_as<T, void>) {
                 return std::optional<Scalar<>>{};
             } else {
@@ -69,9 +70,9 @@ template <typename T = void> class TestGraphResult {
         }
 
         if constexpr (std::same_as<T, void>) {
-            return std::optional{values_[index]->view()};
+            return std::optional{value->view()};
         } else {
-            return std::optional{scalar_cast<T>(*values_[index])};
+            return std::optional{scalar_cast<T>(*value)};
         }
     }
 
@@ -80,24 +81,23 @@ template <typename T = void> class TestGraphResult {
     bool equals(
         std::initializer_list<std::optional<std::remove_cvref_t<typename bg::scalar_storage_traits<Value>::value_type>>>
             expected) const {
-        if (values_.size() != expected.size()) {
+        if (size() != expected.size()) {
             return false;
         }
 
-        auto actual = values_.begin();
-        for (const auto &value : expected) {
-            if (actual->has_value() != value.has_value()) {
+        for (auto index = std::size_t{}; index < expected.size(); ++index) {
+            const auto *actual = scalar_value(index);
+            const auto &value = *(expected.begin() + static_cast<std::ptrdiff_t>(index));
+            if ((actual != nullptr) != value.has_value()) {
                 return false;
             }
             if (value) {
-                const auto actual_scalar = scalar_cast<Value>(**actual);
+                const auto actual_scalar = scalar_cast<Value>(*actual);
                 decltype(auto) actual_value = actual_scalar.value();
                 if (!scalar_storage_traits<Value>::equals(actual_value, *value)) {
                     return false;
                 }
             }
-
-            ++actual;
         }
 
         return true;
@@ -111,8 +111,43 @@ template <typename T = void> class TestGraphResult {
         return equals(expected);
     }
 
+    bool equals(std::initializer_list<literal::TimeSeriesLiteral> expected) const
+        requires std::same_as<T, void>
+    {
+        if (size() != expected.size()) {
+            return false;
+        }
+        for (auto index = std::size_t{}; index < size(); ++index) {
+            const auto &actual = captured_.records[index];
+            const auto &wanted = *(expected.begin() + static_cast<std::ptrdiff_t>(index));
+            if (!details::LiteralMatcher::matches_tick(actual, wanted)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    bool operator==(std::initializer_list<literal::TimeSeriesLiteral> expected) const
+        requires std::same_as<T, void>
+    {
+        return equals(expected);
+    }
+
   private:
-    std::vector<std::optional<ScalarValue<>>> values_;
+    const ScalarValue<> *scalar_value(std::size_t index) const {
+        const auto &record = captured_.records[index];
+        if (!record || std::holds_alternative<details::CapturedDelta::Invalid>(record->payload)) {
+            return nullptr;
+        }
+        if (const auto *value = std::get_if<ScalarValue<>>(&record->payload)) {
+            return value;
+        }
+
+        throw std::invalid_argument{"test_graph result tick is a collection"};
+    }
+
+    details::CapturedValues captured_;
 };
 
 namespace details {
