@@ -265,33 +265,17 @@ TEST_CASE("test_graph literal inputs coerce values and revalidate after INVALID"
 
 TEST_CASE("test_graph accepts descriptor spans with more than four inputs",
           "[testing][evaluation][feature:test-graph][declaration:generic][series:value]") {
-    const auto fifth = bg::graph("name"_n = "fifth", [](bg::wp<bg::TS<bg::i64>>, bg::wp<bg::TS<bg::i64>>,
-                                                          bg::wp<bg::TS<bg::i64>>, bg::wp<bg::TS<bg::i64>>,
-                                                          bg::wp<bg::TS<bg::i64>> last) { return last; });
-    const auto payloads = std::array<bg::i64, 5>{1, 2, 3, 4, 5};
-    const auto values = std::array{
-        std::array<literal::TimeSeriesLiteral, 1>{payloads[0]},
-        std::array<literal::TimeSeriesLiteral, 1>{payloads[1]},
-        std::array<literal::TimeSeriesLiteral, 1>{payloads[2]},
-        std::array<literal::TimeSeriesLiteral, 1>{payloads[3]},
-        std::array<literal::TimeSeriesLiteral, 1>{payloads[4]},
-    };
-    const auto inputs = std::array{
-        bg::testing::input<bg::TS<bg::i64>>(
-            bg::testing::TestGraphLiteralInput{std::span<const literal::TimeSeriesLiteral>{values[0]}}),
-        bg::testing::input<bg::TS<bg::i64>>(
-            bg::testing::TestGraphLiteralInput{std::span<const literal::TimeSeriesLiteral>{values[1]}}),
-        bg::testing::input<bg::TS<bg::i64>>(
-            bg::testing::TestGraphLiteralInput{std::span<const literal::TimeSeriesLiteral>{values[2]}}),
-        bg::testing::input<bg::TS<bg::i64>>(
-            bg::testing::TestGraphLiteralInput{std::span<const literal::TimeSeriesLiteral>{values[3]}}),
-        bg::testing::input<bg::TS<bg::i64>>(
-            bg::testing::TestGraphLiteralInput{std::span<const literal::TimeSeriesLiteral>{values[4]}}),
-    };
+    using bg::testing::TestGraphLiteralInput;
 
-    const auto actual = bg::testing::test_graph(fifth, std::span<const bg::testing::TestGraphLiteralInput>{inputs});
+    const auto fifth = bg::graph(
+        "name"_n = "fifth",
+        [](bg::wp<bg::TS<bg::i64>>, bg::wp<bg::TS<bg::i64>>, bg::wp<bg::TS<bg::i64>>,
+           bg::wp<bg::TS<bg::i64>>, bg::wp<bg::TS<bg::i64>> last) { return last; });
+    const auto actual = bg::testing::test_graph(
+        fifth, std::span<const TestGraphLiteralInput>{{{1}, {2}, {3}, {4}, {5}}});
     const auto configured_actual = bg::testing::test_graph(
-        fifth, bg::GraphRunOptions{}, inputs[0], inputs[1], inputs[2], inputs[3], inputs[4]);
+        fifth, bg::GraphRunOptions{}, TestGraphLiteralInput{1}, TestGraphLiteralInput{2}, TestGraphLiteralInput{3},
+        TestGraphLiteralInput{4}, TestGraphLiteralInput{5});
 
     CHECK(actual.equals<bg::i64>({5}));
     CHECK(configured_actual.equals<bg::i64>({5}));
