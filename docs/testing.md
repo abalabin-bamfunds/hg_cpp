@@ -426,6 +426,9 @@ graph compilation or evaluation.
   retained handles after graph destruction, inner graph rejection, and optional runtime storage
 - queue-node start and stop callbacks, scalar conversion and optional values, callback captures,
   destination selection, independent runtime graphs, retained writer copies, and absence of initial evaluation
+- outer-cycle queue draining in standard and eliding modes, publication once per changed target, validity
+  transitions, no-op advancement, whole-message pending, cross-target ordering, collection-item independence,
+  cleanup before application, and fail-stop cleanup after application errors
 - queue message reading for sentinel skipping, target order, padding, block rollover, committed reservation order,
   standard retry, batch rejection, no-op advancement, typed discard, replay failure, and concurrent watermark growth
 - queue tick application in standard and eliding modes, independent collection items, complete-message pending,

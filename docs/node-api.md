@@ -125,8 +125,9 @@ eliding modes. Batch mode is rejected until batch message handling is available.
 Queue nodes have no evaluation function or initial evaluation. They run in the
 outer graph and use the ordinary node lifecycle and wiring deduplication rules.
 [Queue handles](time-series-types.md#queue-messages) define writing and copying.
+[Queue input](evaluation.md#queue-input) defines application and publication in
+each outer cycle.
 [Graph shutdown](evaluation.md#stop) defines admission closure and cleanup.
-Graph-cycle application of queued messages is not connected yet.
 
 ## Runtime-signature declaration
 

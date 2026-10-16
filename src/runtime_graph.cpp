@@ -16,6 +16,7 @@
 #include <bg/time_series/ref/ref_input_storage.hpp>
 #include <bg/time_series/ref/ref_input_sample.hpp>
 #include <bg/time_series/ref/ref_provider.hpp>
+#include <bg/time_series/output_state.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/tick_serializer.hpp>
 #include <bg/util/scope_exit.hpp>
@@ -935,6 +936,34 @@ void RuntimeGraph::discard_queue() noexcept {
     }
 }
 
+void RuntimeGraph::drain_queue(EvaluationContext &context) {
+    if (!compiled_graph_->has_queue() || queue_state() == nullptr) {
+        return;
+    }
+
+    auto &reader = queue_state()->reader;
+    while (const auto target = reader.next_target()) {
+        const auto &compiled_node = compiled_graph_->node(*target);
+        const auto runtime_node = node(compiled_node);
+        context.node_index_ = *target;
+        const auto allocation_context = details::ScalarAllocationContext{
+            allocator_, context.global_state().bundle_allocation_owner(), this, *target};
+        auto output = OutputState{compiled_node.output_runtime_type()};
+        output.bind(runtime_node.output_last_updated(), runtime_node.output_value(), context);
+        const auto restore_context = util::scope_exit{[&]() noexcept {
+            context.reset_scratch();
+            context.node_index_ = 0;
+        }};
+        if (!reader.apply(output, compiled_node.queue_mode())) {
+            return;
+        }
+
+        if (runtime_node.output_last_updated().time() == evaluation_time_) {
+            schedule(*target);
+        }
+    }
+}
+
 Queue RuntimeGraph::make_queue(std::size_t target) {
     if (!compiled_graph_->has_queue()) {
         throw std::logic_error{"the compiled graph does not declare queue use"};
@@ -1052,6 +1081,18 @@ std::optional<OutputChange> RuntimeGraph::output_change(const CompiledNode &node
 
     return now_valid ? (output_was_valid ? OutputChange::update : OutputChange::revalidation)
                      : OutputChange::invalidation;
+}
+
+std::optional<OutputChange> RuntimeGraph::current_cycle_output_change(const CompiledNode &node) const noexcept {
+    const auto &last_updated = Node{node, storage_}.output_last_updated();
+    if (last_updated.time() != evaluation_time_) {
+        return std::nullopt;
+    }
+
+    if (last_updated.valid()) {
+        return last_updated.became_valid() ? OutputChange::revalidation : OutputChange::update;
+    }
+    return OutputChange::invalidation;
 }
 
 void RuntimeGraph::publish_output(const CompiledNode &node, OutputChange change) {
@@ -1482,6 +1523,10 @@ bool RuntimeGraphEvaluator::evaluate_graph(RuntimeGraph &graph, EvaluationContex
         graph.stopped_ = true;
         graph.stop_nodes(graph.compiled_graph_->node_count(), context);
     }};
+    if (!resuming && outer_graph_evaluation) {
+        graph.drain_queue(context);
+    }
+
     for (auto scheduled_node = resuming ? scheduled.begin(graph.paused_node_index_) : scheduled.begin();
          scheduled_node != std::default_sentinel;) {
         const auto [node_index, evaluation_requested, validity_check_requested] = *scheduled_node;
@@ -1512,8 +1557,10 @@ bool RuntimeGraphEvaluator::evaluate_graph(RuntimeGraph &graph, EvaluationContex
             continue;
         }
 
-        const auto output_was_valid = has_output && Node{node, graph.storage_}.output_last_updated().valid();
-        if (const auto evaluate = node.evaluation_function(); evaluate != nullptr) {
+        const auto evaluate = node.evaluation_function();
+        const auto output_was_valid = evaluate != nullptr && has_output &&
+                                      Node{node, graph.storage_}.output_last_updated().valid();
+        if (evaluate != nullptr) {
             context.node_index_ = node_index;
             const auto allocation_context = details::ScalarAllocationContext{
                 graph.allocator_, context.global_state().scalar_allocation_pool(), &graph, node_index};
@@ -1538,7 +1585,9 @@ bool RuntimeGraphEvaluator::evaluate_graph(RuntimeGraph &graph, EvaluationContex
         }
 
         if (has_output) {
-            if (const auto change = graph.output_change(node, output_was_valid)) {
+            const auto change = evaluate == nullptr ? graph.current_cycle_output_change(node)
+                                                    : graph.output_change(node, output_was_valid);
+            if (change) {
                 graph.publish_output(node, *change);
             }
         }

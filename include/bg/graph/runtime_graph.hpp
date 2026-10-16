@@ -166,11 +166,13 @@ class RuntimeGraph {
     QueueState *&queue_state() noexcept;
     void close_queue() noexcept;
     void discard_queue() noexcept;
+    void drain_queue(EvaluationContext &context);
     RuntimeGraph &outer_graph() noexcept;
     CycleCallbacks &require_cycle_callbacks();
     void run_cycle_callbacks(EvaluationContext &context) noexcept;
     void clear_cycle_callbacks(EvaluationContext &context) noexcept;
     std::optional<OutputChange> output_change(const CompiledNode &node, bool output_was_valid) const noexcept;
+    std::optional<OutputChange> current_cycle_output_change(const CompiledNode &node) const noexcept;
     void publish_output(const CompiledNode &node, OutputChange change);
     void notify_subscribers(std::span<const Subscriber> subscribers, OutputChange change);
     void notify_node_subscriber(std::size_t node_index, bool active, bool required, bool active_optional,

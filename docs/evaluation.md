@@ -26,6 +26,23 @@ have the same evaluation time.
 
 The engine applies an external stop request between outer cycles.
 
+## Queue input
+
+At the beginning of each outer cycle, after deferred cleanup, the runtime graph
+applies committed queue messages in order before evaluating nodes. It stops at
+the committed watermark or the first message that conflicts with the target's
+standard-mode limit. The conflicting message remains pending, and later
+messages wait behind it. See [queue messages](time-series-types.md#queue-messages)
+for application rules.
+
+Each changed queue target is scheduled for ordinary output publication once in
+the cycle. Subscribers observe its completed output after draining. No-op
+messages do not schedule the target. Resuming a paused graph does not drain
+again in the same cycle.
+
+Queue messages do not request evaluation times. A pending message is retried
+when the next outer cycle runs.
+
 ## Evaluation time
 
 `EvaluationTime` is `std::chrono::sys_time<std::chrono::microseconds>`.
