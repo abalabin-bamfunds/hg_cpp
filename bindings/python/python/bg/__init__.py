@@ -11,9 +11,12 @@ from weakref import WeakKeyDictionary
 
 from . import operators
 from ._bg import (
+    EvaluationClock,
     Dict,
     EvaluationProfiler,
     EvaluationProfilerRecorder as _EvaluationProfilerRecorder,
+    Scheduler,
+    ScheduleHandle,
     _TimeSeriesGuarantee,
     WiringPoint as _WiringPoint,
     _Type,
@@ -433,13 +436,23 @@ class NodeDefinition:
         native_definition: Any,
         fixed_parameters: tuple[str, ...],
         callback: Any,
+        injected_parameters: tuple[str, ...],
     ):
         self.function = function
         self._callback = callback
         self._native_definition = native_definition
         self._fixed_parameters = fixed_parameters
         update_wrapper(self, function)
-        self.signature = inspect.signature(function)
+        signature = inspect.signature(function)
+        if injected_parameters:
+            signature = signature.replace(
+                parameters=tuple(
+                    parameter for parameter in signature.parameters.values()
+                    if parameter.name not in injected_parameters
+                )
+            )
+        self.signature = signature
+        self.__signature__ = signature
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         fixed, positional, named = _bind_definition_arguments(
@@ -551,17 +564,43 @@ def _bind_definition_arguments(
 
 
 def _definition_signature(
-    function: Any, *, scalar_or_time_series_inputs: bool = False, promote_plain_graph_inputs: bool = False
-) -> tuple[list[tuple[str, Any, str]], tuple[str, ...], Any]:
+    function: Any,
+    *,
+    scalar_or_time_series_inputs: bool = False,
+    promote_plain_graph_inputs: bool = False,
+    allow_injectables: bool = False,
+) -> tuple[list[tuple[str, Any, str]], tuple[str, ...], Any, list[str], tuple[str, ...]]:
     signature = inspect.signature(function)
     annotations = get_type_hints(function, include_extras=True)
     fixed = []
     variadic = []
+    callback_fixed_parameters = []
+    callback_variadic_parameters = []
+    injected_parameters = []
 
     for parameter in signature.parameters.values():
         annotation = annotations.get(parameter.name, parameter.annotation)
         if annotation is inspect.Parameter.empty:
             raise TypeError(f"Python definition parameter {parameter.name!r} requires a type annotation")
+
+        if annotation is EvaluationClock:
+            injected_parameter = "evaluation_clock"
+        elif annotation is Scheduler:
+            injected_parameter = "scheduler"
+        else:
+            injected_parameter = None
+        if injected_parameter is not None:
+            if not allow_injectables:
+                raise TypeError("EvaluationClock and Scheduler can only annotate Python node parameters")
+            if parameter.kind not in (
+                parameter.POSITIONAL_ONLY,
+                parameter.POSITIONAL_OR_KEYWORD,
+                parameter.KEYWORD_ONLY,
+            ):
+                raise TypeError("EvaluationClock and Scheduler cannot annotate variadic node parameters")
+            callback_fixed_parameters.append(injected_parameter)
+            injected_parameters.append(parameter.name)
+            continue
 
         if parameter.kind in (
             parameter.POSITIONAL_ONLY,
@@ -582,14 +621,17 @@ def _definition_signature(
             elif promote_plain_graph_inputs and not scalar_only and not native_type.is_time_series:
                 native_type = _node_input_type(native_type)
             fixed.append((parameter.name, native_type, ""))
+            callback_fixed_parameters.append("input")
         elif parameter.kind is parameter.VAR_POSITIONAL:
             if scalar_or_time_series_inputs:
                 raise TypeError("@node does not currently support variadic parameters")
             variadic.append((parameter.name, _native_type(annotation), "positional"))
+            callback_variadic_parameters.append("input")
         elif parameter.kind is parameter.VAR_KEYWORD:
             if scalar_or_time_series_inputs:
                 raise TypeError("@node does not currently support variadic parameters")
             variadic.append((parameter.name, _native_type(annotation), "named"))
+            callback_variadic_parameters.append("input")
         else:
             raise TypeError(f"unsupported Python parameter kind for {parameter.name!r}")
 
@@ -599,7 +641,13 @@ def _definition_signature(
         parameter.kind is parameter.KEYWORD_ONLY for parameter in signature.parameters.values()
     )
     callback = _positional_callback(function) if needs_positional_callback else function
-    return parameters, fixed_names, callback
+    return (
+        parameters,
+        fixed_names,
+        callback,
+        callback_fixed_parameters + callback_variadic_parameters,
+        tuple(injected_parameters),
+    )
 
 
 def _positional_callback(function: Any) -> Any:
@@ -624,8 +672,8 @@ def _define_node(
 ) -> NodeDefinition:
     signature = inspect.signature(function)
     annotations = get_type_hints(function, include_extras=True)
-    parameters, fixed_parameters, callback = _definition_signature(
-        function, scalar_or_time_series_inputs=scalar_or_time_series_inputs
+    parameters, fixed_parameters, callback, callback_parameters, injected_parameters = _definition_signature(
+        function, scalar_or_time_series_inputs=scalar_or_time_series_inputs, allow_injectables=True
     )
 
     output = annotations.get("return", signature.return_annotation)
@@ -643,9 +691,10 @@ def _define_node(
             output = output_type
 
     native_definition = _make_node(
-        function.__name__, parameters, output, callback, schedule_on_start, scalar_or_time_series_inputs
+        function.__name__, parameters, output, callback, schedule_on_start, scalar_or_time_series_inputs,
+        callback_parameters
     )
-    return NodeDefinition(function, native_definition, fixed_parameters, callback)
+    return NodeDefinition(function, native_definition, fixed_parameters, callback, injected_parameters)
 
 
 def _define_service(function: Any, kind: str) -> _ServiceDefinition:
@@ -764,10 +813,15 @@ def node(function: Any) -> NodeDefinition:
 def source_node(function: Any) -> NodeDefinition:
     """Declare a no-input node that runs in the first evaluation cycle."""
     signature = inspect.signature(function)
-    if signature.parameters:
-        raise TypeError("Python source nodes cannot have parameters")
-
     annotations = get_type_hints(function, include_extras=True)
+    graph_parameters = []
+    for parameter in signature.parameters.values():
+        annotation = annotations.get(parameter.name, parameter.annotation)
+        if annotation is EvaluationClock or annotation is Scheduler:
+            continue
+        graph_parameters.append(parameter)
+    if graph_parameters:
+        raise TypeError("Python source nodes cannot have graph inputs")
     output = annotations.get("return", signature.return_annotation)
     output_type = _native_type(output) if output is not inspect.Signature.empty else None
     if output_type is None or not output_type.is_time_series:
@@ -780,7 +834,9 @@ def graph(function: Any) -> GraphDefinition:
     """Declare a graph template composed from Python nodes and graph functions."""
     signature = inspect.signature(function)
     annotations = get_type_hints(function, include_extras=True)
-    parameters, fixed_parameters, callback = _definition_signature(function, promote_plain_graph_inputs=True)
+    parameters, fixed_parameters, callback, _, _ = _definition_signature(
+        function, promote_plain_graph_inputs=True
+    )
 
     output = annotations.get("return", signature.return_annotation)
     lift_scalar_output = False
@@ -840,7 +896,10 @@ operators.switch_ = switch_
 
 
 __all__ = [
+    "EvaluationClock",
     "EvaluationProfiler",
+    "Scheduler",
+    "ScheduleHandle",
     "const_",
     "deduplicated",
     "final",

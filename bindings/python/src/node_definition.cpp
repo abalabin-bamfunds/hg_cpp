@@ -222,9 +222,23 @@ nanobind::object PythonNodeDefinition::CompiledData::argument(Invocation invocat
 }
 
 nanobind::object PythonNodeDefinition::CompiledData::call(Invocation invocation, CallbackScope &callback) const {
-    auto arguments = CallArguments{parameters.size()};
-    for (auto index = std::size_t{}; index < parameters.size(); ++index) {
-        arguments.set(index, argument(invocation, index, callback));
+    auto arguments = CallArguments{callback_parameters.size()};
+    auto input_index = std::size_t{};
+    auto argument_index = std::size_t{};
+    for (const auto parameter : callback_parameters) {
+        switch (parameter) {
+        case CallbackParameter::input:
+            arguments.set(argument_index++, argument(invocation, input_index++, callback));
+            break;
+        case CallbackParameter::evaluation_clock:
+            arguments.set(argument_index++, nanobind::cast(PythonEvaluationClock{
+                NodeCallbackAccess{invocation.context(), lifetime, callback.generation()}}));
+            break;
+        case CallbackParameter::scheduler:
+            arguments.set(argument_index++, nanobind::cast(PythonScheduler{
+                NodeCallbackAccess{invocation.context(), lifetime, callback.generation()}}));
+            break;
+        }
     }
 
     auto *result = PyObject_Vectorcall(function.get().ptr(), arguments.data(), arguments.size(), nullptr);
@@ -259,9 +273,11 @@ void PythonNodeDefinition::CompiledData::invoke(Invocation invocation) const {
 
 PythonNodeDefinition::PythonNodeDefinition(std::shared_ptr<const SignatureDefinition> signature,
                                            nanobind::handle function, bool schedule_on_start,
-                                           bool pass_time_series_values)
+                                           bool pass_time_series_values,
+                                           std::vector<CallbackParameter> callback_parameters)
     : signature_{std::move(signature)}, weak_function_{function}, identity_{std::make_shared<const char>()},
-      schedule_on_start_{schedule_on_start}, pass_time_series_values_{pass_time_series_values} {
+      schedule_on_start_{schedule_on_start}, pass_time_series_values_{pass_time_series_values},
+      callback_parameters_{std::move(callback_parameters)} {
     if (signature_ == nullptr) {
         throw std::invalid_argument{"a Python node requires a signature"};
     }
@@ -272,13 +288,19 @@ PythonNodeDefinition::PythonNodeDefinition(std::shared_ptr<const SignatureDefini
 
 PythonNodeDefinition::PythonNodeDefinition(std::shared_ptr<const SignatureDefinition> signature, Object function,
                                            std::shared_ptr<const char> identity, bool schedule_on_start,
-                                           bool pass_time_series_values) noexcept
+                                           bool pass_time_series_values,
+                                           std::vector<CallbackParameter> callback_parameters) noexcept
     : signature_{std::move(signature)}, retained_function_{std::move(function)}, identity_{std::move(identity)},
-      schedule_on_start_{schedule_on_start}, pass_time_series_values_{pass_time_series_values} {}
+      schedule_on_start_{schedule_on_start}, pass_time_series_values_{pass_time_series_values},
+      callback_parameters_{std::move(callback_parameters)} {}
 
 PythonNodeDefinition PythonNodeDefinition::retain_function() const {
     return PythonNodeDefinition{signature_, weak_function_.lock(), identity_, schedule_on_start_,
-                                pass_time_series_values_};
+                                pass_time_series_values_, callback_parameters_};
+}
+
+bool PythonNodeDefinition::uses_timed_scheduling() const noexcept {
+    return std::ranges::find(callback_parameters_, CallbackParameter::scheduler) != callback_parameters_.end();
 }
 
 bool PythonNodeDefinition::schedule_on_start(const ResolvedSignature &signature) const noexcept {
@@ -321,6 +343,7 @@ PythonNodeDefinition::CompiledData PythonNodeDefinition::compile(const ResolvedS
     auto result = CompiledData{};
     result.function = retained_function_;
     result.parameters = std::move(parameter_conversions);
+    result.callback_parameters = callback_parameters_;
     result.has_output = signature.output != nullptr;
     return result;
 }

@@ -177,6 +177,32 @@ struct RuntimeNodeDefinition {
     bg::Signature signature_;
 };
 
+struct InstanceTimedSchedulingDefinition {
+    explicit InstanceTimedSchedulingDefinition(bool uses_timed_scheduling)
+        : uses_timed_scheduling_{uses_timed_scheduling},
+          signature_{bg::util::symbol{"instance_timed_scheduling"}, {}} {}
+
+    const bg::Signature &signature() const { return signature_; }
+    bool uses_timed_scheduling() const noexcept { return uses_timed_scheduling_; }
+    static void evaluate(bg::NodeInvocation<>) {}
+
+  private:
+    bool uses_timed_scheduling_;
+    bg::Signature signature_;
+};
+
+struct StaticTimedSchedulingDefinition {
+    static constexpr bool uses_timed_scheduling = true;
+
+    StaticTimedSchedulingDefinition() : signature_{bg::util::symbol{"static_timed_scheduling"}, {}} {}
+
+    const bg::Signature &signature() const { return signature_; }
+    static void evaluate(bg::NodeInvocation<>) {}
+
+  private:
+    bg::Signature signature_;
+};
+
 TEST_CASE("a runtime-signature node exposes resolved parameters, compiled data, and state",
           "[node][runtime-signature][definition:runtime][feature:node-api][declaration:runtime]") {
     const auto runtime_node = bg::node(RuntimeNodeDefinition{});
@@ -186,6 +212,20 @@ TEST_CASE("a runtime-signature node exposes resolved parameters, compiled data, 
     };
 
     CHECK(bg::testing::test_graph(graph, {1, 2, 3}).equals({3, 6, 9}));
+}
+
+TEST_CASE("runtime-signature node timed scheduling can depend on the definition instance",
+          "[node][runtime-signature][feature:scheduling]") {
+    const auto clock_only = bg::RuntimeSignatureNodeTemplate<InstanceTimedSchedulingDefinition>{
+        InstanceTimedSchedulingDefinition{false}};
+    const auto scheduled = bg::RuntimeSignatureNodeTemplate<InstanceTimedSchedulingDefinition>{
+        InstanceTimedSchedulingDefinition{true}};
+    const auto static_scheduled =
+        bg::RuntimeSignatureNodeTemplate<StaticTimedSchedulingDefinition>{StaticTimedSchedulingDefinition{}};
+
+    CHECK_FALSE(clock_only.uses_timed_scheduling());
+    CHECK(scheduled.uses_timed_scheduling());
+    CHECK(static_scheduled.uses_timed_scheduling());
 }
 
 TEST_CASE("a callable selects its output runtime type from wiring arguments",
