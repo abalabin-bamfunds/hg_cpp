@@ -8,5 +8,6 @@ void register_logical_operators();
 void register_stream_operators();
 void register_running_operators();
 void register_collection_operators();
+void register_collection_reduction_operators();
 
 } // namespace bg::operators::details

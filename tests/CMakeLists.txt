@@ -190,6 +190,7 @@ add_executable(
     bg_library_tests
     library/add_test.cpp
     library/collection_test.cpp
+    library/collection_reduction_test.cpp
     library/operators_test.cpp
     library/overload_registration_test.cpp
     library/running_test.cpp

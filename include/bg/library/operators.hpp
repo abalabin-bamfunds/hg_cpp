@@ -77,6 +77,12 @@ extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> i64> len_;
 extern BG_LIBRARY_EXPORT
     operator_<auto(COLLECTION, Union<"key", EQUALITY_SCALAR, TS<EQUALITY_SCALAR>>) -> bool> contains_;
 
+// Collection reductions.
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> OUT> sum_;
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> OUT> min_;
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> OUT> max_;
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> OUT> mean;
+
 // Nested graph operators.
 using ::bg::map;
 using ::bg::mesh;

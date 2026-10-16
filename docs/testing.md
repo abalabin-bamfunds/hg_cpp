@@ -470,6 +470,10 @@ For each reusable node and graph, test:
 - running sums, extrema, and means, including skipped cycles, repeated values,
   invalidation, reset-only and simultaneous reset/value ticks, reset invalidation,
   numeric limits, NaN comparisons, guarantees, references, and independent nested graph state
+- collection sums, extrema, and means, including `opt` overload selection,
+  partial validity, empty results, item removal and replacement, integer limits,
+  reference rebinding, free collections, output guarantees, and equal optional
+  sums across invalid-to-valid transitions
 - scalar equality through built-in, compound, collection, and extension views;
   ordering and Boolean operations
 - guarantee propagation, equal-result tick selection, reference bindings,

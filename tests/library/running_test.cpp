@@ -203,7 +203,7 @@ TEST_CASE("running extrema restart after input invalidation",
 }
 
 TEST_CASE("running extrema keep an initial NaN until input invalidation",
-          "[feature:operator][series:value][scalar:double][guarantee:deduplicated]"
+          "[feature:operator][series:value][scalar:floating-point][guarantee:deduplicated]"
           "[transition:invalidation][transition:revalidation]") {
     const auto mins = [](wp<TS<double>> value) { return operators::mins(value); };
     const auto maxs = [](wp<TS<double>> value) { return operators::maxs(value); };
@@ -239,7 +239,7 @@ TEST_CASE("running extrema keep an initial NaN until input invalidation",
 }
 
 TEST_CASE("running extrema ignore later NaNs without invalidating output",
-          "[feature:operator][series:value][scalar:double][guarantee:deduplicated]") {
+          "[feature:operator][series:value][scalar:floating-point][guarantee:deduplicated]") {
     const auto mins = [](wp<TS<double>> value) { return operators::mins(value); };
     const auto maxs = [](wp<TS<double>> value) { return operators::maxs(value); };
     const auto mins_valid = [](wp<TS<double>> value) { return operators::valid(operators::mins(value)); };
@@ -256,7 +256,7 @@ TEST_CASE("running extrema ignore later NaNs without invalidating output",
 }
 
 TEST_CASE("running extrema clear NaN history on reset-only and simultaneous ticks",
-          "[feature:operator][series:value][scalar:double][scalar:bool][validity:optional]"
+          "[feature:operator][series:value][scalar:floating-point][scalar:boolean][validity:optional]"
           "[transition:update][transition:invalidation]") {
     const auto mins = [](wp<TS<double>> value, wp<TS<bool>> reset) {
         return operators::mins(value, "reset"_n = reset);
@@ -340,7 +340,7 @@ TEST_CASE("running extrema retain final and const guarantees",
 }
 
 TEST_CASE("running floating aggregates calculate sums, extrema, and means",
-          "[feature:operator][series:value][scalar:double][guarantee:ordinary]"
+          "[feature:operator][series:value][scalar:floating-point][guarantee:ordinary]"
           "[transition:first-tick][transition:update]") {
     const auto sums = [](wp<TS<double>> value) { return operators::sums(value); };
     const auto mins = [](wp<TS<double>> value) { return operators::mins(value); };
@@ -357,7 +357,7 @@ TEST_CASE("running floating aggregates calculate sums, extrema, and means",
 }
 
 TEST_CASE("running means use double output and restart after invalidation",
-          "[feature:operator][series:value][scalar:i64][scalar:double][validity:optional]"
+          "[feature:operator][series:value][scalar:i64][scalar:floating-point][validity:optional]"
           "[transition:update][transition:invalidation][transition:revalidation]") {
     const auto integer_mean = [](wp<TS<i64>> value) {
         const auto result = operators::means(value);
@@ -374,7 +374,7 @@ TEST_CASE("running means use double output and restart after invalidation",
 }
 
 TEST_CASE("running sums and means retain the input guarantee",
-          "[feature:operator][series:value][scalar:i64][scalar:double]"
+          "[feature:operator][series:value][scalar:i64][scalar:floating-point]"
           "[guarantee:ordinary][guarantee:deduplicated][guarantee:final][guarantee:const]") {
     const auto check_deduplicated = [](wp<TS<i64, TimeSeriesGuarantee::deduplicated>> value) {
         const auto sum = operators::sums(value);
@@ -409,7 +409,7 @@ TEST_CASE("running sums and means retain the input guarantee",
 }
 
 TEST_CASE("reset operators weaken final and const guarantees",
-          "[feature:operator][series:value][scalar:i64][scalar:bool]"
+          "[feature:operator][series:value][scalar:i64][scalar:boolean]"
           "[guarantee:final][guarantee:const][transition:update]") {
     const auto check_final = [](wp<TS<i64, TimeSeriesGuarantee::final>> value,
                                 wp<TS<bool, TimeSeriesGuarantee::final>> reset) {
@@ -445,7 +445,7 @@ TEST_CASE("reset operators weaken final and const guarantees",
 }
 
 TEST_CASE("running means avoid integer overflow and use ordinary floating arithmetic",
-          "[feature:operator][series:value][scalar:i64][scalar:double][transition:update]") {
+          "[feature:operator][series:value][scalar:i64][scalar:floating-point][transition:update]") {
     const auto integer_mean = [](wp<TS<i64>> value) { return operators::means(value); };
     const auto floating_mean = [](wp<TS<double>> value) { return operators::means(value); };
     const auto maximum = std::numeric_limits<i64>::max();

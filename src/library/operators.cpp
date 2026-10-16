@@ -45,6 +45,10 @@ decltype(means) means{"means", {"value"}};
 
 decltype(len_) len_{"len_", {"value"}};
 decltype(contains_) contains_{"contains_", {"collection", "key"}};
+decltype(sum_) sum_{"sum_", {"values"}};
+decltype(min_) min_{"min_", {"values"}};
+decltype(max_) max_{"max_", {"values"}};
+decltype(mean) mean{"mean", {"values"}};
 
 namespace {
 
@@ -56,6 +60,7 @@ const auto registered = [] {
     details::register_stream_operators();
     details::register_running_operators();
     details::register_collection_operators();
+    details::register_collection_reduction_operators();
     return true;
 }();
 

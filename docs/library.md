@@ -221,6 +221,49 @@ total = bg.operators.sums(value)
 restarted_total = bg.operators.sums(value, reset=reset)
 ```
 
+## Collection reductions
+
+`sum_(values)`, `min_(values)`, `max_(values)`, and `mean(values)` calculate
+over the current items of a numeric fixed-size TSL, TSD, or TSS. They accept `i64` and
+`double` items. Sums and extrema retain the item scalar type. `mean` returns
+`double` and accumulates in `double`; integer sums use the wrapping policy
+described above.
+
+An ordinary call requires a valid collection and valid immediate items.
+`opt(values)` selects an optional overload that skips invalid items:
+
+```cpp
+auto complete_total = operators::sum_(values);
+auto available_total = operators::sum_(opt(values));
+```
+
+```python
+complete_total = bg.operators.sum_(values)
+available_total = bg.operators.sum_(bg.opt(values))
+```
+
+With no contributing items, sum publishes zero and the other reductions
+invalidate their output. An invalid optional collection has no contributing
+items. These nodes do not schedule on start; an input change schedules the
+calculation. Skipped cycles preserve the previous result.
+
+Each evaluation reads the complete current collection. Item updates,
+invalidations, additions, removals, and reference changes therefore contribute
+to the next result without retaining previous item values. Ordinary outputs
+publish on each permitted evaluation, including equal results. Extrema use
+ordinary floating-point comparisons in enumeration order. TSD and TSS
+enumeration order is unspecified.
+
+The `all_valid` sum propagates the observed collection guarantee. Optional sum
+always has an ordinary output and publishes on each evaluation, including
+equal results. For example, binding an invalid set and then observing `{0}`
+publishes `0` twice.
+
+The other reductions retain ordinary, deduplicated, and final guarantees, and
+limit const to final because an empty collection has no result. This applies
+to both overload versions. Each evaluation takes O(N) work and O(1) auxiliary
+storage.
+
 ## Collection queries
 
 `len_(value)` returns an `i64` length. It counts current TSS membership or the

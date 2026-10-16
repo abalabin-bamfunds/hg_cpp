@@ -36,6 +36,10 @@ mins = _native.mins
 maxs = _native.maxs
 means = _native.means
 len_ = _native.len_
+sum_ = _native.sum_
+min_ = _native.min_
+max_ = _native.max_
+mean = _native.mean
 contains_ = _native.contains_
 const_ = _native.const_
 default_ = _native.default_
@@ -67,9 +71,12 @@ __all__ = [
     "len_",
     "lt",
     "map",
+    "max_",
     "mesh",
     "maxs",
+    "mean",
     "means",
+    "min_",
     "mins",
     "mod",
     "mul",
@@ -82,6 +89,7 @@ __all__ = [
     "round",
     "sample",
     "sub",
+    "sum_",
     "switch_",
     "sums",
     "valid",

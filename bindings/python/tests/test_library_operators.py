@@ -340,6 +340,90 @@ def test_collection_query_operators_accept_public_keyword_names():
     assert bg.test_graph(dictionary_contains_scalar, [{1: 10, 2: 20}, {}, {3: 30}]) == [True, False, False]
 
 
+def test_collection_reductions_accept_values_and_tss_removals():
+    @bg.graph
+    def sum_values(values: bg.TSS[int]) -> bg.TS[int]:
+        return bg.operators.sum_(values=values)
+
+    @bg.graph
+    def min_values(values: bg.TSS[int]) -> bg.TS[int]:
+        return bg.operators.min_(values=values)
+
+    @bg.graph
+    def max_values(values: bg.TSS[int]) -> bg.TS[int]:
+        return bg.operators.max_(values=values)
+
+    @bg.graph
+    def mean_values(values: bg.TSS[int]) -> bg.TS[float]:
+        return bg.operators.mean(values=values)
+
+    values = [
+        {1, 2},
+        bg.SetDelta(added={3}, removed={1}),
+        bg.SetDelta(removed={2, 3}),
+    ]
+    assert bg.test_graph(sum_values, values) == [3, 5, 0]
+    assert bg.test_graph(min_values, values) == [1, 2, None]
+    assert bg.test_graph(max_values, values) == [2, 3, None]
+    assert bg.test_graph(mean_values, values) == [1.5, 2.5, None]
+
+
+def test_optional_collection_sum_publishes_equal_values_for_deduplicated_collection():
+    @bg.graph
+    def total(values: bg.TSS[int, bg.deduplicated]) -> bg.TS[int]:
+        return bg.operators.sum_(values=bg.opt(values))
+
+    assert bg.test_graph(total, [set(), {0}]) == [0, 0]
+
+
+def test_collection_reductions_gate_invalid_tsd_items_and_optional_reductions_skip_them():
+    @bg.graph
+    def sum_values(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        return bg.operators.sum_(values=values)
+
+    @bg.graph
+    def optional_sum(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        return bg.operators.sum_(values=bg.opt(values))
+
+    @bg.graph
+    def min_values(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        return bg.operators.min_(values=values)
+
+    @bg.graph
+    def optional_min(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        return bg.operators.min_(values=bg.opt(values))
+
+    @bg.graph
+    def max_values(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        return bg.operators.max_(values=values)
+
+    @bg.graph
+    def optional_max(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        return bg.operators.max_(values=bg.opt(values))
+
+    @bg.graph
+    def mean_values(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[float]:
+        return bg.operators.mean(values=values)
+
+    @bg.graph
+    def optional_mean(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[float]:
+        return bg.operators.mean(values=bg.opt(values))
+
+    values = [
+        {1: 10, 2: 20},
+        {1: bg.INVALID, 2: 30},
+        {1: bg.REMOVE, 2: bg.INVALID},
+    ]
+    assert bg.test_graph(sum_values, values) == [30, None, None]
+    assert bg.test_graph(optional_sum, values) == [30, 30, 0]
+    assert bg.test_graph(min_values, values) == [10, None, None]
+    assert bg.test_graph(optional_min, values) == [10, 30, None]
+    assert bg.test_graph(max_values, values) == [20, None, None]
+    assert bg.test_graph(optional_max, values) == [20, 30, None]
+    assert bg.test_graph(mean_values, values) == [15.0, None, None]
+    assert bg.test_graph(optional_mean, values) == [15.0, 30.0, None]
+
+
 def test_numeric_operator_syntax_and_explicit_convert_target():
     @bg.graph
     def divide(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[float]:
