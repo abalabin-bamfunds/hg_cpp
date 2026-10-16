@@ -228,7 +228,11 @@ For a supplied scalar value, a parameter that requires presence is preferred
 over an otherwise equivalent parameter that accepts absence. This applies to
 scalar-only declarations and scalar-or-time-series parameters resolved as
 scalars. An absent scalar rejects a parameter that requires presence before
-overload ranking. Omitting a fixed argument remains an argument-count error.
+overload ranking. A fixed scalar parameter marked `accepts_absent_scalar` can be
+omitted. Wiring supplies a typed absence, including when a later named argument
+skips that parameter. Omission requires one concrete scalar type in the
+parameter declaration; unresolved generic parameters and parameters with
+multiple scalar alternatives must be supplied explicitly.
 
 One overload must be at least as preferred at every parameter and strictly
 preferred at one. Conflicting preferences remain ambiguous, including conflicts

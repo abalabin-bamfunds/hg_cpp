@@ -4,8 +4,10 @@
 #include <bg/graph/details/variadic_wiring_record.hpp>
 #include <bg/graph/details/wiring_record_overlay.hpp>
 #include <bg/graph/wiring_error.hpp>
+#include <bg/scalar/runtime_type.hpp>
 #include <bg/time_series/tsb/details/wiring.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
+#include <bg/type/type_variable.hpp>
 
 #include <algorithm>
 
@@ -41,6 +43,44 @@ struct VariadicCaptureArguments {
     std::size_t parameter_index;
     std::vector<const WiringArgument *> arguments;
 };
+
+const ScalarType *optional_scalar_type(const Type &type) {
+    if (type.is_scalar() && type.is_resolved()) {
+        return static_cast<const ScalarType *>(&type);
+    }
+
+    const auto find_unique_scalar = [](auto alternatives) {
+        auto *result = static_cast<const ScalarType *>(nullptr);
+        for (const auto *alternative : alternatives) {
+            if (alternative->is_time_series()) {
+                continue;
+            }
+            const auto *scalar = type_cast<ScalarType>(alternative);
+            if (scalar == nullptr || !scalar->is_resolved() || result != nullptr) {
+                return static_cast<const ScalarType *>(nullptr);
+            }
+            result = scalar;
+        }
+        return result;
+    };
+
+    if (const auto *variable = dynamic_cast<const TypeVariableType<Type> *>(&type)) {
+        return find_unique_scalar(variable->alternatives());
+    }
+    if (const auto *variable = dynamic_cast<const TypeVariableType<ScalarType> *>(&type)) {
+        return find_unique_scalar(variable->alternatives());
+    }
+    return nullptr;
+}
+
+WiringArgument absent_scalar_argument(const Parameter &parameter) {
+    const auto *type = optional_scalar_type(*parameter.type);
+    if (type == nullptr) {
+        throw WiringError{"an omitted optional scalar argument requires a unique concrete scalar type"};
+    }
+
+    return WiringArgument::absent_scalar(*type, resolve_scalar_runtime_type(*type, {}));
+}
 
 std::vector<WiringArgument> prepare_arguments(const Signature &signature, std::span<const WiringArgument> arguments,
                                               bool import_contexts, const Signature *parameter_aliases) {
@@ -120,7 +160,11 @@ std::vector<WiringArgument> prepare_arguments(const Signature &signature, std::s
             argument = &*context_argument;
         }
         if (argument == nullptr) {
-            throw WiringError{"a call is missing a fixed argument"};
+            if (!parameter.accepts_absent_scalar) {
+                throw WiringError{"a call is missing a fixed argument"};
+            }
+            prepared.push_back(absent_scalar_argument(parameter));
+            continue;
         }
 
         auto value = WiringArgument::borrow(*argument);

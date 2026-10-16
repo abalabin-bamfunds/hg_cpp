@@ -4,6 +4,7 @@
 #include <bg/graph/wiring_error.hpp>
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
+#include <bg/scalar/declaration.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/time_series_variable.hpp>
@@ -602,6 +603,20 @@ struct optional_scalar_definition {
     void evaluate() const {}
 };
 
+class optional_scalar_type_node_template final : public bg::NodeTemplate {
+  public:
+    explicit optional_scalar_type_node_template(const bg::Type &type)
+        : signature_{bg::util::symbol{"optional_scalar_type"},
+                     {{bg::util::symbol{"value"}, &type, bg::active, bg::required, true}},
+                     bg::TS<float>::type()} {}
+
+    const bg::Signature &default_signature() const final { return signature_; }
+    bg::EvaluationFunction evaluation_function(const bg::ResolvedSignature &) const noexcept final { return nullptr; }
+
+  private:
+    bg::Signature signature_;
+};
+
 } // namespace
 
 TEST_CASE("optional scalar parameters can record absence", "[graph_wiring][feature:wiring]") {
@@ -611,12 +626,27 @@ TEST_CASE("optional scalar parameters can record absence", "[graph_wiring][featu
     {
         bg::WiringContext context{wiring};
         optional_scalar(std::optional<int>{});
+        optional_scalar();
     }
 
     (void)wiring.complete_pending_wiring();
-    REQUIRE(wiring.nodes().size() == 1);
-    REQUIRE(wiring.nodes()[0].scalar_values().size() == 1);
-    CHECK_FALSE(wiring.nodes()[0].scalar_values()[0].has_value());
+    REQUIRE(wiring.nodes().size() == 2);
+    for (const auto &node : wiring.nodes()) {
+        REQUIRE(node.scalar_values().size() == 1);
+        CHECK_FALSE(node.scalar_values()[0].has_value());
+    }
+}
+
+TEST_CASE("omitted optional scalar parameters require one concrete scalar type",
+          "[graph_wiring][feature:wiring][scalar:generic]") {
+    using AMBIGUOUS = bg::ScalarVariable<"AMBIGUOUS", float, double>;
+
+    const auto generic = optional_scalar_type_node_template{bg::SCALAR::type()};
+    const auto ambiguous = optional_scalar_type_node_template{AMBIGUOUS::type()};
+    bg::testing::test_wiring([&] {
+        CHECK_THROWS_WITH(generic(), Catch::Matchers::ContainsSubstring("unique concrete scalar type"));
+        CHECK_THROWS_WITH(ambiguous(), Catch::Matchers::ContainsSubstring("unique concrete scalar type"));
+    });
 }
 
 namespace {
@@ -642,6 +672,7 @@ TEST_CASE("required scalar parameters reject absence", "[graph_wiring][feature:w
         CHECK(error.subject().text() == "value");
         CHECK(std::string{error.what()}.contains("required scalar parameter has no value"));
     }
+    CHECK_THROWS_AS(required_scalar(), bg::WiringError);
     CHECK_NOTHROW(wiring.finalize());
     CHECK(wiring.nodes().empty());
 }

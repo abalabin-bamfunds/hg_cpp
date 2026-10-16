@@ -531,16 +531,33 @@ TEST_CASE("scalar-only overloads prefer presence and keep absent calls distinct 
     const auto required_first_absent = [&] {
         return required_first(std::optional<bg::i64>{}).as<bg::TS<bg::i64>>();
     };
+    const auto required_first_omitted = [&] { return required_first().as<bg::TS<bg::i64>>(); };
     const auto optional_first_graph = [&] { return optional_first(bg::i64{1}).as<bg::TS<bg::i64>>(); };
     const auto optional_first_absent = [&] {
         return optional_first(std::optional<bg::i64>{}).as<bg::TS<bg::i64>>();
     };
+    const auto optional_first_omitted = [&] { return optional_first().as<bg::TS<bg::i64>>(); };
 
     CHECK(bg::testing::test_graph(required_first_graph).equals({11}));
     CHECK(bg::testing::test_graph(required_first_absent).equals({20}));
+    CHECK(bg::testing::test_graph(required_first_omitted).equals({20}));
+    CHECK(bg::testing::test_graph(required_first_omitted).equals({20}));
     CHECK(bg::testing::test_graph(required_first_graph).equals({11}));
     CHECK(bg::testing::test_graph(optional_first_graph).equals({11}));
     CHECK(bg::testing::test_graph(optional_first_absent).equals({20}));
+    CHECK(bg::testing::test_graph(optional_first_omitted).equals({20}));
+}
+
+TEST_CASE("a graph can omit an optional scalar parameter",
+          "[feature:wiring][scalar:integer][definition:function]") {
+    const auto optional_graph = bg::graph("name"_n = "optional_scalar",
+                                          [](std::optional<bg::i64> value) {
+                                              return bg::operators::const_(value.value_or(7))
+                                                  .as<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
+                                          });
+    const auto omitted_graph = [&] { return optional_graph().as<bg::TS<bg::i64>>(); };
+
+    CHECK(bg::testing::test_graph(omitted_graph).equals({7}));
 }
 
 TEST_CASE("promoted node overloads prefer presence for scalar arguments",
@@ -553,10 +570,34 @@ TEST_CASE("promoted node overloads prefer presence for scalar arguments",
 
     const auto required_graph = [&] { return operation(bg::i64{1}).as<bg::TS<bg::i64>>(); };
     const auto absent_graph = [&] { return operation(std::optional<bg::i64>{}).as<bg::TS<bg::i64>>(); };
+    const auto omitted_graph = [&] { return operation().as<bg::TS<bg::i64>>(); };
 
     CHECK(bg::testing::test_graph(required_graph).equals({11}));
     CHECK(bg::testing::test_graph(absent_graph).equals({20}));
+    CHECK(bg::testing::test_graph(omitted_graph).equals({20}));
+    CHECK(bg::testing::test_graph(omitted_graph).equals({20}));
     CHECK(bg::testing::test_graph(required_graph).equals({11}));
+}
+
+TEST_CASE("named omission fills an earlier optional scalar and caches the overload",
+          "[feature:operator][feature:wiring][scalar:integer][definition:function]") {
+    auto selected = 0;
+    auto operation = bg::operator_<auto(bg::i64, bg::i64) -> bg::TS<bg::i64>>{
+        "named_omission", {"first", "second"}};
+    operation.overload(bg::graph("name"_n = "optional_first", [&](std::optional<bg::i64> first,
+                                                                       bg::i64 second) {
+        selected = 1;
+        return bg::operators::const_(first.value_or(0) + second)
+            .as<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
+    }));
+
+    const auto named_graph = [&] {
+        return operation("second"_n = bg::i64{5}).as<bg::TS<bg::i64>>();
+    };
+    CHECK(bg::testing::test_graph(named_graph).equals({5}));
+    CHECK(selected == 1);
+    CHECK(bg::testing::test_graph(named_graph).equals({5}));
+    CHECK(selected == 1);
 }
 
 TEST_CASE("type specificity precedes scalar presence preference",
@@ -644,6 +685,7 @@ TEST_CASE("a required scalar graph rejects absence before running its body",
         CHECK(error.code() == bg::TypeResolutionErrorCode::mismatch);
         CHECK(std::string{error.what()}.contains("required scalar parameter has no value"));
     }
+    CHECK_THROWS_AS(bg::testing::test_wiring([&] { (void)graph(); }), bg::WiringError);
     CHECK(body_calls == 0);
 }
 
@@ -666,6 +708,7 @@ TEST_CASE("an operator rejects absent required scalars before overload wiring",
         CHECK(error.diagnostic()->candidates.front().message.find("required scalar parameter has no value") !=
               std::string::npos);
     }
+    CHECK_THROWS_AS(bg::testing::test_wiring([&] { (void)operation(); }), bg::WiringError);
     CHECK(overload_calls == 0);
 }
 
