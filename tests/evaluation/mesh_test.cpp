@@ -456,8 +456,8 @@ TEST_CASE("a named outer mesh is selected through an inner mesh and switch",
     REQUIRE(actual.size() == 2);
     REQUIRE(actual[0]);
     REQUIRE(actual[1]);
-    CHECK(actual[0]->value() == 22);
-    CHECK(actual[1]->value() == 33);
+    CHECK(actual[0]->view().value() == 22);
+    CHECK(actual[1]->view().value() == 33);
 }
 
 TEST_CASE("a mesh dependency follows switch output replacement",
@@ -512,10 +512,10 @@ TEST_CASE("a mesh dependency follows switch output replacement",
     REQUIRE(actual[1]);
     REQUIRE(actual[2]);
     REQUIRE(actual[3]);
-    CHECK(actual[0]->value() == 111);
-    CHECK(actual[1]->value() == 222);
-    CHECK(actual[2]->value() == 233);
-    CHECK(actual[3]->value() == 144);
+    CHECK(actual[0]->view().value() == 111);
+    CHECK(actual[1]->view().value() == 222);
+    CHECK(actual[2]->view().value() == 233);
+    CHECK(actual[3]->view().value() == 144);
 }
 
 TEST_CASE("runtime map instances keep independent outer mesh dependencies",
@@ -623,7 +623,7 @@ TEST_CASE("a mesh dependency branch reports timed work through its owner",
     CHECK_FALSE(actual[0]);
     CHECK_FALSE(actual[1]);
     REQUIRE(actual[2]);
-    CHECK(actual[2]->value() == 11);
+    CHECK(actual[2]->view().value() == 11);
 }
 
 TEST_CASE("mesh supports source and sink graphs",

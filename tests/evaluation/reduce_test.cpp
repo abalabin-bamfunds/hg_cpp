@@ -218,9 +218,9 @@ TEST_CASE("compact reduce handles addition that reuses an expired physical item 
     const auto actual = testing::test_graph(tested, std::array{0, 1, 2});
 
     REQUIRE(actual.size() == 3);
-    CHECK((actual[0] && scalar_cast<i64>(*actual[0]).value() == 5));
-    CHECK((actual[1] && scalar_cast<i64>(*actual[1]).value() == 10));
-    CHECK((actual[2] && scalar_cast<i64>(*actual[2]).value() == 14));
+    CHECK((actual[0] && scalar_cast<i64>(actual[0]->view()).value() == 5));
+    CHECK((actual[1] && scalar_cast<i64>(actual[1]->view()).value() == 10));
+    CHECK((actual[2] && scalar_cast<i64>(actual[2]->view()).value() == 14));
 }
 
 TEST_CASE("compact reduce updates a sparse path in a larger TSD",
@@ -425,10 +425,10 @@ TEST_CASE("reduce updates its tree when TSD membership changes and uses the defa
     CHECK(actual[1].has_value());
     CHECK(actual[2].has_value());
     CHECK(actual[3].has_value());
-    CHECK(scalar_cast<i64>(*actual[0]).value() == 5);
-    CHECK(scalar_cast<i64>(*actual[1]).value() == 2);
-    CHECK(scalar_cast<i64>(*actual[2]).value() == 9);
-    CHECK(scalar_cast<i64>(*actual[3]).value() == 20);
+    CHECK(scalar_cast<i64>(actual[0]->view()).value() == 5);
+    CHECK(scalar_cast<i64>(actual[1]->view()).value() == 2);
+    CHECK(scalar_cast<i64>(actual[2]->view()).value() == 9);
+    CHECK(scalar_cast<i64>(actual[3]->view()).value() == 20);
 }
 
 TEST_CASE("reduce omits invalid items while valid items remain",
@@ -526,10 +526,10 @@ TEST_CASE("reduce follows stable TSD references as initially invalid items becom
                                             std::array{true, false, false, false});
 
     REQUIRE(actual.size() == 4);
-    CHECK((actual[0] && scalar_cast<i64>(*actual[0]).value() == 5));
-    CHECK((actual[1] && scalar_cast<i64>(*actual[1]).value() == 15));
-    CHECK((actual[2] && scalar_cast<i64>(*actual[2]).value() == 7));
-    CHECK((actual[3] && scalar_cast<i64>(*actual[3]).value() == 19));
+    CHECK((actual[0] && scalar_cast<i64>(actual[0]->view()).value() == 5));
+    CHECK((actual[1] && scalar_cast<i64>(actual[1]->view()).value() == 15));
+    CHECK((actual[2] && scalar_cast<i64>(actual[2]->view()).value() == 7));
+    CHECK((actual[3] && scalar_cast<i64>(actual[3]->view()).value() == 19));
 }
 
 } // namespace

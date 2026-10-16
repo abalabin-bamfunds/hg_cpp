@@ -20,9 +20,11 @@
 #include <bg/graph_run_options.hpp>
 #include <bg/testing/test_graph_input.hpp>
 #include <bg/testing/test_graph_literal_input.hpp>
+#include <bg/testing/time_series_tick_comparison.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/time_series/details/scalar_literal.hpp>
+#include <bg/time_series/tick_serializer.hpp>
 #include <bg/time_series/tsd/tsd_runtime_type.hpp>
 #include <bg/time_series/tss/tss_runtime_type.hpp>
 
@@ -69,36 +71,49 @@ struct Source {
 };
 
 struct CapturedValues {
-    struct Entry;
-
-    struct Delta {
-        enum class Operation { update, add, remove };
-
-        const TimeSeriesRuntimeType *runtime_type{};
-        struct Invalid {};
-        std::variant<Invalid, ScalarValue<>, std::vector<Entry>> payload;
-    };
-
-    struct Entry {
-        Delta::Operation operation{Delta::Operation::update};
-        std::optional<ScalarValue<>> key;
-        std::size_t index{};
-        Delta value;
-    };
-
+  private:
     EvaluationTime start_time;
-    std::vector<std::optional<Delta>> records;
+    util::buffer bytes;
+    std::unique_ptr<util::buffer_reader> tail;
+    const TimeSeriesType *type_{};
 
-    void set(EvaluationTime time, Delta delta) {
+  public:
+    explicit CapturedValues(EvaluationTime start_time)
+        : start_time{start_time}, bytes{util::buffer::chain(128)}, tail{std::make_unique<util::buffer_reader>(bytes)} {}
+
+    CapturedValues(CapturedValues &&other) noexcept
+        : start_time{other.start_time}, bytes{std::move(other.bytes)}, tail{std::move(other.tail)},
+          type_{std::exchange(other.type_, nullptr)}, records{std::move(other.records)} {}
+
+    CapturedValues(const CapturedValues &) = delete;
+    CapturedValues &operator=(const CapturedValues &) = delete;
+    CapturedValues &operator=(CapturedValues &&) = delete;
+
+    ~CapturedValues() {
+        if (type_ != nullptr) {
+            TimeSeriesTickReader reader{std::move(bytes), *type_};
+        }
+    }
+
+    void set_type(const TimeSeriesType &type) noexcept { type_ = &type; }
+    const TimeSeriesType *type() const noexcept { return type_; }
+
+    util::buffer begin_tick() const { return tail->current_block(); }
+
+    void set(EvaluationTime time, util::buffer bytes) {
+        for (;;) {
+            const auto readable = tail->readable();
+            if (readable.empty()) {
+                break;
+            }
+            tail->consume(readable.size());
+        }
+
         const auto index = position(time);
-        records[index].emplace(std::move(delta));
+        records[index].emplace(std::move(bytes));
     }
 
-    void reset(EvaluationTime time, const TimeSeriesRuntimeType &runtime_type) {
-        auto delta = Delta{};
-        delta.runtime_type = &runtime_type;
-        set(time, std::move(delta));
-    }
+    std::vector<std::optional<util::buffer>> records;
 
   private:
     std::size_t position(EvaluationTime time) {
@@ -112,119 +127,6 @@ struct CapturedValues {
 };
 
 inline const auto source = node<Source>();
-
-using CapturedDelta = CapturedValues::Delta;
-
-struct CaptureTimeSeries {
-    CaptureTimeSeries(CapturedDelta &delta, allocator &memory) : delta{&delta}, memory{&memory} {}
-
-    template <typename SCALAR> void operator()(const In<TS<SCALAR>> *input) const {
-        delta->runtime_type = &input->runtime_type();
-        if (!input->valid()) {
-            return;
-        }
-        delta->payload.template emplace<ScalarValue<>>(input->value_view(), *memory);
-    }
-
-    template <typename ITEM, auto SIZE> void operator()(const In<TSL<ITEM, SIZE>> *input) const {
-        delta->runtime_type = &input->runtime_type();
-        if (!input->valid()) {
-            return;
-        }
-        auto &changes = delta->payload.template emplace<std::vector<CapturedValues::Entry>>();
-        input->for_each_updated([&](item_id_t id) {
-            auto change = child(CapturedDelta::Operation::update, input->runtime_type());
-            change.index = id;
-            auto item = input->operator[](id);
-            item.visit(CaptureTimeSeries{change.value, *memory}, ddv::noop);
-            changes.push_back(std::move(change));
-        });
-    }
-
-    template <typename KEY> void operator()(const In<TSS<KEY>> *input) const {
-        delta->runtime_type = &input->runtime_type();
-        if (!input->valid()) {
-            return;
-        }
-        auto &changes = delta->payload.template emplace<std::vector<CapturedValues::Entry>>();
-        input->for_each_added([&](const auto &key) {
-            auto change = child(CapturedDelta::Operation::add, input->runtime_type());
-            change.key.emplace(key, *memory);
-            changes.push_back(std::move(change));
-        });
-        input->for_each_removed([&](const auto &key) {
-            auto change = child(CapturedDelta::Operation::remove, input->runtime_type());
-            change.key.emplace(key, *memory);
-            changes.push_back(std::move(change));
-        });
-    }
-
-    template <typename KEY, typename ITEM> void operator()(const In<TSD<KEY, ITEM>> *input) const {
-        delta->runtime_type = &input->runtime_type();
-        if (!input->valid()) {
-            return;
-        }
-        delta->payload.template emplace<std::vector<CapturedValues::Entry>>();
-        input->for_each_added([&](const auto &key) { capture_item(*input, key, CapturedDelta::Operation::add); });
-        input->for_each_modified(
-            [&](const auto &key) { capture_item(*input, key, CapturedDelta::Operation::update); });
-        input->for_each_removed([&](const auto &key) {
-            auto change = child(CapturedDelta::Operation::remove, input->runtime_type());
-            change.key.emplace(key, *memory);
-            std::get<std::vector<CapturedValues::Entry>>(delta->payload).push_back(std::move(change));
-        });
-    }
-
-    template <template <template <typename, auto...> typename> typename SCHEMA>
-    void operator()(const In<TSB<SCHEMA>> *input) const {
-        delta->runtime_type = &input->runtime_type();
-        if (!input->valid()) {
-            return;
-        }
-        auto &changes = delta->payload.template emplace<std::vector<CapturedValues::Entry>>();
-        input->for_each_updated([&](item_id_t id) {
-            auto change = child(CapturedDelta::Operation::update, input->runtime_type());
-            change.index = id;
-            const auto item = input->runtime_type().item(input->input_data().data(), id);
-            const auto modified = input->modified() && item.last_updated.valid() &&
-                                  item.last_updated.time() == input->last_updated();
-            const auto child_input = In<TS_T>{TimeSeriesInputData{item.runtime_type, item.last_updated, item.value,
-                                                                  modified}};
-            child_input.visit(CaptureTimeSeries{change.value, *memory}, ddv::noop);
-            changes.push_back(std::move(change));
-        });
-    }
-
-    template <typename TARGET> void operator()(const In<REF<TARGET>> *) const {
-        throw std::invalid_argument{"test_graph cannot capture nested time-series references"};
-    }
-
-    void operator()(const In<TS_T> *input) const {
-        static_cast<void>(input);
-        throw std::invalid_argument{"test_graph cannot capture an external time-series type"};
-    }
-
-  private:
-    static CapturedValues::Entry child(CapturedDelta::Operation operation,
-                                       const TimeSeriesRuntimeType &runtime_type) {
-        auto result = CapturedValues::Entry{};
-        result.operation = operation;
-        result.value.runtime_type = &runtime_type;
-        return result;
-    }
-
-    template <typename KEY, typename Input>
-    void capture_item(const Input &input, const KEY &key, CapturedDelta::Operation operation) const {
-        auto change = child(operation, input.runtime_type());
-        change.key.emplace(key, *memory);
-        auto item = input[key];
-        item.visit(CaptureTimeSeries{change.value, *memory}, ddv::noop);
-        std::get<std::vector<CapturedValues::Entry>>(delta->payload).push_back(std::move(change));
-    }
-
-    CapturedDelta *delta;
-    allocator *memory;
-};
 
 class RuntimeSink {
   public:
@@ -243,24 +145,32 @@ class RuntimeSink {
     CompiledData compile(const ResolvedSignature &, allocator &) const noexcept { return {captured_}; }
 
     static void evaluate(Invocation invocation) {
-        auto delta = CapturedDelta{};
-        auto memory = allocator{};
-        invocation.input<In<TS_T>>(0).visit(CaptureTimeSeries{delta, memory}, ddv::noop);
-        invocation.compiled_data().captured->set(invocation.context().evaluation_time(), std::move(delta));
+        capture(invocation);
     }
 
-    static void on_invalidation(Invocation invocation) {
-        const auto input = invocation.input<In<TS_T>>(0);
-        invocation.compiled_data().captured->reset(invocation.context().evaluation_time(), input.runtime_type());
-    }
+    static void on_invalidation(Invocation invocation) { capture(invocation); }
 
   private:
+    static void capture(Invocation invocation) {
+        const auto input = invocation.input<In<TS_T>>(0);
+        auto bytes = invocation.compiled_data().captured->begin_tick();
+        auto writer = TimeSeriesTickWriter{bytes};
+        if (writer.write(input, invocation.context().evaluation_time())) {
+            invocation.compiled_data().captured->set(invocation.context().evaluation_time(), std::move(bytes));
+        }
+    }
+
     CapturedValues *captured_;
     Signature signature_;
 };
 
 inline void capture_output(WiringPoint output, CapturedValues &captured) {
     const auto &input_type = output.type().dereferenced_type();
+    if (input_type.contains_reference()) {
+        throw std::invalid_argument{"test_graph output capture does not support nested time-series references"};
+    }
+
+    captured.set_type(input_type);
     auto definition = RuntimeSink{input_type, captured};
     auto &wiring = WiringContext::current().wiring();
     const auto &sink_template = wiring.own_node_template(
@@ -472,19 +382,30 @@ inline auto finish_test_graph(GraphWiring &wiring, CapturedValues &captured, Eva
 
 class LiteralMatcher {
   public:
-    static bool matches_tick(const std::optional<CapturedDelta> &actual,
+    // Compare one nested child tick and advance past its complete payload on success.
+    static bool matches_child(util::buffer_reader &reader, const TimeSeriesType &type,
+                              const literal::TimeSeriesLiteral &expected) {
+        try {
+            const auto header = bg::details::TickHeader::read(reader);
+            return header.operation == bg::details::TickOperation::tick &&
+                   matches_payload(reader, type, header.valid, expected);
+        } catch (const std::invalid_argument &) {
+            return false;
+        } catch (const std::out_of_range &) {
+            return false;
+        }
+    }
+
+    static bool matches_tick(const std::optional<util::buffer> &actual, const TimeSeriesType *type,
                              const literal::TimeSeriesLiteral &expected) {
         if (marker(expected) == Marker::skip) {
             return !actual;
         }
-        if (!actual) {
+        if (!actual || type == nullptr) {
             return false;
         }
-        try {
-            return matches_delta(*actual, expected);
-        } catch (const std::invalid_argument &) {
-            return false;
-        }
+        auto reader = util::buffer_reader{*actual};
+        return matches_child(reader, *type, expected);
     }
 
   private:
@@ -505,174 +426,275 @@ class LiteralMatcher {
         return result;
     }
 
-    template <typename Predicate>
-    static bool consume_entry(const std::vector<CapturedValues::Entry> &entries, std::vector<bool> &consumed,
-                              Predicate &&predicate) {
-        for (auto index = std::size_t{}; index < entries.size(); ++index) {
-            if (!consumed[index] && predicate(entries[index])) {
-                consumed[index] = true;
-                return true;
-            }
-        }
-        return false;
-    }
-
-    static bool all_consumed(const std::vector<bool> &consumed) {
-        return std::ranges::all_of(consumed, [](bool used) { return used; });
-    }
-
-    static bool matches_delta(const CapturedDelta &actual, const literal::TimeSeriesLiteral &expected) {
+    static bool matches_payload(util::buffer_reader &reader, const TimeSeriesType &type, bool valid,
+                                const literal::TimeSeriesLiteral &expected) {
         const auto expected_marker = marker(expected);
         if (expected_marker == Marker::invalid) {
-            return std::holds_alternative<CapturedDelta::Invalid>(actual.payload);
+            return !valid;
         }
-        if (expected_marker != Marker::value || actual.runtime_type == nullptr) {
+        if (expected_marker != Marker::value || !valid) {
             return false;
         }
 
-        if (const auto *scalar = std::get_if<ScalarValue<>>(&actual.payload)) {
-            const auto &runtime_type = static_cast<const bg::TimeSeriesValueRuntimeType &>(*actual.runtime_type);
-            auto memory = allocator{};
-            const auto expected_value =
-                ScalarValue<>::from_literal(runtime_type.scalar_runtime_type(), expected, memory);
-            return scalar->equals(expected_value);
-        }
-        if (std::holds_alternative<CapturedDelta::Invalid>(actual.payload)) {
-            return false;
-        }
-
-        return expected.visit(
-            [&](const literal::TimeSeriesLiteralItem &) { return false; },
-            [&](std::span<const literal::TimeSeriesLiteral> values) {
-                return actual.runtime_type->type().visit(
-                    [&](const TimeSeriesListType *) { return matches_list(actual, values); },
-                    [&](const TimeSeriesSetType *) { return matches_set(actual, values); },
-                    [&](const TimeSeriesDictionaryType *) { return matches_dictionary(actual, values); },
-                    [&](const TimeSeriesBundleType *type) { return matches_bundle(actual, values, *type); },
-                    [&] { return false; });
+        return type.visit(
+            [&](const TimeSeriesValueType *value_type) { return matches_scalar(reader, *value_type, expected); },
+            [&](const TimeSeriesListType *list_type) { return matches_list(reader, *list_type, expected); },
+            [&](const TimeSeriesSetType *set_type) { return matches_set(reader, *set_type, expected); },
+            [&](const TimeSeriesDictionaryType *dictionary_type) {
+                return matches_dictionary(reader, *dictionary_type, expected);
+            },
+            [&](const TimeSeriesBundleType *bundle_type) {
+                return matches_bundle(reader, *bundle_type, expected);
+            },
+            [&] {
+                const auto *operations =
+                    TimeSeriesDispatch<TickLiteralComparison>::instance().find(type);
+                return operations != nullptr && operations->compare && operations->compare(reader, type, expected);
             }).value();
     }
 
-    static bool matches_list(const CapturedDelta &actual, std::span<const literal::TimeSeriesLiteral> expected) {
-        const auto &entries = std::get<std::vector<CapturedValues::Entry>>(actual.payload);
-        auto consumed = std::vector<bool>(entries.size());
-        for (const auto &value : expected) {
-            const auto pair = bg::details::scalar_literal::pair(
-                value, "a TSL update entry requires an index and a value");
-            if (marker(*pair.second) == Marker::skip) {
-                continue;
-            }
-            const auto index = bg::details::scalar_literal::list_index(*pair.first);
-            if (!consume_entry(entries, consumed, [&](const auto &entry) {
-                    return entry.operation == CapturedDelta::Operation::update && !entry.key &&
-                           entry.index == index && matches_delta(entry.value, *pair.second);
-                })) {
-                return false;
-            }
-        }
-        return all_consumed(consumed);
+    static bool matches_scalar(util::buffer_reader &reader, const TimeSeriesValueType &type,
+                               const literal::TimeSeriesLiteral &expected) {
+        auto matched = false;
+        const auto read = bg::details::TimeSeriesTickScalarRead::visit(
+            reader, type.value_type(), [&](Scalar<> actual) {
+                auto memory = allocator{};
+                const auto wanted = ScalarValue<>::from_literal(actual.runtime_type(), expected, memory);
+                matched = actual.equals(wanted);
+            });
+        return read && matched;
     }
 
-    static bool matches_set(const CapturedDelta &actual, std::span<const literal::TimeSeriesLiteral> expected) {
-        const auto &entries = std::get<std::vector<CapturedValues::Entry>>(actual.payload);
-        const auto &runtime_type = static_cast<const bg::details::TimeSeriesSetRuntimeType &>(*actual.runtime_type);
-        auto memory = allocator{};
-        auto consumed = std::vector<bool>(entries.size());
-        for (const auto &value : expected) {
-            const auto value_marker = marker(value);
-            if (value_marker == Marker::skip) {
-                continue;
-            }
-            auto key = std::optional<ScalarValue<>>{};
-            auto operation = CapturedDelta::Operation::add;
-            if (value_marker == Marker::value) {
-                key.emplace(ScalarValue<>::from_literal(runtime_type.key_runtime_type(), value, memory));
-            } else if (value_marker == Marker::removed) {
-                value.visit(
-                    [&](const literal::TimeSeriesLiteralItem &item) {
-                        item.visit_item(
-                            [&](const literal::RemovedLiteral *removed) {
-                                key.emplace(ScalarValue<>::from_literal(runtime_type.key_runtime_type(),
-                                                                        *removed->value, memory));
-                            },
-                            [](const auto *) {});
-                    },
-                    [](std::span<const literal::TimeSeriesLiteral>) {});
-                operation = CapturedDelta::Operation::remove;
-            } else {
-                return false;
-            }
-
-            if (!key || !consume_entry(entries, consumed, [&](const auto &entry) {
-                    return entry.operation == operation && entry.key && entry.key->equals(*key);
-                })) {
-                return false;
-            }
-        }
-        return all_consumed(consumed);
+    static bool matches_list(util::buffer_reader &reader, const TimeSeriesListType &type,
+                             const literal::TimeSeriesLiteral &expected_literal) {
+        return matches_indexed(reader, type, expected_literal, "a TSL update entry requires an index and a value",
+                               [&](const literal::TimeSeriesLiteral &selector, item_id_t index) {
+                                   return bg::details::scalar_literal::list_index(selector) == index;
+                               });
     }
 
-    static bool matches_dictionary(const CapturedDelta &actual,
-                                   std::span<const literal::TimeSeriesLiteral> expected) {
-        const auto &entries = std::get<std::vector<CapturedValues::Entry>>(actual.payload);
-        const auto &runtime_type =
-            static_cast<const bg::details::TimeSeriesDictionaryRuntimeType &>(*actual.runtime_type);
-        auto memory = allocator{};
-        auto consumed = std::vector<bool>(entries.size());
-        for (const auto &value : expected) {
-            const auto pair = bg::details::scalar_literal::pair(
-                value, "a TSD update entry requires a key and a value");
-            const auto value_marker = marker(*pair.second);
-            if (value_marker == Marker::skip) {
-                continue;
+    static bool matches_set(util::buffer_reader &reader, const TimeSeriesSetType &type,
+                            const literal::TimeSeriesLiteral &expected_literal) {
+        const auto expected = values(expected_literal);
+        if (!expected) {
+            return false;
+        }
+
+        auto matched = std::vector<bool>(expected->size());
+        mark_skips(*expected, matched, [](const literal::TimeSeriesLiteral &entry) {
+            return marker(entry) == Marker::skip;
+        });
+        for (;;) {
+            const auto header = bg::details::TickHeader::read(reader);
+            if (header.operation == bg::details::TickOperation::end) {
+                return all_expected_matched(matched);
             }
-            const auto key = ScalarValue<>::from_literal(runtime_type.key_runtime_type(), *pair.first, memory);
-            if (value_marker == Marker::removed) {
+            if (header.operation != bg::details::TickOperation::add &&
+                header.operation != bg::details::TickOperation::remove) {
                 return false;
             }
-            if (!consume_entry(entries, consumed, [&](const auto &entry) {
-                    if (!entry.key || !entry.key->equals(key)) {
-                        return false;
+
+            auto candidate = std::optional<std::size_t>{};
+            auto candidate_count = std::size_t{};
+            const auto read = bg::details::TimeSeriesTickScalarRead::visit(
+                reader, type.item_type(), [&](Scalar<> actual_key) {
+                    for (auto expected_index = std::size_t{}; expected_index < expected->size(); ++expected_index) {
+                        const auto &value = (*expected)[expected_index];
+                        const auto value_marker = marker(value);
+                        if (value_marker == Marker::skip) {
+                            continue;
+                        }
+
+                        if (value_marker != Marker::value && value_marker != Marker::removed) {
+                            continue;
+                        }
+                        const auto expected_operation = value_marker == Marker::removed
+                                                            ? bg::details::TickOperation::remove
+                                                            : bg::details::TickOperation::add;
+                        if (expected_operation != header.operation) {
+                            continue;
+                        }
+
+                        auto matches_key = false;
+                        if (value_marker == Marker::value) {
+                            matches_key = matches_scalar_literal(actual_key, value);
+                        } else if (const auto *key_literal = removed_value(value)) {
+                            matches_key = matches_scalar_literal(actual_key, *key_literal);
+                        }
+                        if (matches_key) {
+                            candidate = expected_index;
+                            ++candidate_count;
+                        }
                     }
-                    if (value_marker == Marker::remove) {
-                        return entry.operation == CapturedDelta::Operation::remove;
+                });
+            if (!read || candidate_count != 1 || matched[*candidate]) {
+                return false;
+            }
+            matched[*candidate] = true;
+        }
+    }
+
+    static bool matches_dictionary(util::buffer_reader &reader, const TimeSeriesDictionaryType &type,
+                                   const literal::TimeSeriesLiteral &expected_literal) {
+        const auto expected = values(expected_literal);
+        if (!expected) {
+            return false;
+        }
+
+        auto matched = std::vector<bool>(expected->size());
+        mark_skips(*expected, matched, [](const literal::TimeSeriesLiteral &entry) {
+            const auto pair = bg::details::scalar_literal::pair(
+                entry, "a TSD update entry requires a key and a value");
+            return marker(*pair.second) == Marker::skip;
+        });
+        for (;;) {
+            const auto header = bg::details::TickHeader::read(reader);
+            if (header.operation == bg::details::TickOperation::end) {
+                return all_expected_matched(matched);
+            }
+            if (header.operation != bg::details::TickOperation::add &&
+                header.operation != bg::details::TickOperation::tick &&
+                header.operation != bg::details::TickOperation::remove) {
+                return false;
+            }
+
+            auto candidate = std::optional<std::size_t>{};
+            auto candidate_count = std::size_t{};
+            const auto read = bg::details::TimeSeriesTickScalarRead::visit(
+                reader, type.key_type(), [&](Scalar<> actual_key) {
+                    for (auto expected_index = std::size_t{}; expected_index < expected->size(); ++expected_index) {
+                        const auto pair = bg::details::scalar_literal::pair(
+                            (*expected)[expected_index], "a TSD update entry requires a key and a value");
+                        const auto value_marker = marker(*pair.second);
+                        if (value_marker == Marker::skip || value_marker == Marker::removed ||
+                            (header.operation == bg::details::TickOperation::remove) !=
+                                (value_marker == Marker::remove)) {
+                            continue;
+                        }
+
+                        auto memory = allocator{};
+                        const auto wanted = ScalarValue<>::from_literal(actual_key.runtime_type(), *pair.first, memory);
+                        if (actual_key.equals(wanted)) {
+                            candidate = expected_index;
+                            ++candidate_count;
+                        }
                     }
-                    const auto update = entry.operation == CapturedDelta::Operation::add ||
-                                        entry.operation == CapturedDelta::Operation::update;
-                    return update && matches_delta(entry.value, *pair.second);
-                })) {
+                });
+            if (!read || candidate_count != 1 || matched[*candidate]) {
+                return false;
+            }
+
+            matched[*candidate] = true;
+            const auto pair = bg::details::scalar_literal::pair(
+                (*expected)[*candidate], "a TSD update entry requires a key and a value");
+            if (header.operation != bg::details::TickOperation::remove &&
+                !matches_payload(reader, type.value_type(), header.valid, *pair.second)) {
                 return false;
             }
         }
-        return all_consumed(consumed);
     }
 
-    static bool matches_bundle(const CapturedDelta &actual, std::span<const literal::TimeSeriesLiteral> expected,
-                               const TimeSeriesBundleType &bundle_type) {
-        const auto &entries = std::get<std::vector<CapturedValues::Entry>>(actual.payload);
-        auto consumed = std::vector<bool>(entries.size());
-        for (const auto &value : expected) {
+    static bool matches_bundle(util::buffer_reader &reader, const TimeSeriesBundleType &type,
+                               const literal::TimeSeriesLiteral &expected_literal) {
+        return matches_indexed(reader, type, expected_literal,
+                               "a TSB update entry requires a field name and a value",
+                               [&](const literal::TimeSeriesLiteral &selector, item_id_t index) {
+                                   return bg::details::scalar_literal::field_name(selector) ==
+                                          type.item_name(index).text();
+                               });
+    }
+
+    template <typename SelectorMatches>
+    static bool matches_indexed(util::buffer_reader &reader, const FixedItemTimeSeriesType &type,
+                                const literal::TimeSeriesLiteral &expected_literal, const char *pair_error,
+                                SelectorMatches &&selector_matches) {
+        const auto expected = values(expected_literal);
+        if (!expected) {
+            return false;
+        }
+
+        auto matched = std::vector<bool>(expected->size());
+        mark_skips(*expected, matched, [pair_error](const literal::TimeSeriesLiteral &entry) {
             const auto pair = bg::details::scalar_literal::pair(
-                value, "a TSB update entry requires a field name and a value");
-            if (marker(*pair.second) == Marker::skip) {
-                continue;
+                entry, pair_error);
+            return marker(*pair.second) == Marker::skip;
+        });
+        for (;;) {
+            const auto header = bg::details::TickHeader::read(reader);
+            if (header.operation == bg::details::TickOperation::end) {
+                return all_expected_matched(matched);
             }
-            const auto field_name = bg::details::scalar_literal::field_name(*pair.first);
-            auto index = std::optional<std::size_t>{};
-            for (auto field = std::size_t{}; field < bundle_type.item_count(); ++field) {
-                if (bundle_type.item_name(field).text() == field_name) {
-                    index = field;
-                    break;
+            if (header.operation != bg::details::TickOperation::tick) {
+                return false;
+            }
+
+            const auto index = reader.read_raw<item_id_t>();
+            auto candidate = std::optional<std::size_t>{};
+            const literal::TimeSeriesLiteral *child_literal{};
+            for (auto expected_index = std::size_t{}; expected_index < expected->size(); ++expected_index) {
+                const auto pair = bg::details::scalar_literal::pair(
+                    (*expected)[expected_index], pair_error);
+                if (marker(*pair.second) == Marker::skip || !std::invoke(selector_matches, *pair.first, index)) {
+                    continue;
                 }
+                if (candidate) {
+                    return false;
+                }
+                candidate = expected_index;
+                child_literal = pair.second;
             }
-            if (!index || !consume_entry(entries, consumed, [&](const auto &entry) {
-                    return entry.operation == CapturedDelta::Operation::update && !entry.key &&
-                           entry.index == *index && matches_delta(entry.value, *pair.second);
-                })) {
+            if (!candidate || matched[*candidate]) {
+                return false;
+            }
+            matched[*candidate] = true;
+            if (!matches_payload(reader, type.item_type(index), header.valid, *child_literal)) {
                 return false;
             }
         }
-        return all_consumed(consumed);
+    }
+
+    static std::optional<std::span<const literal::TimeSeriesLiteral>> values(
+        const literal::TimeSeriesLiteral &literal_value) {
+        return literal_value.visit(
+            [](const literal::TimeSeriesLiteralItem &)
+                -> std::optional<std::span<const literal::TimeSeriesLiteral>> {
+                return std::nullopt;
+            },
+            [](std::span<const literal::TimeSeriesLiteral> values)
+                -> std::optional<std::span<const literal::TimeSeriesLiteral>> {
+                return values;
+            }).value();
+    }
+
+    static const literal::ScalarLiteral *removed_value(const literal::TimeSeriesLiteral &value) {
+        auto result = static_cast<const literal::ScalarLiteral *>(nullptr);
+        value.visit(
+            [&](const literal::TimeSeriesLiteralItem &item) {
+                item.visit_item(
+                    [&](const literal::RemovedLiteral *removed) { result = removed->value; },
+                    [](const auto *) {});
+            },
+            [](std::span<const literal::TimeSeriesLiteral>) {});
+        return result;
+    }
+
+    template <typename Literal>
+    static bool matches_scalar_literal(Scalar<> actual, const Literal &expected) {
+        auto memory = allocator{};
+        const auto wanted = ScalarValue<>::from_literal(actual.runtime_type(), expected, memory);
+        return actual.equals(wanted);
+    }
+
+    template <typename Predicate>
+    static void mark_skips(std::span<const literal::TimeSeriesLiteral> expected, std::vector<bool> &matched,
+                           Predicate &&is_skip) {
+        for (auto index = std::size_t{}; index < expected.size(); ++index) {
+            matched[index] = std::invoke(is_skip, expected[index]);
+        }
+    }
+
+    static bool all_expected_matched(const std::vector<bool> &matched) {
+        return std::ranges::all_of(matched, [](bool value) { return value; });
     }
 };
 
@@ -736,7 +758,7 @@ template <typename Function, typename Inputs, std::size_t... Index>
                                          std::index_sequence<Index...>) {
     using FunctionInfo = test_function<Function>;
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
-    auto captured = CapturedValues{.start_time = start_time};
+    auto captured = CapturedValues{start_time};
     auto cycle_count = std::size_t{1};
     for (const auto &input : inputs) {
         cycle_count = std::max(cycle_count, input.ticks.size());
@@ -768,7 +790,7 @@ inline auto run_template_literals(const WiringTemplate &tested, const GraphRunOp
     }
 
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
-    auto captured = CapturedValues{.start_time = start_time};
+    auto captured = CapturedValues{start_time};
     auto cycle_count = std::size_t{1};
     for (const auto &input : inputs) {
         cycle_count = std::max(cycle_count, input.ticks.size());
@@ -800,7 +822,7 @@ template <typename Function, typename Inputs, std::size_t... Index>
                                 std::index_sequence<Index...>) {
     using FunctionInfo = test_function<Function>;
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
-    auto captured = CapturedValues{.start_time = start_time};
+    auto captured = CapturedValues{start_time};
     captured.records.resize(std::max({std::size_t{1}, std::ranges::size(std::get<Index>(inputs))...}));
     auto wiring = GraphWiring{};
 
@@ -820,7 +842,7 @@ template <std::ranges::contiguous_range... Inputs>
 [[nodiscard]] auto run_template(const WiringTemplate &tested, const GraphRunOptions &options,
                                 const Inputs &...inputs) {
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
-    auto captured = CapturedValues{.start_time = start_time};
+    auto captured = CapturedValues{start_time};
     captured.records.resize(std::max({std::size_t{1}, std::ranges::size(inputs)...}));
     auto wiring = GraphWiring{};
 
@@ -841,7 +863,7 @@ template <std::ranges::contiguous_range... Inputs>
 [[nodiscard]] inline auto run_runtime_template(const WiringTemplate &tested, const GraphRunOptions &options,
                                                std::span<const TestGraphInput> inputs) {
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
-    auto captured = CapturedValues{.start_time = start_time};
+    auto captured = CapturedValues{start_time};
     auto cycle_count = std::size_t{1};
     auto wiring = GraphWiring{};
 

@@ -134,9 +134,18 @@ descriptors from temporary values in the `test_graph` call so their sources and
 nested initializer lists remain alive throughout evaluation.
 
 Result capture supports `TS`, `TSL`, `TSS`, `TSD`, and `TSB`, including nested
-collections. Results own their captured scalar values after graph destruction.
+collections. A result owns the serialized deltas in a shared buffer chain.
+Built-in comparisons read borrowed payloads. Indexed scalar access returns an
+owning `ScalarValue<T>` copy in `std::optional`; call `.view()` to use the
+scalar interface. The copied value can outlive the result.
+
 Top-level reference outputs use ordinary reference-to-value binding. Capture
-rejects reference-valued collection items and provider-defined time series types.
+rejects reference-valued collection items. Provider-defined time series types
+use their registered `TimeSeriesTickOperations` write and discard handlers.
+Register `TickLiteralComparison` by semantic time-series type to compare their
+literal payloads. The framework handles invalid ticks before calling the
+comparison handler. A handler reads a valid payload from the supplied reader,
+advances past exactly one payload on success, and leaves encoded values intact.
 Compare collection output deltas with the same literal syntax used for inputs:
 
 ```cpp

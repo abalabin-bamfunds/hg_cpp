@@ -1,10 +1,13 @@
 #include <bg/graph.hpp>
 #include <bg/testing/test_graph.hpp>
+#include <bg/type/type_registry.hpp>
+#include <bg/time_series/tick_serializer.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <span>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -17,6 +20,21 @@ template <template <typename, auto...> typename Field> struct OutputScalarBundle
     Field<bg::i64> value;
 };
 
+class ExtensionTimeSeriesType final : public bg::TimeSeriesType {
+  public:
+    bool is_resolved() const noexcept override { return true; }
+    const bg::Type &resolve(const bg::TypeMap &) const override { return *this; }
+    void format_name(std::string &result) const override { result += "test_extension"; }
+};
+
+inline int extension_comparison_count{};
+
+const ExtensionTimeSeriesType &extension_time_series_type() {
+    static const auto type = ExtensionTimeSeriesType{};
+    [[maybe_unused]] static const auto &registered = bg::TypeRegistry::register_static(type);
+    return type;
+}
+
 TEST_CASE("test_graph captures TSL and TSS output deltas",
           "[testing][evaluation][feature:test-graph][series:fixed-tsl][series:tss][transition:update]") {
     const auto list_identity = [](bg::wp<bg::TSL<bg::TS<bg::i64>, 2>> input) { return input; };
@@ -28,11 +46,16 @@ TEST_CASE("test_graph captures TSL and TSS output deltas",
     const auto empty_set = bg::testing::test_graph(set_identity, {{}});
 
     CHECK(list.equals({{{0, 1}, {1, 10}}, {{1, 20}}, literal::INVALID, {{0, 3}}}));
+    CHECK(list.equals({{{0, 1}, {1, 10}}, {{0, literal::SKIP}, {1, 20}},
+                       literal::INVALID, {{0, 3}}}));
+    CHECK_FALSE(list.equals({{{0, literal::SKIP}, {1, 10}}, {{0, literal::SKIP}, {1, 20}},
+                             literal::INVALID, {{0, 3}}}));
     CHECK_FALSE(list.equals({{{0, 1}, {1, 10}}, {{0, 20}}, literal::INVALID, {{0, 3}}}));
     CHECK_FALSE(list.equals({{{0, 1}, {1, 10}}, {{1, 20}}, literal::SKIP, {{0, 3}}}));
     CHECK(set.equals({{2, 1}, {3, literal::REMOVED(1)}, literal::SKIP}));
     CHECK_FALSE(set.equals({{1, 2}, {3, literal::REMOVED(2)}, literal::SKIP}));
     CHECK(empty_set.equals({{}}));
+    CHECK(empty_set.equals({{literal::SKIP}}));
 }
 
 TEST_CASE("test_graph compares runtime-typed scalar bundle literals",
@@ -43,6 +66,56 @@ TEST_CASE("test_graph compares runtime-typed scalar bundle literals",
         bg::testing::input<bg::TS<bg::Bundle<OutputScalarBundle>>>({{{"value", 42}}}));
 
     CHECK(actual.equals({{{"value", 42}}}));
+}
+
+TEST_CASE("test_graph extension literal comparison delegates nested ticks to the framework",
+          "[testing][evaluation][feature:test-graph][series:value]") {
+    using Comparison = bg::testing::details::LiteralMatcher;
+    using Dispatch = bg::TimeSeriesDispatch<bg::testing::TickLiteralComparison>;
+
+    const auto time = bg::MIN_DT + bg::EvaluationTime::duration{1};
+    auto child_state = bg::TimeSeriesState{};
+    child_state.publish(time);
+    const auto child = bg::i64{17};
+    const auto child_input = bg::In<bg::TS<bg::i64>>{bg::TimeSeriesInputData{
+        bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>(), child_state, &child, true}};
+    auto child_buffer = bg::util::buffer::contiguous(32);
+    auto child_writer = bg::TimeSeriesTickWriter{child_buffer};
+    REQUIRE(child_writer.write(child_input, time));
+
+    auto buffer = bg::util::buffer::contiguous(64);
+    auto writer = bg::util::buffer_writer{buffer};
+    auto encoded = bg::ScalarBufferWriteContext{writer};
+    bg::details::TickHeader{bg::details::TickOperation::tick, true}.write(encoded);
+    writer.write_bytes(child_buffer.bytes());
+    writer.commit();
+
+    const auto operations = bg::testing::TickLiteralComparison{
+        .compare = [](bg::util::buffer_reader &reader, const bg::TimeSeriesType &,
+                      const literal::TimeSeriesLiteral &expected) {
+            ++extension_comparison_count;
+            return Comparison::matches_child(reader, bg::TS<bg::i64>::type(), expected);
+        }};
+    REQUIRE(Dispatch::instance().add(extension_time_series_type(), operations));
+
+    const auto actual = std::optional{buffer};
+    const auto expected_value = bg::i64{17};
+    const auto expected = literal::TimeSeriesLiteral(expected_value);
+    const auto mismatch_value = bg::i64{18};
+    const auto mismatch = literal::TimeSeriesLiteral(mismatch_value);
+    extension_comparison_count = 0;
+    CHECK(Comparison::matches_tick(actual, &extension_time_series_type(), expected));
+    CHECK_FALSE(Comparison::matches_tick(actual, &extension_time_series_type(), mismatch));
+    CHECK(Comparison::matches_tick(actual, &extension_time_series_type(), expected));
+    CHECK(extension_comparison_count == 3);
+
+    auto invalid_buffer = bg::util::buffer::contiguous(8);
+    auto invalid_writer = bg::util::buffer_writer{invalid_buffer};
+    auto invalid_encoded = bg::ScalarBufferWriteContext{invalid_writer};
+    bg::details::TickHeader{bg::details::TickOperation::tick, false}.write(invalid_encoded);
+    invalid_writer.commit();
+    CHECK(Comparison::matches_tick(std::optional{invalid_buffer}, &extension_time_series_type(), literal::INVALID));
+    CHECK(extension_comparison_count == 3);
 }
 
 TEST_CASE("test_graph preserves missing and empty collection output ticks",
@@ -58,6 +131,75 @@ TEST_CASE("test_graph preserves missing and empty collection output ticks",
     CHECK(skipped.equals({literal::SKIP, literal::SKIP, literal::SKIP}));
     CHECK(no_ticks.equals({literal::SKIP}));
     CHECK(empty.equals({{}}));
+}
+
+TEST_CASE("test_graph captured tick chain rolls over and remains readable after comparisons and moves",
+          "[testing][evaluation][feature:test-graph][series:tsd][scalar:string][feature:scalar-storage]") {
+    using Tick = literal::TimeSeriesLiteral;
+    struct EntryStorage {
+        std::string key;
+        std::string value;
+        std::array<Tick, 2> literal;
+    };
+    constexpr auto entry_count = std::size_t{14};
+
+    const auto make_entries = [](bool mismatch) {
+        auto pairs = std::vector<EntryStorage>{};
+        pairs.reserve(entry_count);
+        auto entries = std::vector<Tick>{};
+        entries.reserve(entry_count);
+        for (auto index = std::size_t{}; index < entry_count; ++index) {
+            auto key = std::string{"key-"} + std::to_string(index);
+            auto value = std::string{"value-"} + std::to_string(index);
+            if (mismatch && index == 0) {
+                value = "different";
+            }
+            pairs.push_back(EntryStorage{std::move(key), std::move(value), {}});
+            auto &pair = pairs.back();
+            pair.literal = {Tick(pair.key), Tick(pair.value)};
+            entries.emplace_back(std::span<const Tick>{pair.literal});
+        }
+        return std::pair{std::move(pairs), std::move(entries)};
+    };
+
+    auto expected_storage = make_entries(false);
+    const auto expected_tick = Tick(std::span<const Tick>{expected_storage.second});
+    const auto input_ticks = std::array{expected_tick};
+    const auto identity = [](bg::wp<bg::TSD<bg::string, bg::TS<bg::string>>> input) { return input; };
+    auto result = bg::testing::test_graph(
+        identity, bg::testing::TestGraphLiteralInput(std::span<const Tick>{input_ticks}));
+
+    auto mismatch_storage = make_entries(true);
+    const auto mismatch_tick = Tick(std::span<const Tick>{mismatch_storage.second});
+    CHECK(result.equals({expected_tick}));
+    CHECK_FALSE(result.equals({mismatch_tick}));
+    CHECK(result.equals({expected_tick}));
+
+    auto moved_result = std::move(result);
+    CHECK(moved_result.equals({expected_tick}));
+}
+
+TEST_CASE("test_graph captures owning scalar strings across cycles and result lifetimes",
+          "[testing][evaluation][feature:test-graph][series:value][scalar:string][feature:scalar-storage]") {
+    auto ticks = std::vector<std::string>{};
+    for (auto index = std::size_t{}; index < 20; ++index) {
+        ticks.emplace_back(24, static_cast<char>('a' + index));
+    }
+    const auto identity = [](bg::wp<bg::TS<bg::string>> input) { return input; };
+
+    auto retained = [&] {
+        auto result = bg::testing::test_graph(identity, ticks);
+        for (auto index = std::size_t{}; index < ticks.size(); ++index) {
+            const auto value = result[index];
+            CHECK(value.has_value());
+            if (value) {
+                CHECK(value->view().value() == ticks[index]);
+            }
+        }
+        return result[17];
+    }();
+
+    CHECK(retained->view().value() == ticks[17]);
 }
 
 TEST_CASE("test_graph captures nested TSD and TSB output deltas",

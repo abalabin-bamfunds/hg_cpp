@@ -59,6 +59,7 @@ inline int copied_series_count{};
 inline int written_tick_count{};
 inline int replayed_tick_count{};
 inline int discarded_tick_count{};
+inline int test_graph_comparison_count{};
 
 struct ScalarTickState {
     int writes{};
@@ -1336,6 +1337,50 @@ TEST_CASE("tick write dispatch reaches provider-defined time series",
     CHECK(output_last_updated.valid());
     CHECK(output_last_updated.time() == output_time);
     CHECK(output_value.value == 17);
+}
+
+TEST_CASE("test_graph captures provider time series with registered literal comparison",
+          "[testing][evaluation][feature:test-graph][series:generic][declaration:concrete]") {
+    using Series = provider::Series<bg::i64>;
+    provider::register_default_tick_handlers();
+
+    auto comparison = bg::testing::TickLiteralComparison{
+        .compare = [](bg::util::buffer_reader &reader, const bg::TimeSeriesType &,
+                      const literal::TimeSeriesLiteral &expected) {
+            ++provider::test_graph_comparison_count;
+            const auto actual = reader.read_raw<bg::i64>();
+            auto memory = bg::allocator{};
+            const auto wanted = bg::ScalarValue<bg::i64>::from_literal(expected, memory);
+            return wanted.view().value() == actual;
+        }};
+    auto &comparison_dispatch = bg::TimeSeriesDispatch<bg::testing::TickLiteralComparison>::instance();
+    REQUIRE(comparison_dispatch.add(Series::type(), std::move(comparison)));
+
+    const auto publish = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<Series> output) {
+        if (*input == -1) {
+            output.invalidate();
+            return;
+        }
+        output.set(*input);
+    });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return publish(input); };
+    const auto ticks = std::array<bg::i64, 3>{17, -1, 31};
+    provider::written_tick_count = 0;
+    provider::discarded_tick_count = 0;
+    provider::test_graph_comparison_count = 0;
+
+    {
+        const auto result = bg::testing::test_graph(graph, ticks);
+        CHECK(result.equals({17, literal::INVALID, 31}));
+        CHECK(provider::test_graph_comparison_count == 2);
+        CHECK_FALSE(result.equals({17, literal::INVALID, 32}));
+        CHECK(provider::test_graph_comparison_count == 4);
+        CHECK(result.equals({17, literal::INVALID, 31}));
+        CHECK(provider::test_graph_comparison_count == 6);
+    }
+
+    CHECK(provider::written_tick_count == 2);
+    CHECK(provider::discarded_tick_count == 2);
 }
 
 TEST_CASE("a provider i64 tick uses a nine-byte record",

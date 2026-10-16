@@ -974,8 +974,8 @@ TEST_CASE("a dictionary reference sample reports key-set changes",
                                             {{{2, 200}, {3, 300}}, {{2, 200}, {3, 300}}}, {false, true});
 
     REQUIRE(actual.size() == 2);
-    CHECK(actual[0]->value() == 30'300);
-    CHECK(actual[1]->value() == 31'310);
+    CHECK(actual[0]->view().value() == 30'300);
+    CHECK(actual[1]->view().value() == 31'310);
 }
 
 TEST_CASE("a sampled TSD reports item ID exchanges across a reference rebind",
@@ -1024,8 +1024,8 @@ TEST_CASE("a sampled TSD reports item ID exchanges across a reference rebind",
     REQUIRE(actual.size() == 2);
     REQUIRE(actual[0].has_value());
     REQUIRE(actual[1].has_value());
-    CHECK(actual[0]->value() == 1);
-    CHECK(actual[1]->value() == 2);
+    CHECK(actual[0]->view().value() == 1);
+    CHECK(actual[1]->view().value() == 2);
 }
 
 TEST_CASE("a sampled TSD does not report remapping for additions and removals at unchanged IDs",
@@ -1075,8 +1075,8 @@ TEST_CASE("a sampled TSD does not report remapping for additions and removals at
     REQUIRE(actual.size() == 2);
     REQUIRE(actual[0].has_value());
     REQUIRE(actual[1].has_value());
-    CHECK(actual[0]->value() == 1);
-    CHECK(actual[1]->value() == 2);
+    CHECK(actual[0]->view().value() == 1);
+    CHECK(actual[1]->view().value() == 2);
 }
 
 TEST_CASE("a TSD reports no item ID remapping for ordinary additions and removals",

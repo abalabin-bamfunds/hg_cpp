@@ -112,9 +112,9 @@ TEST_CASE("service keeps a client active while any input is valid",
     );
 
     CHECK(actual.equals<float>({2.0F, 3.0F, 10.0F, std::nullopt}));
-    CHECK((actual[0] && actual[0]->value() == 2.0F));
-    CHECK((actual[1] && actual[1]->value() == 3.0F));
-    CHECK((actual[2] && actual[2]->value() == 10.0F));
+    CHECK((actual[0] && actual[0]->view().value() == 2.0F));
+    CHECK((actual[1] && actual[1]->view().value() == 3.0F));
+    CHECK((actual[2] && actual[2]->view().value() == 10.0F));
     CHECK_FALSE(actual[3]);
     CHECK(integer_request_sizes == std::vector<std::size_t>{1, 1, 1, 0});
     CHECK(fraction_request_sizes == std::vector<std::size_t>{1, 1, 1, 0});
