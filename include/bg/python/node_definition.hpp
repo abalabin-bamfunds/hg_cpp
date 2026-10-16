@@ -36,9 +36,10 @@ class BG_PYTHON_API PythonNodeDefinition {
 
     struct CompiledData;
     using compiled_data_type = CompiledData;
+    using state_type = PyObject *;
 
     enum class ParameterMode : std::uint8_t { scalar, input_view, time_series_value };
-    enum class CallbackParameter : std::uint8_t { input, evaluation_clock, scheduler };
+    enum class CallbackParameter : std::uint8_t { input, evaluation_clock, scheduler, state };
 
     struct ParameterConversion {
         ParameterMode mode;
@@ -46,16 +47,17 @@ class BG_PYTHON_API PythonNodeDefinition {
 
     struct CompiledData {
         Object function;
+        Object state_factory;
         std::vector<ParameterConversion> parameters;
         std::vector<CallbackParameter> callback_parameters;
         bool has_output{};
         std::shared_ptr<CallbackLifetime> lifetime{std::make_shared<CallbackLifetime>()};
 
-        nanobind::object argument(NodeInvocation<CompiledData> invocation, std::size_t index,
+        nanobind::object argument(NodeInvocation<CompiledData, state_type> invocation, std::size_t index,
                                   CallbackScope &callback) const;
-        nanobind::object call(NodeInvocation<CompiledData> invocation, CallbackScope &callback) const;
-        void apply_delta(NodeInvocation<CompiledData> invocation, nanobind::handle delta) const;
-        void invoke(NodeInvocation<CompiledData> invocation) const;
+        nanobind::object call(NodeInvocation<CompiledData, state_type> invocation, CallbackScope &callback) const;
+        void apply_delta(NodeInvocation<CompiledData, state_type> invocation, nanobind::handle delta) const;
+        void invoke(NodeInvocation<CompiledData, state_type> invocation) const;
     };
 
     struct Identity {
@@ -67,7 +69,7 @@ class BG_PYTHON_API PythonNodeDefinition {
 
     PythonNodeDefinition(std::shared_ptr<const SignatureDefinition> signature, nanobind::handle function,
                          bool schedule_on_start, bool pass_time_series_values,
-                         std::vector<CallbackParameter> callback_parameters);
+                         std::vector<CallbackParameter> callback_parameters, nanobind::handle state_factory);
 
     const Signature &signature() const noexcept { return signature_->signature; }
     std::span<const Type *const> wiring_parameter_types() const noexcept { return signature_->wiring_parameter_types; }
@@ -76,18 +78,22 @@ class BG_PYTHON_API PythonNodeDefinition {
     NodeTemplateIdentity definition_identity() const;
     CompiledData compile(const ResolvedSignature &signature, allocator &) const;
     bool schedule_on_start(const ResolvedSignature &signature) const noexcept;
+    bool deduplicate_wiring() const noexcept;
     bool uses_timed_scheduling() const noexcept;
 
-    static void evaluate(NodeInvocation<compiled_data_type> invocation);
+    static void evaluate(NodeInvocation<compiled_data_type, state_type> invocation);
+    static void destroy_state(NodeInvocation<compiled_data_type, state_type> invocation) noexcept;
 
   private:
     PythonNodeDefinition(std::shared_ptr<const SignatureDefinition> signature, Object function,
                          std::shared_ptr<const char> identity, bool schedule_on_start,
-                         bool pass_time_series_values, std::vector<CallbackParameter> callback_parameters) noexcept;
+                         bool pass_time_series_values, std::vector<CallbackParameter> callback_parameters,
+                         Object state_factory) noexcept;
 
     std::shared_ptr<const SignatureDefinition> signature_;
     WeakObject weak_function_;
     Object retained_function_;
+    Object state_factory_;
     std::shared_ptr<const char> identity_;
     bool schedule_on_start_;
     bool pass_time_series_values_;

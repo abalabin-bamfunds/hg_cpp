@@ -305,8 +305,11 @@ native identity; its qualified name is descriptive.
 cycle. `@compute_node` declares a fixed-input node. Inputs can be any supported
 time-series type or a scalar argument.
 
-Nodes can request `bg.EvaluationClock` or `bg.Scheduler` as parameters. These are injected
-independently of graph inputs and may appear between ordinary input parameters.
+Nodes can request `bg.EvaluationClock`, `bg.Scheduler`, or `bg.State[T]` as
+parameters. Each injectable must have `= None` as its default and is omitted
+from the wiring signature. Place positional injectables after required
+positional parameters, or declare them keyword-only, because Python does not
+allow a required positional parameter after a defaulted one.
 `EvaluationClock.evaluation_time` exposes the evaluation time. `EvaluationClock.now`
 exposes the current time for the engine mode: evaluation time in simulation mode
 and wall-clock time in real-time mode. Both are Python `datetime` values.
@@ -317,9 +320,13 @@ runs. A schedule handle can be retained and cancelled by a later invocation.
 Only a node that declares `Scheduler` enables timed scheduling; `EvaluationClock`
 alone does not.
 
-`@node`, `@compute_node`, and `@source_node` accept either injectable at any
-declared parameter position. Injected parameters do not appear in the wiring
-signature. Graph definitions cannot request these injected objects.
+`State[T]` calls the zero-argument callable or class `T` once on the first
+invocation of each runtime node. The callback receives that object directly.
+Each runtime node, including nodes in nested branches and separate graph runs,
+has independent state. A node can declare at most one `State[T]` parameter.
+
+`@node`, `@compute_node`, and `@source_node` accept these injectables. Graph
+definitions cannot request them.
 
 `@node` declares scalar-valued inputs and output. Each parameter annotated with
 a scalar type accepts either a scalar wiring argument or a matching `TS[T]`
@@ -505,8 +512,8 @@ releases the GIL while native graph evaluation runs. Each Python node callback
 acquires it for argument conversion, callback execution, and output
 conversion.
 
-The current package does not expose scalar bundle schemas, injected runtime
-services, or dynamic Python node inputs.
+The current package does not expose scalar bundle schemas or dynamic Python
+node inputs.
 
 Python definition wrappers retain their callbacks. A wired runtime graph also
 retains each Python node callback that it uses. Destroy these graphs before

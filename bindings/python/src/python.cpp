@@ -796,7 +796,8 @@ void bind_core(nb::module_ &module) {
     });
     module.def("_make_node", [](std::string name, const std::vector<PythonParameter> &parameters,
                                 std::optional<TypeDescriptor> output, nb::handle function, bool schedule_on_start,
-                                bool pass_time_series_values, const std::vector<std::string> &callback_parameters) {
+                                bool pass_time_series_values, const std::vector<std::string> &callback_parameters,
+                                std::optional<nb::object> state_factory) {
         auto callback_parameter_kinds = std::vector<PythonNodeDefinition::CallbackParameter>{};
         callback_parameter_kinds.reserve(callback_parameters.size());
         for (const auto &parameter : callback_parameters) {
@@ -806,12 +807,15 @@ void bind_core(nb::module_ &module) {
                 callback_parameter_kinds.push_back(PythonNodeDefinition::CallbackParameter::evaluation_clock);
             } else if (parameter == "scheduler") {
                 callback_parameter_kinds.push_back(PythonNodeDefinition::CallbackParameter::scheduler);
+            } else if (parameter == "state") {
+                callback_parameter_kinds.push_back(PythonNodeDefinition::CallbackParameter::state);
             } else {
                 throw std::invalid_argument{"invalid Python node callback parameter"};
             }
         }
         return PythonNodeDefinition{make_signature(name, parameters, output), function, schedule_on_start,
-                                    pass_time_series_values, std::move(callback_parameter_kinds)};
+                                    pass_time_series_values, std::move(callback_parameter_kinds),
+                                    state_factory.value_or(nb::none())};
     });
     module.def("_make_graph", [](std::string name, const std::vector<PythonParameter> &parameters,
                                  std::optional<TypeDescriptor> output, nb::handle function,

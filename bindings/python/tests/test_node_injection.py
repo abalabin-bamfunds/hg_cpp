@@ -10,7 +10,7 @@ def test_compute_node_injects_clock_between_inputs():
     observed = []
 
     @bg.compute_node
-    def add(left: bg.TS[int], clock: bg.EvaluationClock, right: bg.TS[int]) -> bg.TS[int]:
+    def add(left: bg.TS[int], right: bg.TS[int], clock: bg.EvaluationClock = None) -> bg.TS[int]:
         observed.append((clock.evaluation_time, clock.now))
         return left.value + right.value
 
@@ -29,7 +29,7 @@ def test_node_injects_clock_without_exposing_it_as_a_wiring_argument():
     observed = []
 
     @bg.node
-    def increment(value: int, clock: bg.EvaluationClock) -> int:
+    def increment(value: int, clock: bg.EvaluationClock = None) -> int:
         observed.append(clock.evaluation_time)
         return value + 1
 
@@ -48,7 +48,9 @@ def test_source_node_clock_is_callback_scoped():
     schedulers = []
 
     @bg.source_node
-    def source(clock: bg.EvaluationClock, scheduler: bg.Scheduler) -> bg.TS[int]:
+    def source(
+        clock: bg.EvaluationClock = None, scheduler: bg.Scheduler = None
+    ) -> bg.TS[int]:
         clocks.append(clock)
         schedulers.append(scheduler)
         return 1
@@ -68,7 +70,9 @@ def test_keyword_only_clock_preserves_callback_parameter_order():
     observed = []
 
     @bg.compute_node
-    def add(left: bg.TS[int], *, clock: bg.EvaluationClock, right: bg.TS[int]) -> bg.TS[int]:
+    def add(
+        left: bg.TS[int], *, clock: bg.EvaluationClock = None, right: bg.TS[int]
+    ) -> bg.TS[int]:
         observed.append(clock.evaluation_time)
         return left.value + right.value
 
@@ -85,7 +89,9 @@ def test_keyword_only_clock_and_variadic_inputs_keep_callback_parameter_order():
     observed = []
 
     @bg.compute_node
-    def total(*values: bg.TSL[bg.TS[int], bg.SIZE], clock: bg.EvaluationClock) -> bg.TS[int]:
+    def total(
+        *values: bg.TSL[bg.TS[int], bg.SIZE], clock: bg.EvaluationClock = None
+    ) -> bg.TS[int]:
         observed.append(clock.evaluation_time)
         return sum(values.value)
 
@@ -104,13 +110,18 @@ def test_scheduler_injects_and_cancels_timed_node_evaluations():
     observed_values = []
 
     @bg.source_node
-    def source(clock: bg.EvaluationClock, scheduler: bg.Scheduler) -> bg.TS[int]:
+    def source(
+        clock: bg.EvaluationClock = None,
+        scheduler: bg.Scheduler = None,
+        state: bg.State[list] = None,
+    ) -> bg.TS[int]:
         evaluation_times.append(clock.evaluation_time)
         if len(evaluation_times) == 1:
-            handles.append(scheduler.schedule_at(clock.evaluation_time + timedelta(seconds=1)))
-            handles.append(scheduler.schedule_at(clock.evaluation_time + timedelta(seconds=2)))
+            state.append(scheduler.schedule_at(clock.evaluation_time + timedelta(seconds=1)))
+            state.append(scheduler.schedule_at(clock.evaluation_time + timedelta(seconds=2)))
+            handles.extend(state)
         else:
-            scheduler.cancel(handles[1])
+            scheduler.cancel(state[1])
         return len(evaluation_times)
 
     @bg.compute_node
@@ -133,11 +144,159 @@ def test_node_injectables_are_rejected_on_graphs_and_variadic_parameters():
     with pytest.raises(TypeError, match="only annotate Python node parameters"):
 
         @bg.graph
-        def invalid(clock: bg.EvaluationClock) -> bg.TS[int]:
+        def invalid(clock: bg.EvaluationClock = None) -> bg.TS[int]:
             return bg.operators.const_(1)
 
     with pytest.raises(TypeError, match="cannot annotate variadic"):
 
         @bg.compute_node
         def invalid(*scheduler: bg.Scheduler) -> bg.TS[int]:
+            return 1
+
+
+def test_state_is_reused_per_node_and_isolated_between_nodes_and_runs():
+    @bg.compute_node
+    def count(value: bg.TS[int], state: bg.State[list] = None) -> bg.TS[int]:
+        state.append(value.value)
+        return len(state)
+
+    @bg.graph
+    def graph(left: bg.TS[int], right: bg.TS[int]) -> bg.TS[int]:
+        return count(left) + count(right)
+
+    assert list(inspect.signature(count).parameters) == ["value"]
+    assert bg.test_graph(graph, [1, 2], [10, 20]) == [2, 4]
+    assert bg.test_graph(graph, [3, 4], [30, 40]) == [2, 4]
+
+
+def test_state_node_instances_with_identical_wiring_are_not_deduplicated():
+    instance_ids = iter((1, 2))
+
+    class StateValue:
+        def __init__(self):
+            self.instance_id = next(instance_ids)
+
+    @bg.node
+    def identify(value: int, state: bg.State[StateValue] = None) -> int:
+        return state.instance_id
+
+    @bg.graph
+    def graph() -> bg.TS[int]:
+        return identify(1) + identify(1)
+
+    assert bg.test_graph(graph) == [3]
+
+
+def test_state_factory_supports_non_weak_referenceable_callables():
+    class StateFactory:
+        __slots__ = ()
+
+        def __call__(self):
+            return []
+
+    factory = StateFactory()
+
+    @bg.compute_node
+    def accumulate(value: bg.TS[int], state: bg.State[factory] = None) -> bg.TS[int]:
+        state.append(value.value)
+        return len(state)
+
+    @bg.graph
+    def graph(value: bg.TS[int]) -> bg.TS[int]:
+        return accumulate(value)
+
+    assert bg.test_graph(graph, [1, 2]) == [1, 2]
+
+
+def test_state_is_isolated_between_nested_map_branches():
+    @bg.compute_node
+    def make_values(trigger: bg.TS[int]) -> bg.TSD[int, bg.TS[int]]:
+        return {1: trigger.value, 2: trigger.value * 10}
+
+    @bg.compute_node
+    def count(value: bg.TS[int], state: bg.State[list] = None) -> bg.TS[int]:
+        state.append(value.value)
+        return len(state)
+
+    @bg.graph
+    def branch(value: bg.TS[int]) -> bg.TS[int]:
+        return count(value)
+
+    @bg.graph
+    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+        mapped = bg.map(branch, make_values(trigger))
+        return mapped[1] + mapped[2]
+
+    assert bg.test_graph(graph, [1, 2]) == [2, 4]
+
+
+def test_state_factory_exception_leaves_state_uninitialized():
+    calls = []
+
+    class BrokenState:
+        def __init__(self):
+            calls.append(None)
+            raise ValueError("state construction failed")
+
+    @bg.compute_node
+    def copy(value: bg.TS[int], state: bg.State[BrokenState] = None) -> bg.TS[int]:
+        return value.value
+
+    @bg.graph
+    def graph(value: bg.TS[int]) -> bg.TS[int]:
+        return copy(value)
+
+    with pytest.raises(ValueError, match="state construction failed"):
+        bg.test_graph(graph, [1])
+    assert len(calls) == 1
+
+
+def test_state_is_released_when_runtime_graph_is_destroyed():
+    released = []
+
+    class StateValue:
+        def __del__(self):
+            released.append(True)
+
+    @bg.compute_node
+    def copy(value: bg.TS[int], state: bg.State[StateValue] = None) -> bg.TS[int]:
+        return value.value
+
+    @bg.graph
+    def graph(value: bg.TS[int]) -> bg.TS[int]:
+        return copy(value)
+
+    assert bg.test_graph(graph, [1]) == [1]
+    assert released == [True]
+
+
+def test_state_requires_a_none_default_and_allows_only_one_parameter():
+    with pytest.raises(TypeError, match="must use '= None'"):
+
+        @bg.compute_node
+        def missing_default(value: bg.TS[int], state: bg.State[list]) -> bg.TS[int]:
+            return value.value
+
+    with pytest.raises(TypeError, match="only one State parameter"):
+
+        @bg.compute_node
+        def duplicate(
+            value: bg.TS[int], first: bg.State[list] = None, second: bg.State[dict] = None
+        ) -> bg.TS[int]:
+            return value.value
+
+
+def test_clock_and_scheduler_require_none_defaults():
+    with pytest.raises(TypeError, match="must use '= None'"):
+
+        @bg.compute_node
+        def missing_clock_default(
+            value: bg.TS[int], clock: bg.EvaluationClock
+        ) -> bg.TS[int]:
+            return value.value
+
+    with pytest.raises(TypeError, match="must use '= None'"):
+
+        @bg.source_node
+        def missing_scheduler_default(scheduler: bg.Scheduler) -> bg.TS[int]:
             return 1

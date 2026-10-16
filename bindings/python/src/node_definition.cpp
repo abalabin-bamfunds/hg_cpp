@@ -24,11 +24,12 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace bg::python {
 
-using Invocation = NodeInvocation<PythonNodeDefinition::compiled_data_type>;
+using Invocation = NodeInvocation<PythonNodeDefinition::compiled_data_type, PythonNodeDefinition::state_type>;
 namespace {
 
 void apply_time_series_delta(Out<TS_T> output, nanobind::handle delta, allocator &memory);
@@ -238,6 +239,18 @@ nanobind::object PythonNodeDefinition::CompiledData::call(Invocation invocation,
             arguments.set(argument_index++, nanobind::cast(PythonScheduler{
                 NodeCallbackAccess{invocation.context(), lifetime, callback.generation()}}));
             break;
+        case CallbackParameter::state: {
+            auto &state = invocation.state<PyObject *>();
+            if (state == nullptr) {
+                state = PyObject_CallNoArgs(state_factory.get().ptr());
+                if (state == nullptr) {
+                    nanobind::raise_python_error();
+                }
+            }
+            Py_INCREF(state);
+            arguments.set(argument_index++, nanobind::steal<nanobind::object>(state));
+            break;
+        }
         }
     }
 
@@ -274,7 +287,8 @@ void PythonNodeDefinition::CompiledData::invoke(Invocation invocation) const {
 PythonNodeDefinition::PythonNodeDefinition(std::shared_ptr<const SignatureDefinition> signature,
                                            nanobind::handle function, bool schedule_on_start,
                                            bool pass_time_series_values,
-                                           std::vector<CallbackParameter> callback_parameters)
+                                           std::vector<CallbackParameter> callback_parameters,
+                                           nanobind::handle state_factory)
     : signature_{std::move(signature)}, weak_function_{function}, identity_{std::make_shared<const char>()},
       schedule_on_start_{schedule_on_start}, pass_time_series_values_{pass_time_series_values},
       callback_parameters_{std::move(callback_parameters)} {
@@ -284,19 +298,31 @@ PythonNodeDefinition::PythonNodeDefinition(std::shared_ptr<const SignatureDefini
     if (!PyCallable_Check(function.ptr())) {
         throw std::invalid_argument{"a Python node definition requires a callable"};
     }
+    if (!state_factory.is_none()) {
+        if (!PyCallable_Check(state_factory.ptr())) {
+            throw std::invalid_argument{"a Python node State factory must be callable"};
+        }
+        state_factory_ = Object{state_factory};
+    }
 }
 
 PythonNodeDefinition::PythonNodeDefinition(std::shared_ptr<const SignatureDefinition> signature, Object function,
                                            std::shared_ptr<const char> identity, bool schedule_on_start,
                                            bool pass_time_series_values,
-                                           std::vector<CallbackParameter> callback_parameters) noexcept
-    : signature_{std::move(signature)}, retained_function_{std::move(function)}, identity_{std::move(identity)},
+                                           std::vector<CallbackParameter> callback_parameters,
+                                           Object state_factory) noexcept
+    : signature_{std::move(signature)}, retained_function_{std::move(function)},
+      state_factory_{std::move(state_factory)}, identity_{std::move(identity)},
       schedule_on_start_{schedule_on_start}, pass_time_series_values_{pass_time_series_values},
       callback_parameters_{std::move(callback_parameters)} {}
 
 PythonNodeDefinition PythonNodeDefinition::retain_function() const {
     return PythonNodeDefinition{signature_, weak_function_.lock(), identity_, schedule_on_start_,
-                                pass_time_series_values_, callback_parameters_};
+                                pass_time_series_values_, callback_parameters_, state_factory_};
+}
+
+bool PythonNodeDefinition::deduplicate_wiring() const noexcept {
+    return std::ranges::find(callback_parameters_, CallbackParameter::state) == callback_parameters_.end();
 }
 
 bool PythonNodeDefinition::uses_timed_scheduling() const noexcept {
@@ -342,6 +368,7 @@ PythonNodeDefinition::CompiledData PythonNodeDefinition::compile(const ResolvedS
 
     auto result = CompiledData{};
     result.function = retained_function_;
+    result.state_factory = state_factory_;
     result.parameters = std::move(parameter_conversions);
     result.callback_parameters = callback_parameters_;
     result.has_output = signature.output != nullptr;
@@ -350,6 +377,14 @@ PythonNodeDefinition::CompiledData PythonNodeDefinition::compile(const ResolvedS
 
 void PythonNodeDefinition::evaluate(Invocation invocation) {
     invocation.compiled_data().invoke(invocation);
+}
+
+void PythonNodeDefinition::destroy_state(NodeInvocation<compiled_data_type, state_type> invocation) noexcept {
+    auto &state = invocation.state<PyObject *>();
+    if (state == nullptr) {
+        return;
+    }
+    Object::release_reference(std::exchange(state, nullptr));
 }
 
 } // namespace bg::python

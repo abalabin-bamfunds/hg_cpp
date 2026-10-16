@@ -190,10 +190,31 @@ _TIME_SERIES_T = TypeVar("_TIME_SERIES_T", bound=TimeSeries)
 _ITEM_T = TypeVar("_ITEM_T")
 _SIZE_T = TypeVar("_SIZE_T")
 _SCHEMA_T = TypeVar("_SCHEMA_T")
+_STATE_T = TypeVar("_STATE_T")
 
 _type_variables: WeakKeyDictionary[TypeVar, _Type] = WeakKeyDictionary()
 # Release nanobind wrappers before its shutdown leak check runs.
 atexit.register(_type_variables.clear)
+
+
+class _StateAnnotation:
+    __slots__ = ("factory",)
+
+    def __init__(self, factory: Any):
+        if not callable(factory):
+            raise TypeError("State[...] requires a zero-argument callable or class")
+        self.factory = factory
+
+
+class State(Generic[_STATE_T]):
+    """Inject one lazily created, per-runtime-node Python state object."""
+
+    def __class_getitem__(cls, factory: Any) -> _StateAnnotation:
+        return _StateAnnotation(factory)
+
+
+def _is_injectable_annotation(annotation: Any) -> bool:
+    return annotation is EvaluationClock or annotation is Scheduler or isinstance(annotation, _StateAnnotation)
 
 
 def _annotation_arguments(arguments: Any, required: int, name: str) -> tuple[Any, Any]:
@@ -569,7 +590,7 @@ def _definition_signature(
     scalar_or_time_series_inputs: bool = False,
     promote_plain_graph_inputs: bool = False,
     allow_injectables: bool = False,
-) -> tuple[list[tuple[str, Any, str]], tuple[str, ...], Any, list[str], tuple[str, ...]]:
+) -> tuple[list[tuple[str, Any, str]], tuple[str, ...], Any, list[str], tuple[str, ...], Any]:
     signature = inspect.signature(function)
     annotations = get_type_hints(function, include_extras=True)
     fixed = []
@@ -577,13 +598,19 @@ def _definition_signature(
     callback_fixed_parameters = []
     callback_variadic_parameters = []
     injected_parameters = []
+    state_factory = None
 
     for parameter in signature.parameters.values():
         annotation = annotations.get(parameter.name, parameter.annotation)
         if annotation is inspect.Parameter.empty:
             raise TypeError(f"Python definition parameter {parameter.name!r} requires a type annotation")
 
-        if annotation is EvaluationClock:
+        if isinstance(annotation, _StateAnnotation):
+            injected_parameter = "state"
+            if state_factory is not None:
+                raise TypeError("a Python node can declare only one State parameter")
+            state_factory = annotation.factory
+        elif annotation is EvaluationClock:
             injected_parameter = "evaluation_clock"
         elif annotation is Scheduler:
             injected_parameter = "scheduler"
@@ -591,13 +618,15 @@ def _definition_signature(
             injected_parameter = None
         if injected_parameter is not None:
             if not allow_injectables:
-                raise TypeError("EvaluationClock and Scheduler can only annotate Python node parameters")
+                raise TypeError("injectables can only annotate Python node parameters")
             if parameter.kind not in (
                 parameter.POSITIONAL_ONLY,
                 parameter.POSITIONAL_OR_KEYWORD,
                 parameter.KEYWORD_ONLY,
             ):
-                raise TypeError("EvaluationClock and Scheduler cannot annotate variadic node parameters")
+                raise TypeError("Python node injectables cannot annotate variadic parameters")
+            if parameter.default is not None:
+                raise TypeError("Python node injectables must use '= None' as their default")
             callback_fixed_parameters.append(injected_parameter)
             injected_parameters.append(parameter.name)
             continue
@@ -647,6 +676,7 @@ def _definition_signature(
         callback,
         callback_fixed_parameters + callback_variadic_parameters,
         tuple(injected_parameters),
+        state_factory,
     )
 
 
@@ -672,7 +702,14 @@ def _define_node(
 ) -> NodeDefinition:
     signature = inspect.signature(function)
     annotations = get_type_hints(function, include_extras=True)
-    parameters, fixed_parameters, callback, callback_parameters, injected_parameters = _definition_signature(
+    (
+        parameters,
+        fixed_parameters,
+        callback,
+        callback_parameters,
+        injected_parameters,
+        state_factory,
+    ) = _definition_signature(
         function, scalar_or_time_series_inputs=scalar_or_time_series_inputs, allow_injectables=True
     )
 
@@ -692,7 +729,7 @@ def _define_node(
 
     native_definition = _make_node(
         function.__name__, parameters, output, callback, schedule_on_start, scalar_or_time_series_inputs,
-        callback_parameters
+        callback_parameters, state_factory
     )
     return NodeDefinition(function, native_definition, fixed_parameters, callback, injected_parameters)
 
@@ -817,7 +854,7 @@ def source_node(function: Any) -> NodeDefinition:
     graph_parameters = []
     for parameter in signature.parameters.values():
         annotation = annotations.get(parameter.name, parameter.annotation)
-        if annotation is EvaluationClock or annotation is Scheduler:
+        if _is_injectable_annotation(annotation):
             continue
         graph_parameters.append(parameter)
     if graph_parameters:
@@ -834,7 +871,7 @@ def graph(function: Any) -> GraphDefinition:
     """Declare a graph template composed from Python nodes and graph functions."""
     signature = inspect.signature(function)
     annotations = get_type_hints(function, include_extras=True)
-    parameters, fixed_parameters, callback, _, _ = _definition_signature(
+    parameters, fixed_parameters, callback, _, _, _ = _definition_signature(
         function, promote_plain_graph_inputs=True
     )
 
@@ -912,6 +949,7 @@ __all__ = [
     "REMOVE",
     "Removed",
     "Scalar",
+    "State",
     "ServiceCatalogue",
     "SetDelta",
     "SIZE",
