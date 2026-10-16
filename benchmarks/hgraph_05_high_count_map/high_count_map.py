@@ -346,10 +346,11 @@ def run_benchmark(profile_name: str, cycles: int, source_commit: str) -> int:
             for child_key in control.observed_child_values.pop(int(parent_key), {}):
                 control.observe(2, int(parent_key), child_key, False, 0)
 
-        active_parents = set(children.added_keys()) | set(children.modified_keys())
+        added_parents = set(children.added_keys())
+        active_parents = added_parents | set(children.modified_keys())
         for parent_key in active_parents:
             child_values = children[parent_key]
-            if parent_key in children.added_keys():
+            if parent_key in added_parents:
                 active_children = set(child_values.keys())
             else:
                 active_children = set(child_values.added_keys()) | set(child_values.modified_keys())
