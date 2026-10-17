@@ -212,10 +212,14 @@ TEST_CASE("queue copies write independently to their destination",
                                                            bg::allocator{*std::pmr::new_delete_resource()});
     auto control = bg::details::QueueControl{};
     auto empty = bg::Queue{};
+    CHECK_FALSE(empty.is_open());
     CHECK_FALSE(empty.write(::literal::TimeSeriesLiteral(::literal::SKIP)));
     auto first = control.make_queue(buffer, 17, runtime_type);
+    CHECK(first.is_open());
     auto second = first;
     auto moved = std::move(second);
+    CHECK_FALSE(second.is_open());
+    CHECK(moved.is_open());
     CHECK_FALSE(second.write(::literal::TimeSeriesLiteral(bg::i64{13})));
     second = first;
 
@@ -223,6 +227,9 @@ TEST_CASE("queue copies write independently to their destination",
     REQUIRE(first.write(::literal::TimeSeriesLiteral(bg::i64{11})));
     REQUIRE(moved.write(::literal::TimeSeriesLiteral(bg::i64{12})));
     REQUIRE(second.write(::literal::TimeSeriesLiteral(bg::i64{13})));
+    control.close();
+    CHECK_FALSE(first.is_open());
+    CHECK_FALSE(moved.is_open());
 
     auto reader = bg::details::QueueMessageReader{buffer};
     REQUIRE(reader.next_target() == 17);

@@ -312,7 +312,9 @@ class RuntimeSignatureNodeTemplate final
     }
 
     bool uses_queue() const noexcept override {
-        if constexpr (requires { Definition::uses_queue; }) {
+        if constexpr (requires { { definition_.uses_queue() } -> std::convertible_to<bool>; }) {
+            return static_cast<bool>(definition_.uses_queue());
+        } else if constexpr (requires { Definition::uses_queue; }) {
             return Definition::uses_queue;
         }
         return false;

@@ -3,6 +3,7 @@
 #include <bg/evaluation_time.hpp>
 #include <bg/node/node_invocation.hpp>
 #include <bg/node/node_template_identity.hpp>
+#include <bg/queue_mode.hpp>
 #include <bg/python/export.hpp>
 #include <bg/python/input_view.hpp>
 #include <bg/python/python_node_injection.hpp>
@@ -49,7 +50,7 @@ class BG_PYTHON_API PythonNodeDefinition {
     using state_type = void *;
 
     enum class ParameterMode : std::uint8_t { scalar, input_view, time_series_value };
-    enum class CallbackParameter : std::uint8_t { input, output, evaluation_clock, scheduler, state };
+    enum class CallbackParameter : std::uint8_t { input, output, evaluation_clock, scheduler, state, queue };
 
     struct CallbackArgument {
         CallbackParameter parameter;
@@ -106,7 +107,8 @@ class BG_PYTHON_API PythonNodeDefinition {
     PythonNodeDefinition(std::shared_ptr<const SignatureDefinition> signature, bool schedule_on_start,
                          bool pass_time_series_values, CallbackDefinition evaluation, CallbackDefinition start,
                          CallbackDefinition stop,
-                         CallbackDefinition invalidation, nanobind::handle state_factory, bool generator);
+                         CallbackDefinition invalidation, nanobind::handle state_factory, bool generator,
+                         QueueMode queue_mode);
 
     const Signature &signature() const noexcept { return signature_->signature; }
     std::span<const Type *const> wiring_parameter_types() const noexcept { return signature_->wiring_parameter_types; }
@@ -117,6 +119,8 @@ class BG_PYTHON_API PythonNodeDefinition {
     bool schedule_on_start(const ResolvedSignature &signature) const noexcept;
     bool deduplicate_wiring() const noexcept;
     bool uses_timed_scheduling() const noexcept;
+    bool uses_queue() const noexcept;
+    QueueMode queue_mode() const noexcept { return queue_mode_; }
     bool has_evaluation(const ResolvedSignature &) const noexcept;
     bool has_start(const ResolvedSignature &) const noexcept;
     bool has_stop(const ResolvedSignature &) const noexcept;
@@ -134,7 +138,8 @@ class BG_PYTHON_API PythonNodeDefinition {
                          bool schedule_on_start, Object function, CallbackArguments evaluation_arguments,
                          bool pass_time_series_values, Object start_function, CallbackArguments start_arguments,
                          Object stop_function, CallbackArguments stop_arguments, Object invalidation_function,
-                         CallbackArguments invalidation_arguments, Object state_factory, bool generator) noexcept;
+                         CallbackArguments invalidation_arguments, Object state_factory, bool generator,
+                         QueueMode queue_mode) noexcept;
 
     static std::optional<WeakObject> weak_callback(const CallbackDefinition &callback);
     static Object retain_callback(const std::optional<WeakObject> &callback);
@@ -157,6 +162,7 @@ class BG_PYTHON_API PythonNodeDefinition {
     bool schedule_on_start_;
     bool pass_time_series_values_;
     bool generator_;
+    QueueMode queue_mode_{QueueMode::standard};
 };
 
 } // namespace bg::python

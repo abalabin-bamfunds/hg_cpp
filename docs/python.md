@@ -540,6 +540,8 @@ through the same table.
 The built-in scalar annotations are `bool`, `int`, `float`, `str`,
 `datetime.timedelta`, and `bg.Symbol`. Durations map to signed 64-bit
 microseconds; conversion rejects values outside that range.
+`list[T]` declares an engine scalar list. Conversion copies its items using
+the declared scalar type `T`; conversion back to Python produces a list.
 `bg.Symbol` is a `str` subclass. Non-null symbols compare and
 hash like their text; `bg.Symbol()` represents a null symbol and differs from
 the empty string. `str(symbol)` returns ordinary Python text, so converting a
@@ -609,6 +611,48 @@ held; otherwise, release is deferred and drained at `test_graph` boundaries.
 Python `__hash__` and `__eq__` run with the GIL and their exceptions propagate.
 Python objects used as graph scalars must be immutable, including any state
 that affects equality or hashing.
+
+### Queue nodes
+
+`@bg.queue` declares a queue node whose decorated function runs at graph start.
+Its return annotation declares the output time series type; its return value is
+ignored. The function declares exactly one `q: bg.Queue = None` parameter.
+Graph code supplies its scalar parameters. A queue node has no evaluation
+callback and runs in the outer graph. Register cleanup with `@name.stop`,
+selecting parameters by name as for other Python nodes.
+Queue callbacks can also request `State[T]` and `EvaluationClock`.
+
+```python
+@bg.queue(mode=bg.QueueMode.batch)
+def values(count: int, q: bg.Queue = None) -> bg.TS[list[int]]:
+    for value in range(count):
+        q.write(value)
+
+@bg.graph
+def example() -> bg.TS[list[int]]:
+    return values(3)
+
+assert bg.test_graph(example) == [[0, 1, 2]]
+```
+
+The default mode is `bg.QueueMode.standard`. `bg.QueueMode.elide` and
+`bg.QueueMode.batch` follow the [queue message rules](time-series-types.md#queue-messages).
+Queue outputs use ordinary time series. Batch outputs have `TS[list[T]]`
+leaves, including leaves inside fixed `TSL`, `TSB`, and `TSD` collections.
+
+`Queue.write(delta)` returns whether it committed a message. It accepts the
+existing Python output delta forms. `None` requests no message and returns
+`False`. Batch mode accepts one `T` for each updated `TS[list[T]]` leaf.
+Invalidation uses `bg.INVALID`; dictionary removal uses `bg.REMOVE`. An open
+writer propagates conversion and serialization errors without committing a
+partial message.
+
+Retain a `Queue` after its callback returns to submit later messages. Use
+`copy.copy(q)` to create an independent writer for another thread. A handle
+rejects overlapping writes and copying during a write. Graph shutdown closes
+all writers before stop callbacks; closed writes return `False` without
+converting the delta. Retained handles remain safe after graph destruction.
+Use [realtime execution](#graph-authoring) to wait for messages from producers.
 
 ## C++ extensions
 

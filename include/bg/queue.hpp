@@ -41,6 +41,9 @@ class Queue {
     // while open; closure rejects a write before it inspects the literal.
     bool write(const ::literal::TimeSeriesLiteral &literal);
 
+    // Returns false for a default, moved-from, or closed handle.
+    bool is_open() const noexcept;
+
   private:
     void swap(Queue &other) noexcept;
 

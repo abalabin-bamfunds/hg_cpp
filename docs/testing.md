@@ -588,6 +588,10 @@ For each reusable node and graph, test:
 - runner engine selection, default and explicit start times, simulation-only test capture,
   profiling, explicit cancellation, stop-state lifetime, and GIL release while waiting
 - callback-scoped wall-clock scheduling, timer firing, and cancellation
+- queue-node scalar wiring, start and stop callbacks, injected handles, and output validation
+- queue delta conversion, standard and eliding modes, batch element conversion, and collection removals
+- copied Python writers, concurrent submission, realtime wakeups, and closed-handle rejection before conversion
+- queue payload ownership, conversion failures, startup failures, and unread-message cleanup
 
 ### Performance and portability
 

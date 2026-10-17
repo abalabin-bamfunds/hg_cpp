@@ -24,6 +24,8 @@ add_library(
     src/delta.cpp
     src/input_view.cpp
     src/python_node_injection.cpp
+    src/python_queue.cpp
+    src/python_literal_builder.cpp
     src/dict_view.cpp
     src/higher_order.cpp
     src/operator.cpp

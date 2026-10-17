@@ -87,6 +87,10 @@ Queue::Queue(Queue &&other) noexcept = default;
 Queue &Queue::operator=(Queue &&other) noexcept = default;
 Queue::~Queue() = default;
 
+bool Queue::is_open() const noexcept {
+    return gate_ && writer_ && !gate_->closed();
+}
+
 bool Queue::write(const literal::TimeSeriesLiteral &literal) {
     if (!gate_ || !writer_ || !gate_->enter()) {
         return false;

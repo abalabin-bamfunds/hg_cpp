@@ -14,6 +14,8 @@ from . import operators
 from ._bg import (
     EvaluationEngine,
     EvaluationClock,
+    Queue,
+    QueueMode,
     Dict,
     EvaluationProfiler,
     EvaluationProfilerRecorder as _EvaluationProfilerRecorder,
@@ -225,8 +227,12 @@ class Output:
 
 
 def _is_injectable_annotation(annotation: Any) -> bool:
-    return annotation is EvaluationClock or annotation is Scheduler or annotation is Output or isinstance(
-        annotation, _StateAnnotation
+    return (
+        annotation is EvaluationClock
+        or annotation is Scheduler
+        or annotation is Output
+        or annotation is Queue
+        or isinstance(annotation, _StateAnnotation)
     )
 
 
@@ -705,6 +711,7 @@ def _definition_signature(
     scalar_or_time_series_inputs: bool = False,
     promote_plain_graph_inputs: bool = False,
     allow_injectables: bool = False,
+    allow_queue: bool = False,
 ) -> tuple[list[tuple[str, Any, str]], tuple[str, ...], Any, tuple[str, ...], Any]:
     signature = inspect.signature(function)
     annotations = get_type_hints(function, include_extras=True)
@@ -729,6 +736,10 @@ def _definition_signature(
             injected_parameter = "scheduler"
         elif annotation is Output:
             injected_parameter = "output"
+        elif annotation is Queue:
+            if not allow_queue:
+                raise TypeError("bg.Queue can only annotate a bg.queue start parameter")
+            injected_parameter = "queue"
         else:
             injected_parameter = None
         if injected_parameter is not None:
@@ -820,6 +831,8 @@ def _callback_arguments(function: Any, base_function: Any) -> tuple[Any, tuple[t
             base_arguments[parameter.name] = ("scheduler", 0)
         elif annotation is Output:
             base_arguments[parameter.name] = ("output", 0)
+        elif annotation is Queue:
+            base_arguments[parameter.name] = ("queue", 0)
         elif isinstance(annotation, _StateAnnotation):
             base_arguments[parameter.name] = ("state", 0)
         else:
@@ -869,7 +882,7 @@ def _callback_arguments(function: Any, base_function: Any) -> tuple[Any, tuple[t
 
 def _define_node(
     function: Any, *, schedule_on_start: bool = False, scalar_or_time_series_inputs: bool = False,
-    source: bool = False, generator: bool = False,
+    source: bool = False, generator: bool = False, queue_mode: QueueMode | None = None,
 ) -> NodeDefinition:
     signature = inspect.signature(function)
     annotations = get_type_hints(function, include_extras=True)
@@ -880,7 +893,8 @@ def _define_node(
         injected_parameters,
         state_factory,
     ) = _definition_signature(
-        function, scalar_or_time_series_inputs=scalar_or_time_series_inputs, allow_injectables=True
+        function, scalar_or_time_series_inputs=scalar_or_time_series_inputs, allow_injectables=True,
+        allow_queue=queue_mode is not None,
     )
 
     output = annotations.get("return", signature.return_annotation)
@@ -897,12 +911,23 @@ def _define_node(
         else:
             output = output_type
 
+    queue_enabled = queue_mode is not None
+    if queue_enabled:
+        if sum(annotations.get(name) is Queue for name in injected_parameters) != 1:
+            raise TypeError("a bg.queue start callback must declare exactly one Queue parameter")
+        if any(annotations.get(name) is Output or annotations.get(name) is Scheduler for name in injected_parameters):
+            raise TypeError("bg.queue callbacks cannot use Output or Scheduler")
+        if any(native_type.is_time_series for _, native_type, _ in parameters):
+            raise TypeError("bg.queue start callbacks accept scalar wiring parameters only")
+        if output is None or not output.is_time_series:
+            raise TypeError("bg.queue requires a TS[...] return annotation")
+
     if output is None and any(annotations.get(name) is Output for name in injected_parameters):
         raise TypeError("bg.Output requires a Python node with a time-series output")
 
     callbacks: dict[str, Any] = {}
     callback_references: dict[str, Any] = {}
-    callbacks["evaluation"] = callback
+    callbacks["start" if queue_enabled else "evaluation"] = callback
 
     def make_native_definition(callbacks_to_bind: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
         callback_definitions = {}
@@ -921,7 +946,7 @@ def _define_node(
             *(callback_definitions[name][0] for name in ("evaluation", "start", "stop", "invalidation")),
             schedule_on_start, scalar_or_time_series_inputs,
             *(list(callback_definitions[name][1]) for name in ("evaluation", "start", "stop", "invalidation")),
-            state_factory, generator,
+            state_factory, generator, queue_mode if queue_mode is not None else QueueMode.standard,
         )
         return native_definition, retained_callbacks
 
@@ -1052,6 +1077,9 @@ def _native_type(annotation: Any) -> Any:
     if origin is dict:
         key_type, value_type = get_args(annotation)
         return _dict_scalar_type(_native_type(key_type), _native_type(value_type))
+    if get_origin(annotation) is list:
+        (item_type,) = get_args(annotation)
+        return _list_scalar_type(_native_type(item_type))
     union_arguments = get_args(annotation)
     if len(union_arguments) == 2 and type(None) in union_arguments:
         value_type = next(value for value in union_arguments if value is not type(None))
@@ -1106,6 +1134,19 @@ def source_node(function: Any) -> NodeDefinition:
         raise TypeError("Python source nodes must return a time-series value")
 
     return _define_node(function, schedule_on_start=True, source=True)
+
+
+def queue(function: Any = None, *, mode: QueueMode = QueueMode.standard) -> Any:
+    """Declare a push queue node whose start callback writes its output ticks."""
+    if not isinstance(mode, QueueMode):
+        raise TypeError("mode must be a bg.QueueMode")
+
+    def decorate(callback: Any) -> NodeDefinition:
+        if not callable(callback):
+            raise TypeError("@queue requires a callable start callback")
+        return _define_node(callback, source=True, queue_mode=mode)
+
+    return decorate if function is None else decorate(function)
 
 
 def generator(function: Any) -> NodeDefinition:
@@ -1219,6 +1260,8 @@ __all__ = [
     "EvaluationEngine",
     "EvaluationClock",
     "EvaluationProfiler",
+    "Queue",
+    "QueueMode",
     "StopSource",
     "StopToken",
     "Bundle",
@@ -1258,6 +1301,7 @@ __all__ = [
     "opt",
     "operators",
     "pass_through",
+    "queue",
     "run_graph",
     "schema",
     "reference_service",

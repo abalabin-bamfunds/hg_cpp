@@ -45,6 +45,7 @@
 #include "dict_view.hpp"
 #include "higher_order.hpp"
 #include "operator_binding.hpp"
+#include "python_queue.hpp"
 #include "wiring_argument.hpp"
 
 #include <nanobind/stl/optional.h>
@@ -672,11 +673,11 @@ void bind_core(nb::module_ &module) {
     });
     module.def("_list_scalar_type", [](const TypeDescriptor &item_value) {
         if (item_value.accepts_absent_scalar()) {
-            throw std::invalid_argument{"tuple[T, ...] does not support optional items"};
+            throw std::invalid_argument{"Optional[...] cannot be used as a list item type"};
         }
         const auto *item = type_cast<ScalarType>(&item_value.type());
         if (item == nullptr) {
-            throw std::invalid_argument{"tuple[T, ...] requires a scalar item annotation"};
+            throw std::invalid_argument{"list[T] requires a scalar item annotation"};
         }
         if (item->is_resolved()) {
             return TypeDescriptor{list_scalar_type(*item)};
@@ -929,7 +930,7 @@ void bind_core(nb::module_ &module) {
                                 const std::vector<std::pair<std::string, std::size_t>> &start_arguments,
                                 const std::vector<std::pair<std::string, std::size_t>> &stop_arguments,
                                 const std::vector<std::pair<std::string, std::size_t>> &invalidation_arguments,
-                                std::optional<nb::object> state_factory, bool generator) {
+                                std::optional<nb::object> state_factory, bool generator, QueueMode queue_mode) {
         const auto callback = [](const std::optional<nb::object> &function,
                                  const std::vector<std::pair<std::string, std::size_t>> &arguments) {
             auto result = PythonNodeDefinition::CallbackDefinition{};
@@ -951,6 +952,8 @@ void bind_core(nb::module_ &module) {
                     parameter = PythonNodeDefinition::CallbackParameter::scheduler;
                 } else if (name == "state") {
                     parameter = PythonNodeDefinition::CallbackParameter::state;
+                } else if (name == "queue") {
+                    parameter = PythonNodeDefinition::CallbackParameter::queue;
                 } else {
                     throw std::invalid_argument{"invalid Python node callback parameter"};
                 }
@@ -962,7 +965,7 @@ void bind_core(nb::module_ &module) {
             make_signature(name, parameters, output), schedule_on_start, pass_time_series_values,
             callback(evaluation, evaluation_arguments), callback(start, start_arguments),
             callback(stop, stop_arguments), callback(invalidation, invalidation_arguments),
-            state_factory.value_or(nb::none()), generator};
+            state_factory.value_or(nb::none()), generator, queue_mode};
     });
     module.def("_make_graph", [](std::string name, const std::vector<PythonParameter> &parameters,
                                  std::optional<TypeDescriptor> output, nb::handle function,
@@ -1328,6 +1331,7 @@ void bind_core(nb::module_ &module) {
         .def_prop_ro("delta_value", &REFInput::delta_value);
     bind_input_iterators(module);
     bind_node_injectables(module);
+    bind_python_queue(module);
     bind_dict_view(module);
     nb::class_<ReferenceValue>(module, "ReferenceValue").def_prop_ro("valid", &ReferenceValue::valid);
     nb::class_<PythonNodeDefinition>(module, "_PythonNodeDefinition");

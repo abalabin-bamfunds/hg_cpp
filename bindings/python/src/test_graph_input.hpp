@@ -3,10 +3,10 @@
 #include <bg/testing/test_graph_literal_input.hpp>
 #include <bg/type/signature.hpp>
 
+#include "python_literal_builder.hpp"
+
 #include <nanobind/nanobind.h>
 
-#include <memory>
-#include <memory_resource>
 #include <span>
 #include <vector>
 
@@ -21,17 +21,8 @@ class TestGraphInputs {
 
   private:
     const TimeSeriesType &input_type(const Type &parameter_type, const Type &wiring_type) const;
-    literal::TimeSeriesLiteral delta(const TimeSeriesType &type, nanobind::handle value);
-    literal::TimeSeriesLiteral scalar(const ScalarType &type, nanobind::handle value);
-    literal::ScalarLiteral &removed_value(const ScalarType &type, nanobind::handle value);
-    literal::TimeSeriesLiteral sequence(std::vector<literal::TimeSeriesLiteral> values);
 
-    std::pmr::unsynchronized_pool_resource pool_;
-    allocator memory_;
-    std::vector<std::unique_ptr<ScalarValue<>>> scalars_;
-    std::vector<std::unique_ptr<literal::ScalarLiteral>> removed_values_;
-    std::vector<std::unique_ptr<literal::TaggedLiteral>> removed_markers_;
-    std::vector<std::unique_ptr<std::vector<literal::TimeSeriesLiteral>>> sequences_;
+    PythonLiteralBuilder literals_;
     std::vector<testing::TestGraphLiteralInput> inputs_;
 };
 

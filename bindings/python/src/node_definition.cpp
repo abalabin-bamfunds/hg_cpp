@@ -1,6 +1,7 @@
 #include <bg/python/node_definition.hpp>
 
 #include "delta.hpp"
+#include "python_queue.hpp"
 
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/node/output.hpp>
@@ -276,6 +277,14 @@ nanobind::object PythonNodeDefinition::CompiledData::call(
             arguments.set(argument_index, std::move(value));
             break;
         }
+        case CallbackParameter::queue: {
+            auto &graph = invocation.context().runtime_graph();
+            const auto &node = graph.compiled_node(invocation.context().node_index());
+            auto queue = PythonQueue{graph.make_queue(invocation.context().node_index()),
+                                     node.output_runtime_type().type(), node.queue_mode()};
+            arguments.set(argument_index, nanobind::cast(std::move(queue)));
+            break;
+        }
         }
     }
 
@@ -494,12 +503,12 @@ PythonNodeDefinition::PythonNodeDefinition(std::shared_ptr<const SignatureDefini
                                            bool schedule_on_start, bool pass_time_series_values,
                                            CallbackDefinition evaluation, CallbackDefinition start,
                                            CallbackDefinition stop, CallbackDefinition invalidation,
-                                           nanobind::handle state_factory, bool generator)
+                                           nanobind::handle state_factory, bool generator, QueueMode queue_mode)
     : signature_{std::move(signature)}, weak_function_{weak_callback(evaluation)},
       weak_start_function_{weak_callback(start)}, weak_stop_function_{weak_callback(stop)},
       weak_invalidation_function_{weak_callback(invalidation)}, identity_{std::make_shared<const char>()},
       schedule_on_start_{schedule_on_start}, pass_time_series_values_{pass_time_series_values},
-      generator_{generator} {
+      generator_{generator}, queue_mode_{queue_mode} {
     if (signature_ == nullptr) {
         throw std::invalid_argument{"a Python node requires a signature"};
     }
@@ -538,7 +547,7 @@ PythonNodeDefinition::PythonNodeDefinition(std::shared_ptr<const SignatureDefini
                                            CallbackArguments start_arguments, Object stop_function,
                                            CallbackArguments stop_arguments, Object invalidation_function,
                                            CallbackArguments invalidation_arguments, Object state_factory,
-                                           bool generator) noexcept
+                                           bool generator, QueueMode queue_mode) noexcept
     : signature_{std::move(signature)}, retained_function_{std::move(function)},
       evaluation_arguments_{std::move(evaluation_arguments)},
       retained_start_function_{std::move(start_function)}, start_arguments_{std::move(start_arguments)},
@@ -546,7 +555,7 @@ PythonNodeDefinition::PythonNodeDefinition(std::shared_ptr<const SignatureDefini
       retained_invalidation_function_{std::move(invalidation_function)},
       invalidation_arguments_{std::move(invalidation_arguments)}, state_factory_{std::move(state_factory)},
       identity_{std::move(identity)}, schedule_on_start_{schedule_on_start},
-      pass_time_series_values_{pass_time_series_values}, generator_{generator} {}
+      pass_time_series_values_{pass_time_series_values}, generator_{generator}, queue_mode_{queue_mode} {}
 
 PythonNodeDefinition PythonNodeDefinition::retain_function() const {
     return PythonNodeDefinition{signature_, identity_, schedule_on_start_, retain_callback(weak_function_),
@@ -554,7 +563,7 @@ PythonNodeDefinition PythonNodeDefinition::retain_function() const {
                                 retain_callback(weak_start_function_), start_arguments_,
                                 retain_callback(weak_stop_function_), stop_arguments_,
                                 retain_callback(weak_invalidation_function_), invalidation_arguments_,
-                                state_factory_, generator_};
+                                state_factory_, generator_, queue_mode_};
 }
 
 bool PythonNodeDefinition::deduplicate_wiring() const noexcept {
@@ -578,6 +587,12 @@ bool PythonNodeDefinition::uses_timed_scheduling() const noexcept {
     };
     return generator_ || uses_scheduler(evaluation_arguments_) || uses_scheduler(start_arguments_) ||
            uses_scheduler(stop_arguments_) || uses_scheduler(invalidation_arguments_);
+}
+
+bool PythonNodeDefinition::uses_queue() const noexcept {
+    return std::ranges::any_of(start_arguments_, [](const auto &argument) {
+        return argument.parameter == CallbackParameter::queue;
+    });
 }
 
 bool PythonNodeDefinition::schedule_on_start(const ResolvedSignature &signature) const noexcept {
@@ -610,6 +625,13 @@ PythonNodeDefinition::CompiledData PythonNodeDefinition::compile(const ResolvedS
                                                                  allocator &) const {
     if (!retained_function_ && !retained_start_function_) {
         throw std::logic_error{"a Python node callback was not retained by its graph wiring"};
+    }
+
+    if (uses_queue()) {
+        if (signature.output == nullptr) {
+            throw std::invalid_argument{"a Python queue node requires a time-series output"};
+        }
+        bg::details::validate_queue_output_type(*signature.output, queue_mode_);
     }
 
     auto parameter_conversions = std::vector<ParameterConversion>{};
