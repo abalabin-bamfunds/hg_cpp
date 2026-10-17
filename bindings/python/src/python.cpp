@@ -38,6 +38,7 @@
 
 #include "delta.hpp"
 #include "test_graph_input.hpp"
+#include "test_graph_output.hpp"
 #include "dict_view.hpp"
 #include "higher_order.hpp"
 #include "operator_binding.hpp"
@@ -429,16 +430,7 @@ nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_
             rethrow_python_error(error);
         }
     }();
-    auto output = nb::list{};
-    for (auto index = std::size_t{}; index < results.size(); ++index) {
-        auto tick = results[index];
-        if (!tick) {
-            output.append(nb::none());
-            continue;
-        }
-        output.append(scalar_conversions().to_python(*tick));
-    }
-    return output;
+    return details::TestGraphOutputs{results}.to_python();
 }
 
 void run_graph(const PythonGraphDefinition &definition, nb::sequence fixed_values, nb::sequence positional_values,

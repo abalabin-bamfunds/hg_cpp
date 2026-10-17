@@ -181,8 +181,21 @@ invalidation. A scalar collection such as `TS[dict[int, str]]` remains one
 scalar value and is not interpreted as a TSD delta. Generic graph definitions
 require explicit, fully resolved input types, for example
 `test_graph(graph[bg.TS[int], bg.TSD[int, bg.TS[str]]], ...)`.
-The graph must return a `TS[T]`. The result has one entry per cycle: an output
-value when the graph publishes one, otherwise `None`.
+The graph can return `TS`, `TSS`, `TSL`, `TSD`, or `TSB`, including nested
+collections. The result has one entry per cycle. A valid published tick becomes
+a scalar value or collection delta in the same format as input deltas; TSS
+results use `SetDelta`. Skipped and invalid root ticks become `None`.
+Invalidated collection items use `INVALID` and removed TSD keys use `REMOVE`.
+
+```python
+@bg.graph
+def identity(values: bg.TSD[int, bg.TS[str]]) -> bg.TSD[int, bg.TS[str]]:
+    return values
+
+assert bg.test_graph(identity, [{1: "first"}, {1: bg.REMOVE}, None]) == [
+    {1: "first"}, {1: bg.REMOVE}, None,
+]
+```
 
 `run_graph` wires a graph with normal Python arguments and runs the simulation
 to completion. Scalar arguments become wiring-time constants. Use `test_graph`

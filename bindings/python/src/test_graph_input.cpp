@@ -162,14 +162,15 @@ literal::TimeSeriesLiteral TestGraphInputs::sequence(std::vector<literal::TimeSe
 }
 
 literal::TimeSeriesLiteral TestGraphInputs::delta(const TimeSeriesType &type, nb::handle value) {
+    // Parentheses select the literal leaf constructor instead of the one-element sequence constructor.
     if (value.is_none()) {
-        return literal::TimeSeriesLiteral(literal::TimeSeriesLiteralItem{literal::SKIP});
+        return literal::TimeSeriesLiteral(literal::SKIP);
     }
     if (is_invalid(value)) {
         if (!type.supports_invalidation()) {
             throw std::invalid_argument{"this time-series input type does not support invalidation"};
         }
-        return literal::TimeSeriesLiteral(literal::TimeSeriesLiteralItem{literal::INVALID});
+        return literal::TimeSeriesLiteral(literal::INVALID);
     }
     if (const auto *time_series = type_cast<TimeSeriesValueType>(&type)) {
         return scalar(time_series->value_type(), value);
@@ -183,8 +184,9 @@ literal::TimeSeriesLiteral TestGraphInputs::delta(const TimeSeriesType &type, nb
                 remove = true;
             }
             if (remove) {
-                values.emplace_back(literal::TimeSeriesLiteralItem{
-                    literal::REMOVED(removed_value(set->item_type(), item))});
+                removed_markers_.push_back(
+                    std::make_unique<literal::TaggedLiteral>(literal::REMOVED(removed_value(set->item_type(), item))));
+                values.emplace_back(*removed_markers_.back());
             } else {
                 values.push_back(scalar(set->item_type(), item));
             }
@@ -249,7 +251,7 @@ literal::TimeSeriesLiteral TestGraphInputs::delta(const TimeSeriesType &type, nb
             pair.reserve(2);
             pair.push_back(scalar(dictionary->key_type(), key));
             if (is_remove(item)) {
-                pair.emplace_back(literal::TimeSeriesLiteralItem{literal::REMOVE});
+                pair.emplace_back(literal::REMOVE);
             } else {
                 pair.push_back(delta(dictionary->value_type(), item));
             }

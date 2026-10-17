@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cstddef>
+#include <functional>
 #include <initializer_list>
 #include <optional>
 #include <ranges>
@@ -58,6 +59,29 @@ template <typename T = void> class TestGraphResult {
     explicit TestGraphResult(details::CapturedValues captured) : captured_{std::move(captured)} {}
 
     std::size_t size() const noexcept { return captured_.records.size(); }
+
+    // Visit one captured tick without taking ownership of its encoded values. The reader is valid only for the
+    // duration of the callback. An invalid tick contains only its header.
+    template <typename Visitor> bool visit_tick(std::size_t index, Visitor &&visitor) const {
+        const auto &record = captured_.records.at(index);
+        if (!record) {
+            return false;
+        }
+
+        auto reader = util::buffer_reader{*record};
+        const auto header = bg::details::TickHeader::read(reader);
+        if (header.operation != bg::details::TickOperation::tick) {
+            throw std::invalid_argument{"test_graph result tick does not start with a tick header"};
+        }
+
+        const auto *type = captured_.type();
+        if (type == nullptr) {
+            throw std::logic_error{"test_graph result has captured bytes without a time-series type"};
+        }
+
+        std::invoke(std::forward<Visitor>(visitor), *type, header.valid, reader);
+        return true;
+    }
 
     auto operator[](std::size_t index) const {
         if constexpr (std::same_as<T, void>) {
@@ -138,31 +162,20 @@ template <typename T = void> class TestGraphResult {
 
   private:
     template <typename Function> bool visit_scalar(std::size_t index, Function &&function) const {
-        const auto &record = captured_.records[index];
-        if (!record) {
-            return false;
-        }
+        auto present = false;
+        visit_tick(index, [&](const TimeSeriesType &type, bool valid, util::buffer_reader &reader) {
+            if (!valid) {
+                return;
+            }
 
-        auto reader = util::buffer_reader{*record};
-        const auto header = bg::details::TickHeader::read(reader);
-        if (header.operation != bg::details::TickOperation::tick) {
-            throw std::invalid_argument{"test_graph result tick does not start with a tick header"};
-        }
-        if (!header.valid) {
-            return false;
-        }
-
-        const auto *type = captured_.type();
-        if (type == nullptr) {
-            throw std::logic_error{"test_graph result has captured bytes without a time-series type"};
-        }
-
-        const auto *value_type = type_cast<TimeSeriesValueType>(type);
-        if (value_type == nullptr) {
-            throw std::invalid_argument{"test_graph result tick is a collection"};
-        }
-        return bg::details::TimeSeriesTickScalarRead::visit(reader, value_type->value_type(),
-                                                            std::forward<Function>(function));
+            const auto *value_type = type_cast<TimeSeriesValueType>(&type);
+            if (value_type == nullptr) {
+                throw std::invalid_argument{"test_graph result tick is a collection"};
+            }
+            present = bg::details::TimeSeriesTickScalarRead::visit(reader, value_type->value_type(),
+                                                                    std::forward<Function>(function));
+        });
+        return present;
     }
 
     details::CapturedValues captured_;

@@ -30,6 +30,7 @@ class TestGraphInputs {
     allocator memory_;
     std::vector<std::unique_ptr<ScalarValue<>>> scalars_;
     std::vector<std::unique_ptr<literal::ScalarLiteral>> removed_values_;
+    std::vector<std::unique_ptr<literal::TaggedLiteral>> removed_markers_;
     std::vector<std::unique_ptr<std::vector<literal::TimeSeriesLiteral>>> sequences_;
     std::vector<testing::TestGraphLiteralInput> inputs_;
 };
