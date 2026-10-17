@@ -984,12 +984,16 @@ TEST_CASE("operator cache hits rebind concrete demands to the current source",
     const auto float_source = bg::node([](bg::Out<bg::TS<float>>) {});
     const auto wire = [&](bg::GraphWiring &wiring) {
         const auto context = bg::WiringContext{wiring};
-        auto deferred = wiring.create_wp<bg::TS<bg::i64>>(integer_source());
-        deferred.materialisation_option<bg::TS<float>>(
-            [float_source](bg::wp<bg::TS<bg::i64>>) { return float_source(); }, 0.0);
-        const auto output = operation(deferred);
-        REQUIRE(output.has_output());
-        CHECK(wiring.materialisation_required(deferred, bg::TS<float>::type()));
+        const auto bind = [&] {
+            auto deferred = wiring.create_wp<bg::TS<bg::i64>>(integer_source());
+            deferred.materialisation_option<bg::TS<float>>(
+                [float_source](bg::wp<bg::TS<bg::i64>>) { return float_source(); }, 0.0);
+            const auto output = operation(deferred);
+            REQUIRE(output.has_output());
+            CHECK(wiring.materialisation_required(deferred, bg::TS<float>::type()));
+        };
+        bind();
+        bind();
     };
 
     auto first_wiring = bg::GraphWiring{};
@@ -999,7 +1003,7 @@ TEST_CASE("operator cache hits rebind concrete demands to the current source",
 
     auto second_wiring = bg::GraphWiring{};
     wire(second_wiring);
-    CHECK(requirement_calls == 1);
+    CHECK(requirement_calls == 2);
     second_wiring.finalize();
 }
 

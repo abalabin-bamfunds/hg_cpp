@@ -53,6 +53,28 @@ def test_date_time_scalar_conversions_remain_available_to_extensions():
     )
 
 
+def test_test_graph_uses_registered_runtime_scalar_conversion():
+    script = """
+import bg
+from bg._bg_test_extension import register_runtime_double_result_conversion
+
+assert register_runtime_double_result_conversion()
+
+@bg.graph
+def graph(value: bg.TS[float]) -> bg.TS[float]:
+    return value
+
+assert bg.test_graph(graph, [2.5]) == ["extension scalar conversion"]
+
+@bg.graph
+def nested(values: bg.TSD[int, bg.TS[float]]) -> bg.TSD[int, bg.TS[float]]:
+    return values
+
+assert bg.test_graph(nested, [{1: 2.5}]) == [{1: "extension scalar conversion"}]
+"""
+    subprocess.run([sys.executable, "-c", script], check=True, capture_output=True, text=True)
+
+
 def test_symbol_is_a_value_type():
     value = bg.symbol("price")
 

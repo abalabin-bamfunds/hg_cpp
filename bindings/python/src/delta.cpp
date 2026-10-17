@@ -70,6 +70,14 @@ nb::handle remove_sentinel() {
     return sentinel.get();
 }
 
+nb::handle invalid_sentinel() {
+    const auto &sentinel = delta_types().invalid_sentinel;
+    if (!sentinel) {
+        throw std::logic_error{"Python delta types have not been registered"};
+    }
+    return sentinel.get();
+}
+
 nb::object make_set_delta(nb::handle added, nb::handle removed) {
     const auto &type = delta_types().set_delta_type;
     if (!type) {

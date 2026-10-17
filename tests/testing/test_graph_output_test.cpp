@@ -161,6 +161,55 @@ TEST_CASE("test_graph preserves missing and empty collection output ticks",
     CHECK(empty.equals({{}}));
 }
 
+TEST_CASE("test_graph result visits captured ticks without consuming owning scalar values",
+          "[testing][evaluation][feature:test-graph][series:value][scalar:string][feature:scalar-storage]") {
+    const auto identity = [](bg::wp<bg::TS<bg::string>> input) { return input; };
+    const auto result = bg::testing::test_graph(identity, {"first", literal::SKIP, literal::INVALID, "last"});
+
+    const auto read_value = [&](std::size_t index) {
+        auto value = std::string{};
+        const auto visited = result.visit_tick(index, [&](const bg::TimeSeriesType &type, bool valid,
+                                                          bg::util::buffer_reader &reader) {
+            REQUIRE(valid);
+            const auto &value_type = bg::type_cast<bg::TimeSeriesValueType>(type);
+            REQUIRE(bg::details::TimeSeriesTickScalarRead::visit(reader, value_type.value_type(),
+                                                                  [&](bg::Scalar<> scalar) {
+                                                                      value = bg::scalar_cast<bg::string>(scalar)
+                                                                                  .value();
+                                                                  }));
+        });
+        REQUIRE(visited);
+        return value;
+    };
+
+    CHECK(read_value(0) == "first");
+    CHECK_THROWS(result.visit_tick(0, [&](const bg::TimeSeriesType &type, bool valid,
+                                          bg::util::buffer_reader &reader) {
+        REQUIRE(valid);
+        const auto &value_type = bg::type_cast<bg::TimeSeriesValueType>(type);
+        REQUIRE(bg::details::TimeSeriesTickScalarRead::visit(reader, value_type.value_type(),
+                                                              [](bg::Scalar<> scalar) {
+                                                                  CHECK(bg::scalar_cast<bg::string>(scalar).value() ==
+                                                                        "first");
+                                                              }));
+        throw std::runtime_error{"callback"};
+    }));
+    CHECK(read_value(0) == "first");
+
+    auto skipped_callback_called = false;
+    CHECK_FALSE(result.visit_tick(1, [&](const auto &, bool, auto &) { skipped_callback_called = true; }));
+    CHECK_FALSE(skipped_callback_called);
+
+    auto invalid_callback_called = false;
+    CHECK(result.visit_tick(2, [&](const auto &, bool valid, auto &) {
+        invalid_callback_called = true;
+        CHECK_FALSE(valid);
+    }));
+    CHECK(invalid_callback_called);
+    CHECK(read_value(3) == "last");
+    CHECK(result[0]->view().value() == "first");
+}
+
 TEST_CASE("test_graph captured tick chain rolls over and remains readable after comparisons and moves",
           "[testing][evaluation][feature:test-graph][series:tsd][scalar:string][feature:scalar-storage]") {
     using Tick = literal::TimeSeriesLiteral;

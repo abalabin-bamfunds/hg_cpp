@@ -662,6 +662,30 @@ def test_operator_namespace_reexports_existing_higher_order_apis():
     assert bg.operators.switch_ is bg.switch_
 
 
+def test_string_switch_cache_is_released_before_scalar_runtime_shutdown():
+    script = """
+import bg
+
+@bg.graph
+def a(value: bg.TS[str]) -> bg.TS[str]:
+    return value
+
+@bg.graph
+def b(value: bg.TS[str]) -> bg.TS[str]:
+    return bg.operators.const_("fallback")
+
+@bg.graph
+def root(key: bg.TS[int], value: bg.TS[str]) -> bg.TS[str]:
+    return bg.switch_(key, {1: a, bg.DEFAULT: b}, value)
+
+assert bg.test_graph(root, [1, 0], ["original", None]) == ["original", "fallback"]
+"""
+
+    completed = subprocess.run([sys.executable, "-c", script], check=False, capture_output=True, text=True)
+
+    assert completed.returncode == 0, completed.stderr
+
+
 def test_addition_checks_wiring_point_lifetime():
     saved_points = []
 

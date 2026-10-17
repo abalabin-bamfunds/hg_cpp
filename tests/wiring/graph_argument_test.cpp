@@ -10,6 +10,7 @@
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/type/type_resolution_error.hpp>
+#include <bg/type/type_registry.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -17,12 +18,53 @@
 
 #include <array>
 #include <compare>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
+
+namespace test_graph_argument {
+
+struct captured_pointer {
+    std::shared_ptr<int> value;
+
+    friend bool operator==(const captured_pointer &, const captured_pointer &) = default;
+};
+
+} // namespace test_graph_argument
+
+namespace std {
+
+template <> struct hash<test_graph_argument::captured_pointer> {
+    std::size_t operator()(const test_graph_argument::captured_pointer &value) const noexcept {
+        return std::hash<std::shared_ptr<int>>{}(value.value);
+    }
+};
+
+} // namespace std
+
+namespace bg {
+
+template <> struct scalar_type_traits<test_graph_argument::captured_pointer> {
+    static const ScalarType &type() noexcept {
+        class Type final : public ScalarType {
+          public:
+            bool is_resolved() const noexcept override { return true; }
+            const bg::Type &resolve(const TypeMap &) const override { return *this; }
+            bool supports_equality() const noexcept override { return true; }
+            bool supports_hash() const noexcept override { return true; }
+        };
+
+        static const Type type;
+        [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
+        return type;
+    }
+};
+
+} // namespace bg
 
 namespace {
 
@@ -104,7 +146,7 @@ struct captured_integer_node {
 };
 
 struct captured_shared_pointer_node {
-    Scalar<Opaque<std::shared_ptr<int>>> value;
+    Scalar<test_graph_argument::captured_pointer> value;
     Out<TS<i64>> output;
     void evaluate() const {}
 };
@@ -183,7 +225,8 @@ details::GraphWiringStructure captured_shared_pointer_structure(const std::share
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
     const auto source = node<captured_shared_pointer_node>();
-    const auto result = source(ScalarValue<Opaque<std::shared_ptr<int>>>{captured_value});
+    const auto result = source(ScalarValue<test_graph_argument::captured_pointer>{
+        test_graph_argument::captured_pointer{captured_value}});
 
     (void)wiring.complete_pending_wiring();
     return details::graph_wiring_structure(wiring, std::span<const WiringPoint>{},
@@ -829,6 +872,36 @@ TEST_CASE("operator caching uses graph structure and bypasses uncacheable struct
         (void)operation(argument(std::vector<details::GraphWiringStructure>{}));
     });
     CHECK(requirements == 9);
+}
+
+TEST_CASE("root GraphWiring owns cached graph scalar copies through nested wiring",
+          "[feature:operator][feature:wiring][feature:graph-argument][scalar:opaque][shape:nested]") {
+    auto lifetime = std::weak_ptr<int>{};
+    auto selected = std::string{};
+    auto requirements = 0;
+    auto operation = Operator{
+        Signature{util::symbol{"map"}, {{util::symbol{"function"}, &GraphArgument::type()}}, TS_T::type()}};
+    operation.overload(GraphOverload{util::symbol{"generic"}, true, selected, &requirements});
+
+    {
+        auto root = GraphWiring{};
+        {
+            auto nested = GraphWiring{root};
+            const auto context = WiringContext{nested};
+            auto captured = std::make_shared<int>(7);
+            lifetime = captured;
+            auto structure = captured_shared_pointer_structure(captured);
+            REQUIRE(structure.cacheable());
+
+            (void)operation(argument(std::move(structure)));
+            CHECK(requirements == 1);
+            captured.reset();
+        }
+
+        CHECK_FALSE(lifetime.expired());
+    }
+
+    CHECK(lifetime.expired());
 }
 
 TEST_CASE("graph signature constraints own captured scalars without registry retention",

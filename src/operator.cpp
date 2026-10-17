@@ -15,9 +15,10 @@
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/type/type_variable.hpp>
 
+#include "operator_resolution_cache.hpp"
+
 #include <algorithm>
 #include <compare>
-#include <deque>
 #include <exception>
 #include <iterator>
 #include <memory>
@@ -264,31 +265,7 @@ WiringDiagnostic diagnostic(const Signature &prototype, std::vector<util::symbol
     return {prototype.name(), std::move(path), std::move(arguments), std::move(candidates), ambiguous};
 }
 
-struct ArgumentKey {
-    const Type *type{};
-    std::optional<GraphArgumentStructures> graph_structures;
-    bool present;
-    std::optional<util::symbol> name;
-    bool requires_optional{};
-    details::VariadicMode variadic_capture_mode{details::VariadicMode::none};
-    bool has_default_materialisation{};
-    std::vector<std::pair<const TimeSeriesType *, double>> materialisation_options;
-    std::size_t source_group{static_cast<std::size_t>(-1)};
-
-    bool operator==(const ArgumentKey &other) const {
-        if (type != other.type || present != other.present || name != other.name ||
-            requires_optional != other.requires_optional || variadic_capture_mode != other.variadic_capture_mode ||
-            static_cast<bool>(graph_structures) != static_cast<bool>(other.graph_structures) ||
-            has_default_materialisation != other.has_default_materialisation ||
-            materialisation_options != other.materialisation_options || source_group != other.source_group) {
-            return false;
-        }
-        if (graph_structures) {
-            return *graph_structures == *other.graph_structures;
-        }
-        return true;
-    }
-};
+using ArgumentKey = details::OperatorArgumentKey;
 
 std::size_t source_group_index(std::vector<const details::WiringRecord *> &sources,
                                const details::WiringRecord *record) {
@@ -393,11 +370,7 @@ std::optional<Scalar<>> scalar(std::span<const details::WiringArgumentDescriptor
     return argument.scalar();
 }
 
-struct ScalarRead {
-    const WiringTemplate *implementation;
-    std::size_t index;
-    ScalarValue<> value;
-};
+using ScalarRead = details::OperatorScalarRead;
 
 struct ScalarReads {
     const WiringTemplate *implementation{};
@@ -423,22 +396,7 @@ void record_scalar_read(void *context, std::size_t index, Scalar<> value) {
 
 } // namespace
 
-struct Operator::Cache {
-    static constexpr auto maximum_entries = std::size_t{64};
-
-    struct Entry {
-        std::vector<ArgumentKey> arguments;
-        std::optional<TypeMap> seed_type_map;
-        std::vector<ScalarRead> scalar_reads;
-        const WiringTemplate *implementation;
-        SignatureResolution resolution;
-        std::vector<const TimeSeriesType *> argument_forms;
-    };
-
-    std::deque<Entry> entries;
-};
-
-Operator::Operator(Signature prototype) : prototype_{std::move(prototype)}, cache_{std::make_unique<Cache>()} {}
+Operator::Operator(Signature prototype) : prototype_{std::move(prototype)} {}
 
 Operator::~Operator() = default;
 
@@ -447,11 +405,17 @@ void Operator::add_overload(std::unique_ptr<WiringTemplate> implementation) {
         throw std::invalid_argument{"an outputless operator cannot have an output overload"};
     }
     overloads_.push_back(std::move(implementation));
-    cache_->entries.clear();
 }
 
 std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const WiringArgument> arguments,
                                             const TypeMap *seed_type_map) const {
+    auto &cache = wiring.operator_resolution_cache(*this);
+    if (cache.operator_identity != cache_identity_ || cache.overload_count != overloads_.size()) {
+        cache.entries.clear();
+        cache.operator_identity = cache_identity_;
+        cache.overload_count = overloads_.size();
+    }
+
     const auto &prototype = signature();
     auto cache_key = argument_key(arguments);
     if (cache_key) {
@@ -512,7 +476,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
 
     if (cache_key) {
         auto temporary_records = details::WiringRecordOverlay{wiring};
-        for (const auto &entry : cache_->entries) {
+        for (const auto &entry : cache.entries) {
             const auto seed_matches = entry.seed_type_map.has_value() == seed_key.has_value() &&
                                       (!seed_key || entry.seed_type_map->has_same_mappings(*seed_key));
             if (!seed_matches || !std::ranges::equal(entry.arguments, *cache_key)) {
@@ -813,18 +777,18 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
     }
 
     if (scalar_reads.cacheable && cache_key) {
-        if (cache_->entries.size() == Cache::maximum_entries) {
-            cache_->entries.pop_front();
+        if (cache.entries.size() == details::OperatorResolutionCache::maximum_entries) {
+            cache.entries.pop_front();
         }
         auto selected_forms = std::vector<const TimeSeriesType *>{};
         selected_forms.reserve(selected->argument_forms.size());
         for (const auto &form : selected->argument_forms) {
             selected_forms.push_back(form.materialisation_target);
         }
-        cache_->entries.push_back({std::move(*cache_key), std::move(seed_key), std::move(scalar_reads.values),
-                                   selected->implementation,
-                                   {selected->resolution.signature, selected->resolution.type_map.copy()},
-                                   std::move(selected_forms)});
+        cache.entries.push_back({std::move(*cache_key), std::move(seed_key), std::move(scalar_reads.values),
+                                 selected->implementation,
+                                 {selected->resolution.signature, selected->resolution.type_map.copy()},
+                                 std::move(selected_forms)});
     }
 
     auto committed = details::normalize_wiring_arguments(selected->implementation->signature(), arguments,

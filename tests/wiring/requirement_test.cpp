@@ -186,20 +186,26 @@ TEST_CASE("an operator cache keys scalar values read by aggregate requirements",
 
     const auto run = [&](int mode) {
         const auto graph = [&](bg::wp<bg::TS<float>> input) -> bg::wp<bg::TS<float>> {
-            return operation(input, mode).as<bg::TS<float>>();
+            const auto result = operation(input, mode);
+            (void)operation(input, 1 - mode);
+            (void)operation(input, 1 - mode);
+            (void)operation(input, mode);
+            return result.as<bg::TS<float>>();
         };
 
         return bg::testing::test_graph(graph, {1.0F});
     };
 
     CHECK(run(0).equals({1.0F}));
-    CHECK(run(0).equals({1.0F}));
-    CHECK(zero_mode_copy_definition::requirement_calls == 1);
-    CHECK(nonzero_mode_copy_definition::requirement_calls == 1);
-
-    CHECK(run(1).equals({-1.0F}));
     CHECK(zero_mode_copy_definition::requirement_calls == 2);
     CHECK(nonzero_mode_copy_definition::requirement_calls == 2);
+    CHECK(run(0).equals({1.0F}));
+    CHECK(zero_mode_copy_definition::requirement_calls == 4);
+    CHECK(nonzero_mode_copy_definition::requirement_calls == 4);
+
+    CHECK(run(1).equals({-1.0F}));
+    CHECK(zero_mode_copy_definition::requirement_calls == 6);
+    CHECK(nonzero_mode_copy_definition::requirement_calls == 6);
 }
 
 TEST_CASE("callable requirements control overload applicability",
@@ -227,20 +233,26 @@ TEST_CASE("callable requirements control overload applicability",
 
     const auto run = [&](int mode) {
         const auto graph = [&](bg::wp<bg::TS<float>> input) -> bg::wp<bg::TS<float>> {
-            return operation(input, mode).as<bg::TS<float>>();
+            const auto result = operation(input, mode);
+            (void)operation(input, 1 - mode);
+            (void)operation(input, 1 - mode);
+            (void)operation(input, mode);
+            return result.as<bg::TS<float>>();
         };
 
         return bg::testing::test_graph(graph, {2.0F});
     };
 
     CHECK(run(0).equals({2.0F}));
-    CHECK(run(0).equals({2.0F}));
-    CHECK(zero_requirement_calls == 1);
-    CHECK(nonzero_requirement_calls == 1);
-
-    CHECK(run(1).equals({-2.0F}));
     CHECK(zero_requirement_calls == 2);
     CHECK(nonzero_requirement_calls == 2);
+    CHECK(run(0).equals({2.0F}));
+    CHECK(zero_requirement_calls == 4);
+    CHECK(nonzero_requirement_calls == 4);
+
+    CHECK(run(1).equals({-2.0F}));
+    CHECK(zero_requirement_calls == 6);
+    CHECK(nonzero_requirement_calls == 6);
 }
 
 TEST_CASE("an unhashable scalar read disables operator caching",

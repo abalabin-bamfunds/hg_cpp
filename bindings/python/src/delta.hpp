@@ -11,6 +11,7 @@ bool is_invalid(nanobind::handle value);
 bool is_set_delta(nanobind::handle value);
 bool is_removed(nanobind::handle value);
 nanobind::handle remove_sentinel();
+nanobind::handle invalid_sentinel();
 nanobind::object make_set_delta(nanobind::handle added, nanobind::handle removed);
 
 } // namespace bg::python::details

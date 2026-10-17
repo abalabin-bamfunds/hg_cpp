@@ -196,10 +196,9 @@ TEST_CASE("an aggregate resolver completes an output type",
     auto operation = bg::operator_<auto(int)->bg::TS<float>>{"resolved_source", {"kind"}};
     operation.overload(bg::node<resolved_source_definition>());
 
+    auto wiring = bg::GraphWiring{};
+    auto context = bg::WiringContext{wiring};
     const auto resolve = [&](int kind) -> const bg::TimeSeriesType & {
-        auto wiring = bg::GraphWiring{};
-        auto context = bg::WiringContext{wiring};
-
         return operation(kind).type();
     };
 

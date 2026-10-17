@@ -101,6 +101,10 @@ NB_MODULE(_bg_test_extension, module) {
     module.def("register_double_type", [](nanobind::handle python_type) {
         return bg::python::scalar_conversions().add_python_type(python_type, bg::double_type());
     });
+    module.def("register_runtime_double_result_conversion", [] {
+        return bg::python::scalar_conversions().add(bg::cpp_scalar_runtime_type<double>(),
+                                                    &extension_scalar_to_python);
+    });
     module.def("can_convert_python_type", [](nanobind::handle python_type) {
         auto &conversions = bg::python::scalar_conversions();
         return conversions.can_from_python(conversions.type_from_python(python_type));
