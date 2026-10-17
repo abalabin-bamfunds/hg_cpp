@@ -481,6 +481,19 @@ GlobalState &RuntimeGraph::global_state() const noexcept {
     return *root_global_state_;
 }
 
+GlobalEvaluationContext RuntimeGraph::make_global_evaluation_context(
+    GlobalState &global_state, details::EvaluationScratch &evaluation_scratch, const WallClock &wall_clock,
+    EvaluationProfile *evaluation_profile) noexcept {
+    auto *root_graph = this;
+    auto *root_evaluator = evaluator_;
+    if (root_evaluator != nullptr) {
+        root_graph = &root_evaluator->outer_graph(*this);
+        root_evaluator = root_graph->evaluator_;
+    }
+    return GlobalEvaluationContext{wall_clock, *root_graph, root_evaluator, global_state, evaluation_scratch,
+                                   evaluation_profile};
+}
+
 std::size_t RuntimeGraph::borrowed_storage_size(const CompiledGraph &compiled_graph) noexcept {
     const auto runtime_storage_size = compiled_graph.runtime_storage_size();
     const auto scheduling_word_count = compiled_graph.schedule_word_count();
@@ -658,8 +671,8 @@ RuntimeGraph::~RuntimeGraph() {
 
 void RuntimeGraph::finalize(GlobalState &global_state) noexcept {
     auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
-    auto context = EvaluationContext{evaluation_time_, *this, 0, global_state, &scratch,
-                                     SystemWallClock::instance()};
+    auto global_context = make_global_evaluation_context(global_state, scratch, SystemWallClock::instance());
+    auto context = EvaluationContext{global_context, evaluation_time_, *this};
     finalize(context);
 }
 
@@ -1190,7 +1203,8 @@ void RuntimeGraph::start(EvaluationTime evaluation_time, const RuntimeGraphInput
 
 void RuntimeGraph::start(EvaluationTime evaluation_time, GlobalState &global_state, const RuntimeGraphInput *inputs) {
     auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
-    auto context = EvaluationContext{evaluation_time, *this, global_state, scratch, SystemWallClock::instance()};
+    auto global_context = make_global_evaluation_context(global_state, scratch, SystemWallClock::instance());
+    auto context = EvaluationContext{global_context, evaluation_time, *this, inputs};
     start(context, inputs);
 }
 
@@ -1202,8 +1216,8 @@ void RuntimeGraph::start(EvaluationTime evaluation_time, EvaluationProfile &prof
 void RuntimeGraph::start(EvaluationTime evaluation_time, GlobalState &global_state, EvaluationProfile &profile,
                          std::optional<Scalar<>> label, const RuntimeGraphInput *inputs) {
     auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
-    auto context =
-        EvaluationContext{evaluation_time, *this, global_state, scratch, SystemWallClock::instance(), &profile};
+    auto global_context = make_global_evaluation_context(global_state, scratch, SystemWallClock::instance(), &profile);
+    auto context = EvaluationContext{global_context, evaluation_time, *this, inputs};
     start(context, inputs, std::move(label));
 }
 
@@ -1361,7 +1375,8 @@ void RuntimeGraph::stop(const RuntimeGraphInput *inputs) noexcept {
 
 void RuntimeGraph::stop(GlobalState &global_state, const RuntimeGraphInput *inputs) noexcept {
     auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
-    auto context = EvaluationContext{evaluation_time_, *this, global_state, scratch, SystemWallClock::instance()};
+    auto global_context = make_global_evaluation_context(global_state, scratch, SystemWallClock::instance());
+    auto context = EvaluationContext{global_context, evaluation_time_, *this, inputs};
     stop(context, inputs);
 }
 
@@ -1372,8 +1387,8 @@ void RuntimeGraph::stop(EvaluationProfile &profile, const RuntimeGraphInput *inp
 void RuntimeGraph::stop(GlobalState &global_state, EvaluationProfile &profile,
                         const RuntimeGraphInput *inputs) noexcept {
     auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
-    auto context =
-        EvaluationContext{evaluation_time_, *this, global_state, scratch, SystemWallClock::instance(), &profile};
+    auto global_context = make_global_evaluation_context(global_state, scratch, SystemWallClock::instance(), &profile);
+    auto context = EvaluationContext{global_context, evaluation_time_, *this, inputs};
     stop(context, inputs);
 }
 
@@ -1391,8 +1406,11 @@ void RuntimeGraphEvaluator::stop(RuntimeGraph &graph, EvaluationContext &parent_
         return;
     }
 
-    auto run_context = EvaluationContext{parent_context, profile_};
-    auto binding_context = ServiceBindingContext{run_context, graph.service_bindings()};
+    auto &global_context = parent_context.global_context();
+    auto *previous_profile = global_context.evaluation_profile;
+    global_context.evaluation_profile = profile_;
+    auto restore_profile = util::scope_exit{[&]() noexcept { global_context.evaluation_profile = previous_profile; }};
+    auto binding_context = ServiceBindingContext{parent_context, graph.service_bindings()};
     auto context = EvaluationContext{graph, binding_context.context(), inputs};
     graph.stopped_ = true;
     graph.stop_nodes(graph.compiled_graph_->node_count(), context);
@@ -1434,7 +1452,8 @@ void RuntimeGraph::evaluate(EvaluationTime evaluation_time, const RuntimeGraphIn
 void RuntimeGraph::evaluate(EvaluationTime evaluation_time, GlobalState &global_state,
                             const RuntimeGraphInput *inputs) {
     auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
-    auto context = EvaluationContext{evaluation_time, *this, global_state, scratch, SystemWallClock::instance()};
+    auto global_context = make_global_evaluation_context(global_state, scratch, SystemWallClock::instance());
+    auto context = EvaluationContext{global_context, evaluation_time, *this, inputs};
     if (!evaluate(context, inputs)) {
         throw std::logic_error{"a pending evaluation escaped the outer graph"};
     }
@@ -1448,8 +1467,8 @@ void RuntimeGraph::evaluate(EvaluationTime evaluation_time, EvaluationProfile &p
 void RuntimeGraph::evaluate(EvaluationTime evaluation_time, GlobalState &global_state,
                             EvaluationProfile &profile, const RuntimeGraphInput *inputs) {
     auto scratch = details::EvaluationScratch{allocator_.memory_resource()};
-    auto context =
-        EvaluationContext{evaluation_time, *this, global_state, scratch, SystemWallClock::instance(), &profile};
+    auto global_context = make_global_evaluation_context(global_state, scratch, SystemWallClock::instance(), &profile);
+    auto context = EvaluationContext{global_context, evaluation_time, *this, inputs};
     if (!evaluate(context, inputs)) {
         throw std::logic_error{"a pending evaluation escaped the outer graph"};
     }
@@ -1647,19 +1666,6 @@ void EvaluationContext::add_cycle_callback(void *receiver,
                                            bool call_on_stop) const {
     runtime_graph_->add_cycle_callback(receiver, function, call_on_stop);
 }
-
-GlobalState &EvaluationContext::global_state() const noexcept {
-    return *global_state_;
-}
-
-EvaluationContext::EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph,
-                                     std::size_t node_index, GlobalState &global_state,
-                                     details::EvaluationScratch *evaluation_scratch, const WallClock &wall_clock,
-                                     const details::EvaluationContextSection *sections,
-                                     EvaluationProfile *evaluation_profile) noexcept
-    : evaluation_time_(evaluation_time), wall_clock_(&wall_clock), runtime_graph_(&runtime_graph),
-      node_index_(node_index), global_state_{&global_state}, scratch_{evaluation_scratch}, sections_(sections),
-      evaluation_profile_{evaluation_profile} {}
 
 EvaluationContext EvaluationContext::child(details::EvaluationContextSection &section) noexcept {
     section.parent = sections_;

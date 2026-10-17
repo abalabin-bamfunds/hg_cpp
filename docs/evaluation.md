@@ -137,6 +137,20 @@ requests it explicitly as its first parameter:
 
 The engine injects the context independently of wiring.
 
+`GlobalEvaluationContext` holds services shared by the outer graph and its inner
+graphs: the wall clock, global state, evaluation profile, scratch arena, and
+references to the outer runtime graph and its evaluator. Nested contexts borrow
+the same global context, so access to the outer graph and evaluator does not
+traverse graph ownership.
+
+The simulation engine creates one global context for a run. A direct
+`RuntimeGraph::start`, `evaluate`, or `stop` call creates one for that call.
+Overloads that take an `EvaluationContext` borrow its global context.
+`EvaluationContext` retains the evaluation time, current graph and node, borrowed
+graph inputs, scoped bindings, and invocation-local scratch frames. Evaluation
+time remains local for direct access during node execution. Child construction
+shares services and keeps scratch-frame state local.
+
 The context provides:
 
 - the evaluation time

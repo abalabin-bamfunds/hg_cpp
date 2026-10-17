@@ -301,6 +301,139 @@ struct NestedMiddlePassThrough {
     inline static int stops{};
 };
 
+struct GlobalContextRootPassThrough {
+    bg::In<bg::TS<bg::i64>> input;
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void start(bg::EvaluationContext *context) const {
+        ++start_count;
+        observe(*context);
+    }
+
+    void evaluate(bg::EvaluationContext *context) const {
+        ++evaluate_count;
+        observe(*context);
+        output.set(*input);
+    }
+
+    void stop(bg::EvaluationContext *context) const noexcept {
+        ++stop_count;
+        observe(*context);
+    }
+
+    static void observe(bg::EvaluationContext &context) noexcept {
+        const auto &global = context.global_context();
+        if (global_context == nullptr) {
+            global_context = &global;
+            root_graph = &context.runtime_graph();
+            root_evaluator = global.root_runtime_graph_evaluator;
+        } else {
+            root_context_is_stable = root_context_is_stable && global_context == &global &&
+                                     root_graph == &context.runtime_graph() &&
+                                     root_evaluator == global.root_runtime_graph_evaluator;
+        }
+    }
+
+    inline static const bg::GlobalEvaluationContext *global_context{};
+    inline static bg::RuntimeGraph *root_graph{};
+    inline static bg::RuntimeGraphEvaluator *root_evaluator{};
+    inline static bool root_context_is_stable{true};
+    inline static std::size_t start_count{};
+    inline static std::size_t evaluate_count{};
+    inline static std::size_t stop_count{};
+};
+
+struct GlobalContextLeafProbe {
+    bg::In<bg::TS<bg::i64>> input;
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void start(bg::EvaluationContext *context) const {
+        ++start_count;
+        observe(*context);
+    }
+
+    void evaluate(bg::EvaluationContext *context) const {
+        ++evaluate_count;
+        observe(*context);
+        output.set(*input);
+    }
+
+    void stop(bg::EvaluationContext *context) const noexcept {
+        ++stop_count;
+        observe(*context);
+    }
+
+    static void observe(bg::EvaluationContext &context) noexcept {
+        const auto &global = context.global_context();
+        shares_global_context = shares_global_context && &global == GlobalContextRootPassThrough::global_context;
+        resolves_root_graph = resolves_root_graph &&
+                              &global.root_runtime_graph == GlobalContextRootPassThrough::root_graph;
+        resolves_root_evaluator = resolves_root_evaluator && global.root_runtime_graph_evaluator != nullptr &&
+                                  global.root_runtime_graph_evaluator == GlobalContextRootPassThrough::root_evaluator;
+        retains_local_graph = retains_local_graph &&
+                              &context.runtime_graph() != GlobalContextRootPassThrough::root_graph;
+    }
+
+    inline static bool shares_global_context{true};
+    inline static bool resolves_root_graph{true};
+    inline static bool resolves_root_evaluator{true};
+    inline static bool retains_local_graph{true};
+    inline static std::size_t start_count{};
+    inline static std::size_t evaluate_count{};
+    inline static std::size_t stop_count{};
+};
+
+TEST_CASE("nested evaluation contexts share root graph services",
+          "[evaluation][nested][context][feature:evaluation-context][feature:nested-graph]"
+          "[shape:doubly-nested][series:value][scalar:integer][transition:lifecycle]") {
+    const auto root_pass_through = bg::node<GlobalContextRootPassThrough>();
+    const auto leaf_probe = bg::node<GlobalContextLeafProbe>();
+    const auto leaf = bg::graph("name"_n = "global_context_leaf",
+                                [&](bg::wp<bg::TS<bg::i64>> input) -> bg::wp<bg::TS<bg::i64>> {
+                                    return leaf_probe(input);
+                                });
+    const auto middle = bg::graph(
+        "name"_n = "global_context_middle",
+        [&](bg::wp<bg::TS<bg::i64>> input, bg::wp<bg::TS<bool>> run) -> bg::wp<bg::TS<bg::i64>> {
+            return bg::wp<bg::TS<bg::i64>>{bg::nested(leaf, run, input)};
+        });
+    const auto outer = [&](bg::wp<bg::TS<bg::i64>> input,
+                           bg::wp<bg::TS<bool>> run) -> bg::wp<bg::TS<bg::i64>> {
+        return bg::wp<bg::TS<bg::i64>>{bg::nested(middle, run, root_pass_through(input), run)};
+    };
+
+    GlobalContextRootPassThrough::global_context = nullptr;
+    GlobalContextRootPassThrough::root_graph = nullptr;
+    GlobalContextRootPassThrough::root_evaluator = nullptr;
+    GlobalContextRootPassThrough::root_context_is_stable = true;
+    GlobalContextRootPassThrough::start_count = 0;
+    GlobalContextRootPassThrough::evaluate_count = 0;
+    GlobalContextRootPassThrough::stop_count = 0;
+    GlobalContextLeafProbe::shares_global_context = true;
+    GlobalContextLeafProbe::resolves_root_graph = true;
+    GlobalContextLeafProbe::resolves_root_evaluator = true;
+    GlobalContextLeafProbe::retains_local_graph = true;
+    GlobalContextLeafProbe::start_count = 0;
+    GlobalContextLeafProbe::evaluate_count = 0;
+    GlobalContextLeafProbe::stop_count = 0;
+
+    const auto values = {1, 2, 3};
+    const auto running = {true, true, true};
+    CHECK(bg::testing::test_graph(outer, values, running).equals<bg::i64>({1, 2, 3}));
+    CHECK(GlobalContextRootPassThrough::root_context_is_stable);
+    CHECK(GlobalContextRootPassThrough::start_count == 1);
+    CHECK(GlobalContextRootPassThrough::evaluate_count == 3);
+    CHECK(GlobalContextRootPassThrough::stop_count == 1);
+    CHECK(GlobalContextRootPassThrough::root_evaluator != nullptr);
+    CHECK(GlobalContextLeafProbe::start_count == 1);
+    CHECK(GlobalContextLeafProbe::evaluate_count == 3);
+    CHECK(GlobalContextLeafProbe::stop_count == 1);
+    CHECK(GlobalContextLeafProbe::shares_global_context);
+    CHECK(GlobalContextLeafProbe::resolves_root_graph);
+    CHECK(GlobalContextLeafProbe::resolves_root_evaluator);
+    CHECK(GlobalContextLeafProbe::retains_local_graph);
+}
+
 TEST_CASE("a nested graph can own another nested graph",
           "[evaluation][nested][lifecycle][reference][feature:nested-graph][shape:nested]"
           "[shape:doubly-nested][scalar:integer][series:value][binding:value-to-reference]"

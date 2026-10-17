@@ -83,6 +83,11 @@ class RuntimeGraph {
     EvaluationTime evaluation_time() const noexcept { return evaluation_time_; }
     GraphInstanceId instance_id() const noexcept { return instance_id_; }
     GlobalState &global_state() const noexcept;
+    // Engine API. Binds shared context services to the outer graph. A borrowed graph view has no root evaluator.
+    GlobalEvaluationContext make_global_evaluation_context(GlobalState &global_state,
+                                                          details::EvaluationScratch &evaluation_scratch,
+                                                          const WallClock &wall_clock,
+                                                          EvaluationProfile *evaluation_profile = nullptr) noexcept;
     bg::allocator &allocation() noexcept { return allocator_; }
     const bg::allocator &allocation() const noexcept { return allocator_; }
     void *storage_at(std::size_t offset) noexcept { return storage_ + offset; }

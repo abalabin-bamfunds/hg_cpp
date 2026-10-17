@@ -449,6 +449,8 @@ graph compilation or evaluation.
 - timed scheduling, cancellation, ordering, and coalescing
 - simulation time progression and termination
 - system and injected wall-clock access during lifecycle, nested evaluation, invalidation, and failure cleanup
+- shared global evaluation context and outer graph/evaluator identity across nested lifecycle calls;
+  isolation between runs and invocation-local bindings, graph inputs, and scratch frames
 - profile records for completed outer cycles, nested graph instances, graph lifetime, polling visibility,
   and rollback after evaluation failure; plain evaluation without a profile
 - profiler node and outer-cycle histories with independent periods and retention, steady-clock durations,
@@ -574,3 +576,5 @@ Build the `benchmark` preset and run `build/benchmark/benchmarks/bg_container_be
 to compare the custom hash dictionary with the standard library implementation.
 The [high-count map benchmark](../benchmarks/high_count_map.md) defines the
 portable map workload and the format for commit-keyed comparison results.
+The [evaluation context benchmark](../benchmarks/evaluation_context.md) measures
+child-context construction and flat and nested evaluation that reads evaluation time.

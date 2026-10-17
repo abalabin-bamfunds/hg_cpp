@@ -21,6 +21,17 @@ class EvaluationScratch;
 class NodeScheduler;
 } // namespace details
 
+// Engine state borrowed by every EvaluationContext in one run. The engine keeps this object, its referenced services,
+// and the root graph alive until all contexts for the run are destroyed.
+struct GlobalEvaluationContext {
+    const WallClock &wall_clock;
+    RuntimeGraph &root_runtime_graph;
+    RuntimeGraphEvaluator *root_runtime_graph_evaluator;
+    GlobalState &global_state;
+    details::EvaluationScratch &evaluation_scratch;
+    EvaluationProfile *evaluation_profile;
+};
+
 class EvaluationContext {
   public:
     ~EvaluationContext();
@@ -32,13 +43,15 @@ class EvaluationContext {
 
     const EvaluationTime &evaluation_time() const noexcept { return evaluation_time_; }
 
-    const WallClock &wall_clock() const noexcept { return *wall_clock_; }
+    const WallClock &wall_clock() const noexcept { return global_context_->wall_clock; }
 
     RuntimeGraph &runtime_graph() const noexcept { return *runtime_graph_; }
 
-    EvaluationProfile *evaluation_profile() const noexcept { return evaluation_profile_; }
+    EvaluationProfile *evaluation_profile() const noexcept { return global_context_->evaluation_profile; }
 
-    GlobalState &global_state() const noexcept;
+    GlobalState &global_state() const noexcept { return global_context_->global_state; }
+
+    GlobalEvaluationContext &global_context() const noexcept { return *global_context_; }
 
     std::size_t node_index() const noexcept { return node_index_; }
 
@@ -64,52 +77,35 @@ class EvaluationContext {
     friend SimulationEvaluationEngine;
     friend details::NodeScheduler;
 
-    EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph, GlobalState &global_state,
-                      details::EvaluationScratch &evaluation_scratch, const WallClock &wall_clock,
-                      EvaluationProfile *evaluation_profile = nullptr) noexcept
-        : evaluation_time_(evaluation_time), wall_clock_(&wall_clock), runtime_graph_(&runtime_graph), node_index_{},
-          global_state_{&global_state}, scratch_{&evaluation_scratch}, evaluation_profile_{evaluation_profile} {}
-    EvaluationContext(EvaluationTime evaluation_time, RuntimeGraph &runtime_graph, std::size_t node_index,
-                      GlobalState &global_state, details::EvaluationScratch *evaluation_scratch,
-                      const WallClock &wall_clock,
-                      const details::EvaluationContextSection *sections = nullptr,
-                      EvaluationProfile *evaluation_profile = nullptr) noexcept;
+    EvaluationContext(GlobalEvaluationContext &global_context, EvaluationTime evaluation_time,
+                      RuntimeGraph &runtime_graph, const RuntimeGraphInput *runtime_graph_inputs = nullptr) noexcept
+        : global_context_{&global_context}, evaluation_time_{evaluation_time}, runtime_graph_{&runtime_graph},
+          node_index_{}, scratch_{&global_context.evaluation_scratch}, runtime_graph_inputs_{runtime_graph_inputs} {}
     EvaluationContext(EvaluationContext &parent, RuntimeGraph &runtime_graph, std::size_t node_index) noexcept
-        : evaluation_time_(parent.evaluation_time_), wall_clock_(parent.wall_clock_), runtime_graph_(&runtime_graph),
-          node_index_(node_index), global_state_(parent.global_state_),
-          scratch_{parent.scratch_.evaluation_scratch_}, sections_(parent.sections_),
-          runtime_graph_inputs_{parent.runtime_graph_inputs_},
-          evaluation_profile_{parent.evaluation_profile_} {}
+        : global_context_{parent.global_context_}, evaluation_time_{parent.evaluation_time_},
+          runtime_graph_{&runtime_graph}, node_index_{node_index},
+          scratch_{&parent.global_context_->evaluation_scratch}, sections_{parent.sections_},
+          runtime_graph_inputs_{parent.runtime_graph_inputs_} {}
     EvaluationContext(RuntimeGraph &runtime_graph, EvaluationContext &parent,
                       const RuntimeGraphInput *runtime_graph_inputs) noexcept
-        : evaluation_time_(parent.evaluation_time_), wall_clock_(parent.wall_clock_), runtime_graph_(&runtime_graph),
-          node_index_{}, global_state_(parent.global_state_), scratch_{parent.scratch_.evaluation_scratch_},
-          sections_(parent.sections_), runtime_graph_inputs_{runtime_graph_inputs},
-          evaluation_profile_{parent.evaluation_profile_} {}
-    EvaluationContext(EvaluationContext &parent, EvaluationProfile *evaluation_profile) noexcept
-        : evaluation_time_(parent.evaluation_time_), wall_clock_(parent.wall_clock_),
-          runtime_graph_(parent.runtime_graph_), node_index_(parent.node_index_), global_state_(parent.global_state_),
-          scratch_{parent.scratch_.evaluation_scratch_}, sections_(parent.sections_),
-          runtime_graph_inputs_{parent.runtime_graph_inputs_},
-          evaluation_profile_{evaluation_profile} {}
+        : global_context_{parent.global_context_}, evaluation_time_{parent.evaluation_time_},
+          runtime_graph_{&runtime_graph}, node_index_{}, scratch_{&parent.global_context_->evaluation_scratch},
+          sections_(parent.sections_), runtime_graph_inputs_{runtime_graph_inputs} {}
     EvaluationContext(EvaluationContext &parent, const details::EvaluationContextSection &section) noexcept
-        : evaluation_time_(parent.evaluation_time_), wall_clock_(parent.wall_clock_),
-          runtime_graph_(parent.runtime_graph_), node_index_(parent.node_index_),
-          global_state_(parent.global_state_), scratch_{parent.scratch_.evaluation_scratch_}, sections_(&section),
-          runtime_graph_inputs_{parent.runtime_graph_inputs_},
-          evaluation_profile_{parent.evaluation_profile_} {}
+        : global_context_{parent.global_context_}, evaluation_time_{parent.evaluation_time_},
+          runtime_graph_{parent.runtime_graph_}, node_index_{parent.node_index_},
+          scratch_{&parent.global_context_->evaluation_scratch}, sections_(&section),
+          runtime_graph_inputs_{parent.runtime_graph_inputs_} {}
 
     void reset_scratch() noexcept { scratch_.reset(); }
 
+    GlobalEvaluationContext *global_context_;
     EvaluationTime evaluation_time_;
-    const WallClock *wall_clock_;
     RuntimeGraph *runtime_graph_;
     std::size_t node_index_;
-    GlobalState *global_state_;
     ScratchPad scratch_;
     const details::EvaluationContextSection *sections_{};
     const RuntimeGraphInput *runtime_graph_inputs_{};
-    EvaluationProfile *evaluation_profile_{};
 };
 
 } // namespace bg
