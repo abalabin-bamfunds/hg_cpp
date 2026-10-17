@@ -138,8 +138,6 @@ class DefaultMapNodeDefinition : public MapNodeDefinition {
     using state_type = MapNodeState;
 
     static constexpr bool uses_cycle_callbacks = true;
-    static constexpr bool uses_timed_scheduling = true;
-
     using MapNodeDefinition::MapNodeDefinition;
 
     static bool evaluate(NodeInvocation<compiled_data_type, state_type> invocation) {

@@ -101,8 +101,7 @@ template <typename SERIES> struct FeedbackSink {
 
     void evaluate(EvaluationContext *context) const {
         if ((*writer)->write(input, context->evaluation_time())) {
-            context->runtime_graph().schedule_at(*source_index,
-                                                 context->evaluation_time() + std::chrono::microseconds{1});
+            context->schedule_at(*source_index, context->evaluation_time() + std::chrono::microseconds{1});
         }
     }
 };

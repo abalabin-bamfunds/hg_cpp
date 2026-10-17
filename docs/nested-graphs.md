@@ -92,15 +92,13 @@ Scheduling an inner node from outside its current evaluation schedules the
 owning node. This propagation repeats through each containing graph. The owning
 node then evaluates the inner graph at the current outer-cycle time.
 
-An inner graph mirrors its earliest scheduled time to its owning node.
-Adding or cancelling inner schedules updates that time. This allows the outer
-evaluation engine to select the next outer cycle without inspecting inner
-scheduling storage.
+Inner graphs register timers with the outer evaluator's shared
+[timer scheduler](evaluation.md#timed-scheduling). At outer-cycle entry, timer
+activation schedules the target node and propagates readiness to its owners.
 
 When one node owns several inner graphs, each inner graph reports an
-owner-supplied instance token with immediate scheduling and changes to its
-scheduled time. The owner uses these notifications to track ready instances and
-its earliest scheduled time. It does not inspect every inner graph.
+owner-supplied instance token with immediate scheduling. The owner uses these
+notifications to track ready instances without inspecting every inner graph.
 
 The [`map` operator](map.md) uses this interface to own one inner runtime graph
 per current key. The [`switch_` operator](switch.md) uses it to own the selected

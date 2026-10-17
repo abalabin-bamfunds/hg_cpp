@@ -35,7 +35,7 @@ class RuntimeGraph {
     RuntimeGraph(const CompiledGraph &compiled_graph, GlobalState &global_state);
     RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, GlobalState &global_state);
     RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, RuntimeGraphEvaluator &evaluator,
-                 RuntimeGraphSchedulingCallbacks::token_type owner_token);
+                 RuntimeGraphSchedulingHandler::token_type owner_token);
     // Borrowed views are valid only for graphs accepted by supports_borrowed_evaluation(). The caller keeps storage
     // and its allocator resource alive, uses increasing cycle times per storage instance, and passes each view's
     // input_validity() to the next view. Node code must not retain graph-allocator allocations beyond an invocation.
@@ -80,6 +80,7 @@ class RuntimeGraph {
     void evaluate(EvaluationTime evaluation_time, GlobalState &global_state, EvaluationProfile &profile,
                   const RuntimeGraphInput *inputs = nullptr);
     std::optional<EvaluationTime> next_scheduled_time() const noexcept;
+    std::optional<EvaluationTime> next_wall_clock_time() const noexcept;
     EvaluationTime evaluation_time() const noexcept { return evaluation_time_; }
     GraphInstanceId instance_id() const noexcept { return instance_id_; }
     GlobalState &global_state() const noexcept;
@@ -108,8 +109,11 @@ class RuntimeGraph {
 
     void schedule(std::size_t node_index) noexcept;
     void schedule_validity_check(std::size_t node_index) noexcept;
-    ScheduleHandle schedule_at(std::size_t node_index, EvaluationTime time);
-    void cancel(std::size_t node_index, ScheduleHandle handle) noexcept;
+
+    // Engine-owned intrusive timer list head. These operations require timed scheduling storage.
+    static constexpr std::uint32_t no_timer_owner = std::numeric_limits<std::uint32_t>::max();
+    std::uint32_t timer_owner_head() const noexcept;
+    void timer_owner_head(std::uint32_t slot) noexcept;
 
     // Suppresses propagation to the owning node and returns the previous state.
     bool set_owner_scheduling_suppressed(bool suppressed) noexcept;
@@ -141,7 +145,6 @@ class RuntimeGraph {
     using SchedulingInfo = CompiledGraph::SchedulingInfo;
 
     class ScheduledNodes;
-    class TimedSchedule;
     class CycleCallbacks;
     class OutputChangePublisher;
     struct QueueState;
@@ -160,11 +163,6 @@ class RuntimeGraph {
     std::size_t runtime_allocation_alignment() const noexcept;
     void initialize_storage();
 
-    TimedSchedule *&timed_schedule() noexcept;
-    TimedSchedule *timed_schedule() const noexcept;
-    void activate_scheduled(EvaluationTime evaluation_time) noexcept;
-    void clear_timed_schedule() noexcept;
-    void notify_timed_schedule_changed(std::optional<EvaluationTime> previous);
     void notify_owner_scheduled() noexcept;
     CycleCallbacks *&cycle_callbacks() noexcept;
     CycleCallbacks *cycle_callbacks() const noexcept;
@@ -200,7 +198,7 @@ class RuntimeGraph {
     // Only outer graphs use the global state pointer; inner graphs use the owner token.
     union {
         GlobalState *root_global_state_;
-        RuntimeGraphSchedulingCallbacks::token_type owner_token_;
+        RuntimeGraphSchedulingHandler::token_type owner_token_;
     };
     std::uint32_t paused_node_index_{std::numeric_limits<std::uint32_t>::max()};
     bool suppress_parent_scheduling_ : 1 {};

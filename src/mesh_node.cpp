@@ -172,7 +172,7 @@ class MeshRuntimeState {
           evaluation_stack_{&memory.memory_resource()}, cycle_stack_{&memory.memory_resource()},
           dependencies_to_unlink_{&memory.memory_resource()} {
         branches_.entries().bind_evaluator(
-            context, {.receiver = this, .callbacks = &scheduling_callbacks});
+            context, {.receiver = this, .inner_scheduled = inner_graph_scheduled});
     }
 
     MeshRuntimeState(const MeshRuntimeState &) = delete;
@@ -243,8 +243,6 @@ class MeshRuntimeState {
     void destroy(EvaluationContext &context) noexcept {
         auto &entries = branches_.entries();
         branches_.stop_all(context);
-        entries.clear_schedule_tracking(context);
-
         for (const auto item : entries.table()) {
             auto &state = existing_branch_state(item.value.branch_id);
             state.destruction_dependent_count = 0;
@@ -735,19 +733,10 @@ class MeshRuntimeState {
         }
     }
 
-    static void inner_graph_scheduled(void *receiver, RuntimeGraphSchedulingCallbacks::token_type token) noexcept {
+    static void inner_graph_scheduled(void *receiver, RuntimeGraphSchedulingHandler::token_type token) noexcept {
         auto &runtime = *static_cast<MeshRuntimeState *>(receiver);
         runtime.branches_.entries().mark_ready(static_cast<branch_id_t>(token));
     }
-
-    static void inner_graph_timed_schedule_changed(RuntimeGraphSchedulingContext &context, void *receiver,
-                                                   RuntimeGraphSchedulingCallbacks::token_type token,
-                                                   std::optional<EvaluationTime> time) {
-        auto &runtime = *static_cast<MeshRuntimeState *>(receiver);
-        runtime.branches_.entries().timed_schedule_changed(context, static_cast<branch_id_t>(token), time);
-    }
-
-    static const RuntimeGraphSchedulingCallbacks scheduling_callbacks;
 
     allocator memory_;
     MapRuntime branches_;
@@ -766,11 +755,6 @@ class MeshRuntimeState {
     bool dependency_unlink_pending_{};
     bool evaluation_active_{};
     bool destroying_{};
-};
-
-const RuntimeGraphSchedulingCallbacks MeshRuntimeState::scheduling_callbacks{
-    .inner_scheduled = MeshRuntimeState::inner_graph_scheduled,
-    .timed_schedule_changed = MeshRuntimeState::inner_graph_timed_schedule_changed,
 };
 
 bool MeshDependencyState::evaluate(const Scalar<> &key,
@@ -823,8 +807,6 @@ class MeshNodeDefinition : public MapNodeDefinition {
     using state_type = MeshNodeState;
 
     static constexpr bool uses_cycle_callbacks = true;
-    static constexpr bool uses_timed_scheduling = true;
-
     using MapNodeDefinition::MapNodeDefinition;
 
     compiled_data_type compile(const ResolvedSignature &signature, allocator &memory) const {

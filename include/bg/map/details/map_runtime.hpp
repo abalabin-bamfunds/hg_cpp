@@ -33,7 +33,6 @@ class MapRuntime {
 
     template <typename Invocation, typename PresenceChanged>
     void update(const CompiledMapGraph &compiled, Invocation invocation, PresenceChanged &&presence_changed) {
-        entries_.activate_due(invocation.context());
         process_key_changes(compiled, invocation);
 
         for (auto *entry : pending_presence_changes_) {

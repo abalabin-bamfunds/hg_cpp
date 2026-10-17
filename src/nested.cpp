@@ -72,8 +72,6 @@ class NestedNodeDefinition {
     using state_type = NestedNodeState;
 
     static constexpr bool uses_cycle_callbacks = true;
-    static constexpr bool uses_timed_scheduling = true;
-
     NestedNodeDefinition(NestedGraphWiring wiring, const ResolvedSignature &graph_signature)
         : wiring_{std::move(wiring)}, output_type_{&static_cast<const TimeSeriesType &>(*graph_signature.output)} {
         const auto inherited_count = wiring_.wiring->inherited_requirements().size();

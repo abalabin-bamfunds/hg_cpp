@@ -5,6 +5,7 @@
 #include <bg/evaluation_profile.hpp>
 #include <bg/graph/runtime_graph.hpp>
 
+#include <algorithm>
 #include <stdexcept>
 
 namespace bg {
@@ -49,9 +50,21 @@ void SimulationEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime
     };
     evaluate(start_time);
 
-    while (const auto time = runtime_graph.next_scheduled_time()) {
-        wall_clock.set_time(*time);
-        evaluate(*time);
+    while (true) {
+        auto next_time = runtime_graph.next_scheduled_time();
+        if (const auto wall_clock_time = runtime_graph.next_wall_clock_time()) {
+            const auto next_wall_cycle = std::max(
+                *wall_clock_time, runtime_graph.evaluation_time() + EvaluationTime::duration{1});
+            if (!next_time || next_wall_cycle < *next_time) {
+                next_time = next_wall_cycle;
+            }
+        }
+        if (!next_time) {
+            break;
+        }
+
+        wall_clock.set_time(*next_time);
+        evaluate(*next_time);
     }
 
     const auto stop_time = runtime_graph.evaluation_time();

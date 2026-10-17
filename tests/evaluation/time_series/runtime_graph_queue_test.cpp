@@ -858,6 +858,58 @@ TEST_CASE("due and overdue timers leave pending queue frames for the next minimu
     }
 }
 
+struct QueueWallClockTimer {
+    static constexpr bool uses_timed_scheduling = true;
+
+    void start(bg::EvaluationContext *context) const {
+        handle = context->schedule_wall_clock_at(context->wall_clock().now() + std::chrono::microseconds{1});
+    }
+
+    void evaluate(bg::EvaluationContext *context) const {
+        fired = context->timer_fired(handle);
+        evaluation_time = context->evaluation_time();
+    }
+
+    inline static bg::ScheduleHandle handle;
+    inline static bool fired{};
+    inline static bg::EvaluationTime evaluation_time{bg::MIN_DT};
+};
+
+TEST_CASE("due wall-clock timers leave committed queue frames for the next minimum-tick cycle",
+          "[evaluation][simulation][queue][feature:simulation][feature:wall-clock]"
+          "[feature:time-series-storage][feature:timed-scheduling][series:value][scalar:i64]") {
+    auto values = std::vector<std::pair<bg::i64, bg::EvaluationTime>>{};
+    const auto queue_node = bg::queue<bg::TS<bg::i64>>(bg::start = [](bg::Queue queue) {
+        if (!queue.write(::literal::TimeSeriesLiteral(bg::i64{1})) ||
+            !queue.write(::literal::TimeSeriesLiteral(bg::i64{2}))) {
+            throw std::logic_error{"queue write was rejected during start"};
+        }
+    });
+    const auto observer = bg::node([&](bg::In<bg::TS<bg::i64>> input) {
+        values.emplace_back(*input, input.last_updated());
+    });
+    const auto timer = bg::node<QueueWallClockTimer>();
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        observer(queue_node());
+        timer();
+    }
+    wiring.finalize();
+
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    QueueWallClockTimer::fired = false;
+    QueueWallClockTimer::evaluation_time = bg::MIN_DT;
+
+    bg::SimulationEvaluationEngine{}.run(runtime, time(1));
+
+    CHECK(QueueWallClockTimer::fired);
+    CHECK(QueueWallClockTimer::evaluation_time == time(2));
+    CHECK(values == std::vector<std::pair<bg::i64, bg::EvaluationTime>>{{1, time(1)}, {2, time(3)}});
+}
+
 struct QueuePriorityInnerTimer {
     static constexpr bool uses_timed_scheduling = true;
 
@@ -953,7 +1005,7 @@ struct QueueTimedCleanupNodeDefinition {
     bg::Signature signature_;
 };
 
-TEST_CASE("stopped and finalized graphs suppress queue readiness and preserve pending timer reporting",
+TEST_CASE("stopped and finalized graphs suppress queue readiness and clear pending timers",
           "[evaluation][queue][lifecycle][feature:time-series-storage][feature:timed-scheduling]"
           "[series:value][scalar:i64]") {
     const auto node = bg::node(QueueTimedCleanupNodeDefinition{});
@@ -985,7 +1037,7 @@ TEST_CASE("stopped and finalized graphs suppress queue readiness and preserve pe
 
         runtime.finalize(global_state);
 
-        CHECK(runtime.next_scheduled_time() == time(3));
+        CHECK_FALSE(runtime.next_scheduled_time().has_value());
     }
 }
 

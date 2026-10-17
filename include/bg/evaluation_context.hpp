@@ -59,7 +59,11 @@ class EvaluationContext {
 
     void schedule_now() const noexcept;
     ScheduleHandle schedule_at(EvaluationTime time) const;
+    // Engine API for nodes that schedule a different node in the current graph.
+    ScheduleHandle schedule_at(std::size_t node_index, EvaluationTime time) const;
+    ScheduleHandle schedule_wall_clock_at(EvaluationTime time) const;
     void cancel(ScheduleHandle handle) const noexcept;
+    bool timer_fired(ScheduleHandle handle) const noexcept;
     void add_cycle_callback(void *receiver, void (*function)(void *, EvaluationContext &) noexcept,
                            bool call_on_stop = false) const;
 

@@ -30,11 +30,7 @@ using branch_id_t = std::uint32_t;
 class MapEntries {
   public:
     struct Entry {
-        static constexpr auto not_in_schedule_heap = std::numeric_limits<std::size_t>::max();
-
         NestedGraph inner_graph;
-        EvaluationTime next_scheduled_time{MIN_DT};
-        std::size_t schedule_heap_index{not_in_schedule_heap};
         branch_id_t branch_id{};
         std::uint32_t presence_count : 30 {};
         std::uint32_t presence_change_queued : 1 {};
@@ -86,38 +82,17 @@ class MapEntries {
     void mark_ready(branch_id_t branch_id) noexcept;
     util::index<> &ready() noexcept { return ready_; }
 
-    void activate_due(EvaluationContext &context);
-    void clear_schedule_tracking(EvaluationContext &context) noexcept;
-    void timed_schedule_changed(RuntimeGraphSchedulingContext &context, branch_id_t branch_id,
-                                std::optional<EvaluationTime> time);
-
   private:
-    static void inner_graph_scheduled(void *receiver, RuntimeGraphSchedulingCallbacks::token_type token) noexcept;
-    static void inner_graph_timed_schedule_changed(RuntimeGraphSchedulingContext &context, void *receiver,
-                                                   RuntimeGraphSchedulingCallbacks::token_type token,
-                                                   std::optional<EvaluationTime> time);
+    static void inner_graph_scheduled(void *receiver, RuntimeGraphSchedulingHandler::token_type token) noexcept;
     static void remove_stopped_entries_callback(void *receiver, EvaluationContext &) noexcept;
 
     void queue_removal(Entry &entry, EvaluationContext &context);
     void remove_stopped_entries() noexcept;
-    void set_next_scheduled_time(RuntimeGraphSchedulingContext &context, Entry &entry,
-                                 std::optional<EvaluationTime> time);
-    void remove_from_schedule_heap(Entry &entry) noexcept;
-    void move_up_schedule_heap(std::size_t index) noexcept;
-    void move_down_schedule_heap(std::size_t index) noexcept;
-    void swap_schedule_heap_items(std::size_t left, std::size_t right) noexcept;
-    static bool scheduled_before(const Entry *left, const Entry *right) noexcept;
-
-    static const RuntimeGraphSchedulingCallbacks scheduling_callbacks;
-
     allocator memory_;
     RuntimeGraphEvaluator evaluator_;
     Table table_;
-    std::pmr::vector<Entry *> schedule_heap_;
     util::index<> ready_;
     std::pmr::vector<branch_id_t> branches_pending_removal_;
-    ScheduleHandle outer_schedule_{};
-    std::optional<EvaluationTime> outer_scheduled_time_;
     bool removal_callback_pending_{};
 };
 

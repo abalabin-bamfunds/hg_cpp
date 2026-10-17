@@ -446,7 +446,14 @@ graph compilation or evaluation.
   separate handles, and same-graph binding
 - `default_` fallback selection, timestamps, modified state, and source validity transitions
 - invalidation behavior selected by a node
-- timed scheduling, cancellation, ordering, and coalescing
+- timed scheduling, cancellation, ordering, coalescing, stale handles after slot reuse,
+  owner-node isolation across nested graphs, and graph-stop cleanup
+- timer registration allocation rollback, startup and evaluation failure cleanup,
+  finalization without stop, and timers registered by shutdown callbacks
+- wall-clock timer readiness independent of evaluation time, overdue coalescing,
+  mixed timer progression in simulation, and timer priority over queue input
+- fired-handle queries throughout an outer cycle, including nested pause/resume and
+  cancellation after activation; reset at the next cycle and graph stop
 - simulation time progression and termination
 - system and injected wall-clock access during lifecycle, nested evaluation, invalidation, and failure cleanup
 - shared global evaluation context and outer graph/evaluator identity across nested lifecycle calls;

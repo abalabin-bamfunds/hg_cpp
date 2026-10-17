@@ -29,9 +29,10 @@ The engine applies an external stop request between outer cycles.
 ## Queue input
 
 At the beginning of each outer cycle, after deferred cleanup, the runtime graph
-checks for timers due at or before the cycle's evaluation time. If any are due,
-it activates them and leaves the queue untouched for that cycle. Otherwise, it
-applies committed queue messages in order before evaluating nodes. It stops at
+activates evaluation-time timers due at the cycle's evaluation time and
+wall-clock timers due at the current wall-clock time. If any activate, it leaves
+the queue untouched for that cycle. Otherwise, it applies committed queue
+messages in order before evaluating nodes. It stops at
 the committed watermark or the first message that conflicts with the target's
 mode. The conflicting message remains pending, and later messages wait behind
 it. See [queue messages](time-series-types.md#queue-messages) for application rules.
@@ -41,10 +42,10 @@ the cycle. Subscribers observe its completed output after draining. No-op
 messages do not schedule the target. Resuming a paused graph does not drain
 again in the same cycle.
 
-`next_scheduled_time()` returns the earlier of the next timer and the next
-minimum evaluation time when committed queue messages remain. A chain of
+`next_scheduled_time()` returns the earlier of the next evaluation-time timer and
+the next minimum evaluation time when committed queue messages remain. A chain of
 minimum-tick timers therefore completes before queue reading resumes. Timers
-from inner graphs use the same priority through their owning nodes. Stopped
+from inner graphs use the same shared scheduler and priority. Stopped
 and finalized graphs do not report queue work.
 
 ## Evaluation time
@@ -160,8 +161,8 @@ The context provides:
 - access to the runtime graph's `bg::allocator`
 - temporary scratch storage for the current node invocation
 - the outer graph's [global state](global-state.md)
-- immediate and timed scheduling
-- cancellation of timed scheduling
+- immediate and timed scheduling, and wall-clock timers
+- timer cancellation and fired-handle queries
 - registration of outer-cycle callbacks
 
 A runtime graph can declare borrowed time-series input slots.
@@ -184,7 +185,7 @@ graphs in a cycle share it, so `WallClock::now()` returns that cycle's
 evaluation time. Start and stop functions observe the start and final evaluation
 times. Direct `RuntimeGraph::start`, `evaluate`, and `stop` calls use
 `SystemWallClock`. A real-time engine can provide another `WallClock`
-implementation. Timed scheduling uses evaluation time.
+implementation.
 
 ## Start
 
@@ -208,9 +209,24 @@ reference identity before it forwards the notification.
 `schedule_at(time)` schedules the current node for a later evaluation time. A
 node can have several pending times. Scheduling records due at the same time
 coalesce because the node evaluates once in that outer cycle.
+The engine overload `schedule_at(node_index, time)` targets another node in the
+current runtime graph.
 
-`schedule_at` returns a handle. `cancel(handle)` cancels that pending evaluation
-if the handle still identifies it.
+`schedule_wall_clock_at(time)` makes the current node runnable when
+`WallClock::now()` reaches the deadline. Readiness depends on wall-clock time.
+Overdue wall-clock timers can coalesce in one outer cycle; their old deadlines
+do not select a historical evaluation time. An already due deadline becomes
+runnable at the next outer-cycle entry.
+
+Both functions return a `ScheduleHandle` scoped to the outer runtime graph and
+the node that registered it. `cancel(handle)` removes a pending timer if the
+handle still identifies it. Cancelling an activated timer preserves its fired
+status for the rest of the cycle.
+
+`timer_fired(handle)` reports whether that node's timer activated in the current
+outer cycle. The result remains available through nested evaluation and
+pause/resume. The next outer-cycle entry retires fired records before deferred
+cleanup. Graph stop retires the graph's records after its stop functions run.
 
 An aggregate node that uses timed scheduling declares:
 
@@ -218,10 +234,14 @@ An aggregate node that uses timed scheduling declares:
 static constexpr bool uses_timed_scheduling = true;
 ```
 
-A graph has timed scheduling state only when a node declares its use.
-`evaluate(time)` activates requests due at or before that time before it
-processes nodes. The next evaluation time also accounts for
-[queue input](#queue-input).
+Both timer kinds require this declaration. A graph reserves timer ownership
+state only when a node declares its use. The outer evaluator owns one shared
+timer scheduler.
+
+`RuntimeGraph::next_scheduled_time()` and `next_wall_clock_time()` are outer-graph
+engine operations. The former includes [queue input](#queue-input); the latter
+reports the next wall-clock deadline separately. Direct `evaluate(time)` also
+activates overdue evaluation-time requests before it processes nodes.
 
 ## Feedback
 
@@ -255,8 +275,10 @@ Pass the resolved output type explicitly when inference is not suitable.
 ## Simulation
 
 `SimulationEvaluationEngine` starts a runtime graph and evaluates its first
-outer cycle. It then advances to each next scheduled time and calls
-`evaluate(time)`. It stops the runtime graph when no scheduled evaluation remains.
+outer cycle. It then advances to the earliest evaluation-time timer, simulated
+wall-clock deadline, or [queue wake](#queue-input), and calls `evaluate(time)`.
+An overdue wall-clock deadline advances to the next minimum evaluation time.
+It stops the runtime graph when no scheduled evaluation remains.
 
 A later real-time evaluation engine can wait for each scheduled time while
 using the same runtime graph interface.

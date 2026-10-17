@@ -19,6 +19,9 @@
 #include <bg/time_series/output_state.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/tick_serializer.hpp>
+#include <bg/util/index.hpp>
+#include <bg/util/occupancy_index.hpp>
+#include <bg/util/sparse_bunch.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <algorithm>
@@ -59,14 +62,6 @@ OutputChangeContext::OutputChangeContext(RuntimeGraph &runtime_graph) noexcept
 OutputChangeContext::OutputChangeContext(const EvaluationContext &evaluation_context) noexcept
     : runtime_graph_{&evaluation_context.runtime_graph()}, evaluation_time_{evaluation_context.evaluation_time()},
       runtime_graph_inputs_{evaluation_context.runtime_graph_inputs()} {}
-
-ScheduleHandle RuntimeGraphSchedulingContext::schedule_at(EvaluationTime time) const {
-    return graph_->schedule_at(node_index_, time);
-}
-
-void RuntimeGraphSchedulingContext::cancel(ScheduleHandle handle) const noexcept {
-    graph_->cancel(node_index_, handle);
-}
 
 EvaluationTime OutputChangeContext::evaluation_time() const noexcept {
     return evaluation_time_;
@@ -115,58 +110,249 @@ void notify_controlled_inputs(OutputChangeContext &context, const TimeSeriesRunt
     }
 }
 
-class RuntimeGraph::TimedSchedule {
-    struct Record {
-        EvaluationTime time;
-        std::uint64_t id;
-        std::uint32_t node_index;
-    };
-
-    struct Later {
-        bool operator()(const Record &left, const Record &right) const noexcept { return left.time > right.time; }
-    };
+class TimerScheduler {
+    static constexpr auto no_slot = std::numeric_limits<std::uint32_t>::max();
 
   public:
-    explicit TimedSchedule(allocator memory) : records_{&memory.memory_resource()} {}
-
-    [[nodiscard]] std::uint64_t add(EvaluationTime time, std::size_t node_index) {
-        const auto id = next_id_++;
-        records_.push_back(Record{time, id, static_cast<std::uint32_t>(node_index)});
-        std::ranges::push_heap(records_, Later{});
-
-        return id;
-    }
-
-    void cancel(std::size_t node_index, std::uint64_t id) noexcept {
-        const auto record = std::ranges::find_if(
-            records_, [=](const auto &entry) { return entry.id == id && entry.node_index == node_index; });
-        if (record != records_.end()) {
-            records_.erase(record);
-            std::ranges::make_heap(records_, Later{});
-        }
-    }
-
-    void activate(RuntimeGraph &graph, EvaluationTime time) noexcept {
-        while (!records_.empty() && records_.front().time <= time) {
-            std::ranges::pop_heap(records_, Later{});
-            graph.schedule(records_.back().node_index);
-            records_.pop_back();
-        }
-    }
-
-    std::optional<EvaluationTime> next_time() const noexcept {
-        if (records_.empty()) {
-            return std::nullopt;
-        }
-
-        return records_.front().time;
-    }
-
-    void clear() noexcept { records_.clear(); }
+    enum class Kind : std::uint8_t { evaluation, wall_clock };
 
   private:
-    std::pmr::vector<Record> records_;
-    std::uint64_t next_id_{1};
+    struct Record {
+        RuntimeGraph *owner;
+        EvaluationTime deadline;
+        std::uint32_t id;
+        std::uint32_t node_index;
+        std::uint32_t heap_position;
+        std::uint32_t previous_owner;
+        std::uint32_t next_owner;
+        Kind kind;
+    };
+    static_assert(sizeof(Record) == 40);
+
+  public:
+    explicit TimerScheduler(allocator memory)
+        : memory_{memory}, evaluation_heap_{&memory.memory_resource()}, wall_clock_heap_{&memory.memory_resource()} {}
+
+    ~TimerScheduler() {
+        assert(occupied_.empty());
+        records_.release(occupied_, memory_.memory_resource());
+        occupied_.release(memory_.memory_resource());
+        fired_.release(memory_.memory_resource());
+    }
+
+    ScheduleHandle add(RuntimeGraph &graph, std::size_t node_index, EvaluationTime deadline, Kind kind) {
+        auto &memory = memory_.memory_resource();
+        const auto slot = occupied_.acquire(memory);
+        auto release_slot = util::scope_exit{[&]() noexcept { occupied_.reset(slot); }};
+        fired_.grow(slot + 1, memory);
+        records_.emplace_at(slot, memory,
+                            Record{&graph, deadline, 0, static_cast<std::uint32_t>(node_index), no_slot,
+                                   no_slot, no_slot, kind});
+        auto erase_record = util::scope_exit{[&]() noexcept { records_.erase_at(slot, memory); }};
+        heap(kind).push_back(slot);
+
+        auto &record = records_[slot];
+        record.id = next_id_++;
+        if (next_id_ == 0) {
+            next_id_ = 1;
+        }
+        record.heap_position = static_cast<std::uint32_t>(heap(kind).size() - 1);
+        move_up(kind, record.heap_position);
+        link_owner(graph, slot, record);
+        erase_record.release();
+        release_slot.release();
+
+        return {slot, record.id};
+    }
+
+    void cancel(RuntimeGraph &graph, std::size_t node_index, ScheduleHandle handle) noexcept {
+        auto *record = find(graph, node_index, handle);
+        if (record == nullptr || fired_.contains(handle.slot)) {
+            return;
+        }
+        retire(handle.slot);
+    }
+
+    bool timer_fired(RuntimeGraph &graph, std::size_t node_index, ScheduleHandle handle) const noexcept {
+        return find(graph, node_index, handle) != nullptr && fired_.contains(handle.slot);
+    }
+
+    std::optional<EvaluationTime> next_time(Kind kind) const noexcept {
+        const auto &values = heap(kind);
+        if (values.empty()) {
+            return std::nullopt;
+        }
+        return records_[values.front()].deadline;
+    }
+
+    void retire_fired() noexcept {
+        for (const auto slot : fired_) {
+            retire(slot);
+        }
+    }
+
+    bool activate_due(EvaluationTime evaluation_time, std::optional<EvaluationTime> wall_clock_time) noexcept {
+        auto activated = false;
+        activate_due(Kind::evaluation, evaluation_time, activated);
+        if (wall_clock_time) {
+            activate_due(Kind::wall_clock, *wall_clock_time, activated);
+        }
+        return activated;
+    }
+
+    void clear(RuntimeGraph &graph) noexcept {
+        while (graph.timer_owner_head() != RuntimeGraph::no_timer_owner) {
+            retire(graph.timer_owner_head());
+        }
+    }
+
+    bool empty() const noexcept { return occupied_.empty(); }
+
+  private:
+    using Heap = std::pmr::vector<std::uint32_t>;
+
+    Heap &heap(Kind kind) noexcept { return kind == Kind::evaluation ? evaluation_heap_ : wall_clock_heap_; }
+    const Heap &heap(Kind kind) const noexcept {
+        return kind == Kind::evaluation ? evaluation_heap_ : wall_clock_heap_;
+    }
+
+    static bool before(const Record &left, std::uint32_t left_slot,
+                       const Record &right, std::uint32_t right_slot) noexcept {
+        if (left.deadline != right.deadline) {
+            return left.deadline < right.deadline;
+        }
+        return left_slot < right_slot;
+    }
+
+    void swap(Kind kind, std::uint32_t left, std::uint32_t right) noexcept {
+        auto &values = heap(kind);
+        std::swap(values[left], values[right]);
+        records_[values[left]].heap_position = left;
+        records_[values[right]].heap_position = right;
+    }
+
+    std::uint32_t move_up(Kind kind, std::uint32_t index) noexcept {
+        auto &values = heap(kind);
+        while (index != 0) {
+            const auto parent = (index - 1) / 2;
+            if (!before(records_[values[index]], values[index], records_[values[parent]], values[parent])) {
+                break;
+            }
+            swap(kind, index, parent);
+            index = parent;
+        }
+        return index;
+    }
+
+    void move_down(Kind kind, std::uint32_t index) noexcept {
+        auto &values = heap(kind);
+        while (true) {
+            const auto left = index * 2 + 1;
+            if (left >= values.size()) {
+                return;
+            }
+            const auto right = left + 1;
+            const auto first = right < values.size() &&
+                                       before(records_[values[right]], values[right], records_[values[left]],
+                                              values[left])
+                                   ? right
+                                   : left;
+            if (!before(records_[values[first]], values[first], records_[values[index]], values[index])) {
+                return;
+            }
+            swap(kind, index, first);
+            index = first;
+        }
+    }
+
+    void remove_from_heap(Record &record) noexcept {
+        if (record.heap_position == no_slot) {
+            return;
+        }
+        auto &values = heap(record.kind);
+        const auto position = record.heap_position;
+        record.heap_position = no_slot;
+        if (position == values.size() - 1) {
+            values.pop_back();
+            return;
+        }
+
+        values[position] = values.back();
+        values.pop_back();
+        records_[values[position]].heap_position = position;
+        move_down(record.kind, move_up(record.kind, position));
+    }
+
+    void activate_due(Kind kind, EvaluationTime time, bool &activated) noexcept {
+        auto &values = heap(kind);
+        while (!values.empty() && records_[values.front()].deadline <= time) {
+            const auto slot = values.front();
+            auto &record = records_[slot];
+            remove_from_heap(record);
+            const auto inserted = fired_.set(slot, memory_.memory_resource());
+            assert(inserted);
+            activated = true;
+            record.owner->schedule(record.node_index);
+        }
+    }
+
+    Record *find(RuntimeGraph &graph, std::size_t node_index, ScheduleHandle handle) noexcept {
+        if (!handle || !occupied_.contains(handle.slot)) {
+            return nullptr;
+        }
+        auto &record = records_[handle.slot];
+        return record.id == handle.id && record.owner == &graph && record.node_index == node_index ? &record
+                                                                                                    : nullptr;
+    }
+
+    const Record *find(RuntimeGraph &graph, std::size_t node_index, ScheduleHandle handle) const noexcept {
+        if (!handle || !occupied_.contains(handle.slot)) {
+            return nullptr;
+        }
+        const auto &record = records_[handle.slot];
+        return record.id == handle.id && record.owner == &graph && record.node_index == node_index ? &record
+                                                                                                    : nullptr;
+    }
+
+    void link_owner(RuntimeGraph &graph, std::uint32_t slot, Record &record) noexcept {
+        record.previous_owner = RuntimeGraph::no_timer_owner;
+        record.next_owner = graph.timer_owner_head();
+        if (record.next_owner != RuntimeGraph::no_timer_owner) {
+            records_[record.next_owner].previous_owner = slot;
+        }
+        graph.timer_owner_head(slot);
+    }
+
+    void unlink_owner(Record &record) noexcept {
+        auto &graph = *record.owner;
+        if (record.previous_owner == RuntimeGraph::no_timer_owner) {
+            graph.timer_owner_head(record.next_owner);
+        } else {
+            records_[record.previous_owner].next_owner = record.next_owner;
+        }
+        if (record.next_owner != RuntimeGraph::no_timer_owner) {
+            records_[record.next_owner].previous_owner = record.previous_owner;
+        }
+        record.previous_owner = RuntimeGraph::no_timer_owner;
+        record.next_owner = RuntimeGraph::no_timer_owner;
+    }
+
+    void retire(std::uint32_t slot) noexcept {
+        auto &record = records_[slot];
+        remove_from_heap(record);
+        fired_.reset(slot);
+        unlink_owner(record);
+        records_.erase_at(slot, memory_.memory_resource());
+        occupied_.reset(slot);
+    }
+
+    allocator memory_;
+    util::occupancy_index occupied_;
+    util::sparse_bunch<Record> records_;
+    util::index<> fired_;
+    Heap evaluation_heap_;
+    Heap wall_clock_heap_;
+    std::uint32_t next_id_{1};
 };
 
 class RuntimeGraph::CycleCallbacks {
@@ -432,7 +618,7 @@ RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory
 }
 
 RuntimeGraph::RuntimeGraph(const CompiledGraph &compiled_graph, allocator memory, RuntimeGraphEvaluator &evaluator,
-                           RuntimeGraphSchedulingCallbacks::token_type owner_token)
+                           RuntimeGraphSchedulingHandler::token_type owner_token)
     : compiled_graph_(&compiled_graph), allocator_(memory), evaluator_{&evaluator},
       instance_id_{GraphInstanceIdAllocator::allocate()}, owner_token_{owner_token},
       owns_storage_{true} {
@@ -566,6 +752,9 @@ void RuntimeGraph::initialize_storage() {
         auto *spill = reinterpret_cast<SchedulingInfo *>(storage_ + offset);
         std::uninitialized_copy(initial_scheduling.begin() + 1, initial_scheduling.end(), spill);
     }
+    if (compiled_graph_->has_timed_scheduling()) {
+        timer_owner_head(no_timer_owner);
+    }
 }
 
 std::size_t RuntimeGraph::runtime_allocation_size() const noexcept {
@@ -644,12 +833,9 @@ std::span<details::ServiceRequestBinding *> RuntimeGraph::service_bindings() noe
 RuntimeGraph::~RuntimeGraph() {
     if (owns_evaluator_) {
         finalize(*root_global_state_);
+        evaluator_->destroy_timer_scheduler(*this);
     } else if (owns_storage_) {
         assert(finalized_);
-    }
-
-    if (compiled_graph_->has_timed_scheduling() && timed_schedule() != nullptr) {
-        allocator_.delete_object(timed_schedule());
     }
 
     if (compiled_graph_->has_cycle_callbacks() && cycle_callbacks() != nullptr) {
@@ -717,6 +903,10 @@ void RuntimeGraph::finalize(EvaluationContext &parent_context) noexcept {
             node.state_destruction_function()(node, storage_, &context);
         }
 
+        if (auto *root_evaluator = parent_context.global_context().root_runtime_graph_evaluator) {
+            root_evaluator->clear_timers(*this);
+        }
+
         const auto output_destruction = compiled_graph_->output_destruction();
         for (auto i = output_destruction.offsets.size(); i != 0; --i) {
             output_destruction.runtime_types[i - 1]->destroy_value(storage_ + output_destruction.offsets[i - 1],
@@ -740,85 +930,102 @@ void RuntimeGraph::schedule_validity_check(std::size_t node_index) noexcept {
     notify_owner_scheduled();
 }
 
-ScheduleHandle RuntimeGraph::schedule_at(std::size_t node_index, EvaluationTime time) {
-    if (time <= evaluation_time_) {
-        throw std::invalid_argument{"a scheduled evaluation time must be after the current evaluation time"};
-    }
+std::uint32_t RuntimeGraph::timer_owner_head() const noexcept {
+    assert(compiled_graph_->has_timed_scheduling());
+    return *reinterpret_cast<const std::uint32_t *>(storage_);
+}
 
-    if (!compiled_graph_->has_timed_scheduling()) {
+void RuntimeGraph::timer_owner_head(std::uint32_t slot) noexcept {
+    assert(compiled_graph_->has_timed_scheduling());
+    *reinterpret_cast<std::uint32_t *>(storage_) = slot;
+}
+
+ScheduleHandle RuntimeGraphEvaluator::schedule_at(GlobalEvaluationContext &context, RuntimeGraph &graph,
+                                                   std::size_t node_index, EvaluationTime time) {
+    if (!graph.compiled_graph_->has_timed_scheduling()) {
         throw std::logic_error{"the graph does not declare timed scheduling"};
     }
 
-    if (timed_schedule() == nullptr) {
-        timed_schedule() = allocator_.new_object<TimedSchedule>(allocator_);
+    if (context.root_runtime_graph_evaluator != this) {
+        throw std::logic_error{"timer registration requires the root runtime graph evaluator"};
     }
 
-    const auto previous = next_scheduled_time();
-    auto result = ScheduleHandle{timed_schedule()->add(time, node_index)};
-    notify_timed_schedule_changed(previous);
-    return result;
-}
-
-void RuntimeGraph::cancel(std::size_t node_index, ScheduleHandle handle) noexcept {
-    if (compiled_graph_->has_timed_scheduling() && timed_schedule() != nullptr && handle.id_ != 0) {
-        const auto previous = next_scheduled_time();
-        timed_schedule()->cancel(node_index, handle.id_);
-        notify_timed_schedule_changed(previous);
+    if (owner_.scheduler == nullptr) {
+        auto &root_graph = context.root_runtime_graph;
+        owner_.scheduler = root_graph.allocation().new_object<TimerScheduler>(root_graph.allocation());
     }
+    return owner_.scheduler->add(graph, node_index, time, TimerScheduler::Kind::evaluation);
 }
 
-RuntimeGraph::TimedSchedule *&RuntimeGraph::timed_schedule() noexcept {
-    return *reinterpret_cast<TimedSchedule **>(storage_);
+ScheduleHandle RuntimeGraphEvaluator::schedule_wall_clock_at(GlobalEvaluationContext &context, RuntimeGraph &graph,
+                                                              std::size_t node_index, EvaluationTime time) {
+    if (!graph.compiled_graph_->has_timed_scheduling()) {
+        throw std::logic_error{"the graph does not declare timed scheduling"};
+    }
+    if (context.root_runtime_graph_evaluator != this) {
+        throw std::logic_error{"timer registration requires the root runtime graph evaluator"};
+    }
+    if (owner_.scheduler == nullptr) {
+        auto &root_graph = context.root_runtime_graph;
+        owner_.scheduler = root_graph.allocation().new_object<TimerScheduler>(root_graph.allocation());
+    }
+    return owner_.scheduler->add(graph, node_index, time, TimerScheduler::Kind::wall_clock);
 }
 
-RuntimeGraph::TimedSchedule *RuntimeGraph::timed_schedule() const noexcept {
-    return *reinterpret_cast<TimedSchedule *const *>(storage_);
-}
-
-void RuntimeGraph::activate_scheduled(EvaluationTime evaluation_time) noexcept {
-    if (compiled_graph_->has_timed_scheduling() && timed_schedule() != nullptr) {
-        const auto previous = next_scheduled_time();
-        timed_schedule()->activate(*this, evaluation_time);
-        notify_timed_schedule_changed(previous);
+void RuntimeGraphEvaluator::cancel(RuntimeGraph &graph, std::size_t node_index, ScheduleHandle handle) noexcept {
+    if (owner_.scheduler != nullptr) {
+        owner_.scheduler->cancel(graph, node_index, handle);
     }
 }
 
-void RuntimeGraph::clear_timed_schedule() noexcept {
-    if (compiled_graph_->has_timed_scheduling() && timed_schedule() != nullptr) {
-        const auto previous = next_scheduled_time();
-        timed_schedule()->clear();
-        notify_timed_schedule_changed(previous);
+bool RuntimeGraphEvaluator::timer_fired(RuntimeGraph &graph, std::size_t node_index,
+                                        ScheduleHandle handle) const noexcept {
+    return owner_.scheduler != nullptr && owner_.scheduler->timer_fired(graph, node_index, handle);
+}
+
+std::optional<EvaluationTime> RuntimeGraphEvaluator::next_scheduled_time() const noexcept {
+    if (owner_.scheduler == nullptr) {
+        return std::nullopt;
+    }
+    return owner_.scheduler->next_time(TimerScheduler::Kind::evaluation);
+}
+
+std::optional<EvaluationTime> RuntimeGraphEvaluator::next_wall_clock_time() const noexcept {
+    if (owner_.scheduler == nullptr) {
+        return std::nullopt;
+    }
+    return owner_.scheduler->next_time(TimerScheduler::Kind::wall_clock);
+}
+
+void RuntimeGraphEvaluator::retire_fired() noexcept {
+    if (owner_.scheduler != nullptr) {
+        owner_.scheduler->retire_fired();
     }
 }
 
-void RuntimeGraph::notify_timed_schedule_changed(std::optional<EvaluationTime> previous) {
-    evaluator_->notify_timed_schedule_changed(*this, previous);
+bool RuntimeGraphEvaluator::activate_due(GlobalEvaluationContext &context,
+                                         EvaluationTime evaluation_time) noexcept {
+    if (owner_.scheduler == nullptr) {
+        return false;
+    }
+    const auto has_wall_clock_timer = owner_.scheduler->next_time(TimerScheduler::Kind::wall_clock).has_value();
+    const auto wall_clock_time = has_wall_clock_timer ? std::optional{context.wall_clock.now()} : std::nullopt;
+    return owner_.scheduler->activate_due(evaluation_time, wall_clock_time);
 }
 
-void RuntimeGraphEvaluator::notify_timed_schedule_changed(RuntimeGraph &graph,
-                                                          std::optional<EvaluationTime> previous) {
-    if (!parent_) {
+void RuntimeGraphEvaluator::clear_timers(RuntimeGraph &graph) noexcept {
+    if (owner_.scheduler != nullptr && graph.compiled_graph_->has_timed_scheduling()) {
+        owner_.scheduler->clear(graph);
+    }
+}
+
+void RuntimeGraphEvaluator::destroy_timer_scheduler(RuntimeGraph &root_graph) noexcept {
+    if (owner_.scheduler == nullptr) {
         return;
     }
-
-    const auto next = graph.next_scheduled_time();
-    if (next == previous) {
-        return;
-    }
-
-    if (parent_.tag()) {
-        auto context = RuntimeGraphSchedulingContext{*parent_, owner_node_index_};
-        owner_.callback.callbacks->timed_schedule_changed(context, owner_.callback.receiver, graph.owner_token_, next);
-        return;
-    }
-
-    if (owner_.direct.timed_schedule) {
-        parent_->cancel(owner_node_index_, owner_.direct.timed_schedule);
-        owner_.direct.timed_schedule = {};
-    }
-    if (next) {
-        owner_.direct.timed_schedule = parent_->schedule_at(owner_node_index_, *next);
-    }
+    assert(owner_.scheduler->empty());
+    root_graph.allocation().delete_object(owner_.scheduler);
+    owner_.scheduler = nullptr;
 }
 
 void RuntimeGraph::notify_owner_scheduled() noexcept {
@@ -833,42 +1040,41 @@ void RuntimeGraphEvaluator::notify_scheduled(RuntimeGraph &graph) noexcept {
     }
 
     if (parent_.tag()) {
-        owner_.callback.callbacks->inner_scheduled(owner_.callback.receiver, graph.owner_token_);
+        owner_.callback.inner_scheduled(owner_.callback.receiver, graph.owner_token_);
     }
     parent_->schedule(owner_node_index_);
 }
 
-void RuntimeGraphEvaluator::require_owner(RuntimeGraph &graph, std::size_t node_index, void *receiver,
-                                          const RuntimeGraphSchedulingCallbacks *callbacks) {
+void RuntimeGraphEvaluator::require_owner(RuntimeGraph &graph, std::size_t node_index,
+                                          RuntimeGraphSchedulingHandler handler) {
     if (!parent_) {
-        parent_.reset(&graph, callbacks != nullptr);
+        const auto has_handler = handler.receiver != nullptr;
+        parent_.reset(&graph, has_handler);
         owner_node_index_ = node_index;
-        if (callbacks != nullptr) {
-            owner_.callback = {.receiver = receiver, .callbacks = callbacks};
-        } else {
-            owner_.direct = {};
+        if (has_handler) {
+            owner_.callback = handler;
         }
         return;
     }
 
-    if (parent_.get() != &graph || owner_node_index_ != node_index || parent_.tag() != (callbacks != nullptr) ||
-        (callbacks != nullptr &&
-         (owner_.callback.receiver != receiver || owner_.callback.callbacks != callbacks))) {
+    const auto has_handler = handler.receiver != nullptr;
+    if (parent_.get() != &graph || owner_node_index_ != node_index || parent_.tag() != has_handler ||
+        (has_handler && (owner_.callback.receiver != handler.receiver ||
+                         owner_.callback.inner_scheduled != handler.inner_scheduled))) {
         throw std::logic_error{"a runtime graph evaluator cannot change owner"};
     }
 }
 
 void RuntimeGraphEvaluator::bind_owner(RuntimeGraph &graph, std::size_t node_index) {
-    require_owner(graph, node_index, nullptr, nullptr);
+    require_owner(graph, node_index, {});
 }
 
 void RuntimeGraphEvaluator::bind_owner(RuntimeGraph &graph, std::size_t node_index,
                                        RuntimeGraphSchedulingHandler handler) {
-    if (handler.receiver == nullptr || handler.callbacks == nullptr || handler.callbacks->inner_scheduled == nullptr ||
-        handler.callbacks->timed_schedule_changed == nullptr) {
+    if (handler.receiver == nullptr || handler.inner_scheduled == nullptr) {
         throw std::invalid_argument{"an inner-graph scheduling handler requires scheduling callbacks"};
     }
-    require_owner(graph, node_index, handler.receiver, handler.callbacks);
+    require_owner(graph, node_index, handler);
 }
 
 bool RuntimeGraph::set_owner_scheduling_suppressed(bool suppressed) noexcept {
@@ -1063,10 +1269,8 @@ void RuntimeGraph::clear_cycle_callbacks(EvaluationContext &context) noexcept {
 }
 
 std::optional<EvaluationTime> RuntimeGraph::next_scheduled_time() const noexcept {
-    auto next = std::optional<EvaluationTime>{};
-    if (compiled_graph_->has_timed_scheduling() && timed_schedule() != nullptr) {
-        next = timed_schedule()->next_time();
-    }
+    auto next = evaluator_ == nullptr || evaluator_->owner_bound() ? std::optional<EvaluationTime>{}
+                                                                  : evaluator_->next_scheduled_time();
 
     const auto queue_can_schedule = !stopped_ && !finalized_ && compiled_graph_->has_queue() &&
                                    queue_state() != nullptr;
@@ -1084,6 +1288,11 @@ std::optional<EvaluationTime> RuntimeGraph::next_scheduled_time() const noexcept
     }
 
     return queue_time;
+}
+
+std::optional<EvaluationTime> RuntimeGraph::next_wall_clock_time() const noexcept {
+    return evaluator_ == nullptr || evaluator_->owner_bound() ? std::optional<EvaluationTime>{}
+                                                              : evaluator_->next_wall_clock_time();
 }
 
 void RuntimeGraph::notify_subscribers(std::span<const Subscriber> subscribers, OutputChange change) {
@@ -1364,8 +1573,10 @@ void RuntimeGraph::stop_nodes(std::size_t node_count, EvaluationContext &parent_
         parent_context.node_index_ = 0;
     }
 
-    clear_timed_schedule();
     clear_cycle_callbacks(parent_context);
+    if (auto *root_evaluator = parent_context.global_context().root_runtime_graph_evaluator) {
+        root_evaluator->clear_timers(*this);
+    }
     discard_queue();
 }
 
@@ -1550,18 +1761,19 @@ bool RuntimeGraphEvaluator::evaluate_graph(RuntimeGraph &graph, EvaluationContex
         }
     }};
 
-    auto timed_schedule_due_at_entry = false;
+    auto timer_activated = false;
     if (!resuming) {
+        if (outer_graph_evaluation) {
+            context.global_context().root_runtime_graph_evaluator->retire_fired();
+        }
         graph.run_cycle_callbacks(context);
         graph.last_evaluation_time_ = evaluation_time;
         graph.evaluation_time_ = evaluation_time;
         graph.notify_runtime_graph_inputs(context);
-        if (outer_graph_evaluation && graph.compiled_graph_->has_timed_scheduling() &&
-            graph.timed_schedule() != nullptr) {
-            const auto next_timed_time = graph.timed_schedule()->next_time();
-            timed_schedule_due_at_entry = next_timed_time && *next_timed_time <= evaluation_time;
+        if (outer_graph_evaluation) {
+            timer_activated = context.global_context().root_runtime_graph_evaluator->activate_due(
+                context.global_context(), evaluation_time);
         }
-        graph.activate_scheduled(evaluation_time);
     }
 
     auto scheduled = RuntimeGraph::ScheduledNodes{graph};
@@ -1569,7 +1781,7 @@ bool RuntimeGraphEvaluator::evaluate_graph(RuntimeGraph &graph, EvaluationContex
         graph.stopped_ = true;
         graph.stop_nodes(graph.compiled_graph_->node_count(), context);
     }};
-    if (!resuming && outer_graph_evaluation && !timed_schedule_due_at_entry) {
+    if (!resuming && outer_graph_evaluation && !timer_activated) {
         graph.drain_queue(context);
     }
 
@@ -1654,11 +1866,37 @@ void EvaluationContext::schedule_now() const noexcept {
 }
 
 ScheduleHandle EvaluationContext::schedule_at(EvaluationTime time) const {
-    return runtime_graph_->schedule_at(node_index_, time);
+    return schedule_at(node_index_, time);
+}
+
+ScheduleHandle EvaluationContext::schedule_at(std::size_t node_index, EvaluationTime time) const {
+    if (time <= evaluation_time_) {
+        throw std::invalid_argument{"a scheduled evaluation time must be after the current evaluation time"};
+    }
+    if (global_context_->root_runtime_graph_evaluator == nullptr) {
+        throw std::logic_error{"timer registration requires a root runtime graph evaluator"};
+    }
+    return global_context_->root_runtime_graph_evaluator->schedule_at(*global_context_, *runtime_graph_, node_index,
+                                                                     time);
+}
+
+ScheduleHandle EvaluationContext::schedule_wall_clock_at(EvaluationTime time) const {
+    if (global_context_->root_runtime_graph_evaluator == nullptr) {
+        throw std::logic_error{"timer registration requires a root runtime graph evaluator"};
+    }
+    return global_context_->root_runtime_graph_evaluator->schedule_wall_clock_at(
+        *global_context_, *runtime_graph_, node_index_, time);
 }
 
 void EvaluationContext::cancel(ScheduleHandle handle) const noexcept {
-    runtime_graph_->cancel(node_index_, handle);
+    if (global_context_->root_runtime_graph_evaluator != nullptr) {
+        global_context_->root_runtime_graph_evaluator->cancel(*runtime_graph_, node_index_, handle);
+    }
+}
+
+bool EvaluationContext::timer_fired(ScheduleHandle handle) const noexcept {
+    return global_context_->root_runtime_graph_evaluator != nullptr &&
+           global_context_->root_runtime_graph_evaluator->timer_fired(*runtime_graph_, node_index_, handle);
 }
 
 void EvaluationContext::add_cycle_callback(void *receiver,

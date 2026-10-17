@@ -129,8 +129,6 @@ struct SwitchNodeState {
 
     RuntimeGraphEvaluator evaluator;
     NestedGraph graph;
-    ScheduleHandle outer_schedule{};
-    std::optional<EvaluationTime> scheduled_time;
     SwitchSelection active_selection;
 };
 
@@ -142,8 +140,6 @@ class SwitchNodeDefinition {
     using state_type = SwitchNodeState;
 
     static constexpr bool uses_cycle_callbacks = true;
-    static constexpr bool uses_timed_scheduling = true;
-
     SwitchNodeDefinition(SwitchNodeWiring wiring, const ResolvedSignature &outer_signature)
         : wiring_{std::move(wiring)} {
         auto parameters = std::vector<Parameter>{};
@@ -319,37 +315,16 @@ class SwitchNodeDefinition {
 
     static void stop(NodeInvocation<compiled_data_type, state_type> invocation) noexcept {
         auto &state = invocation.state();
-        clear_timed_schedule(invocation.context(), state);
         state.graph.stop(invocation.context());
         state.active_selection = {};
     }
 
     static void destroy_state(NodeInvocation<compiled_data_type, state_type> invocation) noexcept {
         auto &state = invocation.state();
-        clear_timed_schedule(invocation.context(), state);
         state.graph.stop_and_destroy(invocation.context());
     }
 
-    static void inner_graph_scheduled(void *, RuntimeGraphSchedulingCallbacks::token_type) noexcept {}
-
-    static void inner_graph_timed_schedule_changed(RuntimeGraphSchedulingContext &context, void *receiver,
-                                                   RuntimeGraphSchedulingCallbacks::token_type,
-                                                   std::optional<EvaluationTime> time) {
-        auto &state = *static_cast<SwitchNodeState *>(receiver);
-        if (state.scheduled_time) {
-            context.cancel(state.outer_schedule);
-            state.outer_schedule = {};
-        }
-        state.scheduled_time = time;
-        if (time) {
-            state.outer_schedule = context.schedule_at(*time);
-        }
-    }
-
-    static constexpr RuntimeGraphSchedulingCallbacks scheduling_callbacks{
-        .inner_scheduled = inner_graph_scheduled,
-        .timed_schedule_changed = inner_graph_timed_schedule_changed,
-    };
+    static void inner_graph_scheduled(void *, RuntimeGraphSchedulingHandler::token_type) noexcept {}
 
   private:
     template <typename Invocation>
@@ -398,7 +373,7 @@ class SwitchNodeDefinition {
         auto &state = invocation.state();
         if (!state.evaluator.owner_bound()) {
             state.evaluator.bind_owner(invocation.context().runtime_graph(), invocation.context().node_index(),
-                                       {.receiver = &state, .callbacks = &scheduling_callbacks});
+                                       {.receiver = &state, .inner_scheduled = inner_graph_scheduled});
         }
         const auto inherited_start = branch.inherited_parameter_start.value_or(invocation.parameter_count());
         auto startup_context = NestedGraphStartupContext{invocation, branch.nested, inherited_start, inherited_count};
@@ -425,17 +400,8 @@ class SwitchNodeDefinition {
         if (!state.active_selection.active()) {
             return;
         }
-        clear_timed_schedule(context, state);
         state.graph.stop(context);
         state.active_selection = {};
-    }
-
-    static void clear_timed_schedule(EvaluationContext &context, SwitchNodeState &state) noexcept {
-        if (state.scheduled_time) {
-            context.cancel(state.outer_schedule);
-            state.outer_schedule = {};
-        }
-        state.scheduled_time.reset();
     }
 
     void validate() const {

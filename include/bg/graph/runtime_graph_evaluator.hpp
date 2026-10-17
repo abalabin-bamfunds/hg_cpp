@@ -2,6 +2,7 @@
 
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/runtime_graph_scheduling.hpp>
+#include <bg/schedule_handle.hpp>
 #include <bg/util/tagged_ptr.hpp>
 
 #include <cstddef>
@@ -10,6 +11,8 @@
 namespace bg {
 
 class EvaluationContext;
+struct GlobalEvaluationContext;
+class TimerScheduler;
 
 // Runs runtime graphs owned by the same node.
 class RuntimeGraphEvaluator {
@@ -27,6 +30,20 @@ class RuntimeGraphEvaluator {
     void bind_owner(RuntimeGraph &graph, std::size_t node_index, RuntimeGraphSchedulingHandler handler);
     bool owner_bound() const noexcept { return parent_.get() != nullptr; }
 
+    // These timer operations are called only on the root evaluator. Child evaluators use owner_ for notifications.
+    ScheduleHandle schedule_at(GlobalEvaluationContext &context, RuntimeGraph &graph, std::size_t node_index,
+                               EvaluationTime time);
+    ScheduleHandle schedule_wall_clock_at(GlobalEvaluationContext &context, RuntimeGraph &graph,
+                                          std::size_t node_index, EvaluationTime time);
+    void cancel(RuntimeGraph &graph, std::size_t node_index, ScheduleHandle handle) noexcept;
+    bool timer_fired(RuntimeGraph &graph, std::size_t node_index, ScheduleHandle handle) const noexcept;
+    std::optional<EvaluationTime> next_scheduled_time() const noexcept;
+    std::optional<EvaluationTime> next_wall_clock_time() const noexcept;
+    void retire_fired() noexcept;
+    bool activate_due(GlobalEvaluationContext &context, EvaluationTime evaluation_time) noexcept;
+    void clear_timers(RuntimeGraph &graph) noexcept;
+    void destroy_timer_scheduler(RuntimeGraph &root_graph) noexcept;
+
     void start(RuntimeGraph &graph, EvaluationContext &context, const RuntimeGraphInput *inputs,
                std::optional<Scalar<>> label);
     static bool evaluate(RuntimeGraph &graph, EvaluationContext &context, const RuntimeGraphInput *inputs);
@@ -35,32 +52,21 @@ class RuntimeGraphEvaluator {
   private:
     friend RuntimeGraph;
 
-    void require_owner(RuntimeGraph &graph, std::size_t node_index, void *receiver,
-                       const RuntimeGraphSchedulingCallbacks *callbacks);
+    void require_owner(RuntimeGraph &graph, std::size_t node_index, RuntimeGraphSchedulingHandler handler);
     template <bool Profiled>
     static bool evaluate_graph(RuntimeGraph &graph, EvaluationContext &context, EvaluationProfile *profile,
                                GraphInstanceId graph_id, const RuntimeGraphInput *inputs);
     void notify_scheduled(RuntimeGraph &graph) noexcept;
-    void notify_timed_schedule_changed(RuntimeGraph &graph, std::optional<EvaluationTime> previous);
     RuntimeGraph &outer_graph(RuntimeGraph &graph) const noexcept;
 
-    struct DirectOwner {
-        ScheduleHandle timed_schedule;
-    };
-
-    struct CallbackOwner {
-        void *receiver;
-        const RuntimeGraphSchedulingCallbacks *callbacks;
-    };
-
     union Owner {
-        constexpr Owner() noexcept : direct{} {}
+        constexpr Owner() noexcept : scheduler{} {}
 
-        DirectOwner direct;
-        CallbackOwner callback;
+        TimerScheduler *scheduler;
+        RuntimeGraphSchedulingHandler callback;
     } owner_;
 
-    // The tag selects the callback owner; an untagged parent uses direct scheduling.
+    // The tag selects the owner scheduling callback.
     util::tagged_ptr<RuntimeGraph, 1, bool> parent_;
     std::size_t owner_node_index_{};
     EvaluationProfile *profile_{};

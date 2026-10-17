@@ -4,19 +4,11 @@
 
 namespace bg {
 
-class RuntimeGraph;
+struct ScheduleHandle {
+    explicit operator bool() const noexcept { return id != 0; }
 
-class ScheduleHandle {
-  public:
-    ScheduleHandle() = default;
-    explicit operator bool() const noexcept { return id_ != 0; }
-
-  private:
-    friend RuntimeGraph;
-
-    explicit ScheduleHandle(std::uint64_t id) noexcept : id_(id) {}
-
-    std::uint64_t id_{};
+    std::uint32_t slot{};
+    std::uint32_t id{};
 };
 
 } // namespace bg
