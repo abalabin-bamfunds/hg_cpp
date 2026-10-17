@@ -480,6 +480,7 @@ graph compilation or evaluation.
 - realtime idle and timed waits, cancellation before startup and between complete cycles, future-start waiting,
   queue closure on normal and failed runs, retained handles, and profiling
 - periodic callbacks at complete outer-cycle boundaries, steady-clock intervals independent of simulation time,
+  eight-cycle polling during continuous evaluation, unconditional checks before and after waits,
   idle and future-start waits without extra cycles, and exception cleanup with and without profiling
 - system and injected wall-clock access during lifecycle, nested evaluation, invalidation, and failure cleanup
 - shared global evaluation context and outer graph/evaluator identity across nested lifecycle calls;

@@ -38,6 +38,7 @@ struct LiteralBatch {
 };
 
 struct Options {
+    bool timer_only{};
     std::size_t messages{100'000};
     std::size_t latency_messages{1'000};
     std::size_t timer_cycles{1'000'000};
@@ -590,6 +591,10 @@ void benchmark_periodic_callback(std::size_t cycles, std::size_t samples, std::s
     auto options = Options{};
     for (auto argument = 1; argument < argc; ++argument) {
         const auto name = std::string_view{argv[argument]};
+        if (name == "--timer-only") {
+            options.timer_only = true;
+            continue;
+        }
         if (name == "--quick") {
             options.messages = 1'000;
             options.latency_messages = 50;
@@ -630,14 +635,17 @@ int main(int argc, char **argv) {
         std::cout << "{\"kind\":\"metadata\",\"benchmark\":\"queue_realtime\",\"messages\":"
                   << options.messages << ",\"latency_messages\":" << options.latency_messages
                   << ",\"timer_cycles\":" << options.timer_cycles << ",\"samples\":" << options.samples
+                  << ",\"timer_only\":" << std::boolalpha << options.timer_only
                   << ",\"idle_gap_ms\":" << options.idle_gap.count() << ",\"hardware_threads\":"
                   << std::thread::hardware_concurrency() << ",\"steady_clock_steady\":"
-                  << std::boolalpha << Clock::is_steady << "}\n";
+                  << Clock::is_steady << "}\n";
 
-        benchmark_writes(options.messages, options.samples, options.warmup_messages);
-        benchmark_graph_drain(options.messages, options.samples);
-        benchmark_realtime_latency(options.latency_messages, options.samples,
-                                   options.warmup_latency_messages, options.idle_gap);
+        if (!options.timer_only) {
+            benchmark_writes(options.messages, options.samples, options.warmup_messages);
+            benchmark_graph_drain(options.messages, options.samples);
+            benchmark_realtime_latency(options.latency_messages, options.samples,
+                                       options.warmup_latency_messages, options.idle_gap);
+        }
         benchmark_periodic_callback(options.timer_cycles, options.samples, options.warmup_timer_cycles);
         return 0;
     } catch (const std::exception &error) {

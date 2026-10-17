@@ -340,8 +340,13 @@ termination. Periodic calls use its positive `interval`, which defaults to
 time. Startup and termination calls run regardless of the interval. An empty
 function disables the callback.
 
-Realtime waits also wake at the next callback deadline, including before a future
-start time. Calling the function does not evaluate the graph or advance evaluation time.
+During continuous evaluation, engines check the callback deadline after each
+group of eight complete outer cycles. A due callback can wait for up to seven
+additional cycles. Realtime engines also check immediately before waiting and
+after waking. Realtime wait deadlines are bounded by the next callback deadline,
+including before a future start time.
+
+Calling the function does not evaluate the graph or advance evaluation time.
 An exception from the callback stops a started graph through its normal lifecycle
 and propagates to the caller. A callback that returns normally lets execution
 continue.

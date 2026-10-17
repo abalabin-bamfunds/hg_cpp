@@ -87,8 +87,10 @@ struct RealtimeProbe {
         auto value = bg::i64{};
         auto write_queue = false;
         auto schedule_exact = false;
+        auto delay = std::chrono::milliseconds{};
         {
             std::unique_lock lock{mutex};
+            delay = evaluation_delay;
             evaluation_times.push_back(context->evaluation_time());
             value = static_cast<bg::i64>(evaluation_times.size());
             if (queue_on_first_evaluation && !queue_written) {
@@ -118,6 +120,7 @@ struct RealtimeProbe {
             }
         }
 
+        std::this_thread::sleep_for(delay);
         output.set(value);
         if (write_queue) {
             (void)QueueState::copy().write(::literal::TimeSeriesLiteral(bg::i64{42}));
@@ -145,6 +148,7 @@ struct RealtimeProbe {
         std::scoped_lock lock{mutex};
         exact_offsets.clear();
         reschedule_interval = std::chrono::microseconds{};
+        evaluation_delay = std::chrono::milliseconds{};
         reschedules_remaining = 0;
         wall_offsets.clear();
         evaluation_times.clear();
@@ -170,6 +174,7 @@ struct RealtimeProbe {
     inline static std::condition_variable changed;
     inline static std::vector<std::chrono::microseconds> exact_offsets;
     inline static std::chrono::microseconds reschedule_interval{};
+    inline static std::chrono::milliseconds evaluation_delay{};
     inline static std::vector<std::chrono::microseconds> wall_offsets;
     inline static std::vector<bg::EvaluationTime> evaluation_times;
     inline static std::vector<bg::EvaluationTime> wall_deadlines;
@@ -614,6 +619,43 @@ TEST_CASE("realtime periodic callback polls idle waits and stops after the compl
     CHECK(RealtimeProbe::evaluation_times == std::vector{start});
     CHECK(RealtimeProbe::stop_count == 1);
     CHECK(runtime.evaluation_time() == start);
+}
+
+TEST_CASE("realtime periodic callback queue writes are scheduled before waiting",
+          "[evaluation][realtime][feature:realtime][queue]") {
+    RealtimeProbe::reset();
+    QueueState::reset();
+    QueueSink::values.clear();
+    RealtimeProbe::evaluation_delay = std::chrono::milliseconds{5};
+    QueueGraph graph;
+    const auto compiled = bg::CompiledGraph{graph.wiring};
+    auto global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    auto queue_state_scope = QueueStateScope{};
+    auto callback_calls = std::size_t{};
+    auto accepted = false;
+    const auto periodic_callback = bg::PeriodicCallback{
+        .callback = [&] {
+            if (++callback_calls == 2) {
+                accepted = QueueState::copy().write(::literal::TimeSeriesLiteral(bg::i64{73}));
+            }
+        },
+        .interval = std::chrono::milliseconds{1},
+    };
+    EngineWorker worker{[&](std::stop_token token) {
+        bg::RealtimeEvaluationEngine{}.run(runtime, bg::SystemWallClock::instance().now(), token, periodic_callback);
+    }};
+
+    const auto received = wait_for(QueueSink::changed, QueueSink::mutex, [] { return !QueueSink::values.empty(); });
+    worker.request_stop();
+    worker.join();
+
+    REQUIRE(received);
+    REQUIRE_FALSE(worker.failure());
+    CHECK(accepted);
+    CHECK(callback_calls >= 2);
+    REQUIRE(QueueSink::values.size() == 1);
+    CHECK(QueueSink::values.front().second == 73);
 }
 
 TEST_CASE("realtime periodic callbacks run during future startup without starting the graph",

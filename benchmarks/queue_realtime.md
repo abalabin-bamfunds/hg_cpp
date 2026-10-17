@@ -12,7 +12,8 @@ build/benchmark/benchmarks/bg_queue_realtime_benchmark
 
 The default run uses 100,000 messages, 1,000 latency samples per run, 1,000,000
 timer cycles, and seven measured samples. `--quick` uses smaller workloads for
-smoke validation. `--messages`, `--latency-messages`, `--timer-cycles`, and
+smoke validation. `--timer-only` runs the paired simulation timer samples without
+the queue workloads. `--messages`, `--latency-messages`, `--timer-cycles`, and
 `--samples` override the corresponding defaults. Output is JSON Lines with raw
 samples and summaries.
 
