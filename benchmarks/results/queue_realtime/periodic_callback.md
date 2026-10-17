@@ -1,8 +1,52 @@
-# Periodic callback polling investigation — 2026-10-21
+# Periodic callback polling — 2026-10-21
+
+Eight-cycle polling reduces the median paired callback cost from 32.395 to
+5.123 ns/cycle, approximately 84%, in the simulation timer-chain benchmark.
+
+## Graph comparison
+
+The comparison uses GCC 14.3, `-O3 -DNDEBUG`, no LTO, and CPU affinity 0 on the
+same VM as the [queue and real-time baseline](README.md). Both executables use
+the same benchmark source and candidate shared libbg for common runtime code.
+Each executable defines its simulation engine: the baseline uses the engine
+and callback runner from `06f12da7`; the candidate uses `9473d53d`.
+
+Each variant has 21 measured pairs: three invocations of seven pairs, after
+warmup, with 1,000,000 timer firings per run. Invocations alternate baseline and
+candidate order; pairs alternate disabled and enabled callback order. The
+enabled callback increments a counter every 50 ms. Timing includes wiring,
+start, and stop. Medians below pool all 21 samples for each setting.
+
+| Setting | Per-cycle polling, median ns/cycle | Eight-cycle polling, median ns/cycle |
+|---|---:|---:|
+| Callback disabled | 113.066 | 112.330 |
+| Callback enabled | 145.581 | 117.482 |
+| Paired enabled minus disabled | 32.395 | 5.123 |
+
+The median paired increase falls from 28.6% to 4.6%. The enabled median cycle
+cost falls by 19.3%. Disabled sample ranges are 112.553–155.229 and
+111.618–184.204 ns/cycle; enabled ranges are 144.350–192.923 and
+116.697–194.617 ns/cycle, respectively. Paired increases range from
+28.656–48.152 ns/cycle before and −31.446–26.278 after. The wide ranges and
+negative paired samples show timing variation; the medians describe this
+workload rather than a bound on overhead.
+
+All timer counts pass. Enabled callbacks run four or five times per measured
+run, including lifecycle calls. No invocation increases cgroup throttling
+counters. Cgroup CPU pressure `some` increases by 0.291–1.339 ms during each
+1.6–2.2-second invocation.
+
+The [raw comparison](../periodic_callback_overhead/9473d53d89440ff11d9b6aca49f8cf62bdbb07d2-timer-ab.json)
+preserves source snapshots, exact build and run commands, binary and library
+hashes, all samples, and environment counters. The paired workloads can be run
+with `taskset -c 0 build/benchmark/benchmarks/bg_queue_realtime_benchmark --timer-only`;
+build instructions are in [queue_realtime.md](../../queue_realtime.md).
+
+## Clock-read isolation
 
 The per-cycle clock read accounts for most of the callback overhead in the
-[queue and real-time baseline](README.md). The runner's enabled check and
-deadline comparison add no material cost in isolation.
+original baseline. The runner's enabled check and deadline comparison add no
+material cost in isolation.
 
 A standalone experiment uses GCC 14.3, `-O3 -DNDEBUG`, the same VM without
 explicit CPU affinity, and seven samples of 1,000,000 loop iterations.
@@ -35,10 +79,10 @@ This matters because Python installs a periodic callback for every graph run
 and uses it to process signals, including Ctrl-C. Startup, termination, callback
 exceptions, and idle realtime waits also need their existing behavior.
 
-Production behavior is unchanged. Selecting a polling stride requires deciding
-whether the callback may run at a later cycle boundary after its deadline.
-Preserving the current check at every boundary retains the clock-read cost;
-a helper timer thread would introduce separate scheduling and lifetime costs.
+The implementation in `9473d53d` checks after every eight complete outer cycles
+during continuous evaluation and before and after every realtime wait. The
+[decision record](../../../docs/decisions/0076-periodic-callback-polling.md)
+states the timing tradeoff. Callback state remains local to the engine run.
 
 ## Reproduction
 

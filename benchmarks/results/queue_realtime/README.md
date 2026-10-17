@@ -72,10 +72,11 @@ calls.
 | Callback enabled | 146.207 | 141.909–156.679 |
 
 The median paired increase is **34.408 ns/cycle (30.8%)**; paired increases
-range from 12.302 to 44.730 ns/cycle. The per-cycle wall-clock check in
-`PeriodicCallbackRunner::run_if_due` is a candidate for profiling.
-The [polling investigation](periodic_callback.md) isolates its clock-read cost
-and measures the cost of checking less often.
+range from 12.302 to 44.730 ns/cycle. This baseline checks the steady-clock
+deadline between every pair of cycles.
+The [polling follow-up](periodic_callback.md) isolates its clock-read cost and
+measures the implemented eight-cycle cadence: median paired overhead falls
+from 32.395 to 5.123 ns/cycle in a matched engine comparison.
 
 The scheduling benchmark has three runs of 200,000 cycles each. Dense scheduling
 of 32 nodes measures 963.6 ns/cycle (range 904.2–1,249.7). Scheduling one of 32
