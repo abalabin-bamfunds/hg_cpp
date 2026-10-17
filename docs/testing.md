@@ -474,6 +474,9 @@ For each reusable node and graph, test:
   partial validity, empty results, item removal and replacement, integer limits,
   reference rebinding, free collections, output guarantees, and equal optional
   sums across invalid-to-valid transitions
+- delayed ticks and invalidation, collection delta replay, periodic tick limits,
+  throttle publication times and latest-state reconciliation, simultaneous
+  timers and input changes, duration bounds, and nested-graph stop cleanup
 - scalar equality through built-in, compound, collection, and extension views;
   ordering and Boolean operations
 - guarantee propagation, equal-result tick selection, reference bindings,

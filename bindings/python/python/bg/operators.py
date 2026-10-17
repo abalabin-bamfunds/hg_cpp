@@ -31,6 +31,9 @@ dedup = _native.dedup
 filter_ = _native.filter_
 if_then_else = _native.if_then_else
 lag = _native.lag
+delay = _native.delay
+schedule = _native.schedule
+throttle = _native.throttle
 sums = _native.sums
 mins = _native.mins
 maxs = _native.maxs
@@ -56,6 +59,7 @@ __all__ = [
     "convert",
     "count",
     "default_",
+    "delay",
     "dedup",
     "div",
     "eq",
@@ -88,9 +92,11 @@ __all__ = [
     "pos",
     "round",
     "sample",
+    "schedule",
     "sub",
     "sum_",
     "switch_",
     "sums",
+    "throttle",
     "valid",
 ]

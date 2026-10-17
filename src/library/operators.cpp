@@ -38,6 +38,9 @@ decltype(dedup) dedup{"dedup", {"value"}};
 decltype(filter_) filter_{"filter_", {"condition", "value"}};
 decltype(if_then_else) if_then_else{"if_then_else", {"condition", "true_value", "false_value"}};
 decltype(lag) lag{"lag", {"value"}};
+decltype(delay) delay{"delay", {"value", "duration"}};
+decltype(schedule) schedule{"schedule", {"period", "initial_delay", "max_ticks"}};
+decltype(throttle) throttle{"throttle", {"value", "period", "delay_first_tick"}};
 decltype(sums) sums{"sums", {"value"}};
 decltype(mins) mins{"mins", {"value"}};
 decltype(maxs) maxs{"maxs", {"value"}};
@@ -59,6 +62,7 @@ const auto registered = [] {
     details::register_logical_operators();
     details::register_stream_operators();
     details::register_running_operators();
+    details::register_timed_operators();
     details::register_collection_operators();
     details::register_collection_reduction_operators();
     return true;

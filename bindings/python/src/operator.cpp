@@ -192,6 +192,9 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "filter_", operators::filter_);
     export_operator(operators_module, "if_then_else", operators::if_then_else);
     export_operator(operators_module, "lag", operators::lag);
+    export_operator(operators_module, "delay", operators::delay);
+    export_operator(operators_module, "schedule", operators::schedule);
+    export_operator(operators_module, "throttle", operators::throttle);
     export_operator(operators_module, "sums", operators::sums);
     export_operator(operators_module, "mins", operators::mins);
     export_operator(operators_module, "maxs", operators::maxs);

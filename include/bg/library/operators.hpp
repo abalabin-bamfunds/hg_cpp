@@ -5,6 +5,7 @@
 #include <bg/map.hpp>
 #include <bg/mesh.hpp>
 #include <bg/operators.hpp>
+#include <bg/scalar/builtins.hpp>
 #include <bg/switch.hpp>
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/time_series_variable.hpp>
@@ -65,6 +66,11 @@ extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TRUE_TS, FALSE_TS) -> OUT> if_
 // Counting and lag.
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> i64> count;
 extern BG_LIBRARY_EXPORT operator_<auto(TS<SCALAR>) -> TS<SCALAR>> lag;
+
+// Timed operators.
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T, timedelta_t) -> OUT> delay;
+extern BG_LIBRARY_EXPORT operator_<auto(timedelta_t, bool, i64) -> TS<bool>> schedule;
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T, timedelta_t, bool) -> OUT> throttle;
 
 // Running numeric aggregates. A valid reset-input tick clears the current aggregate.
 extern BG_LIBRARY_EXPORT operator_<auto(TS<NUMERIC>) -> OUT> sums;

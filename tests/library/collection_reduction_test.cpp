@@ -493,18 +493,33 @@ TEST_CASE("fixed TSL extrema and means use ordinary floating-point comparisons",
     const auto minimum_result = testing::test_graph(minimum, first, second);
     const auto maximum_result = testing::test_graph(maximum, first, second);
     const auto mean_result = testing::test_graph(mean, first, second);
-    REQUIRE(minimum_result[0].has_value());
-    REQUIRE(maximum_result[0].has_value());
-    REQUIRE(mean_result[0].has_value());
-    CHECK(std::isnan(scalar_cast<double>(*minimum_result[0]).value()));
-    CHECK(std::isnan(scalar_cast<double>(*maximum_result[0]).value()));
-    CHECK(std::isnan(scalar_cast<double>(*mean_result[0]).value()));
-    CHECK(scalar_cast<double>(*minimum_result[1]).value() == negative_infinity);
-    CHECK(scalar_cast<double>(*minimum_result[2]).value() == positive_infinity);
-    CHECK(scalar_cast<double>(*maximum_result[1]).value() == 1.0);
-    CHECK(scalar_cast<double>(*maximum_result[2]).value() == positive_infinity);
-    CHECK(scalar_cast<double>(*mean_result[1]).value() == negative_infinity);
-    CHECK(std::isnan(scalar_cast<double>(*mean_result[2]).value()));
+    const auto minimum_at_zero = minimum_result[0];
+    const auto maximum_at_zero = maximum_result[0];
+    const auto mean_at_zero = mean_result[0];
+    const auto minimum_at_one = minimum_result[1];
+    const auto minimum_at_two = minimum_result[2];
+    const auto maximum_at_one = maximum_result[1];
+    const auto maximum_at_two = maximum_result[2];
+    const auto mean_at_one = mean_result[1];
+    const auto mean_at_two = mean_result[2];
+    REQUIRE(minimum_at_zero.has_value());
+    REQUIRE(maximum_at_zero.has_value());
+    REQUIRE(mean_at_zero.has_value());
+    REQUIRE(minimum_at_one.has_value());
+    REQUIRE(minimum_at_two.has_value());
+    REQUIRE(maximum_at_one.has_value());
+    REQUIRE(maximum_at_two.has_value());
+    REQUIRE(mean_at_one.has_value());
+    REQUIRE(mean_at_two.has_value());
+    CHECK(std::isnan(scalar_cast<double>(*minimum_at_zero).value()));
+    CHECK(std::isnan(scalar_cast<double>(*maximum_at_zero).value()));
+    CHECK(std::isnan(scalar_cast<double>(*mean_at_zero).value()));
+    CHECK(scalar_cast<double>(*minimum_at_one).value() == negative_infinity);
+    CHECK(scalar_cast<double>(*minimum_at_two).value() == positive_infinity);
+    CHECK(scalar_cast<double>(*maximum_at_one).value() == 1.0);
+    CHECK(scalar_cast<double>(*maximum_at_two).value() == positive_infinity);
+    CHECK(scalar_cast<double>(*mean_at_one).value() == negative_infinity);
+    CHECK(std::isnan(scalar_cast<double>(*mean_at_two).value()));
 }
 
 TEST_CASE("collection reductions reject non-numeric item types",

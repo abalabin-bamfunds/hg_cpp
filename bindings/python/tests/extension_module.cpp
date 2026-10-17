@@ -153,6 +153,13 @@ NB_MODULE(_bg_test_extension, module) {
                                     conversions.to_python(timedelta_scalar),
                                     conversions.to_python_view(date_time_scalar, lifetime, callback.generation()));
     });
+    module.def("convert_timedelta", [](nanobind::handle value) {
+        auto memory = bg::allocator{};
+        auto &conversions = bg::python::scalar_conversions();
+        const auto converted = conversions.from_python(bg::timedelta_type(), value, memory);
+        const auto view = converted.view();
+        return conversions.to_python(bg::Scalar<>::from(view));
+    });
     module.def("scalar_conversions_address",
                [] { return reinterpret_cast<std::uintptr_t>(&bg::python::scalar_conversions()); });
     module.def("decode_invalid_string", [] {

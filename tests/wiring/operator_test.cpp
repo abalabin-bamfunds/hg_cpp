@@ -579,25 +579,30 @@ TEST_CASE("promoted node overloads prefer presence for scalar arguments",
     CHECK(bg::testing::test_graph(required_graph).equals({11}));
 }
 
-TEST_CASE("named omission fills an earlier optional scalar and caches the overload",
+TEST_CASE("named omission and scalar presence remain distinct in one root wiring",
           "[feature:operator][feature:wiring][scalar:integer][definition:function]") {
-    auto selected = 0;
     auto operation = bg::operator_<auto(bg::i64, bg::i64) -> bg::TS<bg::i64>>{
         "named_omission", {"first", "second"}};
-    operation.overload(bg::graph("name"_n = "optional_first", [&](std::optional<bg::i64> first,
-                                                                       bg::i64 second) {
-        selected = 1;
+    operation.overload(bg::graph("name"_n = "required_first", [](bg::i64 first, bg::i64 second) {
+        return bg::operators::const_(100 + first + second)
+            .as<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
+    }));
+    operation.overload(bg::graph("name"_n = "optional_first", [](std::optional<bg::i64> first,
+                                                                    bg::i64 second) {
         return bg::operators::const_(first.value_or(0) + second)
             .as<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
     }));
 
-    const auto named_graph = [&] {
-        return operation("second"_n = bg::i64{5}).as<bg::TS<bg::i64>>();
+    const auto add = bg::node([](bg::i64 lhs, bg::i64 rhs) { return lhs + rhs; });
+    const auto graph = [&] {
+        const auto omitted = operation("second"_n = bg::i64{5});
+        const auto omitted_again = operation("second"_n = bg::i64{5});
+        const auto present = operation(bg::i64{2}, "second"_n = bg::i64{5});
+        const auto present_again = operation(bg::i64{2}, "second"_n = bg::i64{5});
+        return add(add(omitted, present), add(omitted_again, present_again));
     };
-    CHECK(bg::testing::test_graph(named_graph).equals({5}));
-    CHECK(selected == 1);
-    CHECK(bg::testing::test_graph(named_graph).equals({5}));
-    CHECK(selected == 1);
+
+    CHECK(bg::testing::test_graph(graph).equals({224}));
 }
 
 TEST_CASE("type specificity precedes scalar presence preference",

@@ -214,14 +214,16 @@ TEST_CASE("running extrema keep an initial NaN until input invalidation",
         const auto result = testing::test_graph(
             operation, testing::input<TS<double>>({nan, 1.0, nan, 0.0, literal::INVALID,
                                                    literal::SKIP, 3.0}));
+        const auto first_value = result[0];
+        const auto last_value = result[6];
         CHECK(result.size() == 7);
-        REQUIRE(result[0].has_value());
-        CHECK(std::isnan(scalar_cast<double>(*result[0]).value()));
+        REQUIRE(first_value.has_value());
+        CHECK(std::isnan(scalar_cast<double>(*first_value).value()));
         for (const auto index : {1, 2, 3, 4, 5}) {
             CHECK_FALSE(result[index].has_value());
         }
-        REQUIRE(result[6].has_value());
-        CHECK(scalar_cast<double>(*result[6]).value() == 3.0);
+        REQUIRE(last_value.has_value());
+        CHECK(scalar_cast<double>(*last_value).value() == 3.0);
     };
 
     check_sticky_nan(mins);
@@ -278,22 +280,27 @@ TEST_CASE("running extrema clear NaN history on reset-only and simultaneous tick
                                                    nan, 5.0, 2.0, 3.0}),
             testing::input<TS<bool>>({literal::SKIP, literal::SKIP, true, literal::SKIP,
                                       false, literal::SKIP, true, literal::SKIP}));
+        const auto first_value = result[0];
+        const auto value_after_first_reset = result[3];
+        const auto value_after_second_nan = result[4];
+        const auto value_after_second_reset = result[6];
+        const auto last_value = result[7];
         CHECK(result.size() == 8);
-        REQUIRE(result[0].has_value());
-        CHECK(std::isnan(scalar_cast<double>(*result[0]).value()));
+        REQUIRE(first_value.has_value());
+        CHECK(std::isnan(scalar_cast<double>(*first_value).value()));
         CHECK_FALSE(result[1].has_value());
         CHECK_FALSE(result[2].has_value());
-        REQUIRE(result[3].has_value());
-        CHECK(scalar_cast<double>(*result[3]).value() == 4.0);
-        REQUIRE(result[4].has_value());
-        CHECK(std::isnan(scalar_cast<double>(*result[4]).value()));
+        REQUIRE(value_after_first_reset.has_value());
+        CHECK(scalar_cast<double>(*value_after_first_reset).value() == 4.0);
+        REQUIRE(value_after_second_nan.has_value());
+        CHECK(std::isnan(scalar_cast<double>(*value_after_second_nan).value()));
         CHECK_FALSE(result[5].has_value());
-        REQUIRE(result[6].has_value());
-        CHECK(scalar_cast<double>(*result[6]).value() == 2.0);
-        CHECK(result[7].has_value() == expected_last_update.has_value());
+        REQUIRE(value_after_second_reset.has_value());
+        CHECK(scalar_cast<double>(*value_after_second_reset).value() == 2.0);
+        CHECK(last_value.has_value() == expected_last_update.has_value());
         if (expected_last_update) {
-            REQUIRE(result[7].has_value());
-            CHECK(scalar_cast<double>(*result[7]).value() == *expected_last_update);
+            REQUIRE(last_value.has_value());
+            CHECK(scalar_cast<double>(*last_value).value() == *expected_last_update);
         }
     };
 

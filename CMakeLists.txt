@@ -172,6 +172,7 @@ add_library(
     src/library/collection.cpp
     src/library/string.cpp
     src/library/stream.cpp
+    src/library/timed.cpp
     src/library/running.cpp
     src/library/collection_reduction.cpp
 )

@@ -17,8 +17,12 @@
 #include <bg/type/type_registry.hpp>
 #include <bg/util/scope_exit.hpp>
 
+#include <datetime.h>
+
 #include <algorithm>
 #include <atomic>
+#include <cstdint>
+#include <limits>
 #include <mutex>
 #include <stdexcept>
 #include <string_view>
@@ -430,6 +434,46 @@ ScalarValue<> from_python_double(nanobind::handle value, allocator &memory, cons
     return make_scalar<double>(nanobind::cast<double>(value), memory);
 }
 
+ScalarValue<> from_python_timedelta(nanobind::handle value, allocator &memory, const PythonScalarConversions &) {
+    if (!PyDelta_Check(value.ptr())) {
+        PyErr_SetString(PyExc_TypeError, "expected datetime.timedelta for bg.timedelta_t");
+        nanobind::raise_python_error();
+    }
+
+    constexpr auto microseconds_per_day = std::uint64_t{86'400'000'000};
+    const auto days = static_cast<std::int64_t>(PyDateTime_DELTA_GET_DAYS(value.ptr()));
+    const auto remainder = static_cast<std::uint64_t>(PyDateTime_DELTA_GET_SECONDS(value.ptr())) * 1'000'000 +
+                           static_cast<std::uint64_t>(PyDateTime_DELTA_GET_MICROSECONDS(value.ptr()));
+
+    const auto count = [&] {
+        if (days >= 0) {
+            const auto positive_days = static_cast<std::uint64_t>(days);
+            const auto maximum = static_cast<std::uint64_t>(std::numeric_limits<i64>::max());
+            if (positive_days > (maximum - remainder) / microseconds_per_day) {
+                throw std::overflow_error{"datetime.timedelta is outside the bg.timedelta_t range"};
+            }
+            return static_cast<i64>(positive_days * microseconds_per_day + remainder);
+        }
+
+        const auto negative_days = static_cast<std::uint64_t>(-days);
+        const auto maximum_magnitude = std::uint64_t{1} << 63;
+        const auto whole_days = negative_days - 1;
+        if (whole_days > maximum_magnitude / microseconds_per_day) {
+            throw std::overflow_error{"datetime.timedelta is outside the bg.timedelta_t range"};
+        }
+        const auto magnitude = whole_days * microseconds_per_day + (microseconds_per_day - remainder);
+        if (magnitude > maximum_magnitude) {
+            throw std::overflow_error{"datetime.timedelta is outside the bg.timedelta_t range"};
+        }
+        if (magnitude == maximum_magnitude) {
+            return std::numeric_limits<i64>::min();
+        }
+        return -static_cast<i64>(magnitude);
+    }();
+
+    return make_scalar<timedelta_t>(timedelta_t{count}, memory);
+}
+
 ScalarValue<> from_python_string(nanobind::handle value, allocator &, const PythonScalarConversions &conversions) {
     auto string_value = nanobind::object{};
     auto *python_type = Py_TYPE(value.ptr());
@@ -665,6 +709,20 @@ nanobind::object to_python_double(Scalar<> value, const PythonScalarConversions 
     return nanobind::float_{unchecked_scalar_cast<double>(value).value()};
 }
 
+nanobind::object to_python_timedelta(Scalar<> value, const PythonScalarConversions &) {
+    const auto count = unchecked_scalar_cast<timedelta_t>(value).value().count();
+    constexpr auto microseconds_per_day = std::int64_t{86'400'000'000};
+    const auto days = count / microseconds_per_day;
+    const auto within_day = count % microseconds_per_day;
+    const auto seconds = within_day / 1'000'000;
+    const auto microseconds = within_day % 1'000'000;
+    auto *result = PyDelta_FromDSU(static_cast<int>(days), static_cast<int>(seconds), static_cast<int>(microseconds));
+    if (result == nullptr) {
+        nanobind::raise_python_error();
+    }
+    return nanobind::steal<nanobind::object>(result);
+}
+
 nanobind::object to_python_string(Scalar<> value, const PythonScalarConversions &) {
     const auto text = unchecked_scalar_cast<string>(value).value();
     auto *storage = StringStorage::from(details::scalar_data(value));
@@ -752,6 +810,13 @@ struct NB_HIDDEN PythonScalarConversions::Impl {
 };
 
 PythonScalarConversions::PythonScalarConversions() : impl_{std::make_unique<Impl>()} {
+    if (PyDateTimeAPI == nullptr) {
+        PyDateTime_IMPORT;
+        if (PyDateTimeAPI == nullptr) {
+            nanobind::raise_python_error();
+        }
+    }
+
     const auto add_from_python = [this](const ScalarType &type, PythonToScalar conversion) {
         if (!impl_->from_python.add(type, conversion)) {
             throw std::logic_error{"a built-in Python scalar conversion was registered twice"};
@@ -762,6 +827,7 @@ PythonScalarConversions::PythonScalarConversions() : impl_{std::make_unique<Impl
     add_from_python(bool_type(), &from_python_bool);
     add_from_python(int64_type(), &from_python_i64);
     add_from_python(double_type(), &from_python_double);
+    add_from_python(timedelta_type(), &from_python_timedelta);
     add_from_python(string_type(), &from_python_string);
     add_from_python(symbol_type(), &from_python_symbol);
 
@@ -775,6 +841,7 @@ PythonScalarConversions::PythonScalarConversions() : impl_{std::make_unique<Impl
     add_to_python(bool_type(), &to_python_bool);
     add_to_python(int64_type(), &to_python_i64);
     add_to_python(double_type(), &to_python_double);
+    add_to_python(timedelta_type(), &to_python_timedelta);
     add_to_python(string_type(), &to_python_string);
     add_to_python(symbol_type(), &to_python_symbol);
 
@@ -787,6 +854,7 @@ PythonScalarConversions::PythonScalarConversions() : impl_{std::make_unique<Impl
     add_python_builtin(PyLong_Type, int64_type());
     add_python_builtin(PyFloat_Type, double_type());
     add_python_builtin(PyUnicode_Type, string_type());
+    add_python_builtin(*PyDateTimeAPI->DeltaType, timedelta_type());
 }
 
 PythonScalarConversions::~PythonScalarConversions() = default;

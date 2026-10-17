@@ -54,8 +54,8 @@ timestamp. Integer and temporal arithmetic wraps at the underlying integer
 width. Negation and absolute value of the minimum integer or duration return
 that same minimum value. Floating-point arithmetic uses normal C++ operations.
 String operations process bytes, including embedded NUL bytes. Temporal
-operators are native C++ overloads; Python temporal conversions are not yet
-supplied.
+operators are native C++ overloads. Python `datetime.timedelta` maps to
+`timedelta_t`; Python timestamp scalar conversion is not yet supplied.
 
 Integer division converts both operands to `double` and uses native floating-point
 division. Conversion can round operands outside the consecutive-integer range,
@@ -181,6 +181,44 @@ Neither operator schedules on start. Skipped cycles do not advance either
 operation. Ordinary equal-valued ticks remain separate events. `lag` produces
 an ordinary output; its first event produces no output, and its final retained
 event remains unpublished unless another input event arrives.
+
+## Timed operators
+
+`delay(value, duration)` publishes each input event at its original evaluation
+time plus `duration`. It retains ticks, including invalidation and collection
+deltas, rather than sampling the value later. Equal ordinary ticks remain
+separate events. Zero duration returns the input; negative duration is a wiring
+error. Positive delay limits const guarantees to final, including contained
+time series. Retained ticks follow the supported types and ownership rules in
+[retaining ticks](time-series-types.md#retaining-ticks). Delay rejects contained
+references and sparse TSL values. TSS and TSD root invalidation cannot be
+replayed, so retargeting from a valid TSS or TSD to an invalid target fails.
+Initially unbound references are supported.
+
+`schedule(period, initial_delay=true, max_ticks=...)` publishes ordinary
+`TS<bool>` ticks whose value is true. The first tick occurs one period after
+graph start. `initial_delay=false` produces the first tick at graph start.
+`max_ticks` limits the number of ticks; zero produces none. Without a limit,
+the source continues until its graph stops. Period must be positive and
+`max_ticks` must be nonnegative.
+
+`throttle(value, period, delay_first_tick=false)` passes the first event
+immediately and starts a period. Events during that period coalesce. At its
+end, throttle publishes the latest pending state and starts another period.
+With no pending event, it stops scheduling until the input changes again.
+`delay_first_tick=true` also delays the first event by one period. Period must
+be positive.
+
+Throttle applies the same timing to invalidation. An input change at the
+publication time contributes to that publication. Collection publication
+reconciles the complete current value, so changes that cancel within the
+period need not produce an output tick. The output retains input guarantees up
+to final. Throttle retains timing state, not a copy of the input value.
+
+Durations are scalar arguments: use `bg::timedelta_t` in C++ and
+`datetime.timedelta` in Python. Timed work uses evaluation time and stops with
+the owning graph, including inner graphs. Scheduling outside the supported
+[evaluation-time range](evaluation.md#evaluation-time) fails.
 
 ## Running calculations
 

@@ -195,7 +195,8 @@ add_executable(
     library/overload_registration_test.cpp
     library/running_test.cpp
     library/stateful_test.cpp
-    library/stream_test.cpp)
+    library/stream_test.cpp
+    library/timed_test.cpp)
 target_link_libraries(bg_library_tests PRIVATE bg::library Catch2::Catch2WithMain)
 target_compile_options(bg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj>)
 target_compile_definitions(bg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:CATCH_CONFIG_NO_CPP17_STRING_VIEW>)
