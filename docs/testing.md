@@ -19,7 +19,7 @@ Use `[dimension:value]` for each applicable dimension:
   `scalar-collection`, `global-state`, `visitor`, `type-system`,
   `node-api`, `state`, `wiring`, `context-time-series`, `graph-compilation`, `test-graph`, `evaluation-context`,
   `evaluation-scratch`, `borrowed-input`,
-  `lifecycle`, `finalization`, `scheduling`, `timed-scheduling`, `simulation`, `wall-clock`, `profiling`,
+  `lifecycle`, `finalization`, `scheduling`, `timed-scheduling`, `simulation`, `realtime`, `wall-clock`, `profiling`,
   `input-activity`, `validity`,
   `invalidation`, `operator`, `constant`, `graph-argument`, `map`, `switch`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `feedback`,
@@ -458,6 +458,10 @@ graph compilation or evaluation.
 - fired-handle queries throughout an outer cycle, including nested pause/resume and
   cancellation after activation; reset at the next cycle and graph stop
 - simulation time progression and termination
+- realtime cycle selection at exact timer boundaries, distinct exact deadlines, queue wakeups during timer waits,
+  wall-clock timer readiness and coalescing, and pending queue priority through minimum-tick chains
+- realtime idle and timed waits, cancellation before startup and between complete cycles, future-start waiting,
+  queue closure on normal and failed runs, retained handles, and profiling
 - system and injected wall-clock access during lifecycle, nested evaluation, invalidation, and failure cleanup
 - shared global evaluation context and outer graph/evaluator identity across nested lifecycle calls;
   isolation between runs and invocation-local bindings, graph inputs, and scratch frames

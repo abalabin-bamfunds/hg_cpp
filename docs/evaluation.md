@@ -54,10 +54,13 @@ timers. An engine accesses that evaluator through `GlobalEvaluationContext`.
 
 An engine can call `bind_queue_wakeup(wakeup)` once before graph startup. Graphs
 without queue declarations require no queue storage. The engine owns the
-`details::EngineWakeup` and keeps it alive until the graph stops or finalizes.
+`details::EngineWakeup` and keeps it alive until queue admission closes.
 Queue writes notify it after committing a message, including a sentinel frame after
 serialization failure, and before leaving write admission. Root `SKIP` requires
 no notification. Closure waits for admitted writers before detaching the wakeup.
+Graph stop and finalization close admission. The engine operation `close_queue()`
+also closes admission and supports sequential repeated calls; it is required to
+detach the wakeup when startup fails before the graph starts.
 
 `EngineWakeup` supports one waiting engine thread and concurrent notifications.
 Notifications coalesce. After each wait, the engine rechecks queue readiness,
@@ -161,13 +164,17 @@ references to the outer runtime graph and its evaluator. Nested contexts borrow
 the same global context, so access to the outer graph and evaluator does not
 traverse graph ownership.
 
-The simulation engine creates one global context for a run. A direct
+Each evaluation engine creates one global context for a run. A direct
 `RuntimeGraph::start`, `evaluate`, or `stop` call creates one for that call.
 Overloads that take an `EvaluationContext` borrow its global context.
 `EvaluationContext` retains the evaluation time, current graph and node, borrowed
 graph inputs, scoped bindings, and invocation-local scratch frames. Evaluation
 time remains local for direct access during node execution. Child construction
 shares services and keeps scratch-frame state local.
+
+The engine constructs `EvaluationContext(global_context, time, runtime_graph,
+inputs)` for lifecycle calls and outer cycles. The global context, its services,
+the runtime graph, and any borrowed inputs must outlive that context.
 
 The context provides:
 
@@ -200,9 +207,8 @@ The engine sets it to the start time before graph startup, then updates it once
 at the start of each later outer evaluation cycle. All contexts and nested
 graphs in a cycle share it, so `WallClock::now()` returns that cycle's
 evaluation time. Start and stop functions observe the start and final evaluation
-times. Direct `RuntimeGraph::start`, `evaluate`, and `stop` calls use
-`SystemWallClock`. A real-time engine can provide another `WallClock`
-implementation.
+times. `RealtimeEvaluationEngine` and direct `RuntimeGraph::start`, `evaluate`,
+and `stop` calls use `SystemWallClock`.
 
 ## Start
 
@@ -297,15 +303,40 @@ wall-clock deadline, or [queue wake](#queue-input), and calls `evaluate(time)`.
 An overdue wall-clock deadline advances to the next minimum evaluation time.
 It stops the runtime graph when no scheduled evaluation remains.
 
-A later real-time evaluation engine can wait for each scheduled time while
-using the same runtime graph interface.
+## Realtime evaluation
+
+`RealtimeEvaluationEngine::run(graph, start_time, stop_token)` waits until the
+explicit start time, starts the graph, and evaluates its first outer cycle at
+that time. The optional `std::stop_token` defaults to an empty token. The
+profiling overload accepts an `EvaluationProfile&` before the token.
+
+For each later cycle, the engine selects the earlier of the next evaluation-time
+timer and a cycle for ready queue or wall-clock work. Ready external work uses
+the later of the current wall-clock time and the next minimum evaluation time.
+An evaluation-time timer therefore establishes a cycle at its declared time;
+external work cannot advance evaluation past it. Timers at different evaluation
+times run in separate cycles. Timer activation and queue priority follow
+[queue input](#queue-input).
+
+When no cycle is ready, the engine waits for queue publication, the next timer
+deadline, or a stop request. It rechecks readiness after every wake. An empty
+schedule leaves the engine waiting.
+
+A stop request before startup leaves the graph unstarted. Once startup begins,
+the engine completes the first outer cycle and observes stop requests between
+complete outer cycles. A stop callback only notifies the engine wakeup; the
+engine thread stops the graph through its normal lifecycle. Queue admission
+closes before the engine destroys its wakeup, including when startup fails.
+Signal handling belongs to the application. A signal waiter thread can request
+stop through `std::stop_source` from normal thread execution.
 
 ## Evaluation profiling
 
 `EvaluationProfile` records evaluation work when supplied to
-`SimulationEvaluationEngine::run()` or to every `RuntimeGraph` start, evaluate,
-and stop call in a run. A run uses one profile throughout. Without a profile,
-the evaluator does not execute the recording path.
+`SimulationEvaluationEngine::run()`, `RealtimeEvaluationEngine::run()`, or to
+every `RuntimeGraph` start, evaluate, and stop call in a run. A run uses one
+profile throughout. Without a profile, the evaluator does not execute the
+recording path.
 
 The caller transfers the recording buffer once with `take_recording()` and can
 poll it through `EvaluationProfileReader` on another thread. A completed outer

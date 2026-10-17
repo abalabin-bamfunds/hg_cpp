@@ -16,6 +16,7 @@ add_executable(
     evaluation/context/evaluation_scratch_test.cpp
     evaluation/context/context_time_series_test.cpp
     evaluation/context/wall_clock_test.cpp
+    evaluation/engine/realtime_evaluation_engine_test.cpp
     evaluation/engine/simulation_evaluation_engine_test.cpp
     evaluation/engine/evaluation_profile_test.cpp
     evaluation/engine/evaluation_profiler_test.cpp

@@ -102,9 +102,12 @@ class RuntimeGraph {
     // a closed handle.
     // The target must identify a queue node with a retained output runtime type.
     [[nodiscard]] Queue make_queue(std::size_t target);
-    // Engine API. Bind once before start. Graphs without queues need no queue storage. The wakeup must outlive graph
-    // stop or finalization.
+    // Engine API. Bind once before start. Graphs without queues need no queue storage. The wakeup must outlive queue
+    // admission closure by close_queue(), stop, or finalization.
     void bind_queue_wakeup(details::EngineWakeup &wakeup);
+    // Engine API. Irreversibly closes queue admission, waits for admitted writers, and detaches the wakeup. Safe to
+    // call again after a prior close.
+    void close_queue() noexcept;
 
     void start(EvaluationContext &context, const RuntimeGraphInput *inputs = nullptr,
                std::optional<Scalar<>> label = std::nullopt);
@@ -174,7 +177,6 @@ class RuntimeGraph {
     CycleCallbacks *cycle_callbacks() const noexcept;
     QueueState *&queue_state() noexcept;
     QueueState *queue_state() const noexcept;
-    void close_queue() noexcept;
     void discard_queue() noexcept;
     void drain_queue(EvaluationContext &context);
     RuntimeGraph &outer_graph() noexcept;

@@ -32,6 +32,7 @@
 #include <bg/operator.hpp>
 #include <bg/operators.hpp>
 #include <bg/queue.hpp>
+#include <bg/realtime_evaluation_engine.hpp>
 #include <bg/optionality.hpp>
 #include <bg/node/input.hpp>
 #include <bg/node/input_properties.hpp>

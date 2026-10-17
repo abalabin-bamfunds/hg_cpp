@@ -14,7 +14,6 @@ namespace bg {
 class RuntimeGraph;
 class RuntimeGraphEvaluator;
 class GlobalState;
-class SimulationEvaluationEngine;
 class EvaluationProfile;
 namespace details {
 class EvaluationScratch;
@@ -40,6 +39,12 @@ class EvaluationContext {
     EvaluationContext &operator=(const EvaluationContext &) = delete;
     EvaluationContext(EvaluationContext &&) noexcept = default;
     EvaluationContext &operator=(EvaluationContext &&) noexcept = default;
+
+    // Engine API. The global context and its referenced services must outlive this invocation context.
+    EvaluationContext(GlobalEvaluationContext &global_context, EvaluationTime evaluation_time,
+                      RuntimeGraph &runtime_graph, const RuntimeGraphInput *runtime_graph_inputs = nullptr) noexcept
+        : global_context_{&global_context}, evaluation_time_{evaluation_time}, runtime_graph_{&runtime_graph},
+          node_index_{}, scratch_{&global_context.evaluation_scratch}, runtime_graph_inputs_{runtime_graph_inputs} {}
 
     const EvaluationTime &evaluation_time() const noexcept { return evaluation_time_; }
 
@@ -78,13 +83,7 @@ class EvaluationContext {
   private:
     friend RuntimeGraph;
     friend RuntimeGraphEvaluator;
-    friend SimulationEvaluationEngine;
     friend details::NodeScheduler;
-
-    EvaluationContext(GlobalEvaluationContext &global_context, EvaluationTime evaluation_time,
-                      RuntimeGraph &runtime_graph, const RuntimeGraphInput *runtime_graph_inputs = nullptr) noexcept
-        : global_context_{&global_context}, evaluation_time_{evaluation_time}, runtime_graph_{&runtime_graph},
-          node_index_{}, scratch_{&global_context.evaluation_scratch}, runtime_graph_inputs_{runtime_graph_inputs} {}
     EvaluationContext(EvaluationContext &parent, RuntimeGraph &runtime_graph, std::size_t node_index) noexcept
         : global_context_{parent.global_context_}, evaluation_time_{parent.evaluation_time_},
           runtime_graph_{&runtime_graph}, node_index_{node_index},

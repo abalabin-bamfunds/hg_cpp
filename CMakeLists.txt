@@ -91,6 +91,7 @@ add_library(
     src/scalar/type.cpp
     src/signature.cpp
     src/signature_specificity.cpp
+    src/realtime_evaluation_engine.cpp
     src/simulation_evaluation_engine.cpp
     src/symbol.cpp
     src/time_series/tsl/tsl_type.cpp

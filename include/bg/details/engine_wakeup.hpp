@@ -28,7 +28,25 @@ class EngineWakeup {
 
     template <typename Clock, typename Duration>
     bool wait_until(std::chrono::time_point<Clock, Duration> deadline) noexcept {
-        if (!semaphore_.try_acquire_until(deadline)) {
+        using NativeTimePoint = std::chrono::time_point<Clock, typename Clock::duration>;
+        // try_acquire_until requires the clock-native duration on libstdc++; saturation also handles deadlines outside
+        // that duration's range without overflowing during conversion.
+        const auto requested_epoch = std::chrono::duration<long double>{deadline.time_since_epoch()};
+        const auto maximum_epoch = std::chrono::duration<long double>{Clock::duration::max()};
+        const auto minimum_epoch = std::chrono::duration<long double>{Clock::duration::min()};
+        auto native_deadline = NativeTimePoint{};
+        if (requested_epoch >= maximum_epoch) {
+            native_deadline = NativeTimePoint::max();
+        } else if (requested_epoch <= minimum_epoch) {
+            native_deadline = NativeTimePoint::min();
+        } else {
+            native_deadline = NativeTimePoint{
+                std::chrono::duration_cast<typename Clock::duration>(deadline.time_since_epoch())};
+        }
+
+        const auto acquired = native_deadline <= Clock::now() ? semaphore_.try_acquire()
+                                                              : semaphore_.try_acquire_until(native_deadline);
+        if (!acquired) {
             return false;
         }
         pending_.exchange(false, std::memory_order_acq_rel);
