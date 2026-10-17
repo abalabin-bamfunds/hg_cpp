@@ -44,6 +44,7 @@ add_executable(
     evaluation/time_series/time_series_dict_getitem_test.cpp
     evaluation/time_series/time_series_reference_test.cpp
     evaluation/service_test.cpp
+    evaluation/service_queue_test.cpp
     evaluation/multiservice_test.cpp
     evaluation/reference_service_test.cpp
     evaluation/subscription_service_test.cpp
