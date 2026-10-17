@@ -585,6 +585,9 @@ For each reusable node and graph, test:
 - declaration metadata lifetime after definition destruction and callback ownership
 - scalar-or-time-series node input resolution and concrete binding
 - wiring failures preserving Python exception identity, type, traceback, and context notes
+- runner engine selection, default and explicit start times, simulation-only test capture,
+  profiling, explicit cancellation, stop-state lifetime, and GIL release while waiting
+- callback-scoped wall-clock scheduling, timer firing, and cancellation
 
 ### Performance and portability
 

@@ -1,9 +1,15 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import gc
+import subprocess
 import sys
 
 import bg
 import pytest
+
+
+def _run_realtime_script(source: str) -> None:
+    result = subprocess.run([sys.executable, "-c", source], capture_output=True, text=True, timeout=5)
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_run_graph_wires_scalar_arguments_as_constants_and_reacquires_gil_for_callbacks():
@@ -164,3 +170,204 @@ def test_test_graph_propagates_python_callback_exception_identity(with_recorder)
     with pytest.raises(LookupError, match="compute callback failed") as raised:
         bg.test_graph(graph, [1], recorder=recorder)
     assert raised.value is error
+
+
+def test_run_graph_defaults_to_simulation_and_accepts_a_start_time():
+    observed = []
+
+    @bg.node
+    def source(clock: bg.EvaluationClock = None) -> int:
+        observed.append(clock.evaluation_time)
+        return 1
+
+    @bg.graph
+    def graph() -> int:
+        return source()
+
+    bg.run_graph(graph)
+    start_time = datetime(2024, 5, 6, 7, 8, 9, 123456)
+    bg.run_graph(graph, engine=bg.EvaluationEngine.simulation, start_time=start_time)
+
+    assert len(observed) == 2
+    assert observed[0] == datetime.fromtimestamp(0) + timedelta(microseconds=1)
+    assert observed[1] == start_time
+
+
+def test_run_graph_realtime_accepts_start_time_and_profile_recorder():
+    _run_realtime_script(
+        """
+import datetime
+import bg
+
+default_observed = []
+default_stop = bg.StopSource()
+before = datetime.datetime.now()
+
+@bg.node
+def default_source(clock: bg.EvaluationClock = None) -> int:
+    default_observed.append(clock.evaluation_time)
+    default_stop.request_stop()
+    return 3
+
+@bg.graph
+def default_graph() -> int:
+    return default_source()
+
+bg.run_graph(default_graph, engine=bg.EvaluationEngine.realtime, stop_token=default_stop.get_token())
+after = datetime.datetime.now()
+assert len(default_observed) == 1
+assert before <= default_observed[0] <= after
+
+observed = []
+stop_source = bg.StopSource()
+start_time = datetime.datetime(2024, 5, 6, 7, 8, 9, 123456)
+
+@bg.node
+def source(clock: bg.EvaluationClock = None) -> int:
+    observed.append(clock.evaluation_time)
+    stop_source.request_stop()
+    return 7
+
+@bg.graph
+def graph() -> int:
+    return source()
+
+profiler = bg.EvaluationProfiler()
+bg.run_graph(
+    graph,
+    engine=bg.EvaluationEngine.realtime,
+    start_time=start_time,
+    stop_token=stop_source.get_token(),
+    recorder=profiler.recorder(),
+)
+assert observed == [start_time]
+assert profiler.outer_totals()["cycles"] == 1
+assert profiler.root_graph_id() is not None
+"""
+    )
+
+
+def test_run_graph_realtime_stop_from_another_thread_completes_downstream_tick():
+    _run_realtime_script(
+        """
+import threading
+import bg
+
+entered = threading.Event()
+received = []
+errors = []
+stop_source = bg.StopSource()
+
+@bg.node
+def source() -> int:
+    entered.set()
+    return 41
+
+@bg.compute_node
+def sink(value: bg.TS[int]) -> None:
+    received.append(value.value)
+
+@bg.graph
+def graph() -> None:
+    sink(source())
+
+def stop_after_callback():
+    if not entered.wait(3):
+        errors.append(RuntimeError("the source callback did not start"))
+        return
+    stop_source.request_stop()
+
+thread = threading.Thread(target=stop_after_callback)
+thread.start()
+bg.run_graph(graph, engine=bg.EvaluationEngine.realtime, stop_token=stop_source.get_token())
+thread.join(3)
+assert not thread.is_alive()
+assert not errors, repr(errors)
+assert received == [41]
+"""
+    )
+
+
+def test_run_graph_realtime_honors_pre_requested_token_and_token_lifetime():
+    _run_realtime_script(
+        """
+import bg
+
+stop_source = bg.StopSource()
+token = stop_source.get_token()
+empty_token = bg.StopToken()
+assert not empty_token.stop_requested()
+assert isinstance(token, bg.StopToken)
+assert not token.stop_requested()
+assert not stop_source.stop_requested()
+assert stop_source.request_stop()
+assert stop_source.stop_requested()
+assert not stop_source.request_stop()
+assert token.stop_requested()
+del stop_source
+assert token.stop_requested()
+
+calls = []
+@bg.node
+def source() -> int:
+    calls.append(True)
+    return 1
+
+@bg.graph
+def graph() -> int:
+    return source()
+
+bg.run_graph(graph, engine=bg.EvaluationEngine.realtime, stop_token=token)
+assert calls == []
+"""
+    )
+
+
+def test_runner_options_validate_engine_start_time_and_stop_token():
+    @bg.graph
+    def graph() -> int:
+        return 1
+
+    with pytest.raises(TypeError, match="engine must be a bg.EvaluationEngine"):
+        bg.run_graph(graph, engine="realtime")
+    with pytest.raises(TypeError, match="start_time must be a datetime or None"):
+        bg.run_graph(graph, start_time=1)
+    with pytest.raises(ValueError, match="timezone-naive"):
+        bg.run_graph(graph, start_time=datetime.now(timezone.utc))
+    with pytest.raises(TypeError, match="stop_token must be a bg.StopToken or None"):
+        bg.run_graph(graph, stop_token=bg.StopSource())
+
+
+def test_test_graph_uses_simulation_start_time_and_rejects_realtime_before_wiring():
+    observed = []
+    wired = []
+
+    @bg.compute_node
+    def observe(value: bg.TS[int], clock: bg.EvaluationClock = None) -> bg.TS[int]:
+        observed.append(clock.evaluation_time)
+        return value.value
+
+    @bg.graph
+    def graph(value: bg.TS[int]) -> bg.TS[int]:
+        wired.append(True)
+        return observe(value)
+
+    start_time = datetime(2024, 5, 6, 7, 8, 9, 123456)
+    assert bg.test_graph(graph, [1, 2], engine=bg.EvaluationEngine.simulation, start_time=start_time) == [1, 2]
+    assert observed == [start_time, start_time + timedelta(microseconds=1)]
+    wired.clear()
+
+    with pytest.raises(ValueError, match="test_graph only supports the simulation engine"):
+        bg.test_graph(graph, [3], engine=bg.EvaluationEngine.realtime)
+    assert wired == []
+
+
+def test_test_graph_rejects_invalid_start_times():
+    @bg.graph
+    def graph(value: bg.TS[int]) -> bg.TS[int]:
+        return value
+
+    with pytest.raises(TypeError, match="start_time must be a datetime or None"):
+        bg.test_graph(graph, [1], start_time=1)
+    with pytest.raises(ValueError, match="timezone-naive"):
+        bg.test_graph(graph, [1], start_time=datetime.now(timezone.utc))

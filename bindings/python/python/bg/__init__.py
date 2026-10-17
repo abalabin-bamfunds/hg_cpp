@@ -5,16 +5,20 @@ from __future__ import annotations
 import atexit
 import inspect
 import types
+from datetime import datetime
 from functools import update_wrapper
 from typing import Annotated, Any, Generic, Tuple, TypeVar, get_args, get_origin, get_type_hints
 from weakref import WeakKeyDictionary
 
 from . import operators
 from ._bg import (
+    EvaluationEngine,
     EvaluationClock,
     Dict,
     EvaluationProfiler,
     EvaluationProfilerRecorder as _EvaluationProfilerRecorder,
+    StopSource,
+    StopToken,
     Scheduler,
     ScheduleHandle,
     _TimeSeriesGuarantee,
@@ -686,6 +690,15 @@ def _bind_definition_arguments(
     return fixed, positional, named
 
 
+def _validate_runner_options(engine: EvaluationEngine, start_time: datetime | None) -> None:
+    if not isinstance(engine, EvaluationEngine):
+        raise TypeError("engine must be a bg.EvaluationEngine")
+    if start_time is not None and not isinstance(start_time, datetime):
+        raise TypeError("start_time must be a datetime or None")
+    if start_time is not None and start_time.utcoffset() is not None:
+        raise ValueError("start_time must be a timezone-naive datetime")
+
+
 def _definition_signature(
     function: Any,
     *,
@@ -1154,26 +1167,35 @@ def run_graph(
     *args: Any,
     catalogue: ServiceCatalogue | None = None,
     recorder: _EvaluationProfilerRecorder | None = None,
+    engine: EvaluationEngine = EvaluationEngine.simulation,
+    start_time: datetime | None = None,
+    stop_token: StopToken | None = None,
     **kwargs: Any,
 ) -> None:
-    """Wire and run a graph to completion, using scalar arguments as wiring-time constants."""
+    """Wire and run a graph with the selected evaluation engine."""
     if not isinstance(definition, GraphDefinition):
         raise TypeError("run_graph expects a decorated @graph definition")
     if recorder is not None and not isinstance(recorder, _EvaluationProfilerRecorder):
         raise TypeError("recorder must be created by EvaluationProfiler.recorder()")
     if catalogue is not None and not isinstance(catalogue, ServiceCatalogue):
         raise TypeError("catalogue must be a bg.ServiceCatalogue")
+    _validate_runner_options(engine, start_time)
+    if stop_token is not None and not isinstance(stop_token, StopToken):
+        raise TypeError("stop_token must be a bg.StopToken or None")
 
     fixed, positional, named = _bind_definition_arguments(
         definition.signature, definition._fixed_parameters, args, kwargs
     )
     native_catalogue = None if catalogue is None else catalogue._native_catalogue
-    _run_graph(definition._native_definition, fixed, positional, named, native_catalogue, recorder)
+    _run_graph(definition._native_definition, fixed, positional, named, native_catalogue, recorder,
+               engine, start_time, stop_token)
 
 
 def test_graph(definition: GraphDefinition, *inputs: Any,
                catalogue: ServiceCatalogue | None = None,
-               recorder: _EvaluationProfilerRecorder | None = None) -> Any:
+               recorder: _EvaluationProfilerRecorder | None = None,
+               engine: EvaluationEngine = EvaluationEngine.simulation,
+               start_time: datetime | None = None) -> Any:
     """Run a graph definition with one update sequence for each time-series input."""
     if not isinstance(definition, GraphDefinition):
         raise TypeError("test_graph expects a decorated @graph definition")
@@ -1181,8 +1203,11 @@ def test_graph(definition: GraphDefinition, *inputs: Any,
         raise TypeError("recorder must be created by EvaluationProfiler.recorder()")
     if catalogue is not None and not isinstance(catalogue, ServiceCatalogue):
         raise TypeError("catalogue must be a bg.ServiceCatalogue")
+    _validate_runner_options(engine, start_time)
+    if engine is EvaluationEngine.realtime:
+        raise ValueError("test_graph only supports the simulation engine")
     native_catalogue = None if catalogue is None else catalogue._native_catalogue
-    return _test_graph(definition._native_definition, inputs, native_catalogue, recorder)
+    return _test_graph(definition._native_definition, inputs, native_catalogue, recorder, engine, start_time)
 
 
 operators.map = map
@@ -1191,8 +1216,11 @@ operators.switch_ = switch_
 
 
 __all__ = [
+    "EvaluationEngine",
     "EvaluationClock",
     "EvaluationProfiler",
+    "StopSource",
+    "StopToken",
     "Bundle",
     "Scheduler",
     "ScheduleHandle",

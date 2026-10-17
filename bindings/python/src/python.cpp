@@ -3,6 +3,7 @@
 #include <bg/library/operators.hpp>
 #include <bg/node/runtime_signature_node_template.hpp>
 #include <bg/operators.hpp>
+#include <bg/evaluation_engine.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/evaluation_profiler.hpp>
 #include <bg/python/graph_definition.hpp>
@@ -62,6 +63,7 @@
 #include <ranges>
 #include <span>
 #include <stdexcept>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -410,7 +412,8 @@ nb::object wire_graph(const PythonGraphDefinition &definition, nb::sequence fixe
                      nb::sequence positional_values, nb::dict named_values);
 
 nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_sequences,
-                    PythonServiceCatalogue *service_catalogue, EvaluationProfiler::Recorder *recorder) {
+                    PythonServiceCatalogue *service_catalogue, EvaluationProfiler::Recorder *recorder,
+                    EvaluationEngine engine, std::optional<EvaluationTime> start_time) {
     Object::drain_deferred_releases();
     auto drain_on_exit = util::scope_exit{[]() noexcept {
         if (Py_IsInitialized() && PyGILState_Check()) {
@@ -423,6 +426,8 @@ nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_
     const auto options = bg::GraphRunOptions{
         .services = service_catalogue != nullptr ? &service_catalogue->catalogue() : nullptr,
         .recorder = recorder != nullptr ? std::optional<EvaluationProfiler::Recorder>{*recorder} : std::nullopt,
+        .engine = engine,
+        .start_time = start_time,
     };
     auto results = [&] {
         try {
@@ -438,7 +443,8 @@ nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_
 
 void run_graph(const PythonGraphDefinition &definition, nb::sequence fixed_values, nb::sequence positional_values,
                nb::dict named_values, PythonServiceCatalogue *service_catalogue,
-               EvaluationProfiler::Recorder *recorder) {
+               EvaluationProfiler::Recorder *recorder, EvaluationEngine engine,
+               std::optional<EvaluationTime> start_time, std::optional<std::stop_token> stop_token) {
     Object::drain_deferred_releases();
     auto drain_on_exit = util::scope_exit{[]() noexcept {
         if (Py_IsInitialized() && PyGILState_Check()) {
@@ -456,6 +462,9 @@ void run_graph(const PythonGraphDefinition &definition, nb::sequence fixed_value
         const auto options = bg::GraphRunOptions{
             .services = service_catalogue != nullptr ? &service_catalogue->catalogue() : nullptr,
             .recorder = recorder != nullptr ? std::optional<EvaluationProfiler::Recorder>{*recorder} : std::nullopt,
+            .engine = engine,
+            .start_time = start_time,
+            .stop_token = stop_token.value_or(std::stop_token{}),
         };
         {
             auto release_gil = nb::gil_scoped_release{};
@@ -613,6 +622,20 @@ void bind_core(nb::module_ &module) {
         .value("deduplicated", TimeSeriesGuarantee::deduplicated)
         .value("final", TimeSeriesGuarantee::final)
         .value("const_", TimeSeriesGuarantee::const_);
+
+    nb::enum_<EvaluationEngine>(module, "EvaluationEngine")
+        .value("simulation", EvaluationEngine::simulation)
+        .value("realtime", EvaluationEngine::realtime);
+
+    nb::class_<std::stop_token>(module, "StopToken")
+        .def(nb::init<>())
+        .def("stop_requested", &std::stop_token::stop_requested);
+
+    nb::class_<std::stop_source>(module, "StopSource")
+        .def(nb::init<>())
+        .def("get_token", &std::stop_source::get_token)
+        .def("request_stop", &std::stop_source::request_stop)
+        .def("stop_requested", &std::stop_source::stop_requested);
 
     module.def("version", [] { return std::string{bg::version()}; });
     nb::class_<PythonServiceDefinition>(module, "_PythonServiceDefinition");
@@ -1067,9 +1090,12 @@ void bind_core(nb::module_ &module) {
         .def("report", &EvaluationProfiler::report, "recent_outer_periods"_a = 10);
 
     module.def("_test_graph", &test_graph, "definition"_a, "input_sequences"_a, "catalogue"_a = nullptr,
-               "recorder"_a = nullptr);
+               "recorder"_a = nullptr, "engine"_a = EvaluationEngine::simulation,
+               "start_time"_a = std::nullopt);
     module.def("_run_graph", &run_graph, "definition"_a, "fixed_values"_a, "positional_values"_a,
-               "named_values"_a, "catalogue"_a = nullptr, "recorder"_a = nullptr);
+               "named_values"_a, "catalogue"_a = nullptr, "recorder"_a = nullptr,
+               "engine"_a = EvaluationEngine::simulation, "start_time"_a = std::nullopt,
+               "stop_token"_a = std::nullopt);
     module.def("_register_delta_types", &details::register_delta_types);
     module.def("_scalar_conversions_address", [] { return reinterpret_cast<std::uintptr_t>(&scalar_conversions()); });
     module.def("_register_symbol_type", [](nb::handle python_type) {

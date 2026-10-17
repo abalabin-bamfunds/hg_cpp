@@ -206,11 +206,46 @@ assert bg.test_graph(identity, [{1: "first"}, {1: bg.REMOVE}, None]) == [
 ]
 ```
 
-`run_graph` wires a graph with normal Python arguments and runs the simulation
-to completion. Scalar arguments become wiring-time constants. Use `test_graph`
-when the graph needs update sequences or its output values. Pass an optional
-recorder created by `EvaluationProfiler.recorder()` through the `recorder`
-keyword.
+`run_graph` wires a graph with normal Python arguments and selects its engine
+through `engine=bg.EvaluationEngine.simulation` or
+`engine=bg.EvaluationEngine.realtime`. Simulation is the default. Scalar
+arguments become wiring-time constants. Use `test_graph` when the graph needs
+update sequences or its output values.
+
+`start_time` sets the first evaluation time using a timezone-naive local Python
+`datetime`, as returned by `EvaluationClock`. When omitted, the defaults follow
+[direct execution](graph-wiring.md#direct-execution).
+`test_graph` also accepts `engine` and `start_time`; it requires simulation and
+keeps result positions relative to the configured start time.
+
+Realtime execution waits for work until `stop_token` requests cancellation.
+Create a `bg.StopSource`, pass `source.get_token()` as `stop_token`, and call
+`source.request_stop()` from a graph callback or another thread. Cancellation
+follows the [engine lifecycle](evaluation.md#realtime-evaluation).
+
+```python
+stop_source = bg.StopSource()
+
+@bg.node
+def finish() -> int:
+    stop_source.request_stop()
+    return 42
+
+@bg.graph
+def realtime_example() -> bg.TS[int]:
+    return finish()
+
+bg.run_graph(realtime_example, engine=bg.EvaluationEngine.realtime,
+             stop_token=stop_source.get_token())
+```
+
+`StopSource.stop_requested()` and `StopToken.stop_requested()` report whether
+stop was requested. A token retains its shared stop state after its source is
+destroyed. Simulation uses its normal termination condition and ignores a stop
+token.
+
+Pass an optional recorder created by `EvaluationProfiler.recorder()` through
+the `recorder` keyword. Profiling follows the selected engine and start time.
 
 ```python
 profiler = bg.EvaluationProfiler()
@@ -406,10 +441,14 @@ frame between callback invocations.
 `EvaluationClock.evaluation_time` exposes the evaluation time. `EvaluationClock.now`
 exposes the current time for the engine mode: evaluation time in simulation mode
 and wall-clock time in real-time mode. Both are Python `datetime` values.
-`Scheduler.schedule_at(time)` schedules that node for a later evaluation and
-returns a `bg.ScheduleHandle`; `Scheduler.cancel(handle)` cancels a pending
-handle for the same node. Both injected objects are valid only while the callback
-runs. A schedule handle can be retained and cancelled by a later invocation.
+`Scheduler.schedule_at(time)` schedules that node at a later evaluation time.
+`Scheduler.schedule_wall_clock_at(time)` schedules it when the wall clock
+reaches the deadline. Both return a `bg.ScheduleHandle` and follow the
+[timer semantics](evaluation.md#timed-scheduling).
+`Scheduler.cancel(handle)` cancels a pending handle for the same node.
+`Scheduler.timer_fired(handle)` reports whether that node's timer activated in
+the current outer cycle. Both injected objects are valid only while the
+callback runs. A schedule handle can be retained and used by a later invocation.
 Only a node that declares `Scheduler` or uses `@generator` enables timed
 scheduling; `EvaluationClock` alone does not. `@source_node` can use
 `Scheduler` to schedule its evaluation callback. `@generator` uses yielded

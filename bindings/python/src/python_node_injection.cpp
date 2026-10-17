@@ -30,6 +30,12 @@ ScheduleHandle PythonScheduler::schedule_at(EvaluationTime time) const { return 
 
 void PythonScheduler::cancel(ScheduleHandle handle) const { access_.get().cancel(handle); }
 
+ScheduleHandle PythonScheduler::schedule_wall_clock_at(EvaluationTime time) const {
+    return access_.get().schedule_wall_clock_at(time);
+}
+
+bool PythonScheduler::timer_fired(ScheduleHandle handle) const { return access_.get().timer_fired(handle); }
+
 void bind_node_injectables(nb::module_ &module) {
     nb::class_<ScheduleHandle>(module, "ScheduleHandle")
         .def("__bool__", [](const ScheduleHandle &handle) { return static_cast<bool>(handle); });
@@ -40,7 +46,9 @@ void bind_node_injectables(nb::module_ &module) {
 
     nb::class_<PythonScheduler>(module, "Scheduler")
         .def("schedule_at", &PythonScheduler::schedule_at, "time"_a)
-        .def("cancel", &PythonScheduler::cancel, "handle"_a);
+        .def("cancel", &PythonScheduler::cancel, "handle"_a)
+        .def("schedule_wall_clock_at", &PythonScheduler::schedule_wall_clock_at, "time"_a)
+        .def("timer_fired", &PythonScheduler::timer_fired, "handle"_a);
 }
 
 } // namespace bg::python

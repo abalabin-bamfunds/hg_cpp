@@ -43,6 +43,8 @@ class BG_PYTHON_API PythonScheduler {
 
     ScheduleHandle schedule_at(EvaluationTime time) const;
     void cancel(ScheduleHandle handle) const;
+    ScheduleHandle schedule_wall_clock_at(EvaluationTime time) const;
+    bool timer_fired(ScheduleHandle handle) const;
 
   private:
     NodeCallbackAccess access_;

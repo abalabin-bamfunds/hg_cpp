@@ -1,9 +1,16 @@
 from datetime import datetime, timedelta
 import inspect
+import subprocess
+import sys
 
 import pytest
 
 import bg
+
+
+def _run_realtime_script(source: str) -> None:
+    result = subprocess.run([sys.executable, "-c", source], capture_output=True, text=True, timeout=5)
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_compute_node_injects_clock_between_inputs():
@@ -132,6 +139,59 @@ def test_scheduler_injects_and_cancels_timed_node_evaluations():
     assert all(handles)
     assert observed_values == [1, 2]
     assert evaluation_times[1] - evaluation_times[0] == timedelta(seconds=1)
+
+
+def test_scheduler_handles_wall_clock_timers_and_preserves_callback_scope():
+    _run_realtime_script(
+        """
+from datetime import timedelta
+import bg
+
+stop_source = bg.StopSource()
+handles = []
+fired = []
+retained_schedulers = []
+retained_times = []
+
+@bg.node
+def source(clock: bg.EvaluationClock = None, scheduler: bg.Scheduler = None) -> int:
+    retained_schedulers.append(scheduler)
+    retained_times.append(clock.now)
+    if not handles:
+        deadline = clock.now - timedelta(seconds=1)
+        handles.append(scheduler.schedule_wall_clock_at(deadline))
+        handles.append(scheduler.schedule_wall_clock_at(deadline))
+        assert not scheduler.timer_fired(handles[0])
+        assert not scheduler.timer_fired(handles[1])
+        scheduler.cancel(handles[1])
+        return 1
+
+    assert scheduler.timer_fired(handles[0])
+    assert not scheduler.timer_fired(handles[1])
+    fired.append(True)
+    stop_source.request_stop()
+    return 2
+
+@bg.graph
+def graph() -> int:
+    return source()
+
+bg.run_graph(graph, engine=bg.EvaluationEngine.realtime, stop_token=stop_source.get_token())
+assert fired == [True]
+try:
+    retained_schedulers[0].timer_fired(handles[0])
+except RuntimeError as error:
+    assert "outside its callback" in str(error)
+else:
+    raise AssertionError("a retained Scheduler must reject access after its callback")
+try:
+    retained_schedulers[0].schedule_wall_clock_at(retained_times[0])
+except RuntimeError as error:
+    assert "outside its callback" in str(error)
+else:
+    raise AssertionError("a retained Scheduler must reject scheduling after its callback")
+"""
+    )
 
 
 def test_node_injectables_are_rejected_on_graphs_and_variadic_parameters():
