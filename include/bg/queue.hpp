@@ -18,6 +18,7 @@ class TimeSeriesType;
 namespace details {
 class QueueMessageWriter;
 class QueueWriteGate;
+class EngineWakeup;
 
 void validate_queue_output_type(const TimeSeriesType &type, QueueMode mode);
 } // namespace details
@@ -51,7 +52,8 @@ namespace details {
 
 class QueueControl {
   public:
-    QueueControl();
+    // A non-null wakeup must outlive close() and all writes admitted by this controller.
+    explicit QueueControl(EngineWakeup *wakeup = nullptr);
     QueueControl(const QueueControl &) = delete;
     QueueControl &operator=(const QueueControl &) = delete;
     QueueControl(QueueControl &&) = delete;
@@ -63,7 +65,8 @@ class QueueControl {
     Queue make_queue(util::buffer buffer, std::size_t target, const TimeSeriesRuntimeType &runtime_type,
                      QueueMode mode = QueueMode::standard) const;
 
-    // Rejects new writes and waits for accepted writes to finish. Safe to call more than once.
+    // Rejects new writes, waits for accepted writes, and detaches the wakeup. A single controller calls close();
+    // repeated sequential calls are safe.
     void close() noexcept;
 
   private:

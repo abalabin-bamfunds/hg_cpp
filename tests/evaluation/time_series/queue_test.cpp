@@ -1,4 +1,5 @@
 #include <bg/queue.hpp>
+#include <bg/details/engine_wakeup.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/tick_serializer.hpp>
@@ -11,6 +12,7 @@
 
 #include <array>
 #include <atomic>
+#include <barrier>
 #include <chrono>
 #include <cstddef>
 #include <exception>
@@ -71,7 +73,137 @@ class LocalRuntimeType final : public bg::TimeSeriesValueRuntimeType {
     }
 };
 
+bool wait_for_notification(bg::details::EngineWakeup &wakeup) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (wakeup.wait_until(deadline)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
+
+TEST_CASE("engine wakeups preserve early notifications and coalesce concurrent notifications",
+          "[coverage-exempt][queue][wakeup]") {
+    auto wakeup = bg::details::EngineWakeup{};
+    CHECK_FALSE(wakeup.wait_until(std::chrono::steady_clock::now()));
+
+    wakeup.notify();
+    wakeup.wait();
+    wakeup.notify();
+    REQUIRE(wait_for_notification(wakeup));
+    CHECK_FALSE(wakeup.wait_until(std::chrono::steady_clock::now()));
+
+    constexpr auto writer_count = std::size_t{4};
+    auto writers = std::array<std::jthread, writer_count>{};
+    for (auto &writer : writers) {
+        writer = std::jthread{[&] {
+            for (auto count = std::size_t{}; count < 128; ++count) {
+                wakeup.notify();
+            }
+        }};
+    }
+    for (auto &writer : writers) {
+        writer.join();
+    }
+
+    REQUIRE(wait_for_notification(wakeup));
+    CHECK_FALSE(wakeup.wait_until(std::chrono::steady_clock::now()));
+    CHECK_FALSE(wakeup.wait_until(std::chrono::steady_clock::now() + std::chrono::milliseconds{10}));
+}
+
+TEST_CASE("queue writes publish committed messages before notifying the engine",
+          "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][wakeup]") {
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>();
+    const auto buffer = bg::util::buffer::concurrent_chain(64, 4,
+                                                           bg::allocator{*std::pmr::new_delete_resource()});
+    auto wakeup = bg::details::EngineWakeup{};
+    auto control = bg::details::QueueControl{&wakeup};
+    auto queue = control.make_queue(buffer, 19, runtime_type);
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(bg::i64{71})));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(bg::i64{72})));
+    REQUIRE(wait_for_notification(wakeup));
+    CHECK_FALSE(wakeup.wait_until(std::chrono::steady_clock::now()));
+
+    auto reader = bg::details::QueueMessageReader{buffer};
+    REQUIRE(reader.next_target() == 19);
+    REQUIRE(reader.discard(bg::TS<bg::i64>::type()));
+    REQUIRE(reader.next_target() == 19);
+    REQUIRE(reader.discard(bg::TS<bg::i64>::type()));
+    CHECK_FALSE(reader.next_target());
+}
+
+TEST_CASE("accepted queue writes that throw still wake the engine",
+          "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][wakeup][failure]") {
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>();
+    const auto buffer = bg::util::buffer::concurrent_chain(64, 4,
+                                                           bg::allocator{*std::pmr::new_delete_resource()});
+    auto wakeup = bg::details::EngineWakeup{};
+    auto control = bg::details::QueueControl{&wakeup};
+    auto queue = control.make_queue(buffer, 20, runtime_type);
+    CHECK_THROWS_AS(queue.write(::literal::TimeSeriesLiteral(::literal::REMOVE)), std::invalid_argument);
+    REQUIRE(wait_for_notification(wakeup));
+    auto reader = bg::details::QueueMessageReader{buffer};
+    CHECK_FALSE(reader.next_target());
+}
+
+TEST_CASE("the engine consumes committed queue messages while writers keep notifying",
+          "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][wakeup][concurrency]") {
+    constexpr auto writer_count = std::size_t{4};
+    constexpr auto writes_per_writer = std::size_t{512};
+    const auto expected_count = writer_count * writes_per_writer;
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>();
+    const auto buffer = bg::util::buffer::concurrent_chain(64, 4,
+                                                           bg::allocator{*std::pmr::new_delete_resource()});
+    auto wakeup = bg::details::EngineWakeup{};
+    auto control = bg::details::QueueControl{&wakeup};
+    auto root = control.make_queue(buffer, 21, runtime_type);
+    auto queues = std::array{root, root, root, root};
+    auto writer_errors = std::array<std::exception_ptr, writer_count>{};
+    auto writers = std::array<std::jthread, writer_count>{};
+    auto start = std::barrier{static_cast<std::ptrdiff_t>(writer_count + 1)};
+
+    for (auto index = std::size_t{}; index < writer_count; ++index) {
+        writers[index] = std::jthread{[&, index] {
+            start.arrive_and_wait();
+            try {
+                for (auto value = std::size_t{}; value < writes_per_writer; ++value) {
+                    const auto payload = static_cast<bg::i64>(index * writes_per_writer + value);
+                    if (!queues[index].write(::literal::TimeSeriesLiteral(payload))) {
+                        throw std::logic_error{"open queue rejected a concurrent write"};
+                    }
+                }
+            } catch (...) {
+                writer_errors[index] = std::current_exception();
+            }
+        }};
+    }
+
+    start.arrive_and_wait();
+    auto reader = bg::details::QueueMessageReader{buffer};
+    auto messages_read = std::size_t{};
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+    while (messages_read < expected_count && std::chrono::steady_clock::now() < deadline) {
+        if (!reader.next_target()) {
+            (void)wakeup.wait_until(deadline);
+            continue;
+        }
+
+        REQUIRE(reader.discard(bg::TS<bg::i64>::type()));
+        ++messages_read;
+    }
+
+    for (auto &writer : writers) {
+        writer.join();
+    }
+    CHECK(messages_read == expected_count);
+    for (const auto &error : writer_errors) {
+        CHECK(error == nullptr);
+    }
+    CHECK_FALSE(reader.next_target());
+}
 
 TEST_CASE("queue copies write independently to their destination",
           "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue]") {
@@ -168,53 +300,59 @@ TEST_CASE("queue control close waits for accepted writes",
     auto memory = BlockingResource{};
     const auto buffer = bg::util::buffer::concurrent_chain(1, 4, bg::allocator{memory});
     const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>();
-    auto control = bg::details::QueueControl{};
-    auto queue = control.make_queue(buffer, 41, runtime_type);
-    auto probe = queue;
-    memory.block_next_allocation();
+    auto queue = bg::Queue{};
+    {
+        auto wakeup = bg::details::EngineWakeup{};
+        auto control = bg::details::QueueControl{&wakeup};
+        queue = control.make_queue(buffer, 41, runtime_type);
+        auto probe = queue;
+        memory.block_next_allocation();
 
-    auto write_finished = std::atomic<bool>{};
-    auto write_error = std::exception_ptr{};
-    auto close_finished = std::atomic<bool>{};
-    auto closer = std::jthread{};
-    auto writer = std::jthread{[&] {
-        try {
-            if (!queue.write(::literal::TimeSeriesLiteral(bg::i64{7}))) {
-                throw std::logic_error{"accepted queue write was rejected"};
+        auto write_finished = std::atomic<bool>{};
+        auto write_error = std::exception_ptr{};
+        auto close_finished = std::atomic<bool>{};
+        auto closer = std::jthread{};
+        auto writer = std::jthread{[&] {
+            try {
+                if (!queue.write(::literal::TimeSeriesLiteral(bg::i64{7}))) {
+                    throw std::logic_error{"accepted queue write was rejected"};
+                }
+            } catch (...) {
+                write_error = std::current_exception();
             }
-        } catch (...) {
-            write_error = std::current_exception();
-        }
-        write_finished.store(true, std::memory_order_release);
-        write_finished.notify_all();
-    }};
-    auto release = bg::util::scope_exit{[&]() noexcept { memory.release_allocation(); }};
-    memory.wait_until_blocked();
+            write_finished.store(true, std::memory_order_release);
+            write_finished.notify_all();
+        }};
+        auto release = bg::util::scope_exit{[&]() noexcept { memory.release_allocation(); }};
+        memory.wait_until_blocked();
 
-    closer = std::jthread{[&] {
-        control.close();
-        close_finished.store(true, std::memory_order_release);
-        close_finished.notify_all();
-    }};
+        closer = std::jthread{[&] {
+            control.close();
+            close_finished.store(true, std::memory_order_release);
+            close_finished.notify_all();
+        }};
 
-    while (true) {
-        try {
-            if (!probe.write(::literal::TimeSeriesLiteral(::literal::REMOVE))) {
-                break;
+        while (true) {
+            try {
+                if (!probe.write(::literal::TimeSeriesLiteral(::literal::REMOVE))) {
+                    break;
+                }
+            } catch (const std::invalid_argument &) {
+                continue;
             }
-        } catch (const std::invalid_argument &) {
-            continue;
         }
+
+        CHECK_FALSE(close_finished.load(std::memory_order_acquire));
+        CHECK_FALSE(write_finished.load(std::memory_order_acquire));
+        memory.release_allocation();
+        release.release();
+        writer.join();
+        closer.join();
+        CHECK(write_error == nullptr);
+        CHECK(close_finished.load(std::memory_order_acquire));
     }
 
-    CHECK_FALSE(close_finished.load(std::memory_order_acquire));
-    CHECK_FALSE(write_finished.load(std::memory_order_acquire));
-    memory.release_allocation();
-    release.release();
-    writer.join();
-    closer.join();
-    CHECK(write_error == nullptr);
-    CHECK(close_finished.load(std::memory_order_acquire));
+    CHECK_FALSE(queue.write(::literal::TimeSeriesLiteral(bg::i64{8})));
 
     auto reader = bg::details::QueueMessageReader{buffer};
     REQUIRE(reader.next_target() == 41);

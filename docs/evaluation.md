@@ -48,6 +48,23 @@ minimum-tick timers therefore completes before queue reading resumes. Timers
 from inner graphs use the same shared scheduler and priority. Stopped
 and finalized graphs do not report queue work.
 
+`has_committed_queue_messages()` reports queue readiness independently of timers.
+The outer evaluator's `next_scheduled_time()` reports only evaluation-time
+timers. An engine accesses that evaluator through `GlobalEvaluationContext`.
+
+An engine can call `bind_queue_wakeup(wakeup)` once before graph startup. Graphs
+without queue declarations require no queue storage. The engine owns the
+`details::EngineWakeup` and keeps it alive until the graph stops or finalizes.
+Queue writes notify it after committing a message, including a sentinel frame after
+serialization failure, and before leaving write admission. Root `SKIP` requires
+no notification. Closure waits for admitted writers before detaching the wakeup.
+
+`EngineWakeup` supports one waiting engine thread and concurrent notifications.
+Notifications coalesce. After each wait, the engine rechecks queue readiness,
+stop state, and timer deadlines. A timed wait can fail spuriously; the engine
+checks the clock before treating a deadline as reached. An external stop request
+must notify the wakeup too.
+
 ## Evaluation time
 
 `EvaluationTime` is `std::chrono::sys_time<std::chrono::microseconds>`.

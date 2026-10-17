@@ -1,3 +1,5 @@
+#include <bg/details/evaluation_scratch.hpp>
+#include <bg/details/engine_wakeup.hpp>
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
@@ -18,16 +20,22 @@
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/util/buffer.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <atomic>
 #include <chrono>
+#include <exception>
+#include <limits>
 #include <memory>
 #include <optional>
+#include <semaphore>
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -155,6 +163,15 @@ struct QueuePayloadBufferHandlers {
                     const auto number = value.value().number;
                     writer.write_bytes(std::as_bytes(std::span{&number, std::size_t{1}}));
                     writer.write(writing_payload);
+                    if (number == block_after_write_for.load(std::memory_order_acquire)) {
+                        provider_write_blocked.release();
+                        while (!release_provider_write.load(std::memory_order_acquire)) {
+                            release_provider_write.wait(false, std::memory_order_acquire);
+                        }
+                    }
+                    if (number == fail_after_write_for.load(std::memory_order_acquire)) {
+                        throw std::runtime_error{"injected selected queue payload write failure"};
+                    }
                     if (fail_after_write) {
                         fail_after_write = false;
                         throw std::runtime_error{"injected queue payload write failure"};
@@ -180,6 +197,10 @@ struct QueuePayloadBufferHandlers {
     inline static std::size_t read_calls{};
     inline static std::size_t fail_on_read{};
     inline static bool fail_after_write{};
+    inline static std::atomic<bg::i64> block_after_write_for{std::numeric_limits<bg::i64>::min()};
+    inline static std::atomic<bg::i64> fail_after_write_for{std::numeric_limits<bg::i64>::min()};
+    inline static std::binary_semaphore provider_write_blocked{0};
+    inline static std::atomic<bool> release_provider_write{};
 };
 
 struct PayloadQueueNodeDefinition {
@@ -279,6 +300,16 @@ struct QueueLayoutNodeDefinition : QueueNodeDefinition {
     return bg::MIN_DT + std::chrono::microseconds{microseconds};
 }
 
+bool wait_for_notification(bg::details::EngineWakeup &wakeup) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (wakeup.wait_until(deadline)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 TEST_CASE("an outer runtime graph shares and closes queues before stop callbacks",
@@ -302,14 +333,23 @@ TEST_CASE("an outer runtime graph shares and closes queues before stop callbacks
     CHECK_FALSE(compiled.supports_borrowed_evaluation());
 
     auto global_state = bg::GlobalState{};
+    auto wakeup = bg::details::EngineWakeup{};
     auto runtime = bg::RuntimeGraph{compiled, global_state};
+    CHECK_FALSE(runtime.has_committed_queue_messages());
+    runtime.bind_queue_wakeup(wakeup);
+    CHECK_THROWS_AS(runtime.bind_queue_wakeup(wakeup), std::logic_error);
     CHECK_THROWS_AS(runtime.make_queue(first_target), std::logic_error);
     runtime.start(time(1));
+    CHECK_THROWS_AS(runtime.bind_queue_wakeup(wakeup), std::logic_error);
+    CHECK_FALSE(runtime.has_committed_queue_messages());
 
     auto first = runtime.make_queue(first_target);
     auto second = runtime.make_queue(second_target);
     REQUIRE(first.write(::literal::TimeSeriesLiteral(bg::i64{11})));
     REQUIRE(second.write(::literal::TimeSeriesLiteral(bg::i64{22})));
+    REQUIRE(wait_for_notification(wakeup));
+    CHECK(runtime.has_committed_queue_messages());
+    CHECK(runtime.next_scheduled_time() == time(2));
     QueueNodeDefinition::stop_probe = &first;
     QueueNodeDefinition::stop_write_accepted = true;
     QueueNodeDefinition::stop_count = 0;
@@ -317,6 +357,7 @@ TEST_CASE("an outer runtime graph shares and closes queues before stop callbacks
     runtime.stop();
 
     CHECK(QueueNodeDefinition::stop_count == 2);
+    CHECK_FALSE(runtime.has_committed_queue_messages());
     CHECK_FALSE(QueueNodeDefinition::stop_write_accepted);
     CHECK_FALSE(first.write(::literal::TimeSeriesLiteral(bg::i64{33})));
     CHECK_FALSE(second.write(::literal::TimeSeriesLiteral(bg::i64{44})));
@@ -414,6 +455,77 @@ TEST_CASE("finalization closes and discards queues without invoking stop functio
     CHECK(QueueNodeDefinition::stop_count == 0);
     CHECK_FALSE(queue.write(::literal::TimeSeriesLiteral(bg::i64{56})));
     CHECK_THROWS_AS(runtime.make_queue(0), std::logic_error);
+}
+
+TEST_CASE("queue wakeup binding is closed by finalization before graph startup",
+          "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][wakeup][finalization]") {
+    auto node = bg::node(QueueNodeDefinition{});
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        (void)node();
+    }
+    wiring.finalize();
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+    auto wakeup = bg::details::EngineWakeup{};
+    auto runtime = bg::RuntimeGraph{compiled, global_state};
+
+    runtime.bind_queue_wakeup(wakeup);
+    CHECK_FALSE(runtime.has_committed_queue_messages());
+    runtime.finalize(global_state);
+    CHECK_FALSE(runtime.has_committed_queue_messages());
+}
+
+TEST_CASE("queue wakeup binding is optional for graphs without queues",
+          "[evaluation][feature:time-series-storage][queue][wakeup][lifecycle]") {
+    auto node = bg::node([] {});
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        (void)node();
+    }
+    wiring.finalize();
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+    auto wakeup = bg::details::EngineWakeup{};
+    auto runtime = bg::RuntimeGraph{compiled, global_state};
+
+    CHECK_FALSE(compiled.has_queue());
+    runtime.bind_queue_wakeup(wakeup);
+    CHECK_FALSE(runtime.has_committed_queue_messages());
+}
+
+TEST_CASE("queue readiness remains visible alongside an evaluation timer deadline",
+          "[evaluation][feature:time-series-storage][feature:timed-scheduling][series:value][scalar:i64][queue]"
+          "[wakeup]") {
+    auto timed_node = bg::node(QueueLayoutNodeDefinition<true, false, false>{});
+    auto queue_node = bg::node(QueueNodeDefinition{});
+    auto wiring = bg::GraphWiring{};
+    std::optional<bg::WiringPoint> queue_output;
+    {
+        auto context = bg::WiringContext{wiring};
+        (void)timed_node();
+        queue_output = queue_node();
+    }
+    wiring.finalize();
+    const auto queue_target = wiring.output_node_index(*queue_output);
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    runtime.start(time(1));
+    runtime.evaluate(time(2));
+    auto queue = runtime.make_queue(queue_target);
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(bg::i64{43})));
+
+    auto scratch = bg::details::EvaluationScratch{runtime.allocation().memory_resource()};
+    auto global_context =
+        runtime.make_global_evaluation_context(global_state, scratch, bg::SystemWallClock::instance());
+    REQUIRE(global_context.root_runtime_graph_evaluator != nullptr);
+    CHECK(global_context.root_runtime_graph_evaluator->next_scheduled_time() == time(3));
+    CHECK(runtime.has_committed_queue_messages());
+    runtime.stop();
+    CHECK_FALSE(runtime.has_committed_queue_messages());
 }
 
 TEST_CASE("queue discard destroys unread typed payloads after stop callbacks and finalization",
@@ -523,18 +635,77 @@ TEST_CASE("batch queue shutdown and failed writes discard owning item payloads",
     }
 
     SECTION("writer rollback discards the semantic batch item") {
+        auto wakeup = bg::details::EngineWakeup{};
         auto runtime = bg::RuntimeGraph{compiled, global_state};
+        runtime.bind_queue_wakeup(wakeup);
         runtime.start(time(1));
         auto queue = runtime.make_queue(target);
-        auto payload = std::make_shared<int>(42);
-        auto probe = std::weak_ptr<int>{payload};
-        QueuePayloadBufferHandlers::writing_payload = payload;
-        auto value = bg::ScalarValue<QueuePayload>{QueuePayload{42}};
-        QueuePayloadBufferHandlers::fail_after_write = true;
-        CHECK_THROWS_AS(queue.write(::literal::TimeSeriesLiteral(value)), std::runtime_error);
-        QueuePayloadBufferHandlers::writing_payload.reset();
-        payload.reset();
-        CHECK(probe.expired());
+        auto later_queue = queue;
+        auto failed_payload = std::make_shared<int>(42);
+        auto failed_probe = std::weak_ptr<int>{failed_payload};
+        QueuePayloadBufferHandlers::writing_payload = failed_payload;
+        QueuePayloadBufferHandlers::fail_after_write = false;
+        QueuePayloadBufferHandlers::block_after_write_for.store(42, std::memory_order_release);
+        QueuePayloadBufferHandlers::fail_after_write_for.store(42, std::memory_order_release);
+        QueuePayloadBufferHandlers::release_provider_write.store(false, std::memory_order_release);
+        auto failed_value = bg::ScalarValue<QueuePayload>{QueuePayload{42}};
+        auto write_error = std::exception_ptr{};
+        auto writer_entered_provider = false;
+        auto later_payload = std::make_shared<int>(43);
+        auto later_value = bg::ScalarValue<QueuePayload>{QueuePayload{43}};
+        auto later_written = false;
+        auto later_notification = false;
+        auto later_message_visible_before_failure = true;
+
+        {
+            auto failing_writer = std::jthread{};
+            auto release_blocked_writer = bg::util::scope_exit{[&]() noexcept {
+                QueuePayloadBufferHandlers::release_provider_write.store(true, std::memory_order_release);
+                QueuePayloadBufferHandlers::release_provider_write.notify_all();
+                if (failing_writer.joinable()) {
+                    failing_writer.join();
+                }
+                while (QueuePayloadBufferHandlers::provider_write_blocked.try_acquire()) {
+                }
+                QueuePayloadBufferHandlers::writing_payload.reset();
+                QueuePayloadBufferHandlers::block_after_write_for.store(
+                    std::numeric_limits<bg::i64>::min(), std::memory_order_release);
+                QueuePayloadBufferHandlers::fail_after_write_for.store(
+                    std::numeric_limits<bg::i64>::min(), std::memory_order_release);
+                QueuePayloadBufferHandlers::fail_after_write = false;
+            }};
+            failing_writer = std::jthread{[&] {
+                try {
+                    (void)queue.write(::literal::TimeSeriesLiteral(failed_value));
+                } catch (...) {
+                    write_error = std::current_exception();
+                }
+            }};
+
+            const auto provider_deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+            while (std::chrono::steady_clock::now() < provider_deadline && !writer_entered_provider) {
+                writer_entered_provider =
+                    QueuePayloadBufferHandlers::provider_write_blocked.try_acquire_until(provider_deadline);
+            }
+            if (writer_entered_provider) {
+                QueuePayloadBufferHandlers::writing_payload = later_payload;
+                later_written = later_queue.write(::literal::TimeSeriesLiteral(later_value));
+                later_notification = wait_for_notification(wakeup);
+                later_message_visible_before_failure = runtime.has_committed_queue_messages();
+            }
+        }
+
+        failed_payload.reset();
+        later_payload.reset();
+
+        CHECK(writer_entered_provider);
+        CHECK(later_written);
+        CHECK(later_notification);
+        CHECK_FALSE(later_message_visible_before_failure);
+        CHECK(write_error != nullptr);
+        CHECK(failed_probe.expired());
+        REQUIRE(wait_for_notification(wakeup));
+        CHECK(runtime.has_committed_queue_messages());
         runtime.stop();
     }
 }

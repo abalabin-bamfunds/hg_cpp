@@ -5,6 +5,7 @@
 
 #include <bg/allocator.hpp>
 #include <bg/details/evaluation_scratch.hpp>
+#include <bg/details/engine_wakeup.hpp>
 #include <bg/graph/compiled_node.hpp>
 #include <bg/graph/details/inherited_time_series_section.hpp>
 #include <bg/graph/details/node_scheduler.hpp>
@@ -37,6 +38,8 @@
 namespace bg {
 
 struct RuntimeGraph::QueueState {
+    explicit QueueState(details::EngineWakeup *wakeup) : control{wakeup} {}
+
     details::QueueControl control;
     details::QueueMessageReader reader{util::buffer::concurrent_chain(
         4096, 64, allocator{*std::pmr::new_delete_resource()})};
@@ -1203,11 +1206,27 @@ Queue RuntimeGraph::make_queue(std::size_t target) {
         return {};
     }
     if (queue_state() == nullptr) {
-        queue_state() = allocator_.new_object<QueueState>();
+        queue_state() = allocator_.new_object<QueueState>(nullptr);
     }
 
     return queue_state()->control.make_queue(queue_state()->reader.current_block(), target,
                                               compiled_node.output_runtime_type(), compiled_node.queue_mode());
+}
+
+void RuntimeGraph::bind_queue_wakeup(details::EngineWakeup &wakeup) {
+    if (!compiled_graph_->has_queue()) {
+        return;
+    }
+    if (evaluator_ == nullptr || evaluator_->owner_bound()) {
+        throw std::logic_error{"only an outer runtime graph can bind a queue wakeup"};
+    }
+    if (started_ || stopped_ || finalized_) {
+        throw std::logic_error{"a queue wakeup must be bound before graph startup"};
+    }
+    if (queue_state() != nullptr) {
+        throw std::logic_error{"a queue wakeup can only be bound once"};
+    }
+    queue_state() = allocator_.new_object<QueueState>(&wakeup);
 }
 
 RuntimeGraph &RuntimeGraph::outer_graph() noexcept {
@@ -1271,23 +1290,21 @@ void RuntimeGraph::clear_cycle_callbacks(EvaluationContext &context) noexcept {
 std::optional<EvaluationTime> RuntimeGraph::next_scheduled_time() const noexcept {
     auto next = evaluator_ == nullptr || evaluator_->owner_bound() ? std::optional<EvaluationTime>{}
                                                                   : evaluator_->next_scheduled_time();
-
-    const auto queue_can_schedule = !stopped_ && !finalized_ && compiled_graph_->has_queue() &&
-                                   queue_state() != nullptr;
-    if (!queue_can_schedule) {
-        return next;
-    }
-
     const auto queue_time = evaluation_time_ + EvaluationTime::duration{1};
     if (next && *next <= queue_time) {
         return next;
     }
 
-    if (!queue_state()->reader.has_pending_target()) {
+    if (!has_committed_queue_messages()) {
         return next;
     }
 
     return queue_time;
+}
+
+bool RuntimeGraph::has_committed_queue_messages() const noexcept {
+    return evaluator_ != nullptr && !evaluator_->owner_bound() && !stopped_ && !finalized_ &&
+           compiled_graph_->has_queue() && queue_state() != nullptr && queue_state()->reader.has_pending_target();
 }
 
 std::optional<EvaluationTime> RuntimeGraph::next_wall_clock_time() const noexcept {

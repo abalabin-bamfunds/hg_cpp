@@ -1,6 +1,7 @@
 #include <bg/queue.hpp>
 
 #include <bg/allocator.hpp>
+#include <bg/details/engine_wakeup.hpp>
 #include <bg/time_series/tick_serializer.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/util/buffer.hpp>
@@ -15,6 +16,8 @@ namespace bg::details {
 
 class QueueWriteGate {
   public:
+    explicit QueueWriteGate(EngineWakeup *wakeup) noexcept : wakeup_{wakeup} {}
+
     bool enter() noexcept {
         auto current = state_.load(std::memory_order_acquire);
         while ((current & closed_bit) == 0) {
@@ -26,7 +29,10 @@ class QueueWriteGate {
         return false;
     }
 
-    void leave() noexcept {
+    void leave(bool notify) noexcept {
+        if (notify && wakeup_ != nullptr) {
+            wakeup_->notify();
+        }
         const auto previous = state_.fetch_sub(1, std::memory_order_release);
         if ((previous & closed_bit) != 0 && (previous & active_mask) == 1) {
             state_.notify_all();
@@ -42,6 +48,7 @@ class QueueWriteGate {
             state_.wait(current, std::memory_order_acquire);
             current = state_.load(std::memory_order_acquire);
         }
+        wakeup_ = nullptr;
     }
 
   private:
@@ -49,6 +56,7 @@ class QueueWriteGate {
     static constexpr std::size_t active_mask = ~closed_bit;
 
     std::atomic<std::size_t> state_{};
+    EngineWakeup *wakeup_;
 };
 
 } // namespace bg::details
@@ -84,8 +92,11 @@ bool Queue::write(const literal::TimeSeriesLiteral &literal) {
         return false;
     }
 
-    auto leave = util::scope_exit{[&]() noexcept { gate_->leave(); }};
-    return writer_->write(literal);
+    auto notify = true;
+    auto leave = util::scope_exit{[&]() noexcept { gate_->leave(notify); }};
+    const auto written = writer_->write(literal);
+    notify = written;
+    return written;
 }
 
 void Queue::swap(Queue &other) noexcept {
@@ -95,7 +106,7 @@ void Queue::swap(Queue &other) noexcept {
 
 namespace details {
 
-QueueControl::QueueControl() : gate_{std::make_shared<QueueWriteGate>()} {}
+QueueControl::QueueControl(EngineWakeup *wakeup) : gate_{std::make_shared<QueueWriteGate>(wakeup)} {}
 
 QueueControl::~QueueControl() { close(); }
 

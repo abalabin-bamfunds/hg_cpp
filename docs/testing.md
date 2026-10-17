@@ -421,6 +421,8 @@ graph compilation or evaluation.
   selectors and markers, scalar ownership, concurrent reservation rollover, and failure cleanup
 - queue handle copying and moving, independent concurrent writers, closed-write rejection before serialization,
   retained handles after controller destruction, and shutdown waiting for accepted writes, including failures
+- single-consumer engine wakeups, concurrent notification coalescing, publication visibility after wake,
+  timed waits, failed-write notification, and wakeup lifetime through queue closure
 - outer runtime graph queue ownership, shared admission across target nodes, closure before stop callbacks,
   typed unread-message cleanup after stop, startup and evaluation failure, finalization without stop,
   retained handles after graph destruction, inner graph rejection, and optional runtime storage
@@ -432,6 +434,7 @@ graph compilation or evaluation.
   cleanup before application, and fail-stop cleanup after application errors
 - queue scheduling from committed messages, timer priority at cycle entry, minimum-tick chains through inner
   graphs, timer cancellation, queue-only simulation progress, and stopped-graph readiness
+- committed queue readiness independent of timer deadlines and wakeup attachment before graph startup
 - batch queue output validation, element literal encoding, ordered accumulation per time series, batch replacement
   across cycles, nested collection items, whole-message pending at invalidation and removal boundaries,
   owning scalar replay, unread-payload cleanup, and failure cleanup

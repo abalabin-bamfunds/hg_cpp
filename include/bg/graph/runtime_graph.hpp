@@ -20,6 +20,7 @@ namespace bg {
 
 namespace details {
 struct DynamicSubscribers;
+class EngineWakeup;
 class EvaluationScratch;
 class ServiceRequestBinding;
 } // namespace details
@@ -80,6 +81,8 @@ class RuntimeGraph {
     void evaluate(EvaluationTime evaluation_time, GlobalState &global_state, EvaluationProfile &profile,
                   const RuntimeGraphInput *inputs = nullptr);
     std::optional<EvaluationTime> next_scheduled_time() const noexcept;
+    // Engine API. Reports unread committed messages, independent of timers.
+    bool has_committed_queue_messages() const noexcept;
     std::optional<EvaluationTime> next_wall_clock_time() const noexcept;
     EvaluationTime evaluation_time() const noexcept { return evaluation_time_; }
     GraphInstanceId instance_id() const noexcept { return instance_id_; }
@@ -99,6 +102,9 @@ class RuntimeGraph {
     // a closed handle.
     // The target must identify a queue node with a retained output runtime type.
     [[nodiscard]] Queue make_queue(std::size_t target);
+    // Engine API. Bind once before start. Graphs without queues need no queue storage. The wakeup must outlive graph
+    // stop or finalization.
+    void bind_queue_wakeup(details::EngineWakeup &wakeup);
 
     void start(EvaluationContext &context, const RuntimeGraphInput *inputs = nullptr,
                std::optional<Scalar<>> label = std::nullopt);
