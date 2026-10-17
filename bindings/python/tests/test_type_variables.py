@@ -162,25 +162,25 @@ def test_scalar_type_variable_inside_time_series_set():
     assert bg.test_graph(graph) == [3]
 
 
-def test_scalar_type_variable_inside_list_scalar_resolves_in_time_series_output():
+def test_scalar_type_variable_inside_tuple_list_scalar_resolves_in_time_series_output():
     VALUE = TypeVar("VALUE")
 
     @bg.compute_node
-    def as_list(value: bg.TS[VALUE]) -> bg.TS[list[VALUE]]:
+    def as_list(value: bg.TS[VALUE]) -> bg.TS[tuple[VALUE, ...]]:
         return [value.value]
 
     @bg.graph
-    def graph(value: bg.TS[int]) -> bg.TS[list[int]]:
+    def graph(value: bg.TS[int]) -> bg.TS[tuple[int, ...]]:
         return as_list(value)
 
-    assert bg.test_graph(graph, [7]) == [[7]]
+    assert bg.test_graph(graph, [7]) == [(7,)]
 
 
-def test_optional_scalar_cannot_be_a_list_item_type():
-    with pytest.raises(ValueError, match=r"Optional\[\.\.\.\] cannot be used as a list item type"):
+def test_optional_scalar_cannot_be_a_homogeneous_tuple_item_type():
+    with pytest.raises(TypeError, match=r"Optional\[\.\.\.\] cannot be used as a list item type"):
 
         @bg.source_node
-        def invalid() -> bg.TS[list[Optional[int]]]:
+        def invalid() -> bg.TS[tuple[Optional[int], ...]]:
             return [None]
 
 

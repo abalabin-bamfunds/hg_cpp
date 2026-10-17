@@ -43,11 +43,11 @@ void run_graph(Function &&function, const GraphRunOptions &options = {}) {
     auto run = [&](GlobalState &global_state) {
         auto runtime = RuntimeGraph{compiled, global_state};
         if (options.recorder) {
-            options.recorder->run(runtime, start_time, options.engine, options.stop_token);
+            options.recorder->run(runtime, start_time, options.engine, options.stop_token, options.interruption);
         } else if (options.engine == EvaluationEngine::realtime) {
-            RealtimeEvaluationEngine{}.run(runtime, start_time, options.stop_token);
+            RealtimeEvaluationEngine{}.run(runtime, start_time, options.stop_token, options.interruption);
         } else {
-            SimulationEvaluationEngine{}.run(runtime, start_time);
+            SimulationEvaluationEngine{}.run(runtime, start_time, options.interruption);
         }
     };
 

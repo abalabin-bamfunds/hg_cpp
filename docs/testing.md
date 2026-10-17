@@ -470,6 +470,8 @@ graph compilation or evaluation.
   wall-clock timer readiness and coalescing, and pending queue priority through minimum-tick chains
 - realtime idle and timed waits, cancellation before startup and between complete cycles, future-start waiting,
   queue closure on normal and failed runs, retained handles, and profiling
+- interruption checks at complete outer-cycle boundaries, steady-clock intervals independent of simulation time,
+  idle and future-start waits without extra cycles, and exception cleanup with and without profiling
 - system and injected wall-clock access during lifecycle, nested evaluation, invalidation, and failure cleanup
 - shared global evaluation context and outer graph/evaluator identity across nested lifecycle calls;
   isolation between runs and invocation-local bindings, graph inputs, and scratch frames
@@ -587,6 +589,8 @@ For each reusable node and graph, test:
 - wiring failures preserving Python exception identity, type, traceback, and context notes
 - runner engine selection, default and explicit start times, simulation-only test capture,
   profiling, explicit cancellation, stop-state lifetime, and GIL release while waiting
+- Python signal processing during idle realtime waits, future-start waits, and native evaluation;
+  Ctrl+C cleanup, retained-writer closure, and custom signal-handler behavior
 - callback-scoped wall-clock scheduling, timer firing, and cancellation
 - queue-node scalar wiring, start and stop callbacks, injected handles, and output validation
 - queue delta conversion, standard and eliding modes, batch element conversion, and collection removals

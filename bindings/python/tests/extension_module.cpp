@@ -16,6 +16,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -24,6 +25,26 @@
 namespace {
 
 std::array<std::atomic<int>, 4> native_node_lifecycle{};
+std::array<std::atomic<std::uint64_t>, 2> native_interruption_lifecycle{};
+
+struct native_continuous_timer_node {
+    static constexpr bool uses_timed_scheduling = true;
+
+    bg::In<bg::TS<bool>> repeat;
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void start(bg::EvaluationContext *context) const { context->schedule_now(); }
+
+    void evaluate(bg::EvaluationContext *context) const {
+        const auto evaluations = ++native_interruption_lifecycle[0];
+        output.set(static_cast<bg::i64>(evaluations));
+        if (*repeat) {
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        }
+    }
+
+    void stop() const noexcept { ++native_interruption_lifecycle[1]; }
+};
 
 struct native_gil_node {
     bg::In<bg::TS<bg::i64>> input;
@@ -127,6 +148,14 @@ const bg::Operator &native_start_only_source_operator() {
     return operation;
 }
 
+const bg::Operator &native_continuous_timer_operator() {
+    static auto operation = bg::operator_<auto(bg::TS<bool>) -> bg::TS<bg::i64>>{"native_continuous_timer",
+                                                                                 {"repeat"}};
+    static const auto &implementation = operation.overload(bg::node<native_continuous_timer_node>());
+    (void)implementation;
+    return operation;
+}
+
 struct list_source_definition {
     bg::Out<bg::TSL<bg::TS<bg::i64>, 2>> output;
 
@@ -204,12 +233,22 @@ NB_MODULE(_bg_test_extension, module) {
     bg::python::export_operator(module, "native_python_exception", native_python_exception_operator());
     bg::python::export_operator(module, "native_stop_exception", native_stop_exception_operator());
     bg::python::export_operator(module, "native_start_only_source", native_start_only_source_operator());
+    bg::python::export_operator(module, "native_continuous_timer", native_continuous_timer_operator());
     module.def("native_node_lifecycle", [] {
         return nanobind::make_tuple(native_node_lifecycle[0].load(), native_node_lifecycle[1].load(),
                                     native_node_lifecycle[2].load(), native_node_lifecycle[3].load());
     });
     module.def("reset_native_node_lifecycle", [] {
         for (auto &value : native_node_lifecycle) {
+            value = 0;
+        }
+    });
+    module.def("native_interruption_lifecycle", [] {
+        return nanobind::make_tuple(native_interruption_lifecycle[0].load(),
+                                    native_interruption_lifecycle[1].load());
+    });
+    module.def("reset_native_interruption_lifecycle", [] {
+        for (auto &value : native_interruption_lifecycle) {
             value = 0;
         }
     });

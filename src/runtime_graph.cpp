@@ -1174,7 +1174,7 @@ void RuntimeGraph::drain_queue(EvaluationContext &context) {
         const auto runtime_node = node(compiled_node);
         context.node_index_ = *target;
         const auto allocation_context = details::ScalarAllocationContext{
-            allocator_, context.global_state().bundle_allocation_owner(), this, *target};
+            allocator_, context.global_state().scalar_allocation_pool(), this, *target};
         auto output = OutputState{compiled_node.output_runtime_type()};
         output.bind(runtime_node.output_last_updated(), runtime_node.output_value(), context);
         const auto restore_context = util::scope_exit{[&]() noexcept {

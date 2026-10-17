@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/evaluation_time.hpp>
+#include <bg/evaluation_interruption.hpp>
 
 #include <stop_token>
 
@@ -13,13 +14,14 @@ class EvaluationProfile;
 // returns when stop_token requests stop. The caller must not start, evaluate, or stop the graph independently.
 class RealtimeEvaluationEngine {
   public:
-    void run(RuntimeGraph &runtime_graph, EvaluationTime start_time, std::stop_token stop_token = {}) const;
+    void run(RuntimeGraph &runtime_graph, EvaluationTime start_time, std::stop_token stop_token = {},
+             const EvaluationInterruption &interruption = {}) const;
     void run(RuntimeGraph &runtime_graph, EvaluationTime start_time, EvaluationProfile &profile,
-             std::stop_token stop_token = {}) const;
+             std::stop_token stop_token = {}, const EvaluationInterruption &interruption = {}) const;
 
   private:
     void run(RuntimeGraph &runtime_graph, EvaluationTime start_time, EvaluationProfile *profile,
-             std::stop_token stop_token) const;
+             std::stop_token stop_token, const EvaluationInterruption &interruption) const;
 };
 
 } // namespace bg

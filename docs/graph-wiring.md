@@ -501,6 +501,9 @@ the [engine lifecycle](evaluation.md#realtime-evaluation).
 `MIN_DT + 1us`; realtime samples the current wall-clock time after graph
 compilation. Profiling uses the selected engine and start time.
 
+`interruption` configures optional [interruption checks](evaluation.md#interruption-checks)
+for either engine.
+
 [`testing::test_graph`](testing.md#test-layout) accepts the same options
 immediately after the graph and requires simulation execution.
 

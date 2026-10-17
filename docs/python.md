@@ -244,6 +244,15 @@ stop was requested. A token retains its shared stop state after its source is
 destroyed. Simulation uses its normal termination condition and ignores a stop
 token.
 
+On Python's main thread, `run_graph` and `test_graph` process Python signals
+through [interruption checks](evaluation.md#interruption-checks). Ctrl+C raises
+`KeyboardInterrupt` after graph cleanup. Realtime execution also checks during
+idle and future-start waits. Checks run approximately every 50 milliseconds,
+subject to completion of the current outer cycle. Python callbacks can process
+signals during their own execution. Custom signal handlers retain their normal
+Python behavior; a handler that returns normally lets execution continue.
+Realtime graphs running on other threads use explicit stop requests for cancellation.
+
 Pass an optional recorder created by `EvaluationProfiler.recorder()` through
 the `recorder` keyword. Profiling follows the selected engine and start time.
 
@@ -624,25 +633,25 @@ Queue callbacks can also request `State[T]` and `EvaluationClock`.
 
 ```python
 @bg.queue(mode=bg.QueueMode.batch)
-def values(count: int, q: bg.Queue = None) -> bg.TS[list[int]]:
+def values(count: int, q: bg.Queue = None) -> bg.TS[tuple[int, ...]]:
     for value in range(count):
         q.write(value)
 
 @bg.graph
-def example() -> bg.TS[list[int]]:
+def example() -> bg.TS[tuple[int, ...]]:
     return values(3)
 
-assert bg.test_graph(example) == [[0, 1, 2]]
+assert bg.test_graph(example) == [(0, 1, 2)]
 ```
 
 The default mode is `bg.QueueMode.standard`. `bg.QueueMode.elide` and
 `bg.QueueMode.batch` follow the [queue message rules](time-series-types.md#queue-messages).
-Queue outputs use ordinary time series. Batch outputs have `TS[list[T]]`
+Queue outputs use ordinary time series. Batch outputs have `TS[tuple[T, ...]]`
 leaves, including leaves inside fixed `TSL`, `TSB`, and `TSD` collections.
 
 `Queue.write(delta)` returns whether it committed a message. It accepts the
 existing Python output delta forms. `None` requests no message and returns
-`False`. Batch mode accepts one `T` for each updated `TS[list[T]]` leaf.
+`False`. Batch mode accepts one `T` for each updated `TS[tuple[T, ...]]` leaf.
 Invalidation uses `bg.INVALID`; dictionary removal uses `bg.REMOVE`. An open
 writer propagates conversion and serialization errors without committing a
 partial message.

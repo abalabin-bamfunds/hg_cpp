@@ -101,16 +101,16 @@ def test_failed_queue_conversion_commits_no_partial_dictionary_and_writer_recove
     assert values == [{3: 30}]
 
 
-def test_list_scalar_annotation_converts_nested_values():
+def test_tuple_scalar_annotation_converts_nested_values():
     @bg.source_node
-    def source() -> bg.TS[list[dict[int, str]]]:
+    def source() -> bg.TS[tuple[dict[int, str], ...]]:
         return [{1: "one"}]
 
     @bg.graph
-    def graph() -> bg.TS[list[dict[int, str]]]:
+    def graph() -> bg.TS[tuple[dict[int, str], ...]]:
         return source()
 
-    assert bg.test_graph(graph) == [[{1: "one"}]]
+    assert bg.test_graph(graph) == [({1: "one"},)]
 
 
 @pytest.mark.parametrize(
@@ -118,7 +118,7 @@ def test_list_scalar_annotation_converts_nested_values():
     [
         ("standard", int, [1, 2]),
         ("elide", int, [2]),
-        ("batch", list[int], [[1, 2]]),
+        ("batch", tuple[int, ...], [(1, 2)]),
     ],
 )
 def test_queue_modes_apply_standard_elided_and_batch_deltas(mode_name, item_type, expected):
@@ -172,41 +172,41 @@ def test_queue_missing_dictionary_key_removal_is_a_no_op():
     assert received == [{1: 10}]
 
 
-def test_batch_queue_projects_nested_lists_into_a_batch_list():
+def test_batch_queue_projects_nested_tuples_into_a_batch_list():
     @bg.queue(mode=bg.QueueMode.batch)
-    def source(writer: bg.Queue = None) -> bg.TS[list[list[int]]]:
+    def source(writer: bg.Queue = None) -> bg.TS[tuple[tuple[int, ...], ...]]:
         assert writer.write([1, 2])
         assert writer.write([3])
 
     @bg.graph
-    def graph() -> bg.TS[list[list[int]]]:
+    def graph() -> bg.TS[tuple[tuple[int, ...], ...]]:
         return source()
 
-    assert bg.test_graph(graph) == [[[1, 2], [3]]]
+    assert bg.test_graph(graph) == [((1, 2), (3,))]
 
 
 def test_batch_invalidation_breaks_the_batch_and_pending_values_resume_later():
     @bg.queue(mode=bg.QueueMode.batch)
-    def source(writer: bg.Queue = None) -> bg.TS[list[int]]:
+    def source(writer: bg.Queue = None) -> bg.TS[tuple[int, ...]]:
         assert writer.write(10)
         assert writer.write(bg.INVALID)
         assert writer.write(20)
 
     @bg.graph
-    def graph() -> bg.TS[list[int]]:
+    def graph() -> bg.TS[tuple[int, ...]]:
         return source()
 
-    assert bg.test_graph(graph) == [[10], None, [20]]
+    assert bg.test_graph(graph) == [(10,), None, (20,)]
 
 
 def test_batch_queue_round_trips_through_tsl_tsb_and_tsd_leaves():
     @bg.schema
     class Pair:
-        left: bg.TS[list[int]]
-        right: bg.TS[list[int]]
+        left: bg.TS[tuple[int, ...]]
+        right: bg.TS[tuple[int, ...]]
 
     @bg.queue(mode=bg.QueueMode.batch)
-    def list_source(writer: bg.Queue = None) -> bg.TSL[bg.TS[list[int]], 2]:
+    def list_source(writer: bg.Queue = None) -> bg.TSL[bg.TS[tuple[int, ...]], 2]:
         assert writer.write({0: 1})
         assert writer.write({0: 2})
         assert writer.write({1: 3})
@@ -217,15 +217,15 @@ def test_batch_queue_round_trips_through_tsl_tsb_and_tsd_leaves():
         assert writer.write({"left": 5, "right": 6})
 
     @bg.queue(mode=bg.QueueMode.batch)
-    def dictionary_source(writer: bg.Queue = None) -> bg.TSD[int, bg.TS[list[int]]]:
+    def dictionary_source(writer: bg.Queue = None) -> bg.TSD[int, bg.TS[tuple[int, ...]]]:
         assert writer.write({7: 7})
         assert writer.write({7: 8, 9: 9})
 
     @bg.compute_node
     def total(
-        values: bg.TSL[bg.TS[list[int]], 2],
+        values: bg.TSL[bg.TS[tuple[int, ...]], 2],
         pair: bg.TSB[Pair],
-        dictionary: bg.TSD[int, bg.TS[list[int]]],
+        dictionary: bg.TSD[int, bg.TS[tuple[int, ...]]],
     ) -> bg.TS[int]:
         return (
             sum(values[0].value)
@@ -290,21 +290,21 @@ def test_batch_dictionary_removal_breaks_the_batch_before_recreation():
     snapshots = []
 
     @bg.queue(mode=bg.QueueMode.batch)
-    def source(writer: bg.Queue = None) -> bg.TSD[int, bg.TS[list[int]]]:
+    def source(writer: bg.Queue = None) -> bg.TSD[int, bg.TS[tuple[int, ...]]]:
         assert writer.write({1: 10})
         assert writer.write({1: bg.REMOVE})
         assert writer.write({1: 20})
 
     @bg.compute_node
-    def inspect(values: bg.TSD[int, bg.TS[list[int]]]) -> None:
-        snapshots.append({key: list(value) for key, value in values.value.items()})
+    def inspect(values: bg.TSD[int, bg.TS[tuple[int, ...]]]) -> None:
+        snapshots.append({key: tuple(value) for key, value in values.value.items()})
 
     @bg.graph
     def graph() -> None:
         inspect(source())
 
     bg.test_graph(graph)
-    assert snapshots == [{1: [10]}, {}, {1: [20]}]
+    assert snapshots == [{1: (10,)}, {}, {1: (20,)}]
 
 
 def test_queue_start_and_stop_callbacks_select_scalar_state_and_queue_parameters():

@@ -367,9 +367,9 @@ inline auto finish_test_graph(GraphWiring &wiring, CapturedValues &captured, Eva
     auto run = [&](GlobalState &global_state) {
         auto runtime = RuntimeGraph{compiled, global_state};
         if (options.recorder) {
-            options.recorder->run(runtime, start_time);
+            options.recorder->run(runtime, start_time, EvaluationEngine::simulation, {}, options.interruption);
         } else {
-            SimulationEvaluationEngine{}.run(runtime, start_time);
+            SimulationEvaluationEngine{}.run(runtime, start_time, options.interruption);
         }
     };
 

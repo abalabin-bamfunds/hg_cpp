@@ -7,7 +7,7 @@ import bg
 import pytest
 
 
-def _run_realtime_script(source: str) -> None:
+def _run_script(source: str) -> None:
     result = subprocess.run([sys.executable, "-c", source], capture_output=True, text=True, timeout=5)
     assert result.returncode == 0, result.stdout + result.stderr
 
@@ -194,7 +194,7 @@ def test_run_graph_defaults_to_simulation_and_accepts_a_start_time():
 
 
 def test_run_graph_realtime_accepts_start_time_and_profile_recorder():
-    _run_realtime_script(
+    _run_script(
         """
 import datetime
 import bg
@@ -248,7 +248,7 @@ assert profiler.root_graph_id() is not None
 
 
 def test_run_graph_realtime_stop_from_another_thread_completes_downstream_tick():
-    _run_realtime_script(
+    _run_script(
         """
 import threading
 import bg
@@ -289,7 +289,7 @@ assert received == [41]
 
 
 def test_run_graph_realtime_honors_pre_requested_token_and_token_lifetime():
-    _run_realtime_script(
+    _run_script(
         """
 import bg
 
@@ -319,6 +319,278 @@ def graph() -> int:
 
 bg.run_graph(graph, engine=bg.EvaluationEngine.realtime, stop_token=token)
 assert calls == []
+"""
+    )
+
+
+@pytest.mark.parametrize("engine", ["simulation", "realtime"])
+@pytest.mark.parametrize("with_recorder", [False, True])
+def test_run_graph_checks_sigint_between_native_cycles_and_stops_the_graph(engine, with_recorder):
+    _run_script(
+        f"""
+import signal
+import threading
+import time
+
+import bg
+from bg._bg_test_extension import native_continuous_timer, native_interruption_lifecycle
+from bg._bg_test_extension import reset_native_interruption_lifecycle
+
+reset_native_interruption_lifecycle()
+@bg.node
+def repeat() -> bool:
+    return True
+
+@bg.graph
+def graph() -> bg.TS[int]:
+    return native_continuous_timer(repeat())
+
+def raise_after_a_native_cycle():
+    deadline = time.monotonic() + 2
+    while native_interruption_lifecycle()[0] == 0 and time.monotonic() < deadline:
+        time.sleep(0.001)
+    if native_interruption_lifecycle()[0] == 0:
+        errors.append(RuntimeError("native graph did not complete a cycle"))
+    signal.raise_signal(signal.SIGINT)
+
+errors = []
+sender = threading.Thread(target=raise_after_a_native_cycle)
+profiler = bg.EvaluationProfiler() if {with_recorder!r} else None
+try:
+    sender.start()
+    options = {{"engine": bg.EvaluationEngine.{engine}}}
+    if profiler is not None:
+        options["recorder"] = profiler.recorder()
+    bg.run_graph(graph, **options)
+except KeyboardInterrupt:
+    pass
+else:
+    raise AssertionError("SIGINT should interrupt the run")
+sender.join(2)
+assert not sender.is_alive()
+assert not errors, repr(errors)
+evaluations, stops = native_interruption_lifecycle()
+assert evaluations > 0
+assert stops == 1
+if profiler is not None:
+    assert profiler.outer_totals()["cycles"] > 0
+"""
+    )
+
+
+def test_run_graph_custom_sigint_handler_runs_and_requests_normal_stop():
+    _run_script(
+        """
+import signal
+import threading
+import bg
+
+entered = threading.Event()
+events = []
+signals = []
+errors = []
+stop_source = bg.StopSource()
+
+@bg.node
+def source() -> int:
+    events.append("evaluate")
+    entered.set()
+    return 1
+
+@source.stop
+def stop():
+    events.append("stop")
+
+@bg.graph
+def graph() -> int:
+    return source()
+
+def handler(signum, frame):
+    signals.append(signum)
+    stop_source.request_stop()
+
+signal.signal(signal.SIGINT, handler)
+def raise_after_callback_releases_the_gil():
+    if not entered.wait(2):
+        errors.append(RuntimeError("the graph callback did not run"))
+        stop_source.request_stop()
+        return
+    signal.raise_signal(signal.SIGINT)
+
+sender = threading.Thread(target=raise_after_callback_releases_the_gil)
+sender.start()
+bg.run_graph(graph, engine=bg.EvaluationEngine.realtime, stop_token=stop_source.get_token())
+sender.join(2)
+assert not sender.is_alive()
+assert not errors, repr(errors)
+assert signals == [signal.SIGINT]
+assert events == ["evaluate", "stop"]
+"""
+    )
+
+
+def test_run_graph_idle_sigint_closes_retained_queue_writers():
+    _run_script(
+        """
+import copy
+import signal
+import threading
+import time
+import bg
+from bg._bg_test_extension import native_continuous_timer, native_interruption_lifecycle
+from bg._bg_test_extension import reset_native_interruption_lifecycle
+
+reset_native_interruption_lifecycle()
+writers = []
+@bg.node
+def repeat() -> bool:
+    return False
+
+@bg.queue
+def source(writer: bg.Queue = None) -> bg.TS[int]:
+    writers.append(copy.copy(writer))
+
+@bg.graph
+def graph() -> None:
+    source()
+    native_continuous_timer(repeat())
+
+def raise_after_the_first_cycle():
+    deadline = time.monotonic() + 2
+    while native_interruption_lifecycle()[0] == 0 and time.monotonic() < deadline:
+        time.sleep(0.001)
+    signal.raise_signal(signal.SIGINT)
+
+sender = threading.Thread(target=raise_after_the_first_cycle)
+try:
+    sender.start()
+    bg.run_graph(graph, engine=bg.EvaluationEngine.realtime)
+except KeyboardInterrupt:
+    pass
+else:
+    raise AssertionError("SIGINT should interrupt the idle queue wait")
+sender.join(2)
+assert not sender.is_alive()
+assert native_interruption_lifecycle() == (1, 1)
+assert len(writers) == 1
+assert writers[0].write(delta=42) is False
+"""
+    )
+
+
+def test_run_graph_custom_sigint_handler_processes_queue_before_normal_stop():
+    _run_script(
+        """
+import copy
+import signal
+import threading
+import time
+import bg
+from bg._bg_test_extension import native_continuous_timer, native_interruption_lifecycle
+from bg._bg_test_extension import reset_native_interruption_lifecycle
+
+reset_native_interruption_lifecycle()
+writers = []
+accepted = []
+received = []
+signals = []
+stop_source = bg.StopSource()
+
+@bg.node
+def repeat() -> bool:
+    return False
+
+@bg.queue
+def source(writer: bg.Queue = None) -> bg.TS[int]:
+    writers.append(copy.copy(writer))
+
+@bg.compute_node
+def collect(value: bg.TS[int]) -> None:
+    received.append(value.value)
+    stop_source.request_stop()
+
+@bg.graph
+def graph() -> None:
+    collect(source())
+    native_continuous_timer(repeat())
+
+def handler(signum, frame):
+    signals.append(signum)
+    accepted.append(writers[0].write(delta=42))
+
+signal.signal(signal.SIGINT, handler)
+def raise_after_the_first_cycle():
+    deadline = time.monotonic() + 2
+    while native_interruption_lifecycle()[0] == 0 and time.monotonic() < deadline:
+        time.sleep(0.001)
+    signal.raise_signal(signal.SIGINT)
+
+sender = threading.Thread(target=raise_after_the_first_cycle)
+sender.start()
+bg.run_graph(graph, engine=bg.EvaluationEngine.realtime, stop_token=stop_source.get_token())
+sender.join(2)
+assert not sender.is_alive()
+assert signals == [signal.SIGINT]
+assert accepted == [True]
+assert received == [42]
+assert native_interruption_lifecycle() == (1, 1)
+assert writers[0].write(delta=43) is False
+"""
+    )
+
+
+def test_run_graph_sigint_interrupts_future_start_without_lifecycle_callbacks():
+    _run_script(
+        """
+import datetime
+import signal
+import threading
+import time
+import bg
+
+events = []
+wired = threading.Event()
+errors = []
+@bg.node
+def source() -> int:
+    events.append("evaluate")
+    return 1
+
+@source.start
+def start():
+    events.append("start")
+
+@source.stop
+def stop():
+    events.append("stop")
+
+@bg.graph
+def graph() -> int:
+    wired.set()
+    return source()
+
+def raise_during_future_start():
+    if not wired.wait(2):
+        errors.append(RuntimeError("graph wiring did not complete"))
+    time.sleep(0.02)
+    signal.raise_signal(signal.SIGINT)
+
+sender = threading.Thread(target=raise_during_future_start)
+try:
+    sender.start()
+    bg.run_graph(
+        graph,
+        engine=bg.EvaluationEngine.realtime,
+        start_time=datetime.datetime.now() + datetime.timedelta(hours=1),
+    )
+except KeyboardInterrupt:
+    pass
+else:
+    raise AssertionError("SIGINT should interrupt future startup")
+sender.join(2)
+assert not sender.is_alive()
+assert not errors, repr(errors)
+assert events == []
 """
     )
 

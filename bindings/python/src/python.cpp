@@ -78,6 +78,17 @@ using namespace nanobind::literals;
 namespace bg::python {
 namespace {
 
+EvaluationInterruption python_interruption() {
+    return EvaluationInterruption{
+        .check = [] {
+            auto acquire_gil = nb::gil_scoped_acquire{};
+            if (PyErr_CheckSignals() != 0) {
+                nb::raise_python_error();
+            }
+        },
+    };
+}
+
 std::exception_ptr python_error_cause(std::exception_ptr cause) {
     if (cause == nullptr) {
         return {};
@@ -429,6 +440,7 @@ nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_
         .recorder = recorder != nullptr ? std::optional<EvaluationProfiler::Recorder>{*recorder} : std::nullopt,
         .engine = engine,
         .start_time = start_time,
+        .interruption = python_interruption(),
     };
     auto results = [&] {
         try {
@@ -466,6 +478,7 @@ void run_graph(const PythonGraphDefinition &definition, nb::sequence fixed_value
             .engine = engine,
             .start_time = start_time,
             .stop_token = stop_token.value_or(std::stop_token{}),
+            .interruption = python_interruption(),
         };
         {
             auto release_gil = nb::gil_scoped_release{};

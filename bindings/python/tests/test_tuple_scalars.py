@@ -317,7 +317,7 @@ def test_mutable_list_annotations_are_rejected(annotation):
 
 
 def test_tuple_scalar_annotation_rejects_time_series_items():
-    with pytest.raises(TypeError, match=r"tuple\[T, \.\.\.\] requires a scalar item annotation"):
+    with pytest.raises(TypeError, match=r"list\[T\] requires a scalar item annotation"):
         bg._native_type(tuple[bg.TS[int], ...])
 
 
@@ -327,7 +327,7 @@ def test_fixed_tuple_scalar_annotation_rejects_time_series_items():
 
 
 def test_tuple_scalar_annotation_rejects_optional_items():
-    with pytest.raises(TypeError, match=r"tuple\[T, \.\.\.\] does not support optional items"):
+    with pytest.raises(TypeError, match=r"Optional\[\.\.\.\] cannot be used as a list item type"):
         bg._native_type(tuple[int | None, ...])
 
 

@@ -330,6 +330,27 @@ closes before the engine destroys its wakeup, including when startup fails.
 Signal handling belongs to the application. A signal waiter thread can request
 stop through `std::stop_source` from normal thread execution.
 
+## Interruption checks
+
+Both evaluation engines accept `EvaluationInterruption` from
+`<bg/evaluation_interruption.hpp>`. Its `check` callback runs on the evaluation
+thread before startup, between complete outer cycles, and before normal
+termination. Periodic checks use its positive `interval`, which defaults to
+50 milliseconds and uses `std::chrono::steady_clock`, independently of evaluation
+time. Startup and termination checks run regardless of the interval. An empty
+callback disables checks.
+
+Realtime waits also wake at the next check deadline, including before a future
+start time. A check does not evaluate the graph or advance evaluation time.
+An exception from the callback stops a started graph through its normal lifecycle
+and propagates to the caller. A callback that returns normally lets execution
+continue.
+
+Set `GraphRunOptions::interruption` for `run_graph` or `test_graph`. Profiling
+uses the same checks. Check state belongs to the engine run; runtime graphs and
+nodes store no interruption state. Runs without a callback retain their normal
+wait behavior and do not read a clock for interruption checks.
+
 ## Evaluation profiling
 
 `EvaluationProfile` records evaluation work when supplied to
