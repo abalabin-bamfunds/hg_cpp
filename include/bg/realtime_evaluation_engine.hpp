@@ -3,6 +3,7 @@
 #include <bg/evaluation_time.hpp>
 #include <bg/periodic_callback.hpp>
 
+#include <optional>
 #include <stop_token>
 
 namespace bg {
@@ -15,13 +16,16 @@ class EvaluationProfile;
 class RealtimeEvaluationEngine {
   public:
     void run(RuntimeGraph &runtime_graph, EvaluationTime start_time, std::stop_token stop_token = {},
-             const PeriodicCallback &periodic_callback = {}) const;
+             const PeriodicCallback &periodic_callback = {},
+             std::optional<EvaluationTime> stop_time = std::nullopt) const;
     void run(RuntimeGraph &runtime_graph, EvaluationTime start_time, EvaluationProfile &profile,
-             std::stop_token stop_token = {}, const PeriodicCallback &periodic_callback = {}) const;
+             std::stop_token stop_token = {}, const PeriodicCallback &periodic_callback = {},
+             std::optional<EvaluationTime> stop_time = std::nullopt) const;
 
   private:
     void run(RuntimeGraph &runtime_graph, EvaluationTime start_time, EvaluationProfile *profile,
-             std::stop_token stop_token, const PeriodicCallback &periodic_callback) const;
+             std::stop_token stop_token, const PeriodicCallback &periodic_callback,
+             std::optional<EvaluationTime> stop_time) const;
 };
 
 } // namespace bg

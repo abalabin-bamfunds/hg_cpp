@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 import gc
 import subprocess
 import sys
+from time import monotonic
 
 import bg
 import pytest
@@ -191,6 +192,54 @@ def test_run_graph_defaults_to_simulation_and_accepts_a_start_time():
     assert len(observed) == 2
     assert observed[0] == datetime.fromtimestamp(0) + timedelta(microseconds=1)
     assert observed[1] == start_time
+
+
+def test_python_runners_stop_at_simulation_and_realtime_limits():
+    observed = []
+
+    @bg.compute_node
+    def observe(value: bg.TS[int]) -> bg.TS[int]:
+        observed.append(value.value)
+        return value.value
+
+    @bg.graph
+    def graph(value: bg.TS[int]) -> bg.TS[int]:
+        return observe(value)
+
+    start_time = datetime(2024, 5, 6, 7, 8, 9, 123456)
+    assert bg.test_graph(graph, [1, 2, 3], start_time=start_time,
+                         stop_time=start_time + timedelta(microseconds=2),
+                         run_time=timedelta(microseconds=5)) == [1, 2, None]
+    assert observed == [1, 2]
+
+    @bg.graph
+    def idle() -> int:
+        return 1
+
+    before = monotonic()
+    bg.run_graph(idle, engine=bg.EvaluationEngine.realtime, run_time=timedelta(milliseconds=40))
+    assert monotonic() - before >= 0.02
+
+
+def test_python_runner_time_limits_validate_types_ranges_and_order():
+    @bg.graph
+    def graph() -> int:
+        return 1
+
+    with pytest.raises(TypeError, match="stop_time must be a datetime or None"):
+        bg.run_graph(graph, stop_time=1)
+    with pytest.raises(ValueError, match="stop_time must be a timezone-naive datetime"):
+        bg.run_graph(graph, stop_time=datetime.now(timezone.utc))
+    with pytest.raises(TypeError, match="run_time must be a datetime.timedelta or None"):
+        bg.test_graph(graph, run_time=1)
+    with pytest.raises(ValueError, match="run_time must be positive"):
+        bg.run_graph(graph, run_time=timedelta(0))
+    with pytest.raises(OverflowError, match="run_time is outside"):
+        bg.run_graph(graph, run_time=timedelta.max)
+    with pytest.raises(ValueError, match="stop_time must be later than start_time"):
+        bg.run_graph(graph, start_time=datetime(2024, 1, 1), stop_time=datetime(2024, 1, 1))
+    with pytest.raises(OverflowError, match="run_time overflows stop_time"):
+        bg.run_graph(graph, start_time=datetime(2024, 1, 1), run_time=timedelta(microseconds=(1 << 63) - 1))
 
 
 def test_run_graph_realtime_accepts_start_time_and_profile_recorder():

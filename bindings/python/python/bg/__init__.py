@@ -5,7 +5,7 @@ from __future__ import annotations
 import atexit
 import inspect
 import types
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import update_wrapper
 from typing import Annotated, Any, Generic, Tuple, TypeVar, get_args, get_origin, get_type_hints
 from weakref import WeakKeyDictionary
@@ -710,13 +710,28 @@ def _bind_definition_arguments(
     return fixed, positional, named
 
 
-def _validate_runner_options(engine: EvaluationEngine, start_time: datetime | None) -> None:
+def _validate_runner_options(
+    engine: EvaluationEngine,
+    start_time: datetime | None,
+    stop_time: datetime | None,
+    run_time: timedelta | None,
+) -> None:
     if not isinstance(engine, EvaluationEngine):
         raise TypeError("engine must be a bg.EvaluationEngine")
     if start_time is not None and not isinstance(start_time, datetime):
         raise TypeError("start_time must be a datetime or None")
     if start_time is not None and start_time.utcoffset() is not None:
         raise ValueError("start_time must be a timezone-naive datetime")
+    if stop_time is not None and not isinstance(stop_time, datetime):
+        raise TypeError("stop_time must be a datetime or None")
+    if stop_time is not None and stop_time.utcoffset() is not None:
+        raise ValueError("stop_time must be a timezone-naive datetime")
+    if run_time is not None and not isinstance(run_time, timedelta):
+        raise TypeError("run_time must be a datetime.timedelta or None")
+    if run_time is not None and run_time <= timedelta(0):
+        raise ValueError("run_time must be positive")
+    if run_time is not None and run_time > timedelta(microseconds=(1 << 63) - 1):
+        raise OverflowError("run_time is outside the EvaluationTime::duration range")
 
 
 def _definition_signature(
@@ -1227,6 +1242,8 @@ def run_graph(
     engine: EvaluationEngine = EvaluationEngine.simulation,
     start_time: datetime | None = None,
     stop_token: StopToken | None = None,
+    stop_time: datetime | None = None,
+    run_time: timedelta | None = None,
     **kwargs: Any,
 ) -> None:
     """Wire and run a graph with the selected evaluation engine."""
@@ -1236,7 +1253,7 @@ def run_graph(
         raise TypeError("recorder must be created by EvaluationProfiler.recorder()")
     if catalogue is not None and not isinstance(catalogue, ServiceCatalogue):
         raise TypeError("catalogue must be a bg.ServiceCatalogue")
-    _validate_runner_options(engine, start_time)
+    _validate_runner_options(engine, start_time, stop_time, run_time)
     if stop_token is not None and not isinstance(stop_token, StopToken):
         raise TypeError("stop_token must be a bg.StopToken or None")
 
@@ -1245,14 +1262,16 @@ def run_graph(
     )
     native_catalogue = None if catalogue is None else catalogue._native_catalogue
     _run_graph(definition._native_definition, fixed, positional, named, native_catalogue, recorder,
-               engine, start_time, stop_token)
+               engine, start_time, stop_token, stop_time, run_time)
 
 
 def test_graph(definition: GraphDefinition, *inputs: Any,
                catalogue: ServiceCatalogue | None = None,
                recorder: _EvaluationProfilerRecorder | None = None,
                engine: EvaluationEngine = EvaluationEngine.simulation,
-               start_time: datetime | None = None) -> Any:
+               start_time: datetime | None = None,
+               stop_time: datetime | None = None,
+               run_time: timedelta | None = None) -> Any:
     """Run a graph definition with one update sequence for each time-series input."""
     if not isinstance(definition, GraphDefinition):
         raise TypeError("test_graph expects a decorated @graph definition")
@@ -1260,11 +1279,12 @@ def test_graph(definition: GraphDefinition, *inputs: Any,
         raise TypeError("recorder must be created by EvaluationProfiler.recorder()")
     if catalogue is not None and not isinstance(catalogue, ServiceCatalogue):
         raise TypeError("catalogue must be a bg.ServiceCatalogue")
-    _validate_runner_options(engine, start_time)
+    _validate_runner_options(engine, start_time, stop_time, run_time)
     if engine is EvaluationEngine.realtime:
         raise ValueError("test_graph only supports the simulation engine")
     native_catalogue = None if catalogue is None else catalogue._native_catalogue
-    return _test_graph(definition._native_definition, inputs, native_catalogue, recorder, engine, start_time)
+    return _test_graph(definition._native_definition, inputs, native_catalogue, recorder, engine, start_time,
+                       stop_time, run_time)
 
 
 operators.map = map

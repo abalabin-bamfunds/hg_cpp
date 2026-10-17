@@ -357,6 +357,7 @@ inline auto finish_test_graph(GraphWiring &wiring, CapturedValues &captured, Eva
     if (options.engine != EvaluationEngine::simulation) {
         throw std::invalid_argument{"test_graph supports only the simulation evaluation engine"};
     }
+    const auto stop_time = options.resolve_stop_time(start_time);
 
     if (options.services != nullptr) {
         wiring.finalize(*options.services);
@@ -368,9 +369,10 @@ inline auto finish_test_graph(GraphWiring &wiring, CapturedValues &captured, Eva
     auto run = [&](GlobalState &global_state) {
         auto runtime = RuntimeGraph{compiled, global_state};
         if (options.recorder) {
-            options.recorder->run(runtime, start_time, EvaluationEngine::simulation, {}, options.periodic_callback);
+            options.recorder->run(runtime, start_time, EvaluationEngine::simulation, {}, options.periodic_callback,
+                                  stop_time);
         } else {
-            SimulationEvaluationEngine{}.run(runtime, start_time, options.periodic_callback);
+            SimulationEvaluationEngine{}.run(runtime, start_time, options.periodic_callback, stop_time);
         }
     };
 

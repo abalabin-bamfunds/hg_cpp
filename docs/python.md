@@ -233,10 +233,12 @@ update sequences or its output values.
 `start_time` sets the first evaluation time using a timezone-naive local Python
 `datetime`, as returned by `EvaluationClock`. When omitted, the defaults follow
 [direct execution](graph-wiring.md#direct-execution).
-`test_graph` also accepts `engine` and `start_time`; it requires simulation and
+`stop_time` accepts a timezone-naive `datetime`; `run_time` accepts a `timedelta`.
+Both follow the shared [run limits](evaluation.md#run-limits).
+`test_graph` also accepts these options and `engine`; it requires simulation and
 keeps result positions relative to the configured start time.
 
-Realtime execution waits for work until `stop_token` requests cancellation.
+Realtime execution waits for work until a run limit or `stop_token` ends the run.
 Create a `bg.StopSource`, pass `source.get_token()` as `stop_token`, and call
 `source.request_stop()` from a graph callback or another thread. Cancellation
 follows the [engine lifecycle](evaluation.md#realtime-evaluation).

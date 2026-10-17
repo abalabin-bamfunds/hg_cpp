@@ -514,7 +514,7 @@ keep them alive throughout the synchronous run.
 
 `engine` selects `EvaluationEngine::simulation` by default. Simulation returns
 when no scheduled evaluation remains. Select `EvaluationEngine::realtime` to
-wait for queue input and timer deadlines until `stop_token` requests cancellation:
+wait for queue input and timer deadlines until a run limit or `stop_token` ends the run:
 
 ```cpp
 auto stop_source = std::stop_source{};
@@ -530,6 +530,10 @@ the [engine lifecycle](evaluation.md#realtime-evaluation).
 `start_time` overrides the first evaluation time. When omitted, simulation uses
 `MIN_DT + 1us`; realtime samples the current wall-clock time after graph
 compilation. Profiling uses the selected engine and start time.
+
+`stop_time` and `run_time` configure [run limits](evaluation.md#run-limits).
+For example, set `.run_time = std::chrono::seconds{5}` to bound a realtime run
+without a timeout callback.
 
 `periodic_callback` configures an optional [periodic callback](evaluation.md#periodic-callbacks)
 for either engine.

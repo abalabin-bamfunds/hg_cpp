@@ -550,7 +550,8 @@ EvaluationProfiler::~EvaluationProfiler() = default;
 
 void EvaluationProfiler::Recorder::run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
                                        EvaluationEngine engine, std::stop_token stop_token,
-                                       const PeriodicCallback &periodic_callback) const {
+                                       const PeriodicCallback &periodic_callback,
+                                       std::optional<EvaluationTime> stop_time) const {
     auto &profiler = profiler_;
     if (profiler.state_->run_started) {
         throw std::logic_error{"an evaluation profiler records one graph run"};
@@ -582,9 +583,10 @@ void EvaluationProfiler::Recorder::run(RuntimeGraph &runtime_graph, EvaluationTi
     auto graph_error = std::exception_ptr{};
     try {
         if (engine == EvaluationEngine::realtime) {
-            RealtimeEvaluationEngine{}.run(runtime_graph, start_time, profile, stop_token, periodic_callback);
+            RealtimeEvaluationEngine{}.run(runtime_graph, start_time, profile, stop_token, periodic_callback,
+                                           stop_time);
         } else {
-            SimulationEvaluationEngine{}.run(runtime_graph, start_time, profile, periodic_callback);
+            SimulationEvaluationEngine{}.run(runtime_graph, start_time, profile, periodic_callback, stop_time);
         }
     } catch (...) {
         graph_error = std::current_exception();

@@ -35,7 +35,6 @@ TEST_CASE("service requests dispatch to a worker and queued replies reach the cl
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
 
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
     run_graph(
         [&] {
             const auto output = service(operators::const_(i64{3})).as<TS<i64>>();
@@ -47,10 +46,8 @@ TEST_CASE("service requests dispatch to a worker and queued replies reach the cl
         GraphRunOptions{
             .services = &catalogue,
             .engine = EvaluationEngine::realtime,
+            .run_time = std::chrono::seconds{5},
             .stop_token = stop_source.get_token(),
-            .periodic_callback = {
-                .callback = [&] { if (std::chrono::steady_clock::now() >= deadline) stop_source.request_stop(); },
-            },
         });
 
     CHECK(actual == 6);

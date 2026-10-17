@@ -295,6 +295,20 @@ The feedback output type cannot contain references. `feedback(point)` infers its
 reference-free value type and changes a root `const` guarantee to `final`.
 Pass the resolved output type explicitly when inference is not suitable.
 
+## Run limits
+
+`GraphRunOptions::stop_time` sets an exclusive evaluation-time limit.
+`run_time` sets a duration from the resolved `start_time`. When both are supplied,
+the earlier limit applies. A duration must be positive and must not overflow
+`EvaluationTime`; an absolute limit must follow the start time.
+
+Both engines complete each started outer cycle and stop before a cycle at or
+after the limit. Simulation can finish earlier when its schedule is empty.
+Realtime waits end at the limit even when the graph is idle. Exact timers before
+the limit still run at their declared times when realtime evaluation catches up.
+Stopping does not create a cycle at the limit; stop functions observe the last
+evaluation time. Profiling and `test_graph` use the same limits.
+
 ## Simulation
 
 `SimulationEvaluationEngine` starts a runtime graph and evaluates its first

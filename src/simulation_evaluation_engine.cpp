@@ -26,19 +26,26 @@ class SimulationWallClock final : public WallClock {
 } // namespace
 
 void SimulationEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
-                                     const PeriodicCallback &periodic_callback) const {
-    run(runtime_graph, start_time, nullptr, periodic_callback);
+                                     const PeriodicCallback &periodic_callback,
+                                     std::optional<EvaluationTime> stop_time) const {
+    run(runtime_graph, start_time, nullptr, periodic_callback, stop_time);
 }
 
 void SimulationEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
                                      EvaluationProfile &profile,
-                                     const PeriodicCallback &periodic_callback) const {
-    run(runtime_graph, start_time, &profile, periodic_callback);
+                                     const PeriodicCallback &periodic_callback,
+                                     std::optional<EvaluationTime> stop_time) const {
+    run(runtime_graph, start_time, &profile, periodic_callback, stop_time);
 }
 
 void SimulationEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
                                      EvaluationProfile *profile,
-                                     const PeriodicCallback &periodic_callback) const {
+                                     const PeriodicCallback &periodic_callback,
+                                     std::optional<EvaluationTime> stop_time) const {
+    if (stop_time && *stop_time <= start_time) {
+        throw std::invalid_argument{"stop_time must be later than start_time"};
+    }
+
     auto callback_runner = details::PeriodicCallbackRunner{periodic_callback};
     callback_runner.run_now();
 
@@ -83,14 +90,17 @@ void SimulationEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime
                 break;
             }
         }
+        if (stop_time && *next_time >= *stop_time) {
+            break;
+        }
 
         wall_clock.set_time(*next_time);
         evaluate(*next_time);
         callback_runner.poll_after_cycle();
     }
 
-    const auto stop_time = runtime_graph.evaluation_time();
-    auto stop_context = EvaluationContext{global_context, stop_time, runtime_graph};
+    const auto stop_evaluation_time = runtime_graph.evaluation_time();
+    auto stop_context = EvaluationContext{global_context, stop_evaluation_time, runtime_graph};
     runtime_graph.stop(stop_context);
     stop_graph.release();
 }
