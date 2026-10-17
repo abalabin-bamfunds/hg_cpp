@@ -430,6 +430,8 @@ graph compilation or evaluation.
 - outer-cycle queue draining in standard and eliding modes, publication once per changed target, validity
   transitions, no-op advancement, whole-message pending, cross-target ordering, collection-item independence,
   cleanup before application, and fail-stop cleanup after application errors
+- queue scheduling from committed messages, timer priority at cycle entry, minimum-tick chains through inner
+  graphs, timer cancellation, queue-only simulation progress, and stopped-graph readiness
 - batch queue output validation, element literal encoding, ordered accumulation per time series, batch replacement
   across cycles, nested collection items, whole-message pending at invalidation and removal boundaries,
   owning scalar replay, unread-payload cleanup, and failure cleanup

@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <limits>
 #include <span>
+#include <stdexcept>
 #include <thread>
 
 TEST_CASE("a queue message reader skips sentinels across padded block frames",
@@ -29,10 +30,12 @@ TEST_CASE("a queue message reader skips sentinels across padded block frames",
     first_header.target = std::numeric_limits<std::uint32_t>::max();
 
     auto reader = bg::details::QueueMessageReader{buffer};
+    CHECK(reader.has_pending_target());
     for (auto target = std::uint32_t{1}; target < 12; ++target) {
         REQUIRE(reader.next_target() == target);
         REQUIRE(reader.discard(bg::TS<bg::i64>::type()));
     }
+    CHECK_FALSE(reader.has_pending_target());
     CHECK_FALSE(reader.next_target());
 }
 
@@ -80,16 +83,37 @@ TEST_CASE("a queue message reader respects an unfinished earlier reservation",
     write_frame(second, 101, 2);
     auto reader = bg::details::QueueMessageReader{buffer};
 
+    CHECK_FALSE(reader.has_pending_target());
     CHECK_FALSE(reader.next_target());
     second.commit();
+    CHECK_FALSE(reader.has_pending_target());
     CHECK_FALSE(reader.next_target());
     first.commit();
 
+    CHECK(reader.has_pending_target());
     REQUIRE(reader.next_target() == 100);
     REQUIRE(reader.discard(bg::TS<bg::i64>::type()));
     REQUIRE(reader.next_target() == 101);
     REQUIRE(reader.discard(bg::TS<bg::i64>::type()));
     CHECK_FALSE(reader.next_target());
+}
+
+TEST_CASE("queue message readiness preserves malformed frames for checked reading",
+          "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][failure]") {
+    const auto buffer = bg::util::buffer::concurrent_chain(32, 1);
+    auto writer = bg::util::concurrent_buffer_writer{buffer};
+    auto reservation = writer.reserve(sizeof(bg::details::QueueMessageHeader),
+                                      alignof(bg::details::QueueMessageHeader));
+    auto context = bg::ScalarBufferWriteContext{reservation};
+    context.write(bg::details::QueueMessageHeader{
+        7, static_cast<std::uint32_t>(sizeof(bg::details::QueueMessageHeader))});
+    reservation.commit();
+
+    auto reader = bg::details::QueueMessageReader{buffer};
+    CHECK(reader.has_pending_target());
+    CHECK_THROWS_AS(reader.next_target(), std::logic_error);
+    CHECK(reader.has_pending_target());
+    CHECK_THROWS_AS(reader.next_target(), std::logic_error);
 }
 
 TEST_CASE("a queue message reader advances no-op frames and discards typed payloads",

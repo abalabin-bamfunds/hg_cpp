@@ -876,6 +876,15 @@ bool QueueTickApply::apply(OutputState &output) {
 
 QueueMessageReader::QueueMessageReader(util::buffer buffer) : reader_{std::move(buffer)} {}
 
+bool QueueMessageReader::has_pending_target() noexcept {
+    try {
+        return next_target().has_value();
+    } catch (const std::logic_error &) {
+        // Keep malformed frames unread. Evaluation reports the checked reader error outside this noexcept query.
+        return true;
+    }
+}
+
 std::optional<std::uint32_t> QueueMessageReader::next_target() {
     const auto frame = next_frame();
     if (!frame) {

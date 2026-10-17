@@ -81,7 +81,7 @@ TEST_CASE("queue nodes bind stop scalars to named start scalars and close stop h
     CHECK(probe.started_id == 37);
     CHECK(probe.started_topic == "prices");
     CHECK(probe.start_write_accepted);
-    CHECK_FALSE(runtime.next_scheduled_time().has_value());
+    CHECK(runtime.next_scheduled_time() == time(2));
 
     runtime.stop();
 

@@ -708,6 +708,8 @@ class QueueMessageReader {
   public:
     explicit QueueMessageReader(util::buffer buffer);
 
+    // Skips aborted frames, leaves the next message unread, and defers malformed-frame errors to next_target().
+    bool has_pending_target() noexcept;
     std::optional<std::uint32_t> next_target();
     bool apply(OutputState &output, QueueMode mode);
     bool discard(const TimeSeriesType &type, QueueMode mode = QueueMode::standard);

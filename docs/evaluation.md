@@ -29,19 +29,23 @@ The engine applies an external stop request between outer cycles.
 ## Queue input
 
 At the beginning of each outer cycle, after deferred cleanup, the runtime graph
+checks for timers due at or before the cycle's evaluation time. If any are due,
+it activates them and leaves the queue untouched for that cycle. Otherwise, it
 applies committed queue messages in order before evaluating nodes. It stops at
 the committed watermark or the first message that conflicts with the target's
-mode. The conflicting message remains pending, and later
-messages wait behind it. See [queue messages](time-series-types.md#queue-messages)
-for application rules.
+mode. The conflicting message remains pending, and later messages wait behind
+it. See [queue messages](time-series-types.md#queue-messages) for application rules.
 
 Each changed queue target is scheduled for ordinary output publication once in
 the cycle. Subscribers observe its completed output after draining. No-op
 messages do not schedule the target. Resuming a paused graph does not drain
 again in the same cycle.
 
-Queue messages do not request evaluation times. A pending message is retried
-when the next outer cycle runs.
+`next_scheduled_time()` returns the earlier of the next timer and the next
+minimum evaluation time when committed queue messages remain. A chain of
+minimum-tick timers therefore completes before queue reading resumes. Timers
+from inner graphs use the same priority through their owning nodes. Stopped
+and finalized graphs do not report queue work.
 
 ## Evaluation time
 
@@ -200,9 +204,10 @@ An aggregate node that uses timed scheduling declares:
 static constexpr bool uses_timed_scheduling = true;
 ```
 
-A graph has timed scheduling state only when a node declares its use. The
-runtime graph reports the earliest pending time. `evaluate(time)` schedules
-requests due at that time before it processes nodes.
+A graph has timed scheduling state only when a node declares its use.
+`evaluate(time)` activates requests due at or before that time before it
+processes nodes. The next evaluation time also accounts for
+[queue input](#queue-input).
 
 ## Feedback
 

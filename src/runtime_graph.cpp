@@ -919,6 +919,10 @@ RuntimeGraph::QueueState *&RuntimeGraph::queue_state() noexcept {
     return *reinterpret_cast<QueueState **>(storage_ + compiled_graph_->queue_offset());
 }
 
+RuntimeGraph::QueueState *RuntimeGraph::queue_state() const noexcept {
+    return *reinterpret_cast<QueueState *const *>(storage_ + compiled_graph_->queue_offset());
+}
+
 void RuntimeGraph::close_queue() noexcept {
     if (compiled_graph_->has_queue() && queue_state() != nullptr) {
         queue_state()->control.close();
@@ -1046,11 +1050,27 @@ void RuntimeGraph::clear_cycle_callbacks(EvaluationContext &context) noexcept {
 }
 
 std::optional<EvaluationTime> RuntimeGraph::next_scheduled_time() const noexcept {
-    if (!compiled_graph_->has_timed_scheduling() || timed_schedule() == nullptr) {
-        return std::nullopt;
+    auto next = std::optional<EvaluationTime>{};
+    if (compiled_graph_->has_timed_scheduling() && timed_schedule() != nullptr) {
+        next = timed_schedule()->next_time();
     }
 
-    return timed_schedule()->next_time();
+    const auto queue_can_schedule = !stopped_ && !finalized_ && compiled_graph_->has_queue() &&
+                                   queue_state() != nullptr;
+    if (!queue_can_schedule) {
+        return next;
+    }
+
+    const auto queue_time = evaluation_time_ + EvaluationTime::duration{1};
+    if (next && *next <= queue_time) {
+        return next;
+    }
+
+    if (!queue_state()->reader.has_pending_target()) {
+        return next;
+    }
+
+    return queue_time;
 }
 
 void RuntimeGraph::notify_subscribers(std::span<const Subscriber> subscribers, OutputChange change) {
@@ -1511,11 +1531,17 @@ bool RuntimeGraphEvaluator::evaluate_graph(RuntimeGraph &graph, EvaluationContex
         }
     }};
 
+    auto timed_schedule_due_at_entry = false;
     if (!resuming) {
         graph.run_cycle_callbacks(context);
         graph.last_evaluation_time_ = evaluation_time;
         graph.evaluation_time_ = evaluation_time;
         graph.notify_runtime_graph_inputs(context);
+        if (outer_graph_evaluation && graph.compiled_graph_->has_timed_scheduling() &&
+            graph.timed_schedule() != nullptr) {
+            const auto next_timed_time = graph.timed_schedule()->next_time();
+            timed_schedule_due_at_entry = next_timed_time && *next_timed_time <= evaluation_time;
+        }
         graph.activate_scheduled(evaluation_time);
     }
 
@@ -1524,7 +1550,7 @@ bool RuntimeGraphEvaluator::evaluate_graph(RuntimeGraph &graph, EvaluationContex
         graph.stopped_ = true;
         graph.stop_nodes(graph.compiled_graph_->node_count(), context);
     }};
-    if (!resuming && outer_graph_evaluation) {
+    if (!resuming && outer_graph_evaluation && !timed_schedule_due_at_entry) {
         graph.drain_queue(context);
     }
 

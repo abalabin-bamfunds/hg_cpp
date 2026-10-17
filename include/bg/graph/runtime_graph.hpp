@@ -164,6 +164,7 @@ class RuntimeGraph {
     CycleCallbacks *&cycle_callbacks() noexcept;
     CycleCallbacks *cycle_callbacks() const noexcept;
     QueueState *&queue_state() noexcept;
+    QueueState *queue_state() const noexcept;
     void close_queue() noexcept;
     void discard_queue() noexcept;
     void drain_queue(EvaluationContext &context);

@@ -1,10 +1,14 @@
 #include <bg/graph/compiled_graph.hpp>
+#include <bg/graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/runtime_graph_evaluator.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/nested.hpp>
 #include <bg/node.hpp>
+#include <bg/operators.hpp>
 #include <bg/queue.hpp>
+#include <bg/simulation_evaluation_engine.hpp>
 #include <bg/scalar/buffer_operations.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/scalar/struct/scalar_type.hpp>
@@ -17,6 +21,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <chrono>
 #include <memory>
 #include <optional>
@@ -699,7 +704,7 @@ TEST_CASE("queue storage follows timed scheduling and cycle callback pointers",
         auto queue = runtime.make_queue(0);
         REQUIRE(queue.write(::literal::TimeSeriesLiteral(bg::i64{42})));
         if constexpr (Definition::uses_timed_scheduling) {
-            CHECK(runtime.next_scheduled_time() == time(3));
+            CHECK(runtime.next_scheduled_time() == time(2));
         }
         runtime.evaluate(time(1));
         if constexpr (Definition::uses_cycle_callbacks) {
@@ -717,6 +722,271 @@ TEST_CASE("queue storage follows timed scheduling and cycle callback pointers",
                                       QueueLayoutNodeDefinition<false, true, false>>(sizeof(void *));
     verify_layout.template operator()<QueueLayoutNodeDefinition<true, true>,
                                       QueueLayoutNodeDefinition<true, true, false>>(2 * sizeof(void *));
+}
+
+TEST_CASE("pending queue messages schedule a minimum-tick simulation cycle",
+          "[evaluation][simulation][queue][feature:simulation][feature:time-series-storage]"
+          "[feature:timed-scheduling][series:value][scalar:i64]") {
+    auto values = std::vector<std::pair<bg::i64, bg::EvaluationTime>>{};
+    const auto queue_node = bg::queue<bg::TS<bg::i64>>(bg::start = [](bg::Queue queue) {
+        if (!queue.write(::literal::TimeSeriesLiteral(bg::i64{1})) ||
+            !queue.write(::literal::TimeSeriesLiteral(bg::i64{2}))) {
+            throw std::logic_error{"queue write was rejected during start"};
+        }
+    });
+    const auto observer = bg::node([&](bg::In<bg::TS<bg::i64>> input) {
+        values.emplace_back(*input, input.last_updated());
+    });
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        observer(queue_node());
+    }
+    wiring.finalize();
+
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    bg::SimulationEvaluationEngine{}.run(runtime, time(1));
+
+    CHECK(values == std::vector<std::pair<bg::i64, bg::EvaluationTime>>{{1, time(1)}, {2, time(2)}});
+}
+
+struct QueueTimerCancellation {
+    static constexpr bool uses_timed_scheduling = true;
+    static constexpr bool schedule_on_start = true;
+
+    void start(bg::EvaluationContext *context) const {
+        handle = context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate(bg::EvaluationContext *context) const { context->cancel(handle); }
+
+    inline static bg::ScheduleHandle handle;
+};
+
+TEST_CASE("cancelling a timer lets pending queue work use the minimum-tick cycle",
+          "[evaluation][queue][feature:time-series-storage][feature:timed-scheduling]"
+          "[series:value][scalar:i64][transition:removal]") {
+    auto values = std::vector<std::pair<bg::i64, bg::EvaluationTime>>{};
+    const auto queue_node = bg::queue<bg::TS<bg::i64>>(bg::start = [](bg::Queue queue) {
+        if (!queue.write(::literal::TimeSeriesLiteral(bg::i64{1})) ||
+            !queue.write(::literal::TimeSeriesLiteral(bg::i64{2}))) {
+            throw std::logic_error{"queue write was rejected during start"};
+        }
+    });
+    const auto observer = bg::node([&](bg::In<bg::TS<bg::i64>> input) {
+        values.emplace_back(*input, input.last_updated());
+    });
+    const auto timer = bg::node<QueueTimerCancellation>();
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        observer(queue_node());
+        timer();
+    }
+    wiring.finalize();
+
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    QueueTimerCancellation::handle = {};
+    runtime.start(time(1));
+    runtime.evaluate(time(1));
+
+    CHECK(values == std::vector<std::pair<bg::i64, bg::EvaluationTime>>{{1, time(1)}});
+    REQUIRE(runtime.next_scheduled_time() == time(2));
+
+    runtime.evaluate(time(2));
+
+    CHECK(values == std::vector<std::pair<bg::i64, bg::EvaluationTime>>{{1, time(1)}, {2, time(2)}});
+    CHECK_FALSE(runtime.next_scheduled_time().has_value());
+    runtime.stop();
+}
+
+struct QueueDueTimer {
+    static constexpr bool uses_timed_scheduling = true;
+
+    void start(bg::EvaluationContext *context) const {
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
+    }
+
+    void evaluate() const {}
+};
+
+TEST_CASE("due and overdue timers leave pending queue frames for the next minimum-tick cycle",
+          "[evaluation][queue][feature:time-series-storage][feature:timed-scheduling]"
+          "[series:value][scalar:i64]") {
+    auto values = std::vector<std::pair<bg::i64, bg::EvaluationTime>>{};
+    const auto queue_node = bg::queue<bg::TS<bg::i64>>(bg::start = [](bg::Queue queue) {
+        if (!queue.write(::literal::TimeSeriesLiteral(bg::i64{1})) ||
+            !queue.write(::literal::TimeSeriesLiteral(bg::i64{2}))) {
+            throw std::logic_error{"queue write was rejected during start"};
+        }
+    });
+    const auto observer = bg::node([&](bg::In<bg::TS<bg::i64>> input) {
+        values.emplace_back(*input, input.last_updated());
+    });
+    const auto timer = bg::node<QueueDueTimer>();
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        observer(queue_node());
+        timer();
+    }
+    wiring.finalize();
+
+    const auto compiled = bg::CompiledGraph{wiring};
+    for (const auto next_cycle : std::array{time(3), time(10)}) {
+        auto global_state = bg::GlobalState{};
+        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        values.clear();
+        runtime.start(time(1));
+        runtime.evaluate(time(1));
+        CHECK(values == std::vector<std::pair<bg::i64, bg::EvaluationTime>>{{1, time(1)}});
+        REQUIRE(runtime.next_scheduled_time() == time(2));
+
+        runtime.evaluate(next_cycle);
+
+        CHECK(values == std::vector<std::pair<bg::i64, bg::EvaluationTime>>{{1, time(1)}});
+        REQUIRE(runtime.next_scheduled_time() == next_cycle + std::chrono::microseconds{1});
+        runtime.evaluate(next_cycle + std::chrono::microseconds{1});
+
+        CHECK(values == std::vector<std::pair<bg::i64, bg::EvaluationTime>>{
+                            {1, time(1)}, {2, next_cycle + std::chrono::microseconds{1}}});
+        runtime.stop();
+    }
+}
+
+struct QueuePriorityInnerTimer {
+    static constexpr bool uses_timed_scheduling = true;
+
+    bg::State<int> step;
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void start(bg::EvaluationContext *context) const {
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate(bg::EvaluationContext *context) const {
+        evaluation_times.push_back(context->evaluation_time());
+        ++*step;
+        output.set(*step);
+        if (*step < 3) {
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        }
+    }
+
+    inline static std::vector<bg::EvaluationTime> evaluation_times;
+};
+
+TEST_CASE("nested minimum-tick timers keep queued frames unread until the chain completes",
+          "[evaluation][simulation][nested][queue][feature:simulation][feature:time-series-storage]"
+          "[feature:timed-scheduling][feature:nested-graph][series:value][scalar:i64]") {
+    using namespace bg::literals;
+
+    auto values = std::vector<std::pair<bg::i64, bg::EvaluationTime>>{};
+    const auto queue_node = bg::queue<bg::TS<bg::i64>>(bg::start = [](bg::Queue queue) {
+        if (!queue.write(::literal::TimeSeriesLiteral(bg::i64{1})) ||
+            !queue.write(::literal::TimeSeriesLiteral(bg::i64{2}))) {
+            throw std::logic_error{"queue write was rejected during start"};
+        }
+    });
+    const auto observer = bg::node([&](bg::In<bg::TS<bg::i64>> input) {
+        values.emplace_back(*input, input.last_updated());
+    });
+    const auto timer = bg::node<QueuePriorityInnerTimer>();
+    const auto inner = bg::graph("name"_n = "queue_priority_inner_timer", [&]() -> bg::wp<bg::TS<bg::i64>> {
+        return timer();
+    });
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        observer(queue_node());
+        (void)bg::nested(inner, bg::operators::const_(true));
+    }
+    wiring.finalize();
+
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    QueuePriorityInnerTimer::evaluation_times.clear();
+
+    bg::SimulationEvaluationEngine{}.run(runtime, time(1));
+
+    CHECK(QueuePriorityInnerTimer::evaluation_times == std::vector{time(2), time(3), time(4)});
+    CHECK(values == std::vector<std::pair<bg::i64, bg::EvaluationTime>>{{1, time(1)}, {2, time(5)}});
+}
+
+struct QueueTimedCleanupNodeDefinition {
+    static constexpr bool uses_queue = true;
+    static constexpr bool uses_timed_scheduling = true;
+
+    QueueTimedCleanupNodeDefinition()
+        : signature_{bg::util::symbol{"queue_timed_cleanup_node"}, {}, bg::TS<bg::i64>::type()} {}
+
+    const bg::Signature &signature() const noexcept { return signature_; }
+    bool uses_output_runtime_type() const noexcept { return true; }
+    const bg::TimeSeriesRuntimeType &output_runtime_type(const bg::WiringArguments &) const noexcept {
+        return bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>();
+    }
+
+    static void start(bg::NodeInvocation<> invocation) {
+        auto &context = invocation.context();
+        queue = context.runtime_graph().make_queue(0);
+        context.schedule_at(context.evaluation_time() + std::chrono::microseconds{2});
+        if (!queue.write(::literal::TimeSeriesLiteral(bg::i64{42}))) {
+            throw std::logic_error{"queue write was rejected during start"};
+        }
+    }
+
+    static void evaluate(bg::NodeInvocation<>) {}
+
+    static void stop(bg::NodeInvocation<> invocation) noexcept {
+        next_scheduled_time_during_stop = invocation.context().runtime_graph().next_scheduled_time();
+    }
+
+    inline static bg::Queue queue;
+    inline static std::optional<bg::EvaluationTime> next_scheduled_time_during_stop;
+
+  private:
+    bg::Signature signature_;
+};
+
+TEST_CASE("stopped and finalized graphs suppress queue readiness and preserve pending timer reporting",
+          "[evaluation][queue][lifecycle][feature:time-series-storage][feature:timed-scheduling]"
+          "[series:value][scalar:i64]") {
+    const auto node = bg::node(QueueTimedCleanupNodeDefinition{});
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        (void)node();
+    }
+    wiring.finalize();
+
+    const auto compiled = bg::CompiledGraph{wiring};
+    {
+        auto global_state = bg::GlobalState{};
+        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        runtime.start(time(1));
+        REQUIRE(runtime.next_scheduled_time() == time(2));
+
+        runtime.stop();
+
+        CHECK(QueueTimedCleanupNodeDefinition::next_scheduled_time_during_stop == time(3));
+        CHECK_FALSE(runtime.next_scheduled_time().has_value());
+    }
+
+    {
+        auto global_state = bg::GlobalState{};
+        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        runtime.start(time(1));
+        REQUIRE(runtime.next_scheduled_time() == time(2));
+
+        runtime.finalize(global_state);
+
+        CHECK(runtime.next_scheduled_time() == time(3));
+    }
 }
 
 TEST_CASE("a retained graph queue is closed before its output runtime type expires",
