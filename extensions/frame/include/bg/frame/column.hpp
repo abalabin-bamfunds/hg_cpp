@@ -66,6 +66,7 @@ class ColumnType final : public ScalarType {
     }
     const ScalarType &cell_type() const noexcept { return cell_type_; }
     bool is_resolved() const noexcept override { return cell_type_.is_resolved(); }
+    bool supports_equality() const noexcept override { return cell_type_.supports_equality(); }
     const Type &resolve(const TypeMap &type_map) const override;
 
   protected:
@@ -1661,6 +1662,57 @@ template <typename T> inline std::size_t ColumnView<T>::size() const noexcept {
         return snapshot_->size();
     return source_ == nullptr ? 0 : source_->size();
 }
+
+template <cell_type T> bool column_values_equal(const ColumnView<T> &left, const ColumnView<T> &right) {
+    if (left.size() != right.size())
+        return false;
+
+    auto right_batches = std::vector<ColumnBatch<T>>{};
+    right.batches([&](const auto &batch) { right_batches.push_back(batch); });
+
+    auto right_index = std::size_t{};
+    auto right_offset = std::size_t{};
+    auto compared = std::size_t{};
+    auto equal = true;
+    left.batches([&](const auto &left_batch) {
+        for (auto left_offset = std::size_t{}; left_offset != left_batch.size && equal; ++left_offset) {
+            while (right_index != right_batches.size() && right_offset == right_batches[right_index].size) {
+                ++right_index;
+                right_offset = 0;
+            }
+            if (right_index == right_batches.size()) {
+                equal = false;
+                return;
+            }
+
+            const auto &right_batch = right_batches[right_index];
+            const auto left_valid = left_batch.is_valid(left_offset);
+            if (left_valid != right_batch.is_valid(right_offset) ||
+                (left_valid && left_batch.values[left_offset] != right_batch.values[right_offset])) {
+                equal = false;
+                return;
+            }
+            ++right_offset;
+            ++compared;
+        }
+    });
+    while (right_index != right_batches.size() && right_offset == right_batches[right_index].size) {
+        ++right_index;
+        right_offset = 0;
+    }
+    return equal && compared == left.size() && right_index == right_batches.size();
+}
+
+inline bool column_values_equal(const ColumnView<> &left, const ColumnView<> &right) {
+    if (std::addressof(left.cell_type()) != std::addressof(right.cell_type()))
+        return false;
+    if (std::addressof(left.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
+        return column_values_equal(left.view<i64>(), right.view<i64>());
+    if (std::addressof(left.cell_type()) == std::addressof(cpp_scalar_type<double>()))
+        return column_values_equal(left.view<double>(), right.view<double>());
+    return false;
+}
+
 template <typename T>
 inline ColumnView<T>::ColumnView(const Column<T> &column) noexcept : snapshot_{column.snapshot_} {}
 template <typename T>
@@ -1708,11 +1760,12 @@ template <typename T> struct declaration_variable_traits<frame::Column<T>> {
 template <frame::cell_type T> struct scalar_storage_traits<frame::Column<T>> {
     using stored_type = frame::ColumnStorage<T>;
     using value_type = frame::ColumnView<T>;
-    static constexpr bool supports_equality = false, supports_hash = false, uses_variable_memory = true;
+    static constexpr bool supports_equality = true, supports_hash = false, uses_variable_memory = true;
     static constexpr bool requires_finalization = true, assign_uses_memory_resource = true;
     static value_type read(const stored_type &value) noexcept {
         return value.native != nullptr ? value_type{value} : value_type{value.snapshot};
     }
+    static bool equals(value_type left, value_type right) { return frame::column_values_equal(left, right); }
     static void construct(stored_type *destination, value_type source, allocator &memory) {
         std::construct_at(destination, copy(source, memory));
     }
@@ -1761,7 +1814,7 @@ template <frame::cell_type T> struct scalar_storage_traits<frame::Column<T>> {
 template <details::scalar_variable T> struct scalar_storage_traits<frame::Column<T>> {
     using stored_type = frame::ColumnStorage<T>;
     using value_type = frame::ColumnView<>;
-    static constexpr bool supports_equality = false;
+    static constexpr bool supports_equality = true;
     static constexpr bool supports_hash = false;
     static constexpr bool supports_alternative_layouts = true;
     static constexpr bool uses_shared_handle = false;
@@ -1777,6 +1830,7 @@ template <details::scalar_variable T> struct scalar_storage_traits<frame::Column
             return value_type{details::scalar_data_value<frame::Column<double>>(source)};
         throw std::invalid_argument{"frame column scalar has an unsupported cell type"};
     }
+    static bool equals(value_type left, value_type right) { return frame::column_values_equal(left, right); }
 };
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<frame::Column<i64>>();
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<frame::Column<double>>();

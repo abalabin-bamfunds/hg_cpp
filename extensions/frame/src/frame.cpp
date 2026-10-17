@@ -1,5 +1,6 @@
 #include <bg/frame/frame.hpp>
 #include <bg/frame/tsc.hpp>
+#include <bg/frame/literal.hpp>
 #include <bg/type/type_registry.hpp>
 #include <bg/util/scope_exit.hpp>
 
@@ -138,6 +139,7 @@ const FrameType &frame_type(const SchemaType &schema) {
     validate_frame_schema(schema);
     const auto &type = TypeRegistry::instance().get_or_create<FrameType, std::hash<const SchemaType *>>(
         std::addressof(schema), [&] { return std::make_unique<FrameType>(schema); });
+    details::register_frame_literal_type(type);
     if (type.is_resolved()) {
         static_cast<void>(details::native_frame_layout(schema));
         static_cast<void>(frame_snapshot_runtime_type(type));
@@ -296,6 +298,32 @@ const ScalarRuntimeType &FrameScalarRuntimeType::runtime_type_for_copy(const Sca
     if (storage.schema == nullptr)
         throw std::invalid_argument{"frame scalar source has no schema"};
     return frame_snapshot_runtime_type(frame_type(*storage.schema));
+}
+
+bool FrameScalarRuntimeType::equals(const void *value, const ScalarData &other) const {
+    return equals(ScalarDataMode::stored_view, reinterpret_cast<std::uintptr_t>(value), other);
+}
+
+bool FrameScalarRuntimeType::equals(ScalarDataMode mode, std::uintptr_t data, const ScalarData &other) const {
+    if (typeid(other.type()) != typeid(FrameType))
+        return false;
+
+    const auto left_data = ScalarData{*this, data, mode};
+    const auto &right_runtime = static_cast<const FrameScalarRuntimeType &>(other.runtime_type());
+    const auto left = read_storage(left_data);
+    const auto right = right_runtime.read_storage(other);
+    if (left.schema != right.schema || left.size != right.size)
+        return false;
+
+    for (auto index = std::size_t{}; index != left.schema->field_count(); ++index) {
+        if (!column_values_equal(left.generic_column(index), right.generic_column(index)))
+            return false;
+    }
+    return true;
+}
+
+bool FrameScalarRuntimeType::equals_same_type(const void *value, const ScalarData &other) const {
+    return equals(ScalarDataMode::stored_view, reinterpret_cast<std::uintptr_t>(value), other);
 }
 
 } // namespace bg::frame

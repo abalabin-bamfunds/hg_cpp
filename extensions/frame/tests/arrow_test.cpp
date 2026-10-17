@@ -409,6 +409,59 @@ void test_imports_and_runtime_lifetime() {
     require(consumed_value->view().value() == 5, "BG node read an incorrect Arrow-backed frame value");
 }
 
+void test_column_equality_across_arrow_chunks() {
+    auto first_chunks = arrow::ChunkedArray::Make(
+        {int_array({1, std::nullopt}), int_array({3, 4})}, arrow::int64());
+    auto second_chunks = arrow::ChunkedArray::Make(
+        {int_array({1}), int_array({std::nullopt, 3, 4})}, arrow::int64());
+    require(first_chunks.ok() && second_chunks.ok(), "could not create fragmented Arrow columns");
+
+    auto first_result = from_arrow<i64>(std::move(first_chunks).ValueUnsafe());
+    auto second_result = from_arrow<i64>(std::move(second_chunks).ValueUnsafe());
+    require(first_result.ok() && second_result.ok(), "could not import fragmented Arrow columns");
+    auto first = std::move(first_result).ValueUnsafe();
+    auto second = std::move(second_result).ValueUnsafe();
+    auto native = ScalarValue<Column<i64>>::from_literal({1, NULL_VALUE, 3, 4});
+    auto arrow_literal = ScalarValue<>::from_literal(first.runtime_type(), {i64{1}, NULL_VALUE, i64{3}, i64{4}});
+    auto native_different = ScalarValue<Column<i64>>::from_literal({i64{1}, NULL_VALUE, i64{3}, i64{5}});
+
+    require(&arrow_literal.runtime_type() == &first.runtime_type() && first.equals(second.view()) &&
+                first.equals(native.view()) && native.equals(first.view()) &&
+                arrow_literal.equals(first.view()) && first.equals(arrow_literal.view()),
+            "column equality depended on Arrow chunk boundaries or storage representation");
+    require(!first.equals(native_different.view()) && !native_different.equals(first.view()),
+            "column equality ignored a different cell value");
+}
+
+void test_exact_arrow_frame_literal_and_native_equality() {
+    auto table = arrow::Table::Make(
+        arrow::schema({arrow::field("size", arrow::int64(), true), arrow::field("bid", arrow::float64(), true),
+                       arrow::field("ask", arrow::float64(), true)}),
+        std::vector<std::shared_ptr<arrow::Array>>{int_array({7, std::nullopt}), double_array({12.5, 14.5}),
+                                                   double_array({13.5, 15.5})});
+    auto imported_result = from_arrow<Quotes>(table);
+    require(imported_result.ok(), "could not import an Arrow frame for literal runtime testing");
+    auto imported = std::move(imported_result).ValueUnsafe();
+
+    auto arrow_literal = ScalarValue<>::from_literal(
+        imported.runtime_type(),
+        {{"ask", {13.5, 15.5}}, {symbol{"size"}, {i64{7}, NULL_VALUE}}, {"bid", {12.5, 14.5}}});
+    auto native = ScalarValue<Frame<Quotes>>::from_literal(
+        {{"size", {i64{7}, NULL_VALUE}}, {"bid", {12.5, 14.5}}, {"ask", {13.5, 15.5}}});
+    auto different_native = ScalarValue<Frame<Quotes>>::from_literal(
+        {{"size", {i64{7}, NULL_VALUE}}, {"bid", {12.5, 14.5}}, {"ask", {13.5, 99.5}}});
+
+    const auto arrow_scalar = arrow_literal.view();
+    const auto arrow_view = Scalar<Frame<Quotes>>::from(arrow_scalar).value();
+    require(&arrow_literal.runtime_type() == &imported.runtime_type() && arrow_view.size() == 2 &&
+                arrow_view.columns().size.cell(1) == std::nullopt && arrow_view.columns().ask.cell(1) == 15.5,
+            "Arrow frame literal did not use its exact runtime or preserve values and nulls");
+    require(arrow_literal.equals(native.view()) && native.equals(arrow_literal.view()),
+            "native and Arrow frame equality differed for equal values");
+    require(!arrow_literal.equals(different_native.view()) && !different_native.equals(arrow_literal.view()),
+            "native and Arrow frame equality ignored a different cell value");
+}
+
 void test_arrow_scalar_owners() {
     auto table = arrow::Table::Make(
         arrow::schema({arrow::field("size", arrow::int64(), true), arrow::field("bid", arrow::float64(), true),
@@ -565,6 +618,8 @@ int main() {
     test_computed_tsc_arrow_export_preserves_traversal_and_copy_ownership();
     test_null_only_and_empty_exports();
     test_imports_and_runtime_lifetime();
+    test_column_equality_across_arrow_chunks();
+    test_exact_arrow_frame_literal_and_native_equality();
     test_zero_column_row_count();
     test_schema_validation();
     test_arrow_scalar_owners();

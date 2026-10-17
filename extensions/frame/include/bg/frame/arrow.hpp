@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/frame/frame.hpp>
+#include <bg/frame/literal.hpp>
 
 #include <arrow/api.h>
 #include <arrow/array/data.h>
@@ -50,6 +51,7 @@ inline arrow::Status check_length(std::size_t size) {
 class ArrowRuntimeFrameStorage;
 FrameReadStorage frame_read_storage(const ArrowRuntimeFrameStorage &storage, const FrameScalarRuntimeType &runtime);
 const ScalarRuntimeType &runtime_schema_frame_scalar_runtime(const FrameType &type);
+void register_arrow_column_literal_runtime(const ScalarRuntimeType &runtime);
 
 template <typename Semantic> class ArrowScalarRuntimeBase : public ScalarRuntimeType {
   protected:
@@ -317,8 +319,10 @@ class ArrowScalarRuntime final : public ArrowScalarRuntimeBase<Semantic> {
         std::construct_at(static_cast<Storage *>(destination), *static_cast<const Storage *>(source));
     }
     std::size_t hash(const void *) const noexcept override { return 0; }
-    bool equals(const void *, const ScalarData &) const noexcept override { return false; }
-    bool equals_same_type(const void *, const ScalarData &) const noexcept override { return false; }
+    bool equals_same_type(const void *value, const ScalarData &other) const override {
+        const auto left = ArrowScalarValueRead<Storage, Value>::read(*static_cast<const Storage *>(value));
+        return column_values_equal(left, bg::details::scalar_data_value<Semantic>(other));
+    }
     void destroy(void *value, allocator &) const noexcept override { std::destroy_at(static_cast<Storage *>(value)); }
     bool accepts_input(const ScalarRuntimeType &source) const noexcept override { return &source == this; }
 
@@ -343,7 +347,9 @@ const ArrowScalarRuntime<Semantic, Storage, Value> &scalar_runtime() {
 template <cell_type T>
 const ArrowScalarRuntime<Column<T>, ArrowColumnReadSource<T>, ColumnView<T>> &column_scalar_runtime() {
     static_cast<void>(cpp_scalar_runtime_type<Column<T>>());
-    return scalar_runtime<Column<T>, ArrowColumnReadSource<T>, ColumnView<T>>();
+    const auto &runtime = scalar_runtime<Column<T>, ArrowColumnReadSource<T>, ColumnView<T>>();
+    register_arrow_column_literal_runtime(runtime);
+    return runtime;
 }
 
 using ArrowRuntimeFrameColumn =

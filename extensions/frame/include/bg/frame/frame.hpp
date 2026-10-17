@@ -101,6 +101,7 @@ class FrameType final : public ScalarType {
     void format_name(std::string &result) const override;
     const SchemaType &schema_type() const noexcept { return *schema_; }
     bool is_resolved() const noexcept override { return schema_->is_resolved(); }
+    bool supports_equality() const noexcept override { return true; }
     const Type &resolve(const TypeMap &type_map) const override;
 
   protected:
@@ -360,6 +361,9 @@ class FrameScalarRuntimeType : public ScalarRuntimeType {
     virtual FrameReadStorage read_storage(const ScalarData &source) const = 0;
     virtual details::FrameSnapshotOwner *snapshot_owner(const ScalarData &) const noexcept { return nullptr; }
     const ScalarRuntimeType &runtime_type_for_copy(const ScalarData &source) const override;
+    bool equals(const void *value, const ScalarData &other) const override;
+    bool equals(ScalarDataMode mode, std::uintptr_t data, const ScalarData &other) const override;
+    bool equals_same_type(const void *value, const ScalarData &other) const override;
 
   protected:
     using ScalarRuntimeType::ScalarRuntimeType;
@@ -991,14 +995,17 @@ class FrameViewScalarRuntimeType final : public FrameScalarRuntimeType {
                                  alignof(FrameView<Schema>), false, false, false} {}
 
     FrameReadStorage read_storage(const ScalarData &source) const override {
-        return frame_read_storage(*static_cast<const FrameView<Schema> *>(source.data()), this);
+        const auto &view = *static_cast<const FrameView<Schema> *>(source.data());
+        if (!view.source_data().empty()) {
+            const auto &source_runtime = static_cast<const FrameScalarRuntimeType &>(view.source_data().runtime_type());
+            return source_runtime.read_storage(view.source_data());
+        }
+        return frame_read_storage(view, this);
     }
     void read_value(ScalarDataMode, std::uintptr_t, void *) const override { std::terminate(); }
     void construct_initial_value(void *) const noexcept override { std::terminate(); }
     void copy_construct(void *, const void *, allocator &) const override { std::terminate(); }
     std::size_t hash(const void *) const noexcept override { return 0; }
-    bool equals(const void *, const ScalarData &) const noexcept override { return false; }
-    bool equals_same_type(const void *, const ScalarData &) const noexcept override { return false; }
     void destroy(void *, allocator &) const noexcept override {}
     bool accepts_input(const ScalarRuntimeType &) const noexcept override { return false; }
 
@@ -2580,8 +2587,6 @@ class FrameSeriesScalarRuntimeType final : public FrameScalarRuntimeType {
     void construct_initial_value(void *) const noexcept override { std::terminate(); }
     void copy_construct(void *, const void *, allocator &) const override { std::terminate(); }
     std::size_t hash(const void *) const noexcept override { return 0; }
-    bool equals(const void *, const ScalarData &) const noexcept override { return false; }
-    bool equals_same_type(const void *, const ScalarData &) const noexcept override { return false; }
     void destroy(void *, allocator &) const noexcept override {}
     bool accepts_input(const ScalarRuntimeType &) const noexcept override { return false; }
 
@@ -2617,8 +2622,6 @@ class FrameSnapshotRuntimeType final : public FrameScalarRuntimeType {
         do_construct_from_input(destination, input, memory);
     }
     std::size_t hash(const void *) const noexcept override { return 0; }
-    bool equals(const void *, const ScalarData &) const noexcept override { return false; }
-    bool equals_same_type(const void *, const ScalarData &) const noexcept override { return false; }
     void destroy(void *value, allocator &memory) const noexcept override {
         static_cast<void>(memory);
         auto *storage = static_cast<FrameSnapshotStorage *>(value);
@@ -3623,7 +3626,7 @@ struct scalar_storage_traits<frame::Frame<Schema>> {
     using stored_type = frame::FrameSnapshotStorage;
     using value_type = frame::FrameView<Schema>;
     static constexpr bool supports_byte_copy_initialization = true;
-    static constexpr bool supports_equality = false;
+    static constexpr bool supports_equality = true;
     static constexpr bool supports_hash = false;
     static constexpr bool supports_alternative_layouts = true;
     static constexpr bool uses_variable_memory = true;
@@ -3649,6 +3652,8 @@ struct scalar_storage_traits<frame::Frame<Schema>> {
             return value.source_data();
         return frame::details::frame_view_scalar_runtime_type<Schema>().borrow(std::addressof(value));
     }
+
+    static bool equals(value_type left, value_type right) { return borrow_value(left).equals(borrow_value(right)); }
 
     static const ScalarRuntimeType &runtime_type_for_copy(const ScalarData &source) {
         const auto &runtime = static_cast<const frame::FrameScalarRuntimeType &>(source.runtime_type());

@@ -11,11 +11,13 @@ if(NOT TARGET bg::bg)
     find_package(bg CONFIG REQUIRED)
 endif()
 
-add_library(bg_frame SHARED src/arithmetic.cpp src/column.cpp src/column_expression.cpp src/expression.cpp src/frame.cpp)
+add_library(bg_frame SHARED src/arithmetic.cpp src/column.cpp src/column_expression.cpp src/expression.cpp src/frame.cpp
+                            src/literal.cpp)
 add_library(bg::frame ALIAS bg_frame)
 
 target_compile_features(bg_frame PUBLIC cxx_std_23)
 target_link_libraries(bg_frame PUBLIC bg::bg bg::library)
+target_compile_definitions(bg_frame PRIVATE BG_FRAME_BUILDING_LIBRARY)
 set_target_properties(bg_frame PROPERTIES CXX_EXTENSIONS OFF WINDOWS_EXPORT_ALL_SYMBOLS ON)
 target_include_directories(
     bg_frame

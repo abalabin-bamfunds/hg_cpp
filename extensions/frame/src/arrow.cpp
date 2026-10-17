@@ -11,6 +11,44 @@ namespace {
 auto runtimes_mutex = std::mutex{};
 auto runtimes = std::unordered_map<std::type_index, std::unique_ptr<ScalarRuntimeType>>{};
 
+template <cell_type T>
+void construct_arrow_column_literal(const literal::ScalarLiteral &literal, const ScalarRuntimeType &runtime,
+                                    void *destination, allocator &memory) {
+    const auto &native_runtime = cpp_scalar_runtime_type<Column<T>>();
+    auto value = ScalarValue<>::from_literal(native_runtime, literal, memory);
+    const auto column = bg::details::scalar_data_value<Column<T>>(bg::details::scalar_data(value));
+    auto array = copy_to_arrow(column);
+    if (!array.ok())
+        throw std::runtime_error{array.status().ToString()};
+    static_cast<void>(runtime);
+    std::construct_at(static_cast<ArrowColumnReadSource<T> *>(destination), std::move(array).ValueUnsafe());
+}
+
+void construct_arrow_column_literal(const literal::ScalarLiteral &literal, const ScalarRuntimeType &runtime,
+                                    void *destination, allocator &memory) {
+    const auto &column = static_cast<const ColumnType &>(runtime.type());
+    if (std::addressof(column.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
+        return construct_arrow_column_literal<i64>(literal, runtime, destination, memory);
+    if (std::addressof(column.cell_type()) == std::addressof(cpp_scalar_type<double>()))
+        return construct_arrow_column_literal<double>(literal, runtime, destination, memory);
+    throw std::invalid_argument{"Arrow column literal supports only i64 and double cells"};
+}
+
+void construct_arrow_frame_literal(const literal::ScalarLiteral &literal, const ScalarRuntimeType &runtime,
+                                   void *destination, allocator &memory) {
+    const auto &frame_type = static_cast<const FrameType &>(runtime.type());
+    const auto &native_runtime = frame_snapshot_runtime_type(frame_type);
+    auto value = ScalarValue<>::from_literal(native_runtime, literal, memory);
+    const auto source = bg::details::scalar_data(value);
+    const auto native_storage = static_cast<const FrameScalarRuntimeType &>(native_runtime).read_storage(source);
+    auto frame = details::frame_view<bg::SCHEMA>(native_storage, source);
+    auto table = copy_to_arrow(frame);
+    if (!table.ok())
+        throw std::runtime_error{table.status().ToString()};
+    const auto &schema = static_cast<const Schema &>(frame_type.schema_type());
+    std::construct_at(static_cast<ArrowRuntimeFrameStorage *>(destination), std::move(table).ValueUnsafe(), schema);
+}
+
 class RuntimeSchemaFrameScalarRuntime final : public FrameScalarRuntimeType {
   public:
     explicit RuntimeSchemaFrameScalarRuntime(const FrameType &type)
@@ -37,8 +75,6 @@ class RuntimeSchemaFrameScalarRuntime final : public FrameScalarRuntimeType {
                           *static_cast<const ArrowRuntimeFrameStorage *>(source));
     }
     std::size_t hash(const void *) const noexcept override { return 0; }
-    bool equals(const void *, const ScalarData &) const noexcept override { return false; }
-    bool equals_same_type(const void *, const ScalarData &) const noexcept override { return false; }
     void destroy(void *value, allocator &) const noexcept override {
         std::destroy_at(static_cast<ArrowRuntimeFrameStorage *>(value));
     }
@@ -60,6 +96,10 @@ auto runtime_schema_runtimes =
     std::unordered_map<const FrameType *, std::unique_ptr<RuntimeSchemaFrameScalarRuntime>>{};
 
 } // namespace
+
+void register_arrow_column_literal_runtime(const ScalarRuntimeType &runtime) {
+    bg::frame::details::register_literal_runtime(runtime, ScalarLiteralOperations{&construct_arrow_column_literal});
+}
 
 const ScalarRuntimeType &canonical_scalar_runtime(const ScalarType &type, const std::type_info &identity,
                                                   scalar_runtime_factory factory) {
@@ -90,6 +130,10 @@ const ScalarRuntimeType &runtime_schema_frame_scalar_runtime(const FrameType &ty
 
     auto runtime = std::make_unique<RuntimeSchemaFrameScalarRuntime>(type);
     const auto entry = runtime_schema_runtimes.emplace(std::addressof(type), std::move(runtime)).first;
+    auto rollback = util::scope_exit{[&]() noexcept { runtime_schema_runtimes.erase(entry); }};
+    bg::frame::details::register_literal_runtime(
+        *entry->second, ScalarLiteralOperations{&construct_arrow_frame_literal});
+    rollback.release();
     return *entry->second;
 }
 

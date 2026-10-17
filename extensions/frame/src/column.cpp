@@ -1,4 +1,5 @@
 #include <bg/frame/tsc.hpp>
+#include <bg/frame/literal.hpp>
 
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
@@ -191,8 +192,11 @@ void register_column_series_default_runtime(const bg::TimeSeriesType &type) {
 } // namespace
 
 const bg::frame::ColumnType &bg::frame::column_type(const bg::ScalarType &cell_type) {
-    return bg::TypeRegistry::instance().get_or_create<bg::frame::ColumnType, std::hash<const bg::ScalarType *>>(
-        &cell_type, [&] { return std::make_unique<bg::frame::ColumnType>(cell_type); });
+    const auto &type =
+        bg::TypeRegistry::instance().get_or_create<bg::frame::ColumnType, std::hash<const bg::ScalarType *>>(
+            &cell_type, [&] { return std::make_unique<bg::frame::ColumnType>(cell_type); });
+    details::register_column_literal_type(type);
+    return type;
 }
 
 const bg::Type &bg::frame::ColumnType::resolve(const bg::TypeMap &type_map) const {

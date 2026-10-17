@@ -1,5 +1,6 @@
 #include <bg/frame/frame.hpp>
 #include <bg/frame/expression.hpp>
+#include <bg/frame/literal.hpp>
 #include <bg/bg.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/testing/test_graph.hpp>
@@ -147,6 +148,220 @@ class FailingResource final : public std::pmr::memory_resource {
 void require(bool condition, const char *message) {
     if (!condition)
         throw std::runtime_error{message};
+}
+
+void test_scalar_literals_and_content_equality() {
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    auto memory = allocator{resource};
+
+    auto sizes = ScalarValue<Column<i64>>::from_literal({i64{7}, NULL_VALUE, i64{9}}, memory);
+    const auto sizes_view = sizes.view().value();
+    require(sizes_view.size() == 3 && sizes_view.cell(0) == 7 && !sizes_view.cell(1) && sizes_view.cell(2) == 9,
+            "column literal did not preserve values and nulls");
+    auto other_sizes = ScalarValue<Column<i64>>::from_literal({i64{7}, NULL_VALUE, i64{9}}, memory);
+    require(sizes.equals(other_sizes.view()), "equal column literals compared unequal");
+
+    const auto distinct_null = literal::Sentinel{symbol{"frame.null"}};
+    auto rejected_distinct_sentinel = false;
+    try {
+        static_cast<void>(ScalarValue<Column<i64>>::from_literal({distinct_null}, memory));
+    } catch (const std::invalid_argument &) {
+        rejected_distinct_sentinel = true;
+    }
+    require(rejected_distinct_sentinel, "column literal treated a same-name sentinel as the frame null singleton");
+    auto frame = ScalarValue<Frame<Quotes>>::from_literal(
+        {{"ask", {13.5, 14.5}}, {symbol{"size"}, {i64{7}, NULL_VALUE}}, {"bid", {12.5, NULL_VALUE}}},
+        memory);
+    const auto frame_view = frame.view().value();
+    require(frame_view.size() == 2 && frame_view.columns().size.cell(1) == std::nullopt &&
+                frame_view.columns().bid.cell(0) == 12.5 && frame_view.columns().ask.cell(1) == 14.5,
+            "frame literal did not construct schema-ordered nullable columns");
+
+    auto same_frame = ScalarValue<Frame<Quotes>>{frame.view(), memory};
+    require(frame.equals(same_frame.view()), "equal frame values compared unequal");
+    const auto shared_source = Scalar<Frame<Quotes>>::from(frame.runtime_type(), frame.view().data());
+    auto shared_frame = ScalarValue<Frame<Quotes>>{shared_source};
+    require(bg::details::scalar_data(shared_frame).mode() == ScalarDataMode::shared_value,
+            "frame scalar copy did not retain shared storage");
+    require(frame.equals(shared_frame.view()),
+            "frame equality failed for a shared scalar value");
+
+    const auto &empty_schema = static_cast<const Schema &>(frame_schema_type<EmptySchema>());
+    const auto no_columns = std::span<const ColumnView<>>{};
+    auto empty_two_rows = make_frame_value(memory, empty_schema, 2, no_columns);
+    auto empty_three_rows = make_frame_value(memory, empty_schema, 3, no_columns);
+    require(!empty_two_rows.equals(empty_three_rows.view()),
+            "zero-column frame equality ignored the row count");
+
+    auto nan_left = ScalarValue<Column<double>>::from_literal({std::numeric_limits<double>::quiet_NaN()}, memory);
+    auto nan_right = ScalarValue<Column<double>>::from_literal({std::numeric_limits<double>::quiet_NaN()}, memory);
+    require(!nan_left.equals(nan_right.view()) && !nan_left.equals(nan_left.view()),
+            "column equality treated NaN cells as equal");
+
+    const auto empty_literal = literal::ScalarLiteral{};
+    auto empty_column = ScalarValue<Column<i64>>::from_literal(empty_literal, memory);
+    auto empty_frame = ScalarValue<Frame<EmptySchema>>::from_literal(empty_literal, memory);
+    require(empty_column.view().value().size() == 0 && empty_frame.view().value().size() == 0 &&
+                empty_frame.view().value().schema().field_count() == 0,
+            "empty column or frame literal did not construct an empty value");
+
+    auto different_frame = ScalarValue<Frame<Quotes>>::from_literal(
+        {{"size", {i64{7}, NULL_VALUE}}, {"bid", {12.5, NULL_VALUE}}, {"ask", {13.5, 99.5}}}, memory);
+    require(!frame.equals(different_frame.view()) && !different_frame.equals(frame.view()),
+            "frame equality treated different column values as equal");
+}
+
+void test_runtime_schema_and_malformed_frame_literals() {
+    const auto fields = std::array{
+        SchemaField{util::symbol{"number"}, &cpp_scalar_type<i64>()},
+        SchemaField{util::symbol{"price"}, &cpp_scalar_type<double>()},
+    };
+    const auto &schema = anonymous_schema(fields);
+    const auto &runtime = frame_snapshot_runtime_type(frame_type(schema));
+    auto memory_resource = FailingResource{};
+    auto memory = allocator{memory_resource};
+
+    {
+        auto value = ScalarValue<>::from_literal(runtime, {{"price", {12.5, 13.5}}, {"number", {i64{7}, NULL_VALUE}}},
+                                                 memory);
+        const auto erased_scalar = value.view();
+        const auto frame = Scalar<Frame<SCHEMA>>::from(erased_scalar).value();
+        require(frame.size() == 2 && frame.schema().field_count() == 2 && frame.column("number").cell<i64>(0) == 7 &&
+                    !frame.column("number").cell<i64>(1) && frame.column("price").cell<double>(1) == 13.5,
+                "runtime-schema frame literal lost its schema, values, or nulls");
+    }
+
+    const auto rejects = [&](const literal::ScalarLiteral &literal) {
+        try {
+            static_cast<void>(ScalarValue<Frame<Quotes>>::from_literal(literal, memory));
+        } catch (const std::invalid_argument &) {
+            return true;
+        }
+        return false;
+    };
+    require(rejects({{"size"}}), "frame literal accepted an entry without a column");
+    require(rejects({{"unknown", {i64{1}}}, {"bid", {12.5}}, {"ask", {13.5}}}),
+            "frame literal accepted an unknown column");
+    require(rejects({{"size", {i64{1}}}, {"bid", {12.5}}}),
+            "frame literal accepted a missing column");
+    require(rejects({{"size", {i64{1}}}, {"bid", {12.5}}, {"bid", {13.5}}, {"ask", {14.5}}}),
+            "frame literal accepted a duplicate column");
+    require(rejects({{"size", {12.5}}, {"bid", {12.5}}, {"ask", {13.5}}}),
+            "frame literal accepted a cell with the wrong type");
+    require(rejects({{"size", {i64{1}, i64{2}}}, {"bid", {12.5}}, {"ask", {13.5, 14.5}}}),
+            "frame literal accepted columns with different lengths");
+
+    auto malformed_resource = FailingResource{};
+    auto malformed_memory = allocator{malformed_resource};
+    auto malformed_rejected = false;
+    try {
+        static_cast<void>(ScalarValue<Frame<Quotes>>::from_literal(
+            {{"size", {i64{1}, i64{2}}}, {"bid", {12.5}}, {"ask", {13.5, 14.5}}}, malformed_memory));
+    } catch (const std::invalid_argument &) {
+        malformed_rejected = true;
+    }
+    require(malformed_rejected && malformed_resource.allocations == malformed_resource.deallocations,
+            "malformed frame literal leaked column allocations");
+    require(memory_resource.allocations == memory_resource.deallocations,
+            "runtime-schema frame literal leaked allocations");
+
+    auto allocation_failures = std::size_t{};
+    auto succeeded = false;
+    for (auto failure = std::size_t{1};; ++failure) {
+        auto attempt_resource = FailingResource{};
+        auto attempt_memory = allocator{attempt_resource};
+        attempt_resource.fail_at = failure;
+        try {
+            auto frame = ScalarValue<Frame<Quotes>>::from_literal(
+                {{"size", {i64{1}, i64{2}}}, {"bid", {12.5, 13.5}}, {"ask", {14.5, 15.5}}}, attempt_memory);
+            require(frame.view().value().size() == 2, "frame literal changed values during allocation retry");
+            succeeded = true;
+        } catch (const std::bad_alloc &) {
+            ++allocation_failures;
+        }
+        require(attempt_resource.allocations == attempt_resource.deallocations,
+                "frame literal leaked allocations during failure or success");
+        if (succeeded)
+            break;
+    }
+    require(allocation_failures != 0, "frame literal allocation retry did not exercise rollback");
+}
+
+void test_frame_literals_as_ordinary_time_series_inputs() {
+    using namespace bg::literals;
+
+    const auto copy_column = node([](In<TS<Column<i64>>> input, Out<TS<Column<i64>>> output) {
+        output.set_value(input.value_view());
+    });
+    const auto column_result = testing::test_graph(
+        copy_column, testing::input<TS<Column<i64>>>({{i64{1}, i64{2}}, {i64{3}, NULL_VALUE}}));
+    auto first_column = ScalarValue<Column<i64>>::from_literal({i64{1}, i64{2}});
+    auto second_column = ScalarValue<Column<i64>>::from_literal({i64{3}, NULL_VALUE});
+    require(column_result.equals<Column<i64>>({first_column.view().value(), second_column.view().value()}),
+            "ordinary TS<Column> literal inputs produced incorrect results");
+    require(column_result.equals({{i64{1}, i64{2}}, {i64{3}, NULL_VALUE}}),
+            "ordinary TS<Column> literal result comparison failed");
+
+    const auto copy_frame = node([](In<TS<Frame<Quotes>>> input, Out<TS<Frame<Quotes>>> output) {
+        output.set_value(input.value_view());
+    });
+    const auto frame_result = testing::test_graph(
+        copy_frame,
+        testing::input<TS<Frame<Quotes>>>({{{"size", {i64{1}}}, {"bid", {10.0}}, {"ask", {12.0}}},
+                                           {{"ask", {20.0}}, {"size", {i64{2}}}, {"bid", {20.0}}}}));
+    auto first_frame = ScalarValue<Frame<Quotes>>::from_literal(
+        {{"size", {i64{1}}}, {"bid", {10.0}}, {"ask", {12.0}}});
+    auto second_frame = ScalarValue<Frame<Quotes>>::from_literal(
+        {{"ask", {20.0}}, {"size", {i64{2}}}, {"bid", {20.0}}});
+    require(frame_result.equals<Frame<Quotes>>({first_frame.view().value(), second_frame.view().value()}),
+            "ordinary TS<Frame> literal inputs produced incorrect results");
+    require(frame_result.equals({{{"size", {i64{1}}}, {"bid", {10.0}}, {"ask", {12.0}}},
+                                 {{"ask", {20.0}}, {"size", {i64{2}}}, {"bid", {20.0}}}}),
+            "ordinary TS<Frame> literal result comparison failed");
+}
+
+void test_base_and_derived_frame_equality() {
+    using namespace bg::frame;
+
+    auto memory = allocator{};
+    const auto make_derived = [&](double ask) {
+        auto frame_value = Frame<InheritedFrame>{InheritedFrame<Column>{
+            InheritedFrameBase<Column>{Column<i64>{{i64{5}}}, Column<double>{{12.5}}}, Column<double>{{13.5}},
+            Column<double>{{ask}}}};
+        auto view = FrameView<InheritedFrame>{frame_value};
+        const auto scalar = Scalar<Frame<InheritedFrame>>::from(
+            frame::details::frame_view_scalar_runtime_type<InheritedFrame>(), std::addressof(view));
+        return ScalarValue<Frame<InheritedFrame>>{scalar, memory};
+    };
+
+    auto derived = make_derived(21.5);
+    auto equal_derived = make_derived(21.5);
+    auto changed_derived = make_derived(22.5);
+    const auto derived_scalar = derived.view();
+    const auto equal_derived_scalar = equal_derived.view();
+    const auto changed_derived_scalar = changed_derived.view();
+    const auto base_scalar = Scalar<Frame<InheritedFrameBase>>::from(derived_scalar);
+    const auto equal_base_scalar = Scalar<Frame<InheritedFrameBase>>::from(equal_derived_scalar);
+    const auto changed_base_scalar = Scalar<Frame<InheritedFrameBase>>::from(changed_derived_scalar);
+    require(base_scalar.value().schema().field_count() == 3 && derived.equals(base_scalar) &&
+                base_scalar.equals(derived.view()) && equal_derived.equals(base_scalar) &&
+                base_scalar.equals(equal_derived.view()),
+            "base and derived frame runtimes compared equal values as different");
+    require(!derived.equals(changed_base_scalar) && !changed_base_scalar.equals(derived.view()),
+            "base and derived frame equality ignored a derived-only field change");
+    auto copied_base = ScalarValue<Frame<InheritedFrameBase>>{base_scalar, memory};
+    const auto copied_base_scalar = copied_base.view();
+    const auto copied_base_view = Scalar<Frame<InheritedFrameBase>>::from(copied_base_scalar).value();
+    require(copied_base_view.schema().field_count() == 3 && derived.equals(copied_base_scalar) &&
+                copied_base_scalar.equals(derived.view()),
+            "owning copy through a base frame view lost the actual derived schema");
+
+    auto base_frame = Frame<InheritedFrameBase>{InheritedFrameBase<Column>{
+        Column<i64>{{i64{5}}}, Column<double>{{12.5}}}};
+    auto base_frame_view = FrameView<InheritedFrameBase>{base_frame};
+    auto base_value = ScalarValue<Frame<InheritedFrameBase>>{base_frame_view, memory};
+    require(!derived.equals(base_value.view()) && !base_value.equals(derived.view()),
+            "frame equality ignored a different actual schema");
 }
 
 template <typename Function>
@@ -5013,6 +5228,10 @@ void test_runtime_schema_computed_tsf_output() {
 
 int main() {
     try {
+        test_scalar_literals_and_content_equality();
+        test_runtime_schema_and_malformed_frame_literals();
+        test_frame_literals_as_ordinary_time_series_inputs();
+        test_base_and_derived_frame_equality();
         test_runtime_native_storage_mixed_and_zero_column_schemas();
         test_native_storage_validates_row_and_patch_shape_before_mutation();
         test_native_storage_changed_columns_beyond_inline_capacity();
