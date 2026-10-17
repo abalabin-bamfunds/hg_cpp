@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bg/evaluation_time.hpp>
-#include <bg/evaluation_interruption.hpp>
+#include <bg/periodic_callback.hpp>
 
 namespace bg {
 
@@ -11,13 +11,13 @@ class EvaluationProfile;
 class SimulationEvaluationEngine {
   public:
     void run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
-             const EvaluationInterruption &interruption = {}) const;
+             const PeriodicCallback &periodic_callback = {}) const;
     void run(RuntimeGraph &runtime_graph, EvaluationTime start_time, EvaluationProfile &profile,
-             const EvaluationInterruption &interruption = {}) const;
+             const PeriodicCallback &periodic_callback = {}) const;
 
   private:
     void run(RuntimeGraph &runtime_graph, EvaluationTime start_time, EvaluationProfile *profile,
-             const EvaluationInterruption &interruption) const;
+             const PeriodicCallback &periodic_callback) const;
 };
 
 } // namespace bg

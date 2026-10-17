@@ -470,7 +470,7 @@ graph compilation or evaluation.
   wall-clock timer readiness and coalescing, and pending queue priority through minimum-tick chains
 - realtime idle and timed waits, cancellation before startup and between complete cycles, future-start waiting,
   queue closure on normal and failed runs, retained handles, and profiling
-- interruption checks at complete outer-cycle boundaries, steady-clock intervals independent of simulation time,
+- periodic callbacks at complete outer-cycle boundaries, steady-clock intervals independent of simulation time,
   idle and future-start waits without extra cycles, and exception cleanup with and without profiling
 - system and injected wall-clock access during lifecycle, nested evaluation, invalidation, and failure cleanup
 - shared global evaluation context and outer graph/evaluator identity across nested lifecycle calls;

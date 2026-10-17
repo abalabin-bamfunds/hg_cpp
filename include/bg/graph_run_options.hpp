@@ -2,7 +2,7 @@
 
 #include <bg/evaluation_profiler.hpp>
 #include <bg/evaluation_engine.hpp>
-#include <bg/evaluation_interruption.hpp>
+#include <bg/periodic_callback.hpp>
 #include <bg/evaluation_time.hpp>
 #include <bg/global_state.hpp>
 #include <bg/service_catalogue.hpp>
@@ -19,7 +19,7 @@ struct GraphRunOptions {
     EvaluationEngine engine{EvaluationEngine::simulation};
     std::optional<EvaluationTime> start_time{};
     std::stop_token stop_token{};
-    EvaluationInterruption interruption{};
+    PeriodicCallback periodic_callback{};
 };
 
 } // namespace bg

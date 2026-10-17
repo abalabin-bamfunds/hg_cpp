@@ -2,7 +2,7 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/evaluation_engine.hpp>
-#include <bg/evaluation_interruption.hpp>
+#include <bg/periodic_callback.hpp>
 #include <bg/evaluation_profile.hpp>
 #include <bg/evaluation_time.hpp>
 #include <bg/feedback.hpp>

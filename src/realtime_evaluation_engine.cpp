@@ -1,7 +1,7 @@
 #include <bg/realtime_evaluation_engine.hpp>
 
 #include <bg/details/evaluation_scratch.hpp>
-#include <bg/details/evaluation_interruption_checker.hpp>
+#include <bg/details/periodic_callback_runner.hpp>
 #include <bg/details/engine_wakeup.hpp>
 #include <bg/evaluation_context.hpp>
 #include <bg/evaluation_profile.hpp>
@@ -18,34 +18,34 @@ namespace bg {
 
 void RealtimeEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
                                    std::stop_token stop_token,
-                                   const EvaluationInterruption &interruption) const {
-    run(runtime_graph, start_time, nullptr, stop_token, interruption);
+                                   const PeriodicCallback &periodic_callback) const {
+    run(runtime_graph, start_time, nullptr, stop_token, periodic_callback);
 }
 
 void RealtimeEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
                                    EvaluationProfile &profile, std::stop_token stop_token,
-                                   const EvaluationInterruption &interruption) const {
-    run(runtime_graph, start_time, &profile, stop_token, interruption);
+                                   const PeriodicCallback &periodic_callback) const {
+    run(runtime_graph, start_time, &profile, stop_token, periodic_callback);
 }
 
 void RealtimeEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
                                    EvaluationProfile *profile, std::stop_token stop_token,
-                                   const EvaluationInterruption &interruption) const {
+                                   const PeriodicCallback &periodic_callback) const {
     if (stop_token.stop_requested()) {
         return;
     }
-    auto interruption_checker = details::EvaluationInterruptionChecker{interruption};
+    auto callback_runner = details::PeriodicCallbackRunner{periodic_callback};
     if (!TimeSeriesState::can_represent(start_time)) {
         throw std::invalid_argument{"evaluation time cannot be represented by a time series"};
     }
 
-    interruption_checker.check_now();
+    callback_runner.run_now();
 
     auto wakeup = details::EngineWakeup{};
     auto wake_on_stop = std::stop_callback{stop_token, [&wakeup]() noexcept { wakeup.notify(); }};
     const auto &wall_clock = SystemWallClock::instance();
     const auto wait_until = [&](EvaluationTime deadline) {
-        if (!interruption_checker.enabled()) {
+        if (!callback_runner.enabled()) {
             wakeup.wait_until(deadline);
             return;
         }
@@ -53,12 +53,12 @@ void RealtimeEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime s
         const auto remaining = std::chrono::duration<long double>{deadline.time_since_epoch()} -
                                std::chrono::duration<long double>{wall_clock.now().time_since_epoch()};
         const auto steady_now = std::chrono::steady_clock::now();
-        const auto until_check = std::chrono::duration<long double>{
-            interruption_checker.next_check().time_since_epoch() - steady_now.time_since_epoch()};
-        auto wake_deadline = interruption_checker.next_check();
+        const auto until_callback = std::chrono::duration<long double>{
+            callback_runner.next_run().time_since_epoch() - steady_now.time_since_epoch()};
+        auto wake_deadline = callback_runner.next_run();
         if (remaining <= std::chrono::duration<long double>::zero()) {
             wake_deadline = steady_now;
-        } else if (remaining < until_check) {
+        } else if (remaining < until_callback) {
             const auto bounded_remaining = std::chrono::duration_cast<std::chrono::steady_clock::duration>(remaining);
             wake_deadline = steady_now + bounded_remaining;
         }
@@ -66,7 +66,7 @@ void RealtimeEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime s
     };
     while (!stop_token.stop_requested() && wall_clock.now() < start_time) {
         wait_until(start_time);
-        interruption_checker.check_if_due();
+        callback_runner.run_if_due();
     }
     if (stop_token.stop_requested()) {
         return;
@@ -96,7 +96,7 @@ void RealtimeEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime s
 
     auto &root_evaluator = *global_context.root_runtime_graph_evaluator;
     while (true) {
-        interruption_checker.check_if_due();
+        callback_runner.run_if_due();
         if (stop_token.stop_requested()) {
             break;
         }
@@ -127,14 +127,14 @@ void RealtimeEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime s
         }
         if (deadline) {
             wait_until(*deadline);
-        } else if (interruption_checker.enabled()) {
-            wakeup.wait_until(interruption_checker.next_check());
+        } else if (callback_runner.enabled()) {
+            wakeup.wait_until(callback_runner.next_run());
         } else {
             wakeup.wait();
         }
     }
 
-    interruption_checker.check_now();
+    callback_runner.run_now();
     auto stop_context = EvaluationContext{global_context, runtime_graph.evaluation_time(), runtime_graph};
     runtime_graph.stop(stop_context);
     stop_graph.release();

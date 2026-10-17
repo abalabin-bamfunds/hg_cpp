@@ -124,7 +124,7 @@ TEST_CASE("timed scheduling orders requests by evaluation time",
     CHECK(unordered_schedule_definition::evaluation_times == std::vector{time(3), time(6), time(10)});
 }
 
-TEST_CASE("simulation interruption checks run between cycles and stop a started graph on failure",
+TEST_CASE("simulation periodic callback runs between cycles and stops a started graph on failure",
           "[evaluation][simulation][feature:simulation][feature:lifecycle][failure]") {
     const auto scheduled_source = bg::node<scheduled_source_definition>();
     const auto int_sink = bg::node<int_sink_definition>();
@@ -143,19 +143,19 @@ TEST_CASE("simulation interruption checks run between cycles and stop a started 
     scheduled_source_definition::evaluation_delay = std::chrono::milliseconds{2};
     int_sink_definition::values.clear();
 
-    auto checks = std::size_t{};
-    auto interruption = bg::EvaluationInterruption{
-        .check = [&] {
-            ++checks;
+    auto callback_calls = std::size_t{};
+    auto periodic_callback = bg::PeriodicCallback{
+        .callback = [&] {
+            ++callback_calls;
             if (!scheduled_source_definition::evaluation_times.empty()) {
-                throw std::runtime_error{"simulation interrupted"};
+                throw std::runtime_error{"periodic callback failed"};
             }
         },
         .interval = std::chrono::milliseconds{1},
     };
 
-    CHECK_THROWS_AS(bg::SimulationEvaluationEngine{}.run(runtime, time(1), interruption), std::runtime_error);
-    CHECK(checks >= 2);
+    CHECK_THROWS_AS(bg::SimulationEvaluationEngine{}.run(runtime, time(1), periodic_callback), std::runtime_error);
+    CHECK(callback_calls >= 2);
     CHECK(scheduled_source_definition::evaluation_times == std::vector{time(3)});
     CHECK(int_sink_definition::values == std::vector{1, 2});
     CHECK(scheduled_source_definition::stop_count == 1);
@@ -163,7 +163,7 @@ TEST_CASE("simulation interruption checks run between cycles and stop a started 
     scheduled_source_definition::evaluation_delay = std::chrono::milliseconds{};
 }
 
-TEST_CASE("simulation validates an enabled interruption interval before starting",
+TEST_CASE("simulation validates an enabled periodic callback interval before starting",
           "[evaluation][simulation][feature:simulation][failure]") {
     const auto scheduled_source = bg::node<scheduled_source_definition>();
     auto wiring = bg::GraphWiring{};
@@ -179,11 +179,11 @@ TEST_CASE("simulation validates an enabled interruption interval before starting
     scheduled_source_definition::evaluation_times.clear();
     scheduled_source_definition::stop_count = 0;
 
-    const auto interruption = bg::EvaluationInterruption{
-        .check = [] {},
+    const auto periodic_callback = bg::PeriodicCallback{
+        .callback = [] {},
         .interval = std::chrono::steady_clock::duration::zero(),
     };
-    CHECK_THROWS_AS(bg::SimulationEvaluationEngine{}.run(runtime, time(1), interruption), std::invalid_argument);
+    CHECK_THROWS_AS(bg::SimulationEvaluationEngine{}.run(runtime, time(1), periodic_callback), std::invalid_argument);
     CHECK(scheduled_source_definition::evaluation_times.empty());
     CHECK(scheduled_source_definition::stop_count == 0);
 }

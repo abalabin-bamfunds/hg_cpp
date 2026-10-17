@@ -245,7 +245,7 @@ destroyed. Simulation uses its normal termination condition and ignores a stop
 token.
 
 On Python's main thread, `run_graph` and `test_graph` process Python signals
-through [interruption checks](evaluation.md#interruption-checks). Ctrl+C raises
+through a [periodic callback](evaluation.md#periodic-callbacks). Ctrl+C raises
 `KeyboardInterrupt` after graph cleanup. Realtime execution also checks during
 idle and future-start waits. Checks run approximately every 50 milliseconds,
 subject to completion of the current outer cycle. Python callbacks can process

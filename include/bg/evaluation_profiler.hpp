@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bg/allocator.hpp>
-#include <bg/evaluation_interruption.hpp>
+#include <bg/periodic_callback.hpp>
 #include <bg/evaluation_engine.hpp>
 #include <bg/evaluation_profile.hpp>
 
@@ -68,7 +68,7 @@ class EvaluationProfiler {
         explicit Recorder(EvaluationProfiler &profiler) : profiler_{profiler} {}
         void run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
                  EvaluationEngine engine = EvaluationEngine::simulation, std::stop_token stop_token = {},
-                 const EvaluationInterruption &interruption = {}) const;
+                 const PeriodicCallback &periodic_callback = {}) const;
 
       private:
         EvaluationProfiler &profiler_;

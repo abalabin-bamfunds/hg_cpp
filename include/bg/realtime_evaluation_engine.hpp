@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bg/evaluation_time.hpp>
-#include <bg/evaluation_interruption.hpp>
+#include <bg/periodic_callback.hpp>
 
 #include <stop_token>
 
@@ -15,13 +15,13 @@ class EvaluationProfile;
 class RealtimeEvaluationEngine {
   public:
     void run(RuntimeGraph &runtime_graph, EvaluationTime start_time, std::stop_token stop_token = {},
-             const EvaluationInterruption &interruption = {}) const;
+             const PeriodicCallback &periodic_callback = {}) const;
     void run(RuntimeGraph &runtime_graph, EvaluationTime start_time, EvaluationProfile &profile,
-             std::stop_token stop_token = {}, const EvaluationInterruption &interruption = {}) const;
+             std::stop_token stop_token = {}, const PeriodicCallback &periodic_callback = {}) const;
 
   private:
     void run(RuntimeGraph &runtime_graph, EvaluationTime start_time, EvaluationProfile *profile,
-             std::stop_token stop_token, const EvaluationInterruption &interruption) const;
+             std::stop_token stop_token, const PeriodicCallback &periodic_callback) const;
 };
 
 } // namespace bg

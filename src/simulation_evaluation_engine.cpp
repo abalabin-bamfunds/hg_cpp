@@ -1,7 +1,7 @@
 #include <bg/simulation_evaluation_engine.hpp>
 
 #include <bg/details/evaluation_scratch.hpp>
-#include <bg/details/evaluation_interruption_checker.hpp>
+#include <bg/details/periodic_callback_runner.hpp>
 #include <bg/evaluation_context.hpp>
 #include <bg/evaluation_profile.hpp>
 #include <bg/graph/runtime_graph.hpp>
@@ -26,21 +26,21 @@ class SimulationWallClock final : public WallClock {
 } // namespace
 
 void SimulationEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
-                                     const EvaluationInterruption &interruption) const {
-    run(runtime_graph, start_time, nullptr, interruption);
+                                     const PeriodicCallback &periodic_callback) const {
+    run(runtime_graph, start_time, nullptr, periodic_callback);
 }
 
 void SimulationEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
                                      EvaluationProfile &profile,
-                                     const EvaluationInterruption &interruption) const {
-    run(runtime_graph, start_time, &profile, interruption);
+                                     const PeriodicCallback &periodic_callback) const {
+    run(runtime_graph, start_time, &profile, periodic_callback);
 }
 
 void SimulationEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
                                      EvaluationProfile *profile,
-                                     const EvaluationInterruption &interruption) const {
-    auto interruption_checker = details::EvaluationInterruptionChecker{interruption};
-    interruption_checker.check_now();
+                                     const PeriodicCallback &periodic_callback) const {
+    auto callback_runner = details::PeriodicCallbackRunner{periodic_callback};
+    callback_runner.run_now();
 
     auto scratch = details::EvaluationScratch{runtime_graph.allocation().memory_resource()};
     auto wall_clock = SimulationWallClock{};
@@ -74,10 +74,10 @@ void SimulationEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime
     evaluate(start_time);
 
     while (true) {
-        interruption_checker.check_if_due();
+        callback_runner.run_if_due();
         auto next_time = next_scheduled_time();
         if (!next_time) {
-            interruption_checker.check_now();
+            callback_runner.run_now();
             next_time = next_scheduled_time();
             if (!next_time) {
                 break;

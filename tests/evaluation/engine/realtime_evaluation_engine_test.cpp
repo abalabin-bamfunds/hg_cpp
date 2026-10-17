@@ -1,5 +1,5 @@
 #include <bg/details/engine_wakeup.hpp>
-#include <bg/evaluation_interruption.hpp>
+#include <bg/periodic_callback.hpp>
 #include <bg/evaluation_profile.hpp>
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
@@ -589,34 +589,34 @@ TEST_CASE("realtime engines stop while idle and reject pre-cancelled starts",
     CHECK(RealtimeProbe::stop_count == 1);
 }
 
-TEST_CASE("realtime interruption polls idle waits and stops after the completed cycle",
+TEST_CASE("realtime periodic callback polls idle waits and stops after the completed cycle",
           "[evaluation][realtime][feature:realtime][feature:lifecycle][failure]") {
     RealtimeProbe::reset();
     ProbeGraph graph;
     const auto compiled = bg::CompiledGraph{graph.wiring};
     auto global_state = bg::GlobalState{};
     auto runtime = bg::RuntimeGraph{compiled, global_state};
-    auto checks = std::size_t{};
-    const auto interruption = bg::EvaluationInterruption{
-        .check = [&] {
-            if (++checks == 2) {
-                throw std::runtime_error{"realtime interrupted"};
+    auto callback_calls = std::size_t{};
+    const auto periodic_callback = bg::PeriodicCallback{
+        .callback = [&] {
+            if (++callback_calls == 2) {
+                throw std::runtime_error{"periodic callback failed"};
             }
         },
         .interval = std::chrono::milliseconds{1},
     };
     const auto start = bg::SystemWallClock::instance().now();
 
-    CHECK_THROWS_AS(bg::RealtimeEvaluationEngine{}.run(runtime, start, std::stop_token{}, interruption),
+    CHECK_THROWS_AS(bg::RealtimeEvaluationEngine{}.run(runtime, start, std::stop_token{}, periodic_callback),
                     std::runtime_error);
-    CHECK(checks == 2);
+    CHECK(callback_calls == 2);
     CHECK(RealtimeProbe::start_count == 1);
     CHECK(RealtimeProbe::evaluation_times == std::vector{start});
     CHECK(RealtimeProbe::stop_count == 1);
     CHECK(runtime.evaluation_time() == start);
 }
 
-TEST_CASE("realtime interruption checks during future startup without starting the graph",
+TEST_CASE("realtime periodic callbacks run during future startup without starting the graph",
           "[evaluation][realtime][feature:realtime][feature:lifecycle][failure]") {
     SECTION("polling the future-start wait") {
         RealtimeProbe::reset();
@@ -624,43 +624,43 @@ TEST_CASE("realtime interruption checks during future startup without starting t
         const auto compiled = bg::CompiledGraph{graph.wiring};
         auto global_state = bg::GlobalState{};
         auto runtime = bg::RuntimeGraph{compiled, global_state};
-        auto checks = std::size_t{};
-        const auto interruption = bg::EvaluationInterruption{
-            .check = [&] {
-                if (++checks == 2) {
-                    throw std::runtime_error{"future startup interrupted"};
+        auto callback_calls = std::size_t{};
+        const auto periodic_callback = bg::PeriodicCallback{
+            .callback = [&] {
+                if (++callback_calls == 2) {
+                    throw std::runtime_error{"periodic callback failed during future startup"};
                 }
             },
             .interval = std::chrono::milliseconds{1},
         };
         const auto future_start = bg::SystemWallClock::instance().now() + std::chrono::hours{1};
 
-        CHECK_THROWS_AS(bg::RealtimeEvaluationEngine{}.run(runtime, future_start, std::stop_token{}, interruption),
+        CHECK_THROWS_AS(bg::RealtimeEvaluationEngine{}.run(runtime, future_start, std::stop_token{}, periodic_callback),
                         std::runtime_error);
-        CHECK(checks == 2);
+        CHECK(callback_calls == 2);
         CHECK(RealtimeProbe::start_count == 0);
         CHECK(RealtimeProbe::evaluation_times.empty());
         CHECK(RealtimeProbe::stop_count == 0);
     }
 
-    SECTION("an initial interruption check") {
+    SECTION("an initial periodic callback") {
         RealtimeProbe::reset();
         ProbeGraph graph;
         const auto compiled = bg::CompiledGraph{graph.wiring};
         auto global_state = bg::GlobalState{};
         auto runtime = bg::RuntimeGraph{compiled, global_state};
-        auto checks = std::size_t{};
-        const auto interruption = bg::EvaluationInterruption{
-            .check = [&] {
-                ++checks;
-                throw std::runtime_error{"startup interrupted"};
+        auto callback_calls = std::size_t{};
+        const auto periodic_callback = bg::PeriodicCallback{
+            .callback = [&] {
+                ++callback_calls;
+                throw std::runtime_error{"periodic callback failed during startup"};
             },
         };
 
         CHECK_THROWS_AS(bg::RealtimeEvaluationEngine{}.run(
-                            runtime, bg::SystemWallClock::instance().now(), std::stop_token{}, interruption),
+                            runtime, bg::SystemWallClock::instance().now(), std::stop_token{}, periodic_callback),
                         std::runtime_error);
-        CHECK(checks == 1);
+        CHECK(callback_calls == 1);
         CHECK(RealtimeProbe::start_count == 0);
         CHECK(RealtimeProbe::stop_count == 0);
     }
