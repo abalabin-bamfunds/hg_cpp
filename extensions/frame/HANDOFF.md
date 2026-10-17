@@ -1,19 +1,13 @@
 # Frame foundation handoff
 
-Updated: 2026-10-16. The active lane is rebased onto main `36eb21fb`.
+Updated: 2026-10-17. The active lane is rebased onto main `36eb21fb`.
 The expression implementation is committed as `cadf1c38` on the lane.
-Release Arrow-on verification against main `359e1aee` passed 6/6 suites;
-the rebuild against `36eb21fb` found four test targets that still use
-`ScalarValue::value()` instead of `ScalarValue::view().value()`. Both extension
-libraries compiled, and the expression and provider integration tests passed.
-The previous Debug and Arrow-off verification used matching BG dependencies
-built from main `19403a4d`. This commit includes double-column addition and subtraction, expression construction,
-scalar broadcasts, shared-selection arithmetic, filter-owned row order, and
-shared heterogeneous expression execution. Independent review
-of the current factory, compiler, evaluator, and mixed-type tests found no
-correctness blockers. Shared-expression and subtraction consumer verification
-passed. See
-[Verification](#verification).
+Scalar Column/Frame literals and content equality are committed as `7db3b2f9`.
+They use BG's existing literal dispatch and scalar test capture. All six
+Release Arrow-on suites passed against installed main `36eb21fb`, including
+an independent rerun. TSF/TSC literals, delta comparison, and capture handlers
+remain outstanding. See
+[Literal support](#literal-support) and [Verification](#verification).
 
 ## Work locations
 
@@ -23,16 +17,18 @@ completed lane retirement, and consumer verification.
 | Work | Location / branch | State |
 | --- | --- | --- |
 | Main | `/home/abalabin/_bg`, `main` | Rebase target `36eb21fb`; literal APIs, wiring source-type matching, and test-graph output capture integrated |
-| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Arithmetic and shared expression execution committed with this handoff |
+| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Expressions committed as `cadf1c38`; scalar literals and equality committed as `7db3b2f9`; unmerged |
 | Test graph output capture | Main | Integrated through `36eb21fb`, including shared extension comparison dispatch |
 | Numeric value extraction | `.lanes/library-numeric-values` | Held; frame does not depend on it |
 | Historical frame work | `extensions/frame/archive/` | Proposals, probe sources, and benchmark results preserved; see its README |
 | Schema field reflection | Main | Integrated and covered by BG schema reflection tests |
 
-The Release Arrow-on consumer uses BG, ddvisitor, and tpack from
+The Release Arrow-on consumer uses BG from
 `extensions/frame/build/dependencies/bg-release-36eb21fb-install`, built in
-`extensions/frame/build/dependencies/bg-release-36eb21fb` with testing disabled. The Debug and
-Arrow-off consumers retain their previous matching installations under
+`extensions/frame/build/dependencies/bg-release-36eb21fb` with testing disabled.
+Its cached ddvisitor and tpack packages retain the preceding
+`bg-release-359e1aee-install` prefix; those dependencies are unchanged.
+The Debug and Arrow-off consumers retain their previous matching installations under
 `extensions/frame/build/dependencies/bg-debug-install` and
 `extensions/frame/build/dependencies/bg-release-install`. Each extension build
 must match its BG dependency's configuration. Conda provides unrelated
@@ -220,6 +216,18 @@ The frame expression helpers now use public `bg::bundle(span<const WiringArgumen
 Explicit target bundle schemas retain the previous field dereferencing.
 Debug and Arrow-off consumers have not been rerun against this revision.
 
+Verification against installed main `36eb21fb` rebuilt both extension libraries
+and passed all 6 Arrow-on Release suites after the test-only API adaptation in
+`72679b4d`. BG testing was disabled for the dependency installation.
+
+Scalar literal and equality verification at `7db3b2f9` on 2026-10-17 rebuilt
+the Release Arrow-on consumer with `--parallel 12`. All 6 suites passed;
+an independent rerun also passed. Coverage includes nullable native and exact
+Arrow literals, runtime schemas, chunk-independent equality, Base/Derived
+values and owning copies, malformed input, allocation-failure cleanup, and
+ordinary scalar time-series literal inputs and result assertions.
+Debug, sanitizer, and Arrow-off consumers have not been rerun for this change.
+
 BG and the extension must use matching build configurations. Debug compiles both
 scalar allocation and deallocation checks; Release compiles neither check.
 
@@ -390,8 +398,8 @@ scalar storage, and `TimeSeriesLiteralOperations::apply` consumes
 `TimeSeriesLiteral` through `OutputState`. Their existing `ScalarDispatch` and
 `TimeSeriesDispatch` registries prefer exact runtime registration, then semantic
 registration. These are extension-facing APIs. Nodes use
-`ScalarValue::from_literal()` and `Out::apply()`. Frame handlers will share one
-implementation across concrete and runtime schemas.
+`ScalarValue::from_literal()` and `Out::apply()`. Frame scalar literal handlers
+share one implementation across concrete and runtime schemas.
 
 `ScalarLiteral` and `TimeSeriesLiteral` are aliases of the same borrowed
 recursive carrier. Scalar time series replacements pass that carrier directly
@@ -425,10 +433,12 @@ Frame has not registered these handlers yet.
 
 Scalar `TS<Frame<...>>` and `TS<Column<...>>` use scalar capture and comparison.
 The capture buffer's generic fallback retains an owning `ScalarValue<>`;
-specialized `ScalarBufferOperations` are unnecessary for test capture. Frame
-scalar runtimes return false for equality, and Column storage traits disable
-equality. Content equality is required for scalar result assertions; TSF/TSC
-delta comparison uses the separate time-series handler.
+specialized `ScalarBufferOperations` are unnecessary for test capture. Column
+and Frame content equality compares nulls and ordered cells across native and
+Arrow layouts. Frame equality also compares the actual schema and row count,
+including Derived fields observed through a Base annotation. Numeric cells use
+ordinary numeric equality, so NaN compares unequal. TSF/TSC delta comparison
+uses the separate time-series handler.
 
 The approved scalar literal format uses a sequence of nullable cells for a
 Column and named column sequences for a Frame. Null cells use the exported
@@ -436,7 +446,10 @@ frame-extension sentinel `frame::NULL_VALUE`. Frame columns have equal lengths.
 Current literal leaves do not support `std::nullopt` as a null cell.
 Time-series row-update syntax remains undecided.
 Insertions must allocate internal row IDs; patch and removal operations use
-existing IDs. Frame literal handlers have not been implemented.
+existing IDs. Scalar literal handlers register automatically through canonical
+type factories. Exact Arrow runtime handlers construct Arrow storage using the
+same native parser. Malformed names, cell types, and column lengths fail during
+construction. See [scalar literal syntax](README.md#scalar-literals-and-equality).
 
 ## Performance artifacts
 
@@ -459,10 +472,10 @@ design; they do not replace the consumer verification recorded above.
 
 ## Status and remaining work
 
-BG test-graph output capture is integrated. Implement the approved scalar
-literals and content equality first, then add TSF/TSC result-capture handlers
-through the existing extension APIs. Agree row-update literal syntax before
-implementing time-series literal application and delta comparison.
+BG test-graph output capture and frame scalar literals and content equality are
+implemented. TSF/TSC result-capture handlers remain outstanding. Agree row-update
+literal syntax before implementing time-series literal application and delta
+comparison through the existing extension APIs.
 
 Boolean storage, comparisons, and expression-based filtering are the next
 frame features and require design review before implementation.

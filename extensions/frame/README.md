@@ -72,6 +72,41 @@ Assigning an immutable native snapshot to `TS<Frame>` retains its owner;
 assigning a mutable TSF borrow copies its current cells into an independent
 snapshot.
 
+## Scalar literals and equality
+
+Include `<bg/frame/literal.hpp>` with the Column or Frame header. A Column
+literal is a sequence of nullable cells. A Frame literal supplies every column
+by name; column lengths must match. Names can appear in any order. Cell types
+must match the schema. `frame::NULL_VALUE` is the extension's exported null
+sentinel.
+
+```cpp
+using namespace bg;
+using namespace bg::frame;
+
+template <template <typename, auto...> typename Field> struct Quotes {
+    Field<double> bid;
+    Field<double> ask;
+};
+
+auto column = ScalarValue<Column<double>>::from_literal({1.0, NULL_VALUE, 3.0});
+auto quotes = ScalarValue<Frame<Quotes>>::from_literal({
+    {"bid", {1.0, NULL_VALUE}},
+    {"ask", {1.5, 2.5}},
+});
+```
+
+For a runtime schema, pass its scalar runtime to
+`ScalarValue<>::from_literal(runtime, literal)`. Construction uses the requested
+native or Arrow layout. Literal registration is automatic.
+
+Scalar equality compares the actual schema, row count, nulls, and ordered
+values across layouts and chunk boundaries. A Base annotation preserves
+Derived columns for comparison. Numeric cells use ordinary numeric equality.
+Row IDs and deltas are time-series state and do not participate.
+Ordinary `TS<Column<T>>` and `TS<Frame<Schema>>` support these literals in
+`test_graph` inputs and result assertions.
+
 ## TSC input/output surface
 
 Include `<bg/frame/tsc.hpp>` for the typed views.
