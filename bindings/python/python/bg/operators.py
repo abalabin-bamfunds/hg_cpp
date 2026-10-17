@@ -31,7 +31,18 @@ dedup = _native.dedup
 filter_ = _native.filter_
 if_then_else = _native.if_then_else
 lag = _native.lag
+delay = _native.delay
+schedule = _native.schedule
+throttle = _native.throttle
+sums = _native.sums
+mins = _native.mins
+maxs = _native.maxs
+means = _native.means
 len_ = _native.len_
+sum_ = _native.sum_
+min_ = _native.min_
+max_ = _native.max_
+mean = _native.mean
 contains_ = _native.contains_
 const_ = _native.const_
 default_ = _native.default_
@@ -48,6 +59,7 @@ __all__ = [
     "convert",
     "count",
     "default_",
+    "delay",
     "dedup",
     "div",
     "eq",
@@ -63,7 +75,13 @@ __all__ = [
     "len_",
     "lt",
     "map",
+    "max_",
     "mesh",
+    "maxs",
+    "mean",
+    "means",
+    "min_",
+    "mins",
     "mod",
     "mul",
     "ne",
@@ -74,7 +92,11 @@ __all__ = [
     "pos",
     "round",
     "sample",
+    "schedule",
     "sub",
+    "sum_",
     "switch_",
+    "sums",
+    "throttle",
     "valid",
 ]

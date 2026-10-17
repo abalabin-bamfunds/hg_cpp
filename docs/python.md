@@ -449,8 +449,10 @@ key maps to `REMOVE`; added and modified keys map to their item deltas. A TSS
 input delta has lazy `added` and `removed` views. Collection item deltas recur
 through the same table.
 
-The built-in scalar annotations are `bool`, `int`, `float`, `str`, and
-`bg.Symbol`. `bg.Symbol` is a `str` subclass. Non-null symbols compare and
+The built-in scalar annotations are `bool`, `int`, `float`, `str`,
+`datetime.timedelta`, and `bg.Symbol`. Durations map to signed 64-bit
+microseconds; conversion rejects values outside that range.
+`bg.Symbol` is a `str` subclass. Non-null symbols compare and
 hash like their text; `bg.Symbol()` represents a null symbol and differs from
 the empty string. `str(symbol)` returns ordinary Python text, so converting a
 null symbol produces `""`. `bg.Symbol` cannot be subclassed. Python `int` maps

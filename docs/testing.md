@@ -467,6 +467,16 @@ For each reusable node and graph, test:
   revalidation, startup scheduling, and distinctions from explicit defaults
 - stateful count and one-event lag, including repeated ticks, validity changes,
   owned scalar snapshots, guarantees, references, and nested graph instances
+- running sums, extrema, and means, including skipped cycles, repeated values,
+  invalidation, reset-only and simultaneous reset/value ticks, reset invalidation,
+  numeric limits, NaN comparisons, guarantees, references, and independent nested graph state
+- collection sums, extrema, and means, including `opt` overload selection,
+  partial validity, empty results, item removal and replacement, integer limits,
+  reference rebinding, free collections, output guarantees, and equal optional
+  sums across invalid-to-valid transitions
+- delayed ticks and invalidation, collection delta replay, periodic tick limits,
+  throttle publication times and latest-state reconciliation, simultaneous
+  timers and input changes, duration bounds, and nested-graph stop cleanup
 - scalar equality through built-in, compound, collection, and extension views;
   ordering and Boolean operations
 - guarantee propagation, equal-result tick selection, reference bindings,

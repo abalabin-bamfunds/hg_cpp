@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 import weakref
+from datetime import timedelta
 
 import bg
 import pytest
@@ -44,13 +45,105 @@ def test_runtime_scalar_conversion_overrides_semantic_type_conversion():
 def test_date_time_scalar_conversions_remain_available_to_extensions():
     extension = pytest.importorskip("bg._bg_test_extension")
 
-    assert extension.date_time_conversions_can_be_registered() == (
-        True,
-        "extension scalar conversion",
-        True,
-        "extension scalar conversion",
-        "extension scalar conversion",
+    date_time_added, date_time, timedelta_added, duration, date_time_view = (
+        extension.date_time_conversions_can_be_registered()
     )
+    assert date_time_added
+    assert date_time == "extension scalar conversion"
+    assert not timedelta_added
+    assert duration == timedelta(0)
+    assert date_time_view == "extension scalar conversion"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        timedelta(0),
+        timedelta(microseconds=1),
+        timedelta(microseconds=-1),
+        timedelta(days=2, seconds=3, microseconds=4),
+        timedelta(days=-2, seconds=3, microseconds=4),
+        timedelta(microseconds=-(1 << 63)),
+        timedelta(microseconds=(1 << 63) - 1),
+    ],
+)
+def test_timedelta_scalar_conversion_round_trips_exact_microseconds(value):
+    @bg.graph
+    def constant() -> bg.TS[timedelta]:
+        return bg.operators.const_(value)
+
+    assert bg.test_graph(constant) == [value]
+
+
+@pytest.mark.parametrize("microseconds", [-(1 << 63) - 1, 1 << 63])
+def test_timedelta_scalar_conversion_rejects_values_outside_i64_microseconds(microseconds):
+    value = timedelta(microseconds=microseconds)
+
+    @bg.graph
+    def constant() -> bg.TS[timedelta]:
+        return bg.operators.const_(value)
+
+    with pytest.raises(OverflowError, match="outside the bg.timedelta_t range"):
+        bg.test_graph(constant)
+
+
+def test_timedelta_conversion_accepts_subclasses_and_rejects_other_values():
+    extension = pytest.importorskip("bg._bg_test_extension")
+
+    class CustomTimedelta(timedelta):
+        pass
+
+    assert extension.convert_timedelta(CustomTimedelta(seconds=-2, microseconds=3)) == timedelta(
+        seconds=-2, microseconds=3
+    )
+    with pytest.raises(TypeError, match="expected datetime.timedelta"):
+        extension.convert_timedelta(3)
+
+
+def test_timed_operators_accept_datetime_timedelta():
+    @bg.graph
+    def delayed(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.delay(value, timedelta(microseconds=2))
+
+    @bg.graph
+    def scheduled() -> bg.TS[bool]:
+        return bg.operators.schedule(timedelta(microseconds=1), max_ticks=3)
+
+    @bg.graph
+    def throttled(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.throttle(value, timedelta(microseconds=2))
+
+    assert bg.test_graph(delayed, [1, 2, None, 4]) == [None, None, 1, 2, None, 4]
+    assert bg.test_graph(scheduled) == [None, True, True, True]
+    assert bg.test_graph(throttled, [1, 2, 3, 4]) == [1, None, 3, None, 4]
+
+
+def test_nested_delay_releases_pending_python_values_when_stopped():
+    class WeakString(str):
+        pass
+
+    value = WeakString("pending delayed value")
+    value_reference = weakref.ref(value)
+
+    @bg.graph
+    def delayed(value: bg.TS[str]) -> bg.TS[str]:
+        return bg.operators.delay(value, timedelta(microseconds=10))
+
+    @bg.graph
+    def fallback(value: bg.TS[str]) -> bg.TS[str]:
+        return bg.operators.const_("fallback")
+
+    @bg.graph
+    def graph(key: bg.TS[int], value: bg.TS[str]) -> bg.TS[str]:
+        return bg.switch_(key, {1: delayed, bg.DEFAULT: fallback}, value)
+
+    result = bg.test_graph(graph, [1, 0], [value, None])
+    assert result == [None, "fallback"]
+
+    del result
+    del value
+    gc.collect()
+    assert value_reference() is None
 
 
 def test_test_graph_uses_registered_runtime_scalar_conversion():

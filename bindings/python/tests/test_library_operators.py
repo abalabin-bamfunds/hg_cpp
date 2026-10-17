@@ -90,6 +90,200 @@ def test_i64_arithmetic_wraps_at_signed_boundaries():
     assert bg.test_graph(absolute, [minimum, -maximum]) == [minimum, maximum]
 
 
+def test_running_numeric_operators_and_named_reset_input():
+    @bg.graph
+    def sums(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.sums(value)
+
+    @bg.graph
+    def mins(value: bg.TS[float]) -> bg.TS[float]:
+        return bg.operators.mins(value)
+
+    @bg.graph
+    def maxs(value: bg.TS[float]) -> bg.TS[float]:
+        return bg.operators.maxs(value)
+
+    @bg.graph
+    def means(value: bg.TS[int]) -> bg.TS[float]:
+        return bg.operators.means(value)
+
+    @bg.graph
+    def reset_sums(value: bg.TS[int], reset: bg.TS[bool]) -> bg.TS[int]:
+        return bg.operators.sums(value, reset=reset)
+
+    @bg.graph
+    def reset_mins(value: bg.TS[int], reset: bg.TS[bool]) -> bg.TS[int]:
+        return bg.operators.mins(value, reset=reset)
+
+    @bg.graph
+    def reset_maxs(value: bg.TS[int], reset: bg.TS[bool]) -> bg.TS[int]:
+        return bg.operators.maxs(value, reset=reset)
+
+    @bg.graph
+    def reset_means(value: bg.TS[int], reset: bg.TS[bool]) -> bg.TS[float]:
+        return bg.operators.means(value, reset=reset)
+
+    assert bg.test_graph(sums, [1, 1, 2]) == [1, 2, 4]
+    assert bg.test_graph(mins, [4.0, 4.0, 6.0, 3.0]) == [4.0, None, None, 3.0]
+    assert bg.test_graph(maxs, [4.0, 4.0, 6.0, 3.0]) == [4.0, None, 6.0, None]
+    assert bg.test_graph(means, [1, 2, 3]) == [1.0, 1.5, 2.0]
+    values = [5, 4, 6, 8, 3, 9, None, 7]
+    resets = [None, False, True, None, False, True, True, None]
+    assert bg.test_graph(reset_sums, values, resets) == [5, 4, 6, 14, 3, 9, None, 7]
+    assert bg.test_graph(reset_mins, values, resets) == [5, 4, 6, None, 3, 9, None, 7]
+    assert bg.test_graph(reset_maxs, values, resets) == [5, 4, 6, 8, 3, 9, None, 7]
+    assert bg.test_graph(reset_means, values, resets) == [5.0, 4.0, 6.0, 7.0, 3.0, 9.0, None, 7.0]
+
+
+def test_running_numeric_operators_handle_input_invalidation_with_named_reset():
+    @bg.graph
+    def sums(value: bg.TS[int], reset: bg.TS[str]) -> bg.TS[int]:
+        return bg.operators.sums(value, reset=reset)
+
+    @bg.graph
+    def mins(value: bg.TS[int], reset: bg.TS[str]) -> bg.TS[int]:
+        return bg.operators.mins(value, reset=reset)
+
+    @bg.graph
+    def maxs(value: bg.TS[int], reset: bg.TS[str]) -> bg.TS[int]:
+        return bg.operators.maxs(value, reset=reset)
+
+    @bg.graph
+    def means(value: bg.TS[int], reset: bg.TS[str]) -> bg.TS[float]:
+        return bg.operators.means(value, reset=reset)
+
+    values = [5, 4, bg.INVALID, 3, 2]
+    resets = [None, None, None, None, None]
+    assert bg.test_graph(sums, values, resets) == [5, 9, None, 3, 5]
+    assert bg.test_graph(mins, values, resets) == [5, 4, None, 3, 2]
+    assert bg.test_graph(maxs, values, resets) == [5, None, None, 3, None]
+    assert bg.test_graph(means, values, resets) == [5.0, 4.5, None, 3.0, 2.5]
+
+
+def test_running_numeric_operators_preserve_history_on_reset_invalidation():
+    @bg.graph
+    def sums(value: bg.TS[int], reset: bg.TS[str]) -> bg.TS[int]:
+        return bg.operators.sums(value, reset=reset)
+
+    @bg.graph
+    def mins(value: bg.TS[int], reset: bg.TS[str]) -> bg.TS[int]:
+        return bg.operators.mins(value, reset=reset)
+
+    @bg.graph
+    def maxs(value: bg.TS[int], reset: bg.TS[str]) -> bg.TS[int]:
+        return bg.operators.maxs(value, reset=reset)
+
+    @bg.graph
+    def means(value: bg.TS[int], reset: bg.TS[str]) -> bg.TS[float]:
+        return bg.operators.means(value, reset=reset)
+
+    values = [5, 4, None, 3]
+    resets = [None, "reset", bg.INVALID, None]
+    assert bg.test_graph(sums, values, resets) == [5, 4, None, 7]
+    assert bg.test_graph(mins, values, resets) == [5, 4, None, 3]
+    assert bg.test_graph(maxs, values, resets) == [5, 4, None, None]
+    assert bg.test_graph(means, values, resets) == [5.0, 4.0, None, 3.5]
+
+
+def test_running_extrema_keep_initial_nan_until_input_invalidation():
+    @bg.graph
+    def mins(value: bg.TS[float]) -> bg.TS[float]:
+        return bg.operators.mins(value)
+
+    @bg.graph
+    def maxs(value: bg.TS[float]) -> bg.TS[float]:
+        return bg.operators.maxs(value)
+
+    @bg.graph
+    def mins_valid(value: bg.TS[float]) -> bg.TS[bool]:
+        return bg.operators.valid(bg.operators.mins(value))
+
+    @bg.graph
+    def maxs_valid(value: bg.TS[float]) -> bg.TS[bool]:
+        return bg.operators.valid(bg.operators.maxs(value))
+
+    values = [math.nan, 1.0, math.nan, 0.0, bg.INVALID, None, 3.0]
+    minimum = bg.test_graph(mins, values)
+    maximum = bg.test_graph(maxs, values)
+    assert math.isnan(minimum[0])
+    assert math.isnan(maximum[0])
+    assert minimum[1:] == [None, None, None, None, None, 3.0]
+    assert maximum[1:] == [None, None, None, None, None, 3.0]
+    assert bg.test_graph(mins_valid, values) == [True, None, None, None, False, None, True]
+    assert bg.test_graph(maxs_valid, values) == [True, None, None, None, False, None, True]
+
+
+def test_running_extrema_ignore_later_nan_without_invalidating_output():
+    @bg.graph
+    def mins(value: bg.TS[float]) -> bg.TS[float]:
+        return bg.operators.mins(value)
+
+    @bg.graph
+    def maxs(value: bg.TS[float]) -> bg.TS[float]:
+        return bg.operators.maxs(value)
+
+    @bg.graph
+    def mins_valid(value: bg.TS[float]) -> bg.TS[bool]:
+        return bg.operators.valid(bg.operators.mins(value))
+
+    @bg.graph
+    def maxs_valid(value: bg.TS[float]) -> bg.TS[bool]:
+        return bg.operators.valid(bg.operators.maxs(value))
+
+    values = [2.0, math.nan, 3.0, 1.0]
+    assert bg.test_graph(mins, values) == [2.0, None, None, 1.0]
+    assert bg.test_graph(maxs, values) == [2.0, None, 3.0, None]
+    assert bg.test_graph(mins_valid, values) == [True, None, None, None]
+    assert bg.test_graph(maxs_valid, values) == [True, None, None, None]
+
+
+def test_running_extrema_clear_nan_history_on_reset_only_and_simultaneous_ticks():
+    @bg.graph
+    def mins(value: bg.TS[float], reset: bg.TS[bool]) -> bg.TS[float]:
+        return bg.operators.mins(value, reset=reset)
+
+    @bg.graph
+    def maxs(value: bg.TS[float], reset: bg.TS[bool]) -> bg.TS[float]:
+        return bg.operators.maxs(value, reset=reset)
+
+    @bg.graph
+    def mins_valid(value: bg.TS[float], reset: bg.TS[bool]) -> bg.TS[bool]:
+        return bg.operators.valid(bg.operators.mins(value, reset=reset))
+
+    @bg.graph
+    def maxs_valid(value: bg.TS[float], reset: bg.TS[bool]) -> bg.TS[bool]:
+        return bg.operators.valid(bg.operators.maxs(value, reset=reset))
+
+    values = [math.nan, 1.0, None, 4.0, math.nan, 5.0, 2.0, 3.0]
+    resets = [None, None, True, None, False, None, True, None]
+    minimum = bg.test_graph(mins, values, resets)
+    maximum = bg.test_graph(maxs, values, resets)
+    assert math.isnan(minimum[0])
+    assert math.isnan(maximum[0])
+    assert minimum[1:4] == [None, None, 4.0]
+    assert maximum[1:4] == [None, None, 4.0]
+    assert math.isnan(minimum[4])
+    assert math.isnan(maximum[4])
+    assert minimum[5:] == [None, 2.0, None]
+    assert maximum[5:] == [None, 2.0, 3.0]
+    expected_validity = [True, None, False, True, None, None, None, None]
+    assert bg.test_graph(mins_valid, values, resets) == expected_validity
+    assert bg.test_graph(maxs_valid, values, resets) == expected_validity
+
+
+@pytest.mark.parametrize("operator_name", ["sums", "mins", "maxs", "means"])
+@pytest.mark.parametrize("value_type", [bool, str])
+def test_running_numeric_operators_reject_non_numeric_time_series(operator_name, value_type):
+    operator = getattr(bg.operators, operator_name)
+
+    @bg.graph
+    def unsupported(value: bg.TS[value_type]) -> bg.TS[value_type]:
+        return operator(value)
+
+    with pytest.raises(ValueError, match=f"Cannot resolve operator {operator_name}"):
+        bg.test_graph(unsupported, [True if value_type is bool else "value"])
+
+
 def test_python_operator_syntax_and_named_boolean_operators():
     @bg.graph
     def arithmetic(lhs: bg.TS[float], rhs: bg.TS[float]) -> bg.TS[float]:
@@ -144,6 +338,90 @@ def test_collection_query_operators_accept_public_keyword_names():
     assert bg.test_graph(dictionary_length, [{1: 10, 2: 20}, {}]) == [2, 0]
     assert bg.test_graph(dictionary_contains, [{1: 10, 2: 20}, {}, {3: 30}], [2, 1, 3]) == [True, False, True]
     assert bg.test_graph(dictionary_contains_scalar, [{1: 10, 2: 20}, {}, {3: 30}]) == [True, False, False]
+
+
+def test_collection_reductions_accept_values_and_tss_removals():
+    @bg.graph
+    def sum_values(values: bg.TSS[int]) -> bg.TS[int]:
+        return bg.operators.sum_(values=values)
+
+    @bg.graph
+    def min_values(values: bg.TSS[int]) -> bg.TS[int]:
+        return bg.operators.min_(values=values)
+
+    @bg.graph
+    def max_values(values: bg.TSS[int]) -> bg.TS[int]:
+        return bg.operators.max_(values=values)
+
+    @bg.graph
+    def mean_values(values: bg.TSS[int]) -> bg.TS[float]:
+        return bg.operators.mean(values=values)
+
+    values = [
+        {1, 2},
+        bg.SetDelta(added={3}, removed={1}),
+        bg.SetDelta(removed={2, 3}),
+    ]
+    assert bg.test_graph(sum_values, values) == [3, 5, 0]
+    assert bg.test_graph(min_values, values) == [1, 2, None]
+    assert bg.test_graph(max_values, values) == [2, 3, None]
+    assert bg.test_graph(mean_values, values) == [1.5, 2.5, None]
+
+
+def test_optional_collection_sum_publishes_equal_values_for_deduplicated_collection():
+    @bg.graph
+    def total(values: bg.TSS[int, bg.deduplicated]) -> bg.TS[int]:
+        return bg.operators.sum_(values=bg.opt(values))
+
+    assert bg.test_graph(total, [set(), {0}]) == [0, 0]
+
+
+def test_collection_reductions_gate_invalid_tsd_items_and_optional_reductions_skip_them():
+    @bg.graph
+    def sum_values(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        return bg.operators.sum_(values=values)
+
+    @bg.graph
+    def optional_sum(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        return bg.operators.sum_(values=bg.opt(values))
+
+    @bg.graph
+    def min_values(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        return bg.operators.min_(values=values)
+
+    @bg.graph
+    def optional_min(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        return bg.operators.min_(values=bg.opt(values))
+
+    @bg.graph
+    def max_values(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        return bg.operators.max_(values=values)
+
+    @bg.graph
+    def optional_max(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        return bg.operators.max_(values=bg.opt(values))
+
+    @bg.graph
+    def mean_values(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[float]:
+        return bg.operators.mean(values=values)
+
+    @bg.graph
+    def optional_mean(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[float]:
+        return bg.operators.mean(values=bg.opt(values))
+
+    values = [
+        {1: 10, 2: 20},
+        {1: bg.INVALID, 2: 30},
+        {1: bg.REMOVE, 2: bg.INVALID},
+    ]
+    assert bg.test_graph(sum_values, values) == [30, None, None]
+    assert bg.test_graph(optional_sum, values) == [30, 30, 0]
+    assert bg.test_graph(min_values, values) == [10, None, None]
+    assert bg.test_graph(optional_min, values) == [10, 30, None]
+    assert bg.test_graph(max_values, values) == [20, None, None]
+    assert bg.test_graph(optional_max, values) == [20, 30, None]
+    assert bg.test_graph(mean_values, values) == [15.0, None, None]
+    assert bg.test_graph(optional_mean, values) == [15.0, 30.0, None]
 
 
 def test_numeric_operator_syntax_and_explicit_convert_target():

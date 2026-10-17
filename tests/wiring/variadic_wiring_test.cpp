@@ -929,6 +929,14 @@ TEST_CASE("a variadic operator cache recreates each candidate's absent arguments
     CHECK(OptionalFixedVariadicNode::requirement_calls == 2);
 }
 
+TEST_CASE("a fixed optional scalar can be omitted before an empty variadic pack",
+          "[feature:wiring][feature:variadic-wiring][scalar:integer][validity:optional]"
+          "[definition:aggregate]") {
+    const auto receiver = node<OptionalFixedVariadicNode>();
+
+    CHECK_NOTHROW(testing::test_wiring([&] { (void)receiver(); }));
+}
+
 TEST_CASE("a materialized pack keeps scalar and time series fields",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:generic][scalar:integer]"
           "[definition:aggregate][representation:free]") {

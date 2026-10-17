@@ -54,8 +54,8 @@ timestamp. Integer and temporal arithmetic wraps at the underlying integer
 width. Negation and absolute value of the minimum integer or duration return
 that same minimum value. Floating-point arithmetic uses normal C++ operations.
 String operations process bytes, including embedded NUL bytes. Temporal
-operators are native C++ overloads; Python temporal conversions are not yet
-supplied.
+operators are native C++ overloads. Python `datetime.timedelta` maps to
+`timedelta_t`; Python timestamp scalar conversion is not yet supplied.
 
 Integer division converts both operands to `double` and uses native floating-point
 division. Conversion can round operands outside the consecutive-integer range,
@@ -181,6 +181,126 @@ Neither operator schedules on start. Skipped cycles do not advance either
 operation. Ordinary equal-valued ticks remain separate events. `lag` produces
 an ordinary output; its first event produces no output, and its final retained
 event remains unpublished unless another input event arrives.
+
+## Timed operators
+
+`delay(value, duration)` publishes each input event at its original evaluation
+time plus `duration`. It retains ticks, including invalidation and collection
+deltas, rather than sampling the value later. Equal ordinary ticks remain
+separate events. Zero duration returns the input; negative duration is a wiring
+error. Positive delay limits const guarantees to final, including contained
+time series. Retained ticks follow the supported types and ownership rules in
+[retaining ticks](time-series-types.md#retaining-ticks). Delay rejects contained
+references and sparse TSL values. TSS and TSD root invalidation cannot be
+replayed, so retargeting from a valid TSS or TSD to an invalid target fails.
+Initially unbound references are supported.
+
+`schedule(period, initial_delay=true, max_ticks=...)` publishes ordinary
+`TS<bool>` ticks whose value is true. The first tick occurs one period after
+graph start. `initial_delay=false` produces the first tick at graph start.
+`max_ticks` limits the number of ticks; zero produces none. Without a limit,
+the source continues until its graph stops. Period must be positive and
+`max_ticks` must be nonnegative.
+
+`throttle(value, period, delay_first_tick=false)` passes the first event
+immediately and starts a period. Events during that period coalesce. At its
+end, throttle publishes the latest pending state and starts another period.
+With no pending event, it stops scheduling until the input changes again.
+`delay_first_tick=true` also delays the first event by one period. Period must
+be positive.
+
+Throttle applies the same timing to invalidation. An input change at the
+publication time contributes to that publication. Collection publication
+reconciles the complete current value, so changes that cancel within the
+period need not produce an output tick. The output retains input guarantees up
+to final. Throttle retains timing state, not a copy of the input value.
+
+Durations are scalar arguments: use `bg::timedelta_t` in C++ and
+`datetime.timedelta` in Python. Timed work uses evaluation time and stops with
+the owning graph, including inner graphs. Scheduling outside the supported
+[evaluation-time range](evaluation.md#evaluation-time) fails.
+
+## Running calculations
+
+`sums(value)`, `mins(value)`, `maxs(value)`, and `means(value)` calculate over
+successive ticks of one `TS<i64>` or `TS<double>`. `sums`, `mins`, and `maxs`
+retain the input scalar type. `means` returns `double` and accumulates in
+`double`, independently of the integer sum's wrapping policy.
+
+Each valid input tick contributes, including equal ordinary ticks. Skipped
+cycles do not advance the calculation. Invalidation clears history and
+invalidates the output; revalidation starts a new history. No operator
+schedules on start. `mins` and `maxs` publish the first value and then publish
+only when a comparison establishes a new extremum.
+
+`mins` and `maxs` use ordinary floating-point comparisons. An initial NaN
+remains the result until history is cleared; a later NaN produces no tick.
+NaN is a valid scalar value, not time series invalidity.
+
+Without reset, `sums` and `means` propagate the observed input guarantee.
+`mins` and `maxs` provide at least `deduplicated` and retain `final` or `const`
+inputs. With reset, `sums` and `means` produce ordinary outputs, while `mins`
+and `maxs` produce deduplicated outputs. Reset can invalidate these outputs
+independently of the value input's guarantee.
+
+Each operator accepts an optional `reset` time series argument. Any valid tick
+on that input clears history, regardless of its value. A simultaneous valid
+`value` tick starts the new history. Reset alone invalidates the output rather
+than sampling an unchanged input. Invalidating `reset` does not clear history
+or contribute another value.
+
+```cpp
+auto total = operators::sums(value);
+auto restarted_total = operators::sums(value, "reset"_n = reset);
+```
+
+```python
+total = bg.operators.sums(value)
+restarted_total = bg.operators.sums(value, reset=reset)
+```
+
+## Collection reductions
+
+`sum_(values)`, `min_(values)`, `max_(values)`, and `mean(values)` calculate
+over the current items of a numeric fixed-size TSL, TSD, or TSS. They accept `i64` and
+`double` items. Sums and extrema retain the item scalar type. `mean` returns
+`double` and accumulates in `double`; integer sums use the wrapping policy
+described above.
+
+An ordinary call requires a valid collection and valid immediate items.
+`opt(values)` selects an optional overload that skips invalid items:
+
+```cpp
+auto complete_total = operators::sum_(values);
+auto available_total = operators::sum_(opt(values));
+```
+
+```python
+complete_total = bg.operators.sum_(values)
+available_total = bg.operators.sum_(bg.opt(values))
+```
+
+With no contributing items, sum publishes zero and the other reductions
+invalidate their output. An invalid optional collection has no contributing
+items. These nodes do not schedule on start; an input change schedules the
+calculation. Skipped cycles preserve the previous result.
+
+Each evaluation reads the complete current collection. Item updates,
+invalidations, additions, removals, and reference changes therefore contribute
+to the next result without retaining previous item values. Ordinary outputs
+publish on each permitted evaluation, including equal results. Extrema use
+ordinary floating-point comparisons in enumeration order. TSD and TSS
+enumeration order is unspecified.
+
+The `all_valid` sum propagates the observed collection guarantee. Optional sum
+always has an ordinary output and publishes on each evaluation, including
+equal results. For example, binding an invalid set and then observing `{0}`
+publishes `0` twice.
+
+The other reductions retain ordinary, deduplicated, and final guarantees, and
+limit const to final because an empty collection has no result. This applies
+to both overload versions. Each evaluation takes O(N) work and O(1) auxiliary
+storage.
 
 ## Collection queries
 

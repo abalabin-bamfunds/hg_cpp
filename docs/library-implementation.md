@@ -95,6 +95,8 @@ file into groups within the aggregate reflection limit.
 
 Give callback captures a lifetime independent of the temporary registration
 class.
+When a graph overload creates a node template, follow the
+[node-template lifetime rules](graph-wiring.md#wiring-template-call).
 
 ## Select input validity
 
