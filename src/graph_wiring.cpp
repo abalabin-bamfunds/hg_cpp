@@ -14,6 +14,7 @@
 #include <bg/util/scope_exit.hpp>
 
 #include "time_series/ref/ref_node.hpp"
+#include "operator_resolution_cache.hpp"
 
 #include <algorithm>
 #include <array>
@@ -290,6 +291,8 @@ allocator &GraphWiring::variable_allocator(const ScalarRuntimeType &runtime_type
 }
 
 GraphWiring::~GraphWiring() {
+    operator_caches_.release(fixed_memory_);
+
     for (const auto &node : nodes_) {
         for (const auto &scalar : node.scalar_values()) {
             if (scalar.has_value() && scalar.runtime_type_->requires_destruction()) {
@@ -301,6 +304,18 @@ GraphWiring::~GraphWiring() {
 
     wired_nodes_.release(fixed_memory_);
     output_items_.release(fixed_memory_);
+}
+
+details::OperatorResolutionCache &GraphWiring::operator_resolution_cache(const Operator &operation) {
+    if (parent_ != nullptr) {
+        return parent_->operator_resolution_cache(operation);
+    }
+
+    auto *cache = operator_caches_.try_emplace(&operation, fixed_memory_).first;
+    if (!*cache) {
+        *cache = std::make_unique<details::OperatorResolutionCache>();
+    }
+    return **cache;
 }
 
 const NodeTemplate &GraphWiring::own_node_template(std::unique_ptr<NodeTemplate> node_template) {

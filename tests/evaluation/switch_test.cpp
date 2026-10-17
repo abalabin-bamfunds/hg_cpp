@@ -155,6 +155,25 @@ TEST_CASE("switch selects a case graph from its key",
     CHECK(actual.equals<bg::i64>({13, 23, 24, 15}));
 }
 
+TEST_CASE("switch releases cached string graph arguments with its root wiring",
+          "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
+          "[series:value][scalar:string]") {
+    const auto identity = graph("name"_n = "string_identity", [](wp<TS<string>> value) { return value; });
+    const auto fallback = graph("name"_n = "string_fallback", [](wp<TS<string>>) {
+        return operators::const_(std::string_view{"fallback"})
+            .as<TS<string, TimeSeriesGuarantee::const_>>();
+    });
+    const auto tested = [&](wp<TS<i64>> key, wp<TS<string>> value) {
+        return switch_(key, cases{case_(i64{1}, identity), case_(DEFAULT, fallback)}, value).as<TS<string>>();
+    };
+
+    const auto actual = testing::test_graph(
+        tested, std::array<i64, 2>{1, 0},
+        std::array<std::optional<std::string_view>, 2>{"original", std::nullopt});
+
+    CHECK(actual.equals<string>({"original", "fallback"}));
+}
+
 TEST_CASE("switch accepts an optional wiring argument as its key",
           "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
           "[series:value][validity:optional][definition:function]") {

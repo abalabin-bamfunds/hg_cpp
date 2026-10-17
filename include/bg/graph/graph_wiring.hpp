@@ -12,6 +12,7 @@
 #include <bg/graph/wiring_error.hpp>
 #include <bg/graph/wiring_path.hpp>
 #include <bg/graph/wiring_point.hpp>
+#include <bg/util/hash_dictionary.hpp>
 #include <bg/util/linear_hash_table.hpp>
 
 #include <cstdint>
@@ -45,6 +46,7 @@ class WiringArgumentDescriptor;
 class GraphWiringStructure;
 class ContextScope;
 class ServiceRequirements;
+struct OperatorResolutionCache;
 WiringPoint add_wiring_record(std::unique_ptr<WiringRecord> record);
 WiringPoint add_item_wiring_record(WiringPoint parent, item_id_t item, std::unique_ptr<WiringRecord> record);
 GraphWiringStructure graph_wiring_structure(const GraphWiring &, std::span<const WiringPoint>,
@@ -210,6 +212,7 @@ class GraphWiring {
                             ServiceBindingOrdering ordering = ServiceBindingOrdering::provider_before_consumers);
     void provide_service_binding(const details::NestedBindingIdentity &identity, WiringPoint provider);
     details::ServiceRequirements &root_service_requirements();
+    details::OperatorResolutionCache &operator_resolution_cache(const Operator &operation);
 
     [[nodiscard]] const WiringPath &make_path(util::symbol name, util::symbol label);
     util::symbol default_label() const;
@@ -230,6 +233,7 @@ class GraphWiring {
   private:
     allocator allocator_;
     GraphWiring *parent_{};
+    util::hash_dictionary<const Operator *, std::unique_ptr<details::OperatorResolutionCache>> operator_caches_;
     std::pmr::unsynchronized_pool_resource fixed_memory_;
     std::optional<std::pmr::unsynchronized_pool_resource> variable_memory_;
     allocator variable_allocator_;

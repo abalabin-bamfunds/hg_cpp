@@ -15,14 +15,18 @@
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/type_resolution_error.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 using namespace bg::literals;
 
@@ -262,6 +266,169 @@ TEST_CASE("registering an overload clears cached selections", "[feature:operator
 
     bg::testing::test_wiring([&] { operation(source()); });
     CHECK(selected == "float");
+}
+
+TEST_CASE("operator resolution caches are shared by nested wiring and isolated between roots",
+          "[feature:operator][feature:wiring][shape:nested]") {
+    auto requirement_calls = 0;
+    auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS_T>{"identity", {"value"}};
+    operation.overload(bg::graph(
+        "name"_n = "identity_impl",
+        bg::require = [&](const bg::WiringArguments &) {
+            ++requirement_calls;
+            return true;
+        },
+        [](bg::wp<bg::TS<bg::SCALAR>> value) { return value; }));
+    const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
+
+    auto root = bg::GraphWiring{};
+    {
+        const auto context = bg::WiringContext{root};
+        (void)operation(source());
+    }
+    {
+        auto nested = bg::GraphWiring{root};
+        const auto context = bg::WiringContext{nested};
+        (void)operation(source());
+    }
+    CHECK(requirement_calls == 1);
+
+    auto separate_root = bg::GraphWiring{};
+    {
+        const auto context = bg::WiringContext{separate_root};
+        (void)operation(source());
+    }
+    CHECK(requirement_calls == 2);
+}
+
+TEST_CASE("overload registration invalidates resolution caches in every live root",
+          "[feature:operator][feature:wiring]") {
+    auto generic_requirement_calls = 0;
+    auto float_requirement_calls = 0;
+    auto selected_overload = std::string{};
+    auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS_T>{"identity", {"value"}};
+    operation.overload(bg::graph(
+        "name"_n = "generic",
+        bg::require = [&](const bg::WiringArguments &) {
+            ++generic_requirement_calls;
+            return true;
+        },
+        [&](bg::wp<bg::TS<bg::SCALAR>> value) {
+            selected_overload = "generic";
+            return value;
+        }));
+    const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
+    auto first_root = bg::GraphWiring{};
+    auto second_root = bg::GraphWiring{};
+    const auto wire = [&](bg::GraphWiring &wiring) {
+        const auto context = bg::WiringContext{wiring};
+        const auto result = operation(source());
+        CHECK(&result.type() == &bg::TS<float>::type());
+    };
+
+    wire(first_root);
+    CHECK(selected_overload == "generic");
+    wire(second_root);
+    CHECK(selected_overload == "generic");
+    CHECK(generic_requirement_calls == 2);
+
+    operation.overload(bg::graph(
+        "name"_n = "float",
+        bg::require = [&](const bg::WiringArguments &) {
+            ++float_requirement_calls;
+            return true;
+        },
+        [&](bg::wp<bg::TS<float>> value) {
+            selected_overload = "float";
+            return value;
+        }));
+
+    wire(first_root);
+    CHECK(selected_overload == "float");
+    wire(second_root);
+    CHECK(selected_overload == "float");
+    CHECK(generic_requirement_calls == 4);
+    CHECK(float_requirement_calls == 2);
+}
+
+TEST_CASE("a cached operator identity is checked when an address is reused",
+          "[feature:operator][feature:wiring]") {
+    using Operator = bg::Operator;
+
+    alignas(Operator) auto storage = std::array<std::byte, sizeof(Operator)>{};
+    auto generic_requirement_calls = 0;
+    auto float_requirement_calls = 0;
+    const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+
+    {
+        auto *operation = std::construct_at(
+            static_cast<Operator *>(static_cast<void *>(storage.data())),
+            bg::Signature{bg::util::symbol{"identity"}, {{bg::util::symbol{"value"}, &bg::TS_T::type()}},
+                          bg::TS_T::type()});
+        const auto cleanup = bg::util::scope_exit{[&]() noexcept { std::destroy_at(operation); }};
+        operation->overload(bg::graph(
+            "name"_n = "generic",
+            bg::require = [&](const bg::WiringArguments &) {
+                ++generic_requirement_calls;
+                return true;
+            },
+            [](bg::wp<bg::TS<bg::SCALAR>> value) { return value; }));
+        (void)(*operation)(source());
+        CHECK(generic_requirement_calls == 1);
+    }
+
+    {
+        auto *operation = std::construct_at(
+            static_cast<Operator *>(static_cast<void *>(storage.data())),
+            bg::Signature{bg::util::symbol{"identity"}, {{bg::util::symbol{"value"}, &bg::TS_T::type()}},
+                          bg::TS_T::type()});
+        const auto cleanup = bg::util::scope_exit{[&]() noexcept { std::destroy_at(operation); }};
+        operation->overload(bg::graph(
+            "name"_n = "float",
+            bg::require = [&](const bg::WiringArguments &) {
+                ++float_requirement_calls;
+                return true;
+            },
+            [](bg::wp<bg::TS<float>> value) { return value; }));
+        (void)(*operation)(source());
+        CHECK(float_requirement_calls == 1);
+    }
+}
+
+TEST_CASE("operator cache references survive nested resolution adding cache entries",
+          "[feature:operator][feature:wiring][shape:nested]") {
+    auto nested_operations = std::vector<std::unique_ptr<bg::Operator>>{};
+    for (auto index = 0; index < 64; ++index) {
+        auto nested = std::make_unique<bg::Operator>(bg::Signature{
+            bg::util::symbol{"nested"}, {{bg::util::symbol{"value"}, &bg::TS_T::type()}}, bg::TS_T::type()});
+        nested->overload(bg::graph("name"_n = "identity_impl",
+                                   [](bg::wp<bg::TS<bg::SCALAR>> value) { return value; }));
+        nested_operations.push_back(std::move(nested));
+    }
+
+    auto requirement_calls = 0;
+    auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS_T>{"outer", {"value"}};
+    auto input = bg::WiringPoint{};
+    operation.overload(bg::graph(
+        "name"_n = "outer_impl",
+        bg::require = [&](const bg::WiringArguments &) {
+            ++requirement_calls;
+            for (const auto &nested : nested_operations) {
+                (void)(*nested)(input);
+            }
+            return true;
+        },
+        [](bg::wp<bg::TS<bg::SCALAR>> value) { return value; }));
+    const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    input = source();
+
+    (void)operation(input);
+    (void)operation(input);
+    CHECK(requirement_calls == 1);
 }
 
 TEST_CASE("an overload can have a different parameter count from its prototype",

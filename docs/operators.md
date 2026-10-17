@@ -437,7 +437,13 @@ before normal overload resolution.
 
 ## Resolution cache
 
-Each operator has a bounded resolution cache. Its keys include supplied
+Root `GraphWiring` owns a bounded resolution cache for each invoked operator.
+Nested wiring shares these caches through its parent wiring. Independent roots
+resolve independently. Destroying the root releases cached scalar values and
+graph structures. Registering an overload invalidates cached resolutions for
+that operator in every root.
+
+Cache keys include supplied
 argument types, presence, and `opt` qualifiers, explicit type mappings, and
 only the wiring-time scalar values read by a resolver or requirement function.
 Qualifiers inside forwarded variadic records also contribute to the key. Reads

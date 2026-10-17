@@ -30,8 +30,6 @@ class Operator : public WiringTemplate {
   private:
     void add_overload(std::unique_ptr<WiringTemplate> implementation);
 
-    struct Cache;
-
     [[nodiscard]] std::optional<WiringPoint> invoke(GraphWiring &wiring,
                                                     std::span<const WiringArgument> arguments,
                                                     const TypeMap *seed_type_map) const final;
@@ -40,7 +38,7 @@ class Operator : public WiringTemplate {
 
     Signature prototype_;
     std::vector<std::unique_ptr<WiringTemplate>> overloads_;
-    mutable std::unique_ptr<Cache> cache_;
+    std::shared_ptr<const void> cache_identity_{std::make_shared<const char>()};
 };
 
 } // namespace bg
