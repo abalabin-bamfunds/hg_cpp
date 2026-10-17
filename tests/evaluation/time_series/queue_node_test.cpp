@@ -143,12 +143,17 @@ TEST_CASE("queue node declarations route writes to their declared output types a
 TEST_CASE("queue factories reject unsupported modes and time-series scalar inputs",
           "[evaluation][feature:node-api][queue][wiring]") {
     const auto start_callback = [](bg::Queue) {};
-    CHECK_THROWS_AS(bg::queue<bg::TS<bg::i64>>(bg::start = start_callback,
-                                               bg::mode = bg::QueueMode::batch),
-                    std::invalid_argument);
     CHECK_THROWS_AS(bg::queue<bg::TS<bg::i64>>(
                         bg::start = start_callback, bg::mode = static_cast<bg::QueueMode>(41)),
                     std::invalid_argument);
+
+    const auto invalid_batch = bg::queue<bg::TS<bg::i64>>(
+        bg::start = start_callback, bg::mode = bg::QueueMode::batch);
+    auto invalid_batch_wiring = bg::GraphWiring{};
+    {
+        const auto context = bg::WiringContext{invalid_batch_wiring};
+        CHECK_THROWS_AS((void)invalid_batch(), bg::WiringError);
+    }
 
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
     const auto scalar_queue = bg::queue<bg::TS<bg::i64>>(
@@ -160,27 +165,57 @@ TEST_CASE("queue factories reject unsupported modes and time-series scalar input
     }
 }
 
+TEST_CASE("queue declarations require ordinary guarantees in every mode",
+          "[feature:node-api][queue][wiring][guarantee:deduplicated][guarantee:final][guarantee:const]") {
+    const auto require_rejected = [](auto definition) {
+        auto wiring = bg::GraphWiring{};
+        const auto context = bg::WiringContext{wiring};
+        CHECK_THROWS_AS((void)definition(), bg::WiringError);
+    };
+
+    for (const auto mode : {bg::QueueMode::standard, bg::QueueMode::elide, bg::QueueMode::batch}) {
+        for (const auto guarantee : {bg::TimeSeriesGuarantee::deduplicated, bg::TimeSeriesGuarantee::final,
+                                     bg::TimeSeriesGuarantee::const_}) {
+            const auto &output_type = bg::TS<bg::List<bg::i64>>::type().with_guarantee(guarantee);
+            require_rejected(bg::queue(bg::output_type = output_type, bg::start = [](bg::Queue) {},
+                                       bg::mode = mode));
+        }
+        require_rejected(bg::queue<bg::TSD<bg::i64, bg::TS<bg::List<bg::i64>, bg::TimeSeriesGuarantee::final>>>(
+            bg::start = [](bg::Queue) {}, bg::mode = mode));
+    }
+}
+
 TEST_CASE("runtime queue declarations return an untyped output wiring handle",
           "[feature:node-api][series:value][queue][node]") {
     const auto queue_node = bg::queue(
         bg::output_type = bg::TS<bg::i64>::type(),
         bg::start = [](bg::Queue) {});
+    const auto batch_queue_node = bg::queue(
+        bg::output_type = bg::TS<bg::List<bg::i64>>::type(),
+        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
     static_assert(std::same_as<decltype(queue_node()), std::optional<bg::WiringPoint>>);
 
     auto wiring = bg::GraphWiring{};
     std::optional<bg::WiringPoint> output;
+    std::optional<bg::WiringPoint> batch_output;
     {
         const auto context = bg::WiringContext{wiring};
         output = queue_node();
+        batch_output = batch_queue_node();
     }
     wiring.finalize();
     REQUIRE(output.has_value());
     CHECK(wiring.output_node_index(*output) == 0);
+    REQUIRE(batch_output.has_value());
+    CHECK(wiring.output_node_index(*batch_output) == 1);
     const auto compiled = bg::CompiledGraph{wiring};
     CHECK(compiled.node(0).has_output());
     CHECK(compiled.node(0).has_output_runtime_type());
     CHECK(compiled.node(0).evaluation_function() == nullptr);
     CHECK(&compiled.node(0).output_runtime_type() == &bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>());
+    CHECK(compiled.node(1).queue_mode() == bg::QueueMode::batch);
+    CHECK(&compiled.node(1).output_runtime_type() ==
+          &bg::cpp_time_series_runtime_type<bg::TS<bg::List<bg::i64>>>());
 }
 
 TEST_CASE("queue stop callbacks bind optional scalars and Scalar views by canonical type",

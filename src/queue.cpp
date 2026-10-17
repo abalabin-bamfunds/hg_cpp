@@ -100,13 +100,13 @@ QueueControl::QueueControl() : gate_{std::make_shared<QueueWriteGate>()} {}
 QueueControl::~QueueControl() { close(); }
 
 Queue QueueControl::make_queue(util::buffer buffer, std::size_t target,
-                               const TimeSeriesRuntimeType &runtime_type) const {
+                               const TimeSeriesRuntimeType &runtime_type, QueueMode mode) const {
     if (gate_->closed()) {
         return Queue{gate_, {}};
     }
 
     auto writer = std::make_unique<QueueMessageWriter>(std::move(buffer), target, runtime_type,
-                                                       allocator{*std::pmr::new_delete_resource()});
+                                                       allocator{*std::pmr::new_delete_resource()}, mode);
     return Queue{gate_, std::move(writer)};
 }
 

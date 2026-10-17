@@ -120,8 +120,9 @@ const auto updates = bg::queue(
     bg::mode = bg::QueueMode::elide);
 ```
 
-The mode defaults to `QueueMode::standard`. The declaration accepts standard and
-eliding modes. Batch mode is rejected until batch message handling is available.
+The mode defaults to `QueueMode::standard`. The declaration also accepts eliding
+and batch modes. [Queue messages](time-series-types.md#queue-messages) define
+the output requirements and payload for each mode.
 Queue nodes have no evaluation function or initial evaluation. They run in the
 outer graph and use the ordinary node lifecycle and wiring deduplication rules.
 [Queue handles](time-series-types.md#queue-messages) define writing and copying.

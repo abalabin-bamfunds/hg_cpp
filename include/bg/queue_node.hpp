@@ -463,11 +463,15 @@ class QueueNodeDefinition : public QueueNodeOutputType<Output, RuntimeOutput> {
     QueueMode queue_mode() const noexcept { return mode_; }
 
     const TimeSeriesRuntimeType &output_runtime_type(const WiringArguments &arguments) const {
-        if constexpr (RuntimeOutput) {
-            return resolve_time_series_runtime_type(*arguments.resolved_output_type());
-        } else {
-            return output_declaration_traits<Out<Output>>::runtime(*arguments.resolved_output_type());
-        }
+        const auto &runtime_type = [&]() -> const TimeSeriesRuntimeType & {
+            if constexpr (RuntimeOutput) {
+                return resolve_time_series_runtime_type(*arguments.resolved_output_type());
+            } else {
+                return output_declaration_traits<Out<Output>>::runtime(*arguments.resolved_output_type());
+            }
+        }();
+        validate_queue_output_type(runtime_type.type(), mode_);
+        return runtime_type;
     }
 
     compiled_data_type compile(const ResolvedSignature &, allocator &) const { return {start_, stop_}; }
@@ -587,7 +591,7 @@ template <typename Output, typename... Options>
 [[nodiscard]] auto queue(Options &&...options) {
     auto [start_callback, stop_callback, mode_value, output] =
         details::make_queue_callbacks(std::forward<Options>(options)...);
-    if (mode_value != QueueMode::standard && mode_value != QueueMode::elide) {
+    if (mode_value != QueueMode::standard && mode_value != QueueMode::elide && mode_value != QueueMode::batch) {
         throw std::invalid_argument{"queue mode is unsupported"};
     }
     using Definition = details::QueueNodeDefinition<Output, decltype(start_callback), decltype(stop_callback), false>;
@@ -601,7 +605,7 @@ template <typename... Options>
 [[nodiscard]] auto queue(Options &&...options) {
     auto [start_callback, stop_callback, mode_value, output] =
         details::make_queue_callbacks(std::forward<Options>(options)...);
-    if (mode_value != QueueMode::standard && mode_value != QueueMode::elide) {
+    if (mode_value != QueueMode::standard && mode_value != QueueMode::elide && mode_value != QueueMode::batch) {
         throw std::invalid_argument{"queue mode is unsupported"};
     }
     using Definition = details::QueueNodeDefinition<void, decltype(start_callback), decltype(stop_callback), true>;

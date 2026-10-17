@@ -10,6 +10,7 @@
 #include <bg/scalar/struct/scalar_type.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/tick_serializer.hpp>
+#include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/util/buffer.hpp>
@@ -21,6 +22,7 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -117,6 +119,11 @@ struct QueuePayload {
     bg::i64 number{};
 };
 
+template <template <typename, auto...> typename Field> struct BatchQueueBundle {
+    Field<bg::TS<bg::List<bg::i64>>> first;
+    Field<bg::TS<bg::List<bg::i64>>> second;
+};
+
 struct QueuePayloadBufferHandlers {
     static bool register_operations() {
         static const auto registered = [] {
@@ -143,6 +150,10 @@ struct QueuePayloadBufferHandlers {
                     const auto number = value.value().number;
                     writer.write_bytes(std::as_bytes(std::span{&number, std::size_t{1}}));
                     writer.write(writing_payload);
+                    if (fail_after_write) {
+                        fail_after_write = false;
+                        throw std::runtime_error{"injected queue payload write failure"};
+                    }
                 }) ||
                 !runtime.set_project<QueuePayload>([](bg::Scalar<QueuePayload> value,
                                                       bg::ScalarBufferProjectionContext &projection) {
@@ -163,6 +174,7 @@ struct QueuePayloadBufferHandlers {
     inline static std::shared_ptr<int> writing_payload;
     inline static std::size_t read_calls{};
     inline static std::size_t fail_on_read{};
+    inline static bool fail_after_write{};
 };
 
 struct PayloadQueueNodeDefinition {
@@ -470,6 +482,96 @@ TEST_CASE("queue discard destroys unread typed payloads after stop callbacks and
     }
 }
 
+TEST_CASE("batch queue shutdown and failed writes discard owning item payloads",
+          "[evaluation][feature:time-series-storage][series:value][scalar:compound][scalar:list][queue][batch]"
+          "[lifecycle][failure]") {
+    REQUIRE(QueuePayloadBufferHandlers::register_operations());
+    const auto queue_node = bg::queue<bg::TS<bg::List<QueuePayload>>>(
+        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
+    auto wiring = bg::GraphWiring{};
+    bg::WiringPoint output;
+    {
+        const auto context = bg::WiringContext{wiring};
+        output = queue_node();
+    }
+    wiring.finalize();
+    const auto target = wiring.output_node_index(output);
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+
+    SECTION("shutdown discards the semantic batch item") {
+        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        runtime.start(time(1));
+        auto queue = runtime.make_queue(target);
+        auto payload = std::make_shared<int>(41);
+        auto probe = std::weak_ptr<int>{payload};
+        QueuePayloadBufferHandlers::writing_payload = payload;
+        auto value = bg::ScalarValue<QueuePayload>{QueuePayload{41}};
+        REQUIRE(queue.write(::literal::TimeSeriesLiteral(value)));
+        QueuePayloadBufferHandlers::writing_payload.reset();
+        payload.reset();
+        CHECK_FALSE(probe.expired());
+
+        runtime.stop();
+
+        CHECK(probe.expired());
+    }
+
+    SECTION("writer rollback discards the semantic batch item") {
+        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        runtime.start(time(1));
+        auto queue = runtime.make_queue(target);
+        auto payload = std::make_shared<int>(42);
+        auto probe = std::weak_ptr<int>{payload};
+        QueuePayloadBufferHandlers::writing_payload = payload;
+        auto value = bg::ScalarValue<QueuePayload>{QueuePayload{42}};
+        QueuePayloadBufferHandlers::fail_after_write = true;
+        CHECK_THROWS_AS(queue.write(::literal::TimeSeriesLiteral(value)), std::runtime_error);
+        QueuePayloadBufferHandlers::writing_payload.reset();
+        payload.reset();
+        CHECK(probe.expired());
+        runtime.stop();
+    }
+}
+
+TEST_CASE("batch queue replay failure discards later values in the same nested frame",
+          "[evaluation][feature:time-series-storage][series:fixed-tsl][scalar:compound][scalar:list][queue][batch]"
+          "[failure]") {
+    REQUIRE(QueuePayloadBufferHandlers::register_operations());
+    const auto queue_node = bg::queue<bg::TSL<bg::TS<bg::List<QueuePayload>>, 3>>(
+        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
+    auto wiring = bg::GraphWiring{};
+    bg::WiringPoint output;
+    {
+        const auto context = bg::WiringContext{wiring};
+        output = queue_node();
+    }
+    wiring.finalize();
+    const auto target = wiring.output_node_index(output);
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    runtime.start(time(1));
+    auto queue = runtime.make_queue(target);
+
+    auto payload = std::make_shared<int>(43);
+    auto probe = std::weak_ptr<int>{payload};
+    QueuePayloadBufferHandlers::writing_payload = payload;
+    QueuePayloadBufferHandlers::read_calls = 0;
+    QueuePayloadBufferHandlers::fail_on_read = 5;
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral{
+        {0, QueuePayload{1}}, {1, QueuePayload{2}}, {2, QueuePayload{3}}}));
+    QueuePayloadBufferHandlers::writing_payload.reset();
+    payload.reset();
+    CHECK_FALSE(probe.expired());
+
+    CHECK_THROWS_AS(runtime.evaluate(time(2)), std::runtime_error);
+    CHECK(QueuePayloadBufferHandlers::read_calls == 5);
+    QueuePayloadBufferHandlers::fail_on_read = 0;
+    CHECK(probe.expired());
+    runtime.stop();
+}
+
 TEST_CASE("queue shutdown destroys typed unread payloads after startup and evaluation failures",
           "[evaluation][feature:time-series-storage][series:value][scalar:compound][queue][failure]") {
     REQUIRE(QueuePayloadBufferHandlers::register_operations());
@@ -706,6 +808,457 @@ TEST_CASE("outer evaluation drains standard and eliding queues and publishes eac
     runtime.stop();
 }
 
+TEST_CASE("batch queues append copied handle values and encode nested scalar list items",
+          "[evaluation][feature:time-series-storage][series:value][scalar:list][scalar:i64][queue][batch]") {
+    auto batch_values = std::vector<std::vector<bg::i64>>{};
+    auto nested_values = std::vector<std::vector<std::vector<bg::i64>>>{};
+    const auto batch_queue = bg::queue<bg::TS<bg::List<bg::i64>>>(
+        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
+    const auto nested_queue = bg::queue<bg::TS<bg::List<bg::List<bg::i64>>>>(
+        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
+    const auto batch_sink = bg::node([&](bg::In<bg::TS<bg::List<bg::i64>>> input) {
+        auto values = std::vector<bg::i64>{};
+        const auto list = input.value_view();
+        for (auto index = std::size_t{}; index < list.size(); ++index) {
+            values.push_back(list[index].value());
+        }
+        batch_values.push_back(std::move(values));
+    });
+    const auto nested_sink = bg::node([&](bg::In<bg::TS<bg::List<bg::List<bg::i64>>>> input) {
+        auto values = std::vector<std::vector<bg::i64>>{};
+        const auto outer = input.value_view();
+        for (auto index = std::size_t{}; index < outer.size(); ++index) {
+            auto inner_values = std::vector<bg::i64>{};
+            const auto inner = outer[index];
+            for (auto item = std::size_t{}; item < inner.size(); ++item) {
+                inner_values.push_back(inner[item].value());
+            }
+            values.push_back(std::move(inner_values));
+        }
+        nested_values.push_back(std::move(values));
+    });
+
+    auto wiring = bg::GraphWiring{};
+    auto batch_output = bg::WiringPoint{};
+    auto nested_output = bg::WiringPoint{};
+    {
+        const auto context = bg::WiringContext{wiring};
+        batch_output = batch_queue();
+        nested_output = nested_queue();
+        batch_sink(batch_output);
+        nested_sink(nested_output);
+    }
+    wiring.finalize();
+    const auto batch_target = wiring.output_node_index(batch_output);
+    const auto nested_target = wiring.output_node_index(nested_output);
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    runtime.start(time(1));
+
+    auto batch = runtime.make_queue(batch_target);
+    auto batch_copy = batch;
+    auto nested = runtime.make_queue(nested_target);
+    REQUIRE(batch.write(::literal::TimeSeriesLiteral(bg::i64{10})));
+    REQUIRE(batch_copy.write(::literal::TimeSeriesLiteral(bg::i64{20})));
+    REQUIRE(batch.write(::literal::TimeSeriesLiteral(bg::i64{30})));
+    REQUIRE(nested.write(::literal::TimeSeriesLiteral{1, 2}));
+    REQUIRE(nested.write(::literal::TimeSeriesLiteral{3}));
+    runtime.evaluate(time(2));
+
+    CHECK(batch_values == std::vector<std::vector<bg::i64>>{{10, 20, 30}});
+    CHECK(nested_values == std::vector<std::vector<std::vector<bg::i64>>>{{{1, 2}, {3}}});
+
+    REQUIRE(batch_copy.write(::literal::TimeSeriesLiteral(bg::i64{40})));
+    REQUIRE(batch.write(::literal::TimeSeriesLiteral(bg::i64{50})));
+    runtime.evaluate(time(3));
+    CHECK(batch_values == std::vector<std::vector<bg::i64>>{{10, 20, 30}, {40, 50}});
+    CHECK(nested_values == std::vector<std::vector<std::vector<bg::i64>>>{{{1, 2}, {3}}});
+    runtime.stop();
+}
+
+TEST_CASE("batch queues accumulate scalar lists inside TSL, TSB, and TSD values",
+          "[evaluation][feature:time-series-storage][series:fixed-tsl][series:tsb][series:tsd]"
+          "[scalar:list][scalar:i64][queue][batch]") {
+    auto list_values = std::vector<std::vector<std::vector<bg::i64>>>{};
+    auto bundle_values = std::vector<std::vector<std::vector<bg::i64>>>{};
+    auto dictionary_values = std::vector<std::vector<std::vector<bg::i64>>>{};
+    const auto list_queue = bg::queue<bg::TSL<bg::TS<bg::List<bg::i64>>, 2>>(
+        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
+    const auto bundle_queue = bg::queue<bg::TSB<BatchQueueBundle>>(
+        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
+    const auto dictionary_queue = bg::queue<bg::TSD<bg::i64, bg::TS<bg::List<bg::i64>>>>(
+        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
+    const auto list_sink = bg::node([&](bg::In<bg::TSL<bg::TS<bg::List<bg::i64>>, 2>> input) {
+        auto values = std::vector<std::vector<bg::i64>>{};
+        for (auto index = std::size_t{}; index < input.size(); ++index) {
+            auto items = std::vector<bg::i64>{};
+            const auto list = input[index].value_view();
+            for (auto item = std::size_t{}; item < list.size(); ++item) {
+                items.push_back(list[item].value());
+            }
+            values.push_back(std::move(items));
+        }
+        list_values.push_back(std::move(values));
+    });
+    const auto bundle_sink = bg::node([&](bg::In<bg::TSB<BatchQueueBundle>> input) {
+        auto values = std::vector<std::vector<bg::i64>>{};
+        for (const auto field : {input->first, input->second}) {
+            auto items = std::vector<bg::i64>{};
+            const auto list = field.value_view();
+            for (auto item = std::size_t{}; item < list.size(); ++item) {
+                items.push_back(list[item].value());
+            }
+            values.push_back(std::move(items));
+        }
+        bundle_values.push_back(std::move(values));
+    });
+    const auto dictionary_sink = bg::node([&](bg::In<bg::TSD<bg::i64, bg::TS<bg::List<bg::i64>>>> input) {
+        auto values = std::vector<std::vector<bg::i64>>{};
+        for (const auto key : {bg::i64{1}, bg::i64{2}}) {
+            auto items = std::vector<bg::i64>{};
+            const auto list = input[key].value_view();
+            for (auto item = std::size_t{}; item < list.size(); ++item) {
+                items.push_back(list[item].value());
+            }
+            values.push_back(std::move(items));
+        }
+        dictionary_values.push_back(std::move(values));
+    });
+
+    auto wiring = bg::GraphWiring{};
+    auto list_output = bg::WiringPoint{};
+    auto bundle_output = bg::WiringPoint{};
+    auto dictionary_output = bg::WiringPoint{};
+    {
+        const auto context = bg::WiringContext{wiring};
+        list_output = list_queue();
+        bundle_output = bundle_queue();
+        dictionary_output = dictionary_queue();
+        list_sink(list_output);
+        bundle_sink(bundle_output);
+        dictionary_sink(dictionary_output);
+    }
+    wiring.finalize();
+    const auto list_target = wiring.output_node_index(list_output);
+    const auto bundle_target = wiring.output_node_index(bundle_output);
+    const auto dictionary_target = wiring.output_node_index(dictionary_output);
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    runtime.start(time(1));
+
+    auto list = runtime.make_queue(list_target);
+    auto bundle = runtime.make_queue(bundle_target);
+    auto dictionary = runtime.make_queue(dictionary_target);
+    REQUIRE(list.write(::literal::TimeSeriesLiteral{{0, 1}, {1, 10}}));
+    REQUIRE(list.write(::literal::TimeSeriesLiteral{{0, 2}, {1, 20}}));
+    REQUIRE(bundle.write(::literal::TimeSeriesLiteral{{"first", 3}, {"second", 30}}));
+    REQUIRE(bundle.write(::literal::TimeSeriesLiteral{{"first", 4}, {"second", 40}}));
+    REQUIRE(dictionary.write(::literal::TimeSeriesLiteral{{1, 5}, {2, 50}}));
+    REQUIRE(dictionary.write(::literal::TimeSeriesLiteral{{1, 6}, {2, 60}}));
+    runtime.evaluate(time(2));
+
+    CHECK(list_values == std::vector<std::vector<std::vector<bg::i64>>>{{{1, 2}, {10, 20}}});
+    CHECK(bundle_values == std::vector<std::vector<std::vector<bg::i64>>>{{{3, 4}, {30, 40}}});
+    CHECK(dictionary_values == std::vector<std::vector<std::vector<bg::i64>>>{{{5, 6}, {50, 60}}});
+
+    REQUIRE(list.write(::literal::TimeSeriesLiteral{{0, 7}}));
+    REQUIRE(bundle.write(::literal::TimeSeriesLiteral{{"first", 8}}));
+    REQUIRE(dictionary.write(::literal::TimeSeriesLiteral{{1, 9}}));
+    runtime.evaluate(time(3));
+
+    CHECK(list_values == std::vector<std::vector<std::vector<bg::i64>>>{{{1, 2}, {10, 20}}, {{7}, {10, 20}}});
+    CHECK(bundle_values == std::vector<std::vector<std::vector<bg::i64>>>{{{3, 4}, {30, 40}}, {{8}, {30, 40}}});
+    CHECK(dictionary_values == std::vector<std::vector<std::vector<bg::i64>>>{{{5, 6}, {50, 60}}, {{9}, {50, 60}}});
+    runtime.stop();
+}
+
+TEST_CASE("batch queue admission keeps conflicting bundle frames pending as a whole",
+          "[evaluation][feature:time-series-storage][series:tsb][scalar:list][scalar:i64][queue][batch][failure]") {
+    using Values = std::vector<bg::i64>;
+    using Event = std::pair<std::optional<Values>, std::optional<Values>>;
+    auto events = std::vector<Event>{};
+    const auto queue_node = bg::queue<bg::TSB<BatchQueueBundle>>(
+        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
+    const auto sink = bg::node([&](bg::In<bg::TSB<BatchQueueBundle>> input) {
+        const auto values = [](const auto &field) -> std::optional<Values> {
+            if (!field.valid()) {
+                return std::nullopt;
+            }
+            auto result = Values{};
+            const auto list = field.value_view();
+            for (auto index = std::size_t{}; index < list.size(); ++index) {
+                result.push_back(list[index].value());
+            }
+            return result;
+        };
+        events.emplace_back(values(input->first), values(input->second));
+    });
+
+    auto wiring = bg::GraphWiring{};
+    bg::WiringPoint output;
+    {
+        const auto context = bg::WiringContext{wiring};
+        output = queue_node();
+        sink(output);
+    }
+    wiring.finalize();
+    const auto target = wiring.output_node_index(output);
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    runtime.start(time(1));
+    auto queue = runtime.make_queue(target);
+
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral{{"first", 1}, {"second", 10}}));
+    runtime.evaluate(time(2));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral{{"second", ::literal::INVALID}}));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral{{"first", 2}, {"second", 20}}));
+    runtime.evaluate(time(3));
+
+    CHECK(events == std::vector<Event>{{Values{1}, Values{10}}, {Values{1}, std::nullopt}});
+
+    runtime.evaluate(time(4));
+    CHECK(events == std::vector<Event>{{Values{1}, Values{10}}, {Values{1}, std::nullopt}, {Values{2}, Values{20}}});
+    runtime.stop();
+}
+
+TEST_CASE("batch queue invalidations wait for changes and redundant invalidations remain no-ops",
+          "[evaluation][feature:time-series-storage][series:value][scalar:list][scalar:i64][queue][batch]"
+          "[transition:invalidation]") {
+    using Values = std::vector<bg::i64>;
+    auto events = std::vector<std::optional<Values>>{};
+    const auto queue_node = bg::queue<bg::TS<bg::List<bg::i64>>>(
+        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
+    const auto sink = bg::node([&](bg::In<bg::TS<bg::List<bg::i64>>, bg::optional> input) {
+        if (!input.valid()) {
+            events.emplace_back(std::nullopt);
+            return;
+        }
+        auto values = Values{};
+        const auto list = input.value_view();
+        for (auto index = std::size_t{}; index < list.size(); ++index) {
+            values.push_back(list[index].value());
+        }
+        events.emplace_back(std::move(values));
+    });
+
+    auto wiring = bg::GraphWiring{};
+    bg::WiringPoint output;
+    {
+        const auto context = bg::WiringContext{wiring};
+        output = queue_node();
+        sink(output);
+    }
+    wiring.finalize();
+    const auto target = wiring.output_node_index(output);
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    runtime.start(time(1));
+    auto queue = runtime.make_queue(target);
+
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(bg::i64{10})));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(::literal::INVALID)));
+    runtime.evaluate(time(2));
+    CHECK(events == std::vector<std::optional<Values>>{Values{10}});
+
+    runtime.evaluate(time(3));
+    CHECK(events == std::vector<std::optional<Values>>{Values{10}, std::nullopt});
+
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(::literal::INVALID)));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(::literal::INVALID)));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(bg::i64{20})));
+    runtime.evaluate(time(4));
+    CHECK(events == std::vector<std::optional<Values>>{Values{10}, std::nullopt, Values{20}});
+
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(::literal::INVALID)));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(bg::i64{30})));
+    runtime.evaluate(time(5));
+    CHECK(events == std::vector<std::optional<Values>>{Values{10}, std::nullopt, Values{20}, std::nullopt});
+
+    runtime.evaluate(time(6));
+    CHECK(events == std::vector<std::optional<Values>>{Values{10}, std::nullopt, Values{20}, std::nullopt, Values{30}});
+    runtime.stop();
+}
+
+TEST_CASE("batch dictionary admission preserves per-key removal and recreation boundaries",
+          "[evaluation][feature:time-series-storage][series:tsd][scalar:list][scalar:i64][queue][batch]"
+          "[transition:removal][transition:addition]") {
+    using Values = std::vector<bg::i64>;
+    using Event = std::pair<std::optional<Values>, std::optional<Values>>;
+    auto events = std::vector<Event>{};
+    const auto queue_node = bg::queue<bg::TSD<bg::i64, bg::TS<bg::List<bg::i64>>>>(
+        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
+    const auto sink = bg::node([&](bg::In<bg::TSD<bg::i64, bg::TS<bg::List<bg::i64>>>> input) {
+        const auto values = [&](bg::i64 key) -> std::optional<Values> {
+            if (!input.contains(key)) {
+                return std::nullopt;
+            }
+
+            const auto item = input[key];
+            if (!item.valid()) {
+                return std::nullopt;
+            }
+            auto result = Values{};
+            const auto list = item.value_view();
+            for (auto index = std::size_t{}; index < list.size(); ++index) {
+                result.push_back(list[index].value());
+            }
+            return result;
+        };
+        events.emplace_back(values(1), values(2));
+    });
+
+    auto wiring = bg::GraphWiring{};
+    bg::WiringPoint output;
+    {
+        const auto context = bg::WiringContext{wiring};
+        output = queue_node();
+        sink(output);
+    }
+    wiring.finalize();
+    const auto target = wiring.output_node_index(output);
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    runtime.start(time(1));
+    auto queue = runtime.make_queue(target);
+
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral{{1, 10}, {2, 100}}));
+    runtime.evaluate(time(2));
+
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral{{1, 11}}));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral{{1, ::literal::REMOVE}}));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral{{2, 101}}));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral{{1, 12}}));
+    runtime.evaluate(time(3));
+    CHECK(events == std::vector<Event>{{Values{10}, Values{100}}, {Values{11}, Values{100}}});
+
+    runtime.evaluate(time(4));
+    CHECK(events == std::vector<Event>{{Values{10}, Values{100}}, {Values{11}, Values{100}},
+                                        {std::nullopt, Values{101}}});
+
+    runtime.evaluate(time(5));
+    CHECK(events == std::vector<Event>{{Values{10}, Values{100}}, {Values{11}, Values{100}},
+                                        {std::nullopt, Values{101}}, {Values{12}, Values{101}}});
+
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral{{9, ::literal::REMOVE}}));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral{{9, 90}}));
+    runtime.evaluate(time(6));
+    CHECK(events == std::vector<Event>{{Values{10}, Values{100}}, {Values{11}, Values{100}},
+                                        {std::nullopt, Values{101}}, {Values{12}, Values{101}},
+                                        {Values{12}, Values{101}}});
+    runtime.stop();
+}
+
+TEST_CASE("batch queue replay preserves owned scalar values in the output list",
+          "[evaluation][feature:time-series-storage][series:value][scalar:list][scalar:string][queue][batch]") {
+    auto batch_values = std::vector<std::vector<std::string>>{};
+    const auto queue_node = bg::queue<bg::TS<bg::List<bg::string>>>(
+        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
+    const auto sink = bg::node([&](bg::In<bg::TS<bg::List<bg::string>>> input) {
+        auto values = std::vector<std::string>{};
+        const auto list = input.value_view();
+        for (auto index = std::size_t{}; index < list.size(); ++index) {
+            values.emplace_back(list[index].value());
+        }
+        batch_values.push_back(std::move(values));
+    });
+
+    auto wiring = bg::GraphWiring{};
+    auto output = bg::WiringPoint{};
+    {
+        const auto context = bg::WiringContext{wiring};
+        output = queue_node();
+        sink(output);
+    }
+    wiring.finalize();
+    const auto target = wiring.output_node_index(output);
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    runtime.start(time(1));
+    auto queue = runtime.make_queue(target);
+
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral("first owned string value with allocated storage")));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral("second owned string value with allocated storage")));
+    runtime.evaluate(time(2));
+    CHECK(batch_values == std::vector<std::vector<std::string>>{{
+                              "first owned string value with allocated storage",
+                              "second owned string value with allocated storage"}});
+
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral("next owned string value with allocated storage")));
+    runtime.evaluate(time(3));
+    CHECK(batch_values == std::vector<std::vector<std::string>>{{
+                              "first owned string value with allocated storage",
+                              "second owned string value with allocated storage"},
+                          {"next owned string value with allocated storage"}});
+    runtime.stop();
+}
+
+TEST_CASE("batch queue retains owned payloads while an invalidated leaf waits pending",
+          "[evaluation][feature:time-series-storage][series:value][scalar:compound][scalar:list][queue][batch]"
+          "[lifetime][transition:invalidation]") {
+    REQUIRE(QueuePayloadBufferHandlers::register_operations());
+    auto values = std::vector<std::vector<bg::i64>>{};
+    const auto queue_node = bg::queue<bg::TS<bg::List<QueuePayload>>>(
+        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
+    const auto sink = bg::node([&](bg::In<bg::TS<bg::List<QueuePayload>>> input) {
+        auto items = std::vector<bg::i64>{};
+        const auto list = input.value_view();
+        for (auto index = std::size_t{}; index < list.size(); ++index) {
+            items.push_back(list[index].value().number);
+        }
+        values.push_back(std::move(items));
+    });
+
+    auto wiring = bg::GraphWiring{};
+    bg::WiringPoint output;
+    {
+        const auto context = bg::WiringContext{wiring};
+        output = queue_node();
+        sink(output);
+    }
+    wiring.finalize();
+    const auto target = wiring.output_node_index(output);
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    runtime.start(time(1));
+    auto queue = runtime.make_queue(target);
+
+    auto initial_payload = std::make_shared<int>(1);
+    auto initial_probe = std::weak_ptr<int>{initial_payload};
+    QueuePayloadBufferHandlers::writing_payload = initial_payload;
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(QueuePayload{1})));
+    QueuePayloadBufferHandlers::writing_payload.reset();
+    initial_payload.reset();
+    CHECK_FALSE(initial_probe.expired());
+    runtime.evaluate(time(2));
+    CHECK(initial_probe.expired());
+    CHECK(values == std::vector<std::vector<bg::i64>>{{1}});
+
+    auto pending_payload = std::make_shared<int>(2);
+    auto pending_probe = std::weak_ptr<int>{pending_payload};
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(::literal::INVALID)));
+    QueuePayloadBufferHandlers::writing_payload = pending_payload;
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(QueuePayload{2})));
+    QueuePayloadBufferHandlers::writing_payload.reset();
+    pending_payload.reset();
+    CHECK_FALSE(pending_probe.expired());
+
+    runtime.evaluate(time(3));
+    CHECK_FALSE(pending_probe.expired());
+    CHECK(values == std::vector<std::vector<bg::i64>>{{1}});
+
+    runtime.evaluate(time(4));
+    CHECK(pending_probe.expired());
+    CHECK(values == std::vector<std::vector<bg::i64>>{{1}, {2}});
+    runtime.stop();
+}
+
 TEST_CASE("a standard queue conflict retains its frame and stops later targets",
           "[evaluation][feature:time-series-storage][series:tsd][series:value][scalar:i64][queue][failure]") {
     auto dictionary_values = std::vector<bg::i64>{};
@@ -750,6 +1303,62 @@ TEST_CASE("a standard queue conflict retains its frame and stops later targets",
     runtime.evaluate(time(3));
     CHECK(dictionary_values == std::vector<bg::i64>{10, -1});
     CHECK(scalar_values == std::vector<bg::i64>{20});
+    runtime.stop();
+}
+
+TEST_CASE("batch queue values after a standard conflict start the next cycle with a fresh list",
+          "[evaluation][feature:time-series-storage][series:value][scalar:list][scalar:i64][queue][batch][failure]") {
+    auto batch_values = std::vector<std::vector<bg::i64>>{};
+    auto standard_values = std::vector<bg::i64>{};
+    const auto batch_queue = bg::queue<bg::TS<bg::List<bg::i64>>>(
+        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
+    const auto standard_queue = bg::queue<bg::TS<bg::i64>>(
+        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::standard);
+    const auto batch_sink = bg::node([&](bg::In<bg::TS<bg::List<bg::i64>>> input) {
+        auto values = std::vector<bg::i64>{};
+        const auto list = input.value_view();
+        for (auto index = std::size_t{}; index < list.size(); ++index) {
+            values.push_back(list[index].value());
+        }
+        batch_values.push_back(std::move(values));
+    });
+    const auto standard_sink = bg::node([&](bg::In<bg::TS<bg::i64>> input) {
+        standard_values.push_back(*input);
+    });
+
+    auto wiring = bg::GraphWiring{};
+    auto batch_output = bg::WiringPoint{};
+    auto standard_output = bg::WiringPoint{};
+    {
+        const auto context = bg::WiringContext{wiring};
+        batch_output = batch_queue();
+        standard_output = standard_queue();
+        batch_sink(batch_output);
+        standard_sink(standard_output);
+    }
+    wiring.finalize();
+    const auto batch_target = wiring.output_node_index(batch_output);
+    const auto standard_target = wiring.output_node_index(standard_output);
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    runtime.start(time(1));
+
+    auto batch = runtime.make_queue(batch_target);
+    auto standard = runtime.make_queue(standard_target);
+    REQUIRE(batch.write(::literal::TimeSeriesLiteral(bg::i64{10})));
+    REQUIRE(batch.write(::literal::TimeSeriesLiteral(bg::i64{20})));
+    REQUIRE(standard.write(::literal::TimeSeriesLiteral(bg::i64{1})));
+    REQUIRE(standard.write(::literal::TimeSeriesLiteral(bg::i64{2})));
+    REQUIRE(batch.write(::literal::TimeSeriesLiteral(bg::i64{30})));
+    runtime.evaluate(time(2));
+
+    CHECK(batch_values == std::vector<std::vector<bg::i64>>{{10, 20}});
+    CHECK(standard_values == std::vector<bg::i64>{1});
+
+    runtime.evaluate(time(3));
+    CHECK(batch_values == std::vector<std::vector<bg::i64>>{{10, 20}, {30}});
+    CHECK(standard_values == std::vector<bg::i64>{1, 2});
     runtime.stop();
 }
 

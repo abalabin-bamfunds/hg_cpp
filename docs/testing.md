@@ -424,13 +424,18 @@ graph compilation or evaluation.
 - outer runtime graph queue ownership, shared admission across target nodes, closure before stop callbacks,
   typed unread-message cleanup after stop, startup and evaluation failure, finalization without stop,
   retained handles after graph destruction, inner graph rejection, and optional runtime storage
-- queue-node start and stop callbacks, scalar conversion and optional values, callback captures,
-  destination selection, independent runtime graphs, retained writer copies, and absence of initial evaluation
+- queue-node ordinary output requirements, start and stop callbacks, scalar conversion and optional values,
+  callback captures, destination selection, independent runtime graphs, retained writer copies,
+  and absence of initial evaluation
 - outer-cycle queue draining in standard and eliding modes, publication once per changed target, validity
   transitions, no-op advancement, whole-message pending, cross-target ordering, collection-item independence,
   cleanup before application, and fail-stop cleanup after application errors
+- batch queue output validation, element literal encoding, ordered accumulation per time series, batch replacement
+  across cycles, nested collection items, whole-message pending at invalidation and removal boundaries,
+  owning scalar replay, unread-payload cleanup, and failure cleanup
 - queue message reading for sentinel skipping, target order, padding, block rollover, committed reservation order,
-  standard retry, batch rejection, no-op advancement, typed discard, replay failure, and concurrent watermark growth
+  standard retry, incompatible batch output rejection, no-op advancement, typed discard, replay failure,
+  and concurrent watermark growth
 - queue tick application in standard and eliding modes, independent collection items, complete-message pending,
   first-conflict stopping, no-op timestamps, invalidation, revalidation, per-key dictionary tick/removal separation,
   encoded scalar ownership during inspection and replay, consuming ownership transfer, and unread-payload cleanup

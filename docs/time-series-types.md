@@ -167,6 +167,7 @@ The controller does not destroy encoded payloads.
 The node template declares `uses_queue` and `uses_output_runtime_type` so the
 compiled graph reserves queue storage and retains the target's runtime type.
 `CompiledNode::queue_mode()` supplies the target node's configured mode.
+Queue outputs and every contained time series must use the `ordinary` guarantee.
 The graph creates one shared stream on first use. Handle creation requires a
 started graph that has not finalized. After stop, it returns a closed handle.
 Inner graphs reject it.
@@ -196,11 +197,11 @@ read or discard the tick payload with the semantic time-series type. They must
 not construct a `TimeSeriesTickReader` over the framed buffer.
 
 `bg::details::QueueMessageReader` returns the next non-sentinel target without
-consuming that frame. Standard apply leaves a conflicting frame pending, and
-inspection exceptions leave it pending. Successful apply and typed discard
+consuming that frame. Standard and batch apply leave a conflicting frame
+pending, and inspection exceptions leave it pending. Successful apply and typed discard
 consume the entire frame, including trailing padding. Replay exceptions consume
-the frame. Batch mode rejects an individual frame without consuming it. Call
-`discard(type)` for frames that will not be applied; releasing the reader does
+the frame. Call `discard(type, mode)` for frames that will not be applied;
+the mode selects the scalar payload type. Releasing the reader does
 not destroy unread payloads.
 
 Queue message serialization supports `TS`, fixed-size `TSL`, `TSB`, `TSS`, and
@@ -218,15 +219,40 @@ the reader position, output, and encoded objects stay unchanged. Fixed-list and
 bundle items are checked independently.
 Eliding mode applies successive changes in order.
 
+Batch mode requires `TS<List<T>>` leaves, directly or inside fixed-size `TSL`,
+`TSB`, and `TSD` outputs. Each written leaf contains one `T`, using the existing
+tick grammar with the list's element encoding. The first value for a leaf in
+an outer cycle replaces its previous list with a one-element list. Later values
+append in queue order. Leaves accumulate independently, and an unchanged leaf
+retains its previous list. Subscribers observe the completed lists through
+[ordinary queue publication](evaluation.md#queue-input).
+
+An effective invalidation and accumulated values for the same time series use
+separate cycles. TSD item updates and removals use the same per-key separation
+as standard mode below. A conflicting message remains pending in its entirety
+and stops queue reading.
+
+```cpp
+const auto events = bg::queue<bg::TS<bg::List<bg::i64>>>(
+    bg::start = [](bg::Queue queue) {
+        queue.write(literal::TimeSeriesLiteral(bg::i64{1}));
+        queue.write(literal::TimeSeriesLiteral(bg::i64{2}));
+    },
+    bg::mode = bg::QueueMode::batch);
+```
+
+The first outer cycle publishes the list `[1, 2]`.
+
 TSD keys are independent in standard mode. Across messages, an effective item
 update and removal of the same key use separate cycles. A removed key cannot
 be recreated by a later message in the same cycle. Removing an absent key is a
 no-op when the TSD is already valid. Updates to distinct time series under one
 key remain independent.
 
-Admission checks the complete message against changes already applied in the
-cycle. Accepted messages replay all entries in order, including repeated TSD
-keys. Replay consumes the payload and moves owning scalar values into outputs.
+In standard and batch modes, admission checks the complete message against
+changes already applied in the cycle. Accepted messages replay all entries in
+order, including repeated TSD keys. Replay consumes the payload and moves owning
+scalar values into outputs.
 No-op values are destroyed locally. Custom scalar encodings use their registered
 read and discard handlers for each scalar.
 

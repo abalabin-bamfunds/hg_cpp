@@ -31,7 +31,7 @@ The engine applies an external stop request between outer cycles.
 At the beginning of each outer cycle, after deferred cleanup, the runtime graph
 applies committed queue messages in order before evaluating nodes. It stops at
 the committed watermark or the first message that conflicts with the target's
-standard-mode limit. The conflicting message remains pending, and later
+mode. The conflicting message remains pending, and later
 messages wait behind it. See [queue messages](time-series-types.md#queue-messages)
 for application rules.
 

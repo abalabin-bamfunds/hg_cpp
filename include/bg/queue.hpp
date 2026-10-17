@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/literal/time_series_literal.hpp>
+#include <bg/queue_mode.hpp>
 
 #include <cstddef>
 #include <memory>
@@ -12,10 +13,13 @@ class buffer;
 }
 
 class TimeSeriesRuntimeType;
+class TimeSeriesType;
 
 namespace details {
 class QueueMessageWriter;
 class QueueWriteGate;
+
+void validate_queue_output_type(const TimeSeriesType &type, QueueMode mode);
 } // namespace details
 
 // A queue handle writes to one destination. Copying creates an independent writer cursor. Distinct handles may write
@@ -56,7 +60,8 @@ class QueueControl {
 
     // The buffer must be a concurrent chain with thread-safe allocation and deallocation; its allocator must outlive
     // retained handles. The runtime type must outlive close() and reader cleanup of the queue's messages.
-    Queue make_queue(util::buffer buffer, std::size_t target, const TimeSeriesRuntimeType &runtime_type) const;
+    Queue make_queue(util::buffer buffer, std::size_t target, const TimeSeriesRuntimeType &runtime_type,
+                     QueueMode mode = QueueMode::standard) const;
 
     // Rejects new writes and waits for accepted writes to finish. Safe to call more than once.
     void close() noexcept;

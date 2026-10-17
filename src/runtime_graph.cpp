@@ -931,8 +931,9 @@ void RuntimeGraph::discard_queue() noexcept {
     }
 
     while (const auto target = queue_state()->reader.next_target()) {
-        const auto &runtime_type = compiled_graph_->node(*target).output_runtime_type();
-        queue_state()->reader.discard(runtime_type.type());
+        const auto &compiled_node = compiled_graph_->node(*target);
+        const auto &runtime_type = compiled_node.output_runtime_type();
+        queue_state()->reader.discard(runtime_type.type(), compiled_node.queue_mode());
     }
 }
 
@@ -983,7 +984,7 @@ Queue RuntimeGraph::make_queue(std::size_t target) {
     }
 
     return queue_state()->control.make_queue(queue_state()->reader.current_block(), target,
-                                              compiled_node.output_runtime_type());
+                                              compiled_node.output_runtime_type(), compiled_node.queue_mode());
 }
 
 RuntimeGraph &RuntimeGraph::outer_graph() noexcept {

@@ -30,6 +30,8 @@ class Out<TS<Variable, Properties...>> {
     bool valid() const noexcept { return state_->valid(); }
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
+    // Engine API for runtime-selected scalar mutation and publication through the containing output path.
+    OutputState &output_state() const noexcept { return state_.get(); }
 
     template <typename Value> void set_value(const Scalar<Value> &value) const {
         const auto &source = details::scalar_data(value);

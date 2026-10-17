@@ -2,6 +2,8 @@
 
 #include <bg/allocator.hpp>
 #include <bg/scalar/buffer_operations.hpp>
+#include <bg/scalar/list/runtime_type.hpp>
+#include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/literal/time_series_literal.hpp>
 #include <bg/queue_mode.hpp>
@@ -14,6 +16,7 @@
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/util/buffer.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -342,7 +345,8 @@ class TimeSeriesTickScalarRead {
 class TimeSeriesTickDiscard {
   public:
     TimeSeriesTickDiscard(util::buffer_reader &reader,
-                          const TimeSeriesDispatch<TimeSeriesTickOperations> &dispatch);
+                          const TimeSeriesDispatch<TimeSeriesTickOperations> &dispatch,
+                          QueueMode mode = QueueMode::standard);
     void apply(const TimeSeriesType &type);
     void discard_child(const TimeSeriesType &type, TickHeader header);
     void discard_scalar(const ScalarType &type);
@@ -352,13 +356,15 @@ class TimeSeriesTickDiscard {
 
     util::buffer_reader *reader_;
     const TimeSeriesDispatch<TimeSeriesTickOperations> *dispatch_;
+    QueueMode mode_;
 };
 
 class TimeSeriesTickReplay {
   public:
     TimeSeriesTickReplay(util::buffer_reader &reader,
-                         const TimeSeriesDispatch<TimeSeriesTickOperations> &dispatch, bool consume = false)
-        : reader_{&reader}, dispatch_{&dispatch}, consume_{consume} {}
+                         const TimeSeriesDispatch<TimeSeriesTickOperations> &dispatch, bool consume = false,
+                         QueueMode mode = QueueMode::standard)
+        : reader_{&reader}, dispatch_{&dispatch}, consume_{consume}, mode_{mode} {}
 
     template <typename Variable>
     void apply_erased(const TimeSeriesType &type, const Out<Variable> &output) {
@@ -387,7 +393,7 @@ class TimeSeriesTickReplay {
             return;
         }
         if (failure_) {
-            TimeSeriesTickDiscard{*reader_, *dispatch_}.discard_child(type, header);
+            TimeSeriesTickDiscard{*reader_, *dispatch_, mode_}.discard_child(type, header);
             return;
         }
         apply_payload(type, output, header);
@@ -395,6 +401,10 @@ class TimeSeriesTickReplay {
 
     void apply_concrete(const TimeSeriesType &type, const Out<TS<SCALAR>> &output, TickHeader header) {
         const auto &value_type = type_cast<TimeSeriesValueType>(type);
+        if (mode_ == QueueMode::batch) {
+            apply_batch_leaf(value_type, output, header);
+            return;
+        }
         if (!header.valid) {
             mutate([&] { output.invalidate(); });
             return;
@@ -407,6 +417,68 @@ class TimeSeriesTickReplay {
                 } else {
                     output.set_value(value);
                 }
+            });
+        });
+    }
+
+    struct BatchListConstruction {
+        const Scalar<> *value;
+        ScalarValue<> *owned;
+    };
+
+    static void construct_batch_item(void *context, const ScalarRuntimeType &runtime_type, void *destination,
+                                     allocator &memory) {
+        auto &construction = *static_cast<BatchListConstruction *>(context);
+        if (construction.owned == nullptr) {
+            runtime_type.construct_from_input(destination, *construction.value, memory);
+            return;
+        }
+
+        runtime_type.construct_initial_value(destination);
+        auto rollback = util::scope_exit{[&]() noexcept { runtime_type.destroy(destination, memory); }};
+        std::move(*construction.owned).move_to(runtime_type, destination);
+        rollback.release();
+    }
+
+    static void construct_batch_list(void *context, const ScalarRuntimeType &runtime_type, void *destination,
+                                     allocator &memory) {
+        auto &construction = *static_cast<BatchListConstruction *>(context);
+        const auto &list_type = static_cast<const ScalarListRuntimeType &>(runtime_type);
+        list_type.construct_initial_value(destination);
+        auto rollback = util::scope_exit{[&]() noexcept { list_type.destroy(destination, memory); }};
+        list_type.emplace_back_with(destination, memory, {&construction, &construct_batch_item});
+        rollback.release();
+    }
+
+    void apply_batch_leaf(const TimeSeriesValueType &value_type, const Out<TS<SCALAR>> &output,
+                          TickHeader header) {
+        const auto *list_type = type_cast<ListScalarType>(&value_type.value_type());
+        if (list_type == nullptr) {
+            throw std::invalid_argument{"batch queue leaves require a scalar list"};
+        }
+        if (!header.valid) {
+            mutate([&] { output.invalidate(); });
+            return;
+        }
+
+        const auto &scalar_runtime_type =
+            static_cast<const TimeSeriesValueRuntimeType &>(output.runtime_type()).scalar_runtime_type();
+        const auto &list_runtime_type = static_cast<const ScalarListRuntimeType &>(scalar_runtime_type);
+        visit_scalar(list_type->item_type(), [&](const Scalar<> &value, ScalarValue<> *owned) {
+            mutate([&] {
+                auto &state = output.output_state();
+                const auto append = output.valid() && output.last_updated() == state.evaluation_time();
+                auto construction = BatchListConstruction{&value, owned};
+                if (append) {
+                    list_runtime_type.emplace_back_with(state.mutable_data(), state.allocator(),
+                                                        {&construction, &construct_batch_item});
+                    state.publish();
+                    return;
+                }
+
+                (void)scalar_runtime_type.assign_with(state.mutable_data(), {&construction, &construct_batch_list},
+                                                      false);
+                state.publish();
             });
         });
     }
@@ -515,8 +587,8 @@ class TimeSeriesTickReplay {
                             throw;
                         }
                         record_failure();
-                        TimeSeriesTickDiscard{*reader_, *dispatch_}.discard_child(dictionary_type.value_type(),
-                                                                                   entry_header);
+                        TimeSeriesTickDiscard{*reader_, *dispatch_, mode_}
+                            .discard_child(dictionary_type.value_type(), entry_header);
                         return std::nullopt;
                     }
                 }();
@@ -525,7 +597,8 @@ class TimeSeriesTickReplay {
                 }
             });
             if (!key_read && entry_header.operation != TickOperation::remove) {
-                TimeSeriesTickDiscard{*reader_, *dispatch_}.discard_child(dictionary_type.value_type(), entry_header);
+                TimeSeriesTickDiscard{*reader_, *dispatch_, mode_}
+                    .discard_child(dictionary_type.value_type(), entry_header);
             }
         }
     }
@@ -593,7 +666,7 @@ class TimeSeriesTickReplay {
     template <typename Output> void apply_child_at(const TimeSeriesType &type, const Output &output, item_id_t item_id,
                                                    TickHeader header) {
         if (failure_) {
-            TimeSeriesTickDiscard{*reader_, *dispatch_}.discard_child(type, header);
+            TimeSeriesTickDiscard{*reader_, *dispatch_, mode_}.discard_child(type, header);
             return;
         }
         auto child = [&]() -> std::optional<decltype(output[item_id])> {
@@ -608,7 +681,7 @@ class TimeSeriesTickReplay {
             }
         }();
         if (!child) {
-            TimeSeriesTickDiscard{*reader_, *dispatch_}.discard_child(type, header);
+            TimeSeriesTickDiscard{*reader_, *dispatch_, mode_}.discard_child(type, header);
             return;
         }
         apply_child(type, *child, header);
@@ -617,6 +690,7 @@ class TimeSeriesTickReplay {
     util::buffer_reader *reader_;
     const TimeSeriesDispatch<TimeSeriesTickOperations> *dispatch_;
     bool consume_{};
+    QueueMode mode_;
     std::exception_ptr failure_;
 };
 
@@ -636,7 +710,7 @@ class QueueMessageReader {
 
     std::optional<std::uint32_t> next_target();
     bool apply(OutputState &output, QueueMode mode);
-    bool discard(const TimeSeriesType &type);
+    bool discard(const TimeSeriesType &type, QueueMode mode = QueueMode::standard);
     // Returns a handle at the reader position, including when no bytes are committed. Writers use the block's write
     // position and retain the chain independently of the reader.
     util::buffer current_block();
@@ -657,11 +731,12 @@ class QueueMessageWriter {
   public:
     // The runtime type must outlive each write call. The buffer must be a concurrent buffer chain.
     QueueMessageWriter(util::buffer buffer, std::size_t target, const TimeSeriesRuntimeType &runtime_type,
-                       allocator memory = {});
+                       allocator memory = {}, QueueMode mode = QueueMode::standard);
 
     // Copy only when the source has no active reservation and is not being mutated.
     QueueMessageWriter(const QueueMessageWriter &other)
-        : writer_{other.writer_}, target_{other.target_}, runtime_type_{other.runtime_type_}, memory_{other.memory_} {}
+        : writer_{other.writer_}, target_{other.target_}, runtime_type_{other.runtime_type_}, memory_{other.memory_},
+          mode_{other.mode_} {}
     QueueMessageWriter &operator=(const QueueMessageWriter &) = delete;
 
     // Write one framed message. Root SKIP returns false without reserving a frame.
@@ -674,6 +749,7 @@ class QueueMessageWriter {
     std::uint32_t target_;
     const TimeSeriesRuntimeType *runtime_type_;
     allocator memory_;
+    QueueMode mode_;
 };
 
 } // namespace details
