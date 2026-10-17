@@ -505,8 +505,7 @@ graph compilation or evaluation.
   and membership changes
 - switch selection, default selection, inner graph evaluation, scheduling, lifecycle, and composition with map and mesh
 - service request deduplication, invalidation, nested graph binding propagation, provider ordering, and client removal
-- service request sinks dispatching work to a background thread, queued replies routed by client identifier,
-  request updates, and worker shutdown during realtime execution
+- service request sinks dispatching work to a background thread and returning queued replies during realtime execution
 
 ### Time series references
 
