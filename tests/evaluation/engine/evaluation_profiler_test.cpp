@@ -1,5 +1,6 @@
 #include <bg/evaluation_profiler.hpp>
 #include <bg/evaluation_context.hpp>
+#include <bg/evaluation_engine.hpp>
 #include <bg/global_state.hpp>
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
@@ -8,6 +9,7 @@
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/service_catalogue.hpp>
+#include <bg/wall_clock.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -15,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
+#include <stop_token>
 #include <string>
 #include <vector>
 
@@ -371,6 +374,65 @@ TEST_CASE("run_graph records a completed profile", "[evaluation][profile][featur
     CHECK(nodes.front().node_index == 0);
     CHECK(nodes.front().totals.evaluations == 1);
     CHECK(profiler.report().find("1 cycle") != std::string::npos);
+}
+
+namespace {
+struct profiled_realtime_source {
+    static constexpr bool uses_timed_scheduling = true;
+
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void start(bg::EvaluationContext *context) const { context->schedule_now(); }
+
+    void evaluate(bg::EvaluationContext *context) const {
+        ++calls;
+        observed_time = context->evaluation_time();
+        used_global_state = &context->global_state() == global_state;
+        output.set(1);
+        if (calls == 1) {
+            context->schedule_at(context->evaluation_time() + std::chrono::seconds{1});
+        }
+        stop_source->request_stop();
+    }
+
+    inline static int calls{};
+    inline static bg::EvaluationTime observed_time{};
+    inline static bool used_global_state{};
+    inline static bg::GlobalState *global_state{};
+    inline static std::stop_source *stop_source{};
+};
+} // namespace
+
+TEST_CASE("run_graph records realtime evaluation", "[evaluation][feature:profiling][feature:realtime]") {
+    auto stop_source = std::stop_source{};
+    auto global_state = bg::GlobalState{};
+    auto services = bg::ServiceCatalogue{};
+    profiled_realtime_source::calls = 0;
+    profiled_realtime_source::observed_time = {};
+    profiled_realtime_source::used_global_state = false;
+    profiled_realtime_source::global_state = &global_state;
+    profiled_realtime_source::stop_source = &stop_source;
+    const auto source = bg::node<profiled_realtime_source>();
+    auto profiler = bg::EvaluationProfiler{};
+    const auto start_time = bg::SystemWallClock::instance().now() - std::chrono::seconds{1};
+
+    bg::run_graph([&] { (void)source(); },
+                  bg::GraphRunOptions{.global_state = &global_state,
+                                      .services = &services,
+                                      .recorder = profiler.recorder(),
+                                      .engine = bg::EvaluationEngine::realtime,
+                                      .start_time = start_time,
+                                      .stop_token = stop_source.get_token()});
+
+    const auto root = profiler.root_graph_id();
+    REQUIRE(root);
+    const auto *graph = profiler.graph(*root);
+    REQUIRE(graph);
+    CHECK_FALSE(graph->active);
+    CHECK(graph->totals.evaluations == 1);
+    CHECK(profiled_realtime_source::calls == 1);
+    CHECK(profiled_realtime_source::observed_time == start_time);
+    CHECK(profiled_realtime_source::used_global_state);
 }
 
 TEST_CASE("run_graph joins the profile reader after graph failure", "[evaluation][profile][feature:profiling]") {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/allocator.hpp>
+#include <bg/evaluation_engine.hpp>
 #include <bg/evaluation_profile.hpp>
 
 #include <chrono>
@@ -8,6 +9,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <vector>
 
@@ -63,7 +65,8 @@ class EvaluationProfiler {
     class Recorder {
       public:
         explicit Recorder(EvaluationProfiler &profiler) : profiler_{profiler} {}
-        void run(RuntimeGraph &runtime_graph, EvaluationTime start_time) const;
+        void run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
+                 EvaluationEngine engine = EvaluationEngine::simulation, std::stop_token stop_token = {}) const;
 
       private:
         EvaluationProfiler &profiler_;

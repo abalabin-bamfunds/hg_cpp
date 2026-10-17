@@ -5,10 +5,12 @@
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/scalar/opaque.hpp>
+#include <bg/wall_clock.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
+#include <stop_token>
 #include <stdexcept>
 #include <vector>
 
@@ -47,6 +49,17 @@ struct add_definition {
     inline static float last_result{};
 };
 
+struct run_graph_start_time_probe {
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void start(bg::EvaluationContext *context) const {
+        observed_time = context->evaluation_time();
+        output.set(1);
+    }
+
+    inline static bg::EvaluationTime observed_time{};
+};
+
 [[nodiscard]] bg::EvaluationTime time(bg::i64 microseconds) {
     return bg::MIN_DT + std::chrono::microseconds{microseconds};
 }
@@ -68,6 +81,80 @@ TEST_CASE("run_graph starts, evaluates, and stops a graph",
     CHECK(starting_source_definition::stop_count == 2);
     CHECK(add_definition::evaluation_count == 1);
     CHECK(add_definition::last_result == 3.0F);
+}
+
+TEST_CASE("run_graph uses an explicit simulation start time",
+          "[evaluation][lifecycle][feature:simulation][transition:start]") {
+    run_graph_start_time_probe::observed_time = {};
+    const auto source = bg::node<run_graph_start_time_probe>();
+    const auto start_time = bg::EvaluationTime{std::chrono::microseconds{123}};
+
+    bg::run_graph([&] { (void)source(); },
+                  bg::GraphRunOptions{.engine = bg::EvaluationEngine::simulation, .start_time = start_time});
+
+    CHECK(run_graph_start_time_probe::observed_time == start_time);
+}
+
+TEST_CASE("run_graph forwards stop tokens to the realtime engine",
+          "[evaluation][lifecycle][feature:realtime][transition:stop]") {
+    auto starts = 0;
+    const auto source = bg::node([&](bg::Out<bg::TS<bg::i64>>) { ++starts; });
+    auto stop_source = std::stop_source{};
+    stop_source.request_stop();
+
+    bg::run_graph([&] { (void)source(); },
+                  bg::GraphRunOptions{.engine = bg::EvaluationEngine::realtime,
+                                      .stop_token = stop_source.get_token()});
+
+    CHECK(starts == 0);
+}
+
+TEST_CASE("run_graph ignores stop tokens in simulation", "[evaluation][lifecycle][feature:simulation]") {
+    auto stop_source = std::stop_source{};
+    stop_source.request_stop();
+    run_graph_start_time_probe::observed_time = {};
+    const auto source = bg::node<run_graph_start_time_probe>();
+
+    bg::run_graph([&] { (void)source(); }, bg::GraphRunOptions{.stop_token = stop_source.get_token()});
+
+    CHECK(run_graph_start_time_probe::observed_time == bg::MIN_DT + std::chrono::microseconds{1});
+}
+
+namespace {
+struct run_graph_time_sink {
+    bg::In<bg::TS<bg::i64>> input;
+
+    void evaluate(bg::EvaluationContext *context) const {
+        observed_time = context->evaluation_time();
+        ++calls;
+    }
+
+    inline static bg::EvaluationTime observed_time{};
+    inline static int calls{};
+};
+} // namespace
+
+TEST_CASE("run_graph stops realtime evaluation after a complete downstream tick",
+          "[evaluation][lifecycle][feature:realtime][transition:stop][shape:chain]") {
+    auto stop_source = std::stop_source{};
+    run_graph_time_sink::calls = 0;
+    run_graph_time_sink::observed_time = {};
+    auto wired_at = bg::EvaluationTime{};
+    const auto source = bg::node([&](bg::Out<bg::TS<bg::i64>> output) {
+        output.set(7);
+        stop_source.request_stop();
+    });
+    const auto sink = bg::node<run_graph_time_sink>();
+
+    bg::run_graph(
+        [&] {
+            (void)sink(source());
+            wired_at = bg::SystemWallClock::instance().now();
+        },
+        bg::GraphRunOptions{.engine = bg::EvaluationEngine::realtime, .stop_token = stop_source.get_token()});
+
+    CHECK(run_graph_time_sink::calls == 1);
+    CHECK(run_graph_time_sink::observed_time >= wired_at);
 }
 
 struct lifecycle_definition {

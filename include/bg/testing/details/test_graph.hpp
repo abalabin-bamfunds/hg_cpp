@@ -37,6 +37,7 @@
 #include <optional>
 #include <ranges>
 #include <span>
+#include <stdexcept>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -352,6 +353,10 @@ template <typename Function> struct test_function {
 
 inline auto finish_test_graph(GraphWiring &wiring, CapturedValues &captured, EvaluationTime start_time,
                               const GraphRunOptions &options) {
+    if (options.engine != EvaluationEngine::simulation) {
+        throw std::invalid_argument{"test_graph supports only the simulation evaluation engine"};
+    }
+
     if (options.services != nullptr) {
         wiring.finalize(*options.services);
     } else {
@@ -715,7 +720,7 @@ template <typename Function, typename Inputs, std::size_t... Index>
                                          const Inputs &inputs,
                                          std::index_sequence<Index...>) {
     using FunctionInfo = test_function<Function>;
-    const auto start_time = MIN_DT + EvaluationTime::duration{1};
+    const auto start_time = options.start_time.value_or(MIN_DT + EvaluationTime::duration{1});
     auto captured = CapturedValues{start_time};
     auto cycle_count = std::size_t{1};
     for (const auto &input : inputs) {
@@ -747,7 +752,7 @@ inline auto run_template_literals(const WiringTemplate &tested, const GraphRunOp
         throw std::invalid_argument{"test_graph literal input count does not match the wiring template"};
     }
 
-    const auto start_time = MIN_DT + EvaluationTime::duration{1};
+    const auto start_time = options.start_time.value_or(MIN_DT + EvaluationTime::duration{1});
     auto captured = CapturedValues{start_time};
     auto cycle_count = std::size_t{1};
     for (const auto &input : inputs) {
@@ -779,7 +784,7 @@ template <typename Function, typename Inputs, std::size_t... Index>
                                 const Inputs &inputs,
                                 std::index_sequence<Index...>) {
     using FunctionInfo = test_function<Function>;
-    const auto start_time = MIN_DT + EvaluationTime::duration{1};
+    const auto start_time = options.start_time.value_or(MIN_DT + EvaluationTime::duration{1});
     auto captured = CapturedValues{start_time};
     captured.records.resize(std::max({std::size_t{1}, std::ranges::size(std::get<Index>(inputs))...}));
     auto wiring = GraphWiring{};
@@ -799,7 +804,7 @@ template <typename Function, typename Inputs, std::size_t... Index>
 template <std::ranges::contiguous_range... Inputs>
 [[nodiscard]] auto run_template(const WiringTemplate &tested, const GraphRunOptions &options,
                                 const Inputs &...inputs) {
-    const auto start_time = MIN_DT + EvaluationTime::duration{1};
+    const auto start_time = options.start_time.value_or(MIN_DT + EvaluationTime::duration{1});
     auto captured = CapturedValues{start_time};
     captured.records.resize(std::max({std::size_t{1}, std::ranges::size(inputs)...}));
     auto wiring = GraphWiring{};
@@ -820,7 +825,7 @@ template <std::ranges::contiguous_range... Inputs>
 
 [[nodiscard]] inline auto run_runtime_template(const WiringTemplate &tested, const GraphRunOptions &options,
                                                std::span<const TestGraphInput> inputs) {
-    const auto start_time = MIN_DT + EvaluationTime::duration{1};
+    const auto start_time = options.start_time.value_or(MIN_DT + EvaluationTime::duration{1});
     auto captured = CapturedValues{start_time};
     auto cycle_count = std::size_t{1};
     auto wiring = GraphWiring{};

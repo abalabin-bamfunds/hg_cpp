@@ -464,8 +464,8 @@ inline const auto scaled_graph = bg::graph<scaled>();
 
 ## Direct execution
 
-`run_graph(function)` wires and compiles the graph, then runs it as a simulation
-until no scheduled evaluation remains. Pass `GraphRunOptions` from
+`run_graph(function)` wires and compiles the graph, then runs it with the selected
+evaluation engine. Pass `GraphRunOptions` from
 `<bg/graph_run_options.hpp>` as the second argument to configure the run:
 
 ```cpp
@@ -479,9 +479,30 @@ run_graph(function, options);
 
 All fields are optional. `global_state` selects the [global state](global-state.md),
 `services` selects the [service catalogue](services.md), and `recorder` enables
-[profiling](evaluation.md#evaluation-profiling). The options borrow these objects; keep them
-alive throughout the synchronous run. [`testing::test_graph`](testing.md#test-layout)
-accepts the same options immediately after the graph.
+[profiling](evaluation.md#evaluation-profiling). The options borrow these objects;
+keep them alive throughout the synchronous run.
+
+`engine` selects `EvaluationEngine::simulation` by default. Simulation returns
+when no scheduled evaluation remains. Select `EvaluationEngine::realtime` to
+wait for queue input and timer deadlines until `stop_token` requests cancellation:
+
+```cpp
+auto stop_source = std::stop_source{};
+run_graph(function, GraphRunOptions{
+    .engine = EvaluationEngine::realtime,
+    .stop_token = stop_source.get_token(),
+});
+```
+
+The application requests stop through the source. Realtime cancellation follows
+the [engine lifecycle](evaluation.md#realtime-evaluation).
+
+`start_time` overrides the first evaluation time. When omitted, simulation uses
+`MIN_DT + 1us`; realtime samples the current wall-clock time after graph
+compilation. Profiling uses the selected engine and start time.
+
+[`testing::test_graph`](testing.md#test-layout) accepts the same options
+immediately after the graph and requires simulation execution.
 
 ## Wiring paths
 

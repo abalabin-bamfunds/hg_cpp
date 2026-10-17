@@ -1,5 +1,6 @@
 #include <bg/graph.hpp>
 #include <bg/evaluation_context.hpp>
+#include <bg/evaluation_engine.hpp>
 #include <bg/evaluation_profiler.hpp>
 #include <bg/global_state.hpp>
 #include <bg/node.hpp>
@@ -93,6 +94,51 @@ TEST_CASE("test_graph records a profile for a graph function", "[testing][evalua
     const auto period = std::chrono::floor<std::chrono::minutes>(*summary->last_updated);
     REQUIRE(profiler.graph_period(*root, period));
     CHECK(profiler.graph_period(*root, period)->evaluations == 3);
+}
+
+TEST_CASE("test_graph applies its configured start time to every input path",
+          "[testing][evaluation][feature:test-graph][feature:simulation]") {
+    struct test_graph_time_observer {
+        bg::In<bg::TS<bg::i64>> input;
+        bg::Out<bg::TS<bg::i64>> output;
+
+        void evaluate(bg::EvaluationContext *context) const {
+            output.set(static_cast<bg::i64>(context->evaluation_time().time_since_epoch().count()));
+        }
+    };
+
+    const auto observe = bg::node<test_graph_time_observer>();
+    const auto function = [&](bg::wp<bg::TS<bg::i64>> input) -> bg::wp<bg::TS<bg::i64>> {
+        return observe(input);
+    };
+    const auto template_target = bg::graph("name"_n = "observe_time", function);
+    const auto start_time = bg::EvaluationTime{std::chrono::microseconds{42}};
+    const auto options = bg::GraphRunOptions{.start_time = start_time};
+    const auto expected = {std::optional<bg::i64>{42}, std::optional<bg::i64>{43}};
+    CHECK(bg::testing::test_graph(function, options, bg::testing::input<bg::TS<bg::i64>>({1, 2}))
+              .equals<bg::i64>(expected));
+    CHECK(bg::testing::test_graph(template_target, options, bg::testing::input<bg::TS<bg::i64>>({1, 2}))
+              .equals<bg::i64>(expected));
+    CHECK(bg::testing::test_graph(function, options, std::array<bg::i64, 2>{1, 2}).equals<bg::i64>(expected));
+    CHECK(bg::testing::test_graph(template_target, options, std::array<bg::i64, 2>{1, 2}).equals<bg::i64>(expected));
+
+    auto ticks = std::vector<std::optional<bg::ScalarValue<>>>{};
+    ticks.emplace_back(std::in_place, bg::i64{1});
+    ticks.emplace_back(std::in_place, bg::i64{2});
+    const auto runtime_inputs = std::array{
+        bg::testing::TestGraphInput{bg::cpp_scalar_runtime_type<bg::i64>(), ticks},
+    };
+    CHECK(bg::testing::test_graph(template_target, options,
+                                  std::span<const bg::testing::TestGraphInput>{runtime_inputs})
+              .equals<bg::i64>(expected));
+}
+
+TEST_CASE("test_graph rejects realtime evaluation options", "[testing][evaluation][feature:test-graph]") {
+    const auto identity = [](bg::wp<bg::TS<bg::i64>> input) { return input; };
+
+    CHECK_THROWS_AS((bg::testing::test_graph(
+                        identity, bg::GraphRunOptions{.engine = bg::EvaluationEngine::realtime}, {1})),
+                    std::invalid_argument);
 }
 
 TEST_CASE("test_graph records a profile for runtime-typed inputs", "[testing][evaluation][feature:profiling]") {

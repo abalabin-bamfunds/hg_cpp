@@ -2,6 +2,7 @@
 
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/runtime_graph.hpp>
+#include <bg/realtime_evaluation_engine.hpp>
 #include <bg/simulation_evaluation_engine.hpp>
 
 #include <algorithm>
@@ -547,7 +548,8 @@ EvaluationProfiler::EvaluationProfiler(EvaluationProfilerConfig config, allocato
     : state_{std::make_unique<State>(config, memory)} {}
 EvaluationProfiler::~EvaluationProfiler() = default;
 
-void EvaluationProfiler::Recorder::run(RuntimeGraph &runtime_graph, EvaluationTime start_time) const {
+void EvaluationProfiler::Recorder::run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
+                                       EvaluationEngine engine, std::stop_token stop_token) const {
     auto &profiler = profiler_;
     if (profiler.state_->run_started) {
         throw std::logic_error{"an evaluation profiler records one graph run"};
@@ -578,7 +580,11 @@ void EvaluationProfiler::Recorder::run(RuntimeGraph &runtime_graph, EvaluationTi
 
     auto graph_error = std::exception_ptr{};
     try {
-        SimulationEvaluationEngine{}.run(runtime_graph, start_time, profile);
+        if (engine == EvaluationEngine::realtime) {
+            RealtimeEvaluationEngine{}.run(runtime_graph, start_time, profile, stop_token);
+        } else {
+            SimulationEvaluationEngine{}.run(runtime_graph, start_time, profile);
+        }
     } catch (...) {
         graph_error = std::current_exception();
     }

@@ -141,6 +141,11 @@ Omit the options argument to use the defaults:
 auto actual = test_graph(graph, {1, 2}, {10, 20});
 ```
 
+`test_graph` requires `EvaluationEngine::simulation` and rejects realtime
+selection. `GraphRunOptions::start_time` sets the first input time and the origin
+of captured result positions. Input positions remain one microsecond apart.
+Defaults and shared options follow [direct execution](graph-wiring.md#direct-execution).
+
 Literal input sequences use the [output literal syntax](node-api.md#output-parameters).
 Each sequence element describes one cycle's delta. Source nodes borrow the
 sequences for the synchronous test run and call `Out::apply()` for each tick.
@@ -390,7 +395,10 @@ graph compilation or evaluation.
 - `test_graph` input sequencing through brace literals, typed ranges, and runtime-selected types;
   scalar construction, nested collection deltas, removal, skip, invalidation, and revalidation;
   plain callable and aggregate parameter inference, explicit generic input types, cycle positions,
+  configured start times, realtime rejection,
   services, profiling, and existing scalar input compatibility
+- `run_graph` default and explicit simulation selection, realtime selection, engine-specific default start times,
+  explicit start times, realtime stop-token forwarding, and services, global state, and profiling in both modes
 - `test_graph` output capture and literal comparison for scalar and nested collection deltas;
   scalar ownership after graph destruction, complete delta comparison, entry order independence,
   empty ticks, skipped cycles, invalidation, revalidation, and removal;
