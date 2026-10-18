@@ -3,7 +3,6 @@
 #include <bg/library/operators.hpp>
 
 #include <bg/graph/wiring_argument.hpp>
-
 #include <utility>
 
 namespace bg {
@@ -33,6 +32,24 @@ template <typename LHS, typename RHS>
     requires details::library_binary_wiring_operands<LHS, RHS>
 auto operator-(LHS &&lhs, RHS &&rhs) {
     return operators::sub(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+}
+
+template <typename LHS, typename RHS>
+    requires details::library_binary_wiring_operands<LHS, RHS>
+auto operator|(LHS &&lhs, RHS &&rhs) {
+    return operators::bit_or(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+}
+
+template <typename LHS, typename RHS>
+    requires details::library_binary_wiring_operands<LHS, RHS>
+auto operator&(LHS &&lhs, RHS &&rhs) {
+    return operators::bit_and(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
+}
+
+template <typename LHS, typename RHS>
+    requires details::library_binary_wiring_operands<LHS, RHS>
+auto operator^(LHS &&lhs, RHS &&rhs) {
+    return operators::bit_xor(std::forward<LHS>(lhs), std::forward<RHS>(rhs));
 }
 
 template <typename LHS, typename RHS>

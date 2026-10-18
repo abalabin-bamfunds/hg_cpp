@@ -1,5 +1,6 @@
 #include <bg/graph.hpp>
 #include <bg/graph/dynamic_subscribers.hpp>
+#include <bg/literal/sentinel.hpp>
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
@@ -839,4 +840,30 @@ TEST_CASE("reference invalidation unbinds and revalidation resamples consumers",
     const auto actual = bg::testing::test_graph(graph);
 
     CHECK(actual.equals({10, std::nullopt, 10}));
+}
+
+TEST_CASE("a sampled TSS output includes a same-cycle change to the previous target",
+          "[evaluation][reference][series:tss][feature:sampling][transition:retarget][transition:update]") {
+    const auto select = bg::node([](bg::In<bg::TS<bool>> condition,
+                                    bg::In<bg::REF<bg::TSS<bg::i64>>, bg::passive> old_target,
+                                    bg::In<bg::REF<bg::TSS<bg::i64>>, bg::passive> new_target,
+                                    bg::Out<bg::REF<bg::TSS<bg::i64>>> output) {
+        output.copy(*condition ? old_target : new_target);
+    });
+    const auto graph = [&](bg::wp<bg::TS<bool>> condition, bg::wp<bg::TSS<bg::i64>> old_target,
+                           bg::wp<bg::TSS<bg::i64>> new_target) {
+        return select(condition, old_target, new_target).as<bg::TSS<bg::i64>>();
+    };
+
+    const auto same_cycle_change = bg::testing::test_graph(
+        graph, bg::testing::input<bg::TS<bool>>({true, false}),
+        bg::testing::input<bg::TSS<bg::i64>>({{2}, {3, literal::REMOVED(2)}}),
+        bg::testing::input<bg::TSS<bg::i64>>({{3}, literal::SKIP}));
+    CHECK(same_cycle_change.equals({{2}, {3, literal::REMOVED(2)}}));
+
+    const auto stale_change = bg::testing::test_graph(
+        graph, bg::testing::input<bg::TS<bool>>({true, true, false}),
+        bg::testing::input<bg::TSS<bg::i64>>({{2}, {3, literal::REMOVED(2)}, literal::SKIP}),
+        bg::testing::input<bg::TSS<bg::i64>>({{3}, literal::SKIP, literal::SKIP}));
+    CHECK(stale_change.equals({{2}, {3, literal::REMOVED(2)}, {}}));
 }

@@ -575,6 +575,10 @@ For each reusable node and graph, test:
   partial validity, empty results, item removal and replacement, integer limits,
   reference rebinding, free collections, output guarantees, and equal optional
   sums across invalid-to-valid transitions
+- TSS union, intersection, difference, symmetric difference, equality, and
+  emptiness, including simultaneous membership changes, empty sets, required
+  input gating, `opt` treating invalid inputs as empty, reference rebinding,
+  reconciliation after missed changes, output guarantees, and no-op updates
 - delayed ticks and invalidation, collection delta replay, periodic tick limits,
   throttle publication times and latest-state reconciliation, simultaneous
   timers and input changes, duration bounds, and nested-graph stop cleanup

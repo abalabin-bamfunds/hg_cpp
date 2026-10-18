@@ -327,9 +327,48 @@ deduplicated outputs suppress equal results.
 Use named calls in Python. Its `len()` and `in` syntax cannot return wiring
 points. Python annotations for scalar lists and sets are not yet supplied.
 
+## Time series set operations
+
+Two `TSS<K>` inputs support union (`bit_or`, `|`), intersection (`bit_and`,
+`&`), difference (`sub`, `-`), and symmetric difference (`bit_xor`, `^`).
+Both inputs must have the same key type. `eq` and `ne` compare membership;
+`is_empty` tests whether a set has no members.
+
+Inputs are required by default. A TSS result preserves its membership while
+a required input is invalid and reconciles the current sets when evaluation
+resumes. Boolean results follow normal required-input invalidation.
+
+`opt()` selects overloads that treat invalid inputs as empty sets. Marking
+either binary operand selects that behavior for both operands. Optional
+overloads evaluate on input changes, without startup scheduling.
+
+```cpp
+auto shared = lhs & rhs;
+auto available = opt(lhs) | opt(rhs);
+auto empty = operators::is_empty(available);
+```
+
+```python
+shared = lhs & rhs
+available = bg.opt(lhs) | bg.opt(rhs)
+empty = bg.operators.is_empty(available)
+```
+
+Set results publish only actual membership changes, including a first valid
+empty result. Updating one operand without changing the result membership does
+not publish another set tick.
+
+Required overloads propagate the weakest observed input guarantee. Optional
+overloads produce ordinary outputs. Boolean outputs publish on each evaluation
+unless their resolved guarantee suppresses an equal result.
+
+Set operations and equality process changed keys incrementally. Initial
+evaluation and recovery enumerate current membership. Equality retains a
+mismatch count; neither implementation retains a second set of keys.
+
 ## Wiring syntax
 
-C++ wiring points support binary `+`, `-`, `*`, `/`, `%`, unary `+` and `-`,
+C++ wiring points support binary `+`, `-`, `*`, `/`, `%`, `|`, `&`, `^`, unary `+` and `-`,
 and `==`, `!=`, `<`, `<=`, `>`, `>=`. Use `operators::floordiv()`,
 `operators::pow()`, `operators::round()`, and `operators::abs()` for operations
 without C++ wiring syntax.

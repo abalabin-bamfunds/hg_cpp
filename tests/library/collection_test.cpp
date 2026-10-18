@@ -107,6 +107,293 @@ TEST_CASE("contains_ on a TSS accepts a time-series key",
     CHECK(testing::test_graph(graph, {{1}, {2}}, {1, 2}).equals<bool>({true, true}));
 }
 
+TEST_CASE("is_empty observes required and optional TSS membership",
+          "[feature:operator][series:tss][scalar:i64][validity:required][validity:optional]"
+          "[transition:first-tick][transition:invalidation][transition:revalidation]") {
+    const auto required = [](wp<TSS<i64>> values) { return operators::is_empty(values); };
+    const auto optional = [](wp<TSS<i64>> values) { return operators::is_empty(opt(values)); };
+    CHECK(testing::test_graph(required, testing::input<TSS<i64>>(
+                                           {literal::SKIP, {}, {1}, {literal::REMOVED(1)}}))
+              .equals<bool>({std::nullopt, true, false, true}));
+    CHECK(testing::test_graph(optional, testing::input<TSS<i64>>(
+                                           {literal::SKIP, {}, {1}, {literal::REMOVED(1)}}))
+              .equals<bool>({std::nullopt, true, false, true}));
+}
+
+TEST_CASE("TSS equality accounts for simultaneous membership changes",
+          "[feature:operator][series:tss][scalar:i64][guarantee:ordinary][transition:addition]"
+          "[transition:removal]") {
+    const auto equal = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs == rhs; };
+    const auto not_equal = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return operators::ne(lhs, rhs); };
+
+    const auto equal_result = testing::test_graph(
+        equal, testing::input<TSS<i64>>({{1}, {2}, {3}, {literal::REMOVED(2)}}),
+        testing::input<TSS<i64>>({{1}, {3}, {2}, {literal::REMOVED(2)}}));
+    const auto not_equal_result = testing::test_graph(
+        not_equal, testing::input<TSS<i64>>({{1}, {2}, {3}, {literal::REMOVED(2)}}),
+        testing::input<TSS<i64>>({{1}, {3}, {2}, {literal::REMOVED(2)}}));
+    CHECK(equal_result.equals<bool>({true, false, true, true}));
+    CHECK(not_equal_result.equals<bool>({false, true, false, false}));
+}
+
+TEST_CASE("TSS equality reconciles after required input invalidation",
+          "[feature:operator][series:tss][scalar:i64][validity:required][transition:invalidation]"
+          "[transition:revalidation]") {
+    const auto equal = [](wp<TS<bool>> condition, wp<TSS<i64>> never_valid, wp<TSS<i64>> values) {
+        return operators::if_then_else(condition, never_valid, values) == values;
+    };
+
+    const auto result = testing::test_graph(
+        equal, testing::input<TS<bool>>({false, true, true, false}),
+        testing::input<TSS<i64>>({literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP}),
+        testing::input<TSS<i64>>({{1}, {1}, {2}, {2}}));
+    CHECK(result.equals<bool>({true, std::nullopt, std::nullopt, true}));
+}
+
+TEST_CASE("optional TSS equality treats invalid inputs as empty with ordinary outputs",
+          "[feature:operator][series:tss][scalar:i64][guarantee:ordinary][validity:optional]"
+          "[transition:invalidation][transition:revalidation]") {
+    const auto equal = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) {
+        return operators::eq("lhs"_n = opt(lhs), "rhs"_n = opt(rhs));
+    };
+
+    CHECK(testing::test_graph(equal, testing::input<TSS<i64>>({literal::SKIP, {}, {1}}),
+                              testing::input<TSS<i64>>({{}, {}, {2}}))
+              .equals<bool>({true, true, false}));
+}
+
+TEST_CASE("TSS equality preserves required guarantees and weakens optional guarantees",
+          "[feature:operator][series:tss][scalar:i64][guarantee:final][guarantee:deduplicated]"
+          "[validity:required][validity:optional]") {
+    const auto check_final = [](wp<TSS<i64, TimeSeriesGuarantee::final>> lhs,
+                                wp<TSS<i64, TimeSeriesGuarantee::final>> rhs) {
+        const auto required = operators::eq(lhs, rhs);
+        const auto optional = operators::eq("lhs"_n = opt(lhs), "rhs"_n = opt(rhs));
+        const auto empty = operators::is_empty("value"_n = opt(lhs));
+        CHECK(&required.type() == &TS<bool, TimeSeriesGuarantee::final>::type());
+        CHECK(&optional.type() == &TS<bool>::type());
+        CHECK(&empty.type() == &TS<bool>::type());
+        return required;
+    };
+    const auto check_deduplicated = [](wp<TSS<i64, TimeSeriesGuarantee::deduplicated>> lhs,
+                                       wp<TSS<i64, TimeSeriesGuarantee::deduplicated>> rhs) {
+        const auto required = operators::eq(lhs, rhs);
+        const auto optional = operators::ne("lhs"_n = opt(lhs), "rhs"_n = opt(rhs));
+        CHECK(&required.type() == &TS<bool, TimeSeriesGuarantee::deduplicated>::type());
+        CHECK(&optional.type() == &TS<bool>::type());
+        return required;
+    };
+
+    CHECK(testing::test_graph(check_final,
+                              testing::input<TSS<i64, TimeSeriesGuarantee::final>>({{1}}),
+                              testing::input<TSS<i64, TimeSeriesGuarantee::final>>({{1}}))
+              .equals<bool>({true}));
+    CHECK(testing::test_graph(check_deduplicated,
+                              testing::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{1}, {2}}),
+                              testing::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{1}, {3}}))
+              .equals<bool>({true, false}));
+}
+
+TEST_CASE("TSS set operators publish only changes to their result",
+          "[feature:operator][series:tss][scalar:i64][transition:addition][transition:removal]") {
+    const auto set_union = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs | rhs; };
+    const auto intersection = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs & rhs; };
+    const auto difference = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs - rhs; };
+    const auto symmetric_difference = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs ^ rhs; };
+    CHECK(testing::test_graph(set_union,
+                              testing::input<TSS<i64>>({{1, 2}, {3, literal::REMOVED(1)}, literal::SKIP,
+                                                        {literal::REMOVED(2)}}),
+                              testing::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
+                                                        literal::SKIP}))
+              .equals({{1, 2, 3}, literal::SKIP, literal::SKIP, literal::SKIP}));
+    CHECK(testing::test_graph(intersection,
+                              testing::input<TSS<i64>>({{1, 2}, {3, literal::REMOVED(1)}, literal::SKIP,
+                                                        {literal::REMOVED(2)}}),
+                              testing::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
+                                                        literal::SKIP}))
+              .equals({{2}, {3, literal::REMOVED(2)}, {2, literal::REMOVED(3)}, {literal::REMOVED(2)}}));
+    CHECK(testing::test_graph(difference,
+                              testing::input<TSS<i64>>({{1, 2}, {3, literal::REMOVED(1)}, literal::SKIP,
+                                                        {literal::REMOVED(2)}}),
+                              testing::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
+                                                        literal::SKIP}))
+              .equals({{1}, {2, literal::REMOVED(1)}, {3, literal::REMOVED(2)}, literal::SKIP}));
+    CHECK(testing::test_graph(symmetric_difference,
+                              testing::input<TSS<i64>>({{1, 2}, {3, literal::REMOVED(1)}, literal::SKIP,
+                                                        {literal::REMOVED(2)}}),
+                              testing::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
+                                                        literal::SKIP}))
+              .equals({{1, 3}, {2, literal::REMOVED(3)}, {3, literal::REMOVED(2)}, {2}}));
+}
+
+TEST_CASE("TSS set operators propagate guarantees and weaken optional inputs",
+          "[feature:operator][series:tss][scalar:i64][guarantee:final][guarantee:deduplicated]"
+          "[guarantee:const][validity:optional]") {
+    const auto check_final = [](wp<TSS<i64, TimeSeriesGuarantee::final>> lhs,
+                                wp<TSS<i64, TimeSeriesGuarantee::final>> rhs) {
+        const auto result = lhs | rhs;
+        const auto optional = opt(lhs) | rhs;
+        CHECK(&result.type() == &TSS<i64, TimeSeriesGuarantee::final>::type());
+        CHECK(&optional.type() == &TSS<i64>::type());
+        return result;
+    };
+    const auto check_deduplicated = [](wp<TSS<i64, TimeSeriesGuarantee::deduplicated>> lhs,
+                                       wp<TSS<i64, TimeSeriesGuarantee::deduplicated>> rhs) {
+        const auto result = lhs ^ rhs;
+        CHECK(&result.type() == &TSS<i64, TimeSeriesGuarantee::deduplicated>::type());
+        return result;
+    };
+    const auto check_const = [](wp<TSS<i64, TimeSeriesGuarantee::const_>> lhs,
+                                wp<TSS<i64, TimeSeriesGuarantee::const_>> rhs) {
+        const auto result = lhs & rhs;
+        CHECK(&result.type() == &TSS<i64, TimeSeriesGuarantee::const_>::type());
+        return result;
+    };
+
+    CHECK(testing::test_graph(check_final, testing::input<TSS<i64, TimeSeriesGuarantee::final>>({{1}}),
+                              testing::input<TSS<i64, TimeSeriesGuarantee::final>>({{2}}))
+              .equals({{1, 2}}));
+    CHECK(testing::test_graph(
+              check_deduplicated,
+              testing::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{1}}),
+              testing::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{2}}))
+              .equals({{1, 2}}));
+    CHECK(testing::test_graph(check_const, testing::input<TSS<i64, TimeSeriesGuarantee::const_>>({{1, 2}}),
+                              testing::input<TSS<i64, TimeSeriesGuarantee::const_>>({{2, 3}}))
+              .equals({{2}}));
+}
+
+TEST_CASE("TSS set operations accept erased wiring points and treat optional invalid sets as empty",
+          "[feature:operator][series:tss][scalar:i64][validity:optional][transition:first-tick]"
+          "[declaration:generic]") {
+    const auto set_union = [](wp<> lhs, wp<> rhs) { return lhs | rhs; };
+    const auto difference = [](wp<> lhs, wp<> rhs) {
+        return operators::sub("lhs"_n = opt(lhs), "rhs"_n = opt(rhs));
+    };
+    CHECK(testing::test_graph(set_union, testing::input<TSS<i64>>({literal::SKIP, {1, 2}}),
+                              testing::input<TSS<i64>>({{1}, {2}}))
+              .equals({literal::SKIP, {1, 2}}));
+    CHECK(testing::test_graph(difference, testing::input<TSS<i64>>({literal::SKIP, {1, 2}}),
+                              testing::input<TSS<i64>>({{1}, {2}}))
+              .equals({{}, literal::SKIP}));
+
+    const auto one_optional = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return opt(lhs) | rhs; };
+    CHECK(testing::test_graph(one_optional, testing::input<TSS<i64>>({literal::SKIP, {1, 2}}),
+                              testing::input<TSS<i64>>({{1}, {2}}))
+              .equals({{1}, {2}}));
+}
+
+TEST_CASE("TSS set operations retain members while a required reference is invalid",
+          "[feature:operator][series:tss][series:reference][scalar:i64][validity:required]"
+          "[transition:invalidation][transition:revalidation][transition:addition][transition:removal]") {
+    const auto select = node([](In<TS<i64>> phase, In<REF<TSS<i64>>, passive> populated,
+                                In<REF<TSS<i64>>, passive> invalid, Out<REF<TSS<i64>>> output) {
+        output.copy(*phase == 1 || *phase == 2 ? invalid : populated);
+    });
+    const auto graph = [&](wp<TS<i64>> phase, wp<TSS<i64>> populated, wp<TSS<i64>> invalid,
+                           wp<TSS<i64>> rhs) {
+        return select(phase, populated, invalid) | rhs;
+    };
+
+    CHECK(testing::test_graph(graph, {0, 1, 2, 3}, {{1}, literal::SKIP, literal::SKIP, literal::SKIP}, {},
+                              {{2}, {3, literal::REMOVED(2)}, {4, literal::REMOVED(3)}, literal::SKIP})
+              .equals({{1, 2}, literal::SKIP, literal::SKIP, {4, literal::REMOVED(2)}}));
+}
+
+TEST_CASE("optional TSS set operations remove an invalid reference contribution",
+          "[feature:operator][series:tss][series:reference][scalar:i64][validity:optional]"
+          "[transition:invalidation][transition:revalidation]") {
+    const auto set_union = [](wp<TS<bool>> condition, wp<TSS<i64>> populated, wp<TSS<i64>> invalid,
+                              wp<TSS<i64>> rhs) {
+        const auto selected = operators::if_then_else(condition, populated, invalid);
+        return opt(selected) | rhs;
+    };
+    const auto intersection = [](wp<TS<bool>> condition, wp<TSS<i64>> populated, wp<TSS<i64>> invalid,
+                                 wp<TSS<i64>> rhs) {
+        const auto selected = operators::if_then_else(condition, populated, invalid);
+        return opt(selected) & rhs;
+    };
+    const auto difference = [](wp<TS<bool>> condition, wp<TSS<i64>> populated, wp<TSS<i64>> invalid,
+                               wp<TSS<i64>> rhs) {
+        const auto selected = operators::if_then_else(condition, populated, invalid);
+        return opt(selected) - rhs;
+    };
+    const auto symmetric_difference = [](wp<TS<bool>> condition, wp<TSS<i64>> populated,
+                                          wp<TSS<i64>> invalid, wp<TSS<i64>> rhs) {
+        const auto selected = operators::if_then_else(condition, populated, invalid);
+        return opt(selected) ^ rhs;
+    };
+
+    CHECK(testing::test_graph(set_union, {true, false, true}, {{1, 2}, literal::SKIP, literal::SKIP}, {},
+                              {{2}, literal::SKIP, literal::SKIP})
+              .equals({{1, 2}, {literal::REMOVED(1)}, {1}}));
+    CHECK(testing::test_graph(intersection, {true, false, true}, {{1, 2}, literal::SKIP, literal::SKIP}, {},
+                              {{2}, literal::SKIP, literal::SKIP})
+              .equals({{2}, {literal::REMOVED(2)}, {2}}));
+    CHECK(testing::test_graph(difference, {true, false, true}, {{1, 2}, literal::SKIP, literal::SKIP}, {},
+                              {{2}, literal::SKIP, literal::SKIP})
+              .equals({{1}, {literal::REMOVED(1)}, {1}}));
+    CHECK(testing::test_graph(symmetric_difference, {true, false, true},
+                              {{1, 2}, literal::SKIP, literal::SKIP}, {}, {{2}, literal::SKIP, literal::SKIP})
+              .equals({{1}, {2, literal::REMOVED(1)}, {1, literal::REMOVED(2)}}));
+}
+
+TEST_CASE("TSS set operations do not publish when a valid reference selects equal membership",
+          "[feature:operator][series:tss][series:reference][scalar:i64][transition:update]") {
+    const auto graph = [](wp<TS<bool>> condition, wp<TSS<i64>> first, wp<TSS<i64>> second,
+                          wp<TSS<i64>> rhs) {
+        return operators::if_then_else(condition, first, second) | rhs;
+    };
+
+    CHECK(testing::test_graph(graph, {true, false}, {{1}, literal::SKIP}, {{1}, literal::SKIP},
+                              {{2}, literal::SKIP})
+              .equals({{1, 2}, literal::SKIP}));
+}
+
+TEST_CASE("TSS set operations include the old target's same-cycle change when a reference is retargeted",
+          "[feature:operator][series:tss][series:reference][transition:update][transition:retarget]") {
+    const auto graph = [](wp<TS<bool>> condition, wp<TSS<i64>> lhs, wp<TSS<i64>> old_target,
+                          wp<TSS<i64>> new_target) {
+        return lhs | operators::if_then_else(condition, old_target, new_target);
+    };
+
+    CHECK(testing::test_graph(graph, {true, false}, {{1}, literal::SKIP}, {{2}, {3, literal::REMOVED(2)}},
+                              {{3}, literal::SKIP})
+              .equals({{1, 2}, {3, literal::REMOVED(2)}}));
+}
+
+TEST_CASE("TSS set operations do not replay a stale old-target delta when a reference is retargeted",
+          "[feature:operator][series:tss][series:reference][transition:retarget]") {
+    const auto graph = [](wp<TS<bool>> condition, wp<TSS<i64>> lhs, wp<TSS<i64>> old_target,
+                          wp<TSS<i64>> new_target) {
+        return lhs | operators::if_then_else(condition, old_target, new_target);
+    };
+
+    CHECK(testing::test_graph(graph, {true, false}, {{1}, literal::SKIP}, {{2}, literal::SKIP},
+                              {{3}, literal::SKIP})
+              .equals({{1, 2}, {3, literal::REMOVED(2)}}));
+}
+
+TEST_CASE("TSS equality sees same-cycle removals from a sampled previous target",
+          "[feature:operator][series:tss][series:reference][transition:update][transition:retarget]") {
+    const auto graph = [](wp<TS<bool>> condition, wp<TSS<i64>> old_target, wp<TSS<i64>> new_target) {
+        return operators::if_then_else(condition, old_target, new_target) == new_target;
+    };
+
+    CHECK(testing::test_graph(graph, {true, false},
+                              testing::input<TSS<i64>>({{2}, {3, literal::REMOVED(2)}}),
+                              testing::input<TSS<i64>>({{3}, literal::SKIP}))
+              .equals<bool>({false, true}));
+}
+
+TEST_CASE("TSS set operators support string keys",
+          "[feature:operator][series:tss][scalar:string][transition:addition][transition:removal]") {
+    const auto graph = [](wp<TSS<string>> lhs, wp<TSS<string>> rhs) { return lhs | rhs; };
+
+    CHECK(testing::test_graph(graph, {{"alpha", "beta"}, {literal::REMOVED("alpha"), "gamma"}}, {{"beta"}})
+              .equals({{"alpha", "beta"}, {"gamma", literal::REMOVED("alpha")}}));
+}
+
 TEST_CASE("contains_ follows a time-series key through invalidation and revalidation",
           "[feature:operator][series:tss][scalar:i64][shape:single-node][validity:required]"
           "[transition:invalidation][transition:revalidation]") {

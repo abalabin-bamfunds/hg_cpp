@@ -205,6 +205,10 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "max_", operators::max_);
     export_operator(operators_module, "mean", operators::mean);
     export_operator(operators_module, "contains_", operators::contains_);
+    export_operator(operators_module, "is_empty", operators::is_empty);
+    export_operator(operators_module, "bit_or", operators::bit_or);
+    export_operator(operators_module, "bit_and", operators::bit_and);
+    export_operator(operators_module, "bit_xor", operators::bit_xor);
     export_operator(operators_module, "const_", operators::const_);
     export_operator(operators_module, "default_", operators::default_);
     const auto getitem_type_parameters = operators::getitem.explicit_type_parameters();

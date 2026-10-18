@@ -181,8 +181,9 @@ each item reference. Binding its first item target samples that target as a
 first update. Removing an item target reports its previous collection value as
 removed.
 
-A TSS target switch compares membership in the current and previous sets. A TSD
-target switch compares keys and recursively samples contained TSS and TSD items.
+A TSS target switch compares current membership with the previous target's
+membership before the current cycle. A TSD target switch compares keys and
+recursively samples contained TSS and TSD items.
 One reference notification shares a sample among subscribers with the same old
 and new references, resolved previous target state, and requested representation.
 The sample materializes change data on its first query. Inputs retain it until

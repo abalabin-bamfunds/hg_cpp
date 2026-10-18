@@ -213,6 +213,28 @@ TEST_CASE("a time series set accepts its exact non-canonical item type",
     CHECK(actual.equals({true, false}));
 }
 
+TEST_CASE("Out<TSS>::for_each supports erasing visited members across index words",
+          "[evaluation][feature:node-api][series:tss][transition:removal][transition:update]") {
+    const auto update = bg::node([](bg::In<bg::TS<bg::i64>> trigger, bg::Out<bg::TSS<bg::i64>> output) {
+        auto visited = std::size_t{};
+        output.for_each([&](const auto &key) {
+            ++visited;
+            output.erase(key);
+        });
+        CHECK(visited == (*trigger == 1 ? 130 : 0));
+
+        if (*trigger == 0) {
+            for (auto key = bg::i64{}; key < 130; ++key) {
+                output.insert(key);
+            }
+        }
+    });
+    const auto size = bg::node<set_size_definition>();
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> trigger) { return size(update(trigger)); };
+
+    CHECK(bg::testing::test_graph(graph, {0, 1, 2}).equals<bg::i64>({130, 0, std::nullopt}));
+}
+
 namespace {
 
 struct set_reference_condition_definition {
@@ -474,7 +496,7 @@ TEST_CASE("a TSS input does not report stale removals after an invalid target is
     CHECK(was_removed == std::vector{false, true, false});
 }
 
-TEST_CASE("a TSS reference transition uses the old target's current state after a same-cycle clear",
+TEST_CASE("a TSS reference transition reports removals when the old target clears in the retargeting cycle",
           "[series:tss][feature:reference][feature:collection-change]"
           "[validity:optional][transition:removal][binding:reference-to-value][scalar:integer]") {
     const auto valid = node<clearing_referenced_set_source_definition>();
@@ -510,8 +532,8 @@ TEST_CASE("a TSS reference transition uses the old target's current state after 
     CHECK(validity == std::vector{true, false});
     CHECK(sizes == std::vector<std::size_t>{2, 0});
     CHECK(added == std::vector<std::vector<i64>>{{11, 12}, {}});
-    CHECK(removed == std::vector<std::vector<i64>>{{}, {}});
-    CHECK(was_removed == std::vector{false, false});
+    CHECK(removed == std::vector<std::vector<i64>>{{}, {11, 12}});
+    CHECK(was_removed == std::vector{false, true});
 }
 
 TEST_CASE("a TSS input reports removed items when its reference becomes null",

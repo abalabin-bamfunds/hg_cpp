@@ -175,6 +175,7 @@ add_library(
     src/library/numeric.cpp
     src/library/operators.cpp
     src/library/collection.cpp
+    src/library/tss.cpp
     src/library/string.cpp
     src/library/stream.cpp
     src/library/timed.cpp

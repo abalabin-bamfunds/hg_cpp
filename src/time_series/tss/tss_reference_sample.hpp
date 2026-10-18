@@ -25,6 +25,7 @@ struct SampledSet {
     void retain() noexcept { ++reference_count; }
     void release() noexcept;
     TimeSeriesRuntimeType::ConstItem input() const noexcept;
+    bool previous_contains(const ScalarData &key) const;
     void populate_changes() const;
 
     const TimeSeriesSetRuntimeType *runtime_type;

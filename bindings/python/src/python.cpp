@@ -1137,6 +1137,9 @@ void bind_core(nb::module_ &module) {
     const auto le_operator = details::PythonOperator{operators::le};
     const auto gt_operator = details::PythonOperator{operators::gt};
     const auto ge_operator = details::PythonOperator{operators::ge};
+    const auto bit_or_operator = details::PythonOperator{operators::bit_or};
+    const auto bit_and_operator = details::PythonOperator{operators::bit_and};
+    const auto bit_xor_operator = details::PythonOperator{operators::bit_xor};
 
     nb::class_<TypeDescriptor>(module, "_Type")
         .def_prop_ro("is_time_series", [](const TypeDescriptor &value) { return value.type().is_time_series(); })
@@ -1168,6 +1171,36 @@ void bind_core(nb::module_ &module) {
         .def("__sub__",
              [sub_operator](const PythonWiringPoint &self, nb::handle other) {
                  return sub_operator.call(nb::cast(self), other);
+             },
+             nb::is_operator())
+        .def("__or__",
+             [bit_or_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return bit_or_operator.call(nb::cast(self), other);
+             },
+             nb::is_operator())
+        .def("__ror__",
+             [bit_or_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return bit_or_operator.call(other, nb::cast(self));
+             },
+             nb::is_operator())
+        .def("__and__",
+             [bit_and_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return bit_and_operator.call(nb::cast(self), other);
+             },
+             nb::is_operator())
+        .def("__rand__",
+             [bit_and_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return bit_and_operator.call(other, nb::cast(self));
+             },
+             nb::is_operator())
+        .def("__xor__",
+             [bit_xor_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return bit_xor_operator.call(nb::cast(self), other);
+             },
+             nb::is_operator())
+        .def("__rxor__",
+             [bit_xor_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return bit_xor_operator.call(other, nb::cast(self));
              },
              nb::is_operator())
         .def("__rsub__",

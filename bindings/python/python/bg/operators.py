@@ -44,6 +44,10 @@ min_ = _native.min_
 max_ = _native.max_
 mean = _native.mean
 contains_ = _native.contains_
+is_empty = _native.is_empty
+bit_or = _native.bit_or
+bit_and = _native.bit_and
+bit_xor = _native.bit_xor
 const_ = _native.const_
 default_ = _native.default_
 getitem = _native.getitem
@@ -56,6 +60,10 @@ __all__ = [
     "and_",
     "const_",
     "contains_",
+    "is_empty",
+    "bit_or",
+    "bit_and",
+    "bit_xor",
     "convert",
     "count",
     "default_",

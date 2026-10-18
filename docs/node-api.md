@@ -505,6 +505,10 @@ the behavior defined by the [validity design](time-series-validity.md).
 `Out<TSS<T>>::clear()` and `Out<TSD<K, TS_T>>::clear()` remove all entries and
 produce a valid empty collection.
 
+`Out<TSS<T>>::for_each(callback)` visits current members as `Scalar<T>` views.
+An invalid output has no members. The callback may erase the member it receives;
+it must not insert members during enumeration.
+
 `Out<TS<T>>::set_value()` accepts a compatible scalar view or an owning
 `ScalarValue` rvalue. The rvalue overload transfers compatible storage and
 copies when the runtime representation or allocator requires conversion.

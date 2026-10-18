@@ -340,6 +340,197 @@ def test_collection_query_operators_accept_public_keyword_names():
     assert bg.test_graph(dictionary_contains_scalar, [{1: 10, 2: 20}, {}, {3: 30}]) == [True, False, False]
 
 
+def test_tss_equality_and_is_empty():
+    @bg.graph
+    def equal(lhs: bg.TSS[int], rhs: bg.TSS[int]) -> bg.TS[bool]:
+        return lhs == rhs
+
+    @bg.graph
+    def empty(values: bg.TSS[int]) -> bg.TS[bool]:
+        return bg.operators.is_empty(value=values)
+
+    assert bg.test_graph(equal, [{1}, {2, bg.Removed(1)}, {4}],
+                         [{1}, {3, bg.Removed(1)}, {5}]) == [True, False, False]
+    assert bg.test_graph(empty, [set(), {1}, bg.SetDelta(removed={1})]) == [True, False, True]
+
+
+def test_optional_tss_operators_treat_invalid_sets_as_empty():
+    @bg.graph
+    def equal(condition: bg.TS[bool], values: bg.TSS[int], invalid: bg.TSS[int], empty: bg.TSS[int]) -> bg.TS[bool]:
+        selected = bg.operators.if_then_else(condition, values, invalid)
+        return bg.operators.eq(lhs=bg.opt(selected), rhs=bg.opt(empty))
+
+    @bg.graph
+    def empty(condition: bg.TS[bool], values: bg.TSS[int], invalid: bg.TSS[int]) -> bg.TS[bool]:
+        selected = bg.operators.if_then_else(condition, values, invalid)
+        return bg.operators.is_empty(value=bg.opt(selected))
+
+    condition = [False, True, True, False]
+    values = [None, set(), {1}, None]
+    invalid = [None, None, None, None]
+    assert bg.test_graph(equal, condition, values, invalid, [set(), None, None, None]) == [True, True, False, True]
+    assert bg.test_graph(empty, condition, values, invalid) == [True, True, False, True]
+
+
+def test_tss_set_operators_and_bitwise_syntax():
+    @bg.graph
+    def union(lhs: bg.TSS[int], rhs: bg.TSS[int]) -> bg.TS[int]:
+        return bg.operators.sum_(lhs | rhs)
+
+    @bg.graph
+    def intersection(lhs: bg.TSS[int], rhs: bg.TSS[int]) -> bg.TS[int]:
+        return bg.operators.sum_(lhs & rhs)
+
+    @bg.graph
+    def difference(lhs: bg.TSS[int], rhs: bg.TSS[int]) -> bg.TS[int]:
+        return bg.operators.sum_(lhs - rhs)
+
+    @bg.graph
+    def symmetric_difference(lhs: bg.TSS[int], rhs: bg.TSS[int]) -> bg.TS[int]:
+        return bg.operators.sum_(lhs ^ rhs)
+
+    lhs = [
+        {1, 2},
+        bg.SetDelta(added={3}, removed={1}),
+        None,
+        bg.SetDelta(removed={2}),
+    ]
+    rhs = [
+        {2, 3},
+        bg.SetDelta(added={1}, removed={2}),
+        bg.SetDelta(added={2}, removed={3}),
+        None,
+    ]
+
+    assert bg.test_graph(union, lhs, rhs) == [6, None, None, None]
+    assert bg.test_graph(intersection, lhs, rhs) == [2, 3, 2, 0]
+    assert bg.test_graph(difference, lhs, rhs) == [1, 2, 3, None]
+    assert bg.test_graph(symmetric_difference, lhs, rhs) == [4, 3, 4, 6]
+
+    @bg.graph
+    def recover_union(condition: bg.TS[bool], values: bg.TSS[int], invalid: bg.TSS[int],
+                      other: bg.TSS[int]) -> bg.TS[int]:
+        selected = bg.operators.if_then_else(condition, values, invalid)
+        return bg.operators.sum_(bg.opt(selected) | other)
+
+    assert bg.test_graph(recover_union, [True, False, True], [{1}, None, None], [None, None, None],
+                         [{2}, None, None]) == [3, 2, 3]
+
+
+def test_tss_union_reconciles_reference_retarget_against_the_previous_membership():
+    @bg.graph
+    def union(condition: bg.TS[bool], lhs: bg.TSS[int], old_target: bg.TSS[int],
+              new_target: bg.TSS[int]) -> bg.TSS[int]:
+        return lhs | bg.operators.if_then_else(condition, old_target, new_target)
+
+    expected = [
+        bg.SetDelta(added={1, 2}),
+        bg.SetDelta(added={3}, removed={2}),
+    ]
+    assert bg.test_graph(union, [True, False], [{1}, None], [{2}, bg.SetDelta(added={3}, removed={2})],
+                         [{3}, None]) == expected
+    assert bg.test_graph(union, [True, False], [{1}, None], [{2}, None], [{3}, None]) == expected
+
+
+def test_tss_equality_sees_same_cycle_removals_from_a_sampled_previous_target():
+    @bg.graph
+    def equal_to_new_target(condition: bg.TS[bool], old_target: bg.TSS[int],
+                            new_target: bg.TSS[int]) -> bg.TS[bool]:
+        return bg.operators.if_then_else(condition, old_target, new_target) == new_target
+
+    assert bg.test_graph(equal_to_new_target, [True, False],
+                         [{2}, bg.SetDelta(added={3}, removed={2})], [{3}, None]) == [False, True]
+
+
+@pytest.mark.parametrize(("name", "operation", "set_result"), [
+    ("union", lambda lhs, rhs: lhs | rhs, True),
+    ("intersection", lambda lhs, rhs: lhs & rhs, True),
+    ("difference", lambda lhs, rhs: lhs - rhs, True),
+    ("symmetric_difference", lambda lhs, rhs: lhs ^ rhs, True),
+    ("equal", lambda lhs, rhs: lhs == rhs, False),
+    ("not_equal", lambda lhs, rhs: lhs != rhs, False),
+])
+@pytest.mark.parametrize("optional", [False, True])
+def test_sampled_tss_operators_match_seeded_membership_oracle(name, operation, set_result, optional):
+    @bg.graph
+    def select(which: bg.TS[int], first: bg.TSS[int], second: bg.TSS[int],
+               invalid: bg.TSS[int]) -> bg.TSS[int]:
+        first_or_second = bg.operators.if_then_else(which == 0, first, second)
+        return bg.operators.if_then_else(which == 2, invalid, first_or_second)
+
+    output_type = bg.TSS[int] if set_result else bg.TS[bool]
+
+    @bg.graph
+    def evaluate(left_selector: bg.TS[int], right_selector: bg.TS[int], first: bg.TSS[int],
+                 second: bg.TSS[int], invalid: bg.TSS[int]) -> output_type:
+        lhs = select(left_selector, first, second, invalid)
+        rhs = select(right_selector, first, second, invalid)
+        return operation(bg.opt(lhs) if optional else lhs, rhs)
+
+    rng = random.Random(0x5A_2026)
+    cycle_count = 513
+    domains = (tuple(range(130)), tuple(range(1_000, 1_130)))
+    source_values = [set(rng.sample(domain, 80)) for domain in domains]
+    source_inputs = [[set(values)] for values in source_values]
+    source_history = [[set(values) for values in source_values]]
+    selectors = [[0, 0] + [rng.randrange(3) for _ in range(cycle_count - 2)] for _ in range(2)]
+
+    for _ in range(1, cycle_count):
+        for source_index, domain in enumerate(domains):
+            values = source_values[source_index]
+            removed = rng.choice(tuple(values))
+            added = rng.choice(tuple(set(domain) - values))
+            values.remove(removed)
+            values.add(added)
+            source_inputs[source_index].append(bg.SetDelta(added={added}, removed={removed}))
+        source_history.append([set(values) for values in source_values])
+
+    expected = []
+    previous_set = None
+    previous_bool = None
+    for cycle in range(cycle_count):
+        left_selection, right_selection = selectors[0][cycle], selectors[1][cycle]
+        left = None if left_selection == 2 else source_history[cycle][left_selection]
+        right = None if right_selection == 2 else source_history[cycle][right_selection]
+        if optional:
+            left = left or set()
+            right = right or set()
+
+        value = None if left is None or right is None else operation(left, right)
+        if set_result:
+            if value is None:
+                expected.append(None)
+                continue
+            if previous_set is None:
+                expected.append(bg.SetDelta(added=value))
+            elif value != previous_set:
+                expected.append(bg.SetDelta(added=value - previous_set, removed=previous_set - value))
+            else:
+                expected.append(None)
+            previous_set = value
+        elif value is None:
+            expected.append(None)
+            previous_bool = None
+        else:
+            expected.append((value, previous_bool is None or value != previous_bool))
+            previous_bool = value
+
+    actual = bg.test_graph(evaluate, selectors[0], selectors[1], source_inputs[0], source_inputs[1],
+                           [None] * cycle_count)
+    assert len(actual) == cycle_count, name
+    for expected_tick, actual_tick in zip(expected, actual):
+        if set_result:
+            assert actual_tick == expected_tick, name
+        elif expected_tick is None:
+            assert actual_tick is None, name
+        else:
+            expected_value, required_tick = expected_tick
+            if required_tick:
+                assert actual_tick == expected_value, name
+            elif actual_tick is not None:
+                assert actual_tick == expected_value, name
+
+
 def test_collection_reductions_accept_values_and_tss_removals():
     @bg.graph
     def sum_values(values: bg.TSS[int]) -> bg.TS[int]:
