@@ -268,6 +268,8 @@ output.copy(input);      // Sample the complete current value.
 
 Use change queries for incremental algorithms that maintain a matching
 baseline. Use complete enumeration when the algorithm needs the complete value.
+Use the membership established by an iterator: an added item is present, and a
+removed item is absent. Query the other input when its membership is needed.
 When processing a validity transition manually, establish that it belongs to
 the current cycle; transition queries can describe an older event.
 

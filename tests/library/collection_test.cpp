@@ -136,6 +136,19 @@ TEST_CASE("TSS equality accounts for simultaneous membership changes",
     CHECK(not_equal_result.equals<bool>({false, true, false, false}));
 }
 
+TEST_CASE("TSS equality preserves mismatch counts across same-cycle key changes",
+          "[feature:operator][series:tss][scalar:i64][transition:addition][transition:removal]") {
+    const auto equal = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs == rhs; };
+
+    CHECK(testing::test_graph(
+              equal,
+              testing::input<TSS<i64>>({{}, {1}, {2}, {literal::REMOVED(1)}, {literal::REMOVED(2)}, {2},
+                                        {literal::REMOVED(2)}, literal::SKIP, {3}}),
+              testing::input<TSS<i64>>({{}, {1}, literal::SKIP, {literal::REMOVED(1)}, {2}, literal::SKIP,
+                                        {literal::REMOVED(2)}, {3}, literal::SKIP}))
+              .equals<bool>({true, true, false, false, false, true, true, false, true}));
+}
+
 TEST_CASE("TSS equality reconciles after required input invalidation",
           "[feature:operator][series:tss][scalar:i64][validity:required][transition:invalidation]"
           "[transition:revalidation]") {
@@ -224,6 +237,30 @@ TEST_CASE("TSS set operators publish only changes to their result",
                               testing::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
                                                         literal::SKIP}))
               .equals({{1, 3}, {2, literal::REMOVED(3)}, {3, literal::REMOVED(2)}, {2}}));
+}
+
+TEST_CASE("TSS set operations handle same-cycle additions, removals, and key moves",
+          "[feature:operator][series:tss][scalar:i64][transition:addition][transition:removal]") {
+    const auto set_union = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs | rhs; };
+    const auto intersection = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs & rhs; };
+    const auto difference = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs - rhs; };
+    const auto symmetric_difference = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs ^ rhs; };
+    CHECK(testing::test_graph(set_union, testing::input<TSS<i64>>({{1}, {2}, {literal::REMOVED(2)}, {3}}),
+                              testing::input<TSS<i64>>({{}, {2}, {3, literal::REMOVED(2)},
+                                                        {literal::REMOVED(3)}}))
+              .equals({{1}, {2}, {3, literal::REMOVED(2)}, literal::SKIP}));
+    CHECK(testing::test_graph(intersection, testing::input<TSS<i64>>({{1}, {2}, {literal::REMOVED(2)}, {3}}),
+                              testing::input<TSS<i64>>({{}, {2}, {3, literal::REMOVED(2)},
+                                                        {literal::REMOVED(3)}}))
+              .equals({{}, {2}, {literal::REMOVED(2)}, literal::SKIP}));
+    CHECK(testing::test_graph(difference, testing::input<TSS<i64>>({{1}, {2}, {literal::REMOVED(2)}, {3}}),
+                              testing::input<TSS<i64>>({{}, {2}, {3, literal::REMOVED(2)},
+                                                        {literal::REMOVED(3)}}))
+              .equals({{1}, literal::SKIP, literal::SKIP, {3}}));
+    CHECK(testing::test_graph(
+              symmetric_difference, testing::input<TSS<i64>>({{1}, {2}, {literal::REMOVED(2)}, {3}}),
+              testing::input<TSS<i64>>({{}, {2}, {3, literal::REMOVED(2)}, {literal::REMOVED(3)}}))
+              .equals({{1}, literal::SKIP, {3}, literal::SKIP}));
 }
 
 TEST_CASE("TSS set operators propagate guarantees and weaken optional inputs",
