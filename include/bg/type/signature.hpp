@@ -152,6 +152,7 @@ class Signature {
     std::size_t parameter_count() const noexcept { return parameters_.size(); }
 
     const Parameter &parameter(std::size_t index) const noexcept { return parameters_[index]; }
+    [[nodiscard]] bool is_union_parameter(std::size_t index) const noexcept;
 
     std::optional<std::size_t> variadic_parameter(details::VariadicMode mode) const noexcept {
         for (auto index = std::size_t{}; index < parameters_.size(); ++index) {

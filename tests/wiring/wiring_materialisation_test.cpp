@@ -404,7 +404,10 @@ TEST_CASE("signature matching uses default materialisation and reports no unavai
 
     const auto generic_signature = bg::Signature{
         bg::util::symbol{"consume_any"}, {{bg::util::symbol{"value"}, &bg::TS_T::type()}}};
-    CHECK(generic_signature.match_wiring_arguments(deferred_argument).empty());
+    const auto generic_matches = generic_signature.match_wiring_arguments(deferred_argument);
+    REQUIRE(generic_matches.size() == 1);
+    CHECK(generic_matches[0].argument_forms[0].offered_type == &bg::TSB<OneValue>::type());
+    CHECK(&bg::TS_T::type().resolve(generic_matches[0].type_map) == &bg::TSB<OneValue>::type());
 }
 
 TEST_CASE("typed deferred bundles expose their materialisation options",
@@ -534,23 +537,38 @@ TEST_CASE("direct graph calls select lazy forms without adding graph-boundary de
 TEST_CASE("direct graph Union inputs keep the original point and its other forms",
           "[feature:wiring-materialisation][feature:wiring][schema:generic]") {
     using namespace bg::literals;
-    using FORM = bg::Union<"DIRECT_GRAPH_FORM", bg::TS<bg::i64>, bg::TS<float>>;
+    using FORM = bg::Union<"DIRECT_GRAPH_FORM", bg::TS<float>, bg::TS<double>>;
 
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
     const auto integer_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
     const auto float_source = bg::node([](bg::Out<bg::TS<float>>) {});
+    const auto double_source = bg::node([](bg::Out<bg::TS<double>>) {});
     const auto bool_source = bg::node([](bg::Out<bg::TS<bool>>) {});
     auto deferred = wiring.create_wp<bg::TS<bg::i64>>(integer_source());
-    deferred.materialisation_option<bg::TS<float>>(
-        [float_source](bg::wp<bg::TS<bg::i64>>) { return float_source(); }, 0.0);
+    auto float_builder_calls = 0;
+    auto double_builder_calls = 0;
+    deferred.materialisation_option<bg::TS<float>>([float_source, &float_builder_calls](bg::wp<bg::TS<bg::i64>>) {
+        ++float_builder_calls;
+        return float_source();
+    }, 0.0);
+    deferred.materialisation_option<bg::TS<double>>([double_source, &double_builder_calls](bg::wp<bg::TS<bg::i64>>) {
+        ++double_builder_calls;
+        return double_source();
+    }, 4.0);
     const auto original_record = static_cast<bg::WiringPoint>(deferred).record();
     auto observed_record = static_cast<const bg::details::WiringRecord *>(nullptr);
     auto observed_options = std::size_t{};
     const auto identity = bg::graph("name"_n = "identity",
         [&](bg::wp<FORM> value) {
             observed_record = static_cast<bg::WiringPoint>(value).record();
-            observed_options = value.materialisation_options().size();
+            const auto options = value.materialisation_options();
+            observed_options = options.size();
+            REQUIRE(options.size() == 2);
+            CHECK(options[0].target_type == &bg::TS<float>::type());
+            CHECK(options[0].cost == 0.0);
+            CHECK(options[1].target_type == &bg::TS<double>::type());
+            CHECK(options[1].cost == 4.0);
             return bool_source();
         });
 
@@ -558,8 +576,37 @@ TEST_CASE("direct graph Union inputs keep the original point and its other forms
 
     REQUIRE(result.has_output());
     CHECK(observed_record == original_record);
-    CHECK(observed_options == 1);
+    CHECK(observed_options == 2);
+    CHECK(float_builder_calls == 0);
+    CHECK(double_builder_calls == 0);
     CHECK_FALSE(wiring.materialisation_required(deferred, bg::TS<float>::type()));
+    CHECK_FALSE(wiring.materialisation_required(deferred, bg::TS<double>::type()));
+}
+
+TEST_CASE("graph Union binding ignores mappings for unused alternatives",
+          "[feature:wiring-materialisation][feature:wiring][schema:generic]") {
+    using namespace bg::literals;
+    using FORM = bg::Union<"GRAPH_SCHEMA_FORM", bg::TS<bg::i64>, bg::TSB<bg::SCHEMA>>;
+
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    const auto integer_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    const auto bool_source = bg::node([](bg::Out<bg::TS<bool>>) {});
+    auto deferred = wiring.create_wp<bg::TS<bg::i64>>(integer_source());
+    deferred.materialisation_option<bg::TSB<OneValue>>([](bg::wp<bg::TS<bg::i64>> value) {
+        return bg::bundle<bg::TSB<OneValue>>("value"_n = value);
+    }, 0.0);
+
+    auto observed_record = static_cast<const bg::details::WiringRecord *>(nullptr);
+    const auto identity = bg::graph("name"_n = "generic_union_identity", [&](bg::wp<FORM> value) {
+        observed_record = static_cast<bg::WiringPoint>(value).record();
+        return bool_source();
+    });
+
+    const auto result = identity(deferred);
+
+    REQUIRE(result.has_output());
+    CHECK(observed_record == static_cast<bg::WiringPoint>(deferred).record());
 }
 
 TEST_CASE("a direct graph Union input preserves its actual reference point",
@@ -590,7 +637,7 @@ TEST_CASE("a direct graph Union input preserves its actual reference point",
     CHECK(observed_type == &original_point.type());
 }
 
-TEST_CASE("direct graph form ties use reference affinity",
+TEST_CASE("direct graph calls defer selected reference forms until required",
           "[feature:wiring-materialisation][feature:wiring][series:reference]") {
     using namespace bg::literals;
     using REFERENCE = bg::REF<bg::TS<bg::i64>>;
@@ -1201,7 +1248,7 @@ TEST_CASE("signature completes each form match with its original arguments and r
     CHECK(scalar_reads == 2);
 }
 
-TEST_CASE("an open time series variable keeps the source semantic type",
+TEST_CASE("an open time series variable resolves from each selected form",
           "[feature:wiring-materialisation][feature:wiring][series:value][schema:generic]") {
     using namespace bg::literals;
 
@@ -1220,11 +1267,15 @@ TEST_CASE("an open time series variable keeps the source semantic type",
 
     const auto matches = signature.match_wiring_arguments(arguments);
 
-    REQUIRE(matches.size() == 1);
+    REQUIRE(matches.size() == 2);
     CHECK(matches[0].argument_forms[0].offered_type == &bg::TS<bg::i64>::type());
     CHECK(matches[0].argument_forms[0].materialisation_target == &bg::TS<bg::i64>::type());
     CHECK(matches[0].argument_forms[0].materialisation_cost == 4.0);
     CHECK(&bg::TS_T::type().resolve(matches[0].type_map) == &bg::TS<bg::i64>::type());
+    CHECK(matches[1].argument_forms[0].offered_type == &bg::TSB<OneValue>::type());
+    CHECK(matches[1].argument_forms[0].materialisation_target == &bg::TSB<OneValue>::type());
+    CHECK(matches[1].argument_forms[0].materialisation_cost == 0.0);
+    CHECK(&bg::TS_T::type().resolve(matches[1].type_map) == &bg::TSB<OneValue>::type());
 
     auto conflicting_seed = bg::TypeMap{};
     const auto &variable = dynamic_cast<const bg::TypeVariableType<bg::TimeSeriesType> &>(bg::TS_T::type());
@@ -1321,7 +1372,7 @@ TEST_CASE("conflicting original inputs leave their shared type variable unpinned
     CHECK(reversed_matches[0].argument_forms[1].offered_type == &bg::TS<float>::type());
 }
 
-TEST_CASE("reference target matching ignores guarantees but preserves target structure",
+TEST_CASE("reference target matching resolves each selected target structure",
           "[feature:wiring-materialisation][feature:wiring][series:reference][schema:generic]") {
     using SOURCE = bg::REF<bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, 2>,
                             bg::TimeSeriesGuarantee::final>;
@@ -1342,10 +1393,12 @@ TEST_CASE("reference target matching ignores guarantees but preserves target str
 
     const auto matches = signature.match_wiring_arguments(arguments);
 
-    REQUIRE(matches.size() == 1);
+    REQUIRE(matches.size() == 2);
     CHECK(matches[0].argument_forms[0].offered_type == &SOURCE::type());
     CHECK(&bg::TS_T::type().resolve(matches[0].type_map) ==
           &bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, 2>::type());
+    CHECK(matches[1].argument_forms[0].offered_type == &ALTERNATIVE::type());
+    CHECK(&bg::TS_T::type().resolve(matches[1].type_map) == &bg::TSL<bg::TS<double>, 2>::type());
 }
 
 TEST_CASE("source matching ignores guarantees in captured bundle schemas",
@@ -1405,7 +1458,7 @@ TEST_CASE("signature matching does not source-bind a constrained time series var
     CHECK(matches[0].argument_forms[0].materialisation_cost == 0.0);
 }
 
-TEST_CASE("signature matching preserves generic source structure through a guarantee variable",
+TEST_CASE("signature matching resolves a guarantee variable from each selected form",
           "[feature:wiring-materialisation][feature:wiring][series:value][schema:generic]") {
     using GUARANTEED = bg::TS_T::with<bg::guarantee_variable<"MATCH_GUARANTEE">>;
 
@@ -1425,14 +1478,14 @@ TEST_CASE("signature matching preserves generic source structure through a guara
 
     const auto guaranteed_matches = guaranteed_signature.match_wiring_arguments(arguments);
 
-    REQUIRE(guaranteed_matches.size() == 1);
-    CHECK(guaranteed_matches[0].argument_forms[0].materialisation_target ==
-          &bg::TS<bg::i64>::type());
-    CHECK(&GUARANTEED::type().resolve(guaranteed_matches[0].type_map) ==
-          &bg::TS<bg::i64>::type());
+    REQUIRE(guaranteed_matches.size() == 2);
+    CHECK(guaranteed_matches[0].argument_forms[0].materialisation_target == &bg::TS<bg::i64>::type());
+    CHECK(&GUARANTEED::type().resolve(guaranteed_matches[0].type_map) == &bg::TS<bg::i64>::type());
+    CHECK(guaranteed_matches[1].argument_forms[0].materialisation_target == &bg::TS<double>::type());
+    CHECK(&GUARANTEED::type().resolve(guaranteed_matches[1].type_map) == &bg::TS<double>::type());
 }
 
-TEST_CASE("signature matching preserves generic source structure through a reference wrapper",
+TEST_CASE("signature matching resolves a reference target from each selected form",
           "[feature:wiring-materialisation][feature:wiring][series:reference][schema:generic]") {
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
     auto wiring = bg::GraphWiring{};
@@ -1449,10 +1502,37 @@ TEST_CASE("signature matching preserves generic source structure through a refer
 
     const auto reference_matches = reference_signature.match_wiring_arguments(arguments);
 
-    REQUIRE(reference_matches.size() == 1);
-    CHECK(reference_matches[0].argument_forms[0].materialisation_target ==
-          &bg::TS<bg::i64>::type());
+    REQUIRE(reference_matches.size() == 2);
+    CHECK(reference_matches[0].argument_forms[0].materialisation_target == &bg::TS<bg::i64>::type());
     CHECK(&bg::TS_T::type().resolve(reference_matches[0].type_map) == &bg::TS<bg::i64>::type());
+    CHECK(reference_matches[1].argument_forms[0].materialisation_target == &bg::TS<double>::type());
+    CHECK(&bg::TS_T::type().resolve(reference_matches[1].type_map) == &bg::TS<double>::type());
+}
+
+TEST_CASE("an ambiguous union form does not hide another valid materialisation form",
+          "[feature:wiring-materialisation][feature:wiring][series:reference][schema:generic]") {
+    using SOURCE = bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>>;
+    using INPUT = bg::Union<"AMBIGUOUS_REFERENCE_FORM", bg::REF<bg::TS_T>, bg::TS_T>;
+
+    const auto source = bg::node([](bg::Out<SOURCE>) {});
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    auto deferred = wiring.create_wp<SOURCE>(source());
+    deferred.materialisation_option<SOURCE>(
+        [](bg::wp<SOURCE> value) { return static_cast<bg::WiringPoint>(value); }, 0.0);
+    deferred.materialisation_option<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>>(
+        [](bg::wp<SOURCE>) { return bg::WiringPoint{}; }, 0.0);
+    const auto arguments = std::array{bg::WiringArgument{static_cast<bg::WiringPoint>(deferred)}};
+    const auto signature = bg::Signature{
+        bg::util::symbol{"consume_union"}, {{bg::util::symbol{"value"}, &INPUT::type()}}};
+
+    const auto matches = signature.match_wiring_arguments(arguments);
+
+    REQUIRE(matches.size() == 1);
+    CHECK(matches[0].argument_forms[0].materialisation_target ==
+          &bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type());
+    CHECK(&bg::TS_T::type().resolve(matches[0].type_map) ==
+          &bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type());
 }
 
 TEST_CASE("signature matching branches independent unions and unifies shared inner variables",

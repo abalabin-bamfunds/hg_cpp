@@ -39,8 +39,7 @@ std::optional<WiringPoint> WiringTemplate::invoke(GraphWiring &wiring,
     auto temporary_records = details::WiringRecordOverlay{wiring};
     auto probe = details::probe_wiring_arguments(signature(), arguments, temporary_records);
     const auto &declared_signature = signature();
-    auto preparation = details::WiringCallPreparation{
-        declared_signature, probe.arguments, details::preserves_union_wiring_inputs(*this), seed_type_map};
+    auto preparation = details::WiringCallPreparation{declared_signature, probe.arguments, seed_type_map};
     if (preparation.empty()) {
         auto supplied_types = std::vector<const Type *>{};
         supplied_types.reserve(probe.arguments.size());
@@ -50,10 +49,15 @@ std::optional<WiringPoint> WiringTemplate::invoke(GraphWiring &wiring,
         (void)declared_signature.match_arguments(supplied_types, seed_type_map);
         throw WiringError{"no advertised wiring form satisfies the wiring-template signature"};
     }
+    auto preserved_inputs = std::vector<unsigned char>{};
+    preserved_inputs.reserve(probe.arguments.size());
+    for (auto index = std::size_t{}; index < probe.arguments.size(); ++index) {
+        preserved_inputs.push_back(static_cast<unsigned char>(preserves_input_point(index)));
+    }
 
     struct Candidate {
         details::PreparedWiringCall call;
-        std::vector<const Type *> argument_types;
+        double binding_cost;
     };
     auto type_map = TypeMap{};
     auto argument_context = WiringArguments{declared_signature, type_map, probe.descriptors};
@@ -64,7 +68,7 @@ std::optional<WiringPoint> WiringTemplate::invoke(GraphWiring &wiring,
         .operation = declared_signature.name()};
     auto prepared = details::WiringCallPreparationResult{};
     try {
-        prepared = preparation.complete(argument_context, [&](const TypeMap &resolved_type_map) {
+        prepared = preparation.complete(preserved_inputs, argument_context, [&](const TypeMap &resolved_type_map) {
             resolve_additional_types(resolved_type_map);
             try {
                 requirement_results.push_back(
@@ -98,14 +102,8 @@ std::optional<WiringPoint> WiringTemplate::invoke(GraphWiring &wiring,
             }
             continue;
         }
-        auto argument_types = std::vector<const Type *>{};
-        argument_types.reserve(prepared.calls[index].argument_forms.size());
-        for (auto argument_index = std::size_t{}; argument_index < prepared.calls[index].argument_forms.size();
-             ++argument_index) {
-            argument_types.push_back(
-                prepared.calls[index].argument_type(argument_index, probe.arguments[argument_index]));
-        }
-        applicable.push_back({std::move(prepared.calls[index]), std::move(argument_types)});
+        const auto binding_cost = prepared.calls[index].binding_cost(probe.arguments);
+        applicable.push_back({std::move(prepared.calls[index]), binding_cost});
     }
 
     if (applicable.empty()) {
@@ -128,44 +126,28 @@ std::optional<WiringPoint> WiringTemplate::invoke(GraphWiring &wiring,
     unique_applicable.reserve(applicable.size());
     for (auto &candidate : applicable) {
         const auto existing = std::ranges::find_if(unique_applicable, [&](const auto &other) {
-            return candidate.call.same_concrete_binding(other.call);
+            return candidate.call.same_concrete_binding(other.call) &&
+                   same_binding_type_map(candidate.call.resolution.type_map, other.call.resolution.type_map);
         });
         if (existing == unique_applicable.end()) {
             unique_applicable.push_back(std::move(candidate));
-        } else if (candidate.call.materialisation_cost < existing->call.materialisation_cost) {
+        } else if (candidate.binding_cost < existing->binding_cost) {
             *existing = std::move(candidate);
         }
     }
 
     const auto lowest_cost = std::ranges::min_element(unique_applicable, {}, [](const auto &candidate) {
-                                 return candidate.call.materialisation_cost;
-                             })->call.materialisation_cost;
+                                 return candidate.binding_cost;
+                             })->binding_cost;
     std::erase_if(unique_applicable, [&](const auto &candidate) {
-        return candidate.call.materialisation_cost != lowest_cost;
+        return candidate.binding_cost != lowest_cost;
     });
 
-    auto preferred = std::vector<std::size_t>{};
-    for (auto index = std::size_t{}; index < unique_applicable.size(); ++index) {
-        const auto best = std::ranges::all_of(unique_applicable, [&](const auto &other) {
-            const auto other_index = static_cast<std::size_t>(&other - unique_applicable.data());
-            if (index == other_index) {
-                return true;
-            }
-            const auto affinity = details::compare_wiring_reference_affinity(
-                unique_applicable[index].call.resolution.signature, other.call.resolution.signature,
-                unique_applicable[index].argument_types, other.argument_types,
-                declared_signature.parameter_count());
-            return affinity == std::partial_ordering::less || affinity == std::partial_ordering::equivalent;
-        });
-        if (best) {
-            preferred.push_back(index);
-        }
-    }
-    if (preferred.size() != 1) {
+    if (unique_applicable.size() != 1) {
         throw WiringError{"equal-cost wiring forms resolve to distinct concrete bindings"};
     }
 
-    auto selected = std::move(unique_applicable[preferred.front()].call);
+    auto selected = std::move(unique_applicable.front().call);
     const auto path_name = selected.resolution.signature.name;
     auto committed = details::normalize_wiring_arguments(declared_signature, arguments, wiring.allocation());
     auto selected_forms = std::vector<const TimeSeriesType *>{};

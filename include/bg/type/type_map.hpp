@@ -47,7 +47,6 @@ class TypeMap {
     [[nodiscard]] TypeMap copy() const {
         auto result = TypeMap{};
         copy_into(result);
-        result.matching_structure_only_ = matching_structure_only();
         return result;
     }
 
@@ -73,10 +72,6 @@ class TypeMap {
             const auto *value = find(*entry.first);
             return value != nullptr && *value == entry.second;
         });
-    }
-
-    bool matching_structure_only() const noexcept {
-        return matching_structure_only_ || (parent_ != nullptr && parent_->matching_structure_only());
     }
 
   private:
@@ -116,7 +111,6 @@ class TypeMap {
 
     const TypeMap *parent_{};
     std::unordered_map<const Variable *, TypeMapValue> values_;
-    bool matching_structure_only_{};
     void *missing_mapping_context_{};
     MissingMappingFunction missing_mapping_{};
 };

@@ -10,10 +10,8 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <bg/scalar/value.hpp>
-#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/details/resolver_type_resolution_error.hpp>
 #include <bg/type/type_resolution_error.hpp>
-#include <bg/type/type_variable.hpp>
 
 #include "operator_resolution_cache.hpp"
 
@@ -93,11 +91,6 @@ bool preferred(const WiringTemplate &candidate, const ResolvedSignature &candida
         const auto candidate_fixed = *candidate.signature().first_variadic_parameter();
         const auto other_fixed = *other.signature().first_variadic_parameter();
         const auto shared_fixed = std::min(candidate_fixed, other_fixed);
-        const auto reference_affinity = details::compare_wiring_reference_affinity(
-            candidate_signature, other_signature, candidate_arguments, other_arguments, shared_fixed);
-        if (reference_affinity != std::partial_ordering::equivalent) {
-            return reference_affinity == std::partial_ordering::less;
-        }
         if (candidate_fixed == other_fixed) {
             const auto parameter_count = candidate.signature().parameter_count();
             const auto specificity = parameter_count == other.signature().parameter_count()
@@ -124,11 +117,6 @@ bool preferred(const WiringTemplate &candidate, const ResolvedSignature &candida
         return preferences_agree && prefix_length == std::partial_ordering::less;
     }
     const auto shared_parameters = std::min(candidate_signature.parameters.size(), other_signature.parameters.size());
-    const auto reference_affinity = details::compare_wiring_reference_affinity(
-        candidate_signature, other_signature, candidate_arguments, other_arguments, shared_parameters);
-    if (reference_affinity != std::partial_ordering::equivalent) {
-        return reference_affinity == std::partial_ordering::less;
-    }
     const auto parameter_count = candidate.signature().parameter_count();
     const auto specificity = parameter_count == other.signature().parameter_count()
                                  ? details::compare_parameter_specificity(candidate.signature(), other.signature(),
@@ -220,7 +208,7 @@ void require_concrete_materialisation_forms(GraphWiring &wiring, const WiringTem
     const auto *path = WiringContext::current().path();
     for (auto index = std::size_t{}; index < arguments.size(); ++index) {
         if (!arguments[index].is_time_series() ||
-            details::preserves_union_wiring_input(implementation, index) ||
+            implementation.preserves_input_point(index) ||
             selected_forms[index] == nullptr) {
             continue;
         }
@@ -539,6 +527,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
         std::vector<InputValidity> argument_validity;
         std::vector<WiringArgumentFormMatch> argument_forms;
         double materialisation_cost;
+        double binding_cost;
     };
 
     const auto applicable_failure = [](const Candidate &candidate, std::string message) {
@@ -560,6 +549,12 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
             }
 
             const auto &signature = implementation->signature();
+            auto preserved_inputs = std::vector<unsigned char>{};
+            preserved_inputs.reserve(signature.parameter_count());
+            for (auto index = std::size_t{}; index < signature.parameter_count(); ++index) {
+                preserved_inputs.push_back(
+                    static_cast<unsigned char>(implementation->preserves_input_point(index)));
+            }
             auto normalized = details::NormalizedWiringArguments{};
             try {
                 temporary_records.clear();
@@ -674,17 +669,19 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                     continue;
                 }
 
+                auto prepared_call = details::PreparedWiringCall{
+                    std::move(*completed), std::span<const unsigned char>{preserved_inputs}};
+                const auto binding_cost = prepared_call.binding_cost(normalized.arguments);
                 auto candidate_types = std::vector<const Type *>{};
                 candidate_types.reserve(normalized.arguments.size());
                 for (auto index = std::size_t{}; index < normalized.arguments.size(); ++index) {
-                    candidate_types.push_back(details::preserves_union_wiring_input(*implementation, index)
-                                                  ? &normalized.arguments[index].type()
-                                                  : completed->argument_forms[index].offered_type);
+                    candidate_types.push_back(
+                        prepared_call.argument_type(index, normalized.arguments[index]));
                 }
-                applicable.push_back({implementation.get(), std::move(completed->resolution),
+                applicable.push_back({implementation.get(), std::move(prepared_call.resolution),
                                       std::move(candidate_types), argument_validity,
-                                      std::move(completed->argument_forms),
-                                      completed->materialisation_cost});
+                                      std::move(prepared_call.argument_forms),
+                                      prepared_call.materialisation_cost, binding_cost});
             }
         }
 
@@ -712,12 +709,13 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
 
     const auto same_concrete_binding = [&](const Candidate &left, const Candidate &right) {
         if (left.implementation != right.implementation ||
-            left.resolution.signature.output != right.resolution.signature.output) {
+            left.resolution.signature.output != right.resolution.signature.output ||
+            !left.implementation->same_binding_type_map(left.resolution.type_map, right.resolution.type_map)) {
             return false;
         }
         const auto &signature = left.implementation->signature();
         for (auto index = std::size_t{}; index < signature.parameter_count(); ++index) {
-            if (details::preserves_union_wiring_input(*left.implementation, index)) {
+            if (left.implementation->preserves_input_point(index)) {
                 continue;
             }
             if (left.resolution.signature.parameters[index].type !=
@@ -737,7 +735,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
         });
         if (existing == unique_applicable.end()) {
             unique_applicable.push_back(std::move(candidate));
-        } else if (candidate.materialisation_cost < existing->materialisation_cost) {
+        } else if (candidate.binding_cost < existing->binding_cost) {
             *existing = std::move(candidate);
         }
     }
@@ -745,9 +743,9 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
 
     if (!applicable.empty()) {
         const auto lowest_cost =
-            std::ranges::min_element(applicable, {}, &Candidate::materialisation_cost)->materialisation_cost;
+            std::ranges::min_element(applicable, {}, &Candidate::binding_cost)->binding_cost;
         std::erase_if(applicable, [&](const auto &candidate) {
-            return candidate.materialisation_cost != lowest_cost;
+            return candidate.binding_cost != lowest_cost;
         });
     }
 

@@ -734,7 +734,7 @@ TEST_CASE("a variadic operator prefers the longer compatible fixed prefix",
     CHECK(selected == "long");
 }
 
-TEST_CASE("a variadic operator compares reference affinity on fixed parameters",
+TEST_CASE("a variadic operator includes reference adaptation cost for fixed parameters",
           "[feature:wiring][feature:variadic-wiring][feature:operator][series:tsb][schema:generic]"
           "[binding:value-to-reference][binding:reference-to-reference][definition:function]") {
     auto selected = std::string_view{};

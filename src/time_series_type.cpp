@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <span>
 #include <string_view>
 
 namespace bg {
@@ -91,6 +92,54 @@ bool FixedItemTimeSeriesType::requires_reference_representation_for(const TimeSe
         }
     }
     return false;
+}
+
+ReferenceAdaptationCounts TimeSeriesType::reference_adaptation_counts_for(const TimeSeriesType &supplied) const
+    noexcept {
+    const auto *parameter_reference = type_cast<TimeSeriesReferenceType>(this);
+    const auto *supplied_reference = type_cast<TimeSeriesReferenceType>(&supplied);
+    auto result = ReferenceAdaptationCounts{
+        .top_level = static_cast<std::size_t>((parameter_reference == nullptr) != (supplied_reference == nullptr))};
+
+    const auto &parameter_target = parameter_reference == nullptr ? *this : parameter_reference->target_type();
+    const auto &supplied_target = supplied_reference == nullptr ? supplied : supplied_reference->target_type();
+    const auto contained = parameter_target.contained_reference_adaptation_counts_for(supplied_target);
+    result.contained += contained.top_level + contained.contained;
+    return result;
+}
+
+ReferenceAdaptationCounts
+TimeSeriesType::contained_reference_adaptation_counts_for(const TimeSeriesType &supplied) const noexcept {
+    const auto *parameter_reference = type_cast<TimeSeriesReferenceType>(this);
+    const auto *supplied_reference = type_cast<TimeSeriesReferenceType>(&supplied);
+    if (parameter_reference == nullptr && supplied_reference == nullptr) {
+        return {};
+    }
+
+    auto result = ReferenceAdaptationCounts{
+        .contained = static_cast<std::size_t>((parameter_reference == nullptr) != (supplied_reference == nullptr))};
+
+    const auto &parameter_target = parameter_reference == nullptr ? *this : parameter_reference->target_type();
+    const auto &supplied_target = supplied_reference == nullptr ? supplied : supplied_reference->target_type();
+    const auto nested = parameter_target.contained_reference_adaptation_counts_for(supplied_target);
+    result.contained += nested.top_level + nested.contained;
+    return result;
+}
+
+ReferenceAdaptationCounts FixedItemTimeSeriesType::contained_reference_adaptation_counts_for(
+    const TimeSeriesType &supplied) const noexcept {
+    const auto *supplied_items = dynamic_cast<const FixedItemTimeSeriesType *>(&supplied);
+    if (supplied_items == nullptr || item_count() != supplied_items->item_count()) {
+        return {};
+    }
+
+    auto result = ReferenceAdaptationCounts{};
+    const auto count = item_count() == std::dynamic_extent ? 1 : item_count();
+    for (auto index = std::size_t{}; index < count; ++index) {
+        const auto item = item_type(index).reference_adaptation_counts_for(supplied_items->item_type(index));
+        result.contained += item.top_level + item.contained;
+    }
+    return result;
 }
 
 } // namespace bg

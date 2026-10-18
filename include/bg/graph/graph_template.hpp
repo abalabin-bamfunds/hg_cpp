@@ -95,6 +95,14 @@ class GraphTemplate final
         }
     }
 
+    bool preserves_input_point(std::size_t index) const noexcept override {
+        return signature_.is_union_parameter(index);
+    }
+
+    // Alternative mappings do not change the callback binding: it receives the original points, and output types
+    // are compared separately.
+    bool same_binding_type_map(const TypeMap &, const TypeMap &) const override { return true; }
+
   private:
     util::symbol label(const ResolvedSignature &signature, std::span<const WiringArgument> arguments,
                        util::symbol default_label) const override {

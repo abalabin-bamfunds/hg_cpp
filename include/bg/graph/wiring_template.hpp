@@ -31,6 +31,11 @@ class WiringTemplate {
     }
 
     [[nodiscard]] virtual RequirementResult requirement(const WiringArguments &) const { return accept; }
+    virtual bool preserves_input_point(std::size_t) const noexcept { return false; }
+    // Binding equivalence retains type mappings consumed by this template.
+    virtual bool same_binding_type_map(const TypeMap &left, const TypeMap &right) const {
+        return left.has_same_mappings(right);
+    }
     // Engine and extension API. Resolve types outside the input/output signature, such as node state types,
     // while resolver lookup is active and before checking requirements.
     virtual void resolve_additional_types(const TypeMap &) const {}

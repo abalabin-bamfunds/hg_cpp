@@ -10,7 +10,6 @@
 #include <bg/node/node_template.hpp>
 #include <bg/type/type_variable.hpp>
 #include <bg/type/type_resolution_error.hpp>
-#include <bg/type/time_series_reference_type.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <algorithm>
@@ -24,37 +23,23 @@
 namespace bg {
 namespace details {
 
-bool is_union_wiring_parameter(const Signature &signature, std::size_t index) {
-    const auto *variable = dynamic_cast<const TypeVariableType<Type> *>(signature.parameter(index).type);
-    return variable != nullptr && !variable->alternatives().empty();
-}
-
-bool preserves_union_wiring_inputs(const WiringTemplate &implementation) {
-    return dynamic_cast<const NodeTemplate *>(&implementation) == nullptr;
-}
-
-bool preserves_union_wiring_input(const WiringTemplate &implementation, std::size_t index) {
-    return is_union_wiring_parameter(implementation.signature(), index) &&
-           preserves_union_wiring_inputs(implementation);
-}
-
 const Type *PreparedWiringCall::argument_type(std::size_t index, const WiringArgument &argument) const noexcept {
-    if (preserve_union_inputs && is_union_wiring_parameter(*declared_signature, index)) {
+    if (preserves_input_point(index)) {
         return &argument.type();
     }
     return argument_forms[index].offered_type;
 }
 
 const TimeSeriesType *PreparedWiringCall::materialisation_target(std::size_t index) const noexcept {
-    if (preserve_union_inputs && is_union_wiring_parameter(*declared_signature, index)) {
+    if (preserves_input_point(index)) {
         return nullptr;
     }
     return argument_forms[index].materialisation_target;
 }
 
-bool PreparedWiringCall::same_concrete_binding(const PreparedWiringCall &other) const noexcept {
+bool PreparedWiringCall::same_concrete_binding(const PreparedWiringCall &other) const {
     for (auto index = std::size_t{}; index < argument_forms.size(); ++index) {
-        if (preserve_union_inputs && is_union_wiring_parameter(*declared_signature, index)) {
+        if (preserves_input_point(index)) {
             continue;
         }
         if (resolution.signature.parameters[index].type != other.resolution.signature.parameters[index].type ||
@@ -65,21 +50,56 @@ bool PreparedWiringCall::same_concrete_binding(const PreparedWiringCall &other) 
     return true;
 }
 
+double PreparedWiringCall::binding_cost(std::span<const WiringArgument> arguments) const {
+    // Prototype ranking only; these weights are not production wiring semantics.
+    constexpr auto top_level_reference_adaptation_cost = 1.0;
+    constexpr auto contained_reference_adaptation_cost = 4.0;
+
+    auto bindings = std::vector<std::pair<const WiringRecord *, const TimeSeriesType *>>{};
+    auto total = 0.0;
+    for (auto index = std::size_t{}; index < argument_forms.size(); ++index) {
+        if (preserves_input_point(index)) {
+            continue;
+        }
+
+        const auto &form = argument_forms[index];
+        if (form.materialisation_target != nullptr) {
+            const auto point = arguments[index].time_series();
+            const auto binding = std::pair{point.record()->source_identity(), form.materialisation_target};
+            if (std::ranges::find(bindings, binding) == bindings.end()) {
+                bindings.push_back(binding);
+                total += form.materialisation_cost;
+            }
+        }
+
+        const auto *parameter = type_cast<TimeSeriesType>(resolution.signature.parameters[index].type);
+        const auto *offered = type_cast<TimeSeriesType>(form.offered_type);
+        if (parameter == nullptr || offered == nullptr) {
+            continue;
+        }
+
+        const auto adaptation = parameter->reference_adaptation_counts_for(*offered);
+        total += static_cast<double>(adaptation.top_level) * top_level_reference_adaptation_cost;
+        total += static_cast<double>(adaptation.contained) * contained_reference_adaptation_cost;
+    }
+    return total;
+}
+
 WiringCallPreparation::WiringCallPreparation(const Signature &signature,
                                              std::span<const WiringArgument> arguments,
-                                             bool preserve_union_inputs, const TypeMap *seed_type_map)
-    : signature_{&signature}, preserve_union_inputs_{preserve_union_inputs},
-      matches_{signature.match_wiring_arguments(arguments, seed_type_map)} {}
+                                             const TypeMap *seed_type_map)
+    : signature_{&signature}, matches_{signature.match_wiring_arguments(arguments, seed_type_map)} {}
 
 WiringCallPreparationResult WiringCallPreparation::complete(
-    const WiringArguments &argument_context, const std::function<void(const TypeMap &)> &completion) {
+    std::span<const unsigned char> preserved_inputs, const WiringArguments &argument_context,
+    const std::function<void(const TypeMap &)> &completion) {
     auto result = WiringCallPreparationResult{};
     auto matches = std::move(matches_);
     result.calls.reserve(matches.size());
     for (auto &match : matches) {
         try {
             auto resolved = signature_->complete_wiring_match(std::move(match), argument_context, completion);
-            result.calls.push_back({std::move(resolved), signature_, preserve_union_inputs_});
+            result.calls.push_back({std::move(resolved), preserved_inputs});
         } catch (const TypeResolutionError &) {
             if (result.completion_error == nullptr) {
                 result.completion_error = std::current_exception();
@@ -89,55 +109,12 @@ WiringCallPreparationResult WiringCallPreparation::complete(
     return result;
 }
 
-std::partial_ordering compare_wiring_reference_affinity(const ResolvedSignature &left,
-                                                        const ResolvedSignature &right,
-                                                        std::span<const Type *const> left_arguments,
-                                                        std::span<const Type *const> right_arguments,
-                                                        std::size_t parameter_count) noexcept {
-    auto left_better = false;
-    auto right_better = false;
-    for (auto index = std::size_t{}; index < parameter_count; ++index) {
-        const auto *left_argument = type_cast<TimeSeriesType>(left_arguments[index]);
-        const auto *right_argument = type_cast<TimeSeriesType>(right_arguments[index]);
-        const auto *left_parameter = type_cast<TimeSeriesType>(left.parameters[index].type);
-        const auto *right_parameter = type_cast<TimeSeriesType>(right.parameters[index].type);
-        if (left_argument == nullptr || right_argument == nullptr || left_parameter == nullptr ||
-            right_parameter == nullptr) {
-            continue;
-        }
-
-        const auto *left_argument_reference = type_cast<TimeSeriesReferenceType>(left_argument);
-        const auto *right_argument_reference = type_cast<TimeSeriesReferenceType>(right_argument);
-        const auto *left_reference = type_cast<TimeSeriesReferenceType>(left_parameter);
-        const auto *right_reference = type_cast<TimeSeriesReferenceType>(right_parameter);
-        const auto left_matches = (left_reference != nullptr) == (left_argument_reference != nullptr);
-        const auto right_matches = (right_reference != nullptr) == (right_argument_reference != nullptr);
-        left_better |= left_matches && !right_matches;
-        right_better |= right_matches && !left_matches;
-
-        const auto &left_supplied =
-            left_argument_reference == nullptr ? *left_argument : left_argument_reference->target_type();
-        const auto &right_supplied =
-            right_argument_reference == nullptr ? *right_argument : right_argument_reference->target_type();
-        const auto &left_target = left_reference == nullptr ? *left_parameter : left_reference->target_type();
-        const auto &right_target = right_reference == nullptr ? *right_parameter : right_reference->target_type();
-        const auto left_requires_representation = left_target.requires_reference_representation_for(left_supplied);
-        const auto right_requires_representation = right_target.requires_reference_representation_for(right_supplied);
-        left_better |= !left_requires_representation && right_requires_representation;
-        right_better |= !right_requires_representation && left_requires_representation;
-    }
-    if (left_better == right_better) {
-        return left_better ? std::partial_ordering::unordered : std::partial_ordering::equivalent;
-    }
-    return left_better ? std::partial_ordering::less : std::partial_ordering::greater;
-}
-
 void bind_materialisation_forms(GraphWiring &wiring, const WiringTemplate &implementation,
                                 std::span<WiringArgument> arguments,
                                 std::span<const TimeSeriesType *const> selected_forms) {
     for (auto index = std::size_t{}; index < arguments.size(); ++index) {
         auto &argument = arguments[index];
-        if (!argument.is_time_series() || preserves_union_wiring_input(implementation, index)) {
+        if (!argument.is_time_series() || implementation.preserves_input_point(index)) {
             continue;
         }
 
@@ -263,14 +240,18 @@ class DeferredWiringRecord final : public details::WiringRecord {
         auto preparation = details::MaterialisationPreparation{};
         auto normalized = details::normalize_wiring_arguments(option->input_signature, arguments_,
                                                               wiring().allocation(), &option->input_signature);
-        auto call_preparation = details::WiringCallPreparation{option->input_signature, normalized.arguments, true};
+        auto call_preparation = details::WiringCallPreparation{option->input_signature, normalized.arguments};
         if (call_preparation.empty()) {
             throw WiringError{"a materialisation option's input signature does not match its retained arguments"};
+        }
+        auto preserved_inputs = std::vector<unsigned char>(normalized.arguments.size());
+        for (auto index = std::size_t{}; index < preserved_inputs.size(); ++index) {
+            preserved_inputs[index] = static_cast<unsigned char>(option->preserves_input_point(index));
         }
 
         auto type_map = TypeMap{};
         auto argument_context = WiringArguments{option->input_signature, type_map, normalized.descriptors};
-        auto prepared = call_preparation.complete(argument_context);
+        auto prepared = call_preparation.complete(preserved_inputs, argument_context);
         if (prepared.calls.empty()) {
             auto completion_error = std::string{};
             try {
@@ -281,24 +262,8 @@ class DeferredWiringRecord final : public details::WiringRecord {
             throw WiringError{"materialisation inputs cannot resolve: " + completion_error};
         }
 
-        // Union inputs keep their original point; rank only the concrete forms this callback will receive.
         const auto binding_cost = [&](const auto &match) {
-            auto bindings = std::vector<std::pair<const details::WiringRecord *, const TimeSeriesType *>>{};
-            auto total = 0.0;
-            for (std::size_t index = 0; index < match.argument_forms.size(); ++index) {
-                const auto *target = match.materialisation_target(index);
-                if (target == nullptr) {
-                    continue;
-                }
-                const auto point = normalized.arguments[index].time_series();
-                const auto binding = std::pair{point.record()->source_identity(), target};
-                if (std::ranges::find(bindings, binding) != bindings.end()) {
-                    continue;
-                }
-                bindings.push_back(binding);
-                total += match.argument_forms[index].materialisation_cost;
-            }
-            return total;
+            return match.binding_cost(normalized.arguments);
         };
 
         auto best_cost = binding_cost(prepared.calls.front());
@@ -318,7 +283,7 @@ class DeferredWiringRecord final : public details::WiringRecord {
 
         preparation.input_targets.resize(normalized.arguments.size());
         for (std::size_t index = 0; index < normalized.arguments.size(); ++index) {
-            if (details::is_union_wiring_parameter(option->input_signature, index)) {
+            if (prepared.calls[*best].preserves_input_point(index)) {
                 continue;
             }
             const auto &argument = normalized.arguments[index];
@@ -407,6 +372,10 @@ class DeferredWiringRecord final : public details::WiringRecord {
         double cost;
         Signature input_signature;
         WiringMaterialisationBuilder builder;
+
+        bool preserves_input_point(std::size_t index) const noexcept {
+            return input_signature.is_union_parameter(index);
+        }
     };
 
     std::vector<WiringArgument> arguments_;

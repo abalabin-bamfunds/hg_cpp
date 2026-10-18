@@ -92,6 +92,18 @@ bool TimeSeriesDictionaryType::requires_reference_representation_for(const TimeS
            value_type().requires_reference_representation_for(tsd->value_type());
 }
 
+ReferenceAdaptationCounts TimeSeriesDictionaryType::contained_reference_adaptation_counts_for(
+    const TimeSeriesType &supplied) const noexcept {
+    const auto *dictionary = type_cast<TimeSeriesDictionaryType>(&supplied);
+    if (dictionary == nullptr) {
+        return {};
+    }
+
+    // FixedItemTimeSeriesType exposes the key set as its only item; TSD input binding adapts value representations.
+    const auto value_counts = value_type().reference_adaptation_counts_for(dictionary->value_type());
+    return {.contained = value_counts.top_level + value_counts.contained};
+}
+
 bool TimeSeriesDictionaryType::do_match(const Type &supplied, TypeMap &type_map) const {
     return do_match(supplied, type_map, std::nullopt);
 }
