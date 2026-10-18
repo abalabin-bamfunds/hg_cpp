@@ -246,7 +246,7 @@ class DeferredWiringRecord final : public details::WiringRecord {
         }
         auto preserved_inputs = std::vector<unsigned char>(normalized.arguments.size());
         for (auto index = std::size_t{}; index < preserved_inputs.size(); ++index) {
-            preserved_inputs[index] = static_cast<unsigned char>(option->preserves_input_point(index));
+            preserved_inputs[index] = static_cast<unsigned char>(option->input_signature.is_union_parameter(index));
         }
 
         auto type_map = TypeMap{};
@@ -372,10 +372,6 @@ class DeferredWiringRecord final : public details::WiringRecord {
         double cost;
         Signature input_signature;
         WiringMaterialisationBuilder builder;
-
-        bool preserves_input_point(std::size_t index) const noexcept {
-            return input_signature.is_union_parameter(index);
-        }
     };
 
     std::vector<WiringArgument> arguments_;
