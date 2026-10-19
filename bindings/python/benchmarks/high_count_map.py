@@ -63,6 +63,7 @@ class RunObserver:
         self.population_finished_ns: int | None = None
         self.population_observers: set[str] = set()
         self.populated_rss_bytes: int | None = None
+        self.before_stop_rss_bytes: int | None = None
 
     def start(self, cycle: int) -> None:
         now = time.perf_counter_ns()
@@ -83,6 +84,8 @@ class RunObserver:
         observers.add(branch)
         if len(observers) == 2:
             self.cycle_finishes[cycle] = time.perf_counter_ns()
+            if cycle + 1 == len(self.workload.cycles):
+                self.before_stop_rss_bytes = current_rss_bytes()
 
 
 def expected_cycle_event_count(workload: Workload, cycle: int) -> int:
@@ -172,7 +175,7 @@ def git_commit() -> str | None:
         return None
 
 
-def make_graph(workload: Workload, observer: RunObserver):
+def make_graph(workload: Workload, observer: RunObserver, arithmetic: str):
     @bg.compute_node
     def flat_source(trigger: bg.TS[int]) -> bg.TSD[int, bg.TS[int]]:
         cycle = trigger.value
@@ -237,17 +240,22 @@ def make_graph(workload: Workload, observer: RunObserver):
             return 1
         return workload.cycles[trigger.value - 1].bias
 
-    @bg.compute_node
-    def add_values(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[int]:
-        return lhs.value + rhs.value
+    if arithmetic == "library":
+        add_values = bg.operators.add
+        multiply = bg.operators.mul
+        add_constant = bg.operators.add
+    else:
+        @bg.compute_node
+        def add_values(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[int]:
+            return lhs.value + rhs.value
 
-    @bg.compute_node
-    def multiply(value: bg.TS[int], factor: int) -> bg.TS[int]:
-        return value.value * factor
+        @bg.compute_node
+        def multiply(value: bg.TS[int], factor: int) -> bg.TS[int]:
+            return value.value * factor
 
-    @bg.compute_node
-    def add_constant(value: bg.TS[int], addend: int) -> bg.TS[int]:
-        return value.value + addend
+        @bg.compute_node
+        def add_constant(value: bg.TS[int], addend: int) -> bg.TS[int]:
+            return value.value + addend
 
     @bg.graph
     def stage_a(key: bg.TS[int], value: bg.TS[int], bias: bg.TS[int]) -> bg.TS[int]:
@@ -346,12 +354,12 @@ def make_graph(workload: Workload, observer: RunObserver):
     return benchmark
 
 
-def run_benchmark(profile_name: str, cycle_count: int) -> dict[str, Any]:
+def run_benchmark(profile_name: str, cycle_count: int, arithmetic: str = "callbacks") -> dict[str, Any]:
     started = time.perf_counter_ns()
     workload = build_workload(profile_name, cycle_count)
     workload_generation_ns = time.perf_counter_ns() - started
     observer = RunObserver(workload)
-    definition = make_graph(workload, observer)
+    definition = make_graph(workload, observer, arithmetic)
     triggers = list(range(cycle_count + 1))
     before_wiring_rss = current_rss_bytes()
 
@@ -405,7 +413,7 @@ def run_benchmark(profile_name: str, cycle_count: int) -> dict[str, Any]:
         "schema_version": 1,
         "benchmark": "portable_high_count_map",
         "engine": "bg",
-        "runtime": "python-callbacks",
+        "runtime": "library-operators" if arithmetic == "library" else "python-callbacks",
         "source_commit": source_commit,
         "benchmark_adapter_commit": adapter_commit,
         "profile": profile_name,
@@ -460,6 +468,12 @@ def run_benchmark(profile_name: str, cycle_count: int) -> dict[str, Any]:
             "after_wiring_rss_bytes": None,
             "empty_runtime_rss_bytes": None,
             "populated_rss_bytes": observer.populated_rss_bytes,
+            "before_stop_rss_bytes": observer.before_stop_rss_bytes,
+            "graph_rss_delta_bytes": (
+                observer.before_stop_rss_bytes - before_wiring_rss
+                if observer.before_stop_rss_bytes is not None and before_wiring_rss is not None
+                else None
+            ),
             "peak_rss_bytes": max(
                 value for value in (before_wiring_rss, observer.populated_rss_bytes, process_peak_rss, after_stop_rss)
                 if value is not None
@@ -493,6 +507,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", choices=PROFILES, default="smoke")
     parser.add_argument("--cycles", type=int, default=120)
+    parser.add_argument("--arithmetic", choices=("callbacks", "library"), default="callbacks")
     parser.add_argument("--verify-workload", action="store_true")
     arguments = parser.parse_args()
 
@@ -503,7 +518,7 @@ def main() -> None:
     if arguments.cycles <= 0:
         parser.error("--cycles must be positive")
 
-    print(json.dumps(run_benchmark(arguments.profile, arguments.cycles), indent=2))
+    print(json.dumps(run_benchmark(arguments.profile, arguments.cycles, arguments.arithmetic), indent=2))
 
 
 if __name__ == "__main__":
