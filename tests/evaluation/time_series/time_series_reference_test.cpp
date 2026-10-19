@@ -520,6 +520,21 @@ struct dynamic_reference_value {
     }
 };
 
+struct dynamic_reference_unbinder {
+    bg::In<bg::REF<bg::TSL<bg::TS<bg::i64>, 1>>> collection;
+    bg::In<bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::ordinary>, bg::dynamic_binding, bg::optional> input;
+    bg::In<bg::TS<bg::i64>> trigger;
+    bg::Out<bg::TS<bool>> output;
+
+    void evaluate() const {
+        if (*trigger == 0) {
+            input.bind(collection[0]);
+        }
+        input.unbind();
+        output.set(input.became_invalid());
+    }
+};
+
 } // namespace
 
 TEST_CASE("changing a reference samples its target",
@@ -572,6 +587,18 @@ TEST_CASE("a dynamic dereferenced input rebinds while passive",
     };
 
     CHECK(bg::testing::test_graph(graph).equals({10, 20}));
+}
+
+TEST_CASE("dynamic reference input unbinding reports one invalidation cycle",
+          "[evaluation][reference][validity][feature:reference][transition:invalidation]"
+          "[binding:reference-to-value][series:value]") {
+    const auto unbind = bg::node<dynamic_reference_unbinder>();
+    const auto graph = [&](bg::wp<bg::TSL<bg::TS<bg::i64>, 1>> collection,
+                           bg::wp<bg::TS<bg::i64>> trigger) {
+        return unbind(collection, trigger);
+    };
+
+    CHECK(bg::testing::test_graph(graph, {{{0, 10}}, {{0, 20}}}, {0, 1}).equals({true, false}));
 }
 
 namespace {

@@ -91,8 +91,7 @@ struct timed_overloads {
 
         void evaluate(EvaluationContext *context) const {
             const auto now = context->evaluation_time();
-            const auto has_current_tick = value.last_updated() == now &&
-                                          (value.valid() ? value.modified() : value.became_invalid());
+            const auto has_current_tick = value.modified();
 
             if (*retained == nullptr) {
                 if (!has_current_tick) {
@@ -234,7 +233,7 @@ struct timed_overloads {
 
         void evaluate(EvaluationContext *context) const {
             const auto now = context->evaluation_time();
-            const auto input_changed = value.modified() || (value.last_updated() == now && value.became_invalid());
+            const auto input_changed = value.modified();
             const auto active_period = *deadline != MIN_DT;
             const auto at_deadline = active_period && *deadline <= now;
 

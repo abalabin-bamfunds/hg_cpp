@@ -516,8 +516,9 @@ raised by a callback propagates from `test_graph`. Each test run constructs and
 destroys a new runtime graph.
 
 An input view exposes `valid`, `modified`, `last_modified_time`, `value`, and
-`delta_value`. `last_modified_time` is a Python `datetime` mapped from the
-engine update time. Input views and their lazy values, change views, and
+`delta_value`. Change queries follow the [node input API](node-api.md#complete-time-series-access).
+`last_modified_time` is a Python `datetime` mapped from the engine update time.
+Input views and their lazy values, change views, and
 iterators expire when the callback returns.
 
 `TSS` values are set-like. `added()` and `removed()` return lazy set-like

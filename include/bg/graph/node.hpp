@@ -51,13 +51,13 @@ class Node {
 
     bool input_modified(std::size_t parameter_index, EvaluationTime evaluation_time) const noexcept {
         const auto &state = input_last_updated(parameter_index);
-        return state.valid() && state.time() == evaluation_time;
+        return evaluation_time != MIN_DT && state.time() == evaluation_time;
     }
 
     bool input_modified(std::size_t parameter_index, EvaluationTime evaluation_time,
                         const RuntimeGraphInput *runtime_graph_inputs) const {
         const auto &state = input_last_updated(parameter_index, runtime_graph_inputs);
-        return state.valid() && state.time() == evaluation_time;
+        return evaluation_time != MIN_DT && state.time() == evaluation_time;
     }
 
     InputData input_data(std::size_t parameter_index) const noexcept {
@@ -228,14 +228,14 @@ class Node {
     In<TS_T> time_series_input(std::size_t parameter_index, EvaluationTime evaluation_time = MIN_DT) const noexcept {
         const auto input = input_data(parameter_index);
         return {*input.last_updated, input.value, time_series_input_runtime_type(parameter_index),
-                input.last_updated->valid() && input.last_updated->time() == evaluation_time};
+                evaluation_time != MIN_DT && input.last_updated->time() == evaluation_time};
     }
 
     In<TS_T> time_series_input(std::size_t parameter_index, EvaluationTime evaluation_time,
                                const EvaluationContext &context) const {
         const auto input = input_data(parameter_index, context);
         return {*input.last_updated, input.value, time_series_input_runtime_type(parameter_index, context),
-                input.last_updated->valid() && input.last_updated->time() == evaluation_time};
+                evaluation_time != MIN_DT && input.last_updated->time() == evaluation_time};
     }
 
     bool *input_activity(std::size_t controlled_input_index) const noexcept {

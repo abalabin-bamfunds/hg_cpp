@@ -338,12 +338,13 @@ scheduling from other inputs. A change that occurs while the input is passive
 does not schedule evaluation when the input becomes active later.
 
 All time series types provide `valid()`, `all_valid()`, `became_valid()`, `became_invalid()`,
-`modified()`, and `last_updated()`. `became_valid()` and `became_invalid()`
-describe the latest change. They do not imply that the change occurred in the
-current evaluation. `modified()` reports a valid update in the current
-evaluation. `last_updated()` returns the latest change time, including an
-invalidation. `TS<T>::value()` returns `const T&` and requires a valid time
-series. `all_valid()` tests the root and immediate item validity without changing
+`modified()`, and `last_updated()`. `modified()` reports a change in the current
+evaluation, including invalidation. `became_valid()` and `became_invalid()`
+report validity transitions in that evaluation. `last_updated()` returns the
+latest change time, including an invalidation. `TS<T>::value()` returns
+`const T&` and requires a valid time series. Check `valid()` before reading an
+optional input's value, even when `modified()` is true.
+`all_valid()` tests the root and immediate item validity without changing
 the input validity constraint. Collection time series provide their type-specific change queries.
 
 The erased `In<TS_T>` query checks the actual runtime type. Runtime-defined nodes

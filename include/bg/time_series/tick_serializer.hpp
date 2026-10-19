@@ -70,7 +70,7 @@ class TimeSeriesTickWrite {
         if (input.runtime_type().is_reference()) {
             throw std::invalid_argument{"retained reference time series ticks are not supported"};
         }
-        if (input.last_updated() != now || (input.valid() ? !input.modified() : !input.became_invalid())) {
+        if (input.last_updated() != now || !input.modified()) {
             return false;
         }
 

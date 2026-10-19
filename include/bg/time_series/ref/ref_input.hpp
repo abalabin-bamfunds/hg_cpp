@@ -217,7 +217,8 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...>
         const auto *declared_runtime_type = &data_.runtime_type();
         dynamic_.storage->unbind(dynamic_.context->runtime_graph(), dynamic_.storage_offset);
         data_ = details::TimeSeriesInputData{*declared_runtime_type, dynamic_.storage->last_updated(),
-                                             &dynamic_.storage->value(), false};
+                                             &dynamic_.storage->value(),
+                                             dynamic_.storage->modified(dynamic_.context->evaluation_time())};
     }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {

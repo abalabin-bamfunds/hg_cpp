@@ -853,7 +853,7 @@ nb::object make_value(In<TS_T> input, const PythonScalarConversions &conversions
 
 nb::object make_delta_value(In<TS_T> input, const PythonScalarConversions &conversions,
                             const std::shared_ptr<CallbackLifetime> &lifetime, std::uint64_t generation) {
-    if (!input.modified()) {
+    if (!input.valid() || !input.modified()) {
         return nb::none();
     }
 
@@ -921,7 +921,7 @@ nb::object TSInput::value() const {
 
 nb::object TSInput::delta_value() const {
     check_lifetime();
-    return modified() ? value() : nb::none();
+    return valid() && modified() ? value() : nb::none();
 }
 
 nb::object REFInput::value() const {
@@ -934,7 +934,7 @@ nb::object REFInput::value() const {
 
 nb::object REFInput::delta_value() const {
     check_lifetime();
-    return modified() ? value() : nb::none();
+    return valid() && modified() ? value() : nb::none();
 }
 
 std::size_t TSSInput::size() const {
@@ -962,7 +962,7 @@ nb::object TSSInput::value() const {
 
 nb::object TSSInput::delta_value() const {
     check_lifetime();
-    if (!modified()) {
+    if (!valid() || !modified()) {
         return nb::none();
     }
     return nb::cast(SetDeltaView{input(), conversions(), lifetime(), generation()});
@@ -1028,7 +1028,8 @@ nb::object TSLInput::value() const {
 
 nb::object TSLInput::delta_value() const {
     check_lifetime();
-    return modified() ? nb::cast(FixedDeltaView{input(), conversions(), lifetime(), generation()}) : nb::none();
+    return valid() && modified() ? nb::cast(FixedDeltaView{input(), conversions(), lifetime(), generation()})
+                                 : nb::none();
 }
 
 nb::object TSLInput::iter() const {
@@ -1143,7 +1144,8 @@ nb::object TSBInput::value() const {
 
 nb::object TSBInput::delta_value() const {
     check_lifetime();
-    return modified() ? nb::cast(FixedDeltaView{input(), conversions(), lifetime(), generation()}) : nb::none();
+    return valid() && modified() ? nb::cast(FixedDeltaView{input(), conversions(), lifetime(), generation()})
+                                 : nb::none();
 }
 
 nb::object TSBInput::keys() const {
@@ -1261,7 +1263,8 @@ nb::object TSDInput::value() const {
 
 nb::object TSDInput::delta_value() const {
     check_lifetime();
-    return modified() ? nb::cast(DictionaryDeltaView{input(), conversions(), lifetime(), generation()}) : nb::none();
+    return valid() && modified() ? nb::cast(DictionaryDeltaView{input(), conversions(), lifetime(), generation()})
+                                 : nb::none();
 }
 
 nb::object TSDInput::iter() const {

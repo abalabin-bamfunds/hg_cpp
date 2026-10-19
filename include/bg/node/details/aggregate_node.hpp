@@ -716,7 +716,7 @@ template <typename Definition, std::size_t Index>
         constexpr auto ControlledInputIndex =
             aggregate_dynamic_activity_input_index<Definition, Index>(std::make_index_sequence<Index>{});
         const auto input = runtime_node.input_data(ParameterIndex, *context);
-        const auto modified = input.last_updated->valid() && input.last_updated->time() == context->evaluation_time();
+        const auto modified = input.last_updated->time() == context->evaluation_time();
 
         if constexpr (input_runtime_type_field<Field>::value) {
             const auto &runtime_type = runtime_node.time_series_input_runtime_type(ParameterIndex, *context);
@@ -778,7 +778,7 @@ template <typename Definition, std::size_t Index>
         }
 
         const auto input = runtime_node.input_data(ParameterIndex, *context);
-        const auto modified = input.last_updated->valid() && input.last_updated->time() == context->evaluation_time();
+        const auto modified = input.last_updated->time() == context->evaluation_time();
         using Input = In<TS<Parameter>>;
         const auto value = [&] {
             if constexpr (input_requires_runtime_type<Input>) {

@@ -419,6 +419,8 @@ graph compilation or evaluation.
 - scheduling during evaluation, including nodes in the current bit block
 - active and passive inputs, including per-input runtime activity changes
 - required-input validity caching, invalidation, and revalidation
+- current-evaluation input modification and validity-transition queries, including
+  invalidation, unchanged inputs, passive inputs, and collection items
 - immediate `all_valid` queries and evaluation gating across native, free, and reference-bound collections;
   deferred item checks for passive and dynamically inactive inputs, including timer- and other-input-driven
   evaluation attempts; optional bundle fields and base-schema narrowing;

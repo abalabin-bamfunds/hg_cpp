@@ -124,12 +124,11 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
     In<TSS<K>> key_set() const {
         if (!valid()) {
             return In<TSS<K>>{TimeSeriesInputData{dictionary_runtime_type().key_set_runtime_type(),
-                                                  initial_time_series_state, nullptr}};
+                                                  data_.last_updated_ref(), nullptr, data_.modified()}};
         }
         const auto item = data_.runtime_type().item(data_.data(), key_set_item_id);
         return In<TSS<K>>{TimeSeriesInputData{item.runtime_type, item.last_updated, item.value,
-                                              data_.modified() && item.last_updated.valid() &&
-                                                  item.last_updated.time() == data_.last_updated()}};
+                                              data_.modified() && item.last_updated.time() == data_.last_updated()}};
     }
 
     item_id_t next_item_id(item_id_t start) const {
@@ -358,8 +357,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
     [[nodiscard]] In<Item> make_item(std::uint32_t position) const {
         const auto item = data_.runtime_type().item(data_.data(), position);
         return In<Item>{TimeSeriesInputData{item.runtime_type, item.last_updated, item.value,
-                                            data_.modified() && item.last_updated.valid() &&
-                                                item.last_updated.time() == data_.last_updated()}};
+                                            data_.modified() && item.last_updated.time() == data_.last_updated()}};
     }
 
     Scalar<K> make_key(item_id_t id) const {

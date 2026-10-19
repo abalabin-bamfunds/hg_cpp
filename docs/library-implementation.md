@@ -131,6 +131,8 @@ const auto add_optional = node(
 
 This node evaluates on input changes. Optional validity permits evaluation
 with invalid inputs; startup scheduling is a separate choice.
+Check `valid()` before reading an optional input's value, including inside a
+`modified()` branch.
 
 Register optional implementations as overloads so `opt()` can select them.
 Define missing-value behavior for each operation. Multiplication, selection,
@@ -270,8 +272,6 @@ Use change queries for incremental algorithms that maintain a matching
 baseline. Use complete enumeration when the algorithm needs the complete value.
 Use the membership established by an iterator: an added item is present, and a
 removed item is absent. Query the other input when its membership is needed.
-When processing a validity transition manually, establish that it belongs to
-the current cycle; transition queries can describe an older event.
 
 Select `preserve_output` when a required input's invalidation should leave the
 output unchanged. Use explicit invalidation when the contract removes the

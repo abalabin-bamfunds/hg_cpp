@@ -620,10 +620,10 @@ TEST_CASE("invalidating a bundle invalidates every field",
                           {"value_modified", true}},
                          {{"root_valid", false},
                           {"count_valid", false},
-                          {"value_valid", false},
-                          {"root_modified", false},
-                          {"count_modified", false},
-                          {"value_modified", false}}}));
+                         {"value_valid", false},
+                          {"root_modified", true},
+                          {"count_modified", true},
+                          {"value_modified", true}}}));
 
     const auto transitions = testing::test_graph(transition_graph, {{{"count", 2}, {"value", 3.5F}}, literal::INVALID});
 

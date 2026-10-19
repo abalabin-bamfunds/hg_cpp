@@ -21,10 +21,9 @@ struct tss_set_operation_impl {
     State<bool> needs_reconcile;
     Out<TSS<K, OUTPUT_GUARANTEE>> output;
 
-    void evaluate(EvaluationContext *context) const {
-        const auto now = context->evaluation_time();
-        const auto lhs_validity_changed = lhs.last_updated() == now && (lhs.became_valid() || lhs.became_invalid());
-        const auto rhs_validity_changed = rhs.last_updated() == now && (rhs.became_valid() || rhs.became_invalid());
+    void evaluate() const {
+        const auto lhs_validity_changed = lhs.became_valid() || lhs.became_invalid();
+        const auto rhs_validity_changed = rhs.became_valid() || rhs.became_invalid();
         if (*needs_reconcile || !output.valid() || lhs_validity_changed || rhs_validity_changed) {
             if (!output.valid()) {
                 output.clear();
@@ -47,10 +46,9 @@ struct tss_equality_impl {
     State<std::size_t> mismatches;
     Out<TS<bool, OUTPUT_GUARANTEE>> output;
 
-    void evaluate(EvaluationContext *context) const {
-        const auto now = context->evaluation_time();
-        const auto lhs_validity_changed = lhs.last_updated() == now && (lhs.became_valid() || lhs.became_invalid());
-        const auto rhs_validity_changed = rhs.last_updated() == now && (rhs.became_valid() || rhs.became_invalid());
+    void evaluate() const {
+        const auto lhs_validity_changed = lhs.became_valid() || lhs.became_invalid();
+        const auto rhs_validity_changed = rhs.became_valid() || rhs.became_invalid();
         if (!output.valid() || lhs_validity_changed || rhs_validity_changed) {
             *mismatches = count_mismatches();
         } else {

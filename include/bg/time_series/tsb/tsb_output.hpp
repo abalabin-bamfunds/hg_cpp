@@ -169,8 +169,7 @@ class Out<TSB<Schema, Properties...>> {
               auto... InputTimeSeriesProperties, auto... InputProperties>
         requires details::bundle_schema_variable_declaration<InputSchema<details::bundle_schema_field>>
     void copy_tick(const In<TSB<InputSchema, InputTimeSeriesProperties...>, InputProperties...> &input) const {
-        if (input.last_updated() != state_->evaluation_time() ||
-            (!input.modified() && !input.became_invalid())) {
+        if (input.last_updated() != state_->evaluation_time() || !input.modified()) {
             return;
         }
         if (!input.valid()) {
