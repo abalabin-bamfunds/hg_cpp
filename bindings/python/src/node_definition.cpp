@@ -240,6 +240,15 @@ nanobind::object PythonNodeDefinition::CompiledData::call(
         case CallbackParameter::input:
             arguments.set(argument_index, argument(invocation, parameter.index, callback, generator_call));
             break;
+        case CallbackParameter::output: {
+            auto output = invocation.output();
+            const auto modified = output.valid() && output.last_updated() == invocation.context().evaluation_time();
+            auto input = In<TS_T>{output.output_state().mutable_last_updated(), output.data(), output.runtime_type(),
+                                  modified};
+            arguments.set(argument_index,
+                          make_input_view(input, scalar_conversions(), lifetime, callback.generation()));
+            break;
+        }
         case CallbackParameter::evaluation_clock:
             arguments.set(argument_index, nanobind::cast(PythonEvaluationClock{NodeCallbackAccess{
                 invocation.context(), lifetime, callback.generation(),

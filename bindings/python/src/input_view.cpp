@@ -907,7 +907,7 @@ nb::object InputView::last_modified_time() const {
 
 void InputView::check_lifetime() const {
     if (lifetime() == nullptr || !lifetime()->active(generation())) {
-        throw std::runtime_error{"a Python time-series input view was used outside its callback"};
+        throw std::runtime_error{"a Python time-series view was used outside its callback"};
     }
 }
 

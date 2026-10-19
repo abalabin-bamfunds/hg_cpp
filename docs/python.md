@@ -385,6 +385,15 @@ parameters. Each injectable must have `= None` as its default and is omitted
 from the wiring signature. Place positional injectables after required
 positional parameters, or declare them keyword-only, because Python does not
 allow a required positional parameter after a defaulted one.
+An evaluation callback can also request `output: bg.Output = None`. This
+provides the same read-only API as an input view, over the node's retained
+output before the callback's returned delta is applied. `modified` and
+`delta_value` keep their current-cycle meaning, so they are normally `False`
+and `None` during evaluation. Output views are valid only during their callback;
+the node publishes changes only by returning a delta. A lifecycle callback can
+request the same view by selecting the `output` parameter by name. `@generator`
+rejects `bg.Output` because its function parameters remain in the generator
+frame between callback invocations.
 `EvaluationClock.evaluation_time` exposes the evaluation time. `EvaluationClock.now`
 exposes the current time for the engine mode: evaluation time in simulation mode
 and wall-clock time in real-time mode. Both are Python `datetime` values.
@@ -402,9 +411,10 @@ invocation of each runtime node. The callback receives that object directly.
 Each runtime node, including nodes in nested branches and separate graph runs,
 has independent state. A node can declare at most one `State[T]` parameter.
 
-`@node`, `@compute_node`, `@source_node`, and `@generator` accept these
-injectables subject to the source restrictions above. Graph definitions cannot
-request them.
+`@node`, `@compute_node`, and `@source_node` accept these injectables subject to
+the source restrictions above. `@generator` accepts `EvaluationClock` and
+`State[T]` but rejects `Scheduler` and `Output`. Graph definitions cannot
+request injectables.
 
 `@node` declares scalar-valued inputs and output. Each parameter annotated with
 a scalar type accepts either a scalar wiring argument or a matching `TS[T]`

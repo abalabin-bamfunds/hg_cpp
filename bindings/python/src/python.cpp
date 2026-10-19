@@ -880,6 +880,8 @@ void bind_core(nb::module_ &module) {
                 auto parameter = PythonNodeDefinition::CallbackParameter{};
                 if (name == "input") {
                     parameter = PythonNodeDefinition::CallbackParameter::input;
+                } else if (name == "output") {
+                    parameter = PythonNodeDefinition::CallbackParameter::output;
                 } else if (name == "evaluation_clock") {
                     parameter = PythonNodeDefinition::CallbackParameter::evaluation_clock;
                 } else if (name == "scheduler") {

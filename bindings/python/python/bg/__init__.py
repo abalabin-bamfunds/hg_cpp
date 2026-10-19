@@ -214,8 +214,14 @@ class State(Generic[_STATE_T]):
         return _StateAnnotation(factory)
 
 
+class Output:
+    """Inject a read-only, callback-scoped view of a node's current output."""
+
+
 def _is_injectable_annotation(annotation: Any) -> bool:
-    return annotation is EvaluationClock or annotation is Scheduler or isinstance(annotation, _StateAnnotation)
+    return annotation is EvaluationClock or annotation is Scheduler or annotation is Output or isinstance(
+        annotation, _StateAnnotation
+    )
 
 
 def _annotation_arguments(arguments: Any, required: int, name: str) -> tuple[Any, Any]:
@@ -706,6 +712,8 @@ def _definition_signature(
             injected_parameter = "evaluation_clock"
         elif annotation is Scheduler:
             injected_parameter = "scheduler"
+        elif annotation is Output:
+            injected_parameter = "output"
         else:
             injected_parameter = None
         if injected_parameter is not None:
@@ -795,6 +803,8 @@ def _callback_arguments(function: Any, base_function: Any) -> tuple[Any, tuple[t
             base_arguments[parameter.name] = ("evaluation_clock", 0)
         elif annotation is Scheduler:
             base_arguments[parameter.name] = ("scheduler", 0)
+        elif annotation is Output:
+            base_arguments[parameter.name] = ("output", 0)
         elif isinstance(annotation, _StateAnnotation):
             base_arguments[parameter.name] = ("state", 0)
         else:
@@ -871,6 +881,9 @@ def _define_node(
             output = _time_series_type(output_type)
         else:
             output = output_type
+
+    if output is None and any(annotations.get(name) is Output for name in injected_parameters):
+        raise TypeError("bg.Output requires a Python node with a time-series output")
 
     callbacks: dict[str, Any] = {}
     callback_references: dict[str, Any] = {}
@@ -1072,6 +1085,8 @@ def generator(function: Any) -> NodeDefinition:
         if _is_injectable_annotation(annotation):
             if annotation is Scheduler:
                 raise TypeError("Python generators cannot use Scheduler; yield timed output instead")
+            if annotation is Output:
+                raise TypeError("Python generators cannot use bg.Output; output views are callback-scoped")
             continue
         input_type = _native_type(annotation)
         if isinstance(input_type, _ScalarAnnotation):
@@ -1167,6 +1182,7 @@ __all__ = [
     "INVALID",
     "NodeDefinition",
     "ordinary",
+    "Output",
     "REF",
     "REMOVE",
     "Removed",
