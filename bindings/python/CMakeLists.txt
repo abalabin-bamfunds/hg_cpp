@@ -27,6 +27,7 @@ add_library(
     src/dict_view.cpp
     src/higher_order.cpp
     src/operator.cpp
+    src/python_object_operators.cpp
     src/wiring_argument.cpp
     src/test_graph_input.cpp
     src/test_graph_output.cpp

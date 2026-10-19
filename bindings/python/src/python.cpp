@@ -604,6 +604,8 @@ void bind_core(nb::module_ &module) {
         nb::raise_python_error();
     }
 
+    details::register_python_object_operators();
+
     nb::enum_<TimeSeriesGuarantee>(module, "_TimeSeriesGuarantee")
         .value("ordinary", TimeSeriesGuarantee::ordinary)
         .value("deduplicated", TimeSeriesGuarantee::deduplicated)

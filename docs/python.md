@@ -114,6 +114,15 @@ def constant() -> bg.TS[int]:
 item = collection[key]  # bg.operators.getitem(collection, key)
 ```
 
+`getitem` and `getattr` also accept Python-object time series. `getitem` accepts
+a scalar or time-series key. `getattr` accepts a scalar string or symbol name.
+The output scalar type is inferred from the Python `__getitem__` return
+annotation or the selected attribute's annotation; provide an explicit output
+type when inference is unavailable, for example
+`bg.operators.getitem[bg.TS[int]](value, key)` or
+`bg.operators.getattr[bg.TS[int]](value, "count")`. These overloads return
+scalar time series only.
+
 `bg.opt(point)` requires an optional receiving parameter. It returns a new
 wiring proxy for the same time series and leaves `point` unchanged. It adds no
 runtime node or fallback value. The selected node defines how it handles an

@@ -74,8 +74,8 @@ class DefaultValueTemplate final : public WiringTemplate {
 
 operator_<auto(SCALAR)->TS<SCALAR, TimeSeriesGuarantee::const_>> const_{"const", {"value"}};
 operator_<auto(TS<SCALAR>, SCALAR)->TS<SCALAR>> default_{"default", {"value", "fallback"}};
-operator_<auto(COLLECTION, Union<"key", K, TS<K>>)->ITEM> getitem{"getitem", {"collection", "key"}};
-operator_<auto(TSB<SCHEMA>, util::symbol)->ITEM> getattr{"getattr", {"bundle", "name"}};
+operator_<ITEM, auto(COLLECTION, Union<"key", K, TS<K>>)->ITEM> getitem{"getitem", {"collection", "key"}};
+operator_<ITEM, auto(TS_T, SCALAR)->ITEM> getattr{"getattr", {"bundle", "name"}};
 
 namespace {
 

@@ -207,8 +207,10 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "contains_", operators::contains_);
     export_operator(operators_module, "const_", operators::const_);
     export_operator(operators_module, "default_", operators::default_);
-    export_operator(operators_module, "getitem", operators::getitem);
-    export_operator(operators_module, "getattr", operators::getattr);
+    const auto getitem_type_parameters = operators::getitem.explicit_type_parameters();
+    const auto getattr_type_parameters = operators::getattr.explicit_type_parameters();
+    export_operator(operators_module, "getitem", operators::getitem, getitem_type_parameters);
+    export_operator(operators_module, "getattr", operators::getattr, getattr_type_parameters);
 }
 
 nb::object getitem(const PythonWiringPoint &collection, nb::handle key) {

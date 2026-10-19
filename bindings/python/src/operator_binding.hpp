@@ -38,6 +38,7 @@ class PythonOperator {
 const Type &python_type_argument(nanobind::handle value);
 
 void bind_operators(nanobind::module_ &module);
+void register_python_object_operators();
 nanobind::object getitem(const PythonWiringPoint &collection, nanobind::handle key);
 
 } // namespace bg::python::details

@@ -805,6 +805,7 @@ struct NB_HIDDEN PythonScalarConversions::Impl {
     ScalarDispatch<ScalarToPythonView> to_python_view;
     std::unordered_map<PyTypeObject *, PythonType> python_types;
     std::unordered_map<const ScalarType *, const PythonObjectScalarRuntimeType *> python_object_types;
+    std::unordered_map<const ScalarType *, Object> python_object_classes;
     std::unordered_map<const ScalarType *, Object> python_schemas;
     Object symbol_python_type;
 };
@@ -936,6 +937,14 @@ nanobind::object PythonScalarConversions::python_schema_class(const bg::Schema &
     return nanobind::borrow<nanobind::object>(found->second.get());
 }
 
+nanobind::object PythonScalarConversions::python_object_class(const ScalarType &type) const {
+    const auto found = impl_->python_object_classes.find(&type);
+    if (found == impl_->python_object_classes.end()) {
+        return {};
+    }
+    return nanobind::borrow<nanobind::object>(found->second.get());
+}
+
 const ScalarType &PythonScalarConversions::add_python_type(nanobind::handle python_type) {
     if (!PyType_Check(python_type.ptr())) {
         throw std::invalid_argument{"a Python scalar type registration requires a Python type"};
@@ -973,6 +982,7 @@ const ScalarType &PythonScalarConversions::add_python_type(nanobind::handle pyth
         throw std::logic_error{"a Python object runtime type was registered twice"};
     }
     impl_->python_types.emplace(python_type_key, Impl::PythonType{Object{python_type}, &registered_type, false});
+    impl_->python_object_classes.emplace(&registered_type, Object{python_type});
     return registered_type;
 }
 
