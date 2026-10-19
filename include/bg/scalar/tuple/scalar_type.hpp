@@ -5,6 +5,7 @@
 #include <bg/type/details/declaration_variables.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <array>
 #include <cstddef>
@@ -56,9 +57,10 @@ namespace details {
 
 template <typename... Items> const ScalarType &tuple_declaration_type() {
     if constexpr ((scalar_declaration_traits<Items>::generic || ...)) {
-        static const auto type = GenericTupleScalarType{std::vector<const ScalarType *>{&scalar_type_for<Items>()...}};
-        [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
-        return type;
+        static const auto type = util::static_storage<GenericTupleScalarType>{
+            std::vector<const ScalarType *>{&scalar_type_for<Items>()...}};
+        [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+        return type.get();
     } else {
         const auto item_types = std::array<const ScalarType *, sizeof...(Items)>{&cpp_scalar_type<Items>()...};
         return tuple_scalar_type(item_types);

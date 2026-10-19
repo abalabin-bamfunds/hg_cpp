@@ -6,6 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <cstdlib>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -33,6 +34,34 @@ struct TrackedValue {
 };
 
 using GenericTuple = bg::Tuple<bg::i64, ITEM>;
+using ShutdownConcreteTuple = bg::Tuple<bg::i64, bg::symbol>;
+
+struct TupleShutdownProbe {
+    bool active{};
+
+    ~TupleShutdownProbe() noexcept {
+        if (!active) {
+            return;
+        }
+
+        const auto &generic = static_cast<const bg::TupleScalarType &>(bg::cpp_scalar_type<GenericTuple>());
+        const auto &concrete = static_cast<const bg::TupleScalarType &>(bg::cpp_scalar_type<ShutdownConcreteTuple>());
+        auto type_map = bg::TypeMap{};
+        if (generic.size() != 2 || !generic.match(concrete, type_map) || &generic.resolve(type_map) != &concrete) {
+            std::abort();
+        }
+
+        const auto &runtime = static_cast<const bg::ScalarTupleRuntimeType &>(
+            bg::cpp_scalar_runtime_type<ShutdownConcreteTuple>());
+        if (&runtime.type() != &concrete ||
+            &runtime.item_runtime_type(0) != &bg::cpp_scalar_runtime_type<bg::i64>() ||
+            &runtime.item_runtime_type(1) != &bg::cpp_scalar_runtime_type<bg::symbol>()) {
+            std::abort();
+        }
+    }
+};
+
+TupleShutdownProbe tuple_shutdown_probe;
 
 template <template <typename, auto...> typename Field> struct BaseRecord {
     Field<bg::symbol> name;
@@ -62,6 +91,19 @@ TEST_CASE("a positional scalar tuple has canonical ordered type identity",
     auto text = std::string{};
     type.format_name(text);
     CHECK(text == "Tuple<string, i64, symbol>");
+}
+
+TEST_CASE("tuple scalar descriptors remain usable during process shutdown",
+          "[feature:type-system][scalar:tuple][declaration:generic][storage:variable]") {
+    const auto &generic = static_cast<const bg::TupleScalarType &>(bg::cpp_scalar_type<GenericTuple>());
+    const auto &concrete = static_cast<const bg::TupleScalarType &>(bg::cpp_scalar_type<ShutdownConcreteTuple>());
+    auto type_map = bg::TypeMap{};
+
+    REQUIRE(generic.match(concrete, type_map));
+    CHECK(&generic.resolve(type_map) == &concrete);
+    CHECK(&bg::cpp_scalar_runtime_type<ShutdownConcreteTuple>().type() == &concrete);
+
+    tuple_shutdown_probe.active = true;
 }
 
 TEST_CASE("a positional scalar tuple matches and resolves each item in order",
@@ -213,9 +255,9 @@ TEST_CASE("test_graph accepts a tuple-valued time series input and output",
     auto retained = std::optional<bg::ScalarValue<Nested>>{};
     const auto identity = bg::node([&](bg::In<bg::TS<Nested>> input, bg::Out<bg::TS<Nested>> output) {
         if (!retained) {
-            retained.emplace(input.value_view());
+            retained.emplace(input.value());
         }
-        output.set_value(input.value_view());
+        output.set_value(input.value());
     });
     const auto graph = [&](bg::wp<bg::TS<Nested>> input) { return identity(input); };
 

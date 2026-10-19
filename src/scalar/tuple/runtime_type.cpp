@@ -209,6 +209,10 @@ details::ScalarData ComposedTupleRuntimeType::item(const details::ScalarData &va
 }
 
 bool ComposedTupleRuntimeType::accepts_input(const ScalarRuntimeType &source) const noexcept {
+    if (&source == this) {
+        return true;
+    }
+
     const auto *source_type = type_cast<TupleScalarType>(&source.type());
     if (source_type == nullptr || type().size() != source_type->size()) {
         return false;

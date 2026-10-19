@@ -3,6 +3,7 @@
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_registry.hpp>
 #include <bg/type/type_resolution_error.hpp>
+#include <bg/util/static_storage.hpp>
 #include <bg/util/symbol.hpp>
 
 #include "../../type/type_registration.hpp"
@@ -79,13 +80,14 @@ const Type &GenericTupleScalarType::resolve(const TypeMap &type_map) const {
 }
 
 const TupleScalarType &tuple_scalar_type(std::span<const ScalarType *const> item_types) {
-    static auto types = std::vector<const ResolvedTupleScalarType *>{};
+    static auto types = util::static_storage<std::vector<const ResolvedTupleScalarType *>>{};
+    auto &cache = types.get();
 
     const auto lock = std::lock_guard{details::semantic_type_registration_mutex()};
-    const auto found = std::ranges::find_if(types, [&](const auto *type) {
+    const auto found = std::ranges::find_if(cache, [&](const auto *type) {
         return std::ranges::equal(type->item_types(), item_types);
     });
-    if (found != types.end()) {
+    if (found != cache.end()) {
         return **found;
     }
 
@@ -94,16 +96,16 @@ const TupleScalarType &tuple_scalar_type(std::span<const ScalarType *const> item
     const auto &registered = static_cast<const ResolvedTupleScalarType &>(
         TypeRegistry::instance().register_owned(std::move(new_type)));
     try {
-        types.push_back(&registered);
+        cache.push_back(&registered);
         if (auto *registration = details::SemanticTypeRegistration::current()) {
             registration->on_rollback([type = &registered] {
-                std::erase(types, type);
+                std::erase(types.get(), type);
                 TypeRegistry::instance().rollback(*type);
             });
         }
         return registered;
     } catch (...) {
-        std::erase(types, &registered);
+        std::erase(cache, &registered);
         TypeRegistry::instance().rollback(registered);
         throw;
     }
