@@ -52,10 +52,9 @@ bool PreparedWiringCall::same_concrete_binding(const PreparedWiringCall &other) 
 }
 
 double PreparedWiringCall::binding_cost(std::span<const WiringArgument> arguments) const {
-    // Prototype ranking charges each top-level and contained adaptation once per input binding.
-    // These weights are not production wiring semantics.
+    // Reference adaptation costs are charged once per input binding.
     constexpr auto top_level_reference_adaptation_cost = 1.0;
-    constexpr auto contained_reference_adaptation_cost = 4.0;
+    constexpr auto contained_reference_adaptation_cost = 2.0;
 
     auto bindings = std::vector<std::pair<const WiringRecord *, const TimeSeriesType *>>{};
     auto total = 0.0;

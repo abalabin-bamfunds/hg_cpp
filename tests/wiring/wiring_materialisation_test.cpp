@@ -994,7 +994,7 @@ TEST_CASE("binding cost charges one contained and one top-level reference adapta
         {0, &bg::TSL<bg::TS<bg::i64>, 2>::type(), nullptr, 0.0});
     contained_adaptation.preserved_inputs = not_preserved;
 
-    CHECK(contained_adaptation.binding_cost(arguments) == 4.0);
+    CHECK(contained_adaptation.binding_cost(arguments) == 2.0);
 
     auto top_level_adaptation = bg::details::PreparedWiringCall{};
     top_level_adaptation.resolution.signature.parameters.push_back(

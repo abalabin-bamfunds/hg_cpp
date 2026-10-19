@@ -194,7 +194,7 @@ information.
 Matching considers each advertised materialisation form and each compatible
 Union alternative. It selects the lowest-cost binding before comparing type
 specificity. A top-level reference adaptation costs `1`; a change between
-reference and value items inside one collection input costs `4`, once for that
+reference and value items inside one collection input costs `2`, once for that
 input rather than once per item. An advertised materialisation contributes its
 declared cost once per source and target. Equal-cost bindings with distinct
 observable type mappings remain ambiguous.
