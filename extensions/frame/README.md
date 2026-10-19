@@ -117,6 +117,46 @@ Row IDs and deltas are time-series state and do not participate.
 Ordinary `TS<Column<T>>` and `TS<Frame<Schema>>` support these literals in
 `test_graph` inputs and result assertions.
 
+### TSF row updates
+
+`TSF<Schema>` literals describe row changes for one cycle. A keyed row supplies
+every key column: it inserts when the key is absent and patches when the key is
+present. Omitted non-key fields are null on insert and unchanged on patch. A
+`REMOVE` entry names exactly the key columns. Key fields identify rows and are
+not modified by a row patch. An unkeyed row always appends, and unkeyed frames
+do not accept `REMOVE`.
+
+```cpp
+template <template <typename, auto...> typename Field> struct KeyedQuotes {
+    Field<i64> id;
+    Field<double> price;
+    static SchemaMetadata metadata() { return key_metadata<"id">(); }
+};
+
+auto count_rows = node([](In<TSF<KeyedQuotes>> frame, Out<TS<i64>> count) {
+    count.set(static_cast<i64>(frame.size()));
+});
+auto graph = [&](wp<TSF<KeyedQuotes>> frame) { return count_rows(frame); };
+auto result = testing::test_graph(
+    graph, testing::input(TSF<KeyedQuotes>::type(), {
+        {{{"id", i64{1}}, {"price", 10.0}}},
+        {{{"id", i64{1}}, {"price", 11.0}}},
+        {literal::REMOVE({{"id", i64{1}}})},
+    }));
+```
+
+Entries apply in written order. At the root of a TSF literal,
+`literal::SKIP` leaves the frame unchanged and `literal::INVALID` invalidates
+it. An empty literal validates an invalid output as an empty frame; on an
+already valid output it does nothing. Key cells may be null, including
+components of a composite key. Literal cells currently support `i64` and
+`double` and must match the schema types.
+
+Nodes can also call `Out<TSF<Schema>>::apply()` with one
+`literal::TimeSeriesLiteral` during evaluation. Literal updates use the actual
+runtime schema, including Derived fields when the node input is declared as a
+Base schema.
+
 ## TSC input/output surface
 
 Include `<bg/frame/tsc.hpp>` for the typed views.

@@ -3822,6 +3822,261 @@ void test_tsf_graph_behavior() {
             "TSF scalar snapshots changed after later row mutations");
 }
 
+struct frame_literal_observation {
+    bool valid{};
+    bool became_valid{};
+    bool became_invalid{};
+    bool modified{};
+    std::size_t size{};
+    std::vector<row_id_t> rows;
+    std::vector<row_id_t> changed;
+    std::vector<row_id_t> removed;
+    std::vector<row_id_t> key_modified;
+    std::vector<row_id_t> price_modified;
+    std::vector<std::optional<double>> prices;
+};
+
+void test_tsf_literal_updates() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto observations = std::vector<frame_literal_observation>{};
+    const auto observe = node([&](In<TSF<KeyedQuotes>, optional> input, In<TS<i64>> tick,
+                                  Out<TS<i64>> output) {
+        auto result = frame_literal_observation{.valid = input.valid(),
+                                                .became_valid = input.became_valid(),
+                                                .became_invalid = input.became_invalid(),
+                                                .modified = input.modified(),
+                                                .size = input.size()};
+        const auto prices = input.column("price").input<double>();
+        input.for_each_row([&](row_id_t id, std::size_t) {
+            result.rows.push_back(id);
+            result.prices.push_back(prices.cell(id));
+        });
+        input.for_each_changed([&](row_id_t id) { result.changed.push_back(id); });
+        input.for_each_removed([&](row_id_t id) { result.removed.push_back(id); });
+        input.for_each_modified<0>([&](row_id_t id) { result.key_modified.push_back(id); });
+        input.for_each_modified<1>([&](row_id_t id) { result.price_modified.push_back(id); });
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TSF<KeyedQuotes>> input, wp<TS<i64>> tick) { return observe(input, tick); };
+    const auto result = testing::test_graph(
+        graph,
+        testing::input(TSF<KeyedQuotes>::type(),
+                       {literal::TimeSeriesLiteral{}, {{{"id", i64{1}}, {"price", 10.0}}},
+                        {{{"id", i64{1}}, {"price", 11.0}}}, {{{"id", i64{2}}}},
+                        {{{"id", i64{1}}}}, literal::TimeSeriesLiteral{},
+                        {literal::REMOVE({{"id", i64{1}}}), {{"id", i64{1}}, {"price", 12.0}}},
+                        {literal::REMOVE({{"id", i64{99}}})}, literal::SKIP, literal::INVALID,
+                        literal::TimeSeriesLiteral{}}),
+        testing::input(cpp_time_series_runtime_type<TS<i64>>(),
+                       {i64{0}, i64{1}, i64{2}, i64{3}, i64{4}, i64{5}, i64{6}, i64{7}, i64{8}, i64{9},
+                        i64{10}}));
+
+    require(result.equals<i64>({0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}) && observations.size() == 11,
+            "TSF literal test graph missed an observation cycle");
+    require(observations[0].valid && observations[0].became_valid && observations[0].size == 0,
+            "empty TSF literal did not establish a valid empty frame");
+    require(observations[1].valid && observations[1].size == 1 &&
+                observations[1].rows == std::vector<row_id_t>{0} &&
+                observations[1].changed == std::vector<row_id_t>{0} && observations[1].prices[0] == 10.0,
+            "keyed TSF literal did not insert a row");
+    require(observations[2].valid && observations[2].size == 1 &&
+                observations[2].changed == std::vector<row_id_t>{0} &&
+                observations[2].key_modified.empty() &&
+                observations[2].price_modified == std::vector<row_id_t>{0} &&
+                observations[2].prices[0] == 11.0,
+            "keyed TSF literal did not patch only the supplied data column");
+    require(observations[3].valid && observations[3].size == 2 &&
+                observations[3].rows == std::vector<row_id_t>{0, 1} &&
+                observations[3].prices[1] == std::nullopt,
+            "keyed TSF literal did not insert omitted data columns as null");
+    require(!observations[4].modified && observations[4].changed.empty() &&
+                observations[4].key_modified.empty() && observations[4].size == 2,
+            "key-only keyed TSF literal published a row modification");
+    require(!observations[5].modified && observations[5].changed.empty() && observations[5].size == 2,
+            "empty TSF literal cleared an already valid nonempty frame");
+    require(observations[6].valid && observations[6].size == 2 &&
+                observations[6].removed == std::vector<row_id_t>{0} &&
+                observations[6].changed == std::vector<row_id_t>{2} &&
+                std::ranges::is_permutation(observations[6].rows, std::array<row_id_t, 2>{1, 2}) &&
+                observations[6].prices[std::ranges::find(observations[6].rows, row_id_t{2}) -
+                                       observations[6].rows.begin()] == 12.0,
+            "same-tick key removal and reinsertion did not preserve the removed row identity");
+    require(!observations[7].modified && observations[7].removed.empty() && observations[7].size == 2,
+            "keyed TSF literal published a missing-key removal");
+    require(!observations[8].modified && observations[8].size == 2,
+            "SKIP changed the TSF literal output");
+    require(!observations[9].valid && observations[9].became_invalid && observations[9].size == 0,
+            "INVALID did not invalidate the TSF literal output");
+    require(observations[10].valid && observations[10].became_valid && observations[10].size == 0,
+            "empty TSF literal did not revalidate the output");
+}
+
+void test_tsf_literal_uses_actual_derived_schema() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto observed_prices = std::vector<std::optional<double>>{};
+    auto observed_bids = std::vector<std::optional<double>>{};
+    const auto observe = node([&](In<TSF<KeyedQuotesBase>, optional> input, In<TS<i64>> tick,
+                                  Out<TS<i64>> output) {
+        static_cast<void>(tick);
+        if (input.valid()) {
+            const auto prices = input.column("price").input<double>();
+            const auto bids = input.column("bid").input<double>();
+            input.for_each_row([&](row_id_t id, std::size_t) {
+                observed_prices.push_back(prices.cell(id));
+                observed_bids.push_back(bids.cell(id));
+            });
+        }
+        output.set(static_cast<i64>(observed_prices.size()));
+    });
+    const auto graph = [&](wp<TSF<KeyedQuotesBase>> input, wp<TS<i64>> tick) { return observe(input, tick); };
+    const auto &derived_runtime = frame_time_series_runtime_type<KeyedQuotesDerived>(TSF<KeyedQuotesDerived>::type());
+    const auto result = testing::test_graph(
+        graph,
+        testing::input(derived_runtime,
+                       {literal::TimeSeriesLiteral{}, {{{"id", i64{5}}, {"price", 10.0}, {"bid", 20.0}}},
+                        {{{"id", i64{5}}, {"price", 11.0}}}}),
+        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {i64{0}, i64{1}, i64{2}}));
+
+    require(result.size() == 3 && observed_prices == std::vector<std::optional<double>>{10.0, 11.0} &&
+                observed_bids == std::vector<std::optional<double>>{20.0, 20.0},
+            "TSF literal did not use the actual Derived schema through a Base input");
+}
+
+void test_tsf_literal_unkeyed_append_and_typed_output() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto sizes = std::vector<std::size_t>{};
+    auto row_ids = std::vector<std::vector<row_id_t>>{};
+    const auto observe = node([&](In<TSF<Quotes>, optional> input, Out<TS<i64>> output) {
+        sizes.push_back(input.size());
+        auto rows = std::vector<row_id_t>{};
+        input.for_each_row([&](row_id_t id, std::size_t) { rows.push_back(id); });
+        row_ids.push_back(std::move(rows));
+        output.set(static_cast<i64>(input.size()));
+    });
+    const auto graph = [&](wp<TSF<Quotes>> input) { return observe(input); };
+    const auto &runtime = frame_time_series_runtime_type<Quotes>(TSF<Quotes>::type());
+    const auto result = testing::test_graph(
+        graph, testing::input(runtime, {{{{"bid", 10.5}}}, {{{"ask", 12.5}}}}));
+    require(result.size() == 2 && sizes == std::vector<std::size_t>{1, 2} &&
+                row_ids == std::vector<std::vector<row_id_t>>{{0}, {0, 1}},
+            "unkeyed TSF literal did not append rows with consecutive row ids");
+
+    auto observed_prices = std::vector<std::optional<double>>{};
+    const auto write = node([](In<TS<i64>> tick, Out<TSF<KeyedQuotes>> output) {
+        if (*tick == 1)
+            output.apply({{{"id", i64{9}}, {"price", 15.5}}});
+    });
+    const auto sink = node([&](In<TSF<KeyedQuotes>> input, Out<TS<i64>> output) {
+        input.for_each_row([&](row_id_t id, std::size_t) {
+            observed_prices.push_back(input.column("price").input<double>().cell(id));
+        });
+        output.set(static_cast<i64>(input.size()));
+    });
+    const auto typed_graph = [&](wp<TS<i64>> tick) { return sink(write(tick)); };
+    const auto typed_result = testing::test_graph(typed_graph, {0, 1});
+    require(typed_result.size() == 2 && observed_prices == std::vector<std::optional<double>>{15.5},
+            "typed TSF output apply did not apply a frame literal");
+}
+
+void test_tsf_literal_anonymous_composite_key() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto fields = std::array{
+        SchemaField{util::symbol{"id"}, &cpp_scalar_type<i64>()},
+        SchemaField{util::symbol{"sequence"}, &cpp_scalar_type<i64>()},
+        SchemaField{util::symbol{"value"}, &cpp_scalar_type<double>()},
+    };
+    const auto &schema = anonymous_schema(fields, key_metadata<"id", "sequence">());
+    const auto &series_type = frame_series_type(schema, TimeSeriesGuarantee::ordinary);
+    const auto &runtime = frame_time_series_runtime_type<SCHEMA>(series_type);
+
+    auto observations = std::vector<std::pair<std::size_t, std::vector<std::optional<double>>>>{};
+    const auto observe = node([&](In<TSF<SCHEMA>, optional> input, Out<TS<i64>> output) {
+        auto values = std::vector<std::optional<double>>{};
+        const auto column = input.column("value").input<double>();
+        input.for_each_row([&](row_id_t id, std::size_t) { values.push_back(column.cell(id)); });
+        std::ranges::sort(values);
+        observations.emplace_back(input.size(), std::move(values));
+        output.set(static_cast<i64>(input.size()));
+    });
+    const auto graph = [&](wp<TSF<SCHEMA>> input) { return observe(input); };
+    const auto result = testing::test_graph(
+        graph,
+        testing::input(runtime,
+                       {literal::TimeSeriesLiteral{},
+                        {{{"id", i64{1}}, {"sequence", i64{2}}, {"value", 10.0}}},
+                        {{{"id", i64{1}}, {"sequence", i64{2}}, {"value", 11.0}}},
+                        {{{"id", i64{1}}, {"sequence", i64{3}}, {"value", 12.0}}},
+                        {literal::REMOVE({{"id", i64{1}}, {"sequence", i64{2}}})},
+                        {{{"id", NULL_VALUE}, {"sequence", i64{4}}, {"value", 20.0}}},
+                        {{{"id", NULL_VALUE}, {"sequence", i64{4}}, {"value", 21.0}}},
+                        {literal::REMOVE({{"id", NULL_VALUE}, {"sequence", i64{4}}})}}));
+    require(result.size() == 8 &&
+                observations == std::vector<std::pair<std::size_t, std::vector<std::optional<double>>>>{
+                                    {0, {}}, {1, {10.0}}, {1, {11.0}}, {2, {11.0, 12.0}}, {1, {12.0}},
+                                    {2, {12.0, 20.0}}, {2, {12.0, 21.0}}, {1, {12.0}}},
+            "anonymous-schema TSF literal did not apply composite key updates and removals");
+}
+
+void test_tsf_literal_rejections() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto observe = node([](In<TSF<KeyedQuotes>, optional> input, Out<TS<i64>> output) {
+        output.set(static_cast<i64>(input.size()));
+    });
+    const auto graph = [&](wp<TSF<KeyedQuotes>> input) { return observe(input); };
+    const auto rejects = [&](const TimeSeriesRuntimeType &runtime,
+                             std::initializer_list<literal::TimeSeriesLiteral> ticks) {
+        try {
+            static_cast<void>(testing::test_graph(graph, testing::input(runtime, ticks)));
+        } catch (const std::invalid_argument &) {
+            return true;
+        }
+        return false;
+    };
+    const auto &native_runtime = frame_time_series_runtime_type<KeyedQuotes>(TSF<KeyedQuotes>::type());
+    require(rejects(native_runtime, {{{{"price", 10.0}}}}),
+            "keyed TSF literal accepted a row with an omitted key");
+    require(rejects(native_runtime, {{{{"id", i64{1}}, {"id", i64{2}}}}}),
+            "keyed TSF literal accepted a duplicate field");
+    require(rejects(native_runtime, {{literal::REMOVE({{"id", i64{1}}, {"price", 10.0}})}}),
+            "keyed TSF literal accepted a non-key removal field");
+
+    const auto unkeyed_observe = node([](In<TSF<Quotes>, optional> input, Out<TS<i64>> output) {
+        output.set(static_cast<i64>(input.size()));
+    });
+    const auto unkeyed_graph = [&](wp<TSF<Quotes>> input) { return unkeyed_observe(input); };
+    const auto &unkeyed_runtime = frame_time_series_runtime_type<Quotes>(TSF<Quotes>::type());
+    auto unkeyed_remove_rejected = false;
+    try {
+        static_cast<void>(testing::test_graph(
+            unkeyed_graph,
+            testing::input(unkeyed_runtime, {{literal::REMOVE({{"id", i64{1}}})}})));
+    } catch (const std::invalid_argument &) {
+        unkeyed_remove_rejected = true;
+    }
+    require(unkeyed_remove_rejected, "unkeyed TSF literal accepted a removal selector");
+
+    const auto &view_runtime = frame_view_time_series_runtime_type<KeyedQuotes>(TSF<KeyedQuotes>::type());
+    auto view_rejected = false;
+    try {
+        static_cast<void>(testing::test_graph(
+            graph, testing::input(view_runtime, {{{{"id", i64{1}}, {"price", 10.0}}}})));
+    } catch (const std::invalid_argument &) {
+        view_rejected = true;
+    }
+    require(view_rejected, "TSF literal dispatch cast a view runtime to native storage");
+}
+
 void test_borrowed_tsf_input_with_native_and_view_runtimes() {
     using namespace bg;
     using namespace bg::frame;
@@ -5620,6 +5875,11 @@ int main() {
         test_scalar_frame_time_series_graph();
         test_compiled_graph_runtime_storage_is_independent();
         test_tsf_graph_behavior();
+        test_tsf_literal_updates();
+        test_tsf_literal_uses_actual_derived_schema();
+        test_tsf_literal_unkeyed_append_and_typed_output();
+        test_tsf_literal_anonymous_composite_key();
+        test_tsf_literal_rejections();
         test_borrowed_tsf_input_with_native_and_view_runtimes();
         test_generic_tsf_input_schema_and_columns();
         test_generic_declared_tsf_rows_follow_resolved_cell_type();

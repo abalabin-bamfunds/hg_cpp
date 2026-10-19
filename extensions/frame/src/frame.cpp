@@ -409,7 +409,10 @@ const TimeSeriesRuntimeType &canonical_frame_series_runtime_type(const TimeSerie
 
     auto runtime = factory(type);
     const auto *result = runtime.get();
-    cache.series_runtimes.emplace(key, std::move(runtime));
+    const auto entry = cache.series_runtimes.emplace(key, std::move(runtime)).first;
+    auto rollback = util::scope_exit{[&]() noexcept { cache.series_runtimes.erase(entry); }};
+    register_frame_series_literal_runtime(*result);
+    rollback.release();
     return *result;
 }
 

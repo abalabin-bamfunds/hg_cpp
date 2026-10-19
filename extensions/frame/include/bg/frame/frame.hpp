@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/frame/expression.hpp>
+#include <bg/frame/literal.hpp>
 #include <bg/frame/tsc.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
@@ -3187,6 +3188,10 @@ template <template <template <typename, auto...> typename> typename Schema, auto
 class Out<frame::TSF<Schema, Properties...>> {
   public:
     explicit Out(TimeSeriesOutputBinding binding) noexcept : binding_{std::move(binding)} {}
+
+    void apply(const literal::TimeSeriesLiteral &literal) const {
+        frame::details::apply_frame_series_literal(literal, binding_.get());
+    }
 
     const bg::Schema &schema() const {
         return static_cast<const bg::Schema &>(

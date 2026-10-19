@@ -1,14 +1,13 @@
 # Frame foundation handoff
 
-Updated: 2026-10-19. The active frame lane is based on main `2ad4747c`, with
-shared schema metadata `8ab0b121` and BG process-lifetime storage fix
-`97f37b55` cherry-picked.
-Expressions are committed as `30e6fa80`; scalar Column/Frame literals and
-content equality are committed as `02fc8c17`. Native keyed storage and its
-tests are committed on this lane. Raw scalar and Arrow duplicate-key validation
-is implemented and verified in the current extension change; see
-[Key metadata and native keyed storage](#key-metadata-and-native-keyed-storage).
-TSF/TSC literals, delta comparison, and capture remain outstanding.
+Updated: 2026-10-19. The common ancestor with main is `932d9b73`; main is
+currently `cdc0223b`. Rebase the frame lane before integrating.
+Shared schema metadata and the BG process-lifetime storage fix are in this lane
+as `e65b9be5` and `aee759ba`. Expressions are committed as `371bb1a3`; scalar
+Column/Frame literals and content equality are committed as `56f4f386`. Native
+keyed storage and scalar/Arrow duplicate-key validation are committed as
+foundation commit `a020f016`. TSF row updates are implemented in the active
+frame lane. TSC literals, delta comparison, and capture remain outstanding.
 
 ## Work locations
 
@@ -17,25 +16,20 @@ completed lane retirement, and consumer verification.
 
 | Work | Location / branch | State |
 | --- | --- | --- |
-| Main | `/home/abalabin/_bg`, `main` | `2ad4747c`; shared schema metadata and frame work are unmerged |
-| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Native keyed storage is committed; frame work remains unmerged |
-| Shared schema metadata | `.lanes/schema-metadata`, `agent/schema-metadata` | `cb0d861b`; process-lifetime storage fix passes Release and Debug consumer checks |
+| Main | `/home/abalabin/_bg`, `main` | `cdc0223b`; frame lane requires rebase before integration |
+| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Foundation commit `a020f016`; TSF row literals implemented |
+| Shared schema metadata and BG lifetime fix | Active frame history | `e65b9be5`, `aee759ba`; consumer builds use the lane-local BG install |
 | Test graph output capture | Main | Integrated through `36eb21fb`, including shared extension comparison dispatch |
 | Numeric value extraction | `.lanes/library-numeric-values` | Held; frame does not depend on it |
 | Historical frame work | `extensions/frame/archive/` | Proposals, probe sources, and benchmark results preserved; see its README |
 | Schema field reflection | Main | Integrated and covered by BG schema reflection tests |
 
-Current keyed-storage consumer builds use BG from
-`/home/abalabin/_bg/.lanes/schema-metadata/build/install/release` for Release
-(Arrow on and off) and
-`/home/abalabin/_bg/.lanes/schema-metadata/build/install/debug` for Debug
-(Arrow on). Older BG installs and dependency caches under
-`extensions/frame/build/dependencies/` remain on disk but are not used for this
-verification. Conda supplies Arrow and other unrelated dependencies.
-
-The Debug dependency build cache is `dependencies/bg-debug`; it is generated
-and untracked. The Release cache is
-`extensions/frame/build/dependencies/bg-release`. Preserve both caches.
+The current TSF row-literal verification uses fresh consumer directories:
+`build/tsf-row-release-arrow-off` and `build/tsf-row-release-arrow-on` use the
+lane-local Release BG install at `dependencies/bg-frame-core-release-install`;
+`build/tsf-row-debug-asan-arrow-on` uses the matching Debug install at
+`dependencies/bg-frame-core-debug-install`. Preserve these generated dependency
+installs and the existing build caches.
 
 Preserve the existing recovery stashes:
 
@@ -175,6 +169,20 @@ tests use native and view TSF runtimes with one concrete schema. They verify
 runtime descriptors, source and column buffer identity, nullable cells, and
 row and column deltas across invocations. Test checkpoint: `bf4d9483`.
 
+TSF row-literal verification on 2026-10-19 passed the complete extension suite
+in all three fresh consumer builds below. Each build used `-j12` and the
+lane-local BG install with a matching build configuration:
+
+| Consumer | Build | Test |
+| --- | --- | --- |
+| `build/tsf-row-release-arrow-off`, Release, Arrow disabled | Passed | 5/5 suites passed |
+| `build/tsf-row-release-arrow-on`, Release, Arrow 24.0.0 enabled | Passed | 6/6 suites passed |
+| `build/tsf-row-debug-asan-arrow-on`, Debug, Arrow 24.0.0, ASan/UBSan | Passed | 6/6 suites passed; no sanitizer diagnostics |
+
+The sanitizer build uses `-fsanitize=address,undefined -fno-omit-frame-pointer`.
+CTest ran with `ASAN_OPTIONS=detect_leaks=0` and
+`UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1`.
+
 BG main `6051cc63` previously passed its complete C++ and Python suite:
 1,720/1,720. Earlier verification built Debug and Release BG dependencies from
 `19403a4d`, with testing, Python, and benchmarks disabled. The complete BG suite
@@ -213,7 +221,9 @@ The deferred-column Union matching regression was recovered from
 That checker lane has no other unique implementation changes.
 The frame expression helpers now use public `bg::bundle(span<const WiringArgument>)`.
 Explicit target bundle schemas retain the previous field dereferencing.
-Debug and Arrow-off consumers have not been rerun against this revision.
+At that checkpoint, Debug and Arrow-off consumers had not been rerun against
+that revision. The 2026-10-19 verification above covers both configurations for
+the TSF row-literal changes.
 
 Verification against installed main `36eb21fb` rebuilt both extension libraries
 and passed all 6 Arrow-on Release suites after the test-only API adaptation in
@@ -225,7 +235,9 @@ an independent rerun also passed. Coverage includes nullable native and exact
 Arrow literals, runtime schemas, chunk-independent equality, Base/Derived
 values and owning copies, malformed input, allocation-failure cleanup, and
 ordinary scalar time-series literal inputs and result assertions.
-Debug, sanitizer, and Arrow-off consumers have not been rerun for this change.
+At that checkpoint, Debug, sanitizer, and Arrow-off consumers had not been
+rerun for the scalar literal and equality changes. The 2026-10-19 verification
+above covers those configurations for the TSF row-literal changes.
 
 BG and the extension must use matching build configurations. Debug compiles both
 scalar allocation and deallocation checks; Release compiles neither check.
@@ -471,10 +483,9 @@ design; they do not replace the consumer verification recorded above.
 
 ## Status and remaining work
 
-BG test-graph output capture and frame scalar literals and content equality are
-implemented. TSF/TSC result-capture handlers remain outstanding. Agree row-update
-literal syntax before implementing time-series literal application and delta
-comparison through the existing extension APIs.
+BG test-graph output capture, frame scalar literals and content equality, and
+TSF row-literal updates are implemented. TSC literals, TSF/TSC result-capture
+handlers, and delta comparison remain outstanding.
 
 Boolean storage, comparisons, and expression-based filtering are the next
 frame features and require design review before implementation.
@@ -536,8 +547,9 @@ constructor. Its caller must provide columns from storage whose schema and key
 invariants are already established. Raw scalar construction and Arrow import
 validate key uniqueness with a temporary hash index of row positions. The
 validator records batch starts for collision checks; it does not add persistent
-key-index state to scalar frames. Node-facing key lookup, keyed view behavior,
-and TSF/TSC row literal and capture behavior remain open.
+key-index state to scalar frames. TSF row literal updates use key columns for
+insert, patch, and removal as documented in the [extension README](README.md#tsf-row-updates).
+TSC literals, delta comparison and capture, and keyed view behavior remain open.
 
 The native keyed-storage test target builds in Release with Arrow disabled:
 
