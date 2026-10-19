@@ -19,9 +19,9 @@
 namespace bg {
 namespace {
 
-class ComposedTupleRuntimeType final : public ScalarTupleRuntimeType {
+class FixedTupleRuntimeType final : public ScalarTupleRuntimeType {
   public:
-    explicit ComposedTupleRuntimeType(const TupleScalarType &type) noexcept;
+    explicit FixedTupleRuntimeType(const TupleScalarType &type) noexcept;
 
     void initialize(std::span<const ScalarRuntimeType *const> items);
     void construct_fields_with(void *destination, allocator &memory,
@@ -78,7 +78,7 @@ class ComposedTupleRuntimeType final : public ScalarTupleRuntimeType {
     std::size_t allocation_alignment_{};
 };
 
-struct ComposedTupleRuntimeType::Storage {
+struct FixedTupleRuntimeType::Storage {
     explicit Storage(details::ScalarAllocationPool &allocation_pool) noexcept
         : references{1}, pool{&allocation_pool} {}
 
@@ -86,10 +86,10 @@ struct ComposedTupleRuntimeType::Storage {
     details::ScalarAllocationPool *pool;
 };
 
-ComposedTupleRuntimeType::ComposedTupleRuntimeType(const TupleScalarType &type) noexcept
+FixedTupleRuntimeType::FixedTupleRuntimeType(const TupleScalarType &type) noexcept
     : ScalarTupleRuntimeType{type, sizeof(Storage *), alignof(Storage *), true, false, true, shared_handle_flag} {}
 
-void ComposedTupleRuntimeType::initialize(std::span<const ScalarRuntimeType *const> items) {
+void FixedTupleRuntimeType::initialize(std::span<const ScalarRuntimeType *const> items) {
     if (items.size() != type().size()) {
         throw std::logic_error{"tuple scalar runtime item count does not match its semantic type"};
     }
@@ -111,7 +111,7 @@ void ComposedTupleRuntimeType::initialize(std::span<const ScalarRuntimeType *con
     allocation_size_ = align_up(offset, alignment);
 }
 
-std::size_t ComposedTupleRuntimeType::align_up(std::size_t offset, std::size_t alignment) {
+std::size_t FixedTupleRuntimeType::align_up(std::size_t offset, std::size_t alignment) {
     const auto remainder = offset % alignment;
     if (remainder == 0) {
         return offset;
@@ -123,7 +123,7 @@ std::size_t ComposedTupleRuntimeType::align_up(std::size_t offset, std::size_t a
     return offset + padding;
 }
 
-void ComposedTupleRuntimeType::construct_fields_with(void *destination, allocator &memory,
+void FixedTupleRuntimeType::construct_fields_with(void *destination, allocator &memory,
                                                       ScalarFieldConstruction construction) const {
     auto *pool = static_cast<details::ScalarAllocationPool *>(nullptr);
     auto owns_pool = false;
@@ -150,7 +150,7 @@ void ComposedTupleRuntimeType::construct_fields_with(void *destination, allocato
     store_handle(destination, reinterpret_cast<Storage *>(handle));
 }
 
-std::uintptr_t ComposedTupleRuntimeType::construct_shared(ScalarFieldConstruction construction,
+std::uintptr_t FixedTupleRuntimeType::construct_shared(ScalarFieldConstruction construction,
                                                           details::ScalarAllocationPool &pool,
                                                           allocator &memory) const {
     const auto *previous = details::current_scalar_allocation_owner();
@@ -183,7 +183,7 @@ std::uintptr_t ComposedTupleRuntimeType::construct_shared(ScalarFieldConstructio
     return reinterpret_cast<std::uintptr_t>(stored);
 }
 
-bool ComposedTupleRuntimeType::copy_field(void *context, std::size_t index,
+bool FixedTupleRuntimeType::copy_field(void *context, std::size_t index,
                                           const ScalarRuntimeType &runtime_type, void *destination,
                                           allocator &memory) {
     const auto &source = *static_cast<const CopyContext *>(context)->source;
@@ -193,11 +193,11 @@ bool ComposedTupleRuntimeType::copy_field(void *context, std::size_t index,
     return true;
 }
 
-const ScalarRuntimeType &ComposedTupleRuntimeType::item_runtime_type(std::size_t index) const {
+const ScalarRuntimeType &FixedTupleRuntimeType::item_runtime_type(std::size_t index) const {
     return *items_.at(index).runtime_type;
 }
 
-details::ScalarData ComposedTupleRuntimeType::item(const details::ScalarData &value, std::size_t index) const {
+details::ScalarData FixedTupleRuntimeType::item(const details::ScalarData &value, std::size_t index) const {
     auto *stored = storage(value);
     if (stored == nullptr) {
         throw std::logic_error{"cannot read an empty tuple scalar"};
@@ -208,7 +208,7 @@ details::ScalarData ComposedTupleRuntimeType::item(const details::ScalarData &va
     return items_[index].runtime_type->borrow(field_storage(*stored, index));
 }
 
-bool ComposedTupleRuntimeType::accepts_input(const ScalarRuntimeType &source) const noexcept {
+bool FixedTupleRuntimeType::accepts_input(const ScalarRuntimeType &source) const noexcept {
     if (&source == this) {
         return true;
     }
@@ -227,7 +227,7 @@ bool ComposedTupleRuntimeType::accepts_input(const ScalarRuntimeType &source) co
     return true;
 }
 
-bool ComposedTupleRuntimeType::assign_with(void *destination, ScalarConstruction construction,
+bool FixedTupleRuntimeType::assign_with(void *destination, ScalarConstruction construction,
                                            bool suppress_equal) const {
     auto memory = details::current_scalar_allocator();
     alignas(Storage *) std::byte replacement_bytes[sizeof(Storage *)];
@@ -246,7 +246,7 @@ bool ComposedTupleRuntimeType::assign_with(void *destination, ScalarConstruction
     return true;
 }
 
-bool ComposedTupleRuntimeType::try_assign_from_owned(void *destination, void *source, allocator &,
+bool FixedTupleRuntimeType::try_assign_from_owned(void *destination, void *source, allocator &,
                                                      allocator &) const noexcept {
     auto *previous = stored_handle(destination);
     store_handle(destination, stored_handle(source));
@@ -254,7 +254,7 @@ bool ComposedTupleRuntimeType::try_assign_from_owned(void *destination, void *so
     return true;
 }
 
-details::ScalarData ComposedTupleRuntimeType::borrow_shared(const void *value) const noexcept {
+details::ScalarData FixedTupleRuntimeType::borrow_shared(const void *value) const noexcept {
     auto *stored = stored_handle(value);
     if (stored == nullptr) {
         return details::ScalarData{*this, value};
@@ -262,7 +262,7 @@ details::ScalarData ComposedTupleRuntimeType::borrow_shared(const void *value) c
     return details::ScalarData{*this, reinterpret_cast<std::uintptr_t>(stored), details::ScalarDataMode::shared_view};
 }
 
-const ScalarRuntimeType *ComposedTupleRuntimeType::retain_shared(const details::ScalarData &value,
+const ScalarRuntimeType *FixedTupleRuntimeType::retain_shared(const details::ScalarData &value,
                                                                 std::uintptr_t &data) const noexcept {
     auto *stored = storage(value);
     if (stored == nullptr) {
@@ -273,7 +273,7 @@ const ScalarRuntimeType *ComposedTupleRuntimeType::retain_shared(const details::
     return this;
 }
 
-void ComposedTupleRuntimeType::release_shared(std::uintptr_t data) const noexcept {
+void FixedTupleRuntimeType::release_shared(std::uintptr_t data) const noexcept {
     auto *stored = reinterpret_cast<Storage *>(data);
     if (stored == nullptr || stored->references.fetch_sub(1, std::memory_order_acq_rel) != 1) {
         return;
@@ -281,9 +281,9 @@ void ComposedTupleRuntimeType::release_shared(std::uintptr_t data) const noexcep
     destroy_storage(*stored);
 }
 
-void ComposedTupleRuntimeType::construct_initial_value(void *destination) const noexcept { store_handle(destination, nullptr); }
+void FixedTupleRuntimeType::construct_initial_value(void *destination) const noexcept { store_handle(destination, nullptr); }
 
-void ComposedTupleRuntimeType::do_construct_from_input(void *destination, const details::ScalarData &value,
+void FixedTupleRuntimeType::do_construct_from_input(void *destination, const details::ScalarData &value,
                                                        allocator &memory) const {
     if (&value.runtime_type() == this) {
         auto *stored = storage(value);
@@ -295,10 +295,10 @@ void ComposedTupleRuntimeType::do_construct_from_input(void *destination, const 
     }
 
     auto context = CopyContext{&value};
-    construct_fields_with(destination, memory, {&context, &ComposedTupleRuntimeType::copy_field});
+    construct_fields_with(destination, memory, {&context, &FixedTupleRuntimeType::copy_field});
 }
 
-void ComposedTupleRuntimeType::copy_construct(void *destination, const void *source, allocator &) const {
+void FixedTupleRuntimeType::copy_construct(void *destination, const void *source, allocator &) const {
     auto *stored = stored_handle(source);
     if (stored != nullptr) {
         stored->references.fetch_add(1, std::memory_order_relaxed);
@@ -306,7 +306,7 @@ void ComposedTupleRuntimeType::copy_construct(void *destination, const void *sou
     store_handle(destination, stored);
 }
 
-void ComposedTupleRuntimeType::do_assign_from_input(void *destination, const details::ScalarData &value) const {
+void FixedTupleRuntimeType::do_assign_from_input(void *destination, const details::ScalarData &value) const {
     auto source = value;
     const auto construct = [](void *context, const ScalarRuntimeType &runtime_type, void *target, allocator &memory) {
         runtime_type.construct_from_input(target, *static_cast<const details::ScalarData *>(context), memory);
@@ -314,12 +314,12 @@ void ComposedTupleRuntimeType::do_assign_from_input(void *destination, const det
     (void)assign_with(destination, {&source, construct}, false);
 }
 
-std::size_t ComposedTupleRuntimeType::hash(details::ScalarDataMode mode, std::uintptr_t data) const {
+std::size_t FixedTupleRuntimeType::hash(details::ScalarDataMode mode, std::uintptr_t data) const {
     auto *stored = storage(details::ScalarData{*this, data, mode});
     return stored == nullptr ? 0 : hash_storage(*stored);
 }
 
-bool ComposedTupleRuntimeType::equals(details::ScalarDataMode mode, std::uintptr_t data,
+bool FixedTupleRuntimeType::equals(details::ScalarDataMode mode, std::uintptr_t data,
                                      const details::ScalarData &other) const {
     if (&type() != &other.type()) {
         return false;
@@ -338,22 +338,22 @@ bool ComposedTupleRuntimeType::equals(details::ScalarDataMode mode, std::uintptr
     return true;
 }
 
-std::size_t ComposedTupleRuntimeType::hash(const void *value) const {
+std::size_t FixedTupleRuntimeType::hash(const void *value) const {
     auto *stored = stored_handle(value);
     return stored == nullptr ? 0 : hash_storage(*stored);
 }
 
-bool ComposedTupleRuntimeType::equals(const void *value, const details::ScalarData &other) const {
+bool FixedTupleRuntimeType::equals(const void *value, const details::ScalarData &other) const {
     auto *stored = stored_handle(value);
     return stored != nullptr && equals(details::ScalarDataMode::shared_view,
                                        reinterpret_cast<std::uintptr_t>(stored), other);
 }
 
-bool ComposedTupleRuntimeType::equals_same_type(const void *value, const details::ScalarData &other) const {
+bool FixedTupleRuntimeType::equals_same_type(const void *value, const details::ScalarData &other) const {
     return equals(value, other);
 }
 
-void ComposedTupleRuntimeType::destroy(void *value, allocator &) const noexcept {
+void FixedTupleRuntimeType::destroy(void *value, allocator &) const noexcept {
     auto *stored = stored_handle(value);
     store_handle(value, nullptr);
     if (stored != nullptr) {
@@ -361,33 +361,33 @@ void ComposedTupleRuntimeType::destroy(void *value, allocator &) const noexcept 
     }
 }
 
-ComposedTupleRuntimeType::Storage *ComposedTupleRuntimeType::storage(const details::ScalarData &value) const noexcept {
+FixedTupleRuntimeType::Storage *FixedTupleRuntimeType::storage(const details::ScalarData &value) const noexcept {
     if (value.mode() == details::ScalarDataMode::shared_view || value.mode() == details::ScalarDataMode::shared_value) {
         return reinterpret_cast<Storage *>(value.data_word());
     }
     return stored_handle(value.data());
 }
 
-ComposedTupleRuntimeType::Storage *ComposedTupleRuntimeType::stored_handle(const void *value) noexcept {
+FixedTupleRuntimeType::Storage *FixedTupleRuntimeType::stored_handle(const void *value) noexcept {
     auto handle = std::uintptr_t{};
     std::memcpy(&handle, value, sizeof(handle));
     return reinterpret_cast<Storage *>(handle);
 }
 
-void ComposedTupleRuntimeType::store_handle(void *destination, Storage *storage) noexcept {
+void FixedTupleRuntimeType::store_handle(void *destination, Storage *storage) noexcept {
     const auto handle = reinterpret_cast<std::uintptr_t>(storage);
     std::memcpy(destination, &handle, sizeof(handle));
 }
 
-const void *ComposedTupleRuntimeType::field_storage(const Storage &storage, std::size_t index) const noexcept {
+const void *FixedTupleRuntimeType::field_storage(const Storage &storage, std::size_t index) const noexcept {
     return reinterpret_cast<const std::byte *>(&storage) + items_[index].offset;
 }
 
-void *ComposedTupleRuntimeType::field_storage(Storage &storage, std::size_t index) const noexcept {
+void *FixedTupleRuntimeType::field_storage(Storage &storage, std::size_t index) const noexcept {
     return reinterpret_cast<std::byte *>(&storage) + items_[index].offset;
 }
 
-std::size_t ComposedTupleRuntimeType::hash_storage(const Storage &storage) const {
+std::size_t FixedTupleRuntimeType::hash_storage(const Storage &storage) const {
     auto result = std::hash<const TupleScalarType *>{}(&type());
     for (auto index = std::size_t{}; index < items_.size(); ++index) {
         result = details::combine_scalar_hash(result, items_[index].runtime_type->hash(field_storage(storage, index)));
@@ -395,7 +395,7 @@ std::size_t ComposedTupleRuntimeType::hash_storage(const Storage &storage) const
     return result;
 }
 
-void ComposedTupleRuntimeType::destroy_storage(Storage &storage) const noexcept {
+void FixedTupleRuntimeType::destroy_storage(Storage &storage) const noexcept {
     auto memory = storage.pool->memory();
     for (auto index = items_.size(); index != 0; --index) {
         const auto field_index = index - 1;
@@ -412,13 +412,13 @@ void ComposedTupleRuntimeType::destroy_storage(Storage &storage) const noexcept 
 
 namespace details {
 
-std::unique_ptr<ScalarTupleRuntimeType> make_composed_tuple_runtime_type(const TupleScalarType &type) {
-    return std::make_unique<ComposedTupleRuntimeType>(type);
+std::unique_ptr<ScalarTupleRuntimeType> make_fixed_tuple_runtime_type(const TupleScalarType &type) {
+    return std::make_unique<FixedTupleRuntimeType>(type);
 }
 
-void initialize_composed_tuple_runtime_type(ScalarTupleRuntimeType &runtime_type,
+void initialize_fixed_tuple_runtime_type(ScalarTupleRuntimeType &runtime_type,
                                             std::span<const ScalarRuntimeType *const> items) {
-    static_cast<ComposedTupleRuntimeType &>(runtime_type).initialize(items);
+    static_cast<FixedTupleRuntimeType &>(runtime_type).initialize(items);
 }
 
 } // namespace details

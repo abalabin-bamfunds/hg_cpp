@@ -32,8 +32,8 @@ class ScalarTupleRuntimeType : public ScalarRuntimeType {
 
 namespace details {
 
-std::unique_ptr<ScalarTupleRuntimeType> make_composed_tuple_runtime_type(const TupleScalarType &type);
-void initialize_composed_tuple_runtime_type(ScalarTupleRuntimeType &runtime_type,
+std::unique_ptr<ScalarTupleRuntimeType> make_fixed_tuple_runtime_type(const TupleScalarType &type);
+void initialize_fixed_tuple_runtime_type(ScalarTupleRuntimeType &runtime_type,
                                            std::span<const ScalarRuntimeType *const> items);
 
 } // namespace details

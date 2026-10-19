@@ -1071,7 +1071,7 @@ class ScalarRuntimeTypeResolver {
             return static_cast<const ScalarTupleRuntimeType &>(*existing);
         }
 
-        auto runtime_type = make_composed_tuple_runtime_type(type);
+        auto runtime_type = make_fixed_tuple_runtime_type(type);
         auto *result = runtime_type.get();
         publish(std::move(runtime_type));
 
@@ -1080,7 +1080,7 @@ class ScalarRuntimeTypeResolver {
         for (const auto *item_type : type.item_types()) {
             items.push_back(&resolve(*item_type));
         }
-        initialize_composed_tuple_runtime_type(*result, items);
+        initialize_fixed_tuple_runtime_type(*result, items);
         return *result;
     }
 
