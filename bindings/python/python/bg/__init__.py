@@ -534,11 +534,15 @@ class NodeDefinition:
         fixed_parameters: tuple[str, ...],
         callback: Any,
         injected_parameters: tuple[str, ...],
+        lifecycle_registrar: Any,
+        callback_references: dict[str, Any],
     ):
         self.function = function
         self._callback = callback
         self._native_definition = native_definition
         self._fixed_parameters = fixed_parameters
+        self._lifecycle_registrar = lifecycle_registrar
+        self._callback_references = callback_references
         update_wrapper(self, function)
         signature = inspect.signature(function)
         if injected_parameters:
@@ -557,6 +561,20 @@ class NodeDefinition:
         )
         return _wire_node(self._native_definition, fixed, positional, named)
 
+    def start(self, function: Any) -> Any:
+        """Register the node start callback using selected definition arguments."""
+        self._lifecycle_registrar(self, "start", function)
+        return function
+
+    def stop(self, function: Any) -> Any:
+        """Register the node stop callback using selected definition arguments."""
+        self._lifecycle_registrar(self, "stop", function)
+        return function
+
+    def on_invalidation(self, function: Any) -> Any:
+        """Register the node invalidation callback using selected definition arguments."""
+        self._lifecycle_registrar(self, "invalidation", function)
+        return function
 
 class GraphDefinition:
     def __init__(
@@ -666,13 +684,11 @@ def _definition_signature(
     scalar_or_time_series_inputs: bool = False,
     promote_plain_graph_inputs: bool = False,
     allow_injectables: bool = False,
-) -> tuple[list[tuple[str, Any, str]], tuple[str, ...], Any, list[str], tuple[str, ...], Any]:
+) -> tuple[list[tuple[str, Any, str]], tuple[str, ...], Any, tuple[str, ...], Any]:
     signature = inspect.signature(function)
     annotations = get_type_hints(function, include_extras=True)
     fixed = []
     variadic = []
-    callback_fixed_parameters = []
-    callback_variadic_parameters = []
     injected_parameters = []
     state_factory = None
 
@@ -703,7 +719,6 @@ def _definition_signature(
                 raise TypeError("Python node injectables cannot annotate variadic parameters")
             if parameter.default is not None:
                 raise TypeError("Python node injectables must use '= None' as their default")
-            callback_fixed_parameters.append(injected_parameter)
             injected_parameters.append(parameter.name)
             continue
 
@@ -726,17 +741,14 @@ def _definition_signature(
             elif promote_plain_graph_inputs and not scalar_only and not native_type.is_time_series:
                 native_type = _node_input_type(native_type)
             fixed.append((parameter.name, native_type, ""))
-            callback_fixed_parameters.append("input")
         elif parameter.kind is parameter.VAR_POSITIONAL:
             if scalar_or_time_series_inputs:
                 raise TypeError("@node does not currently support variadic parameters")
             variadic.append((parameter.name, _native_type(annotation), "positional"))
-            callback_variadic_parameters.append("input")
         elif parameter.kind is parameter.VAR_KEYWORD:
             if scalar_or_time_series_inputs:
                 raise TypeError("@node does not currently support variadic parameters")
             variadic.append((parameter.name, _native_type(annotation), "named"))
-            callback_variadic_parameters.append("input")
         else:
             raise TypeError(f"unsupported Python parameter kind for {parameter.name!r}")
 
@@ -750,7 +762,6 @@ def _definition_signature(
         parameters,
         fixed_names,
         callback,
-        callback_fixed_parameters + callback_variadic_parameters,
         tuple(injected_parameters),
         state_factory,
     )
@@ -773,8 +784,67 @@ def _positional_callback(function: Any) -> Any:
     return types.FunctionType(code, function.__globals__, function.__name__, closure=function.__closure__)
 
 
+def _callback_arguments(function: Any, base_function: Any) -> tuple[Any, tuple[tuple[str, int], ...]]:
+    base_signature = inspect.signature(base_function)
+    base_annotations = get_type_hints(base_function, include_extras=True)
+    base_arguments = {}
+    input_parameters = []
+    for parameter in base_signature.parameters.values():
+        annotation = base_annotations.get(parameter.name, parameter.annotation)
+        if annotation is EvaluationClock:
+            base_arguments[parameter.name] = ("evaluation_clock", 0)
+        elif annotation is Scheduler:
+            base_arguments[parameter.name] = ("scheduler", 0)
+        elif isinstance(annotation, _StateAnnotation):
+            base_arguments[parameter.name] = ("state", 0)
+        else:
+            input_parameters.append(parameter)
+
+    fixed_inputs = [
+        parameter for parameter in input_parameters
+        if parameter.kind not in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD)
+    ]
+    variadic_inputs = [
+        parameter for parameter in input_parameters
+        if parameter.kind in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD)
+    ]
+    for input_index, parameter in enumerate(fixed_inputs + variadic_inputs):
+        base_arguments[parameter.name] = ("input", input_index)
+
+    if function is base_function:
+        callback_function = function
+        if any(
+            parameter.kind in (parameter.KEYWORD_ONLY, parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD)
+            for parameter in base_signature.parameters.values()
+        ):
+            callback_function = _positional_callback(function)
+        selected_arguments = tuple(base_arguments[parameter.name] for parameter in base_signature.parameters.values())
+    else:
+        signature = inspect.signature(function)
+        selected = []
+        for parameter in signature.parameters.values():
+            if parameter.kind not in (
+                parameter.POSITIONAL_ONLY,
+                parameter.POSITIONAL_OR_KEYWORD,
+                parameter.KEYWORD_ONLY,
+            ):
+                raise TypeError("Python node lifecycle callbacks do not support variadic parameters")
+            if parameter.name not in base_arguments:
+                raise TypeError(
+                    f"Python node lifecycle parameter {parameter.name!r} is not a parameter of {base_function.__name__!r}"
+                )
+            selected.append(base_arguments[parameter.name])
+        callback_function = function
+        if any(parameter.kind is parameter.KEYWORD_ONLY for parameter in signature.parameters.values()):
+            callback_function = _positional_callback(function)
+        selected_arguments = tuple(selected)
+
+    return callback_function, selected_arguments
+
+
 def _define_node(
-    function: Any, *, schedule_on_start: bool = False, scalar_or_time_series_inputs: bool = False
+    function: Any, *, schedule_on_start: bool = False, scalar_or_time_series_inputs: bool = False,
+    source: bool = False, generator: bool = False,
 ) -> NodeDefinition:
     signature = inspect.signature(function)
     annotations = get_type_hints(function, include_extras=True)
@@ -782,7 +852,6 @@ def _define_node(
         parameters,
         fixed_parameters,
         callback,
-        callback_parameters,
         injected_parameters,
         state_factory,
     ) = _definition_signature(
@@ -803,11 +872,54 @@ def _define_node(
         else:
             output = output_type
 
-    native_definition = _make_node(
-        function.__name__, parameters, output, callback, schedule_on_start, scalar_or_time_series_inputs,
-        callback_parameters, state_factory
+    callbacks: dict[str, Any] = {}
+    callback_references: dict[str, Any] = {}
+    callbacks["evaluation"] = callback
+
+    def make_native_definition(callbacks_to_bind: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
+        callback_definitions = {}
+        retained_callbacks = {}
+        for name in ("evaluation", "start", "stop", "invalidation"):
+            callback_function = callbacks_to_bind.get(name)
+            if callback_function is None:
+                callback_definitions[name] = (None, ())
+            else:
+                adapted, arguments = _callback_arguments(callback_function, function)
+                callback_definitions[name] = (adapted, arguments)
+                retained_callbacks[name] = adapted
+
+        native_definition = _make_node(
+            function.__name__, parameters, output,
+            *(callback_definitions[name][0] for name in ("evaluation", "start", "stop", "invalidation")),
+            schedule_on_start, scalar_or_time_series_inputs,
+            *(list(callback_definitions[name][1]) for name in ("evaluation", "start", "stop", "invalidation")),
+            state_factory, generator,
+        )
+        return native_definition, retained_callbacks
+
+    def register_lifecycle(definition: NodeDefinition, name: str, hook: Any) -> None:
+        if not callable(hook):
+            raise TypeError(f"Python node {name} callback must be callable")
+        if name == "start" and generator:
+            raise TypeError("Python generators cannot register a separate start callback")
+        if name == "invalidation" and (source or generator):
+            raise TypeError("Python sources cannot register invalidation callbacks without time-series inputs")
+        if name in callbacks:
+            raise TypeError(f"Python node {name} callback is already defined")
+        candidate_callbacks = callbacks.copy()
+        candidate_callbacks[name] = hook
+        native_definition, retained_callbacks = make_native_definition(candidate_callbacks)
+        callbacks[name] = hook
+        callback_references.update(retained_callbacks)
+        definition._native_definition = native_definition
+
+    native_definition, retained_callbacks = make_native_definition(callbacks)
+    callback_references.update(retained_callbacks)
+    definition = NodeDefinition(
+        function, native_definition, fixed_parameters, callback, injected_parameters, register_lifecycle,
+        callback_references,
     )
-    return NodeDefinition(function, native_definition, fixed_parameters, callback, injected_parameters)
+    return definition
 
 
 def _define_service(function: Any, kind: str) -> _ServiceDefinition:
@@ -928,30 +1040,59 @@ def node(function: Any) -> NodeDefinition:
 
 
 def source_node(function: Any) -> NodeDefinition:
-    """Declare a no-input node that runs in the first evaluation cycle."""
+    """Declare a source that evaluates at graph start and can schedule later evaluations."""
     signature = inspect.signature(function)
     annotations = get_type_hints(function, include_extras=True)
-    graph_parameters = []
     for parameter in signature.parameters.values():
         annotation = annotations.get(parameter.name, parameter.annotation)
         if _is_injectable_annotation(annotation):
             continue
-        graph_parameters.append(parameter)
-    if graph_parameters:
-        raise TypeError("Python source nodes cannot have graph inputs")
+        input_type = _native_type(annotation)
+        if isinstance(input_type, _ScalarAnnotation):
+            input_type = input_type.type
+        if input_type.is_time_series:
+            raise TypeError("Python source node parameters must be scalar wiring values")
     output = annotations.get("return", signature.return_annotation)
     output_type = _native_type(output) if output is not inspect.Signature.empty else None
     if output_type is None or not output_type.is_time_series:
         raise TypeError("Python source nodes must return a time-series value")
 
-    return _define_node(function, schedule_on_start=True)
+    return _define_node(function, schedule_on_start=True, source=True)
+
+
+def generator(function: Any) -> NodeDefinition:
+    """Declare a pull source that yields ``(datetime | timedelta, delta)`` pairs."""
+    if not inspect.isgeneratorfunction(function):
+        raise TypeError("@generator requires a Python generator function")
+
+    signature = inspect.signature(function)
+    annotations = get_type_hints(function, include_extras=True)
+    for parameter in signature.parameters.values():
+        annotation = annotations.get(parameter.name, parameter.annotation)
+        if _is_injectable_annotation(annotation):
+            if annotation is Scheduler:
+                raise TypeError("Python generators cannot use Scheduler; yield timed output instead")
+            continue
+        input_type = _native_type(annotation)
+        if isinstance(input_type, _ScalarAnnotation):
+            input_type = input_type.type
+        if input_type.is_time_series:
+            raise TypeError("Python generator parameters must be scalar wiring values")
+
+    output = annotations.get("return", signature.return_annotation)
+    if output is inspect.Signature.empty:
+        raise TypeError("Python generators must declare a TS[...] return annotation")
+    output_type = _native_type(output)
+    if not output_type.is_time_series:
+        raise TypeError("Python generators must return a TS[...] value")
+    return _define_node(function, generator=True)
 
 
 def graph(function: Any) -> GraphDefinition:
     """Declare a graph template composed from Python nodes and graph functions."""
     signature = inspect.signature(function)
     annotations = get_type_hints(function, include_extras=True)
-    parameters, fixed_parameters, callback, _, _, _ = _definition_signature(
+    parameters, fixed_parameters, callback, _, _ = _definition_signature(
         function, promote_plain_graph_inputs=True
     )
 
@@ -1043,6 +1184,7 @@ __all__ = [
     "TSS",
     "TimeSeries",
     "compute_node",
+    "generator",
     "graph",
     "map",
     "mesh",

@@ -95,7 +95,10 @@ The definition constructs its compiled data during graph compilation. Initial
 state follows the byte-copy requirement in [Private state](#private-state).
 Either type can be omitted.
 
-The definition declares `evaluate()` or `start()`. `evaluate()` returns `void`
+The definition declares `evaluate()` or `start()`. A runtime-signature
+definition can provide `has_evaluation(signature)`, `has_start(signature)`,
+`has_stop(signature)`, and `has_on_invalidation(signature)` to select which
+static callbacks apply to each resolved signature. `evaluate()` returns `void`
 or the same completion `bool` as an aggregate evaluation function. Each
 function receives a `NodeInvocation<CompiledData, State>` by value. The same
 value is available to declared stop and invalidation functions. It provides

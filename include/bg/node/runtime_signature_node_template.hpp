@@ -187,29 +187,43 @@ class RuntimeSignatureNodeTemplate final
         return accept;
     }
 
-    EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override {
+    EvaluationFunction evaluation_function(const ResolvedSignature &signature) const noexcept override {
+        if constexpr (requires { definition_.has_evaluation(signature); }) {
+            return definition_.has_evaluation(signature) ? &evaluate : nullptr;
+        }
         if constexpr (requires(Invocation invocation) { Definition::evaluate(invocation); }) {
             return &evaluate;
         }
         return nullptr;
     }
 
-    NodeFunction start_function(const ResolvedSignature &) const noexcept override {
+    NodeFunction start_function(const ResolvedSignature &signature) const noexcept override {
+        if constexpr (requires { definition_.has_start(signature); }) {
+            return definition_.has_start(signature) ? &start : nullptr;
+        }
         if constexpr (requires(Invocation invocation) { Definition::start(invocation); }) {
             return &start;
         }
         return nullptr;
     }
 
-    NodeFunction stop_function(const ResolvedSignature &) const noexcept override {
+    NodeFunction stop_function(const ResolvedSignature &signature) const noexcept override {
         if constexpr (requires(Invocation invocation) { Definition::stop(invocation); }) {
             static_assert(noexcept(Definition::stop(std::declval<Invocation>())));
+            if constexpr (requires { definition_.has_stop(signature); }) {
+                return definition_.has_stop(signature) ? &stop : nullptr;
+            }
             return &stop;
         }
         return nullptr;
     }
 
-    InvalidationBehavior invalidation_behavior(const ResolvedSignature &) const noexcept override {
+    InvalidationBehavior invalidation_behavior(const ResolvedSignature &signature) const noexcept override {
+        if constexpr (requires { definition_.has_on_invalidation(signature); }) {
+            return definition_.has_on_invalidation(signature)
+                       ? InvalidationBehavior{InvalidationMode::invoke, &invalidate}
+                       : InvalidationBehavior{};
+        }
         if constexpr (requires(Invocation invocation) { Definition::on_invalidation(invocation); }) {
             return {InvalidationMode::invoke, &invalidate};
         }

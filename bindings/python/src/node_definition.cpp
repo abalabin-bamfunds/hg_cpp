@@ -15,11 +15,15 @@
 #include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <nanobind/stl/string.h>
+#include <nanobind/stl/chrono.h>
 
 #include <algorithm>
 #include <array>
+#include <chrono>
+#include <exception>
 #include <memory_resource>
 #include <span>
 #include <stdexcept>
@@ -30,6 +34,7 @@
 namespace bg::python {
 
 using Invocation = NodeInvocation<PythonNodeDefinition::compiled_data_type, PythonNodeDefinition::state_type>;
+
 namespace {
 
 void apply_time_series_delta(Out<TS_T> output, nanobind::handle delta, allocator &memory);
@@ -197,7 +202,7 @@ class CallArguments {
 } // namespace
 
 nanobind::object PythonNodeDefinition::CompiledData::argument(Invocation invocation, std::size_t index,
-                                                              CallbackScope &callback) const {
+                                                              CallbackScope &callback, bool retain_scalar) const {
     const auto &parameter = parameters[index];
     if (parameter.mode == ParameterMode::input_view) {
         auto input = invocation.input<In<TS_T>>(index);
@@ -219,46 +224,65 @@ nanobind::object PythonNodeDefinition::CompiledData::argument(Invocation invocat
         return nanobind::none();
     }
 
+    if (retain_scalar) {
+        return scalar_conversions().to_python(scalar.value());
+    }
     return scalar_conversions().to_python_view(scalar.value(), lifetime, callback.generation());
 }
 
-nanobind::object PythonNodeDefinition::CompiledData::call(Invocation invocation, CallbackScope &callback) const {
-    auto arguments = CallArguments{callback_parameters.size()};
-    auto input_index = std::size_t{};
-    auto argument_index = std::size_t{};
-    for (const auto parameter : callback_parameters) {
-        switch (parameter) {
+nanobind::object PythonNodeDefinition::CompiledData::call(
+    Invocation invocation, CallbackScope &callback, const Object &callback_function,
+    const CallbackArguments &callback_arguments, bool generator_call) const {
+    auto arguments = CallArguments{callback_arguments.size()};
+    for (auto argument_index = std::size_t{}; argument_index < callback_arguments.size(); ++argument_index) {
+        const auto parameter = callback_arguments[argument_index];
+        switch (parameter.parameter) {
         case CallbackParameter::input:
-            arguments.set(argument_index++, argument(invocation, input_index++, callback));
+            arguments.set(argument_index, argument(invocation, parameter.index, callback, generator_call));
             break;
         case CallbackParameter::evaluation_clock:
-            arguments.set(argument_index++, nanobind::cast(PythonEvaluationClock{
-                NodeCallbackAccess{invocation.context(), lifetime, callback.generation()}}));
+            arguments.set(argument_index, nanobind::cast(PythonEvaluationClock{NodeCallbackAccess{
+                invocation.context(), lifetime, callback.generation(),
+                generator_call ? runtime_state(invocation).generator_clock : nullptr}}));
             break;
         case CallbackParameter::scheduler:
-            arguments.set(argument_index++, nanobind::cast(PythonScheduler{
+            arguments.set(argument_index, nanobind::cast(PythonScheduler{
                 NodeCallbackAccess{invocation.context(), lifetime, callback.generation()}}));
             break;
         case CallbackParameter::state: {
-            auto &state = invocation.state<PyObject *>();
-            if (state == nullptr) {
+            auto &storage = invocation.state<void *>();
+            auto *state = is_generator ? runtime_state(invocation).user_state : static_cast<PyObject *>(storage);
+            if (state == nullptr && state_factory) {
                 state = PyObject_CallNoArgs(state_factory.get().ptr());
                 if (state == nullptr) {
                     nanobind::raise_python_error();
                 }
+                if (is_generator) {
+                    runtime_state(invocation).user_state = state;
+                } else {
+                    storage = state;
+                }
             }
-            Py_INCREF(state);
-            arguments.set(argument_index++, nanobind::steal<nanobind::object>(state));
+            auto value = state == nullptr ? nanobind::none() : nanobind::borrow<nanobind::object>(state);
+            arguments.set(argument_index, std::move(value));
             break;
         }
         }
     }
 
-    auto *result = PyObject_Vectorcall(function.get().ptr(), arguments.data(), arguments.size(), nullptr);
+    auto *result = PyObject_Vectorcall(callback_function.get().ptr(), arguments.data(), arguments.size(), nullptr);
     if (result == nullptr) {
         nanobind::raise_python_error();
     }
     return nanobind::steal<nanobind::object>(result);
+}
+
+PythonNodeDefinition::RuntimeState &PythonNodeDefinition::CompiledData::runtime_state(Invocation invocation) const {
+    auto &storage = invocation.state<void *>();
+    if (storage == nullptr) {
+        storage = new RuntimeState{};
+    }
+    return *static_cast<RuntimeState *>(storage);
 }
 
 void PythonNodeDefinition::CompiledData::apply_delta(Invocation invocation, nanobind::handle delta) const {
@@ -273,31 +297,212 @@ void PythonNodeDefinition::CompiledData::apply_delta(Invocation invocation, nano
     apply_time_series_delta(invocation.output(), delta, memory);
 }
 
-void PythonNodeDefinition::CompiledData::invoke(Invocation invocation) const {
+void PythonNodeDefinition::CompiledData::start(Invocation invocation) const {
     if (!Py_IsInitialized()) {
         throw std::runtime_error{"the Python interpreter has shut down"};
     }
     auto gil = nanobind::gil_scoped_acquire{};
-
     auto callback = CallbackScope{*lifetime};
-    auto result = call(invocation, callback);
+
+    if (is_generator) {
+        auto generator_value = call(invocation, callback, function, evaluation_arguments, true);
+        auto iterator = nanobind::steal<nanobind::object>(PyObject_GetIter(generator_value.ptr()));
+        if (!iterator) {
+            nanobind::raise_python_error();
+        }
+        runtime_state(invocation).generator = iterator.release().ptr();
+        advance_generator(invocation);
+        return;
+    }
+
+    if (start_function) {
+        (void)call(invocation, callback, start_function, start_arguments);
+    }
+}
+
+void PythonNodeDefinition::CompiledData::evaluate(Invocation invocation) const {
+    if (!Py_IsInitialized()) {
+        throw std::runtime_error{"the Python interpreter has shut down"};
+    }
+    auto gil = nanobind::gil_scoped_acquire{};
+    auto callback = CallbackScope{*lifetime};
+
+    if (is_generator) {
+        auto &state = runtime_state(invocation);
+        if (state.pending_value != nullptr) {
+            auto pending = nanobind::steal<nanobind::object>(std::exchange(state.pending_value, nullptr));
+            apply_delta(invocation, pending);
+        }
+        advance_generator(invocation);
+        return;
+    }
+
+    if (function) {
+        auto result = call(invocation, callback, function, evaluation_arguments);
+        apply_delta(invocation, result);
+    }
+}
+
+void PythonNodeDefinition::CompiledData::stop(Invocation invocation) const noexcept {
+    const auto context = stop_function ? stop_function.get() : function.get();
+    const auto report_unraisable = [](std::exception_ptr failure, nanobind::handle error_context) noexcept {
+        try {
+            std::rethrow_exception(failure);
+        } catch (nanobind::python_error &error) {
+            error.discard_as_unraisable(error_context);
+        } catch (const std::exception &error) {
+            PyErr_SetString(PyExc_RuntimeError, error.what());
+            PyErr_WriteUnraisable(error_context.ptr());
+        } catch (...) {
+            PyErr_SetString(PyExc_RuntimeError, "an unknown exception occurred in a Python node stop callback");
+            PyErr_WriteUnraisable(error_context.ptr());
+        }
+    };
+
+    try {
+        if (!Py_IsInitialized()) {
+            return;
+        }
+        auto gil = nanobind::gil_scoped_acquire{};
+        auto *generator_state = is_generator ? &runtime_state(invocation) : nullptr;
+        if (generator_state != nullptr) {
+            generator_state->generator_clock->current = &invocation.context();
+        }
+        auto clear_generator_context = util::scope_exit{[generator_state]() noexcept {
+            if (generator_state != nullptr) {
+                generator_state->generator_clock->current = nullptr;
+            }
+        }};
+
+        auto failures = std::array<std::exception_ptr, 2>{};
+        auto failure_count = std::size_t{};
+        if (stop_function) {
+            try {
+                auto callback = CallbackScope{*lifetime};
+                (void)call(invocation, callback, stop_function, stop_arguments);
+            } catch (...) {
+                failures[failure_count++] = std::current_exception();
+            }
+        }
+
+        if (is_generator) {
+            try {
+                auto &state = *generator_state;
+                if (state.generator != nullptr) {
+                    auto generator = nanobind::borrow<nanobind::object>(state.generator);
+                    auto closed = nanobind::steal<nanobind::object>(
+                        PyObject_CallMethod(generator.ptr(), "close", nullptr));
+                    if (!closed) {
+                        nanobind::raise_python_error();
+                    }
+                }
+            } catch (...) {
+                failures[failure_count++] = std::current_exception();
+            }
+        }
+        for (auto index = std::size_t{}; index < failure_count; ++index) {
+            report_unraisable(std::move(failures[index]), context ? context : nanobind::handle{Py_None});
+        }
+    } catch (...) {
+        if (!Py_IsInitialized()) {
+            return;
+        }
+        try {
+            auto gil = nanobind::gil_scoped_acquire{};
+            report_unraisable(std::current_exception(), context ? context : nanobind::handle{Py_None});
+        } catch (...) {
+            // Interpreter shutdown can prevent reporting from the noexcept stop callback.
+        }
+    }
+}
+
+void PythonNodeDefinition::CompiledData::on_invalidation(Invocation invocation) const {
+    if (!invalidation_function) {
+        return;
+    }
+    if (!Py_IsInitialized()) {
+        throw std::runtime_error{"the Python interpreter has shut down"};
+    }
+    auto gil = nanobind::gil_scoped_acquire{};
+    auto callback = CallbackScope{*lifetime};
+    auto result = call(invocation, callback, invalidation_function, invalidation_arguments);
     apply_delta(invocation, result);
 }
 
+void PythonNodeDefinition::CompiledData::advance_generator(Invocation invocation) const {
+    auto &state = runtime_state(invocation);
+    auto iterator = nanobind::borrow<nanobind::object>(state.generator);
+    state.generator_clock->current = &invocation.context();
+    auto clear_generator_context = util::scope_exit{[&]() noexcept { state.generator_clock->current = nullptr; }};
+    auto yielded = nanobind::steal<nanobind::object>(PyIter_Next(iterator.ptr()));
+    state.generator_clock->current = nullptr;
+    clear_generator_context.release();
+    if (!yielded) {
+        if (PyErr_Occurred() != nullptr) {
+            nanobind::raise_python_error();
+        }
+        return;
+    }
+
+    auto pair = nanobind::cast<nanobind::tuple>(yielded);
+    if (pair.size() != 2) {
+        throw std::invalid_argument{"a Python generator must yield (datetime | timedelta, value) pairs"};
+    }
+
+    auto when = EvaluationTime{};
+    const auto time = pair[0];
+    if (!nanobind::try_cast(time, when)) {
+        auto delay = std::chrono::microseconds{};
+        if (!nanobind::try_cast(time, delay)) {
+            throw std::invalid_argument{"a Python generator time must be datetime or timedelta"};
+        }
+        when = invocation.context().evaluation_time() + delay;
+    }
+
+    const auto current_time = invocation.context().evaluation_time();
+    if (state.has_generator_time && when <= state.last_generator_time) {
+        throw std::invalid_argument{"Python generator output times must be strictly increasing"};
+    }
+    if (when < current_time) {
+        throw std::invalid_argument{"a Python generator cannot yield a time before the current evaluation time"};
+    }
+
+    state.last_generator_time = when;
+    state.has_generator_time = true;
+    if (when == current_time) {
+        apply_delta(invocation, pair[1]);
+        advance_generator(invocation);
+        return;
+    }
+
+    Py_XDECREF(state.pending_value);
+    Py_INCREF(pair[1].ptr());
+    state.pending_value = pair[1].ptr();
+    invocation.context().schedule_at(when);
+}
+
 PythonNodeDefinition::PythonNodeDefinition(std::shared_ptr<const SignatureDefinition> signature,
-                                           nanobind::handle function, bool schedule_on_start,
-                                           bool pass_time_series_values,
-                                           std::vector<CallbackParameter> callback_parameters,
-                                           nanobind::handle state_factory)
-    : signature_{std::move(signature)}, weak_function_{function}, identity_{std::make_shared<const char>()},
+                                           bool schedule_on_start, bool pass_time_series_values,
+                                           CallbackDefinition evaluation, CallbackDefinition start,
+                                           CallbackDefinition stop, CallbackDefinition invalidation,
+                                           nanobind::handle state_factory, bool generator)
+    : signature_{std::move(signature)}, weak_function_{weak_callback(evaluation)},
+      weak_start_function_{weak_callback(start)}, weak_stop_function_{weak_callback(stop)},
+      weak_invalidation_function_{weak_callback(invalidation)}, identity_{std::make_shared<const char>()},
       schedule_on_start_{schedule_on_start}, pass_time_series_values_{pass_time_series_values},
-      callback_parameters_{std::move(callback_parameters)} {
+      generator_{generator} {
     if (signature_ == nullptr) {
         throw std::invalid_argument{"a Python node requires a signature"};
     }
-    if (!PyCallable_Check(function.ptr())) {
-        throw std::invalid_argument{"a Python node definition requires a callable"};
+    for (const auto *callback : {&evaluation, &start, &stop, &invalidation}) {
+        if (callback->function.ptr() != nullptr && !PyCallable_Check(callback->function.ptr())) {
+            throw std::invalid_argument{"a Python node callback must be callable"};
+        }
     }
+    evaluation_arguments_ = std::move(evaluation.arguments);
+    start_arguments_ = std::move(start.arguments);
+    stop_arguments_ = std::move(stop.arguments);
+    invalidation_arguments_ = std::move(invalidation.arguments);
     if (!state_factory.is_none()) {
         if (!PyCallable_Check(state_factory.ptr())) {
             throw std::invalid_argument{"a Python node State factory must be callable"};
@@ -306,27 +511,64 @@ PythonNodeDefinition::PythonNodeDefinition(std::shared_ptr<const SignatureDefini
     }
 }
 
-PythonNodeDefinition::PythonNodeDefinition(std::shared_ptr<const SignatureDefinition> signature, Object function,
+std::optional<WeakObject> PythonNodeDefinition::weak_callback(const CallbackDefinition &callback) {
+    if (callback.function.ptr() == nullptr) {
+        return std::nullopt;
+    }
+    return WeakObject{callback.function};
+}
+
+Object PythonNodeDefinition::retain_callback(const std::optional<WeakObject> &callback) {
+    return callback ? callback->lock() : Object{};
+}
+
+PythonNodeDefinition::PythonNodeDefinition(std::shared_ptr<const SignatureDefinition> signature,
                                            std::shared_ptr<const char> identity, bool schedule_on_start,
-                                           bool pass_time_series_values,
-                                           std::vector<CallbackParameter> callback_parameters,
-                                           Object state_factory) noexcept
+                                           Object function, CallbackArguments evaluation_arguments,
+                                           bool pass_time_series_values, Object start_function,
+                                           CallbackArguments start_arguments, Object stop_function,
+                                           CallbackArguments stop_arguments, Object invalidation_function,
+                                           CallbackArguments invalidation_arguments, Object state_factory,
+                                           bool generator) noexcept
     : signature_{std::move(signature)}, retained_function_{std::move(function)},
-      state_factory_{std::move(state_factory)}, identity_{std::move(identity)},
-      schedule_on_start_{schedule_on_start}, pass_time_series_values_{pass_time_series_values},
-      callback_parameters_{std::move(callback_parameters)} {}
+      evaluation_arguments_{std::move(evaluation_arguments)},
+      retained_start_function_{std::move(start_function)}, start_arguments_{std::move(start_arguments)},
+      retained_stop_function_{std::move(stop_function)}, stop_arguments_{std::move(stop_arguments)},
+      retained_invalidation_function_{std::move(invalidation_function)},
+      invalidation_arguments_{std::move(invalidation_arguments)}, state_factory_{std::move(state_factory)},
+      identity_{std::move(identity)}, schedule_on_start_{schedule_on_start},
+      pass_time_series_values_{pass_time_series_values}, generator_{generator} {}
 
 PythonNodeDefinition PythonNodeDefinition::retain_function() const {
-    return PythonNodeDefinition{signature_, weak_function_.lock(), identity_, schedule_on_start_,
-                                pass_time_series_values_, callback_parameters_, state_factory_};
+    return PythonNodeDefinition{signature_, identity_, schedule_on_start_, retain_callback(weak_function_),
+                                evaluation_arguments_, pass_time_series_values_,
+                                retain_callback(weak_start_function_), start_arguments_,
+                                retain_callback(weak_stop_function_), stop_arguments_,
+                                retain_callback(weak_invalidation_function_), invalidation_arguments_,
+                                state_factory_, generator_};
 }
 
 bool PythonNodeDefinition::deduplicate_wiring() const noexcept {
-    return std::ranges::find(callback_parameters_, CallbackParameter::state) == callback_parameters_.end();
+    if (generator_) {
+        return false;
+    }
+    const auto uses_state = [](const CallbackArguments &arguments) {
+        return std::ranges::any_of(arguments, [](const auto &argument) {
+            return argument.parameter == CallbackParameter::state;
+        });
+    };
+    return !uses_state(evaluation_arguments_) && !uses_state(start_arguments_) && !uses_state(stop_arguments_) &&
+           !uses_state(invalidation_arguments_);
 }
 
 bool PythonNodeDefinition::uses_timed_scheduling() const noexcept {
-    return std::ranges::find(callback_parameters_, CallbackParameter::scheduler) != callback_parameters_.end();
+    const auto uses_scheduler = [](const CallbackArguments &arguments) {
+        return std::ranges::any_of(arguments, [](const auto &argument) {
+            return argument.parameter == CallbackParameter::scheduler;
+        });
+    };
+    return generator_ || uses_scheduler(evaluation_arguments_) || uses_scheduler(start_arguments_) ||
+           uses_scheduler(stop_arguments_) || uses_scheduler(invalidation_arguments_);
 }
 
 bool PythonNodeDefinition::schedule_on_start(const ResolvedSignature &signature) const noexcept {
@@ -335,13 +577,29 @@ bool PythonNodeDefinition::schedule_on_start(const ResolvedSignature &signature)
            });
 }
 
+bool PythonNodeDefinition::has_evaluation(const ResolvedSignature &) const noexcept {
+    return generator_ || static_cast<bool>(weak_function_) || static_cast<bool>(retained_function_);
+}
+
+bool PythonNodeDefinition::has_start(const ResolvedSignature &) const noexcept {
+    return generator_ || weak_start_function_.has_value() || static_cast<bool>(retained_start_function_);
+}
+
+bool PythonNodeDefinition::has_stop(const ResolvedSignature &) const noexcept {
+    return generator_ || weak_stop_function_.has_value() || static_cast<bool>(retained_stop_function_);
+}
+
+bool PythonNodeDefinition::has_on_invalidation(const ResolvedSignature &) const noexcept {
+    return weak_invalidation_function_.has_value() || static_cast<bool>(retained_invalidation_function_);
+}
+
 NodeTemplateIdentity PythonNodeDefinition::definition_identity() const {
     return NodeTemplateIdentity::from_value(Identity{identity_});
 }
 
 PythonNodeDefinition::CompiledData PythonNodeDefinition::compile(const ResolvedSignature &signature,
                                                                  allocator &) const {
-    if (!retained_function_) {
+    if (!retained_function_ && !retained_start_function_) {
         throw std::logic_error{"a Python node callback was not retained by its graph wiring"};
     }
 
@@ -368,23 +626,56 @@ PythonNodeDefinition::CompiledData PythonNodeDefinition::compile(const ResolvedS
 
     auto result = CompiledData{};
     result.function = retained_function_;
+    result.start_function = retained_start_function_;
+    result.stop_function = retained_stop_function_;
+    result.invalidation_function = retained_invalidation_function_;
     result.state_factory = state_factory_;
     result.parameters = std::move(parameter_conversions);
-    result.callback_parameters = callback_parameters_;
+    result.evaluation_arguments = evaluation_arguments_;
+    result.start_arguments = start_arguments_;
+    result.stop_arguments = stop_arguments_;
+    result.invalidation_arguments = invalidation_arguments_;
     result.has_output = signature.output != nullptr;
+    result.is_generator = generator_;
     return result;
 }
 
 void PythonNodeDefinition::evaluate(Invocation invocation) {
-    invocation.compiled_data().invoke(invocation);
+    invocation.compiled_data().evaluate(invocation);
+}
+
+void PythonNodeDefinition::start(Invocation invocation) {
+    invocation.compiled_data().start(invocation);
+}
+
+void PythonNodeDefinition::stop(Invocation invocation) noexcept {
+    invocation.compiled_data().stop(invocation);
+}
+
+void PythonNodeDefinition::on_invalidation(Invocation invocation) {
+    invocation.compiled_data().on_invalidation(invocation);
 }
 
 void PythonNodeDefinition::destroy_state(NodeInvocation<compiled_data_type, state_type> invocation) noexcept {
-    auto &state = invocation.state<PyObject *>();
-    if (state == nullptr) {
+    auto &storage = invocation.state<void *>();
+    if (storage == nullptr) {
         return;
     }
-    Object::release_reference(std::exchange(state, nullptr));
+    if (invocation.compiled_data().is_generator) {
+        auto &state = *static_cast<RuntimeState *>(storage);
+        if (state.user_state != nullptr) {
+            Object::release_reference(state.user_state);
+        }
+        if (state.generator != nullptr) {
+            Object::release_reference(state.generator);
+        }
+        if (state.pending_value != nullptr) {
+            Object::release_reference(state.pending_value);
+        }
+        delete static_cast<RuntimeState *>(std::exchange(storage, nullptr));
+        return;
+    }
+    Object::release_reference(static_cast<PyObject *>(std::exchange(storage, nullptr)));
 }
 
 } // namespace bg::python

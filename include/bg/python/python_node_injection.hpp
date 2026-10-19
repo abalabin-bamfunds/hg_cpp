@@ -13,10 +13,15 @@
 
 namespace bg::python {
 
+struct GeneratorClockLease {
+    EvaluationContext *current{};
+};
+
 struct NodeCallbackAccess {
     EvaluationContext &context;
     std::shared_ptr<CallbackLifetime> lifetime;
     std::uint64_t generation;
+    std::shared_ptr<GeneratorClockLease> generator_clock;
 
     EvaluationContext &get() const;
 };

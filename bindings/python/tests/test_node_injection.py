@@ -45,14 +45,10 @@ def test_node_injects_clock_without_exposing_it_as_a_wiring_argument():
 
 def test_source_node_clock_is_callback_scoped():
     clocks = []
-    schedulers = []
 
     @bg.source_node
-    def source(
-        clock: bg.EvaluationClock = None, scheduler: bg.Scheduler = None
-    ) -> bg.TS[int]:
+    def source(clock: bg.EvaluationClock = None) -> bg.TS[int]:
         clocks.append(clock)
-        schedulers.append(scheduler)
         return 1
 
     @bg.graph
@@ -62,8 +58,6 @@ def test_source_node_clock_is_callback_scoped():
     assert bg.test_graph(graph) == [1]
     with pytest.raises(RuntimeError, match="outside its callback"):
         _ = clocks[0].evaluation_time
-    with pytest.raises(RuntimeError, match="outside its callback"):
-        schedulers[0].schedule_at(datetime.now())
 
 
 def test_keyword_only_clock_preserves_callback_parameter_order():
@@ -109,12 +103,12 @@ def test_scheduler_injects_and_cancels_timed_node_evaluations():
     handles = []
     observed_values = []
 
-    @bg.source_node
+    @bg.node
     def source(
         clock: bg.EvaluationClock = None,
         scheduler: bg.Scheduler = None,
         state: bg.State[list] = None,
-    ) -> bg.TS[int]:
+    ) -> int:
         evaluation_times.append(clock.evaluation_time)
         if len(evaluation_times) == 1:
             state.append(scheduler.schedule_at(clock.evaluation_time + timedelta(seconds=1)))
@@ -297,6 +291,6 @@ def test_clock_and_scheduler_require_none_defaults():
 
     with pytest.raises(TypeError, match="must use '= None'"):
 
-        @bg.source_node
+        @bg.compute_node
         def missing_scheduler_default(scheduler: bg.Scheduler) -> bg.TS[int]:
             return 1

@@ -10,6 +10,12 @@ using namespace nanobind::literals;
 namespace bg::python {
 
 EvaluationContext &NodeCallbackAccess::get() const {
+    if (generator_clock != nullptr) {
+        if (generator_clock->current == nullptr) {
+            throw std::runtime_error{"a Python generator clock was used outside generator advancement"};
+        }
+        return *generator_clock->current;
+    }
     if (!lifetime->active(generation)) {
         throw std::runtime_error{"a Python node injectable was used outside its callback"};
     }

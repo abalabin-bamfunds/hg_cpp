@@ -55,6 +55,7 @@
 
 #include <cstdint>
 #include <exception>
+#include <limits>
 #include <memory_resource>
 #include <ranges>
 #include <span>
@@ -454,8 +455,10 @@ void run_graph(const PythonGraphDefinition &definition, nb::sequence fixed_value
             .services = service_catalogue != nullptr ? &service_catalogue->catalogue() : nullptr,
             .recorder = recorder != nullptr ? std::optional<EvaluationProfiler::Recorder>{*recorder} : std::nullopt,
         };
-        auto release_gil = nb::gil_scoped_release{};
-        bg::run_graph(run, options);
+        {
+            auto release_gil = nb::gil_scoped_release{};
+            bg::run_graph(run, options);
+        }
     } catch (const WiringError &error) {
         rethrow_python_error(error);
     }
@@ -855,27 +858,46 @@ void bind_core(nb::module_ &module) {
         return TypeDescriptor{value, true};
     });
     module.def("_make_node", [](std::string name, const std::vector<PythonParameter> &parameters,
-                                std::optional<TypeDescriptor> output, nb::handle function, bool schedule_on_start,
-                                bool pass_time_series_values, const std::vector<std::string> &callback_parameters,
-                                std::optional<nb::object> state_factory) {
-        auto callback_parameter_kinds = std::vector<PythonNodeDefinition::CallbackParameter>{};
-        callback_parameter_kinds.reserve(callback_parameters.size());
-        for (const auto &parameter : callback_parameters) {
-            if (parameter == "input") {
-                callback_parameter_kinds.push_back(PythonNodeDefinition::CallbackParameter::input);
-            } else if (parameter == "evaluation_clock") {
-                callback_parameter_kinds.push_back(PythonNodeDefinition::CallbackParameter::evaluation_clock);
-            } else if (parameter == "scheduler") {
-                callback_parameter_kinds.push_back(PythonNodeDefinition::CallbackParameter::scheduler);
-            } else if (parameter == "state") {
-                callback_parameter_kinds.push_back(PythonNodeDefinition::CallbackParameter::state);
-            } else {
-                throw std::invalid_argument{"invalid Python node callback parameter"};
+                                std::optional<TypeDescriptor> output, std::optional<nb::object> evaluation,
+                                std::optional<nb::object> start, std::optional<nb::object> stop,
+                                std::optional<nb::object> invalidation,
+                                bool schedule_on_start, bool pass_time_series_values,
+                                const std::vector<std::pair<std::string, std::size_t>> &evaluation_arguments,
+                                const std::vector<std::pair<std::string, std::size_t>> &start_arguments,
+                                const std::vector<std::pair<std::string, std::size_t>> &stop_arguments,
+                                const std::vector<std::pair<std::string, std::size_t>> &invalidation_arguments,
+                                std::optional<nb::object> state_factory, bool generator) {
+        const auto callback = [](const std::optional<nb::object> &function,
+                                 const std::vector<std::pair<std::string, std::size_t>> &arguments) {
+            auto result = PythonNodeDefinition::CallbackDefinition{};
+            if (function.has_value() && !function->is_none()) {
+                result.function = *function;
             }
-        }
-        return PythonNodeDefinition{make_signature(name, parameters, output), function, schedule_on_start,
-                                    pass_time_series_values, std::move(callback_parameter_kinds),
-                                    state_factory.value_or(nb::none())};
+            for (const auto &[name, index] : arguments) {
+                if (index > std::numeric_limits<std::uint32_t>::max()) {
+                    throw std::invalid_argument{"Python node callback input index exceeds the compiled input limit"};
+                }
+                auto parameter = PythonNodeDefinition::CallbackParameter{};
+                if (name == "input") {
+                    parameter = PythonNodeDefinition::CallbackParameter::input;
+                } else if (name == "evaluation_clock") {
+                    parameter = PythonNodeDefinition::CallbackParameter::evaluation_clock;
+                } else if (name == "scheduler") {
+                    parameter = PythonNodeDefinition::CallbackParameter::scheduler;
+                } else if (name == "state") {
+                    parameter = PythonNodeDefinition::CallbackParameter::state;
+                } else {
+                    throw std::invalid_argument{"invalid Python node callback parameter"};
+                }
+                result.arguments.push_back({parameter, static_cast<std::uint32_t>(index)});
+            }
+            return result;
+        };
+        return PythonNodeDefinition{
+            make_signature(name, parameters, output), schedule_on_start, pass_time_series_values,
+            callback(evaluation, evaluation_arguments), callback(start, start_arguments),
+            callback(stop, stop_arguments), callback(invalidation, invalidation_arguments),
+            state_factory.value_or(nb::none()), generator};
     });
     module.def("_make_graph", [](std::string name, const std::vector<PythonParameter> &parameters,
                                  std::optional<TypeDescriptor> output, nb::handle function,

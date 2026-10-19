@@ -349,9 +349,36 @@ custom `__init__` method.
 
 ## Python nodes
 
-`@source_node` declares a no-input node that runs in the first evaluation
-cycle. `@compute_node` declares a fixed-input node. Inputs can be any supported
-time-series type or a scalar argument.
+`@source_node` declares a source whose decorated function is its evaluation
+callback. The engine schedules it once at graph start. It accepts scalar wiring
+arguments and returns a `TS[...]` delta. It can request `Scheduler` to schedule
+later evaluations of the same function. An optional `@source.start` callback
+runs before the first evaluation. `@compute_node` declares an input-driven
+node. `@generator` declares a timed source that yields output deltas.
+
+`@node` and `@compute_node` use their decorated function as the evaluation
+callback. Register lifecycle callbacks with `@name.start`, `@name.stop`, and
+`@name.on_invalidation`. A start callback runs before evaluation and is
+side-effect-only; its return value is ignored. Each callback declares a subset
+of the decorated function's parameters by name; arguments are passed in the
+callback's declared order. A parameter name not present on the decorated
+function is an error.
+
+```python
+@bg.node
+def add(value: int, offset: int) -> int:
+    return value + offset
+
+@add.start
+def start(offset: int):
+    initialize(offset)
+```
+
+`@generator` yields `(datetime, delta)` at an absolute evaluation time or
+`(timedelta, delta)` relative to the current evaluation time. Yielded times
+must increase strictly. An empty generator is valid. The engine closes the
+generator when its node stops. Exceptions from stop callbacks are reported
+through Python's unraisable-exception hook after stop cleanup.
 
 Nodes can request `bg.EvaluationClock`, `bg.Scheduler`, or `bg.State[T]` as
 parameters. Each injectable must have `= None` as its default and is omitted
@@ -365,16 +392,19 @@ and wall-clock time in real-time mode. Both are Python `datetime` values.
 returns a `bg.ScheduleHandle`; `Scheduler.cancel(handle)` cancels a pending
 handle for the same node. Both injected objects are valid only while the callback
 runs. A schedule handle can be retained and cancelled by a later invocation.
-Only a node that declares `Scheduler` enables timed scheduling; `EvaluationClock`
-alone does not.
+Only a node that declares `Scheduler` or uses `@generator` enables timed
+scheduling; `EvaluationClock` alone does not. `@source_node` can use
+`Scheduler` to schedule its evaluation callback. `@generator` uses yielded
+times and rejects `Scheduler`.
 
 `State[T]` calls the zero-argument callable or class `T` once on the first
 invocation of each runtime node. The callback receives that object directly.
 Each runtime node, including nodes in nested branches and separate graph runs,
 has independent state. A node can declare at most one `State[T]` parameter.
 
-`@node`, `@compute_node`, and `@source_node` accept these injectables. Graph
-definitions cannot request them.
+`@node`, `@compute_node`, `@source_node`, and `@generator` accept these
+injectables subject to the source restrictions above. Graph definitions cannot
+request them.
 
 `@node` declares scalar-valued inputs and output. Each parameter annotated with
 a scalar type accepts either a scalar wiring argument or a matching `TS[T]`
