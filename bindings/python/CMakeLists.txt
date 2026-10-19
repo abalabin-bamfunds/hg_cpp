@@ -31,6 +31,7 @@ add_library(
     src/test_graph_input.cpp
     src/test_graph_output.cpp
     src/python.cpp
+    src/gil.cpp
 )
 add_library(bg::python ALIAS bg_python)
 set_target_properties(

@@ -27,7 +27,10 @@ class AggregateNodeTemplate final
     using TypeMapping::operator[];
 
     explicit AggregateNodeTemplate(Label label = {})
-        : AggregateNodeTemplateBase{details::aggregate_node_descriptor<Definition>()}, label_(std::move(label)) {
+        : AggregateNodeTemplate{details::aggregate_node_descriptor<Definition>(), std::move(label)} {}
+
+    AggregateNodeTemplate(const details::AggregateNodeDescriptor &descriptor, Label label = {})
+        : AggregateNodeTemplateBase{descriptor}, label_(std::move(label)) {
         if constexpr (!std::same_as<Label, details::default_wiring_label>) {
             if (signature().parameter_count() != details::callable<Label>::argument_count) {
                 throw std::invalid_argument{"a node label function and its signature have different parameter counts"};
