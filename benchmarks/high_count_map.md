@@ -56,11 +56,12 @@ stage B and child-map changes.
 
 ## Workload
 
-The engine-independent workload generator in
-[`high_count_map_benchmark.cpp`](high_count_map_benchmark.cpp) defines the
-initial values, update values, selected keys, lifecycle operations, and
-expected checksum. Port its workload and checksum code without changing the
-constants or operation order.
+The engine-independent C++ workload generator in
+[`high_count_map_workload.hpp`](high_count_map_workload.hpp) defines the initial
+values, update values, selected keys, lifecycle operations, and expected
+checksum. The Python port is in
+[`high_count_map_workload.py`](high_count_map_workload.py). Port its workload and
+checksum code without changing the constants or operation order.
 
 The `250k` profile applies 250 flat updates and 250 child updates per cycle.
 Every 100-cycle period performs these lifecycle operations:
@@ -122,6 +123,8 @@ percentile, and maximum for these classes:
 
 Record process resident set size (RSS) before wiring, after wiring, after an
 empty runtime starts, after population, at the process peak, and after stop.
+Record RSS after the final cycle and before stop when the engine permits it.
+`graph_rss_delta_bytes` is this value minus RSS before wiring.
 `populated_rss_delta_bytes` is populated RSS minus empty-runtime RSS.
 `bytes_per_active_inner_graph` divides this delta by 250,000. This measurement
 includes engine-inserted nodes and all runtime support data.
@@ -134,7 +137,7 @@ required measurements. An engine that cannot separate a timing phase records
 
 1. Implement the topology with the engine's public graph and map interfaces.
 2. Port the engine-independent workload generator and checksum from the C++
-   benchmark.
+   or Python workload module.
 3. Run the smoke profile and its manifest validation before a comparison run.
 4. Run the `250k` profile for 10,000 measured cycles in a release build.
 5. Confirm the output checksum before accepting timing or memory results.
@@ -145,6 +148,16 @@ required measurements. An engine that cannot separate a timing phase records
 Do not simplify the graph, combine arithmetic nodes, exclude engine-created
 runtime objects from memory, or replace incremental evaluation with a batch
 calculation.
+
+## Implementations
+
+The adapters are [BG C++](high_count_map_benchmark.cpp),
+[BG Python](../bindings/python/benchmarks/high_count_map.py),
+[current hgraph C++](hgraph_current_high_count_map/native.cpp),
+[current hgraph Python](hgraph_latest_high_count_map/run.py), and
+[hgraph 0.5 Python/C++ runtime](hgraph_05_high_count_map/high_count_map.py).
+The [historical 10,000-cycle comparison](results/high_count_map/clean_250k_10k_2026-10-17.md)
+records the measured configurations and their limits.
 
 ## Running BG
 
