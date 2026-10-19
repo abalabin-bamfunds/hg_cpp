@@ -1,13 +1,14 @@
 # Frame foundation handoff
 
-Updated: 2026-10-17. The active lane is rebased onto main `36eb21fb`.
-The expression implementation is committed as `cadf1c38` on the lane.
-Scalar Column/Frame literals and content equality are committed as `7db3b2f9`.
-They use BG's existing literal dispatch and scalar test capture. All six
-Release Arrow-on suites passed against installed main `36eb21fb`, including
-an independent rerun. TSF/TSC literals, delta comparison, and capture handlers
-remain outstanding. See
-[Literal support](#literal-support) and [Verification](#verification).
+Updated: 2026-10-19. The active frame lane is based on main `2ad4747c`, with
+shared schema metadata `8ab0b121` and BG process-lifetime storage fix
+`97f37b55` cherry-picked.
+Expressions are committed as `30e6fa80`; scalar Column/Frame literals and
+content equality are committed as `02fc8c17`. Native keyed storage and its
+tests are committed on this lane. Raw scalar and Arrow duplicate-key validation
+is the next separate change; see
+[Key metadata and native keyed storage](#key-metadata-and-native-keyed-storage).
+TSF/TSC literals, delta comparison, and capture remain outstanding.
 
 ## Work locations
 
@@ -16,23 +17,21 @@ completed lane retirement, and consumer verification.
 
 | Work | Location / branch | State |
 | --- | --- | --- |
-| Main | `/home/abalabin/_bg`, `main` | Rebase target `36eb21fb`; literal APIs, wiring source-type matching, and test-graph output capture integrated |
-| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Expressions committed as `cadf1c38`; scalar literals and equality committed as `7db3b2f9`; unmerged |
+| Main | `/home/abalabin/_bg`, `main` | `2ad4747c`; shared schema metadata and frame work are unmerged |
+| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Native keyed storage is committed; frame work remains unmerged |
+| Shared schema metadata | `.lanes/schema-metadata`, `agent/schema-metadata` | `cb0d861b`; process-lifetime storage fix passes Release and Debug consumer checks |
 | Test graph output capture | Main | Integrated through `36eb21fb`, including shared extension comparison dispatch |
 | Numeric value extraction | `.lanes/library-numeric-values` | Held; frame does not depend on it |
 | Historical frame work | `extensions/frame/archive/` | Proposals, probe sources, and benchmark results preserved; see its README |
 | Schema field reflection | Main | Integrated and covered by BG schema reflection tests |
 
-The Release Arrow-on consumer uses BG from
-`extensions/frame/build/dependencies/bg-release-36eb21fb-install`, built in
-`extensions/frame/build/dependencies/bg-release-36eb21fb` with testing disabled.
-Its cached ddvisitor and tpack packages retain the preceding
-`bg-release-359e1aee-install` prefix; those dependencies are unchanged.
-The Debug and Arrow-off consumers retain their previous matching installations under
-`extensions/frame/build/dependencies/bg-debug-install` and
-`extensions/frame/build/dependencies/bg-release-install`. Each extension build
-must match its BG dependency's configuration. Conda provides unrelated
-dependencies.
+Current keyed-storage consumer builds use BG from
+`/home/abalabin/_bg/.lanes/schema-metadata/build/install/release` for Release
+(Arrow on and off) and
+`/home/abalabin/_bg/.lanes/schema-metadata/build/install/debug` for Debug
+(Arrow on). Older BG installs and dependency caches under
+`extensions/frame/build/dependencies/` remain on disk but are not used for this
+verification. Conda supplies Arrow and other unrelated dependencies.
 
 The Debug dependency build cache is `dependencies/bg-debug`; it is generated
 and untracked. The Release cache is
@@ -512,6 +511,63 @@ Frame output layout options remain extension-owned.
 The shared numeric function extraction remains held. The arithmetic implementation is
 described above. Other numeric operators, explicit column conversion, and
 expression-based filtering remain later work.
+
+## Key metadata and native keyed storage
+
+The active frame lane includes `8ab0b121` (`Add shared schema metadata`) and
+the BG process-lifetime storage fix `97f37b55`.
+`bg::frame::key_metadata<...>()` records an ordered list of key column names in
+schema metadata under `bg.frame.key`; concrete and runtime schemas use the same
+representation. Key fields must have `i64` cell types; `double` remains
+supported for non-key columns. Schema validation checks key names and types across inherited
+schemas, rejects changes to inherited keys, and requires a keyed parameter to
+match the argument's key metadata. An unkeyed parameter can match an otherwise
+compatible keyed schema.
+
+Native `TSF` storage keeps a live key-to-row-ID index. It rejects duplicate
+live keys and changes to key columns. Null key cells are supported, including
+in composite keys. Removal retains the removed key tuple through the removal
+cycle. If the key is re-added during that cycle, the new live row gets a new
+row ID while the removed row's key and ID remain available in the delta.
+`find_key()` and `removed_key()` are storage APIs, not node-facing APIs.
+
+`FrameView(columns, size, source)` is an extension-facing trusted binding
+constructor. Its caller must provide columns from storage whose schema and key
+invariants are already established. Raw scalar construction and Arrow import
+do not yet validate key uniqueness. Node-facing key lookup, keyed view behavior,
+and TSF/TSC row literal and capture behavior remain open.
+
+The native keyed-storage test target builds in Release with Arrow disabled:
+
+```sh
+conda run --no-capture-output -n bg-build cmake --build build/cc4-checkpoint-off \
+  --target bg_frame_frame_test -j12
+```
+
+Focused tests cover allocation rollback for keyed insertion and removal-key
+retention, including retry after failure. The Arrow-off Release suite passes
+5/5 tests in `build/cc4-checkpoint-off`. The Arrow-on Release suite passes
+6/6 tests in `build/field-access-on`. Both use BG from
+`/home/abalabin/_bg/.lanes/schema-metadata/build/install/release`.
+
+The matching Arrow-on Debug/ASan build in `build/cc4-lifetime` passes all 6
+tests with no ASan or UBSan diagnostics. It uses BG from
+`/home/abalabin/_bg/.lanes/schema-metadata/build/install/debug`. The build uses
+`-fsanitize=address,undefined -fno-omit-frame-pointer`; CTest ran with
+`ASAN_OPTIONS=detect_leaks=0` and
+`UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1`.
+
+The earlier shutdown abort occurred when `SchemaMetadata` released a
+`ScalarValue<List<string>>` after its runtime type had been destroyed. GDB
+showed `__cxa_pure_virtual` from `bg::details::release_scalar_value` while
+`TypeRegistry` destroyed a schema. The user chose process-lifetime ownership
+for registered types, canonical runtime descriptors, and schema metadata;
+ordinary node and scalar values keep normal destruction. The frame lane uses
+`bg::util::static_storage<T>` for its canonical runtime and layout cache owner,
+typed column runtime statics, FrameView scalar and mixed-view runtimes, and
+Arrow runtime cache owner. The updated Release Arrow-on and Arrow-off consumer
+processes exit cleanly, and all 11 tests pass. The matching Debug/ASan consumer
+process also exits cleanly; all 6 tests pass without sanitizer diagnostics.
 
 Previous-value subscriptions, strings and symbols, compaction, capacity
 trimming, and delta transport remain later work. Previous-cell capture, if

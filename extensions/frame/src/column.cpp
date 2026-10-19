@@ -4,6 +4,7 @@
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 #include <bg/util/symbol.hpp>
 
 #include <cstdint>
@@ -141,10 +142,11 @@ const bg::frame::ColumnSeriesType &ordinary_column_series_type() {
 
 template <bg::frame::cell_type T>
 const NativeColumnSeriesRuntimeType<T> &ordinary_column_series_runtime_type(const bg::TimeSeriesType &type) {
-    static const auto runtime = NativeColumnSeriesRuntimeType<T>{type};
-    if (std::addressof(runtime.type()) != std::addressof(type))
+    static bg::util::static_storage<NativeColumnSeriesRuntimeType<T>> runtime{type};
+    const auto &runtime_value = runtime.get();
+    if (std::addressof(runtime_value.type()) != std::addressof(type))
         throw std::logic_error{"frame TSC runtime was requested for a non-canonical type"};
-    return runtime;
+    return runtime_value;
 }
 
 template <bg::frame::cell_type T>
@@ -154,22 +156,23 @@ const NativeColumnSeriesRuntimeType<T> &ordinary_column_series_runtime_type() {
 
 template <bg::frame::cell_type T>
 const ColumnViewSeriesRuntimeType<T> &column_view_series_runtime_type() {
-    static const auto runtime = ColumnViewSeriesRuntimeType<T>{ordinary_column_series_type<T>()};
-    return runtime;
+    static bg::util::static_storage<ColumnViewSeriesRuntimeType<T>> runtime{ordinary_column_series_type<T>()};
+    return runtime.get();
 }
 
 template <bg::frame::cell_type T>
 const ColumnBindingViewSeriesRuntimeType<T> &column_binding_view_series_runtime_type() {
-    static const auto runtime = ColumnBindingViewSeriesRuntimeType<T>{ordinary_column_series_type<T>()};
-    return runtime;
+    static bg::util::static_storage<ColumnBindingViewSeriesRuntimeType<T>> runtime{ordinary_column_series_type<T>()};
+    return runtime.get();
 }
 
 template <bg::frame::cell_type T>
 const ComputedColumnSeriesRuntimeType<T> &computed_column_series_runtime_type(const bg::TimeSeriesType &type) {
-    static const auto runtime = ComputedColumnSeriesRuntimeType<T>{type};
-    if (std::addressof(runtime.type()) != std::addressof(type))
+    static bg::util::static_storage<ComputedColumnSeriesRuntimeType<T>> runtime{type};
+    const auto &runtime_value = runtime.get();
+    if (std::addressof(runtime_value.type()) != std::addressof(type))
         throw std::logic_error{"computed TSC runtime was requested for a non-canonical type"};
-    return runtime;
+    return runtime_value;
 }
 
 void register_column_series_default_runtime(const bg::TimeSeriesType &type) {

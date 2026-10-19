@@ -1,4 +1,5 @@
 #include <bg/frame/frame.hpp>
+#include <bg/util/static_storage.hpp>
 #include <bg/frame/tsc.hpp>
 #include <bg/frame/literal.hpp>
 #include <bg/type/type_registry.hpp>
@@ -48,20 +49,67 @@ FrameSeriesKey frame_series_key(const SchemaType &schema, const GuaranteeParamet
     throw std::invalid_argument{"a frame time series requires a guarantee"};
 }
 
-auto canonical_series_runtime_mutex = std::mutex{};
-auto native_frame_layout_mutex = std::mutex{};
-auto canonical_series_runtimes =
-    std::unordered_map<const TimeSeriesType *, std::unique_ptr<TimeSeriesRuntimeType>>{};
-auto canonical_series_scalar_runtimes =
-    std::unordered_map<const FrameSeriesRuntimeType *, std::unique_ptr<ScalarRuntimeType>>{};
-auto canonical_snapshot_runtimes =
-    std::unordered_map<const ScalarType *, std::unique_ptr<ScalarRuntimeType>>{};
-auto native_frame_layouts = std::unordered_map<const SchemaType *, std::unique_ptr<details::NativeFrameLayout>>{};
+constexpr auto frame_key_metadata_name = std::string_view{"bg.frame.key"};
+
+std::vector<std::size_t> frame_key_fields(const bg::Schema &schema) {
+    const auto *metadata = schema.metadata().find(frame_key_metadata_name);
+    if (metadata == nullptr)
+        return {};
+    if (std::addressof(metadata->type()) != std::addressof(cpp_scalar_type<bg::List<bg::string>>()))
+        throw std::invalid_argument{"frame key metadata must be a List<string>"};
+
+    const auto names = bg::Scalar<bg::List<bg::string>>::from(metadata->runtime_type(), metadata->data());
+    if (names.empty())
+        throw std::invalid_argument{"frame key metadata must name at least one column"};
+
+    auto result = std::vector<std::size_t>{};
+    result.reserve(names.size());
+    for (auto index = std::size_t{}; index != names.size(); ++index) {
+        const auto name = names[index].value();
+        if (name.empty())
+            throw std::invalid_argument{"frame key metadata contains an empty column name"};
+        const auto *field = schema.find(util::symbol{name});
+        if (field == nullptr)
+            throw std::invalid_argument{"frame key metadata names a missing column"};
+        if (field->type->is_resolved() && field->type != std::addressof(cpp_scalar_type<bg::i64>()))
+            throw std::invalid_argument{"frame key columns must have i64 cell types"};
+
+        const auto field_index = static_cast<std::size_t>(field - schema.fields().data());
+        if (std::ranges::find(result, field_index) != result.end())
+            throw std::invalid_argument{"frame key metadata names a column more than once"};
+        result.push_back(field_index);
+    }
+    return result;
+}
+
+struct FrameRuntimeCache {
+    std::mutex series_mutex;
+    std::mutex layout_mutex;
+    std::unordered_map<const TimeSeriesType *, std::unique_ptr<TimeSeriesRuntimeType>> series_runtimes;
+    std::unordered_map<const FrameSeriesRuntimeType *, std::unique_ptr<ScalarRuntimeType>> series_scalar_runtimes;
+    std::unordered_map<const ScalarType *, std::unique_ptr<ScalarRuntimeType>> snapshot_runtimes;
+    std::unordered_map<const SchemaType *, std::unique_ptr<details::NativeFrameLayout>> layouts;
+};
+
+FrameRuntimeCache &frame_runtime_cache() {
+    static util::static_storage<FrameRuntimeCache> cache;
+    return cache.get();
+}
 
 void validate_frame_schema(const SchemaType &schema) {
     const auto *concrete = dynamic_cast<const Schema *>(std::addressof(schema));
     if (concrete == nullptr)
         return;
+    for (auto current = concrete; current != nullptr; current = current->base()) {
+        static_cast<void>(frame_key_fields(*current));
+        if (current->base() == nullptr)
+            continue;
+
+        const auto *base_key = current->base()->metadata().find(frame_key_metadata_name);
+        const auto *direct_key = current->direct_metadata().find(frame_key_metadata_name);
+        if (base_key != nullptr && direct_key != nullptr && !base_key->equals(*direct_key))
+            throw std::invalid_argument{"a derived frame schema cannot change its inherited key"};
+    }
     for (const auto &field : concrete->fields()) {
         if (field.optional)
             throw std::invalid_argument{"frame schema columns must be present"};
@@ -75,6 +123,11 @@ bool frame_schema_matches(const SchemaType &parameter, const SchemaType &argumen
     const auto *parameter_schema = dynamic_cast<const Schema *>(std::addressof(parameter));
     const auto *argument_schema = dynamic_cast<const Schema *>(std::addressof(argument));
     if (parameter_schema != nullptr && argument_schema != nullptr) {
+        const auto *parameter_key = parameter_schema->metadata().find(frame_key_metadata_name);
+        const auto *argument_key = argument_schema->metadata().find(frame_key_metadata_name);
+        if (parameter_key != nullptr && (argument_key == nullptr || !parameter_key->equals(*argument_key)))
+            return false;
+
         if (parameter_schema->named() && argument_schema->named() &&
             !argument_schema->derives_from(*parameter_schema))
             return false;
@@ -95,10 +148,12 @@ bool frame_schema_matches(const SchemaType &parameter, const SchemaType &argumen
 } // namespace
 
 const details::NativeFrameLayout &details::native_frame_layout(const SchemaType &schema) {
-    const auto lock = std::lock_guard{native_frame_layout_mutex};
-    if (const auto found = native_frame_layouts.find(std::addressof(schema)); found != native_frame_layouts.end())
+    auto &cache = frame_runtime_cache();
+    const auto lock = std::lock_guard{cache.layout_mutex};
+    if (const auto found = cache.layouts.find(std::addressof(schema)); found != cache.layouts.end())
         return *found->second;
 
+    validate_frame_schema(schema);
     const auto *concrete = dynamic_cast<const bg::Schema *>(std::addressof(schema));
     if (concrete == nullptr || !concrete->is_resolved())
         throw std::invalid_argument{"TSF native storage requires a resolved BG schema"};
@@ -107,6 +162,7 @@ const details::NativeFrameLayout &details::native_frame_layout(const SchemaType 
     layout->schema = concrete;
     layout->alignment = alignof(NativeFrameStorage);
     auto offset = sizeof(NativeFrameStorage);
+    layout->key_fields = frame_key_fields(*concrete);
     for (const auto &schema_field : concrete->fields()) {
         if (schema_field.optional)
             throw std::invalid_argument{"frame schema columns must be present"};
@@ -129,9 +185,16 @@ const details::NativeFrameLayout &details::native_frame_layout(const SchemaType 
         offset += field.column_storage_size;
         layout->fields.push_back(field);
     }
+    if (!layout->key_fields.empty()) {
+        const auto alignment = alignof(NativeFrameKeyState);
+        layout->alignment = std::max(layout->alignment, alignment);
+        offset = (offset + alignment - 1) / alignment * alignment;
+        layout->key_state_offset = offset;
+        offset += sizeof(NativeFrameKeyState);
+    }
     layout->size = (offset + layout->alignment - 1) / layout->alignment * layout->alignment;
     const auto *result = layout.get();
-    native_frame_layouts.emplace(std::addressof(schema), std::move(layout));
+    cache.layouts.emplace(std::addressof(schema), std::move(layout));
     return *result;
 }
 
@@ -240,9 +303,10 @@ namespace details {
 
 const TimeSeriesRuntimeType &canonical_frame_series_runtime_type(const TimeSeriesType &type,
                                                                  frame_series_runtime_factory factory) {
-    const auto lock = std::lock_guard{canonical_series_runtime_mutex};
+    auto &cache = frame_runtime_cache();
+    const auto lock = std::lock_guard{cache.series_mutex};
     const auto *key = std::addressof(type);
-    if (const auto entry = canonical_series_runtimes.find(key); entry != canonical_series_runtimes.end()) {
+    if (const auto entry = cache.series_runtimes.find(key); entry != cache.series_runtimes.end()) {
         if (&entry->second->type() != &type)
             throw std::logic_error{"frame runtime requested for a non-canonical schema type"};
         return *entry->second;
@@ -250,7 +314,7 @@ const TimeSeriesRuntimeType &canonical_frame_series_runtime_type(const TimeSerie
 
     auto runtime = factory(type);
     const auto *result = runtime.get();
-    canonical_series_runtimes.emplace(key, std::move(runtime));
+    cache.series_runtimes.emplace(key, std::move(runtime));
     return *result;
 }
 
@@ -263,16 +327,16 @@ const ScalarRuntimeType &frame_series_scalar_runtime_type(const FrameSeriesRunti
 
     if (const auto *cached = runtime.cached_scalar_runtime_type(); cached != nullptr)
         return *cached;
-    const auto lock = std::lock_guard{canonical_series_runtime_mutex};
+    auto &cache = frame_runtime_cache();
+    const auto lock = std::lock_guard{cache.series_mutex};
     const auto *key = std::addressof(runtime);
-    if (const auto found = canonical_series_scalar_runtimes.find(key);
-        found != canonical_series_scalar_runtimes.end()) {
+    if (const auto found = cache.series_scalar_runtimes.find(key); found != cache.series_scalar_runtimes.end()) {
         runtime.cache_scalar_runtime_type(*found->second);
         return *found->second;
     }
     auto scalar_runtime = std::make_unique<details::FrameSeriesScalarRuntimeType>(runtime, snapshot_type);
     const auto *result = scalar_runtime.get();
-    canonical_series_scalar_runtimes.emplace(key, std::move(scalar_runtime));
+    cache.series_scalar_runtimes.emplace(key, std::move(scalar_runtime));
     runtime.cache_scalar_runtime_type(*result);
     return *result;
 }
@@ -280,14 +344,15 @@ const ScalarRuntimeType &frame_series_scalar_runtime_type(const FrameSeriesRunti
 const ScalarRuntimeType &frame_snapshot_runtime_type(const FrameType &type) {
     if (!type.is_resolved())
         throw std::invalid_argument{"frame snapshot runtime requires a resolved frame scalar type"};
-    const auto lock = std::lock_guard{canonical_series_runtime_mutex};
+    auto &cache = frame_runtime_cache();
+    const auto lock = std::lock_guard{cache.series_mutex};
     const auto *key = std::addressof(type);
-    if (const auto found = canonical_snapshot_runtimes.find(key); found != canonical_snapshot_runtimes.end())
+    if (const auto found = cache.snapshot_runtimes.find(key); found != cache.snapshot_runtimes.end())
         return *found->second;
     auto scalar_runtime = std::make_unique<details::FrameSnapshotRuntimeType>(type);
     const auto *result = scalar_runtime.get();
-    const auto entry = canonical_snapshot_runtimes.emplace(key, std::move(scalar_runtime)).first;
-    auto rollback = util::scope_exit{[&]() noexcept { canonical_snapshot_runtimes.erase(entry); }};
+    const auto entry = cache.snapshot_runtimes.emplace(key, std::move(scalar_runtime)).first;
+    auto rollback = util::scope_exit{[&]() noexcept { cache.snapshot_runtimes.erase(entry); }};
     register_scalar_runtime_type(*result);
     rollback.release();
     return *result;

@@ -17,6 +17,7 @@
 #include <bg/type/fixed_item_time_series_type.hpp>
 #include <bg/type/type_registry.hpp>
 #include <bg/type/type_map.hpp>
+#include <bg/type/schema_metadata_values.hpp>
 #include <bg/node/output_declaration_traits.hpp>
 #include <bg/schema/reflection.hpp>
 #include <bg/scalar/bundle/scalar_type.hpp>
@@ -24,7 +25,9 @@
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/util/compile_time_string.hpp>
 #include <bg/util/contiguous_bunch.hpp>
+#include <bg/util/hash_dictionary.hpp>
 #include <bg/util/reflection.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <algorithm>
 #include <array>
@@ -48,6 +51,16 @@
 #include <vector>
 
 namespace bg::frame {
+
+// Erased key cells are used only by extension storage operations and retained removal deltas.
+using KeyValue = std::variant<std::monostate, i64>;
+
+template <util::compile_time_string... Names> bg::SchemaMetadata key_metadata() {
+    static_assert(sizeof...(Names) != 0, "a frame key must name at least one column");
+    auto names = std::array<std::string_view, sizeof...(Names)>{Names.view()...};
+    auto value = bg::ScalarValue<bg::List<bg::string>>{names};
+    return bg::make_schema_metadata({bg::schema_metadata_entry("bg.frame.key", value)});
+}
 
 template <typename T> class Cell {
   public:
@@ -168,6 +181,8 @@ using frame_series_runtime_factory = std::unique_ptr<TimeSeriesRuntimeType> (*)(
 const TimeSeriesRuntimeType &canonical_frame_series_runtime_type(const TimeSeriesType &type,
                                                                  frame_series_runtime_factory factory);
 
+inline constexpr auto null_key_hash = std::size_t{0x9e3779b9};
+
 struct NativeFrameFieldLayout {
     using add_function = void (*)(void *, NativeRows &, row_id_t, const void *, allocator);
     using set_function = void (*)(void *, NativeRows &, row_id_t, const void *, allocator);
@@ -194,6 +209,14 @@ struct NativeFrameFieldLayout {
     using release_snapshot_column_function = void (*)(void *);
     using release_snapshot_storage_function = void (*)(void *, allocator);
     using install_snapshot_column_function = void (*)(void *, void *);
+    using hash_key_value_function = std::size_t (*)(const void *) noexcept;
+    using hash_row_key_function = std::size_t (*)(const void *, const NativeRows &, row_id_t) noexcept;
+    using equal_row_key_function = bool (*)(const void *, const NativeRows &, row_id_t, const void *) noexcept;
+    using append_row_key_function = void (*)(const void *, const NativeRows &, row_id_t,
+                                              std::pmr::vector<KeyValue> &);
+    using hash_erased_key_function = std::size_t (*)(const KeyValue &);
+    using equal_erased_row_key_function = bool (*)(const void *, const NativeRows &, row_id_t,
+                                                   const KeyValue &);
 
     const ScalarType *cell_type{};
     const TimeSeriesRuntimeType *column_runtime{};
@@ -228,6 +251,12 @@ struct NativeFrameFieldLayout {
     release_snapshot_column_function release_snapshot_column{};
     release_snapshot_storage_function release_snapshot_storage{};
     install_snapshot_column_function install_snapshot_column{};
+    hash_key_value_function hash_key_value{};
+    hash_row_key_function hash_row_key{};
+    equal_row_key_function equal_row_key{};
+    append_row_key_function append_row_key{};
+    hash_erased_key_function hash_erased_key{};
+    equal_erased_row_key_function equal_erased_row_key{};
 };
 
 struct NativeFrameCellPatch {
@@ -240,6 +269,22 @@ struct NativeFrameLayout {
     std::size_t size{};
     std::size_t alignment{};
     std::vector<NativeFrameFieldLayout> fields;
+    std::vector<std::size_t> key_fields;
+    std::size_t key_state_offset{std::numeric_limits<std::size_t>::max()};
+};
+
+struct NativeFrameKeyState {
+    using KeyTuple = std::pmr::vector<KeyValue>;
+
+    util::hash_dictionary<row_id_t, row_id_t> live_rows;
+    util::hash_dictionary<row_id_t, KeyTuple> removed_rows;
+
+    void release(allocator memory) noexcept {
+        live_rows.release(memory.memory_resource());
+        removed_rows.release_with(memory.memory_resource(), [](row_id_t *) noexcept {}, [](KeyTuple *key) noexcept {
+            key->~KeyTuple();
+        });
+    }
 };
 
 const NativeFrameLayout &native_frame_layout(const SchemaType &schema);
@@ -1016,8 +1061,8 @@ class FrameViewScalarRuntimeType final : public FrameScalarRuntimeType {
 
 template <template <template <typename, auto...> typename> typename Schema>
 const FrameViewScalarRuntimeType<Schema> &frame_view_scalar_runtime_type() {
-    static const auto runtime = FrameViewScalarRuntimeType<Schema>{};
-    return runtime;
+    static bg::util::static_storage<FrameViewScalarRuntimeType<Schema>> runtime;
+    return runtime.get();
 }
 
 } // namespace details
@@ -1031,6 +1076,8 @@ class NativeFrameStorage {
     void initialize(const details::NativeFrameLayout &layout) noexcept {
         layout_ = std::addressof(layout);
         auto *bytes = reinterpret_cast<std::byte *>(this);
+        if (!layout.key_fields.empty())
+            std::construct_at(std::addressof(key_state()));
         for (const auto &field : layout.fields) {
             field.construct(bytes + field.native_offset);
             std::construct_at(reinterpret_cast<TimeSeriesState *>(bytes + field.child_state_offset));
@@ -1051,6 +1098,30 @@ class NativeFrameStorage {
     const util::index<> &changed_columns() const noexcept { return changed_columns_; }
     const util::index<> &changed() const noexcept { return changed_; }
 
+    std::optional<row_id_t> find_key(std::span<const KeyValue> key) const {
+        if (key.size() != layout_->key_fields.size())
+            throw std::invalid_argument{"frame key width does not match its schema"};
+        if (key.empty())
+            return std::nullopt;
+
+        const auto hash = hash_key(key);
+        const auto *found = key_state().live_rows.find_with(hash, [&](row_id_t id) {
+            return key_matches_row(id, key);
+        });
+        if (found == nullptr)
+            return std::nullopt;
+        return *found;
+    }
+
+    std::span<const KeyValue> removed_key(row_id_t id) const noexcept {
+        if (layout_->key_fields.empty())
+            return {};
+        const auto *key = key_state().removed_rows.find(id);
+        if (key == nullptr)
+            return {};
+        return *key;
+    }
+
     void *native_field(std::size_t index) noexcept {
         return reinterpret_cast<std::byte *>(this) + layout_->fields[index].native_offset;
     }
@@ -1070,19 +1141,39 @@ class NativeFrameStorage {
     row_id_t add(std::span<const void *const> values, EvaluationTime time, allocator memory) {
         if (values.size() != layout_->fields.size())
             throw std::invalid_argument{"frame row field count does not match its schema"};
+        const auto key_hash = layout_->key_fields.empty() ? std::size_t{} : hash_row_values(values);
         reserve_changed_columns(memory);
-        begin_cycle(time);
+        begin_cycle(time, memory);
         const auto id = rows_.add(time, memory);
         const auto slot = rows_.slot_of(id);
+        auto indexed = false;
+        auto added_fields = std::size_t{};
         auto rollback = util::scope_exit{[&]() noexcept {
-            for (std::size_t index = 0; index != layout_->fields.size(); ++index)
+            if (indexed)
+                key_state().live_rows.erase_with(key_hash, [id](row_id_t candidate) { return candidate == id; },
+                                                 memory.memory_resource(), [](row_id_t *) noexcept {},
+                                                 [](row_id_t *) noexcept {});
+            for (std::size_t index = 0; index != added_fields; ++index)
                 layout_->fields[index].erase(native_field(index), slot, id, memory);
             changed_.reset(id);
             rows_.rollback_add(id);
         }};
         changed_.set(id, memory.memory_resource());
-        for (std::size_t index = 0; index != layout_->fields.size(); ++index)
+        if (!layout_->key_fields.empty()) {
+            const auto [stored_id, inserted] = key_state().live_rows.try_emplace_with(
+                key_hash, [&](row_id_t candidate) { return key_matches_row_values(candidate, values); },
+                memory.memory_resource(), [id](row_id_t *destination) { std::construct_at(destination, id); },
+                [](row_id_t *value) noexcept { std::destroy_at(value); },
+                [id](row_id_t *destination) { std::construct_at(destination, id); });
+            if (!inserted)
+                throw std::invalid_argument{"frame key is not unique"};
+            indexed = true;
+            static_cast<void>(stored_id);
+        }
+        for (std::size_t index = 0; index != layout_->fields.size(); ++index) {
             layout_->fields[index].add(native_field(index), rows_, id, values[index], memory);
+            ++added_fields;
+        }
         publish_all_columns(time, memory);
         valid_ = true;
         bind_column_storage();
@@ -1096,8 +1187,9 @@ class NativeFrameStorage {
             throw std::invalid_argument{"frame patch field count does not match its schema"};
         if (!rows_.contains(id))
             throw std::out_of_range{"frame row ID"};
+        validate_key_patch(id, patches);
         reserve_changed_columns(memory);
-        begin_cycle(time);
+        begin_cycle(time, memory);
         const auto has_change = std::ranges::any_of(patches, &details::NativeFrameCellPatch::changed);
         if (!has_change)
             return false;
@@ -1123,24 +1215,18 @@ class NativeFrameStorage {
 
     bool erase(row_id_t id, EvaluationTime time, allocator memory) {
         reserve_changed_columns(memory);
-        begin_cycle(time);
-        if (!rows_.contains(id))
+        begin_cycle(time, memory);
+        if (!erase_row(id, time, memory))
             return false;
-        const auto slot = rows_.slot_of(id);
-        if (!rows_.erase(id, time, memory))
-            return false;
-        for (std::size_t index = 0; index != layout_->fields.size(); ++index)
-            layout_->fields[index].erase(native_field(index), slot, id, memory);
         publish_all_columns(time, memory);
         valid_ = true;
-        changed_.reset(id);
         bind_column_storage();
         return true;
     }
 
     void clear(EvaluationTime time, allocator memory) {
         reserve_changed_columns(memory);
-        begin_cycle(time);
+        begin_cycle(time, memory);
         const auto was_valid = valid_;
         auto removed_rows = false;
         auto slot_iterator = rows_.live_slots().begin();
@@ -1148,11 +1234,8 @@ class NativeFrameStorage {
             const auto slot = *slot_iterator;
             ++slot_iterator;
             const auto id = rows_.id_at_slot(slot);
-            if (!rows_.erase(id, time, memory))
+            if (!erase_row(id, time, memory))
                 std::terminate();
-            for (std::size_t index = 0; index != layout_->fields.size(); ++index)
-                layout_->fields[index].erase(native_field(index), slot, id, memory);
-            changed_.reset(id);
             removed_rows = true;
         }
         if (!was_valid || removed_rows)
@@ -1173,6 +1256,10 @@ class NativeFrameStorage {
         for (const auto &field : layout_->fields)
             field.release(bytes + field.native_offset, memory);
         rows_.release(memory);
+        if (!layout_->key_fields.empty()) {
+            key_state().release(memory);
+            std::destroy_at(std::addressof(key_state()));
+        }
         changed_.release(memory.memory_resource());
         changed_columns_.release(memory.memory_resource());
         for (const auto &field : layout_->fields) {
@@ -1195,6 +1282,120 @@ class NativeFrameStorage {
     }
 
   private:
+    bool erase_row(row_id_t id, EvaluationTime time, allocator memory) {
+        if (!rows_.contains(id))
+            return false;
+        const auto slot = rows_.slot_of(id);
+        const auto key_hash = layout_->key_fields.empty() ? std::size_t{} : hash_row(id);
+        auto retained_key = false;
+        if (!layout_->key_fields.empty() && !rows_.added().contains(id)) {
+            auto [key, inserted] = key_state().removed_rows.try_emplace(
+                id, memory.memory_resource(),
+                std::pmr::polymorphic_allocator<KeyValue>{std::addressof(memory.memory_resource())});
+            if (!inserted)
+                throw std::logic_error{"removed frame key is already retained"};
+            auto remove_partial_key = util::scope_exit{
+                [&]() noexcept { key_state().removed_rows.erase(id, memory.memory_resource()); }};
+            key->reserve(layout_->key_fields.size());
+            append_row_key(id, *key);
+            retained_key = true;
+            remove_partial_key.release();
+        }
+        auto remove_retained_key = util::scope_exit{[&]() noexcept {
+            if (retained_key)
+                key_state().removed_rows.erase(id, memory.memory_resource());
+        }};
+        if (!rows_.erase(id, time, memory))
+            return false;
+        if (!layout_->key_fields.empty()) {
+            const auto erased = key_state().live_rows.erase_with(
+                key_hash, [id](row_id_t candidate) { return candidate == id; }, memory.memory_resource(),
+                [](row_id_t *) noexcept {}, [](row_id_t *) noexcept {});
+            if (!erased)
+                std::terminate();
+        }
+        for (std::size_t index = 0; index != layout_->fields.size(); ++index)
+            layout_->fields[index].erase(native_field(index), slot, id, memory);
+        changed_.reset(id);
+        remove_retained_key.release();
+        return true;
+    }
+    details::NativeFrameKeyState &key_state() noexcept {
+        return *reinterpret_cast<details::NativeFrameKeyState *>(
+            reinterpret_cast<std::byte *>(this) + layout_->key_state_offset);
+    }
+
+    const details::NativeFrameKeyState &key_state() const noexcept {
+        return *reinterpret_cast<const details::NativeFrameKeyState *>(
+            reinterpret_cast<const std::byte *>(this) + layout_->key_state_offset);
+    }
+
+    static std::size_t combine_key_hash(std::size_t result, std::size_t value) noexcept {
+        constexpr auto constant = std::size_t{0x9e3779b9};
+        return result ^ (value + constant + (result << 6) + (result >> 2));
+    }
+
+    std::size_t hash_key(std::span<const KeyValue> key) const {
+        auto result = std::size_t{};
+        for (auto index = std::size_t{}; index != layout_->key_fields.size(); ++index) {
+            const auto &field = layout_->fields[layout_->key_fields[index]];
+            result = combine_key_hash(result, field.hash_erased_key(key[index]));
+        }
+        return result;
+    }
+
+    std::size_t hash_row(row_id_t id) const noexcept {
+        auto result = std::size_t{};
+        for (auto index : layout_->key_fields) {
+            const auto &field = layout_->fields[index];
+            result = combine_key_hash(result, field.hash_row_key(native_field(index), rows_, id));
+        }
+        return result;
+    }
+
+    std::size_t hash_row_values(std::span<const void *const> values) const noexcept {
+        auto result = std::size_t{};
+        for (auto index : layout_->key_fields) {
+            const auto &field = layout_->fields[index];
+            result = combine_key_hash(result, field.hash_key_value(values[index]));
+        }
+        return result;
+    }
+
+    bool key_matches_row(row_id_t id, std::span<const KeyValue> key) const {
+        for (auto key_index = std::size_t{}; key_index != layout_->key_fields.size(); ++key_index) {
+            const auto index = layout_->key_fields[key_index];
+            const auto &field = layout_->fields[index];
+            if (!field.equal_erased_row_key(native_field(index), rows_, id, key[key_index]))
+                return false;
+        }
+        return true;
+    }
+
+    bool key_matches_row_values(row_id_t id, std::span<const void *const> values) const noexcept {
+        for (auto index : layout_->key_fields) {
+            const auto &field = layout_->fields[index];
+            if (!field.equal_row_key(native_field(index), rows_, id, values[index]))
+                return false;
+        }
+        return true;
+    }
+
+    void validate_key_patch(row_id_t id, std::span<const details::NativeFrameCellPatch> patches) const {
+        for (auto index : layout_->key_fields) {
+            if (patches[index].changed &&
+                !layout_->fields[index].equal_row_key(native_field(index), rows_, id, patches[index].value))
+                throw std::invalid_argument{"frame key columns are immutable"};
+        }
+    }
+
+    void append_row_key(row_id_t id, std::pmr::vector<KeyValue> &key) const {
+        for (auto index : layout_->key_fields) {
+            const auto &field = layout_->fields[index];
+            field.append_row_key(native_field(index), rows_, id, key);
+        }
+    }
+
     void reserve_changed_columns(allocator memory) {
         if (layout_->fields.size() > std::numeric_limits<util::index<>::size_type>::max())
             throw std::length_error{"frame schema has too many columns"};
@@ -1202,7 +1403,11 @@ class NativeFrameStorage {
                               memory.memory_resource());
     }
 
-    void begin_cycle(EvaluationTime time) {
+    void begin_cycle(EvaluationTime time, allocator memory) {
+        if (rows_.change_time() != time && !layout_->key_fields.empty())
+            key_state().removed_rows.release_with(
+                memory.memory_resource(), [](row_id_t *) noexcept {},
+                [](details::NativeFrameKeyState::KeyTuple *key) noexcept { std::destroy_at(key); });
         if (!rows_.reset_changes(time))
             return;
         changed_.clear();
@@ -1593,7 +1798,7 @@ namespace details {
 
 template <cell_type Cell> NativeFrameFieldLayout make_native_frame_field_layout() {
     const auto &series_type = column_time_series_type<Cell>(TimeSeriesGuarantee::ordinary);
-    return {
+    auto result = NativeFrameFieldLayout{
         .cell_type = std::addressof(cpp_scalar_type<Cell>()),
         .column_runtime = std::addressof(column_view_time_series_runtime_type<Cell>(series_type)),
         .native_size = sizeof(NativeColumnData<Cell>),
@@ -1646,6 +1851,57 @@ template <cell_type Cell> NativeFrameFieldLayout make_native_frame_field_layout(
         .release_snapshot_storage = &release_frame_snapshot_storage<Cell>,
         .install_snapshot_column = &install_frame_snapshot_column<Cell>,
     };
+
+    if constexpr (std::same_as<Cell, i64>) {
+        result.hash_key_value = [](const void *value) noexcept {
+            const auto &cell = *static_cast<const std::optional<Cell> *>(value);
+            return cell ? std::hash<Cell>{}(*cell) : null_key_hash;
+        };
+        result.hash_row_key = [](const void *field, const NativeRows &rows, row_id_t id) noexcept {
+            const auto cell = static_cast<const NativeColumnData<Cell> *>(field)->cell(rows, id);
+            return cell ? std::hash<Cell>{}(*cell) : null_key_hash;
+        };
+        result.equal_row_key = [](const void *field, const NativeRows &rows, row_id_t id,
+                                  const void *value) noexcept {
+            const auto cell = static_cast<const NativeColumnData<Cell> *>(field)->cell(rows, id);
+            const auto &candidate = *static_cast<const std::optional<Cell> *>(value);
+            return cell == candidate;
+        };
+        result.append_row_key = [](const void *field, const NativeRows &rows, row_id_t id,
+                                   std::pmr::vector<KeyValue> &key) {
+            const auto cell = static_cast<const NativeColumnData<Cell> *>(field)->cell(rows, id);
+            if (cell)
+                key.emplace_back(*cell);
+            else
+                key.emplace_back(std::monostate{});
+        };
+        result.hash_erased_key = [](const KeyValue &key) {
+            return std::visit(
+                [](const auto &value) -> std::size_t {
+                    using Value = std::remove_cvref_t<decltype(value)>;
+                    if constexpr (std::same_as<Value, std::monostate>)
+                        return null_key_hash;
+                    else
+                        return std::hash<Value>{}(value);
+                },
+                key);
+        };
+        result.equal_erased_row_key = [](const void *field, const NativeRows &rows, row_id_t id,
+                                         const KeyValue &key) {
+            const auto cell = static_cast<const NativeColumnData<Cell> *>(field)->cell(rows, id);
+            return std::visit(
+                [&](const auto &value) {
+                    using Value = std::remove_cvref_t<decltype(value)>;
+                    if constexpr (std::same_as<Value, std::monostate>)
+                        return !cell.has_value();
+                    else
+                        return cell == value;
+                },
+                key);
+        };
+    }
+
+    return result;
 }
 
 inline NativeFrameFieldLayout native_frame_field_layout(const ScalarType &cell_type) {
@@ -2722,13 +2978,22 @@ const TimeSeriesRuntimeType &frame_view_time_series_runtime_type(const TimeSerie
 
 namespace details {
 
+struct FrameViewRuntimeCache {
+    std::mutex mutex;
+    std::unordered_map<const TimeSeriesType *,
+                       std::vector<std::unique_ptr<RuntimeSchemaFrameViewSeriesRuntimeType>>> runtimes;
+};
+
+inline FrameViewRuntimeCache &frame_view_runtime_cache() {
+    static bg::util::static_storage<FrameViewRuntimeCache> cache;
+    return cache.get();
+}
+
 inline const TimeSeriesRuntimeType &canonical_frame_view_runtime_type(
     const TimeSeriesType &type, std::vector<std::size_t> computed_fields) {
-    static auto mutex = std::mutex{};
-    static auto runtimes = std::unordered_map<
-        const TimeSeriesType *, std::vector<std::unique_ptr<RuntimeSchemaFrameViewSeriesRuntimeType>>>{};
-    const auto lock = std::lock_guard{mutex};
-    auto &candidates = runtimes[std::addressof(type)];
+    auto &cache = frame_view_runtime_cache();
+    const auto lock = std::lock_guard{cache.mutex};
+    auto &candidates = cache.runtimes[std::addressof(type)];
     for (const auto &candidate : candidates)
         if (candidate->computed_fields() == computed_fields) {
             frame_series_scalar_runtime_type(*candidate);

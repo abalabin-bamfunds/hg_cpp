@@ -34,6 +34,57 @@ template <template <typename, auto...> typename Field> struct Quotes {
     Field<double> ask;
 };
 
+template <template <typename, auto...> typename Field> struct KeyedQuotes {
+    Field<i64> id;
+    Field<double> price;
+
+    static bg::SchemaMetadata metadata() { return key_metadata<"id">(); }
+};
+
+template <template <typename, auto...> typename Field> struct CompositeKeyRows {
+    Field<i64> id;
+    Field<i64> sequence;
+    Field<double> price;
+    Field<i64> value;
+
+    static bg::SchemaMetadata metadata() { return key_metadata<"id", "sequence">(); }
+};
+
+template <template <typename, auto...> typename Field> struct OtherKeyedQuotes {
+    Field<i64> id;
+    Field<i64> other_id;
+    Field<double> price;
+
+    static bg::SchemaMetadata metadata() { return key_metadata<"other_id">(); }
+};
+
+template <template <typename, auto...> typename Field> struct KeyedQuotesBase {
+    Field<i64> id;
+    Field<double> price;
+
+    static bg::SchemaMetadata metadata() { return key_metadata<"id">(); }
+};
+
+template <template <typename, auto...> typename Field>
+struct KeyedQuotesDerived : bg::schema_extends<KeyedQuotesBase, Field> {
+    Field<double> bid;
+};
+
+template <template <typename, auto...> typename Field>
+struct ChangedKeyQuotes : bg::schema_extends<KeyedQuotesBase, Field> {
+    Field<i64> other_id;
+    Field<double> bid;
+
+    static bg::SchemaMetadata metadata() { return key_metadata<"other_id">(); }
+};
+
+template <template <typename, auto...> typename Field> struct DoubleKeyQuotes {
+    Field<i64> id;
+    Field<double> price;
+
+    static bg::SchemaMetadata metadata() { return key_metadata<"price">(); }
+};
+
 template <template <typename, auto...> typename Field> struct ReorderedQuotes {
     Field<double> ask;
     Field<i64> size;
@@ -220,6 +271,26 @@ void test_runtime_schema_and_malformed_frame_literals() {
     const auto &runtime = frame_snapshot_runtime_type(frame_type(schema));
     auto memory_resource = FailingResource{};
     auto memory = allocator{memory_resource};
+
+    const auto base_fields = std::array{SchemaField{util::symbol{"id"}, &cpp_scalar_type<i64>()},
+                                        SchemaField{util::symbol{"price"}, &cpp_scalar_type<double>()}};
+    const auto &keyed_base = bg::schema(util::symbol{"RuntimeKeyBase"}, bg::new_runtime_schema_id(), nullptr,
+                                        base_fields, key_metadata<"id">());
+    const auto mid_fields = std::array{SchemaField{util::symbol{"other_id"}, &cpp_scalar_type<i64>()},
+                                     SchemaField{util::symbol{"bid"}, &cpp_scalar_type<double>()}};
+    const auto &changed_key_mid = bg::schema(util::symbol{"RuntimeChangedKeyMid"}, bg::new_runtime_schema_id(),
+                                             std::addressof(keyed_base), mid_fields, key_metadata<"other_id">());
+    const auto leaf_fields = std::array{SchemaField{util::symbol{"ask"}, &cpp_scalar_type<double>()}};
+    const auto &keyed_leaf = bg::schema(util::symbol{"RuntimeKeyLeaf"}, bg::new_runtime_schema_id(),
+                                        std::addressof(changed_key_mid), leaf_fields);
+    auto inherited_key_change_rejected = false;
+    try {
+        static_cast<void>(frame_type(keyed_leaf));
+    } catch (const std::invalid_argument &) {
+        inherited_key_change_rejected = true;
+    }
+    require(inherited_key_change_rejected,
+            "runtime frame schema chain hid an inherited key change behind an intermediate schema");
 
     {
         auto value = ScalarValue<>::from_literal(runtime, {{"price", {12.5, 13.5}}, {"number", {i64{7}, NULL_VALUE}}},
@@ -462,6 +533,236 @@ struct RowTraversalCounter {
                       }};
     }
 };
+
+void test_native_frame_composite_keys() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto resource = FailingResource{};
+    const auto memory = allocator{resource};
+    with_native_storage(frame_schema_type<CompositeKeyRows>(), memory, [&](NativeFrameStorage &storage) {
+        const auto add = [&](std::optional<i64> id, std::optional<i64> sequence, std::optional<double> price, i64 value,
+                             EvaluationTime time) {
+            const auto cell = std::optional<i64>{value};
+            const auto values = std::array<const void *, 4>{std::addressof(id), std::addressof(sequence),
+                                                            std::addressof(price), std::addressof(cell)};
+            return storage.add(values, time, memory);
+        };
+        const auto first_time = MIN_DT + EvaluationTime::duration{1};
+        const auto first = add(std::nullopt, 0, 0.0, 10, first_time);
+
+        const auto first_key = std::array{KeyValue{std::monostate{}}, KeyValue{i64{0}}};
+        require(storage.find_key(first_key) == first,
+                "composite frame key did not match a null and integer component");
+
+        const auto second = add(std::nullopt, 1, 1.0, 20, first_time);
+        require(second != first && storage.find_key(first_key) == first,
+                "composite frame key treated a nullable component as the whole key");
+
+        auto duplicate_rejected = false;
+        try {
+            static_cast<void>(add(std::nullopt, 0, 2.0, 30, first_time));
+        } catch (const std::invalid_argument &) {
+            duplicate_rejected = true;
+        }
+        const auto other_key = std::array{KeyValue{std::monostate{}}, KeyValue{i64{1}}};
+        require(duplicate_rejected && storage.size() == 2 && storage.find_key(first_key) == first &&
+                    storage.find_key(other_key) == second,
+                "duplicate composite key changed rows or damaged key lookup");
+
+        const auto changed_sequence = std::optional<i64>{7};
+        const auto changed_key_patch = std::array<frame::details::NativeFrameCellPatch, 4>{
+            frame::details::NativeFrameCellPatch{},
+            frame::details::NativeFrameCellPatch{.changed = true, .value = std::addressof(changed_sequence)},
+            frame::details::NativeFrameCellPatch{}, frame::details::NativeFrameCellPatch{}};
+        auto key_change_rejected = false;
+        try {
+            static_cast<void>(storage.set(first, changed_key_patch, first_time, memory));
+        } catch (const std::invalid_argument &) {
+            key_change_rejected = true;
+        }
+        const auto id_column = static_cast<const ColumnStorage<i64> *>(storage.column_storage(0));
+        require(key_change_rejected && id_column->native->cell(storage.rows(), first) == std::nullopt &&
+                    storage.find_key(first_key) == first,
+                "rejected key-column update changed row values or damaged key lookup");
+
+        const auto second_time = first_time + EvaluationTime::duration{1};
+        require(storage.erase(first, second_time, memory), "keyed frame row could not be removed");
+        const auto retained = storage.removed_key(first);
+        require(retained.size() == 2 && std::holds_alternative<std::monostate>(retained[0]) &&
+                    std::get<i64>(retained[1]) == 0 && !storage.find_key(first_key),
+                "removed frame row did not retain its key or leave the live lookup");
+
+        const auto replacement = add(std::nullopt, 0, -0.0, 40, second_time);
+        require(replacement != first && storage.find_key(first_key) == replacement &&
+                    storage.removed_key(first).size() == 2 && storage.removed().contains(first) &&
+                    storage.added().contains(replacement),
+                "same-cycle reinsert did not preserve the removed ID and publish a new live ID");
+
+        const auto transient = add(i64{9}, i64{9}, 9.0, 90, second_time);
+        const auto transient_key = std::array{KeyValue{i64{9}}, KeyValue{i64{9}}};
+        require(storage.erase(transient, second_time, memory) && !storage.removed().contains(transient) &&
+                    storage.removed_key(transient).empty() && !storage.find_key(transient_key),
+                "same-cycle add/remove published a removal or retained a transient key");
+
+        storage.clear(second_time + EvaluationTime::duration{1}, memory);
+        require(storage.removed().contains(replacement) && storage.removed_key(replacement).size() == 2 &&
+                    storage.removed_key(first).empty(),
+                "clear did not retain current removals and expire the previous cycle's keys");
+        storage.clear(second_time + EvaluationTime::duration{2}, memory);
+        require(storage.removed_key(replacement).empty(), "removed frame key survived into the next cycle");
+    });
+    require(resource.allocations == resource.deallocations,
+            "native keyed frame storage leaked allocations");
+}
+
+void test_frame_key_schema_validation() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto inherited_change_rejected = false;
+    try {
+        auto frame = NativeFrame<ChangedKeyQuotes>{};
+        static_cast<void>(frame);
+    } catch (const std::invalid_argument &) {
+        inherited_change_rejected = true;
+    }
+    require(inherited_change_rejected,
+            "direct native frame construction accepted an inherited key change");
+
+    auto static_double_key_rejected = false;
+    try {
+        static_cast<void>(frame_type(frame_schema_type<DoubleKeyQuotes>()));
+    } catch (const std::invalid_argument &) {
+        static_double_key_rejected = true;
+    }
+    require(static_double_key_rejected, "static frame schema accepted a double key column");
+
+    auto native_double_key_rejected = false;
+    try {
+        auto frame = NativeFrame<DoubleKeyQuotes>{};
+        static_cast<void>(frame);
+    } catch (const std::invalid_argument &) {
+        native_double_key_rejected = true;
+    }
+    require(native_double_key_rejected, "direct native frame construction accepted a double key column");
+
+    const auto fields = std::array{SchemaField{util::symbol{"id"}, &cpp_scalar_type<i64>()},
+                                  SchemaField{util::symbol{"other_id"}, &cpp_scalar_type<i64>()},
+                                  SchemaField{util::symbol{"price"}, &cpp_scalar_type<double>()}};
+    const auto &unkeyed = anonymous_schema(fields);
+    const auto &unkeyed_type = frame_type(unkeyed);
+    const auto &keyed_runtime = anonymous_schema(fields, key_metadata<"id">());
+    const auto &different_key_runtime = anonymous_schema(fields, key_metadata<"other_id">());
+    const auto &keyed_type = frame_type(keyed_runtime);
+    const auto &different_key_type = frame_type(different_key_runtime);
+    auto unkeyed_parameter = TypeMap{};
+    require(unkeyed_type.match(keyed_type, unkeyed_parameter),
+            "unkeyed frame parameter rejected a keyed frame with matching fields");
+    auto keyed_parameter = TypeMap{};
+    require(!keyed_type.match(unkeyed_type, keyed_parameter),
+            "keyed frame parameter accepted an unkeyed frame schema");
+    auto different_key_parameter = TypeMap{};
+    require(!keyed_type.match(different_key_type, different_key_parameter),
+            "runtime frame schemas with different key metadata matched");
+
+    const auto &double_key_runtime = anonymous_schema(fields, key_metadata<"price">());
+    auto runtime_double_key_rejected = false;
+    try {
+        static_cast<void>(frame_type(double_key_runtime));
+    } catch (const std::invalid_argument &) {
+        runtime_double_key_rejected = true;
+    }
+    require(runtime_double_key_rejected, "runtime frame schema accepted a double key column");
+
+    auto runtime_series_double_key_rejected = false;
+    try {
+        static_cast<void>(frame_series_type(double_key_runtime, TimeSeriesGuarantee::ordinary));
+    } catch (const std::invalid_argument &) {
+        runtime_series_double_key_rejected = true;
+    }
+    require(runtime_series_double_key_rejected, "runtime frame time-series schema accepted a double key column");
+}
+
+void test_native_frame_key_insert_rolls_back() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto failures = std::size_t{};
+    auto succeeded = false;
+    for (auto failure = std::size_t{1}; !succeeded; ++failure) {
+        auto resource = FailingResource{};
+        const auto memory = allocator{resource};
+        resource.fail_at = failure;
+        with_native_storage(frame_schema_type<KeyedQuotes>(), memory, [&](NativeFrameStorage &storage) {
+            const auto id = std::optional<i64>{7};
+            const auto price = std::optional<double>{12.5};
+            const auto values = std::array<const void *, 2>{std::addressof(id), std::addressof(price)};
+            const auto key = std::array{KeyValue{i64{7}}};
+            try {
+                static_cast<void>(storage.add(values, MIN_DT + EvaluationTime::duration{1}, memory));
+                succeeded = true;
+                require(storage.size() == 1 && storage.find_key(key).has_value(),
+                        "keyed frame insert lost a row after allocation retry");
+            } catch (const std::bad_alloc &) {
+                ++failures;
+                require(storage.size() == 0 && !storage.find_key(key) && storage.changed().empty(),
+                        "failed keyed frame insert left a row, key, or row delta behind");
+
+                resource.fail_at = 0;
+                const auto inserted = storage.add(values, MIN_DT + EvaluationTime::duration{2}, memory);
+                require(storage.find_key(key) == inserted,
+                        "keyed frame insert retry found a stale partial key entry");
+            }
+        });
+        require(resource.allocations == resource.deallocations,
+                "keyed frame allocation failure leaked storage");
+    }
+    require(failures != 0, "keyed frame insert allocation retry did not exercise rollback");
+}
+
+void test_native_frame_key_removal_retention_rolls_back() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto failures = std::size_t{};
+    auto succeeded = false;
+    for (auto failure = std::size_t{1}; !succeeded; ++failure) {
+        auto resource = FailingResource{};
+        const auto memory = allocator{resource};
+        with_native_storage(frame_schema_type<KeyedQuotes>(), memory, [&](NativeFrameStorage &storage) {
+            const auto id_value = std::optional<i64>{7};
+            const auto price = std::optional<double>{12.5};
+            const auto values = std::array<const void *, 2>{std::addressof(id_value), std::addressof(price)};
+            const auto id = storage.add(values, MIN_DT + EvaluationTime::duration{1}, memory);
+            const auto key = std::array{KeyValue{i64{7}}};
+            resource.fail_at = resource.attempts + failure;
+
+            try {
+                require(storage.erase(id, MIN_DT + EvaluationTime::duration{2}, memory),
+                        "keyed frame row could not be removed during allocation retry");
+                succeeded = true;
+            } catch (const std::bad_alloc &) {
+                ++failures;
+                require(storage.rows().contains(id) && !storage.removed().contains(id) &&
+                            storage.removed_key(id).empty() && storage.find_key(key) == id,
+                        "failed key retention changed row membership or key lookup");
+
+                resource.fail_at = 0;
+                require(storage.erase(id, MIN_DT + EvaluationTime::duration{2}, memory) &&
+                            storage.removed().contains(id) && storage.removed_key(id).size() == 1,
+                        "key removal retry failed after retention allocation rollback");
+            }
+            if (succeeded)
+                require(!storage.rows().contains(id) && storage.removed().contains(id) &&
+                            storage.removed_key(id).size() == 1,
+                        "successful key removal did not retain its delta key");
+        });
+        require(resource.allocations == resource.deallocations,
+                "key retention allocation failure leaked frame storage");
+    }
+    require(failures != 0, "key retention allocation retry did not exercise rollback");
+}
 
 void test_runtime_native_storage_mixed_and_zero_column_schemas() {
     using namespace bg;
@@ -5232,6 +5533,10 @@ int main() {
         test_runtime_schema_and_malformed_frame_literals();
         test_frame_literals_as_ordinary_time_series_inputs();
         test_base_and_derived_frame_equality();
+        test_frame_key_schema_validation();
+        test_native_frame_composite_keys();
+        test_native_frame_key_insert_rolls_back();
+        test_native_frame_key_removal_retention_rolls_back();
         test_runtime_native_storage_mixed_and_zero_column_schemas();
         test_native_storage_validates_row_and_patch_shape_before_mutation();
         test_native_storage_changed_columns_beyond_inline_capacity();

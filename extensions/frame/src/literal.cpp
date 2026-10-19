@@ -5,6 +5,7 @@
 #include <bg/frame/tsc.hpp>
 #include <bg/scalar/data.hpp>
 #include <bg/scalar/details/value_access.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <algorithm>
 #include <mutex>
@@ -18,7 +19,10 @@ const literal::Sentinel NULL_VALUE{symbol{"frame.null"}};
 
 namespace {
 
-auto literal_registration_mutex = std::mutex{};
+std::mutex &literal_registration_mutex() {
+    static bg::util::static_storage<std::mutex> mutex;
+    return mutex.get();
+}
 
 template <cell_type T> std::optional<T> read_cell(const literal::ScalarLiteral &value) {
     auto result = std::optional<T>{};
@@ -167,19 +171,19 @@ void construct_frame_literal(const literal::ScalarLiteral &literal, const Scalar
 namespace details {
 
 void register_column_literal_type(const ScalarType &type) {
-    const auto lock = std::lock_guard{literal_registration_mutex};
+    const auto lock = std::lock_guard{literal_registration_mutex()};
     static_cast<void>(ScalarDispatch<ScalarLiteralOperations>::instance().add(
         type, ScalarLiteralOperations{&construct_column_literal}));
 }
 
 void register_frame_literal_type(const ScalarType &type) {
-    const auto lock = std::lock_guard{literal_registration_mutex};
+    const auto lock = std::lock_guard{literal_registration_mutex()};
     static_cast<void>(ScalarDispatch<ScalarLiteralOperations>::instance().add(
         type, ScalarLiteralOperations{&construct_frame_literal}));
 }
 
 void register_literal_runtime(const ScalarRuntimeType &runtime, ScalarLiteralOperations operations) {
-    const auto lock = std::lock_guard{literal_registration_mutex};
+    const auto lock = std::lock_guard{literal_registration_mutex()};
     static_cast<void>(ScalarDispatch<ScalarLiteralOperations>::instance().add(runtime, operations));
 }
 

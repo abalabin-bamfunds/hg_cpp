@@ -41,6 +41,15 @@ removal cycle while the removed row ID remains reserved. Physical slot mappings
 retain storage based on peak occupancy. Compaction and capacity trimming are
 not implemented yet.
 
+Schemas can declare an ordered key with `bg::frame::key_metadata<...>()`.
+Key columns must have `i64` cells; `double` columns remain supported as data.
+Native TSF storage rejects duplicate live keys and changes to key columns. Key
+values may be null, including in composite keys. A removed row's key remains
+available through its removal cycle; removing and re-adding the same key in one
+cycle creates a new live row while preserving the removed row's key and ID in
+the removal delta. This behavior is implemented in native TSF storage. Key
+validation at raw scalar construction and Arrow import is still outstanding.
+
 A null cell is a present row with no value. ID-based cell reads return
 `std::optional<T>` and throw for a missing row. Scalar batches contain cells
 and validity; native time-series batches additionally contain aligned IDs.
@@ -614,6 +623,15 @@ IDs, null cells, sparse blocks, and allocation-failure cleanup. TSC graph tests
 cover empty publication, row deltas, invalidation, and revalidation. Two runtime
 graphs created from one compiled graph verify independent storage and allocator
 cleanup.
+
+The keyed native storage tests cover insertion and removal-retention allocation
+rollback. Before the pending BG lifetime fix, the target built successfully but
+its CTest process aborted during shared-library teardown after the test body
+completed. GDB showed
+`SchemaMetadata` releasing a `ScalarValue<List<string>>` after its runtime type
+has been destroyed (`__cxa_pure_virtual` from
+`bg::details::release_scalar_value`). This is a BG core lifetime issue under
+investigation; the frame extension does not work around it.
 
 Provider descriptors describe runtime storage and binding. Extension code uses
 `TimeSeriesType`, `TimeSeriesRuntimeType`, `TimeSeriesInputData`,

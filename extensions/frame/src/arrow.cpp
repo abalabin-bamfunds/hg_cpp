@@ -1,5 +1,7 @@
 #include <bg/frame/arrow.hpp>
 
+#include <bg/util/static_storage.hpp>
+
 #include <mutex>
 #include <stdexcept>
 #include <typeindex>
@@ -7,9 +9,6 @@
 
 namespace bg::frame::arrow_details {
 namespace {
-
-auto runtimes_mutex = std::mutex{};
-auto runtimes = std::unordered_map<std::type_index, std::unique_ptr<ScalarRuntimeType>>{};
 
 template <cell_type T>
 void construct_arrow_column_literal(const literal::ScalarLiteral &literal, const ScalarRuntimeType &runtime,
@@ -91,9 +90,18 @@ class RuntimeSchemaFrameScalarRuntime final : public FrameScalarRuntimeType {
     }
 };
 
-auto runtime_schema_mutex = std::mutex{};
-auto runtime_schema_runtimes =
-    std::unordered_map<const FrameType *, std::unique_ptr<RuntimeSchemaFrameScalarRuntime>>{};
+struct RuntimeCaches {
+    std::mutex runtimes_mutex;
+    std::unordered_map<std::type_index, std::unique_ptr<ScalarRuntimeType>> runtimes;
+    std::mutex runtime_schema_mutex;
+    std::unordered_map<const FrameType *,
+                       std::unique_ptr<RuntimeSchemaFrameScalarRuntime>> runtime_schema_runtimes;
+};
+
+RuntimeCaches &runtime_caches() {
+    static bg::util::static_storage<RuntimeCaches> caches;
+    return caches.get();
+}
 
 } // namespace
 
@@ -103,9 +111,10 @@ void register_arrow_column_literal_runtime(const ScalarRuntimeType &runtime) {
 
 const ScalarRuntimeType &canonical_scalar_runtime(const ScalarType &type, const std::type_info &identity,
                                                   scalar_runtime_factory factory) {
-    const auto lock = std::lock_guard{runtimes_mutex};
+    auto &caches = runtime_caches();
+    const auto lock = std::lock_guard{caches.runtimes_mutex};
     const auto key = std::type_index{identity};
-    if (const auto entry = runtimes.find(key); entry != runtimes.end()) {
+    if (const auto entry = caches.runtimes.find(key); entry != caches.runtimes.end()) {
         if (&entry->second->type() != &type)
             throw std::logic_error{"conflicting Arrow scalar runtime identity"};
         return *entry->second;
@@ -114,7 +123,7 @@ const ScalarRuntimeType &canonical_scalar_runtime(const ScalarType &type, const 
     auto runtime = factory();
     if (&runtime->type() != &type)
         throw std::logic_error{"Arrow scalar runtime has a non-canonical scalar type"};
-    const auto entry = runtimes.emplace(key, std::move(runtime)).first;
+    const auto entry = caches.runtimes.emplace(key, std::move(runtime)).first;
     return *entry->second;
 }
 
@@ -123,14 +132,15 @@ const ScalarRuntimeType &runtime_schema_frame_scalar_runtime(const FrameType &ty
         throw std::invalid_argument{"Arrow frame runtime requires a resolved frame type"};
     static_cast<void>(frame_snapshot_runtime_type(type));
 
-    const auto lock = std::lock_guard{runtime_schema_mutex};
-    if (const auto entry = runtime_schema_runtimes.find(std::addressof(type));
-        entry != runtime_schema_runtimes.end())
+    auto &caches = runtime_caches();
+    const auto lock = std::lock_guard{caches.runtime_schema_mutex};
+    if (const auto entry = caches.runtime_schema_runtimes.find(std::addressof(type));
+        entry != caches.runtime_schema_runtimes.end())
         return *entry->second;
 
     auto runtime = std::make_unique<RuntimeSchemaFrameScalarRuntime>(type);
-    const auto entry = runtime_schema_runtimes.emplace(std::addressof(type), std::move(runtime)).first;
-    auto rollback = util::scope_exit{[&]() noexcept { runtime_schema_runtimes.erase(entry); }};
+    const auto entry = caches.runtime_schema_runtimes.emplace(std::addressof(type), std::move(runtime)).first;
+    auto rollback = util::scope_exit{[&]() noexcept { caches.runtime_schema_runtimes.erase(entry); }};
     bg::frame::details::register_literal_runtime(
         *entry->second, ScalarLiteralOperations{&construct_arrow_frame_literal});
     rollback.release();
