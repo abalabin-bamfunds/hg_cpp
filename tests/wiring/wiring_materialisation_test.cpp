@@ -584,6 +584,37 @@ TEST_CASE("direct graph Union inputs keep the original point and its other forms
     CHECK_FALSE(wiring.materialisation_required(deferred, bg::TS<double>::type()));
 }
 
+TEST_CASE("a graph callback that receives WiringArguments retains distinct equal-cost Union mappings",
+          "[feature:wiring-materialisation][feature:wiring][schema:generic]") {
+    using namespace bg::literals;
+    using FORM = bg::Union<"OBSERVED_GRAPH_FORM", bg::TS<float>, bg::TS<double>>;
+
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    const auto integer_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    const auto float_source = bg::node([](bg::Out<bg::TS<float>>) {});
+    const auto double_source = bg::node([](bg::Out<bg::TS<double>>) {});
+    const auto bool_source = bg::node([](bg::Out<bg::TS<bool>>) {});
+    auto deferred = wiring.create_wp<bg::TS<bg::i64>>(integer_source());
+    deferred.materialisation_option<bg::TS<float>>(
+        [float_source](bg::wp<bg::TS<bg::i64>>) { return float_source(); }, 0.0);
+    deferred.materialisation_option<bg::TS<double>>(
+        [double_source](bg::wp<bg::TS<bg::i64>>) { return double_source(); }, 0.0);
+
+    auto observed_calls = 0;
+    const auto observing = bg::graph("name"_n = "observing_union",
+                                     [&](const bg::WiringArguments &, bg::wp<FORM>) {
+                                         ++observed_calls;
+                                         return bool_source();
+                                     });
+    CHECK_THROWS_AS(observing(deferred), bg::WiringError);
+    CHECK(observed_calls == 0);
+
+    const auto transparent = bg::graph("name"_n = "transparent_union",
+                                       [&](bg::wp<FORM>) { return bool_source(); });
+    CHECK_NOTHROW(transparent(deferred));
+}
+
 TEST_CASE("graph Union binding ignores mappings for unused alternatives",
           "[feature:wiring-materialisation][feature:wiring][schema:generic]") {
     using namespace bg::literals;

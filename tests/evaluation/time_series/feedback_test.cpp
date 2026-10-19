@@ -62,6 +62,29 @@ TEST_CASE("feedback accepts an explicit resolved output type",
     CHECK(actual.equals({std::nullopt, 2, 5, 7}));
 }
 
+TEST_CASE("feedback infers a reference-free output type from a wiring point",
+          "[evaluation][feature:feedback][feature:type-system][series:value][scalar:i64]") {
+    const auto graph = [](bg::wp<bg::TS<bg::i64>> input) {
+        return bg::wp<bg::TS<bg::i64>>{bg::feedback(static_cast<bg::WiringPoint>(input))};
+    };
+
+    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 3>{2, 5, 7});
+    CHECK(actual.equals({std::nullopt, 2, 5, 7}));
+}
+
+TEST_CASE("feedback inference changes a const source to a final output",
+          "[feature:feedback][feature:type-system][series:value][guarantee:final]") {
+    const auto graph = [] {
+        const auto input = bg::operators::const_(bg::i64{7});
+        const auto output = bg::feedback(static_cast<bg::WiringPoint>(input));
+        CHECK(&output.type() == &bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type());
+        return bg::wp<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>>{output};
+    };
+
+    const auto actual = bg::testing::test_graph(graph);
+    CHECK(actual.equals({std::nullopt, 7}));
+}
+
 TEST_CASE("feedback captures a service-shaped dictionary of reference requests",
           "[evaluation][feature:feedback][feature:service][feature:reference][series:tsd]") {
     using namespace bg::literals;

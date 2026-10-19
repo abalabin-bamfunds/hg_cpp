@@ -99,9 +99,12 @@ class GraphTemplate final
         return signature_.is_union_parameter(index);
     }
 
-    // Alternative mappings do not change the callback binding: it receives the original points, and output types
-    // are compared separately.
-    bool same_binding_type_map(const TypeMap &, const TypeMap &) const override { return true; }
+    bool same_binding_type_map(const TypeMap &left, const TypeMap &right) const override {
+        if constexpr (FunctionInfo::receives_wiring_arguments) {
+            return left.has_same_mappings(right);
+        }
+        return true;
+    }
 
   private:
     util::symbol label(const ResolvedSignature &signature, std::span<const WiringArgument> arguments,

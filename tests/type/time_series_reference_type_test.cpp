@@ -817,6 +817,16 @@ TEST_CASE("a value variable removes contained references but a reference target 
     CHECK(&bg::TS_T::type().resolve(reference_map) == &SOURCE::type());
 }
 
+TEST_CASE("a reference target preserves only its immediate variable's reference representation",
+          "[type][reference][feature:type-system][series:tsd][schema:generic]") {
+    using SOURCE = bg::TSD<bg::i64, bg::REF<bg::TSL<bg::REF<bg::TS<bg::i64>>, 2>>>;
+    using VALUES = bg::TSL<bg::TS<bg::i64>, 2>;
+
+    auto type_map = bg::TypeMap{};
+    REQUIRE(bg::REF<bg::TSD<bg::i64, bg::TS_T>>::type().match(bg::REF<SOURCE>::type(), type_map));
+    CHECK(&bg::TS_T::type().resolve(type_map) == &VALUES::type());
+}
+
 TEST_CASE("reference-free types remove references recursively through collections",
           "[type][reference][feature:type-system][series:tsd][series:tsl]") {
     using SOURCE = bg::TSD<bg::i64, bg::TSL<bg::REF<bg::TS<bg::i64>>, 2>>;

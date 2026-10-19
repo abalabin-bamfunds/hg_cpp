@@ -191,16 +191,17 @@ original argument types. A requirement function can therefore distinguish a
 reference argument from a direct argument when an implementation requires that
 information.
 
-Reference shape does not change type specificity. Selection first prefers a
-reference parameter for a reference argument and a direct parameter for a
-direct argument. The preference applies recursively to collection item types.
-For example, `TSL<REF<V>, N>` is preferred over `TSL<V, N>` for a list of
-references. It then compares the remaining type specificity. Conflicting
-reference preferences across parameters remain ambiguous.
+Matching considers each advertised materialisation form and each compatible
+Union alternative. It selects the lowest-cost binding before comparing type
+specificity. A top-level reference adaptation costs `1`; a change between
+reference and value items inside one collection input costs `4`, once for that
+input rather than once per item. An advertised materialisation contributes its
+declared cost once per source and target. Equal-cost bindings with distinct
+observable type mappings remain ambiguous.
 
-Free collection materialization and other wiring adaptations happen
-after selection. This ensures that ranking describes the graph-code arguments,
-not infrastructure introduced by wiring.
+Graph overloads with Union parameters receive the original wiring point and
+can select its form inside the graph body. Node overloads receive the selected
+concrete form. Materialisation runs only after selection.
 
 ## Optional arguments
 

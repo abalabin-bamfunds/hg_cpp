@@ -67,9 +67,6 @@ struct timed_overloads {
         static RequirementResult require(const WiringArguments &arguments) {
             const auto &value_type = type_cast<TimeSeriesType>(arguments.resolved_type("value"));
             const auto &stored_type = value_type.dereferenced_type();
-            if (stored_type.contains_reference()) {
-                return reject("delay does not support time series types containing references");
-            }
             const auto contains_sparse_list = [](const auto &self, const TimeSeriesType &type) -> bool {
                 if (const auto *list = type_cast<TimeSeriesListType>(&type); list != nullptr) {
                     return list->item_count() == std::dynamic_extent || self(self, list->item_type());
@@ -158,6 +155,9 @@ struct timed_overloads {
             }
             if (duration == timedelta_t{}) {
                 return wp<OUT>{value};
+            }
+            if (value.type().target_type().contains_reference()) {
+                throw WiringError{"delay does not support time series types containing references"};
             }
 
             static const auto delay = node<delay_node>();

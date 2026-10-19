@@ -47,6 +47,8 @@ struct FeedbackTickStream {
     TimeSeriesTickReader reader;
 };
 
+using FEEDBACK_INPUT = TimeSeriesVariable<"FEEDBACK_INPUT">;
+
 template <typename SERIES> struct FeedbackSource {
     static constexpr bool deduplicate_wiring = false;
     static constexpr bool uses_timed_scheduling = true;
@@ -78,10 +80,16 @@ template <typename SERIES> struct FeedbackSink {
     static constexpr bool uses_timed_scheduling = true;
     static constexpr bool uses_input_node_indices = true;
 
-    In<SERIES, optional> input;
+    In<FEEDBACK_INPUT, optional> input;
     In<SERIES, optional, passive> feedback_output;
     State<TimeSeriesTickWriter *> writer;
     State<std::size_t> source_index;
+
+    static RequirementResult require(const WiringArguments &arguments) {
+        return arguments.resolved_type(1).accepts(arguments.resolved_type(0))
+                   ? accept
+                   : reject("feedback input does not satisfy its output type");
+    }
 
     void start(EvaluationContext *context) const {
         const auto &compiled_node = context->runtime_graph().compiled_node(context->node_index());
@@ -201,6 +209,14 @@ template <typename SERIES> [[nodiscard]] auto feedback(std::string_view name = {
     auto delayed = Feedback<TS_T>{output_type, name};
     delayed = input;
     return static_cast<WiringPoint>(delayed);
+}
+
+[[nodiscard]] inline WiringPoint feedback(WiringPoint input, std::string_view name = {}) {
+    const auto &value_type = input.type().reference_free_type();
+    const auto &output_type = value_type.guarantee().value() == TimeSeriesGuarantee::const_
+                                  ? value_type.with_guarantee(TimeSeriesGuarantee::final)
+                                  : value_type;
+    return feedback(input, output_type, name);
 }
 
 } // namespace bg

@@ -60,6 +60,13 @@ registration; that filter is not passed again to the implementation graph. Other
 arguments are passed to the implementation graph in order. Named arguments must match
 the implementation graph's parameter names.
 
+For an output service whose implementation needs to read its own clients' requests,
+register `feedback_service_implementation(service, implementation)` as the implementation.
+The returned graph delays each generated request input by one cycle and runs the supplied
+implementation in `nested()`. It forwards scalar and installation arguments unchanged.
+The catalogue applies the same registration and type-mapping rules as for an ordinary
+implementation graph.
+
 ## Wiring and type resolution
 
 A service call resolves its client-facing signature and result type before an
