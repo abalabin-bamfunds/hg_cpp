@@ -151,7 +151,9 @@ a stable time series value while the client is active. The service result is an 
 
 The provider output is a runtime bundle with one
 `TSD<service_client_id_t, REF<A>>` field for each time-series argument. The implementation
-receives each field as a named `TSD<service_client_id_t, A>` argument. The argument name
+receives each field as a named `TSD<service_client_id_t, A>` argument, where each time-series
+guarantee in `A` is limited to ordinary. The provider reference has an ordinary guarantee,
+so the implementation cannot rely on a stronger client-side guarantee. The argument name
 is the service parameter name. While at least one value input is valid, the client keeps
 its identifier in every request dictionary. An unbound reference argument has an invalid
 item under that identifier. The client removes its identifier from every field when all

@@ -391,7 +391,9 @@ Service::implementation_request_inputs(const ResolvedSignature &signature) const
     for (const auto &parameter : signature.parameters) {
         if (const auto *type = type_cast<TimeSeriesType>(parameter.type)) {
             inputs.push_back({parameter.name,
-                              &time_series_dictionary_type(client_id_type, *type, TimeSeriesGuarantee::ordinary)});
+                              &time_series_dictionary_type(
+                                  client_id_type, type->with_guarantee_limit(TimeSeriesGuarantee::ordinary),
+                                  TimeSeriesGuarantee::ordinary)});
         }
     }
     return inputs;

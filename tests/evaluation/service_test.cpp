@@ -196,11 +196,11 @@ TEST_CASE("feedback service wrapper delays requests into its nested implementati
     CHECK(actual.equals<bg::i64>({std::nullopt, 2, 4, 6}));
 }
 
-TEST_CASE("feedback service wrapper preserves a final client request",
+TEST_CASE("feedback service wrapper caps a final client request to ordinary",
           "[feature:service][feature:feedback][feature:nested-graph][series:tsd][guarantee:final]") {
     const auto service = bg::service<auto(TS<bg::i64, bg::TimeSeriesGuarantee::final>)->TS<bg::i64>>{
         "final_echo", {"value"}};
-    const auto respond = node([](In<TSD<service_client_id_t, TS<bg::i64, bg::TimeSeriesGuarantee::final>>> requests,
+    const auto respond = node([](In<TSD<service_client_id_t, TS<bg::i64>>> requests,
                                  Out<TSD<service_client_id_t, TS<bg::i64>>> responses) {
         requests.for_each_key_value([&](const auto &client_id, const auto &value) {
             responses[client_id].set(*value);
@@ -208,7 +208,7 @@ TEST_CASE("feedback service wrapper preserves a final client request",
     });
     const auto implementation = graph(
         "name"_n = "final_echo_impl",
-        [&](wp<TSD<service_client_id_t, TS<bg::i64, bg::TimeSeriesGuarantee::final>>, "value"_n> requests) {
+        [&](wp<TSD<service_client_id_t, TS<bg::i64>>, "value"_n> requests) {
             return respond(requests);
         });
 
