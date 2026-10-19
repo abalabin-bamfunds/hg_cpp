@@ -487,6 +487,23 @@ TEST_CASE("a positional argument cannot follow a named argument",
                       "a positional argument cannot follow a named argument");
 }
 
+TEST_CASE("a service wrapper cannot append positional implementation arguments after generated requests",
+          "[feature:service][feature:wiring][feature:variadic-wiring][series:tsb][schema:generic]") {
+    const auto source = node([](Out<TS<i64>>) {});
+    const auto implementation = graph(
+        "name"_n = "implementation",
+        [](wp<TSB<ARGS>, var_args>, wp<TSB<KWARGS>, var_kwargs>) {});
+    const auto wrapper = graph(
+        "name"_n = "wrapper",
+        [&](wp<TSB<ARGS>, var_args> positional, wp<TSB<KWARGS>, var_kwargs> named) {
+            const auto requests = bundle("request"_n = source());
+            implementation(kwargs(requests), args(positional), 1, 2);
+        });
+
+    CHECK_THROWS_WITH(testing::test_wiring([&] { wrapper(1, "service"_n = 2); }),
+                      Catch::Matchers::ContainsSubstring("a positional argument cannot follow a named argument"));
+}
+
 TEST_CASE("variadic parameter order is validated",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:generic][definition:function]") {
     CHECK_THROWS_WITH(

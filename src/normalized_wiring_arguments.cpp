@@ -37,6 +37,80 @@ void append_wiring_arguments(std::vector<WiringArgument> &result, WiringArgument
     }
 }
 
+std::vector<WiringArgument> bind_wiring_arguments(const Signature &signature,
+                                                 std::span<const WiringArgument> arguments) {
+    const auto fixed_count = signature.first_variadic_parameter().value_or(signature.parameter_count());
+    auto fixed = std::vector<const WiringArgument *>(fixed_count);
+    auto positional = std::vector<const WiringArgument *>{};
+    auto named = std::vector<const WiringArgument *>{};
+    positional.reserve(arguments.size());
+    named.reserve(arguments.size());
+
+    for (const auto &argument : arguments) {
+        if (!argument.name()) {
+            positional.push_back(&argument);
+            continue;
+        }
+
+        auto parameter_index = std::size_t{};
+        while (parameter_index < fixed_count && signature.parameter(parameter_index).name != *argument.name()) {
+            ++parameter_index;
+        }
+        if (parameter_index == fixed_count) {
+            if (!signature.variadic_parameter(VariadicMode::named)) {
+                throw WiringError{"a call has an unknown named argument"};
+            }
+            named.push_back(&argument);
+            continue;
+        }
+        if (fixed[parameter_index] != nullptr) {
+            throw WiringError{"fixed parameter '" + std::string{argument.name()->text()} +
+                              "' received more than one argument"};
+        }
+        fixed[parameter_index] = &argument;
+    }
+
+    auto extra_positional = std::vector<const WiringArgument *>{};
+    auto next_fixed = std::size_t{};
+    for (const auto *argument : positional) {
+        while (next_fixed < fixed_count &&
+               (fixed[next_fixed] != nullptr || signature.parameter(next_fixed).context)) {
+            ++next_fixed;
+        }
+        if (next_fixed == fixed_count) {
+            if (!signature.variadic_parameter(VariadicMode::positional)) {
+                throw WiringError{"a call has too many positional arguments"};
+            }
+            extra_positional.push_back(argument);
+            continue;
+        }
+        fixed[next_fixed++] = argument;
+    }
+
+    auto bound = std::vector<WiringArgument>{};
+    bound.reserve(arguments.size());
+    for (auto index = std::size_t{}; index < fixed_count; ++index) {
+        const auto *argument = fixed[index];
+        if (argument == nullptr) {
+            if (signature.parameter(index).context) {
+                continue;
+            }
+            throw WiringError{"a call is missing a fixed argument"};
+        }
+        bound.push_back(WiringArgument::borrow(*argument));
+        if (!signature.parameter(index).context) {
+            bound.back().clear_name();
+        }
+    }
+    for (const auto *argument : extra_positional) {
+        bound.push_back(WiringArgument::borrow(*argument));
+    }
+    for (const auto *argument : named) {
+        bound.push_back(WiringArgument::borrow(*argument));
+    }
+    return bound;
+}
+
 namespace {
 
 struct VariadicCaptureArguments {

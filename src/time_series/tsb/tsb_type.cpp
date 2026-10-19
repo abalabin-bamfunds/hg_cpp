@@ -146,12 +146,8 @@ const TimeSeriesType &TimeSeriesBundleType::reference_free_type() const {
         return bg::schema(source.name(), source.identity(), base, fields);
     };
 
-    const auto &reference_free_schema = rewrite_schema(rewrite_schema, schema());
-    if (&reference_free_schema == &schema()) {
-        return *this;
-    }
-
-    return time_series_bundle_type(reference_free_schema, *guarantee().value());
+    const auto &schema = rewrite_schema(rewrite_schema, this->schema());
+    return &schema == &this->schema() ? *this : time_series_bundle_type(schema, *guarantee().value());
 }
 
 const TimeSeriesType &TimeSeriesBundleType::with_guarantee(TimeSeriesGuarantee guarantee) const {

@@ -1,5 +1,6 @@
 #include "service_test_helpers.hpp"
 
+#include <bg/service_feedback.hpp>
 #include <bg/testing/test_wiring.hpp>
 
 TEST_CASE("subscription services deduplicate requests and return values by key",
@@ -48,6 +49,29 @@ TEST_CASE("subscription services deduplicate requests and return values by key",
     CHECK(log.sizes == std::vector<std::size_t>{1});
     CHECK(log.added == std::vector<std::size_t>{1});
     CHECK(log.removed == std::vector<std::size_t>{0});
+}
+
+TEST_CASE("feedback subscription wrapper delays requests into its nested implementation",
+          "[feature:service][feature:feedback][feature:nested-graph][series:tss][series:tsd][shape:nested]") {
+    const auto service = subscription_service<auto(TS<bg::i64, TimeSeriesGuarantee::final>)->TS<bg::i64>>{
+        "delayed_lookup", {"key"}};
+    const auto respond = node([](In<TSS<bg::i64>> requests, Out<TSD<bg::i64, TS<bg::i64>>> output) {
+        requests.for_each_removed([&](const auto &key) { output.erase(key); });
+        requests.for_each_added([&](const auto &key) { output[key].set(*key * 10); });
+    });
+    const auto implementation = graph("name"_n = "delayed_lookup_impl",
+                                      [&](wp<TSS<bg::i64>> requests) { return respond(requests); });
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(service, feedback_service_implementation(service, implementation));
+
+    const auto key_source = node<FinalKeySource<bg::i64>>();
+    const auto tested = [&](wp<TS<bg::i64>> tick) {
+        (void)tick;
+        return service(key_source(3)).as<TS<bg::i64>>();
+    };
+    const auto actual = testing::test_graph(
+        tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 1>{0});
+    CHECK(actual.equals<bg::i64>({std::nullopt, 30}));
 }
 
 TEST_CASE("subscription services reject a replaceable reference to a final key",

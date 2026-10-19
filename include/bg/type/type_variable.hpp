@@ -59,7 +59,8 @@ template <typename Category> class TypeVariableType final : public Category, pub
 
         if constexpr (std::same_as<Category, TimeSeriesType>) {
             const auto *time_series = type_cast<TimeSeriesType>(observed_type);
-            if (time_series != nullptr && time_series->is_resolved() && time_series->contains_reference()) {
+            if (!type_map.matching_reference_target() && time_series != nullptr && time_series->is_resolved() &&
+                time_series->contains_reference()) {
                 observed_type = &time_series->reference_free_type();
             }
         }

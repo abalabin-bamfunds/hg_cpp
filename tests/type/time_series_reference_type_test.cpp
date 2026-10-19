@@ -734,7 +734,7 @@ TEST_CASE("limiting bundle guarantees preserves named schema identity",
     CHECK(resolved.item_type(1).guarantee().value() == bg::TimeSeriesGuarantee::final);
 }
 
-TEST_CASE("limiting a collection caps an explicit reference but preserves its target",
+TEST_CASE("a value variable removes references after applying the outer reference limit",
           "[type][reference][resolution][feature:type-system][declaration:generic]"
           "[series:tsd][guarantee:final][guarantee:const][binding:reference-to-reference]") {
     using ITEM = bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>, bg::TimeSeriesGuarantee::const_>;
@@ -744,10 +744,13 @@ TEST_CASE("limiting a collection caps an explicit reference but preserves its ta
 
     REQUIRE(bg::TS_T::type().match(reference, type_map));
     const auto &resolved = static_cast<const bg::TimeSeriesDictionaryType &>(bg::TS_T::type().resolve(type_map));
-    const auto &item_reference = static_cast<const bg::TimeSeriesReferenceType &>(resolved.value_type());
 
-    CHECK(item_reference.guarantee().value() == bg::TimeSeriesGuarantee::final);
-    CHECK(&item_reference.target_type() == &bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>::type());
+    CHECK(resolved.guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+    CHECK(&resolved.value_type() == &bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type());
+
+    auto reference_map = bg::TypeMap{};
+    REQUIRE(bg::REF<bg::TS_T>::type().match(reference, reference_map));
+    CHECK(&bg::TS_T::type().resolve(reference_map) == &TARGET::type());
 }
 
 TEST_CASE("limiting a set reference caps its guarantee",
@@ -798,6 +801,20 @@ TEST_CASE("reference matching enforces the reference guarantee",
 
 TEST_CASE("a reference cannot target another reference", "[type][reference][feature:type-system]") {
     CHECK_THROWS_AS((bg::REF<bg::REF<bg::TS<bg::i64>>>::type()), std::invalid_argument);
+}
+
+TEST_CASE("a value variable removes contained references but a reference target preserves them",
+          "[type][reference][feature:type-system][series:tsd][schema:generic]") {
+    using SOURCE = bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>;
+    using VALUES = bg::TSD<bg::i64, bg::TS<bg::i64>>;
+
+    auto value_map = bg::TypeMap{};
+    REQUIRE(bg::TS_T::type().match(SOURCE::type(), value_map));
+    CHECK(&bg::TS_T::type().resolve(value_map) == &VALUES::type());
+
+    auto reference_map = bg::TypeMap{};
+    REQUIRE(bg::REF<bg::TS_T>::type().match(bg::REF<SOURCE>::type(), reference_map));
+    CHECK(&bg::TS_T::type().resolve(reference_map) == &SOURCE::type());
 }
 
 TEST_CASE("reference-free types remove references recursively through collections",

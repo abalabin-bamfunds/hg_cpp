@@ -7,11 +7,17 @@
 #include <bg/util/symbol.hpp>
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace bg {
 
 using service_client_id_t = std::int64_t;
+
+struct ServiceImplementationRequestInput {
+    std::optional<util::symbol> name;
+    const TimeSeriesType *type;
+};
 
 class ServiceDefinition : public WiringTemplate {
   public:
@@ -26,6 +32,8 @@ class ServiceDefinition : public WiringTemplate {
                                 std::span<const WiringArgument> scalar_arguments) const;
 
     virtual bool implementation_requests_required() const noexcept = 0;
+    virtual std::vector<ServiceImplementationRequestInput>
+    implementation_request_inputs(const ResolvedSignature &signature) const = 0;
     virtual const TimeSeriesType *implementation_output_type(const ResolvedSignature &signature) const = 0;
     virtual WiringPoint wire_implementation_requests(GraphWiring &wiring, const ResolvedSignature &signature,
                                                      details::NestedBindingIdentity identity,
@@ -51,6 +59,8 @@ class Service : public ServiceDefinition {
     explicit Service(Signature signature);
 
     bool implementation_requests_required() const noexcept final { return true; }
+    std::vector<ServiceImplementationRequestInput>
+    implementation_request_inputs(const ResolvedSignature &signature) const final;
     const TimeSeriesType *implementation_output_type(const ResolvedSignature &signature) const final;
     WiringPoint wire_implementation_requests(GraphWiring &wiring, const ResolvedSignature &signature,
                                              details::NestedBindingIdentity identity,
@@ -71,6 +81,8 @@ class ReferenceService : public ServiceDefinition {
     explicit ReferenceService(Signature signature);
 
     bool implementation_requests_required() const noexcept final { return false; }
+    std::vector<ServiceImplementationRequestInput>
+    implementation_request_inputs(const ResolvedSignature &signature) const final;
     const TimeSeriesType *implementation_output_type(const ResolvedSignature &signature) const final;
     WiringPoint wire_implementation_requests(GraphWiring &wiring, const ResolvedSignature &signature,
                                              details::NestedBindingIdentity identity,
@@ -91,6 +103,8 @@ class SubscriptionService : public ServiceDefinition {
     explicit SubscriptionService(Signature signature);
 
     bool implementation_requests_required() const noexcept final { return true; }
+    std::vector<ServiceImplementationRequestInput>
+    implementation_request_inputs(const ResolvedSignature &signature) const final;
     const TimeSeriesType *implementation_output_type(const ResolvedSignature &signature) const final;
     WiringPoint wire_implementation_requests(GraphWiring &wiring, const ResolvedSignature &signature,
                                              details::NestedBindingIdentity identity,

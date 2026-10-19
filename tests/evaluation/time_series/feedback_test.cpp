@@ -6,7 +6,10 @@
 #include <bg/graph.hpp>
 #include <bg/nested.hpp>
 #include <bg/operators.hpp>
+#include <bg/service.hpp>
+#include <bg/service_catalogue.hpp>
 #include <bg/testing/test_graph.hpp>
+#include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_input.hpp>
 #include <bg/time_series/tsd/tsd_output.hpp>
 
@@ -57,6 +60,43 @@ TEST_CASE("feedback accepts an explicit resolved output type",
 
     const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 3>{2, 5, 7});
     CHECK(actual.equals({std::nullopt, 2, 5, 7}));
+}
+
+TEST_CASE("feedback captures a service-shaped dictionary of reference requests",
+          "[evaluation][feature:feedback][feature:service][feature:reference][series:tsd]") {
+    using namespace bg::literals;
+
+    const auto service = bg::service<auto(bg::TS<bg::i64>)->bg::TS<bg::i64>>{"echo", {"value"}};
+    const auto implementation = bg::graph(
+        "name"_n = "echo_feedback",
+        [](bg::wp<bg::TSB<bg::SCHEMA>, bg::var_kwargs> requests) {
+            const auto request = bg::operators::getattr(requests, bg::util::symbol{"value"});
+            auto loop = bg::feedback(bg::TSD<bg::service_client_id_t, bg::TS<bg::i64>>::type());
+            const auto output = static_cast<bg::wp<bg::TSD<bg::service_client_id_t, bg::TS<bg::i64>>>>(loop);
+            loop = request;
+            return output;
+        });
+    auto catalogue = bg::ServiceCatalogue{};
+    catalogue.register_impl(service, implementation);
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return service(input).as<bg::TS<bg::i64>>(); };
+
+    try {
+        const auto actual = bg::testing::test_graph(
+            graph, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 3>{2, 4, 6});
+        CHECK(actual.equals({std::nullopt, 2, 4, 6}));
+    } catch (const bg::TypeResolutionError &error) {
+        auto diagnostic = std::string{"subject: "} + std::string{error.subject().text()};
+        if (error.expected() != nullptr) {
+            diagnostic += ", expected: ";
+            error.expected()->format_name(diagnostic);
+        }
+        if (error.supplied() != nullptr) {
+            diagnostic += ", supplied: ";
+            error.supplied()->format_name(diagnostic);
+        }
+        INFO(diagnostic);
+        throw;
+    }
 }
 
 TEST_CASE("feedback can drive a bounded computation loop",
@@ -266,27 +306,4 @@ TEST_CASE("feedback rejects collections containing references",
     auto context = bg::WiringContext{wiring};
 
     CHECK_THROWS_AS((bg::feedback<bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>>()), bg::WiringError);
-}
-
-TEST_CASE("inferred feedback removes references contained in a collection",
-          "[evaluation][feature:feedback][feature:reference][feature:type-system]"
-          "[series:tsd][scalar:i64][binding:reference-to-value]") {
-    CHECK(bg::TSD<bg::i64, bg::TS<bg::i64>>::type().accepts(
-        bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>::type()));
-
-    const auto make_reference_dictionary = bg::node(
-        [](bg::In<bg::REF<bg::TS<bg::i64>>> input,
-           bg::Out<bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>> output) { output[1].copy(input); });
-    const auto sum = bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input,
-                                bg::Out<bg::TS<bg::i64>> output) {
-        auto total = bg::i64{};
-        input.for_each_value([&](const auto &value) { total += *value; });
-        output.set(total);
-    });
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) {
-        return sum(bg::feedback(make_reference_dictionary(input)));
-    };
-
-    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 3>{2, 4, 6});
-    CHECK(actual.equals({std::nullopt, 2, 4, 6}));
 }

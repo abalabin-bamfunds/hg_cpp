@@ -35,7 +35,7 @@ bool Type::match(const Type &supplied, TypeMap &type_map,
         const auto observed_guarantee = reference_limit
                                             ? weakest(*argument_guarantee, *reference_limit)
                                             : *argument_guarantee;
-        auto trial = type_map.overlay();
+        auto trial = type_map.reference_target_overlay();
         if (!parameter_reference->target_type().match(argument_target, trial) ||
             !parameter_reference->guarantee().match(observed_guarantee, trial)) {
             return false;

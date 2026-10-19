@@ -28,6 +28,7 @@
 #include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
+#include <bg/type/time_series_set_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/util/occupancy_index.hpp>
 
@@ -383,6 +384,19 @@ Service::Service(Signature signature) : ServiceDefinition{std::move(signature)} 
     }
 }
 
+std::vector<ServiceImplementationRequestInput>
+Service::implementation_request_inputs(const ResolvedSignature &signature) const {
+    auto inputs = std::vector<ServiceImplementationRequestInput>{};
+    const auto &client_id_type = cpp_scalar_type<service_client_id_t>();
+    for (const auto &parameter : signature.parameters) {
+        if (const auto *type = type_cast<TimeSeriesType>(parameter.type)) {
+            inputs.push_back({parameter.name,
+                              &time_series_dictionary_type(client_id_type, *type, TimeSeriesGuarantee::ordinary)});
+        }
+    }
+    return inputs;
+}
+
 const TimeSeriesType *Service::implementation_output_type(const ResolvedSignature &signature) const {
     return signature.output == nullptr
                ? nullptr
@@ -468,6 +482,11 @@ ReferenceService::ReferenceService(Signature signature) : ServiceDefinition{std:
     }
 }
 
+std::vector<ServiceImplementationRequestInput>
+ReferenceService::implementation_request_inputs(const ResolvedSignature &) const {
+    return {};
+}
+
 const TimeSeriesType *ReferenceService::implementation_output_type(const ResolvedSignature &signature) const {
     return signature.output;
 }
@@ -508,6 +527,12 @@ SubscriptionService::SubscriptionService(Signature signature) : ServiceDefinitio
     if (!declared_guarantee || !satisfies(*declared_guarantee, TimeSeriesGuarantee::final)) {
         throw std::invalid_argument{"a subscription service key must have a final guarantee"};
     }
+}
+
+std::vector<ServiceImplementationRequestInput>
+SubscriptionService::implementation_request_inputs(const ResolvedSignature &signature) const {
+    const auto &key_type = static_cast<const TimeSeriesValueType &>(*signature.parameters[0].type);
+    return {{std::nullopt, &time_series_set_type(key_type.value_type(), TimeSeriesGuarantee::ordinary)}};
 }
 
 const TimeSeriesType *SubscriptionService::implementation_output_type(const ResolvedSignature &signature) const {

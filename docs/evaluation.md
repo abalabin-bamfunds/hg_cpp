@@ -212,9 +212,8 @@ the same graph. The optional name labels the source and capture sink.
 The declared feedback type determines the output guarantee. A delayed `final`
 output remains `final`; a delayed output cannot be `const` because its first
 tick occurs after graph start.
-The feedback output type cannot contain references. `feedback(source)` infers
-its output type by removing references recursively from the source type. Normal
-input binding samples those references before capture.
+The feedback output type cannot contain references. Specify the exact output
+type when it is not available as a C++ time-series type parameter.
 
 ## Simulation
 

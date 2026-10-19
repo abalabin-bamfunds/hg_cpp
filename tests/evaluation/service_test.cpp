@@ -1,5 +1,11 @@
 #include "service_test_helpers.hpp"
 
+#include <bg/service_feedback.hpp>
+#include <bg/time_series/tsb/tsb.hpp>
+
+template <template <typename, auto...> typename Field>
+using SERVICE_KWARGS = bg::BundleSchemaVariableDeclaration<"SERVICE_KWARGS", Field>;
+
 TEST_CASE("service publishes each valid client input and selects its response",
           "[feature:service][series:tsd][shape:single-node]") {
     const auto service = bg::service<auto(TS<bg::i64>)->TS<bg::i64>>{"double", {"value"}};
@@ -118,6 +124,76 @@ TEST_CASE("service keeps a client active while any input is valid",
     CHECK_FALSE(actual[3]);
     CHECK(integer_request_sizes == std::vector<std::size_t>{1, 1, 1, 0});
     CHECK(fraction_request_sizes == std::vector<std::size_t>{1, 1, 1, 0});
+}
+
+TEST_CASE("service arguments bind by implementation signature before wiring",
+          "[feature:service][feature:variadic-wiring][series:tsd][shape:multiple]") {
+    const auto service = bg::service<auto(TS<bg::i64>, TS<bg::i64>)->TS<bg::i64>>{
+        "sum_with_offset", {"first", "second"}};
+    const auto add = node([](In<TSD<service_client_id_t, TS<bg::i64>>> second, bg::i64 offset,
+                             In<TSD<service_client_id_t, TS<bg::i64>>> first,
+                             Out<TSD<service_client_id_t, TS<bg::i64>>> output) {
+        first.for_each_key_value([&](const auto &client_id, const auto &value) {
+            output[client_id].set(*value + *second[client_id] + offset);
+        });
+    });
+    const auto implementation = graph(
+        "name"_n = "sum_with_offset_impl",
+        [&](wp<TSD<service_client_id_t, TS<bg::i64>>, "second"_n> second, bg::i64 offset,
+            wp<TSD<service_client_id_t, TS<bg::i64>>, "first"_n> first) {
+            return add(second, offset, first);
+        });
+
+    const auto tested = [&](wp<TS<bg::i64>> first, wp<TS<bg::i64>> second) {
+        return service(first, second).as<TS<bg::i64>>();
+    };
+
+    auto direct_catalogue = ServiceCatalogue{};
+    direct_catalogue.register_impl(service, implementation, 10);
+    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &direct_catalogue},
+                              std::array<bg::i64, 2>{2, 5}, std::array<bg::i64, 2>{3, 7})
+              .equals<bg::i64>({15, 22}));
+
+    const auto wrapper = graph(
+        "name"_n = "sum_with_offset_wrapper",
+        [&](wp<TSB<SCHEMA>, var_args> positional, wp<TSB<SERVICE_KWARGS>, var_kwargs> named)
+            -> wp<TSD<service_client_id_t, TS<bg::i64>>> {
+            auto supplied = std::vector<WiringArgument>{};
+            bg::details::append_wiring_arguments(supplied, bg::args(positional));
+            bg::details::append_wiring_arguments(supplied, bg::kwargs(named));
+            const auto bound = bg::details::bind_wiring_arguments(implementation.signature(), supplied);
+            const auto output = static_cast<const WiringTemplate &>(implementation)(
+                std::span<const WiringArgument>{bound});
+            return output->as<TSD<service_client_id_t, TS<bg::i64>>>();
+        });
+    auto wrapped_catalogue = ServiceCatalogue{};
+    wrapped_catalogue.register_impl(service, wrapper, 10);
+    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &wrapped_catalogue},
+                              std::array<bg::i64, 2>{2, 5}, std::array<bg::i64, 2>{3, 7})
+              .equals<bg::i64>({15, 22}));
+}
+
+TEST_CASE("feedback service wrapper delays requests into its nested implementation",
+          "[feature:service][feature:feedback][feature:nested-graph][series:tsd][shape:nested]") {
+    const auto service = bg::service<auto(TS<bg::i64>)->TS<bg::i64>>{"echo", {"value"}};
+    const auto respond = node([](In<TSD<service_client_id_t, TS<bg::i64>>> requests,
+                                 Out<TSD<service_client_id_t, TS<bg::i64>>> responses) {
+        requests.for_each_removed([&](const auto &client_id) { responses.erase(client_id); });
+        requests.for_each_key_value([&](const auto &client_id, const auto &value) {
+            responses[client_id].set(*value);
+        });
+    });
+    const auto implementation = graph(
+        "name"_n = "echo_impl",
+        [&](wp<TSD<service_client_id_t, TS<bg::i64>>, "value"_n> requests) { return respond(requests); });
+
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(service, feedback_service_implementation(service, implementation));
+    const auto tested = [&](wp<TS<bg::i64>> value) { return service(value).as<TS<bg::i64>>(); };
+
+    const auto actual = testing::test_graph(
+        tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 3>{2, 4, 6});
+    CHECK(actual.equals<bg::i64>({std::nullopt, 2, 4, 6}));
 }
 
 TEST_CASE("service keeps an unbound reference request as an invalid item",

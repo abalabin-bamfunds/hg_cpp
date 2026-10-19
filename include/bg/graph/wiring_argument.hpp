@@ -13,6 +13,7 @@
 #include <concepts>
 #include <memory>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -58,6 +59,8 @@ struct WiringArgumentExpansion {
 } // namespace bg::details
 
 namespace bg {
+
+class Signature;
 
 class WiringArgument {
     struct TimeSeriesArgument {
@@ -325,6 +328,10 @@ concept graph_code_argument = graph_code_argument_value<T> ||
                               (is_named_argument_v<T> && graph_code_argument_value<decltype(std::declval<T>().value)>);
 
 BG_EXPORT void append_wiring_arguments(std::vector<WiringArgument> &result, WiringArgumentExpansion expansion);
+
+// Bind generated arguments to a target signature before making an ordinary wiring call.
+BG_EXPORT std::vector<WiringArgument> bind_wiring_arguments(const Signature &signature,
+                                                            std::span<const WiringArgument> arguments);
 
 template <typename Argument>
 void append_wiring_arguments(std::vector<WiringArgument> &result, Argument &&argument) {

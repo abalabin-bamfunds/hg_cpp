@@ -658,8 +658,10 @@ bool ServiceCatalogue::BuildOperation::run() {
 
         auto output = std::optional<WiringPoint>{};
         try {
+            const auto bound = details::bind_wiring_arguments(candidates.front()->implementation->signature(),
+                                                               arguments);
             output = (*candidates.front()->implementation)(instance.type_map,
-                                                           std::span<const WiringArgument>{arguments});
+                                                           std::span<const WiringArgument>{bound});
         } catch (...) {
             throw service_error("service implementation wiring failed for '" + service_name + "'", instance,
                                 std::current_exception());

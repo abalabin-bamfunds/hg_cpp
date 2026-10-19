@@ -196,12 +196,11 @@ template <typename SERIES> [[nodiscard]] auto feedback(std::string_view name = {
     return Feedback<TS_T>{series_type, name};
 }
 
-template <details::wiring_point_argument SOURCE>
-[[nodiscard]] WiringPoint feedback(SOURCE &&source, std::string_view name = {}) {
-    const auto input = static_cast<WiringPoint>(source);
-    auto result = Feedback<TS_T>{input.type().reference_free_type(), name};
-    result = input;
-    return static_cast<WiringPoint>(result);
+[[nodiscard]] inline WiringPoint feedback(WiringPoint input, const TimeSeriesType &output_type,
+                                          std::string_view name = {}) {
+    auto delayed = Feedback<TS_T>{output_type, name};
+    delayed = input;
+    return static_cast<WiringPoint>(delayed);
 }
 
 } // namespace bg

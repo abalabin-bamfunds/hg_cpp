@@ -62,11 +62,7 @@ const TimeSeriesType &TimeSeriesListType::reference_free_type() const {
                                   "an unresolved time series type cannot be made reference-free"};
     }
     const auto &item = item_type().reference_free_type();
-    if (&item == &item_type()) {
-        return *this;
-    }
-
-    return time_series_list_type(item, item_count(), *guarantee().value());
+    return &item == &item_type() ? *this : time_series_list_type(item, item_count(), *guarantee().value());
 }
 
 const TimeSeriesListType &TimeSeriesListType::from_items(std::span<const TimeSeriesType *const> items,

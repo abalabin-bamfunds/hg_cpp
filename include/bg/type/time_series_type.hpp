@@ -22,7 +22,7 @@ class TimeSeriesType : public Type {
     // Unlike target_type(), this returns what a non-reference consumer observes. A resolved reference caps its
     // target guarantees recursively; a non-reference type returns itself.
     virtual const TimeSeriesType &dereferenced_type() const;
-    // Returns the resolved time-series type with references removed recursively from built-in collections.
+    // Return the resolved type observed by a value input, removing contained references recursively.
     virtual const TimeSeriesType &reference_free_type() const;
     [[nodiscard]] virtual const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const;
     // Returns a canonical resolved type capped at limit, including contained time series. Extension types with

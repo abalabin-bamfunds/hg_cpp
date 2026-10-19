@@ -13,19 +13,20 @@
 
 #include <concepts>
 #include <memory>
+#include <span>
 #include <utility>
 #include <vector>
 
 namespace bg::nested_details {
 
-template <typename Graph, details::graph_code_argument Run, details::graph_code_argument... Arguments>
+template <typename Graph, details::graph_code_argument Run>
     requires std::derived_from<Graph, WiringTemplate> && requires { typename Graph::result_type; }
-auto wire(const Graph &graph, const TypeMap *seed_type_map, Run &&run, Arguments &&...arguments) {
+auto wire(const Graph &graph, const TypeMap *seed_type_map, Run &&run,
+          std::span<const WiringArgument> supplied) {
     using Result = typename Graph::result_type;
     static_assert(details::is_typed_wiring_point<Result>, "a nested graph must have an output");
     using Target = typename details::typed_wiring_point<Result>::time_series_type;
 
-    auto supplied = details::make_wiring_arguments(std::forward<Arguments>(arguments)...);
     auto &outer_wiring = WiringContext::current().wiring();
     auto temporary_records = details::WiringRecordOverlay{outer_wiring};
     auto normalized_result = details::probe_wiring_arguments(
@@ -187,7 +188,15 @@ namespace bg {
 template <typename Graph, details::graph_code_argument Run, details::graph_code_argument... Arguments>
     requires std::derived_from<Graph, WiringTemplate> && requires { typename Graph::result_type; }
 [[nodiscard]] auto nested(const Graph &graph, Run &&run, Arguments &&...arguments) {
-    return nested_details::wire(graph, nullptr, std::forward<Run>(run), std::forward<Arguments>(arguments)...);
+    auto supplied = details::make_wiring_arguments(std::forward<Arguments>(arguments)...);
+    return nested_details::wire(graph, nullptr, std::forward<Run>(run),
+                                std::span<const WiringArgument>{supplied});
+}
+
+template <typename Graph, details::graph_code_argument Run>
+    requires std::derived_from<Graph, WiringTemplate> && requires { typename Graph::result_type; }
+[[nodiscard]] auto nested(const Graph &graph, Run &&run, std::span<const WiringArgument> arguments) {
+    return nested_details::wire(graph, nullptr, std::forward<Run>(run), arguments);
 }
 
 template <typename Graph, typename... TypeParameters, details::graph_code_argument Run,
@@ -195,8 +204,16 @@ template <typename Graph, typename... TypeParameters, details::graph_code_argume
     requires std::derived_from<Graph, WiringTemplate> && requires { typename Graph::result_type; }
 [[nodiscard]] auto nested(const details::MappedWiring<Graph, TypeParameters...> &graph, Run &&run,
                           Arguments &&...arguments) {
+    auto supplied = details::make_wiring_arguments(std::forward<Arguments>(arguments)...);
     return nested_details::wire(graph.target(), &graph.type_map(), std::forward<Run>(run),
-                                std::forward<Arguments>(arguments)...);
+                                std::span<const WiringArgument>{supplied});
+}
+
+template <typename Graph, typename... TypeParameters, details::graph_code_argument Run>
+    requires std::derived_from<Graph, WiringTemplate> && requires { typename Graph::result_type; }
+[[nodiscard]] auto nested(const details::MappedWiring<Graph, TypeParameters...> &graph, Run &&run,
+                          std::span<const WiringArgument> arguments) {
+    return nested_details::wire(graph.target(), &graph.type_map(), std::forward<Run>(run), arguments);
 }
 
 } // namespace bg

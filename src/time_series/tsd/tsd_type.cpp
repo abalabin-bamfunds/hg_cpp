@@ -42,11 +42,7 @@ const TimeSeriesType &TimeSeriesDictionaryType::reference_free_type() const {
                                   "an unresolved time series type cannot be made reference-free"};
     }
     const auto &value = value_type().reference_free_type();
-    if (&value == &value_type()) {
-        return *this;
-    }
-
-    return time_series_dictionary_type(key_type(), value, *guarantee().value());
+    return &value == &value_type() ? *this : time_series_dictionary_type(key_type(), value, *guarantee().value());
 }
 
 const TimeSeriesType &TimeSeriesDictionaryType::item_type(std::size_t index) const {
