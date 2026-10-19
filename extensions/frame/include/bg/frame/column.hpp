@@ -304,6 +304,7 @@ template <typename T> class ColumnReadSource {
     virtual ~ColumnReadSource() = default;
     virtual std::size_t size() const noexcept = 0;
     virtual std::optional<T> cell(std::size_t position) const = 0;
+    // Batches must cover size() cells in logical order; each valid cell must have a value buffer.
     virtual void visit_batches(void *target, batch_visitor visit) const = 0;
 };
 

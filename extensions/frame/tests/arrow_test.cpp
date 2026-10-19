@@ -39,6 +39,14 @@ struct InheritedArrowFrame : bg::schema_extends<InheritedArrowBase, Field> {
 
 template <template <typename, auto...> typename Field> struct EmptySchema {};
 
+template <template <typename, auto...> typename Field> struct KeyedArrowRows {
+    Field<i64> id;
+    Field<i64> sequence;
+    Field<double> price;
+
+    static bg::SchemaMetadata metadata() { return key_metadata<"id", "sequence">(); }
+};
+
 struct RowTraversalOrder {
     const NativeRows *rows{};
     std::array<row_id_t, 2> ids{};
@@ -607,6 +615,72 @@ void test_schema_validation() {
     require(!from_arrow(unsupported).ok(), "schema-inferred Arrow import accepted an unsupported cell type");
 }
 
+void test_arrow_frame_key_validation() {
+    auto sliced_ids = int_array({-1, 10, std::nullopt, 30, -1})->Slice(1, 2);
+    auto unique_ids = arrow::ChunkedArray::Make({sliced_ids, int_array({30})}, arrow::int64());
+    auto unique_sequences = arrow::ChunkedArray::Make({int_array({2}), int_array({3, 1})}, arrow::int64());
+    auto unique_prices = arrow::ChunkedArray::Make({double_array({10.0, 11.0, 12.0})}, arrow::float64());
+    require(unique_ids.ok() && unique_sequences.ok() && unique_prices.ok(),
+            "could not create independently chunked composite key columns");
+    auto unique_table = arrow::Table::Make(
+        arrow::schema({arrow::field("id", arrow::int64(), true), arrow::field("sequence", arrow::int64(), true),
+                       arrow::field("price", arrow::float64(), true)}),
+        std::vector<std::shared_ptr<arrow::ChunkedArray>>{std::move(unique_ids).ValueUnsafe(),
+                                                          std::move(unique_sequences).ValueUnsafe(),
+                                                          std::move(unique_prices).ValueUnsafe()});
+    auto unique_import = from_arrow<KeyedArrowRows>(unique_table);
+    require(unique_import.ok(), "Arrow import rejected unique composite keys with sliced, unequal chunks");
+    const auto unique_scalar = unique_import.ValueUnsafe().view();
+    const auto unique_frame = Scalar<Frame<KeyedArrowRows>>::from(unique_scalar).value();
+    require(unique_frame.size() == 3 && unique_frame.columns().id.cell(0) == 10 &&
+                !unique_frame.columns().id.cell(1) && unique_frame.columns().sequence.cell(2) == 1,
+            "Arrow import changed composite key values or nulls across unequal chunks");
+
+    auto ids = arrow::ChunkedArray::Make({int_array({std::nullopt}), int_array({std::nullopt})}, arrow::int64());
+    auto sequences = arrow::ChunkedArray::Make({int_array({std::nullopt}), int_array({std::nullopt})}, arrow::int64());
+    auto prices = arrow::ChunkedArray::Make({double_array({10.0}), double_array({11.0})}, arrow::float64());
+    require(ids.ok() && sequences.ok() && prices.ok(), "could not create chunked key columns");
+
+    auto table = arrow::Table::Make(
+        arrow::schema({arrow::field("id", arrow::int64(), true), arrow::field("sequence", arrow::int64(), true),
+                       arrow::field("price", arrow::float64(), true)}),
+        std::vector<std::shared_ptr<arrow::ChunkedArray>>{std::move(ids).ValueUnsafe(),
+                                                          std::move(sequences).ValueUnsafe(),
+                                                          std::move(prices).ValueUnsafe()});
+    auto static_import = from_arrow<KeyedArrowRows>(table);
+    require(!static_import.ok(), "Arrow import accepted duplicate all-null composite keys across chunks");
+
+    const auto fields = std::array{SchemaField{util::symbol{"id"}, &cpp_scalar_type<i64>()},
+                                  SchemaField{util::symbol{"sequence"}, &cpp_scalar_type<i64>()},
+                                  SchemaField{util::symbol{"price"}, &cpp_scalar_type<double>()}};
+    const auto &schema = anonymous_schema(fields, key_metadata<"id", "sequence">());
+    auto runtime_import = from_arrow(table, schema);
+    require(!runtime_import.ok(), "runtime-schema Arrow import accepted duplicate all-null composite keys");
+
+    const auto colliding_key = static_cast<i64>(bg::frame::details::null_key_hash);
+    const auto make_collision_table = [](std::initializer_list<std::optional<i64>> id_values) {
+        const auto row_count = id_values.size();
+        auto ids = arrow::ChunkedArray::Make({int_array(id_values)}, arrow::int64()).ValueOrDie();
+        auto sequences = arrow::ChunkedArray::Make(
+            {row_count == 2 ? int_array({7, 7}) : int_array({7, 7, 7})}, arrow::int64()).ValueOrDie();
+        auto prices = arrow::ChunkedArray::Make(
+            {row_count == 2 ? double_array({1.0, 1.0}) : double_array({1.0, 1.0, 1.0})},
+            arrow::float64()).ValueOrDie();
+        return arrow::Table::Make(
+            arrow::schema({arrow::field("id", arrow::int64(), true),
+                           arrow::field("sequence", arrow::int64(), true),
+                           arrow::field("price", arrow::float64(), true)}),
+            std::vector<std::shared_ptr<arrow::ChunkedArray>>{std::move(ids), std::move(sequences),
+                                                              std::move(prices)});
+    };
+    auto distinct_collision = from_arrow<KeyedArrowRows>(
+        make_collision_table({std::optional<i64>{}, std::optional<i64>{colliding_key}}));
+    require(distinct_collision.ok(), "Arrow import rejected distinct keys with colliding hashes");
+    require(!from_arrow<KeyedArrowRows>(make_collision_table(
+                {std::optional<i64>{}, std::optional<i64>{colliding_key}, std::optional<i64>{}})).ok(),
+            "Arrow import missed a duplicate behind a distinct colliding composite key");
+}
+
 } // namespace
 
 int main() {
@@ -624,4 +698,5 @@ int main() {
     test_schema_validation();
     test_arrow_scalar_owners();
     test_inherited_arrow_frame_fields();
+    test_arrow_frame_key_validation();
 }

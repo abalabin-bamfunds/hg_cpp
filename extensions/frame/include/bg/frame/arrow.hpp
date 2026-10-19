@@ -49,7 +49,7 @@ inline arrow::Status check_length(std::size_t size) {
 }
 
 class ArrowRuntimeFrameStorage;
-FrameReadStorage frame_read_storage(const ArrowRuntimeFrameStorage &storage, const FrameScalarRuntimeType &runtime);
+FrameReadStorage frame_read_storage(const ArrowRuntimeFrameStorage &storage, const RuntimeType *runtime);
 const ScalarRuntimeType &runtime_schema_frame_scalar_runtime(const FrameType &type);
 void register_arrow_column_literal_runtime(const ScalarRuntimeType &runtime);
 
@@ -393,8 +393,7 @@ inline FrameColumnReadBinding runtime_arrow_frame_column_binding(const void *con
     return {std::addressof(cpp_scalar_type<double>()), column, &bind_runtime_arrow_column_view<double>, nullptr};
 }
 
-inline FrameReadStorage frame_read_storage(const ArrowRuntimeFrameStorage &storage,
-                                           const FrameScalarRuntimeType &runtime) {
+inline FrameReadStorage frame_read_storage(const ArrowRuntimeFrameStorage &storage, const RuntimeType *runtime) {
     auto result = FrameReadStorage{};
     result.schema = storage.schema;
     result.valid = true;
@@ -402,7 +401,7 @@ inline FrameReadStorage frame_read_storage(const ArrowRuntimeFrameStorage &stora
     result.columns_context = std::addressof(storage);
     result.column_binding = &runtime_arrow_frame_column_binding;
     result.source_owner = std::addressof(storage);
-    result.source_runtime = std::addressof(runtime);
+    result.source_runtime = runtime;
     return result;
 }
 
@@ -482,6 +481,11 @@ arrow::Result<ScalarValue<>> from_arrow(std::shared_ptr<arrow::ChunkedArray> col
 inline arrow::Result<ScalarValue<>> from_arrow(std::shared_ptr<arrow::Table> table, const bg::Schema &schema) {
     ARROW_RETURN_NOT_OK(arrow_details::validate_frame(table, schema));
     auto storage = arrow_details::ArrowRuntimeFrameStorage{std::move(table), schema};
+    try {
+        details::validate_frame_key_uniqueness(arrow_details::frame_read_storage(storage, nullptr));
+    } catch (const std::invalid_argument &error) {
+        return arrow::Status::Invalid(error.what());
+    }
     const auto &type = frame_type(schema);
     const auto &runtime = arrow_details::runtime_schema_frame_scalar_runtime(type);
     auto value = Scalar<Frame<bg::SCHEMA>>::from(runtime, std::addressof(storage));

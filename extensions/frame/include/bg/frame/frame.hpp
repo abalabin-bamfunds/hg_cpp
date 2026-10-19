@@ -400,6 +400,10 @@ struct FrameReadStorage {
 
 };
 
+namespace details {
+void validate_frame_key_uniqueness(const FrameReadStorage &source);
+}
+
 // Common scalar runtime interface for native, Arrow, and snapshot frame representations.
 class FrameScalarRuntimeType : public ScalarRuntimeType {
   public:
@@ -811,14 +815,19 @@ template <template <template <typename, auto...> typename> typename Schema> clas
   public:
     using columns_type = Schema<Column>;
 
-    Frame() = default;
+    Frame() {
+        if constexpr (!bg::details::schema_variable_template<Schema>)
+            static_cast<void>(frame_type(schema()));
+    }
     explicit Frame(columns_type columns) : columns_{std::move(columns)}, size_{column_size(columns_)} {
         validate_column_sizes();
         bind_storage();
+        validate_key_uniqueness();
     }
     Frame(columns_type columns, std::size_t size) : columns_{std::move(columns)}, size_{size} {
         validate_column_sizes();
         bind_storage();
+        validate_key_uniqueness();
     }
     Frame(const Frame &other) : columns_{other.columns_}, size_{other.size_} { bind_storage(); }
     Frame(Frame &&other) noexcept : columns_{std::move(other.columns_)}, size_{std::exchange(other.size_, 0)} {
@@ -871,6 +880,7 @@ template <template <template <typename, auto...> typename> typename Schema> clas
                 members);
         }
     }
+    void validate_key_uniqueness() const;
     void bind_storage() {
         auto destination = details::frame_schema_reflection<Schema>::fields(storage_.columns);
         auto source = details::frame_schema_reflection<Schema>::fields(columns_);
@@ -956,6 +966,14 @@ FrameReadStorage frame_read_storage(const FrameView<Schema> &view, const Runtime
 }
 
 } // namespace details
+
+template <template <template <typename, auto...> typename> typename Schema>
+void Frame<Schema>::validate_key_uniqueness() const {
+    if constexpr (!bg::details::schema_variable_template<Schema>) {
+        auto view = FrameView<Schema>{*this};
+        details::validate_frame_key_uniqueness(details::frame_read_storage(view, nullptr));
+    }
+}
 
 template <template <template <typename, auto...> typename> typename Schema>
 const bg::Schema &FrameView<Schema>::schema() const {
@@ -4006,6 +4024,7 @@ inline ScalarValue<Frame<bg::SCHEMA>> make_frame_value(allocator &memory, const 
         const auto &values = *static_cast<const std::span<const ColumnView<> > *>(context);
         return details::runtime_frame_column_binding(values[index]);
     };
+    details::validate_frame_key_uniqueness(source);
 
     auto staged = FrameSnapshotStorage{};
     details::copy_frame_snapshot_storage(staged, details::native_frame_layout(schema), source, memory);

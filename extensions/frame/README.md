@@ -47,8 +47,9 @@ Native TSF storage rejects duplicate live keys and changes to key columns. Key
 values may be null, including in composite keys. A removed row's key remains
 available through its removal cycle; removing and re-adding the same key in one
 cycle creates a new live row while preserving the removed row's key and ID in
-the removal delta. This behavior is implemented in native TSF storage. Key
-validation at raw scalar construction and Arrow import is still outstanding.
+the removal delta. Raw `Frame` construction, `make_frame_value`, and Arrow
+imports reject duplicate key tuples. Nulls compare as key components, so
+duplicate all-null composite keys are rejected.
 
 A null cell is a present row with no value. ID-based cell reads return
 `std::optional<T>` and throw for a missing row. Scalar batches contain cells

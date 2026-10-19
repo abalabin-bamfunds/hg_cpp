@@ -6,7 +6,7 @@ shared schema metadata `8ab0b121` and BG process-lifetime storage fix
 Expressions are committed as `30e6fa80`; scalar Column/Frame literals and
 content equality are committed as `02fc8c17`. Native keyed storage and its
 tests are committed on this lane. Raw scalar and Arrow duplicate-key validation
-is the next separate change; see
+is implemented and verified in the current extension change; see
 [Key metadata and native keyed storage](#key-metadata-and-native-keyed-storage).
 TSF/TSC literals, delta comparison, and capture remain outstanding.
 
@@ -534,7 +534,9 @@ row ID while the removed row's key and ID remain available in the delta.
 `FrameView(columns, size, source)` is an extension-facing trusted binding
 constructor. Its caller must provide columns from storage whose schema and key
 invariants are already established. Raw scalar construction and Arrow import
-do not yet validate key uniqueness. Node-facing key lookup, keyed view behavior,
+validate key uniqueness with a temporary hash index of row positions. The
+validator records batch starts for collision checks; it does not add persistent
+key-index state to scalar frames. Node-facing key lookup, keyed view behavior,
 and TSF/TSC row literal and capture behavior remain open.
 
 The native keyed-storage test target builds in Release with Arrow disabled:
@@ -544,10 +546,14 @@ conda run --no-capture-output -n bg-build cmake --build build/cc4-checkpoint-off
   --target bg_frame_frame_test -j12
 ```
 
-Focused tests cover allocation rollback for keyed insertion and removal-key
-retention, including retry after failure. The Arrow-off Release suite passes
-5/5 tests in `build/cc4-checkpoint-off`. The Arrow-on Release suite passes
-6/6 tests in `build/field-access-on`. Both use BG from
+Tests cover allocation rollback for keyed insertion and removal-key retention,
+including retry after failure. Scalar validation tests cover duplicate single
+and composite keys, including an all-null tuple and runtime-schema construction.
+Arrow validation tests cover duplicate keys across chunks, a valid composite
+key import with unequal chunk boundaries and a sliced nullable array, and a
+collision chain with a distinct key before a duplicate. The Arrow-off Release
+suite passes 5/5 tests in `build/cc4-checkpoint-off`. The Arrow-on Release suite
+passes 6/6 tests in `build/field-access-on`. Both use BG from
 `/home/abalabin/_bg/.lanes/schema-metadata/build/install/release`.
 
 The matching Arrow-on Debug/ASan build in `build/cc4-lifetime` passes all 6

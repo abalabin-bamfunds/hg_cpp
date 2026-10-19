@@ -684,6 +684,75 @@ void test_frame_key_schema_validation() {
     require(runtime_series_double_key_rejected, "runtime frame time-series schema accepted a double key column");
 }
 
+void test_frame_scalar_key_validation() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto single_key_rejected = false;
+    try {
+        auto value = Frame<KeyedQuotes>{KeyedQuotes<Column>{.id = Column<i64>{{3, 3}},
+                                                            .price = Column<double>{{10.0, 11.0}}}};
+        static_cast<void>(value);
+    } catch (const std::invalid_argument &) {
+        single_key_rejected = true;
+    }
+    require(single_key_rejected, "raw Frame construction accepted duplicate keys");
+
+    auto explicit_size_rejected = false;
+    try {
+        auto value = Frame<KeyedQuotes>{KeyedQuotes<Column>{.id = Column<i64>{{4, 4}},
+                                                            .price = Column<double>{{10.0, 11.0}}},
+                                         2};
+        static_cast<void>(value);
+    } catch (const std::invalid_argument &) {
+        explicit_size_rejected = true;
+    }
+    require(explicit_size_rejected, "explicit-size Frame construction accepted duplicate keys");
+
+    auto all_null_key_rejected = false;
+    try {
+        auto value = Frame<CompositeKeyRows>{CompositeKeyRows<Column>{
+            .id = Column<i64>{{std::nullopt, std::nullopt}},
+            .sequence = Column<i64>{{std::nullopt, std::nullopt}},
+            .price = Column<double>{{10.0, 11.0}},
+            .value = Column<i64>{{1, 2}}}};
+        static_cast<void>(value);
+    } catch (const std::invalid_argument &) {
+        all_null_key_rejected = true;
+    }
+    require(all_null_key_rejected, "raw Frame construction accepted duplicate all-null composite keys");
+
+    auto invalid_default_schema_rejected = false;
+    try {
+        auto value = Frame<DoubleKeyQuotes>{};
+        static_cast<void>(value);
+    } catch (const std::invalid_argument &) {
+        invalid_default_schema_rejected = true;
+    }
+    require(invalid_default_schema_rejected, "default Frame construction bypassed key schema validation");
+
+    const auto fields = std::array{SchemaField{util::symbol{"id"}, &cpp_scalar_type<i64>()},
+                                  SchemaField{util::symbol{"sequence"}, &cpp_scalar_type<i64>()},
+                                  SchemaField{util::symbol{"price"}, &cpp_scalar_type<double>()},
+                                  SchemaField{util::symbol{"value"}, &cpp_scalar_type<i64>()}};
+    const auto &schema = anonymous_schema(fields, key_metadata<"id", "sequence">());
+    auto ids = Column<i64>{{std::nullopt, std::nullopt}};
+    auto sequences = Column<i64>{{std::nullopt, std::nullopt}};
+    auto prices = Column<double>{{10.0, 11.0}};
+    auto values = Column<i64>{{1, 2}};
+    const auto columns = std::array<ColumnView<>, 4>{ColumnView<i64>{ids}, ColumnView<i64>{sequences},
+                                                     ColumnView<double>{prices}, ColumnView<i64>{values}};
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    auto memory = allocator{resource};
+    auto runtime_duplicate_rejected = false;
+    try {
+        static_cast<void>(make_frame_value(memory, schema, 2, columns));
+    } catch (const std::invalid_argument &) {
+        runtime_duplicate_rejected = true;
+    }
+    require(runtime_duplicate_rejected, "runtime Frame value construction accepted duplicate all-null keys");
+}
+
 void test_native_frame_key_insert_rolls_back() {
     using namespace bg;
     using namespace bg::frame;
@@ -5534,6 +5603,7 @@ int main() {
         test_frame_literals_as_ordinary_time_series_inputs();
         test_base_and_derived_frame_equality();
         test_frame_key_schema_validation();
+        test_frame_scalar_key_validation();
         test_native_frame_composite_keys();
         test_native_frame_key_insert_rolls_back();
         test_native_frame_key_removal_retention_rolls_back();

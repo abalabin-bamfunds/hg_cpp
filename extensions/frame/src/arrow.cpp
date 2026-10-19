@@ -55,7 +55,7 @@ class RuntimeSchemaFrameScalarRuntime final : public FrameScalarRuntimeType {
                                  true, false} {}
 
     FrameReadStorage read_storage(const ScalarData &source) const override {
-        return frame_read_storage(*static_cast<const ArrowRuntimeFrameStorage *>(source.data()), *this);
+        return frame_read_storage(*static_cast<const ArrowRuntimeFrameStorage *>(source.data()), this);
     }
 
     void read_value(ScalarDataMode mode, std::uintptr_t data, void *destination) const override {
