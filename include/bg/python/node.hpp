@@ -23,7 +23,9 @@ template <typename Definition> class NodeDefinitionAdapter : public Definition {
 
     explicit NodeDefinitionAdapter(Definition definition) : Definition{std::move(definition)} {}
 
-    static auto evaluate(Invocation invocation) {
+    static auto evaluate(Invocation invocation)
+        requires requires(Invocation value) { Definition::evaluate(value); }
+    {
         auto gil = GilScope{};
         if constexpr (std::same_as<decltype(Definition::evaluate(invocation)), bool>) {
             const auto complete = Definition::evaluate(invocation);

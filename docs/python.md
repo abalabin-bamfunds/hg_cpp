@@ -602,13 +602,15 @@ releases the GIL while native graph evaluation runs. Each Python node callback
 acquires it for argument conversion, callback execution, and output
 conversion.
 
-C++ node definitions that call Python APIs can use `bg::python::node<Definition>()`
-instead of `bg::node<Definition>()`. The wrapper acquires the GIL for evaluation,
-start, invalidation, stop, and finalization callbacks. Exceptions from
-evaluation, start, and invalidation propagate through graph execution. Since
-stop and finalization are `noexcept` engine callbacks, pending Python
-exceptions from them are reported through `sys.unraisablehook` after cleanup.
-Runtime-signature definitions wrapped this way must not be declared `final`.
+C++ nodes that call Python APIs use the Python wrapper: `bg::python::node<Definition>()`
+for aggregate declarations, `bg::python::node(callable)` for callable nodes, and
+`bg::python::node(definition)` for runtime-signature nodes. The wrapper acquires
+the GIL for evaluation, start, invalidation, stop, and finalization callbacks.
+Exceptions from evaluation, start, and invalidation propagate through graph
+execution. Since stop and finalization are `noexcept` engine callbacks,
+pending Python exceptions from them are reported through `sys.unraisablehook`
+after cleanup. Runtime-signature definitions wrapped this way must not be
+declared `final`.
 
 The current package does not expose dynamic Python node inputs.
 

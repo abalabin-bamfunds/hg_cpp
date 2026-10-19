@@ -8,6 +8,7 @@ from bg._bg_test_extension import (
     native_gil,
     native_node_lifecycle,
     native_python_exception,
+    native_start_only_source,
     native_stop_exception,
     reset_native_node_lifecycle,
 )
@@ -30,6 +31,17 @@ def test_callable_cpp_node_acquires_gil_before_input_and_output_access():
         return native_callable_gil(value)
 
     assert bg.test_graph(graph, [4, 9]) == [5, 10]
+
+
+def test_python_aware_runtime_source_can_define_start_without_evaluate():
+    reset_native_node_lifecycle()
+
+    @bg.graph
+    def graph() -> bg.TS[int]:
+        return native_start_only_source()
+
+    assert bg.test_graph(graph) == [42]
+    assert native_node_lifecycle()[0] == 1
 
 
 def test_native_cpp_node_propagates_python_exception_from_callback():

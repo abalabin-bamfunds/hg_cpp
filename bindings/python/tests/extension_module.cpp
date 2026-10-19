@@ -69,6 +69,23 @@ struct native_stop_exception_node {
     void finalize() const noexcept { native_node_lifecycle[3] = 1; }
 };
 
+struct native_start_only_source_definition {
+    native_start_only_source_definition()
+        : signature_{bg::util::symbol{"native_start_only_source"}, {}, bg::TS<bg::i64>::type()} {}
+
+    const bg::Signature &signature() const { return signature_; }
+
+    static void start(bg::NodeInvocation<> invocation) {
+        native_node_lifecycle[0] = PyGILState_Check();
+        invocation.output().visit([](bg::Out<bg::TS<bg::SCALAR>> *output) {
+            const auto value = bg::i64{42};
+            output->set_value(bg::Scalar<bg::i64>::from(value));
+        }, ddv::noop);
+    }
+
+    bg::Signature signature_;
+};
+
 const bg::Operator &native_gil_operator() {
     static auto operation = bg::operator_<auto(bg::TS<bg::i64>) -> bg::TS<bg::i64>>{"native_gil", {"value"}};
     static const auto &implementation = operation.overload(bg::python::node<native_gil_node>());
@@ -98,6 +115,14 @@ const bg::Operator &native_python_exception_operator() {
 const bg::Operator &native_stop_exception_operator() {
     static auto operation = bg::operator_<void(bg::TS<bg::i64>)>{"native_stop_exception", {"value"}};
     static const auto &implementation = operation.overload(bg::python::node<native_stop_exception_node>());
+    (void)implementation;
+    return operation;
+}
+
+const bg::Operator &native_start_only_source_operator() {
+    static auto operation = bg::operator_<auto() -> bg::TS<bg::i64>>{"native_start_only_source"};
+    static const auto &implementation = operation.overload(
+        bg::python::node(native_start_only_source_definition{}));
     (void)implementation;
     return operation;
 }
@@ -178,6 +203,7 @@ NB_MODULE(_bg_test_extension, module) {
     bg::python::export_operator(module, "native_callable_gil", native_callable_gil_operator());
     bg::python::export_operator(module, "native_python_exception", native_python_exception_operator());
     bg::python::export_operator(module, "native_stop_exception", native_stop_exception_operator());
+    bg::python::export_operator(module, "native_start_only_source", native_start_only_source_operator());
     module.def("native_node_lifecycle", [] {
         return nanobind::make_tuple(native_node_lifecycle[0].load(), native_node_lifecycle[1].load(),
                                     native_node_lifecycle[2].load(), native_node_lifecycle[3].load());
