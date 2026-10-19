@@ -151,7 +151,7 @@ class Out<TS<T, Properties...>> {
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
     value_type value() const
-        requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>)
+        requires details::scalar_exposes_value<T>
     {
         if constexpr (!details::scalar_storage_supports_alternative_layouts<T>) {
             return Traits::read(*static_cast<const storage_type *>(state_->data()));
@@ -163,7 +163,7 @@ class Out<TS<T, Properties...>> {
     }
 
     Scalar<T> value() const
-        requires details::hierarchical_scalar_declaration<T>
+        requires(!details::scalar_exposes_value<T>)
     {
         const auto &runtime_type =
             static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
@@ -171,7 +171,7 @@ class Out<TS<T, Properties...>> {
     }
 
     template <typename Value>
-        requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>) &&
+        requires details::scalar_exposes_value<T> &&
                 std::constructible_from<std::remove_cvref_t<value_type>, Value &&> &&
                 (details::scalar_storage_has_borrow_value<T> ||
                  details::scalar_storage_supports_alternative_layouts<T> ||
@@ -243,8 +243,7 @@ class Out<TS<T, Properties...>> {
             return;
         }
 
-        if constexpr (scalar_declaration_traits<T>::is_collection || details::hierarchical_scalar_declaration<T> ||
-                      details::scalar_uses_shared_handle<T>) {
+        if constexpr (!details::scalar_exposes_value<T> || details::scalar_uses_shared_handle<T>) {
             set_value(input.value_view());
         } else {
             set(input.value());

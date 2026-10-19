@@ -3,6 +3,7 @@
 #include <bg/scalar/bundle/scalar_type.hpp>
 #include <bg/scalar/type.hpp>
 #include <bg/scalar/struct/scalar_type.hpp>
+#include <bg/scalar/tuple/scalar_type.hpp>
 #include <bg/type/details/declaration_variables.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/type_variable.hpp>
@@ -33,6 +34,8 @@ struct ScalarVariableInstance<ScalarVariable<Name, Constraints...>> {
                             property_constraints.push_back(&is_hierarchical_scalar);
                         } else if constexpr (std::same_as<Constraints, struct_scalar_constraint>) {
                             property_constraints.push_back(&is_struct_scalar);
+                        } else if constexpr (std::same_as<Constraints, tuple_scalar_constraint>) {
+                            property_constraints.push_back(&is_tuple_scalar);
                         } else {
                             alternatives.push_back(&cpp_scalar_type<Constraints>());
                         }

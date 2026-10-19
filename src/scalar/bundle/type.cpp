@@ -1,4 +1,5 @@
 #include <bg/scalar/bundle/scalar_type.hpp>
+#include <bg/scalar/tuple/scalar_type.hpp>
 
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_registry.hpp>
@@ -129,6 +130,27 @@ enum class RequiredFieldVisit : std::uint8_t {
 
 bool has_required_field_cycle(
     const ResolvedHierarchicalScalarType &type,
+    std::unordered_map<const ResolvedHierarchicalScalarType *, RequiredFieldVisit> &visits);
+
+bool has_required_field_cycle(
+    const ScalarType &type,
+    std::unordered_map<const ResolvedHierarchicalScalarType *, RequiredFieldVisit> &visits) {
+    if (const auto *hierarchical = type_cast<HierarchicalScalarType>(&type)) {
+        return hierarchical->is_resolved() &&
+               has_required_field_cycle(static_cast<const ResolvedHierarchicalScalarType &>(*hierarchical), visits);
+    }
+
+    const auto *tuple = type_cast<TupleScalarType>(&type);
+    if (tuple == nullptr || !tuple->is_resolved()) {
+        return false;
+    }
+    return std::ranges::any_of(tuple->item_types(), [&](const auto *item) {
+        return has_required_field_cycle(*item, visits);
+    });
+}
+
+bool has_required_field_cycle(
+    const ResolvedHierarchicalScalarType &type,
     std::unordered_map<const ResolvedHierarchicalScalarType *, RequiredFieldVisit> &visits) {
     const auto [entry, inserted] = visits.try_emplace(&type, RequiredFieldVisit::active);
     if (!inserted) {
@@ -136,9 +158,7 @@ bool has_required_field_cycle(
     }
 
     for (const auto &field : type.fields()) {
-        const auto *nested = field.optional ? nullptr : type_cast<HierarchicalScalarType>(field.type);
-        if (nested != nullptr && nested->is_resolved() &&
-            has_required_field_cycle(static_cast<const ResolvedHierarchicalScalarType &>(*nested), visits)) {
+        if (!field.optional && has_required_field_cycle(static_cast<const ScalarType &>(*field.type), visits)) {
             return true;
         }
     }

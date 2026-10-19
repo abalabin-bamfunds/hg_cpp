@@ -81,7 +81,7 @@ class In<TS<T, TimeSeriesProperties...>, Properties...>
 
     In(const TimeSeriesState &last_updated, const Stored *value, bool modified = false,
        bool *activity = nullptr) noexcept
-        requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>)
+        requires details::scalar_exposes_value<T>
         : activity_control{activity},
           data_{cpp_time_series_runtime_type<TS<T, TimeSeriesProperties...>>(), last_updated, value, modified} {}
 
@@ -101,7 +101,7 @@ class In<TS<T, TimeSeriesProperties...>, Properties...>
     const TimeSeriesInputData &input_data() const noexcept { return data_; }
 
     typename scalar_storage_traits<T>::value_type value() const
-        requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>)
+        requires details::scalar_exposes_value<T>
     {
         if constexpr (!details::scalar_storage_supports_alternative_layouts<T>) {
             return Traits::read(*static_cast<const Stored *>(data_.data()));
@@ -111,26 +111,25 @@ class In<TS<T, TimeSeriesProperties...>, Properties...>
     }
 
     Scalar<T> value() const
-        requires details::hierarchical_scalar_declaration<T>
+        requires(!details::scalar_exposes_value<T>)
     {
         return value_view();
     }
 
     typename scalar_storage_traits<T>::value_type operator*() const
-        requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T>)
+        requires details::scalar_exposes_value<T>
     {
         return value();
     }
 
     Scalar<T> operator*() const
-        requires details::hierarchical_scalar_declaration<T>
+        requires(!details::scalar_exposes_value<T>)
     {
         return value();
     }
 
     auto operator->() const
-        requires(!scalar_declaration_traits<T>::is_collection && !details::hierarchical_scalar_declaration<T> &&
-                 details::scalar_value_supports_arrow<T>)
+        requires details::scalar_exposes_value<T> && details::scalar_value_supports_arrow<T>
     {
         return details::scalar_value_arrow<T>(value());
     }

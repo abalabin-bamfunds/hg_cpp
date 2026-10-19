@@ -20,6 +20,7 @@ class ListScalarType;
 class ScalarType;
 class SetScalarType;
 class StructScalarType;
+class TupleScalarType;
 class TimeSeriesBundleType;
 class TimeSeriesDictionaryType;
 class TimeSeriesListType;
@@ -32,8 +33,8 @@ class TypeMap;
 enum class TimeSeriesGuarantee;
 
 using TypeVisitor = ddv::mux<Type, ScalarType, BuiltinScalarType, ListScalarType, SetScalarType, DictScalarType,
-                             StructScalarType, HierarchicalScalarType, GraphArgumentType, TimeSeriesType,
-                             TimeSeriesValueType, TimeSeriesReferenceType, TimeSeriesListType,
+                             StructScalarType, TupleScalarType, HierarchicalScalarType, GraphArgumentType,
+                             TimeSeriesType, TimeSeriesValueType, TimeSeriesReferenceType, TimeSeriesListType,
                              TimeSeriesBundleType, TimeSeriesSetType, TimeSeriesDictionaryType>;
 
 template <typename Target, typename Visitor> struct is_type_cast_target;

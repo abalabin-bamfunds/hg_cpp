@@ -6,6 +6,7 @@
 #include <bg/scalar/details/data.hpp>
 #include <bg/scalar/details/storage_traits.hpp>
 #include <bg/scalar/details/value_access.hpp>
+#include <bg/scalar/tuple/scalar_type.hpp>
 #include <bg/scalar/type.hpp>
 
 #include <ddv/serial_visitor.h>
@@ -28,7 +29,7 @@ namespace details {
 template <typename... Builtins>
 auto scalar_visit_types(tp::tpack<Builtins...>)
     -> ddv::mux<Scalar<List<SCALAR>>, Scalar<Set<SCALAR>>, Scalar<Dict<SCALAR, SCALAR>>, Scalar<HIERARCHICAL>,
-                Scalar<STRUCT>, Scalar<Builtins>..., Scalar<>>;
+                Scalar<STRUCT>, Scalar<TUPLE>, Scalar<Builtins>..., Scalar<>>;
 
 } // namespace details
 
@@ -185,6 +186,7 @@ template <typename T> class Scalar {
 #include <bg/scalar/list/scalar.hpp>
 #include <bg/scalar/set/scalar.hpp>
 #include <bg/scalar/struct/scalar.hpp>
+#include <bg/scalar/tuple/scalar.hpp>
 
 namespace bg {
 

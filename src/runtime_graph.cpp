@@ -684,7 +684,7 @@ void RuntimeGraph::finalize(EvaluationContext &parent_context) noexcept {
 
             EvaluationContext context{parent_context, *this, node_index};
             const auto allocation_context = details::ScalarAllocationContext{
-                allocator_, context.global_state().bundle_allocation_owner(), this, node_index};
+                allocator_, context.global_state().scalar_allocation_pool(), this, node_index};
             node.state_destruction_function()(node, storage_, &context);
         }
 
@@ -1053,7 +1053,7 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
     const auto output_was_valid = node.has_output() && Node{node, storage_}.output_last_updated().valid();
     context.node_index_ = node_index;
     const auto allocation_context = details::ScalarAllocationContext{
-        allocator_, context.global_state().bundle_allocation_owner(), this, node_index};
+        allocator_, context.global_state().scalar_allocation_pool(), this, node_index};
     node.invalidation_function()(node, storage_, &context);
     context.node_index_ = 0;
 
@@ -1191,7 +1191,7 @@ void RuntimeGraphEvaluator::start(RuntimeGraph &graph, EvaluationContext &parent
 
         context.node_index_ = node_index;
         const auto allocation_context = details::ScalarAllocationContext{
-            graph.allocator_, context.global_state().bundle_allocation_owner(), &graph, node_index};
+            graph.allocator_, context.global_state().scalar_allocation_pool(), &graph, node_index};
         (*function)(node, graph.storage_, &context);
         context.node_index_ = 0;
         ++function;
@@ -1223,7 +1223,7 @@ void RuntimeGraph::stop_nodes(std::size_t node_count, EvaluationContext &parent_
         const auto &node = compiled_graph_->node(node_index);
         parent_context.node_index_ = node_index;
         const auto allocation_context = details::ScalarAllocationContext{
-            allocator_, parent_context.global_state().bundle_allocation_owner(), this, node_index};
+            allocator_, parent_context.global_state().scalar_allocation_pool(), this, node_index};
         stops.functions[i](node, storage_, &parent_context);
         parent_context.node_index_ = 0;
     }
@@ -1281,7 +1281,7 @@ void RuntimeGraphEvaluator::stop(RuntimeGraph &graph, EvaluationContext &parent_
         const auto &node = graph.compiled_graph_->node(node_index);
         context.node_index_ = node_index;
         const auto allocation_context = details::ScalarAllocationContext{
-            graph.allocator_, context.global_state().bundle_allocation_owner(), &graph, node_index};
+            graph.allocator_, context.global_state().scalar_allocation_pool(), &graph, node_index};
         stops.functions[i](node, graph.storage_, &context);
         context.node_index_ = 0;
     }
@@ -1470,7 +1470,7 @@ bool RuntimeGraphEvaluator::evaluate_graph(RuntimeGraph &graph, EvaluationContex
         if (const auto evaluate = node.evaluation_function(); evaluate != nullptr) {
             context.node_index_ = node_index;
             const auto allocation_context = details::ScalarAllocationContext{
-                graph.allocator_, context.global_state().bundle_allocation_owner(), &graph, node_index};
+                graph.allocator_, context.global_state().scalar_allocation_pool(), &graph, node_index};
             const auto evaluation_completed = evaluate(node, graph.storage_, &context);
             context.reset_scratch();
             context.node_index_ = 0;

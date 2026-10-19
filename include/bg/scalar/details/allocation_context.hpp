@@ -6,18 +6,18 @@
 
 namespace bg::details {
 
-class BundleAllocationOwner;
+class ScalarAllocationPool;
 
 struct ScalarAllocationOwner {
     allocator memory;
-    BundleAllocationOwner *bundle_owner;
+    ScalarAllocationPool *scalar_allocation_pool;
     const void *graph;
     std::size_t node_index;
 };
 
 class ScalarAllocationContext {
   public:
-    ScalarAllocationContext(allocator memory, BundleAllocationOwner &bundle_owner, const void *graph,
+    ScalarAllocationContext(allocator memory, ScalarAllocationPool &scalar_allocation_pool, const void *graph,
                             std::size_t node_index) noexcept;
     ~ScalarAllocationContext();
 
@@ -31,7 +31,7 @@ class ScalarAllocationContext {
 
 const ScalarAllocationOwner *current_scalar_allocation_owner() noexcept;
 allocator &current_scalar_allocator();
-BundleAllocationOwner *current_bundle_allocation_owner() noexcept;
+ScalarAllocationPool *current_scalar_allocation_pool() noexcept;
 
 void record_context_scalar_allocation(const void *value);
 void check_context_scalar_deallocation(const void *value);

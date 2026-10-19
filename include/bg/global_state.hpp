@@ -111,7 +111,7 @@ class GlobalState {
 
         explicit WriteAccess(GlobalState &state)
             : state_{&state}, lock_{state.mutex_},
-              allocation_context_{state.allocator_, *state.bundle_owner_, &state, 0} {}
+              allocation_context_{state.allocator_, *state.scalar_allocation_pool_, &state, 0} {}
 
         GlobalState *state_;
         std::unique_lock<std::shared_mutex> lock_;
@@ -128,7 +128,7 @@ class GlobalState {
 
     ~GlobalState();
 
-    details::BundleAllocationOwner &bundle_allocation_owner() noexcept { return *bundle_owner_; }
+    details::ScalarAllocationPool &scalar_allocation_pool() noexcept { return *scalar_allocation_pool_; }
 
     template <typename Function>
         requires std::invocable<Function, const ReadAccess &> &&
@@ -203,7 +203,7 @@ class GlobalState {
     allocator allocator_;
     Values values_;
     mutable std::shared_mutex mutex_;
-    details::BundleAllocationOwner *bundle_owner_;
+    details::ScalarAllocationPool *scalar_allocation_pool_;
 };
 
 } // namespace bg

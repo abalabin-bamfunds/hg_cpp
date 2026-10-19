@@ -34,7 +34,7 @@ collection layouts therefore interoperate without converting a view to a C++
 collection object.
 
 The view visitor selects typed built-in atomic access, structural compound,
-list, set, or dictionary access, or erased extension access. A
+tuple, list, set, or dictionary access, or erased extension access. A
 `BuiltinScalarType` carries the built-in declaration index used to select a
 typed atomic view. Other leaf scalar types use the erased view. Generic node code
 can use this interface without inspecting the semantic type. The selected view
@@ -131,7 +131,7 @@ an item in its final slot before hashing and duplicate lookup. A duplicate
 returns `false` and destroys the candidate. An exception destroys the candidate
 and preserves existing items.
 
-`ScalarFieldConstruction` constructs one field by schema index. Its callback
+`ScalarFieldConstruction` constructs one field or tuple item by index. Its callback
 receives the field runtime type, sized and aligned uninitialized storage, and
 the allocator. Return `true` after complete construction. Return `false` for
 an absent field. A `false` result or exception must leave no live object or
@@ -202,6 +202,7 @@ runtime types construct and destroy storage through source-neutral callbacks:
 | Destination | Sequence syntax | Conditions |
 | --- | --- | --- |
 | List | `{item, ...}` | Items follow sequence order. |
+| Tuple | `{item, ...}` | Item count equals the tuple length; each position uses its declared type. |
 | Set | `{item, ...}` | Equal items are deduplicated. |
 | Dictionary | `{{key, value}, ...}` | Entries have exactly two values; duplicate keys are rejected. |
 | Compound scalar or bundle | `{{name, value}, ...}` | Names are strings or symbols; each supplied name is unique and known. |
@@ -304,6 +305,32 @@ object; advancing it uses the caller's batch buffer.
 
 Generic collection views use the resolved item types. This applies to scalar
 parameters and `State` declarations such as `State<Dict<K, SCALAR>>`.
+
+## Scalar tuples
+
+`Tuple<T...>` declares a fixed-length positional scalar. The items can have
+different scalar types. `Scalar<Tuple<T...>>::get<Index>()` returns a borrowed
+`Scalar` view with that position's declared type. `Scalar<TUPLE>` provides
+runtime-indexed item access for any resolved tuple. Equality and hashing require
+the respective operation on every item.
+
+```cpp
+auto value = ScalarValue<Tuple<string, i64, symbol>>::from_literal(
+    {"answer", 42, symbol{"ok"}});
+auto count = value.view().get<1>().value();
+```
+
+Tuple literals provide exactly one value per position, including zero values
+for `Tuple<>`. Construction uses each position's runtime type and the existing
+`ScalarFieldConstruction` callback contract. Completed items are destroyed if
+a later item fails to construct.
+
+Tuple values use shared immutable storage. Copies with the same runtime type
+retain storage. A copy into a compatible different runtime type constructs each
+item through its destination runtime type. Replacing a time series value
+preserves owning copies of the previous tuple. Item offsets belong to the
+runtime type. Tuples and hierarchical scalars reuse the scalar allocation pool
+for nested ownership.
 
 ## Compound scalars
 
@@ -538,8 +565,8 @@ or assignment. Without the hook, a C++ read view uses its declaration's
 canonical runtime. These operations are extension APIs; node code uses the
 ordinary scalar and time series APIs.
 
-A runtime type for a list, set, or dictionary semantic type derives from the
-matching collection runtime interface. Its component runtime types correspond
+A runtime type for a tuple, list, set, or dictionary semantic type derives from
+the matching runtime interface. Its component runtime types correspond
 to the semantic type components. Generic collection access and runtime input
 compatibility rely on this registration invariant. A dictionary runtime type
 also implements one-lookup `find()` and creates a resumable cursor that fills
@@ -555,7 +582,7 @@ virtual functions to scalar types, runtime types, or values.
 Resolved handler pointers remain stable for the registry lifetime and can be
 cached while processing values of one runtime type.
 
-Use `Scalar::visit()` for structural list, set, dictionary, compound, and
+Use `Scalar::visit()` for structural tuple, list, set, dictionary, compound, and
 hierarchical handling. An operation handles built-in atomic types through typed
 `Scalar<T>` callbacks. It performs `ScalarDispatch` lookup in the `Scalar<>`
 extension catch-all callback. Pass the operation object to a registered handler

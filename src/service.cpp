@@ -69,9 +69,9 @@ class ServiceRequestBinding {
         const auto *inputs = &caller_context.runtime_graph() == &graph ? caller_context.runtime_graph_inputs()
                                                                        : nullptr;
         auto provider_context = provider_.node_context(caller_context, inputs);
-        auto *bundle_owner = current_bundle_allocation_owner();
-        assert(bundle_owner != nullptr);
-        const auto allocation_context = ScalarAllocationContext{graph.allocation(), *bundle_owner, &graph, node_index};
+        auto *scalar_allocation_pool = current_scalar_allocation_pool();
+        assert(scalar_allocation_pool != nullptr);
+        const auto allocation_context = ScalarAllocationContext{graph.allocation(), *scalar_allocation_pool, &graph, node_index};
         auto output = output_factory::make<Out<TimeSeries>>(runtime_node.output_last_updated(),
                                                             runtime_node.output_value(), *runtime_type_,
                                                             provider_context);

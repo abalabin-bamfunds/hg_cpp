@@ -7,6 +7,7 @@
 #include <bg/scalar/set/runtime_type.hpp>
 #include <bg/scalar/set/scalar_type.hpp>
 #include <bg/scalar/struct/runtime_type.hpp>
+#include <bg/scalar/tuple/runtime_type.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/util/byte_copy.hpp>
 #include <bg/util/linear_hash_table.hpp>
@@ -949,6 +950,9 @@ void validate_runtime_interface(const ScalarRuntimeType &runtime_type) {
         [&](const StructScalarType *) {
             valid = dynamic_cast<const StructScalarRuntimeType *>(&runtime_type) != nullptr;
         },
+        [&](const TupleScalarType *) {
+            valid = dynamic_cast<const ScalarTupleRuntimeType *>(&runtime_type) != nullptr;
+        },
         [&](const ListScalarType *) { valid = dynamic_cast<const ScalarListRuntimeType *>(&runtime_type) != nullptr; },
         [&](const SetScalarType *) { valid = dynamic_cast<const ScalarSetRuntimeType *>(&runtime_type) != nullptr; },
         [&](const DictScalarType *) { valid = dynamic_cast<const ScalarDictRuntimeType *>(&runtime_type) != nullptr; },
@@ -1019,6 +1023,7 @@ class ScalarRuntimeTypeResolver {
                 }
                 result = &resolve_composed(static_cast<const ResolvedHierarchicalScalarType &>(*hierarchical));
             },
+            [&](const TupleScalarType *tuple) { result = &resolve_composed(*tuple); },
             [&](const ListScalarType *list) {
                 auto runtime_type = std::make_unique<ComposedListRuntimeType>(*list, resolve(list->item_type()));
                 result = &publish(std::move(runtime_type));
@@ -1055,6 +1060,27 @@ class ScalarRuntimeTypeResolver {
             fields.push_back(&resolve(static_cast<const ScalarType &>(*field.type)));
         }
         initialize_composed_hierarchical_scalar_runtime_type(*result, fields);
+        return *result;
+    }
+
+    const ScalarTupleRuntimeType &resolve_composed(const TupleScalarType &type) {
+        if (!type.is_resolved()) {
+            throw std::invalid_argument{"an unresolved tuple scalar has no runtime type"};
+        }
+        if (const auto *existing = registered_runtime_type(runtime_types_, type, false)) {
+            return static_cast<const ScalarTupleRuntimeType &>(*existing);
+        }
+
+        auto runtime_type = make_composed_tuple_runtime_type(type);
+        auto *result = runtime_type.get();
+        publish(std::move(runtime_type));
+
+        auto items = std::vector<const ScalarRuntimeType *>{};
+        items.reserve(type.size());
+        for (const auto *item_type : type.item_types()) {
+            items.push_back(&resolve(*item_type));
+        }
+        initialize_composed_tuple_runtime_type(*result, items);
         return *result;
     }
 

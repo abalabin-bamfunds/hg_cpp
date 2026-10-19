@@ -516,6 +516,10 @@ template <template <typename, auto...> typename Field> struct RequiredSelfCycle 
     Field<bg::Bundle<RequiredSelfCycle>> next;
 };
 
+template <template <typename, auto...> typename Field> struct RequiredTupleCycle {
+    Field<bg::Tuple<bg::i64, bg::Bundle<RequiredTupleCycle>>> next;
+};
+
 template <template <typename, auto...> typename Field> struct RecursiveSchemaParent {
     Field<bg::i64> value;
 };
@@ -571,6 +575,18 @@ TEST_CASE("a required direct self-cycle is rejected",
           "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]") {
     const auto register_type = [] {
         return &bg::cpp_scalar_type<bg::Bundle<RequiredSelfCycle>>();
+    };
+
+    CHECK_THROWS_WITH(register_type(),
+                      "required hierarchical scalar fields cannot form a recursive cycle");
+    CHECK_THROWS_WITH(register_type(),
+                      "required hierarchical scalar fields cannot form a recursive cycle");
+}
+
+TEST_CASE("a required cycle through tuple items is rejected",
+          "[feature:type-system][scalar:hierarchical][scalar:tuple][schema:named][declaration:concrete]") {
+    const auto register_type = [] {
+        return &bg::cpp_scalar_type<bg::Bundle<RequiredTupleCycle>>();
     };
 
     CHECK_THROWS_WITH(register_type(),

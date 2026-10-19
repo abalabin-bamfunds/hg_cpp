@@ -1,5 +1,5 @@
 #include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/bundle/details/allocation_owner.hpp>
+#include <bg/scalar/details/allocation_pool.hpp>
 #include <bg/scalar/details/string_storage.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/scalar/data.hpp>
@@ -30,13 +30,13 @@ std::size_t allocation_size(std::size_t capacity) {
 
 } // namespace
 
-StringStorage::StringStorage(std::pmr::memory_resource &memory, BundleAllocationOwner *owner, std::size_t length,
+StringStorage::StringStorage(std::pmr::memory_resource &memory, ScalarAllocationPool *owner, std::size_t length,
                              std::size_t capacity) noexcept
     : memory_{&memory}, owner_{owner}, length_{static_cast<std::uint32_t>(length)},
       capacity_{static_cast<std::uint32_t>(capacity)} {}
 
 StringStorage *StringStorage::allocate(std::size_t length, std::size_t capacity, allocator &memory,
-                                       BundleAllocationOwner *owner) {
+                                       ScalarAllocationPool *owner) {
     if (length > maximum_string_size || capacity > maximum_string_size) {
         throw std::length_error{"string storage exceeds the 4 GiB limit"};
     }
@@ -47,7 +47,7 @@ StringStorage *StringStorage::allocate(std::size_t length, std::size_t capacity,
     if (owner == nullptr) {
         const auto *context = current_scalar_allocation_owner();
         if (context != nullptr && &memory.memory_resource() == &context->memory.memory_resource()) {
-            owner = context->bundle_owner;
+            owner = context->scalar_allocation_pool;
         }
     }
 

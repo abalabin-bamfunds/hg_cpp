@@ -3,7 +3,7 @@
 #include <bg/scalar/list/runtime_type.hpp>
 #include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/value.hpp>
-#include <bg/scalar/bundle/details/allocation_owner.hpp>
+#include <bg/scalar/details/allocation_pool.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -57,7 +57,7 @@ TEST_CASE("the default scalar list assignment constructs before replacing provid
     const auto &list_runtime = static_cast<const bg::ScalarListRuntimeType &>(runtime);
     auto scalar_memory = counting_memory_resource{};
     auto scalar_allocator = bg::allocator{scalar_memory};
-    auto *allocation_owner = bg::details::BundleAllocationOwner::create(scalar_allocator);
+    auto *allocation_owner = bg::details::ScalarAllocationPool::create(scalar_allocator);
     auto release_allocation_owner = bg::util::scope_exit{[&]() noexcept { allocation_owner->release(); }};
     auto value_memory = std::pmr::unsynchronized_pool_resource{};
     auto value_allocator = bg::allocator{value_memory};

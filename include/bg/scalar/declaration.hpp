@@ -16,6 +16,7 @@ struct Hashable {};
 namespace details {
 struct hierarchical_scalar_constraint {};
 struct struct_scalar_constraint {};
+struct tuple_scalar_constraint {};
 }
 
 template <util::compile_time_string Name, typename... Constraints>
@@ -26,6 +27,7 @@ struct ScalarVariable : details::scalar_type_access<ScalarVariable<Name, Constra
 using SCALAR = ScalarVariable<"SCALAR">;
 using HIERARCHICAL = ScalarVariable<"HIERARCHICAL", details::hierarchical_scalar_constraint>;
 using STRUCT = ScalarVariable<"STRUCT", details::struct_scalar_constraint, EqualityComparable, Hashable>;
+using TUPLE = ScalarVariable<"TUPLE", details::tuple_scalar_constraint>;
 
 namespace details {
 

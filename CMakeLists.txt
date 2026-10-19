@@ -75,7 +75,7 @@ add_library(
     src/scalar/buffer_operations.cpp
     src/scalar/literal_operations.cpp
     src/scalar/literal_sentinel.cpp
-    src/scalar/bundle/allocation_owner.cpp
+    src/scalar/allocation_pool.cpp
     src/scalar/bundle/runtime_type.cpp
     src/scalar/dict/type.cpp
     src/scalar/string_storage.cpp
@@ -84,6 +84,8 @@ add_library(
     src/scalar/list/type.cpp
     src/scalar/set/type.cpp
     src/scalar/struct/type.cpp
+    src/scalar/tuple/runtime_type.cpp
+    src/scalar/tuple/type.cpp
     src/scalar/runtime_type.cpp
     src/scalar/type.cpp
     src/signature.cpp

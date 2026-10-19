@@ -7,6 +7,7 @@
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/scalar/storage_traits.hpp>
 #include <bg/scalar/struct/runtime_type.hpp>
+#include <bg/scalar/tuple/scalar_type.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/util/byte_copy.hpp>
 #include <bg/util/scope_exit.hpp>
@@ -334,7 +335,7 @@ template <typename T> const ScalarRuntimeType &cpp_scalar_runtime_type() {
         (void)registered;
 
         return runtime_type;
-    } else if constexpr (details::hierarchical_scalar_declaration<T>) {
+    } else if constexpr (details::hierarchical_scalar_declaration<T> || is_tuple_scalar_v<T>) {
         return resolve_scalar_runtime_type(cpp_scalar_type<T>(), {});
     } else {
         static const auto runtime_type = util::static_storage<details::CppScalarRuntimeType<T>>{};

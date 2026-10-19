@@ -1,9 +1,10 @@
 #include <bg/node.hpp>
-#include <bg/scalar/bundle/details/allocation_owner.hpp>
+#include <bg/scalar/details/allocation_pool.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/details/string_storage.hpp>
 #include <bg/scalar/list/scalar.hpp>
 #include <bg/scalar/opaque.hpp>
+#include <bg/scalar/tuple/scalar.hpp>
 #include <bg/time_series/output_binding.hpp>
 #include <bg/time_series/output_state.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
@@ -1330,7 +1331,7 @@ TEST_CASE("a queue message writer stores a scalar sequence as one owning value",
     auto tick_reader = bg::TimeSeriesTickReader{payload, bg::TS<List>::type()};
 
     auto memory = bg::allocator{};
-    auto *allocation_owner = bg::details::BundleAllocationOwner::create(memory);
+    auto *allocation_owner = bg::details::ScalarAllocationPool::create(memory);
     auto release_allocation_owner = bg::util::scope_exit{[&]() noexcept { allocation_owner->release(); }};
     {
         const auto allocation_context = bg::details::ScalarAllocationContext{memory, *allocation_owner, &buffer, 0};
@@ -1380,7 +1381,7 @@ TEST_CASE("queue replay transfers an owning scalar list into output storage",
     output_state.bind(output_time, &output_value, evaluation_time);
 
     {
-        auto *allocation_owner = bg::details::BundleAllocationOwner::create(memory);
+        auto *allocation_owner = bg::details::ScalarAllocationPool::create(memory);
         auto release_allocation_owner = bg::util::scope_exit{[&]() noexcept { allocation_owner->release(); }};
         const auto allocation_context =
             bg::details::ScalarAllocationContext{memory, *allocation_owner, &buffer, 0};
@@ -1404,6 +1405,74 @@ TEST_CASE("queue replay transfers an owning scalar list into output storage",
         CHECK(frame.target == 24);
     }
 
+    CHECK(retained_value_memory.allocations == retained_value_memory.deallocations);
+}
+
+TEST_CASE("queue messages replay and discard nested scalar tuples through the owning-value path",
+          "[feature:time-series-storage][series:value][scalar:tuple][queue][storage:variable]") {
+    using Value = bg::Tuple<bg::i64, bg::Tuple<bg::string, bg::symbol>>;
+    const auto &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<Value>>();
+    auto memory = bg::allocator{retained_value_memory};
+
+    retained_value_memory.allocations = 0;
+    retained_value_memory.deallocations = 0;
+    {
+        const auto buffer = bg::util::buffer::concurrent_chain(512, 4);
+        auto writer = bg::details::QueueMessageWriter{buffer, 25, runtime_type, memory};
+        REQUIRE(writer.write(literal::TimeSeriesLiteral{7, {"NASDAQ", bg::symbol{"NQ"}}}));
+
+        auto message_reader = bg::util::concurrent_buffer_reader{buffer};
+        const auto frame = message_reader.read<bg::details::QueueMessageHeader>();
+        CHECK(frame.target == 25);
+        CHECK(retained_value_memory.allocations > 0);
+
+        constexpr auto value_offset = (1 + alignof(bg::ScalarValue<>) - 1) / alignof(bg::ScalarValue<>) *
+                                      alignof(bg::ScalarValue<>);
+        constexpr auto payload_size = value_offset + sizeof(bg::ScalarValue<>);
+        auto tick_reader = bg::TimeSeriesTickReader{
+            message_reader.current_buffer().chunk(0, payload_size), bg::TS<Value>::type()};
+
+        auto *allocation_owner = bg::details::ScalarAllocationPool::create(memory);
+        auto release_allocation_owner = bg::util::scope_exit{[&]() noexcept { allocation_owner->release(); }};
+        const auto allocation_context = bg::details::ScalarAllocationContext{memory, *allocation_owner, &buffer, 0};
+        auto output_time = bg::TimeSeriesState{};
+        auto output_value = bg::scalar_storage_traits<Value>::stored_type{};
+        auto output_state = bg::OutputState{runtime_type};
+        const auto evaluation_time = bg::MIN_DT + std::chrono::microseconds{1};
+        output_state.bind(output_time, &output_value, evaluation_time);
+        auto output = bg::Out<bg::TS<Value>>{bg::TimeSeriesOutputBinding{output_state}};
+        auto output_initialized = false;
+        auto destroy_output = bg::util::scope_exit{[&]() noexcept {
+            if (output_initialized) {
+                bg::cpp_scalar_runtime_type<Value>().destroy(&output_value, memory);
+            }
+        }};
+
+        REQUIRE(tick_reader.replay(output));
+        output_initialized = true;
+        CHECK_FALSE(tick_reader.has_next());
+        const auto value = bg::Scalar<Value>::from(bg::cpp_scalar_runtime_type<Value>(), &output_value);
+        CHECK(value.get<0>().value() == 7);
+        CHECK(value.get<1>().get<0>().value() == "NASDAQ");
+        CHECK(value.get<1>().get<1>().value() == bg::symbol{"NQ"});
+    }
+    CHECK(retained_value_memory.allocations == retained_value_memory.deallocations);
+
+    retained_value_memory.allocations = 0;
+    retained_value_memory.deallocations = 0;
+    {
+        const auto buffer = bg::util::buffer::concurrent_chain(512, 4);
+        auto writer = bg::details::QueueMessageWriter{buffer, 26, runtime_type, memory};
+        REQUIRE(writer.write(literal::TimeSeriesLiteral{7, {"NASDAQ", bg::symbol{"NQ"}}}));
+        auto message_reader = bg::util::concurrent_buffer_reader{buffer};
+        const auto frame = message_reader.read<bg::details::QueueMessageHeader>();
+        constexpr auto value_offset = (1 + alignof(bg::ScalarValue<>) - 1) / alignof(bg::ScalarValue<>) *
+                                      alignof(bg::ScalarValue<>);
+        constexpr auto payload_size = value_offset + sizeof(bg::ScalarValue<>);
+        { auto tick_reader = bg::TimeSeriesTickReader{
+              message_reader.current_buffer().chunk(0, payload_size), bg::TS<Value>::type()}; }
+        CHECK(frame.target == 26);
+    }
     CHECK(retained_value_memory.allocations == retained_value_memory.deallocations);
 }
 

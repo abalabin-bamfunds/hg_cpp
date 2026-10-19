@@ -231,6 +231,13 @@ compatibility and provides no equality or hashing.
 A scalar list has one scalar item type. `List<SCALAR>` accepts any resolved
 scalar item type. Each list is homogeneous.
 
+A scalar tuple has a fixed number of positional scalar items, written
+`Tuple<T...>`. Its canonical identity is the ordered sequence of item types.
+Compatibility requires equal item counts and compatible types at each position.
+Item variables resolve through the ordinary `TypeMap`. `TUPLE` accepts any
+resolved scalar tuple. `Tuple<>` is the empty tuple. A tuple remains distinct
+from a scalar list even when every item has the same type.
+
 A scalar set has one hashable scalar item type, written `Set<T>`. A scalar
 dictionary maps hashable scalar keys to scalar values, written `Dict<K, V>`.
 
@@ -287,8 +294,9 @@ through scalar collections. Semantic registration publishes the complete group
 of types and schemas atomically. Readers observe complete field metadata.
 
 Required direct hierarchical fields must not form a recursive cycle. Every
-direct cycle must contain an optional field. A scalar collection also terminates
-the direct cycle because an empty collection has a finite value.
+direct cycle must contain an optional field. The check traverses every tuple
+item. A scalar list, set, or dictionary terminates the direct cycle because
+an empty collection has a finite value.
 
 The [scalar API](scalar-api.md) defines C++ access and ownership.
 

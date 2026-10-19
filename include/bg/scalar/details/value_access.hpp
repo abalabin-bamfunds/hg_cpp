@@ -18,6 +18,9 @@
 namespace bg::details {
 
 template <typename T>
+concept scalar_exposes_value = requires(const Scalar<T> &scalar) { scalar.value(); };
+
+template <typename T>
 inline constexpr bool inline_scalar_value =
     std::same_as<scalar_stored_t<T>, typename scalar_storage_traits<T>::value_type> &&
     std::is_trivially_copyable_v<scalar_stored_t<T>> && sizeof(scalar_stored_t<T>) <= sizeof(std::uintptr_t);

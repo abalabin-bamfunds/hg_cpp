@@ -5,7 +5,7 @@
 #include "test_scalar_provider.hpp"
 
 #include <bg/node.hpp>
-#include <bg/scalar/bundle/details/allocation_owner.hpp>
+#include <bg/scalar/details/allocation_pool.hpp>
 #include <bg/scalar/bundle/scalar.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/dict/scalar.hpp>
@@ -377,7 +377,7 @@ void verify_owned_collection_assignment_fallback(const bg::ScalarListRuntimeType
     auto destination_allocator = bg::allocator{destination_resource};
     auto owner_resource = std::pmr::unsynchronized_pool_resource{};
     auto owner_allocator = bg::allocator{owner_resource};
-    auto *allocation_owner = bg::details::BundleAllocationOwner::create(owner_allocator);
+    auto *allocation_owner = bg::details::ScalarAllocationPool::create(owner_allocator);
     auto release_owner = bg::util::scope_exit{[&]() noexcept { allocation_owner->release(); }};
     auto storage_allocator = bg::allocator{};
     auto *storage = storage_allocator.allocate_bytes(target_runtime.size(), target_runtime.alignment());
@@ -459,7 +459,7 @@ void verify_direct_scalar_output(const ScalarRuntime &scalar_runtime, const bg::
     auto scalar_allocator = bg::allocator{scalar_memory};
     auto owner_resource = std::pmr::unsynchronized_pool_resource{};
     auto owner_allocator = bg::allocator{owner_resource};
-    auto *allocation_owner = bg::details::BundleAllocationOwner::create(owner_allocator);
+    auto *allocation_owner = bg::details::ScalarAllocationPool::create(owner_allocator);
     auto release_allocation_owner = bg::util::scope_exit{[&]() noexcept { allocation_owner->release(); }};
     auto output_storage_resource = std::pmr::unsynchronized_pool_resource{};
     auto output_allocator = bg::allocator{output_storage_resource};
@@ -536,7 +536,7 @@ void verify_retained_scalar_snapshot(const bg::ScalarRuntimeType &scalar_runtime
     auto scalar_allocator = bg::allocator{scalar_memory};
     auto owner_resource = std::pmr::unsynchronized_pool_resource{};
     auto owner_allocator = bg::allocator{owner_resource};
-    auto *allocation_owner = bg::details::BundleAllocationOwner::create(owner_allocator);
+    auto *allocation_owner = bg::details::ScalarAllocationPool::create(owner_allocator);
     auto release_allocation_owner = bg::util::scope_exit{[&]() noexcept { allocation_owner->release(); }};
     auto snapshot_resource = std::pmr::unsynchronized_pool_resource{};
     auto snapshot_allocator = bg::allocator{snapshot_resource};
@@ -903,7 +903,7 @@ void verify_bundle_base_assignment_fallback() {
         auto scalar_allocator = bg::allocator{scalar_memory};
         auto owner_resource = std::pmr::unsynchronized_pool_resource{};
         auto owner_allocator = bg::allocator{owner_resource};
-        auto *allocation_owner = bg::details::BundleAllocationOwner::create(owner_allocator);
+        auto *allocation_owner = bg::details::ScalarAllocationPool::create(owner_allocator);
         auto release_owner = bg::util::scope_exit{[&]() noexcept { allocation_owner->release(); }};
         auto storage_resource = std::pmr::unsynchronized_pool_resource{};
         auto storage_allocator = bg::allocator{storage_resource};

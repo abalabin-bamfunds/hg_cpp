@@ -12,6 +12,7 @@
 #include <bg/scalar/bundle/runtime_type.hpp>
 #include <bg/scalar/struct/runtime_type.hpp>
 #include <bg/scalar/struct/scalar_type.hpp>
+#include <bg/scalar/tuple/runtime_type.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/util/scope_exit.hpp>
 
@@ -104,6 +105,14 @@ template <typename LiteralType> class ScalarLiteralConstructionContext {
                         static_cast<const bg::StructScalarRuntimeType &>(runtime_type).construct_fields_with(
                             destination, memory, {&fields, &NamedFieldConstructionContext::callback});
                     },
+                    [&](const bg::TupleScalarType *tuple_type) {
+                        if (children.size() != tuple_type->size()) {
+                            throw std::invalid_argument{"tuple literal item count does not match its type"};
+                        }
+                        auto fields = PositionalFieldConstructionContext{*this, children};
+                        static_cast<const bg::ScalarTupleRuntimeType &>(runtime_type).construct_fields_with(
+                            destination, memory, {&fields, &PositionalFieldConstructionContext::callback});
+                    },
                     [&](const bg::HierarchicalScalarType *) {
                         if (!explicit_allocator_ && bg::details::current_scalar_allocation_owner() == nullptr) {
                             throw std::logic_error{"constructing a Bundle literal requires an explicit allocator"};
@@ -157,6 +166,23 @@ template <typename LiteralType> class ScalarLiteralConstructionContext {
     struct NamedField {
         const LiteralType *name;
         const LiteralType *value;
+    };
+
+    struct PositionalFieldConstructionContext {
+        const ScalarLiteralConstructionContext &parent;
+        std::span<const LiteralType> items;
+
+        static bool callback(void *context, std::size_t field_index, const bg::ScalarRuntimeType &runtime_type,
+                             void *destination, bg::allocator &memory) {
+            const auto &fields = *static_cast<const PositionalFieldConstructionContext *>(context);
+            if (field_index >= fields.items.size()) {
+                return false;
+            }
+
+            auto item = ScalarLiteralConstructionContext{fields.items[field_index], fields.parent.explicit_allocator_};
+            item.construct(runtime_type, destination, memory);
+            return true;
+        }
     };
 
     struct NamedFieldConstructionContext {

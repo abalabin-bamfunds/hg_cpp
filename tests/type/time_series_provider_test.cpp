@@ -7,7 +7,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/literal/sentinel.hpp>
 #include <bg/node.hpp>
-#include <bg/scalar/bundle/details/allocation_owner.hpp>
+#include <bg/scalar/details/allocation_pool.hpp>
 #include <bg/scalar/bundle/value.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/data.hpp>
@@ -1122,7 +1122,7 @@ TEST_CASE("extension sentinels reach scalar literal providers through time-serie
     provider::expected_scalar_literal = &extension_literal;
     provider::scalar_literal_address_matches = false;
     auto memory = bg::allocator{};
-    auto *allocation_owner = bg::details::BundleAllocationOwner::create(memory);
+    auto *allocation_owner = bg::details::ScalarAllocationPool::create(memory);
     auto release_allocation_owner = bg::util::scope_exit{[&]() noexcept { allocation_owner->release(); }};
     const auto allocation_context = bg::details::ScalarAllocationContext{memory, *allocation_owner, &output_storage, 0};
     output.apply(extension_literal);
@@ -1768,7 +1768,7 @@ TEST_CASE("a custom TSD key hook that throws after its callback does not discard
     auto child_value = bg::i64{};
     auto replay_action = provider::ContextAction{[&](bg::EvaluationContext &context) {
         auto tick_reader = bg::util::buffer_reader{payload};
-        auto *allocation_owner = bg::details::BundleAllocationOwner::create(memory);
+        auto *allocation_owner = bg::details::ScalarAllocationPool::create(memory);
         auto release_allocation_owner = bg::util::scope_exit{[&]() noexcept { allocation_owner->release(); }};
         const auto allocation_context = bg::details::ScalarAllocationContext{memory, *allocation_owner, &buffer, 0};
         auto *output_storage = memory.allocate_bytes(runtime_type.value_size(), runtime_type.value_alignment());

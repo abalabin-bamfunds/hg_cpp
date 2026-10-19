@@ -17,7 +17,7 @@ class StringBuilder;
 
 namespace details {
 
-class BundleAllocationOwner;
+class ScalarAllocationPool;
 
 class StringStorage;
 
@@ -58,20 +58,20 @@ class StringStorage {
   private:
     friend class ::bg::StringBuilder;
 
-    StringStorage(std::pmr::memory_resource &memory, BundleAllocationOwner *owner, std::size_t length,
+    StringStorage(std::pmr::memory_resource &memory, ScalarAllocationPool *owner, std::size_t length,
                   std::size_t capacity) noexcept;
 
     [[nodiscard]] static StringStorage *create_builder(std::size_t capacity, allocator &memory);
     [[nodiscard]] static StringStorage *grow(StringStorage &source, std::size_t capacity);
     [[nodiscard]] static StringStorage *allocate(std::size_t length, std::size_t capacity, allocator &memory,
-                                                 BundleAllocationOwner *owner);
+                                                 ScalarAllocationPool *owner);
     static void deallocate(StringStorage *storage) noexcept;
     char *mutable_data() noexcept;
     void set_size(std::size_t size);
 
     std::atomic_size_t references_{1};
     std::pmr::memory_resource *memory_;
-    BundleAllocationOwner *owner_;
+    ScalarAllocationPool *owner_;
     std::uint32_t length_;
     std::uint32_t capacity_;
     std::atomic<StringStorageFinalReleaseHook *> final_release_hook_{};

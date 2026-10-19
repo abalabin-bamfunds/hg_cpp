@@ -6,6 +6,7 @@
 #include <bg/scalar/dict/type.hpp>
 #include <bg/scalar/list/type.hpp>
 #include <bg/scalar/set/type.hpp>
+#include <bg/scalar/tuple/scalar_type.hpp>
 #include <bg/scalar/storage_traits.hpp>
 
 #include <concepts>
@@ -33,6 +34,12 @@ template <typename K, typename V, typename... Seen, bool Hash>
 struct hierarchical_capability<Dict<K, V>, hierarchical_capability_stack<Seen...>, Hash> {
     static constexpr bool value = hierarchical_capability<K, hierarchical_capability_stack<Seen...>, Hash>::value &&
                                   hierarchical_capability<V, hierarchical_capability_stack<Seen...>, Hash>::value;
+};
+
+template <typename... Items, typename... Seen, bool Hash>
+struct hierarchical_capability<Tuple<Items...>, hierarchical_capability_stack<Seen...>, Hash> {
+    static constexpr bool value =
+        (hierarchical_capability<Items, hierarchical_capability_stack<Seen...>, Hash>::value && ...);
 };
 
 template <template <template <typename, auto...> typename> typename Schema, typename... Seen, bool Hash>

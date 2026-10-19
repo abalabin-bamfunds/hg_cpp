@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/scalar/bundle/details/allocation_owner.hpp>
+#include <bg/scalar/details/allocation_pool.hpp>
 #include <bg/scalar/bundle/runtime_type.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/value.hpp>
@@ -17,7 +17,7 @@ namespace bg::details {
 
 OwnedScalarData construct_composed_hierarchical_scalar_value(
     const ResolvedHierarchicalScalarType &type, std::span<const ScalarData *const> fields,
-    BundleAllocationOwner &owner);
+    ScalarAllocationPool &owner);
 
 class HierarchicalScalarValueFactory {
   public:
@@ -35,7 +35,7 @@ class HierarchicalScalarValueFactory {
             sources[index] = fields[index] ? &scalar_data(*fields[index]) : nullptr;
         }
 
-        return with_owner<ScalarValue<Bundle<Schema>>>(upstream, [&](BundleAllocationOwner &owner) {
+        return with_owner<ScalarValue<Bundle<Schema>>>(upstream, [&](ScalarAllocationPool &owner) {
             return ScalarValue<Bundle<Schema>>{construct_composed_hierarchical_scalar_value(type, sources, owner)};
         });
     }
@@ -50,7 +50,7 @@ class HierarchicalScalarValueFactory {
             sources.push_back(field ? &scalar_data(*field) : nullptr);
         }
 
-        return with_owner<ScalarValue<Bundle<SCHEMA>>>(upstream, [&](BundleAllocationOwner &owner) {
+        return with_owner<ScalarValue<Bundle<SCHEMA>>>(upstream, [&](ScalarAllocationPool &owner) {
             return ScalarValue<Bundle<SCHEMA>>{construct_composed_hierarchical_scalar_value(type, sources, owner)};
         });
     }
@@ -58,14 +58,14 @@ class HierarchicalScalarValueFactory {
   private:
     template <typename Value, typename Construct>
     static Value with_owner(allocator *upstream, Construct &&construct) {
-        auto *owner = upstream == nullptr ? current_bundle_allocation_owner() : nullptr;
+        auto *owner = upstream == nullptr ? current_scalar_allocation_pool() : nullptr;
         auto owns_owner = false;
         if (owner == nullptr) {
             if (upstream == nullptr) {
                 throw std::logic_error{"hierarchical scalar construction requires an allocator or allocation context"};
             }
 
-            owner = BundleAllocationOwner::create(*upstream);
+            owner = ScalarAllocationPool::create(*upstream);
             owns_owner = true;
         }
         auto release_owner = util::scope_exit{[&]() noexcept {

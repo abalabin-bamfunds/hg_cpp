@@ -3,6 +3,7 @@
 #include <bg/optionality.hpp>
 #include <bg/scalar/declaration.hpp>
 #include <bg/scalar/bundle/type.hpp>
+#include <bg/scalar/tuple/scalar_type.hpp>
 #include <bg/schema/reflection.hpp>
 #include <bg/time_series/schema_variable.hpp>
 #include <bg/type/schema.hpp>
@@ -166,6 +167,12 @@ struct hierarchical_scalar_field_supported<Dict<K, V>, hierarchical_scalar_schem
     : std::bool_constant<
           hierarchical_scalar_field_supported<K, hierarchical_scalar_schema_stack<Seen...>>::value &&
           hierarchical_scalar_field_supported<V, hierarchical_scalar_schema_stack<Seen...>>::value> {};
+
+template <typename... Items, typename... Seen>
+struct hierarchical_scalar_field_supported<Tuple<Items...>, hierarchical_scalar_schema_stack<Seen...>> {
+    static constexpr bool value =
+        (hierarchical_scalar_field_supported<Items, hierarchical_scalar_schema_stack<Seen...>>::value && ...);
+};
 
 template <template <template <typename, auto...> typename> typename Schema, typename Stack>
 struct hierarchical_scalar_schema_supported_impl;

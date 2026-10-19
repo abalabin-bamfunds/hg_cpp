@@ -29,7 +29,7 @@ Use `[dimension:value]` for each applicable dimension:
 - `schema`: `named`, `unnamed`, or `generic`
 - `representation`: `native`, `free`, or `covariant`
 - `scalar`: `byte`, `i64`, `integer`, `floating-point`, `boolean`, `string`, `symbol`, `evaluation-time`, `timedelta`,
-  `opaque`, `compound`, `hierarchical`, `list`, `set`, `dict`, or `generic`
+  `opaque`, `compound`, `hierarchical`, `list`, `tuple`, `set`, `dict`, or `generic`
 - `storage`: `inline`, `fixed`, or `variable`
 - `declaration`: `concrete`, `partially-generic`, `generic`, or `runtime`
 - `binding`: `direct`, `value-to-reference`, `reference-to-value`, `reference-to-reference`, `covariant`, or
@@ -213,6 +213,9 @@ graph compilation or evaluation.
 - fixed, variable, inline, and graph-accounted storage
 - construction, assignment, copy, and destruction
 - opaque values and scalar collections, including generic and nested types
+- fixed-length scalar tuples: positional type identity and compatibility, generic
+  resolution, typed and erased item access, conditional equality and hashing,
+  literal construction, shared ownership, and partial-construction cleanup
 - compound scalar metadata, native access, generic field access, nesting, equality, hashing, and invalid declarations
 - hierarchical scalar identity, schema metadata, inheritance, field narrowing, and container variance
 - schema-capturing hierarchical scalar views and construction, runtime field inspection through base annotations,
@@ -492,7 +495,9 @@ For each reusable node and graph, test:
 
 - homogeneous scalar tuple annotations, nested and generic items, immutable
   Python materialization, expected-type sequence conversion and ownership,
-  and rejection of mutable and fixed-length sequence annotations
+  and rejection of mutable sequence annotations
+- fixed-length scalar tuple annotations, empty and single-item tuples, nested
+  and generic items, positional conversion, arity errors, and immutable results
 - declaration metadata lifetime after definition destruction and callback ownership
 - scalar-or-time-series node input resolution and concrete binding
 - wiring failures preserving Python exception identity, type, traceback, and context notes
