@@ -100,8 +100,10 @@ std::optional<WiringPoint> PythonGraphDefinition::wire(GraphWiring &wiring, Reso
         if (argument.is_time_series()) {
             const auto optional = argument.requires_optional() ||
                                   resolved_signature.parameters[index].validity == InputValidity::optional;
-            python_arguments.push_back(
-                nanobind::cast(PythonWiringPoint{argument.time_series(), scope.lifetime(), optional}));
+            const auto valid_items = argument.annotations().valid_items ||
+                                     resolved_signature.parameters[index].valid_items;
+            python_arguments.push_back(nanobind::cast(
+                PythonWiringPoint{argument.time_series(), scope.lifetime(), optional, valid_items}));
             continue;
         }
         if (argument.is_scalar()) {

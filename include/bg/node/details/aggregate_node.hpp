@@ -56,6 +56,7 @@ template <typename T> struct input_field {
     static constexpr bool dynamic_activity = false;
     static constexpr bool dynamic_binding = false;
     static constexpr bool context = false;
+    static constexpr bool valid_items = false;
 };
 
 template <typename TimeSeries, auto... Properties> struct input_field<In<TimeSeries, Properties...>> {
@@ -68,6 +69,7 @@ template <typename TimeSeries, auto... Properties> struct input_field<In<TimeSer
     static constexpr bool dynamic_activity = Input::dynamic_activity;
     static constexpr bool dynamic_binding = Input::dynamic_binding;
     static constexpr bool context = (false || ... || is_context<decltype(Properties)>);
+    static constexpr bool valid_items = basic_input_properties<true, Properties...>::valid_items;
     static constexpr auto variadic_mode = [] {
         if constexpr (requires { Input::variadic_mode; }) {
             return Input::variadic_mode;
@@ -514,13 +516,13 @@ void add_signature_field(std::vector<Parameter> &parameters, const TimeSeriesTyp
             parameters.push_back({util::symbol{util::aggregate_member_names<Definition>[Index]},
                                   &input_type<Definition, Index>(), input_field<Field>::activity,
                                   input_field<Field>::validity, false, mode, nullptr, input_field<Field>::context,
-                                  input_field<Field>::dynamic_activity});
+                                  input_field<Field>::dynamic_activity, nullptr, input_field<Field>::valid_items});
         } else {
             parameters.push_back({util::symbol{util::aggregate_member_names<Definition>[Index]},
                                   &input_type<Definition, Index>(), input_field<Field>::activity,
                                   input_field<Field>::validity, false, mode,
                                   variadic_wiring_operations<typename input_field<Field>::time_series_type>(), false,
-                                  input_field<Field>::dynamic_activity});
+                                  input_field<Field>::dynamic_activity, nullptr, input_field<Field>::valid_items});
         }
     } else if constexpr (promoted_field<Field>::value) {
         constexpr auto validity = promoted_field<Field>::optional ? InputValidity::optional : InputValidity::required;

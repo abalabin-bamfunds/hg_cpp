@@ -135,19 +135,23 @@ std::exception_ptr python_error_cause(std::exception_ptr cause) {
 class TypeDescriptor {
   public:
     explicit TypeDescriptor(const Type &type, bool accepts_absent_scalar = false,
-                            std::optional<TimeSeriesGuarantee> minimum_guarantee = std::nullopt) noexcept
-        : type_{&type}, accepts_absent_scalar_{accepts_absent_scalar}, minimum_guarantee_{minimum_guarantee} {}
+                            std::optional<TimeSeriesGuarantee> minimum_guarantee = std::nullopt,
+                            bool valid_items = false) noexcept
+        : type_{&type}, accepts_absent_scalar_{accepts_absent_scalar}, minimum_guarantee_{minimum_guarantee},
+          valid_items_{valid_items} {}
     explicit TypeDescriptor(const Schema &schema) noexcept : type_{&schema}, schema_{&schema} {}
     TypeDescriptor(const TypeDescriptor &value, bool accepts_time_series_value) noexcept
         : type_{value.type_}, schema_{value.schema_},
           accepts_absent_scalar_{value.accepts_absent_scalar_},
-          accepts_time_series_value_{accepts_time_series_value}, minimum_guarantee_{value.minimum_guarantee_} {}
+          accepts_time_series_value_{accepts_time_series_value}, minimum_guarantee_{value.minimum_guarantee_},
+          valid_items_{value.valid_items_} {}
 
     const Type &type() const noexcept { return *type_; }
     const Schema *schema() const noexcept { return schema_; }
     bool accepts_absent_scalar() const noexcept { return accepts_absent_scalar_; }
     bool accepts_time_series_value() const noexcept { return accepts_time_series_value_; }
     std::optional<TimeSeriesGuarantee> minimum_guarantee() const noexcept { return minimum_guarantee_; }
+    bool valid_items() const noexcept { return valid_items_; }
 
   private:
     const Type *type_;
@@ -155,6 +159,7 @@ class TypeDescriptor {
     bool accepts_absent_scalar_{};
     bool accepts_time_series_value_{};
     std::optional<TimeSeriesGuarantee> minimum_guarantee_;
+    bool valid_items_{};
 };
 
 using PythonParameter = std::tuple<std::string, TypeDescriptor, std::string>;
@@ -314,6 +319,12 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
 
         auto parameter = Parameter{util::symbol{parameter_name}, type};
         parameter.accepts_absent_scalar = parameter_type.accepts_absent_scalar();
+        if (parameter_type.valid_items()) {
+            if (type_cast<TimeSeriesDictionaryType>(type) == nullptr) {
+                throw std::invalid_argument{"bg.valid_items requires a TSD input annotation"};
+            }
+            parameter.valid_items = true;
+        }
         if (parameter_type.accepts_time_series_value() && parameter_type.accepts_absent_scalar()) {
             parameter.validity = optional;
         }
@@ -759,7 +770,13 @@ void bind_core(nb::module_ &module) {
                                          ? time_series->with_guarantee(minimum)
                                          : TypeRegistry::instance().register_owned(
                                                generic_time_series_type(*time_series, minimum));
-        return TypeDescriptor{annotated_type, value.accepts_absent_scalar(), minimum};
+        return TypeDescriptor{annotated_type, value.accepts_absent_scalar(), minimum, value.valid_items()};
+    });
+    module.def("_with_valid_items", [](const TypeDescriptor &value) {
+        if (type_cast<TimeSeriesDictionaryType>(&value.type()) == nullptr) {
+            throw std::invalid_argument{"bg.valid_items requires a TSD input annotation"};
+        }
+        return TypeDescriptor{value.type(), value.accepts_absent_scalar(), value.minimum_guarantee(), true};
     });
     module.def("_time_series_set_type", [](const TypeDescriptor &value) {
         const auto *item = type_cast<ScalarType>(&value.type());
@@ -1143,6 +1160,7 @@ void bind_core(nb::module_ &module) {
 
     nb::class_<TypeDescriptor>(module, "_Type")
         .def_prop_ro("is_time_series", [](const TypeDescriptor &value) { return value.type().is_time_series(); })
+        .def_prop_ro("valid_items", &TypeDescriptor::valid_items)
         .def_prop_ro("accepts_absent_scalar", &TypeDescriptor::accepts_absent_scalar);
     nb::class_<PythonWiringPoint>(module, "WiringPoint")
         .def_prop_ro("has_output", &PythonWiringPoint::has_output)
@@ -1156,6 +1174,7 @@ void bind_core(nb::module_ &module) {
             throw nb::type_error("A wiring point has no Python truth value; use 'has_output' for output presence.");
         })
         .def("_as_optional", &PythonWiringPoint::as_optional)
+        .def("_as_valid_items", &PythonWiringPoint::as_valid_items)
         .def("__getitem__", &details::getitem)
         .def(
             "__add__",

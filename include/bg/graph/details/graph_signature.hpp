@@ -103,11 +103,13 @@ void add_graph_parameter(std::vector<Parameter> &parameters, std::span<const std
         constexpr auto mode = graph_parameter_variadic_mode<Value>;
         if constexpr (mode == VariadicMode::none) {
             parameters.push_back({name, &graph_parameter_type<Function, Index>(name), active, Value::validity,
-                                  supported_optional_scalar_argument<Value>, mode, nullptr, Value::context});
+                                  supported_optional_scalar_argument<Value>, mode, nullptr, Value::context, false,
+                                  nullptr, Value::valid_items});
         } else {
             parameters.push_back({name, &graph_parameter_type<Function, Index>(name), active, Value::validity,
                                   supported_optional_scalar_argument<Value>, mode,
-                                  variadic_wiring_operations<TimeSeries>()});
+                                  variadic_wiring_operations<TimeSeries>(), false, false, nullptr,
+                                  Value::valid_items});
         }
     } else {
         auto parameter = Parameter{name, &graph_parameter_type<Function, Index>(name), active, required,

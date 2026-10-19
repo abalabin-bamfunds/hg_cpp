@@ -53,7 +53,7 @@ concept wiring_point_argument = std::same_as<std::remove_cvref_t<T>, WiringPoint
 struct WiringArgumentExpansion {
     WiringPoint bundle;
     VariadicMode mode;
-    bool requires_optional;
+    WiringAnnotations annotations;
 };
 
 } // namespace bg::details
@@ -68,7 +68,7 @@ class WiringArgument {
 
         WiringPoint point;
         const TimeSeriesType *resolution_type;
-        bool requires_optional{};
+        details::WiringAnnotations annotations{};
     };
 
     struct ScalarArgument {
@@ -126,9 +126,7 @@ class WiringArgument {
     template <typename T>
         requires details::is_typed_wiring_point<T>
     WiringArgument(T point) : WiringArgument{static_cast<WiringPoint>(point)} {
-        if constexpr (std::remove_cvref_t<T>::validity == optional) {
-            require_optional();
-        }
+        std::get<TimeSeriesArgument>(value_).annotations = std::remove_cvref_t<T>::annotations;
     }
 
     template <typename T>
@@ -165,7 +163,11 @@ class WiringArgument {
     bool is_graph() const noexcept { return std::holds_alternative<GraphArgument>(value_); }
     bool requires_optional() const noexcept {
         const auto *time_series = std::get_if<TimeSeriesArgument>(&value_);
-        return time_series != nullptr && time_series->requires_optional;
+        return time_series != nullptr && time_series->annotations.optional;
+    }
+    details::WiringAnnotations annotations() const noexcept {
+        const auto *time_series = std::get_if<TimeSeriesArgument>(&value_);
+        return time_series == nullptr ? details::WiringAnnotations{} : time_series->annotations;
     }
     bool present() const noexcept {
         const auto *scalar = std::get_if<ScalarArgument>(&value_);
@@ -221,7 +223,13 @@ class WiringArgument {
         if (!is_time_series()) {
             throw WiringError{"only a time-series wiring argument can require an optional input"};
         }
-        std::get<TimeSeriesArgument>(value_).requires_optional = true;
+        std::get<TimeSeriesArgument>(value_).annotations.optional = true;
+    }
+    void require_valid_items() {
+        if (!is_time_series()) {
+            throw WiringError{"only a time-series wiring argument can require valid_items"};
+        }
+        std::get<TimeSeriesArgument>(value_).annotations.valid_items = true;
     }
     void replace_time_series(WiringPoint point) { std::get<TimeSeriesArgument>(value_).point = point; }
     void set_resolution_type(const TimeSeriesType &type) {
@@ -350,25 +358,25 @@ template <typename... Arguments> std::vector<WiringArgument> make_wiring_argumen
 namespace bg {
 
 template <details::wiring_point_argument Point> auto args(const Point &bundle) {
-    constexpr auto requires_optional = [] {
+    constexpr auto annotations = [] {
         if constexpr (details::is_typed_wiring_point<Point>) {
-            return std::remove_cvref_t<Point>::validity == optional;
+            return std::remove_cvref_t<Point>::annotations;
         }
-        return false;
+        return details::WiringAnnotations{};
     }();
     return details::WiringArgumentExpansion{static_cast<WiringPoint>(bundle), details::VariadicMode::positional,
-                                            requires_optional};
+                                            annotations};
 }
 
 template <details::wiring_point_argument Point> auto kwargs(const Point &bundle) {
-    constexpr auto requires_optional = [] {
+    constexpr auto annotations = [] {
         if constexpr (details::is_typed_wiring_point<Point>) {
-            return std::remove_cvref_t<Point>::validity == optional;
+            return std::remove_cvref_t<Point>::annotations;
         }
-        return false;
+        return details::WiringAnnotations{};
     }();
     return details::WiringArgumentExpansion{static_cast<WiringPoint>(bundle), details::VariadicMode::named,
-                                            requires_optional};
+                                            annotations};
 }
 
 inline WiringArgument opt(WiringArgument argument) {

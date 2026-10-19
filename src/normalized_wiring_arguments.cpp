@@ -31,8 +31,11 @@ void append_wiring_arguments(std::vector<WiringArgument> &result, WiringArgument
             field.clear_name();
             result.push_back(std::move(field));
         }
-        if (expansion.requires_optional && result.back().is_time_series()) {
+        if (expansion.annotations.optional && result.back().is_time_series()) {
             result.back().require_optional();
+        }
+        if (expansion.annotations.valid_items && result.back().is_time_series()) {
+            result.back().require_valid_items();
         }
     }
 }
@@ -362,7 +365,7 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
                 name_conflicts_with_fixed(*argument.name())) {
                 throw WiringError{"a variadic argument name conflicts with a fixed parameter"};
             }
-            contains_optional_argument |= argument.requires_optional();
+            contains_optional_argument |= argument.annotations().optional;
             descriptors.push_back(argument);
         }
         return contains_optional_argument;
@@ -405,9 +408,9 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
             if (direct) {
                 const auto collection = argument.time_series();
                 auto record = std::make_unique<VariadicWiringRecord>(collection, mode, operations);
-                append_record_descriptors(*record);
+                const auto contains_optional_argument = append_record_descriptors(*record);
                 normalized.emplace_back(add_record(std::move(record)));
-                if (argument.requires_optional()) {
+                if (argument.requires_optional() || contains_optional_argument) {
                     normalized.back().require_optional();
                 }
                 return;

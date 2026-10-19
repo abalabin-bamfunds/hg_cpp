@@ -37,6 +37,7 @@ struct Parameter {
     bool context{};
     bool dynamic_activity{};
     std::shared_ptr<const GraphArgumentConstraint> graph_constraint{};
+    bool valid_items{};
 };
 
 struct VariableResolver {
@@ -68,6 +69,7 @@ struct ResolvedParameter {
     details::VariadicMode variadic_mode{details::VariadicMode::none};
     bool context{};
     bool dynamic_activity{};
+    bool valid_items{};
 };
 
 struct ResolvedSignature {

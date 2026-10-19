@@ -55,6 +55,7 @@ struct ParameterShape {
     bool dynamic_activity;
     bool accepts_absent_scalar;
     VariadicMode variadic_mode;
+    bool valid_items;
 
     bool operator==(const ParameterShape &) const noexcept = default;
 };
@@ -112,6 +113,7 @@ std::size_t node_label_hash(const NodeShape &node) {
         combine(result, parameter.dynamic_activity);
         combine(result, parameter.accepts_absent_scalar);
         combine(result, static_cast<std::size_t>(parameter.variadic_mode));
+        combine(result, parameter.valid_items);
     }
     combine_pointer(result, node.output);
     combine_pointer(result, node.output_runtime_type);
@@ -384,7 +386,7 @@ std::shared_ptr<GraphWiringStructure::Data> snapshot(const GraphWiring &wiring,
         for (const auto &parameter : wired.signature().parameters) {
             node.parameters.push_back({parameter.type, parameter.activity, parameter.validity,
                                        parameter.dynamic_activity, parameter.accepts_absent_scalar,
-                                       parameter.variadic_mode});
+                                       parameter.variadic_mode, parameter.valid_items});
         }
         node_indices[original_index] = data->nodes.size();
         if (root_outputs[original_index] != nullptr) {

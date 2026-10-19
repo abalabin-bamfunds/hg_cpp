@@ -1,8 +1,45 @@
-from typing import TypeVar
+from typing import Annotated, TypeVar
 
 import pytest
 
 import bg
+
+
+def test_valid_items_annotation_is_accepted_and_forwarded_through_python_graphs():
+    @bg.compute_node
+    def count(values: Annotated[bg.TSD[int, bg.TS[int]], bg.valid_items]) -> bg.TS[int]:
+        return len(list(values.valid_items()))
+
+    @bg.graph
+    def inner(values: Annotated[bg.TSD[int, bg.TS[int]], bg.valid_items]) -> bg.TS[int]:
+        return count(values)
+
+    @bg.graph
+    def outer(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        return inner(bg.valid_items(values))
+
+    assert bg.test_graph(outer, [{1: 10, 2: 20}, {3: 30}]) == [2, 3]
+
+
+def test_valid_items_argument_requires_a_valid_items_receiver():
+    @bg.compute_node
+    def consume(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        return len(values.value)
+
+    @bg.graph
+    def graph(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        return consume(bg.valid_items(values))
+
+    with pytest.raises(ValueError, match="valid_items-qualified argument requires a valid_items input parameter"):
+        bg.test_graph(graph, [{1: 10}])
+
+
+def test_valid_items_metadata_requires_a_tsd_annotation():
+    with pytest.raises(ValueError, match="bg.valid_items requires a TSD input annotation"):
+
+        @bg.compute_node
+        def invalid(value: Annotated[bg.TS[int], bg.valid_items]) -> bg.TS[int]:
+            return value.value
 
 
 def test_test_graph_tsd_inputs_accept_deltas_and_removals():

@@ -36,6 +36,76 @@ using WiringMaterialisationBuilder = std::function<WiringPoint(std::span<const W
 
 template <typename TimeSeries = TS_T, auto... Properties> class wp;
 
+namespace details {
+
+struct WiringAnnotations {
+    bool optional{};
+    bool valid_items{};
+
+    constexpr bool operator==(const WiringAnnotations &) const noexcept = default;
+};
+
+template <auto... Properties> struct wiring_point_property_list {};
+
+template <auto Property, typename Properties> struct prepend_wiring_point_property;
+
+template <auto Property, auto... Properties>
+struct prepend_wiring_point_property<Property, wiring_point_property_list<Properties...>> {
+    using type = wiring_point_property_list<Property, Properties...>;
+};
+
+template <typename Properties> struct non_validity_wiring_point_properties;
+
+template <>
+struct non_validity_wiring_point_properties<wiring_point_property_list<>> {
+    using type = wiring_point_property_list<>;
+};
+
+template <auto Property, auto... Properties>
+struct non_validity_wiring_point_properties<wiring_point_property_list<Property, Properties...>> {
+  private:
+    using Tail = typename non_validity_wiring_point_properties<wiring_point_property_list<Properties...>>::type;
+
+  public:
+    using type = std::conditional_t<is_validity<decltype(Property)>, Tail,
+                                    typename prepend_wiring_point_property<Property, Tail>::type>;
+};
+
+template <typename Properties> struct optionalize_wiring_point_properties;
+
+template <auto... Properties>
+struct optionalize_wiring_point_properties<wiring_point_property_list<Properties...>> {
+    using NonValidity = typename non_validity_wiring_point_properties<wiring_point_property_list<Properties...>>::type;
+    using type = typename prepend_wiring_point_property<optional, NonValidity>::type;
+};
+
+template <typename TimeSeries, typename Properties> struct make_typed_wiring_point;
+
+template <typename TimeSeries, auto... Properties>
+struct make_typed_wiring_point<TimeSeries, wiring_point_property_list<Properties...>> {
+    using type = wp<TimeSeries, Properties...>;
+};
+
+template <typename Point> struct optional_wiring_point;
+
+template <typename TimeSeries, auto... Properties>
+struct optional_wiring_point<wp<TimeSeries, Properties...>> {
+    using PropertiesList = wiring_point_property_list<Properties...>;
+    using OptionalProperties = typename optionalize_wiring_point_properties<PropertiesList>::type;
+    using type = typename make_typed_wiring_point<TimeSeries, OptionalProperties>::type;
+};
+
+template <typename Point> struct valid_items_wiring_point;
+
+template <typename TimeSeries, auto... Properties>
+struct valid_items_wiring_point<wp<TimeSeries, Properties...>> {
+    static constexpr bool already_annotated = (false || ... || is_valid_items<decltype(Properties)>);
+    using type = std::conditional_t<already_annotated, wp<TimeSeries, Properties...>,
+                                    wp<TimeSeries, Properties..., bg::valid_items>>;
+};
+
+} // namespace details
+
 class WiringPoint {
   public:
     WiringPoint() noexcept = default;
@@ -106,8 +176,12 @@ template <typename TimeSeries, auto... Properties> class wp {
     const TimeSeriesType &type() const { return point_.type(); }
 
     template <typename Target> auto as() const {
-        if constexpr (ParsedProperties::validity == optional) {
+        if constexpr (ParsedProperties::validity == optional && ParsedProperties::valid_items) {
+            return wp<Target, optional, bg::valid_items>{point_};
+        } else if constexpr (ParsedProperties::validity == optional) {
             return wp<Target, optional>{point_};
+        } else if constexpr (ParsedProperties::valid_items) {
+            return wp<Target, bg::valid_items>{point_};
         } else {
             return point_.template as<Target>();
         }
@@ -129,6 +203,8 @@ template <typename TimeSeries, auto... Properties> class wp {
     static constexpr bool context = ParsedProperties::context;
     static constexpr auto variadic_mode = ParsedProperties::variadic_mode;
     static constexpr InputValidity validity = ParsedProperties::validity;
+    static constexpr bool valid_items = ParsedProperties::valid_items;
+    static constexpr details::WiringAnnotations annotations{validity == optional, valid_items};
 
   private:
     struct unchecked_t {};
@@ -155,6 +231,22 @@ template <typename T> inline constexpr bool is_typed_wiring_point = typed_wiring
 
 } // namespace details
 
+template <typename Point> auto ValidItems::operator()(Point &&point) const {
+    using Source = std::remove_cvref_t<Point>;
+    if constexpr (details::is_typed_wiring_point<Source>) {
+        using Result = typename details::valid_items_wiring_point<Source>::type;
+        return Result{std::forward<Point>(point)};
+    } else if constexpr (requires(Source value) { value.require_valid_items(); }) {
+        auto result = std::forward<Point>(point);
+        result.require_valid_items();
+        return result;
+    } else {
+        static_assert(requires { static_cast<WiringPoint>(point); },
+                      "valid_items requires a typed or erased wiring point");
+        return wp<TS_T, bg::valid_items>{static_cast<WiringPoint>(point)};
+    }
+}
+
 static_assert(sizeof(WiringPoint) == sizeof(void *));
 static_assert(std::is_trivially_copyable_v<WiringPoint>);
 static_assert(sizeof(wp<>) == sizeof(WiringPoint));
@@ -162,33 +254,12 @@ static_assert(std::is_trivially_copyable_v<wp<>>);
 static_assert(sizeof(wp<TS_T, optional>) == sizeof(WiringPoint));
 static_assert(std::is_trivially_copyable_v<wp<TS_T, optional>>);
 
-namespace details {
-
-template <typename TimeSeries, VariadicMode Mode> struct optional_wiring_point {
-    using type = wp<TimeSeries, optional>;
-};
-
-template <typename TimeSeries> struct optional_wiring_point<TimeSeries, VariadicMode::positional> {
-    using type = wp<TimeSeries, var_args, optional>;
-};
-
-template <typename TimeSeries> struct optional_wiring_point<TimeSeries, VariadicMode::named> {
-    using type = wp<TimeSeries, var_kwargs, optional>;
-};
-
-template <typename TimeSeries, VariadicMode Mode>
-using optional_wiring_point_t = typename optional_wiring_point<TimeSeries, Mode>::type;
-
-} // namespace details
-
 inline wp<TS_T, optional> opt(WiringPoint point) { return wp<TS_T, optional>::from_validated(point); }
 
 template <typename Point>
     requires details::is_typed_wiring_point<Point>
 auto opt(Point point) {
-    using Result = details::optional_wiring_point_t<
-        typename details::typed_wiring_point<std::remove_cvref_t<Point>>::time_series_type,
-        std::remove_cvref_t<Point>::variadic_mode>;
+    using Result = typename details::optional_wiring_point<std::remove_cvref_t<Point>>::type;
     return Result::from_validated(static_cast<WiringPoint>(point));
 }
 

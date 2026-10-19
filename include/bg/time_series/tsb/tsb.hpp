@@ -196,8 +196,12 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
     const TimeSeriesType &type() const noexcept { return point_.type(); }
 
     template <typename Target> auto as() const {
-        if constexpr (ParsedProperties::validity == optional) {
+        if constexpr (ParsedProperties::validity == optional && ParsedProperties::valid_items) {
+            return wp<Target, optional, bg::valid_items>{point_};
+        } else if constexpr (ParsedProperties::validity == optional) {
             return wp<Target, optional>{point_};
+        } else if constexpr (ParsedProperties::valid_items) {
+            return wp<Target, bg::valid_items>{point_};
         } else {
             return point_.template as<Target>();
         }
@@ -225,6 +229,8 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
     static constexpr bool context = ParsedProperties::context;
     static constexpr auto variadic_mode = details::VariadicMode::none;
     static constexpr InputValidity validity = ParsedProperties::validity;
+    static constexpr bool valid_items = ParsedProperties::valid_items;
+    static constexpr details::WiringAnnotations annotations{validity == optional, valid_items};
 
   private:
     struct unchecked_t {};
@@ -287,8 +293,12 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
     const TimeSeriesType &type() const noexcept { return point_.type(); }
 
     template <typename Target> auto as() const {
-        if constexpr (ParsedProperties::validity == optional) {
+        if constexpr (ParsedProperties::validity == optional && ParsedProperties::valid_items) {
+            return wp<Target, optional, bg::valid_items>{point_};
+        } else if constexpr (ParsedProperties::validity == optional) {
             return wp<Target, optional>{point_};
+        } else if constexpr (ParsedProperties::valid_items) {
+            return wp<Target, bg::valid_items>{point_};
         } else {
             return point_.template as<Target>();
         }
@@ -301,6 +311,8 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
     static constexpr bool context = ParsedProperties::context;
     static constexpr auto variadic_mode = ParsedProperties::variadic_mode;
     static constexpr InputValidity validity = ParsedProperties::validity;
+    static constexpr bool valid_items = ParsedProperties::valid_items;
+    static constexpr details::WiringAnnotations annotations{validity == optional, valid_items};
 
   private:
     const details::VariadicWiringRecord &record() const noexcept { return *details::variadic_wiring_record(point_); }

@@ -31,6 +31,7 @@ struct WiringParameterDiagnostic {
     util::symbol name;
     const Type *type;
     InputValidity validity{};
+    bool valid_items{};
     struct Form {
         std::string type;
         double cost{};

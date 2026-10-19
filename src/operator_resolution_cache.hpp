@@ -20,6 +20,7 @@ struct OperatorArgumentKey {
     bool present;
     std::optional<util::symbol> name;
     bool requires_optional{};
+    bool requires_valid_items{};
     VariadicMode variadic_capture_mode{VariadicMode::none};
     bool has_default_materialisation{};
     std::vector<std::pair<const TimeSeriesType *, double>> materialisation_options;
@@ -27,7 +28,8 @@ struct OperatorArgumentKey {
 
     bool operator==(const OperatorArgumentKey &other) const {
         if (type != other.type || present != other.present || name != other.name ||
-            requires_optional != other.requires_optional || variadic_capture_mode != other.variadic_capture_mode ||
+            requires_optional != other.requires_optional || requires_valid_items != other.requires_valid_items ||
+            variadic_capture_mode != other.variadic_capture_mode ||
             static_cast<bool>(graph_structures) != static_cast<bool>(other.graph_structures) ||
             has_default_materialisation != other.has_default_materialisation ||
             materialisation_options != other.materialisation_options || source_group != other.source_group) {

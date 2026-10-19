@@ -39,7 +39,9 @@ static_assert(std::is_trivially_copyable_v<InputValidity>);
 
 inline constexpr InputValidity all_valid = InputValidity::all_valid;
 
-struct ValidItems {};
+struct ValidItems {
+    template <typename Point> auto operator()(Point &&point) const;
+};
 inline constexpr ValidItems valid_items{};
 
 struct DynamicBinding {};

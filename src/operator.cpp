@@ -45,6 +45,8 @@ std::partial_ordering compare_input_requirement_preference(const ResolvedSignatu
                                                            const ResolvedSignature &right,
                                                            std::span<const InputValidity> left_arguments,
                                                            std::span<const InputValidity> right_arguments,
+                                                           std::span<const unsigned char> left_valid_items,
+                                                           std::span<const unsigned char> right_valid_items,
                                                            std::size_t parameter_count) noexcept {
     auto left_better = false;
     auto right_better = false;
@@ -60,6 +62,15 @@ std::partial_ordering compare_input_requirement_preference(const ResolvedSignatu
         }
         if (!left_parameter.type->is_time_series() || !right_parameter.type->is_time_series()) {
             continue;
+        }
+        const auto left_supports_valid_items = left_parameter.valid_items;
+        const auto right_supports_valid_items = right_parameter.valid_items;
+        if (left_valid_items[index]) {
+            left_better |= left_supports_valid_items && !right_supports_valid_items;
+            right_better |= right_supports_valid_items && !left_supports_valid_items;
+        } else {
+            left_better |= !left_supports_valid_items && right_supports_valid_items;
+            right_better |= !right_supports_valid_items && left_supports_valid_items;
         }
         if (left_arguments[index] == optional || right_arguments[index] == optional) {
             continue;
@@ -81,7 +92,9 @@ bool preferred(const WiringTemplate &candidate, const ResolvedSignature &candida
                const WiringTemplate &other, const ResolvedSignature &other_signature,
                std::span<const Type *const> candidate_arguments, std::span<const Type *const> other_arguments,
                std::span<const InputValidity> candidate_argument_validity,
-               std::span<const InputValidity> other_argument_validity) {
+               std::span<const InputValidity> other_argument_validity,
+               std::span<const unsigned char> candidate_argument_valid_items,
+               std::span<const unsigned char> other_argument_valid_items) {
     const auto candidate_variadic = candidate.signature().has_variadic_parameters();
     const auto other_variadic = other.signature().has_variadic_parameters();
     if (candidate_variadic != other_variadic) {
@@ -105,6 +118,7 @@ bool preferred(const WiringTemplate &candidate, const ResolvedSignature &candida
                 std::min(candidate_signature.parameters.size(), other_signature.parameters.size());
             return compare_input_requirement_preference(candidate_signature, other_signature,
                                                         candidate_argument_validity, other_argument_validity,
+                                                        candidate_argument_valid_items, other_argument_valid_items,
                                                         shared_parameters) == std::partial_ordering::less;
         }
 
@@ -127,7 +141,8 @@ bool preferred(const WiringTemplate &candidate, const ResolvedSignature &candida
         return specificity == std::partial_ordering::less;
     }
     return compare_input_requirement_preference(candidate_signature, other_signature, candidate_argument_validity,
-                                                other_argument_validity, shared_parameters) ==
+                                                other_argument_validity, candidate_argument_valid_items,
+                                                other_argument_valid_items, shared_parameters) ==
            std::partial_ordering::less;
 }
 
@@ -145,7 +160,7 @@ WiringSignatureDiagnostic diagnostic_signature(const WiringTemplate &implementat
     parameters.reserve(implementation.signature().parameter_count());
     for (auto index = std::size_t{}; index < implementation.signature().parameter_count(); ++index) {
         const auto &parameter = implementation.signature().parameter(index);
-        parameters.push_back({parameter.name, parameter.type, parameter.validity});
+        parameters.push_back({parameter.name, parameter.type, parameter.validity, parameter.valid_items});
     }
 
     return {implementation.signature().name(), std::move(parameters)};
@@ -230,7 +245,8 @@ WiringDiagnostic diagnostic(const Signature &prototype, std::vector<util::symbol
             supplied[index].name().value_or(index < prototype.parameter_count() ? prototype.parameter(index).name
                                                                                 : util::symbol{std::to_string(index)});
         const auto validity = supplied[index].requires_optional() ? InputValidity::optional : InputValidity::required;
-        auto argument = WiringParameterDiagnostic{name, &supplied[index].type(), validity};
+        auto argument = WiringParameterDiagnostic{name, &supplied[index].type(), validity,
+                                                  supplied[index].annotations().valid_items};
         const auto append_form = [&](const Type &type, double cost, bool direct) {
             auto text = std::string{};
             type.format_name(text);
@@ -307,6 +323,7 @@ bool append_argument_key(std::vector<ArgumentKey> &result,
                       .present = argument.present(),
                       .name = argument.name(),
                       .requires_optional = argument.requires_optional(),
+                      .requires_valid_items = argument.annotations().valid_items,
                       .variadic_capture_mode = argument.variadic_capture_mode(),
                       .has_default_materialisation = has_default_materialisation,
                       .materialisation_options = std::move(options),
@@ -326,6 +343,7 @@ bool append_argument_key(std::vector<ArgumentKey> &result,
                           .present = item.present(),
                           .name = item.name(),
                           .requires_optional = item.requires_optional(),
+                          .requires_valid_items = item.annotations().valid_items,
                           .variadic_capture_mode = item.variadic_mode()});
     }
     return true;
@@ -555,6 +573,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
         SignatureResolution resolution;
         std::vector<const Type *> argument_types;
         std::vector<InputValidity> argument_validity;
+        std::vector<unsigned char> argument_valid_items;
         std::vector<WiringArgumentFormMatch> argument_forms;
         double materialisation_cost;
         double binding_cost;
@@ -596,8 +615,11 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
 
             auto argument_validity = std::vector<InputValidity>{};
             argument_validity.reserve(normalized.arguments.size());
+            auto argument_valid_items = std::vector<unsigned char>{};
+            argument_valid_items.reserve(normalized.arguments.size());
             for (const auto &argument : normalized.arguments) {
                 argument_validity.push_back(argument.requires_optional() ? optional : required);
+                argument_valid_items.push_back(static_cast<unsigned char>(argument.annotations().valid_items));
             }
 
             auto matches = std::vector<WiringSignatureMatch>{};
@@ -722,6 +744,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                 }
                 applicable.push_back({implementation.get(), std::move(prepared_call.resolution),
                                       std::move(candidate_types), argument_validity,
+                                      argument_valid_items,
                                       std::move(prepared_call.argument_forms),
                                       prepared_call.materialisation_cost, binding_cost});
             }
@@ -797,7 +820,8 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
             return &candidate == &other ||
                    preferred(*candidate.implementation, candidate.resolution.signature, *other.implementation,
                              other.resolution.signature, candidate.argument_types, other.argument_types,
-                             candidate.argument_validity, other.argument_validity);
+                             candidate.argument_validity, other.argument_validity,
+                             candidate.argument_valid_items, other.argument_valid_items);
         });
         if (least_generic) {
             selected = &candidate;

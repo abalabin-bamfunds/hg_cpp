@@ -173,6 +173,9 @@ bool wiring_parameter_matches(const Parameter &declaration, const ResolvedParame
     using Value = std::remove_cvref_t<Parameter>;
 
     if constexpr (is_typed_wiring_point<Value>) {
+        if (declaration.valid_items != Value::valid_items) {
+            return false;
+        }
         using TimeSeries = typename typed_wiring_point<Value>::time_series_type;
         if constexpr (time_series_variable<TimeSeries>) {
             return parameter.type->is_time_series();
