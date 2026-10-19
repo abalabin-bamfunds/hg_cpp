@@ -196,6 +196,59 @@ TEST_CASE("feedback service wrapper delays requests into its nested implementati
     CHECK(actual.equals<bg::i64>({std::nullopt, 2, 4, 6}));
 }
 
+TEST_CASE("feedback service wrapper maps generic types and forwards scalar arguments",
+          "[feature:service][feature:feedback][feature:nested-graph]"
+          "[declaration:generic][scalar:generic][series:tsd][shape:nested]") {
+    using VALUE = ScalarVariable<"FEEDBACK_SERVICE_VALUE">;
+    const auto service = bg::service<VALUE, auto(TS<VALUE>, bg::i64)->TS<VALUE>>{
+        "generic_echo", {"value", "route"}};
+    auto route_11_installation_values = std::vector<bg::i64>{};
+    auto route_22_installation_values = std::vector<bg::i64>{};
+
+    const auto respond = node([&](In<TSD<service_client_id_t, TS<VALUE>>> requests, bg::i64 route,
+                                  bg::i64 installation_value,
+                                  Out<TSD<service_client_id_t, TS<VALUE>>> responses) {
+        CHECK(requests.size() == 1);
+        requests.for_each_removed([&](const auto &client_id) { responses.erase(client_id); });
+        requests.for_each_key_value([&](const auto &client_id, const auto &value) {
+            if (route == 11) {
+                route_11_installation_values.push_back(installation_value);
+            } else {
+                CHECK(route == 22);
+                route_22_installation_values.push_back(installation_value);
+            }
+            responses[client_id].set_value(value.value_view());
+        });
+    });
+    const auto implementation = graph<VALUE>(
+        "name"_n = "generic_echo_impl",
+        [&](wp<TSD<service_client_id_t, TS<VALUE>>, "value"_n> requests, bg::i64 route,
+            bg::i64 installation_value) { return respond(requests, route, installation_value); });
+
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(service[type<VALUE> = type<bg::i64>],
+                            feedback_service_implementation(service, implementation), "route"_n = 11, 7);
+    catalogue.register_impl(service[type<VALUE> = type<bg::i64>],
+                            feedback_service_implementation(service, implementation), "route"_n = 22, 9);
+    const auto add = node([](In<TS<bg::i64>> first, In<TS<bg::i64>> second, Out<TS<bg::i64>> output) {
+        output.set(*first + *second);
+    });
+    const auto tested = [&](wp<TS<bg::i64>> value) {
+        const auto first = service[type<VALUE> = type<bg::i64>](value, 11).as<TS<bg::i64>>();
+        const auto second = service[type<VALUE> = type<bg::i64>](value, 22).as<TS<bg::i64>>();
+        return add(first, second);
+    };
+
+    const auto actual = testing::test_graph(
+        tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 3>{2, 4, 6});
+
+    CHECK(actual.equals<bg::i64>({std::nullopt, 4, 8, 12}));
+    REQUIRE_FALSE(route_11_installation_values.empty());
+    REQUIRE_FALSE(route_22_installation_values.empty());
+    CHECK(std::ranges::all_of(route_11_installation_values, [](const auto value) { return value == 7; }));
+    CHECK(std::ranges::all_of(route_22_installation_values, [](const auto value) { return value == 9; }));
+}
+
 TEST_CASE("feedback service wrapper caps a final client request to ordinary",
           "[feature:service][feature:feedback][feature:nested-graph][series:tsd][guarantee:final]") {
     const auto service = bg::service<auto(TS<bg::i64, bg::TimeSeriesGuarantee::final>)->TS<bg::i64>>{

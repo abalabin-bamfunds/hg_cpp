@@ -152,6 +152,8 @@ struct SubscriptionRequestClient {
 };
 
 struct ServiceRequestProvider {
+    static constexpr bool deduplicate_wiring = false;
+
     State<details::ServiceRequestBinding> binding;
     Out<SERVICE_REQUESTS> output;
 
