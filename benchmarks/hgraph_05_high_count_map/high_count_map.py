@@ -51,6 +51,7 @@ class BenchmarkControl:
         self.empty_runtime_rss_bytes = None
         self.after_wiring_rss_bytes = None
         self.populated_rss_bytes = None
+        self.before_stop_rss_bytes = None
         self.after_stop_rss_bytes = None
         self.actual = EventChecksum()
         self.actual_cycle_event_count = 0
@@ -79,6 +80,7 @@ class BenchmarkControl:
     def begin_final_stop(self):
         if self.measured_end_ns is None:
             self.measured_end_ns = time.perf_counter_ns()
+        self.before_stop_rss_bytes = current_rss_bytes()
         self.final_stop_start_ns = time.perf_counter_ns()
 
     def observe(self, branch: int, parent_key: int, item_key: int, present: bool, value: int):
@@ -101,6 +103,8 @@ class BenchmarkControl:
             self.cycle_start_ns = None
             if self.cycle + 1 == len(self.workload.cycles):
                 self.measured_end_ns = time.perf_counter_ns()
+                if self.before_stop_rss_bytes is None:
+                    self.before_stop_rss_bytes = current_rss_bytes()
 
 
 def expected_event_count(workload, cycle: int) -> int:
@@ -189,6 +193,7 @@ def main() -> int:
     parser.add_argument("--cycles", type=int, default=120)
     parser.add_argument("--verify-workload", action="store_true")
     parser.add_argument("--source-commit", default=HGRAPH_05_COMMIT)
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
     if args.verify_workload:
@@ -199,16 +204,18 @@ def main() -> int:
     if args.cycles < 1:
         parser.error("--cycles must be positive")
 
-    return run_benchmark(args.profile, args.cycles, args.source_commit)
+    return run_benchmark(args.profile, args.cycles, args.source_commit, args.output)
 
 
-def run_benchmark(profile_name: str, cycles: int, source_commit: str) -> int:
+def run_benchmark(profile_name: str, cycles: int, source_commit: str, output_path: Path | None = None) -> int:
     import hgraph
     from hgraph import EvaluationLifeCycleObserver, EvaluationMode, GraphConfiguration
     from hgraph import SIGNAL, TSB, TSB_OUT, TS, TSD, TimeSeriesSchema
     from hgraph import compute_node, graph, map_, schedule, sink_node
     from hgraph import wire_graph, evaluate_graph
     from hgraph._wiring._wiring_node_instance import WiringNodeInstanceContext
+
+    use_cpp = os.environ.get("HGRAPH_USE_CPP", "").lower() in {"true", "yes", "1", "on"}
 
     workload_start_ns = time.perf_counter_ns()
     workload = build_workload(profile_name, cycles)
@@ -397,12 +404,12 @@ def run_benchmark(profile_name: str, cycles: int, source_commit: str) -> int:
                     control.final_stop_ns = stop_ns - control.final_stop_start_ns
                 control.after_stop_rss_bytes = current_rss_bytes()
 
-    observer = RuntimeObserver()
+    observers = () if use_cpp else (RuntimeObserver(),)
     logger = logging.getLogger("hgraph.high_count_map")
     logger.setLevel(logging.WARNING)
     config = GraphConfiguration(
         run_mode=EvaluationMode.SIMULATION,
-        life_cycle_observers=(observer,),
+        life_cycle_observers=observers,
         graph_logger=logger,
         default_log_level=logging.WARNING,
     )
@@ -416,6 +423,8 @@ def run_benchmark(profile_name: str, cycles: int, source_commit: str) -> int:
     run_start_ns = time.perf_counter_ns()
     evaluate_graph(graph_builder, config)
     run_ns = time.perf_counter_ns() - run_start_ns
+    if use_cpp:
+        control.after_stop_rss_bytes = current_rss_bytes()
 
     actual = control.actual
     expected = workload.expected
@@ -451,11 +460,21 @@ def run_benchmark(profile_name: str, cycles: int, source_commit: str) -> int:
             "broadcast",
         )
     }
+    notes = [
+        "hgraph 0.5 combines runtime construction and start inside evaluate_graph.",
+        "Population timing covers source population and output observation; runtime start has no separate public hook.",
+    ]
+    if use_cpp:
+        notes.append(
+            "The pinned C++ observer base has no Python constructor; "
+            "empty-runtime RSS and stop timing are unavailable."
+        )
+
     result: dict[str, Any] = {
         "schema_version": 1,
         "benchmark": "portable_high_count_map",
         "engine": f"hgraph-{HGRAPH_05_VERSION}",
-        "runtime": "python",
+        "runtime": "cpp" if use_cpp else "python",
         "source_commit": source_commit,
         "benchmark_adapter_commit": git_commit(),
         "profile": profile_name,
@@ -468,10 +487,7 @@ def run_benchmark(profile_name: str, cycles: int, source_commit: str) -> int:
             "cpu_affinity": sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None,
             "python": sys.version.split()[0],
         },
-        "notes": [
-            "hgraph 0.5 combines runtime construction and start inside evaluate_graph.",
-            "Population timing covers source population and output observation; runtime start has no separate public hook.",
-        ],
+        "notes": notes,
         "topology": {
             "flat_items": profile.flat_count,
             "parents": profile.parent_count,
@@ -513,6 +529,12 @@ def run_benchmark(profile_name: str, cycles: int, source_commit: str) -> int:
             "after_wiring_rss_bytes": control.after_wiring_rss_bytes,
             "empty_runtime_rss_bytes": control.empty_runtime_rss_bytes,
             "populated_rss_bytes": control.populated_rss_bytes,
+            "before_stop_rss_bytes": control.before_stop_rss_bytes,
+            "graph_rss_delta_bytes": (
+                control.before_stop_rss_bytes - control.baseline_rss_bytes
+                if control.before_stop_rss_bytes is not None and control.baseline_rss_bytes is not None
+                else None
+            ),
             "peak_rss_bytes": reported_peak_rss_bytes,
             "after_stop_rss_bytes": control.after_stop_rss_bytes,
             "populated_rss_delta_bytes": populated_rss_delta_bytes,
@@ -522,7 +544,11 @@ def run_benchmark(profile_name: str, cycles: int, source_commit: str) -> int:
         },
     }
 
-    print(json.dumps(result, sort_keys=True))
+    output = json.dumps(result, sort_keys=True) + "\n"
+    if output_path is None:
+        print(output, end="")
+    else:
+        output_path.write_text(output, encoding="utf-8")
     return 0 if checksum_valid else 2
 
 
