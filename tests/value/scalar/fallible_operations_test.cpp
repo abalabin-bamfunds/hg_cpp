@@ -4,6 +4,7 @@
 #include <bg/scalar/value.hpp>
 #include <bg/time_series/tss/tss_storage.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -56,9 +57,9 @@ template <> struct scalar_type_traits<test_scalar::fallible_value> {
             bool supports_hash() const noexcept override { return true; }
         };
 
-        static const Type type;
-        [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
-        return type;
+        static const auto type = util::static_storage<Type>{};
+        [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+        return type.get();
     }
 };
 

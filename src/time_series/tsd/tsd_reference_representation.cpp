@@ -3,6 +3,7 @@
 #include <bg/time_series/ref/ref_provider.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <algorithm>
 #include <exception>
@@ -305,20 +306,21 @@ const TimeSeriesDictionaryRuntimeType &time_series_dictionary_representation_run
         std::unique_ptr<TimeSeriesDictionaryRuntimeType> runtime_type;
     };
 
-    static auto mutex = std::mutex{};
-    static auto entries = std::vector<Entry>{};
+    static auto mutex = util::static_storage<std::mutex>{};
+    static auto entries = util::static_storage<std::vector<Entry>>{};
 
-    const auto lock = std::lock_guard{mutex};
-    const auto found = std::ranges::find_if(entries, [&](const auto &entry) {
+    const auto lock = std::lock_guard{mutex.get()};
+    auto &cache = entries.get();
+    const auto found = std::ranges::find_if(cache, [&](const auto &entry) {
         return entry.type == &type && entry.key == &key && entry.item == &item;
     });
-    if (found != entries.end()) {
+    if (found != cache.end()) {
         return *found->runtime_type;
     }
 
     auto runtime_type = std::make_unique<TimeSeriesDictionaryRepresentationRuntimeType>(type, key, item);
     auto &result = *runtime_type;
-    entries.push_back({&type, &key, &item, std::move(runtime_type)});
+    cache.push_back({&type, &key, &item, std::move(runtime_type)});
     return result;
 }
 
@@ -328,18 +330,19 @@ const TimeSeriesRuntimeType &routed_tsd_item_reference_runtime_type(const TimeSe
         std::unique_ptr<TimeSeriesRuntimeType> runtime_type;
     };
 
-    static auto mutex = std::mutex{};
-    static auto entries = std::vector<Entry>{};
+    static auto mutex = util::static_storage<std::mutex>{};
+    static auto entries = util::static_storage<std::vector<Entry>>{};
 
-    const auto lock = std::lock_guard{mutex};
-    const auto found = std::ranges::find(entries, &type, &Entry::type);
-    if (found != entries.end()) {
+    const auto lock = std::lock_guard{mutex.get()};
+    auto &cache = entries.get();
+    const auto found = std::ranges::find(cache, &type, &Entry::type);
+    if (found != cache.end()) {
         return *found->runtime_type;
     }
 
     auto runtime_type = std::make_unique<RoutedTsdItemReferenceRuntimeType>(type);
     auto &result = *runtime_type;
-    entries.push_back({&type, std::move(runtime_type)});
+    cache.push_back({&type, std::move(runtime_type)});
     return result;
 }
 

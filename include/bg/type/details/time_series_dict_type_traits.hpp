@@ -5,6 +5,7 @@
 #include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 
 namespace bg::details {
 
@@ -22,18 +23,20 @@ struct time_series_type_traits<TSD<Key, Item, Properties...>> {
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {
         const auto &key = scalar_type_for<Key>();
         const auto &value = time_series_type_for<Scope, Index, Role, Item>(guarantee);
-        static const auto key_set = GenericTimeSeriesSetType{key, guarantee};
-        [[maybe_unused]] static const auto &key_set_registration = TypeRegistry::register_static(key_set);
+        static const auto key_set = util::static_storage<GenericTimeSeriesSetType>{key, guarantee};
+        [[maybe_unused]] static const auto &key_set_registration = TypeRegistry::register_static(key_set.get());
 
         if constexpr (Role == TimeSeriesTypeRole::input || scalar_declaration_traits<Key>::generic) {
-            static const auto type = GenericTimeSeriesDictionaryType{key, value, key_set, guarantee};
-            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
-            return type;
+            static const auto type = util::static_storage<GenericTimeSeriesDictionaryType>{key, value, key_set.get(),
+                                                                                          guarantee};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+            return type.get();
         }
         if (!value.is_resolved() || !guarantee.is_resolved()) {
-            static const auto type = GenericTimeSeriesDictionaryType{key, value, key_set, guarantee};
-            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
-            return type;
+            static const auto type = util::static_storage<GenericTimeSeriesDictionaryType>{key, value, key_set.get(),
+                                                                                          guarantee};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+            return type.get();
         }
 
         return time_series_dictionary_type(key, value, *guarantee.value());

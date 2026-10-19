@@ -1,5 +1,7 @@
 #include "type_registration.hpp"
 
+#include <bg/util/static_storage.hpp>
+
 #include <utility>
 
 namespace bg::details {
@@ -10,8 +12,8 @@ thread_local SemanticTypeRegistration *current_registration = nullptr;
 } // namespace
 
 std::recursive_mutex &semantic_type_registration_mutex() {
-    static auto mutex = std::recursive_mutex{};
-    return mutex;
+    static auto mutex = util::static_storage<std::recursive_mutex>{};
+    return mutex.get();
 }
 
 SemanticTypeRegistration::SemanticTypeRegistration() noexcept {

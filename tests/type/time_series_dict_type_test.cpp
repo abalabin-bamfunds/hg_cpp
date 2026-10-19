@@ -11,6 +11,7 @@
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -118,19 +119,19 @@ TEST_CASE("dictionary item matching is reference transparent",
     const auto &item = bg::TS<float>::type();
     const auto &reference = bg::REF<bg::TS<float>>::type();
     const auto &key_set = bg::TSS<bg::i64>::type();
-    static const auto direct_dictionary =
-        bg::GenericTimeSeriesDictionaryType{bg::int64_type(), item, key_set, bg::TimeSeriesGuarantee::ordinary};
+    static const auto direct_dictionary = bg::util::static_storage<bg::GenericTimeSeriesDictionaryType>{
+        bg::int64_type(), item, key_set, bg::TimeSeriesGuarantee::ordinary};
     [[maybe_unused]] static const auto &direct_dictionary_registration =
-        bg::TypeRegistry::register_static(direct_dictionary);
-    static const auto reference_dictionary =
-        bg::GenericTimeSeriesDictionaryType{bg::int64_type(), reference, key_set, bg::TimeSeriesGuarantee::ordinary};
+        bg::TypeRegistry::register_static(direct_dictionary.get());
+    static const auto reference_dictionary = bg::util::static_storage<bg::GenericTimeSeriesDictionaryType>{
+        bg::int64_type(), reference, key_set, bg::TimeSeriesGuarantee::ordinary};
     [[maybe_unused]] static const auto &reference_dictionary_registration =
-        bg::TypeRegistry::register_static(reference_dictionary);
+        bg::TypeRegistry::register_static(reference_dictionary.get());
     const auto &direct = bg::TSD<bg::i64, bg::TS<float>>::type();
     const auto &references = bg::TSD<bg::i64, bg::REF<bg::TS<float>>>::type();
     auto type_map = bg::TypeMap{};
 
-    CHECK(direct_dictionary.match(references, type_map));
+    CHECK(direct_dictionary.get().match(references, type_map));
     type_map = bg::TypeMap{};
-    CHECK(reference_dictionary.match(direct, type_map));
+    CHECK(reference_dictionary.get().match(direct, type_map));
 }

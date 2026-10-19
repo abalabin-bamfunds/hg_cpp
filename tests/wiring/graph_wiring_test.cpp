@@ -13,6 +13,7 @@
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 #include <bg/type/type_resolution_error.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -400,11 +401,12 @@ namespace {
 class scale_template final : public bg::NodeTemplate {
   public:
     [[nodiscard]] const bg::Signature &default_signature() const override {
-        static const bg::GenericTimeSeriesValueType input_type{bg::float_type(), bg::TimeSeriesGuarantee::ordinary};
-        [[maybe_unused]] static const auto &input_type_registration = bg::TypeRegistry::register_static(input_type);
+        static const auto input_type = bg::util::static_storage<bg::GenericTimeSeriesValueType>{
+            bg::float_type(), bg::TimeSeriesGuarantee::ordinary};
+        [[maybe_unused]] static const auto &input_type_registration = bg::TypeRegistry::register_static(input_type.get());
         static const bg::Signature value{
             bg::util::symbol{"scale"},
-            {{bg::util::symbol{"input"}, &input_type}, {bg::util::symbol{"factor"}, &bg::float_type()}},
+            {{bg::util::symbol{"input"}, &input_type.get()}, {bg::util::symbol{"factor"}, &bg::float_type()}},
             bg::TS<float>::type()};
 
         return value;

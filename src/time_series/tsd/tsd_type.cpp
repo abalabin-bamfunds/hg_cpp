@@ -3,6 +3,7 @@
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/util/symbol.hpp>
 
@@ -154,14 +155,15 @@ const TimeSeriesDictionaryType &time_series_dictionary_type(const ScalarType &ke
         bool operator==(const Key &) const = default;
     };
 
-    static auto mutex = std::mutex{};
-    static auto types = std::vector<std::pair<Key, const ResolvedTimeSeriesDictionaryType *>>{};
+    static auto mutex = util::static_storage<std::mutex>{};
+    static auto types = util::static_storage<std::vector<std::pair<Key, const ResolvedTimeSeriesDictionaryType *>>>{};
 
     const auto &effective_value = value_type.with_guarantee(strongest(*value_type.guarantee().value(), guarantee));
-    const auto lock = std::lock_guard{mutex};
+    const auto lock = std::lock_guard{mutex.get()};
+    auto &cache = types.get();
     const auto key = Key{&key_type, &effective_value, guarantee};
-    const auto found = std::ranges::find(types, key, &decltype(types)::value_type::first);
-    if (found != types.end()) {
+    const auto found = std::ranges::find(cache, key, &std::remove_reference_t<decltype(cache)>::value_type::first);
+    if (found != cache.end()) {
         return *found->second;
     }
     if (!key_type.supports_hash()) {
@@ -169,14 +171,14 @@ const TimeSeriesDictionaryType &time_series_dictionary_type(const ScalarType &ke
     }
 
     const auto &key_set = time_series_set_type(key_type, guarantee);
-    types.emplace_back(key, nullptr);
+    cache.emplace_back(key, nullptr);
     try {
         const auto &type = TypeRegistry::instance().register_owned(
             std::make_unique<ResolvedTimeSeriesDictionaryType>(key_type, effective_value, key_set, guarantee));
-        types.back().second = &type;
+        cache.back().second = &type;
         return type;
     } catch (...) {
-        types.pop_back();
+        cache.pop_back();
         throw;
     }
 }

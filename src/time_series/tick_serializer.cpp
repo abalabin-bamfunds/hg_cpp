@@ -1,4 +1,5 @@
 #include <bg/time_series/tick_serializer.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <bg/node/details/output_factory.hpp>
 #include <bg/time_series/details/scalar_literal.hpp>
@@ -20,8 +21,8 @@ namespace bg {
 
 template <> TimeSeriesDispatch<TimeSeriesTickOperations> &
 TimeSeriesDispatch<TimeSeriesTickOperations>::instance() noexcept {
-    static auto dispatch = TimeSeriesDispatch<TimeSeriesTickOperations>{};
-    return dispatch;
+    static auto dispatch = util::static_storage<TimeSeriesDispatch<TimeSeriesTickOperations>>{};
+    return dispatch.get();
 }
 
 namespace details {

@@ -5,6 +5,7 @@
 #include <bg/type/size_variable_instance.hpp>
 #include <bg/type/time_series_list_type.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 
 namespace bg::details {
 
@@ -23,14 +24,14 @@ template <typename Item, auto Size, auto... Properties> struct time_series_type_
         const auto size = size_parameter<Size>();
 
         if constexpr (Role == TimeSeriesTypeRole::input) {
-            static const auto type = GenericTimeSeriesListType{item, size, guarantee};
-            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
-            return type;
+            static const auto type = util::static_storage<GenericTimeSeriesListType>{item, size, guarantee};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+            return type.get();
         }
         if (!item.is_resolved() || !size.is_resolved() || !guarantee.is_resolved()) {
-            static const auto type = GenericTimeSeriesListType{item, size, guarantee};
-            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
-            return type;
+            static const auto type = util::static_storage<GenericTimeSeriesListType>{item, size, guarantee};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+            return type.get();
         }
 
         return time_series_list_type(item, *size.value(), *guarantee.value());

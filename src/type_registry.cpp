@@ -1,13 +1,16 @@
 #include <bg/type/type_registry.hpp>
 
 #include <algorithm>
+#include <cstddef>
+#include <new>
 #include <utility>
 
 namespace bg {
 
 TypeRegistry &TypeRegistry::instance() noexcept {
-    static auto registry = TypeRegistry{};
-    return registry;
+    alignas(TypeRegistry) static std::byte storage[sizeof(TypeRegistry)];
+    static auto *registry = ::new (static_cast<void *>(storage)) TypeRegistry{};
+    return *registry;
 }
 
 void TypeRegistry::register_static_type(const Type &type) noexcept {

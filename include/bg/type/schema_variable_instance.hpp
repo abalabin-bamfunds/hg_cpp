@@ -4,14 +4,15 @@
 #include <bg/type/schema.hpp>
 #include <bg/type/type_registry.hpp>
 #include <bg/type/type_variable.hpp>
+#include <bg/util/static_storage.hpp>
 
 namespace bg::details {
 
 template <util::compile_time_string Name>
 const TypeVariableType<SchemaType> &schema_variable_instance() {
-    static const auto variable = TypeVariableType<SchemaType>{util::symbol{Name.view()}};
-    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(variable);
-    return variable;
+    static const auto variable = util::static_storage<TypeVariableType<SchemaType>>{util::symbol{Name.view()}};
+    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(variable.get());
+    return variable.get();
 }
 
 template <typename Declaration>

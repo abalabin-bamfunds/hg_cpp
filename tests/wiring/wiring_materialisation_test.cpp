@@ -15,6 +15,7 @@
 #include <bg/testing/test_wiring.hpp>
 #include <bg/type/signature.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 
@@ -28,6 +29,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -1507,11 +1509,14 @@ TEST_CASE("signature matching resolves constrained variables from selected forms
     deferred.materialisation_option<bg::TS<double>>(
         [](bg::wp<bg::TS<bg::i64>>) { return bg::WiringPoint{}; }, 0.0);
     const auto arguments = std::array{bg::WiringArgument{static_cast<bg::WiringPoint>(deferred)}};
-    static const auto constrained = bg::TypeVariableType<bg::TimeSeriesType>{
-        bg::util::symbol{"DOUBLE_SERIES"}, {}, {&is_double_series}};
-    [[maybe_unused]] static const auto &constrained_registration = bg::TypeRegistry::register_static(constrained);
+    static const auto constrained = bg::util::static_storage<bg::TypeVariableType<bg::TimeSeriesType>>{
+        bg::util::symbol{"DOUBLE_SERIES"}, std::vector<const bg::TimeSeriesType *>{},
+        std::vector<bg::TypeVariableType<bg::TimeSeriesType>::Constraint>{&is_double_series}};
+    [[maybe_unused]] static const auto &constrained_registration =
+        bg::TypeRegistry::register_static(constrained.get());
     const auto signature = bg::Signature{bg::util::symbol{"consume_double"},
-                                          {{bg::util::symbol{"value"}, &constrained}}};
+                                          std::vector<bg::Parameter>{{bg::util::symbol{"value"},
+                                                                      &constrained.get()}}};
 
     const auto matches = signature.match_wiring_arguments(arguments);
 

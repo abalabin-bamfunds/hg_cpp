@@ -1,13 +1,16 @@
 #include <bg/type/variable_registry.hpp>
 
 #include <algorithm>
+#include <cstddef>
+#include <new>
 #include <utility>
 
 namespace bg {
 
 VariableRegistry &VariableRegistry::instance() noexcept {
-    static auto registry = VariableRegistry{};
-    return registry;
+    alignas(VariableRegistry) static std::byte storage[sizeof(VariableRegistry)];
+    static auto *registry = ::new (static_cast<void *>(storage)) VariableRegistry{};
+    return *registry;
 }
 
 void VariableRegistry::register_static_variable(const Variable &variable) noexcept {

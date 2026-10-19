@@ -234,6 +234,8 @@ graph compilation or evaluation.
 
 - resolved type identity and scalar or time series classification
 - process-owned dynamic declarations and type-pointer validity after graph or wiring-template destruction
+- type registry lookup, schema metadata construction, and scalar string reads
+  from process shutdown callbacks
 - canonical factory cache identity, nested construction, failed factory retries, and concurrent cold misses
 - formal type-name formatting through `Type`, including nested extension types
 - registration of primitive, generic, extension, and graph types; allocation-free primitive registration;

@@ -4,6 +4,7 @@
 #include <bg/type/details/time_series_type_traits.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 
 namespace bg::details {
 
@@ -25,14 +26,14 @@ template <typename Target, auto... Properties> struct time_series_type_traits<RE
         }
 
         if constexpr (Role == TimeSeriesTypeRole::input || generic_time_series<Target>) {
-            static const auto type = GenericTimeSeriesReferenceType{target, guarantee};
-            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
-            return type;
+            static const auto type = util::static_storage<GenericTimeSeriesReferenceType>{target, guarantee};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+            return type.get();
         }
         if (!target.is_resolved() || !guarantee.is_resolved()) {
-            static const auto type = GenericTimeSeriesReferenceType{target, guarantee};
-            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
-            return type;
+            static const auto type = util::static_storage<GenericTimeSeriesReferenceType>{target, guarantee};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+            return type.get();
         }
 
         return time_series_reference_type(target, *guarantee.value());

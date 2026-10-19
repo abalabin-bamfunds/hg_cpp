@@ -4,6 +4,7 @@
 #include <bg/type/details/declaration_variables.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 
 namespace bg {
 
@@ -40,10 +41,10 @@ const SetScalarType &set_scalar_type(const ScalarType &item_type);
 template <typename T> struct scalar_type_traits<Set<T>> {
     static const ScalarType &type() {
         if constexpr (scalar_declaration_traits<T>::generic) {
-            static const auto type = GenericSetScalarType{details::scalar_type_for<T>()};
-            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
+            static const auto type = util::static_storage<GenericSetScalarType>{details::scalar_type_for<T>()};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
 
-            return type;
+            return type.get();
         } else {
             return set_scalar_type(details::scalar_type_for<T>());
         }

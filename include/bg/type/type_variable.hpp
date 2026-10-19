@@ -8,6 +8,7 @@
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/type/type_registry.hpp>
 #include <bg/util/compile_time_string.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <algorithm>
 #include <concepts>
@@ -176,11 +177,11 @@ template <util::compile_time_string Name, typename... Alternatives> struct TypeV
     static_assert(sizeof...(Alternatives) > 0, "a type variable requires at least one alternative");
 
     static const TypeVariableType<Type> &type() {
-        static const auto variable = TypeVariableType<Type>{
+        static const auto variable = util::static_storage<TypeVariableType<Type>>{
             util::symbol{Name.view()}, std::vector<const Type *>{&alternative_type<Alternatives>()...}};
-        [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(variable);
+        [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(variable.get());
 
-        return variable;
+        return variable.get();
     }
 
     static constexpr auto name = Name;

@@ -30,6 +30,7 @@
 #include <bg/type/declaration_variables.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
+#include <bg/util/static_storage.hpp>
 #include <bg/type/type_registry.hpp>
 #include <bg/util/scope_exit.hpp>
 
@@ -119,13 +120,14 @@ class NumberType final : public bg::ScalarType {
 };
 
 const NumberType &number_type(const bg::ScalarType &item) {
-    static auto types = std::map<const bg::ScalarType *, const NumberType *>{};
-    const auto [entry, inserted] = types.try_emplace(&item, nullptr);
+    static auto types = bg::util::static_storage<std::map<const bg::ScalarType *, const NumberType *>>{};
+    auto &canonical_types = types.get();
+    const auto [entry, inserted] = canonical_types.try_emplace(&item, nullptr);
     if (inserted) {
         try {
             entry->second = &bg::TypeRegistry::instance().register_owned(std::make_unique<NumberType>(item));
         } catch (...) {
-            types.erase(entry);
+            canonical_types.erase(entry);
             throw;
         }
     }
@@ -189,14 +191,15 @@ const bg::TimeSeriesRuntimeType &series_runtime_type(const bg::TimeSeriesType &t
 
 const SeriesType &series_type(const bg::ScalarType &item, bg::TimeSeriesGuarantee guarantee) {
     using Key = std::pair<const bg::ScalarType *, bg::TimeSeriesGuarantee>;
-    static auto types = std::map<Key, const SeriesType *>{};
+    static auto types = bg::util::static_storage<std::map<Key, const SeriesType *>>{};
+    auto &canonical_types = types.get();
     const auto key = Key{&item, guarantee};
-    const auto [entry, inserted] = types.try_emplace(key, nullptr);
+    const auto [entry, inserted] = canonical_types.try_emplace(key, nullptr);
     if (inserted) {
         try {
             entry->second = &bg::TypeRegistry::instance().register_owned(std::make_unique<SeriesType>(item, guarantee));
         } catch (...) {
-            types.erase(entry);
+            canonical_types.erase(entry);
             throw;
         }
         bg::register_time_series_runtime_type(series_runtime_type(*entry->second));
@@ -258,8 +261,10 @@ class SeriesRuntimeType final : public bg::TimeSeriesRuntimeType {
 };
 
 const bg::TimeSeriesRuntimeType &series_runtime_type(const bg::TimeSeriesType &type) {
-    static auto types = std::map<const bg::TimeSeriesType *, std::unique_ptr<SeriesRuntimeType>>{};
-    const auto [entry, inserted] = types.try_emplace(&type);
+    static auto types = bg::util::static_storage<
+        std::map<const bg::TimeSeriesType *, std::unique_ptr<SeriesRuntimeType>>>{};
+    auto &runtime_types = types.get();
+    const auto [entry, inserted] = runtime_types.try_emplace(&type);
     if (inserted) {
         entry->second = std::make_unique<SeriesRuntimeType>(type);
     }
@@ -397,8 +402,10 @@ class SeriesViewRuntimeType final : public bg::TimeSeriesRuntimeType {
 };
 
 const bg::TimeSeriesRuntimeType &series_view_runtime_type(const bg::TimeSeriesType &type) {
-    static auto types = std::map<const bg::TimeSeriesType *, std::unique_ptr<SeriesViewRuntimeType>>{};
-    const auto [entry, inserted] = types.try_emplace(&type);
+    static auto types = bg::util::static_storage<
+        std::map<const bg::TimeSeriesType *, std::unique_ptr<SeriesViewRuntimeType>>>{};
+    auto &runtime_types = types.get();
+    const auto [entry, inserted] = runtime_types.try_emplace(&type);
     if (inserted) {
         entry->second = std::make_unique<SeriesViewRuntimeType>(type);
     }

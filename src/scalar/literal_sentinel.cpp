@@ -4,6 +4,7 @@
 #include <bg/scalar/scalar.hpp>
 #include <bg/scalar/type.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 
 namespace bg {
 namespace {
@@ -22,15 +23,15 @@ class LiteralScalarType final : public ScalarType {
 } // namespace
 
 const ScalarType &scalar_type_traits<literal::Sentinel>::type() noexcept {
-    static const LiteralScalarType type{"literal::Sentinel"};
-    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
-    return type;
+    static const auto type = util::static_storage<LiteralScalarType>{"literal::Sentinel"};
+    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+    return type.get();
 }
 
 const ScalarType &scalar_type_traits<literal::TaggedLiteral>::type() noexcept {
-    static const LiteralScalarType type{"literal::TaggedLiteral"};
-    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
-    return type;
+    static const auto type = util::static_storage<LiteralScalarType>{"literal::TaggedLiteral"};
+    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+    return type.get();
 }
 
 } // namespace bg

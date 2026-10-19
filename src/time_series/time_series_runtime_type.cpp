@@ -18,6 +18,7 @@
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <memory>
 #include <mutex>
@@ -55,13 +56,13 @@ void TimeSeriesValueRuntimeType::copy(const TimeSeriesInputData &input, OutputSt
 namespace {
 
 auto &registered_runtime_types() {
-    static auto types = std::unordered_map<const TimeSeriesType *, const TimeSeriesRuntimeType *>{};
-    return types;
+    static auto types = util::static_storage<std::unordered_map<const TimeSeriesType *, const TimeSeriesRuntimeType *>>{};
+    return types.get();
 }
 
 auto &registered_runtime_types_mutex() {
-    static auto mutex = std::mutex{};
-    return mutex;
+    static auto mutex = util::static_storage<std::mutex>{};
+    return mutex.get();
 }
 
 void validate_registered_runtime_type(const TimeSeriesRuntimeType &runtime_type) {
@@ -297,13 +298,13 @@ const TimeSeriesRuntimeType &time_series_value_runtime_type(const TimeSeriesType
         throw std::invalid_argument{"a value runtime type requires a time series value type"};
     }
 
-    static auto mutex = std::mutex{};
-    static auto runtime_types =
-        std::unordered_map<ValueRuntimeTypeKey, std::unique_ptr<ValueRuntimeType>, ValueRuntimeTypeKeyHash>{};
+    static auto mutex = util::static_storage<std::mutex>{};
+    static auto runtime_types = util::static_storage<
+        std::unordered_map<ValueRuntimeTypeKey, std::unique_ptr<ValueRuntimeType>, ValueRuntimeTypeKeyHash>>{};
 
-    const auto lock = std::lock_guard{mutex};
+    const auto lock = std::lock_guard{mutex.get()};
     const auto key = ValueRuntimeTypeKey{&type, &scalar_runtime_type};
-    auto [entry, inserted] = runtime_types.try_emplace(key);
+    auto [entry, inserted] = runtime_types.get().try_emplace(key);
     if (inserted) {
         entry->second = std::make_unique<ValueRuntimeType>(type, scalar_runtime_type);
     }

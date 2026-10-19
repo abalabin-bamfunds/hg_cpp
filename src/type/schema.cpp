@@ -2,6 +2,7 @@
 
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include "type_registration.hpp"
@@ -122,8 +123,8 @@ struct SchemaKeyHash {
 using SchemaCache = std::unordered_map<SchemaKey, const Schema *, SchemaKeyHash>;
 
 SchemaCache &schema_cache() {
-    static auto cache = SchemaCache{};
-    return cache;
+    static auto cache = util::static_storage<SchemaCache>{};
+    return cache.get();
 }
 
 void cache_reserved_schema(const Schema &schema) {

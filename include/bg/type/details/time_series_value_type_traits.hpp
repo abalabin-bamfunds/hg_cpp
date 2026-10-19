@@ -4,6 +4,7 @@
 #include <bg/type/details/time_series_type_traits.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 
 namespace bg::details {
 
@@ -20,14 +21,14 @@ template <typename T, auto... Properties> struct time_series_type_traits<TS<T, P
         const auto &value = scalar_type_for<T>();
 
         if constexpr (Role == TimeSeriesTypeRole::input || scalar_declaration_traits<T>::generic) {
-            static const auto type = GenericTimeSeriesValueType{value, guarantee};
-            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
-            return type;
+            static const auto type = util::static_storage<GenericTimeSeriesValueType>{value, guarantee};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+            return type.get();
         }
         if (!guarantee.is_resolved()) {
-            static const auto type = GenericTimeSeriesValueType{value, guarantee};
-            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
-            return type;
+            static const auto type = util::static_storage<GenericTimeSeriesValueType>{value, guarantee};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+            return type.get();
         }
 
         return time_series_value_type(value, *guarantee.value());

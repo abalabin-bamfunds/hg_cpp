@@ -2,6 +2,7 @@
 
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/util/scope_exit.hpp>
 
@@ -117,8 +118,8 @@ using HierarchicalSchemaAssociations =
     std::unordered_map<const Schema *, const ResolvedHierarchicalScalarType *>;
 
 HierarchicalSchemaAssociations &hierarchical_schema_associations() {
-    static auto associations = HierarchicalSchemaAssociations{};
-    return associations;
+    static auto associations = util::static_storage<HierarchicalSchemaAssociations>{};
+    return associations.get();
 }
 
 enum class RequiredFieldVisit : std::uint8_t {
@@ -157,12 +158,13 @@ void validate_required_field_cycles(const ResolvedHierarchicalScalarType &type) 
 
 const ResolvedHierarchicalScalarType &canonical_hierarchical_scalar_type(
     const std::type_info &identity, std::string_view name, void (*initialize)(ResolvedHierarchicalScalarType &)) {
-    static auto types = std::unordered_map<std::type_index, HierarchicalTypeEntry>{};
+    static auto types = util::static_storage<std::unordered_map<std::type_index, HierarchicalTypeEntry>>{};
+    auto &cache = types.get();
 
     const auto lock = std::lock_guard{semantic_type_registration_mutex()};
     const auto find_or_construct = [&]() -> const ResolvedHierarchicalScalarType & {
         const auto key = std::type_index{identity};
-        if (const auto entry = types.find(key); entry != types.end()) {
+        if (const auto entry = cache.find(key); entry != cache.end()) {
             if (entry->second.status == HierarchicalTypeStatus::reserved) {
                 return *entry->second.type;
             }
@@ -174,7 +176,7 @@ const ResolvedHierarchicalScalarType &canonical_hierarchical_scalar_type(
 
             entry->second.status = HierarchicalTypeStatus::reserved;
             const auto restore_status = util::scope_exit{[key]() noexcept {
-                types.find(key)->second.status = HierarchicalTypeStatus::finalized;
+                types.get().find(key)->second.status = HierarchicalTypeStatus::finalized;
             }};
             auto candidate_owner =
                 std::unique_ptr<ResolvedHierarchicalScalarType>{new ResolvedHierarchicalScalarType{}};
@@ -191,8 +193,8 @@ const ResolvedHierarchicalScalarType &canonical_hierarchical_scalar_type(
             return existing;
         }
 
-        auto [entry, inserted] = types.try_emplace(key, HierarchicalTypeEntry{nullptr,
-                                                                             HierarchicalTypeStatus::reserved});
+        auto [entry, inserted] = cache.try_emplace(key, HierarchicalTypeEntry{nullptr,
+                                                                              HierarchicalTypeStatus::reserved});
         ResolvedHierarchicalScalarType *result = nullptr;
         try {
             auto type = std::unique_ptr<ResolvedHierarchicalScalarType>{new ResolvedHierarchicalScalarType{}};
@@ -203,13 +205,13 @@ const ResolvedHierarchicalScalarType &canonical_hierarchical_scalar_type(
             auto &registration = *SemanticTypeRegistration::current();
             registration.on_finalize([result] { return result->finalize_capabilities(); });
             registration.on_validate([result] { validate_required_field_cycles(*result); });
-            registration.on_commit([key] { types.at(key).status = HierarchicalTypeStatus::finalized; });
+            registration.on_commit([key] { types.get().at(key).status = HierarchicalTypeStatus::finalized; });
             registration.on_rollback([key, result] {
-                types.erase(key);
+                types.get().erase(key);
                 TypeRegistry::instance().rollback(*result);
             });
         } catch (...) {
-            types.erase(key);
+            cache.erase(key);
             if (result != nullptr) {
                 TypeRegistry::instance().rollback(*result);
             }

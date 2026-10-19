@@ -10,6 +10,7 @@
 #include <bg/type/scalar_type.hpp>
 #include <bg/util/byte_copy.hpp>
 #include <bg/util/scope_exit.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <array>
 #include <exception>
@@ -336,11 +337,11 @@ template <typename T> const ScalarRuntimeType &cpp_scalar_runtime_type() {
     } else if constexpr (details::hierarchical_scalar_declaration<T>) {
         return resolve_scalar_runtime_type(cpp_scalar_type<T>(), {});
     } else {
-        static const details::CppScalarRuntimeType<T> runtime_type;
-        static const auto registered = (register_scalar_runtime_type(runtime_type), true);
+        static const auto runtime_type = util::static_storage<details::CppScalarRuntimeType<T>>{};
+        static const auto registered = (register_scalar_runtime_type(runtime_type.get()), true);
         (void)registered;
 
-        return runtime_type;
+        return runtime_type.get();
     }
 }
 

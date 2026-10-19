@@ -8,6 +8,7 @@
 #include <bg/time_series/ts/ts_output.hpp>
 #include <bg/type/type_registry.hpp>
 #include <bg/util/scope_exit.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -106,14 +107,14 @@ class AlternateRuntime final
 };
 
 const bg::ScalarType &make_semantic_type() noexcept {
-    static const auto type = SemanticType{};
-    [[maybe_unused]] static const auto &registration = bg::TypeRegistry::register_static(type);
-    return type;
+    static const auto type = bg::util::static_storage<SemanticType>{};
+    [[maybe_unused]] static const auto &registration = bg::TypeRegistry::register_static(type.get());
+    return type.get();
 }
 
 const bg::ScalarRuntimeType &canonical_runtime() {
-    static const auto runtime = CanonicalRuntime{};
-    return runtime;
+    static const auto runtime = bg::util::static_storage<CanonicalRuntime>{};
+    return runtime.get();
 }
 
 } // namespace
@@ -130,8 +131,8 @@ ThrowingValue::~ThrowingValue() { ++destructor_count; }
 const bg::ScalarType &semantic_type() noexcept { return make_semantic_type(); }
 
 const bg::ScalarRuntimeType &alternate_runtime() {
-    static const auto runtime = AlternateRuntime{};
-    return runtime;
+    static const auto runtime = bg::util::static_storage<AlternateRuntime>{};
+    return runtime.get();
 }
 
 } // namespace throwing_scalar_read_test
@@ -261,9 +262,9 @@ class AlternateRuntime final : public bg::ScalarRuntimeType {
 };
 
 const SemanticType &make_semantic_type() noexcept {
-    static const auto type = SemanticType{};
-    [[maybe_unused]] static const auto &registration = bg::TypeRegistry::register_static(type);
-    return type;
+    static const auto type = bg::util::static_storage<SemanticType>{};
+    [[maybe_unused]] static const auto &registration = bg::TypeRegistry::register_static(type.get());
+    return type.get();
 }
 
 } // namespace
@@ -271,8 +272,8 @@ const SemanticType &make_semantic_type() noexcept {
 const bg::ScalarType &semantic_type() noexcept { return make_semantic_type(); }
 
 const bg::ScalarRuntimeType &alternate_runtime() {
-    static const auto runtime = AlternateRuntime{};
-    return runtime;
+    static const auto runtime = bg::util::static_storage<AlternateRuntime>{};
+    return runtime.get();
 }
 
 } // namespace reference_scalar_read_test
@@ -377,8 +378,8 @@ class LegacyIntegerRuntimeType final : public bg::ScalarRuntimeType {
 };
 
 const LegacyIntegerRuntimeType &legacy_integer_runtime() {
-    static const auto runtime = LegacyIntegerRuntimeType{};
-    return runtime;
+    static const auto runtime = bg::util::static_storage<LegacyIntegerRuntimeType>{};
+    return runtime.get();
 }
 
 struct ProviderScalarAggregateReader {

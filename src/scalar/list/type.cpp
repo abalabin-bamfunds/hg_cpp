@@ -2,6 +2,7 @@
 
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/util/symbol.hpp>
 
@@ -53,14 +54,15 @@ const Type &GenericListScalarType::resolve(const TypeMap &type_map) const {
 }
 
 const ListScalarType &list_scalar_type(const ScalarType &item_type) {
-    static auto types = std::unordered_map<const ScalarType *, const ResolvedListScalarType *>{};
+    static auto types = util::static_storage<std::unordered_map<const ScalarType *, const ResolvedListScalarType *>>{};
+    auto &cache = types.get();
 
     const auto lock = std::lock_guard{details::semantic_type_registration_mutex()};
-    if (const auto entry = types.find(&item_type); entry != types.end()) {
+    if (const auto entry = cache.find(&item_type); entry != cache.end()) {
         return *entry->second;
     }
 
-    auto entry = types.try_emplace(&item_type, nullptr).first;
+    auto entry = cache.try_emplace(&item_type, nullptr).first;
     const ResolvedListScalarType *registered_type = nullptr;
     try {
         const auto &result =
@@ -69,13 +71,13 @@ const ListScalarType &list_scalar_type(const ScalarType &item_type) {
         entry->second = registered_type;
         if (auto *registration = details::SemanticTypeRegistration::current()) {
             registration->on_rollback([key = &item_type, result = &result] {
-                types.erase(key);
+                types.get().erase(key);
                 TypeRegistry::instance().rollback(*result);
             });
         }
         return result;
     } catch (...) {
-        types.erase(&item_type);
+        cache.erase(&item_type);
         if (registered_type != nullptr) {
             TypeRegistry::instance().rollback(*registered_type);
         }

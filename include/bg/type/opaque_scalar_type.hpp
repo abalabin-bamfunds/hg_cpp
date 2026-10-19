@@ -4,6 +4,7 @@
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 
 namespace bg::details {
 
@@ -14,9 +15,9 @@ template <typename T> class OpaqueScalarType final : public ScalarType {
 };
 
 template <typename T> const ScalarType &opaque_scalar_type() noexcept {
-    static const OpaqueScalarType<T> type;
-    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
-    return type;
+    static const auto type = util::static_storage<OpaqueScalarType<T>>{};
+    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+    return type.get();
 }
 
 } // namespace bg::details

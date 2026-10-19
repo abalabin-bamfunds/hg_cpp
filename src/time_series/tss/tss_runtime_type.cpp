@@ -1,4 +1,5 @@
 #include <bg/time_series/tss/tss_runtime_type.hpp>
+#include <bg/util/static_storage.hpp>
 #include <bg/time_series/tss/tss_input.hpp>
 #include <bg/time_series/tss/tss_output.hpp>
 
@@ -97,19 +98,20 @@ const TimeSeriesRuntimeType &time_series_set_runtime_type(const TimeSeriesSetTyp
         std::unique_ptr<TimeSeriesSetRuntimeType> runtime_type;
     };
 
-    static auto mutex = std::mutex{};
-    static auto entries = std::vector<Entry>{};
+    static auto mutex = util::static_storage<std::mutex>{};
+    static auto entries = util::static_storage<std::vector<Entry>>{};
 
-    const auto lock = std::lock_guard{mutex};
+    const auto lock = std::lock_guard{mutex.get()};
+    auto &cache = entries.get();
     const auto found =
-        std::ranges::find_if(entries, [&](const auto &entry) { return entry.type == &type && entry.key == &key; });
-    if (found != entries.end()) {
+        std::ranges::find_if(cache, [&](const auto &entry) { return entry.type == &type && entry.key == &key; });
+    if (found != cache.end()) {
         return *found->runtime_type;
     }
 
     auto runtime_type = std::make_unique<TimeSeriesSetRuntimeType>(type, key);
     auto &result = *runtime_type;
-    entries.push_back({&type, &key, std::move(runtime_type)});
+    cache.push_back({&type, &key, std::move(runtime_type)});
     return result;
 }
 

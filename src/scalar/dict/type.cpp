@@ -2,6 +2,7 @@
 
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/util/symbol.hpp>
 
@@ -77,27 +78,28 @@ const Type &GenericDictScalarType::resolve(const TypeMap &type_map) const {
 }
 
 const DictScalarType &dict_scalar_type(const ScalarType &key_type, const ScalarType &mapped_type) {
-    static auto types = std::vector<std::pair<std::pair<const ScalarType *, const ScalarType *>,
-                                              const ResolvedDictScalarType *>>{};
+    static auto types = util::static_storage<std::vector<std::pair<std::pair<const ScalarType *, const ScalarType *>,
+                                                                  const ResolvedDictScalarType *>>>{};
+    auto &cache = types.get();
 
     const auto lock = std::lock_guard{details::semantic_type_registration_mutex()};
-    const auto found = std::ranges::find_if(types, [&](const auto &type) {
+    const auto found = std::ranges::find_if(cache, [&](const auto &type) {
         return type.first.first == &key_type && type.first.second == &mapped_type;
     });
-    if (found != types.end()) {
+    if (found != cache.end()) {
         return *found->second;
     }
     if (!key_type.supports_hash()) {
         throw std::invalid_argument{"dictionary key type does not support hashing"};
     }
 
-    types.emplace_back(std::pair{&key_type, &mapped_type}, nullptr);
+    cache.emplace_back(std::pair{&key_type, &mapped_type}, nullptr);
     const ResolvedDictScalarType *registered_type = nullptr;
     try {
         const auto &result = TypeRegistry::instance().register_owned(
             std::make_unique<ResolvedDictScalarType>(key_type, mapped_type));
         registered_type = &result;
-        types.back().second = registered_type;
+        cache.back().second = registered_type;
         if (auto *registration = details::SemanticTypeRegistration::current()) {
             registration->on_validate([&key_type] {
                 if (!key_type.supports_hash()) {
@@ -105,13 +107,13 @@ const DictScalarType &dict_scalar_type(const ScalarType &key_type, const ScalarT
                 }
             });
             registration->on_rollback([result = registered_type] {
-                std::erase_if(types, [result](const auto &entry) { return entry.second == result; });
+                std::erase_if(types.get(), [result](const auto &entry) { return entry.second == result; });
                 TypeRegistry::instance().rollback(*result);
             });
         }
         return result;
     } catch (...) {
-        types.pop_back();
+        cache.pop_back();
         if (registered_type != nullptr) {
             TypeRegistry::instance().rollback(*registered_type);
         }

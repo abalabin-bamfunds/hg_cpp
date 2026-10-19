@@ -1,4 +1,5 @@
 #include <bg/util/symbol.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <memory>
 #include <mutex>
@@ -22,9 +23,9 @@ class symbol_table {
 };
 
 symbol_table &symbols() {
-    static symbol_table value;
+    static auto value = static_storage<symbol_table>{};
 
-    return value;
+    return value.get();
 }
 
 } // namespace

@@ -36,10 +36,18 @@ helpers cache references to registered objects. Dynamic composition can register
 unnamed types automatically. This is required to retain type pointers after a
 graph or wiring template is destroyed.
 
-Engine and extension implementations use `TypeRegistry::register_static()` for
-objects with process-static storage and `TypeRegistry::instance().register_owned()`
-to transfer dynamic ownership. Both return a stable typed reference. Static
-registration allocates no memory; primitive accessors remain `noexcept`.
+Registries, canonical lookup indexes, and committed descriptors remain alive
+through process shutdown. An extension that provides a committed descriptor
+must remain loaded until process termination because the descriptor's virtual
+functions belong to that extension.
+
+Engine and extension implementations use `util::static_storage<T>` for
+nontrivial function-static descriptors, then register them with
+`TypeRegistry::register_static()`. The storage keeps the object alive without
+running its destructor at process shutdown. Use
+`TypeRegistry::instance().register_owned()` to transfer dynamic ownership.
+Both registration APIs return a stable typed reference. Static registration
+allocates no memory; primitive accessors remain `noexcept`.
 Type objects cannot be copied or moved.
 
 `TypeRegistry::instance().get_or_create<Descriptor, Hash>(key, factory)` provides

@@ -9,6 +9,7 @@
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_registry.hpp>
 #include <bg/type/type_resolution_error.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <algorithm>
 #include <memory>
@@ -140,18 +141,19 @@ const GraphArgumentType &graph_argument_type(std::span<const Type *const> parame
         throw std::invalid_argument{"a graph type requires non-null parameter types"};
     }
 
-    static auto mutex = std::mutex{};
-    static auto types = std::unordered_map<GraphTypeKey, const GraphArgumentType *, GraphTypeKeyHash>{};
+    static auto mutex = util::static_storage<std::mutex>{};
+    static auto types = util::static_storage<std::unordered_map<GraphTypeKey, const GraphArgumentType *,
+                                                                GraphTypeKeyHash>>{};
 
     auto key = GraphTypeKey{std::vector<const Type *>{parameters.begin(), parameters.end()}, output};
-    const auto lock = std::lock_guard{mutex};
-    auto entry = types.try_emplace(std::move(key), nullptr).first;
+    const auto lock = std::lock_guard{mutex.get()};
+    auto entry = types.get().try_emplace(std::move(key), nullptr).first;
     if (entry->second == nullptr) {
         try {
             entry->second = &TypeRegistry::instance().register_owned(
                 std::make_unique<GraphArgumentType>(entry->first.parameters, output));
         } catch (...) {
-            types.erase(entry);
+            types.get().erase(entry);
             throw;
         }
     }
@@ -283,9 +285,9 @@ GraphArgument::GraphArgument(std::vector<details::GraphWiringStructure> structur
     : structures_{std::move(structures)}, type_{&type()}, payload_{std::move(payload)}, payload_type_{payload_type} {}
 
 const GraphArgumentType &GraphArgument::type() noexcept {
-    static const auto type = GraphArgumentType{};
-    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
-    return type;
+    static const auto type = util::static_storage<GraphArgumentType>{};
+    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+    return type.get();
 }
 
 } // namespace bg

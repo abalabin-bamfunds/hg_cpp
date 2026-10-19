@@ -1,6 +1,7 @@
 #include <bg/graph.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 #include <bg/time_series/tick_serializer.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -32,9 +33,9 @@ inline const literal::TimeSeriesLiteral *expected_extension_literal{};
 inline bool extension_literal_address_matches{};
 
 const ExtensionTimeSeriesType &extension_time_series_type() {
-    static const auto type = ExtensionTimeSeriesType{};
-    [[maybe_unused]] static const auto &registered = bg::TypeRegistry::register_static(type);
-    return type;
+    static const auto type = bg::util::static_storage<ExtensionTimeSeriesType>{};
+    [[maybe_unused]] static const auto &registered = bg::TypeRegistry::register_static(type.get());
+    return type.get();
 }
 
 TEST_CASE("test_graph captures TSL and TSS output deltas",

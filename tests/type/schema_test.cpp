@@ -1,4 +1,8 @@
 #include <bg/scalar/bundle/scalar_type.hpp>
+#include <bg/scalar/data.hpp>
+#include <bg/scalar/details/data.hpp>
+#include <bg/scalar/list/scalar_type.hpp>
+#include <bg/scalar/list/type.hpp>
 #include <bg/scalar/opaque.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/type/scalar_variable.hpp>
@@ -8,13 +12,84 @@
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/type_map.hpp>
+#include <bg/type/type_registry.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
 
 #include <array>
+#include <cstddef>
+#include <cstdlib>
 #include <limits>
+#include <memory>
+#include <optional>
 #include <stdexcept>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace {
+
+bg::SchemaMetadata shutdown_schema_metadata() {
+    const auto labels = bg::ScalarValue<bg::List<bg::string>>{
+        std::vector<std::string_view>{"shutdown", "probe"}};
+    return bg::make_schema_metadata({bg::schema_metadata_entry("extension.labels", labels)});
+}
+
+struct ShutdownProbe {
+    std::optional<bg::RuntimeSchemaId> identity;
+    const bg::Schema *canonical_schema{};
+
+    ~ShutdownProbe() noexcept {
+        if (!identity || canonical_schema == nullptr) {
+            return;
+        }
+
+        const auto &list_type = bg::cpp_scalar_type<bg::List<bg::string>>();
+        auto list_name = std::string{};
+        list_type.format_name(list_name);
+        if (list_name != "List<string>" || &list_type != &bg::list_scalar_type(bg::string_type())) {
+            std::abort();
+        }
+        if (!bg::TypeRegistry::instance().contains(list_type)) {
+            std::abort();
+        }
+
+        const auto metadata = shutdown_schema_metadata();
+        const auto fields = std::array{bg::SchemaField{bg::util::symbol{"items"}, &list_type}};
+        const auto &descriptor = bg::schema(bg::util::symbol{"ShutdownSchema"}, *identity, nullptr, fields, metadata);
+        if (&descriptor != canonical_schema || descriptor.field_count() != 1 ||
+            descriptor.field(0).type != &list_type || descriptor.metadata() != metadata ||
+            !bg::TypeRegistry::instance().contains(descriptor)) {
+            std::abort();
+        }
+
+        const auto *stored_labels = descriptor.metadata().find("extension.labels");
+        if (stored_labels == nullptr || &stored_labels->runtime_type().type() != &list_type) {
+            std::abort();
+        }
+        const auto labels =
+            bg::Scalar<bg::List<bg::string>>::from(stored_labels->runtime_type(), stored_labels->data());
+        if (&labels.runtime_type() != &bg::cpp_scalar_runtime_type<bg::List<bg::string>>() || labels.size() != 2 ||
+            labels[0].value() != "shutdown" || labels[1].value() != "probe") {
+            std::abort();
+        }
+
+        const auto first_item = labels[0];
+        const auto &data = bg::details::scalar_data(first_item);
+        alignas(std::string_view) auto storage = std::array<std::byte, sizeof(std::string_view)>{};
+        data.runtime_type().read_value(data.mode(), data.data_word(), storage.data());
+        auto *text = std::launder(reinterpret_cast<std::string_view *>(storage.data()));
+        if (*text != "shutdown") {
+            std::abort();
+        }
+        std::destroy_at(text);
+    }
+};
+
+ShutdownProbe shutdown_probe;
+
+} // namespace
 
 TEST_CASE("runtime schema identities and field metadata key canonical descriptors",
           "[feature:type-system][schema:named][declaration:runtime]") {
@@ -76,6 +151,22 @@ TEST_CASE("schema metadata owns scalar values and ignores entry order in canonic
         bg::schema_metadata_entry("extension.enabled", bg::ScalarValue<bool>{true}),
     });
     CHECK(&bg::schema(bg::util::symbol{"MetadataSchema"}, identity, nullptr, fields, different) != &first);
+}
+
+TEST_CASE("registered schema and List<string> descriptors survive process shutdown",
+          "[feature:type-system][schema:named][declaration:runtime]") {
+    const auto identity = bg::new_runtime_schema_id();
+    const auto fields = std::array{
+        bg::SchemaField{bg::util::symbol{"items"}, &bg::cpp_scalar_type<bg::List<bg::string>>()},
+    };
+    const auto metadata = shutdown_schema_metadata();
+    const auto &registered =
+        bg::schema(bg::util::symbol{"ShutdownSchema"}, identity, nullptr, fields, metadata);
+
+    REQUIRE(registered.field_count() == 1);
+    CHECK(registered.metadata() == metadata);
+    shutdown_probe.identity = identity;
+    shutdown_probe.canonical_schema = &registered;
 }
 
 TEST_CASE("derived schema metadata inherits base entries and replaces matching names",

@@ -5,6 +5,7 @@
 #include <bg/time_series/ref/ref_input_sample.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
+#include <bg/util/static_storage.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <algorithm>
@@ -124,18 +125,19 @@ const SampledDictionaryRuntimeType &SampledDictionaryRuntimeType::for_shape(
         std::unique_ptr<SampledDictionaryRuntimeType> runtime_type;
     };
 
-    static auto mutex = std::mutex{};
-    static auto entries = std::vector<Entry>{};
+    static auto mutex = util::static_storage<std::mutex>{};
+    static auto entries = util::static_storage<std::vector<Entry>>{};
 
-    const auto lock = std::lock_guard{mutex};
-    const auto existing = std::ranges::find(entries, &shape, &Entry::shape);
-    if (existing != entries.end()) {
+    const auto lock = std::lock_guard{mutex.get()};
+    auto &cache = entries.get();
+    const auto existing = std::ranges::find(cache, &shape, &Entry::shape);
+    if (existing != cache.end()) {
         return *existing->runtime_type;
     }
 
     auto runtime_type = std::make_unique<SampledDictionaryRuntimeType>(shape);
     const auto &result = *runtime_type;
-    entries.push_back({&shape, std::move(runtime_type)});
+    cache.push_back({&shape, std::move(runtime_type)});
     return result;
 }
 

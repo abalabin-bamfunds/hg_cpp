@@ -8,6 +8,7 @@
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/time_series_variable.hpp>
 #include <bg/type/variable_registry.hpp>
+#include <bg/util/static_storage.hpp>
 #include <bg/util/symbol.hpp>
 
 #include <concepts>
@@ -183,9 +184,9 @@ bool wiring_parameter_matches(const Parameter &declaration, const ResolvedParame
                     return time_series_type_for<Function, Index, TimeSeriesTypeRole::input, TimeSeries>(
                         guarantee_parameter<TimeSeries::guarantee>());
                 } else {
-                    static const auto guarantee = GuaranteeVariable{parameter.name};
-                    [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee);
-                    return time_series_type_for<Function, Index, TimeSeriesTypeRole::input, TimeSeries>(guarantee);
+                    static const auto guarantee = util::static_storage<GuaranteeVariable>{parameter.name};
+                    [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee.get());
+                    return time_series_type_for<Function, Index, TimeSeriesTypeRole::input, TimeSeries>(guarantee.get());
                 }
             }();
             return declared.accepts(*parameter.type);

@@ -1,4 +1,5 @@
 #include <bg/time_series/tsl/tsl_runtime_type.hpp>
+#include <bg/util/static_storage.hpp>
 #include <bg/time_series/tsl/tsl_free_runtime_type.hpp>
 #include <bg/time_series/tsl/tsl_input.hpp>
 #include <bg/time_series/tsl/tsl_output.hpp>
@@ -150,18 +151,20 @@ void FreeFixedTimeSeriesListRuntimeType::destroy_value(void *value, allocator &m
 }
 
 const TimeSeriesRuntimeType &free_fixed_time_series_list_runtime_type(const TimeSeriesListType &type) {
-    static auto mutex = std::mutex{};
-    static auto runtime_types = std::vector<std::unique_ptr<FreeFixedTimeSeriesListRuntimeType>>{};
+    static auto mutex = util::static_storage<std::mutex>{};
+    static auto runtime_types =
+        util::static_storage<std::vector<std::unique_ptr<FreeFixedTimeSeriesListRuntimeType>>>{};
 
-    const auto lock = std::lock_guard{mutex};
+    const auto lock = std::lock_guard{mutex.get()};
+    auto &cache = runtime_types.get();
     const auto existing = std::ranges::find_if(
-        runtime_types, [&](const auto &candidate) { return &candidate->type() == &type; });
-    if (existing != runtime_types.end()) {
+        cache, [&](const auto &candidate) { return &candidate->type() == &type; });
+    if (existing != cache.end()) {
         return **existing;
     }
 
-    runtime_types.push_back(std::make_unique<FreeFixedTimeSeriesListRuntimeType>(type));
-    return *runtime_types.back();
+    cache.push_back(std::make_unique<FreeFixedTimeSeriesListRuntimeType>(type));
+    return *cache.back();
 }
 
 const TimeSeriesRuntimeType &
@@ -172,19 +175,20 @@ fixed_time_series_list_runtime_type(const TimeSeriesListType &type, const TimeSe
         std::unique_ptr<FixedTimeSeriesListRuntimeType> runtime_type;
     };
 
-    static auto mutex = std::mutex{};
-    static auto entries = std::vector<Entry>{};
+    static auto mutex = util::static_storage<std::mutex>{};
+    static auto entries = util::static_storage<std::vector<Entry>>{};
 
-    const auto lock = std::lock_guard{mutex};
+    const auto lock = std::lock_guard{mutex.get()};
+    auto &cache = entries.get();
     const auto found =
-        std::ranges::find_if(entries, [&](const auto &entry) { return entry.type == &type && entry.item == &item; });
-    if (found != entries.end()) {
+        std::ranges::find_if(cache, [&](const auto &entry) { return entry.type == &type && entry.item == &item; });
+    if (found != cache.end()) {
         return *found->runtime_type;
     }
 
     auto runtime_type = std::make_unique<FixedTimeSeriesListRuntimeType>(type, item);
     auto &result = *runtime_type;
-    entries.push_back({&type, &item, std::move(runtime_type)});
+    cache.push_back({&type, &item, std::move(runtime_type)});
     return result;
 }
 

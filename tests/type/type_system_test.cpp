@@ -19,6 +19,7 @@
 #include <bg/type/type_registry.hpp>
 #include <bg/type/type_variable.hpp>
 #include <bg/type/variable_registry.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -72,15 +73,16 @@ TEST_CASE("a semantic type cast preserves const", "[type_system][feature:type-sy
 }
 
 TEST_CASE("semantic types cast through their visitor categories", "[type_system][feature:type-system]") {
-    static auto value = bg::GenericTimeSeriesValueType{bg::float_type(), bg::TimeSeriesGuarantee::ordinary};
-    [[maybe_unused]] static const auto &value_registration = bg::TypeRegistry::register_static(value);
-    bg::Type &type = value;
+    static auto value = bg::util::static_storage<bg::GenericTimeSeriesValueType>{
+        bg::float_type(), bg::TimeSeriesGuarantee::ordinary};
+    [[maybe_unused]] static const auto &value_registration = bg::TypeRegistry::register_static(value.get());
+    bg::Type &type = value.get();
 
     CHECK(bg::type_cast<bg::Type>(&type) == &type);
-    CHECK(bg::type_cast<bg::TimeSeriesType>(&type) == &value);
-    CHECK(bg::type_cast<bg::TimeSeriesValueType>(&type) == &value);
+    CHECK(bg::type_cast<bg::TimeSeriesType>(&type) == &value.get());
+    CHECK(bg::type_cast<bg::TimeSeriesValueType>(&type) == &value.get());
     CHECK(bg::type_cast<bg::TimeSeriesListType>(&type) == nullptr);
-    CHECK(&bg::type_cast<bg::TimeSeriesValueType>(type) == &value);
+    CHECK(&bg::type_cast<bg::TimeSeriesValueType>(type) == &value.get());
     CHECK_THROWS_AS(bg::type_cast<bg::TimeSeriesListType>(type), std::bad_cast);
 }
 
@@ -461,17 +463,20 @@ TEST_CASE("a guarantee variable enforces its lower bound",
           "[guarantee:deduplicated][guarantee:final]") {
     const bg::ScalarType &float_type = bg::float_type();
 
-    static const bg::GuaranteeVariable stable_guarantee{
+    static const auto stable_guarantee = bg::util::static_storage<bg::GuaranteeVariable>{
         bg::util::symbol{"Stable"}, bg::TimeSeriesGuarantee::deduplicated};
     [[maybe_unused]] static const auto &stable_guarantee_registration =
-        bg::VariableRegistry::register_static(stable_guarantee);
-    static const bg::GenericTimeSeriesValueType stable_ts_float{float_type, stable_guarantee};
+        bg::VariableRegistry::register_static(stable_guarantee.get());
+    static const auto stable_ts_float = bg::util::static_storage<bg::GenericTimeSeriesValueType>{
+        float_type, stable_guarantee.get()};
     [[maybe_unused]] static const auto &stable_ts_float_registration =
-        bg::TypeRegistry::register_static(stable_ts_float);
-    static const bg::TypeVariableType<bg::Type> stable_type{bg::util::symbol{"StableType"}, {&stable_ts_float}};
-    [[maybe_unused]] static const auto &stable_type_registration = bg::TypeRegistry::register_static(stable_type);
+        bg::TypeRegistry::register_static(stable_ts_float.get());
+    static const auto stable_type = bg::util::static_storage<bg::TypeVariableType<bg::Type>>{
+        bg::util::symbol{"StableType"}, std::vector<const bg::Type *>{&stable_ts_float.get()}};
+    [[maybe_unused]] static const auto &stable_type_registration =
+        bg::TypeRegistry::register_static(stable_type.get());
     const bg::Signature stable_input{
-        bg::util::symbol{"stable_input"}, {{bg::util::symbol{"value"}, &stable_type}}, stable_ts_float};
+        bg::util::symbol{"stable_input"}, {{bg::util::symbol{"value"}, &stable_type.get()}}, stable_ts_float.get()};
 
     const auto &ts_ordinary = bg::TS<float>::type();
     const std::array<const bg::Type *, 1> weak_argument{&ts_ordinary};
@@ -496,10 +501,11 @@ TEST_CASE("repeated use of a type variable requires one resolved type",
     const auto &ts_final = bg::TS<float, bg::TimeSeriesGuarantee::final>::type();
     const auto &ts_ordinary = bg::TS<float>::type();
 
-    static const bg::TypeVariableType<bg::Type> same_type{bg::util::symbol{"Same"}};
-    [[maybe_unused]] static const auto &same_type_registration = bg::TypeRegistry::register_static(same_type);
+    static const auto same_type = bg::util::static_storage<bg::TypeVariableType<bg::Type>>{bg::util::symbol{"Same"}};
+    [[maybe_unused]] static const auto &same_type_registration = bg::TypeRegistry::register_static(same_type.get());
     const bg::Signature same_inputs{bg::util::symbol{"same_inputs"},
-                                    {{bg::util::symbol{"first"}, &same_type}, {bg::util::symbol{"second"}, &same_type}},
+                                    {{bg::util::symbol{"first"}, &same_type.get()},
+                                     {bg::util::symbol{"second"}, &same_type.get()}},
                                     ts_ordinary};
     const std::array<const bg::Type *, 2> different_arguments{&float_type, &ts_final};
 
@@ -517,10 +523,11 @@ TEST_CASE("a type parameter maps a time-series type variable",
     const auto &ts_final = bg::TS<float, bg::TimeSeriesGuarantee::final>::type();
 
     const auto &selected_type = bg::TS_T::type();
-    static const bg::GenericTypeScalarType type_parameter{selected_type};
-    [[maybe_unused]] static const auto &type_parameter_registration = bg::TypeRegistry::register_static(type_parameter);
+    static const auto type_parameter = bg::util::static_storage<bg::GenericTypeScalarType>{selected_type};
+    [[maybe_unused]] static const auto &type_parameter_registration =
+        bg::TypeRegistry::register_static(type_parameter.get());
     const bg::Signature select_type{
-        bg::util::symbol{"select_type"}, {{bg::util::symbol{"type"}, &type_parameter}}, selected_type};
+        bg::util::symbol{"select_type"}, {{bg::util::symbol{"type"}, &type_parameter.get()}}, selected_type};
     const bg::TypeScalarType &final_type_argument = bg::type_of(ts_final);
     const std::array<const bg::Type *, 1> final_type_arguments{&final_type_argument};
     const auto selected_final = select_type.resolve(final_type_arguments);
@@ -537,11 +544,11 @@ TEST_CASE("a type parameter maps a nested guarantee variable",
 
     using SELECTED_TS_FLOAT = bg::TS<float, bg::guarantee_variable<"SelectedGuarantee">>;
     const auto &selected_ts_float = SELECTED_TS_FLOAT::type();
-    static const bg::GenericTypeScalarType constrained_type_parameter{selected_ts_float};
+    static const auto constrained_type_parameter = bg::util::static_storage<bg::GenericTypeScalarType>{selected_ts_float};
     [[maybe_unused]] static const auto &constrained_type_parameter_registration =
-        bg::TypeRegistry::register_static(constrained_type_parameter);
+        bg::TypeRegistry::register_static(constrained_type_parameter.get());
     const bg::Signature select_guarantee{bg::util::symbol{"select_guarantee"},
-                                         {{bg::util::symbol{"type"}, &constrained_type_parameter}},
+                                         {{bg::util::symbol{"type"}, &constrained_type_parameter.get()}},
                                          selected_ts_float};
     const bg::TypeScalarType &deduplicated_type_argument = bg::type_of(ts_deduplicated);
     const std::array<const bg::Type *, 1> deduplicated_type_arguments{&deduplicated_type_argument};
@@ -554,11 +561,11 @@ TEST_CASE("a time-series type parameter rejects a scalar type", "[type_system][f
     const bg::ScalarType &float_type = bg::float_type();
     using SELECTED_TS_FLOAT = bg::TS<float, bg::guarantee_variable<"SelectedGuarantee">>;
     const auto &selected_ts_float = SELECTED_TS_FLOAT::type();
-    static const bg::GenericTypeScalarType constrained_type_parameter{selected_ts_float};
+    static const auto constrained_type_parameter = bg::util::static_storage<bg::GenericTypeScalarType>{selected_ts_float};
     [[maybe_unused]] static const auto &constrained_type_parameter_registration =
-        bg::TypeRegistry::register_static(constrained_type_parameter);
+        bg::TypeRegistry::register_static(constrained_type_parameter.get());
     const bg::Signature select_guarantee{bg::util::symbol{"select_guarantee"},
-                                         {{bg::util::symbol{"type"}, &constrained_type_parameter}},
+                                         {{bg::util::symbol{"type"}, &constrained_type_parameter.get()}},
                                          selected_ts_float};
 
     const bg::TypeScalarType &scalar_type_argument = bg::type_of(float_type);

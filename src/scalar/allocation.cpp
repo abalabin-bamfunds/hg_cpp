@@ -1,5 +1,6 @@
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/bundle/details/allocation_owner.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include "../thread_local_pointer.hpp"
 
@@ -12,9 +13,9 @@ namespace bg::details {
 namespace {
 
 util::thread_local_pointer &current_owner() {
-    static auto value = util::thread_local_pointer{};
+    static auto value = util::static_storage<util::thread_local_pointer>{};
 
-    return value;
+    return value.get();
 }
 
 #ifndef NDEBUG

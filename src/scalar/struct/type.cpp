@@ -1,5 +1,6 @@
 #include <bg/scalar/struct/scalar_type.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <memory>
 #include <mutex>
@@ -29,12 +30,13 @@ namespace details {
 const StructScalarType &canonical_struct_scalar_type(const std::type_info &identity, std::string_view full_name,
                                                      std::string_view name, std::size_t size, std::size_t alignment,
                                                      std::span<const StructScalarField> fields) {
-    static auto mutex = std::mutex{};
-    static auto types = std::unordered_map<std::type_index, const ResolvedStructScalarType *>{};
+    static auto mutex = util::static_storage<std::mutex>{};
+    static auto types = util::static_storage<std::unordered_map<std::type_index, const ResolvedStructScalarType *>>{};
 
-    const auto lock = std::lock_guard{mutex};
+    const auto lock = std::lock_guard{mutex.get()};
+    auto &cache = types.get();
     const auto key = std::type_index{identity};
-    if (const auto entry = types.find(key); entry != types.end()) {
+    if (const auto entry = cache.find(key); entry != cache.end()) {
         const auto &existing = *entry->second;
         const auto mismatch = [&] {
             throw std::logic_error{"conflicting native struct declaration: " + std::string{full_name}};
@@ -54,7 +56,7 @@ const StructScalarType &canonical_struct_scalar_type(const std::type_info &ident
         return *entry->second;
     }
 
-    const auto entry = types.try_emplace(key, nullptr).first;
+    const auto entry = cache.try_emplace(key, nullptr).first;
     try {
         const auto &resolved = TypeRegistry::instance().register_owned(std::make_unique<ResolvedStructScalarType>(
             util::symbol{full_name}, util::symbol{name}, size, alignment,
@@ -62,7 +64,7 @@ const StructScalarType &canonical_struct_scalar_type(const std::type_info &ident
         entry->second = &resolved;
         return resolved;
     } catch (...) {
-        types.erase(key);
+        cache.erase(key);
         throw;
     }
 }

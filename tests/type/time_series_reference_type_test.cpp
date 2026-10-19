@@ -10,6 +10,7 @@
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 #include <bg/type/variable_registry.hpp>
 #include <bg/time_series/tsb/tsb_type.hpp>
 
@@ -17,6 +18,7 @@
 
 #include <array>
 #include <stdexcept>
+#include <vector>
 
 namespace {
 
@@ -218,19 +220,20 @@ TEST_CASE("a generic reference accepts a reference or its target",
           "[guarantee:const][binding:value-to-reference][binding:reference-to-reference]") {
     const auto &target = bg::TS<bg::i64>::type();
     const auto &reference = bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::const_>::type();
-    static const auto generic_target =
-        bg::GenericTimeSeriesValueType{bg::int64_type(), bg::GuaranteeParameter{bg::TimeSeriesGuarantee::ordinary}};
-    [[maybe_unused]] static const auto &generic_target_registration = bg::TypeRegistry::register_static(generic_target);
-    static const auto generic_reference =
-        bg::GenericTimeSeriesReferenceType{generic_target, bg::GuaranteeParameter{bg::TimeSeriesGuarantee::ordinary}};
+    static const auto generic_target = bg::util::static_storage<bg::GenericTimeSeriesValueType>{
+        bg::int64_type(), bg::GuaranteeParameter{bg::TimeSeriesGuarantee::ordinary}};
+    [[maybe_unused]] static const auto &generic_target_registration =
+        bg::TypeRegistry::register_static(generic_target.get());
+    static const auto generic_reference = bg::util::static_storage<bg::GenericTimeSeriesReferenceType>{
+        generic_target.get(), bg::GuaranteeParameter{bg::TimeSeriesGuarantee::ordinary}};
     [[maybe_unused]] static const auto &generic_reference_registration =
-        bg::TypeRegistry::register_static(generic_reference);
+        bg::TypeRegistry::register_static(generic_reference.get());
 
     auto type_map = bg::TypeMap{};
-    CHECK(generic_reference.match(reference, type_map));
+    CHECK(generic_reference.get().match(reference, type_map));
 
     type_map = bg::TypeMap{};
-    CHECK(generic_reference.match(target, type_map));
+    CHECK(generic_reference.get().match(target, type_map));
 }
 
 TEST_CASE("generic time series references have process-owned type identity",
@@ -254,21 +257,26 @@ TEST_CASE("reference matching maps target and reference guarantees separately",
           "[binding:reference-to-reference]") {
     const auto &reference =
         bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::deduplicated>::type();
-    static const auto target_guarantee = bg::GuaranteeVariable{bg::util::symbol{"target guarantee"}};
+    static const auto target_guarantee =
+        bg::util::static_storage<bg::GuaranteeVariable>{bg::util::symbol{"target guarantee"}};
     [[maybe_unused]] static const auto &target_guarantee_registration =
-        bg::VariableRegistry::register_static(target_guarantee);
-    static const auto reference_guarantee = bg::GuaranteeVariable{bg::util::symbol{"reference guarantee"}};
+        bg::VariableRegistry::register_static(target_guarantee.get());
+    static const auto reference_guarantee =
+        bg::util::static_storage<bg::GuaranteeVariable>{bg::util::symbol{"reference guarantee"}};
     [[maybe_unused]] static const auto &reference_guarantee_registration =
-        bg::VariableRegistry::register_static(reference_guarantee);
-    static const auto generic_target = bg::GenericTimeSeriesValueType{bg::int64_type(), target_guarantee};
-    [[maybe_unused]] static const auto &generic_target_registration = bg::TypeRegistry::register_static(generic_target);
-    static const auto generic_reference = bg::GenericTimeSeriesReferenceType{generic_target, reference_guarantee};
+        bg::VariableRegistry::register_static(reference_guarantee.get());
+    static const auto generic_target = bg::util::static_storage<bg::GenericTimeSeriesValueType>{
+        bg::int64_type(), target_guarantee.get()};
+    [[maybe_unused]] static const auto &generic_target_registration =
+        bg::TypeRegistry::register_static(generic_target.get());
+    static const auto generic_reference = bg::util::static_storage<bg::GenericTimeSeriesReferenceType>{
+        generic_target.get(), reference_guarantee.get()};
     [[maybe_unused]] static const auto &generic_reference_registration =
-        bg::TypeRegistry::register_static(generic_reference);
+        bg::TypeRegistry::register_static(generic_reference.get());
     auto type_map = bg::TypeMap{};
 
-    REQUIRE(generic_reference.match(reference, type_map));
-    const auto &resolved = static_cast<const bg::TimeSeriesReferenceType &>(generic_reference.resolve(type_map));
+    REQUIRE(generic_reference.get().match(reference, type_map));
+    const auto &resolved = static_cast<const bg::TimeSeriesReferenceType &>(generic_reference.get().resolve(type_map));
 
     CHECK(resolved.guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
     CHECK(resolved.target_type().guarantee().value() == bg::TimeSeriesGuarantee::final);
@@ -277,11 +285,13 @@ TEST_CASE("reference matching maps target and reference guarantees separately",
 TEST_CASE("dereferenced matching enforces the effective guarantee minimum",
           "[type][reference][resolution][feature:type-system][declaration:generic]"
           "[guarantee:ordinary][guarantee:final][binding:reference-to-value]") {
-    static const auto minimum = bg::GuaranteeVariable{bg::util::symbol{"dereferenced minimum"},
-                                                       bg::TimeSeriesGuarantee::final};
-    [[maybe_unused]] static const auto &minimum_registration = bg::VariableRegistry::register_static(minimum);
-    static const auto parameter = bg::GenericTimeSeriesValueType{bg::int64_type(), minimum};
-    [[maybe_unused]] static const auto &parameter_registration = bg::TypeRegistry::register_static(parameter);
+    static const auto minimum = bg::util::static_storage<bg::GuaranteeVariable>{
+        bg::util::symbol{"dereferenced minimum"}, bg::TimeSeriesGuarantee::final};
+    [[maybe_unused]] static const auto &minimum_registration =
+        bg::VariableRegistry::register_static(minimum.get());
+    static const auto parameter =
+        bg::util::static_storage<bg::GenericTimeSeriesValueType>{bg::int64_type(), minimum.get()};
+    [[maybe_unused]] static const auto &parameter_registration = bg::TypeRegistry::register_static(parameter.get());
 
     const auto &final_target = bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type();
     const auto &weak_reference =
@@ -290,11 +300,11 @@ TEST_CASE("dereferenced matching enforces the effective guarantee minimum",
         bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::final>::type();
     auto type_map = bg::TypeMap{};
 
-    CHECK_FALSE(parameter.match(weak_reference, type_map));
+    CHECK_FALSE(parameter.get().match(weak_reference, type_map));
 
     type_map = bg::TypeMap{};
-    REQUIRE(parameter.match(strong_reference, type_map));
-    CHECK(&parameter.resolve(type_map) == &final_target);
+    REQUIRE(parameter.get().match(strong_reference, type_map));
+    CHECK(&parameter.get().resolve(type_map) == &final_target);
 }
 
 TEST_CASE("dereferenced matching limits each target guarantee by the reference guarantee",
@@ -334,61 +344,66 @@ TEST_CASE("dereferenced matching limits each target guarantee by the reference g
 TEST_CASE("reference limits preserve the existing extension matcher path",
           "[type][reference][resolution][feature:type-system][declaration:generic]"
           "[guarantee:ordinary][guarantee:final][binding:reference-to-value]") {
-    static const auto extension_type = ExtensionMatcherTimeSeriesType{};
+    static const auto extension_type = bg::util::static_storage<ExtensionMatcherTimeSeriesType>{};
     [[maybe_unused]] static const auto &extension_type_registration =
-        bg::TypeRegistry::register_static(extension_type);
+        bg::TypeRegistry::register_static(extension_type.get());
     const auto &final_target = bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type();
     const auto &supplied = bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>,
                                    bg::TimeSeriesGuarantee::ordinary>::type();
     auto type_map = bg::TypeMap{};
     ExtensionMatcherTimeSeriesType::observed_type = nullptr;
 
-    REQUIRE(extension_type.match(final_target, type_map));
+    REQUIRE(extension_type.get().match(final_target, type_map));
     CHECK(ExtensionMatcherTimeSeriesType::observed_type == &final_target);
 
     type_map = bg::TypeMap{};
     ExtensionMatcherTimeSeriesType::observed_type = nullptr;
-    REQUIRE(extension_type.match(supplied, type_map));
+    REQUIRE(extension_type.get().match(supplied, type_map));
     CHECK(ExtensionMatcherTimeSeriesType::observed_type == &bg::TS<bg::i64>::type());
 }
 
 TEST_CASE("time-series type-variable constraints inspect the observed guarantee",
           "[type][reference][resolution][feature:type-system][declaration:generic]"
           "[guarantee:ordinary][guarantee:final][binding:reference-to-value]") {
-    static const auto ordinary_variable = bg::TypeVariableType<bg::TimeSeriesType>{
-        bg::util::symbol{"ordinary observed series"}, {}, {&has_ordinary_guarantee}};
+    static const auto ordinary_variable = bg::util::static_storage<bg::TypeVariableType<bg::TimeSeriesType>>{
+        bg::util::symbol{"ordinary observed series"}, std::vector<const bg::TimeSeriesType *>{},
+        std::vector<bg::TypeVariableType<bg::TimeSeriesType>::Constraint>{&has_ordinary_guarantee}};
     [[maybe_unused]] static const auto &ordinary_variable_registration =
-        bg::TypeRegistry::register_static(ordinary_variable);
-    static const auto final_variable = bg::TypeVariableType<bg::TimeSeriesType>{
-        bg::util::symbol{"final observed series"}, {}, {&has_final_guarantee}};
+        bg::TypeRegistry::register_static(ordinary_variable.get());
+    static const auto final_variable = bg::util::static_storage<bg::TypeVariableType<bg::TimeSeriesType>>{
+        bg::util::symbol{"final observed series"}, std::vector<const bg::TimeSeriesType *>{},
+        std::vector<bg::TypeVariableType<bg::TimeSeriesType>::Constraint>{&has_final_guarantee}};
     [[maybe_unused]] static const auto &final_variable_registration =
-        bg::TypeRegistry::register_static(final_variable);
+        bg::TypeRegistry::register_static(final_variable.get());
     const auto &supplied = bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>,
                                    bg::TimeSeriesGuarantee::ordinary>::type();
     auto type_map = bg::TypeMap{};
 
-    REQUIRE(ordinary_variable.match(supplied, type_map));
-    CHECK(&ordinary_variable.resolve(type_map) == &bg::TS<bg::i64>::type());
+    REQUIRE(ordinary_variable.get().match(supplied, type_map));
+    CHECK(&ordinary_variable.get().resolve(type_map) == &bg::TS<bg::i64>::type());
 
     type_map = bg::TypeMap{};
-    CHECK_FALSE(final_variable.match(supplied, type_map));
+    CHECK_FALSE(final_variable.get().match(supplied, type_map));
 }
 
 TEST_CASE("dereferenced guarantee variables resolve from the observed guarantee",
           "[type][reference][resolution][feature:type-system][declaration:generic]"
           "[guarantee:ordinary][guarantee:final]") {
-    static const auto guarantee = bg::GuaranteeVariable{bg::util::symbol{"observed guarantee"}};
-    [[maybe_unused]] static const auto &guarantee_registration = bg::VariableRegistry::register_static(guarantee);
-    static const auto parameter = bg::GenericTimeSeriesValueType{bg::int64_type(), guarantee};
-    [[maybe_unused]] static const auto &parameter_registration = bg::TypeRegistry::register_static(parameter);
+    static const auto guarantee =
+        bg::util::static_storage<bg::GuaranteeVariable>{bg::util::symbol{"observed guarantee"}};
+    [[maybe_unused]] static const auto &guarantee_registration =
+        bg::VariableRegistry::register_static(guarantee.get());
+    static const auto parameter =
+        bg::util::static_storage<bg::GenericTimeSeriesValueType>{bg::int64_type(), guarantee.get()};
+    [[maybe_unused]] static const auto &parameter_registration = bg::TypeRegistry::register_static(parameter.get());
 
     const auto &reference =
         bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::final>::type();
     auto type_map = bg::TypeMap{};
 
-    REQUIRE(parameter.match(reference, type_map));
-    CHECK(parameter.resolve(type_map).is_time_series());
-    CHECK(static_cast<const bg::TimeSeriesType &>(parameter.resolve(type_map)).guarantee().value() ==
+    REQUIRE(parameter.get().match(reference, type_map));
+    CHECK(parameter.get().resolve(type_map).is_time_series());
+    CHECK(static_cast<const bg::TimeSeriesType &>(parameter.get().resolve(type_map)).guarantee().value() ==
           bg::TimeSeriesGuarantee::final);
 }
 
@@ -402,20 +417,21 @@ TEST_CASE("dereferenced matching rejects unresolved references",
           "[binding:reference-to-value]") {
     const auto &unresolved_target =
         bg::generic_time_series_reference_type(bg::TS_T::type(), bg::TimeSeriesGuarantee::ordinary);
-    static const auto reference_guarantee = bg::GuaranteeVariable{bg::util::symbol{"unresolved reference guarantee"}};
+    static const auto reference_guarantee =
+        bg::util::static_storage<bg::GuaranteeVariable>{bg::util::symbol{"unresolved reference guarantee"}};
     [[maybe_unused]] static const auto &reference_guarantee_registration =
-        bg::VariableRegistry::register_static(reference_guarantee);
-    static const auto unresolved_guarantee = bg::GenericTimeSeriesReferenceType{
-        bg::TS<bg::i64>::type(), bg::GuaranteeParameter{reference_guarantee}};
+        bg::VariableRegistry::register_static(reference_guarantee.get());
+    static const auto unresolved_guarantee = bg::util::static_storage<bg::GenericTimeSeriesReferenceType>{
+        bg::TS<bg::i64>::type(), bg::GuaranteeParameter{reference_guarantee.get()}};
     [[maybe_unused]] static const auto &unresolved_guarantee_registration =
-        bg::TypeRegistry::register_static(unresolved_guarantee);
+        bg::TypeRegistry::register_static(unresolved_guarantee.get());
     auto type_map = bg::TypeMap{};
 
     CHECK_FALSE(bg::TS_T::type().match(unresolved_target, type_map));
-    CHECK_FALSE(bg::TS_T::type().match(unresolved_guarantee, type_map));
+    CHECK_FALSE(bg::TS_T::type().match(unresolved_guarantee.get(), type_map));
 
     CHECK_THROWS_AS(unresolved_target.dereferenced_type(), bg::TypeResolutionError);
-    CHECK_THROWS_AS(unresolved_guarantee.dereferenced_type(), bg::TypeResolutionError);
+    CHECK_THROWS_AS(unresolved_guarantee.get().dereferenced_type(), bg::TypeResolutionError);
 }
 
 TEST_CASE("an unresolved TSL cannot limit its guarantee",
@@ -520,17 +536,20 @@ TEST_CASE("an outer reference limit reaches TSB reference fields",
           "[type][reference][resolution][feature:type-system][declaration:generic]"
           "[series:tsb][guarantee:ordinary][guarantee:final]") {
     const auto &field_target = bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type();
-    static const auto field_guarantee = bg::GuaranteeVariable{bg::util::symbol{"bundle field guarantee"}};
+    static const auto field_guarantee =
+        bg::util::static_storage<bg::GuaranteeVariable>{bg::util::symbol{"bundle field guarantee"}};
     [[maybe_unused]] static const auto &field_guarantee_registration =
-        bg::VariableRegistry::register_static(field_guarantee);
-    static const auto generic_field = bg::GenericTimeSeriesReferenceType{
-        field_target, bg::GuaranteeParameter{field_guarantee}};
-    [[maybe_unused]] static const auto &generic_field_registration = bg::TypeRegistry::register_static(generic_field);
-    const auto parameter_fields = std::array{bg::SchemaField{bg::util::symbol{"value"}, &generic_field}};
+        bg::VariableRegistry::register_static(field_guarantee.get());
+    static const auto generic_field = bg::util::static_storage<bg::GenericTimeSeriesReferenceType>{
+        field_target, bg::GuaranteeParameter{field_guarantee.get()}};
+    [[maybe_unused]] static const auto &generic_field_registration =
+        bg::TypeRegistry::register_static(generic_field.get());
+    const auto parameter_fields = std::array{bg::SchemaField{bg::util::symbol{"value"}, &generic_field.get()}};
     const auto &parameter_schema = bg::anonymous_schema(parameter_fields);
-    static const auto parameter = bg::GenericTimeSeriesBundleType{
+    static const auto parameter = bg::util::static_storage<bg::GenericTimeSeriesBundleType>{
         parameter_schema, bg::TimeSeriesGuarantee::ordinary};
-    [[maybe_unused]] static const auto &parameter_registration = bg::TypeRegistry::register_static(parameter);
+    [[maybe_unused]] static const auto &parameter_registration =
+        bg::TypeRegistry::register_static(parameter.get());
 
     const auto &supplied_field =
         bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::const_>::type();
@@ -539,8 +558,8 @@ TEST_CASE("an outer reference limit reaches TSB reference fields",
     const auto &supplied = bg::time_series_reference_type(supplied_target, bg::TimeSeriesGuarantee::ordinary);
     auto type_map = bg::TypeMap{};
 
-    REQUIRE(parameter.match(supplied, type_map));
-    const auto &resolved = static_cast<const bg::TimeSeriesBundleType &>(parameter.resolve(type_map));
+    REQUIRE(parameter.get().match(supplied, type_map));
+    const auto &resolved = static_cast<const bg::TimeSeriesBundleType &>(parameter.get().resolve(type_map));
     const auto &resolved_field = bg::type_cast<bg::TimeSeriesReferenceType>(resolved.item_type(0));
     CHECK(&resolved_field.target_type() == &field_target);
     CHECK(resolved_field.guarantee().value() == bg::TimeSeriesGuarantee::ordinary);

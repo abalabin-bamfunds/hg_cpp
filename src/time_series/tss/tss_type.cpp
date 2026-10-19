@@ -1,6 +1,7 @@
 #include <bg/type/time_series_set_type.hpp>
 
 #include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/util/symbol.hpp>
@@ -76,27 +77,28 @@ const TimeSeriesSetType &time_series_set_type(const ScalarType &item_type, TimeS
         bool operator==(const Key &) const = default;
     };
 
-    static auto mutex = std::mutex{};
-    static auto types = std::vector<std::pair<Key, const ResolvedTimeSeriesSetType *>>{};
+    static auto mutex = util::static_storage<std::mutex>{};
+    static auto types = util::static_storage<std::vector<std::pair<Key, const ResolvedTimeSeriesSetType *>>>{};
 
-    const auto lock = std::lock_guard{mutex};
+    const auto lock = std::lock_guard{mutex.get()};
+    auto &cache = types.get();
     const auto key = Key{&item_type, guarantee};
-    const auto found = std::ranges::find(types, key, &decltype(types)::value_type::first);
-    if (found != types.end()) {
+    const auto found = std::ranges::find(cache, key, &std::remove_reference_t<decltype(cache)>::value_type::first);
+    if (found != cache.end()) {
         return *found->second;
     }
     if (!item_type.supports_hash()) {
         throw std::invalid_argument{"time series set item type does not support hashing"};
     }
 
-    types.emplace_back(key, nullptr);
+    cache.emplace_back(key, nullptr);
     try {
         const auto &type = TypeRegistry::instance().register_owned(
             std::make_unique<ResolvedTimeSeriesSetType>(item_type, guarantee));
-        types.back().second = &type;
+        cache.back().second = &type;
         return type;
     } catch (...) {
-        types.pop_back();
+        cache.pop_back();
         throw;
     }
 }

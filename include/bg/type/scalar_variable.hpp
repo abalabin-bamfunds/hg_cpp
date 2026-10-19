@@ -8,6 +8,7 @@
 #include <bg/type/type_variable.hpp>
 #include <bg/type/type_registry.hpp>
 #include <bg/util/symbol.hpp>
+#include <bg/util/static_storage.hpp>
 
 namespace bg::details {
 
@@ -16,32 +17,34 @@ template <typename Declaration> struct ScalarVariableInstance;
 template <util::compile_time_string Name, typename... Constraints>
 struct ScalarVariableInstance<ScalarVariable<Name, Constraints...>> {
     static const TypeVariableType<ScalarType> &get() {
-        static const auto variable = [] {
-            auto alternatives = std::vector<const ScalarType *>{};
-            auto property_constraints = std::vector<TypeVariableType<ScalarType>::Constraint>{};
+        static const auto variable = util::static_storage<TypeVariableType<ScalarType>>{
+            std::in_place,
+            [] {
+                auto alternatives = std::vector<const ScalarType *>{};
+                auto property_constraints = std::vector<TypeVariableType<ScalarType>::Constraint>{};
 
-            (
-                [&] {
-                    if constexpr (std::same_as<Constraints, EqualityComparable>) {
-                        property_constraints.push_back(&supports_scalar_equality);
-                    } else if constexpr (std::same_as<Constraints, Hashable>) {
-                        property_constraints.push_back(&supports_scalar_hash);
-                    } else if constexpr (std::same_as<Constraints, hierarchical_scalar_constraint>) {
-                        property_constraints.push_back(&is_hierarchical_scalar);
-                    } else if constexpr (std::same_as<Constraints, struct_scalar_constraint>) {
-                        property_constraints.push_back(&is_struct_scalar);
-                    } else {
-                        alternatives.push_back(&cpp_scalar_type<Constraints>());
-                    }
-                }(),
-                ...);
+                (
+                    [&] {
+                        if constexpr (std::same_as<Constraints, EqualityComparable>) {
+                            property_constraints.push_back(&supports_scalar_equality);
+                        } else if constexpr (std::same_as<Constraints, Hashable>) {
+                            property_constraints.push_back(&supports_scalar_hash);
+                        } else if constexpr (std::same_as<Constraints, hierarchical_scalar_constraint>) {
+                            property_constraints.push_back(&is_hierarchical_scalar);
+                        } else if constexpr (std::same_as<Constraints, struct_scalar_constraint>) {
+                            property_constraints.push_back(&is_struct_scalar);
+                        } else {
+                            alternatives.push_back(&cpp_scalar_type<Constraints>());
+                        }
+                    }(),
+                    ...);
 
-            return TypeVariableType<ScalarType>{util::symbol{Name.view()}, std::move(alternatives),
-                                                std::move(property_constraints)};
-        }();
-        [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(variable);
+                return TypeVariableType<ScalarType>{util::symbol{Name.view()}, std::move(alternatives),
+                                                     std::move(property_constraints)};
+            }};
+        [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(variable.get());
 
-        return variable;
+        return variable.get();
     }
 };
 

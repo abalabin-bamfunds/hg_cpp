@@ -10,6 +10,7 @@
 #include <bg/type/time_series_variable.hpp>
 #include <bg/type/type_variable.hpp>
 #include <bg/type/variable_registry.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -56,9 +57,9 @@ template <typename Function, std::size_t Index> const Type &graph_parameter_type
             return time_series_type_for<Function, Index, TimeSeriesTypeRole::input, TimeSeries>(
                 guarantee_parameter<TimeSeries::guarantee>());
         } else {
-            static const GuaranteeVariable guarantee{name};
-            [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee);
-            return time_series_type_for<Function, Index, TimeSeriesTypeRole::input, TimeSeries>(guarantee);
+            static const auto guarantee = util::static_storage<GuaranteeVariable>{name};
+            [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee.get());
+            return time_series_type_for<Function, Index, TimeSeriesTypeRole::input, TimeSeries>(guarantee.get());
         }
     } else if constexpr (supported_optional_scalar_argument<Parameter>) {
         using Scalar = typename optional_scalar_argument<Parameter>::value_type;

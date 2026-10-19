@@ -10,6 +10,7 @@
 #include <bg/type/details/time_series_type.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/variable_registry.hpp>
+#include <bg/util/static_storage.hpp>
 #include <bg/util/named_argument.hpp>
 
 #include <algorithm>
@@ -129,10 +130,10 @@ class TypedBundleConstruction<TSB<Schema, Properties...>> {
 
   private:
     static const TimeSeriesBundleType &input_type() {
-        static const auto guarantee = GuaranteeVariable{util::symbol{"G"}};
-        [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee);
+        static const auto guarantee = util::static_storage<GuaranteeVariable>{util::symbol{"G"}};
+        [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee.get());
         return static_cast<const TimeSeriesBundleType &>(
-            time_series_type_for<TypedBundleConstruction, 0, TimeSeriesTypeRole::input, TimeSeries>(guarantee));
+            time_series_type_for<TypedBundleConstruction, 0, TimeSeriesTypeRole::input, TimeSeries>(guarantee.get()));
     }
 
     template <std::size_t... Index> wp<TimeSeries> finish(std::index_sequence<Index...>) {

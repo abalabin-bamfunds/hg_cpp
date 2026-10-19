@@ -8,6 +8,7 @@
 #include <bg/type/type_variable.hpp>
 #include <bg/type/variable_registry.hpp>
 #include <bg/time_series/time_series_type.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -59,14 +60,14 @@ class NestedRegistryTestType final : public bg::ScalarType {
 std::atomic_size_t cached_candidate_destructions{};
 
 const RegistryTestType &concurrent_registration_type() {
-    static const RegistryTestType type;
-    return type;
+    static const auto type = bg::util::static_storage<RegistryTestType>{};
+    return type.get();
 }
 
 const bg::GuaranteeVariable &registered_static_variable() {
-    static const bg::GuaranteeVariable variable{bg::util::symbol{"static guarantee"}};
-    [[maybe_unused]] static const auto &registration = bg::VariableRegistry::register_static(variable);
-    return variable;
+    static const auto variable = bg::util::static_storage<bg::GuaranteeVariable>{bg::util::symbol{"static guarantee"}};
+    [[maybe_unused]] static const auto &registration = bg::VariableRegistry::register_static(variable.get());
+    return variable.get();
 }
 
 } // namespace

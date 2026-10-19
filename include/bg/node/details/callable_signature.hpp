@@ -6,6 +6,7 @@
 #include <bg/type/details/time_series_type.hpp>
 #include <bg/type/variable_registry.hpp>
 #include <bg/util/compile_time_string.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <cstddef>
 #include <optional>
@@ -125,9 +126,9 @@ const TimeSeriesType &callable_input_type(util::symbol name) {
         return time_series_type_for<Scope, Index, TimeSeriesTypeRole::input, TimeSeries>(
             guarantee_parameter<TimeSeries::guarantee>());
     } else {
-        static const auto guarantee = GuaranteeVariable{name};
-        [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee);
-        return time_series_type_for<Scope, Index, TimeSeriesTypeRole::input, TimeSeries>(guarantee);
+        static const auto guarantee = util::static_storage<GuaranteeVariable>{name};
+        [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee.get());
+        return time_series_type_for<Scope, Index, TimeSeriesTypeRole::input, TimeSeries>(guarantee.get());
     }
 }
 

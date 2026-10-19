@@ -14,6 +14,7 @@
 #include <bg/type/type_of.hpp>
 #include <bg/type/type_registry.hpp>
 #include <bg/type/type_variable.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -50,9 +51,9 @@ class FallbackType final : public bg::Type {
 };
 
 const ExtensionScalarType &extension_scalar_type() {
-    static const auto type = ExtensionScalarType{};
-    [[maybe_unused]] static const auto &registration = bg::TypeRegistry::register_static(type);
-    return type;
+    static const auto type = bg::util::static_storage<ExtensionScalarType>{};
+    [[maybe_unused]] static const auto &registration = bg::TypeRegistry::register_static(type.get());
+    return type.get();
 }
 
 } // namespace
@@ -64,22 +65,24 @@ TEST_CASE("semantic types append their formal names", "[feature:type-system]") {
     CHECK(text == "prefix:float");
 
     auto generic_scalar_text = std::string{};
-    static const auto generic_scalar = FallbackScalarType{};
+    static const auto generic_scalar = bg::util::static_storage<FallbackScalarType>{};
     [[maybe_unused]] static const auto &generic_scalar_registration =
-        bg::TypeRegistry::register_static(generic_scalar);
-    generic_scalar.format_name(generic_scalar_text);
+        bg::TypeRegistry::register_static(generic_scalar.get());
+    generic_scalar.get().format_name(generic_scalar_text);
     CHECK(generic_scalar_text == "scalar");
 
     auto generic_type_text = std::string{};
-    static const auto generic_type = FallbackType{};
-    [[maybe_unused]] static const auto &generic_type_registration = bg::TypeRegistry::register_static(generic_type);
-    generic_type.format_name(generic_type_text);
+    static const auto generic_type = bg::util::static_storage<FallbackType>{};
+    [[maybe_unused]] static const auto &generic_type_registration =
+        bg::TypeRegistry::register_static(generic_type.get());
+    generic_type.get().format_name(generic_type_text);
     CHECK(generic_type_text == "type");
 
     auto variable_text = std::string{};
-    static const auto variable = bg::TypeVariableType<bg::Type>{bg::util::symbol{"VALUE"}};
-    [[maybe_unused]] static const auto &variable_registration = bg::TypeRegistry::register_static(variable);
-    const bg::Type &variable_type = variable;
+    static const auto variable = bg::util::static_storage<bg::TypeVariableType<bg::Type>>{
+        bg::util::symbol{"VALUE"}};
+    [[maybe_unused]] static const auto &variable_registration = bg::TypeRegistry::register_static(variable.get());
+    const bg::Type &variable_type = variable.get();
     variable_type.format_name(variable_text);
     CHECK(variable_text == "VALUE");
 }
@@ -119,15 +122,16 @@ TEST_CASE("built-in composite types format their arguments and guarantees", "[fe
     bg::type_of(value).format_name(type_value_text);
     CHECK(type_value_text == "Type<TS<float>>");
 
-    static const auto series_variable = bg::TypeVariableType<bg::TimeSeriesType>{bg::util::symbol{"SERIES"}};
+    static const auto series_variable = bg::util::static_storage<bg::TypeVariableType<bg::TimeSeriesType>>{
+        bg::util::symbol{"SERIES"}};
     [[maybe_unused]] static const auto &series_variable_registration =
-        bg::TypeRegistry::register_static(series_variable);
-    static const auto generic_time_series = bg::GenericTimeSeriesVariableType{series_variable,
-                                                                               bg::TimeSeriesGuarantee::final};
+        bg::TypeRegistry::register_static(series_variable.get());
+    static const auto generic_time_series = bg::util::static_storage<bg::GenericTimeSeriesVariableType>{
+        series_variable.get(), bg::TimeSeriesGuarantee::final};
     [[maybe_unused]] static const auto &generic_time_series_registration =
-        bg::TypeRegistry::register_static(generic_time_series);
+        bg::TypeRegistry::register_static(generic_time_series.get());
     auto generic_time_series_text = std::string{};
-    generic_time_series.format_name(generic_time_series_text);
+    generic_time_series.get().format_name(generic_time_series_text);
     CHECK(generic_time_series_text == "SERIES, final");
 }
 

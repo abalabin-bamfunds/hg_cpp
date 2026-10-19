@@ -10,6 +10,7 @@
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/type_registry.hpp>
 #include <bg/util/symbol.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <array>
 #include <concepts>
@@ -266,9 +267,9 @@ const ResolvedHierarchicalScalarType &hierarchical_scalar_type() {
 
 template <template <template <typename, auto...> typename> typename Schema>
 const GenericHierarchicalScalarType &generic_hierarchical_scalar_type() {
-    static const auto type = GenericHierarchicalScalarType{schema_type<Schema>::type()};
-    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
-    return type;
+    static const auto type = util::static_storage<GenericHierarchicalScalarType>{schema_type<Schema>::type()};
+    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+    return type.get();
 }
 
 } // namespace details

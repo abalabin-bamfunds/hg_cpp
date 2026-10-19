@@ -2,6 +2,7 @@
 #include <bg/time_series/tsb/tsb_input.hpp>
 #include <bg/time_series/tsb/tsb_output.hpp>
 #include <bg/time_series/tsb/tsb_runtime_type.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <memory>
 #include <mutex>
@@ -67,34 +68,36 @@ time_series_bundle_runtime_type(const TimeSeriesBundleType &type,
         std::unique_ptr<RuntimeTimeSeriesBundleRuntimeType> runtime_type;
     };
 
-    static auto mutex = std::mutex{};
-    static auto entries = std::vector<Entry>{};
+    static auto mutex = util::static_storage<std::mutex>{};
+    static auto entries = util::static_storage<std::vector<Entry>>{};
 
-    const auto lock = std::lock_guard{mutex};
+    const auto lock = std::lock_guard{mutex.get()};
+    auto &cache = entries.get();
     const auto found = std::ranges::find_if(
-        entries, [&](const auto &entry) { return entry.type == &type && std::ranges::equal(entry.items, items); });
-    if (found != entries.end()) {
+        cache, [&](const auto &entry) { return entry.type == &type && std::ranges::equal(entry.items, items); });
+    if (found != cache.end()) {
         return *found->runtime_type;
     }
 
     auto runtime_type = std::make_unique<RuntimeTimeSeriesBundleRuntimeType>(type, items);
     auto &result = *runtime_type;
-    entries.push_back({&type, {items.begin(), items.end()}, std::move(runtime_type)});
+    cache.push_back({&type, {items.begin(), items.end()}, std::move(runtime_type)});
     return result;
 }
 
 const TimeSeriesRuntimeType &free_time_series_bundle_runtime_type(const TimeSeriesBundleType &type) {
-    static auto mutex = std::mutex{};
-    static auto runtime_types = std::vector<std::unique_ptr<FreeTimeSeriesBundleRuntimeType>>{};
+    static auto mutex = util::static_storage<std::mutex>{};
+    static auto runtime_types = util::static_storage<std::vector<std::unique_ptr<FreeTimeSeriesBundleRuntimeType>>>{};
 
-    const auto lock = std::lock_guard{mutex};
+    const auto lock = std::lock_guard{mutex.get()};
+    auto &cache = runtime_types.get();
     const auto existing =
-        std::ranges::find_if(runtime_types, [&](const auto &candidate) { return &candidate->type() == &type; });
-    if (existing != runtime_types.end()) {
+        std::ranges::find_if(cache, [&](const auto &candidate) { return &candidate->type() == &type; });
+    if (existing != cache.end()) {
         return **existing;
     }
-    runtime_types.push_back(std::make_unique<FreeTimeSeriesBundleRuntimeType>(type));
-    return *runtime_types.back();
+    cache.push_back(std::make_unique<FreeTimeSeriesBundleRuntimeType>(type));
+    return *cache.back();
 }
 
 } // namespace bg::details

@@ -10,6 +10,7 @@
 #include <bg/type/guarantee_variable.hpp>
 #include <bg/type/type_variable.hpp>
 #include <bg/type/variable_registry.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <array>
 #include <concepts>
@@ -54,9 +55,10 @@ const Type &declared_graph_parameter_type() {
             return time_series_type_for<Scope, Index, TimeSeriesTypeRole::input, Value>(
                 guarantee_parameter<Value::guarantee>());
         } else {
-            static const auto guarantee = GuaranteeVariable{util::symbol{std::to_string(Index)}};
-            [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee);
-            return time_series_type_for<Scope, Index, TimeSeriesTypeRole::input, Value>(guarantee);
+            static const auto guarantee = util::static_storage<GuaranteeVariable>{
+                util::symbol{std::to_string(Index)}};
+            [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee.get());
+            return time_series_type_for<Scope, Index, TimeSeriesTypeRole::input, Value>(guarantee.get());
         }
     } else if constexpr (generic_scalar<Value>) {
         return scalar_variable_instance<Value>();

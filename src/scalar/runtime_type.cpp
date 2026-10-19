@@ -13,6 +13,7 @@
 #include <bg/util/occupancy_index.hpp>
 #include <bg/util/runtime_bunch.hpp>
 #include <bg/util/scope_exit.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <algorithm>
 #include <cassert>
@@ -935,8 +936,8 @@ struct ScalarRuntimeTypes {
 };
 
 ScalarRuntimeTypes &scalar_runtime_types() {
-    static auto value = ScalarRuntimeTypes{};
-    return value;
+    static auto value = util::static_storage<ScalarRuntimeTypes>{};
+    return value.get();
 }
 
 void validate_runtime_interface(const ScalarRuntimeType &runtime_type) {

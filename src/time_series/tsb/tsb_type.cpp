@@ -4,6 +4,7 @@
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/type/type_registry.hpp>
 #include <bg/type/variable.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <algorithm>
 #include <memory>
@@ -312,25 +313,27 @@ const TimeSeriesBundleType &time_series_bundle_type(const Schema &schema, TimeSe
         bool operator==(const Key &) const = default;
     };
 
-    static auto mutex = std::mutex{};
-    static auto types = std::vector<std::pair<Key, const ResolvedTimeSeriesBundleType *>>{};
+    static auto mutex = util::static_storage<std::mutex>{};
+    static auto types = util::static_storage<std::vector<std::pair<Key, const ResolvedTimeSeriesBundleType *>>>{};
 
     const auto &effective_schema = schema_with_minimum_guarantee(schema, guarantee);
-    const auto lock = std::lock_guard{mutex};
+    const auto lock = std::lock_guard{mutex.get()};
+    auto &cache = types.get();
     const auto key = Key{&effective_schema, guarantee};
-    const auto existing = std::ranges::find(types, key, &decltype(types)::value_type::first);
-    if (existing != types.end()) {
+    const auto existing = std::ranges::find(
+        cache, key, &std::remove_reference_t<decltype(cache)>::value_type::first);
+    if (existing != cache.end()) {
         return *existing->second;
     }
 
-    types.emplace_back(key, nullptr);
+    cache.emplace_back(key, nullptr);
     try {
         const auto &type = TypeRegistry::instance().register_owned(
             std::make_unique<ResolvedTimeSeriesBundleType>(effective_schema, guarantee));
-        types.back().second = &type;
+        cache.back().second = &type;
         return type;
     } catch (...) {
-        types.pop_back();
+        cache.pop_back();
         throw;
     }
 }

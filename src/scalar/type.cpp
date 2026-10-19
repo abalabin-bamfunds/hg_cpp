@@ -3,6 +3,7 @@
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_registry.hpp>
 #include <bg/util/symbol.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <type_traits>
 
@@ -56,9 +57,9 @@ template <typename T> class CppScalarType final : public CppScalarTypeBase<T> {
 };
 
 template <typename T> const CppScalarType<T> &registered_cpp_scalar_type() noexcept {
-    static const CppScalarType<T> type;
-    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type);
-    return type;
+    static const auto type = util::static_storage<CppScalarType<T>>{};
+    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+    return type.get();
 }
 
 } // namespace
