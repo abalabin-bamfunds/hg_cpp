@@ -511,6 +511,8 @@ graph compilation or evaluation.
 - value-to-reference and reference-to-value bindings
 - reference changes and value observers
 - dynamic subscribers and static subscriber entries
+- internal dynamic input declaration defaults, explicit guarantees, and guarantee
+  variables resolved through public inputs
 - references across inner graph boundaries
 - dynamic collection items and outer-cycle removal lifetime
 - representation creation and reuse

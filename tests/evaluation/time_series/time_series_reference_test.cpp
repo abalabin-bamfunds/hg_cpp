@@ -522,7 +522,7 @@ struct dynamic_reference_value {
 
 struct dynamic_reference_unbinder {
     bg::In<bg::REF<bg::TSL<bg::TS<bg::i64>, 1>>> collection;
-    bg::In<bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::ordinary>, bg::dynamic_binding, bg::optional> input;
+    bg::In<bg::REF<bg::TS<bg::i64>>, bg::dynamic_binding, bg::optional> input;
     bg::In<bg::TS<bg::i64>> trigger;
     bg::Out<bg::TS<bool>> output;
 
@@ -591,7 +591,7 @@ TEST_CASE("a dynamic dereferenced input rebinds while passive",
 
 TEST_CASE("dynamic reference input unbinding reports one invalidation cycle",
           "[evaluation][reference][validity][feature:reference][transition:invalidation]"
-          "[binding:reference-to-value][series:value]") {
+          "[binding:reference-to-value][series:value][series:reference][guarantee:ordinary]") {
     const auto unbind = bg::node<dynamic_reference_unbinder>();
     const auto graph = [&](bg::wp<bg::TSL<bg::TS<bg::i64>, 1>> collection,
                            bg::wp<bg::TS<bg::i64>> trigger) {

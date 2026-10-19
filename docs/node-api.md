@@ -357,8 +357,9 @@ An `In` value is valid for one function call. Its last-updated time includes
 through a reference.
 
 An aggregate can declare an internal `In<REF<TS_T>, dynamic_binding>` field.
-The field is excluded from the node signature. Its type variables must resolve
-through the public signature. `bind()` replaces its addressable input and
+The field is excluded from the node signature. An omitted root reference
+guarantee defaults to `ordinary`. Explicit type and guarantee variables must
+resolve through the public signature. `bind()` replaces its addressable input and
 `unbind()` removes the binding. The engine manages subscriptions and cleanup.
 
 Fully specified and generic inputs expose the same common interface to helper

@@ -438,7 +438,7 @@ template <typename Definition, std::size_t Index> const TimeSeriesType &input_ty
 
     if constexpr (time_series_variable<TimeSeries>) {
         return time_series_variable_instance<TimeSeries>();
-    } else if constexpr (TimeSeries::has_explicit_guarantee) {
+    } else if constexpr (TimeSeries::has_explicit_guarantee || input_field<Field>::dynamic_binding) {
         return time_series_type_for<Definition, Index, TimeSeriesTypeRole::input, TimeSeries>(
             guarantee_parameter<TimeSeries::guarantee>());
     } else {
