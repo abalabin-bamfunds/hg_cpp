@@ -1,4 +1,5 @@
 #include <bg/graph/graph_wiring.hpp>
+#include <bg/graph/details/wiring_materialisation.hpp>
 #include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/details/wiring_record_overlay.hpp>
 #include <bg/graph/details/normalized_wiring_arguments.hpp>
@@ -943,6 +944,36 @@ TEST_CASE("signature materialisation cost counts each point and target once",
     CHECK(distinct_target_matches[0].materialisation_cost == 1.75);
 }
 
+TEST_CASE("binding cost charges one contained and one top-level reference adaptation per input",
+          "[feature:wiring-materialisation][feature:wiring][feature:reference][series:fixed-tsl]") {
+    const auto source = bg::node([](bg::Out<bg::TSL<bg::TS<bg::i64>, 2>>) {});
+    const auto scalar_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    const auto input = source();
+    const auto scalar_input = scalar_source();
+    const auto arguments = std::array{bg::WiringArgument{static_cast<bg::WiringPoint>(input)}};
+    const auto scalar_arguments = std::array{bg::WiringArgument{static_cast<bg::WiringPoint>(scalar_input)}};
+    const auto not_preserved = std::array<unsigned char, 1>{0};
+
+    auto contained_adaptation = bg::details::PreparedWiringCall{};
+    contained_adaptation.resolution.signature.parameters.push_back(
+        {bg::util::symbol{"values"}, &bg::TSL<bg::REF<bg::TS<bg::i64>>, 2>::type()});
+    contained_adaptation.argument_forms.push_back(
+        {0, &bg::TSL<bg::TS<bg::i64>, 2>::type(), nullptr, 0.0});
+    contained_adaptation.preserved_inputs = not_preserved;
+
+    CHECK(contained_adaptation.binding_cost(arguments) == 4.0);
+
+    auto top_level_adaptation = bg::details::PreparedWiringCall{};
+    top_level_adaptation.resolution.signature.parameters.push_back(
+        {bg::util::symbol{"value"}, &bg::REF<bg::TS<bg::i64>>::type()});
+    top_level_adaptation.argument_forms.push_back({0, &bg::TS<bg::i64>::type(), nullptr, 0.0});
+    top_level_adaptation.preserved_inputs = not_preserved;
+
+    CHECK(top_level_adaptation.binding_cost(scalar_arguments) == 1.0);
+}
+
 TEST_CASE("operator materialisation selects the cheapest concrete form and adapts it to the consumer type",
           "[feature:wiring-materialisation][feature:operator][series:reference]") {
     using namespace bg::literals;
@@ -1287,7 +1318,7 @@ TEST_CASE("an open time series variable resolves from each selected form",
     CHECK(signature.match_wiring_arguments(arguments, &matching_seed).size() == 1);
 }
 
-TEST_CASE("source matching preserves variables nested in collection parameters",
+TEST_CASE("independent form matches resolve variables nested in collection parameters",
           "[feature:wiring-materialisation][feature:wiring][series:fixed-tsl][schema:generic]") {
     using SOURCE = bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, 2,
                            bg::TimeSeriesGuarantee::final>;
@@ -1319,7 +1350,7 @@ TEST_CASE("source matching preserves variables nested in collection parameters",
     }
 }
 
-TEST_CASE("a failed source match does not reject an offered bundle materialisation",
+TEST_CASE("a failed direct-form match does not reject an offered bundle form",
           "[feature:wiring-materialisation][feature:wiring][series:tsb][schema:named]") {
     using BUNDLE = bg::TSB<OneValue>;
 
@@ -1340,7 +1371,7 @@ TEST_CASE("a failed source match does not reject an offered bundle materialisati
     CHECK(matches[0].argument_forms[0].materialisation_target == &BUNDLE::type());
 }
 
-TEST_CASE("conflicting original inputs leave their shared type variable unpinned",
+TEST_CASE("independent form matches resolve a shared variable from offered forms",
           "[feature:wiring-materialisation][feature:wiring][series:value][schema:generic]") {
     const auto int_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
     const auto double_source = bg::node([](bg::Out<bg::TS<double>>) {});
@@ -1401,7 +1432,7 @@ TEST_CASE("reference target matching resolves each selected target structure",
     CHECK(&bg::TS_T::type().resolve(matches[1].type_map) == &bg::TSL<bg::TS<double>, 2>::type());
 }
 
-TEST_CASE("source matching ignores guarantees in captured bundle schemas",
+TEST_CASE("independent form matches preserve guarantees in captured bundle schemas",
           "[feature:wiring-materialisation][feature:wiring][series:tsb][schema:generic]") {
     using SOURCE = bg::TSB<OneValue, bg::TimeSeriesGuarantee::final>;
     using ALTERNATIVE = bg::TSB<OneValue>;
@@ -1433,7 +1464,7 @@ TEST_CASE("source matching ignores guarantees in captured bundle schemas",
     CHECK(alternative_schema->field(0).type == &bg::TS<bg::i64>::type());
 }
 
-TEST_CASE("signature matching does not source-bind a constrained time series variable",
+TEST_CASE("signature matching resolves constrained variables from selected forms",
           "[feature:wiring-materialisation][feature:wiring][series:value][schema:generic]") {
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
     auto wiring = bg::GraphWiring{};
