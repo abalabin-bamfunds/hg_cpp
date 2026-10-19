@@ -1,6 +1,6 @@
 # Python homogeneous tuple annotations
 
-Status: accepted
+Status: superseded by [Positional scalar tuples](0073-positional-scalar-tuples.md)
 
 ## Decision
 
