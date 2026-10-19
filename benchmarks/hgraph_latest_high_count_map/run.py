@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the portable high-count map workload on hgraph's Python runtime."""
+"""Run the portable high-count map workload on hgraph's native runtime."""
 
 from __future__ import annotations
 
@@ -35,76 +35,86 @@ CHILD_COUNT = 8
 SOURCE_COMMIT = "de44e25b61dc57e217f9781164eee64b6b77e7cf"
 WORKLOAD = None
 CONTROL = None
+ARITHMETIC = "callbacks"
 
 
-def flat_events():
+def flat_delta(cycle: int):
     profile = WORKLOAD.selected_profile
-    yield hg.MIN_ST, {key: initial_flat_value(key) for key in range(profile.flat_count)}
+    if cycle < 0:
+        return {key: initial_flat_value(key) for key in range(profile.flat_count)}
 
-    for cycle, plan in enumerate(WORKLOAD.cycles):
-        delta = {mutation.key: mutation.value for mutation in plan.flat_updates}
-        if plan.lifecycle == Lifecycle.REMOVE_FLAT_AND_PARENTS:
-            delta.update({key: hg.REMOVE for key in plan.flat_lifecycle_keys})
-        elif plan.lifecycle == Lifecycle.RESTORE_FLAT_AND_PARENTS:
-            delta.update({key: flat_source_value(cycle, key) for key in plan.flat_lifecycle_keys})
-        yield hg.MIN_ST + (cycle + 1) * hg.MIN_TD, delta
+    plan = WORKLOAD.cycles[cycle]
+    delta = {mutation.key: mutation.value for mutation in plan.flat_updates}
+    if plan.lifecycle == Lifecycle.REMOVE_FLAT_AND_PARENTS:
+        delta.update({key: hg.REMOVE for key in plan.flat_lifecycle_keys})
+    elif plan.lifecycle == Lifecycle.RESTORE_FLAT_AND_PARENTS:
+        delta.update({key: flat_source_value(cycle, key) for key in plan.flat_lifecycle_keys})
+    return delta
 
 
-def parent_events():
+def parent_delta(cycle: int):
     profile = WORKLOAD.selected_profile
-    yield hg.MIN_ST, {
-        parent_key: {
-            child_key: initial_child_value(parent_key, child_key)
-            for child_key in range(CHILD_COUNT)
+    if cycle < 0:
+        return {
+            parent_key: {
+                child_key: initial_child_value(parent_key, child_key)
+                for child_key in range(CHILD_COUNT)
+            }
+            for parent_key in range(profile.parent_count)
         }
-        for parent_key in range(profile.parent_count)
-    }
 
-    for cycle, plan in enumerate(WORKLOAD.cycles):
-        delta = {}
-        for update in plan.child_updates:
-            delta.setdefault(update.parent_key, {})[update.child_key] = update.value
+    plan = WORKLOAD.cycles[cycle]
+    delta = {}
+    for update in plan.child_updates:
+        delta.setdefault(update.parent_key, {})[update.child_key] = update.value
 
-        if plan.lifecycle == Lifecycle.REMOVE_FLAT_AND_PARENTS:
-            delta.update({parent_key: hg.REMOVE for parent_key in plan.parent_lifecycle_keys})
-        elif plan.lifecycle == Lifecycle.RESTORE_FLAT_AND_PARENTS:
-            for parent_key in plan.parent_lifecycle_keys:
-                delta[parent_key] = {
-                    child_key: child_source_value(cycle, parent_key, child_key)
-                    for child_key in range(CHILD_COUNT)
-                }
-        elif plan.lifecycle == Lifecycle.REMOVE_CHILDREN:
-            for parent_key, child_key in plan.child_lifecycle_keys:
-                delta.setdefault(parent_key, {})[child_key] = hg.REMOVE
-        elif plan.lifecycle == Lifecycle.RESTORE_CHILDREN:
-            for parent_key, child_key in plan.child_lifecycle_keys:
-                delta.setdefault(parent_key, {})[child_key] = child_source_value(
-                    cycle, parent_key, child_key
-                )
-
-        yield hg.MIN_ST + (cycle + 1) * hg.MIN_TD, delta
-
-
-def bias_events():
-    yield hg.MIN_ST, 1
-    for cycle, plan in enumerate(WORKLOAD.cycles):
-        if plan.bias is not None:
-            yield hg.MIN_ST + (cycle + 1) * hg.MIN_TD, plan.bias
+    if plan.lifecycle == Lifecycle.REMOVE_FLAT_AND_PARENTS:
+        delta.update({parent_key: hg.REMOVE for parent_key in plan.parent_lifecycle_keys})
+    elif plan.lifecycle == Lifecycle.RESTORE_FLAT_AND_PARENTS:
+        for parent_key in plan.parent_lifecycle_keys:
+            delta[parent_key] = {
+                child_key: child_source_value(cycle, parent_key, child_key)
+                for child_key in range(CHILD_COUNT)
+            }
+    elif plan.lifecycle == Lifecycle.REMOVE_CHILDREN:
+        for parent_key, child_key in plan.child_lifecycle_keys:
+            delta.setdefault(parent_key, {})[child_key] = hg.REMOVE
+    elif plan.lifecycle == Lifecycle.RESTORE_CHILDREN:
+        for parent_key, child_key in plan.child_lifecycle_keys:
+            delta.setdefault(parent_key, {})[child_key] = child_source_value(
+                cycle, parent_key, child_key
+            )
+    return delta
 
 
 @hg.generator
-def flat_input() -> TSD[int, TS[int]]:
-    yield from flat_events()
+def cycle_input() -> TS[int]:
+    yield hg.MIN_ST, -1
+    for cycle in range(len(WORKLOAD.cycles)):
+        yield hg.MIN_ST + (cycle + 1) * hg.MIN_TD, cycle
 
 
-@hg.generator
-def parent_input() -> TSD[int, TSD[int, TS[int]]]:
-    yield from parent_events()
+@compute_node
+def start_cycle(cycle: TS[int]) -> TS[int]:
+    CONTROL.begin(cycle.value)
+    return cycle.value
 
 
-@hg.generator
-def bias_input() -> TS[int]:
-    yield from bias_events()
+@compute_node
+def flat_input(cycle: TS[int]) -> TSD[int, TS[int]]:
+    return flat_delta(cycle.value)
+
+
+@compute_node
+def parent_input(cycle: TS[int]) -> TSD[int, TSD[int, TS[int]]]:
+    return parent_delta(cycle.value)
+
+
+@compute_node
+def bias_input(cycle: TS[int]) -> TS[int]:
+    if cycle.value < 0:
+        return 1
+    return WORKLOAD.cycles[cycle.value].bias
 
 
 @compute_node
@@ -124,28 +134,26 @@ def add_constant(value: TS[int], addend: int) -> TS[int]:
 
 @graph
 def stage_a(key: TS[int], value: TS[int], bias: TS[int]) -> TS[int]:
-    a1 = add_values(value, bias)
-    a2 = multiply(a1, 3)
-    a3 = add_values(a2, key)
-    a4 = multiply(a3, 5)
-    return add_constant(a4, 7)
+    add = hg.add_ if ARITHMETIC == "library" else add_values
+    mul = hg.mul_ if ARITHMETIC == "library" else multiply
+    add_scalar = hg.add_ if ARITHMETIC == "library" else add_constant
+    a1 = add(value, bias)
+    a2 = mul(a1, 3)
+    a3 = add(a2, key)
+    a4 = mul(a3, 5)
+    return add_scalar(a4, 7)
 
 
 @graph
 def stage_b(key: TS[int], value: TS[int], bias: TS[int]) -> TS[int]:
-    b1 = add_values(value, bias)
-    b2 = multiply(b1, 7)
-    b3 = add_values(b2, key)
-    b4 = multiply(b3, 3)
-    return add_constant(b4, 11)
-
-
-@sink_node
-def observe_flat_collection(values: TSD[int, TS[int]]) -> None:
-    for key in values.modified_keys():
-        CONTROL.observe(Branch.FLAT, 0, key, True, values.value[key])
-    for key in values.removed_keys():
-        CONTROL.observe(Branch.FLAT, 0, key, False, 0)
+    add = hg.add_ if ARITHMETIC == "library" else add_values
+    mul = hg.mul_ if ARITHMETIC == "library" else multiply
+    add_scalar = hg.add_ if ARITHMETIC == "library" else add_constant
+    b1 = add(value, bias)
+    b2 = mul(b1, 7)
+    b3 = add(b2, key)
+    b4 = mul(b3, 3)
+    return add_scalar(b4, 11)
 
 
 @graph
@@ -156,35 +164,23 @@ def child_graph(
     seed: TS[int],
     bias: TS[int],
 ) -> TS[int]:
-    c1 = add_values(value, seed)
-    c2 = multiply(c1, 3)
-    c3 = add_values(c2, child_key)
-    c4 = add_values(c3, bias)
-    return multiply(c4, 7)
-
-
-@sink_node
-def observe_parent_child_deltas(
-    children: TSD[int, TS[int]], parent_key: TS[int]
-) -> None:
-    for child_key in children.modified_keys():
-        CONTROL.observe(
-            Branch.CHILD,
-            parent_key.value,
-            child_key,
-            True,
-            children.value[child_key],
-        )
-    for child_key in children.removed_keys():
-        CONTROL.observe(Branch.CHILD, parent_key.value, child_key, False, 0)
+    add = hg.add_ if ARITHMETIC == "library" else add_values
+    mul = hg.mul_ if ARITHMETIC == "library" else multiply
+    c1 = add(value, seed)
+    c2 = mul(c1, 3)
+    c3 = add(c2, child_key)
+    c4 = add(c3, bias)
+    return mul(c4, 7)
 
 
 @graph
 def parent_graph(
     parent_key: TS[int], children: TSD[int, TS[int]], bias: TS[int]
 ) -> TSD[int, TS[int]]:
-    p1 = add_values(parent_key, bias)
-    seed = multiply(p1, 5)
+    add = hg.add_ if ARITHMETIC == "library" else add_values
+    mul = hg.mul_ if ARITHMETIC == "library" else multiply
+    p1 = add(parent_key, bias)
+    seed = mul(p1, 5)
     outputs = map_(
         child_graph,
         children,
@@ -193,31 +189,50 @@ def parent_graph(
         bias=bias,
         __key_arg__="child_key",
     )
-    observe_parent_child_deltas(outputs, parent_key)
     return outputs
 
 
 @sink_node
-def observe_removed_parents(
-    parents: TSD[int, TSD[int, TS[int]]]
+def observe_outputs(
+    flat: TSD[int, TS[int]], children_by_parent: TSD[int, TSD[int, TS[int]]]
 ) -> None:
-    for parent_key in parents.removed_keys():
-        for child_key in range(CHILD_COUNT):
+    for key in flat.modified_keys():
+        CONTROL.observe(Branch.FLAT, 0, key, True, flat[key].value)
+    for key in flat.removed_keys():
+        CONTROL.observe(Branch.FLAT, 0, key, False, 0)
+
+    for parent_key in children_by_parent.modified_keys():
+        children = children_by_parent[parent_key]
+        if not CONTROL.measuring:
+            CONTROL.active_children[parent_key] = set(children.valid_keys())
+            continue
+
+        active = CONTROL.active_children.setdefault(parent_key, set())
+        for child_key in children.modified_keys():
+            CONTROL.observe(Branch.CHILD, parent_key, child_key, True, children[child_key].value)
+            active.add(child_key)
+        for child_key in children.removed_keys():
             CONTROL.observe(Branch.CHILD, parent_key, child_key, False, 0)
+            active.discard(child_key)
+
+    for parent_key in children_by_parent.removed_keys():
+        for child_key in CONTROL.active_children.pop(parent_key, ()):
+            CONTROL.observe(Branch.CHILD, parent_key, child_key, False, 0)
+
+    CONTROL.complete()
 
 
 @graph
 def benchmark_graph() -> None:
-    flat = flat_input()
-    parents = parent_input()
-    bias = bias_input()
+    cycle = start_cycle(cycle_input())
+    flat = flat_input(cycle)
+    parents = parent_input(cycle)
+    bias = bias_input(cycle)
 
     first_stage = map_(stage_a, flat, bias, __key_arg__="key")
     flat_output = map_(stage_b, first_stage, bias, __key_arg__="key")
-    observe_flat_collection(flat_output)
-
     child_output = map_(parent_graph, parents, bias, __key_arg__="parent_key")
-    observe_removed_parents(child_output)
+    observe_outputs(flat_output, child_output)
 
 
 def current_rss_bytes() -> int | None:
@@ -284,31 +299,16 @@ class RunControl:
     def __init__(self, workload):
         self.workload = workload
         self.measuring = False
-        self.cycle = -1
-        self.actual = EventChecksum()
-
-    def observe(self, branch, parent_key, item_key, present, value):
-        if self.measuring:
-            self.actual.add(
-                self.cycle, branch, parent_key, item_key, present, value
-            )
-
-
-class Measurements(hg.EvaluationLifeCycleObserver):
-    def __init__(self, workload, control):
-        self.workload = workload
-        self.control = control
-        self.root_evaluations = 0
+        self.cycle = -2
         self.cycle_start_ns = None
-        self.root_start_ns = None
-        self.runtime_start_ns = None
-        self.population_ns = None
-        self.final_stop_ns = None
+        self.completed = 0
+        self.actual = EventChecksum()
+        self.active_children = {}
         self.baseline_rss_bytes = current_rss_bytes()
-        self.after_wiring_rss_bytes = None
-        self.empty_runtime_rss_bytes = None
         self.populated_rss_bytes = None
+        self.before_stop_rss_bytes = None
         self.after_stop_rss_bytes = None
+        self.population_ns = None
         self.latencies = {
             "ordinary": [],
             "flat_parent_removal": [],
@@ -318,55 +318,32 @@ class Measurements(hg.EvaluationLifeCycleObserver):
             "broadcast": [],
         }
 
-    @staticmethod
-    def is_root(graph_view):
-        return graph_view.graph_id == ()
-
-    def on_before_start_graph(self, graph_view):
-        if self.is_root(graph_view):
-            self.after_wiring_rss_bytes = current_rss_bytes()
-            self.root_start_ns = time.perf_counter_ns()
-
-    def on_after_start_graph(self, graph_view):
-        if self.is_root(graph_view):
-            self.runtime_start_ns = time.perf_counter_ns() - self.root_start_ns
-            self.empty_runtime_rss_bytes = current_rss_bytes()
-
-    def on_before_graph_evaluation(self, graph_view):
-        if not self.is_root(graph_view):
-            return
-        if self.root_evaluations == 0:
-            self.control.measuring = False
-            self.cycle_start_ns = time.perf_counter_ns()
-            return
-        self.control.cycle = self.root_evaluations - 1
-        self.control.measuring = True
+    def begin(self, cycle):
+        if self.cycle_start_ns is not None or cycle != self.cycle + 1:
+            raise RuntimeError(f"unexpected cycle start: {cycle}")
+        self.cycle = cycle
+        self.measuring = cycle >= 0
         self.cycle_start_ns = time.perf_counter_ns()
 
-    def on_after_graph_evaluation(self, graph_view):
-        if not self.is_root(graph_view):
-            return
+    def observe(self, branch, parent_key, item_key, present, value):
+        if self.measuring:
+            self.actual.add(
+                self.cycle, branch, parent_key, item_key, present, value
+            )
+
+    def complete(self):
+        if self.cycle_start_ns is None:
+            raise RuntimeError("output completed without a cycle start")
         elapsed_ns = time.perf_counter_ns() - self.cycle_start_ns
-        if self.root_evaluations == 0:
+        self.cycle_start_ns = None
+        self.completed += 1
+        if self.cycle < 0:
             self.population_ns = elapsed_ns
             self.populated_rss_bytes = current_rss_bytes()
-            self.control.measuring = False
         else:
-            cycle = self.root_evaluations - 1
-            if cycle < len(self.workload.cycles):
-                self.latencies[latency_class(self.workload.cycles[cycle])].append(
-                    elapsed_ns
-                )
-        self.root_evaluations += 1
-
-    def on_before_stop_graph(self, graph_view):
-        if self.is_root(graph_view):
-            self.root_start_ns = time.perf_counter_ns()
-
-    def on_after_stop_graph(self, graph_view):
-        if self.is_root(graph_view):
-            self.final_stop_ns = time.perf_counter_ns() - self.root_start_ns
-            self.after_stop_rss_bytes = current_rss_bytes()
+            self.latencies[latency_class(self.workload.cycles[self.cycle])].append(elapsed_ns)
+        if self.cycle == len(self.workload.cycles) - 1:
+            self.before_stop_rss_bytes = current_rss_bytes()
 
 
 def verify_native_header(path: Path, source_commit: str) -> str:
@@ -400,33 +377,33 @@ def verify_native_header(path: Path, source_commit: str) -> str:
     return header.split('version_string = "', 1)[1].split('"', 1)[0]
 
 
-def run(profile_name: str, cycle_count: int, version_header: Path) -> dict:
-    global CONTROL, WORKLOAD
+def run(profile_name: str, cycle_count: int, version_header: Path, arithmetic: str = "callbacks") -> dict:
+    global ARITHMETIC, CONTROL, WORKLOAD
 
     source_version = verify_native_header(version_header, SOURCE_COMMIT)
+    ARITHMETIC = arithmetic
     workload_start = time.perf_counter_ns()
     verify_workload_manifest()
     WORKLOAD = build_workload(profile_name, cycle_count)
     workload_generation_ns = time.perf_counter_ns() - workload_start
 
     CONTROL = RunControl(WORKLOAD)
-    measurements = Measurements(WORKLOAD, CONTROL)
     config = hg.GraphConfiguration(
         start_time=hg.MIN_ST,
-        life_cycle_observers=(measurements,),
         default_log_level=50,
     )
     run_start = time.perf_counter_ns()
     hg.evaluate_graph(benchmark_graph, config)
     wall_run_ns = time.perf_counter_ns() - run_start
+    CONTROL.after_stop_rss_bytes = current_rss_bytes()
 
     measured_sample_count = sum(
-        len(samples) for samples in measurements.latencies.values()
+        len(samples) for samples in CONTROL.latencies.values()
     )
-    if measurements.root_evaluations != cycle_count + 1:
+    if CONTROL.completed != cycle_count + 1:
         raise RuntimeError(
             f"expected one population evaluation and {cycle_count} measured cycles, "
-            f"got {measurements.root_evaluations} root evaluations"
+            f"got {CONTROL.completed} completed outputs"
         )
     if measured_sample_count != cycle_count:
         raise RuntimeError(
@@ -442,14 +419,9 @@ def run(profile_name: str, cycle_count: int, version_header: Path) -> dict:
             f"expected=({expected.count}, {expected.sum}, {expected.xor_value})"
         )
 
-    latency = {name: summarize(samples) for name, samples in measurements.latencies.items()}
+    latency = {name: summarize(samples) for name, samples in CONTROL.latencies.items()}
     measured_cycles_ns = sum(item["total_ns"] for item in latency.values())
     profile = WORKLOAD.selected_profile
-    rss_delta = None
-    bytes_per_graph = None
-    if measurements.populated_rss_bytes is not None and measurements.empty_runtime_rss_bytes is not None:
-        rss_delta = measurements.populated_rss_bytes - measurements.empty_runtime_rss_bytes
-        bytes_per_graph = rss_delta / profile.active_inner_graphs
 
     try:
         affinity = sorted(os.sched_getaffinity(0))
@@ -466,7 +438,7 @@ def run(profile_name: str, cycle_count: int, version_header: Path) -> dict:
         "schema_version": 1,
         "benchmark": "portable_high_count_map",
         "engine": "hgraph-current",
-        "runtime": "python",
+        "runtime": "library-operators" if arithmetic == "library" else "python-callbacks",
         "hgraph_version": source_version,
         "source_commit": SOURCE_COMMIT,
         "benchmark_adapter_commit": adapter_commit,
@@ -485,11 +457,10 @@ def run(profile_name: str, cycle_count: int, version_header: Path) -> dict:
             "native_version_header": str(version_header.resolve()),
         },
         "notes": [
-            "run_graph combines graph wiring, runtime construction, population, measured cycles, and shutdown; "
-            "the Python runner does not expose those phases separately.",
-            "Outer-cycle latency includes source delivery through completion of nested output sinks.",
-            "RSS after wiring is sampled immediately before root start; empty-runtime RSS is sampled after "
-            "root start and before population.",
+            "evaluate_graph combines wiring, runtime construction, and shutdown; these phases are not timed "
+            "separately by this adapter.",
+            "Cycle latency starts in the cycle-control compute node and ends in the outer output sink.",
+            "Graph RSS uses the last output callback before graph shutdown minus RSS before wiring.",
         ],
         "topology": {
             "flat_items": profile.flat_count,
@@ -511,11 +482,11 @@ def run(profile_name: str, cycle_count: int, version_header: Path) -> dict:
             "workload_generation_ns": workload_generation_ns,
             "wiring_ns": None,
             "runtime_factory_ns": None,
-            "runtime_start_ns": measurements.runtime_start_ns,
-            "population_ns": measurements.population_ns,
+            "runtime_start_ns": None,
+            "population_ns": CONTROL.population_ns,
             "measured_cycles_ns": measured_cycles_ns,
             "wall_run_ns": wall_run_ns,
-            "final_stop_ns": measurements.final_stop_ns,
+            "final_stop_ns": None,
         },
         "throughput": {
             "cycles_per_second": cycle_count * 1e9 / measured_cycles_ns,
@@ -536,14 +507,21 @@ def run(profile_name: str, cycle_count: int, version_header: Path) -> dict:
             "valid": valid,
         },
         "memory": {
-            "baseline_rss_bytes": measurements.baseline_rss_bytes,
-            "after_wiring_rss_bytes": measurements.after_wiring_rss_bytes,
-            "empty_runtime_rss_bytes": measurements.empty_runtime_rss_bytes,
-            "populated_rss_bytes": measurements.populated_rss_bytes,
+            "baseline_rss_bytes": CONTROL.baseline_rss_bytes,
+            "after_wiring_rss_bytes": None,
+            "empty_runtime_rss_bytes": None,
+            "populated_rss_bytes": CONTROL.populated_rss_bytes,
+            "before_stop_rss_bytes": CONTROL.before_stop_rss_bytes,
+            "graph_rss_delta_bytes": (
+                CONTROL.before_stop_rss_bytes - CONTROL.baseline_rss_bytes
+                if CONTROL.before_stop_rss_bytes is not None
+                and CONTROL.baseline_rss_bytes is not None
+                else None
+            ),
             "peak_rss_bytes": peak_rss_bytes(),
-            "after_stop_rss_bytes": measurements.after_stop_rss_bytes,
-            "populated_rss_delta_bytes": rss_delta,
-            "bytes_per_active_inner_graph": bytes_per_graph,
+            "after_stop_rss_bytes": CONTROL.after_stop_rss_bytes,
+            "populated_rss_delta_bytes": None,
+            "bytes_per_active_inner_graph": None,
         },
     }
 
@@ -552,13 +530,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", choices=("smoke", "25k", "100k", "250k"), default="smoke")
     parser.add_argument("--cycles", type=int, default=120)
+    parser.add_argument("--arithmetic", choices=("callbacks", "library"), default="callbacks")
     parser.add_argument("--native-version-header", type=Path, required=True)
     parser.add_argument("--output", type=Path)
     arguments = parser.parse_args()
     if arguments.cycles < 1:
         parser.error("--cycles must be positive")
 
-    result = run(arguments.profile, arguments.cycles, arguments.native_version_header)
+    result = run(arguments.profile, arguments.cycles, arguments.native_version_header, arguments.arithmetic)
     output = json.dumps(result, indent=2) + "\n"
     if arguments.output:
         arguments.output.write_text(output, encoding="utf-8")
