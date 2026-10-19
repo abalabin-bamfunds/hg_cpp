@@ -121,11 +121,20 @@ fields, and flattened fields. A redefinition keeps the inherited field position,
 requires a compatible narrower type, and preserves required presence. Field
 variables resolve through the ordinary `TypeMap`.
 
-The canonical key contains the name, declaration identity, base pointer, and
-ordered direct fields. Field equality compares name, canonical type pointer,
-and optionality. The factory hashes these components and returns one registered
-descriptor per key. Schema entries created during recursive scalar registration
-commit or roll back with that group.
+The canonical key contains the name, declaration identity, base pointer,
+ordered direct fields, and declaration-local metadata. Field equality compares
+name, canonical type pointer, and optionality. Metadata equality compares names
+and scalar values without depending on dictionary entry order. Metadata values
+must support reflexive equality; metadata hashing uses names only. The factory
+returns one registered descriptor per key. Schema entries created during
+recursive scalar registration commit or roll back with that group.
+
+`Schema::direct_metadata()` returns entries declared on that schema.
+`Schema::metadata()` returns the effective dictionary: base entries followed by
+derived entries, which replace base entries with the same name. Metadata is
+immutable and owns copies of its scalar values. Extensions can read a borrowed
+value with `metadata().find(name)`; the returned `ScalarData` remains valid for
+the schema lifetime.
 
 `SchemaRegistration` reserves runtime schemas, finalizes their descriptors before
 `commit()`, and rolls back the reservations and owned descriptors on failure.
@@ -145,15 +154,33 @@ Projections retain that declaration identity and record their actual field types
 
 These projections have distinct canonical keys. Optional presence describes an
 absent field; extensions define nullable cell values through their column values.
-Extensions construct descriptors through `schema(name, identity, base, fields)`
-or `anonymous_schema(fields)`. These factories are engine and extension APIs.
+TSB guarantee and reference transformations preserve declaration-local metadata.
+Common-schema construction requires matching declaration-local metadata at each
+base level.
+Extensions construct descriptors through `schema(name, identity, base, fields,
+metadata)` or `anonymous_schema(fields, metadata)`. Runtime registration passes
+the same metadata to `SchemaRegistration::reserve_schema`. The metadata argument
+defaults to empty.
 
 ### Shared C++ schemas
 
 A C++ schema declares fields through a supplied field template. A schema can
 declare one base with `schema_extends<Base, Field>`. A derived schema can add
 fields or redefine an inherited field. `bundle_extends` is a compatibility alias
-for `schema_extends`.
+for `schema_extends`. A declaration can supply local metadata with a static
+`metadata()` function returning `SchemaMetadata`; the function is optional and
+omitted metadata is empty. Both the hierarchical scalar and time series bundle
+projections collect metadata from the declaration. For example:
+
+```cpp
+static auto metadata() {
+    return bg::make_schema_metadata({bg::schema_metadata_entry(
+        "extension.version", bg::ScalarValue<bg::i64>{1})});
+}
+```
+
+`schema_metadata_entry` accepts a `Scalar` or `ScalarValue`; the metadata factory
+copies the value. Metadata values need equality but not hashing.
 
 `details::schema_reflection<Schema, ReflectionField>` provides engine and
 extension access to C++ schemas. Logical fields retain base order; a redefined

@@ -52,7 +52,7 @@ const Schema &schema_with_minimum_guarantee(const Schema &schema, TimeSeriesGuar
     }
 
     const auto *base = schema.base() == nullptr ? nullptr : &schema_with_minimum_guarantee(*schema.base(), guarantee);
-    return bg::schema(schema.name(), schema.identity(), base, fields);
+    return bg::schema(schema.name(), schema.identity(), base, fields, schema.direct_metadata());
 }
 
 } // namespace
@@ -143,7 +143,7 @@ const TimeSeriesType &TimeSeriesBundleType::reference_free_type() const {
             return source;
         }
 
-        return bg::schema(source.name(), source.identity(), base, fields);
+        return bg::schema(source.name(), source.identity(), base, fields, source.direct_metadata());
     };
 
     const auto &schema = rewrite_schema(rewrite_schema, this->schema());
@@ -186,6 +186,7 @@ const TimeSeriesType *TimeSeriesBundleType::common_type(const TimeSeriesType &ot
 
 const Schema *TimeSeriesBundleType::common_schema(const Schema &left, const Schema &right) {
     if (left.name() != right.name() || left.identity() != right.identity() ||
+        left.direct_metadata() != right.direct_metadata() ||
         left.direct_fields().size() != right.direct_fields().size() ||
         (left.base() == nullptr) != (right.base() == nullptr)) {
         return nullptr;
@@ -214,7 +215,7 @@ const Schema *TimeSeriesBundleType::common_schema(const Schema &left, const Sche
         fields.push_back({left_field.name, common_field_type, false});
     }
 
-    return &bg::schema(left.name(), left.identity(), common_base, fields);
+    return &bg::schema(left.name(), left.identity(), common_base, fields, left.direct_metadata());
 }
 
 const Schema &TimeSeriesBundleType::limit_schema_guarantees(const Schema &descriptor,
@@ -227,7 +228,7 @@ const Schema &TimeSeriesBundleType::limit_schema_guarantees(const Schema &descri
     }
 
     const auto *base = descriptor.base() == nullptr ? nullptr : &limit_schema_guarantees(*descriptor.base(), limit);
-    return bg::schema(descriptor.name(), descriptor.identity(), base, fields);
+    return bg::schema(descriptor.name(), descriptor.identity(), base, fields, descriptor.direct_metadata());
 }
 
 bool TimeSeriesBundleType::do_match(const Type &supplied, TypeMap &type_map) const {

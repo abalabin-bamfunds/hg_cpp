@@ -235,7 +235,8 @@ const bg::Schema &cpp_hierarchical_scalar_schema() {
     const auto fields = hierarchical_scalar_fields<Schema>(
         std::make_index_sequence<Reflection::direct_field_count>{});
     const auto name = util::symbol{util::unqualified_type_name<Schema<hierarchical_scalar_schema_field>>()};
-    return bg::schema(name, std::type_index{typeid(schema_template<Schema>)}, base, fields);
+    auto metadata = declared_schema_metadata<Schema, hierarchical_scalar_schema_field>();
+    return bg::schema(name, std::type_index{typeid(schema_template<Schema>)}, base, fields, std::move(metadata));
 }
 
 template <template <template <typename, auto...> typename> typename Schema>

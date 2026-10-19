@@ -11,6 +11,7 @@
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/variable.hpp>
+#include <bg/type/schema_metadata_values.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -91,6 +92,52 @@ TEST_CASE("common bundles preserve schema identity and combine nested field guar
     const auto &items = bg::type_cast<bg::TimeSeriesListType>(bundle.item_type(1));
     CHECK(items.item_type().guarantee().value() == bg::TimeSeriesGuarantee::final);
     CHECK(right.common_type(left) == common);
+}
+
+TEST_CASE("TSB schema transformations preserve metadata and common types require matching metadata",
+          "[feature:type-system][series:tsb][schema:named][guarantee:ordinary][guarantee:final]") {
+    const auto metadata = bg::make_schema_metadata(
+        {bg::schema_metadata_entry("extension.owner", bg::ScalarValue<bg::i64>{7})});
+    const auto reference_fields = std::array{
+        bg::SchemaField{bg::util::symbol{"value"}, &bg::REF<bg::TS<bg::i64>>::type()}};
+    const auto &reference_schema = bg::schema(bg::util::symbol{"MetadataBundle"},
+                                              std::type_index{typeid(BundleTypeScope)}, nullptr, reference_fields,
+                                              metadata);
+    const auto &source = bg::time_series_bundle_type(reference_schema, bg::TimeSeriesGuarantee::ordinary);
+
+    CHECK(source.schema().direct_metadata() == metadata);
+
+    const auto &limited = static_cast<const bg::TimeSeriesBundleType &>(
+        source.with_guarantee_limit(bg::TimeSeriesGuarantee::final));
+    CHECK(limited.schema().direct_metadata() == metadata);
+
+    const auto &reference_free = static_cast<const bg::TimeSeriesBundleType &>(source.reference_free_type());
+    CHECK(reference_free.schema().direct_metadata() == metadata);
+
+    const auto fields = std::array{
+        bg::SchemaField{bg::util::symbol{"value"}, &bg::TS<bg::i64>::type()}};
+    const auto &left_schema = bg::anonymous_schema(fields, metadata);
+    const auto &right_schema = bg::anonymous_schema(fields, metadata);
+    const auto &left = bg::time_series_bundle_type(left_schema, bg::TimeSeriesGuarantee::final);
+    const auto &right = bg::time_series_bundle_type(right_schema, bg::TimeSeriesGuarantee::ordinary);
+    const auto *common = left.common_type(right);
+
+    REQUIRE(common != nullptr);
+    CHECK(bg::type_cast<bg::TimeSeriesBundleType>(*common).schema().direct_metadata() == metadata);
+
+    const auto different_metadata = bg::make_schema_metadata(
+        {bg::schema_metadata_entry("extension.owner", bg::ScalarValue<bg::i64>{8})});
+    const auto identity = std::type_index{typeid(TestField<double>)};
+    const auto &different_left_schema = bg::schema(bg::util::symbol{"MetadataBundle"}, identity, nullptr, fields,
+                                                   metadata);
+    const auto &different_right_schema = bg::schema(bg::util::symbol{"MetadataBundle"}, identity, nullptr, fields,
+                                                    different_metadata);
+    const auto &different_left =
+        bg::time_series_bundle_type(different_left_schema, bg::TimeSeriesGuarantee::ordinary);
+    const auto &different_right =
+        bg::time_series_bundle_type(different_right_schema, bg::TimeSeriesGuarantee::ordinary);
+
+    CHECK(different_left.common_type(different_right) == nullptr);
 }
 
 TEST_CASE("common named bundles retain their base and combine a narrowed inherited field",

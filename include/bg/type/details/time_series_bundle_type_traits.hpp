@@ -35,8 +35,9 @@ const bg::Schema &cpp_bundle_schema(GuaranteeParameter guarantee) {
 
     const auto fields = direct_bundle_fields<Scope, Role, Schema>(
         guarantee, std::make_index_sequence<direct_bundle_field_count<Schema>>{});
+    auto metadata = declared_schema_metadata<Schema, bundle_schema_field>();
     return bg::schema(util::symbol{util::unqualified_type_name<Schema<bundle_schema_field>>()},
-                      std::type_index{typeid(schema_template<Schema>)}, base, fields);
+                      std::type_index{typeid(schema_template<Schema>)}, base, fields, std::move(metadata));
 }
 
 template <template <template <typename, auto...> typename> typename Schema, bool HasBase>

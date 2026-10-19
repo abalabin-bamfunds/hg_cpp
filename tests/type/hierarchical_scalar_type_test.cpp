@@ -11,6 +11,7 @@
 #include <bg/scalar/set/scalar_type.hpp>
 #include <bg/schema/reflection.hpp>
 #include <bg/type/opaque_scalar_type.hpp>
+#include <bg/type/schema_metadata_values.hpp>
 #include <bg/util/named_argument.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -58,6 +59,32 @@ template <template <typename, auto...> typename Field> struct NotYetRegistered {
     Field<bg::i64> value;
 };
 
+template <template <typename, auto...> typename Field> struct MetadataBase {
+    Field<bg::i64> value;
+
+    static bg::SchemaMetadata metadata() {
+        return bg::make_schema_metadata({
+            bg::schema_metadata_entry("extension.base", bg::ScalarValue<bg::i64>{5}),
+            bg::schema_metadata_entry("extension.version", bg::ScalarValue<bg::i64>{1}),
+        });
+    }
+};
+
+template <template <typename, auto...> typename Field>
+struct MetadataDerived : bg::schema_extends<MetadataBase, Field> {
+    Field<bg::i64> extra;
+
+    static bg::SchemaMetadata metadata() {
+        return bg::make_schema_metadata(
+            {bg::schema_metadata_entry("extension.version", bg::ScalarValue<bg::i64>{2})});
+    }
+};
+
+template <template <typename, auto...> typename Field>
+struct MetadataInheritingDerived : bg::schema_extends<MetadataBase, Field> {
+    Field<bg::i64> extra;
+};
+
 const bg::ResolvedHierarchicalScalarType &resolved_hierarchical_scalar_type(const bg::Type &type) {
     const auto &hierarchical = bg::type_cast<bg::HierarchicalScalarType>(type);
     if (!hierarchical.is_resolved()) {
@@ -100,6 +127,41 @@ TEST_CASE("a hierarchical scalar has one semantic identity across translation un
           "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]") {
     CHECK(&bg::cpp_scalar_type<bg::Bundle<Instrument>>() ==
           &test_hierarchical_scalar_provider::instrument_type());
+}
+
+TEST_CASE("C++ schema metadata is registered for scalar and TSB projections",
+          "[feature:type-system][schema:named][declaration:concrete]") {
+    const auto &scalar_schema = bg::details::cpp_hierarchical_scalar_schema<MetadataDerived>();
+    const auto &series_schema = bg::TSB<MetadataDerived>::type().schema();
+
+    REQUIRE(scalar_schema.base() != nullptr);
+    REQUIRE(scalar_schema.metadata().size() == 2);
+    REQUIRE(series_schema.metadata().size() == 2);
+    CHECK(scalar_schema.metadata() == series_schema.metadata());
+    CHECK(bg::Scalar<>::from(*series_schema.metadata().find("extension.base"))
+              .equals(bg::ScalarValue<bg::i64>{5}));
+    CHECK(bg::Scalar<>::from(*series_schema.metadata().find("extension.version"))
+              .equals(bg::ScalarValue<bg::i64>{2}));
+    CHECK(bg::Scalar<>::from(*scalar_schema.metadata().find("extension.base"))
+              .equals(bg::ScalarValue<bg::i64>{5}));
+    CHECK(bg::Scalar<>::from(*scalar_schema.metadata().find("extension.version"))
+              .equals(bg::ScalarValue<bg::i64>{2}));
+    CHECK(bg::Scalar<>::from(*scalar_schema.direct_metadata().find("extension.version"))
+              .equals(bg::ScalarValue<bg::i64>{2}));
+    CHECK(&bg::schema_type<MetadataDerived>::type() == &series_schema);
+}
+
+TEST_CASE("C++ schemas without a metadata hook inherit only their base metadata",
+          "[feature:type-system][schema:named][declaration:concrete]") {
+    const auto &schema = bg::details::cpp_hierarchical_scalar_schema<MetadataInheritingDerived>();
+
+    REQUIRE(schema.base() != nullptr);
+    CHECK(schema.direct_metadata().empty());
+    REQUIRE(schema.metadata().size() == 2);
+    CHECK(bg::Scalar<>::from(*schema.metadata().find("extension.base"))
+              .equals(bg::ScalarValue<bg::i64>{5}));
+    CHECK(bg::Scalar<>::from(*schema.metadata().find("extension.version"))
+              .equals(bg::ScalarValue<bg::i64>{1}));
 }
 
 TEST_CASE("a C++ schema needs its scalar bundle registered before runtime lookup",

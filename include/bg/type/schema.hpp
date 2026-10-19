@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/type/type.hpp>
+#include <bg/type/schema_metadata.hpp>
 #include <bg/util/symbol.hpp>
 
 #include <cstddef>
@@ -45,13 +46,16 @@ struct SchemaField {
 
 class Schema final : public SchemaType {
   public:
-    Schema(util::symbol name, SchemaIdentity identity, const Schema *base, std::vector<SchemaField> fields);
-    Schema(util::symbol name, SchemaIdentity identity, const Schema *base);
+    Schema(util::symbol name, SchemaIdentity identity, const Schema *base, std::vector<SchemaField> fields,
+           SchemaMetadata metadata = {});
+    Schema(util::symbol name, SchemaIdentity identity, const Schema *base, SchemaMetadata metadata = {});
 
     util::symbol name() const noexcept { return name_; }
     const SchemaIdentity &identity() const noexcept { return identity_; }
     bool named() const noexcept { return !std::holds_alternative<std::monostate>(identity_); }
     const Schema *base() const noexcept { return base_; }
+    const SchemaMetadata &direct_metadata() const noexcept { return direct_metadata_; }
+    const SchemaMetadata &metadata() const noexcept { return metadata_; }
     std::span<const SchemaField> direct_fields() const noexcept { return direct_fields_; }
     std::span<const SchemaField> fields() const noexcept { return fields_; }
     std::size_t field_count() const noexcept override { return fields_.size(); }
@@ -69,6 +73,8 @@ class Schema final : public SchemaType {
     util::symbol name_;
     SchemaIdentity identity_;
     const Schema *base_;
+    SchemaMetadata direct_metadata_;
+    SchemaMetadata metadata_;
     std::vector<SchemaField> direct_fields_;
     std::vector<SchemaField> fields_;
     bool finalized_{false};
@@ -82,7 +88,8 @@ class SchemaRegistration {
     SchemaRegistration(const SchemaRegistration &) = delete;
     SchemaRegistration &operator=(const SchemaRegistration &) = delete;
 
-    [[nodiscard]] Schema &reserve_schema(util::symbol name, SchemaIdentity identity, const Schema *base);
+    [[nodiscard]] Schema &reserve_schema(util::symbol name, SchemaIdentity identity, const Schema *base,
+                                         SchemaMetadata metadata = {});
     [[nodiscard]] const Type &register_owned(std::unique_ptr<Type> type);
     void commit();
 
@@ -94,7 +101,7 @@ class SchemaRegistration {
 // Engine and extension APIs for runtime schema identity and canonical descriptors.
 [[nodiscard]] RuntimeSchemaId new_runtime_schema_id();
 [[nodiscard]] const Schema &schema(util::symbol name, SchemaIdentity identity, const Schema *base,
-                                   std::span<const SchemaField> fields);
-[[nodiscard]] const Schema &anonymous_schema(std::span<const SchemaField> fields);
+                                   std::span<const SchemaField> fields, SchemaMetadata metadata = {});
+[[nodiscard]] const Schema &anonymous_schema(std::span<const SchemaField> fields, SchemaMetadata metadata = {});
 
 } // namespace bg

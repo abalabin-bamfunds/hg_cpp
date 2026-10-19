@@ -129,6 +129,7 @@ add_library(
     src/thread_local_pointer.cpp
     src/type.cpp
     src/type/schema.cpp
+    src/type/schema_metadata.cpp
     src/type/type_registration.cpp
     src/type_of.cpp
     src/type_registry.cpp
