@@ -103,17 +103,14 @@ TEST_CASE("time series reference types retain their target and guarantee",
     CHECK(&bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::const_>::type() == &reference);
 }
 
-TEST_CASE("reference adaptation counts the item type of an unbounded collection",
+TEST_CASE("reference representation query checks an unbounded collection item type",
           "[type][reference][feature:type-system][series:fixed-tsl]") {
     const auto &reference_items = bg::time_series_list_type(
         bg::REF<bg::TS<bg::i64>>::type(), std::dynamic_extent, bg::TimeSeriesGuarantee::ordinary);
     const auto &value_items = bg::time_series_list_type(
         bg::TS<bg::i64>::type(), std::dynamic_extent, bg::TimeSeriesGuarantee::ordinary);
 
-    const auto adaptation = reference_items.reference_adaptation_counts_for(value_items);
-
-    CHECK(adaptation.top_level == 0);
-    CHECK(adaptation.contained == 1);
+    CHECK(reference_items.requires_reference_representation_for(value_items));
 }
 
 TEST_CASE("common references combine target and reference guarantees separately",
@@ -141,31 +138,46 @@ TEST_CASE("common references combine target and reference guarantees separately"
     CHECK(resolved.common_type(unresolved) == nullptr);
 }
 
-TEST_CASE("reference adaptation counts detect a top-level reference change",
-          "[feature:type-system][series:reference]") {
-    const auto &value = bg::TS<bg::i64>::type();
-    const auto &reference = bg::REF<bg::TS<bg::i64>>::type();
-    const auto top_level = reference.reference_adaptation_counts_for(value);
-    CHECK(top_level.top_level == 1);
-    CHECK(top_level.contained == 0);
-}
-
-TEST_CASE("reference adaptation counts recurse through fixed lists",
+TEST_CASE("reference representation query detects fixed-list item changes",
           "[feature:type-system][series:fixed-tsl]") {
     const auto &reference_list = bg::TSL<bg::REF<bg::TS<bg::i64>>, 2>::type();
     const auto &value_list = bg::TSL<bg::TS<bg::i64>, 2>::type();
-    const auto list_counts = reference_list.reference_adaptation_counts_for(value_list);
-    CHECK(list_counts.top_level == 0);
-    CHECK(list_counts.contained == 2);
+
+    CHECK(reference_list.requires_reference_representation_for(value_list));
 }
 
-TEST_CASE("reference adaptation counts recurse through dictionary values",
+TEST_CASE("reference representation query detects bundle field changes",
+          "[feature:type-system][series:tsb]") {
+    const auto fields = std::array{
+        bg::SchemaField{bg::util::symbol{"first"}, &bg::REF<bg::TS<bg::i64>>::type()},
+        bg::SchemaField{bg::util::symbol{"second"}, &bg::REF<bg::TS<bg::i64>>::type()},
+    };
+    const auto &reference_bundle =
+        bg::TimeSeriesBundleType::from_fields(fields, bg::TimeSeriesGuarantee::ordinary);
+    const auto value_fields = std::array{
+        bg::SchemaField{bg::util::symbol{"first"}, &bg::TS<bg::i64>::type()},
+        bg::SchemaField{bg::util::symbol{"second"}, &bg::TS<bg::i64>::type()},
+    };
+    const auto &value_bundle = bg::TimeSeriesBundleType::from_fields(value_fields, bg::TimeSeriesGuarantee::ordinary);
+
+    CHECK(reference_bundle.requires_reference_representation_for(value_bundle));
+}
+
+TEST_CASE("reference representation query detects dictionary value changes",
           "[feature:type-system][series:tsd]") {
     const auto &reference_dictionary = bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>::type();
     const auto &value_dictionary = bg::TSD<bg::i64, bg::TS<bg::i64>>::type();
-    const auto dictionary_counts = reference_dictionary.reference_adaptation_counts_for(value_dictionary);
-    CHECK(dictionary_counts.top_level == 0);
-    CHECK(dictionary_counts.contained == 1);
+
+    CHECK(reference_dictionary.requires_reference_representation_for(value_dictionary));
+}
+
+TEST_CASE("reference representation query recurses through dictionary reference values",
+          "[feature:type-system][series:tsd][series:fixed-tsl]") {
+    const auto &reference_dictionary =
+        bg::TSD<bg::i64, bg::REF<bg::TSL<bg::REF<bg::TS<bg::i64>>, 2>>>::type();
+    const auto &value_dictionary = bg::TSD<bg::i64, bg::REF<bg::TSL<bg::TS<bg::i64>, 2>>>::type();
+
+    CHECK(reference_dictionary.requires_reference_representation_for(value_dictionary));
 }
 
 TEST_CASE("common reference targets combine nested collection guarantees",

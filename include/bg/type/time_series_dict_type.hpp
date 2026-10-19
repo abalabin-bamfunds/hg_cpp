@@ -31,8 +31,6 @@ class TimeSeriesDictionaryType : public FixedItemTimeSeriesType {
                                 std::optional<TimeSeriesGuarantee> reference_limit) const override;
 
   protected:
-    ReferenceAdaptationCounts
-    contained_reference_adaptation_counts_for(const TimeSeriesType &supplied) const noexcept override;
     TimeSeriesDictionaryType(const ScalarType &key_type, const TimeSeriesType &value_type,
                              const TimeSeriesType &key_set_type, GuaranteeParameter guarantee)
         : FixedItemTimeSeriesType(guarantee), key_type_(&key_type), value_type_(&value_type),

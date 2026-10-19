@@ -8,6 +8,7 @@
 #include <bg/graph/wiring_error.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node/node_template.hpp>
+#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/type_variable.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/util/scope_exit.hpp>
@@ -51,7 +52,8 @@ bool PreparedWiringCall::same_concrete_binding(const PreparedWiringCall &other) 
 }
 
 double PreparedWiringCall::binding_cost(std::span<const WiringArgument> arguments) const {
-    // Prototype ranking only; these weights are not production wiring semantics.
+    // Prototype ranking charges each top-level and contained adaptation once per input binding.
+    // These weights are not production wiring semantics.
     constexpr auto top_level_reference_adaptation_cost = 1.0;
     constexpr auto contained_reference_adaptation_cost = 4.0;
 
@@ -78,9 +80,17 @@ double PreparedWiringCall::binding_cost(std::span<const WiringArgument> argument
             continue;
         }
 
-        const auto adaptation = parameter->reference_adaptation_counts_for(*offered);
-        total += static_cast<double>(adaptation.top_level) * top_level_reference_adaptation_cost;
-        total += static_cast<double>(adaptation.contained) * contained_reference_adaptation_cost;
+        const auto *parameter_reference = type_cast<TimeSeriesReferenceType>(parameter);
+        const auto *offered_reference = type_cast<TimeSeriesReferenceType>(offered);
+        if ((parameter_reference == nullptr) != (offered_reference == nullptr)) {
+            total += top_level_reference_adaptation_cost;
+        }
+
+        const auto &parameter_target = parameter_reference == nullptr ? *parameter : parameter_reference->target_type();
+        const auto &offered_target = offered_reference == nullptr ? *offered : offered_reference->target_type();
+        if (parameter_target.requires_reference_representation_for(offered_target)) {
+            total += contained_reference_adaptation_cost;
+        }
     }
     return total;
 }

@@ -10,11 +10,6 @@ namespace bg {
 
 enum class TimeSeriesTypeRole { declaration, input, output };
 
-struct ReferenceAdaptationCounts {
-    std::size_t top_level{};
-    std::size_t contained{};
-};
-
 class TimeSeriesType : public Type {
   public:
     VISITOR_SUPPORT()
@@ -38,13 +33,10 @@ class TimeSeriesType : public Type {
     virtual bool supports_invalidation() const noexcept { return true; }
     virtual bool contains_reference() const;
     virtual bool reference_changes_require_cycle_cleanup() const noexcept { return false; }
-    virtual bool requires_reference_representation_for(const TimeSeriesType &) const noexcept { return false; }
-    [[nodiscard]] ReferenceAdaptationCounts reference_adaptation_counts_for(const TimeSeriesType &supplied) const
-        noexcept;
+    // Returns whether reference representation differs at this type or at a contained time series.
+    virtual bool requires_reference_representation_for(const TimeSeriesType &supplied) const noexcept;
 
   protected:
-    [[nodiscard]] virtual ReferenceAdaptationCounts
-    contained_reference_adaptation_counts_for(const TimeSeriesType &supplied) const noexcept;
     void append_guarantee(std::string &result) const;
     TimeSeriesType() = default;
     explicit TimeSeriesType(GuaranteeParameter guarantee) : guarantee_(guarantee) {}

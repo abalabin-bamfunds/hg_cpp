@@ -17,8 +17,6 @@ class FixedItemTimeSeriesType : public TimeSeriesType {
     bool reference_changes_require_cycle_cleanup() const noexcept final { return true; }
 
   protected:
-    ReferenceAdaptationCounts
-    contained_reference_adaptation_counts_for(const TimeSeriesType &supplied) const noexcept override;
     using TimeSeriesType::TimeSeriesType;
 };
 
