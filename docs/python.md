@@ -531,15 +531,28 @@ def total(values: tuple[int, ...]) -> int:
     return sum(values)
 ```
 
-Scalar list values materialize as immutable Python tuples in node arguments
-and graph results. When the expected scalar type is known, conversion accepts
-Python tuples and lists, converts each item through its scalar conversion, and
-owns the engine list storage. Later mutations of the source Python list do not
-change that storage.
+Fixed tuple annotations declare `bg::Tuple` with one scalar type per position.
+Their item annotations can contain scalar type variables or nested scalar
+collections. Items require scalar types; optional items are unsupported. Fixed
+tuples support heterogeneous types, including the one-item form `tuple[T]` and
+the empty form `tuple[()]`. `typing.Tuple` supports the same forms. For example:
+
+```python
+@bg.node
+def describe(value: tuple[str, int]) -> str:
+    return f"{value[0]}: {value[1]}"
+```
+
+List and fixed tuple values materialize as immutable Python tuples in node
+arguments and graph results. When the expected scalar type is known, conversion
+accepts Python tuples and lists, converts each item through its scalar
+conversion, and owns the engine storage. Later mutations of the source Python
+list do not change the stored value.
 
 `list[T]` and `typing.List[T]` are unsupported annotations because they describe
 mutable sequences. Bare `list` and `tuple` annotations are unsupported. Fixed
-tuple annotations such as `tuple[int]` and `tuple[int, str]` are unsupported.
+tuple conversion requires the declared number of items and converts each
+position using its declared scalar type.
 
 Other Python classes can be used as scalar annotations and values. The first
 use registers one semantic scalar type for that exact class. Python inheritance

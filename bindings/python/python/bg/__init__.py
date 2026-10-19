@@ -6,7 +6,7 @@ import atexit
 import inspect
 import types
 from functools import update_wrapper
-from typing import Annotated, Any, Generic, TypeVar, get_args, get_origin, get_type_hints
+from typing import Annotated, Any, Generic, Tuple, TypeVar, get_args, get_origin, get_type_hints
 from weakref import WeakKeyDictionary
 
 from . import operators
@@ -26,6 +26,7 @@ from ._bg import (
     _register_python_schema,
     _dict_scalar_type,
     _list_scalar_type,
+    _tuple_scalar_type,
     _map,
     _mesh,
     _mesh_dependency,
@@ -1012,13 +1013,21 @@ def _native_type(annotation: Any) -> Any:
     origin = get_origin(annotation)
     if annotation is list or origin is list:
         raise TypeError("list annotations are mutable; use tuple[T, ...] for an engine list scalar")
-    if annotation is tuple or origin is tuple:
+    if annotation is tuple or annotation is Tuple or origin is tuple:
         arguments = get_args(annotation)
-        if len(arguments) != 2 or arguments[1] is not Ellipsis:
-            raise TypeError("tuple scalar annotations must use tuple[T, ...]")
-        item_type = _native_type(arguments[0])
+        if len(arguments) == 2 and arguments[1] is Ellipsis:
+            item_type = _native_type(arguments[0])
+            try:
+                return _list_scalar_type(item_type)
+            except ValueError as error:
+                raise TypeError(str(error)) from error
+
+        if annotation is tuple or annotation is Tuple:
+            raise TypeError("tuple annotations must specify item types")
+
+        item_types = tuple(_native_type(item) for item in arguments)
         try:
-            return _list_scalar_type(item_type)
+            return _tuple_scalar_type(item_types)
         except ValueError as error:
             raise TypeError(str(error)) from error
     if isinstance(annotation, type):

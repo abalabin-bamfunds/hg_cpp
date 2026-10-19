@@ -18,6 +18,7 @@
 #include <bg/scalar/dict/scalar_type.hpp>
 #include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/runtime_type.hpp>
+#include <bg/scalar/tuple/scalar_type.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/tsb/details/wiring.hpp>
 #include <bg/time_series/tsl/details/wiring.hpp>
@@ -658,6 +659,28 @@ void bind_core(nb::module_ &module) {
             return TypeDescriptor{list_scalar_type(*item)};
         }
         const auto &type = TypeRegistry::instance().register_owned(std::make_unique<GenericListScalarType>(*item));
+        return TypeDescriptor{type};
+    });
+    module.def("_tuple_scalar_type", [](std::vector<TypeDescriptor> item_values) {
+        auto item_types = std::vector<const ScalarType *>{};
+        item_types.reserve(item_values.size());
+        auto is_resolved = true;
+        for (const auto &item_value : item_values) {
+            if (item_value.accepts_absent_scalar()) {
+                throw std::invalid_argument{"fixed tuple annotations do not support optional items"};
+            }
+            const auto *item = type_cast<ScalarType>(&item_value.type());
+            if (item == nullptr) {
+                throw std::invalid_argument{"fixed tuple annotations require scalar item annotations"};
+            }
+            item_types.push_back(item);
+            is_resolved = is_resolved && item->is_resolved();
+        }
+        if (is_resolved) {
+            return TypeDescriptor{tuple_scalar_type(item_types)};
+        }
+        const auto &type = TypeRegistry::instance().register_owned(std::make_unique<GenericTupleScalarType>(
+            std::move(item_types)));
         return TypeDescriptor{type};
     });
     module.def("_time_series_type", [](const TypeDescriptor &value) {
