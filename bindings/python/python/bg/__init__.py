@@ -25,6 +25,7 @@ from ._bg import (
     _make_schema,
     _register_python_schema,
     _dict_scalar_type,
+    _list_scalar_type,
     _map,
     _mesh,
     _mesh_dependency,
@@ -1008,13 +1009,25 @@ def _native_type(annotation: Any) -> Any:
             if isinstance(item, _TimeSeriesGuarantee):
                 native_type = _with_time_series_guarantee(native_type, item)
         return native_type
+    origin = get_origin(annotation)
+    if annotation is list or origin is list:
+        raise TypeError("list annotations are mutable; use tuple[T, ...] for an engine list scalar")
+    if annotation is tuple or origin is tuple:
+        arguments = get_args(annotation)
+        if len(arguments) != 2 or arguments[1] is not Ellipsis:
+            raise TypeError("tuple scalar annotations must use tuple[T, ...]")
+        item_type = _native_type(arguments[0])
+        try:
+            return _list_scalar_type(item_type)
+        except ValueError as error:
+            raise TypeError(str(error)) from error
     if isinstance(annotation, type):
         if "_native_schema" in annotation.__dict__:
             if not annotation._bundle_compatible:
                 raise TypeError("a scalar Bundle schema must contain only scalar fields")
             return annotation._native_bundle_type
         return _scalar_type(annotation)
-    if getattr(annotation, "__origin__", None) is dict:
+    if origin is dict:
         key_type, value_type = get_args(annotation)
         return _dict_scalar_type(_native_type(key_type), _native_type(value_type))
     union_arguments = get_args(annotation)

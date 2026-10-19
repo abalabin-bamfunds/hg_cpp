@@ -10,6 +10,7 @@
 #include <bg/scalar/details/string_storage.hpp>
 #include <bg/scalar/dict/scalar_type.hpp>
 #include <bg/scalar/dict/runtime_type.hpp>
+#include <bg/scalar/list/runtime_type.hpp>
 #include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/set/scalar_type.hpp>
 #include <bg/scalar/struct/scalar_type.hpp>
@@ -560,14 +561,42 @@ ScalarValue<> from_python_dict(const DictScalarType &type, nanobind::handle valu
     return ScalarValue<>{value_view, memory};
 }
 
+ScalarValue<> from_python_list(const ListScalarType &type, nanobind::handle value, allocator &memory,
+                               const PythonScalarConversions &conversions) {
+    if (PyTuple_Check(value.ptr()) == 0 && PyList_Check(value.ptr()) == 0) {
+        PyErr_SetString(PyExc_TypeError, "expected a tuple or list for a scalar list");
+        nanobind::raise_python_error();
+    }
+
+    const auto &runtime_type = static_cast<const ScalarListRuntimeType &>(resolve_scalar_runtime_type(type, {}));
+    struct Construction {
+        nanobind::handle value;
+        const PythonScalarConversions *conversions;
+    } construction{value, &conversions};
+    const auto construct = [](void *context, const ScalarRuntimeType &runtime_type, void *destination,
+                              allocator &memory) {
+        const auto &input = *static_cast<const Construction *>(context);
+        const auto &list_runtime = static_cast<const ScalarListRuntimeType &>(runtime_type);
+        runtime_type.construct_runtime_value(destination, memory);
+        auto rollback = util::scope_exit{[&]() noexcept { runtime_type.destroy(destination, memory); }};
+
+        for (const auto item : nanobind::borrow<nanobind::iterable>(input.value)) {
+            auto converted = input.conversions->from_python(list_runtime.item_runtime_type().type(), item, memory);
+            list_runtime.append(destination, details::scalar_data(converted), memory);
+        }
+        rollback.release();
+    };
+    return ScalarValue<>::from_construction(runtime_type, {&construction, construct}, memory);
+}
+
 nanobind::object to_python_list(const Scalar<List<SCALAR>> &value, const PythonScalarConversions &conversions) {
-    auto result = nanobind::list{};
+    auto result = nanobind::tuple_builder{value.size()};
     const auto item_to_python = conversions.to_python_handler(value.runtime_type().item_runtime_type());
     for (auto index = std::size_t{}; index < value.size(); ++index) {
         const auto item = value[index];
-        result.append(item_to_python(Scalar<>::from(item), conversions));
+        result.put(item_to_python(Scalar<>::from(item), conversions));
     }
-    return result;
+    return result.commit();
 }
 
 nanobind::object to_python_set(const Scalar<Set<SCALAR>> &value, const PythonScalarConversions &conversions) {
@@ -1109,6 +1138,9 @@ ScalarValue<> PythonScalarConversions::from_python(const ScalarType &type, nanob
     if (const auto *dictionary = type_cast<DictScalarType>(&type)) {
         return from_python_dict(*dictionary, value, memory, *this);
     }
+    if (const auto *list = type_cast<ListScalarType>(&type)) {
+        return from_python_list(*list, value, memory, *this);
+    }
 
     throw std::invalid_argument{"no Python-to-scalar conversion is registered for this scalar type"};
 }
@@ -1125,6 +1157,9 @@ bool PythonScalarConversions::can_from_python(const ScalarType &type) const noex
     }
     if (const auto *dictionary = type_cast<DictScalarType>(&type)) {
         return can_from_python(dictionary->key_type()) && can_from_python(dictionary->mapped_type());
+    }
+    if (const auto *list = type_cast<ListScalarType>(&type)) {
+        return can_from_python(list->item_type());
     }
     return false;
 }

@@ -490,6 +490,9 @@ For each reusable node and graph, test:
 
 ### Python integration
 
+- homogeneous scalar tuple annotations, nested and generic items, immutable
+  Python materialization, expected-type sequence conversion and ownership,
+  and rejection of mutable and fixed-length sequence annotations
 - declaration metadata lifetime after definition destruction and callback ownership
 - scalar-or-time-series node input resolution and concrete binding
 - wiring failures preserving Python exception identity, type, traceback, and context notes

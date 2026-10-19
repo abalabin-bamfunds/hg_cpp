@@ -16,6 +16,7 @@
 #include <bg/scalar/bundle/scalar_type.hpp>
 #include <bg/scalar/bundle/value.hpp>
 #include <bg/scalar/dict/scalar_type.hpp>
+#include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/tsb/details/wiring.hpp>
@@ -644,6 +645,20 @@ void bind_core(nb::module_ &module) {
             throw std::invalid_argument{"dict[K, V] requires scalar key and value annotations"};
         }
         return TypeDescriptor{dict_scalar_type(*key, *mapped)};
+    });
+    module.def("_list_scalar_type", [](const TypeDescriptor &item_value) {
+        if (item_value.accepts_absent_scalar()) {
+            throw std::invalid_argument{"tuple[T, ...] does not support optional items"};
+        }
+        const auto *item = type_cast<ScalarType>(&item_value.type());
+        if (item == nullptr) {
+            throw std::invalid_argument{"tuple[T, ...] requires a scalar item annotation"};
+        }
+        if (item->is_resolved()) {
+            return TypeDescriptor{list_scalar_type(*item)};
+        }
+        const auto &type = TypeRegistry::instance().register_owned(std::make_unique<GenericListScalarType>(*item));
+        return TypeDescriptor{type};
     });
     module.def("_time_series_type", [](const TypeDescriptor &value) {
         if (value.accepts_absent_scalar()) {
