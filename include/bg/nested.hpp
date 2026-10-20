@@ -87,8 +87,11 @@ auto wire(const Graph &graph, const TypeMap *seed_type_map, Run &&run,
                         const auto input = details::wire_nested_input(input_reference);
                         input_boundaries.push_back(input);
                         inner_arguments.back().replace_time_series(input);
-                        flattened_parameters.push_back(
-                            {*argument.name(), &input.type(), active, optional, false, details::VariadicMode::none});
+                        flattened_parameters.push_back({.name = *argument.name(),
+                                                         .type = &input.type(),
+                                                         .activity = active,
+                                                         .validity = optional,
+                                                         .valid_items = argument.annotations().valid_items});
                     }
                 }
                 continue;

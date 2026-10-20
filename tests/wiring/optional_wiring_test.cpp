@@ -18,6 +18,7 @@ using namespace bg::literals;
 namespace {
 
 template <typename T> concept has_optional_wrapper = requires(T value) { opt(value); };
+template <typename Source, typename Target> concept can_reannotate = requires(Source value) { Target{value}; };
 
 static_assert(!has_optional_wrapper<i64>);
 
@@ -25,6 +26,12 @@ static_assert(sizeof(wp<TSD<i64, TS<i64>>, valid_items>) == sizeof(WiringPoint))
 static_assert(wp<TSD<i64, TS<i64>>, valid_items>::annotations.valid_items);
 static_assert(wp<TSD<i64, TS<i64>>, optional, valid_items>::annotations.optional);
 static_assert(wp<TSD<i64, TS<i64>>, optional, valid_items>::annotations.valid_items);
+static_assert(can_reannotate<wp<TSD<i64, TS<i64>>, valid_items>, wp<TSD<i64, TS<i64>>, valid_items>>);
+static_assert(can_reannotate<wp<TSD<i64, TS<i64>>, valid_items>,
+                             wp<TSD<i64, TS<i64>>, optional, valid_items>>);
+static_assert(!can_reannotate<wp<TSD<i64, TS<i64>>, valid_items>, wp<TSD<i64, TS<i64>>>>);
+static_assert(!can_reannotate<wp<TSD<i64, TS<i64>>, optional, valid_items>,
+                              wp<TSD<i64, TS<i64>>, valid_items>>);
 
 } // namespace
 

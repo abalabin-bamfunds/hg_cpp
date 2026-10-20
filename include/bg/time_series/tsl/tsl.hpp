@@ -36,10 +36,15 @@ class wp<TSL<Item, Size, TimeSeriesProperties...>, WiringProperties...> {
     }
 
     template <typename Source, auto... SourceProperties>
+        requires(wp<Source, SourceProperties...>::validity != optional || ParsedProperties::validity == optional) &&
+                (!wp<Source, SourceProperties...>::valid_items || ParsedProperties::valid_items)
     explicit wp(wp<Source, SourceProperties...> source) : wp(static_cast<WiringPoint>(source)) {
-        static_assert(wp<Source, SourceProperties...>::validity != optional || ParsedProperties::validity == optional,
-                      "an optional wiring point cannot be re-annotated as a required input");
     }
+
+    template <typename Source, auto... SourceProperties>
+        requires(wp<Source, SourceProperties...>::validity == optional && ParsedProperties::validity != optional) ||
+                (wp<Source, SourceProperties...>::valid_items && !ParsedProperties::valid_items)
+    explicit wp(wp<Source, SourceProperties...>) = delete;
 
     operator WiringPoint() const noexcept { return point_; }
 
@@ -50,15 +55,9 @@ class wp<TSL<Item, Size, TimeSeriesProperties...>, WiringProperties...> {
     const TimeSeriesType &type() const noexcept { return point_.type(); }
 
     template <typename Target> auto as() const {
-        if constexpr (ParsedProperties::validity == optional && ParsedProperties::valid_items) {
-            return wp<Target, optional, bg::valid_items>{point_};
-        } else if constexpr (ParsedProperties::validity == optional) {
-            return wp<Target, optional>{point_};
-        } else if constexpr (ParsedProperties::valid_items) {
-            return wp<Target, bg::valid_items>{point_};
-        } else {
-            return point_.template as<Target>();
-        }
+        using Result = typename details::annotated_wiring_point<Target, ParsedProperties::validity == optional,
+                                                                ParsedProperties::valid_items>::type;
+        return Result{point_};
     }
 
     static wp from_validated(WiringPoint point) noexcept { return wp{point, unchecked_t{}}; }

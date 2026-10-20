@@ -1121,6 +1121,7 @@ RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
     const auto all_valid_input_count = std::ranges::count_if(
         node_plan.time_series_inputs, [&](const auto &input) {
             return node.signature().parameters[input.parameter].validity == InputValidity::all_valid &&
+                   !node.signature().parameters[input.parameter].valid_items &&
                    !input.constant_binding;
         });
     if (all_valid_input_count != 0) {
@@ -2109,6 +2110,7 @@ class CompiledGraphBuilder {
 
             const auto needs_all_valid_check =
                 node.signature().parameters[parameter_index].validity == InputValidity::all_valid &&
+                !node.signature().parameters[parameter_index].valid_items &&
                 !input.constant_binding;
             const auto needs_runtime_type =
                 node.node_template().uses_time_series_input_runtime_type(node.signature(), parameter_index);

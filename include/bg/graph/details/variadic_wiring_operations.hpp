@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -35,6 +36,8 @@ class VariadicWiringOperations {
     virtual util::symbol item_name(const TimeSeriesType &type, std::size_t index) const = 0;
     virtual const TimeSeriesType &item_type(const TimeSeriesType &type, std::size_t index) const = 0;
     virtual WiringPoint item(WiringPoint collection, std::size_t index) const = 0;
+    virtual std::optional<std::span<const WiringArgument>>
+    original_arguments(WiringPoint collection) const noexcept = 0;
     virtual std::vector<MaterialisationDependency>
     materialisation_dependencies(std::span<const WiringArgument> arguments,
                                  const TimeSeriesType &target_type) const = 0;

@@ -861,6 +861,81 @@ TEST_CASE("conflicting required-input preferences remain ambiguous",
     }
 }
 
+TEST_CASE("named validity preferences align with supplied arguments",
+          "[feature:operator][feature:wiring][feature:validity][input-guarantee:valid-items][series:tsd]") {
+    const auto source = bg::node([](bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>>) {});
+    const auto left_first = bg::graph(
+        "name"_n = "left_first",
+        [](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "left"_n, bg::valid_items>,
+           bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "right"_n>) {});
+    const auto right_first = bg::graph(
+        "name"_n = "right_first",
+        [](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "right"_n>,
+           bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "left"_n, bg::valid_items>) {});
+
+    for (const auto reverse : {false, true}) {
+        auto operation = bg::operator_<auto(bg::TS_T, bg::TS_T) -> void>{"validity", {"left", "right"}};
+        if (reverse) {
+            operation.overload(right_first);
+            operation.overload(left_first);
+        } else {
+            operation.overload(left_first);
+            operation.overload(right_first);
+        }
+
+        try {
+            bg::testing::test_wiring([&] {
+                operation("left"_n = bg::valid_items(source()), "right"_n = source());
+            });
+            FAIL("expected named validity preferences to be ambiguous");
+        } catch (const bg::WiringError &error) {
+            REQUIRE(error.diagnostic());
+            CHECK(error.diagnostic()->ambiguous);
+            CHECK(error.diagnostic()->candidates.size() == 2);
+        }
+    }
+}
+
+TEST_CASE("positional validity preferences follow supplied argument order",
+          "[feature:operator][feature:wiring][feature:validity][input-guarantee:valid-items][series:tsd]") {
+    const auto source = bg::node([](bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>>) {});
+
+    for (const auto reverse : {false, true}) {
+        auto selected = std::string{};
+        auto operation = bg::operator_<auto(bg::TS_T, bg::TS_T) -> void>{"validity", {"left", "right"}};
+        if (reverse) {
+            operation.overload(bg::graph("name"_n = "right_first",
+                                         [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "right"_n>,
+                                             bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "left"_n,
+                                                    bg::valid_items>) {
+                                             selected = "right_first";
+                                         }));
+            operation.overload(bg::graph("name"_n = "left_first",
+                                         [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "left"_n,
+                                                       bg::valid_items>,
+                                             bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "right"_n>) {
+                                             selected = "left_first";
+                                         }));
+        } else {
+            operation.overload(bg::graph("name"_n = "left_first",
+                                         [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "left"_n,
+                                                       bg::valid_items>,
+                                             bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "right"_n>) {
+                                             selected = "left_first";
+                                         }));
+            operation.overload(bg::graph("name"_n = "right_first",
+                                         [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "right"_n>,
+                                             bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "left"_n,
+                                                    bg::valid_items>) {
+                                             selected = "right_first";
+                                         }));
+        }
+
+        bg::testing::test_wiring([&] { operation(bg::valid_items(source()), source()); });
+        CHECK(selected == "left_first");
+    }
+}
+
 TEST_CASE("an opt-qualified argument rejects a required-only overload",
           "[feature:operator][feature:wiring][feature:validity][validity:optional][series:value]") {
     auto operation = bg::operator_<auto(bg::TS_T)->bg::TS_T>{"required", {"value"}};

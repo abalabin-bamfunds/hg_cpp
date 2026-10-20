@@ -21,6 +21,24 @@ def test_valid_items_annotation_is_accepted_and_forwarded_through_python_graphs(
     assert bg.test_graph(outer, [{1: 10, 2: 20}, {3: 30}]) == [2, 3]
 
 
+def test_valid_items_annotation_filters_mapping_operations_without_gating_on_items():
+    observed = []
+
+    @bg.compute_node
+    def inspect(
+        values: Annotated[bg.TSD[int, bg.TS[int]], bg.valid_items], all_valid: bg.TS[bool]
+    ) -> bg.TS[int]:
+        observed.append((len(values), list(values.keys()), 2 in values))
+        return len(values) * 10 + int(all_valid.value)
+
+    @bg.graph
+    def graph(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        return inspect(bg.valid_items(values), bg.operators.all_valid(values))
+
+    assert bg.test_graph(graph, [{1: 10, 2: 20}, {2: bg.INVALID}, {2: 21}]) == [21, 10, 21]
+    assert observed == [(2, [1, 2], True), (1, [1], False), (2, [1, 2], True)]
+
+
 def test_valid_items_argument_requires_a_valid_items_receiver():
     @bg.compute_node
     def consume(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:

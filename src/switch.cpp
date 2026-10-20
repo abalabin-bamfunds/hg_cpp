@@ -54,7 +54,8 @@ class SwitchGraphArgumentBuilder {
         resolved_parameters.reserve(parameters_.size());
         for (const auto &parameter : parameters_) {
             resolved_parameters.push_back({parameter.name, parameter.type, parameter.activity, parameter.validity,
-                                           parameter.accepts_absent_scalar, parameter.variadic_mode, false});
+                                           parameter.accepts_absent_scalar, parameter.variadic_mode, false, false,
+                                           parameter.valid_items});
         }
         auto outer_signature = ResolvedSignature{util::symbol{"switch"}, std::move(resolved_parameters), output};
 
@@ -94,8 +95,11 @@ class SwitchGraphArgumentBuilder {
                                         : time_series_reference_type(source_type, TimeSeriesGuarantee::const_);
             const auto parameter_index = parameters_.size();
             outer_parameter_indices_.push_back({index, parameter_index});
-            parameters_.push_back({argument.name().value_or(util::symbol{std::to_string(index)}), &reference, active,
-                                   optional, false, VariadicMode::none});
+            parameters_.push_back({.name = argument.name().value_or(util::symbol{std::to_string(index)}),
+                                   .type = &reference,
+                                   .activity = active,
+                                   .validity = optional,
+                                   .valid_items = argument.annotations().valid_items});
             auto stored = WiringArgument::borrow(argument);
             stored.clear_name();
             outer_arguments_.push_back(std::move(stored));
@@ -289,6 +293,9 @@ class SwitchGraphArgumentBuilder {
             auto inner = WiringArgument{boundary};
             if (argument.value.requires_optional()) {
                 inner.require_optional();
+            }
+            if (argument.value.annotations().valid_items) {
+                inner.require_valid_items();
             }
             if (const auto name = argument.value.name()) {
                 inner.set_variadic_name(*name, argument.value.variadic_capture_mode());

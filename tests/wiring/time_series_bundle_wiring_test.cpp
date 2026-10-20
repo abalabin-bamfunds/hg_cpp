@@ -6,6 +6,7 @@
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsb/details/wiring.hpp>
+#include <bg/time_series/tsd/tsd_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -32,6 +33,10 @@ template <template <typename, auto...> typename Field> struct ReferenceFieldBund
 
 template <template <typename, auto...> typename Field> struct OptionalFieldBundle {
     Field<bg::TS<bg::i64>, bg::optional> value;
+};
+
+template <template <typename, auto...> typename Field> struct DictionaryFieldBundle {
+    Field<bg::TSD<bg::i64, bg::TS<bg::i64>>> dictionary;
 };
 
 template <template <typename, auto...> typename Field> struct SharedBundle {
@@ -163,6 +168,26 @@ TEST_CASE("typed field access preserves free TSB sources",
     REQUIRE(wiring.nodes().size() == 3);
     CHECK(wiring.nodes().back().inputs().front().index() == 0);
     CHECK(wiring.outputs().size() == 2);
+}
+
+TEST_CASE("typed TSB construction preserves field annotations",
+          "[feature:wiring][feature:variadic-wiring][series:tsb][schema:named]"
+          "[input-guarantee:valid-items][representation:free]") {
+    const auto dictionary = bg::node([](bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>>) {});
+    const auto receiver = bg::graph(
+        "name"_n = "typed_bundle_receiver",
+        [](bg::wp<bg::TSB<bg::SCHEMA>, "values"_n, bg::var_kwargs> values) {
+            const auto field = values.find("dictionary");
+            REQUIRE(field);
+            CHECK(field->annotations().valid_items);
+            CHECK_FALSE(field->annotations().optional);
+        });
+
+    bg::testing::test_wiring([&] {
+        const auto fields = bg::bundle<bg::TSB<DictionaryFieldBundle>>(
+            "dictionary"_n = bg::valid_items(dictionary()));
+        receiver("values"_n = fields);
+    });
 }
 
 TEST_CASE("typed TSB construction reports invalid schema arguments as wiring errors",

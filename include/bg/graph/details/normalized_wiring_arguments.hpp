@@ -6,6 +6,7 @@
 #include <bg/type/signature.hpp>
 
 #include <span>
+#include <optional>
 #include <vector>
 
 namespace bg::details {
@@ -15,6 +16,7 @@ class WiringRecordOverlay;
 struct NormalizedWiringArguments {
     std::vector<WiringArgument> arguments;
     std::vector<WiringArgumentDescriptor> descriptors;
+    std::vector<std::optional<std::size_t>> supplied_argument_indices;
 };
 
 [[nodiscard]] NormalizedWiringArguments normalize_wiring_arguments(const Signature &signature,

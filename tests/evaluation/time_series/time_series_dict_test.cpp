@@ -315,8 +315,10 @@ TEST_CASE("a value dictionary provides a source-backed reference representation"
           "[evaluation][tsd][reference][feature:reference][feature:validity][series:tsd][scalar:integer]"
           "[binding:value-to-reference][transition:update]") {
     auto item_became_valid = std::vector<bool>{};
+    auto item_is_valid = std::vector<bool>{};
     const auto summarize = node([&](In<TSD<i64, REF<TS<i64>>>> input) {
         item_became_valid.push_back(input[1].became_valid());
+        item_is_valid.push_back(input[1].valid());
         const auto resolved = details::ResolvedTimeSeries::resolve(input[1].value());
         return static_cast<int>(input.size() * 100) + *static_cast<const int *>(resolved.storage);
     });
@@ -326,7 +328,8 @@ TEST_CASE("a value dictionary provides a source-backed reference representation"
 
     CHECK(actual.equals({210, std::nullopt, 111}));
     // The item reference remains valid after an unrelated dictionary change.
-    CHECK(item_became_valid == std::vector<bool>{true, true});
+    CHECK(item_is_valid == std::vector<bool>{true, true});
+    CHECK(item_became_valid == std::vector<bool>{true, false});
 }
 
 namespace {

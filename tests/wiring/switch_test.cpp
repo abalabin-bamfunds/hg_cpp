@@ -1,7 +1,10 @@
 #include <bg/graph.hpp>
+#include <bg/graph/graph_wiring.hpp>
+#include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
 #include <bg/switch.hpp>
 #include <bg/testing/test_wiring.hpp>
+#include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tsb/tsb_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -92,6 +95,30 @@ TEST_CASE("switch validates its case set",
             (void)switch_(key(), cases{case_(1, identity)}, value(), value()),
             "switch case graph does not accept every positional argument");
     });
+}
+
+TEST_CASE("switch runtime declarations preserve valid_items inputs",
+          "[feature:switch][feature:wiring][feature:validity][series:tsd][input-guarantee:valid-items]") {
+    const auto key = node([](Out<TS<i64>>) {});
+    const auto source = node([](Out<TSD<i64, TS<i64>>>) {});
+    const auto identity = graph(
+        "name"_n = "valid_items_switch_identity",
+        [](wp<TSD<i64, TS<i64>>, valid_items> input) { return input; });
+    auto wiring = GraphWiring{};
+
+    {
+        auto context = WiringContext{wiring};
+        (void)switch_(key(), cases{case_(i64{1}, identity)}, valid_items(source()));
+    }
+
+    (void)wiring.complete_pending_wiring();
+    const auto switched = std::ranges::find_if(wiring.nodes(), [](const auto &candidate) {
+        return std::ranges::any_of(candidate.signature().parameters,
+                                   [](const auto &parameter) { return parameter.valid_items; });
+    });
+    REQUIRE(switched != wiring.nodes().end());
+    CHECK(std::ranges::any_of(switched->signature().parameters,
+                              [](const auto &parameter) { return parameter.valid_items; }));
 }
 
 TEST_CASE("switch rejects incompatible case output shapes",

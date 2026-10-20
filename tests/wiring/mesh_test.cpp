@@ -1,5 +1,7 @@
 #include <bg/graph.hpp>
 #include <bg/graph/graph_argument.hpp>
+#include <bg/graph/graph_wiring.hpp>
+#include <bg/graph/wiring_context.hpp>
 #include <bg/mesh.hpp>
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
@@ -57,6 +59,30 @@ class MeshOverload final : public WiringTemplate {
 TEST_CASE("mesh dependencies require mesh branch wiring",
           "[feature:mesh][feature:wiring][feature:operator][shape:nested]") {
     testing::test_wiring([] { CHECK_THROWS_AS(mesh()[1], WiringError); });
+}
+
+TEST_CASE("mesh runtime declarations preserve valid_items inputs",
+          "[feature:mesh][feature:wiring][feature:validity][series:tsd][input-guarantee:valid-items]") {
+    const auto identity = graph(
+        "name"_n = "valid_items_mesh_identity",
+        [](wp<TS<i64>> value, wp<TSD<i64, TS<i64>>, valid_items>) { return value; });
+    const auto values = node([](Out<TSD<i64, TS<i64>>>) {});
+    const auto dictionary = node([](Out<TSD<i64, TS<i64>>>) {});
+    auto wiring = GraphWiring{};
+
+    {
+        auto context = WiringContext{wiring};
+        (void)mesh(identity, values(), pass_through(valid_items(dictionary())));
+    }
+
+    (void)wiring.complete_pending_wiring();
+    const auto mapped = std::ranges::find_if(wiring.nodes(), [](const auto &candidate) {
+        return std::ranges::any_of(candidate.signature().parameters,
+                                   [](const auto &parameter) { return parameter.valid_items; });
+    });
+    REQUIRE(mapped != wiring.nodes().end());
+    CHECK(std::ranges::any_of(mapped->signature().parameters,
+                              [](const auto &parameter) { return parameter.valid_items; }));
 }
 
 TEST_CASE("mesh dependencies accept a scalar key",

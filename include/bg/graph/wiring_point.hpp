@@ -136,6 +136,28 @@ class WiringPoint {
     friend class details::WiringRecord;
 };
 
+namespace details {
+
+template <typename Target, bool Optional, bool ValidItems> struct annotated_wiring_point;
+
+template <typename Target> struct annotated_wiring_point<Target, false, false> {
+    using type = wp<Target>;
+};
+
+template <typename Target> struct annotated_wiring_point<Target, true, false> {
+    using type = wp<Target, optional>;
+};
+
+template <typename Target> struct annotated_wiring_point<Target, false, true> {
+    using type = wp<Target, bg::valid_items>;
+};
+
+template <typename Target> struct annotated_wiring_point<Target, true, true> {
+    using type = wp<Target, optional, bg::valid_items>;
+};
+
+} // namespace details
+
 template <typename TimeSeries, auto... Properties> class wp {
     using ParsedProperties = details::wiring_point_properties<Properties...>;
     static_assert(ParsedProperties::variadic_mode == details::VariadicMode::none,
@@ -163,10 +185,15 @@ template <typename TimeSeries, auto... Properties> class wp {
 
     // Re-annotation retains the actual wiring type. Signature resolution validates it at the next wiring boundary.
     template <typename Source, auto... SourceProperties>
+        requires(wp<Source, SourceProperties...>::validity != optional || ParsedProperties::validity == optional) &&
+                (!wp<Source, SourceProperties...>::valid_items || ParsedProperties::valid_items)
     explicit wp(wp<Source, SourceProperties...> source) : wp(static_cast<WiringPoint>(source)) {
-        static_assert(wp<Source, SourceProperties...>::validity != optional || ParsedProperties::validity == optional,
-                      "an optional wiring point cannot be re-annotated as a required input");
     }
+
+    template <typename Source, auto... SourceProperties>
+        requires(wp<Source, SourceProperties...>::validity == optional && ParsedProperties::validity != optional) ||
+                (wp<Source, SourceProperties...>::valid_items && !ParsedProperties::valid_items)
+    explicit wp(wp<Source, SourceProperties...>) = delete;
 
     operator WiringPoint() const noexcept { return point_; }
 
@@ -176,15 +203,9 @@ template <typename TimeSeries, auto... Properties> class wp {
     const TimeSeriesType &type() const { return point_.type(); }
 
     template <typename Target> auto as() const {
-        if constexpr (ParsedProperties::validity == optional && ParsedProperties::valid_items) {
-            return wp<Target, optional, bg::valid_items>{point_};
-        } else if constexpr (ParsedProperties::validity == optional) {
-            return wp<Target, optional>{point_};
-        } else if constexpr (ParsedProperties::valid_items) {
-            return wp<Target, bg::valid_items>{point_};
-        } else {
-            return point_.template as<Target>();
-        }
+        using Result = typename details::annotated_wiring_point<Target, ParsedProperties::validity == optional,
+                                                                ParsedProperties::valid_items>::type;
+        return Result{point_};
     }
 
     template <typename Target, typename Builder>

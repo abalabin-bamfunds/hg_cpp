@@ -257,6 +257,9 @@ class MapGraphArgumentBuilder {
         if (argument.requires_optional()) {
             graph_argument.require_optional();
         }
+        if (argument.annotations().valid_items) {
+            graph_argument.require_valid_items();
+        }
         if (const auto name = argument.name()) {
             graph_argument.set_variadic_name(*name, VariadicMode::none);
         }
@@ -266,8 +269,11 @@ class MapGraphArgumentBuilder {
         const auto &outer_type = mapped && supplied_reference != nullptr
                                      ? mapped_type.with_guarantee_limit(supplied_reference->reference_limit())
                                      : mapped_type;
-        parameters_.push_back({argument_name(supplied_argument.value, parameter_index), &outer_type, active,
-                               mapped ? required : optional, false, VariadicMode::none});
+        parameters_.push_back({.name = argument_name(supplied_argument.value, parameter_index),
+                               .type = &outer_type,
+                               .activity = active,
+                               .validity = mapped ? required : optional,
+                               .valid_items = supplied_argument.value.annotations().valid_items});
         outer_arguments_.push_back(WiringArgument::borrow(supplied_argument.value));
         outer_arguments_.back().clear_name();
         inputs_.push_back({mapped ? MapInputKind::mapped : MapInputKind::pass_through, parameter_index, 0});
