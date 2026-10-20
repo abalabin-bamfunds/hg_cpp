@@ -16,36 +16,46 @@
 
 using namespace bg;
 
-namespace {
+TEST_CASE("a dictionary graph preserves its input updates",
+          "[evaluation][tsd][feature:collection-change][series:tsd][scalar:integer][transition:update]") {
+    const auto identity = [](wp<TSD<i64, TS<i64>>> input) { return input; };
 
-struct dict_sink_definition {
-    In<TSD<i64, TS<i64>>> input;
+    const auto actual = testing::test_graph(identity, {{{1, 10}, {2, 20}}, {{1, 11}}});
 
-    void evaluate() const {
-        sizes.push_back(input.size());
-        values.push_back(input.contains(1) ? *input[1] : -1);
+    CHECK(actual.equals({{{1, 10}, {2, 20}}, {{1, 11}}}));
+}
 
-        auto added_count = std::size_t{};
-        input.for_each_added([&](const auto &) { ++added_count; });
-        added.push_back(added_count);
+TEST_CASE("a node can read one dictionary item",
+          "[evaluation][tsd][feature:getitem][series:tsd][scalar:integer][binding:direct][transition:update]") {
+    const auto select = node([](In<TSD<i64, TS<i64>>> input, Out<TS<i64>> output) {
+        auto changed = input.item_modified(1);
+        input.for_each_added([&](const auto &key) { changed = changed || key.value() == 1; });
+        if (input.contains(1) && changed) {
+            output.set(*input[1]);
+        }
+    });
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return select(input); };
 
-        auto removed_count = std::size_t{};
-        input.for_each_removed([&](const auto &) { ++removed_count; });
-        removed.push_back(removed_count);
+    const auto actual = testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
-        auto modified_count = std::size_t{};
-        input.for_each_modified([&](const auto &) { ++modified_count; });
-        modified.push_back(modified_count);
-    }
+    CHECK(actual.equals({10, 11, std::nullopt}));
+}
 
-    inline static std::vector<std::size_t> sizes;
-    inline static std::vector<int> values;
-    inline static std::vector<std::size_t> added;
-    inline static std::vector<std::size_t> removed;
-    inline static std::vector<std::size_t> modified;
-};
+TEST_CASE("a node can select a dictionary item using a time series key",
+          "[evaluation][tsd][feature:getitem][series:tsd][series:value][scalar:integer]"
+          "[binding:direct][transition:update]") {
+    const auto select = node([](In<TSD<i64, TS<i64>>> input, In<TS<i64>> key,
+                                Out<TS<i64>> output) { output.set(*input[*key]); });
 
-} // namespace
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> input, wp<TS<i64>> key) {
+        return select(input, key);
+    };
+
+    const auto actual = testing::test_graph(
+        graph, {{{1, 10}, {2, 100}}, {{1, 11}, {2, 110}}, {{1, 12}, {2, 120}}}, {1, 2, 1});
+
+    CHECK(actual.equals({10, 110, 12}));
+}
 
 TEST_CASE("a time series dictionary publishes item and key changes",
           "[evaluation][tsd][series:tsd][feature:collection-change][transition:addition][transition:removal]"
@@ -493,22 +503,6 @@ TEST_CASE("an explicit dictionary reference input receives a recursively adapted
     CHECK(actual.equals({210, 211, 111}));
 }
 
-TEST_CASE("a node can read one dictionary item",
-          "[evaluation][tsd][feature:getitem][series:tsd][scalar:integer][binding:direct][transition:update]") {
-    const auto select = node([](In<TSD<i64, TS<i64>>> input, Out<TS<i64>> output) {
-        auto changed = input.item_modified(1);
-        input.for_each_added([&](const auto &key) { changed = changed || key.value() == 1; });
-        if (input.contains(1) && changed) {
-            output.set(*input[1]);
-        }
-    });
-    const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return select(input); };
-
-    const auto actual = testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
-
-    CHECK(actual.equals({10, 11, std::nullopt}));
-}
-
 TEST_CASE("a node observes dictionary item addition, removal, and restoration",
           "[evaluation][tsd][feature:getitem][series:tsd][scalar:integer][binding:direct][transition:addition]"
           "[transition:removal][transition:resurrection]") {
@@ -568,21 +562,6 @@ TEST_CASE("a node can read a collection-valued dictionary item",
         graph, {{{1, {{0, 10}, {1, 20}}}}, {{1, {{0, 11}}}}});
 
     CHECK(actual.equals({30, 31}));
-}
-
-TEST_CASE("a node can select a dictionary item using a time series key",
-          "[evaluation][tsd][feature:getitem][series:tsd][series:value][scalar:integer]"
-          "[binding:direct][transition:update]") {
-    const auto select = node([](In<TSD<i64, TS<i64>>> input, In<TS<i64>> key,
-                                    Out<TS<i64>> output) { output.set(*input[*key]); });
-
-    const auto graph = [&](wp<TSD<i64, TS<i64>>> input, wp<TS<i64>> key) {
-        return select(input, key);
-    };
-
-    const auto actual = testing::test_graph(
-        graph, {{{1, 10}, {2, 100}}, {{1, 11}, {2, 110}}, {{1, 12}, {2, 120}}}, {1, 2, 1});
-    CHECK(actual.equals({10, 110, 12}));
 }
 
 namespace {
@@ -709,6 +688,33 @@ struct resurrecting_source_definition {
         output.erase(1);
         output[1].set(20);
     }
+};
+
+struct dict_sink_definition {
+    In<TSD<i64, TS<i64>>> input;
+
+    void evaluate() const {
+        sizes.push_back(input.size());
+        values.push_back(input.contains(1) ? *input[1] : -1);
+
+        auto added_count = std::size_t{};
+        input.for_each_added([&](const auto &) { ++added_count; });
+        added.push_back(added_count);
+
+        auto removed_count = std::size_t{};
+        input.for_each_removed([&](const auto &) { ++removed_count; });
+        removed.push_back(removed_count);
+
+        auto modified_count = std::size_t{};
+        input.for_each_modified([&](const auto &) { ++modified_count; });
+        modified.push_back(modified_count);
+    }
+
+    inline static std::vector<std::size_t> sizes;
+    inline static std::vector<int> values;
+    inline static std::vector<std::size_t> added;
+    inline static std::vector<std::size_t> removed;
+    inline static std::vector<std::size_t> modified;
 };
 
 } // namespace
@@ -1002,6 +1008,7 @@ TEST_CASE("a dictionary input accepts its exact non-canonical key type",
             output.invalidate();
         }
     });
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return select(input); };
 
     const auto actual = testing::test_graph(graph, {{{7, 70}}, {{7, literal::REMOVE}}});

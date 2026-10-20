@@ -14,27 +14,16 @@
 
 using namespace bg;
 
-namespace {
+TEST_CASE("required-input invalidation invalidates a node output",
+          "[evaluation][invalidation][feature:invalidation][shape:single-node][validity:required]"
+          "[transition:invalidation][transition:revalidation][series:value][scalar:floating-point]"
+          "[definition:function]") {
+    const auto copy = node([](In<TS<float>> input, Out<TS<float>> output) { output.set(*input); });
 
-struct fallback_definition {
-    State<int> invalidation_count;
-    In<TS<float>> input;
-    Out<TS<float>> output;
+    const auto actual = testing::test_graph(copy, {4.0F, literal::INVALID, 6.0F});
 
-    void evaluate() const {
-        ++evaluation_count;
-        output.set(*input);
-    }
-
-    void on_invalidation() const {
-        ++*invalidation_count;
-        output.set(-static_cast<float>(*invalidation_count));
-    }
-
-    inline static int evaluation_count{};
-};
-
-} // namespace
+    CHECK(actual.equals({4.0F, literal::INVALID, 6.0F}));
+}
 
 TEST_CASE("required-input invalidation propagates through a graph",
           "[evaluation][invalidation][feature:invalidation][shape:chain][validity:required]"
@@ -66,6 +55,28 @@ TEST_CASE("required-input invalidation propagates through a graph",
     CHECK(copy_evaluations == 2);
     CHECK(consumed_values == std::vector<float>{4.0F, 6.0F});
 }
+
+namespace {
+
+struct fallback_definition {
+    State<int> invalidation_count;
+    In<TS<float>> input;
+    Out<TS<float>> output;
+
+    void evaluate() const {
+        ++evaluation_count;
+        output.set(*input);
+    }
+
+    void on_invalidation() const {
+        ++*invalidation_count;
+        output.set(-static_cast<float>(*invalidation_count));
+    }
+
+    inline static int evaluation_count{};
+};
+
+} // namespace
 
 TEST_CASE("required-input invalidation is applied once while the input remains invalid",
           "[evaluation][invalidation][feature:invalidation][validity:required][transition:invalidation]"

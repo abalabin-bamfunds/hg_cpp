@@ -22,21 +22,8 @@ namespace {
 using namespace bg;
 using namespace bg::literals;
 
-inline constexpr auto G = guarantee_variable<"G">;
-
 const auto increment = node([](In<TS<i64>> value, Out<TS<i64>> output) {
     output.set(*value + 1);
-});
-
-const auto add_values = node([](In<TS<i64>, optional> left,
-                                In<TS<i64>, optional> right,
-                                Out<TS<i64>> output) {
-    output.set((left.valid() ? *left : 0) + (right.valid() ? *right : 0));
-});
-
-const auto values_at_key_one = node([](In<TS<i64>> value,
-                                       Out<TSD<i64, TS<i64>>> output) {
-    output[1].set(*value);
 });
 
 TEST_CASE("map applies a graph to each TSD item",
@@ -108,6 +95,8 @@ TEST_CASE("map generic graph functions preserve optional reference arguments",
     CHECK(actual.equals<i64>({3, 6, 10}));
 }
 
+inline constexpr auto G = guarantee_variable<"G">;
+
 TEST_CASE("map preserves a final item target through a nested dictionary reference",
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:doubly-nested]"
           "[guarantee:final][binding:reference-to-reference]") {
@@ -115,13 +104,15 @@ TEST_CASE("map preserves a final item target through a nested dictionary referen
                                          Out<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> output) {
         output[1].set(*value);
     });
-    const auto read_value = node([](In<TS<i64, G>> value, Out<TS<i64>> output) {
-        output.set(*value);
-    });
-    const auto dictionary = graph("name"_n = "final_item_dictionary", [&](wp<TS<i64>> value) {
-        return make_dictionary(value);
-    });
-    const auto tested = [&](wp<TS<i64>> value, wp<TS<bool>> run) {
+const auto read_value = node([](In<TS<i64, G>> value, Out<TS<i64>> output) {
+    output.set(*value);
+});
+
+const auto dictionary = graph("name"_n = "final_item_dictionary", [&](wp<TS<i64>> value) {
+    return make_dictionary(value);
+});
+
+const auto tested = [&](wp<TS<i64>> value, wp<TS<bool>> run) {
         const auto nested_dictionary = nested(dictionary, run, value);
         const auto mapped = map(
             [&](auto item) {
@@ -145,6 +136,7 @@ TEST_CASE("map invokes a graph through runtime arguments",
                                  Out<TS<i64>> output) {
         output.set(*value + static_cast<int>(*key));
     });
+
     const auto mapped = graph(
         "name"_n = "runtime_add_key",
         [add_key](wp<TS<i64>> value,
@@ -200,6 +192,11 @@ TEST_CASE("map retains a named argument for a graph template",
 
     CHECK(actual.equals<i64>({2, 5}));
 }
+
+const auto values_at_key_one = node([](In<TS<i64>> value,
+                                       Out<TSD<i64, TS<i64>>> output) {
+    output[1].set(*value);
+});
 
 TEST_CASE("map retains a named reference collection as a variadic graph argument",
           "[feature:map][feature:nested-graph][feature:variadic-wiring][feature:reference]"
@@ -269,6 +266,12 @@ TEST_CASE("map passes a const key to an indexed graph parameter",
 
     CHECK(actual.equals<i64>({4, 8}));
 }
+
+const auto add_values = node([](In<TS<i64>, optional> left,
+                                In<TS<i64>, optional> right,
+                                Out<TS<i64>> output) {
+    output.set((left.valid() ? *left : 0) + (right.valid() ? *right : 0));
+});
 
 TEST_CASE("map uses the union of mapped TSD key sets",
           "[feature:map][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
