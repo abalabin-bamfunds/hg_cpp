@@ -18,7 +18,7 @@ TEST_CASE("required-input invalidation invalidates a node output",
           "[evaluation][invalidation][feature:invalidation][shape:single-node][validity:required]"
           "[transition:invalidation][transition:revalidation][series:value][scalar:floating-point]"
           "[definition:function]") {
-    const auto copy = node([](In<TS<float>> input, Out<TS<float>> output) { output.set(*input); });
+    const auto copy = node([](float input) { return input; });
 
     const auto actual = testing::test_graph(copy, {4.0F, literal::INVALID, 6.0F});
 
@@ -31,17 +31,14 @@ TEST_CASE("required-input invalidation propagates through a graph",
     auto copy_evaluations = 0;
     auto consumed_values = std::vector<float>{};
 
-    const auto copy = node([&](In<TS<float>> input, Out<TS<float>> output) {
+    const auto copy = node([&](float input) {
         ++copy_evaluations;
-        output.set(*input);
+        return input;
     });
 
-    const auto consume = node([&](In<TS<float>> input) { consumed_values.push_back(*input); });
+    const auto consume = node([&](float input) { consumed_values.push_back(input); });
 
-    const auto observe_validity = node([](In<TS<float>, optional> input,
-                                           Out<TS<bool>> output) {
-        output.set(input.valid());
-    });
+    const auto observe_validity = node([](std::optional<float> input) { return input.has_value(); });
 
     const auto graph = [&](wp<TS<float>> input) {
         const auto copied = copy(input);
@@ -60,12 +57,12 @@ namespace {
 
 struct fallback_definition {
     State<int> invalidation_count;
-    In<TS<float>> input;
+    float input;
     Out<TS<float>> output;
 
     void evaluate() const {
         ++evaluation_count;
-        output.set(*input);
+        output.set(input);
     }
 
     void on_invalidation() const {
@@ -86,9 +83,9 @@ TEST_CASE("required-input invalidation is applied once while the input remains i
     fallback_definition::evaluation_count = 0;
     auto source_evaluations = 0;
 
-    const auto counted_source = node([&](In<TS<bool>> valid, Out<TS<float>> output) {
+    const auto counted_source = node([&](bool valid, Out<TS<float>> output) {
         ++source_evaluations;
-        if (*valid) {
+        if (valid) {
             output.set(4.0F);
         } else {
             output.invalidate();
@@ -109,10 +106,10 @@ namespace {
 struct hold_definition {
     static constexpr auto on_invalidation = preserve_output;
 
-    In<TS<float>> input;
+    float input;
     Out<TS<float>> output;
 
-    void evaluate() const { output.set(*input); }
+    void evaluate() const { output.set(input); }
 };
 
 } // namespace
@@ -122,10 +119,10 @@ TEST_CASE("a node can preserve its output when a required input becomes invalid"
           "[scalar:floating-point]") {
     const auto hold = node<hold_definition>();
 
-    const auto observe = node([](In<TS<float>, optional> input,
-                                 In<TS<i64>>,
+    const auto observe = node([](std::optional<float> input,
+                                 i64,
                                  Out<TS<float>> output) {
-        if (input.valid()) {
+        if (input) {
             output.set(*input);
         } else {
             output.invalidate();
@@ -133,7 +130,7 @@ TEST_CASE("a node can preserve its output when a required input becomes invalid"
     });
 
     auto downstream_evaluations = 0;
-    const auto downstream = node([&](In<TS<float>>) { ++downstream_evaluations; });
+    const auto downstream = node([&](float) { ++downstream_evaluations; });
 
     const auto graph = [&](wp<TS<float>> input, wp<TS<i64>> tick) {
         const auto held = hold(input);

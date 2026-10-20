@@ -28,7 +28,7 @@ using namespace bg::literals;
 TEST_CASE("map applies a graph to a TSD item",
           "[feature:map][feature:nested-graph][series:tsd][shape:nested]"
           "[transition:addition][binding:value-to-reference][definition:function]") {
-    const auto increment = node([](In<TS<i64>> value, Out<TS<i64>> output) { output.set(*value + 1); });
+    const auto increment = node([](i64 value) { return value + 1; });
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> values) {
         return map([&](auto value) { return increment(value); }, values)[i64{1}].as<TS<i64>>();
@@ -80,26 +80,25 @@ TEST_CASE("map keeps branch state independent and resets it after removal",
 namespace {
 
 struct AddKey {
-    In<TS<i64>> value;
-    In<TS<i64>> key;
+    i64 value;
+    i64 key;
     Out<TS<i64>> output;
 
     inline static std::array<std::size_t, 3> evaluations{};
 
     void evaluate() const {
-        ++evaluations.at(static_cast<std::size_t>(*key));
-        output.set(*value + static_cast<int>(*key));
+        ++evaluations.at(static_cast<std::size_t>(key));
+        output.set(value + static_cast<int>(key));
     }
 };
 
 const auto add_key = node<AddKey>();
 
-const auto add_available = node([](In<TS<i64>, optional> left, In<TS<i64>, optional> right, Out<TS<i64>> output) {
-    output.set((left.valid() ? *left : 0) + (right.valid() ? *right : 0));
+const auto add_available = node([](std::optional<i64> left, std::optional<i64> right) {
+    return left.value_or(0) + right.value_or(0);
 });
 
-const auto add_values =
-    node([](In<TS<i64>> left, In<TS<i64>> right, Out<TS<i64>> output) { output.set(*left + *right); });
+const auto add_values = node([](i64 left, i64 right) { return left + right; });
 
 struct DelayedValue {
     In<TS<i64>, passive> input;
@@ -136,11 +135,11 @@ struct VariableDelay {
 const auto variable_delay = node<VariableDelay>();
 
 struct MapSink {
-    In<TS<i64>> input;
+    i64 value;
 
     inline static std::vector<int> values;
 
-    void evaluate() const { values.push_back(*input); }
+    void evaluate() const { values.push_back(value); }
 };
 
 const auto map_sink = node<MapSink>();
@@ -451,11 +450,11 @@ wp<TSD<i64, REF<TS<i64>>>> wire_pass_through_map(wp<TSD<i64, REF<TS<i64>>>> valu
 TEST_CASE("map starts and stops one inner graph repeatedly",
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[transition:removal][transition:resurrection]") {
-    const auto target = node([](In<TS<i64>> command, Out<TS<i64>> output) { output.set(std::abs(*command)); });
+    const auto target = node([](i64 command) { return std::abs(command); });
 
     const auto make_values =
-        node([](In<TS<i64>> command, In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) {
-            if (*command < 0) {
+        node([](i64 command, In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) {
+            if (command < 0) {
                 output.erase(1);
             } else {
                 output[1].copy(value);
@@ -549,10 +548,10 @@ TEST_CASE("stopped map inner graphs are destroyed at the start of the next outer
 TEST_CASE("map uses the union of mapped dictionary key sets and binds missing values",
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[transition:addition][transition:removal]") {
-    const auto target = node([](In<TS<i64>> value, Out<TS<i64>> output) { output.set(std::abs(*value)); });
+    const auto target = node([](i64 value) { return std::abs(value); });
     const auto make_values =
-        node([](In<TS<i64>> command, In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) {
-            if (*command < 0) {
+        node([](i64 command, In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) {
+            if (command < 0) {
                 output.clear();
             } else {
                 output[1].copy(value);
@@ -592,11 +591,11 @@ TEST_CASE("map uses a selected TSD key set for a source graph",
 TEST_CASE("a sink map evaluates one inner graph for each live key",
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[transition:addition][transition:update][transition:removal]") {
-    const auto target = node([](In<TS<i64>> command, Out<TS<i64>> output) { output.set(std::abs(*command)); });
+    const auto target = node([](i64 command) { return std::abs(command); });
 
     const auto make_values =
-        node([](In<TS<i64>> command, In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) {
-            if (*command < 0) {
+        node([](i64 command, In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) {
+            if (command < 0) {
                 output.erase(1);
             } else {
                 output[1].copy(value);
@@ -619,9 +618,9 @@ TEST_CASE("a sink map evaluates one inner graph for each live key",
 TEST_CASE("a pass-through reference replacement updates each running map inner graph",
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[binding:reference-to-reference][transition:update]") {
-    const auto target = node([](In<TS<i64>> value, int scale, Out<TS<i64>> output) { output.set(*value * scale); });
-    const auto choose = node([](In<TS<bool>> condition, In<REF<TS<i64>>> left, In<REF<TS<i64>>> right,
-                                Out<REF<TS<i64>>> output) { output.copy(*condition ? left : right); });
+    const auto target = node([](i64 value, int scale) { return value * scale; });
+    const auto choose = node([](bool condition, In<REF<TS<i64>>> left, In<REF<TS<i64>>> right,
+                                Out<REF<TS<i64>>> output) { output.copy(condition ? left : right); });
     const auto make_values =
         node([](In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) { output[1].copy(value); });
     const auto graph = [&](wp<TS<i64>> value, wp<TS<bool>> use_left) {
@@ -638,7 +637,7 @@ TEST_CASE("a pass-through reference replacement updates each running map inner g
 TEST_CASE("a map inner graph reports timed work through the map owner",
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[feature:timed-scheduling]") {
-    const auto target = node([](In<TS<i64>> value, Out<TS<i64>> output) { output.set(*value); });
+    const auto target = node([](i64 value) { return value; });
     const auto make_values =
         node([](In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) { output[1].copy(value); });
     const auto graph = [&](wp<TS<i64>> value) {

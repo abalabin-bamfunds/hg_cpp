@@ -44,8 +44,7 @@ TEST_CASE("a node can read one dictionary item",
 TEST_CASE("a node can select a dictionary item using a time series key",
           "[evaluation][tsd][feature:getitem][series:tsd][series:value][scalar:integer]"
           "[binding:direct][transition:update]") {
-    const auto select = node([](In<TSD<i64, TS<i64>>> input, In<TS<i64>> key,
-                                Out<TS<i64>> output) { output.set(*input[*key]); });
+    const auto select = node([](In<TSD<i64, TS<i64>>> input, i64 key) { return *input[key]; });
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input, wp<TS<i64>> key) {
         return select(input, key);
@@ -300,21 +299,10 @@ TEST_CASE("a time series dictionary valid cursor skips invalid items",
     CHECK(valid_dictionary_cursor_definition::snapshots == std::vector<std::vector<i64>>{{1, 2}, {2}});
 }
 
-namespace {
-
-struct item_modified_value_definition {
-    In<TSD<i64, TS<i64>>> input;
-    Out<TS<bool>> output;
-
-    void evaluate() const { output.set(input.item_modified(1)); }
-};
-
-} // namespace
-
 TEST_CASE("dictionary item queries distinguish addition from modification",
           "[evaluation][tsd][feature:collection-change][series:tsd][scalar:integer]"
           "[transition:addition][transition:update][binding:direct]") {
-    const auto modified = node<item_modified_value_definition>();
+    const auto modified = node([](In<TSD<i64, TS<i64>>> input) { return input.item_modified(1); });
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return modified(input); };
 
     const auto actual = testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
@@ -322,78 +310,41 @@ TEST_CASE("dictionary item queries distinguish addition from modification",
     CHECK(actual.equals({false, true, false}));
 }
 
-namespace {
-
-struct reference_dictionary_summary_definition {
-    In<TSD<i64, REF<TS<i64>>>> input;
-    Out<TS<i64>> output;
-
-    void evaluate() const {
-        item_became_valid.push_back(input[1].became_valid());
-        const auto resolved = details::ResolvedTimeSeries::resolve(input[1].value());
-        output.set(static_cast<int>(input.size() * 100) + *static_cast<const int *>(resolved.storage));
-    }
-
-    inline static std::vector<bool> item_became_valid;
-};
-
-} // namespace
-
 TEST_CASE("a value dictionary provides a source-backed reference representation",
           "[evaluation][tsd][reference][feature:reference][feature:validity][series:tsd][scalar:integer]"
           "[binding:value-to-reference][transition:update]") {
-    const auto summarize = node<reference_dictionary_summary_definition>();
-    reference_dictionary_summary_definition::item_became_valid.clear();
+    auto item_became_valid = std::vector<bool>{};
+    const auto summarize = node([&](In<TSD<i64, REF<TS<i64>>>> input) {
+        item_became_valid.push_back(input[1].became_valid());
+        const auto resolved = details::ResolvedTimeSeries::resolve(input[1].value());
+        return static_cast<int>(input.size() * 100) + *static_cast<const int *>(resolved.storage);
+    });
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return summarize(input); };
 
     const auto actual = testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
     CHECK(actual.equals({210, std::nullopt, 111}));
     // The item reference remains valid after an unrelated dictionary change.
-    CHECK(reference_dictionary_summary_definition::item_became_valid == std::vector<bool>{true, true});
+    CHECK(item_became_valid == std::vector<bool>{true, true});
 }
 
 namespace {
 
-struct reference_dictionary_rekey_definition {
-    In<TSD<i64, REF<TS<i64>>>> input;
-    Out<TSD<i64, REF<TS<i64>>>> output;
-
-    void evaluate() const {
-        input.for_each_added([&](const auto &key) { output[key.value() * 10].copy(input[key]); });
-        input.for_each_removed([&](const auto &key) { output.erase(key.value() * 10); });
-    }
-};
-
-struct dereferenced_dictionary_summary_definition {
-    In<TSD<i64, TS<i64>>> input;
-    Out<TS<i64>> output;
-
-    void evaluate() const { output.set(static_cast<int>(input.size() * 100) + (input.contains(10) ? *input[10] : -1)); }
-};
-
-struct explicit_reference_dictionary_pass_definition {
-    In<REF<TSD<i64, REF<TS<i64>>>>> input;
-    Out<REF<TSD<i64, REF<TS<i64>>>>> output;
-
-    void evaluate() const { output.copy(input); }
-};
-
-struct dictionary_summary_definition {
-    In<TSD<i64, TS<i64>>> input;
-    Out<TS<i64>> output;
-
-    void evaluate() const { output.set(static_cast<int>(input.size() * 100) + *input[1]); }
-};
+const auto rekey_reference_dictionary = node([](In<TSD<i64, REF<TS<i64>>>> input,
+                                                 Out<TSD<i64, REF<TS<i64>>>> output) {
+    input.for_each_added([&](const auto &key) { output[key.value() * 10].copy(input[key]); });
+    input.for_each_removed([&](const auto &key) { output.erase(key.value() * 10); });
+});
 
 } // namespace
 
 TEST_CASE("rekeying a reference dictionary preserves item updates and removals",
           "[evaluation][tsd][reference][feature:reference][series:tsd][scalar:integer]"
           "[binding:reference-to-value][binding:value-to-reference][transition:update][transition:removal]") {
-    const auto rekey = node<reference_dictionary_rekey_definition>();
-    const auto summarize = node<dereferenced_dictionary_summary_definition>();
-    const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return summarize(rekey(input)); };
+    const auto summarize = node([](In<TSD<i64, TS<i64>>> input) {
+        return static_cast<int>(input.size() * 100) + (input.contains(10) ? *input[10] : -1);
+    });
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return summarize(rekey_reference_dictionary(input)); };
 
     const auto actual = testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
@@ -404,32 +355,31 @@ TEST_CASE("source dictionary item routes batch fan-out to reference dictionaries
           "[evaluation][tsd][reference][feature:reference][series:tsd][scalar:integer]"
           "[binding:reference-to-value][binding:value-to-reference][shape:fan-out][transition:update]") {
     const auto source = node(
-        [](In<TS<i64>> input, Out<TSD<i64, TS<i64>>> output) {
+        [](i64 input, Out<TSD<i64, TS<i64>>> output) {
             for (auto key = i64{}; key != 31; ++key) {
-                output[key].set(*input + static_cast<int>(key));
+                output[key].set(input + static_cast<int>(key));
             }
-            if (*input == 2) {
+            if (input == 2) {
                 output[31].set(33);
-            } else if (*input == 3) {
+            } else if (input == 3) {
                 output.erase(31);
             }
         });
+
     const auto rekey = node(
-        [](In<TSD<i64, REF<TS<i64>>>> input, Scalar<i64> offset,
+        [](In<TSD<i64, REF<TS<i64>>>> input, i64 offset,
            Out<TSD<i64, REF<TS<i64>>>> output) {
-            input.for_each_added([&](const auto &key) { output[key.value() + *offset].copy(input[key]); });
-            input.for_each_removed([&](const auto &key) { output.erase(key.value() + *offset); });
+            input.for_each_added([&](const auto &key) { output[key.value() + offset].copy(input[key]); });
+            input.for_each_removed([&](const auto &key) { output.erase(key.value() + offset); });
         });
-    const auto sum = node(
-        [](In<TSD<i64, TS<i64>>> input, Out<TS<i64>> output) {
-            auto result = 0;
-            input.for_each_value([&](const auto &value) { result += *value; });
-            output.set(result);
-        });
-    const auto add = node(
-        [](In<TS<i64>> left, In<TS<i64>> right, Out<TS<i64>> output) {
-            output.set(*left + *right);
-        });
+
+    const auto sum = node([](In<TSD<i64, TS<i64>>> input) {
+        auto result = 0;
+        input.for_each_value([&](const auto &value) { result += *value; });
+        return result;
+    });
+
+    const auto add = node([](i64 left, i64 right) { return left + right; });
     const auto graph = [&](wp<TS<i64>> input) {
         const auto values = source(input);
         return add(sum(rekey(values, i64{100})), sum(rekey(values, i64{200})));
@@ -440,49 +390,21 @@ TEST_CASE("source dictionary item routes batch fan-out to reference dictionaries
     CHECK(actual.equals({992, 1120, 1116}));
 }
 
-namespace {
-
-struct increment_reference_target_definition {
-    In<TS<i64>> input;
-    Out<TS<i64>> output;
-
-    void evaluate() const { output.set(*input + 1); }
-};
-
-struct scale_reference_target_definition {
-    In<TS<i64>> input;
-    Out<TS<i64>> output;
-
-    void evaluate() const { output.set(*input * 10); }
-};
-
-struct standalone_reference_dictionary_definition {
-    In<REF<TS<i64>>> first;
-    In<REF<TS<i64>>> second;
-    Out<TSD<i64, REF<TS<i64>>>> output;
-
-    void evaluate() const {
-        output[1].copy(first);
-        output[2].copy(second);
-    }
-};
-
-struct sum_dictionary_definition {
-    In<TSD<i64, TS<i64>>> input;
-    Out<TS<i64>> output;
-
-    void evaluate() const { output.set(*input[1] + *input[2]); }
-};
-
-} // namespace
-
 TEST_CASE("a reference dictionary dereferences unrelated node outputs",
           "[evaluation][tsd][reference][feature:reference][series:tsd][series:value][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value][transition:update]") {
-    const auto increment = node<increment_reference_target_definition>();
-    const auto scale = node<scale_reference_target_definition>();
-    const auto references = node<standalone_reference_dictionary_definition>();
-    const auto sum = node<sum_dictionary_definition>();
+    const auto increment = node([](i64 input) { return input + 1; });
+
+    const auto scale = node([](i64 input) { return input * 10; });
+
+    const auto references = node([](In<REF<TS<i64>>> first, In<REF<TS<i64>>> second,
+                                    Out<TSD<i64, REF<TS<i64>>>> output) {
+        output[1].copy(first);
+        output[2].copy(second);
+    });
+
+    const auto sum = node([](In<TSD<i64, TS<i64>>> input) { return *input[1] + *input[2]; });
+
     const auto graph = [&](wp<TS<i64>> input) { return sum(references(increment(input), scale(input))); };
 
     const auto actual = testing::test_graph(graph, std::array{1, 2, 3});
@@ -494,8 +416,13 @@ TEST_CASE("an explicit dictionary reference input receives a recursively adapted
           "[evaluation][tsd][reference][feature:reference][series:tsd][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-reference][binding:reference-to-value]"
           "[transition:update][transition:removal]") {
-    const auto pass = node<explicit_reference_dictionary_pass_definition>();
-    const auto summarize = node<dictionary_summary_definition>();
+    const auto pass = node([](In<REF<TSD<i64, REF<TS<i64>>>>> input,
+                              Out<REF<TSD<i64, REF<TS<i64>>>>> output) { output.copy(input); });
+
+    const auto summarize = node([](In<TSD<i64, TS<i64>>> input) {
+        return static_cast<int>(input.size() * 100) + *input[1];
+    });
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return summarize(pass(input)); };
 
     const auto actual = testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
@@ -523,37 +450,26 @@ TEST_CASE("a node observes dictionary item addition, removal, and restoration",
 TEST_CASE("a node can publish a contained dictionary reference",
           "[evaluation][tsd][reference][feature:getitem][series:tsd][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value][transition:update]") {
-    const auto rekey = node<reference_dictionary_rekey_definition>();
     const auto select = node([](In<TSD<i64, REF<TS<i64>>>> input,
                                     Out<REF<TS<i64>>> output) { output.copy(input[10]); });
-    const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return select(rekey(input)); };
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return select(rekey_reference_dictionary(input)); };
 
     const auto actual = testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
     CHECK(actual.equals({10, 11, std::nullopt}));
 }
 
-namespace {
-
-struct selected_list_sum_definition {
-    In<TSL<TS<i64>, 2>> input;
-    Out<TS<i64>> output;
-
-    void evaluate() const { output.set(*input[0] + *input[1]); }
-};
-
-} // namespace
-
 TEST_CASE("a node can read a collection-valued dictionary item",
           "[evaluation][tsd][tsl][feature:getitem][series:tsd][series:fixed-tsl][scalar:integer]"
           "[binding:direct][transition:update]") {
-    const auto sum = node<selected_list_sum_definition>();
-    const auto select = node(
-        [](In<TSD<i64, TSL<TS<i64>, 2>>> input, Out<TSL<TS<i64>, 2>> output) {
-            const auto item = input[1];
-            output[0].set(*item[0]);
-            output[1].set(*item[1]);
-        });
+    const auto sum = node([](In<TSL<TS<i64>, 2>> input) { return *input[0] + *input[1]; });
+
+    const auto select = node([](In<TSD<i64, TSL<TS<i64>, 2>>> input,
+                                Out<TSL<TS<i64>, 2>> output) {
+        const auto item = input[1];
+        output[0].set(*item[0]);
+        output[1].set(*item[1]);
+    });
     const auto graph = [&](wp<TSD<i64, TSL<TS<i64>, 2>>> input) {
         return sum(select(input));
     };
@@ -588,8 +504,7 @@ TEST_CASE("a node observes same-cycle dictionary item resurrection",
           "[evaluation][tsd][feature:getitem][series:tsd][scalar:integer][binding:direct]"
           "[transition:resurrection]") {
     const auto source = node<resurrecting_selected_item_definition>();
-    const auto select = node(
-        [](In<TSD<i64, TS<i64>>> input, Out<TS<i64>> output) { output.set(*input[3]); });
+    const auto select = node([](In<TSD<i64, TS<i64>>> input) { return *input[3]; });
     const auto graph = [&] { return select(source()); };
 
     const auto actual = testing::test_graph(graph);
@@ -600,8 +515,7 @@ TEST_CASE("a node observes same-cycle dictionary item resurrection",
 TEST_CASE("time series dictionaries can contain time series dictionaries",
           "[evaluation][tsd][series:tsd][feature:collection-change][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct]") {
-    const auto select = node([](In<TSD<i64, TSD<i64, TS<i64>>>> input,
-                                    Out<TS<i64>> output) { output.set(*input[1][2]); });
+    const auto select = node([](In<TSD<i64, TSD<i64, TS<i64>>>> input) { return *input[1][2]; });
     const auto graph = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> input) {
         return select(input);
     };
@@ -617,19 +531,12 @@ template <template <typename, auto...> typename Field> struct DictionaryBundle {
     Field<TS<i64>> value;
 };
 
-struct bundle_dict_value_definition {
-    In<TSD<i64, TSB<DictionaryBundle>>> input;
-    Out<TS<i64>> output;
-
-    void evaluate() const { output.set(*input[1]->value); }
-};
-
 } // namespace
 
 TEST_CASE("time series dictionaries can contain runtime-sized time series",
           "[evaluation][tsd][series:tsd][tsb][series:tsb][feature:collection-change][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct][schema:named]") {
-    const auto extract = node<bundle_dict_value_definition>();
+    const auto extract = node([](In<TSD<i64, TSB<DictionaryBundle>>> input) { return *input[1]->value; });
     const auto graph = [&](wp<TSD<i64, TSB<DictionaryBundle>>> input) { return extract(input); };
 
     const auto actual = testing::test_graph(graph, {{{1, {{"value", 12}}}}});
@@ -650,13 +557,6 @@ struct canceled_add_source_definition {
     void evaluate() const {}
 };
 
-struct evaluation_marker_definition {
-    In<TSD<i64, TS<i64>>> input;
-    Out<TS<bool>> output;
-
-    void evaluate() const { output.set(true); }
-};
-
 } // namespace
 
 TEST_CASE("adding and removing a new dictionary item in one invocation produces a tick",
@@ -664,7 +564,7 @@ TEST_CASE("adding and removing a new dictionary item in one invocation produces 
           "[transition:update][scalar:integer][representation:native][declaration:concrete]"
           "[binding:direct][transition:addition]") {
     const auto source = node<canceled_add_source_definition>();
-    const auto marker = node<evaluation_marker_definition>();
+    const auto marker = node([](In<TSD<i64, TS<i64>>>) { return true; });
     const auto graph = [&] { return marker(source()); };
 
     const auto actual = testing::test_graph(graph);
@@ -756,24 +656,17 @@ struct nested_item_resurrecting_source_definition {
     }
 };
 
-struct nested_item_resurrection_count_definition {
-    In<TSD<i64, TSD<i64, TS<i64>>>> input;
-    Out<TS<i64>> output;
-
-    void evaluate() const {
-        auto modified_count = int{};
-        input.for_each_modified([&](const auto &) { ++modified_count; });
-        output.set(modified_count);
-    }
-};
-
 } // namespace
 
 TEST_CASE("resurrecting a dictionary collection item reports a modification",
           "[evaluation][tsd][series:tsd][feature:collection-change][transition:resurrection]"
           "[scalar:integer][representation:native][declaration:concrete][binding:direct]") {
     const auto source = node<nested_item_resurrecting_source_definition>();
-    const auto count = node<nested_item_resurrection_count_definition>();
+    const auto count = node([](In<TSD<i64, TSD<i64, TS<i64>>>> input) {
+        auto modified_count = int{};
+        input.for_each_modified([&](const auto &) { ++modified_count; });
+        return modified_count;
+    });
     const auto graph = [&] { return count(source()); };
 
     const auto actual = testing::test_graph(graph);
@@ -781,25 +674,17 @@ TEST_CASE("resurrecting a dictionary collection item reports a modification",
     CHECK(actual.equals({0, 1}));
 }
 
-namespace {
-
-struct generic_dict_copy_definition {
-    In<TSD<i64, TS<SCALAR>>> input;
-    Out<TSD<i64, TS<SCALAR>>> output;
-
-    void evaluate() const {
-        input.for_each([&](const auto &key, const auto &item) { output[key].set_value(item.value_view()); });
-    }
-};
-
-} // namespace
-
 TEST_CASE("a generic dictionary view uses its resolved item type",
           "[evaluation][tsd][series:tsd][generic][declaration:generic][feature:collection-change]"
           "[scalar:integer][representation:native][binding:direct]") {
-    const auto copy = node<generic_dict_copy_definition>();
-    const auto select = node([](In<TSD<i64, TS<SCALAR>>> input,
-                                    Out<TS<SCALAR>> output) { output.set_value(input[1].value_view()); });
+    const auto copy = node([](In<TSD<i64, TS<SCALAR>>> input, Out<TSD<i64, TS<SCALAR>>> output) {
+        input.for_each([&](const auto &key, const auto &item) { output[key].set_value(item.value_view()); });
+    });
+
+    const auto select = node([](In<TSD<i64, TS<SCALAR>>> input, Out<TS<SCALAR>> output) {
+        output.set_value(input[1].value_view());
+    });
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return select(copy(input)); };
 
     const auto actual = testing::test_graph(graph, {{{1, 10}}});
@@ -868,22 +753,19 @@ struct invalidating_dict_input_definition {
     void evaluate() const { output.invalidate(); }
 };
 
-struct dict_from_value_definition {
-    In<TS<i64>> input;
-    Out<TSD<i64, TS<i64>>> output;
-
-    void evaluate() const { output[1].set(*input); }
-};
-
 } // namespace
 
 TEST_CASE("a dictionary preserves its value when a required input becomes invalid",
           "[evaluation][tsd][series:tsd][validity][feature:collection-change][validity:required]"
           "[scalar:integer][representation:native][declaration:concrete][binding:direct]") {
     const auto source = node<invalidating_dict_input_definition>();
-    const auto dict_from_value = node<dict_from_value_definition>();
-    const auto select = node(
-        [](In<TSD<i64, TS<i64>>> input, Out<TS<i64>> output) { output.set(*input[1]); });
+
+    const auto dict_from_value = node([](i64 input, Out<TSD<i64, TS<i64>>> output) {
+        output[1].set(input);
+    });
+
+    const auto select = node([](In<TSD<i64, TS<i64>>> input) { return *input[1]; });
+
     const auto graph = [&] { return select(dict_from_value(source())); };
 
     const auto actual = testing::test_graph(graph);
@@ -977,21 +859,12 @@ TEST_CASE("an invalid dictionary input has no entries to enumerate",
     CHECK(calls == std::array<std::size_t, 5>{});
 }
 
-namespace {
-
-struct exact_int_dictionary_read_definition {
-    In<TSD<i64, TS<i64>>> input;
-    Out<TS<i64>> output;
-
-    void evaluate() const { output.set(input.contains(7) && !input.item_modified(7) ? *input[7] : -1); }
-};
-
-} // namespace
-
 TEST_CASE("a dictionary view accepts its exact non-canonical key type",
           "[evaluation][series:tsd][feature:time-series-view][feature:collection-change]"
           "[scalar:integer][transition:addition][transition:removal][binding:direct]") {
-    const auto read = node<exact_int_dictionary_read_definition>();
+    const auto read = node([](In<TSD<i64, TS<i64>>> input) {
+        return input.contains(7) && !input.item_modified(7) ? *input[7] : -1;
+    });
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return read(input); };
 
     const auto actual = testing::test_graph(graph, {{{7, 70}}, {{7, literal::REMOVE}}});

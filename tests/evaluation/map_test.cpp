@@ -22,9 +22,7 @@ namespace {
 using namespace bg;
 using namespace bg::literals;
 
-const auto increment = node([](In<TS<i64>> value, Out<TS<i64>> output) {
-    output.set(*value + 1);
-});
+const auto increment = node([](i64 value) { return value + 1; });
 
 TEST_CASE("map applies a graph to each TSD item",
           "[feature:map][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
@@ -100,19 +98,18 @@ inline constexpr auto G = guarantee_variable<"G">;
 TEST_CASE("map preserves a final item target through a nested dictionary reference",
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:doubly-nested]"
           "[guarantee:final][binding:reference-to-reference]") {
-    const auto make_dictionary = node([](In<TS<i64>> value,
+    const auto make_dictionary = node([](i64 value,
                                          Out<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> output) {
-        output[1].set(*value);
+        output[1].set(value);
     });
-const auto read_value = node([](In<TS<i64, G>> value, Out<TS<i64>> output) {
-    output.set(*value);
-});
 
-const auto dictionary = graph("name"_n = "final_item_dictionary", [&](wp<TS<i64>> value) {
-    return make_dictionary(value);
-});
+    const auto read_value = node([](In<TS<i64, G>> value) { return *value; });
 
-const auto tested = [&](wp<TS<i64>> value, wp<TS<bool>> run) {
+    const auto dictionary = graph("name"_n = "final_item_dictionary", [&](wp<TS<i64>> value) {
+        return make_dictionary(value);
+    });
+
+    const auto tested = [&](wp<TS<i64>> value, wp<TS<bool>> run) {
         const auto nested_dictionary = nested(dictionary, run, value);
         const auto mapped = map(
             [&](auto item) {
@@ -131,10 +128,8 @@ const auto tested = [&](wp<TS<i64>> value, wp<TS<bool>> run) {
 TEST_CASE("map invokes a graph through runtime arguments",
           "[feature:map][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[guarantee:const][definition:runtime]") {
-    const auto add_key = node([](In<TS<i64>> value,
-                                 In<TS<i64, TimeSeriesGuarantee::const_>> key,
-                                 Out<TS<i64>> output) {
-        output.set(*value + static_cast<int>(*key));
+    const auto add_key = node([](i64 value, In<TS<i64, TimeSeriesGuarantee::const_>> key) {
+        return value + static_cast<int>(*key);
     });
 
     const auto mapped = graph(
@@ -193,9 +188,8 @@ TEST_CASE("map retains a named argument for a graph template",
     CHECK(actual.equals<i64>({2, 5}));
 }
 
-const auto values_at_key_one = node([](In<TS<i64>> value,
-                                       Out<TSD<i64, TS<i64>>> output) {
-    output[1].set(*value);
+const auto values_at_key_one = node([](i64 value, Out<TSD<i64, TS<i64>>> output) {
+    output[1].set(value);
 });
 
 TEST_CASE("map retains a named reference collection as a variadic graph argument",
@@ -231,10 +225,8 @@ TEST_CASE("map retains a named reference collection as a variadic graph argument
 TEST_CASE("map infers a leading key for a graph function with an output",
           "[feature:map][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[guarantee:const][definition:function]") {
-    const auto add_key = node([](In<TS<i64>> value,
-                                 In<TS<i64, TimeSeriesGuarantee::const_>> key,
-                                 Out<TS<i64>> output) {
-        output.set(*value + static_cast<int>(*key));
+    const auto add_key = node([](i64 value, In<TS<i64, TimeSeriesGuarantee::const_>> key) {
+        return value + static_cast<int>(*key);
     });
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
         return map([&](auto key, auto item) { return add_key(item, key); },
@@ -250,10 +242,8 @@ TEST_CASE("map infers a leading key for a graph function with an output",
 TEST_CASE("map passes a const key to an indexed graph parameter",
           "[feature:map][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[guarantee:const][definition:function]") {
-    const auto add_key = node([](In<TS<i64>> value,
-                                 In<TS<i64, TimeSeriesGuarantee::const_>> key,
-                                 Out<TS<i64>> output) {
-        output.set(*value + static_cast<int>(*key));
+    const auto add_key = node([](i64 value, In<TS<i64, TimeSeriesGuarantee::const_>> key) {
+        return value + static_cast<int>(*key);
     });
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
         return map([&](auto item, auto key) { return add_key(item, key); },
@@ -267,10 +257,8 @@ TEST_CASE("map passes a const key to an indexed graph parameter",
     CHECK(actual.equals<i64>({4, 8}));
 }
 
-const auto add_values = node([](In<TS<i64>, optional> left,
-                                In<TS<i64>, optional> right,
-                                Out<TS<i64>> output) {
-    output.set((left.valid() ? *left : 0) + (right.valid() ? *right : 0));
+const auto add_values = node([](std::optional<i64> left, std::optional<i64> right) {
+    return left.value_or(0) + right.value_or(0);
 });
 
 TEST_CASE("map uses the union of mapped TSD key sets",
@@ -326,10 +314,7 @@ TEST_CASE("map infers a leading key for a source graph function",
 TEST_CASE("a map key schedules its consumer when a branch starts",
           "[feature:map][feature:nested-graph][feature:operator][series:tss][series:tsd]"
           "[shape:nested][guarantee:const][transition:addition][transition:removal][definition:function]") {
-    const auto copy_key = node([](In<TS<i64, TimeSeriesGuarantee::const_>> key,
-                                  Out<TS<i64>> output) {
-        output.set(*key);
-    });
+    const auto copy_key = node([](In<TS<i64, TimeSeriesGuarantee::const_>> key) { return *key; });
     const auto tested = [&](wp<TSS<i64>> keys) {
         return map([&](auto key) { return copy_key(key); }, keys)[i64{5}].as<TS<i64>>();
     };
@@ -339,28 +324,20 @@ TEST_CASE("a map key schedules its consumer when a branch starts",
     CHECK(actual.equals<i64>({5, std::nullopt, 5}));
 }
 
-struct RecordingSink {
-    In<TS<i64>> value;
-
-    inline static std::vector<int> values;
-
-    void evaluate() const { values.push_back(*value); }
-};
-
 TEST_CASE("map supports sink graph functions",
           "[feature:map][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[definition:function]") {
-    const auto sink = node<RecordingSink>();
-    RecordingSink::values.clear();
+    auto recorded_values = std::vector<i64>{};
+    const auto sink = node([&](i64 value) { recorded_values.push_back(value); });
 
-    const auto tested = [&](wp<TSD<i64, TS<i64>>> values) -> wp<TS<i64>> {
-        map([&](auto item) { sink(item); }, values);
-        return values[i64{1}].as<TS<i64>>();
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> input) -> wp<TS<i64>> {
+        map([&](auto item) { sink(item); }, input);
+        return input[i64{1}].as<TS<i64>>();
     };
     const auto actual = testing::test_graph(tested, {{{1, 1}}, {{1, 2}}, {{1, 3}}});
 
     CHECK(actual.equals<i64>({1, 2, 3}));
-    CHECK(RecordingSink::values == std::vector{1, 2, 3});
+    CHECK(recorded_values == std::vector<i64>{1, 2, 3});
 }
 
 TEST_CASE("map uses an explicitly selected TSD key set",
@@ -430,8 +407,8 @@ TEST_CASE("map passes direct and reference TSD inputs through to every mapped gr
             const auto reference = reference_factors[i64{9}].as<TS<i64>>();
             return add_values(add_values(value, direct), reference);
         });
-    const auto factors = node([](In<TS<i64>> factor, Out<TSD<i64, TS<i64>>> output) {
-        output[9].set(*factor);
+    const auto factors = node([](i64 factor, Out<TSD<i64, TS<i64>>> output) {
+        output[9].set(factor);
     });
     const auto make_factors = graph("name"_n = "make_factors", [&](wp<TS<i64>> factor) {
         return factors(factor);
@@ -567,8 +544,8 @@ TEST_CASE("map reads a TSD through a nested graph reference",
 TEST_CASE("map reads a TSS through a nested graph reference",
           "[feature:map][feature:nested-graph][feature:operator][series:tss][series:reference]"
           "[shape:doubly-nested][binding:reference-to-value][guarantee:const]") {
-    const auto keys = node([](In<TS<bool>> condition, Out<TSS<i64>> output) {
-        if (*condition) {
+    const auto keys = node([](bool condition, Out<TSS<i64>> output) {
+        if (condition) {
             output.insert(1);
         } else {
             output.erase(1);
@@ -593,8 +570,8 @@ TEST_CASE("map reads a TSS through a nested graph reference",
 TEST_CASE("map reads values using a nested TSS reference as its key set",
           "[feature:map][feature:nested-graph][feature:reference][series:tss][series:tsd]"
           "[shape:doubly-nested][binding:reference-to-reference]") {
-    const auto keys = node([](In<TS<bool>> condition, Out<TSS<i64>> output) {
-        if (*condition) {
+    const auto keys = node([](bool condition, Out<TSS<i64>> output) {
+        if (condition) {
             output.insert(1);
         } else {
             output.erase(1);
