@@ -15,6 +15,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/library.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/time_series/tick_serializer.hpp>
 
 #include <array>
 #include <iostream>
@@ -4167,6 +4168,187 @@ void test_keyed_tsf_delta_capture() {
             "keyed TSF capture accepted duplicate expected row keys");
 }
 
+struct capture_writer_state {
+    row_id_t row{no_row};
+};
+
+struct unkeyed_frame_capture_writer {
+    In<TS<i64>> command;
+    State<capture_writer_state> state;
+    Out<TSF<Quotes>> output;
+
+    void evaluate() const {
+        switch (*command) {
+        case 1:
+            state->row = output.add(Quotes<Cell>{.size = Cell<i64>{5}, .bid = Cell<double>{10.5},
+                                                 .ask = Cell<double>{std::nullopt}});
+            return;
+        case 2:
+            output.set(state->row, RowPatch<Quotes>{.bid = 11.5});
+            return;
+        case 3:
+            require(output.erase(state->row), "unkeyed capture writer could not remove its row");
+            return;
+        case 4:
+            state->row = output.add(Quotes<Cell>{.size = Cell<i64>{6}, .bid = Cell<double>{12.5},
+                                                 .ask = Cell<double>{13.5}});
+            return;
+        case 5:
+            output.invalidate();
+            return;
+        case 6:
+            state->row = output.add(Quotes<Cell>{.size = Cell<i64>{7}, .bid = Cell<double>{14.5},
+                                                 .ask = Cell<double>{15.5}});
+            return;
+        default:
+            throw std::runtime_error{"unknown unkeyed frame capture command"};
+        }
+    }
+};
+
+struct column_capture_writer {
+    In<TS<i64>> command;
+    State<capture_writer_state> state;
+    Out<TSC<i64>> output;
+
+    void evaluate() const {
+        switch (*command) {
+        case 1:
+            state->row = output.add(10);
+            return;
+        case 2:
+            output.set(state->row, 11);
+            return;
+        case 3:
+            require(output.erase(state->row), "TSC capture writer could not remove its row");
+            return;
+        case 4:
+            state->row = output.add(30);
+            return;
+        case 5:
+            output.invalidate();
+            return;
+        case 6:
+            state->row = output.add(40);
+            return;
+        default:
+            throw std::runtime_error{"unknown TSC capture command"};
+        }
+    }
+};
+
+void test_unkeyed_tsf_capture_records_row_ids() {
+    using namespace bg;
+    using namespace bg::frame;
+    using TickOperation = bg::details::TickOperation;
+    using TickHeader = bg::details::TickHeader;
+
+    const auto write = node<unkeyed_frame_capture_writer>();
+    const auto graph = [&](wp<TS<i64>> command) { return write(command); };
+    const auto result = testing::test_graph(graph, {1, 2, 3, 4, 5, 6});
+    using Event = std::pair<TickOperation, row_id_t>;
+
+    const auto events_at = [&](std::size_t tick) {
+        auto events = std::vector<Event>{};
+        result.visit_tick(tick, [&](const TimeSeriesType &, bool valid, util::buffer_reader &reader) {
+            if (!valid)
+                return;
+            const auto *schema = reader.read_raw<const bg::Schema *>();
+            require(schema == std::addressof(frame_schema_type<Quotes>()),
+                    "unkeyed TSF capture did not preserve its runtime schema");
+            const auto discard_cell = [&]<typename T>() {
+                if (reader.read_raw<std::uint8_t>() != 0)
+                    static_cast<void>(reader.read_raw<T>());
+            };
+            for (;;) {
+                const auto header = TickHeader::read(reader);
+                if (header.operation == TickOperation::end)
+                    return;
+                const auto id = reader.read_raw<row_id_t>();
+                events.emplace_back(header.operation, id);
+                if (header.operation == TickOperation::add) {
+                    discard_cell.template operator()<i64>();
+                    discard_cell.template operator()<double>();
+                    discard_cell.template operator()<double>();
+                    continue;
+                }
+                if (header.operation == TickOperation::remove)
+                    continue;
+                require(header.operation == TickOperation::tick,
+                        "unkeyed TSF capture wrote an unknown row operation");
+                const auto count = reader.read_raw<std::uint32_t>();
+                for (auto index = std::uint32_t{}; index != count; ++index) {
+                    const auto field = reader.read_raw<std::uint32_t>();
+                    if (field == 0)
+                        discard_cell.template operator()<i64>();
+                    else
+                        discard_cell.template operator()<double>();
+                }
+            }
+        });
+        return events;
+    };
+
+    require(result.size() == 6 && events_at(0) == std::vector<Event>{{TickOperation::add, 0}} &&
+                events_at(1) == std::vector<Event>{{TickOperation::tick, 0}} &&
+                events_at(2) == std::vector<Event>{{TickOperation::remove, 0}} &&
+                events_at(3) == std::vector<Event>{{TickOperation::add, 0}} &&
+                events_at(5) == std::vector<Event>{{TickOperation::add, 0}},
+            "unkeyed TSF capture did not record row IDs for changes and recycled lifetimes");
+    auto invalid_tick = false;
+    require(result.visit_tick(4, [&](const TimeSeriesType &, bool valid, util::buffer_reader &) {
+                invalid_tick = !valid;
+            }) && invalid_tick,
+            "unkeyed TSF capture did not preserve invalidation");
+}
+
+void test_tsc_capture_records_row_ids() {
+    using namespace bg;
+    using namespace bg::frame;
+    using TickOperation = bg::details::TickOperation;
+    using TickHeader = bg::details::TickHeader;
+
+    const auto write = node<column_capture_writer>();
+    const auto graph = [&](wp<TS<i64>> command) { return write(command); };
+    const auto result = testing::test_graph(graph, {1, 2, 3, 4, 5, 6});
+    using Event = std::pair<TickOperation, row_id_t>;
+
+    const auto events_at = [&](std::size_t tick) {
+        auto events = std::vector<Event>{};
+        result.visit_tick(tick, [&](const TimeSeriesType &, bool valid, util::buffer_reader &reader) {
+            if (!valid)
+                return;
+            for (;;) {
+                const auto header = TickHeader::read(reader);
+                if (header.operation == TickOperation::end)
+                    return;
+                const auto id = reader.read_raw<row_id_t>();
+                events.emplace_back(header.operation, id);
+                if (header.operation == TickOperation::add || header.operation == TickOperation::tick) {
+                    if (reader.read_raw<std::uint8_t>() != 0)
+                        static_cast<void>(reader.read_raw<i64>());
+                } else {
+                    require(header.operation == TickOperation::remove,
+                            "TSC capture wrote an unknown row operation");
+                }
+            }
+        });
+        return events;
+    };
+
+    require(result.size() == 6 && events_at(0) == std::vector<Event>{{TickOperation::add, 0}} &&
+                events_at(1) == std::vector<Event>{{TickOperation::tick, 0}} &&
+                events_at(2) == std::vector<Event>{{TickOperation::remove, 0}} &&
+                events_at(3) == std::vector<Event>{{TickOperation::add, 0}} &&
+                events_at(5) == std::vector<Event>{{TickOperation::add, 0}},
+            "TSC capture did not record row IDs for changes and recycled lifetimes");
+    auto invalid_tick = false;
+    require(result.visit_tick(4, [&](const TimeSeriesType &, bool valid, util::buffer_reader &) {
+                invalid_tick = !valid;
+            }) && invalid_tick,
+            "TSC capture did not preserve invalidation");
+}
+
 void test_keyed_tsf_capture_treats_omitted_added_cells_as_null() {
     using namespace bg;
     using namespace bg::frame;
@@ -6080,6 +6262,8 @@ int main() {
         test_tsf_literal_anonymous_composite_key();
         test_tsf_literal_rejections();
         test_keyed_tsf_delta_capture();
+        test_unkeyed_tsf_capture_records_row_ids();
+        test_tsc_capture_records_row_ids();
         test_keyed_tsf_capture_treats_omitted_added_cells_as_null();
         test_keyed_tsf_capture_uses_actual_derived_schema();
         test_keyed_tsf_capture_uses_keyed_runtime_schema_for_unkeyed_base_output();

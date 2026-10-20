@@ -1,5 +1,6 @@
 #include <bg/frame/frame.hpp>
 #include <bg/frame/literal.hpp>
+#include <bg/frame/tsc.hpp>
 
 #include <bg/testing/time_series_tick_comparison.hpp>
 #include <bg/time_series/tick_operations.hpp>
@@ -24,6 +25,7 @@ using Cell = std::variant<std::monostate, std::optional<i64>, std::optional<doub
 
 struct FrameChange {
     bg::details::TickOperation operation;
+    row_id_t id{};
     std::vector<KeyValue> key;
     std::vector<Cell> cells;
 };
@@ -84,6 +86,7 @@ void write_frame_tick(const In<TSF<SCHEMA>> &input, ScalarBufferWriteContext &wr
 
     for (const auto id : storage.added()) {
         bg::details::TickHeader{bg::details::TickOperation::add}.write(writer);
+        bg::details::write_bytes(writer, id);
         write_live_key(writer, storage, layout, id);
         for (auto index = std::size_t{}; index != layout.fields.size(); ++index) {
             if (std::ranges::find(layout.key_fields, index) == layout.key_fields.end())
@@ -95,6 +98,7 @@ void write_frame_tick(const In<TSF<SCHEMA>> &input, ScalarBufferWriteContext &wr
         if (storage.added().contains(id))
             continue;
         bg::details::TickHeader{bg::details::TickOperation::tick}.write(writer);
+        bg::details::write_bytes(writer, id);
         write_live_key(writer, storage, layout, id);
 
         auto modified_count = std::uint32_t{};
@@ -114,7 +118,34 @@ void write_frame_tick(const In<TSF<SCHEMA>> &input, ScalarBufferWriteContext &wr
 
     for (const auto id : storage.removed()) {
         bg::details::TickHeader{bg::details::TickOperation::remove}.write(writer);
+        bg::details::write_bytes(writer, id);
         write_retained_key(writer, storage.removed_key(id));
+    }
+    bg::details::TickHeader{bg::details::TickOperation::end}.write(writer);
+}
+
+template <cell_type T> void write_column_tick(const In<TSC<T>> &input, ScalarBufferWriteContext &writer) {
+    const auto &storage = *static_cast<const NativeColumn<T> *>(input.input_data().data());
+    if (storage.change_time() != input.last_updated()) {
+        bg::details::TickHeader{bg::details::TickOperation::end}.write(writer);
+        return;
+    }
+
+    for (const auto id : storage.added()) {
+        bg::details::TickHeader{bg::details::TickOperation::add}.write(writer);
+        bg::details::write_bytes(writer, id);
+        write_cell(writer, storage.cell(id));
+    }
+    for (const auto id : storage.modified()) {
+        if (storage.added().contains(id))
+            continue;
+        bg::details::TickHeader{bg::details::TickOperation::tick}.write(writer);
+        bg::details::write_bytes(writer, id);
+        write_cell(writer, storage.cell(id));
+    }
+    for (const auto id : storage.removed()) {
+        bg::details::TickHeader{bg::details::TickOperation::remove}.write(writer);
+        bg::details::write_bytes(writer, id);
     }
     bg::details::TickHeader{bg::details::TickOperation::end}.write(writer);
 }
@@ -161,7 +192,8 @@ void read_key(util::buffer_reader &reader, const NativeFrameLayout &layout, std:
 
 FrameChange read_change(util::buffer_reader &reader, const bg::Schema &schema,
                         const NativeFrameLayout &layout, bg::details::TickHeader header) {
-    auto change = FrameChange{header.operation, {}, std::vector<Cell>(schema.field_count())};
+    auto change = FrameChange{header.operation, reader.read_raw<row_id_t>(), {},
+                              std::vector<Cell>(schema.field_count())};
     read_key(reader, layout, change.key);
 
     if (header.operation == bg::details::TickOperation::add) {
@@ -191,6 +223,7 @@ void discard_frame_tick(util::buffer_reader &reader) {
         if (header.operation == bg::details::TickOperation::end)
             return;
 
+        static_cast<void>(reader.read_raw<row_id_t>());
         for (auto index : layout.key_fields)
             discard_cell(reader, *layout.fields[index].cell_type);
         if (header.operation == bg::details::TickOperation::add) {
@@ -314,6 +347,21 @@ bool compare_frame_tick(util::buffer_reader &reader, const TimeSeriesType &,
     }
 }
 
+template <cell_type T> void discard_column_tick(util::buffer_reader &reader) {
+    for (;;) {
+        const auto header = bg::details::TickHeader::read(reader);
+        if (header.operation == bg::details::TickOperation::end)
+            return;
+        static_cast<void>(reader.read_raw<row_id_t>());
+        if (header.operation == bg::details::TickOperation::add ||
+            header.operation == bg::details::TickOperation::tick) {
+            static_cast<void>(read_cell<T>(reader));
+        } else if (header.operation != bg::details::TickOperation::remove) {
+            throw std::invalid_argument{"invalid TSC tick operation"};
+        }
+    }
+}
+
 } // namespace
 
 void register_frame_series_tick_comparison(const TimeSeriesType &type) {
@@ -325,16 +373,39 @@ void register_frame_series_tick_comparison(const TimeSeriesType &type) {
 }
 
 void register_frame_series_tick_writer(const TimeSeriesRuntimeType &runtime) {
-    const auto &series_type = static_cast<const FrameSeriesType &>(runtime.type());
-    if (native_frame_layout(series_type.schema_type()).key_fields.empty())
-        return;
-
     auto operations = TimeSeriesTickOperations::for_write<TSF<SCHEMA>>(
         [](const In<TSF<SCHEMA>> &input, ScalarBufferWriteContext &writer, allocator &) {
             write_frame_tick(input, writer);
         });
     const auto lock = std::lock_guard{capture_registration_mutex()};
     static_cast<void>(TimeSeriesDispatch<TimeSeriesTickOperations>::instance().add(runtime, std::move(operations)));
+}
+
+void register_column_series_tick_writer(const TimeSeriesRuntimeType &runtime) {
+    const auto &series_type = static_cast<const ColumnSeriesType &>(runtime.type());
+    const auto &cell_type = series_type.cell_type();
+    auto semantic_operations = TimeSeriesTickOperations{};
+    auto runtime_operations = TimeSeriesTickOperations{};
+    if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<i64>())) {
+        semantic_operations = TimeSeriesTickOperations::for_discard(&discard_column_tick<i64>);
+        runtime_operations = TimeSeriesTickOperations::for_write<TSC<i64>>(
+            [](const In<TSC<i64>> &input, ScalarBufferWriteContext &writer, allocator &) {
+                write_column_tick(input, writer);
+            });
+    } else if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<double>())) {
+        semantic_operations = TimeSeriesTickOperations::for_discard(&discard_column_tick<double>);
+        runtime_operations = TimeSeriesTickOperations::for_write<TSC<double>>(
+            [](const In<TSC<double>> &input, ScalarBufferWriteContext &writer, allocator &) {
+                write_column_tick(input, writer);
+            });
+    } else {
+        throw std::invalid_argument{"frame TSC supports only i64 and double cell types"};
+    }
+
+    const auto lock = std::lock_guard{capture_registration_mutex()};
+    auto &dispatch = TimeSeriesDispatch<TimeSeriesTickOperations>::instance();
+    static_cast<void>(dispatch.add(runtime.type(), std::move(semantic_operations)));
+    static_cast<void>(dispatch.add(runtime, std::move(runtime_operations)));
 }
 
 } // namespace bg::frame::details
