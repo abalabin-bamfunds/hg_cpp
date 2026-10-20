@@ -46,25 +46,51 @@ struct dict_sink_definition {
 } // namespace
 
 TEST_CASE("a time series dictionary publishes item and key changes",
-          "[evaluation][tsd][series:tsd][feature:collection-change][transition:update][scalar:integer]"
+          "[evaluation][tsd][series:tsd][feature:collection-change][transition:addition][transition:removal]"
+          "[transition:update][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct]") {
     using namespace bg::literals;
-    const auto dict_sink = bg::node<dict_sink_definition>();
-    dict_sink_definition::sizes.clear();
-    dict_sink_definition::values.clear();
-    dict_sink_definition::added.clear();
-    dict_sink_definition::removed.clear();
-    dict_sink_definition::modified.clear();
+    struct Snapshot {
+        std::size_t size;
+        bg::i64 first_value;
+        std::vector<bg::i64> added;
+        std::vector<bg::i64> removed;
+        std::vector<bg::i64> modified;
 
+        bool operator==(const Snapshot &) const = default;
+    };
+
+    auto snapshots = std::vector<Snapshot>{};
+    const auto inspect = bg::node([&](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) {
+        auto snapshot = Snapshot{.size = input.size(),
+                                 .first_value = input.contains(1) ? *input[1] : -1};
+        input.for_each_added([&](const auto &key) { snapshot.added.push_back(key.value()); });
+        input.for_each_removed([&](const auto &key) { snapshot.removed.push_back(key.value()); });
+        input.for_each_modified([&](const auto &key) { snapshot.modified.push_back(key.value()); });
+        std::ranges::sort(snapshot.added);
+        std::ranges::sort(snapshot.removed);
+        std::ranges::sort(snapshot.modified);
+        snapshots.push_back(std::move(snapshot));
+    });
     const auto graph = bg::graph("name"_n = "dictionary_change_input",
-                                 [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) { dict_sink(input); });
-    (void)bg::testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
+                                 [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) { inspect(input); });
 
-    CHECK(dict_sink_definition::sizes == std::vector<std::size_t>{2, 2, 1});
-    CHECK(dict_sink_definition::values == std::vector{10, 11, 11});
-    CHECK(dict_sink_definition::added == std::vector<std::size_t>{2, 0, 0});
-    CHECK(dict_sink_definition::removed == std::vector<std::size_t>{0, 0, 1});
-    CHECK(dict_sink_definition::modified == std::vector<std::size_t>{0, 1, 0});
+    (void)bg::testing::test_graph(graph,
+                                  {{{1, 10}, {2, 20}},
+                                   {{1, 11}},
+                                   {{1, 12}, {3, 30}},
+                                   literal::SKIP,
+                                   {{2, literal::REMOVE}, {3, literal::REMOVE}},
+                                   {{2, 21}}});
+
+    const auto expected = std::vector<Snapshot>{
+        {.size = 2, .first_value = 10, .added = {1, 2}},
+        {.size = 2, .first_value = 11, .modified = {1}},
+        {.size = 3, .first_value = 12, .added = {3}, .modified = {1}},
+        {.size = 1, .first_value = 12, .removed = {2, 3}},
+        {.size = 2, .first_value = 12, .added = {2}},
+    };
+    CHECK(snapshots == expected);
 }
 
 namespace {

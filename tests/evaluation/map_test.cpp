@@ -44,13 +44,16 @@ TEST_CASE("map applies a graph to each TSD item",
           "[binding:value-to-reference][definition:function]") {
     const auto mapped = graph("name"_n = "increment_each",
                               [](wp<TS<i64>> value) { return increment(value); });
+    const auto copy = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
+        output.copy_tick(input);
+    });
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
-        return map(mapped, values)[i64{1}].as<TS<i64>>();
+        return copy(map(mapped, values));
     };
 
-    const auto actual = testing::test_graph(tested, {{{1, 1}}, {{1, 4}}, {{1, 9}}});
+    const auto actual = testing::test_graph(tested, {{{1, 1}, {2, 10}}, {{1, 4}}, {{2, 20}}, {{1, literal::REMOVE}}});
 
-    CHECK(actual.equals<bg::i64>({2, 5, 10}));
+    CHECK(actual.equals({{{1, 2}, {2, 11}}, {{1, 5}}, {{2, 21}}, {{1, literal::REMOVE}}}));
 }
 
 TEST_CASE("map invokes a generic graph function",

@@ -2,6 +2,7 @@
 #include <bg/graph/details/nested.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/map.hpp>
 #include <bg/map/details/map_node.hpp>
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
@@ -409,12 +410,49 @@ TEST_CASE("map starts and stops one inner graph repeatedly",
         });
     const auto graph = [&](wp<TS<i64>> command) {
         const auto values = make_values(command, target(command));
-        return wire_map(values)[i64{1}];
+        const auto mapped = map([&](auto key, auto value) { return add_key(value, key); }, values);
+        return mapped[i64{1}].as<TS<i64>>();
     };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2, -1, 3, -1, 4});
+    const auto actual = testing::test_graph(graph, {1, 2, -1, 3, -1, 4});
 
-    CHECK(actual.equals<bg::i64>({2, 3, std::nullopt, 4, std::nullopt, 5}));
+    CHECK(actual.equals({2, 3, std::nullopt, 4, std::nullopt, 5}));
+}
+
+TEST_CASE("map keeps branch state independent and resets it after removal",
+          "[feature:map][feature:nested-graph][feature:lifecycle][series:tsd][shape:nested]"
+          "[transition:addition][transition:removal][transition:resurrection]") {
+    struct count_branch_definition {
+        State<int> evaluations;
+        In<TS<i64>> input;
+        Out<TS<i64>> output;
+
+        void evaluate() const {
+            ++*evaluations;
+            output.set(*evaluations);
+        }
+    };
+
+    const auto branch = node<count_branch_definition>();
+    const auto copy = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
+        output.copy_tick(input);
+    });
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> values) {
+        return copy(map([&](wp<TS<i64>> value) { return branch(value); }, values));
+    };
+
+    const auto actual = testing::test_graph(graph,
+                                            {{{1, 10}, {2, 20}},
+                                             {{1, 11}},
+                                             {{1, literal::REMOVE}},
+                                             {{1, 12}},
+                                             {{2, 21}}});
+
+    CHECK(actual.equals({{{1, 1}, {2, 1}},
+                         {{1, 2}},
+                         {{1, literal::REMOVE}},
+                         {{1, 1}},
+                         {{2, 2}}}));
 }
 
 TEST_CASE("mapped target ticks evaluate only the selected inner graph",
