@@ -201,9 +201,9 @@ erased view without selecting an implementation.
 A provider's typed `In` and `Out` views forward `visit()` to the corresponding
 erased view. This lets generic operations inspect a provider view and dispatch
 back to its typed handler through the actual runtime type.
-An erased view's `as<Declaration>()` checks semantic compatibility before it
-constructs a provider view; the returned view borrows the same invocation data
-or output binding.
+An erased input view's `as<Declaration>()` checks semantic compatibility,
+including compatible generic declarations, before it constructs a provider
+view; the returned view borrows the same invocation data.
 For a configured output, `as_output<Output>()` checks semantic compatibility
 and constructs the complete output declaration over that binding.
 

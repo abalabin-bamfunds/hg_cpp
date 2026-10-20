@@ -57,7 +57,7 @@ class In<Variable, Properties...>
     template <typename Target> In<Target> as() const {
         const auto &target_type = Target::type();
         const auto &actual_type = runtime_type().type();
-        if (!target_type.is_resolved() || (&target_type != &actual_type && !target_type.accepts(actual_type))) {
+        if (&target_type != &actual_type && !target_type.accepts(actual_type)) {
             throw std::bad_cast{};
         }
 

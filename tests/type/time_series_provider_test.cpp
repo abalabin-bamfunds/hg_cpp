@@ -1314,6 +1314,23 @@ TEST_CASE("provider inputs and configured outputs bind through public owners",
     CHECK(*output_result);
 }
 
+TEST_CASE("provider input casts accept compatible generic declarations",
+          "[value][time_series][feature:time-series-view][series:generic][declaration:generic]") {
+    using Series = provider::Series<bg::i64>;
+    using GenericSeries = provider::Series<bg::SCALAR>;
+    const auto time = bg::MIN_DT + std::chrono::microseconds{1};
+    auto value = bg::i64{17};
+    const auto state = bg::TimeSeriesState{time};
+    const auto data = bg::TimeSeriesInputData{bg::cpp_time_series_runtime_type<Series>(), state, &value, true};
+    const auto erased_input = bg::In<bg::TS_T>{data};
+
+    const auto generic_input = erased_input.as<GenericSeries>();
+    CHECK(generic_input.value() == 17);
+    CHECK(&generic_input.runtime_type() == &bg::cpp_time_series_runtime_type<Series>());
+    CHECK(&generic_input.runtime_type().type() == &Series::type());
+    CHECK_THROWS_AS(erased_input.as<bg::TS<bg::SCALAR>>(), std::bad_cast);
+}
+
 TEST_CASE("tick write dispatch reaches provider-defined time series",
           "[evaluation][feature:time-series-storage][series:generic][declaration:concrete]") {
     using Series = provider::Series<bg::i64>;
