@@ -181,8 +181,8 @@ auto matches = actual.equals({
 
 Captured deltas own their cell and key values and remain usable after graph
 destruction. Comparisons use the actual schema, including Derived fields
-observed through a Base annotation. Frame views, unkeyed TSF outputs, and TSC
-outputs do not yet support result capture.
+observed through a Base annotation. Frame views do not yet support result
+capture.
 
 ### TSC literal updates
 
@@ -196,6 +196,35 @@ An empty literal validates an invalid output as an empty column and leaves a
 valid column unchanged. Root `literal::SKIP` leaves the column unchanged;
 `literal::INVALID` invalidates it. Literal updates use the native output layout.
 Use `set` and `erase` with IDs obtained from node APIs to modify existing rows.
+
+### Named row expectations
+
+Native unkeyed `TSF` and native `TSC` result expectations assign names to rows.
+The first occurrence of a name expects an addition; later occurrences expect
+modifications of that row. `{name, literal::REMOVED}` expects removal.
+For example, a captured native `TSC<double>` result can be checked with:
+
+```cpp
+auto matches = actual.equals({
+    {{"a", 10.0}, {"b", 10.0}},
+    {{"a", 11.0}},
+    {{"b", literal::REMOVED}},
+});
+```
+
+For an unkeyed `TSF`, replace each cell literal with named row fields, for
+example `{"a", {{"price", 10.0}}}`. Omitted addition fields mean null;
+modifications name exactly the changed fields. Each tick describes the complete
+delta. Use `{}` for a published empty delta, `literal::SKIP` for no publication,
+and `literal::INVALID` for invalidation.
+
+Comparison matches complete row histories across cycles, independent of entry
+order. Identical additions can be distinguished by later modifications or
+removals; identical complete histories are interchangeable. Names belong to one
+`equals()` call and one nested time series. A name remains reserved after
+removal or invalidation. A later addition requires a new name, including when
+storage reuses an internal row ID. These names apply only to expectations;
+unkeyed input literals continue to append rows.
 
 ## TSC input/output surface
 
