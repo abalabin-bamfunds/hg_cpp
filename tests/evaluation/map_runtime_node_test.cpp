@@ -400,6 +400,7 @@ TEST_CASE("map starts and stops one inner graph repeatedly",
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[transition:removal][transition:resurrection]") {
     const auto target = node([](In<TS<i64>> command, Out<TS<i64>> output) { output.set(std::abs(*command)); });
+
     const auto make_values =
         node([](In<TS<i64>> command, In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) {
             if (*command < 0) {
@@ -408,6 +409,7 @@ TEST_CASE("map starts and stops one inner graph repeatedly",
                 output[1].copy(value);
             }
         });
+
     const auto graph = [&](wp<TS<i64>> command) {
         const auto values = make_values(command, target(command));
         const auto mapped = map([&](auto key, auto value) { return add_key(value, key); }, values);
@@ -434,9 +436,11 @@ TEST_CASE("map keeps branch state independent and resets it after removal",
     };
 
     const auto branch = node<count_branch_definition>();
+
     const auto copy = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
         output.copy_tick(input);
     });
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> values) {
         return copy(map([&](wp<TS<i64>> value) { return branch(value); }, values));
     };
@@ -575,6 +579,7 @@ TEST_CASE("a sink map evaluates one inner graph for each live key",
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[transition:addition][transition:update][transition:removal]") {
     const auto target = node([](In<TS<i64>> command, Out<TS<i64>> output) { output.set(std::abs(*command)); });
+
     const auto make_values =
         node([](In<TS<i64>> command, In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) {
             if (*command < 0) {
@@ -583,6 +588,7 @@ TEST_CASE("a sink map evaluates one inner graph for each live key",
                 output[1].copy(value);
             }
         });
+
     const auto graph = [&](wp<TS<i64>> command) {
         const auto value = target(command);
         wire_sink_map(make_values(command, value));

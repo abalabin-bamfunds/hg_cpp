@@ -44,9 +44,11 @@ TEST_CASE("map applies a graph to each TSD item",
           "[binding:value-to-reference][definition:function]") {
     const auto mapped = graph("name"_n = "increment_each",
                               [](wp<TS<i64>> value) { return increment(value); });
+
     const auto copy = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
         output.copy_tick(input);
     });
+
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
         return copy(map(mapped, values));
     };

@@ -82,7 +82,8 @@ value type when the type changes the expected behavior. Keep each test case
 focused on one behavior. Define a test-only function, node, or graph in the test
 case that uses it. When an interface requires a namespace-scope type, place its
 declaration immediately before the test case. Keep other declarations at file
-scope only when multiple test cases share them.
+scope only when multiple test cases share them. Separate node and graph
+definitions with a blank line.
 
 Keep the graph, input sequence, and expected results visible in the test case.
 Prefer literal input sequences and infer their types from the graph signature.

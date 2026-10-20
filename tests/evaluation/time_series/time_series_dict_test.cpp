@@ -61,6 +61,7 @@ TEST_CASE("a time series dictionary publishes item and key changes",
     };
 
     auto snapshots = std::vector<Snapshot>{};
+
     const auto inspect = bg::node([&](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) {
         auto snapshot = Snapshot{.size = input.size(),
                                  .first_value = input.contains(1) ? *input[1] : -1};
@@ -72,6 +73,7 @@ TEST_CASE("a time series dictionary publishes item and key changes",
         std::ranges::sort(snapshot.modified);
         snapshots.push_back(std::move(snapshot));
     });
+
     const auto graph = bg::graph("name"_n = "dictionary_change_input",
                                  [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) { inspect(input); });
 

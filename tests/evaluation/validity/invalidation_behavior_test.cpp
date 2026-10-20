@@ -39,15 +39,19 @@ TEST_CASE("required-input invalidation propagates through a graph",
           "[transition:invalidation][transition:revalidation][series:value][scalar:floating-point]") {
     auto copy_evaluations = 0;
     auto consumed_values = std::vector<float>{};
+
     const auto copy = bg::node([&](bg::In<bg::TS<float>> input, bg::Out<bg::TS<float>> output) {
         ++copy_evaluations;
         output.set(*input);
     });
+
     const auto consume = bg::node([&](bg::In<bg::TS<float>> input) { consumed_values.push_back(*input); });
+
     const auto observe_validity = bg::node([](bg::In<bg::TS<float>, bg::optional> input,
                                                bg::Out<bg::TS<bool>> output) {
         output.set(input.valid());
     });
+
     const auto graph = [&](bg::wp<bg::TS<float>> input) {
         const auto copied = copy(input);
         consume(copied);
@@ -65,8 +69,10 @@ TEST_CASE("required-input invalidation is applied once while the input remains i
           "[evaluation][invalidation][feature:invalidation][validity:required][transition:invalidation]"
           "[series:value][scalar:floating-point]") {
     const auto fallback = bg::node<fallback_definition>();
+
     fallback_definition::evaluation_count = 0;
     auto source_evaluations = 0;
+
     const auto counted_source = bg::node([&](bg::In<bg::TS<bool>> valid, bg::Out<bg::TS<float>> output) {
         ++source_evaluations;
         if (*valid) {
@@ -75,7 +81,9 @@ TEST_CASE("required-input invalidation is applied once while the input remains i
             output.invalidate();
         }
     });
+
     const auto repeated_graph = [&](bg::wp<bg::TS<bool>> valid) { return fallback(counted_source(valid)); };
+
     const auto actual = bg::testing::test_graph(repeated_graph, {true, false, false});
 
     CHECK(actual.equals({4.0F, -1.0F, std::nullopt}));
@@ -100,6 +108,7 @@ TEST_CASE("a node can preserve its output when a required input becomes invalid"
           "[evaluation][invalidation][feature:invalidation][validity:required][series:value]"
           "[scalar:floating-point]") {
     const auto hold = bg::node<hold_definition>();
+
     const auto observe = bg::node([](bg::In<bg::TS<float>, bg::optional> input,
                                      bg::In<bg::TS<bg::i64>>,
                                      bg::Out<bg::TS<float>> output) {
@@ -109,8 +118,10 @@ TEST_CASE("a node can preserve its output when a required input becomes invalid"
             output.invalidate();
         }
     });
+
     auto downstream_evaluations = 0;
     const auto downstream = bg::node([&](bg::In<bg::TS<float>>) { ++downstream_evaluations; });
+
     const auto graph = [&](bg::wp<bg::TS<float>> input, bg::wp<bg::TS<bg::i64>> tick) {
         const auto held = hold(input);
         downstream(held);
@@ -127,7 +138,9 @@ TEST_CASE("a node can produce an output when a required input becomes invalid",
           "[evaluation][invalidation][feature:invalidation][validity:required][series:value]"
           "[scalar:floating-point]") {
     const auto fallback = bg::node<fallback_definition>();
+
     const auto graph = [&](bg::wp<bg::TS<float>> input) { return fallback(input); };
+
     fallback_definition::evaluation_count = 0;
 
     const auto actual = bg::testing::test_graph(graph, {4.0F, literal::INVALID});
@@ -172,7 +185,9 @@ TEST_CASE("an invalidation failure stops the runtime graph",
           "[evaluation][invalidation][lifecycle][feature:invalidation][transition:invalidation]"
           "[transition:stop][series:value][scalar:floating-point]") {
     const auto switchable = bg::node<switchable_definition>();
+
     const auto throwing_invalidation = bg::node<throwing_invalidation_definition>();
+
     bg::GraphWiring wiring;
 
     {
