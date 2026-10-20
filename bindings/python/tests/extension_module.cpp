@@ -7,8 +7,11 @@
 #include <bg/python/object.hpp>
 #include <bg/python/scalar_conversion.hpp>
 #include <bg/python/wiring_point.hpp>
+#include <bg/graph/runtime_graph.hpp>
 #include <bg/scalar/builtins.hpp>
+#include <bg/scalar/declaration.hpp>
 #include <bg/scalar/value.hpp>
+#include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 #include <bg/type/scalar_type.hpp>
 
@@ -20,6 +23,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string_view>
 
 namespace {
@@ -107,6 +111,32 @@ struct native_start_only_source_definition {
     bg::Signature signature_;
 };
 
+using PYOBJECT = bg::ScalarVariable<"PYOBJECT">;
+
+struct native_python_object_property_node {
+    bg::In<bg::TS<PYOBJECT>> input;
+    bg::Out<bg::TS<PYOBJECT>> output;
+
+    void evaluate(bg::EvaluationContext *context) const {
+        if (PyGILState_Check() == 0) {
+            throw std::logic_error{"native Python-object node evaluated without the GIL"};
+        }
+
+        auto &conversions = bg::python::scalar_conversions();
+        const auto input_value = input.value_view();
+        const auto object = conversions.to_python(bg::Scalar<>::from(input_value));
+        auto result = nanobind::steal<nanobind::object>(PyObject_GetAttrString(object.ptr(), "native_result"));
+        if (!result) {
+            nanobind::raise_python_error();
+        }
+
+        const auto &runtime_type = static_cast<const bg::TimeSeriesValueRuntimeType &>(output.runtime_type());
+        auto value = conversions.from_python(runtime_type.scalar_runtime_type().type(), result,
+                                             context->runtime_graph().allocation());
+        output.set_value(std::move(value));
+    }
+};
+
 const bg::Operator &native_gil_operator() {
     static auto operation = bg::operator_<auto(bg::TS<bg::i64>) -> bg::TS<bg::i64>>{"native_gil", {"value"}};
     static const auto &implementation = operation.overload(bg::python::node<native_gil_node>());
@@ -152,6 +182,13 @@ const bg::Operator &native_continuous_timer_operator() {
     static auto operation = bg::operator_<auto(bg::TS<bool>) -> bg::TS<bg::i64>>{"native_continuous_timer",
                                                                                  {"repeat"}};
     static const auto &implementation = operation.overload(bg::node<native_continuous_timer_node>());
+    (void)implementation;
+    return operation;
+}
+
+const bg::Operator &native_python_object_property_operator() {
+    static auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS_T>{"native_python_object_property", {"value"}};
+    static const auto &implementation = operation.overload(bg::python::node<native_python_object_property_node>());
     (void)implementation;
     return operation;
 }
@@ -234,6 +271,7 @@ NB_MODULE(_bg_test_extension, module) {
     bg::python::export_operator(module, "native_stop_exception", native_stop_exception_operator());
     bg::python::export_operator(module, "native_start_only_source", native_start_only_source_operator());
     bg::python::export_operator(module, "native_continuous_timer", native_continuous_timer_operator());
+    bg::python::export_operator(module, "native_python_object_property", native_python_object_property_operator());
     module.def("native_node_lifecycle", [] {
         return nanobind::make_tuple(native_node_lifecycle[0].load(), native_node_lifecycle[1].load(),
                                     native_node_lifecycle[2].load(), native_node_lifecycle[3].load());
