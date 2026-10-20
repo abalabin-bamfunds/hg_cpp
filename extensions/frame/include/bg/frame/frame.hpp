@@ -22,8 +22,8 @@
 #include <bg/node/output_declaration_traits.hpp>
 #include <bg/schema/reflection.hpp>
 #include <bg/scalar/bundle/scalar_type.hpp>
-#include <bg/scalar/bundle/details/allocation_owner.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
+#include <bg/scalar/details/allocation_pool.hpp>
 #include <bg/util/compile_time_string.hpp>
 #include <bg/util/contiguous_bunch.hpp>
 #include <bg/util/hash_dictionary.hpp>
@@ -1475,7 +1475,7 @@ struct FrameSnapshotOwner {
     const ScalarRuntimeType *runtime{};
     const NativeFrameLayout *layout{};
     NativeFrameStorage *frame{};
-    bg::details::BundleAllocationOwner *bundle_owner{};
+    bg::details::ScalarAllocationPool *allocation_pool{};
     allocator memory{};
     std::size_t size{};
 
@@ -1571,29 +1571,30 @@ inline FrameSnapshotOwner *FrameSnapshotOwner::create(const NativeFrameLayout &l
                                                       const FrameReadStorage &source, allocator memory) {
     if (source.schema != layout.schema)
         throw std::invalid_argument{"frame snapshot schema does not match its runtime type"};
-    auto *bundle_owner = static_cast<bg::details::BundleAllocationOwner *>(nullptr);
-    if (const auto *context = bg::details::current_scalar_allocation_owner();
-        context != nullptr && &context->memory.memory_resource() == &memory.memory_resource()) {
-        bundle_owner = context->bundle_owner;
+    auto *allocation_pool = static_cast<bg::details::ScalarAllocationPool *>(nullptr);
+    if (const auto *context = bg::details::current_scalar_allocation_owner()) {
+        auto pool_memory = context->scalar_allocation_pool->memory();
+        if (&memory.memory_resource() == &context->memory.memory_resource() ||
+            &memory.memory_resource() == &pool_memory.memory_resource()) {
+            allocation_pool = context->scalar_allocation_pool;
+        }
     }
-    if (bundle_owner != nullptr) {
-        bundle_owner->retain();
-        memory = bundle_owner->memory();
-    }
+    if (allocation_pool != nullptr)
+        allocation_pool->retain();
+    auto release_allocation_pool = util::scope_exit{[&]() noexcept {
+        if (allocation_pool != nullptr)
+            allocation_pool->release();
+    }};
+    if (allocation_pool != nullptr)
+        memory = allocation_pool->memory();
 
-    auto *owner_memory = static_cast<FrameSnapshotOwner *>(nullptr);
-    try {
-        owner_memory = static_cast<FrameSnapshotOwner *>(memory.allocate_bytes(sizeof(FrameSnapshotOwner),
-                                                                               alignof(FrameSnapshotOwner)));
-    } catch (...) {
-        if (bundle_owner != nullptr)
-            bundle_owner->release();
-        throw;
-    }
+    auto *owner_memory = static_cast<FrameSnapshotOwner *>(
+        memory.allocate_bytes(sizeof(FrameSnapshotOwner), alignof(FrameSnapshotOwner)));
     auto *owner = owner_memory;
     std::construct_at(owner);
     owner->memory = memory;
-    owner->bundle_owner = bundle_owner;
+    owner->allocation_pool = allocation_pool;
+    release_allocation_pool.release();
     try {
         owner->runtime = std::addressof(frame_snapshot_runtime_type(frame_type(*layout.schema)));
         owner->layout = std::addressof(layout);
@@ -1616,7 +1617,7 @@ inline void FrameSnapshotOwner::release() noexcept {
         return;
 
     auto resource = memory;
-    auto *bundle_owner = std::exchange(this->bundle_owner, nullptr);
+    auto *allocation_pool = std::exchange(this->allocation_pool, nullptr);
     if (frame != nullptr) {
         release_frame_snapshot_columns(*frame, resource);
         frame->release(resource);
@@ -1625,8 +1626,8 @@ inline void FrameSnapshotOwner::release() noexcept {
     }
     std::destroy_at(this);
     resource.deallocate_bytes(this, sizeof(FrameSnapshotOwner), alignof(FrameSnapshotOwner));
-    if (bundle_owner != nullptr)
-        bundle_owner->release();
+    if (allocation_pool != nullptr)
+        allocation_pool->release();
 }
 
 inline void copy_frame_snapshot_storage(FrameSnapshotStorage &destination, const NativeFrameLayout &layout,

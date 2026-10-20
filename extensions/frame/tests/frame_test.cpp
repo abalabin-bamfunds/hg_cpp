@@ -3,6 +3,8 @@
 #include <bg/frame/literal.hpp>
 #include <bg/bg.hpp>
 #include <bg/scalar/value.hpp>
+#include <bg/scalar/details/allocation_context.hpp>
+#include <bg/scalar/details/allocation_pool.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/util/scope_exit.hpp>
 #include <bg/graph/runtime_graph_input.hpp>
@@ -1345,16 +1347,34 @@ void test_frame_scalar_views_and_snapshots() {
     snapshot_runtime.construct_from_input(std::addressof(retained_copy), retained_source, snapshot_allocator);
     require(retained_owner != nullptr && retained_copy.owner == retained_owner,
             "frame snapshot construction did not retain its existing owner");
-    auto *bundle_owner = bg::details::BundleAllocationOwner::create(snapshot_allocator);
-    auto release_bundle_owner = util::scope_exit{[&]() noexcept { bundle_owner->release(); }};
+    auto *assignment_pool = bg::details::ScalarAllocationPool::create(snapshot_allocator);
+    auto release_assignment_pool = util::scope_exit{[&]() noexcept { assignment_pool->release(); }};
     {
         const auto allocation_context = bg::details::ScalarAllocationContext{
-            snapshot_allocator, *bundle_owner, std::addressof(retained_copy), 0};
+            snapshot_allocator, *assignment_pool, std::addressof(retained_copy), 0};
         snapshot_runtime.assign_from_input(std::addressof(retained_copy), retained_source);
     }
     require(retained_copy.owner == retained_owner,
             "frame snapshot self-assignment did not retain its owner before releasing it");
     snapshot_runtime.destroy(std::addressof(retained_copy), snapshot_allocator);
+
+    FailingResource pooled_memory;
+    auto pooled_allocator = allocator{pooled_memory};
+    auto *allocation_pool = bg::details::ScalarAllocationPool::create(pooled_allocator);
+    auto release_allocation_pool = util::scope_exit{[&]() noexcept { allocation_pool->release(); }};
+    {
+        const auto allocation_context = bg::details::ScalarAllocationContext{
+            pooled_allocator, *allocation_pool, std::addressof(native), 0};
+        auto pool_allocator = allocation_pool->memory();
+        auto context_allocator_snapshot = ScalarValue<Frame<Quotes>>{native_scalar, pooled_allocator};
+        auto pool_allocator_snapshot = ScalarValue<Frame<Quotes>>{native_scalar, pool_allocator};
+        allocation_pool->release();
+        release_allocation_pool.release();
+        require(pooled_memory.allocations > pooled_memory.deallocations,
+                "frame snapshots did not retain their matching scalar allocation pool");
+    }
+    require(pooled_memory.allocations == pooled_memory.deallocations,
+            "frame snapshots did not release their retained scalar allocation pool");
 
     require(cpp_scalar_type<Frame<Quotes>>().accepts(cpp_scalar_type<Frame<EmptySchema>>()) == false,
             "frame semantic types with distinct schemas matched");
