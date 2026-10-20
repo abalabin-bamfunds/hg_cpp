@@ -7,7 +7,6 @@
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
-#include <bg/simulation_evaluation_engine.hpp>
 #include <bg/testing/test_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -17,73 +16,32 @@
 #include <optional>
 #include <vector>
 
+using namespace bg;
+
+TEST_CASE("a default value supplies an initially invalid source input",
+          "[feature:operator][feature:validity][series:value][scalar:integer]"
+          "[shape:single-node][activity:active][validity:required][transition:first-tick]") {
+    const auto graph = [](wp<TS<i64>> input) { return operators::default_(input, 7).as<TS<i64>>(); };
+
+    const auto actual = testing::test_graph(graph, {std::nullopt, 3, std::nullopt, 4});
+
+    CHECK(actual.equals({7, 3, std::nullopt, 4}));
+}
+
 namespace {
-
-struct default_sink {
-    bg::In<bg::TS<bg::i64>> input;
-
-    void evaluate(bg::EvaluationContext *context) const {
-        ++evaluations;
-        value = *input;
-        last_updated = input.last_updated();
-        modified = input.modified();
-        evaluation_time = context->evaluation_time();
-    }
-
-    inline static int evaluations{};
-    inline static bg::i64 value{};
-    inline static bg::EvaluationTime last_updated{bg::MIN_DT};
-    inline static bg::EvaluationTime evaluation_time{bg::MIN_DT};
-    inline static bool modified{};
-};
-
-struct default_reference_sink {
-    bg::In<bg::REF<bg::TS<bg::i64>>> input;
-
-    void evaluate() const {
-        ++evaluations;
-        valid = input.valid();
-    }
-
-    inline static int evaluations{};
-    inline static bool valid{};
-};
-
-struct default_timeline_sink {
-    bg::In<bg::TS<bg::i64>> input;
-
-    void evaluate(bg::EvaluationContext *context) const {
-        values.push_back(*input);
-        last_updated.push_back(input.last_updated());
-        modified.push_back(input.modified());
-        evaluation_times.push_back(context->evaluation_time());
-    }
-
-    inline static std::vector<bg::i64> values;
-    inline static std::vector<bg::EvaluationTime> last_updated;
-    inline static std::vector<bool> modified;
-    inline static std::vector<bg::EvaluationTime> evaluation_times;
-};
-
-struct reference_pass {
-    bg::In<bg::REF<bg::TS<bg::i64>>> input;
-    bg::Out<bg::REF<bg::TS<bg::i64>>> output;
-
-    void evaluate() const { output.copy(input); }
-};
 
 struct changing_source {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::State<int> step;
-    bg::Out<bg::TS<bg::i64>> output;
+    State<int> step;
+    Out<TS<i64>> output;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         output.set(10);
         context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(EvaluationContext *context) const {
         if (*step == 0) {
             output.set(20);
         } else if (*step == 1) {
@@ -102,27 +60,101 @@ struct changing_source {
 struct initially_invalid_source {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::Out<bg::TS<bg::i64>> output;
+    Out<TS<i64>> output;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
     void evaluate() const { output.set(10); }
 };
 
+auto time(i64 microseconds) { return MIN_DT + std::chrono::microseconds{microseconds}; }
+
+struct default_timeline_sink {
+    In<TS<i64>> input;
+    Out<TS<i64>> output;
+
+    void evaluate(EvaluationContext *context) const {
+        value = *input;
+        last_updated.push_back(input.last_updated());
+        modified.push_back(input.modified());
+        evaluation_times.push_back(context->evaluation_time());
+        output.set(value);
+    }
+
+    static void clear() {
+        value = 0;
+        last_updated.clear();
+        modified.clear();
+        evaluation_times.clear();
+    }
+
+    inline static i64 value{};
+    inline static std::vector<EvaluationTime> last_updated;
+    inline static std::vector<bool> modified;
+    inline static std::vector<EvaluationTime> evaluation_times;
+};
+
+} // namespace
+
+TEST_CASE("a default binding dereferences a reference source",
+          "[feature:operator][feature:reference][feature:validity][series:value][series:reference]"
+          "[binding:reference-to-value][scalar:integer][transition:invalidation]") {
+    const auto source = node<changing_source>();
+
+    const auto pass = node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) { output.copy(input); });
+
+    const auto graph = [&] { return operators::default_(pass(source()), 7).as<TS<i64>>(); };
+
+    const auto actual = testing::test_graph(graph);
+
+    CHECK(actual.equals({10, 20, 7, 30}));
+}
+
+TEST_CASE("a default binding switches on source invalidation and revalidation",
+          "[feature:operator][feature:validity][feature:invalidation][feature:scheduling][series:value]"
+          "[scalar:integer][transition:invalidation][transition:revalidation]") {
+    const auto source = node<changing_source>();
+
+    const auto graph = [&] { return operators::default_(source(), 7).as<TS<i64>>(); };
+
+    const auto actual = testing::test_graph(graph);
+
+    CHECK(actual.equals({10, 20, 7, 30}));
+}
+
+TEST_CASE("a default binding updates its timestamp across source validity changes",
+          "[feature:operator][feature:validity][feature:invalidation][feature:scheduling][series:value]"
+          "[scalar:integer][shape:chain][transition:update][transition:invalidation][transition:revalidation]") {
+    const auto source = node<changing_source>();
+
+    const auto sink = node<default_timeline_sink>();
+    default_timeline_sink::clear();
+
+    const auto graph = [&] { return sink(operators::default_(source(), 7)); };
+    const auto actual = testing::test_graph(graph);
+
+    CHECK(actual.equals({10, 20, 7, 30}));
+    CHECK(default_timeline_sink::last_updated == std::vector{time(1), time(2), time(3), time(4)});
+    CHECK(default_timeline_sink::modified == std::vector<bool>{true, true, true, true});
+    CHECK(default_timeline_sink::evaluation_times == default_timeline_sink::last_updated);
+}
+
+namespace {
+
 struct equal_default_source {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::State<int> step;
-    bg::Out<bg::TS<bg::i64>> output;
+    State<int> step;
+    Out<TS<i64>> output;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         output.set(7);
         context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(EvaluationContext *context) const {
         if (*step == 0) {
             output.invalidate();
             ++*step;
@@ -134,367 +166,248 @@ struct equal_default_source {
     }
 };
 
-struct default_structure_source {
-    static constexpr bool deduplicate_wiring = false;
-
-    bg::Out<bg::TS<bg::i64>> output;
-
-    void evaluate() const {}
-};
-
-struct default_structure_sink {
-    bg::In<bg::TS<bg::i64>> input;
-    bg::Out<bg::TS<bg::i64>> output;
-
-    void evaluate() const {}
-};
-
-struct second_default_structure_sink {
-    bg::In<bg::TS<bg::i64>> input;
-    bg::Out<bg::TS<bg::i64>> output;
-
-    void evaluate() const {}
-};
-
-[[nodiscard]] bg::EvaluationTime time(bg::i64 microseconds) {
-    return bg::MIN_DT + std::chrono::microseconds{microseconds};
-}
-
 } // namespace
-
-TEST_CASE("a default value supplies an initially invalid source input",
-          "[feature:operator][feature:validity][series:value][scalar:integer]"
-          "[shape:single-node][activity:active][validity:required][transition:first-tick]") {
-    const auto graph = [](bg::wp<bg::TS<bg::i64>> input) {
-        return bg::operators::default_(input, 7).as<bg::TS<bg::i64>>();
-    };
-
-    const auto actual =
-        bg::testing::test_graph(graph, std::array<std::optional<bg::i64>, 4>{std::nullopt, 3, std::nullopt, 4});
-
-    CHECK(actual.equals({7, 3, std::nullopt, 4}));
-}
-
-TEST_CASE("a default binding has no default node for a value consumer",
-          "[feature:operator][feature:graph-compilation][series:value][scalar:integer][shape:single-node]") {
-    using namespace bg::operators;
-
-    default_sink::evaluations = 0;
-    auto wiring = bg::GraphWiring{};
-    const auto sink = bg::node<default_sink>();
-    {
-        const auto context = bg::WiringContext{wiring};
-        const auto source = bg::operators::const_(3).as<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
-        const auto adapted = default_(source, 7);
-        CHECK(&adapted.type() == &bg::TS<bg::i64>::type());
-        sink(adapted);
-    }
-
-    wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    REQUIRE(compiled.node_count() == 1);
-    CHECK(compiled.node(0).parameters()[0].mode() == bg::ParameterBindingMode::default_value);
-    CHECK(sizeof(bg::ParameterBinding) == 8);
-
-    auto runtime_global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
-    runtime.start(time(1));
-    runtime.evaluate(time(1));
-
-    CHECK(default_sink::evaluations == 1);
-    CHECK(default_sink::value == 3);
-    CHECK(default_sink::last_updated == time(1));
-    CHECK(default_sink::evaluation_time == time(1));
-    CHECK(default_sink::modified);
-}
-
-TEST_CASE("a default binding has an ordinary result for a final source",
-          "[feature:operator][feature:wiring][series:value][scalar:integer][guarantee:ordinary][guarantee:final]") {
-    const auto source = bg::node([](bg::Out<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>>) {});
-    auto wiring = bg::GraphWiring{};
-    const auto context = bg::WiringContext{wiring};
-
-    const auto adapted = bg::operators::default_(source(), 7);
-
-    CHECK(&adapted.type() == &bg::TS<bg::i64>::type());
-}
-
-TEST_CASE("a default binding directly reaches a callable value consumer",
-          "[feature:operator][feature:graph-compilation][series:value][scalar:integer][shape:single-node]"
-          "[definition:function]") {
-    auto observed = bg::i64{};
-    const auto sink = bg::node([&](bg::In<bg::TS<bg::i64>> input) { observed = *input; });
-    auto wiring = bg::GraphWiring{};
-    {
-        const auto context = bg::WiringContext{wiring};
-        static_cast<void>(sink(bg::operators::default_(bg::operators::const_(3), 7)));
-    }
-
-    wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    REQUIRE(compiled.node_count() == 1);
-    CHECK(compiled.node(0).parameters()[0].mode() == bg::ParameterBindingMode::default_value);
-
-    auto runtime_global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
-    runtime.start(time(1));
-    runtime.evaluate(time(1));
-
-    CHECK(observed == 3);
-}
-
-TEST_CASE("a default binding materializes only for a reference consumer",
-          "[feature:operator][feature:reference][feature:graph-compilation][series:reference][series:value]"
-          "[binding:value-to-reference][scalar:integer][shape:chain]") {
-    using namespace bg::operators;
-
-    default_reference_sink::evaluations = 0;
-    default_reference_sink::valid = false;
-    auto wiring = bg::GraphWiring{};
-    const auto sink = bg::node<default_reference_sink>();
-    {
-        const auto context = bg::WiringContext{wiring};
-        const auto source = const_(3).as<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
-        sink(default_(source, 7));
-    }
-
-    wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    REQUIRE(compiled.node_count() == 2);
-
-    auto runtime_global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
-    runtime.start(time(1));
-    runtime.evaluate(time(1));
-
-    CHECK(default_reference_sink::evaluations == 1);
-    CHECK(default_reference_sink::valid);
-}
-
-TEST_CASE("a default binding dereferences a reference source",
-          "[feature:operator][feature:reference][feature:validity][series:value][series:reference]"
-          "[binding:reference-to-value][scalar:integer][transition:invalidation]") {
-    const auto source = bg::node<changing_source>();
-    const auto pass = bg::node<reference_pass>();
-    const auto graph = [&] { return bg::operators::default_(pass(source()), 7).as<bg::TS<bg::i64>>(); };
-
-    const auto actual = bg::testing::test_graph(graph);
-
-    CHECK(actual.equals({10, 20, 7, 30}));
-}
-
-TEST_CASE("a default binding switches on source invalidation and revalidation",
-          "[feature:operator][feature:validity][feature:invalidation][feature:scheduling][series:value]"
-          "[scalar:integer][transition:invalidation][transition:revalidation]") {
-    const auto source = bg::node<changing_source>();
-    const auto graph = [&] { return bg::operators::default_(source(), 7).as<bg::TS<bg::i64>>(); };
-
-    const auto actual = bg::testing::test_graph(graph);
-
-    CHECK(actual.equals({10, 20, 7, 30}));
-}
-
-TEST_CASE("a default binding updates its timestamp across source validity changes",
-          "[feature:operator][feature:validity][feature:invalidation][feature:scheduling][series:value]"
-          "[scalar:integer][shape:chain][transition:update][transition:invalidation][transition:revalidation]") {
-    const auto source = bg::node<changing_source>();
-    const auto sink = bg::node<default_timeline_sink>();
-    default_timeline_sink::values.clear();
-    default_timeline_sink::last_updated.clear();
-    default_timeline_sink::modified.clear();
-    default_timeline_sink::evaluation_times.clear();
-
-    auto wiring = bg::GraphWiring{};
-    {
-        const auto context = bg::WiringContext{wiring};
-        sink(bg::operators::default_(source(), 7));
-    }
-
-    wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
-    bg::SimulationEvaluationEngine{}.run(runtime, time(1));
-
-    CHECK(default_timeline_sink::values == std::vector<bg::i64>{10, 20, 7, 30});
-    CHECK(default_timeline_sink::last_updated == std::vector{time(1), time(2), time(3), time(4)});
-    CHECK(default_timeline_sink::modified == std::vector<bool>{true, true, true, true});
-    CHECK(default_timeline_sink::evaluation_times == default_timeline_sink::last_updated);
-}
 
 TEST_CASE("a default binding publishes equal fallback validity switches",
           "[feature:operator][feature:validity][feature:invalidation][feature:scheduling][series:value]"
           "[scalar:integer][shape:chain][transition:invalidation][transition:revalidation]") {
-    const auto source = bg::node<equal_default_source>();
-    const auto sink = bg::node<default_timeline_sink>();
-    default_timeline_sink::values.clear();
-    default_timeline_sink::last_updated.clear();
-    default_timeline_sink::modified.clear();
-    default_timeline_sink::evaluation_times.clear();
+    const auto source = node<equal_default_source>();
 
-    auto wiring = bg::GraphWiring{};
-    {
-        const auto context = bg::WiringContext{wiring};
-        sink(bg::operators::default_(source(), 7));
-    }
+    const auto sink = node<default_timeline_sink>();
+    default_timeline_sink::clear();
 
-    wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
-    bg::SimulationEvaluationEngine{}.run(runtime, time(1));
+    const auto graph = [&] { return sink(operators::default_(source(), 7)); };
+    const auto actual = testing::test_graph(graph);
 
-    CHECK(default_timeline_sink::values == std::vector<bg::i64>{7, 7, 7});
+    CHECK(actual.equals({7, 7, 7}));
     CHECK(default_timeline_sink::last_updated == std::vector{time(1), time(2), time(3)});
     CHECK(default_timeline_sink::modified == std::vector<bool>{true, true, true});
+    CHECK(default_timeline_sink::evaluation_times == default_timeline_sink::last_updated);
 }
 
 TEST_CASE("a reference over a default binding receives fallback updates",
           "[feature:operator][feature:reference][feature:validity][feature:invalidation][series:value]"
           "[series:reference][scalar:integer][shape:chain][binding:value-to-reference]"
           "[binding:reference-to-value][transition:invalidation][transition:revalidation]") {
-    const auto source = bg::node<changing_source>();
-    const auto pass = bg::node<reference_pass>();
-    const auto sink = bg::node<default_timeline_sink>();
-    default_timeline_sink::values.clear();
-    default_timeline_sink::last_updated.clear();
-    default_timeline_sink::modified.clear();
-    default_timeline_sink::evaluation_times.clear();
+    const auto source = node<changing_source>();
 
-    auto wiring = bg::GraphWiring{};
-    {
-        const auto context = bg::WiringContext{wiring};
-        sink(pass(bg::operators::default_(source(), 7)));
-    }
+    const auto pass = node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) { output.copy(input); });
 
-    wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
-    bg::SimulationEvaluationEngine{}.run(runtime, time(1));
+    const auto sink = node<default_timeline_sink>();
 
-    CHECK(default_timeline_sink::values == std::vector<bg::i64>{10, 20, 7, 30});
+    default_timeline_sink::clear();
+
+    const auto graph = [&] { return sink(pass(operators::default_(source(), 7))); };
+    const auto actual = testing::test_graph(graph);
+
+    CHECK(actual.equals({10, 20, 7, 30}));
     CHECK(default_timeline_sink::last_updated == std::vector{time(1), time(2), time(3), time(4)});
+    CHECK(default_timeline_sink::modified == std::vector<bool>{true, true, true, true});
 }
 
 TEST_CASE("a default binding initializes a reference consumer while its source is invalid",
           "[feature:operator][feature:reference][feature:validity][feature:scheduling][series:value]"
           "[series:reference][scalar:integer][shape:chain][binding:value-to-reference]"
           "[binding:reference-to-value][transition:first-tick][transition:revalidation]") {
-    const auto source = bg::node<initially_invalid_source>();
-    const auto pass = bg::node<reference_pass>();
-    const auto sink = bg::node<default_timeline_sink>();
-    default_timeline_sink::values.clear();
-    default_timeline_sink::last_updated.clear();
-    default_timeline_sink::modified.clear();
-    default_timeline_sink::evaluation_times.clear();
+    const auto source = node<initially_invalid_source>();
 
-    auto wiring = bg::GraphWiring{};
-    {
-        const auto context = bg::WiringContext{wiring};
-        sink(pass(bg::operators::default_(source(), 7)));
-    }
+    const auto pass = node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) { output.copy(input); });
 
-    wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
-    bg::SimulationEvaluationEngine{}.run(runtime, time(1));
+    const auto sink = node<default_timeline_sink>();
 
-    CHECK(default_timeline_sink::values == std::vector<bg::i64>{7, 10});
+    default_timeline_sink::clear();
+
+    const auto graph = [&] { return sink(pass(operators::default_(source(), 7))); };
+    const auto actual = testing::test_graph(graph);
+
+    CHECK(actual.equals({7, 10}));
     CHECK(default_timeline_sink::last_updated == std::vector{time(1), time(2)});
+    CHECK(default_timeline_sink::modified == std::vector<bool>{true, true});
 }
 
 TEST_CASE("nested defaults preserve the first fallback",
           "[feature:operator][feature:validity][feature:scheduling][series:value][scalar:integer]"
           "[shape:chain][transition:first-tick][transition:revalidation]") {
-    const auto source = bg::node<initially_invalid_source>();
-    const auto sink = bg::node<default_timeline_sink>();
-    default_timeline_sink::values.clear();
-    default_timeline_sink::last_updated.clear();
-    default_timeline_sink::modified.clear();
-    default_timeline_sink::evaluation_times.clear();
+    const auto source = node<initially_invalid_source>();
 
-    auto wiring = bg::GraphWiring{};
-    {
-        const auto context = bg::WiringContext{wiring};
-        sink(bg::operators::default_(bg::operators::default_(source(), 7), 9));
-    }
+    const auto observe = node([](i64 input) { return input; });
 
-    wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
-    bg::SimulationEvaluationEngine{}.run(runtime, time(1));
+    const auto graph = [&] {
+        return observe(operators::default_(operators::default_(source(), 7), 9));
+    };
 
-    CHECK(default_timeline_sink::values == std::vector<bg::i64>{7, 10});
+    const auto actual = testing::test_graph(graph);
+
+    CHECK(actual.equals({7, 10}));
 }
 
 TEST_CASE("a nested graph returns a reference over a default binding",
           "[feature:operator][feature:nested-graph][feature:reference][feature:validity][series:value]"
           "[series:reference][scalar:integer][shape:nested][binding:value-to-reference]"
           "[binding:reference-to-value][transition:invalidation][transition:revalidation]") {
-    using namespace bg::literals;
+    using namespace literals;
 
-    const auto source = bg::node<changing_source>();
-    const auto inner =
-        bg::graph("name"_n = "default_inner", [](bg::wp<bg::TS<bg::i64>> input) -> bg::wp<bg::TS<bg::i64>> {
-            return bg::operators::default_(input, 7).as<bg::TS<bg::i64>>();
-        });
-    const auto graph = [&] { return bg::nested(inner, bg::operators::const_(true), source()).as<bg::TS<bg::i64>>(); };
+    const auto source = node<changing_source>();
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto inner = graph("name"_n = "default_inner", [](wp<TS<i64>> input) {
+        return operators::default_(input, 7).as<TS<i64>>();
+    });
+
+    const auto outer = [&] { return nested(inner, operators::const_(true), source()).as<TS<i64>>(); };
+
+    const auto actual = testing::test_graph(outer);
 
     CHECK(actual.equals({10, 20, 7, 30}));
 }
 
+TEST_CASE("a default binding directly reaches a callable value consumer",
+          "[feature:operator][feature:graph-compilation][series:value][scalar:integer][shape:single-node]"
+          "[definition:function]") {
+    auto observed = i64{};
+    const auto sink = node([&](i64 input) { observed = input; });
+    auto wiring = GraphWiring{};
+    {
+        auto context = WiringContext{wiring};
+        sink(operators::default_(operators::const_(i64{3}), 7));
+    }
+
+    wiring.finalize();
+    const auto compiled = CompiledGraph{wiring};
+    REQUIRE(compiled.node_count() == 1);
+    CHECK(compiled.node(0).parameters()[0].mode() == ParameterBindingMode::default_value);
+
+    auto runtime_global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, runtime_global_state};
+    runtime.start(time(1));
+    runtime.evaluate(time(1));
+    CHECK(observed == 3);
+}
+
+TEST_CASE("a default binding has no default node for a value consumer",
+          "[feature:operator][feature:graph-compilation][series:value][scalar:integer][shape:single-node]") {
+    default_timeline_sink::clear();
+    const auto sink = node<default_timeline_sink>();
+
+    auto wiring = GraphWiring{};
+    {
+        auto context = WiringContext{wiring};
+        const auto adapted = operators::default_(operators::const_(i64{3}), 7);
+        CHECK(&adapted.type() == &TS<i64>::type());
+        static_cast<void>(sink(adapted));
+    }
+
+    wiring.finalize();
+    const auto compiled = CompiledGraph{wiring};
+    REQUIRE(compiled.node_count() == 1);
+    CHECK(compiled.node(0).parameters()[0].mode() == ParameterBindingMode::default_value);
+    CHECK(sizeof(ParameterBinding) == 8);
+
+    auto runtime_global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, runtime_global_state};
+    runtime.start(time(1));
+    runtime.evaluate(time(1));
+
+    CHECK(default_timeline_sink::value == 3);
+    CHECK(default_timeline_sink::last_updated == std::vector{time(1)});
+    CHECK(default_timeline_sink::evaluation_times == std::vector{time(1)});
+    CHECK(default_timeline_sink::modified == std::vector<bool>{true});
+}
+
+TEST_CASE("a default binding has an ordinary result for a final source",
+          "[feature:operator][feature:wiring][series:value][scalar:integer][guarantee:ordinary][guarantee:final]") {
+    const auto source = node([](Out<TS<i64, TimeSeriesGuarantee::final>>) {});
+    auto wiring = GraphWiring{};
+    auto context = WiringContext{wiring};
+
+    const auto adapted = operators::default_(source(), 7);
+
+    CHECK(&adapted.type() == &TS<i64>::type());
+}
+
+TEST_CASE("a default binding materializes only for a reference consumer",
+          "[feature:operator][feature:reference][feature:graph-compilation][series:reference][series:value]"
+          "[binding:value-to-reference][scalar:integer][shape:chain]") {
+    auto evaluations = 0;
+    auto valid = false;
+    const auto sink = node([&](In<REF<TS<i64>>> input) {
+        ++evaluations;
+        valid = input.valid();
+    });
+
+    auto wiring = GraphWiring{};
+    {
+        auto context = WiringContext{wiring};
+        const auto source = operators::const_(i64{3});
+        sink(operators::default_(source, 7));
+    }
+
+    wiring.finalize();
+    const auto compiled = CompiledGraph{wiring};
+    REQUIRE(compiled.node_count() == 2);
+
+    auto runtime_global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, runtime_global_state};
+    runtime.start(time(1));
+    runtime.evaluate(time(1));
+
+    CHECK(evaluations == 1);
+    CHECK(valid);
+}
+
 TEST_CASE("equal default adapter nodes deduplicate",
           "[feature:operator][feature:graph-compilation][series:value][scalar:integer][shape:fan-out]") {
-    const auto first_sink = bg::node<default_structure_sink>();
-    const auto second_sink = bg::node<second_default_structure_sink>();
-    auto wiring = bg::GraphWiring{};
+    const auto first_sink = node([](In<TS<i64>>, Out<TS<i64>>) {});
+
+    const auto second_sink = node([](In<TS<i64>>, Out<TS<i64>>) {});
+
+    auto wiring = GraphWiring{};
     {
-        const auto context = bg::WiringContext{wiring};
-        const auto source = bg::operators::const_(3);
-        static_cast<void>(first_sink(bg::operators::default_(source, 7)));
-        static_cast<void>(second_sink(bg::operators::default_(source, 7)));
+        auto context = WiringContext{wiring};
+        const auto source = operators::const_(i64{3});
+        static_cast<void>(first_sink(operators::default_(source, 7)));
+        static_cast<void>(second_sink(operators::default_(source, 7)));
     }
 
     wiring.finalize();
     CHECK(wiring.nodes().size() == 5);
-    const auto compiled = bg::CompiledGraph{wiring};
+    const auto compiled = CompiledGraph{wiring};
     CHECK(compiled.node_count() == 2);
 }
 
 TEST_CASE("a default binding adds one timestamp to runtime storage",
           "[feature:operator][feature:graph-compilation][series:value][scalar:integer][shape:single-node]") {
-    const auto sink = bg::node<default_structure_sink>();
+    const auto sink = node([](In<TS<i64>>, Out<TS<i64>>) {});
     const auto runtime_storage_size = [&](bool with_default) {
-        auto wiring = bg::GraphWiring{};
+        auto wiring = GraphWiring{};
         {
-            const auto context = bg::WiringContext{wiring};
-            const auto source = bg::operators::const_(3).as<bg::TS<bg::i64>>();
-            static_cast<void>(with_default ? sink(bg::operators::default_(source, 7)) : sink(source));
+            auto context = WiringContext{wiring};
+            const auto source = operators::const_(i64{3}).as<TS<i64>>();
+            if (with_default) {
+                static_cast<void>(sink(operators::default_(source, 7)));
+            } else {
+                static_cast<void>(sink(source));
+            }
         }
         wiring.finalize();
-        return bg::CompiledGraph{wiring}.runtime_storage_size();
+        return CompiledGraph{wiring}.runtime_storage_size();
     };
 
-    CHECK(runtime_storage_size(true) == runtime_storage_size(false) + sizeof(bg::EvaluationTime));
+    CHECK(runtime_storage_size(true) == runtime_storage_size(false) + sizeof(EvaluationTime));
 }
 
 TEST_CASE("graph structure distinguishes default fallbacks",
           "[feature:operator][feature:wiring][series:value][scalar:integer][shape:single-node]") {
-    const auto structure = [](bg::i64 fallback) {
-        auto wiring = bg::GraphWiring{};
-        const auto context = bg::WiringContext{wiring};
-        const auto source = bg::node<default_structure_source>();
-        const auto sink = bg::node<default_structure_sink>();
+    const auto structure = [](i64 fallback) {
+        auto wiring = GraphWiring{};
+        auto context = WiringContext{wiring};
+        const auto source = node(eval = [](Out<TS<i64>>) {}, deduplicate_wiring = false);
+
+        const auto sink = node([](In<TS<i64>>, Out<TS<i64>>) {});
         const auto input = source();
-        const auto result = sink(bg::operators::default_(input, fallback));
-        const auto boundaries = std::array<bg::WiringPoint, 1>{input};
+        const auto result = sink(operators::default_(input, fallback));
+        const auto boundaries = std::array<WiringPoint, 1>{input};
         (void)wiring.complete_pending_wiring();
-        return bg::details::graph_wiring_structure(wiring, boundaries, static_cast<bg::WiringPoint>(result));
+        return details::graph_wiring_structure(wiring, boundaries, static_cast<WiringPoint>(result));
     };
 
     CHECK_FALSE(structure(7) == structure(8));
