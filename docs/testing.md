@@ -3,8 +3,9 @@
 ## Purpose
 
 The test suite verifies graph correctness, supported interfaces, and performance
-constraints. Tests use the lowest interface that contains the behavior under
-test. Node and graph behavior tests use `test_graph`.
+constraints. Node and graph behavior tests construct graph code through public
+node and graph APIs and use `test_graph`. Tests for engine invariants use the
+engine API that owns the invariant.
 
 ## Coverage model
 
@@ -82,6 +83,22 @@ focused on one behavior. Define a test-only function, node, or graph in the test
 case that uses it. When an interface requires a namespace-scope type, place its
 declaration immediately before the test case. Keep other declarations at file
 scope only when multiple test cases share them.
+
+Keep the graph, input sequence, and expected results visible in the test case.
+Prefer literal input sequences and infer their types from the graph signature.
+Specify an input type only when the signature leaves it unresolved or selecting
+a runtime representation is part of the test. Keep a custom source when its
+declaration, lifecycle, or output mutation is under test.
+
+Assert output deltas when they establish the behavior. Use test-local counters
+or event logs for evaluation counts, callbacks, and lifetime requirements that
+outputs cannot establish. Observe input properties through normal node APIs.
+
+Before replacing a test, identify the requirement established by each assertion
+and preserve it in the replacement. Add cases for concrete gaps found during
+this review. Coverage tags identify tested combinations; assertions must
+establish the claimed behavior. A test that claims independent behavior across
+items or graph instances must exercise and observe more than one.
 
 `test_graph` accepts a wiring template or a graph function. Each input range
 defines updates by outer cycle. An empty `std::optional` skips its cycle. The
