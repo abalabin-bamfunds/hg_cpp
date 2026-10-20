@@ -1,11 +1,16 @@
 # Frame foundation handoff
 
-Updated: 2026-10-20. The frame lane is rebased onto main `a17a8ffd`.
+Updated: 2026-10-20. The frame lane is rebased onto main `52bac941`.
 Main includes shared schema metadata (`6419e073`) and process-lifetime ownership
 of registered type metadata (`160f128b`), plus compatible generic input-view
 casts (`a17a8ffd`). Frame implementation remains on the lane.
 
-Native keyed TSF capture is implemented and verified.
+The rebase required adapting frame snapshot ownership to main's
+`ScalarAllocationPool` API. Commit `cd7b73ad` retains a matching context pool
+and preserves direct allocation when the caller supplies an unrelated allocator.
+Release Arrow-on verification passed all six suites after this change.
+
+Native keyed TSF capture and native TSC input literals are implemented and verified.
 Its typed writer uses `In<TS_T>::as<TSF<SCHEMA>>()`; `as()` now accepts compatible
 generic declarations and preserves the actual runtime type. Incompatible
 declarations still throw `std::bad_cast`. No capture changes have been merged.
@@ -17,8 +22,8 @@ completed lane retirement, and consumer verification.
 
 | Work | Location / branch | State |
 | --- | --- | --- |
-| Main | `/home/abalabin/_bg`, `main` | `a17a8ffd` |
-| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Frame foundation, expressions, scalar literals, native keyed storage, TSF row literals, and native keyed capture |
+| Main | `/home/abalabin/_bg`, `main` | `52bac941` |
+| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Frame foundation, expressions, scalar literals, native keyed storage, TSF/TSC input literals, and native keyed capture |
 | Generic input-view casts | Main | `a17a8ffd`; tested build preserved in `.lanes/generic-input-cast` |
 | Shared schema metadata and BG lifetime fix | Main | `6419e073`, `160f128b`; consumer builds use matching lane-local installs |
 | Test graph output capture | Main | Integrated through `36eb21fb`, including shared extension comparison dispatch |
@@ -171,7 +176,21 @@ tests use native and view TSF runtimes with one concrete schema. They verify
 runtime descriptors, source and column buffer identity, nullable cells, and
 row and column deltas across invocations. Test checkpoint: `bf4d9483`.
 
-Rebase verification against main `a17a8ffd` rebuilt the Release BG dependency
+Rebase verification against main `52bac941` rebuilt and installed the Release
+BG dependency with `-j12`. Frame compilation exposed the renamed allocation
+pool API; after the extension compatibility change in `cd7b73ad`, the complete
+Release Arrow-on consumer suite passed 6/6. The rebase itself changed no
+extension files. Pool lifetime tests cover snapshots allocated through both
+the context allocator and the pool allocator.
+
+TSC literal input verification at `cdd201a2` passed the complete Release Arrow-on
+consumer suite, 6/6. Tests cover inferred and explicit runtimes, typed and generic
+`Out::apply`, nullable `i64`/`double` appends, empty no-ops, skipped cycles,
+invalidation/revalidation, malformed cells, and unsupported output layouts.
+No TSC capture handler was added. Debug and Arrow-off verification have not been
+repeated for the current rebase and TSC input change.
+
+Prior rebase verification against main `a17a8ffd` rebuilt the Release BG dependency
 and Release Arrow-on consumer with `-j12`; the complete consumer suite passed
 6/6. Extension files were unchanged by the rebase.
 
@@ -505,9 +524,14 @@ design; they do not replace the consumer verification recorded above.
 ## Status and remaining work
 
 BG test-graph output capture, frame scalar literals and content equality,
-TSF row-literal updates, and native keyed TSF result capture and delta comparison
-are implemented. TSC literals and capture, unkeyed TSF capture, and frame view
-capture remain outstanding.
+TSF row-literal updates, TSC append literals, and native keyed TSF result capture
+and delta comparison are implemented. TSC capture, unkeyed TSF capture, and frame
+view capture remain outstanding.
+
+Unkeyed TSF and TSC input literals append rows. Nodes can also modify and remove
+rows through their internal IDs, so output deltas can contain all three
+operations. Their capture representation and assertion API require agreement
+before implementation. No addition-only output capture was implemented.
 
 Boolean storage, comparisons, and expression-based filtering are the next
 frame features and require design review before implementation.
@@ -571,7 +595,7 @@ validate key uniqueness with a temporary hash index of row positions. The
 validator records batch starts for collision checks; it does not add persistent
 key-index state to scalar frames. TSF row literal updates use key columns for
 insert, patch, and removal as documented in the [extension README](README.md#tsf-row-updates).
-TSC literals and capture, unkeyed TSF capture, and keyed view behavior remain open.
+TSC capture, unkeyed TSF capture, and keyed view behavior remain open.
 View capture needs a decision on preserving source keys and a design for
 removed-key access when the source row domain changes.
 

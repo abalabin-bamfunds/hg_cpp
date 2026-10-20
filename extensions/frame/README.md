@@ -184,6 +184,19 @@ destruction. Comparisons use the actual schema, including Derived fields
 observed through a Base annotation. Frame views, unkeyed TSF outputs, and TSC
 outputs do not yet support result capture.
 
+### TSC literal updates
+
+A native `TSC<T>` literal is a sequence of nullable cells. Each cell appends a
+row; internal row IDs are allocated by the output. For example,
+`output.apply({i64{10}, NULL_VALUE})` appends two rows to `TSC<i64>`.
+The same syntax supplies `test_graph` inputs. Cells must match the resolved
+column type.
+
+An empty literal validates an invalid output as an empty column and leaves a
+valid column unchanged. Root `literal::SKIP` leaves the column unchanged;
+`literal::INVALID` invalidates it. Literal updates use the native output layout.
+Use `set` and `erase` with IDs obtained from node APIs to modify existing rows.
+
 ## TSC input/output surface
 
 Include `<bg/frame/tsc.hpp>` for the typed views.
@@ -193,7 +206,7 @@ Include `<bg/frame/tsc.hpp>` for the typed views.
 | `In<TSC<i64>>` | BG validity/update queries, `size`, `contains`, `cell`, `row_domain` |
 | Current value | Zero-copy `value_view()`, `for_each_row`, `for_each_batch` |
 | Delta | `for_each_changed` combines additions and modifications; `for_each_removed` supplies IDs |
-| `Out<TSC<i64>>` | `add`, `set`, `erase`, `clear`, `invalidate` |
+| `Out<TSC<i64>>` | `add`, `set`, `erase`, `clear`, `invalidate`, `apply` |
 | `Out<TSC<i64>, frame::view>` | `bind(source)`, `invalidate` |
 | `Out<TSC<i64>, frame::computed<>>` | `bind(source)`, `set(id, value)`, `set_batch(ids, batch)`, `invalidate` |
 
