@@ -134,6 +134,11 @@ class FreeTimeSeriesBundleWiringRecord final : public WiringRecord {
         : WiringRecord{type}, fields_{std::move(fields)} {}
 
     WiringArgument argument(std::size_t index) const { return WiringArgument::borrow(fields_.at(index)); }
+    bool materialisation_ready_impl() const noexcept override {
+        return std::ranges::all_of(fields_, [](const auto &field) {
+            return !field.is_time_series() || field.time_series().record()->materialisation_ready();
+        });
+    }
 
   private:
     MaterialisationPreparation prepare_materialisation(const TimeSeriesType &target_type) const override {
@@ -176,6 +181,8 @@ class TimeSeriesBundleFieldWiringRecord final : public WiringRecord {
     TimeSeriesBundleFieldWiringRecord(WiringPoint bundle, const TimeSeriesBundleType &type,
                                       std::size_t index)
         : WiringRecord{type.item_type(index)}, bundle_{bundle}, field_{type.item_id(index)} {}
+
+    bool materialisation_ready_impl() const noexcept override { return bundle_.record()->materialisation_ready(); }
 
   private:
     MaterialisationPreparation prepare_materialisation(const TimeSeriesType &target_type) const override {

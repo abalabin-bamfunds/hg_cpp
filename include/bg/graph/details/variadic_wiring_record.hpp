@@ -26,6 +26,7 @@ class VariadicWiringRecord final : public WiringRecord {
     std::vector<WiringArgumentDescriptor> argument_descriptors() const;
     VariadicMode mode() const noexcept { return mode_; }
     std::optional<WiringPoint> direct_collection() const noexcept { return direct_; }
+    bool materialisation_ready_impl() const noexcept override;
 
   private:
     VariadicWiringRecord(VariadicCapture captured, VariadicMode mode,

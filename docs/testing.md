@@ -24,7 +24,7 @@ Use `[dimension:value]` for each applicable dimension:
   `invalidation`, `operator`, `constant`, `graph-argument`, `map`, `switch`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `feedback`,
   `item-id-remapping`, `service`, `getitem`, `getattr`, `nested-graph`, `mesh`,
-  `multiservice`, `reduce`,
+  `multiservice`, `reduce`, `late-bound-wiring`,
   `variadic-wiring`, or `wiring-materialisation`
 - `series`: `value`, `fixed-tsl`, `tss`, `tsd`, `tsb`, `reference`, or `generic`
 - `schema`: `named`, `unnamed`, or `generic`

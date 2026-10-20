@@ -3,6 +3,7 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_error.hpp>
 
+#include <algorithm>
 #include <stdexcept>
 
 namespace bg::details {
@@ -45,6 +46,15 @@ WiringArgument VariadicWiringRecord::argument(std::size_t index) const {
     auto result = WiringArgument{operations_->item(*direct_, index)};
     result.set_variadic_name(operations_->item_name(direct_->type(), index), mode_);
     return result;
+}
+
+bool VariadicWiringRecord::materialisation_ready_impl() const noexcept {
+    if (direct_) {
+        return direct_->record()->materialisation_ready();
+    }
+    return std::ranges::all_of(arguments_, [](const WiringArgument &argument) {
+        return !argument.is_time_series() || argument.time_series().record()->materialisation_ready();
+    });
 }
 
 std::vector<WiringArgumentDescriptor> VariadicWiringRecord::argument_descriptors() const {

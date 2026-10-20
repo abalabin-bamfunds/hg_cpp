@@ -207,6 +207,18 @@ while permitting later wiring. Compilation requires a successful `finalize()`
 and does not construct nodes. `run_graph` and `test_graph` complete wiring
 automatically.
 
+`GraphWiring::late_bound_wiring(type)` creates a typed deferred point for a
+resolved semantic type. Its provider can be supplied later with
+`provide_late_bound_wiring(point, provider)`.
+The provider must be a compatible point in the same `GraphWiring`, and each
+deferred point accepts one provider. A provider may be another deferred point.
+Direct alias cycles are rejected when the provider is supplied; other
+materialization cycles use the normal cycle check. Consumers can be wired before
+the provider exists; pending wiring waits until it is supplied, then materializes
+the deferred point directly to that provider without adding a node. Finalization
+fails if a deferred point has no provider. This is a wiring-time facility; it
+adds no runtime or compilation behavior.
+
 ## Wiring context
 
 `WiringContext` makes one `GraphWiring` active on the current thread:

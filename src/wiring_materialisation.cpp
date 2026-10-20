@@ -174,6 +174,11 @@ class DeferredWiringRecord final : public details::WiringRecord {
     }
 
     bool has_default_materialisation() const noexcept override { return false; }
+    bool materialisation_ready_impl() const noexcept override {
+        return std::ranges::all_of(arguments_, [](const WiringArgument &argument) {
+            return !argument.is_time_series() || argument.time_series().record()->materialisation_ready();
+        });
+    }
 
     void add_materialisation_option(const TimeSeriesType &target_type, double cost, Signature input_signature,
                                     WiringMaterialisationBuilder builder) const override {

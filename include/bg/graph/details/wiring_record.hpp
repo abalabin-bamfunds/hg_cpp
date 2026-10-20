@@ -6,6 +6,7 @@
 #include <bg/graph/wiring_point.hpp>
 #include <bg/graph/wired_input.hpp>
 #include <bg/time_series/item_id.hpp>
+#include <bg/util/scope_exit.hpp>
 #include <bg/util/symbol.hpp>
 
 #include <cstddef>
@@ -66,6 +67,15 @@ class WiringRecord {
     bool has_wired_output() const noexcept { return output_ != no_output; }
     bool graph_owned() const noexcept { return graph_owned_; }
     virtual bool has_default_materialisation() const noexcept { return true; }
+    bool materialisation_ready() const noexcept {
+        if (checking_materialisation_readiness_) {
+            // Materialisation reports dependency cycles with the active request path.
+            return true;
+        }
+        checking_materialisation_readiness_ = true;
+        auto reset = util::scope_exit{[this]() noexcept { checking_materialisation_readiness_ = false; }};
+        return materialisation_ready_impl();
+    }
     virtual std::optional<NodeCallIdentity> node_call_identity() const noexcept { return std::nullopt; }
     virtual const WiringRecord *source_identity() const noexcept { return this; }
     std::size_t wired_output_index() const noexcept { return output_; }
@@ -92,6 +102,7 @@ class WiringRecord {
 
   protected:
     explicit WiringRecord(const TimeSeriesType &type) noexcept : type_{&type} {}
+    virtual bool materialisation_ready_impl() const noexcept { return true; }
 
   private:
     GraphWiring *graph_{};
@@ -99,6 +110,7 @@ class WiringRecord {
     // A wired output index or no_output.
     std::size_t output_;
     bool graph_owned_{};
+    mutable bool checking_materialisation_readiness_{};
 };
 
 WiringPoint add_wiring_record(std::unique_ptr<WiringRecord> record);

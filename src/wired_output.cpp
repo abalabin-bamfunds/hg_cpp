@@ -27,6 +27,7 @@ class PendingItemWiringRecord final : public details::WiringRecord {
     std::optional<NodeCallIdentity> node_call_identity() const noexcept override {
         return parent_.record()->node_call_identity();
     }
+    bool materialisation_ready_impl() const noexcept override { return parent_.record()->materialisation_ready(); }
 
   private:
     details::MaterialisationPreparation prepare_materialisation(
@@ -58,6 +59,7 @@ class SelectedMaterialisationFormWiringRecord final : public details::WiringReco
     const details::WiringRecord *source_identity() const noexcept override {
         return source_.record()->source_identity();
     }
+    bool materialisation_ready_impl() const noexcept override { return source_.record()->materialisation_ready(); }
     std::vector<WiringMaterialisationOption> materialisation_options() const override {
         auto options = source_.materialisation_options();
         if (source_.has_default_materialisation() && &source_.type() != target_ &&

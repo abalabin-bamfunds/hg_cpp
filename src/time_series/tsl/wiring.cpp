@@ -132,6 +132,10 @@ class FreeFixedTimeSeriesListWiringRecord final : public WiringRecord {
     FreeFixedTimeSeriesListWiringRecord(const TimeSeriesListType &type, std::span<const WiringPoint> items)
         : WiringRecord{type}, items_{items.begin(), items.end()} {}
 
+    bool materialisation_ready_impl() const noexcept override {
+        return std::ranges::all_of(items_, [](WiringPoint item) { return item.record()->materialisation_ready(); });
+    }
+
     WiringPoint item(std::size_t index) const { return items_.at(index); }
 
   private:
@@ -170,6 +174,8 @@ class TimeSeriesListItemWiringRecord final : public WiringRecord {
   public:
     TimeSeriesListItemWiringRecord(WiringPoint list, const TimeSeriesListType &type, std::size_t index)
         : WiringRecord{type.item_type(index)}, list_{list}, item_{type.item_id(index)} {}
+
+    bool materialisation_ready_impl() const noexcept override { return list_.record()->materialisation_ready(); }
 
   private:
     MaterialisationPreparation prepare_materialisation(const TimeSeriesType &target_type) const override {

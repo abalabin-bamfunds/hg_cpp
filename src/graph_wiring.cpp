@@ -162,6 +162,30 @@ class LateInheritedUseWiringRecord final : public WiringRecord {
     mutable std::optional<WiringPoint> forwarded_;
 };
 
+class LateBoundWiringRecord final : public WiringRecord {
+  public:
+    explicit LateBoundWiringRecord(const TimeSeriesType &type) : WiringRecord{type} {}
+
+    bool has_provider() const noexcept { return provider_.has_output(); }
+    WiringPoint provider() const noexcept { return provider_; }
+
+    void provide(WiringPoint provider) { provider_ = provider; }
+
+    bool materialisation_ready_impl() const noexcept override {
+        return has_provider() && provider_.record()->materialisation_ready();
+    }
+
+  private:
+    WiringPoint materialize(const TimeSeriesType &requested_type) const override {
+        if (!has_provider()) {
+            throw WiringError{"a late-bound wiring point has no provider"};
+        }
+        return wiring().materialize(provider_, requested_type);
+    }
+
+    WiringPoint provider_;
+};
+
 class BorrowedInputWiringRecord final : public WiringRecord {
   public:
     BorrowedInputWiringRecord(const TimeSeriesType &type, std::size_t index)
@@ -190,6 +214,8 @@ class PendingNodeOutputWiringRecord final : public WiringRecord {
     std::optional<NodeCallIdentity> node_call_identity() const noexcept override {
         return NodeCallIdentity{identity_};
     }
+
+    bool materialisation_ready_impl() const noexcept override { return wiring().pending_node_call_ready(identity_); }
 
   private:
     WiringPoint materialize(const TimeSeriesType &requested_type) const override {
@@ -546,6 +572,24 @@ WiringPoint GraphWiring::resolve_pending_node_call(std::size_t identity) {
     return call.output.value_or(WiringPoint{});
 }
 
+bool GraphWiring::pending_node_call_ready(std::size_t identity) const noexcept {
+    if (identity >= pending_node_calls_.size()) {
+        return false;
+    }
+
+    auto &call = *pending_node_calls_[identity];
+    if (call.state == PendingNodeCall::State::resolved || call.state == PendingNodeCall::State::resolving) {
+        return true;
+    }
+
+    for (const auto &argument : call.arguments) {
+        if (argument.is_time_series() && !argument.time_series().record()->materialisation_ready()) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void GraphWiring::finalize() {
     if (finalization_state_ == FinalizationState::finalized) {
         return;
@@ -569,6 +613,12 @@ void GraphWiring::finalize() {
 
         if (service_build_validate_) {
             service_build_validate_();
+        }
+
+        for (const auto *requirement : late_bound_wiring_records_) {
+            if (!requirement->has_provider()) {
+                throw WiringError{"a late-bound wiring point has no provider"};
+            }
         }
 
         finalization_state_ = FinalizationState::finalized;
@@ -623,6 +673,9 @@ WiringPoint GraphWiring::complete_pending_wiring(WiringPoint result) {
         auto changed = true;
         while (changed) {
             changed = drain_pending_wiring();
+            if (!result.record()->materialisation_ready()) {
+                throw WiringError{"a wiring result depends on an unprovided late-bound wiring point"};
+            }
             concrete_result = materialize(result, result.type());
             changed = drain_pending_wiring() || changed;
         }
@@ -648,6 +701,9 @@ bool GraphWiring::drain_pending_wiring() {
     while (requirement_index < materialisation_requirements_.size() || call_index < pending_node_calls_.size()) {
         while (requirement_index < materialisation_requirements_.size()) {
             const auto requirement = materialisation_requirements_[requirement_index++];
+            if (!requirement.record->materialisation_ready()) {
+                continue;
+            }
             const auto point = details::WiringRecord::point(*requirement.record);
             const auto &contexts = requirement.origins;
             auto diagnostics = details::WiringDiagnosticContext{*this, contexts};
@@ -663,6 +719,9 @@ bool GraphWiring::drain_pending_wiring() {
         }
         if (call_index < pending_node_calls_.size()) {
             const auto identity = call_index++;
+            if (!pending_node_call_ready(identity)) {
+                continue;
+            }
             try {
                 (void)resolve_pending_node_call(identity);
             } catch (...) {
@@ -858,6 +917,57 @@ WiringPoint GraphWiring::borrowed_input(const TimeSeriesType &type) {
     auto result = register_record(std::make_unique<details::BorrowedInputWiringRecord>(type, index));
     borrowed_input_types_.push_back(&type);
     return result;
+}
+
+WiringPoint GraphWiring::late_bound_wiring(const TimeSeriesType &type) {
+    ensure_open();
+    if (!type.is_resolved()) {
+        throw WiringError{"a late-bound wiring point requires a resolved semantic type"};
+    }
+    auto record = std::make_unique<details::LateBoundWiringRecord>(type);
+    auto *late_bound = record.get();
+    const auto point = register_record(std::move(record));
+    late_bound_wiring_records_.push_back(late_bound);
+    return point;
+}
+
+void GraphWiring::provide_late_bound_wiring(WiringPoint requirement, WiringPoint provider) {
+    ensure_open();
+    if (!requirement.has_output() || &requirement.graph() != this) {
+        throw WiringError{"a late-bound wiring point must belong to this GraphWiring"};
+    }
+    if (!provider.has_output() || &provider.graph() != this) {
+        throw WiringError{"a late-bound wiring provider must belong to the same GraphWiring"};
+    }
+
+    const auto found = std::ranges::find(late_bound_wiring_records_, requirement.record());
+    if (found == late_bound_wiring_records_.end()) {
+        throw WiringError{"the WiringPoint is not a late-bound wiring point"};
+    }
+    auto &late_bound = **found;
+    if (late_bound.has_provider()) {
+        throw WiringError{"a late-bound wiring point already has a provider"};
+    }
+    auto provider_record = provider.record();
+    for (;;) {
+        const auto upstream = std::ranges::find(late_bound_wiring_records_, provider_record);
+        if (upstream == late_bound_wiring_records_.end()) {
+            break;
+        }
+        if (*upstream == &late_bound) {
+            throw WiringError{"late-bound wiring providers contain an alias cycle"};
+        }
+        const auto &upstream_requirement = **upstream;
+        if (!upstream_requirement.has_provider()) {
+            break;
+        }
+        provider_record = upstream_requirement.provider().record();
+    }
+    if (!late_bound.type().accepts(provider.type())) {
+        throw WiringError{"the late-bound wiring provider has an incompatible type"};
+    }
+
+    late_bound.provide(provider);
 }
 
 WiredInput GraphWiring::resolve_inherited_input(WiredInput input) const {

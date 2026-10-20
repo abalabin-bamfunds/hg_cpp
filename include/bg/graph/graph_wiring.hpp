@@ -44,6 +44,7 @@ namespace details {
 class WiringRecord;
 class WiringArgumentDescriptor;
 class GraphWiringStructure;
+class LateBoundWiringRecord;
 class ContextScope;
 class ServiceRequirements;
 struct OperatorResolutionCache;
@@ -157,6 +158,7 @@ class GraphWiring {
                                               const TimeSeriesRuntimeType *output_runtime_type);
     [[nodiscard]] std::size_t node_index(NodeCallIdentity identity) const;
     [[nodiscard]] std::optional<NodeCallIdentity> node_call_identity(WiringPoint point) const noexcept;
+    bool pending_node_call_ready(std::size_t identity) const noexcept;
     [[nodiscard]] WiringPoint resolve_pending_node_call(std::size_t identity);
     [[nodiscard]] std::size_t register_node(WiredNode node);
     void register_node_output(std::size_t node_index, WiringPoint output, std::optional<std::size_t> hash);
@@ -166,6 +168,10 @@ class GraphWiring {
     [[nodiscard]] WiringPoint register_output(WiredOutput output);
     [[nodiscard]] WiringPoint register_output(WiredOutput output, std::unique_ptr<details::WiringRecord> record);
     [[nodiscard]] WiringPoint borrowed_input(const TimeSeriesType &type);
+    // Creates a typed deferred point that must be provided before compilation.
+    [[nodiscard]] WiringPoint late_bound_wiring(const TimeSeriesType &type);
+    // Binds a deferred point once to a compatible provider in this GraphWiring.
+    void provide_late_bound_wiring(WiringPoint requirement, WiringPoint provider);
     [[nodiscard]] std::span<const TimeSeriesType *const> borrowed_input_types() const noexcept {
         return borrowed_input_types_;
     }
@@ -260,6 +266,7 @@ class GraphWiring {
     std::function<void()> service_build_validate_;
     std::unique_ptr<details::ServiceRequirements> service_requirements_;
     std::vector<std::unique_ptr<details::WiringRecord>> wiring_records_;
+    std::vector<details::LateBoundWiringRecord *> late_bound_wiring_records_;
     struct ItemRecord {
         const details::WiringRecord *parent;
         item_id_t item;
