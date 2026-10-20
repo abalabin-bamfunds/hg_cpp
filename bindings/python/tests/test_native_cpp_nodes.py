@@ -74,6 +74,15 @@ def test_native_cpp_node_converts_python_object_using_resolved_covariant_type():
     assert result is value
 
 
+def test_native_cpp_node_rejects_builtin_scalar_for_python_object_input():
+    @bg.graph
+    def graph(value: bg.TS[int]) -> bg.TS[int]:
+        return native_python_object_property(value)
+
+    with pytest.raises(ValueError, match="Cannot resolve operator native_python_object_property"):
+        bg.test_graph(graph, [1])
+
+
 def test_native_cpp_stop_reports_python_exception_unraisable_and_finalizes():
     reset_native_node_lifecycle()
     unraisable = []
