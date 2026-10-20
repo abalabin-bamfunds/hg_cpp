@@ -13,12 +13,13 @@ namespace bg::operators {
 
 using COLLECTION = TimeSeriesVariable<"COLLECTION">;
 using ITEM = TimeSeriesVariable<"ITEM">;
+using VALUE = ScalarVariable<"VALUE">;
 using K = ScalarVariable<"K", Hashable>;
 
 extern BG_EXPORT operator_<auto(SCALAR)->TS<SCALAR, TimeSeriesGuarantee::const_>> const_;
 extern BG_EXPORT operator_<auto(TS<SCALAR>, SCALAR)->TS<SCALAR>> default_;
-extern BG_EXPORT operator_<ITEM, auto(COLLECTION, Union<"key", K, TS<K>>)->ITEM> getitem;
-extern BG_EXPORT operator_<ITEM, auto(TS_T, SCALAR)->ITEM> getattr;
+extern BG_EXPORT operator_<VALUE, auto(COLLECTION, Union<"key", K, TS<K>>)->ITEM> getitem;
+extern BG_EXPORT operator_<VALUE, auto(TS_T, SCALAR)->ITEM> getattr;
 
 } // namespace bg::operators
 

@@ -384,7 +384,8 @@ void record_scalar_read(void *context, std::size_t index, Scalar<> value) {
 
 } // namespace
 
-Operator::Operator(Signature prototype) : prototype_{std::move(prototype)} {}
+Operator::Operator(Signature prototype, std::span<const Variable *const> type_parameters)
+    : prototype_{std::move(prototype)}, type_parameters_{type_parameters.begin(), type_parameters.end()} {}
 
 Operator::~Operator() = default;
 
@@ -397,6 +398,35 @@ void Operator::add_overload(std::unique_ptr<WiringTemplate> implementation) {
 
 std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const WiringArgument> arguments,
                                             const TypeMap *seed_type_map) const {
+    auto explicit_type_parameters = std::vector<const Variable *>{};
+    if (seed_type_map != nullptr) {
+        for (const auto *variable : type_parameters_) {
+            if (seed_type_map->find(*variable) != nullptr) {
+                explicit_type_parameters.push_back(variable);
+            }
+        }
+    }
+
+    const auto matches_prototype_parameter = [&](const Variable &variable, const ResolvedSignature &resolved) {
+        const auto *mapped = std::get_if<const Type *>(seed_type_map->find(variable));
+        const auto *variable_type = dynamic_cast<const Type *>(&variable);
+        if (mapped == nullptr || *mapped == nullptr || variable_type == nullptr) {
+            return false;
+        }
+
+        auto used = false;
+        for (auto index = std::size_t{}; index < prototype_.parameter_count(); ++index) {
+            if (prototype_.parameter(index).type != variable_type) {
+                continue;
+            }
+            used = true;
+            if (index >= resolved.parameters.size() || resolved.parameters[index].type != *mapped) {
+                return false;
+            }
+        }
+        return used;
+    };
+
     auto &cache = wiring.operator_resolution_cache(*this);
     if (cache.operator_identity != cache_identity_ || cache.overload_count != overloads_.size()) {
         cache.entries.clear();
@@ -611,6 +641,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                 auto argument_context = WiringArguments{signature, match.type_map, normalized.descriptors,
                                                         &scalar_reads, &record_scalar_read};
                 auto completed = std::optional<ResolvedWiringSignatureMatch>{};
+                auto observed_type_variables = std::vector<const Variable *>{};
                 try {
                     completed.emplace(signature.complete_wiring_match(
                         std::move(match), argument_context, [&](const TypeMap &resolved_type_map) {
@@ -624,7 +655,7 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                             } catch (...) {
                                 requirement_exception = std::current_exception();
                             }
-                        }));
+                        }, explicit_type_parameters.empty() ? nullptr : &observed_type_variables));
                 } catch (const TypeResolutionError &error) {
                     failures.push_back(failure(*implementation, error));
                     continue;
@@ -666,6 +697,17 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                         completed->materialisation_cost, WiringFailureStage::requirement,
                         requirement.message().empty() ? "requirement rejected the arguments"
                                                      : std::string{requirement.message()}));
+                    continue;
+                }
+
+                const auto unused = std::ranges::find_if(explicit_type_parameters, [&](const auto *variable) {
+                    return !std::ranges::contains(observed_type_variables, variable) &&
+                           !matches_prototype_parameter(*variable, completed->resolution.signature);
+                });
+                if (unused != explicit_type_parameters.end()) {
+                    failures.push_back(failure(*implementation, TypeResolutionError{
+                        TypeResolutionErrorCode::mismatch, (*unused)->name(),
+                        "overload does not accept the explicit type argument"}));
                     continue;
                 }
 

@@ -60,7 +60,8 @@ class OperatorTemplate final
     }
 
     explicit OperatorTemplate(std::string_view name, std::span<const std::string_view> parameter_names = {})
-        : Operator(details::operator_typed_prototype<Prototype>::signature(util::symbol{name}, parameter_names)) {}
+        : Operator(details::operator_typed_prototype<Prototype>::signature(util::symbol{name}, parameter_names),
+                   declared_type_parameters()) {}
 
     OperatorTemplate(std::string_view name, std::initializer_list<std::string_view> parameter_names)
         : OperatorTemplate(name, std::span<const std::string_view>{parameter_names}) {}
@@ -98,6 +99,12 @@ class OperatorTemplate final
     template <typename... Arguments> auto operator()(Arguments &&...) const && = delete;
 
   private:
+    static std::span<const Variable *const> declared_type_parameters() {
+        static const auto parameters = std::array<const Variable *, sizeof...(TypeParameters)>{
+            &details::type_parameter<TypeParameters>()...};
+        return parameters;
+    }
+
     static auto public_result(std::optional<WiringPoint> result) {
         if constexpr (details::operator_typed_prototype<Prototype>::has_output) {
             return result ? wp<>{*result} : wp<>{};

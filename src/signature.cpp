@@ -440,19 +440,27 @@ void Signature::validate_wiring_arguments(std::span<const WiringArgument> argume
 
 ResolvedWiringSignatureMatch Signature::complete_wiring_match(
     WiringSignatureMatch match, const WiringArguments &argument_context,
-    const std::function<void(const TypeMap &)> &completion) const {
+    const std::function<void(const TypeMap &)> &completion,
+    std::vector<const Variable *> *observed_type_variables) const {
     auto arguments = argument_context.with_type_map(match.type_map);
-    auto signature = complete_resolution(match.type_map, &arguments, completion);
+    auto signature = complete_resolution(match.type_map, &arguments, completion, observed_type_variables);
     auto resolution = SignatureResolution{std::move(signature), std::move(match.type_map)};
     return {std::move(resolution), std::move(match.argument_forms), match.materialisation_cost};
 }
 
 ResolvedSignature Signature::complete_resolution(
     TypeMap &type_map, const WiringArguments *arguments,
-    const std::function<void(const TypeMap &)> &completion) const {
+    const std::function<void(const TypeMap &)> &completion,
+    std::vector<const Variable *> *observed_type_variables) const {
     auto resolver_context = ResolverContext{resolvers_, arguments, std::vector<ResolverState>(resolvers_.size())};
     type_map.missing_mapping_handler(&resolver_context, &resolve_missing_mapping);
     auto clear_handler = util::scope_exit{[&]() noexcept { type_map.missing_mapping_handler(nullptr, nullptr); }};
+
+    auto *previous_reads = type_map.observed_reads_;
+    if (observed_type_variables != nullptr) {
+        type_map.observed_reads_ = observed_type_variables;
+    }
+    auto restore_reads = util::scope_exit{[&]() noexcept { type_map.observed_reads_ = previous_reads; }};
 
     std::vector<ResolvedParameter> parameters;
     parameters.reserve(parameters_.size());

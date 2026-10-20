@@ -172,6 +172,12 @@ For each candidate, resolution proceeds in this order:
 4. Run the requirement while resolver lookup remains active.
 5. Retain the candidate when each demand and its requirement succeeds.
 
+An explicit operator type argument makes an overload applicable when its
+signature, additional type resolution, or requirement uses that variable.
+A concrete overload also accepts a variable used directly as a scalar prototype
+parameter when its corresponding parameter has the requested type. Other
+overloads reject the explicit argument even when their inferred output matches.
+
 Resolvers run only when signature resolution, template metadata, requirements, or
 another resolver requests their variable. A resolver can request dependencies
 through `TypeMap::find`. The resolver lookup scope closes before the candidate

@@ -119,9 +119,10 @@ a scalar or time-series key. `getattr` accepts a scalar string or symbol name.
 The output scalar type is inferred from the Python `__getitem__` return
 annotation or the selected attribute's annotation; provide an explicit output
 type when inference is unavailable, for example
-`bg.operators.getitem[bg.TS[int]](value, key)` or
-`bg.operators.getattr[bg.TS[int]](value, "count")`. These overloads return
-scalar time series only.
+`bg.operators.getitem[int](value, key)` or
+`bg.operators.getattr[int](value, "count")`. The bracketed type is the scalar
+value type; these overloads return `TS` of that type.
+Time-series collection overloads do not accept a bracketed output type.
 
 `bg.opt(point)` requires an optional receiving parameter. It returns a new
 wiring proxy for the same time series and leaves `point` unchanged. It adds no

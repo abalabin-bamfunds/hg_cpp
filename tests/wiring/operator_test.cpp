@@ -50,6 +50,27 @@ TEST_CASE("operator scalar type-variable results retain their identity",
     bg::testing::test_wiring([&] {
         const auto result = named[bg::type<VALUE> = bg::type<double>](2.5);
         CHECK(&result.type() == &bg::TS<double, bg::TimeSeriesGuarantee::const_>::type());
+        CHECK_THROWS_AS((named[bg::type<VALUE> = bg::type<bg::i64>](2.5)), bg::WiringError);
+    });
+}
+
+TEST_CASE("an explicit operator type argument requires an overload that uses it",
+          "[feature:operator][feature:type-system][declaration:generic]") {
+    using VALUE = bg::ScalarVariable<"VALUE">;
+    auto operation = bg::operator_<VALUE, auto(bg::TS_T) -> bg::TS_T>{"explicit_type_selection", {"value"}};
+    operation.overload(bg::graph("name"_n = "concrete", [](bg::wp<bg::TS<bg::i64>> value) { return value; }));
+
+    bg::testing::test_wiring([&] {
+        const auto value = bg::operators::const_(bg::i64{3});
+        CHECK(&operation(value).type() == &value.type());
+        CHECK_THROWS_AS((operation[bg::type<bg::i64>](value)), bg::WiringError);
+    });
+
+    operation.overload(bg::graph("name"_n = "generic", [](bg::wp<bg::TS<VALUE>> value) { return value; }));
+    bg::testing::test_wiring([&] {
+        const auto value = bg::operators::const_(bg::i64{3});
+        CHECK(&operation[bg::type<bg::i64>](value).type() == &value.type());
+        CHECK_THROWS_AS((operation[bg::type<double>](value)), bg::WiringError);
     });
 }
 
