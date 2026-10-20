@@ -23,6 +23,7 @@
 #include <bg/testing/time_series_tick_comparison.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
+#include <bg/type/type_variable.hpp>
 #include <bg/time_series/details/scalar_literal.hpp>
 #include <bg/time_series/tick_serializer.hpp>
 
@@ -643,7 +644,25 @@ inline auto literal_runtime_type(const TestGraphLiteralInput &input, const Signa
         return *input.runtime_type;
     }
 
-    const auto *time_series_type = type_cast<TimeSeriesType>(signature.parameter(parameter_index).type);
+    const auto *parameter_type = signature.parameter(parameter_index).type;
+    auto *time_series_type = type_cast<TimeSeriesType>(parameter_type);
+    if (time_series_type == nullptr) {
+        const auto *variable = dynamic_cast<const TypeVariableType<Type> *>(parameter_type);
+        if (variable != nullptr) {
+            for (const auto *alternative : variable->alternatives()) {
+                const auto *candidate = type_cast<TimeSeriesType>(alternative);
+                if (candidate == nullptr) {
+                    continue;
+                }
+                if (time_series_type != nullptr) {
+                    time_series_type = nullptr;
+                    break;
+                }
+                time_series_type = candidate;
+            }
+        }
+    }
+
     if (time_series_type == nullptr) {
         throw std::invalid_argument{"a generic test_graph literal input requires an explicit time-series type"};
     }

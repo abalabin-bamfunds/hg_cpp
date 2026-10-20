@@ -44,6 +44,40 @@ TEST_CASE("test_graph evaluates a node over input ticks",
     CHECK(actual.equals<float>({11.0F, 22.0F, 33.0F}));
 }
 
+TEST_CASE("test_graph infers literal types for plain callable inputs",
+          "[testing][evaluation][feature:test-graph][transition:update][scalar:integer]") {
+    const auto add_plain = bg::node([](int lhs, int rhs) { return lhs + rhs; });
+
+    const auto actual = bg::testing::test_graph(
+        add_plain, {1, literal::SKIP, 3}, {literal::SKIP, 10, literal::SKIP});
+
+    CHECK(actual.equals({literal::SKIP, 11, 13}));
+
+    const auto empty = bg::testing::test_graph(add_plain, {}, {});
+    CHECK(empty.equals({literal::SKIP}));
+
+    const auto skipped = bg::testing::test_graph(
+        add_plain, {literal::SKIP, literal::SKIP}, {literal::SKIP, literal::SKIP});
+    CHECK(skipped.equals({literal::SKIP, literal::SKIP}));
+}
+
+struct PlainOptionalInput {
+    int value;
+    std::optional<int> offset;
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void evaluate() const { output.set(value + offset.value_or(0)); }
+};
+
+TEST_CASE("test_graph infers literal types for optional aggregate plain inputs",
+          "[testing][evaluation][feature:test-graph][transition:update][scalar:integer]") {
+    const auto add_optional = bg::node<PlainOptionalInput>();
+
+    const auto actual = bg::testing::test_graph(add_optional, {1, 2}, {literal::SKIP, 10});
+
+    CHECK(actual.equals({1, 12}));
+}
+
 TEST_CASE("test_graph records a profile for a graph function", "[testing][evaluation][feature:profiling]") {
     const auto graph = [](bg::wp<bg::TS<bg::i64>> input) { return input; };
     auto profiler = bg::EvaluationProfiler{};
@@ -192,6 +226,7 @@ TEST_CASE("test_graph literal annotations support generic and multiple inputs",
     CHECK(empty_first_result.equals<bg::i64>({30}));
     CHECK(configured_empty_first_result.equals<bg::i64>({30}));
     CHECK(generic_dictionary_result.equals<bg::i64>({40}));
+    CHECK_THROWS_AS((bg::testing::test_graph(identity, {1, 2})), std::invalid_argument);
     CHECK_THROWS_AS((bg::testing::test_graph(identity, {1, 2}, {3, 4})), std::invalid_argument);
 }
 
