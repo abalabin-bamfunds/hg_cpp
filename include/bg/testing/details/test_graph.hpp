@@ -39,6 +39,7 @@
 #include <span>
 #include <tuple>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -379,14 +380,113 @@ inline auto finish_test_graph(GraphWiring &wiring, CapturedValues &captured, Eva
 }
 
 class LiteralMatcher {
+  private:
+    class Comparison {
+      public:
+        Comparison &indexed_child(std::size_t index) {
+            if (indexed_children_.size() <= index) {
+                indexed_children_.resize(index + 1);
+            }
+            if (!indexed_children_[index]) {
+                indexed_children_[index] = std::make_unique<Comparison>();
+            }
+            return *indexed_children_[index];
+        }
+
+        Comparison &dictionary_child(const Scalar<> &key) {
+            const auto child = dictionary_children_.find(key);
+            if (child != dictionary_children_.end()) {
+                return *child->second;
+            }
+
+            auto value = std::make_unique<Comparison>();
+            const auto inserted = dictionary_children_.emplace(ScalarValue<>{key}, std::move(value)).first;
+            return *inserted->second;
+        }
+
+        bool retire_dictionary_child(const Scalar<> &key) {
+            const auto child = dictionary_children_.find(key);
+            if (child == dictionary_children_.end()) {
+                return true;
+            }
+
+            const auto matched = child->second->finish();
+            dictionary_children_.erase(child);
+            return matched;
+        }
+
+        void invalidate(std::size_t tick_index) {
+            if (extension_state_) {
+                extension_state_->invalidate(tick_index);
+            }
+            for (const auto &child : indexed_children_) {
+                if (child) {
+                    child->invalidate(tick_index);
+                }
+            }
+            for (const auto &[key, child] : dictionary_children_) {
+                child->invalidate(tick_index);
+            }
+        }
+
+        bool finish() {
+            if (extension_state_ && !extension_state_->finish()) {
+                return false;
+            }
+            for (const auto &child : indexed_children_) {
+                if (child && !child->finish()) {
+                    return false;
+                }
+            }
+            for (const auto &[key, child] : dictionary_children_) {
+                if (!child->finish()) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        TickLiteralComparisonState *extension_state(const TickLiteralComparison &operations) {
+            if (!extension_state_) {
+                extension_state_ = operations.create_state();
+            }
+            return extension_state_.get();
+        }
+
+      private:
+        std::unique_ptr<TickLiteralComparisonState> extension_state_;
+        std::vector<std::unique_ptr<Comparison>> indexed_children_;
+        std::unordered_map<ScalarValue<>, std::unique_ptr<Comparison>, ScalarHash, ScalarEqual> dictionary_children_;
+    };
+
   public:
+    static bool matches_sequence(std::span<const std::optional<util::buffer>> actual, const TimeSeriesType *type,
+                                 std::span<const literal::TimeSeriesLiteral> expected) {
+        if (actual.size() != expected.size()) {
+            return false;
+        }
+
+        try {
+            auto comparison = Comparison{};
+            for (auto index = std::size_t{}; index < actual.size(); ++index) {
+                if (!matches_tick(actual[index], type, expected[index], index, comparison)) {
+                    return false;
+                }
+            }
+            return comparison.finish();
+        } catch (const std::invalid_argument &) {
+            return false;
+        } catch (const std::out_of_range &) {
+            return false;
+        }
+    }
+
     // Compare one nested child tick and advance past its complete payload on success.
     static bool matches_child(util::buffer_reader &reader, const TimeSeriesType &type,
                               const literal::TimeSeriesLiteral &expected) {
         try {
-            const auto header = bg::details::TickHeader::read(reader);
-            return header.operation == bg::details::TickOperation::tick &&
-                   matches_payload(reader, type, header.valid, expected);
+            auto comparison = Comparison{};
+            return matches_child(reader, type, expected, 0, comparison) && comparison.finish();
         } catch (const std::invalid_argument &) {
             return false;
         } catch (const std::out_of_range &) {
@@ -396,14 +496,8 @@ class LiteralMatcher {
 
     static bool matches_tick(const std::optional<util::buffer> &actual, const TimeSeriesType *type,
                              const literal::TimeSeriesLiteral &expected) {
-        if (is_sentinel(expected, literal::SKIP)) {
-            return !actual;
-        }
-        if (!actual || type == nullptr) {
-            return false;
-        }
-        auto reader = util::buffer_reader{*actual};
-        return matches_child(reader, *type, expected);
+        return matches_sequence(std::span{&actual, std::size_t{1}}, type,
+                                std::span{&expected, std::size_t{1}});
     }
 
   private:
@@ -412,10 +506,37 @@ class LiteralMatcher {
         return sentinel != nullptr && *sentinel == expected;
     }
 
+    static bool matches_tick(const std::optional<util::buffer> &actual, const TimeSeriesType *type,
+                             const literal::TimeSeriesLiteral &expected, std::size_t tick_index,
+                             Comparison &comparison) {
+        if (is_sentinel(expected, literal::SKIP)) {
+            return !actual;
+        }
+        if (!actual || type == nullptr) {
+            return false;
+        }
+
+        auto reader = util::buffer_reader{*actual};
+        return matches_child(reader, *type, expected, tick_index, comparison);
+    }
+
+    static bool matches_child(util::buffer_reader &reader, const TimeSeriesType &type,
+                              const literal::TimeSeriesLiteral &expected, std::size_t tick_index,
+                              Comparison &comparison) {
+        const auto header = bg::details::TickHeader::read(reader);
+        return header.operation == bg::details::TickOperation::tick &&
+               matches_payload(reader, type, header.valid, expected, comparison, tick_index);
+    }
+
     static bool matches_payload(util::buffer_reader &reader, const TimeSeriesType &type, bool valid,
-                                const literal::TimeSeriesLiteral &expected) {
+                                const literal::TimeSeriesLiteral &expected, Comparison &node,
+                                std::size_t tick_index) {
         if (is_sentinel(expected, literal::INVALID)) {
-            return !valid;
+            if (valid) {
+                return false;
+            }
+            node.invalidate(tick_index);
+            return true;
         }
         if (!valid || is_sentinel(expected, literal::SKIP)) {
             return false;
@@ -423,18 +544,27 @@ class LiteralMatcher {
 
         return type.visit(
             [&](const TimeSeriesValueType *value_type) { return matches_scalar(reader, *value_type, expected); },
-            [&](const TimeSeriesListType *list_type) { return matches_list(reader, *list_type, expected); },
+            [&](const TimeSeriesListType *list_type) {
+                return matches_list(reader, *list_type, expected, node, tick_index);
+            },
             [&](const TimeSeriesSetType *set_type) { return matches_set(reader, *set_type, expected); },
             [&](const TimeSeriesDictionaryType *dictionary_type) {
-                return matches_dictionary(reader, *dictionary_type, expected);
+                return matches_dictionary(reader, *dictionary_type, expected, node, tick_index);
             },
             [&](const TimeSeriesBundleType *bundle_type) {
-                return matches_bundle(reader, *bundle_type, expected);
+                return matches_bundle(reader, *bundle_type, expected, node, tick_index);
             },
             [&] {
                 const auto *operations =
                     TimeSeriesDispatch<TickLiteralComparison>::instance().find(type);
-                return operations != nullptr && operations->compare && operations->compare(reader, type, expected);
+                if (operations == nullptr) {
+                    return false;
+                }
+                if (operations->create_state) {
+                    auto *state = node.extension_state(*operations);
+                    return state != nullptr && state->compare(reader, type, expected, tick_index);
+                }
+                return operations->compare && operations->compare(reader, type, expected);
             }).value();
     }
 
@@ -449,11 +579,13 @@ class LiteralMatcher {
     }
 
     static bool matches_list(util::buffer_reader &reader, const TimeSeriesListType &type,
-                             const literal::TimeSeriesLiteral &expected_literal) {
+                             const literal::TimeSeriesLiteral &expected_literal, Comparison &node,
+                             std::size_t tick_index) {
         return matches_indexed(reader, type, expected_literal, "a TSL update entry requires an index and a value",
                                [&](const literal::TimeSeriesLiteral &selector, item_id_t index) {
                                    return bg::details::scalar_literal::list_index(selector) == index;
-                               });
+                               },
+                               node, tick_index);
     }
 
     static bool matches_set(util::buffer_reader &reader, const TimeSeriesSetType &type,
@@ -507,7 +639,8 @@ class LiteralMatcher {
     }
 
     static bool matches_dictionary(util::buffer_reader &reader, const TimeSeriesDictionaryType &type,
-                                   const literal::TimeSeriesLiteral &expected_literal) {
+                                   const literal::TimeSeriesLiteral &expected_literal, Comparison &node,
+                                   std::size_t tick_index) {
         const auto expected = bg::details::scalar_literal::sequence(expected_literal);
 
         auto matched = std::vector<bool>(expected.size());
@@ -529,6 +662,8 @@ class LiteralMatcher {
 
             auto candidate = std::optional<std::size_t>{};
             auto candidate_count = std::size_t{};
+            auto matched_entry = false;
+            auto matched_value = false;
             const auto read = bg::details::TimeSeriesTickScalarRead::visit(
                 reader, type.key_type(), [&](Scalar<> actual_key) {
                     for (auto expected_index = std::size_t{}; expected_index < expected.size(); ++expected_index) {
@@ -547,35 +682,49 @@ class LiteralMatcher {
                             ++candidate_count;
                         }
                     }
-                });
-            if (!read || candidate_count != 1 || matched[*candidate]) {
-                return false;
-            }
 
-            matched[*candidate] = true;
-            const auto pair = bg::details::scalar_literal::pair(
-                expected[*candidate], "a TSD update entry requires a key and a value");
-            if (header.operation != bg::details::TickOperation::remove &&
-                !matches_payload(reader, type.value_type(), header.valid, *pair.second)) {
+                    if (candidate_count != 1 || matched[*candidate]) {
+                        return;
+                    }
+
+                    matched_entry = true;
+                    matched[*candidate] = true;
+                    const auto pair = bg::details::scalar_literal::pair(
+                        expected[*candidate], "a TSD update entry requires a key and a value");
+                    if (header.operation == bg::details::TickOperation::remove) {
+                        matched_value = node.retire_dictionary_child(actual_key);
+                        return;
+                    }
+                    if (header.operation == bg::details::TickOperation::add &&
+                        !node.retire_dictionary_child(actual_key)) {
+                        return;
+                    }
+                    matched_value = matches_payload(reader, type.value_type(), header.valid, *pair.second,
+                                                    node.dictionary_child(actual_key), tick_index);
+                });
+            if (!read || !matched_entry || !matched_value) {
                 return false;
             }
         }
     }
 
     static bool matches_bundle(util::buffer_reader &reader, const TimeSeriesBundleType &type,
-                               const literal::TimeSeriesLiteral &expected_literal) {
+                               const literal::TimeSeriesLiteral &expected_literal, Comparison &node,
+                               std::size_t tick_index) {
         return matches_indexed(reader, type, expected_literal,
                                "a TSB update entry requires a field name and a value",
                                [&](const literal::TimeSeriesLiteral &selector, item_id_t index) {
                                    return bg::details::scalar_literal::field_name(selector) ==
                                           type.item_name(index).text();
-                               });
+                               },
+                               node, tick_index);
     }
 
     template <typename SelectorMatches>
     static bool matches_indexed(util::buffer_reader &reader, const FixedItemTimeSeriesType &type,
                                 const literal::TimeSeriesLiteral &expected_literal, const char *pair_error,
-                                SelectorMatches &&selector_matches) {
+                                SelectorMatches &&selector_matches, Comparison &node,
+                                std::size_t tick_index) {
         const auto expected = bg::details::scalar_literal::sequence(expected_literal);
 
         auto matched = std::vector<bool>(expected.size());
@@ -613,7 +762,9 @@ class LiteralMatcher {
                 return false;
             }
             matched[*candidate] = true;
-            if (!matches_payload(reader, type.item_type(index), header.valid, *child_literal)) {
+            const auto &child_type = type.item_type(index);
+            if (!matches_payload(reader, child_type, header.valid, *child_literal, node.indexed_child(index),
+                                 tick_index)) {
                 return false;
             }
         }
