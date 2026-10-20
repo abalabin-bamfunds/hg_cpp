@@ -307,3 +307,277 @@ TEST_CASE("multiservice claims separate service scalar values",
 
     CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 1>{1}).equals<bg::i64>({31}));
 }
+
+TEST_CASE("multiservice catch-all forwards requests and replies while exact claims take precedence",
+          "[feature:service][feature:multiservice][series:tsd][shape:multiple][scalar:integer]") {
+    const auto routed = service<auto(TS<bg::i64>, bg::i64)->TS<bg::i64>>{"routed", {"value", "instance"}};
+    auto catch_all_sizes = std::vector<std::size_t>{};
+    const auto answer_catch_all = node([&](In<TSD<service_client_id_t, TS<bg::i64>>> values,
+                                           In<TSD<service_client_id_t, TS<bg::i64, TimeSeriesGuarantee::final>>>
+                                               instances,
+                                           Out<TSD<service_client_id_t, TS<bg::i64>>> replies) {
+        catch_all_sizes.push_back(values.size());
+        values.for_each_removed([&](const auto &client_id) { replies.erase(client_id); });
+        values.for_each_key_value([&](const auto &client_id, const auto &value) {
+            const auto instance = instances[client_id];
+            if (value.valid() && instance.valid()) {
+                replies[client_id].set(*value + *instance);
+            }
+        });
+    });
+    const auto answer_exact = node([](In<TSD<service_client_id_t, TS<bg::i64>>> values,
+                                      Out<TSD<service_client_id_t, TS<bg::i64>>> replies) {
+        values.for_each_removed([&](const auto &client_id) { replies.erase(client_id); });
+        values.for_each_key_value([&](const auto &client_id, const auto &value) {
+            if (value.valid()) {
+                replies[client_id].set(*value + 100);
+            }
+        });
+    });
+    const auto implementation = graph("name"_n = "routed_multiservice", [&] {
+        const auto requests = routed.implementation_requests_for_catch_all("instance"_sym);
+        routed.implementation_replies_for_catch_all(
+            answer_catch_all(operators::getattr(requests, "value"_sym),
+                             operators::getattr(requests, "instance"_sym)),
+            "instance"_sym);
+
+        const auto exact_requests = routed.implementation_requests(2);
+        routed.implementation_replies(answer_exact(operators::getattr(exact_requests, "value"_sym)), 2);
+    });
+
+    auto catalogue = ServiceCatalogue{};
+    auto registration = catalogue.register_multiservice(implementation);
+    registration.register_impl(routed, "instance"_n = 2);
+    registration.register_catch_all(routed, "instance"_sym);
+
+    const auto sum = node([](In<TS<bg::i64>> first, In<TS<bg::i64>> second, In<TS<bg::i64>> third,
+                             Out<TS<bg::i64>> output) { output.set(*first + *second + *third); });
+    const auto tested = [&](wp<TS<bg::i64>> value) {
+        return sum(routed(value, 1).as<TS<bg::i64>>(), routed(value, 2).as<TS<bg::i64>>(),
+                   routed(value, 3).as<TS<bg::i64>>());
+    };
+
+    const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue},
+                                            std::array<bg::i64, 2>{4, 6});
+    CHECK(actual.equals<bg::i64>({116, 122}));
+    CHECK(catch_all_sizes == std::vector<std::size_t>{2, 2});
+}
+
+TEST_CASE("multiservice catch-all claims filter unlifted scalar arguments",
+          "[feature:service][feature:multiservice][series:tsd][shape:multiple][scalar:integer]") {
+    const auto routed =
+        service<auto(TS<bg::i64>, bg::i64, bg::i64)->TS<bg::i64>>{"filtered", {"value", "group", "instance"}};
+    const auto answer_catch_all =
+        node([](In<TSD<service_client_id_t, TS<bg::i64>>> values,
+                In<TSD<service_client_id_t, TS<bg::i64, TimeSeriesGuarantee::final>>> instances,
+                Out<TSD<service_client_id_t, TS<bg::i64>>> replies) {
+            values.for_each_removed([&](const auto &client_id) { replies.erase(client_id); });
+            values.for_each_key_value([&](const auto &client_id, const auto &value) {
+                const auto instance = instances[client_id];
+                if (value.valid() && instance.valid()) {
+                    replies[client_id].set(*value + *instance + 1);
+                }
+            });
+        });
+    const auto answer_exact = node([](In<TSD<service_client_id_t, TS<bg::i64>>> values,
+                                      Out<TSD<service_client_id_t, TS<bg::i64>>> replies) {
+        values.for_each_removed([&](const auto &client_id) { replies.erase(client_id); });
+        values.for_each_key_value([&](const auto &client_id, const auto &value) {
+            if (value.valid()) {
+                replies[client_id].set(*value + 100);
+            }
+        });
+    });
+    const auto implementation = graph("name"_n = "filtered_multiservice", [&] {
+        const auto requests = routed.implementation_requests_for_catch_all("instance"_sym, "group"_n = 1);
+        routed.implementation_replies_for_catch_all(
+            answer_catch_all(operators::getattr(requests, "value"_sym),
+                             operators::getattr(requests, "instance"_sym)),
+            "instance"_sym, "group"_n = 1);
+
+        const auto exact_requests = routed.implementation_requests(2, 8);
+        routed.implementation_replies(answer_exact(operators::getattr(exact_requests, "value"_sym)), 2, 8);
+    });
+
+    auto catalogue = ServiceCatalogue{};
+    auto registration = catalogue.register_multiservice(implementation);
+    registration.register_impl(routed, "group"_n = 2);
+    registration.register_catch_all(routed, "instance"_sym, "group"_n = 1);
+
+    const auto sum = node([](In<TS<bg::i64>> first, In<TS<bg::i64>> second, In<TS<bg::i64>> third,
+                             Out<TS<bg::i64>> output) { output.set(*first + *second + *third); });
+    const auto tested = [&](wp<TS<bg::i64>> value) {
+        return sum(routed(value, 1, 3).as<TS<bg::i64>>(), routed(value, 1, 4).as<TS<bg::i64>>(),
+                   routed(value, 2, 8).as<TS<bg::i64>>());
+    };
+
+    CHECK(testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 1>{5})
+              .equals<bg::i64>({124}));
+}
+
+TEST_CASE("overlapping multiservice catch-all claims are ambiguous",
+          "[feature:service][feature:multiservice][shape:multiple][scalar:integer]") {
+    const auto routed =
+        service<auto(TS<bg::i64>, bg::i64, bg::i64)->TS<bg::i64>>{"overlap", {"value", "group", "instance"}};
+    const auto implementation = graph("name"_n = "overlapping_catch_all", [&] {
+        const auto requests = routed.implementation_requests_for_catch_all("instance"_sym, "group"_n = 1);
+        routed.implementation_replies_for_catch_all(operators::getattr(requests, "value"_sym), "instance"_sym,
+                                                    "group"_n = 1);
+    });
+
+    auto catalogue = ServiceCatalogue{};
+    auto registration = catalogue.register_multiservice(implementation);
+    registration.register_catch_all(routed, "instance"_sym);
+    registration.register_catch_all(routed, "instance"_sym, "group"_n = 1);
+
+    const auto tested = [&](wp<TS<bg::i64>> value) { return routed(value, 1, 7).as<TS<bg::i64>>(); };
+    CHECK_THROWS_WITH(testing::test_graph(tested, GraphRunOptions{.services = &catalogue},
+                                          std::array<bg::i64, 1>{5}),
+                      Catch::Matchers::ContainsSubstring("ambiguous implementations"));
+}
+
+TEST_CASE("an exact multiservice claim ignores overlapping unused catch-all claims",
+          "[feature:service][feature:multiservice][series:tsd][shape:multiple][scalar:integer]") {
+    const auto routed =
+        service<auto(TS<bg::i64>, bg::i64, bg::i64)->TS<bg::i64>>{"exact_first", {"value", "group", "instance"}};
+    const auto answer_exact = node([](In<TSD<service_client_id_t, TS<bg::i64>>> values,
+                                      Out<TSD<service_client_id_t, TS<bg::i64>>> replies) {
+        values.for_each_key_value([&](const auto &client_id, const auto &value) {
+            if (value.valid()) {
+                replies[client_id].set(*value + 100);
+            }
+        });
+    });
+    const auto implementation = graph("name"_n = "exact_before_catch_all", [&] {
+        const auto catch_all_requests =
+            routed.implementation_requests_for_catch_all("instance"_sym, "group"_n = 1);
+        routed.implementation_replies_for_catch_all(
+            answer_exact(operators::getattr(catch_all_requests, "value"_sym)), "instance"_sym,
+            "group"_n = 1);
+
+        const auto exact_requests = routed.implementation_requests(2, 8);
+        routed.implementation_replies(answer_exact(operators::getattr(exact_requests, "value"_sym)), 2, 8);
+    });
+
+    auto catalogue = ServiceCatalogue{};
+    auto registration = catalogue.register_multiservice(implementation);
+    registration.register_impl(routed, "group"_n = 2);
+    registration.register_catch_all(routed, "instance"_sym);
+    registration.register_catch_all(routed, "instance"_sym, "group"_n = 1);
+
+    const auto tested = [&](wp<TS<bg::i64>> value) { return routed(value, 2, 8).as<TS<bg::i64>>(); };
+    CHECK(testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 1>{5})
+              .equals<bg::i64>({105}));
+}
+
+TEST_CASE("regular exact implementations take precedence over multiservice catch-all claims",
+          "[feature:service][feature:multiservice][series:tsd][shape:multiple][scalar:integer]") {
+    const auto routed = service<auto(TS<bg::i64>, bg::i64)->TS<bg::i64>>{"mixed_claims", {"value", "instance"}};
+    const auto answer_exact = node([](In<TSD<service_client_id_t, TS<bg::i64>>> values, bg::i64 instance,
+                                      Out<TSD<service_client_id_t, TS<bg::i64>>> replies) {
+        values.for_each_key_value([&](const auto &client_id, const auto &value) {
+            if (value.valid()) {
+                replies[client_id].set(*value + instance + 100);
+            }
+        });
+    });
+    const auto exact_implementation = graph(
+        "name"_n = "mixed_claims_exact",
+        [&](wp<TSD<service_client_id_t, TS<bg::i64>>, "value"_n> values, bg::i64 instance) {
+            return answer_exact(values, instance);
+        });
+    const auto answer_catch_all = node([](In<TSD<service_client_id_t, TS<bg::i64>>> values,
+                                          In<TSD<service_client_id_t, TS<bg::i64, TimeSeriesGuarantee::final>>>
+                                              instances,
+                                          Out<TSD<service_client_id_t, TS<bg::i64>>> replies) {
+        values.for_each_key_value([&](const auto &client_id, const auto &value) {
+            const auto instance = instances[client_id];
+            if (value.valid() && instance.valid()) {
+                replies[client_id].set(*value + *instance);
+            }
+        });
+    });
+    const auto catch_all_implementation = graph("name"_n = "mixed_claims_catch_all", [&] {
+        const auto requests = routed.implementation_requests_for_catch_all("instance"_sym);
+        routed.implementation_replies_for_catch_all(
+            answer_catch_all(operators::getattr(requests, "value"_sym),
+                             operators::getattr(requests, "instance"_sym)),
+            "instance"_sym);
+    });
+
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(routed, exact_implementation, "instance"_n = 1);
+    auto registration = catalogue.register_multiservice(catch_all_implementation);
+    registration.register_catch_all(routed, "instance"_sym);
+
+    const auto sum = node([](In<TS<bg::i64>> exact, In<TS<bg::i64>> second, In<TS<bg::i64>> third,
+                             Out<TS<bg::i64>> output) { output.set(*exact + *second + *third); });
+    const auto tested = [&](wp<TS<bg::i64>> value) {
+        return sum(routed(value, 1).as<TS<bg::i64>>(), routed(value, 2).as<TS<bg::i64>>(),
+                   routed(value, 3).as<TS<bg::i64>>());
+    };
+
+    const auto actual =
+        testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 2>{4, 6});
+    CHECK(actual.equals<bg::i64>({118, 124}));
+}
+
+TEST_CASE("multiservice catch-all ports select a resolved generic service signature",
+          "[feature:service][feature:multiservice][series:tsd][declaration:generic][shape:multiple]") {
+    using VALUE = ScalarVariable<"VALUE">;
+    const auto routed = service<VALUE, auto(TS<VALUE>, bg::i64)->TS<VALUE>>{"generic_route", {"value", "instance"}};
+    const auto answer_integers = node([](
+        In<TSD<service_client_id_t, TS<bg::i64>>> values,
+        In<TSD<service_client_id_t, TS<bg::i64, TimeSeriesGuarantee::final>>> instances,
+        Out<TSD<service_client_id_t, TS<bg::i64>>> replies) {
+        values.for_each_key_value([&](const auto &client_id, const auto &value) {
+            const auto instance = instances[client_id];
+            if (value.valid() && instance.valid()) {
+                replies[client_id].set(*value + *instance);
+            }
+        });
+    });
+    const auto answer_fractions = node([](
+        In<TSD<service_client_id_t, TS<float>>> values,
+        In<TSD<service_client_id_t, TS<bg::i64, TimeSeriesGuarantee::final>>> instances,
+        Out<TSD<service_client_id_t, TS<float>>> replies) {
+        values.for_each_key_value([&](const auto &client_id, const auto &value) {
+            const auto instance = instances[client_id];
+            if (value.valid() && instance.valid()) {
+                replies[client_id].set(*value + static_cast<float>(*instance));
+            }
+        });
+    });
+    const auto implementation = graph("name"_n = "generic_catch_all", [&] {
+        const auto integer_requests =
+            routed[type<VALUE> = type<bg::i64>].implementation_requests_for_catch_all("instance"_sym);
+        routed[type<VALUE> = type<bg::i64>].implementation_replies_for_catch_all(
+            answer_integers(operators::getattr(integer_requests, "value"_sym),
+                           operators::getattr(integer_requests, "instance"_sym)),
+            "instance"_sym);
+
+        const auto fraction_requests =
+            routed[type<VALUE> = type<float>].implementation_requests_for_catch_all("instance"_sym);
+        routed[type<VALUE> = type<float>].implementation_replies_for_catch_all(
+            answer_fractions(operators::getattr(fraction_requests, "value"_sym),
+                             operators::getattr(fraction_requests, "instance"_sym)),
+            "instance"_sym);
+    });
+
+    auto catalogue = ServiceCatalogue{};
+    auto registration = catalogue.register_multiservice(implementation);
+    registration.register_catch_all(routed[type<VALUE> = type<bg::i64>], "instance"_sym);
+    registration.register_catch_all(routed[type<VALUE> = type<float>], "instance"_sym);
+
+    const auto add = node([](In<TS<bg::i64>> integer, In<TS<float>> fraction, Out<TS<float>> output) {
+        output.set(static_cast<float>(*integer) + *fraction);
+    });
+    const auto tested = [&](wp<TS<bg::i64>> integer, wp<TS<float>> fraction) {
+        return add(routed[type<VALUE> = type<bg::i64>](integer, 1).as<TS<bg::i64>>(),
+                   routed[type<VALUE> = type<float>](fraction, 2).as<TS<float>>());
+    };
+
+    const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue},
+                                            std::array<bg::i64, 2>{3, 7}, std::array<float, 2>{0.5F, 1.5F});
+    CHECK(actual.equals<float>({6.5F, 11.5F}));
+}

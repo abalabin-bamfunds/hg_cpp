@@ -3,6 +3,8 @@
 #include <bg/service_feedback.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 
+#include <utility>
+
 template <template <typename, auto...> typename Field>
 using SERVICE_KWARGS = bg::BundleSchemaVariableDeclaration<"SERVICE_KWARGS", Field>;
 
@@ -461,6 +463,46 @@ TEST_CASE("catch-all service combines unmatched scalar instances and yields to a
     CHECK(catch_all_sizes == std::vector<std::size_t>{2, 2});
 }
 
+TEST_CASE("catch-all services lift multiple scalar parameters",
+          "[feature:service][series:tsd][shape:multiple][scalar:integer]") {
+    const auto service =
+        bg::service<auto(TS<bg::i64>, bg::i64, bg::i64)->TS<bg::i64>>{"multi_route", {"value", "region", "instance"}};
+    auto group_sizes = std::vector<std::size_t>{};
+    const auto respond = node([&](In<TSD<service_client_id_t, TS<bg::i64>>> values,
+                                  In<TSD<service_client_id_t, TS<bg::i64, TimeSeriesGuarantee::final>>> regions,
+                                  In<TSD<service_client_id_t, TS<bg::i64, TimeSeriesGuarantee::final>>> instances,
+                                  Out<TSD<service_client_id_t, TS<bg::i64>>> output) {
+        group_sizes.push_back(values.size());
+        values.for_each_removed([&](const auto &id) { output.erase(id); });
+        values.for_each_key_value([&](const auto &id, const auto &value) {
+            if (value.valid() && regions[id].valid() && instances[id].valid()) {
+                output[id].set(*value + *regions[id] + *instances[id]);
+            }
+        });
+    });
+    const auto implementation = graph(
+        "name"_n = "multi_route_catch_all",
+        [&](wp<TSD<service_client_id_t, TS<bg::i64>>, "value"_n> values,
+            wp<TSD<service_client_id_t, TS<bg::i64, TimeSeriesGuarantee::final>>, "region"_n> regions,
+            wp<TSD<service_client_id_t, TS<bg::i64, TimeSeriesGuarantee::final>>, "instance"_n> instances) {
+            return respond(values, regions, instances);
+        });
+    const auto sum = node([](In<TS<bg::i64>> first, In<TS<bg::i64>> second, Out<TS<bg::i64>> output) {
+        output.set(*first + *second);
+    });
+
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(service, implementation);
+    const auto tested = [&](wp<TS<bg::i64>> value) {
+        return sum(service(value, 10, 100).as<TS<bg::i64>>(), service(value, 20, 200).as<TS<bg::i64>>());
+    };
+
+    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue},
+                              std::array<bg::i64, 2>{1, 2})
+              .equals<bg::i64>({332, 334}));
+    CHECK(group_sizes == std::vector<std::size_t>{2, 2});
+}
+
 TEST_CASE("outputless catch-all service withdraws and restores final scalar entries",
           "[feature:service][series:tsd][shape:sink][transition:revalidation]") {
     const auto service = bg::service<auto(TS<bg::i64>, bg::i64)->void>{"routed_audit", {"value", "instance"}};
@@ -502,6 +544,88 @@ TEST_CASE("outputless catch-all service withdraws and restores final scalar entr
     REQUIRE(client_ids.size() == 3);
     CHECK(client_ids[0] == client_ids[1]);
     CHECK(client_ids[1] == client_ids[2]);
+}
+
+TEST_CASE("catch-all service clients inside map and switch branches forward their scalar values",
+          "[feature:service][feature:map][feature:switch][feature:nested-graph][series:tsd][shape:nested]") {
+    const auto service = bg::service<auto(TS<bg::i64>, bg::i64)->void>{"nested_route", {"value", "instance"}};
+    auto requests = std::vector<std::pair<bg::i64, bg::i64>>{};
+    const auto observe = node([&](In<TSD<service_client_id_t, TS<bg::i64>>> values,
+                                  In<TSD<service_client_id_t, TS<bg::i64, TimeSeriesGuarantee::final>>> instances) {
+        values.for_each_key_value([&](const auto &id, const auto &value) {
+            if (value.valid() && instances[id].valid()) {
+                requests.emplace_back(*value, *instances[id]);
+            }
+        });
+    });
+    const auto implementation = graph(
+        "name"_n = "nested_route_catch_all",
+        [&](wp<TSD<service_client_id_t, TS<bg::i64>>, "value"_n> values,
+            wp<TSD<service_client_id_t, TS<bg::i64, TimeSeriesGuarantee::final>>, "instance"_n> instances) {
+            observe(values, instances);
+        });
+
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(service, implementation);
+    const auto tested = [&](wp<TSD<bg::i64, TS<bg::i64>>> values,
+                            wp<TSD<bg::i64, TS<bg::i64>>> selectors) {
+        const auto mapped = map(
+            [&](auto value, auto selector) {
+                return switch_(selector,
+                               cases{case_(1, [&](auto selected) {
+                                          service(selected, 10);
+                                          return selected;
+                                      }),
+                                      case_(2, [&](auto selected) {
+                                          service(selected, 20);
+                                          return selected;
+                                      })},
+                               value)
+                    .template as<TS<bg::i64>>();
+            },
+            values, selectors);
+        return mapped[bg::i64{5}].as<TS<bg::i64>>();
+    };
+
+    const auto actual = testing::test_graph(
+        tested, bg::GraphRunOptions{.services = &catalogue},
+        {{{5, 1}}, {{5, 2}}, {{5, 3}}, {{5, 4}}},
+        {{{5, 1}}, {{5, 2}}, {{5, 1}}, {{5, 2}}});
+    CHECK(actual.equals<bg::i64>({1, 2, 3, 4}));
+    CHECK(requests == std::vector<std::pair<bg::i64, bg::i64>>{{1, 10}, {2, 20}, {3, 10}, {4, 20}});
+}
+
+TEST_CASE("feedback delays catch-all service replies while forwarding scalar values",
+          "[feature:service][feature:feedback][feature:nested-graph][series:tsd][shape:nested]") {
+    const auto service = bg::service<auto(TS<bg::i64>, bg::i64)->TS<bg::i64>>{
+        "delayed_route", {"value", "instance"}};
+    const auto respond = node([](In<TSD<service_client_id_t, TS<bg::i64>>> values,
+                                 In<TSD<service_client_id_t, TS<bg::i64, TimeSeriesGuarantee::final>>> instances,
+                                 Out<TSD<service_client_id_t, TS<bg::i64>>> output) {
+        values.for_each_removed([&](const auto &id) { output.erase(id); });
+        values.for_each_key_value([&](const auto &id, const auto &value) {
+            output[id].set(*value + *instances[id]);
+        });
+    });
+    const auto implementation = graph(
+        "name"_n = "delayed_route_catch_all",
+        [&](wp<TSD<service_client_id_t, TS<bg::i64>>, "value"_n> values,
+            wp<TSD<service_client_id_t, TS<bg::i64, TimeSeriesGuarantee::final>>, "instance"_n> instances) {
+            return respond(values, instances);
+        });
+
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(service, feedback_service_implementation(service, implementation));
+    const auto sum = node([](In<TS<bg::i64>> first, In<TS<bg::i64>> second, Out<TS<bg::i64>> output) {
+        output.set(*first + *second);
+    });
+    const auto tested = [&](wp<TS<bg::i64>> value) {
+        return sum(service(value, 10).as<TS<bg::i64>>(), service(value, 20).as<TS<bg::i64>>());
+    };
+
+    const auto actual = testing::test_graph(
+        tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 3>{1, 2, 3});
+    CHECK(actual.equals<bg::i64>({std::nullopt, 32, 34, 36}));
 }
 
 TEST_CASE("subscription implementation receives named installation inputs after service scalars",

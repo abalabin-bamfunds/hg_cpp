@@ -7,6 +7,7 @@
 #include <array>
 #include <concepts>
 #include <memory>
+#include <optional>
 #include <span>
 #include <type_traits>
 #include <utility>
@@ -35,7 +36,7 @@ class ServiceCatalogue {
                 throw std::logic_error{"the multiservice registration's catalogue no longer exists"};
             }
             ServiceCatalogue::add_multiservice_impl(state, index_, service.target(), service.type_map().copy(),
-                                                    values);
+                                                    std::nullopt, values);
         }
 
         template <typename... Filters>
@@ -47,7 +48,34 @@ class ServiceCatalogue {
             if (!state) {
                 throw std::logic_error{"the multiservice registration's catalogue no longer exists"};
             }
-            ServiceCatalogue::add_multiservice_impl(state, index_, service, TypeMap{}, values);
+            ServiceCatalogue::add_multiservice_impl(state, index_, service, TypeMap{}, std::nullopt, values);
+        }
+
+        template <typename Target, typename... Parameters, typename... Filters>
+            requires std::derived_from<Target, ServiceDefinition> && (details::graph_code_argument<Filters> && ...)
+        void register_catch_all(const details::MappedWiring<Target, Parameters...> &service,
+                                util::symbol lifted_scalar, Filters &&...filters) {
+            auto values = std::array<WiringArgument, sizeof...(Filters)>{
+                WiringArgument{std::forward<Filters>(filters)}...};
+            auto state = state_.lock();
+            if (!state) {
+                throw std::logic_error{"the multiservice registration's catalogue no longer exists"};
+            }
+            ServiceCatalogue::add_multiservice_impl(state, index_, service.target(), service.type_map().copy(),
+                                                    lifted_scalar, values);
+        }
+
+        template <typename... Filters>
+            requires(details::graph_code_argument<Filters> && ...)
+        void register_catch_all(const ServiceDefinition &service, util::symbol lifted_scalar,
+                                Filters &&...filters) {
+            auto values = std::array<WiringArgument, sizeof...(Filters)>{
+                WiringArgument{std::forward<Filters>(filters)}...};
+            auto state = state_.lock();
+            if (!state) {
+                throw std::logic_error{"the multiservice registration's catalogue no longer exists"};
+            }
+            ServiceCatalogue::add_multiservice_impl(state, index_, service, TypeMap{}, lifted_scalar, values);
         }
 
       private:
@@ -117,6 +145,7 @@ class ServiceCatalogue {
                                  std::span<const WiringArgument> arguments);
     static void add_multiservice_impl(const std::shared_ptr<State> &state, std::size_t index,
                                       const ServiceDefinition &service, TypeMap type_map,
+                                      std::optional<util::symbol> lifted_scalar,
                                       std::span<const WiringArgument> filters);
 
     std::shared_ptr<State> state_;

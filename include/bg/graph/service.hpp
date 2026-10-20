@@ -29,8 +29,13 @@ class ServiceDefinition : public WiringTemplate {
 
     WiringPoint implementation_requests(const TypeMap &type_map,
                                         std::span<const WiringArgument> scalar_arguments) const;
+    WiringPoint implementation_requests_for_catch_all(const TypeMap &type_map, util::symbol lifted_scalar,
+                                                      std::span<const WiringArgument> scalar_arguments) const;
     void implementation_replies(const TypeMap &type_map, WiringPoint replies,
                                 std::span<const WiringArgument> scalar_arguments) const;
+    void implementation_replies_for_catch_all(const TypeMap &type_map, WiringPoint replies,
+                                               util::symbol lifted_scalar,
+                                               std::span<const WiringArgument> scalar_arguments) const;
 
     virtual bool implementation_requests_required() const noexcept = 0;
     virtual std::vector<ServiceImplementationRequestInput>

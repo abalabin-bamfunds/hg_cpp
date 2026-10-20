@@ -60,14 +60,14 @@ registration; that filter is not passed again to the implementation graph. Other
 arguments are passed to the implementation graph in order. Named arguments must match
 the implementation graph's parameter names.
 
-A service implementation can receive a scalar parameter `s` as a named
-`TSD<service_client_id_t, TS<S, final>>` input instead of a scalar `S` input. This
-selects a catch-all implementation for scalar values without an exact implementation.
-The catalogue groups those instances by service identity, resolved signature, and
-the values of scalar parameters that remain scalar inputs. It wires one implementation
-for each group. Exact implementations take precedence; overlapping applicable
-catch-all registrations are an error. This form applies to services, not reference
-or subscription services.
+An implementation can receive one or more scalar service parameters as named
+`TSD<service_client_id_t, TS<S, final>>` inputs instead of scalar `S` inputs. Each
+matching field lifts that parameter into a per-client final time series. The
+catalogue groups instances by service identity, resolved signature, and values
+of scalar parameters that remain scalar inputs. It wires one implementation for
+each group. Exact implementations take precedence; overlapping applicable
+catch-all registrations are an error. This form applies to services, not
+reference or subscription services.
 
 Each unmatched scalar instance retains its original clients and client IDs. Its
 request-forwarding provider writes the clients' request references and `id -> s`
@@ -210,6 +210,36 @@ transform.implementation_replies(respond(operators::getattr(requests, "value"_sy
 lookup.implementation_replies(respond_to(lookup.implementation_requests()));
 clock.implementation_replies(clock_output());
 ```
+
+A multiservice graph can register a catch-all claim for one service scalar. The
+lifted scalar is explicit because a multiservice graph has no outer signature
+from which the catalogue can infer it:
+
+```cpp
+registration.register_catch_all(transform, "instance"_sym);
+
+auto requests = transform.implementation_requests_for_catch_all("instance"_sym);
+transform.implementation_replies_for_catch_all(
+    respond(operators::getattr(requests, "value"_sym),
+            operators::getattr(requests, "instance"_sym)),
+    "instance"_sym);
+```
+
+The catch-all request bundle contains each ordinary service request field and a
+`TSD<service_client_id_t, TS<S, final>>` field for the lifted scalar `S`. An
+optional named scalar argument on the registration and both port calls filters
+the unlifted scalar parameters.
+
+For each resolved signature and set of unlifted scalar values, the catalogue
+creates one shared catch-all request provider. Each original client retains its
+ordinary service binding and client ID. Each original service instance has one
+forwarding provider that sends its clients' request references and
+`client_id -> lifted scalar` items to the shared provider. The
+catch-all reply dictionary is then bound to each selected original service
+instance by client ID. Exact implementation claims take precedence over
+catch-all claims. Multiple catch-all claims are ambiguous only when no exact
+claim matches the service instance. A catch-all port with no selected clients
+has an empty request collection; it does not create a synthetic scalar item.
 
 Reference services have no requests. Outputless services require requests
 but no reply. A multiservice graph must return no graph output; attach each service

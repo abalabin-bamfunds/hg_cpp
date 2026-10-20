@@ -132,6 +132,16 @@ template <typename Target, typename... Parameters> class MappedWiring {
     }
 
     template <typename... Arguments>
+    decltype(auto) implementation_requests_for_catch_all(Arguments &&...arguments) const
+        requires requires(const Target &target) {
+            target.implementation_requests_for_catch_all(std::declval<const TypeMap &>(),
+                                                         std::declval<Arguments>()...);
+        }
+    {
+        return target_->implementation_requests_for_catch_all(type_map_, std::forward<Arguments>(arguments)...);
+    }
+
+    template <typename... Arguments>
     decltype(auto) implementation_replies(Arguments &&...arguments) const
         requires requires(const Target &target) {
             target.implementation_replies(std::declval<const TypeMap &>(),
@@ -139,6 +149,16 @@ template <typename Target, typename... Parameters> class MappedWiring {
         }
     {
         return target_->implementation_replies(type_map_, std::forward<Arguments>(arguments)...);
+    }
+
+    template <typename... Arguments>
+    decltype(auto) implementation_replies_for_catch_all(Arguments &&...arguments) const
+        requires requires(const Target &target) {
+            target.implementation_replies_for_catch_all(std::declval<const TypeMap &>(),
+                                                        std::declval<Arguments>()...);
+        }
+    {
+        return target_->implementation_replies_for_catch_all(type_map_, std::forward<Arguments>(arguments)...);
     }
 
     template <typename... Mappings> auto operator[](Mappings...) const && = delete;

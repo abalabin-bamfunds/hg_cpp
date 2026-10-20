@@ -31,12 +31,14 @@
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/util/occupancy_index.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <cassert>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -44,6 +46,16 @@
 
 namespace bg {
 namespace details {
+
+class ServiceRequestBinding;
+
+struct alignas(Scalar<>) ServiceRequestForwardingData {
+    ServiceRequestBinding *target;
+    std::size_t scalar_count;
+
+    Scalar<> *scalars() noexcept { return reinterpret_cast<Scalar<> *>(this + 1); }
+    const Scalar<> *scalars() const noexcept { return reinterpret_cast<const Scalar<> *>(this + 1); }
+};
 
 class ServiceRequestBinding {
   public:
@@ -61,22 +73,28 @@ class ServiceRequestBinding {
 
     void forward_to(ServiceRequestBinding &target, std::span<const Scalar<>> scalars, allocator memory) {
         stop_forwarding(memory);
-        target_ = &target;
-        scalar_count_ = scalars.size();
-        if (scalars.empty()) {
-            return;
-        }
-        scalars_ = static_cast<Scalar<> *>(memory.allocate_bytes(scalars.size_bytes(), alignof(Scalar<>)));
-        std::ranges::copy(scalars, scalars_);
+        const auto allocation_size = sizeof(ServiceRequestForwardingData) + scalars.size_bytes();
+        auto *forwarding = static_cast<ServiceRequestForwardingData *>(
+            memory.allocate_bytes(allocation_size, alignof(ServiceRequestForwardingData)));
+        std::construct_at(forwarding, ServiceRequestForwardingData{&target, scalars.size()});
+        auto release = util::scope_exit{[&]() noexcept {
+            std::destroy_at(forwarding);
+            memory.deallocate_bytes(forwarding, allocation_size, alignof(ServiceRequestForwardingData));
+        }};
+        std::uninitialized_copy(scalars.begin(), scalars.end(), forwarding->scalars());
+        forwarding_data_ = forwarding;
+        release.release();
     }
 
     void stop_forwarding(allocator memory) noexcept {
-        if (scalars_ != nullptr) {
-            memory.deallocate_bytes(scalars_, scalar_count_ * sizeof(Scalar<>), alignof(Scalar<>));
+        if (forwarding_data_ != nullptr) {
+            const auto allocation_size =
+                sizeof(ServiceRequestForwardingData) + forwarding_data_->scalar_count * sizeof(Scalar<>);
+            std::destroy_n(forwarding_data_->scalars(), forwarding_data_->scalar_count);
+            std::destroy_at(forwarding_data_);
+            memory.deallocate_bytes(forwarding_data_, allocation_size, alignof(ServiceRequestForwardingData));
         }
-        scalars_ = nullptr;
-        scalar_count_ = 0;
-        target_ = nullptr;
+        forwarding_data_ = nullptr;
     }
 
     template <typename TimeSeries, typename Function>
@@ -103,16 +121,16 @@ class ServiceRequestBinding {
 
     template <typename Function>
     void modify_service(EvaluationContext &context, service_client_id_t id, bool active, Function &&function) {
-        if (target_ == nullptr) {
+        if (forwarding_data_ == nullptr) {
             modify<TSB<SCHEMA>>(context, std::forward<Function>(function));
             return;
         }
 
-        target_->modify<TSB<SCHEMA>>(context, [&](auto &output) {
+        forwarding_data_->target->modify<TSB<SCHEMA>>(context, [&](auto &output) {
             auto changed = std::invoke(function, output);
             const auto key = Scalar<>::from<service_client_id_t>(id);
-            const auto original_field_count = output.size() - scalar_count_;
-            for (auto index = std::size_t{}; index < scalar_count_; ++index) {
+            const auto original_field_count = output.size() - forwarding_data_->scalar_count;
+            for (auto index = std::size_t{}; index < forwarding_data_->scalar_count; ++index) {
                 output[original_field_count + index].visit(
                     [&](Out<TSD<SCALAR, TS_T>> *dictionary) {
                         if (!active) {
@@ -123,7 +141,7 @@ class ServiceRequestBinding {
                         item.visit(
                             [&](Out<TS<SCALAR>> *value) {
                                 if (!value->valid()) {
-                                    value->set_value(scalars_[index]);
+                                    value->set_value(forwarding_data_->scalars()[index]);
                                     changed = true;
                                 }
                             },
@@ -138,9 +156,7 @@ class ServiceRequestBinding {
   private:
     NodeScheduler provider_;
     const TimeSeriesRuntimeType *runtime_type_{};
-    ServiceRequestBinding *target_{};
-    Scalar<> *scalars_{};
-    std::size_t scalar_count_{};
+    ServiceRequestForwardingData *forwarding_data_{};
 };
 
 } // namespace details
@@ -447,7 +463,15 @@ WiringPoint ServiceDefinition::implementation_requests(const TypeMap &type_map,
     if (!implementation_requests_required()) {
         throw WiringError{"reference services do not have request time series"};
     }
-    return WiringContext::current().multiservice_ports().requests(*this, type_map, scalar_arguments);
+    return WiringContext::current().multiservice_ports().requests(*this, type_map, scalar_arguments, std::nullopt);
+}
+
+WiringPoint ServiceDefinition::implementation_requests_for_catch_all(
+    const TypeMap &type_map, util::symbol lifted_scalar, std::span<const WiringArgument> scalar_arguments) const {
+    if (!implementation_requests_required()) {
+        throw WiringError{"reference services do not have request time series"};
+    }
+    return WiringContext::current().multiservice_ports().requests(*this, type_map, scalar_arguments, lifted_scalar);
 }
 
 void ServiceDefinition::implementation_replies(const TypeMap &type_map, WiringPoint replies,
@@ -455,7 +479,16 @@ void ServiceDefinition::implementation_replies(const TypeMap &type_map, WiringPo
     if (!signature_.has_output()) {
         throw WiringError{"an outputless service cannot be assigned replies"};
     }
-    WiringContext::current().multiservice_ports().replies(*this, type_map, replies, scalar_arguments);
+    WiringContext::current().multiservice_ports().replies(*this, type_map, replies, scalar_arguments, std::nullopt);
+}
+
+void ServiceDefinition::implementation_replies_for_catch_all(
+    const TypeMap &type_map, WiringPoint replies, util::symbol lifted_scalar,
+    std::span<const WiringArgument> scalar_arguments) const {
+    if (!signature_.has_output()) {
+        throw WiringError{"an outputless service cannot be assigned replies"};
+    }
+    WiringContext::current().multiservice_ports().replies(*this, type_map, replies, scalar_arguments, lifted_scalar);
 }
 
 std::optional<WiringPoint> ServiceDefinition::wire(GraphWiring &wiring, ResolvedSignature signature,
@@ -543,8 +576,8 @@ WiringPoint Service::wire_catch_all_requests(GraphWiring &wiring, const Resolved
 void Service::wire_forwarding_requests(GraphWiring &wiring, details::NestedBindingIdentity original_identity,
                                        details::NestedBindingIdentity catch_all_identity,
                                        std::span<const WiringArgument> lifted_scalars) const {
-    const auto target_binding =
-        wiring.require_service_binding(catch_all_identity, GraphWiring::ServiceBindingOrdering::provider_after_consumers);
+    const auto target_binding = wiring.require_service_binding(
+        catch_all_identity, GraphWiring::ServiceBindingOrdering::provider_after_consumers);
     const auto &provider = wiring.own_node_template(
         std::make_unique<RuntimeSignatureNodeTemplate<ForwardingServiceRequestProvider>>(
             ForwardingServiceRequestProvider{lifted_scalars, target_binding}));

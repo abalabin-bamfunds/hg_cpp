@@ -36,6 +36,7 @@ struct ServiceCatalogue::State {
     struct Claim {
         const ServiceDefinition *service;
         TypeMap type_map;
+        std::optional<util::symbol> lifted_scalar;
         std::vector<ScalarFilter> scalar_filters;
     };
 
@@ -54,7 +55,19 @@ struct ServiceCatalogue::State {
     };
 
     struct MultiserviceBuildState {
+        struct CatchAllPort {
+            const ServiceDefinition *service;
+            ResolvedSignature signature;
+            TypeMap type_map;
+            std::size_t lifted_parameter;
+            std::vector<ScalarValue<>> unlifted_scalars;
+            WiringPoint requests;
+            bool requests_wired{};
+            std::optional<WiringPoint> replies;
+        };
+
         std::vector<MultiserviceRegistration::Reply> replies;
+        std::vector<std::unique_ptr<CatchAllPort>> catch_all_ports;
         std::unique_ptr<details::MultiservicePorts> ports;
         bool wired{};
     };
@@ -77,13 +90,15 @@ class MultiservicePortCallbacks final : public details::MultiservicePorts {
         : requests_{std::move(requests)}, replies_{std::move(replies)} {}
 
     WiringPoint requests(const ServiceDefinition &service, const TypeMap &type_map,
-                         std::span<const WiringArgument> scalar_arguments) override {
-        return std::invoke(requests_, service, type_map, scalar_arguments);
+                         std::span<const WiringArgument> scalar_arguments,
+                         std::optional<util::symbol> lifted_scalar) override {
+        return std::invoke(requests_, service, type_map, scalar_arguments, lifted_scalar);
     }
 
     void replies(const ServiceDefinition &service, const TypeMap &type_map, WiringPoint output,
-                 std::span<const WiringArgument> scalar_arguments) override {
-        std::invoke(replies_, service, type_map, output, scalar_arguments);
+                 std::span<const WiringArgument> scalar_arguments,
+                 std::optional<util::symbol> lifted_scalar) override {
+        std::invoke(replies_, service, type_map, output, scalar_arguments, lifted_scalar);
     }
 
   private:
@@ -112,6 +127,13 @@ struct ServiceCatalogue::BuildOperation {
     void wire_catch_all(details::ServiceInstance &instance, const State::Registration &registration);
 
   private:
+    struct ImplementationCandidates {
+        std::vector<const State::Registration *> exact;
+        std::vector<std::pair<std::size_t, const State::Claim *>> exact_multiservice;
+        std::vector<const State::Registration *> catch_all;
+        std::vector<std::pair<std::size_t, const State::Claim *>> catch_all_multiservice;
+    };
+
     struct CatchAllGroup {
         const State::Registration *registration;
         const ServiceDefinition *service;
@@ -123,7 +145,9 @@ struct ServiceCatalogue::BuildOperation {
     static bool same_scalars(std::span<const ScalarValue<>> left, std::span<const ScalarValue<>> right);
     static bool matches_scalar_filters(std::span<const State::ScalarFilter> filters,
                                        std::span<const ResolvedParameter> parameters,
-                                       std::span<const ScalarValue<>> scalars);
+                                       std::span<const ScalarValue<>> scalars,
+                                       std::optional<std::size_t> lifted_parameter = std::nullopt);
+    ImplementationCandidates implementation_candidates(const details::ServiceInstance &instance) const;
     const State &catalogue_;
     GraphWiring &wiring_;
     details::ServiceRequirements &requirements_;
@@ -151,25 +175,66 @@ bool ServiceCatalogue::BuildOperation::same_scalars(std::span<const ScalarValue<
 
 bool ServiceCatalogue::BuildOperation::matches_scalar_filters(std::span<const State::ScalarFilter> filters,
                                                               std::span<const ResolvedParameter> parameters,
-                                                              std::span<const ScalarValue<>> scalars) {
+                                                              std::span<const ScalarValue<>> scalars,
+                                                              std::optional<std::size_t> lifted_parameter) {
     for (const auto &filter : filters) {
         auto scalar_index = std::size_t{};
         auto found = false;
-        for (const auto &parameter : parameters) {
+        for (auto parameter_index = std::size_t{}; parameter_index < parameters.size(); ++parameter_index) {
+            const auto &parameter = parameters[parameter_index];
             if (!parameter.type->is_scalar()) {
                 continue;
             }
             if (parameter.name == filter.name) {
-                found = scalar_index < scalars.size() && scalars[scalar_index].equals(filter.value);
+                found = (!lifted_parameter || parameter_index != *lifted_parameter) &&
+                        scalar_index < scalars.size() && scalars[scalar_index].equals(filter.value);
                 break;
             }
-            ++scalar_index;
+            if (!lifted_parameter || parameter_index != *lifted_parameter) {
+                ++scalar_index;
+            }
         }
         if (!found) {
             return false;
         }
     }
     return true;
+}
+
+ServiceCatalogue::BuildOperation::ImplementationCandidates
+ServiceCatalogue::BuildOperation::implementation_candidates(const details::ServiceInstance &instance) const {
+    auto candidates = ImplementationCandidates{};
+    for (const auto &registration : catalogue_.registrations) {
+        if (registration.service != instance.service || !instance.type_map.includes(registration.type_map) ||
+            !matches_scalar_filters(registration.scalar_filters, instance.signature.parameters,
+                                    instance.scalar_arguments)) {
+            continue;
+        }
+        if (registration.lifted_parameters.empty()) {
+            candidates.exact.push_back(&registration);
+        } else {
+            candidates.catch_all.push_back(&registration);
+        }
+    }
+
+    for (auto index = std::size_t{}; index < catalogue_.multiservice_registrations.size(); ++index) {
+        const auto &registration = catalogue_.multiservice_registrations[index];
+        for (const auto &claim : registration.claims) {
+            if (claim.service != instance.service || !instance.type_map.includes(claim.type_map) ||
+                !matches_scalar_filters(claim.scalar_filters, instance.signature.parameters,
+                                        instance.scalar_arguments)) {
+                continue;
+            }
+
+            if (claim.lifted_scalar) {
+                candidates.catch_all_multiservice.emplace_back(index, &claim);
+            } else {
+                candidates.exact_multiservice.emplace_back(index, &claim);
+            }
+        }
+    }
+
+    return candidates;
 }
 
 void ServiceCatalogue::add_impl(const ServiceDefinition &service, TypeMap type_map,
@@ -272,9 +337,24 @@ std::size_t ServiceCatalogue::add_multiservice(std::shared_ptr<const WiringTempl
 
 void ServiceCatalogue::add_multiservice_impl(const std::shared_ptr<State> &state, std::size_t index,
                                              const ServiceDefinition &service, TypeMap type_map,
+                                             std::optional<util::symbol> lifted_scalar,
                                              std::span<const WiringArgument> filters) {
     if (index >= state->multiservice_registrations.size()) {
         throw std::out_of_range{"unknown multiservice registration"};
+    }
+    if (lifted_scalar && dynamic_cast<const Service *>(&service) == nullptr) {
+        throw std::invalid_argument{"a multiservice catch-all requires a service implementation"};
+    }
+
+    if (lifted_scalar) {
+        const auto lifted_parameter = std::ranges::find_if(
+            std::views::iota(std::size_t{}, service.signature().parameter_count()), [&](std::size_t parameter_index) {
+                const auto &parameter = service.signature().parameter(parameter_index);
+                return parameter.name == *lifted_scalar && parameter.type->is_scalar();
+            });
+        if (lifted_parameter == std::views::iota(std::size_t{}, service.signature().parameter_count()).end()) {
+            throw std::invalid_argument{"a multiservice catch-all must name a service scalar parameter"};
+        }
     }
 
     auto scalar_filters = std::vector<State::ScalarFilter>{};
@@ -292,6 +372,9 @@ void ServiceCatalogue::add_multiservice_impl(const std::shared_ptr<State> &state
         if (parameter == std::views::iota(std::size_t{}, service.signature().parameter_count()).end()) {
             throw std::invalid_argument{"a multiservice scalar filter must name a service scalar parameter"};
         }
+        if (lifted_scalar && *filter.name() == *lifted_scalar) {
+            throw std::invalid_argument{"a multiservice catch-all cannot filter its lifted scalar"};
+        }
         if (std::ranges::contains(scalar_filters, *filter.name(), &State::ScalarFilter::name)) {
             throw std::invalid_argument{"a multiservice claim repeats a scalar filter"};
         }
@@ -308,6 +391,7 @@ void ServiceCatalogue::add_multiservice_impl(const std::shared_ptr<State> &state
     auto &claims = state->multiservice_registrations[index].claims;
     const auto duplicate = std::ranges::find_if(claims, [&](const auto &claim) {
         if (claim.service != &service || !claim.type_map.has_same_mappings(type_map) ||
+            claim.lifted_scalar != lifted_scalar ||
             claim.scalar_filters.size() != scalar_filters.size()) {
             return false;
         }
@@ -320,7 +404,7 @@ void ServiceCatalogue::add_multiservice_impl(const std::shared_ptr<State> &state
         throw std::invalid_argument{"a multiservice registration repeats a service claim"};
     }
 
-    claims.push_back({&service, std::move(type_map), std::move(scalar_filters)});
+    claims.push_back({&service, std::move(type_map), lifted_scalar, std::move(scalar_filters)});
 }
 
 void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registration_index) {
@@ -338,6 +422,7 @@ void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registratio
         ResolvedSignature signature;
         TypeMap type_map;
         std::vector<ScalarValue<>> scalars;
+        std::optional<std::size_t> lifted_parameter;
     };
 
     const auto copy_scalars = [](std::span<const ScalarValue<>> values) {
@@ -350,32 +435,50 @@ void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registratio
     };
 
     const auto resolve_call = [this, copy_scalars](const ServiceDefinition &service, const TypeMap &seed,
-                                                   std::span<const WiringArgument> arguments, bool create_instance) {
+                                                   std::span<const WiringArgument> arguments,
+                                                   std::optional<util::symbol> lifted_scalar,
+                                                   bool create_instance) {
+        const auto &signature = service.signature();
+        auto lifted_parameter = std::optional<std::size_t>{};
+        if (lifted_scalar) {
+            for (auto index = std::size_t{}; index < signature.parameter_count(); ++index) {
+                const auto &parameter = signature.parameter(index);
+                if (parameter.name == *lifted_scalar && parameter.type->is_scalar()) {
+                    lifted_parameter = index;
+                    break;
+                }
+            }
+            if (!lifted_parameter) {
+                throw WiringError{"a multiservice catch-all port must name a service scalar parameter"};
+            }
+        }
+
         auto type_map = seed.copy();
         auto scalar_parameters = std::vector<std::size_t>{};
-        for (auto index = std::size_t{}; index < service.signature().parameter_count(); ++index) {
-            if (service.signature().parameter(index).type->is_scalar()) {
+        for (auto index = std::size_t{}; index < signature.parameter_count(); ++index) {
+            if (signature.parameter(index).type->is_scalar() && (!lifted_parameter || index != *lifted_parameter)) {
                 scalar_parameters.push_back(index);
             }
         }
         if (arguments.size() != scalar_parameters.size()) {
-            throw WiringError{"multiservice service arguments must provide every service scalar parameter"};
+            throw WiringError{"multiservice arguments must provide every unlifted service scalar parameter"};
         }
 
         auto scalar_values = std::vector<std::optional<ScalarValue<>>>(scalar_parameters.size());
         auto next_positional = std::size_t{};
         for (const auto &argument : arguments) {
             if (!argument.is_scalar() || !argument.present()) {
-                throw WiringError{"multiservice service arguments must be scalar values"};
+                throw WiringError{"multiservice arguments must be scalar values"};
             }
 
             auto scalar_position = std::size_t{};
             if (argument.name()) {
                 const auto found = std::ranges::find_if(scalar_parameters, [&](std::size_t parameter) {
-                    return service.signature().parameter(parameter).name == *argument.name();
+                    return signature.parameter(parameter).name == *argument.name();
                 });
                 if (found == scalar_parameters.end()) {
-                    throw WiringError{"multiservice service argument names a non-scalar service parameter"};
+                    throw WiringError{
+                        "a multiservice argument must name a service scalar parameter required by this call"};
                 }
                 scalar_position = static_cast<std::size_t>(found - scalar_parameters.begin());
             } else {
@@ -383,16 +486,16 @@ void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registratio
                     ++next_positional;
                 }
                 if (next_positional == scalar_values.size()) {
-                    throw WiringError{"multiservice service arguments repeat a scalar parameter"};
+                    throw WiringError{"multiservice arguments repeat a service scalar parameter"};
                 }
                 scalar_position = next_positional++;
             }
             if (scalar_values[scalar_position]) {
-                throw WiringError{"multiservice service arguments repeat a scalar parameter"};
+                throw WiringError{"multiservice arguments repeat a service scalar parameter"};
             }
 
             const auto parameter = scalar_parameters[scalar_position];
-            if (!service.signature().parameter(parameter).type->match(argument.type(), type_map)) {
+            if (!signature.parameter(parameter).type->match(argument.type(), type_map)) {
                 throw WiringError{"a multiservice scalar argument has an incompatible type"};
             }
             scalar_values[scalar_position].emplace(argument.scalar());
@@ -402,63 +505,135 @@ void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registratio
         scalars.reserve(scalar_values.size());
         for (auto &value : scalar_values) {
             if (!value) {
-                throw WiringError{"multiservice service arguments omit a scalar parameter"};
+                throw WiringError{"multiservice arguments omit a required service scalar parameter"};
             }
             scalars.push_back(std::move(*value));
         }
 
         auto matching_instances = std::vector<details::ServiceInstance *>{};
         for (auto &candidate : requirements_.instances()) {
-            if (candidate->service == &service && same_scalars(candidate->scalar_arguments, scalars) &&
-                candidate->type_map.includes(type_map)) {
+            if (candidate->service != &service || !candidate->type_map.includes(type_map)) {
+                continue;
+            }
+            auto scalar_index = std::size_t{};
+            auto argument_index = std::size_t{};
+            auto matches = true;
+            for (auto parameter_index = std::size_t{}; parameter_index < signature.parameter_count();
+                 ++parameter_index) {
+                if (!signature.parameter(parameter_index).type->is_scalar()) {
+                    continue;
+                }
+                if (lifted_parameter && parameter_index == *lifted_parameter) {
+                    ++scalar_index;
+                    continue;
+                }
+                if (!candidate->scalar_arguments[scalar_index++].equals(scalars[argument_index++])) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) {
                 matching_instances.push_back(candidate.get());
             }
         }
-        if (matching_instances.size() > 1) {
-            throw WiringError{"multiservice arguments match more than one resolved service instance"};
+
+        if (lifted_parameter && !matching_instances.empty()) {
+            auto *first = matching_instances.front();
+            for (const auto *candidate : matching_instances) {
+                if (!same_resolved_signature(first->signature, candidate->signature) ||
+                    !first->type_map.has_same_mappings(candidate->type_map)) {
+                    throw WiringError{"multiservice catch-all arguments match multiple resolved service signatures"};
+                }
+            }
+            type_map = first->type_map.copy();
+            return ServiceCall{nullptr, first->signature, std::move(type_map), std::move(scalars), lifted_parameter};
         }
 
+        if (!lifted_parameter && matching_instances.size() > 1) {
+            throw WiringError{"multiservice arguments match more than one resolved service instance"};
+        }
         if (!matching_instances.empty()) {
             auto *instance = matching_instances.front();
             type_map = instance->type_map.copy();
             scalars = copy_scalars(instance->scalar_arguments);
-            return ServiceCall{instance, instance->signature, std::move(type_map), std::move(scalars)};
+            return ServiceCall{instance, instance->signature, std::move(type_map), std::move(scalars), std::nullopt};
         }
 
-        auto resolved_signature = service.signature().complete_resolution(type_map);
-        if (!create_instance) {
-            return ServiceCall{nullptr, std::move(resolved_signature), std::move(type_map), std::move(scalars)};
+        auto resolved_signature = signature.complete_resolution(type_map);
+        if (lifted_parameter || !create_instance) {
+            return ServiceCall{nullptr, std::move(resolved_signature), std::move(type_map), std::move(scalars),
+                               lifted_parameter};
         }
 
         auto &instance = requirements_.require_resolved(service, resolved_signature, type_map, std::move(scalars),
                                                         WiringContext::current().path());
-        return ServiceCall{&instance, std::move(resolved_signature), std::move(type_map), std::move(scalars)};
+        return ServiceCall{&instance, std::move(resolved_signature), std::move(type_map),
+                           copy_scalars(instance.scalar_arguments), std::nullopt};
     };
 
     const auto matching_claim = [this, registration_index](const ServiceDefinition &service,
-                                                           const TypeMap &type_map,
-                                                           const ResolvedSignature &signature,
-                                                           std::span<const ScalarValue<>> scalars)
-        -> const State::Claim & {
+                                                           const ServiceCall &call) -> const State::Claim & {
         auto matched = static_cast<const State::Claim *>(nullptr);
         for (const auto &claim : catalogue_.multiservice_registrations[registration_index].claims) {
-            if (claim.service != &service || !type_map.includes(claim.type_map)) {
+            if (claim.service != &service || claim.lifted_scalar.has_value() != call.lifted_parameter.has_value() ||
+                !call.type_map.includes(claim.type_map) ||
+                !matches_scalar_filters(claim.scalar_filters, call.signature.parameters, call.scalars,
+                                        call.lifted_parameter)) {
                 continue;
             }
-
-            if (!matches_scalar_filters(claim.scalar_filters, signature.parameters, scalars)) {
+            if (call.lifted_parameter &&
+                claim.lifted_scalar != call.signature.parameters[*call.lifted_parameter].name) {
                 continue;
             }
             if (matched != nullptr) {
-                throw WiringError{"multiservice port matches more than one registered claim"};
+                if (!call.lifted_parameter) {
+                    throw WiringError{"multiservice port matches more than one registered claim"};
+                }
+                // Catch-all claim ambiguity is checked for each client; exact clients do not use this port.
+                continue;
             }
             matched = &claim;
         }
 
         if (matched == nullptr) {
-            throw WiringError{"a multiservice graph uses an unregistered service port"};
+            throw WiringError{call.lifted_parameter
+                                  ? "a multiservice graph uses an unregistered catch-all service port"
+                                  : "a multiservice graph uses an unregistered service port"};
         }
         return *matched;
+    };
+
+    const auto find_catch_all_port = [&session = session_, registration_index, copy_scalars](
+                                         const ServiceDefinition &service, const ServiceCall &call,
+                                         std::optional<WiringPoint> reply) {
+        auto &build_state = session.multiservice_state[registration_index];
+        const auto found = std::ranges::find_if(build_state.catch_all_ports, [&](const auto &port) {
+            return port->service == &service && call.lifted_parameter &&
+                   port->lifted_parameter == *call.lifted_parameter &&
+                   same_resolved_signature(port->signature, call.signature) &&
+                   port->type_map.has_same_mappings(call.type_map) &&
+                   same_scalars(port->unlifted_scalars, call.scalars);
+        });
+        if (found != build_state.catch_all_ports.end()) {
+            if (reply) {
+                if ((*found)->replies) {
+                    throw WiringError{"a multiservice catch-all reply was declared more than once"};
+                }
+                (*found)->replies = *reply;
+            }
+            return found->get();
+        }
+
+        auto port = std::make_unique<State::MultiserviceBuildState::CatchAllPort>();
+        port->service = &service;
+        port->signature = std::move(call.signature);
+        port->type_map = call.type_map.copy();
+        port->lifted_parameter = *call.lifted_parameter;
+        port->unlifted_scalars = copy_scalars(call.scalars);
+        port->replies = reply;
+        auto *result = port.get();
+        build_state.catch_all_ports.push_back(std::move(port));
+        return result;
     };
 
     const auto bind_reply = [this](details::ServiceInstance &instance, WiringPoint output) {
@@ -489,12 +664,37 @@ void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registratio
     };
 
     auto callbacks = MultiservicePortCallbacks{
-        [this, registration_index, resolve_call, matching_claim, matching_reply, bind_reply](
+        [this, registration_index, resolve_call, matching_claim, find_catch_all_port, matching_reply, bind_reply](
             const ServiceDefinition &service, const TypeMap &type_map,
-            std::span<const WiringArgument> scalar_arguments) {
+            std::span<const WiringArgument> scalar_arguments, std::optional<util::symbol> lifted_scalar) {
             auto &build_state = session_.multiservice_state[registration_index];
-            auto call = resolve_call(service, type_map, scalar_arguments, true);
-            (void)matching_claim(service, call.type_map, call.signature, call.scalars);
+            if (lifted_scalar) {
+                auto call = resolve_call(service, type_map, scalar_arguments, lifted_scalar, false);
+                (void)matching_claim(service, call);
+                auto *port = find_catch_all_port(service, std::move(call), std::nullopt);
+                if (port->requests_wired) {
+                    throw WiringError{"a multiservice catch-all request was declared more than once"};
+                }
+
+                auto &signature = port->signature;
+                const auto &scalar_type = static_cast<const ScalarType &>(
+                    *signature.parameters[port->lifted_parameter].type);
+                const auto &value_type = time_series_value_type(scalar_type, TimeSeriesGuarantee::final);
+                const auto &field_type = time_series_dictionary_type(
+                    cpp_scalar_type<service_client_id_t>(), value_type, TimeSeriesGuarantee::ordinary);
+                const auto field = SchemaField{signature.parameters[port->lifted_parameter].name, &field_type};
+                const auto identity = details::NestedBindingIdentity::object(port);
+                (void)wiring_.require_service_binding(
+                    identity, GraphWiring::ServiceBindingOrdering::provider_after_consumers);
+                auto context = WiringContext{wiring_};
+                port->requests = static_cast<const Service &>(service).wire_catch_all_requests(
+                    wiring_, signature, identity, std::span<const SchemaField>{&field, 1});
+                port->requests_wired = true;
+                return port->requests;
+            }
+
+            auto call = resolve_call(service, type_map, scalar_arguments, std::nullopt, true);
+            (void)matching_claim(service, call);
             auto &instance = *call.instance;
             if (instance.implementation_requests_wired) {
                 throw WiringError{"a multiservice service request was declared more than once"};
@@ -512,12 +712,24 @@ void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registratio
 
             return requests;
         },
-        [this, registration_index, resolve_call, matching_claim, bind_reply, copy_scalars](
+        [this, registration_index, resolve_call, matching_claim, find_catch_all_port, bind_reply, copy_scalars](
             const ServiceDefinition &service, const TypeMap &type_map, WiringPoint output,
-            std::span<const WiringArgument> scalar_arguments) {
+            std::span<const WiringArgument> scalar_arguments, std::optional<util::symbol> lifted_scalar) {
             auto &build_state = session_.multiservice_state[registration_index];
-            auto call = resolve_call(service, type_map, scalar_arguments, false);
-            (void)matching_claim(service, call.type_map, call.signature, call.scalars);
+            if (lifted_scalar) {
+                auto call = resolve_call(service, type_map, scalar_arguments, lifted_scalar, false);
+                (void)matching_claim(service, call);
+                const auto *expected_output = service.implementation_output_type(call.signature);
+                if (expected_output == nullptr || !output || !expected_output->accepts(output.type())) {
+                    throw WiringError{"a multiservice catch-all reply has an incompatible output time series"};
+                }
+
+                (void)find_catch_all_port(service, std::move(call), output);
+                return;
+            }
+
+            auto call = resolve_call(service, type_map, scalar_arguments, std::nullopt, false);
+            (void)matching_claim(service, call);
             auto reply_instance = details::ServiceInstance{
                 &service, call.signature, call.type_map.copy(), copy_scalars(call.scalars), false, false, false, false};
             const auto *expected_output = service.implementation_output_type(reply_instance.signature);
@@ -554,12 +766,17 @@ void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registratio
     auto service_contexts = std::vector<WiringErrorContext>{};
     for (const auto &instance_owner : requirements_.instances()) {
         const auto &instance = *instance_owner;
-        const auto claimed = std::ranges::any_of(registration.claims, [&](const auto &claim) {
-            return claim.service == instance.service && instance.type_map.includes(claim.type_map) &&
-                   matches_scalar_filters(claim.scalar_filters, instance.signature.parameters,
-                                          instance.scalar_arguments);
-        });
-        if (claimed) {
+        const auto candidates = implementation_candidates(instance);
+        const auto exact_count = candidates.exact.size() + candidates.exact_multiservice.size();
+        const auto catch_all_count = candidates.catch_all.size() + candidates.catch_all_multiservice.size();
+        const auto selected = exact_count != 0
+                                  ? std::ranges::any_of(candidates.exact_multiservice, [&](const auto &candidate) {
+                                        return candidate.first == registration_index;
+                                    })
+                                  : catch_all_count == 1 &&
+                                        !candidates.catch_all_multiservice.empty() &&
+                                        candidates.catch_all_multiservice.front().first == registration_index;
+        if (selected) {
             service_contexts.insert(service_contexts.end(), instance.call_contexts.begin(),
                                     instance.call_contexts.end());
         }
@@ -575,6 +792,92 @@ void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registratio
     if (output) {
         throw WiringError::from_exception(
             "a multiservice graph must connect service outputs through implementation_replies", service_contexts, {});
+    }
+
+    const auto same_unlifted_scalars = [](const details::ServiceInstance &instance,
+                                          const State::MultiserviceBuildState::CatchAllPort &port) {
+        auto scalar_index = std::size_t{};
+        auto unlifted_index = std::size_t{};
+        for (auto parameter_index = std::size_t{}; parameter_index < instance.signature.parameters.size();
+             ++parameter_index) {
+            if (!instance.signature.parameters[parameter_index].type->is_scalar()) {
+                continue;
+            }
+            if (parameter_index != port.lifted_parameter) {
+                if (!instance.scalar_arguments[scalar_index].equals(port.unlifted_scalars[unlifted_index++])) {
+                    return false;
+                }
+            }
+            ++scalar_index;
+        }
+        return true;
+    };
+
+    for (const auto &port_owner : build_state.catch_all_ports) {
+        auto &port = *port_owner;
+        const auto lifted_name = port.signature.parameters[port.lifted_parameter].name;
+        const auto &service = static_cast<const Service &>(*port.service);
+        for (const auto &instance_owner : requirements_.instances()) {
+            auto &instance = *instance_owner;
+            if (instance.service != port.service ||
+                !same_resolved_signature(instance.signature, port.signature) ||
+                !instance.type_map.has_same_mappings(port.type_map) || !same_unlifted_scalars(instance, port)) {
+                continue;
+            }
+
+            const auto candidates = implementation_candidates(instance);
+            const auto exact_count = candidates.exact.size() + candidates.exact_multiservice.size();
+            const auto catch_all_count = candidates.catch_all.size() + candidates.catch_all_multiservice.size();
+            if (exact_count != 0) {
+                continue;
+            }
+            if (catch_all_count > 1) {
+                throw service_error("service '" + std::string{instance.signature.name.text()} +
+                                        "' has ambiguous catch-all implementations",
+                                    instance);
+            }
+            if (catch_all_count == 0 || candidates.catch_all_multiservice.empty() ||
+                candidates.catch_all_multiservice.front().first != registration_index ||
+                candidates.catch_all_multiservice.front().second->lifted_scalar != lifted_name) {
+                continue;
+            }
+
+            if (port.requests_wired && !instance.implementation_requests_wired) {
+                auto scalar_index = std::size_t{};
+                for (auto parameter_index = std::size_t{}; parameter_index < instance.signature.parameters.size();
+                     ++parameter_index) {
+                    if (!instance.signature.parameters[parameter_index].type->is_scalar()) {
+                        continue;
+                    }
+                    if (parameter_index == port.lifted_parameter) {
+                        auto lifted = WiringArgument{ScalarValue<>{instance.scalar_arguments[scalar_index].view()}};
+                        lifted.set_name(lifted_name);
+                        lifted.match_fixed_parameter_by_name();
+                        auto context = WiringContext{wiring_};
+                        service.wire_forwarding_requests(
+                            wiring_, details::NestedBindingIdentity::object(&instance),
+                            details::NestedBindingIdentity::object(&port),
+                            std::span<const WiringArgument>{&lifted, 1});
+                        instance.implementation_requests_wired = true;
+                        break;
+                    }
+                    ++scalar_index;
+                }
+            }
+
+            if (port.replies && !instance.implementation_replies_wired) {
+                const auto *expected_output = service.implementation_output_type(instance.signature);
+                if (expected_output == nullptr || !expected_output->accepts(port.replies->type())) {
+                    throw service_error("a multiservice catch-all reply has an incompatible output", instance);
+                }
+                wiring_.provide_inherited_time_series(details::NestedBindingIdentity::object(&instance),
+                                                      *expected_output, *port.replies);
+                instance.implementation_replies_wired = true;
+            }
+            instance.implementation_wired = instance.implementation_requests_wired &&
+                                            (instance.signature.output == nullptr ||
+                                             instance.implementation_replies_wired);
+        }
     }
 
     build_state.wired = true;
@@ -718,44 +1021,11 @@ bool ServiceCatalogue::BuildOperation::run() {
             continue;
         }
 
-        auto candidates = std::vector<const State::Registration *>{};
-        auto catch_all_candidates = std::vector<const State::Registration *>{};
-        for (const auto &registration : catalogue_.registrations) {
-            if (registration.service == instance.service && instance.type_map.includes(registration.type_map) &&
-                matches_scalar_filters(registration.scalar_filters, instance.signature.parameters,
-                                       instance.scalar_arguments)) {
-                if (registration.lifted_parameters.empty()) {
-                    candidates.push_back(&registration);
-                } else {
-                    catch_all_candidates.push_back(&registration);
-                }
-            }
-        }
-
-        auto multiservice_candidates = std::vector<std::size_t>{};
-        for (auto index = std::size_t{}; index < catalogue_.multiservice_registrations.size(); ++index) {
-            const auto &registration = catalogue_.multiservice_registrations[index];
-            auto matching_claims = std::size_t{};
-            for (const auto &claim : registration.claims) {
-                if (claim.service == instance.service && instance.type_map.includes(claim.type_map) &&
-                    matches_scalar_filters(claim.scalar_filters, instance.signature.parameters,
-                                           instance.scalar_arguments)) {
-                    ++matching_claims;
-                }
-            }
-            if (matching_claims > 1) {
-                throw service_error("multiservice registration has overlapping claims for service '" +
-                                        std::string{instance.signature.name.text()} + "'",
-                                    instance);
-            }
-            if (matching_claims == 1) {
-                multiservice_candidates.push_back(index);
-            }
-        }
-
+        const auto candidates = implementation_candidates(instance);
         const auto service_name = std::string{instance.signature.name.text()};
-        const auto exact_count = candidates.size() + multiservice_candidates.size();
-        const auto candidate_count = exact_count == 0 ? catch_all_candidates.size() : exact_count;
+        const auto exact_count = candidates.exact.size() + candidates.exact_multiservice.size();
+        const auto catch_all_count = candidates.catch_all.size() + candidates.catch_all_multiservice.size();
+        const auto candidate_count = exact_count == 0 ? catch_all_count : exact_count;
         if (candidate_count == 0) {
             throw service_error("service '" + service_name + "' has no matching implementation", instance);
         }
@@ -767,13 +1037,23 @@ bool ServiceCatalogue::BuildOperation::run() {
         }
 
         if (exact_count == 0) {
-            wire_catch_all(instance, *catch_all_candidates.front());
+            if (!candidates.catch_all.empty()) {
+                wire_catch_all(instance, *candidates.catch_all.front());
+                changed = true;
+                continue;
+            }
+            const auto index = candidates.catch_all_multiservice.front().first;
+            if (session_.multiservice_state[index].wired) {
+                continue;
+            }
+
+            wire_multiservice(index);
             changed = true;
             continue;
         }
 
-        if (!multiservice_candidates.empty()) {
-            const auto index = multiservice_candidates.front();
+        if (!candidates.exact_multiservice.empty()) {
+            const auto index = candidates.exact_multiservice.front().first;
             if (session_.multiservice_state[index].wired) {
                 continue;
             }
@@ -787,7 +1067,7 @@ bool ServiceCatalogue::BuildOperation::run() {
         auto context = WiringContext{wiring_};
         auto arguments = std::vector<WiringArgument>{};
         arguments.reserve(instance.scalar_arguments.size() + instance.signature.parameters.size() +
-                          candidates.front()->installation_arguments.size());
+                          candidates.exact.front()->installation_arguments.size());
         if (instance.service->implementation_requests_required()) {
             const auto requests = instance.service->wire_implementation_requests(
                 wiring_, instance.signature, details::NestedBindingIdentity::object(&instance), true);
@@ -796,15 +1076,15 @@ bool ServiceCatalogue::BuildOperation::run() {
         for (const auto &scalar : instance.scalar_arguments) {
             arguments.emplace_back(ScalarValue<>{scalar.view()});
         }
-        for (const auto &argument : candidates.front()->installation_arguments) {
+        for (const auto &argument : candidates.exact.front()->installation_arguments) {
             arguments.emplace_back(argument);
         }
 
         auto output = std::optional<WiringPoint>{};
         try {
-            const auto bound = details::bind_wiring_arguments(candidates.front()->implementation->signature(),
+            const auto bound = details::bind_wiring_arguments(candidates.exact.front()->implementation->signature(),
                                                                arguments);
-            output = (*candidates.front()->implementation)(instance.type_map,
+            output = (*candidates.exact.front()->implementation)(instance.type_map,
                                                            std::span<const WiringArgument>{bound});
         } catch (...) {
             throw service_error("service implementation wiring failed for '" + service_name + "'", instance,
@@ -865,10 +1145,11 @@ void ServiceCatalogue::BuildOperation::validate() const {
 
         for (const auto &instance_owner : requirements_.instances()) {
             const auto &instance = *instance_owner;
-            const auto claimed = std::ranges::any_of(registration.claims, [&](const auto &claim) {
-                return claim.service == instance.service && instance.type_map.includes(claim.type_map) &&
-                       matches_scalar_filters(claim.scalar_filters, instance.signature.parameters,
-                                              instance.scalar_arguments);
+            const auto candidates = implementation_candidates(instance);
+            const auto exact_count = candidates.exact.size() + candidates.exact_multiservice.size();
+            const auto &claims = exact_count == 0 ? candidates.catch_all_multiservice : candidates.exact_multiservice;
+            const auto claimed = std::ranges::any_of(claims, [&](const auto &candidate) {
+                return candidate.first == registration_index;
             });
             if (!claimed) {
                 continue;

@@ -66,6 +66,23 @@ class ServiceTemplate final
         return wp<>{Definition::implementation_requests(type_map, values)};
     }
 
+    template <typename... Arguments>
+        requires Definition::supports_implementation_requests && (details::graph_code_argument<Arguments> && ...)
+    auto implementation_requests_for_catch_all(util::symbol lifted_scalar, Arguments &&...arguments) const & {
+        auto values = std::array<WiringArgument, sizeof...(Arguments)>{
+            WiringArgument{std::forward<Arguments>(arguments)}...};
+        return wp<>{Definition::implementation_requests_for_catch_all(TypeMap{}, lifted_scalar, values)};
+    }
+
+    template <typename... Arguments>
+        requires Definition::supports_implementation_requests && (details::graph_code_argument<Arguments> && ...)
+    auto implementation_requests_for_catch_all(const TypeMap &type_map, util::symbol lifted_scalar,
+                                               Arguments &&...arguments) const & {
+        auto values = std::array<WiringArgument, sizeof...(Arguments)>{
+            WiringArgument{std::forward<Arguments>(arguments)}...};
+        return wp<>{Definition::implementation_requests_for_catch_all(type_map, lifted_scalar, values)};
+    }
+
     template <typename Reply, typename... Arguments>
         requires(details::typed_prototype<Prototype>::has_output && details::wiring_point_argument<Reply> &&
                  (details::graph_code_argument<Arguments> && ...))
@@ -82,6 +99,28 @@ class ServiceTemplate final
         auto values = std::array<WiringArgument, sizeof...(Arguments)>{
             WiringArgument{std::forward<Arguments>(arguments)}...};
         Definition::implementation_replies(type_map, static_cast<WiringPoint>(reply), values);
+    }
+
+    template <typename Reply, typename... Arguments>
+        requires(details::typed_prototype<Prototype>::has_output && details::wiring_point_argument<Reply> &&
+                 (details::graph_code_argument<Arguments> && ...))
+    void implementation_replies_for_catch_all(Reply &&reply, util::symbol lifted_scalar,
+                                              Arguments &&...arguments) const & {
+        auto values = std::array<WiringArgument, sizeof...(Arguments)>{
+            WiringArgument{std::forward<Arguments>(arguments)}...};
+        Definition::implementation_replies_for_catch_all(TypeMap{}, static_cast<WiringPoint>(reply), lifted_scalar,
+                                                          values);
+    }
+
+    template <typename Reply, typename... Arguments>
+        requires(details::typed_prototype<Prototype>::has_output && details::wiring_point_argument<Reply> &&
+                 (details::graph_code_argument<Arguments> && ...))
+    void implementation_replies_for_catch_all(const TypeMap &type_map, Reply &&reply, util::symbol lifted_scalar,
+                                              Arguments &&...arguments) const & {
+        auto values = std::array<WiringArgument, sizeof...(Arguments)>{
+            WiringArgument{std::forward<Arguments>(arguments)}...};
+        Definition::implementation_replies_for_catch_all(type_map, static_cast<WiringPoint>(reply), lifted_scalar,
+                                                          values);
     }
 
     template <typename... Mappings> auto operator[](Mappings...) && = delete;
