@@ -78,12 +78,17 @@ the tags and write `test-coverage.md` to the build directory.
 - `tests/library`: standard library overloads, in the separate `bg_library_tests` binary
 
 Name a test file after the feature it covers. Split node and graph behavior by
-value type when the type changes the expected behavior. Keep each test case
-focused on one behavior. Define a test-only function, node, or graph in the test
-case that uses it. When an interface requires a namespace-scope type, place its
-declaration immediately before the test case. Keep other declarations at file
-scope only when multiple test cases share them. Separate node and graph
-definitions with a blank line.
+value type when the type changes the expected behavior.
+
+Start each file with a simple test of its core behavior. Order the remaining
+tests from simple cases to specialized behavior and failures. Place declarations
+needed only by later tests after the first test.
+
+Keep each test case focused on one behavior. Define a test-only function, node,
+or graph in the test case that uses it. When an interface requires a
+namespace-scope type, place its declaration immediately before the test case.
+Keep other declarations at file scope only when multiple test cases share them.
+Separate node and graph definitions with a blank line.
 
 Tests may use `using namespace bg;` to avoid repeated qualification.
 
