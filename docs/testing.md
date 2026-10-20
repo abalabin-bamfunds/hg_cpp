@@ -85,6 +85,8 @@ declaration immediately before the test case. Keep other declarations at file
 scope only when multiple test cases share them. Separate node and graph
 definitions with a blank line.
 
+Tests may use `using namespace bg;` to avoid repeated qualification.
+
 Keep the graph, input sequence, and expected results visible in the test case.
 Prefer literal input sequences and infer their types from the graph signature.
 Specify an input type only when the signature leaves it unresolved or selecting
