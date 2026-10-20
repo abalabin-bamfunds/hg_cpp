@@ -1027,6 +1027,10 @@ nanobind::object PythonScalarConversions::python_object_class(const ScalarType &
     return nanobind::borrow<nanobind::object>(found->second.get());
 }
 
+const ScalarType &PythonScalarConversions::python_object_root_type() const {
+    return type_from_python(nanobind::handle{reinterpret_cast<PyObject *>(&PyBaseObject_Type)});
+}
+
 const ScalarType &PythonScalarConversions::add_python_type(nanobind::handle python_type) {
     if (!PyType_Check(python_type.ptr())) {
         throw std::invalid_argument{"a Python scalar type registration requires a Python type"};

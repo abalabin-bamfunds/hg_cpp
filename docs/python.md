@@ -691,6 +691,15 @@ handlers take precedence over handlers for the scalar type. Register handlers
 when the extension module initializes, before affected values are exposed to
 Python.
 
+Native node declarations use `bg::python::PythonObject` to constrain a scalar
+variable to Python-object values. User-defined Python classes represented by
+Python-object scalars match the root `object` bound:
+
+```cpp
+using PYOBJECT = bg::ScalarVariable<"PYOBJECT", bg::python::PythonObject>;
+bg::In<bg::TS<PYOBJECT>> input;
+```
+
 Python-to-scalar conversion during wiring receives a temporary allocator. A
 conversion whose result can retain shared storage beyond wiring must allocate
 that storage from a longer-lived owner or the current runtime allocation context.

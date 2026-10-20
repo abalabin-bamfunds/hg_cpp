@@ -67,9 +67,11 @@ def test_python_object_getitem_result_supports_covariant_output_type():
     class Derived(Base):
         pass
 
+    derived = Derived()
+
     class Indexed:
         def __getitem__(self, key: int) -> Base:
-            return Derived()
+            return derived
 
     @bg.graph
     def graph(value: bg.TS[Indexed]) -> bg.TS[Base]:
@@ -77,6 +79,30 @@ def test_python_object_getitem_result_supports_covariant_output_type():
 
     result = bg.test_graph(graph, [Indexed()])[0]
     assert type(result) is Derived
+    assert result is derived
+
+
+def test_python_object_operators_do_not_match_builtin_scalars():
+    @bg.graph
+    def getitem_graph(value: bg.TS[str]) -> bg.TS[str]:
+        return value[0]
+
+    @bg.graph
+    def getattr_graph(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.getattr(value, "real")
+
+    @bg.graph
+    def explicit_getattr_graph(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.getattr[bg.TS[int]](value, "real")
+
+    with pytest.raises(ValueError, match="Cannot resolve operator getitem"):
+        bg.test_graph(getitem_graph, ["text"])
+
+    with pytest.raises(ValueError, match="Cannot resolve operator getattr"):
+        bg.test_graph(getattr_graph, [1])
+
+    with pytest.raises(ValueError, match="Cannot resolve operator getattr"):
+        bg.test_graph(explicit_getattr_graph, [1])
 
 
 def test_getattr_infers_annotated_field_and_property_types():
@@ -123,8 +149,22 @@ def test_getattr_rejects_non_string_attribute_name():
     def graph(value: bg.TS[Record]) -> bg.TS[int]:
         return bg.operators.getattr(value, 1)
 
+    @bg.graph
+    def explicit_output_graph(value: bg.TS[Record]) -> bg.TS[int]:
+        return bg.operators.getattr[bg.TS[int]](value, 1)
+
+    @bg.graph
+    def null_symbol_graph(value: bg.TS[Record]) -> bg.TS[int]:
+        return bg.operators.getattr[bg.TS[int]](value, bg.Symbol())
+
     with pytest.raises(ValueError, match="Cannot resolve operator getattr"):
         bg.test_graph(graph, [Record()])
+
+    with pytest.raises(ValueError, match="Cannot resolve operator getattr"):
+        bg.test_graph(explicit_output_graph, [Record()])
+
+    with pytest.raises(ValueError):
+        bg.test_graph(null_symbol_graph, [Record()])
 
 
 def test_python_object_operator_propagates_python_exception():

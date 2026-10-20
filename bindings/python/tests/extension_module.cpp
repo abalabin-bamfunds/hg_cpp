@@ -111,7 +111,7 @@ struct native_start_only_source_definition {
     bg::Signature signature_;
 };
 
-using PYOBJECT = bg::ScalarVariable<"PYOBJECT">;
+using PYOBJECT = bg::ScalarVariable<"PYOBJECT", bg::python::PythonObject>;
 
 struct native_python_object_property_node {
     bg::In<bg::TS<PYOBJECT>> input;

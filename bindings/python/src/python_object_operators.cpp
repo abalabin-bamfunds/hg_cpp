@@ -25,8 +25,9 @@ namespace nb = nanobind;
 namespace bg::python::details {
 namespace {
 
-using PYOBJECT = ScalarVariable<"PYOBJECT">;
+using PYOBJECT = ScalarVariable<"PYOBJECT", PythonObject>;
 using KEY = ScalarVariable<"KEY">;
+using ATTRIBUTE = ScalarVariable<"ATTRIBUTE", string, symbol>;
 using ITEM = operators::ITEM;
 
 nb::object optional_attribute(nb::handle object, const char *name) {
@@ -166,11 +167,7 @@ const TimeSeriesType *resolve_getattr_type(const WiringArguments &arguments) {
     return time_series_type_from_annotation(field_annotation(python_class, *name));
 }
 
-RequirementResult python_object_output_requirement(const WiringArguments &arguments, std::string_view input_name) {
-    if (!python_object_input_class(arguments, input_name)) {
-        return reject("the input must be a Python-object scalar time series");
-    }
-
+RequirementResult python_object_output_requirement(const WiringArguments &arguments) {
     const auto *output = type_cast<TimeSeriesValueType>(arguments.resolved_output_type());
     if (output == nullptr) {
         return reject("the output must be a scalar time series");
@@ -203,7 +200,7 @@ struct python_object_getitem_scalar_key {
     static RequirementResult require(const WiringArguments &arguments) {
         const auto gil = GilScope{};
         gil.check_error();
-        return python_object_output_requirement(arguments, "collection");
+        return python_object_output_requirement(arguments);
     }
 
     void evaluate(EvaluationContext *context) const {
@@ -232,7 +229,7 @@ struct python_object_getitem_time_series_key {
     static RequirementResult require(const WiringArguments &arguments) {
         const auto gil = GilScope{};
         gil.check_error();
-        return python_object_output_requirement(arguments, "collection");
+        return python_object_output_requirement(arguments);
     }
 
     void evaluate(EvaluationContext *context) const {
@@ -250,7 +247,7 @@ struct python_object_getitem_time_series_key {
 
 struct python_object_getattr {
     In<TS<PYOBJECT>> bundle;
-    Scalar<SCALAR> name;
+    Scalar<ATTRIBUTE> name;
     Out<ITEM> output;
 
     static const TimeSeriesType *resolve(ITEM, const WiringArguments &arguments) {
@@ -263,9 +260,9 @@ struct python_object_getattr {
         const auto gil = GilScope{};
         gil.check_error();
         if (!scalar_attribute_name(arguments)) {
-            return reject("the attribute name must be a string or symbol scalar");
+            return reject("the attribute name must not be null");
         }
-        return python_object_output_requirement(arguments, "bundle");
+        return python_object_output_requirement(arguments);
     }
 
     void evaluate(EvaluationContext *context) const {

@@ -6,6 +6,7 @@
 #include <bg/scalar/dispatch.hpp>
 #include <bg/scalar/scalar.hpp>
 #include <bg/scalar/value.hpp>
+#include <bg/type/scalar_type.hpp>
 #include <bg/util/symbol.hpp>
 
 #include <nanobind/nanobind.h>
@@ -17,6 +18,10 @@ namespace bg::python {
 
 class CallbackLifetime;
 class PythonScalarConversions;
+
+// Scalar declaration used as a bound for Python-object scalar variables.
+struct PythonObject {};
+
 using ScalarToPython = nanobind::object (*)(Scalar<>, const PythonScalarConversions &);
 using ScalarToPythonView = nanobind::object (*)(Scalar<>, const PythonScalarConversions &,
                                                 const std::shared_ptr<CallbackLifetime> &, std::uint64_t);
@@ -41,6 +46,7 @@ class BG_PYTHON_API PythonScalarConversions {
     [[nodiscard]] const ScalarType &add_python_schema(nanobind::handle python_type, const bg::Schema &schema);
     nanobind::object python_schema_class(const bg::Schema &schema) const;
     nanobind::object python_object_class(const ScalarType &type) const;
+    const ScalarType &python_object_root_type() const;
     // Selects an exact runtime handler before a semantic-type handler. Other values use structural conversion.
     ScalarToPython to_python_handler(const ScalarRuntimeType &runtime_type) const noexcept;
     nanobind::object to_python(Scalar<> value) const;
@@ -62,3 +68,11 @@ class BG_PYTHON_API PythonScalarConversions {
 BG_PYTHON_API PythonScalarConversions &scalar_conversions();
 
 } // namespace bg::python
+
+namespace bg {
+
+template <> struct scalar_type_traits<python::PythonObject> {
+    static const ScalarType &type() { return python::scalar_conversions().python_object_root_type(); }
+};
+
+} // namespace bg
