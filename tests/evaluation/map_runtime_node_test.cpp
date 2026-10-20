@@ -475,7 +475,7 @@ TEST_CASE("mapped target ticks evaluate only the selected inner graph",
 
     const auto actual = testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{2, 20}}});
 
-    CHECK(actual.equals<bg::i64>({22, 22}));
+    CHECK(actual.equals<i64>({22, 22}));
     CHECK(AddKey::evaluations == std::array<std::size_t, 3>{0, 1, 2});
 }
 
@@ -494,7 +494,7 @@ TEST_CASE("map evaluates more inner graphs than the ready bitmap inline capacity
 
     const auto result = testing::test_graph(graph, std::array{7});
 
-    CHECK(result.equals<bg::i64>({7}));
+    CHECK(result.equals<i64>({7}));
     CHECK(MapSink::values.size() == 100);
 }
 
@@ -511,7 +511,7 @@ TEST_CASE("stopped map inner graphs are destroyed at the start of the next outer
     const auto compiled = CompiledGraph{wiring};
     auto memory = counting_memory_resource{};
     {
-        auto runtime_global_state = bg::GlobalState{allocator{memory}};
+        auto runtime_global_state = GlobalState{allocator{memory}};
         auto runtime = RuntimeGraph{compiled, allocator{memory}, runtime_global_state};
         ControlledKeys::present = true;
         runtime.start(time(1));
@@ -552,7 +552,7 @@ TEST_CASE("map uses the union of mapped dictionary key sets and binds missing va
 
     const auto actual = testing::test_graph(graph, std::array{1, -1, -1, 4}, std::array{-1, 2, -1, 3});
 
-    CHECK(actual.equals<bg::i64>({1, 2, std::nullopt, 7}));
+    CHECK(actual.equals<i64>({1, 2, std::nullopt, 7}));
 }
 
 TEST_CASE("map uses a TSS key set for a source graph",
@@ -598,7 +598,7 @@ TEST_CASE("a sink map evaluates one inner graph for each live key",
 
     const auto actual = testing::test_graph(graph, std::array{1, 2, -1, 3});
 
-    CHECK(actual.equals<bg::i64>({1, 2, 1, 3}));
+    CHECK(actual.equals<i64>({1, 2, 1, 3}));
     CHECK(MapSink::values == std::vector{1, 2, 3});
 }
 
@@ -618,7 +618,7 @@ TEST_CASE("a pass-through reference replacement updates each running map inner g
 
     const auto actual = testing::test_graph(graph, std::array{1, 2, 3}, std::array{true, false, true});
 
-    CHECK(actual.equals<bg::i64>({11, 202, 33}));
+    CHECK(actual.equals<i64>({11, 202, 33}));
 }
 
 TEST_CASE("a map inner graph reports timed work through the map owner",
@@ -683,5 +683,5 @@ TEST_CASE("a map consumes and produces TSD references across two nested graph bo
     const auto actual =
         testing::test_graph(outer, std::array{1, 2, 3, 4, 5}, std::array{true, true, false, true, true});
 
-    CHECK(actual.equals<bg::i64>({2, 3, std::nullopt, 5, 6}));
+    CHECK(actual.equals<i64>({2, 3, std::nullopt, 5, 6}));
 }

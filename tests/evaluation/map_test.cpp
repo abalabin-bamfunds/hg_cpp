@@ -69,7 +69,7 @@ TEST_CASE("map invokes a generic graph function",
 
     const auto actual = testing::test_graph(tested, {{{1, 2}}, {{1, 5}}});
 
-    CHECK(actual.equals<bg::i64>({3, 6}));
+    CHECK(actual.equals<i64>({3, 6}));
 }
 
 TEST_CASE("map invokes a graph function with a const wiring-point reference parameter",
@@ -82,7 +82,7 @@ TEST_CASE("map invokes a graph function with a const wiring-point reference para
 
     const auto actual = testing::test_graph(tested, {{{1, 2}}, {{1, 5}}});
 
-    CHECK(actual.equals<bg::i64>({3, 6}));
+    CHECK(actual.equals<i64>({3, 6}));
 }
 
 TEST_CASE("map generic graph functions preserve optional reference arguments",
@@ -105,7 +105,7 @@ TEST_CASE("map generic graph functions preserve optional reference arguments",
         tested, {{{1, 2}}, {{1, 5}}, {{1, 9}}},
         {1, literal::SKIP, 3});
 
-    CHECK(actual.equals<bg::i64>({3, 6, 10}));
+    CHECK(actual.equals<i64>({3, 6, 10}));
 }
 
 TEST_CASE("map preserves a final item target through a nested dictionary reference",
@@ -134,7 +134,7 @@ TEST_CASE("map preserves a final item target through a nested dictionary referen
         return mapped[i64{1}].as<TS<i64>>();
     };
 
-    CHECK(testing::test_graph(tested, std::array{17}, std::array{true}).equals<bg::i64>({17}));
+    CHECK(testing::test_graph(tested, std::array{17}, std::array{true}).equals<i64>({17}));
 }
 
 TEST_CASE("map invokes a graph through runtime arguments",
@@ -165,7 +165,7 @@ TEST_CASE("map invokes a graph through runtime arguments",
 
     const auto actual = testing::test_graph(tested, {{{1, 3}}, {{1, 7}}});
 
-    CHECK(actual.equals<bg::i64>({4, 8}));
+    CHECK(actual.equals<i64>({4, 8}));
 }
 
 TEST_CASE("map passes a named argument positionally to a graph function",
@@ -179,7 +179,7 @@ TEST_CASE("map passes a named argument positionally to a graph function",
 
     const auto actual = testing::test_graph(tested, {{{1, 2}}, {{1, 5}}});
 
-    CHECK(actual.equals<bg::i64>({3, 6}));
+    CHECK(actual.equals<i64>({3, 6}));
 }
 
 TEST_CASE("map retains a named argument for a graph template",
@@ -198,7 +198,7 @@ TEST_CASE("map retains a named argument for a graph template",
 
     const auto actual = testing::test_graph(tested, {{{1, 2}}, {{1, 5}}});
 
-    CHECK(actual.equals<bg::i64>({2, 5}));
+    CHECK(actual.equals<i64>({2, 5}));
 }
 
 TEST_CASE("map retains a named reference collection as a variadic graph argument",
@@ -228,7 +228,7 @@ TEST_CASE("map retains a named reference collection as a variadic graph argument
 
     const auto actual = testing::test_graph(tested, {{{1, 2}}, {{1, 5}}}, {10, 20}, {true, true});
 
-    CHECK(actual.equals<bg::i64>({2, 5}));
+    CHECK(actual.equals<i64>({2, 5}));
 }
 
 TEST_CASE("map infers a leading key for a graph function with an output",
@@ -247,7 +247,7 @@ TEST_CASE("map infers a leading key for a graph function with an output",
 
     const auto actual = testing::test_graph(tested, {{{1, 3}}, {{1, 7}}});
 
-    CHECK(actual.equals<bg::i64>({4, 8}));
+    CHECK(actual.equals<i64>({4, 8}));
 }
 
 TEST_CASE("map passes a const key to an indexed graph parameter",
@@ -267,7 +267,7 @@ TEST_CASE("map passes a const key to an indexed graph parameter",
 
     const auto actual = testing::test_graph(tested, {{{1, 3}}, {{1, 7}}});
 
-    CHECK(actual.equals<bg::i64>({4, 8}));
+    CHECK(actual.equals<i64>({4, 8}));
 }
 
 TEST_CASE("map uses the union of mapped TSD key sets",
@@ -284,7 +284,7 @@ TEST_CASE("map uses the union of mapped TSD key sets",
 
     const auto actual = testing::test_graph(tested, {{{1, 1}}, {{1, 3}}}, {{{2, 10}}, {{2, 30}}});
 
-    CHECK(actual.equals<bg::i64>({10, 30}));
+    CHECK(actual.equals<i64>({10, 30}));
 }
 
 struct KeySourceGraph {
@@ -356,7 +356,7 @@ TEST_CASE("map supports sink graph functions",
     };
     const auto actual = testing::test_graph(tested, {{{1, 1}}, {{1, 2}}, {{1, 3}}});
 
-    CHECK(actual.equals<bg::i64>({1, 2, 3}));
+    CHECK(actual.equals<i64>({1, 2, 3}));
     CHECK(RecordingSink::values == std::vector{1, 2, 3});
 }
 
@@ -377,7 +377,7 @@ TEST_CASE("map uses an explicitly selected TSD key set",
         tested, {{{1, 3}, {2, 30}}, {{1, 4}, {2, 40}}, {{1, 5}, {2, 50}}},
         {{{1, 0}}, {{1, literal::REMOVE}}, {{1, 0}}});
 
-    CHECK(actual.equals<bg::i64>({3, std::nullopt, 5}));
+    CHECK(actual.equals<i64>({3, std::nullopt, 5}));
 }
 
 TEST_CASE("map uses an explicitly selected TSS key set for a source graph",
@@ -413,7 +413,7 @@ TEST_CASE("a pass-through TSD remains one input to every mapped graph",
     const auto actual = testing::test_graph(
         tested, {{{1, 2}}, {{1, 3}}, {{1, 4}}}, {{{9, 10}}, {{9, 20}}, {{9, 30}}});
 
-    CHECK(actual.equals<bg::i64>({12, 23, 34}));
+    CHECK(actual.equals<i64>({12, 23, 34}));
 }
 
 TEST_CASE("map passes direct and reference TSD inputs through to every mapped graph",
@@ -447,7 +447,7 @@ TEST_CASE("map passes direct and reference TSD inputs through to every mapped gr
                                             {100, 200, 300},
                                             {true, true, true});
 
-    CHECK(actual.equals<bg::i64>({112, 223, 334}));
+    CHECK(actual.equals<i64>({112, 223, 334}));
 }
 
 struct RetainedMappedSum {
@@ -485,7 +485,7 @@ TEST_CASE("a mapped inner graph survives one TSD item removal while another TSD 
                                             {{{7, 10}}, {{7, literal::REMOVE}}, {{7, 30}}},
                                             {{{7, 1}}, {{7, 1}}, {{7, 1}}});
 
-    CHECK(actual.equals<bg::i64>({11, 1, 31}));
+    CHECK(actual.equals<i64>({11, 1, 31}));
     CHECK(RetainedMappedSum::starts == 1);
     CHECK(RetainedMappedSum::stops == 1);
 }
@@ -558,7 +558,7 @@ TEST_CASE("map reads a TSD through a nested graph reference",
     const auto actual = testing::test_graph(
         tested, {2, 5}, {true, true});
 
-    CHECK(actual.equals<bg::i64>({3, 6}));
+    CHECK(actual.equals<i64>({3, 6}));
 }
 
 TEST_CASE("map reads a TSS through a nested graph reference",
@@ -610,7 +610,7 @@ TEST_CASE("map reads values using a nested TSS reference as its key set",
     const auto actual = testing::test_graph(tested, {{{1, 10}}, {{1, 20}}, {{1, 30}}},
                                             {true, false, true}, {true, true, true});
 
-    CHECK(actual.equals<bg::i64>({10, std::nullopt, 30}));
+    CHECK(actual.equals<i64>({10, std::nullopt, 30}));
 }
 
 } // namespace
