@@ -316,6 +316,8 @@ const FrameSeriesType &frame_series_type(const SchemaType &schema, GuaranteePara
                 return std::make_unique<details::NativeFrameSeriesRuntimeType>(series_type);
             });
         register_time_series_runtime_type(runtime);
+        details::register_frame_series_tick_comparison(type);
+        details::register_frame_series_tick_writer(runtime);
         frame_series_scalar_runtime_type(static_cast<const FrameSeriesRuntimeType &>(runtime));
     }
     return type;

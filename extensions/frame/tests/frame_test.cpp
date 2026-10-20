@@ -70,6 +70,18 @@ struct KeyedQuotesDerived : bg::schema_extends<KeyedQuotesBase, Field> {
     Field<double> bid;
 };
 
+template <template <typename, auto...> typename Field> struct UnkeyedQuotesBase {
+    Field<i64> id;
+    Field<double> price;
+};
+
+template <template <typename, auto...> typename Field>
+struct KeyedQuotesDerivedFromUnkeyed : bg::schema_extends<UnkeyedQuotesBase, Field> {
+    Field<double> bid;
+
+    static bg::SchemaMetadata metadata() { return key_metadata<"id">(); }
+};
+
 template <template <typename, auto...> typename Field>
 struct ChangedKeyQuotes : bg::schema_extends<KeyedQuotesBase, Field> {
     Field<i64> other_id;
@@ -4077,6 +4089,173 @@ void test_tsf_literal_rejections() {
     require(view_rejected, "TSF literal dispatch cast a view runtime to native storage");
 }
 
+void test_keyed_tsf_delta_capture() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto identity = [](wp<TSF<CompositeKeyRows>> input) { return input; };
+    const auto &runtime = frame_time_series_runtime_type<CompositeKeyRows>(TSF<CompositeKeyRows>::type());
+    const auto result = testing::test_graph(
+        identity,
+        testing::input(runtime,
+                       {literal::TimeSeriesLiteral{},
+                        {{{"id", i64{1}}, {"sequence", i64{1}}, {"price", 10.0}, {"value", i64{4}}},
+                         {{"id", i64{2}}, {"sequence", i64{1}}, {"price", 20.0}, {"value", i64{5}}}},
+                        {{{"id", i64{1}}, {"sequence", i64{1}}, {"price", 11.0}}},
+                        {{{"id", i64{3}}, {"sequence", i64{1}}},
+                         literal::REMOVE({{"id", i64{3}}, {"sequence", i64{1}}})},
+                        {literal::REMOVE({{"id", i64{1}}, {"sequence", i64{1}}}),
+                         {{"id", i64{1}}, {"sequence", i64{1}}, {"price", 12.0}}},
+                        {literal::REMOVE({{"id", i64{2}}, {"sequence", i64{1}}})}}));
+
+    require(result.equals({{},
+                           {{{"id", i64{2}}, {"sequence", i64{1}}, {"price", 20.0}, {"value", i64{5}}},
+                            {{"id", i64{1}}, {"sequence", i64{1}}, {"price", 10.0}, {"value", i64{4}}}},
+                           {{{"id", i64{1}}, {"sequence", i64{1}}, {"price", 11.0}}},
+                           literal::TimeSeriesLiteral{},
+                           {literal::REMOVE({{"id", i64{1}}, {"sequence", i64{1}}}),
+                            {{"id", i64{1}}, {"sequence", i64{1}}, {"price", 12.0}}},
+                           {literal::REMOVE({{"id", i64{2}}, {"sequence", i64{1}}})}}),
+            "keyed TSF capture did not match additions, sparse patches, and key-based removals");
+    require(!result.equals({{},
+                            {{{"id", i64{2}}, {"sequence", i64{1}}, {"price", 20.0}, {"value", i64{5}}},
+                             {{"id", i64{1}}, {"sequence", i64{1}}, {"price", 10.0}, {"value", i64{4}}}},
+                            {{{"id", i64{1}}, {"sequence", i64{1}}, {"price", 11.0}, {"value", i64{4}}}},
+                            literal::TimeSeriesLiteral{},
+                            {literal::REMOVE({{"id", i64{1}}, {"sequence", i64{1}}}),
+                             {{"id", i64{1}}, {"sequence", i64{1}}, {"price", 12.0}}},
+                            {literal::REMOVE({{"id", i64{2}}, {"sequence", i64{1}}})}}),
+            "keyed TSF capture treated an unchanged column as part of a sparse patch");
+    require(result.equals({{},
+                           {{{"id", i64{2}}, {"sequence", i64{1}}, {"price", 20.0}, {"value", i64{5}}},
+                            {{"id", i64{1}}, {"sequence", i64{1}}, {"price", 10.0}, {"value", i64{4}}}},
+                           {{{"id", i64{1}}, {"sequence", i64{1}}, {"price", 11.0}}},
+                           literal::TimeSeriesLiteral{},
+                           {literal::REMOVE({{"id", i64{1}}, {"sequence", i64{1}}}),
+                            {{"id", i64{1}}, {"sequence", i64{1}}, {"price", 12.0}}},
+                           {literal::REMOVE({{"id", i64{2}}, {"sequence", i64{1}}})}}),
+            "a failed keyed TSF capture comparison affected a later comparison");
+
+    require(!result.equals({{},
+                            {{{"id", i64{1}}, {"sequence", i64{1}}, {"price", 10.0}},
+                             {{"id", i64{1}}, {"sequence", i64{1}}, {"price", 11.0}}},
+                            {{{"id", i64{1}}, {"sequence", i64{1}}, {"price", 11.0}}},
+                            literal::TimeSeriesLiteral{},
+                            {literal::REMOVE({{"id", i64{1}}, {"sequence", i64{1}}}),
+                             {{"id", i64{1}}, {"sequence", i64{1}}, {"price", 12.0}}},
+                            {literal::REMOVE({{"id", i64{2}}, {"sequence", i64{1}}})}}),
+            "keyed TSF capture accepted duplicate expected row keys");
+}
+
+void test_keyed_tsf_capture_treats_omitted_added_cells_as_null() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto identity = [](wp<TSF<KeyedQuotes>> input) { return input; };
+    const auto result = testing::test_graph(identity, {{}, {{{"id", i64{7}}}}});
+    require(result.equals({{}, {{{"id", i64{7}}}}}),
+            "keyed TSF capture did not treat omitted addition cells as null");
+}
+
+void test_keyed_tsf_capture_uses_actual_derived_schema() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto identity = [](wp<TSF<KeyedQuotesBase>> input) { return input; };
+    const auto &runtime = frame_time_series_runtime_type<KeyedQuotesDerived>(TSF<KeyedQuotesDerived>::type());
+    const auto result = testing::test_graph(
+        identity,
+        testing::input(runtime,
+                       {literal::TimeSeriesLiteral{},
+                        {{{"id", i64{5}}, {"price", 10.0}, {"bid", 20.0}}}}));
+    require(result.equals({{}, {{{"id", i64{5}}, {"price", 10.0}, {"bid", 20.0}}}}),
+            "keyed TSF capture did not compare the actual Derived schema through a Base output");
+}
+
+void test_keyed_tsf_capture_uses_keyed_runtime_schema_for_unkeyed_base_output() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto identity = [](wp<TSF<UnkeyedQuotesBase>> input) { return input; };
+    const auto &runtime = frame_time_series_runtime_type<KeyedQuotesDerivedFromUnkeyed>(
+        TSF<KeyedQuotesDerivedFromUnkeyed>::type());
+    const auto result = testing::test_graph(
+        identity,
+        testing::input(runtime,
+                       {literal::TimeSeriesLiteral{},
+                        {{{"id", i64{5}}, {"price", 10.0}, {"bid", 9.0}}}}));
+    require(result.equals({{}, {{{"id", i64{5}}, {"price", 10.0}, {"bid", 9.0}}}}),
+            "keyed TSF capture did not use the actual keyed runtime schema for a Base output");
+}
+
+void test_keyed_tsf_capture_uses_runtime_schema() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto fields = std::array{
+        SchemaField{util::symbol{"id"}, &cpp_scalar_type<i64>()},
+        SchemaField{util::symbol{"price"}, &cpp_scalar_type<double>()},
+    };
+    const auto &schema = anonymous_schema(fields, key_metadata<"id">());
+    const auto &series_type = frame_series_type(schema, TimeSeriesGuarantee::ordinary);
+    const auto &runtime = frame_time_series_runtime_type<SCHEMA>(series_type);
+    const auto identity = [](wp<TSF<SCHEMA>> input) { return input; };
+    const auto result = testing::test_graph(
+        identity, testing::input(runtime, {literal::TimeSeriesLiteral{}, {{{"id", i64{5}}, {"price", 10.0}}}}));
+    require(result.equals({{}, {{{"id", i64{5}}, {"price", 10.0}}}}),
+            "keyed TSF capture did not parse its runtime-defined schema");
+}
+
+void test_keyed_tsf_capture_supports_null_composite_keys() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto identity = [](wp<TSF<CompositeKeyRows>> input) { return input; };
+    const auto &runtime = frame_time_series_runtime_type<CompositeKeyRows>(TSF<CompositeKeyRows>::type());
+    const auto result = testing::test_graph(
+        identity,
+        testing::input(runtime,
+                       {literal::TimeSeriesLiteral{},
+                        {{{"id", NULL_VALUE}, {"sequence", i64{4}}, {"price", 20.0}, {"value", i64{8}}}},
+                        {literal::REMOVE({{"id", NULL_VALUE}, {"sequence", i64{4}}})}}));
+    require(result.equals({{},
+                           {{{"id", NULL_VALUE}, {"sequence", i64{4}}, {"price", 20.0}, {"value", i64{8}}}},
+                           {literal::REMOVE({{"id", NULL_VALUE}, {"sequence", i64{4}}})}}),
+            "keyed TSF capture did not match a null component in a composite key");
+}
+
+void test_keyed_tsf_capture_invalidates_and_revalidates_without_old_deltas() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto identity = [](wp<TSF<KeyedQuotes>> input) { return input; };
+    const auto &runtime = frame_time_series_runtime_type<KeyedQuotes>(TSF<KeyedQuotes>::type());
+    const auto result = testing::test_graph(
+        identity,
+        testing::input(runtime,
+                       {{{{"id", i64{1}}, {"price", 10.0}}}, literal::INVALID, literal::TimeSeriesLiteral{}}));
+    require(result.equals({{{{"id", i64{1}}, {"price", 10.0}}}, literal::INVALID, literal::TimeSeriesLiteral{}}),
+            "keyed TSF capture leaked old row changes into an empty revalidated frame");
+}
+
+void test_keyed_tsf_capture_rejects_missing_actual_patch_fields() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto identity = [](wp<TSF<CompositeKeyRows>> input) { return input; };
+    const auto &runtime = frame_time_series_runtime_type<CompositeKeyRows>(TSF<CompositeKeyRows>::type());
+    const auto result = testing::test_graph(
+        identity,
+        testing::input(runtime,
+                       {literal::TimeSeriesLiteral{},
+                        {{{"id", i64{1}}, {"sequence", i64{1}}, {"price", 10.0}, {"value", i64{4}}}},
+                        {{{"id", i64{1}}, {"sequence", i64{1}}, {"price", 11.0}, {"value", i64{5}}}}}));
+    require(!result.equals({{},
+                            {{{"id", i64{1}}, {"sequence", i64{1}}, {"price", 10.0}, {"value", i64{4}}}},
+                            {{{"id", i64{1}}, {"sequence", i64{1}}, {"price", 11.0}}}}),
+            "keyed TSF capture accepted an expected patch that omitted an actual modified field");
+}
+
 void test_borrowed_tsf_input_with_native_and_view_runtimes() {
     using namespace bg;
     using namespace bg::frame;
@@ -5880,6 +6059,14 @@ int main() {
         test_tsf_literal_unkeyed_append_and_typed_output();
         test_tsf_literal_anonymous_composite_key();
         test_tsf_literal_rejections();
+        test_keyed_tsf_delta_capture();
+        test_keyed_tsf_capture_treats_omitted_added_cells_as_null();
+        test_keyed_tsf_capture_uses_actual_derived_schema();
+        test_keyed_tsf_capture_uses_keyed_runtime_schema_for_unkeyed_base_output();
+        test_keyed_tsf_capture_uses_runtime_schema();
+        test_keyed_tsf_capture_supports_null_composite_keys();
+        test_keyed_tsf_capture_invalidates_and_revalidates_without_old_deltas();
+        test_keyed_tsf_capture_rejects_missing_actual_patch_fields();
         test_borrowed_tsf_input_with_native_and_view_runtimes();
         test_generic_tsf_input_schema_and_columns();
         test_generic_declared_tsf_rows_follow_resolved_cell_type();

@@ -157,6 +157,33 @@ Nodes can also call `Out<TSF<Schema>>::apply()` with one
 runtime schema, including Derived fields when the node input is declared as a
 Base schema.
 
+### Native keyed TSF result capture
+
+`test_graph` captures native keyed TSF deltas and compares them with the row
+literal syntax above. Expected rows match by key, independent of entry order.
+An addition compares every non-key field; omitted fields mean null. A patch
+must name exactly the modified non-key fields. A removal compares only its key.
+One removal and one insertion of the same key may occur in the same delta.
+
+```cpp
+auto identity = [](wp<TSF<KeyedQuotes>> frame) { return frame; };
+auto actual = testing::test_graph(identity, {
+    {{{"id", i64{1}}, {"price", 10.0}}},
+    {{{"id", i64{1}}, {"price", 11.0}}},
+    {literal::REMOVE({{"id", i64{1}}})},
+});
+auto matches = actual.equals({
+    {{{"id", i64{1}}, {"price", 10.0}}},
+    {{{"id", i64{1}}, {"price", 11.0}}},
+    {literal::REMOVE({{"id", i64{1}}})},
+});
+```
+
+Captured deltas own their cell and key values and remain usable after graph
+destruction. Comparisons use the actual schema, including Derived fields
+observed through a Base annotation. Frame views, unkeyed TSF outputs, and TSC
+outputs do not yet support result capture.
+
 ## TSC input/output surface
 
 Include `<bg/frame/tsc.hpp>` for the typed views.

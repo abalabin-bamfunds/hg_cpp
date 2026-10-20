@@ -7,11 +7,11 @@
 #include <bg/scalar/details/value_access.hpp>
 #include <bg/time_series/details/scalar_literal.hpp>
 #include <bg/util/static_storage.hpp>
+#include "literal_helpers.hpp"
 
 #include <algorithm>
 #include <mutex>
 #include <stdexcept>
-#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -24,26 +24,6 @@ namespace {
 std::mutex &literal_registration_mutex() {
     static bg::util::static_storage<std::mutex> mutex;
     return mutex.get();
-}
-
-template <cell_type T> std::optional<T> read_cell(const literal::ScalarLiteral &value) {
-    auto result = std::optional<T>{};
-    value.visit(
-        [&](const literal::ScalarLiteralItem &item) {
-            item.visit_scalar([&](auto *source) {
-                const auto &data = bg::details::scalar_data(*source);
-                if (const auto *sentinel = literal::Sentinel::from(data);
-                    sentinel != nullptr && *sentinel == NULL_VALUE)
-                    return;
-                if (std::addressof(data.type()) != std::addressof(cpp_scalar_type<T>()))
-                    throw std::invalid_argument{"frame cell type does not match the requested cell type"};
-                result.emplace(bg::details::scalar_data_value<T>(data));
-            });
-        },
-        [](std::span<const literal::ScalarLiteral>) {
-            throw std::invalid_argument{"frame cells must be scalar literals"};
-        });
-    return result;
 }
 
 template <cell_type T>
@@ -60,7 +40,7 @@ void construct_column_literal(const literal::ScalarLiteral &literal, const Scala
             auto *snapshot = ColumnSnapshot<T>::create(memory, cells.size());
             auto rollback = util::scope_exit{[&]() noexcept { snapshot->release(); }};
             for (auto position = std::size_t{}; position != cells.size(); ++position) {
-                if (auto cell = read_cell<T>(cells[position])) {
+                if (auto cell = details::read_literal_cell<T>(cells[position])) {
                     snapshot->value_at(position) = *cell;
                     snapshot->set_valid(static_cast<row_id_t>(position));
                 }
@@ -78,23 +58,6 @@ void construct_column_literal(const literal::ScalarLiteral &literal, const Scala
     if (std::addressof(column.cell_type()) == std::addressof(cpp_scalar_type<double>()))
         return construct_column_literal<double>(literal, runtime, destination, memory);
     throw std::invalid_argument{"frame column literal supports only i64 and double cells"};
-}
-
-std::string_view read_field_name(const literal::ScalarLiteral &literal) {
-    return literal.visit(
-        [](const literal::ScalarLiteralItem &item) {
-            return item.visit_scalar([](auto *source) -> std::string_view {
-                const auto &data = bg::details::scalar_data(*source);
-                if (std::addressof(data.type()) == std::addressof(cpp_scalar_type<string>()))
-                    return bg::details::scalar_data_value<string>(data);
-                if (std::addressof(data.type()) == std::addressof(cpp_scalar_type<symbol>()))
-                    return bg::details::scalar_data_value<symbol>(data).text();
-                throw std::invalid_argument{"frame field name must be a string or symbol"};
-            }).value();
-        },
-        [](std::span<const literal::ScalarLiteral>) -> std::string_view {
-            throw std::invalid_argument{"frame field name must be a string or symbol"};
-        }).value();
 }
 
 using FrameLiteralCell = std::variant<std::optional<i64>, std::optional<double>>;
@@ -115,9 +78,9 @@ void initialize_frame_literal_cells(const bg::Schema &schema, std::vector<FrameL
 void read_frame_literal_cell(const literal::ScalarLiteral &literal, const Type &type,
                              FrameLiteralCell &destination) {
     if (std::addressof(type) == std::addressof(cpp_scalar_type<i64>()))
-        destination.emplace<std::optional<i64>>(read_cell<i64>(literal));
+        destination.emplace<std::optional<i64>>(details::read_literal_cell<i64>(literal));
     else if (std::addressof(type) == std::addressof(cpp_scalar_type<double>()))
-        destination.emplace<std::optional<double>>(read_cell<double>(literal));
+        destination.emplace<std::optional<double>>(details::read_literal_cell<double>(literal));
     else
         throw std::invalid_argument{"frame literal supports only i64 and double cells"};
 }
@@ -131,55 +94,12 @@ KeyValue frame_literal_key_value(const FrameLiteralCell &cell) {
     return value ? KeyValue{*value} : KeyValue{std::monostate{}};
 }
 
-std::vector<const literal::ScalarLiteral *>
-read_named_frame_fields(const literal::ScalarLiteral &literal, const bg::Schema &schema,
-                        const details::NativeFrameLayout &layout, bool key_fields_only) {
-    const auto entries = literal.visit(
-        [](const literal::ScalarLiteralItem &) -> std::span<const literal::ScalarLiteral> {
-            throw std::invalid_argument{"frame row literal must contain named fields"};
-        },
-        [](std::span<const literal::ScalarLiteral> values) { return values; }).value();
-
-    auto fields = std::vector<const literal::ScalarLiteral *>(schema.field_count(), nullptr);
-    for (const auto &entry : entries) {
-        const auto pair = bg::details::scalar_literal::pair(entry,
-            "frame row literal entries must contain a field name and value");
-        const auto field_name = read_field_name(*pair.first);
-        const auto *field = schema.find(symbol{field_name});
-        if (field == nullptr)
-            throw std::invalid_argument{"frame literal contains an unknown column"};
-        const auto index = static_cast<std::size_t>(field - schema.fields().data());
-        if (key_fields_only && std::ranges::find(layout.key_fields, index) == layout.key_fields.end())
-            throw std::invalid_argument{"frame removal literal may contain only key columns"};
-        if (fields[index] != nullptr)
-            throw std::invalid_argument{"frame literal contains a duplicate column"};
-        fields[index] = pair.second;
-    }
-
-    for (const auto index : layout.key_fields) {
-        if (fields[index] == nullptr)
-            throw std::invalid_argument{"frame literal omits a required key column"};
-    }
-    return fields;
-}
-
 std::vector<KeyValue> read_frame_literal_key(std::span<const FrameLiteralCell> cells,
                                             const details::NativeFrameLayout &layout) {
     auto key = std::vector<KeyValue>{};
     key.reserve(layout.key_fields.size());
     for (const auto index : layout.key_fields) {
         key.push_back(frame_literal_key_value(cells[index]));
-    }
-    return key;
-}
-
-std::vector<KeyValue> read_frame_literal_key(const std::vector<const literal::ScalarLiteral *> &fields,
-                                            const details::NativeFrameLayout &layout) {
-    auto key = std::vector<KeyValue>{};
-    key.reserve(layout.key_fields.size());
-    for (const auto index : layout.key_fields) {
-        const auto value = read_cell<i64>(*fields[index]);
-        key.push_back(value ? KeyValue{*value} : KeyValue{std::monostate{}});
     }
     return key;
 }
@@ -216,7 +136,7 @@ void construct_frame_literal(const literal::ScalarLiteral &literal, const Scalar
                         column = std::addressof(fields[1]);
                     });
 
-                const auto field_name = read_field_name(*name);
+                const auto field_name = details::read_literal_field_name(*name);
                 const auto *field = schema.find(symbol{field_name});
                 if (field == nullptr)
                     throw std::invalid_argument{"frame literal contains an unknown column"};
@@ -292,14 +212,14 @@ void apply_native_frame_series_literal(const literal::TimeSeriesLiteral &literal
                 throw std::invalid_argument{"TSF row change does not accept this tagged literal"};
             if (layout.key_fields.empty())
                 throw std::invalid_argument{"cannot remove a row by key from an unkeyed frame"};
-            const auto fields = read_named_frame_fields(tagged->argument, schema, layout, true);
-            const auto key = read_frame_literal_key(fields, layout);
+            const auto fields = details::read_named_frame_fields(tagged->argument, schema, layout, true);
+            const auto key = details::read_literal_key(fields, layout);
             if (const auto id = storage.find_key(key); id && storage.erase(*id, time, memory))
                 output.publish();
             continue;
         }
 
-        const auto fields = read_named_frame_fields(entry, schema, layout, false);
+        const auto fields = details::read_named_frame_fields(entry, schema, layout, false);
         auto cells = std::vector<FrameLiteralCell>{};
         initialize_frame_literal_cells(schema, cells);
         for (auto index = std::size_t{}; index != fields.size(); ++index) {

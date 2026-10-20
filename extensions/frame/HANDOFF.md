@@ -1,13 +1,16 @@
 # Frame foundation handoff
 
-Updated: 2026-10-19. The common ancestor with main is `932d9b73`; main is
-currently `cdc0223b`. Rebase the frame lane before integrating.
-Shared schema metadata and the BG process-lifetime storage fix are in this lane
-as `e65b9be5` and `aee759ba`. Expressions are committed as `371bb1a3`; scalar
-Column/Frame literals and content equality are committed as `56f4f386`. Native
-keyed storage and scalar/Arrow duplicate-key validation are committed as
-foundation commit `a020f016`. TSF row updates are implemented in the active
-frame lane. TSC literals, delta comparison, and capture remain outstanding.
+Updated: 2026-10-20. The frame lane is based on main `160f128b`.
+Main includes shared schema metadata (`6419e073`) and process-lifetime ownership
+of registered type metadata (`160f128b`). The frame lane also contains the
+approved generic input-view cast fix (`368bded7`, originally `23315ce0` on
+`agent/generic-input-cast`). That BG fix is not merged into main.
+Frame implementation remains on the lane.
+
+Native keyed TSF capture is implemented and verified.
+Its typed writer uses `In<TS_T>::as<TSF<SCHEMA>>()`; `as()` now accepts compatible
+generic declarations and preserves the actual runtime type. Incompatible
+declarations still throw `std::bad_cast`. No capture changes have been merged.
 
 ## Work locations
 
@@ -16,15 +19,16 @@ completed lane retirement, and consumer verification.
 
 | Work | Location / branch | State |
 | --- | --- | --- |
-| Main | `/home/abalabin/_bg`, `main` | `cdc0223b`; frame lane requires rebase before integration |
-| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Foundation commit `a020f016`; TSF row literals implemented |
-| Shared schema metadata and BG lifetime fix | Active frame history | `e65b9be5`, `aee759ba`; consumer builds use the lane-local BG install |
+| Main | `/home/abalabin/_bg`, `main` | `160f128b` |
+| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Frame foundation, expressions, scalar literals, native keyed storage, TSF row literals, and native keyed capture |
+| Generic input-view casts | `.lanes/generic-input-cast`, `agent/generic-input-cast` | `23315ce0`; applied to frame lane as `368bded7`; awaiting main integration |
+| Shared schema metadata and BG lifetime fix | Main | `6419e073`, `160f128b`; consumer builds use matching lane-local installs |
 | Test graph output capture | Main | Integrated through `36eb21fb`, including shared extension comparison dispatch |
 | Numeric value extraction | `.lanes/library-numeric-values` | Held; frame does not depend on it |
 | Historical frame work | `extensions/frame/archive/` | Proposals, probe sources, and benchmark results preserved; see its README |
 | Schema field reflection | Main | Integrated and covered by BG schema reflection tests |
 
-The current TSF row-literal verification uses fresh consumer directories:
+The current frame verification uses these consumer directories:
 `build/tsf-row-release-arrow-off` and `build/tsf-row-release-arrow-on` use the
 lane-local Release BG install at `dependencies/bg-frame-core-release-install`;
 `build/tsf-row-debug-asan-arrow-on` uses the matching Debug install at
@@ -169,9 +173,10 @@ tests use native and view TSF runtimes with one concrete schema. They verify
 runtime descriptors, source and column buffer identity, nullable cells, and
 row and column deltas across invocations. Test checkpoint: `bf4d9483`.
 
-TSF row-literal verification on 2026-10-19 passed the complete extension suite
-in all three fresh consumer builds below. Each build used `-j12` and the
-lane-local BG install with a matching build configuration:
+Native keyed capture verification on 2026-10-20 passed the complete extension
+suite in all three consumer builds below. Each build used `-j12` and a
+lane-local BG install rebuilt from `368bded7` with a matching configuration.
+Root independently reran the Release Arrow-on suite after the final source edits.
 
 | Consumer | Build | Test |
 | --- | --- | --- |
@@ -182,6 +187,11 @@ lane-local BG install with a matching build configuration:
 The sanitizer build uses `-fsanitize=address,undefined -fno-omit-frame-pointer`.
 CTest ran with `ASAN_OPTIONS=detect_leaks=0` and
 `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1`.
+
+The generic input-view cast fix passed its focused provider tests (16 assertions
+in 2 cases) and the complete Release `bg_tests` binary (2,936,101 assertions in
+1,886 cases, including shutdown) in `.lanes/generic-input-cast/build/provider-cast`.
+Python was disabled. Root independently reran the new generic-cast test.
 
 BG main `6051cc63` previously passed its complete C++ and Python suite:
 1,720/1,720. Earlier verification built Debug and Release BG dependencies from
@@ -222,7 +232,7 @@ That checker lane has no other unique implementation changes.
 The frame expression helpers now use public `bg::bundle(span<const WiringArgument>)`.
 Explicit target bundle schemas retain the previous field dereferencing.
 At that checkpoint, Debug and Arrow-off consumers had not been rerun against
-that revision. The 2026-10-19 verification above covers both configurations for
+that revision. The current consumer verification above covers both configurations for
 the TSF row-literal changes.
 
 Verification against installed main `36eb21fb` rebuilt both extension libraries
@@ -236,7 +246,7 @@ Arrow literals, runtime schemas, chunk-independent equality, Base/Derived
 values and owning copies, malformed input, allocation-failure cleanup, and
 ordinary scalar time-series literal inputs and result assertions.
 At that checkpoint, Debug, sanitizer, and Arrow-off consumers had not been
-rerun for the scalar literal and equality changes. The 2026-10-19 verification
+rerun for the scalar literal and equality changes. The current consumer verification
 above covers those configurations for the TSF row-literal changes.
 
 BG and the extension must use matching build configurations. Debug compiles both
@@ -435,12 +445,21 @@ focused suite passed 15 cases and 70 assertions, covering literal identity,
 collection updates, provider marker handling, and queue cleanup.
 
 Main `36eb21fb` captures provider-defined time series through tick serialization.
-Frame must register `TimeSeriesTickOperations` write and discard handlers, and
-`testing::TickLiteralComparison` by canonical semantic series type. Capture does
-not require replay. The framework handles invalidation and skipped ticks before
-calling a comparison handler; successful comparison consumes one valid payload
+Frame registers `TimeSeriesTickOperations` writers for exact native keyed
+runtimes, with discard and `testing::TickLiteralComparison` handlers registered
+by resolved semantic series type. Capture does not require replay. The framework
+handles invalidation and skipped ticks before calling a comparison handler;
+successful comparison consumes one valid payload
 without changing its encoded values. See [BG testing](../../docs/testing.md).
-Frame has not registered these handlers yet.
+
+The native writer visits added, changed, and removed row sets without scanning
+the complete frame. It copies keys and changed cells into the capture buffer.
+Each payload records the actual canonical schema; it contains no internal row
+IDs or borrowed cell pointers. This preserves Derived fields and permits
+comparison and discard after graph destruction, including capture under an
+unkeyed Base annotation. Expected deltas match by key, independent of row order,
+with exact patch field sets and omitted addition fields interpreted as null.
+See [native keyed capture](README.md#native-keyed-tsf-result-capture).
 
 Scalar `TS<Frame<...>>` and `TS<Column<...>>` use scalar capture and comparison.
 The capture buffer's generic fallback retains an owning `ScalarValue<>`;
@@ -455,7 +474,7 @@ The approved scalar literal format uses a sequence of nullable cells for a
 Column and named column sequences for a Frame. Null cells use the exported
 frame-extension sentinel `frame::NULL_VALUE`. Frame columns have equal lengths.
 Current literal leaves do not support `std::nullopt` as a null cell.
-Time-series row-update syntax remains undecided.
+Time-series row updates use [key-addressed row literals](README.md#tsf-row-updates).
 Insertions must allocate internal row IDs; patch and removal operations use
 existing IDs. Scalar literal handlers register automatically through canonical
 type factories. Exact Arrow runtime handlers construct Arrow storage using the
@@ -483,9 +502,10 @@ design; they do not replace the consumer verification recorded above.
 
 ## Status and remaining work
 
-BG test-graph output capture, frame scalar literals and content equality, and
-TSF row-literal updates are implemented. TSC literals, TSF/TSC result-capture
-handlers, and delta comparison remain outstanding.
+BG test-graph output capture, frame scalar literals and content equality,
+TSF row-literal updates, and native keyed TSF result capture and delta comparison
+are implemented. TSC literals and capture, unkeyed TSF capture, and frame view
+capture remain outstanding.
 
 Boolean storage, comparisons, and expression-based filtering are the next
 frame features and require design review before implementation.
@@ -525,8 +545,8 @@ expression-based filtering remain later work.
 
 ## Key metadata and native keyed storage
 
-The active frame lane includes `8ab0b121` (`Add shared schema metadata`) and
-the BG process-lifetime storage fix `97f37b55`.
+The active frame lane uses main's shared schema metadata and process-lifetime
+ownership of registered type metadata.
 `bg::frame::key_metadata<...>()` records an ordered list of key column names in
 schema metadata under `bg.frame.key`; concrete and runtime schemas use the same
 representation. Key fields must have `i64` cell types; `double` remains
@@ -549,43 +569,24 @@ validate key uniqueness with a temporary hash index of row positions. The
 validator records batch starts for collision checks; it does not add persistent
 key-index state to scalar frames. TSF row literal updates use key columns for
 insert, patch, and removal as documented in the [extension README](README.md#tsf-row-updates).
-TSC literals, delta comparison and capture, and keyed view behavior remain open.
-
-The native keyed-storage test target builds in Release with Arrow disabled:
-
-```sh
-conda run --no-capture-output -n bg-build cmake --build build/cc4-checkpoint-off \
-  --target bg_frame_frame_test -j12
-```
+TSC literals and capture, unkeyed TSF capture, and keyed view behavior remain open.
+View capture needs a decision on preserving source keys and a design for
+removed-key access when the source row domain changes.
 
 Tests cover allocation rollback for keyed insertion and removal-key retention,
 including retry after failure. Scalar validation tests cover duplicate single
 and composite keys, including an all-null tuple and runtime-schema construction.
 Arrow validation tests cover duplicate keys across chunks, a valid composite
 key import with unequal chunk boundaries and a sliced nullable array, and a
-collision chain with a distinct key before a duplicate. The Arrow-off Release
-suite passes 5/5 tests in `build/cc4-checkpoint-off`. The Arrow-on Release suite
-passes 6/6 tests in `build/field-access-on`. Both use BG from
-`/home/abalabin/_bg/.lanes/schema-metadata/build/install/release`.
+collision chain with a distinct key before a duplicate. Current consumer
+configurations and results are in [Verification](#verification).
 
-The matching Arrow-on Debug/ASan build in `build/cc4-lifetime` passes all 6
-tests with no ASan or UBSan diagnostics. It uses BG from
-`/home/abalabin/_bg/.lanes/schema-metadata/build/install/debug`. The build uses
-`-fsanitize=address,undefined -fno-omit-frame-pointer`; CTest ran with
-`ASAN_OPTIONS=detect_leaks=0` and
-`UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1`.
-
-The earlier shutdown abort occurred when `SchemaMetadata` released a
-`ScalarValue<List<string>>` after its runtime type had been destroyed. GDB
-showed `__cxa_pure_virtual` from `bg::details::release_scalar_value` while
-`TypeRegistry` destroyed a schema. The user chose process-lifetime ownership
-for registered types, canonical runtime descriptors, and schema metadata;
-ordinary node and scalar values keep normal destruction. The frame lane uses
+Registered types, canonical runtime descriptors, and schema metadata follow
+BG's [process-lifetime ownership rule](../../docs/decisions/0071-process-lifetime-type-storage.md).
+Ordinary node and scalar values keep normal destruction. The frame lane uses
 `bg::util::static_storage<T>` for its canonical runtime and layout cache owner,
 typed column runtime statics, FrameView scalar and mixed-view runtimes, and
-Arrow runtime cache owner. The updated Release Arrow-on and Arrow-off consumer
-processes exit cleanly, and all 11 tests pass. The matching Debug/ASan consumer
-process also exits cleanly; all 6 tests pass without sanitizer diagnostics.
+Arrow runtime cache owner.
 
 Previous-value subscriptions, strings and symbols, compaction, capacity
 trimming, and delta transport remain later work. Previous-cell capture, if
