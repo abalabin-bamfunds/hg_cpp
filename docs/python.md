@@ -129,6 +129,23 @@ wiring proxy for the same time series and leaves `point` unchanged. It adds no
 runtime node or fallback value. The selected node defines how it handles an
 invalid input. See [optional arguments](operators.md#optional-arguments).
 
+`Annotated[TSD[K, V], bg.valid_items]` declares a filtered input view.
+`bg.valid_items(point)` requires that annotation on the receiving parameter:
+
+```python
+from typing import Annotated
+
+@bg.compute_node
+def count(values: Annotated[bg.TSD[int, bg.TS[int]], bg.valid_items]) -> bg.TS[int]:
+    return len(values)
+
+count(bg.valid_items(values))
+```
+
+The annotation adds no runtime node and leaves the original wiring point
+unchanged. Its [input-view behavior](time-series-validity.md#collections)
+matches C++, including immediate-item validity and physical `key_set` access.
+
 Node and graph functions accept positional and named arguments according to
 their Python signatures, including positional-only, keyword-only, `*args`, and
 `**kwargs` parameters. A graph function expands into the active graph while it
