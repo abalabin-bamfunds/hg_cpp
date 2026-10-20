@@ -1,11 +1,9 @@
 # Frame foundation handoff
 
-Updated: 2026-10-20. The frame lane is based on main `160f128b`.
+Updated: 2026-10-20. The frame lane is rebased onto main `a17a8ffd`.
 Main includes shared schema metadata (`6419e073`) and process-lifetime ownership
-of registered type metadata (`160f128b`). The frame lane also contains the
-approved generic input-view cast fix (`368bded7`, originally `23315ce0` on
-`agent/generic-input-cast`). That BG fix is not merged into main.
-Frame implementation remains on the lane.
+of registered type metadata (`160f128b`), plus compatible generic input-view
+casts (`a17a8ffd`). Frame implementation remains on the lane.
 
 Native keyed TSF capture is implemented and verified.
 Its typed writer uses `In<TS_T>::as<TSF<SCHEMA>>()`; `as()` now accepts compatible
@@ -19,9 +17,9 @@ completed lane retirement, and consumer verification.
 
 | Work | Location / branch | State |
 | --- | --- | --- |
-| Main | `/home/abalabin/_bg`, `main` | `160f128b` |
+| Main | `/home/abalabin/_bg`, `main` | `a17a8ffd` |
 | Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Frame foundation, expressions, scalar literals, native keyed storage, TSF row literals, and native keyed capture |
-| Generic input-view casts | `.lanes/generic-input-cast`, `agent/generic-input-cast` | `23315ce0`; applied to frame lane as `368bded7`; awaiting main integration |
+| Generic input-view casts | Main | `a17a8ffd`; tested build preserved in `.lanes/generic-input-cast` |
 | Shared schema metadata and BG lifetime fix | Main | `6419e073`, `160f128b`; consumer builds use matching lane-local installs |
 | Test graph output capture | Main | Integrated through `36eb21fb`, including shared extension comparison dispatch |
 | Numeric value extraction | `.lanes/library-numeric-values` | Held; frame does not depend on it |
@@ -173,8 +171,12 @@ tests use native and view TSF runtimes with one concrete schema. They verify
 runtime descriptors, source and column buffer identity, nullable cells, and
 row and column deltas across invocations. Test checkpoint: `bf4d9483`.
 
-Native keyed capture verification on 2026-10-20 passed the complete extension
-suite in all three consumer builds below. Each build used `-j12` and a
+Rebase verification against main `a17a8ffd` rebuilt the Release BG dependency
+and Release Arrow-on consumer with `-j12`; the complete consumer suite passed
+6/6. Extension files were unchanged by the rebase.
+
+Native keyed capture verification before this rebase passed the complete
+extension suite in all three consumer builds below. Each build used `-j12` and a
 lane-local BG install rebuilt from `368bded7` with a matching configuration.
 Root independently reran the Release Arrow-on suite after the final source edits.
 
