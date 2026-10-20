@@ -147,7 +147,9 @@ CHECK(actual.equals<i64>({30, 10, std::nullopt, 11}));
 
 `{}` supplies no ticks; `{{}}` supplies one empty collection tick.
 
-Literal inputs require a non-variadic parameter list. Concrete graph parameters supply input types. Use
+Literal inputs require a non-variadic parameter list. Concrete time series parameters and plain node
+parameters supply input types. A plain node parameter supplies its time series alternative; its value
+type must be resolved. Input types come from the signature, so empty and skip-only sequences work too. Use
 `input<TSD<string, TS<i64>>>({...})` for an unresolved input declaration, or
 `input(runtime_type, {...})` to supply a time series runtime type explicitly.
 Graph functions with non-collection scalar inputs preserve their existing
@@ -374,7 +376,8 @@ graph compilation or evaluation.
 
 - `test_graph` input sequencing through brace literals, typed ranges, and runtime-selected types;
   scalar construction, nested collection deltas, removal, skip, invalidation, and revalidation;
-  explicit generic input types, cycle positions, services, profiling, and existing scalar input compatibility
+  plain callable and aggregate parameter inference, explicit generic input types, cycle positions,
+  services, profiling, and existing scalar input compatibility
 - `test_graph` output capture and literal comparison for scalar and nested collection deltas;
   scalar ownership after graph destruction, complete delta comparison, entry order independence,
   empty ticks, skipped cycles, invalidation, revalidation, and removal;

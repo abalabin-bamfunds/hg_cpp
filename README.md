@@ -5,6 +5,25 @@ the [project definition](docs/project.md) for its scope and priorities. The
 [terminology dictionary](docs/terminology.md) defines project-specific terms and
 core entities.
 
+## User guide
+
+Start with the [BG documentation](docs/index.md). The opening chapters use
+plain value types and introduce graphs through matching Python and C++
+examples.
+
+Build and preview the documentation site with:
+
+```sh
+python -m pip install -r docs/requirements.txt
+python -m sphinx -b html --fail-on-warning --keep-going docs build/docs/html
+python -m http.server 8000 --directory build/docs/html
+```
+
+Open <http://localhost:8000>. See [documentation builds](docs/README.md) for
+page authoring and Read the Docs setup.
+
+## Engine documentation
+
 Current design documents cover the [node API](docs/node-api.md),
 [node object layout](docs/node-layout.md),
 [graph wiring](docs/graph-wiring.md),
