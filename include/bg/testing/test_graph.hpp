@@ -140,18 +140,8 @@ template <typename T = void> class TestGraphResult {
     bool equals(std::initializer_list<literal::TimeSeriesLiteral> expected) const
         requires std::same_as<T, void>
     {
-        if (size() != expected.size()) {
-            return false;
-        }
-        for (auto index = std::size_t{}; index < size(); ++index) {
-            const auto &actual = captured_.records[index];
-            const auto &wanted = *(expected.begin() + static_cast<std::ptrdiff_t>(index));
-            if (!details::LiteralMatcher::matches_tick(actual, captured_.type(), wanted)) {
-                return false;
-            }
-        }
-
-        return true;
+        return details::LiteralMatcher::matches_sequence(captured_.records, captured_.type(),
+                                                         std::span{expected.begin(), expected.size()});
     }
 
     bool operator==(std::initializer_list<literal::TimeSeriesLiteral> expected) const

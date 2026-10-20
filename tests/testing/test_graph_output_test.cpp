@@ -6,6 +6,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
@@ -27,6 +29,111 @@ class ExtensionTimeSeriesType final : public bg::TimeSeriesType {
     const bg::Type &resolve(const bg::TypeMap &) const override { return *this; }
     void format_name(std::string &result) const override { result += "test_extension"; }
 };
+
+class StatefulExtensionTimeSeriesType final : public bg::TimeSeriesType {
+  public:
+    StatefulExtensionTimeSeriesType() : TimeSeriesType{bg::TimeSeriesGuarantee::ordinary} {}
+
+    bool is_resolved() const noexcept override { return true; }
+    const bg::Type &resolve(const bg::TypeMap &) const override { return *this; }
+    void format_name(std::string &result) const override { result += "test_stateful_extension"; }
+};
+
+struct StatefulComparisonStats {
+    std::size_t created{};
+    std::size_t compared{};
+    std::size_t finished{};
+    std::vector<std::size_t> compared_at;
+    std::vector<std::size_t> invalidated;
+};
+
+inline StatefulComparisonStats stateful_comparison_stats;
+
+class StatefulExtensionComparison final : public bg::testing::TickLiteralComparisonState {
+  public:
+    bool compare(bg::util::buffer_reader &reader, const bg::TimeSeriesType &,
+                 const literal::TimeSeriesLiteral &expected, std::size_t tick_index) override {
+        ++stateful_comparison_stats.compared;
+        stateful_comparison_stats.compared_at.push_back(tick_index);
+        const auto actual = reader.read_raw<bg::i64>();
+        const auto wanted = bg::ScalarValue<bg::i64>::from_literal(expected);
+        if (actual != wanted.view().value() || (has_previous_ && actual != previous_ + 1)) {
+            return false;
+        }
+
+        has_previous_ = true;
+        previous_ = actual;
+        can_finish_ = actual >= 0;
+        return true;
+    }
+
+    void invalidate(std::size_t tick_index) override { stateful_comparison_stats.invalidated.push_back(tick_index); }
+
+    bool finish() override {
+        ++stateful_comparison_stats.finished;
+        return can_finish_;
+    }
+
+  private:
+    bg::i64 previous_{};
+    bool has_previous_{};
+    bool can_finish_{true};
+};
+
+struct DictionaryEntry {
+    bg::details::TickOperation operation;
+    bg::i64 key;
+    bg::i64 value{};
+};
+
+const StatefulExtensionTimeSeriesType &stateful_extension_time_series_type() {
+    static const auto type = bg::util::static_storage<StatefulExtensionTimeSeriesType>{};
+    [[maybe_unused]] static const auto &registered = bg::TypeRegistry::register_static(type.get());
+    return type.get();
+}
+
+bg::util::buffer stateful_extension_tick(bg::i64 value, bool valid = true) {
+    auto buffer = bg::util::buffer::contiguous(32);
+    auto writer = bg::util::buffer_writer{buffer};
+    auto encoded = bg::ScalarBufferWriteContext{writer};
+    bg::details::TickHeader{bg::details::TickOperation::tick, valid}.write(encoded);
+    if (valid) {
+        bg::details::write_bytes(encoded, value);
+    }
+    writer.commit();
+    return buffer;
+}
+
+bg::util::buffer dictionary_tick(std::initializer_list<DictionaryEntry> entries) {
+    auto buffer = bg::util::buffer::contiguous(128);
+    auto writer = bg::util::buffer_writer{buffer};
+    auto encoded = bg::ScalarBufferWriteContext{writer};
+    bg::details::TickHeader{bg::details::TickOperation::tick, true}.write(encoded);
+    for (const auto &entry : entries) {
+        const auto has_value = entry.operation != bg::details::TickOperation::remove;
+        bg::details::TickHeader{entry.operation, has_value}.write(encoded);
+        bg::details::write_bytes(encoded, entry.key);
+        if (has_value) {
+            bg::details::write_bytes(encoded, entry.value);
+        }
+    }
+    bg::details::TickHeader{bg::details::TickOperation::end}.write(encoded);
+    writer.commit();
+    return buffer;
+}
+
+bg::util::buffer list_tick(bg::item_id_t index, bg::i64 value) {
+    auto buffer = bg::util::buffer::contiguous(64);
+    auto writer = bg::util::buffer_writer{buffer};
+    auto encoded = bg::ScalarBufferWriteContext{writer};
+    bg::details::TickHeader{bg::details::TickOperation::tick, true}.write(encoded);
+    bg::details::TickHeader{bg::details::TickOperation::tick, true}.write(encoded);
+    bg::details::write_bytes(encoded, index);
+    bg::details::write_bytes(encoded, value);
+    bg::details::TickHeader{bg::details::TickOperation::end}.write(encoded);
+    writer.commit();
+    return buffer;
+}
 
 inline int extension_comparison_count{};
 inline const literal::TimeSeriesLiteral *expected_extension_literal{};
@@ -145,6 +252,130 @@ TEST_CASE("test_graph extension literal comparison delegates nested ticks to the
     invalid_writer.commit();
     CHECK(Comparison::matches_tick(std::optional{invalid_buffer}, &extension_time_series_type(), literal::INVALID));
     CHECK(extension_comparison_count == 6);
+}
+
+TEST_CASE("test_graph stateful extension comparison spans cycles and nested lifetimes",
+          "[testing][evaluation][feature:test-graph][series:generic]") {
+    using Comparison = bg::testing::details::LiteralMatcher;
+    using Dispatch = bg::TimeSeriesDispatch<bg::testing::TickLiteralComparison>;
+    const auto &type = stateful_extension_time_series_type();
+
+    const auto operations = bg::testing::TickLiteralComparison{
+        .create_state = [] {
+            ++stateful_comparison_stats.created;
+            return std::make_unique<StatefulExtensionComparison>();
+        }};
+    REQUIRE(Dispatch::instance().add(type, operations));
+
+    stateful_comparison_stats = {};
+    const auto valid_tick = stateful_extension_tick(17);
+    const auto invalid_tick = stateful_extension_tick(0, false);
+    const std::array actual{std::optional{valid_tick}, std::optional<bg::util::buffer>{},
+                            std::optional{invalid_tick}, std::optional{stateful_extension_tick(18)}};
+    const bg::i64 expected_first{17};
+    const bg::i64 expected_last{18};
+    const std::array expected{literal::TimeSeriesLiteral(expected_first), literal::TimeSeriesLiteral(literal::SKIP),
+                              literal::TimeSeriesLiteral(literal::INVALID),
+                              literal::TimeSeriesLiteral(expected_last)};
+    CHECK(Comparison::matches_tick(actual[1], &type, expected[1]));
+    CHECK(Comparison::matches_tick(actual[2], &type, expected[2]));
+    CHECK(Comparison::matches_sequence(actual, &type, expected));
+    CHECK(stateful_comparison_stats.created == 1);
+    CHECK(stateful_comparison_stats.compared == 2);
+    CHECK(stateful_comparison_stats.compared_at == std::vector<std::size_t>{0, 3});
+    CHECK(stateful_comparison_stats.invalidated == std::vector<std::size_t>{2});
+    CHECK(stateful_comparison_stats.finished == 1);
+
+    const std::array consecutive_actual{std::optional{stateful_extension_tick(20)},
+                                        std::optional{stateful_extension_tick(21)}};
+    const bg::i64 expected_twenty{20};
+    const bg::i64 expected_twenty_one{21};
+    const bg::i64 expected_twenty_two{22};
+    const std::array consecutive_expected{literal::TimeSeriesLiteral(expected_twenty),
+                                          literal::TimeSeriesLiteral(expected_twenty_one)};
+    const auto created_before_repeated_comparisons = stateful_comparison_stats.created;
+    CHECK(Comparison::matches_sequence(consecutive_actual, &type, consecutive_expected));
+    const std::array mismatched_expected{literal::TimeSeriesLiteral(expected_twenty),
+                                         literal::TimeSeriesLiteral(expected_twenty_two)};
+    CHECK_FALSE(Comparison::matches_sequence(consecutive_actual, &type, mismatched_expected));
+    CHECK(Comparison::matches_sequence(consecutive_actual, &type, consecutive_expected));
+    CHECK(stateful_comparison_stats.created == created_before_repeated_comparisons + 3);
+
+    const std::array negative_actual{std::optional{stateful_extension_tick(-1)}};
+    const bg::i64 expected_negative{-1};
+    const std::array negative_expected{literal::TimeSeriesLiteral(expected_negative)};
+    CHECK_FALSE(Comparison::matches_sequence(negative_actual, &type, negative_expected));
+
+    const auto &dictionary_type = bg::time_series_dictionary_type(bg::int64_type(), type,
+                                                                  bg::TimeSeriesGuarantee::ordinary);
+    const std::array dictionary_actual{
+        std::optional{dictionary_tick({{bg::details::TickOperation::add, 1, 10},
+                                       {bg::details::TickOperation::add, 2, 30}})},
+        std::optional{dictionary_tick({{bg::details::TickOperation::tick, 1, 11},
+                                       {bg::details::TickOperation::tick, 2, 31}})}};
+    const bg::i64 key_one{1};
+    const bg::i64 key_two{2};
+    const bg::i64 value_ten{10};
+    const bg::i64 value_thirty{30};
+    const bg::i64 value_eleven{11};
+    const bg::i64 value_thirty_one{31};
+    const std::array first_key_one{literal::TimeSeriesLiteral(key_one), literal::TimeSeriesLiteral(value_ten)};
+    const std::array first_key_two{literal::TimeSeriesLiteral(key_two), literal::TimeSeriesLiteral(value_thirty)};
+    const std::array second_key_one{literal::TimeSeriesLiteral(key_one), literal::TimeSeriesLiteral(value_eleven)};
+    const std::array second_key_two{literal::TimeSeriesLiteral(key_two), literal::TimeSeriesLiteral(value_thirty_one)};
+    const std::array first_entries{literal::TimeSeriesLiteral(std::span{first_key_one}),
+                                   literal::TimeSeriesLiteral(std::span{first_key_two})};
+    const std::array second_entries{literal::TimeSeriesLiteral(std::span{second_key_one}),
+                                    literal::TimeSeriesLiteral(std::span{second_key_two})};
+    const std::array dictionary_expected{literal::TimeSeriesLiteral(std::span{first_entries}),
+                                         literal::TimeSeriesLiteral(std::span{second_entries})};
+    CHECK(Comparison::matches_sequence(dictionary_actual, &dictionary_type, dictionary_expected));
+
+    const std::array remove_readd_actual{
+        std::optional{dictionary_tick({{bg::details::TickOperation::add, 7, 40}})},
+        std::optional{dictionary_tick({{bg::details::TickOperation::remove, 7}})},
+        std::optional{dictionary_tick({{bg::details::TickOperation::add, 7, 40}})}};
+    const bg::i64 key_seven{7};
+    const bg::i64 value_forty{40};
+    const std::array added_entry{literal::TimeSeriesLiteral(key_seven), literal::TimeSeriesLiteral(value_forty)};
+    const std::array removed_entry{literal::TimeSeriesLiteral(key_seven),
+                                   literal::TimeSeriesLiteral(literal::REMOVE)};
+    const std::array added_entries{literal::TimeSeriesLiteral(std::span{added_entry})};
+    const std::array removed_entries{literal::TimeSeriesLiteral(std::span{removed_entry})};
+    const std::array remove_readd_expected{literal::TimeSeriesLiteral(std::span{added_entries}),
+                                           literal::TimeSeriesLiteral(std::span{removed_entries}),
+                                           literal::TimeSeriesLiteral(std::span{added_entries})};
+    CHECK(Comparison::matches_sequence(remove_readd_actual, &dictionary_type, remove_readd_expected));
+
+    const std::array removal_failure_actual{
+        std::optional{dictionary_tick({{bg::details::TickOperation::add, 8, -1}})},
+        std::optional{dictionary_tick({{bg::details::TickOperation::remove, 8}})}};
+    const bg::i64 key_eight{8};
+    const bg::i64 value_negative_one{-1};
+    const std::array removal_failure_entry{literal::TimeSeriesLiteral(key_eight),
+                                           literal::TimeSeriesLiteral(value_negative_one)};
+    const std::array removal_failure_removed_entry{literal::TimeSeriesLiteral(key_eight),
+                                                   literal::TimeSeriesLiteral(literal::REMOVE)};
+    const std::array removal_failure_entries{literal::TimeSeriesLiteral(std::span{removal_failure_entry})};
+    const std::array removal_failure_removed_entries{
+        literal::TimeSeriesLiteral(std::span{removal_failure_removed_entry})};
+    const std::array removal_failure_expected{literal::TimeSeriesLiteral(std::span{removal_failure_entries}),
+                                              literal::TimeSeriesLiteral(std::span{removal_failure_removed_entries})};
+    CHECK_FALSE(Comparison::matches_sequence(removal_failure_actual, &dictionary_type, removal_failure_expected));
+
+    const auto &list_type = bg::time_series_list_type(type, 1, bg::TimeSeriesGuarantee::ordinary);
+    const std::array list_actual{std::optional{list_tick(0, 50)},
+                                 std::optional{stateful_extension_tick(0, false)}};
+    const auto invalidation_count = stateful_comparison_stats.invalidated.size();
+    const bg::item_id_t list_index{};
+    const bg::i64 list_value{50};
+    const std::array list_entry{literal::TimeSeriesLiteral(list_index), literal::TimeSeriesLiteral(list_value)};
+    const std::array list_entries{literal::TimeSeriesLiteral(std::span{list_entry})};
+    const std::array list_expected{literal::TimeSeriesLiteral(std::span{list_entries}),
+                                   literal::TimeSeriesLiteral(literal::INVALID)};
+    CHECK(Comparison::matches_sequence(list_actual, &list_type, list_expected));
+    CHECK(stateful_comparison_stats.invalidated.size() == invalidation_count + 1);
+    CHECK(stateful_comparison_stats.invalidated.back() == 1);
 }
 
 TEST_CASE("test_graph preserves missing and empty collection output ticks",

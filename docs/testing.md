@@ -196,6 +196,15 @@ literal payloads. The framework handles invalid ticks before calling the
 comparison handler. A handler reads a valid payload from the supplied reader,
 advances past exactly one payload on success, and leaves encoded values intact.
 
+For comparisons across cycles, set `TickLiteralComparison::create_state` instead
+of `compare`. Each `equals()` call creates a separate `TickLiteralComparisonState`
+for each nested time series lifetime. Its `compare()` receives the zero-based
+output cycle index, including skipped cycles. BG checks invalidation expectations
+and calls `invalidate()`, including when an enclosing collection invalidates.
+`finish()` checks the accumulated result when the time series is removed or the
+comparison ends. Removing and re-adding a collection item creates new comparison
+state. Setting `create_state` takes precedence over the stateless callback.
+
 Scalar expectations use [scalar literal construction](scalar-api.md#literals),
 including provider handlers. Collection comparisons interpret removal
 instructions at their defined positions. Other bare and tagged
