@@ -1234,11 +1234,22 @@ std::size_t GraphWiring::require_service_binding(details::NestedBindingIdentity 
 }
 
 void GraphWiring::provide_service_binding(const details::NestedBindingIdentity &identity, WiringPoint provider) {
+    if (!provider.has_output() || &provider.graph() != this) {
+        throw WiringError{"a service binding provider must belong to the root GraphWiring"};
+    }
+    const auto node_call = node_call_identity(provider);
+    if (!node_call) {
+        throw WiringError{"a service binding provider must be a node output"};
+    }
+    provide_service_binding(identity, *node_call);
+}
+
+void GraphWiring::provide_service_binding(const details::NestedBindingIdentity &identity, NodeCallIdentity provider) {
     if (parent_ != nullptr) {
         throw WiringError{"a service binding can only be provided on the root GraphWiring"};
     }
-    if (!provider.has_output() || &provider.graph() != this) {
-        throw WiringError{"a service binding provider must belong to the root GraphWiring"};
+    if (provider.value >= pending_node_calls_.size()) {
+        throw WiringError{"a service binding provider is not a node in this GraphWiring"};
     }
 
     const auto requirement =
@@ -1246,7 +1257,7 @@ void GraphWiring::provide_service_binding(const details::NestedBindingIdentity &
     if (requirement == service_binding_requirements_.end()) {
         throw WiringError{"the service binding requirement was not found"};
     }
-    if (requirement->provider.has_output()) {
+    if (requirement->provider) {
         throw WiringError{"the service binding requirement already has a provider"};
     }
 

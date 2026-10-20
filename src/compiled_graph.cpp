@@ -370,6 +370,7 @@ struct CompilationPlan {
     std::vector<std::size_t> inherited_time_series_slots;
     std::vector<BorrowedInputPlan> borrowed_inputs;
     std::span<const GraphWiring::ServiceBindingRequirement> service_bindings;
+    std::vector<std::optional<std::size_t>> service_binding_provider_nodes;
     RuntimeStorageLayout runtime;
     FixedStorageLayout fixed;
     std::size_t scalar_destruction_count{};
@@ -623,11 +624,11 @@ std::vector<std::size_t> dependency_order(const CompilationPlan &plan, const Gra
         }
     }
     for (const auto &binding : wiring.service_binding_requirements()) {
-        if (!binding.provider.has_output()) {
+        if (!binding.provider) {
             continue;
         }
 
-        const auto provider = wiring.output_node_index(binding.provider);
+        const auto provider = wiring.node_index(*binding.provider);
         for (const auto consumer : binding.consumers) {
             const auto consumer_node = wiring.node_index(consumer);
             if (binding.ordering == GraphWiring::ServiceBindingOrdering::provider_after_consumers) {
@@ -1300,6 +1301,11 @@ void plan_fixed_storage(CompilationPlan &plan) {
     result.nodes = wiring.nodes();
     result.outputs = wiring.outputs();
     result.service_bindings = wiring.service_binding_requirements();
+    result.service_binding_provider_nodes.reserve(result.service_bindings.size());
+    for (const auto &binding : result.service_bindings) {
+        result.service_binding_provider_nodes.push_back(
+            binding.provider ? std::optional{wiring.node_index(*binding.provider)} : std::nullopt);
+    }
     result.node_plans.resize(result.nodes.size());
     result.compiled_node_indices.assign(result.nodes.size(), WiredOutput::npos);
     result.constant_outputs.assign(result.outputs.size(), WiredOutput::npos);
@@ -1324,10 +1330,10 @@ void plan_fixed_storage(CompilationPlan &plan) {
         result.inherited_time_series.emplace_back();
     }
     for (const auto &binding : result.service_bindings) {
-        if (!binding.parent_requirement && !binding.provider.has_output()) {
+        if (!binding.parent_requirement && !binding.provider) {
             throw std::invalid_argument{"a root service binding has no provider"};
         }
-        if (binding.parent_requirement && binding.provider.has_output()) {
+        if (binding.parent_requirement && binding.provider) {
             throw std::invalid_argument{"an inner service binding cannot have a local provider"};
         }
     }
@@ -2345,10 +2351,9 @@ class CompiledGraphBuilder {
     static void construct_service_bindings(const CompilationPlan &plan, std::byte *storage) {
         auto nodes = plan.fixed.service_binding_provider_nodes.objects<std::uint32_t>(storage);
         for (auto index = std::size_t{}; index < plan.service_bindings.size(); ++index) {
-            const auto &binding = plan.service_bindings[index];
-            const auto node = binding.provider.has_output()
-                                  ? plan.compiled_node_index(
-                                        binding.provider.graph().output_node_index(binding.provider))
+            const auto provider = plan.service_binding_provider_nodes[index];
+            const auto node = provider
+                                  ? plan.compiled_node_index(*provider)
                                   : details::no_service_binding_provider_node;
             std::construct_at(nodes.data() + index, static_cast<std::uint32_t>(node));
         }

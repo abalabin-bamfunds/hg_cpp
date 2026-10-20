@@ -59,6 +59,26 @@ class ServiceRequestBinding {
         runtime_type_ = &runtime_type;
     }
 
+    void forward_to(ServiceRequestBinding &target, std::span<const Scalar<>> scalars, allocator memory) {
+        stop_forwarding(memory);
+        target_ = &target;
+        scalar_count_ = scalars.size();
+        if (scalars.empty()) {
+            return;
+        }
+        scalars_ = static_cast<Scalar<> *>(memory.allocate_bytes(scalars.size_bytes(), alignof(Scalar<>)));
+        std::ranges::copy(scalars, scalars_);
+    }
+
+    void stop_forwarding(allocator memory) noexcept {
+        if (scalars_ != nullptr) {
+            memory.deallocate_bytes(scalars_, scalar_count_ * sizeof(Scalar<>), alignof(Scalar<>));
+        }
+        scalars_ = nullptr;
+        scalar_count_ = 0;
+        target_ = nullptr;
+    }
+
     template <typename TimeSeries, typename Function>
     void modify(EvaluationContext &caller_context, Function &&function) {
         assert(provider_ && runtime_type_ != nullptr);
@@ -81,9 +101,46 @@ class ServiceRequestBinding {
         }
     }
 
+    template <typename Function>
+    void modify_service(EvaluationContext &context, service_client_id_t id, bool active, Function &&function) {
+        if (target_ == nullptr) {
+            modify<TSB<SCHEMA>>(context, std::forward<Function>(function));
+            return;
+        }
+
+        target_->modify<TSB<SCHEMA>>(context, [&](auto &output) {
+            auto changed = std::invoke(function, output);
+            const auto key = Scalar<>::from<service_client_id_t>(id);
+            const auto original_field_count = output.size() - scalar_count_;
+            for (auto index = std::size_t{}; index < scalar_count_; ++index) {
+                output[original_field_count + index].visit(
+                    [&](Out<TSD<SCALAR, TS_T>> *dictionary) {
+                        if (!active) {
+                            changed |= dictionary->erase(key);
+                            return;
+                        }
+                        auto item = (*dictionary)[key];
+                        item.visit(
+                            [&](Out<TS<SCALAR>> *value) {
+                                if (!value->valid()) {
+                                    value->set_value(scalars_[index]);
+                                    changed = true;
+                                }
+                            },
+                            ddv::noop);
+                    },
+                    ddv::noop);
+            }
+            return changed;
+        });
+    }
+
   private:
     NodeScheduler provider_;
     const TimeSeriesRuntimeType *runtime_type_{};
+    ServiceRequestBinding *target_{};
+    Scalar<> *scalars_{};
+    std::size_t scalar_count_{};
 };
 
 } // namespace details
@@ -253,7 +310,7 @@ class ServiceRequestClient {
     static void update_requests(NodeInvocation<compiled_data_type, state_type> invocation, bool active) {
         auto &state = invocation.state();
         const auto client_id = ScalarValue<service_client_id_t>{state.id};
-        state.requests->modify<TSB<SCHEMA>>(invocation.context(), [&](auto &requests) {
+        state.requests->modify_service(invocation.context(), state.id, active, [&](auto &requests) {
             const auto parameter_count = invocation.parameter_count() / 2;
             auto changed = false;
             for (auto parameter = std::size_t{}; parameter < parameter_count; ++parameter) {
@@ -315,6 +372,47 @@ class ServiceRequestClient {
 
     Signature signature_;
     std::size_t binding_index_;
+};
+
+class ForwardingServiceRequestProvider {
+  public:
+    using compiled_data_type = std::size_t;
+    using state_type = details::ServiceRequestBinding;
+    static constexpr bool deduplicate_wiring = false;
+
+    ForwardingServiceRequestProvider(std::span<const WiringArgument> scalars, std::size_t target_binding)
+        : signature_{make_signature(scalars)}, target_binding_{target_binding} {}
+
+    const Signature &signature() const noexcept { return signature_; }
+    compiled_data_type compile(const ResolvedSignature &, allocator &) const noexcept { return target_binding_; }
+
+    static void start(NodeInvocation<compiled_data_type, state_type> invocation) {
+        auto scalars = std::vector<Scalar<>>{};
+        scalars.reserve(invocation.parameter_count());
+        for (auto index = std::size_t{}; index < invocation.parameter_count(); ++index) {
+            scalars.push_back(invocation.scalar(index).value());
+        }
+        invocation.state().forward_to(
+            details::ServiceRequestBinding::at(invocation.context(), invocation.compiled_data()), scalars,
+            invocation.context().runtime_graph().allocation());
+    }
+
+    static void destroy_state(NodeInvocation<compiled_data_type, state_type> invocation) noexcept {
+        invocation.state().stop_forwarding(invocation.context().runtime_graph().allocation());
+    }
+
+  private:
+    static Signature make_signature(std::span<const WiringArgument> scalars) {
+        auto parameters = std::vector<Parameter>{};
+        parameters.reserve(scalars.size());
+        for (const auto &scalar : scalars) {
+            parameters.push_back({*scalar.name(), &scalar.type()});
+        }
+        return Signature{util::symbol{"service_request_forwarder"}, std::move(parameters)};
+    }
+
+    Signature signature_;
+    std::size_t target_binding_;
 };
 
 } // namespace
@@ -410,6 +508,13 @@ const TimeSeriesType *Service::implementation_output_type(const ResolvedSignatur
 
 WiringPoint Service::wire_implementation_requests(GraphWiring &wiring, const ResolvedSignature &signature,
                                                   details::NestedBindingIdentity identity, bool bind_clients) const {
+    return wire_catch_all_requests(wiring, signature, identity, {}, bind_clients);
+}
+
+WiringPoint Service::wire_catch_all_requests(GraphWiring &wiring, const ResolvedSignature &signature,
+                                              details::NestedBindingIdentity identity,
+                                              std::span<const SchemaField> lifted_fields,
+                                              bool bind_clients) const {
     const auto &client_id_type = cpp_scalar_type<service_client_id_t>();
     auto fields = std::vector<SchemaField>{};
     for (const auto &parameter : signature.parameters) {
@@ -423,6 +528,7 @@ WiringPoint Service::wire_implementation_requests(GraphWiring &wiring, const Res
             time_series_dictionary_type(client_id_type, reference_type, TimeSeriesGuarantee::ordinary);
         fields.push_back({parameter.name, &request_type});
     }
+    fields.insert(fields.end(), lifted_fields.begin(), lifted_fields.end());
 
     const auto &request_type = TimeSeriesBundleType::from_fields(fields);
     auto type_map = TypeMap{};
@@ -432,6 +538,19 @@ WiringPoint Service::wire_implementation_requests(GraphWiring &wiring, const Res
         wiring.provide_service_binding(identity, output);
     }
     return output;
+}
+
+void Service::wire_forwarding_requests(GraphWiring &wiring, details::NestedBindingIdentity original_identity,
+                                       details::NestedBindingIdentity catch_all_identity,
+                                       std::span<const WiringArgument> lifted_scalars) const {
+    const auto target_binding =
+        wiring.require_service_binding(catch_all_identity, GraphWiring::ServiceBindingOrdering::provider_after_consumers);
+    const auto &provider = wiring.own_node_template(
+        std::make_unique<RuntimeSignatureNodeTemplate<ForwardingServiceRequestProvider>>(
+            ForwardingServiceRequestProvider{lifted_scalars, target_binding}));
+    const auto call = wiring.invoke_node(provider, lifted_scalars);
+    wiring.register_service_binding_consumer(catch_all_identity, call.identity);
+    wiring.provide_service_binding(original_identity, call.identity);
 }
 
 void Service::append_implementation_request_arguments(WiringPoint requests,

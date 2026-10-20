@@ -86,7 +86,7 @@ class GraphWiring {
     struct ServiceBindingRequirement {
         details::NestedBindingIdentity identity;
         std::optional<std::size_t> parent_requirement;
-        WiringPoint provider;
+        std::optional<NodeCallIdentity> provider;
         std::vector<NodeCallIdentity> consumers;
         ServiceBindingOrdering ordering{ServiceBindingOrdering::provider_before_consumers};
     };
@@ -216,6 +216,7 @@ class GraphWiring {
     std::size_t
     require_service_binding(details::NestedBindingIdentity identity,
                             ServiceBindingOrdering ordering = ServiceBindingOrdering::provider_before_consumers);
+    void provide_service_binding(const details::NestedBindingIdentity &identity, NodeCallIdentity provider);
     void provide_service_binding(const details::NestedBindingIdentity &identity, WiringPoint provider);
     details::ServiceRequirements &root_service_requirements();
     details::OperatorResolutionCache &operator_resolution_cache(const Operator &operation);

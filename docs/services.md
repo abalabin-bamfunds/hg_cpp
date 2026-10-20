@@ -60,6 +60,23 @@ registration; that filter is not passed again to the implementation graph. Other
 arguments are passed to the implementation graph in order. Named arguments must match
 the implementation graph's parameter names.
 
+A service implementation can receive a scalar parameter `s` as a named
+`TSD<service_client_id_t, TS<S, final>>` input instead of a scalar `S` input. This
+selects a catch-all implementation for scalar values without an exact implementation.
+The catalogue groups those instances by service identity, resolved signature, and
+the values of scalar parameters that remain scalar inputs. It wires one implementation
+for each group. Exact implementations take precedence; overlapping applicable
+catch-all registrations are an error. This form applies to services, not reference
+or subscription services.
+
+Each unmatched scalar instance retains its original clients and client IDs. Its
+request-forwarding provider writes the clients' request references and `id -> s`
+entries into the group's request output. It removes both when a client withdraws.
+The lifted scalar item is final for that client's active lifetime. A new activation
+after withdrawal creates a new dictionary item. The group's replies are delivered
+to the original instances by client ID. Ordinary service clients retain the same
+runtime state and request-binding interface.
+
 For an output service whose implementation needs to read its own clients' requests,
 register `feedback_service_implementation(service, implementation)` as the implementation.
 The returned graph delays each generated request input by one cycle and runs the supplied

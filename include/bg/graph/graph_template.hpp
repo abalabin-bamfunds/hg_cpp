@@ -87,6 +87,14 @@ class GraphTemplate final
 
     const Signature &default_signature() const override { return signature_; }
 
+    const Signature &implementation_signature() const override {
+        return implementation_signature_ == nullptr ? signature() : *implementation_signature_;
+    }
+
+    void set_implementation_signature(Signature signature) {
+        implementation_signature_ = std::make_shared<const Signature>(std::move(signature));
+    }
+
     RequirementResult requirement(const WiringArguments &arguments) const override {
         if constexpr (requires { options_.check_requirement(arguments); }) {
             return options_.check_requirement(arguments);
@@ -147,6 +155,7 @@ class GraphTemplate final
     }
 
     Signature signature_;
+    std::shared_ptr<const Signature> implementation_signature_;
     [[no_unique_address]] Function function_;
     [[no_unique_address]] Options options_;
 };

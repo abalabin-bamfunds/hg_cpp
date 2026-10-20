@@ -75,7 +75,7 @@ TEST_CASE("service request ordering points at the service client after input mat
     }
 
     const auto &binding = wiring.service_binding_requirements().front();
-    REQUIRE(binding.provider.has_output());
+    REQUIRE(binding.provider.has_value());
 
     auto found_service_client = false;
     for (const auto consumer_index : binding.consumers) {

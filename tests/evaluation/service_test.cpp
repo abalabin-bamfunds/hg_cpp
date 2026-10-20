@@ -413,6 +413,97 @@ TEST_CASE("service scalar arguments select separate implementations", "[feature:
     CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 2>{1, 4}).equals<bg::i64>({32, 38}));
 }
 
+TEST_CASE("catch-all service combines unmatched scalar instances and yields to an exact implementation",
+          "[feature:service][series:tsd][shape:multiple][scalar:integer]") {
+    const auto service = bg::service<auto(TS<bg::i64>, bg::i64)->TS<bg::i64>>{
+        "routed_add", {"value", "instance"}};
+    auto catch_all_sizes = std::vector<std::size_t>{};
+    const auto respond = node([&](In<TSD<service_client_id_t, TS<bg::i64>>> values,
+                                  In<TSD<service_client_id_t, TS<bg::i64, TimeSeriesGuarantee::final>>> instances,
+                                  Out<TSD<service_client_id_t, TS<bg::i64>>> output) {
+        catch_all_sizes.push_back(instances.size());
+        values.for_each_removed([&](const auto &id) { output.erase(id); });
+        values.for_each_key_value([&](const auto &id, const auto &value) {
+            output[id].set(*value + *instances[id]);
+        });
+    });
+    const auto catch_all = graph(
+        "name"_n = "routed_add_catch_all",
+        [&](wp<TSD<service_client_id_t, TS<bg::i64>>, "value"_n> values,
+            wp<TSD<service_client_id_t, TS<bg::i64, TimeSeriesGuarantee::final>>, "instance"_n> instances) {
+            return respond(values, instances);
+        });
+    const auto exact_respond = node([](In<TSD<service_client_id_t, TS<bg::i64>>> values, bg::i64 instance,
+                                       Out<TSD<service_client_id_t, TS<bg::i64>>> output) {
+        values.for_each_key_value([&](const auto &id, const auto &value) {
+            output[id].set(*value + instance + 100);
+        });
+    });
+    const auto exact = graph("name"_n = "routed_add_exact",
+                             [&](wp<TSD<service_client_id_t, TS<bg::i64>>, "value"_n> values, bg::i64 instance) {
+                                 return exact_respond(values, instance);
+                             });
+    const auto sum = node([](In<TS<bg::i64>> first, In<TS<bg::i64>> second, In<TS<bg::i64>> third) {
+        return *first + *second + *third;
+    });
+
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(service, catch_all);
+    catalogue.register_impl(service, exact, "instance"_n = 2);
+    const auto tested = [&](wp<TS<bg::i64>> value) {
+        return sum(service(value, 1).as<TS<bg::i64>>(), service(value, 2).as<TS<bg::i64>>(),
+                   service(value, 3).as<TS<bg::i64>>());
+    };
+
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue},
+                                            std::array<bg::i64, 2>{4, 6});
+    CHECK(actual.equals<bg::i64>({118, 124}));
+    CHECK(catch_all_sizes == std::vector<std::size_t>{2, 2});
+}
+
+TEST_CASE("outputless catch-all service withdraws and restores final scalar entries",
+          "[feature:service][series:tsd][shape:sink][transition:revalidation]") {
+    const auto service = bg::service<auto(TS<bg::i64>, bg::i64)->void>{"routed_audit", {"value", "instance"}};
+    auto request_sizes = std::vector<std::size_t>{};
+    auto client_ids = std::vector<service_client_id_t>{};
+    const auto observe = node([&](In<TSD<service_client_id_t, TS<bg::i64>>> values,
+                                   In<TSD<service_client_id_t, TS<bg::i64, TimeSeriesGuarantee::final>>> instances) {
+        request_sizes.push_back(values.size());
+        values.for_each_key_value([&](const auto &id, const auto &) {
+            client_ids.push_back(*id);
+            CHECK(*instances[id] == 7);
+        });
+    });
+    const auto implementation = graph(
+        "name"_n = "routed_audit_impl",
+        [&](wp<TSD<service_client_id_t, TS<bg::i64>>, "value"_n> values,
+            wp<TSD<service_client_id_t, TS<bg::i64, TimeSeriesGuarantee::final>>, "instance"_n> instances) {
+            observe(values, instances);
+        });
+    const auto invalidate_zero = node([](In<TS<bg::i64>> input, Out<TS<bg::i64>> output) {
+        if (*input == 0) {
+            output.invalidate();
+        } else {
+            output.set(*input);
+        }
+    });
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(service, implementation);
+    const auto tested = [&](wp<TS<bg::i64>> input) {
+        const auto valid = invalidate_zero(input);
+        service(valid, 7);
+        return valid;
+    };
+
+    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue},
+                                            std::array<bg::i64, 4>{5, 6, 0, 8});
+    CHECK(actual.equals<bg::i64>({5, 6, std::nullopt, 8}));
+    CHECK(request_sizes == std::vector<std::size_t>{1, 1, 0, 1});
+    REQUIRE(client_ids.size() == 3);
+    CHECK(client_ids[0] == client_ids[1]);
+    CHECK(client_ids[1] == client_ids[2]);
+}
+
 TEST_CASE("subscription implementation receives named installation inputs after service scalars",
           "[feature:service][shape:multiple]") {
     const auto service =

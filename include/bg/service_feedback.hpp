@@ -97,7 +97,9 @@ template <typename Implementation>
                                      }};
     auto signature = details::make_graph_signature<decltype(code)>(
         util::symbol{"feedback_service_implementation"}, {}, {std::move(resolver)});
-    return GraphTemplate<decltype(code)>{std::move(signature), std::move(code)};
+    auto wrapper = GraphTemplate<decltype(code)>{std::move(signature), std::move(code)};
+    wrapper.set_implementation_signature(graph->signature());
+    return wrapper;
 }
 
 } // namespace bg

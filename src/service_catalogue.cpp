@@ -7,6 +7,8 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
+#include <bg/type/time_series_dict_type.hpp>
+#include <bg/type/time_series_value_type.hpp>
 #include <functional>
 #include <exception>
 #include <optional>
@@ -28,6 +30,7 @@ struct ServiceCatalogue::State {
         std::shared_ptr<const WiringTemplate> implementation;
         std::vector<ScalarFilter> scalar_filters;
         std::vector<WiringArgument> installation_arguments;
+        std::vector<std::size_t> lifted_parameters;
     };
 
     struct Claim {
@@ -106,8 +109,17 @@ struct ServiceCatalogue::BuildOperation {
     bool run();
     void validate() const;
     void wire_multiservice(std::size_t registration_index);
+    void wire_catch_all(details::ServiceInstance &instance, const State::Registration &registration);
 
   private:
+    struct CatchAllGroup {
+        const State::Registration *registration;
+        const ServiceDefinition *service;
+        ResolvedSignature signature;
+        std::vector<ScalarValue<>> unlifted_scalars;
+        std::optional<WiringPoint> replies;
+    };
+
     static bool same_scalars(std::span<const ScalarValue<>> left, std::span<const ScalarValue<>> right);
     static bool matches_scalar_filters(std::span<const State::ScalarFilter> filters,
                                        std::span<const ResolvedParameter> parameters,
@@ -116,6 +128,7 @@ struct ServiceCatalogue::BuildOperation {
     GraphWiring &wiring_;
     details::ServiceRequirements &requirements_;
     Session &session_;
+    std::vector<std::unique_ptr<CatchAllGroup>> catch_all_groups_;
 };
 
 ServiceCatalogue::ServiceCatalogue() : state_{std::make_shared<State>()} {}
@@ -198,8 +211,38 @@ void ServiceCatalogue::add_impl(const ServiceDefinition &service, TypeMap type_m
         installation_arguments.emplace_back(argument);
     }
 
+    auto lifted_parameters = std::vector<std::size_t>{};
+    if (dynamic_cast<const Service *>(&service) != nullptr) {
+        const auto &implementation_signature = implementation->implementation_signature();
+        for (auto parameter_index = std::size_t{}; parameter_index < service.signature().parameter_count();
+             ++parameter_index) {
+            const auto &parameter = service.signature().parameter(parameter_index);
+            if (!parameter.type->is_scalar()) {
+                continue;
+            }
+            const auto &implementation_parameters = implementation_signature;
+            for (auto input_index = std::size_t{}; input_index < implementation_parameters.parameter_count();
+                 ++input_index) {
+                const auto &input = implementation_parameters.parameter(input_index);
+                if (input.name != parameter.name) {
+                    continue;
+                }
+                const auto *dictionary = type_cast<TimeSeriesDictionaryType>(input.type);
+                const auto *value = dictionary == nullptr
+                                        ? nullptr
+                                        : type_cast<TimeSeriesValueType>(&dictionary->value_type());
+                if (value != nullptr &&
+                    dictionary->key_type().accepts(cpp_scalar_type<service_client_id_t>()) &&
+                    value->guarantee().value() == TimeSeriesGuarantee::final) {
+                    lifted_parameters.push_back(parameter_index);
+                }
+                break;
+            }
+        }
+    }
+
     state_->registrations.push_back({&service, std::move(type_map), std::move(implementation), std::move(filters),
-                                     std::move(installation_arguments)});
+                                     std::move(installation_arguments), std::move(lifted_parameters)});
 }
 
 void ServiceCatalogue::register_impl(const ServiceDefinition &service,
@@ -537,6 +580,95 @@ void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registratio
     build_state.wired = true;
 }
 
+void ServiceCatalogue::BuildOperation::wire_catch_all(details::ServiceInstance &instance,
+                                                      const State::Registration &registration) {
+    auto unlifted_scalars = std::vector<ScalarValue<>>{};
+    auto lifted_scalars = std::vector<WiringArgument>{};
+    auto lifted_fields = std::vector<SchemaField>{};
+    auto scalar_index = std::size_t{};
+    for (auto parameter_index = std::size_t{}; parameter_index < instance.signature.parameters.size();
+         ++parameter_index) {
+        const auto &parameter = instance.signature.parameters[parameter_index];
+        if (!parameter.type->is_scalar()) {
+            continue;
+        }
+        const auto &scalar = instance.scalar_arguments[scalar_index++];
+        if (!std::ranges::contains(registration.lifted_parameters, parameter_index)) {
+            unlifted_scalars.emplace_back(scalar.view());
+            continue;
+        }
+
+        auto argument = WiringArgument{ScalarValue<>{scalar.view()}};
+        argument.set_name(parameter.name);
+        argument.match_fixed_parameter_by_name();
+        lifted_scalars.push_back(std::move(argument));
+        const auto &scalar_type = static_cast<const ScalarType &>(*parameter.type);
+        const auto &value_type = time_series_value_type(scalar_type, TimeSeriesGuarantee::final);
+        lifted_fields.push_back({parameter.name,
+                                 &time_series_dictionary_type(cpp_scalar_type<service_client_id_t>(), value_type,
+                                                              TimeSeriesGuarantee::ordinary)});
+    }
+
+    auto found = std::ranges::find_if(catch_all_groups_, [&](const auto &group) {
+        return group->registration == &registration && group->service == instance.service &&
+               same_resolved_signature(group->signature, instance.signature) &&
+               same_scalars(group->unlifted_scalars, unlifted_scalars);
+    });
+    if (found == catch_all_groups_.end()) {
+        auto group = std::make_unique<CatchAllGroup>();
+        group->registration = &registration;
+        group->service = instance.service;
+        group->signature = instance.signature;
+        group->unlifted_scalars = std::move(unlifted_scalars);
+        auto &created = *group;
+        catch_all_groups_.push_back(std::move(group));
+
+        auto diagnostics = details::WiringDiagnosticContext{wiring_, instance.call_contexts};
+        auto context = WiringContext{wiring_};
+        const auto identity = details::NestedBindingIdentity::object(&created);
+        (void)wiring_.require_service_binding(identity, GraphWiring::ServiceBindingOrdering::provider_after_consumers);
+        const auto &service = static_cast<const Service &>(*instance.service);
+        const auto requests = service.wire_catch_all_requests(wiring_, instance.signature, identity, lifted_fields);
+        auto arguments = std::vector<WiringArgument>{};
+        service.append_implementation_request_arguments(requests, arguments);
+        for (const auto &scalar : created.unlifted_scalars) {
+            arguments.emplace_back(ScalarValue<>{scalar.view()});
+        }
+        for (const auto &argument : registration.installation_arguments) {
+            arguments.emplace_back(argument);
+        }
+
+        try {
+            const auto bound = details::bind_wiring_arguments(registration.implementation->signature(), arguments);
+            created.replies = (*registration.implementation)(instance.type_map,
+                                                              std::span<const WiringArgument>{bound});
+        } catch (...) {
+            throw service_error("catch-all service implementation wiring failed for '" +
+                                    std::string{instance.signature.name.text()} + "'",
+                                instance, std::current_exception());
+        }
+
+        const auto *expected = instance.service->implementation_output_type(instance.signature);
+        if (expected == nullptr ? created.replies.has_value()
+                                : !created.replies || !expected->accepts(created.replies->type())) {
+            throw service_error("catch-all service implementation has an incompatible output", instance);
+        }
+        found = catch_all_groups_.end() - 1;
+    }
+
+    auto &group = **found;
+    auto context = WiringContext{wiring_};
+    static_cast<const Service &>(*instance.service)
+        .wire_forwarding_requests(wiring_, details::NestedBindingIdentity::object(&instance),
+                                  details::NestedBindingIdentity::object(&group), lifted_scalars);
+    if (group.replies) {
+        const auto &expected = *instance.service->implementation_output_type(instance.signature);
+        wiring_.provide_inherited_time_series(details::NestedBindingIdentity::object(&instance), expected,
+                                              *group.replies);
+    }
+    instance.implementation_wired = true;
+}
+
 bool ServiceCatalogue::BuildOperation::run() {
     auto changed = false;
     const auto apply_replies = [&](details::ServiceInstance &instance) {
@@ -587,11 +719,16 @@ bool ServiceCatalogue::BuildOperation::run() {
         }
 
         auto candidates = std::vector<const State::Registration *>{};
+        auto catch_all_candidates = std::vector<const State::Registration *>{};
         for (const auto &registration : catalogue_.registrations) {
             if (registration.service == instance.service && instance.type_map.includes(registration.type_map) &&
                 matches_scalar_filters(registration.scalar_filters, instance.signature.parameters,
                                        instance.scalar_arguments)) {
-                candidates.push_back(&registration);
+                if (registration.lifted_parameters.empty()) {
+                    candidates.push_back(&registration);
+                } else {
+                    catch_all_candidates.push_back(&registration);
+                }
             }
         }
 
@@ -617,7 +754,8 @@ bool ServiceCatalogue::BuildOperation::run() {
         }
 
         const auto service_name = std::string{instance.signature.name.text()};
-        const auto candidate_count = candidates.size() + multiservice_candidates.size();
+        const auto exact_count = candidates.size() + multiservice_candidates.size();
+        const auto candidate_count = exact_count == 0 ? catch_all_candidates.size() : exact_count;
         if (candidate_count == 0) {
             throw service_error("service '" + service_name + "' has no matching implementation", instance);
         }
@@ -625,6 +763,12 @@ bool ServiceCatalogue::BuildOperation::run() {
             throw service_error("service '" + service_name + "' has ambiguous implementations", instance);
         }
         if (instance.implementation_wired) {
+            continue;
+        }
+
+        if (exact_count == 0) {
+            wire_catch_all(instance, *catch_all_candidates.front());
+            changed = true;
             continue;
         }
 

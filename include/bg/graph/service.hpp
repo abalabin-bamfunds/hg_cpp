@@ -4,6 +4,7 @@
 #include <bg/graph/type_mapping.hpp>
 #include <bg/graph/wiring_argument.hpp>
 #include <bg/graph/wiring_template.hpp>
+#include <bg/type/schema.hpp>
 #include <bg/util/symbol.hpp>
 
 #include <cstdint>
@@ -67,6 +68,12 @@ class Service : public ServiceDefinition {
                                              bool bind_clients) const final;
     void append_implementation_request_arguments(WiringPoint requests,
                                                  std::vector<WiringArgument> &arguments) const final;
+    WiringPoint wire_catch_all_requests(GraphWiring &wiring, const ResolvedSignature &signature,
+                                        details::NestedBindingIdentity identity,
+                                        std::span<const SchemaField> lifted_fields, bool bind_clients = true) const;
+    void wire_forwarding_requests(GraphWiring &wiring, details::NestedBindingIdentity original_identity,
+                                  details::NestedBindingIdentity catch_all_identity,
+                                  std::span<const WiringArgument> lifted_scalars) const;
 
   private:
     std::optional<WiringPoint> wire_client(GraphWiring &wiring, ResolvedSignature signature,
