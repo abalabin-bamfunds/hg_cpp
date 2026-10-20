@@ -333,6 +333,34 @@ TEST_CASE("service building includes requirements introduced by implementation g
     CHECK_NOTHROW(CompiledGraph{wiring});
 }
 
+TEST_CASE("a graph discovers service clients before its late-bound input is provided",
+          "[feature:service][feature:wiring][feature:late-bound-wiring]") {
+    const auto downstream = reference_service<auto(i64)->TS<i64>>{"downstream", {"key"}};
+    const auto consume = node([](In<TS<i64>>) {});
+    const auto source = node([](Out<TS<i64>>) {});
+    const auto catch_all_implementation = graph("name"_n = "catch_all_impl", [&](wp<TS<i64>> values) {
+        consume(values);
+        (void)downstream(1);
+    });
+    const auto downstream_implementation =
+        graph("name"_n = "downstream_impl", [&](i64 key) { (void)key; return source(); });
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(downstream, downstream_implementation);
+
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto requests = wiring.late_bound_wiring(TS<i64>::type());
+
+    (void)catch_all_implementation(requests);
+
+    wiring.provide_late_bound_wiring(requests, source());
+    wiring.finalize(catalogue);
+
+    CHECK(wiring.is_finalized());
+    CHECK(wiring.inherited_requirements().size() == 1);
+    CHECK_NOTHROW(CompiledGraph{wiring});
+}
+
 TEST_CASE("service building reports missing and ambiguous implementations", "[feature:service][feature:wiring]") {
     const auto service = reference_service<auto()->TS<i64>>{"lookup"};
     const auto source = node([](Out<TS<i64>>) {});
