@@ -32,13 +32,14 @@ struct ServiceInstance {
     std::vector<WiringErrorContext> call_contexts;
 };
 
-class ServiceRequirements {
+class ServiceInstanceRegistry {
   public:
-    ServiceInstance &require(const ServiceDefinition &service, ResolvedSignature signature, const TypeMap &type_map,
-                             std::span<const WiringArgument> arguments, const WiringPath *call_path);
-    ServiceInstance &require_resolved(const ServiceDefinition &service, ResolvedSignature signature,
-                                      const TypeMap &type_map, std::vector<ScalarValue<>> scalar_arguments,
-                                      const WiringPath *call_path);
+    ServiceInstance &find_or_create(const ServiceDefinition &service, ResolvedSignature signature,
+                                    const TypeMap &type_map, std::span<const WiringArgument> arguments,
+                                    const WiringPath *call_path);
+    ServiceInstance &find_or_create(const ServiceDefinition &service, ResolvedSignature signature,
+                                    const TypeMap &type_map, std::vector<ScalarValue<>> scalar_arguments,
+                                    const WiringPath *call_path);
 
     std::span<std::unique_ptr<ServiceInstance>> instances() noexcept { return instances_; }
     std::span<const std::unique_ptr<ServiceInstance>> instances() const noexcept { return instances_; }

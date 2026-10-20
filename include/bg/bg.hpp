@@ -7,6 +7,7 @@
 #include <bg/evaluation_time.hpp>
 #include <bg/feedback.hpp>
 #include <bg/wall_clock.hpp>
+#include <bg/with_signature.hpp>
 #include <bg/global_state.hpp>
 #include <bg/graph.hpp>
 #include <bg/graph/compiled_graph.hpp>

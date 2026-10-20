@@ -79,8 +79,9 @@ runtime state and request-binding interface.
 
 For an output service whose implementation needs to read its own clients' requests,
 register `feedback_service_implementation(service, implementation)` as the implementation.
-The returned graph delays each generated request input by one cycle and runs the supplied
-implementation in `nested()`. It forwards scalar and installation arguments unchanged.
+The returned wiring template delays each generated request input by one cycle and runs the supplied
+implementation in `nested()`. It exposes the implementation's signature and forwards
+scalar and installation arguments unchanged.
 The catalogue applies the same registration and type-mapping rules as for an ordinary
 implementation graph.
 

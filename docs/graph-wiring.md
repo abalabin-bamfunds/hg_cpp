@@ -351,6 +351,13 @@ creates a renamed copy for this template without changing its definition's
 shared metadata or other template copies. Set the name before wiring calls.
 Custom templates provide their original signature through `default_signature()`.
 
+`with_signature(template, signature)` creates a wiring template with the supplied
+call signature. It checks and materializes arguments against that signature,
+then invokes the wrapped template with the resolved type map. Fixed arguments
+beyond the wrapped template's fixed prefix are forwarded by name when it has a
+named variadic parameter; otherwise they are forwarded positionally. The
+wrapped template still performs its own wiring. The utility adds no runtime node.
+
 `argument_view` provides resolved mappings and the fixed and flattened variadic
 arguments used by requirements and resolvers. `arguments` contains one normalized
 argument per signature parameter for forwarding and node storage. Both are

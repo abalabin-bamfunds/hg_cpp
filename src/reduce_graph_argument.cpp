@@ -4,7 +4,7 @@
 #include <bg/graph/details/compiled_graph_builder.hpp>
 #include <bg/graph/details/nested.hpp>
 #include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/details/service_requirements.hpp>
+#include <bg/graph/details/service_instance_registry.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_error.hpp>
@@ -124,10 +124,10 @@ ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplat
                     if (compact_value_type != nullptr &&
                         &compact_value_type->value_type() == &item_value_type->value_type()) {
                         const auto concrete_compact_result = compact_wiring->complete_pending_wiring(*compact_result);
-                        const auto *service_requirements = compact_wiring->service_requirements();
+                        const auto *service_instances = compact_wiring->service_instances();
                         if (compact_wiring->inherited_requirements().empty() &&
                             compact_wiring->service_binding_requirements().empty() &&
-                            (service_requirements == nullptr || service_requirements->instances().empty())) {
+                            (service_instances == nullptr || service_instances->instances().empty())) {
                             if (equivalent_wiring_bodies(*wiring, boundaries, concrete_result, *compact_wiring,
                                                          compact_inputs, concrete_compact_result,
                                                          reducer_input_types)) {

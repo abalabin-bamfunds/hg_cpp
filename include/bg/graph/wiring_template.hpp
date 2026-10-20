@@ -24,9 +24,6 @@ class WiringTemplate {
         return named_signature_ == nullptr ? default_signature() : *named_signature_;
     }
 
-    // Wrappers expose the signature that receives generated service arguments.
-    virtual const Signature &implementation_signature() const { return signature(); }
-
     // Assign a template-instance name without changing a shared declared signature.
     // Call before wiring the template.
     void set_name(util::symbol name) {

@@ -229,7 +229,7 @@ TEST_CASE("an isolated compact reducer rejects service requirements without chan
 
         CHECK_FALSE(built.graph.compact_graph.has_value());
         CHECK(built.graph.nested.wiring->inherited_requirements().empty());
-        CHECK(outer.service_requirements() == nullptr);
+        CHECK(outer.service_instances() == nullptr);
     });
 }
 

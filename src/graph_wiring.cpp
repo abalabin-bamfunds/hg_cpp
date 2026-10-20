@@ -1,7 +1,7 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/service_catalogue.hpp>
 
-#include <bg/graph/details/service_requirements.hpp>
+#include <bg/graph/details/service_instance_registry.hpp>
 #include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/context.hpp>
 #include <bg/graph/wiring_context.hpp>

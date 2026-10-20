@@ -367,6 +367,7 @@ graph compilation or evaluation.
   guarantees, explicit empty TSL item types, named fields, and argument-storage lifetime
 - variadic capture by TSB and homogeneous TSL, forwarding, materialization, exact-name direct collection binding,
   nested boundaries, and operator selection
+- signature wrappers for positional and named variadic graphs and nodes, type mapping, and output validation
 - deferred wiring points, retained arguments, advertised materialisation options, signature form matching and completion,
   deduplicated materialisation cost, callback non-execution during matching and root collection, shared concrete demands
   across Union and concrete consumers, retained context bindings, failed transitive collection, unforced expansion,

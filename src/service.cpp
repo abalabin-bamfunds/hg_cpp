@@ -4,7 +4,7 @@
 #include <bg/graph/details/node_scheduler.hpp>
 #include <bg/graph/details/service_binding_section.hpp>
 #include <bg/graph/details/multiservice_ports.hpp>
-#include <bg/graph/details/service_requirements.hpp>
+#include <bg/graph/details/service_instance_registry.hpp>
 #include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/operator.hpp>
@@ -539,6 +539,34 @@ const TimeSeriesType *Service::implementation_output_type(const ResolvedSignatur
                                               TimeSeriesGuarantee::ordinary);
 }
 
+std::vector<std::size_t> Service::lifted_scalar_parameters(const Signature &implementation) const {
+    auto result = std::vector<std::size_t>{};
+    for (auto parameter_index = std::size_t{}; parameter_index < signature().parameter_count(); ++parameter_index) {
+        const auto &parameter = signature().parameter(parameter_index);
+        if (!parameter.type->is_scalar()) {
+            continue;
+        }
+
+        for (auto input_index = std::size_t{}; input_index < implementation.parameter_count(); ++input_index) {
+            const auto &input = implementation.parameter(input_index);
+            if (input.name != parameter.name) {
+                continue;
+            }
+            const auto *dictionary = type_cast<TimeSeriesDictionaryType>(input.type);
+            const auto *value = dictionary == nullptr
+                                    ? nullptr
+                                    : type_cast<TimeSeriesValueType>(&dictionary->value_type());
+            if (value != nullptr &&
+                dictionary->key_type().accepts(cpp_scalar_type<service_client_id_t>()) &&
+                value->guarantee().value() == TimeSeriesGuarantee::final) {
+                result.push_back(parameter_index);
+            }
+            break;
+        }
+    }
+    return result;
+}
+
 WiringPoint Service::wire_implementation_requests(GraphWiring &wiring, const ResolvedSignature &signature,
                                                   details::NestedBindingIdentity identity, bool bind_clients) const {
     return wire_catch_all_requests(wiring, signature, identity, {}, bind_clients);
@@ -546,7 +574,7 @@ WiringPoint Service::wire_implementation_requests(GraphWiring &wiring, const Res
 
 WiringPoint Service::wire_catch_all_requests(GraphWiring &wiring, const ResolvedSignature &signature,
                                               details::NestedBindingIdentity identity,
-                                              std::span<const SchemaField> lifted_fields,
+                                              std::span<const std::size_t> lifted_parameters,
                                               bool bind_clients) const {
     const auto &client_id_type = cpp_scalar_type<service_client_id_t>();
     auto fields = std::vector<SchemaField>{};
@@ -561,7 +589,14 @@ WiringPoint Service::wire_catch_all_requests(GraphWiring &wiring, const Resolved
             time_series_dictionary_type(client_id_type, reference_type, TimeSeriesGuarantee::ordinary);
         fields.push_back({parameter.name, &request_type});
     }
-    fields.insert(fields.end(), lifted_fields.begin(), lifted_fields.end());
+    for (const auto parameter_index : lifted_parameters) {
+        const auto &parameter = signature.parameters[parameter_index];
+        const auto &scalar_type = static_cast<const ScalarType &>(*parameter.type);
+        const auto &value_type = time_series_value_type(scalar_type, TimeSeriesGuarantee::final);
+        const auto &field_type = time_series_dictionary_type(client_id_type, value_type,
+                                                             TimeSeriesGuarantee::ordinary);
+        fields.push_back({parameter.name, &field_type});
+    }
 
     const auto &request_type = TimeSeriesBundleType::from_fields(fields);
     auto type_map = TypeMap{};
@@ -594,8 +629,8 @@ void Service::append_implementation_request_arguments(WiringPoint requests,
 std::optional<WiringPoint> Service::wire_client(GraphWiring &wiring, ResolvedSignature signature,
                                                 const TypeMap &type_map,
                                                 std::span<const WiringArgument> arguments) const {
-    auto &instance = wiring.root_service_requirements().require(*this, signature, type_map, arguments,
-                                                                WiringContext::current().path());
+    auto &instance = wiring.root_service_instances().find_or_create(*this, signature, type_map, arguments,
+                                                                    WiringContext::current().path());
     const auto identity = details::NestedBindingIdentity::object(&instance);
     const auto binding_index =
         wiring.require_service_binding(identity, GraphWiring::ServiceBindingOrdering::provider_after_consumers);
@@ -731,8 +766,8 @@ std::optional<WiringPoint> SubscriptionService::wire_client(GraphWiring &wiring,
         throw WiringError{"subscription service keys must support hashing and equality"};
     }
 
-    auto &instance = wiring.root_service_requirements().require(*this, signature, type_map, arguments,
-                                                                WiringContext::current().path());
+    auto &instance = wiring.root_service_instances().find_or_create(*this, signature, type_map, arguments,
+                                                                    WiringContext::current().path());
     const auto identity = details::NestedBindingIdentity::object(&instance);
     const auto binding_index =
         wiring.require_service_binding(identity, GraphWiring::ServiceBindingOrdering::provider_after_consumers);
@@ -747,11 +782,11 @@ std::optional<WiringPoint> SubscriptionService::wire_client(GraphWiring &wiring,
     return operators::getitem(response, arguments[0].time_series());
 }
 
-details::ServiceInstance &details::ServiceRequirements::require(const ServiceDefinition &service,
-                                                                ResolvedSignature signature,
-                                                                const TypeMap &type_map,
-                                                                std::span<const WiringArgument> arguments,
-                                                                const WiringPath *call_path) {
+details::ServiceInstance &details::ServiceInstanceRegistry::find_or_create(const ServiceDefinition &service,
+                                                                            ResolvedSignature signature,
+                                                                            const TypeMap &type_map,
+                                                                            std::span<const WiringArgument> arguments,
+                                                                            const WiringPath *call_path) {
     auto scalars = std::vector<ScalarValue<>>{};
     for (auto index = std::size_t{}; index < signature.parameters.size(); ++index) {
         const auto *scalar_type = type_cast<ScalarType>(signature.parameters[index].type);
@@ -765,16 +800,16 @@ details::ServiceInstance &details::ServiceRequirements::require(const ServiceDef
         scalars.emplace_back(arguments[index].scalar());
     }
 
-    auto &instance = require_resolved(service, std::move(signature), type_map, std::move(scalars), call_path);
+    auto &instance = find_or_create(service, std::move(signature), type_map, std::move(scalars), call_path);
     instance.has_client = true;
     return instance;
 }
 
-details::ServiceInstance &details::ServiceRequirements::require_resolved(const ServiceDefinition &service,
-                                                                         ResolvedSignature signature,
-                                                                         const TypeMap &type_map,
-                                                                         std::vector<ScalarValue<>> scalars,
-                                                                         const WiringPath *call_path) {
+details::ServiceInstance &details::ServiceInstanceRegistry::find_or_create(const ServiceDefinition &service,
+                                                                            ResolvedSignature signature,
+                                                                            const TypeMap &type_map,
+                                                                            std::vector<ScalarValue<>> scalars,
+                                                                            const WiringPath *call_path) {
     const auto call_context = WiringErrorContext{.stage = WiringFailureStage::requirement,
                                                 .path = call_path == nullptr ? std::string{} : call_path->text(),
                                                 .operation = signature.name};
@@ -821,22 +856,22 @@ details::ServiceInstance &details::ServiceRequirements::require_resolved(const S
     return result;
 }
 
-details::ServiceRequirements &GraphWiring::root_service_requirements() {
+details::ServiceInstanceRegistry &GraphWiring::root_service_instances() {
     if (parent_ != nullptr) {
-        return parent_->root_service_requirements();
+        return parent_->root_service_instances();
     }
-    if (!service_requirements_) {
-        service_requirements_ = std::make_unique<details::ServiceRequirements>();
+    if (!service_instances_) {
+        service_instances_ = std::make_unique<details::ServiceInstanceRegistry>();
     }
-    return *service_requirements_;
+    return *service_instances_;
 }
 
 std::optional<WiringPoint> GraphWiring::require_service(const ServiceDefinition &service,
                                                         ResolvedSignature signature,
                                                         const TypeMap &type_map,
                                                         std::span<const WiringArgument> arguments) {
-    auto &instance = root_service_requirements().require(service, std::move(signature), type_map, arguments,
-                                                         WiringContext::current().path());
+    auto &instance = root_service_instances().find_or_create(service, std::move(signature), type_map, arguments,
+                                                             WiringContext::current().path());
     if (instance.signature.output == nullptr) {
         return std::nullopt;
     }

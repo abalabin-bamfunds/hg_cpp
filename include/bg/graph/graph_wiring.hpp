@@ -46,7 +46,7 @@ class WiringArgumentDescriptor;
 class GraphWiringStructure;
 class LateBoundWiringRecord;
 class ContextScope;
-class ServiceRequirements;
+class ServiceInstanceRegistry;
 struct OperatorResolutionCache;
 WiringPoint add_wiring_record(std::unique_ptr<WiringRecord> record);
 WiringPoint add_item_wiring_record(WiringPoint parent, item_id_t item, std::unique_ptr<WiringRecord> record);
@@ -218,7 +218,7 @@ class GraphWiring {
                             ServiceBindingOrdering ordering = ServiceBindingOrdering::provider_before_consumers);
     void provide_service_binding(const details::NestedBindingIdentity &identity, NodeCallIdentity provider);
     void provide_service_binding(const details::NestedBindingIdentity &identity, WiringPoint provider);
-    details::ServiceRequirements &root_service_requirements();
+    details::ServiceInstanceRegistry &root_service_instances();
     details::OperatorResolutionCache &operator_resolution_cache(const Operator &operation);
 
     [[nodiscard]] const WiringPath &make_path(util::symbol name, util::symbol label);
@@ -235,7 +235,7 @@ class GraphWiring {
     allocator &variable_allocator() noexcept;
     allocator &variable_allocator(const ScalarRuntimeType &runtime_type);
     bool is_root() const noexcept { return parent_ == nullptr; }
-    details::ServiceRequirements *service_requirements() noexcept { return service_requirements_.get(); }
+    details::ServiceInstanceRegistry *service_instances() noexcept { return service_instances_.get(); }
 
   private:
     allocator allocator_;
@@ -265,7 +265,7 @@ class GraphWiring {
     std::shared_ptr<void> service_build_session_;
     std::function<bool()> service_build_;
     std::function<void()> service_build_validate_;
-    std::unique_ptr<details::ServiceRequirements> service_requirements_;
+    std::unique_ptr<details::ServiceInstanceRegistry> service_instances_;
     std::vector<std::unique_ptr<details::WiringRecord>> wiring_records_;
     std::vector<details::LateBoundWiringRecord *> late_bound_wiring_records_;
     struct ItemRecord {

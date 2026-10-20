@@ -7,6 +7,7 @@
 #include <bg/nested.hpp>
 #include <bg/operators.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
+#include <bg/with_signature.hpp>
 
 #include <algorithm>
 #include <memory>
@@ -55,13 +56,16 @@ template <typename Implementation>
         auto type_map = call.type_map().copy();
         const auto signature = source->signature().complete_resolution(type_map);
         auto next_positional = std::size_t{};
+        auto request_index = std::size_t{};
         for (const auto &request : source->implementation_request_inputs(signature)) {
             auto found = supplied.end();
-            if (request.name) {
+            const auto name = request.name ? *request.name : graph->signature().parameter(request_index).name;
+            if (name.has_value()) {
                 found = std::ranges::find_if(supplied, [&](const auto &argument) {
-                    return argument.name() == request.name;
+                    return argument.name() == name;
                 });
-            } else {
+            }
+            if (found == supplied.end() && !request.name) {
                 while (next_positional < supplied.size() && supplied[next_positional].name()) {
                     ++next_positional;
                 }
@@ -81,6 +85,7 @@ template <typename Implementation>
                 delayed.require_optional();
             }
             *found = std::move(delayed);
+            ++request_index;
         }
 
         const auto bound = details::bind_wiring_arguments(graph->signature(), supplied);
@@ -98,8 +103,7 @@ template <typename Implementation>
     auto signature = details::make_graph_signature<decltype(code)>(
         util::symbol{"feedback_service_implementation"}, {}, {std::move(resolver)});
     auto wrapper = GraphTemplate<decltype(code)>{std::move(signature), std::move(code)};
-    wrapper.set_implementation_signature(graph->signature());
-    return wrapper;
+    return with_signature(std::move(wrapper), graph->signature());
 }
 
 } // namespace bg
