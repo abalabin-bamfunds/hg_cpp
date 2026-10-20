@@ -10,63 +10,29 @@
 #include <optional>
 
 using namespace bg;
+using namespace bg::literals;
 
 static_assert(wp<TS<i64>, InputValidity::required>::validity == required);
 static_assert(wp<TS<i64>, InputValidity::optional>::validity == optional);
 
-TEST_CASE("optional inputs remain evaluable through invalidation and revalidation",
+TEST_CASE("an optional input reports validity and reads its value",
           "[feature:validity][validity:optional][transition:invalidation][transition:revalidation]"
-          "[feature:operator][series:value][scalar:i64][shape:chain]") {
-    const auto choose_left = node([](In<TS<bool>> enabled, In<TS<i64>> value, Out<TS<i64>> output) {
-        if (enabled.value()) {
-            output.set(value.value());
-        } else {
-            output.invalidate();
-        }
-    });
+          "[series:value][scalar:i64][shape:single-node]") {
+    const auto value_or_missing = node([](std::optional<i64> input) { return input.value_or(-1); });
 
-    auto add = operator_<auto(TS_T, TS_T)->TS_T>{"add", {"lhs", "rhs"}};
-    add.overload(node([](In<TS<i64>, optional> lhs, In<TS<i64>> rhs, Out<TS<i64>> output) {
-        output.set((lhs.valid() ? lhs.value() : i64{}) + rhs.value());
-    }));
-
-    auto multiply = operator_<auto(TS_T, TS_T)->TS_T>{"multiply", {"lhs", "rhs"}};
-    multiply.overload(node([](In<TS<i64>, optional> lhs, In<TS<i64>, optional> rhs, Out<TS<i64>> output) {
-        output.set((lhs.valid() ? lhs.value() : i64{1}) * (rhs.valid() ? rhs.value() : i64{1}));
-    }));
-
-    const auto add_graph = [&](wp<TS<bool>> enabled, wp<TS<i64>> lhs,
-                               wp<TS<i64>> rhs) -> wp<TS<i64>> {
-        return add(opt(choose_left(enabled, lhs)), rhs).as<TS<i64>>();
-    };
-    const auto multiply_graph = [&](wp<TS<bool>> enabled, wp<TS<i64>> lhs,
-                                    wp<TS<i64>> rhs) -> wp<TS<i64>> {
-        const auto selected_lhs = choose_left(enabled, lhs);
-        return multiply(opt(selected_lhs), opt(rhs)).as<TS<i64>>();
-    };
-
-    const auto default_graph = [&](wp<TS<bool>> enabled, wp<TS<i64>> lhs) {
-        return operators::default_(opt(choose_left(enabled, lhs)), i64{}).as<TS<i64>>();
-    };
-
-    const auto enabled = std::array{false, true, false, true};
-    const auto lhs = std::array<i64, 4>{3, 3, 3, 3};
-    const auto rhs = std::array<i64, 4>{5, 5, 5, 5};
-
-    CHECK(testing::test_graph(add_graph, enabled, lhs, rhs).equals({5, 8, 5, 8}));
-    CHECK(testing::test_graph(multiply_graph, enabled, lhs, rhs).equals({5, 15, 5, 15}));
-    CHECK(testing::test_graph(default_graph, enabled, lhs).equals({0, 3, 0, 3}));
+    CHECK(testing::test_graph(value_or_missing, {3, literal::INVALID, 5}).equals({3, -1, 5}));
 }
 
 TEST_CASE("opt does not schedule an optional-input node at graph start",
           "[feature:validity][validity:optional][feature:scheduling][transition:start]"
           "[series:value][scalar:i64][shape:single-node]") {
     auto evaluations = 0;
-    const auto copy = node([&](In<TS<i64>, optional> input, Out<TS<i64>> output) {
+    const auto copy = node([&](In<TS<i64>, optional> input) {
         ++evaluations;
-        output.set(input.valid() ? input.value() : i64{});
+        return input.valid() ? input.value() : i64{};
     });
-    const auto tested = [&](wp<TS<i64>> input) -> wp<TS<i64>> { return copy(opt(input)); };
+
+    const auto tested = [&](wp<TS<i64>> input) { return copy(opt(input)); };
     const auto no_updates = std::array<std::optional<i64>, 1>{std::nullopt};
 
     const auto result = testing::test_graph(tested, no_updates);
@@ -80,12 +46,12 @@ TEST_CASE("an optional input node can request evaluation at graph start",
           "[series:value][scalar:i64][shape:single-node]") {
     auto evaluations = 0;
     const auto copy = node(
-        eval = [&](In<TS<i64>, optional> input, Out<TS<i64>> output) {
+        eval = [&](In<TS<i64>, optional> input) {
             ++evaluations;
-            output.set(input.valid() ? input.value() : i64{});
+            return input.valid() ? input.value() : i64{};
         },
         schedule_on_start = true);
-    const auto tested = [&](wp<TS<i64>> input) -> wp<TS<i64>> { return copy(opt(input)); };
+    const auto tested = [&](wp<TS<i64>> input) { return copy(opt(input)); };
     const auto no_updates = std::array<std::optional<i64>, 1>{std::nullopt};
 
     const auto result = testing::test_graph(tested, no_updates);
@@ -105,21 +71,65 @@ TEST_CASE("aggregate optional inputs accept opt-qualified wiring arguments",
         void evaluate() const { output.set((lhs.valid() ? lhs.value() : i64{}) + rhs.value()); }
     };
 
-    const auto choose_left = node([](In<TS<bool>> enabled, In<TS<i64>> value, Out<TS<i64>> output) {
-        if (enabled.value()) {
-            output.set(value.value());
-        } else {
-            output.invalidate();
-        }
-    });
+    const auto copy = node([](i64 value) { return value; });
+
     const auto add = node<add_optional>();
-    const auto tested = [&](wp<TS<bool>> enabled, wp<TS<i64>> lhs, wp<TS<i64>> rhs) -> wp<TS<i64>> {
-        return add(opt(choose_left(enabled, lhs)), rhs);
+
+    const auto graph = bg::graph("name"_n = "add_optional", [&](wp<TS<i64>> lhs, wp<TS<i64>> rhs) {
+        return add(opt(copy(lhs)), rhs);
+    });
+
+    CHECK(testing::test_graph(graph, {literal::INVALID, 3, literal::INVALID}, {5, 5, 5}).equals({5, 8, 5}));
+}
+
+TEST_CASE("optional inputs remain evaluable through invalidation and revalidation",
+          "[feature:validity][validity:optional][transition:invalidation][transition:revalidation]"
+          "[feature:operator][series:value][scalar:i64][shape:chain]") {
+    const auto copy = node([](i64 value) { return value; });
+
+    auto add = operator_<auto(TS_T, TS_T)->TS_T>{"add", {"lhs", "rhs"}};
+    add.overload(node([](In<TS<i64>, optional> lhs, In<TS<i64>> rhs) {
+        return (lhs.valid() ? lhs.value() : i64{}) + rhs.value();
+    }));
+
+    const auto add_graph = [&](wp<TS<i64>> lhs, wp<TS<i64>> rhs) -> wp<TS<i64>> {
+        return add(opt(copy(lhs)), rhs).as<TS<i64>>();
     };
 
-    const auto enabled = std::array{false, true, false};
-    const auto lhs = std::array<i64, 3>{3, 3, 3};
-    const auto rhs = std::array<i64, 3>{5, 5, 5};
+    CHECK(testing::test_graph(add_graph, {literal::INVALID, 3, literal::INVALID, 3}, {5, 5, 5, 5})
+              .equals({5, 8, 5, 8}));
+}
 
-    CHECK(testing::test_graph(tested, enabled, lhs, rhs).equals({5, 8, 5}));
+TEST_CASE("optional multiplication uses one for each invalid operand",
+          "[feature:validity][validity:optional][transition:invalidation][transition:revalidation]"
+          "[feature:operator][series:value][scalar:i64][shape:chain]") {
+    const auto copy = node([](i64 value) { return value; });
+
+    auto multiply = operator_<auto(TS_T, TS_T)->TS_T>{"multiply", {"lhs", "rhs"}};
+    multiply.overload(node([](In<TS<i64>, optional> lhs, In<TS<i64>, optional> rhs) {
+        return (lhs.valid() ? lhs.value() : i64{1}) * (rhs.valid() ? rhs.value() : i64{1});
+    }));
+
+    const auto graph = [&](wp<TS<i64>> lhs, wp<TS<i64>> rhs) {
+        return multiply(opt(copy(lhs)), opt(copy(rhs))).as<TS<i64>>();
+    };
+
+    const auto actual = testing::test_graph(
+        graph,
+        {literal::INVALID, 3, literal::INVALID, 3, literal::INVALID, literal::INVALID, 3},
+        {5, 5, literal::INVALID, literal::INVALID, 5, literal::INVALID, 5});
+
+    CHECK(actual.equals({5, 15, 1, 3, 5, 1, 15}));
+}
+
+TEST_CASE("default uses its fallback while the optional input is invalid",
+          "[feature:validity][validity:optional][transition:invalidation][transition:revalidation]"
+          "[feature:operator][series:value][scalar:i64][shape:chain]") {
+    const auto copy = node([](i64 value) { return value; });
+
+    const auto graph = [&](wp<TS<i64>> input) {
+        return operators::default_(opt(copy(input)), i64{}).as<TS<i64>>();
+    };
+
+    CHECK(testing::test_graph(graph, {literal::INVALID, 3, literal::INVALID, 3}).equals({0, 3, 0, 3}));
 }

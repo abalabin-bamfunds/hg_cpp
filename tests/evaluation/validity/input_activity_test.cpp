@@ -1,3 +1,4 @@
+#include <bg/graph.hpp>
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
@@ -8,370 +9,150 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <array>
 #include <chrono>
+#include <vector>
 
-namespace {
-
-struct controlled_source_definition {
-    int index;
-    bg::Out<bg::TS<float>> output;
-
-    void evaluate() const {
-        if (valid[index]) {
-            output.set(values[index]);
-        } else {
-            output.invalidate();
-        }
-    }
-
-    inline static std::array values{1.0F, 10.0F};
-    inline static std::array valid{true, true};
-};
-
-struct mixed_input_definition {
-    bg::In<bg::TS<float>> trigger;
-    bg::In<bg::TS<float>, bg::passive> sampled;
-    bg::Out<bg::TS<float>> output;
-
-    void evaluate() const {
-        ++evaluation_count;
-        output.set(*trigger + *sampled);
-    }
-
-    inline static int evaluation_count{};
-};
-
-struct float_sink_definition {
-    bg::In<bg::TS<float>> input;
-
-    void evaluate() const { last_value = *input; }
-
-    inline static float last_value{};
-};
-
-[[nodiscard]] bg::EvaluationTime time(bg::i64 microseconds) {
-    return bg::MIN_DT + std::chrono::microseconds{microseconds};
-}
+using namespace bg;
+using namespace bg::literals;
 
 TEST_CASE("an active input schedules evaluation and a passive input supplies its latest value",
           "[evaluation][input_activity][feature:input-activity][activity:active][activity:passive]") {
-    const auto controlled_source = bg::node<controlled_source_definition>();
-    const auto mixed_input = bg::node<mixed_input_definition>();
-    const auto float_sink = bg::node<float_sink_definition>();
-    controlled_source_definition::values = {1.0F, 10.0F};
-    controlled_source_definition::valid = {true, true};
-    mixed_input_definition::evaluation_count = 0;
-    float_sink_definition::last_value = 0.0F;
+    auto evaluated_sums = std::vector<float>{};
+    auto consumed_sums = std::vector<float>{};
+    const auto combine = node([&](float trigger, In<TS<float>, passive> sampled) {
+        const auto sum = trigger + *sampled;
+        evaluated_sums.push_back(sum);
+        return sum;
+    });
 
-    bg::GraphWiring wiring;
-    {
-        bg::WiringContext context{wiring};
-        const auto trigger = controlled_source(0);
-        const auto sampled = controlled_source(1);
-        float_sink(mixed_input(trigger, sampled));
-    }
+    const auto consume = node([&](float sum) { consumed_sums.push_back(sum); });
 
-    wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, runtime_global_state};
-    runtime.start(time(1));
-    runtime.schedule(0);
-    runtime.schedule(1);
-    runtime.evaluate(time(1));
+    const auto graph = bg::graph(
+        "name"_n = "combine_and_consume", [&](wp<TS<float>> trigger, wp<TS<float>> sampled) {
+        const auto sum = combine(trigger, sampled);
+        consume(sum);
+        return sum;
+    });
 
-    REQUIRE(mixed_input_definition::evaluation_count == 1);
-    REQUIRE(float_sink_definition::last_value == 11.0F);
+    const auto actual = testing::test_graph(graph, {1.0F, literal::SKIP, 2.0F}, {10.0F, 20.0F, literal::SKIP});
 
-    controlled_source_definition::values[1] = 20.0F;
-    runtime.schedule(1);
-    runtime.evaluate(time(2));
-    CHECK(mixed_input_definition::evaluation_count == 1);
-    CHECK(float_sink_definition::last_value == 11.0F);
-
-    controlled_source_definition::values[0] = 2.0F;
-    runtime.schedule(0);
-    runtime.evaluate(time(3));
-
-    CHECK(mixed_input_definition::evaluation_count == 2);
-    CHECK(float_sink_definition::last_value == 22.0F);
+    CHECK(actual.equals({11.0F, literal::SKIP, 22.0F}));
+    CHECK(evaluated_sums == std::vector<float>{11.0F, 22.0F});
+    CHECK(consumed_sums == std::vector<float>{11.0F, 22.0F});
 }
-
-struct active_optional_observer_definition {
-    bg::In<bg::TS<float>, bg::optional> input;
-
-    void evaluate() const { observed[observation_count++] = input.valid(); }
-
-    inline static std::array<bool, 3> observed{};
-    inline static std::size_t observation_count{};
-};
 
 TEST_CASE("an active optional input schedules evaluation on invalidation and revalidation",
           "[evaluation][input_activity][validity][feature:input-activity][activity:active]"
           "[validity:optional][transition:invalidation][transition:revalidation]") {
-    const auto controlled_source = bg::node<controlled_source_definition>();
-    const auto active_optional_observer = bg::node<active_optional_observer_definition>();
-    controlled_source_definition::values[0] = 1.0F;
-    controlled_source_definition::valid[0] = true;
-    active_optional_observer_definition::observation_count = 0;
+    auto observed_validity = std::vector<bool>{};
+    const auto observe = node([&](In<TS<float>, optional> input) {
+        observed_validity.push_back(input.valid());
+        return input.valid();
+    });
 
-    bg::GraphWiring wiring;
-    {
-        bg::WiringContext context{wiring};
-        active_optional_observer(controlled_source(0));
-    }
-
-    wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, runtime_global_state};
-    runtime.start(time(1));
-    runtime.schedule(0);
-    runtime.evaluate(time(1));
-
-    controlled_source_definition::valid[0] = false;
-    runtime.schedule(0);
-    runtime.evaluate(time(2));
-
-    controlled_source_definition::valid[0] = true;
-    runtime.schedule(0);
-    runtime.evaluate(time(3));
-
-    REQUIRE(active_optional_observer_definition::observation_count == 3);
-    CHECK(active_optional_observer_definition::observed == std::array{true, false, true});
+    CHECK(testing::test_graph(observe, {1.0F, literal::INVALID, 1.0F}).equals({true, false, true}));
+    CHECK(observed_validity == std::vector<bool>{true, false, true});
 }
-
-struct passive_optional_observer_definition {
-    bg::In<bg::TS<float>, bg::passive, bg::optional> input;
-
-    void evaluate() const {
-        ++evaluation_count;
-        last_valid = input.valid();
-    }
-
-    inline static int evaluation_count{};
-    inline static bool last_valid{};
-};
 
 TEST_CASE("a passive optional input does not schedule evaluation",
           "[evaluation][input_activity][validity][feature:input-activity][activity:passive]"
           "[validity:optional]") {
-    const auto controlled_source = bg::node<controlled_source_definition>();
-    const auto passive_optional_observer = bg::node<passive_optional_observer_definition>();
-    controlled_source_definition::values[0] = 1.0F;
-    controlled_source_definition::valid[0] = true;
-    passive_optional_observer_definition::evaluation_count = 0;
+    auto observed_validity = std::vector<bool>{};
+    const auto observe = node([&](In<TS<float>, passive, optional> input, bool) {
+        observed_validity.push_back(input.valid());
+        return input.valid();
+    });
 
-    bg::GraphWiring wiring;
-    {
-        bg::WiringContext context{wiring};
-        passive_optional_observer(controlled_source(0));
-    }
+    const auto actual = testing::test_graph(
+        observe, {1.0F, literal::INVALID, 1.0F}, {true, literal::SKIP, literal::SKIP});
 
-    wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, runtime_global_state};
-    runtime.start(time(1));
-    runtime.schedule(0);
-    runtime.schedule(1);
-    runtime.evaluate(time(1));
-
-    REQUIRE(passive_optional_observer_definition::evaluation_count == 1);
-    REQUIRE(passive_optional_observer_definition::last_valid);
-
-    controlled_source_definition::valid[0] = false;
-    runtime.schedule(0);
-    runtime.evaluate(time(2));
-
-    controlled_source_definition::valid[0] = true;
-    runtime.schedule(0);
-    runtime.evaluate(time(3));
-
-    CHECK(passive_optional_observer_definition::evaluation_count == 1);
+    CHECK(actual.equals({true, literal::SKIP, literal::SKIP}));
+    CHECK(observed_validity == std::vector<bool>{true});
 }
-
-struct passive_copy_definition {
-    bg::In<bg::TS<float>, bg::passive> input;
-    bg::Out<bg::TS<float>> output;
-
-    void evaluate() const {
-        ++evaluation_count;
-        output.set(*input);
-    }
-
-    inline static int evaluation_count{};
-};
 
 TEST_CASE("a passive required input propagates invalidation without evaluation",
           "[evaluation][input_activity][validity][feature:input-activity][activity:passive]"
           "[validity:required][transition:invalidation]") {
-    const auto controlled_source = bg::node<controlled_source_definition>();
-    const auto passive_copy = bg::node<passive_copy_definition>();
-    const auto active_optional_observer = bg::node<active_optional_observer_definition>();
-    controlled_source_definition::values[0] = 1.0F;
-    controlled_source_definition::valid[0] = true;
-    passive_copy_definition::evaluation_count = 0;
-    active_optional_observer_definition::observation_count = 0;
+    auto copied_values = std::vector<float>{};
+    const auto copy = node([&](In<TS<float>, passive> input, bool) {
+        copied_values.push_back(*input);
+        return *input;
+    });
 
-    bg::GraphWiring wiring;
-    {
-        bg::WiringContext context{wiring};
-        active_optional_observer(passive_copy(controlled_source(0)));
-    }
+    auto observed_validity = std::vector<bool>{};
+    const auto observe = node([&](In<TS<float>, optional> input) {
+        observed_validity.push_back(input.valid());
+        return input.valid();
+    });
 
-    wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, runtime_global_state};
-    runtime.start(time(1));
-    runtime.schedule(0);
-    runtime.schedule(1);
-    runtime.evaluate(time(1));
+    const auto graph = bg::graph("name"_n = "observe_copy", [&](wp<TS<float>> input, wp<TS<bool>> pulse) {
+        return observe(copy(input, pulse));
+    });
 
-    REQUIRE(passive_copy_definition::evaluation_count == 1);
-    REQUIRE(active_optional_observer_definition::observation_count == 1);
-    REQUIRE(active_optional_observer_definition::observed[0]);
+    const auto actual = testing::test_graph(
+        graph, {1.0F, literal::INVALID, 1.0F, literal::SKIP}, {true, literal::SKIP, literal::SKIP, true});
 
-    controlled_source_definition::valid[0] = false;
-    runtime.schedule(0);
-    runtime.evaluate(time(2));
-
-    CHECK(passive_copy_definition::evaluation_count == 1);
-    REQUIRE(active_optional_observer_definition::observation_count == 2);
-    CHECK_FALSE(active_optional_observer_definition::observed[1]);
-
-    controlled_source_definition::valid[0] = true;
-    runtime.schedule(0);
-    runtime.evaluate(time(3));
-    CHECK(passive_copy_definition::evaluation_count == 1);
-
-    runtime.schedule(1);
-    runtime.evaluate(time(4));
-
-    CHECK(passive_copy_definition::evaluation_count == 2);
-    REQUIRE(active_optional_observer_definition::observation_count == 3);
-    CHECK(active_optional_observer_definition::observed[2]);
+    CHECK(actual.equals({true, false, literal::SKIP, true}));
+    CHECK(copied_values == std::vector<float>{1.0F, 1.0F});
+    CHECK(observed_validity == std::vector<bool>{true, false, true});
 }
-
-struct dynamically_controlled_input_definition {
-    bg::In<bg::TS<float>, bg::dynamic_activity> input;
-    bg::In<bg::TS<float>> control;
-
-    void evaluate() const {
-        ++evaluation_count;
-        if (*control == 0.0F) {
-            input.make_passive();
-        } else {
-            input.make_active();
-        }
-    }
-
-    inline static int evaluation_count{};
-};
 
 TEST_CASE("a dynamic input can stop and resume its own scheduling",
           "[feature:input-activity][series:value][definition:aggregate][activity:active][shape:multiple]") {
-    const auto source = bg::node<controlled_source_definition>();
-    const auto controlled = bg::node<dynamically_controlled_input_definition>();
-    controlled_source_definition::values = {1.0F, 1.0F};
-    controlled_source_definition::valid = {true, true};
-    dynamically_controlled_input_definition::evaluation_count = 0;
+    struct dynamically_controlled_input {
+        In<TS<float>, dynamic_activity> input;
+        In<TS<float>> control;
+        State<i64> evaluations;
+        Out<TS<i64>> output;
 
-    bg::GraphWiring wiring;
-    {
-        bg::WiringContext context{wiring};
-        const auto input = source(0);
-        const auto control = source(1);
-        controlled(input, control);
-    }
+        void evaluate() const {
+            ++*evaluations;
+            if (*control == 0.0F) {
+                input.make_passive();
+            } else {
+                input.make_active();
+            }
 
-    wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, runtime_global_state};
-    runtime.start(time(1));
-    runtime.schedule(0);
-    runtime.schedule(1);
-    runtime.evaluate(time(1));
+            output.set(*evaluations);
+        }
+    };
 
-    REQUIRE(dynamically_controlled_input_definition::evaluation_count == 1);
+    const auto controlled = node<dynamically_controlled_input>();
+    const auto actual = testing::test_graph(
+        controlled, {1.0F, 2.0F, 3.0F, 4.0F, 5.0F, 6.0F},
+        {1.0F, literal::SKIP, 0.0F, literal::SKIP, 1.0F, literal::SKIP});
 
-    controlled_source_definition::values[0] = 2.0F;
-    runtime.schedule(0);
-    runtime.evaluate(time(2));
-    REQUIRE(dynamically_controlled_input_definition::evaluation_count == 2);
-
-    controlled_source_definition::values[1] = 0.0F;
-    runtime.schedule(1);
-    runtime.evaluate(time(3));
-    REQUIRE(dynamically_controlled_input_definition::evaluation_count == 3);
-
-    controlled_source_definition::values[0] = 3.0F;
-    runtime.schedule(0);
-    runtime.evaluate(time(4));
-    REQUIRE(dynamically_controlled_input_definition::evaluation_count == 3);
-
-    controlled_source_definition::values[1] = 1.0F;
-    runtime.schedule(1);
-    runtime.evaluate(time(5));
-    REQUIRE(dynamically_controlled_input_definition::evaluation_count == 4);
-
-    controlled_source_definition::values[0] = 4.0F;
-    runtime.schedule(0);
-    runtime.evaluate(time(6));
-    CHECK(dynamically_controlled_input_definition::evaluation_count == 5);
+    CHECK(actual.equals({1, 2, 3, literal::SKIP, 4, 5}));
 }
-
-struct initially_passive_dynamic_input_definition {
-    bg::In<bg::TS<float>, bg::passive, bg::dynamic_activity> input;
-
-    void evaluate() const {
-        ++evaluation_count;
-        input.make_active();
-    }
-
-    inline static int evaluation_count{};
-};
 
 TEST_CASE("a passive dynamic input starts passive",
           "[feature:input-activity][series:value][definition:aggregate][activity:passive]") {
-    const auto source = bg::node<controlled_source_definition>();
-    const auto controlled = bg::node<initially_passive_dynamic_input_definition>();
-    controlled_source_definition::values = {1.0F, 1.0F};
-    controlled_source_definition::valid = {true, true};
-    initially_passive_dynamic_input_definition::evaluation_count = 0;
+    struct initially_passive_dynamic_input {
+        In<TS<float>, passive, dynamic_activity> input;
+        In<TS<bool>, optional> activate;
+        State<i64> evaluations;
+        Out<TS<i64>> output;
 
-    bg::GraphWiring wiring;
-    {
-        bg::WiringContext context{wiring};
-        controlled(source(0));
-    }
+        void evaluate() const {
+            ++*evaluations;
+            if (activate.valid()) {
+                input.make_active();
+            }
 
-    wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, runtime_global_state};
-    runtime.start(time(1));
-    runtime.schedule(0);
-    runtime.evaluate(time(1));
-    REQUIRE(initially_passive_dynamic_input_definition::evaluation_count == 0);
+            output.set(*evaluations);
+        }
+    };
 
-    runtime.schedule(1);
-    runtime.evaluate(time(2));
-    REQUIRE(initially_passive_dynamic_input_definition::evaluation_count == 1);
+    const auto activate = node<initially_passive_dynamic_input>();
+    const auto actual = testing::test_graph(activate, {1.0F, literal::SKIP, 2.0F},
+                                            {literal::SKIP, true, literal::SKIP});
 
-    controlled_source_definition::values[0] = 2.0F;
-    runtime.schedule(0);
-    runtime.evaluate(time(3));
-    CHECK(initially_passive_dynamic_input_definition::evaluation_count == 2);
+    CHECK(actual.equals({literal::SKIP, 1, 2}));
 }
 
 TEST_CASE("a callable dynamic input controls only its own scheduling",
           "[feature:input-activity][series:value][definition:function][activity:active][shape:multiple]") {
-    const auto gate = bg::node([](bg::In<bg::TS<bg::i64>, bg::dynamic_activity> input,
-                                  bg::In<bg::TS<bg::i64>, bg::optional> control, bg::Out<bg::TS<bg::i64>> output) {
+    const auto gate = node([](In<TS<i64>, dynamic_activity> input, In<TS<i64>, optional> control) {
         if (control.valid()) {
             if (*control == 0) {
                 input.make_passive();
@@ -379,24 +160,19 @@ TEST_CASE("a callable dynamic input controls only its own scheduling",
                 input.make_active();
             }
         }
-        output.set(*input);
+        return *input;
     });
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input, bg::wp<bg::TS<bg::i64>> control) {
-        return gate(input, control);
-    };
 
-    const auto actual = bg::testing::test_graph(
-        graph, std::array<bg::i64, 6>{1, 2, 3, 4, 5, 6},
-        std::array<std::optional<bg::i64>, 6>{1, std::nullopt, 0, std::nullopt, 1, std::nullopt});
+    const auto actual = testing::test_graph(gate, {1, 2, 3, 4, 5, 6},
+                                            {1, literal::SKIP, 0, literal::SKIP, 1, literal::SKIP});
 
-    CHECK(actual.equals<bg::i64>({1, 2, 3, std::nullopt, 5, 6}));
+    CHECK(actual.equals({1, 2, 3, literal::SKIP, 5, 6}));
 }
 
 TEST_CASE("a dynamic input controls scheduling for a default binding",
           "[feature:input-activity][feature:operator][series:value][definition:function]"
           "[activity:active][shape:multiple]") {
-    const auto gate = bg::node([](bg::In<bg::TS<bg::i64>, bg::dynamic_activity> input,
-                                  bg::In<bg::TS<bg::i64>, bg::optional> control, bg::Out<bg::TS<bg::i64>> output) {
+    const auto gate = node([](In<TS<i64>, dynamic_activity> input, In<TS<i64>, optional> control) {
         if (control.valid()) {
             if (*control == 0) {
                 input.make_passive();
@@ -404,152 +180,93 @@ TEST_CASE("a dynamic input controls scheduling for a default binding",
                 input.make_active();
             }
         }
-        output.set(*input);
+        return *input;
     });
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input, bg::wp<bg::TS<bg::i64>> control) {
-        return gate(bg::operators::default_(input, 7), control);
-    };
 
-    const auto actual = bg::testing::test_graph(
-        graph, std::array<std::optional<bg::i64>, 6>{std::nullopt, 1, 2, 3, 4, 5},
-        std::array<std::optional<bg::i64>, 6>{1, std::nullopt, 0, std::nullopt, 1, std::nullopt});
+    const auto graph = bg::graph(
+        "name"_n = "default_binding_activity", [&](wp<TS<i64>> input, wp<TS<i64>> control) {
+        return gate(operators::default_(input, 7), control);
+    });
 
-    CHECK(actual.equals<bg::i64>({7, 1, 2, std::nullopt, 4, 5}));
+    const auto actual = testing::test_graph(
+        graph, {literal::INVALID, 1, 2, 3, 4, 5}, {1, literal::SKIP, 0, literal::SKIP, 1, literal::SKIP});
+
+    CHECK(actual.equals({7, 1, 2, literal::SKIP, 4, 5}));
 }
-
-struct independently_controlled_inputs_definition {
-    bg::In<bg::TS<float>, bg::dynamic_activity> left;
-    bg::In<bg::TS<float>, bg::dynamic_activity> right;
-    bg::In<bg::TS<float>> control;
-
-    void evaluate() const {
-        ++evaluation_count;
-
-        if (*control == 0.0F) {
-            left.make_passive();
-            right.make_active();
-        } else if (*control == 1.0F) {
-            left.make_active();
-            right.make_passive();
-        } else {
-            left.make_passive();
-            right.make_passive();
-        }
-    }
-
-    inline static int evaluation_count{};
-};
 
 TEST_CASE("two dynamic inputs sharing one time series control scheduling independently",
           "[feature:input-activity][series:value][definition:aggregate][activity:active][shape:fan-out]") {
-    const auto source = bg::node<controlled_source_definition>();
-    const auto controlled = bg::node<independently_controlled_inputs_definition>();
-    controlled_source_definition::values = {1.0F, 0.0F};
-    controlled_source_definition::valid = {true, true};
-    independently_controlled_inputs_definition::evaluation_count = 0;
+    struct independently_controlled_inputs {
+        In<TS<float>, dynamic_activity> left;
+        In<TS<float>, dynamic_activity> right;
+        In<TS<float>> control;
+        State<i64> evaluations;
+        Out<TS<i64>> output;
 
-    bg::GraphWiring wiring;
-    {
-        bg::WiringContext context{wiring};
-        const auto value = source(0);
-        const auto control = source(1);
-        controlled(value, value, control);
-    }
+        void evaluate() const {
+            ++*evaluations;
 
-    wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, runtime_global_state};
-    runtime.start(time(1));
-    runtime.schedule(0);
-    runtime.schedule(1);
-    runtime.evaluate(time(1));
-    REQUIRE(independently_controlled_inputs_definition::evaluation_count == 1);
+            if (*control == 0.0F) {
+                left.make_passive();
+                right.make_active();
+            } else if (*control == 1.0F) {
+                left.make_active();
+                right.make_passive();
+            } else {
+                left.make_passive();
+                right.make_passive();
+            }
 
-    runtime.schedule(0);
-    runtime.evaluate(time(2));
-    REQUIRE(independently_controlled_inputs_definition::evaluation_count == 2);
-
-    controlled_source_definition::values[1] = 2.0F;
-    runtime.schedule(1);
-    runtime.evaluate(time(3));
-    REQUIRE(independently_controlled_inputs_definition::evaluation_count == 3);
-
-    runtime.schedule(0);
-    runtime.evaluate(time(4));
-    CHECK(independently_controlled_inputs_definition::evaluation_count == 3);
-
-    controlled_source_definition::values[1] = 1.0F;
-    runtime.schedule(1);
-    runtime.evaluate(time(5));
-    REQUIRE(independently_controlled_inputs_definition::evaluation_count == 4);
-
-    runtime.schedule(0);
-    runtime.evaluate(time(6));
-    CHECK(independently_controlled_inputs_definition::evaluation_count == 5);
-}
-
-struct dynamic_required_copy_definition {
-    bg::In<bg::TS<float>, bg::dynamic_activity> input;
-    bg::In<bg::TS<float>> control;
-    bg::Out<bg::TS<float>> output;
-
-    void evaluate() const {
-        ++evaluation_count;
-        if (*control == 0.0F) {
-            input.make_passive();
-        } else {
-            input.make_active();
+            output.set(*evaluations);
         }
-        output.set(*input);
-    }
+    };
 
-    inline static int evaluation_count{};
-};
+    const auto control_activity = node<independently_controlled_inputs>();
+
+    const auto graph = bg::graph(
+        "name"_n = "independent_shared_input_activity", [&](wp<TS<float>> value, wp<TS<float>> control) {
+        return control_activity(value, value, control);
+    });
+
+    const auto actual = testing::test_graph(
+        graph, {1.0F, 2.0F, literal::SKIP, 3.0F, literal::SKIP, 4.0F},
+        {0.0F, literal::SKIP, 2.0F, literal::SKIP, 1.0F, literal::SKIP});
+
+    CHECK(actual.equals({1, 2, 3, literal::SKIP, 4, 5}));
+}
 
 TEST_CASE("a dynamically passive required input still propagates invalidation",
           "[feature:input-activity][feature:validity][series:value][definition:aggregate]"
           "[activity:passive][validity:required][transition:invalidation]") {
-    const auto source = bg::node<controlled_source_definition>();
-    const auto copy = bg::node<dynamic_required_copy_definition>();
-    const auto observer = bg::node<active_optional_observer_definition>();
-    controlled_source_definition::values = {1.0F, 0.0F};
-    controlled_source_definition::valid = {true, true};
-    dynamic_required_copy_definition::evaluation_count = 0;
-    active_optional_observer_definition::observation_count = 0;
+    struct dynamic_required_copy {
+        In<TS<float>, dynamic_activity> input;
+        In<TS<float>> control;
+        State<i64> evaluations;
+        Out<TS<i64>> output;
 
-    bg::GraphWiring wiring;
-    {
-        bg::WiringContext context{wiring};
-        const auto input = source(0);
-        const auto control = source(1);
-        observer(copy(input, control));
-    }
+        void evaluate() const {
+            ++*evaluations;
+            if (*control == 0.0F) {
+                input.make_passive();
+            } else {
+                input.make_active();
+            }
+            output.set(*evaluations);
+        }
+    };
 
-    wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, runtime_global_state};
-    runtime.start(time(1));
-    runtime.schedule(0);
-    runtime.schedule(1);
-    runtime.evaluate(time(1));
-    REQUIRE(dynamic_required_copy_definition::evaluation_count == 1);
-    REQUIRE(active_optional_observer_definition::observation_count == 1);
-    REQUIRE(active_optional_observer_definition::observed[0]);
+    const auto copy = node<dynamic_required_copy>();
+    const auto actual = testing::test_graph(copy, {1.0F, literal::INVALID, 3.0F}, {0.0F, literal::SKIP, 1.0F});
 
-    controlled_source_definition::valid[0] = false;
-    runtime.schedule(0);
-    runtime.evaluate(time(2));
-
-    CHECK(dynamic_required_copy_definition::evaluation_count == 1);
-    REQUIRE(active_optional_observer_definition::observation_count == 2);
-    CHECK_FALSE(active_optional_observer_definition::observed[1]);
+    CHECK(actual.equals({1, literal::INVALID, 2}));
 }
 
-struct dynamic_optional_observer_definition {
-    bg::In<bg::TS<float>, bg::optional, bg::dynamic_activity> input;
-    bg::In<bg::TS<float>> control;
+namespace {
+
+struct dynamic_optional_observer {
+    In<TS<float>, optional, dynamic_activity> input;
+    In<TS<float>> control;
+    Out<TS<bool>> output;
 
     void evaluate() const {
         if (*control == 0.0F) {
@@ -557,83 +274,53 @@ struct dynamic_optional_observer_definition {
         } else {
             input.make_active();
         }
-        observed[observation_count++] = input.valid();
+
+        observed_validity.push_back(input.valid());
+        output.set(input.valid());
     }
 
-    inline static std::array<bool, 5> observed{};
-    inline static std::size_t observation_count{};
+    inline static std::vector<bool> observed_validity;
 };
+
+} // namespace
 
 TEST_CASE("a dynamic optional input applies its current activity to validity changes",
           "[feature:input-activity][feature:validity][series:value][definition:aggregate]"
           "[activity:active][activity:passive][validity:optional]"
           "[transition:invalidation][transition:revalidation]") {
-    const auto source = bg::node<controlled_source_definition>();
-    const auto observer = bg::node<dynamic_optional_observer_definition>();
-    controlled_source_definition::values = {1.0F, 1.0F};
-    controlled_source_definition::valid = {true, true};
-    dynamic_optional_observer_definition::observation_count = 0;
+    dynamic_optional_observer::observed_validity.clear();
+    const auto observe = node<dynamic_optional_observer>();
 
-    bg::GraphWiring wiring;
-    {
-        bg::WiringContext context{wiring};
-        const auto input = source(0);
-        const auto control = source(1);
-        observer(input, control);
-    }
+    const auto actual = testing::test_graph(
+        observe, {1.0F, literal::INVALID, 1.0F, literal::INVALID, literal::SKIP, 1.0F},
+        {1.0F, literal::SKIP, 0.0F, literal::SKIP, 1.0F, literal::SKIP});
 
-    wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, runtime_global_state};
-    runtime.start(time(1));
-    runtime.schedule(0);
-    runtime.schedule(1);
-    runtime.evaluate(time(1));
-
-    controlled_source_definition::valid[0] = false;
-    runtime.schedule(0);
-    runtime.evaluate(time(2));
-
-    controlled_source_definition::valid[0] = true;
-    controlled_source_definition::values[1] = 0.0F;
-    runtime.schedule(0);
-    runtime.schedule(1);
-    runtime.evaluate(time(3));
-
-    controlled_source_definition::valid[0] = false;
-    runtime.schedule(0);
-    runtime.evaluate(time(4));
-    REQUIRE(dynamic_optional_observer_definition::observation_count == 3);
-
-    controlled_source_definition::values[1] = 1.0F;
-    runtime.schedule(1);
-    runtime.evaluate(time(5));
-
-    controlled_source_definition::valid[0] = true;
-    runtime.schedule(0);
-    runtime.evaluate(time(6));
-
-    REQUIRE(dynamic_optional_observer_definition::observation_count == 5);
-    CHECK(dynamic_optional_observer_definition::observed == std::array{true, false, true, false, true});
+    CHECK(actual.equals({true, false, true, literal::SKIP, false, true}));
+    CHECK(dynamic_optional_observer::observed_validity == std::vector<bool>{true, false, true, false, true});
 }
 
 TEST_CASE("a dynamic input connected to a collection item controls its scheduling",
           "[feature:input-activity][feature:collection-change][series:fixed-tsl][definition:function]"
           "[activity:active][shape:chain]") {
-    const auto gate =
-        bg::node([](bg::In<bg::TS<bg::i64>, bg::dynamic_activity> input, bg::Out<bg::TS<bg::i64>> output) {
-            output.set(*input);
-            input.make_passive();
-        });
-    const auto graph = [&](bg::wp<bg::TSL<bg::TS<bg::i64>, 1>> input) { return gate(input[0]); };
+    const auto gate = node([](In<TS<i64>, dynamic_activity> input) {
+        const auto value = *input;
+        input.make_passive();
+        return value;
+    });
 
-    CHECK(bg::testing::test_graph(graph, {{{0, 1}}, {{0, 2}}})
-              .equals<bg::i64>({1, std::nullopt}));
+    const auto graph = [&](wp<TSL<TS<i64>, 1>> input) { return gate(input[0]); };
+
+    CHECK(testing::test_graph(graph, {{{0, 1}}, {{0, 2}}}).equals<i64>({1, std::nullopt}));
+}
+
+namespace {
+
+[[nodiscard]] EvaluationTime time(i64 microseconds) {
+    return MIN_DT + std::chrono::microseconds{microseconds};
 }
 
 struct runtime_local_activity_definition {
-    bg::In<bg::TS<float>, bg::dynamic_activity> input;
+    In<TS<float>, dynamic_activity> input;
 
     void evaluate() const {
         ++evaluation_count;
@@ -648,28 +335,29 @@ struct runtime_local_activity_definition {
     inline static int evaluation_count{};
 };
 
+} // namespace
+
 TEST_CASE("runtime graphs created from one compiled graph have independent input activity",
           "[feature:input-activity][feature:graph-compilation][series:value][definition:aggregate]"
           "[activity:active][shape:multiple]") {
-    const auto source = bg::node<controlled_source_definition>();
-    const auto controlled = bg::node<runtime_local_activity_definition>();
-    controlled_source_definition::values[0] = 1.0F;
-    controlled_source_definition::valid[0] = true;
+    const auto source = node([] { return 1.0F; });
+
+    const auto controlled = node<runtime_local_activity_definition>();
     runtime_local_activity_definition::activate = false;
     runtime_local_activity_definition::evaluation_count = 0;
 
-    bg::GraphWiring wiring;
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
-        controlled(source(0));
+        WiringContext context{wiring};
+        controlled(source());
     }
 
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto first_global_state = bg::GlobalState{};
-    bg::RuntimeGraph first{compiled, first_global_state};
-    auto second_global_state = bg::GlobalState{};
-    bg::RuntimeGraph second{compiled, second_global_state};
+    const CompiledGraph compiled{wiring};
+    auto first_global_state = GlobalState{};
+    RuntimeGraph first{compiled, first_global_state};
+    auto second_global_state = GlobalState{};
+    RuntimeGraph second{compiled, second_global_state};
     first.start(time(1));
     second.start(time(1));
 
@@ -687,8 +375,7 @@ TEST_CASE("runtime graphs created from one compiled graph have independent input
     first.schedule(0);
     second.schedule(0);
     first.evaluate(time(3));
+    CHECK(runtime_local_activity_definition::evaluation_count == 4);
     second.evaluate(time(2));
     CHECK(runtime_local_activity_definition::evaluation_count == 4);
 }
-
-} // namespace
