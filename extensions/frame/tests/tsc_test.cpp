@@ -260,6 +260,17 @@ struct computed_observation {
     std::vector<bg::frame::row_id_t> removed;
 };
 
+struct literal_observation {
+    bool valid{};
+    bool became_valid{};
+    bool became_invalid{};
+    bool modified{};
+    std::vector<bg::frame::row_id_t> rows;
+    std::vector<std::optional<bg::i64>> cells;
+    std::vector<bg::frame::row_id_t> changed;
+    std::vector<bg::frame::row_id_t> removed;
+};
+
 void require_snapshot(const std::optional<bg::ScalarValue<bg::frame::Column<bg::i64>>> &snapshot,
                       std::initializer_list<std::optional<bg::i64>> expected, const char *message) {
     require(snapshot.has_value(), message);
@@ -358,6 +369,158 @@ void test_cold_generic_tsc_column_output() {
                 result[0]->view().value().cell<bg::i64>(0) == 14 &&
                 result[1]->view().value().cell<bg::i64>(0) == -7,
             "cold generic TSC input did not publish its value as a typed column series");
+}
+
+void test_tsc_literal_inputs() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto observations = std::vector<literal_observation>{};
+    const auto observe = node([&](In<TSC<i64>, optional> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto result = literal_observation{.valid = input.valid(),
+                                         .became_valid = input.became_valid(),
+                                         .became_invalid = input.became_invalid(),
+                                         .modified = input.modified()};
+        input.for_each_row([&](row_id_t id, std::size_t) {
+            result.rows.push_back(id);
+            result.cells.push_back(input.cell(id));
+        });
+        input.for_each_changed([&](row_id_t id) { result.changed.push_back(id); });
+        input.for_each_removed([&](row_id_t id) { result.removed.push_back(id); });
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TSC<i64>> input, wp<TS<i64>> tick) { return observe(input, tick); };
+    const auto ticks = std::array<i64, 8>{0, 1, 2, 3, 4, 5, 6, 7};
+    const auto result = testing::test_graph(
+        graph,
+        testing::input<TSC<i64>>({literal::TimeSeriesLiteral{}, {i64{10}, NULL_VALUE, i64{20}},
+                                  literal::TimeSeriesLiteral{}, literal::SKIP, {i64{30}}, literal::INVALID,
+                                  literal::TimeSeriesLiteral{}, {i64{40}}}),
+        testing::input<TS<i64>>({0, 1, 2, 3, 4, 5, 6, 7}));
+
+    require(result.equals({0, 1, 2, 3, 4, 5, 6, 7}) && observations.size() == ticks.size(),
+            "inferred TSC literal input missed an observation cycle");
+    require(observations[0].valid && observations[0].became_valid && observations[0].rows.empty(),
+            "empty TSC literal did not establish a valid empty column");
+    require(observations[1].valid && observations[1].rows == std::vector<row_id_t>{0, 1, 2} &&
+                observations[1].cells == std::vector<std::optional<i64>>{10, std::nullopt, 20} &&
+                observations[1].changed == observations[1].rows,
+            "TSC literal did not append typed and null cells");
+    require(observations[2].valid && !observations[2].modified && observations[2].rows == observations[1].rows,
+            "empty TSC literal changed an already valid column");
+    require(observations[3].valid && !observations[3].modified && observations[3].rows == observations[1].rows,
+            "SKIP changed the TSC literal output");
+    require(observations[4].rows == std::vector<row_id_t>{0, 1, 2, 3} &&
+                observations[4].cells.back() == 30 && observations[4].changed == std::vector<row_id_t>{3},
+            "TSC literal did not append after a no-op cycle");
+    require(!observations[5].valid && observations[5].became_invalid && observations[5].rows.empty(),
+            "INVALID did not invalidate the TSC literal output");
+    require(observations[6].valid && observations[6].became_valid && observations[6].rows.empty(),
+            "empty TSC literal did not revalidate the output");
+    require(observations[7].valid && observations[7].cells == std::vector<std::optional<i64>>{40} &&
+                observations[7].rows == std::vector<row_id_t>{0},
+            "TSC literal did not append after revalidation");
+
+    auto explicit_values = std::vector<std::vector<std::optional<double>>>{};
+    const auto observe_double = node([&](In<TSC<double>, optional> input, In<TS<i64>> tick,
+                                         Out<TS<i64>> output) {
+        auto values = std::vector<std::optional<double>>{};
+        if (input.valid())
+            input.for_each_row([&](row_id_t id, std::size_t) { values.push_back(input.cell(id)); });
+        explicit_values.push_back(std::move(values));
+        output.set(*tick);
+    });
+    const auto double_graph = [&](wp<TSC<double>> input, wp<TS<i64>> tick) { return observe_double(input, tick); };
+    const auto &double_runtime = column_time_series_runtime_type<double>(TSC<double>::type());
+    const auto explicit_result = testing::test_graph(
+        double_graph, testing::input(double_runtime, {{1.25, NULL_VALUE}, {2.5}}),
+        testing::input<TS<i64>>({0, 1}));
+    require(explicit_result.equals({0, 1}) &&
+                explicit_values == std::vector<std::vector<std::optional<double>>>{{1.25, std::nullopt},
+                                                                                   {1.25, std::nullopt, 2.5}},
+            "explicit TSC runtime did not apply double and null literals");
+}
+
+void test_tsc_literal_output_apply() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto typed_write = node([](In<TS<i64>> tick, Out<TSC<i64>> output) {
+        if (*tick == 0)
+            output.apply({i64{10}, NULL_VALUE});
+        else
+            output.apply({i64{20}});
+    });
+    const auto typed_snapshot = node([](In<TSC<i64>> input, Out<TS<Column<i64>>> output) {
+        output.set_value(input.value_view());
+    });
+    const auto typed_graph = [&](wp<TS<i64>> tick) { return typed_snapshot(typed_write(tick)); };
+    const auto typed_result = testing::test_graph(typed_graph, std::array<i64, 2>{0, 1});
+    require(typed_result.size() == 2 && typed_result[0] && typed_result[1] &&
+                typed_result[0]->view().value().cell(0) == 10 &&
+                !typed_result[0]->view().value().cell(1) &&
+                typed_result[1]->view().value().cell(2) == 20,
+            "typed TSC output apply did not append literal cells");
+
+    auto integer_values = std::vector<std::optional<i64>>{};
+    auto double_values = std::vector<std::optional<double>>{};
+    const auto generic_write = node([](In<TS<SCALAR>> input, Out<TSC<SCALAR>> output) {
+        input.value_view().visit(
+            [&](const auto *value) {
+                using Cell = typename std::remove_pointer_t<decltype(value)>::scalar_type;
+                if constexpr (cell_type<Cell>)
+                    output.apply({Cell{value->value()}, NULL_VALUE});
+            },
+            ddv::noop);
+    });
+    const auto generic_snapshot = node([&](In<TSC<SCALAR>> input, Out<TS<i64>> output) {
+        if (std::addressof(input.column_view().cell_type()) == std::addressof(cpp_scalar_type<i64>())) {
+            const auto typed = input.input<i64>();
+            typed.for_each_row([&](row_id_t id, std::size_t) { integer_values.push_back(typed.cell(id)); });
+        } else {
+            const auto typed = input.input<double>();
+            typed.for_each_row([&](row_id_t id, std::size_t) { double_values.push_back(typed.cell(id)); });
+        }
+        output.set(static_cast<i64>(input.size()));
+    });
+    const auto generic_integer_graph = [&](wp<TS<i64>> input) { return generic_snapshot(generic_write(input)); };
+    const auto generic_double_graph = [&](wp<TS<double>> input) { return generic_snapshot(generic_write(input)); };
+    const auto integer_result = testing::test_graph(generic_integer_graph, std::array<i64, 1>{7});
+    const auto double_result = testing::test_graph(generic_double_graph, std::array<double, 1>{2.5});
+    require(integer_result.equals({2}) && double_result.equals({2}) &&
+                integer_values == std::vector<std::optional<i64>>{7, std::nullopt} &&
+                double_values == std::vector<std::optional<double>>{2.5, std::nullopt},
+            "generic TSC output apply did not dispatch for resolved cell types");
+}
+
+void test_tsc_literal_rejections() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto observe = node([](In<TSC<i64>, optional> input, Out<TS<i64>> output) {
+        output.set(static_cast<i64>(input.size()));
+    });
+    const auto graph = [&](wp<TSC<i64>> input) { return observe(input); };
+    const auto rejects = [&](const TimeSeriesRuntimeType &runtime,
+                             std::initializer_list<literal::TimeSeriesLiteral> ticks) {
+        try {
+            static_cast<void>(testing::test_graph(graph, testing::input(runtime, ticks)));
+        } catch (const std::invalid_argument &) {
+            return true;
+        }
+        return false;
+    };
+
+    const auto &native_runtime = column_time_series_runtime_type<i64>(TSC<i64>::type());
+    require(rejects(native_runtime, {literal::TimeSeriesLiteral(i64{1})}),
+            "TSC literal accepted a scalar instead of a cell sequence");
+    require(rejects(native_runtime, {{1.5}}), "TSC literal accepted a cell with the wrong type");
+
+    const auto &view_runtime = column_view_time_series_runtime_type(TSC<i64>::type());
+    require(rejects(view_runtime, {{i64{1}}}), "TSC literal dispatch accepted a view runtime");
+    const auto &computed_runtime = column_computed_time_series_runtime_type<i64>(TSC<i64>::type());
+    require(rejects(computed_runtime, {{i64{1}}}), "TSC literal dispatch accepted a computed runtime");
 }
 
 void test_computed_tsc_output() {
@@ -1068,6 +1231,9 @@ void test_tsc_view_rebinding() {
 int main() {
     try {
         test_cold_generic_tsc_column_output();
+        test_tsc_literal_inputs();
+        test_tsc_literal_output_apply();
+        test_tsc_literal_rejections();
         test_computed_tsc_output();
         test_computed_tsc_domain_rebinding();
         test_computed_tsc_publishes_empty_domain_rebinding();

@@ -175,6 +175,39 @@ void construct_frame_literal(const literal::ScalarLiteral &literal, const Scalar
         });
 }
 
+template <cell_type T>
+void apply_native_column_series_literal(const literal::TimeSeriesLiteral &literal, OutputState &output) {
+    auto typed_output = Out<TSC<T>>{TimeSeriesOutputBinding{output}};
+    if (const auto *sentinel = literal::Sentinel::from(literal)) {
+        if (*sentinel == literal::SKIP)
+            return;
+        if (*sentinel == literal::INVALID) {
+            typed_output.invalidate();
+            return;
+        }
+        throw std::invalid_argument{"TSC literal does not accept this sentinel"};
+    }
+
+    const auto values = bg::details::scalar_literal::sequence(literal);
+    if (values.empty()) {
+        if (!typed_output.valid())
+            typed_output.clear();
+        return;
+    }
+
+    for (const auto &value : values)
+        typed_output.add(details::read_literal_cell<T>(value));
+}
+
+void apply_native_column_series_literal(const literal::TimeSeriesLiteral &literal, OutputState &output) {
+    const auto &type = static_cast<const ColumnSeriesType &>(output.runtime_type().type());
+    if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
+        return apply_native_column_series_literal<i64>(literal, output);
+    if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<double>()))
+        return apply_native_column_series_literal<double>(literal, output);
+    throw std::invalid_argument{"TSC literal supports only i64 and double cell types"};
+}
+
 void apply_native_frame_series_literal(const literal::TimeSeriesLiteral &literal, OutputState &output) {
     if (const auto *sentinel = literal::Sentinel::from(literal)) {
         if (*sentinel == literal::SKIP)
@@ -272,10 +305,10 @@ void register_literal_runtime(const ScalarRuntimeType &runtime, ScalarLiteralOpe
     static_cast<void>(ScalarDispatch<ScalarLiteralOperations>::instance().add(runtime, operations));
 }
 
-void apply_frame_series_literal(const literal::TimeSeriesLiteral &literal, OutputState &output) {
+void apply_series_literal(const literal::TimeSeriesLiteral &literal, OutputState &output) {
     const auto *operations = TimeSeriesDispatch<TimeSeriesLiteralOperations>::instance().find_exact(output.runtime_type());
     if (operations == nullptr)
-        throw std::invalid_argument{"this TSF runtime does not support literal updates"};
+        throw std::invalid_argument{"output runtime does not support literal updates"};
     operations->apply(literal, output);
 }
 
@@ -283,6 +316,12 @@ void register_frame_series_literal_runtime(const TimeSeriesRuntimeType &runtime)
     const auto lock = std::lock_guard{literal_registration_mutex()};
     static_cast<void>(TimeSeriesDispatch<TimeSeriesLiteralOperations>::instance().add(
         runtime, TimeSeriesLiteralOperations{&apply_native_frame_series_literal}));
+}
+
+void register_column_series_literal_runtime(const TimeSeriesRuntimeType &runtime) {
+    const auto lock = std::lock_guard{literal_registration_mutex()};
+    static_cast<void>(TimeSeriesDispatch<TimeSeriesLiteralOperations>::instance().add(
+        runtime, TimeSeriesLiteralOperations{&apply_native_column_series_literal}));
 }
 
 } // namespace details

@@ -182,11 +182,15 @@ void register_column_series_default_runtime(const bg::TimeSeriesType &type) {
         return;
     const auto *cell_type = std::addressof(column_type->cell_type());
     if (cell_type == std::addressof(bg::cpp_scalar_type<bg::i64>())) {
-        bg::register_time_series_runtime_type(ordinary_column_series_runtime_type<bg::i64>(type));
+        const auto &runtime = ordinary_column_series_runtime_type<bg::i64>(type);
+        bg::register_time_series_runtime_type(runtime);
+        bg::frame::details::register_column_series_literal_runtime(runtime);
         return;
     }
     if (cell_type == std::addressof(bg::cpp_scalar_type<double>())) {
-        bg::register_time_series_runtime_type(ordinary_column_series_runtime_type<double>(type));
+        const auto &runtime = ordinary_column_series_runtime_type<double>(type);
+        bg::register_time_series_runtime_type(runtime);
+        bg::frame::details::register_column_series_literal_runtime(runtime);
         return;
     }
     throw std::invalid_argument{"frame TSC supports only i64 and double cell types"};

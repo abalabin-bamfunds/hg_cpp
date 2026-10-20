@@ -17,8 +17,9 @@ BG_FRAME_EXPORT void register_column_literal_type(const ScalarType &type);
 BG_FRAME_EXPORT void register_frame_literal_type(const ScalarType &type);
 BG_FRAME_EXPORT void register_literal_runtime(const ScalarRuntimeType &runtime,
                                               ScalarLiteralOperations operations);
-BG_FRAME_EXPORT void apply_frame_series_literal(const literal::TimeSeriesLiteral &literal, OutputState &output);
+BG_FRAME_EXPORT void apply_series_literal(const literal::TimeSeriesLiteral &literal, OutputState &output);
 BG_FRAME_EXPORT void register_frame_series_literal_runtime(const TimeSeriesRuntimeType &runtime);
+BG_FRAME_EXPORT void register_column_series_literal_runtime(const TimeSeriesRuntimeType &runtime);
 BG_FRAME_EXPORT void register_frame_series_tick_comparison(const TimeSeriesType &type);
 BG_FRAME_EXPORT void register_frame_series_tick_writer(const TimeSeriesRuntimeType &runtime);
 } // namespace details

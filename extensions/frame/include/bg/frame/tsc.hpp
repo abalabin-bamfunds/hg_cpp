@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/frame/column.hpp>
+#include <bg/frame/literal.hpp>
 
 #include <bg/scalar/declaration.hpp>
 #include <bg/node/input_fwd.hpp>
@@ -277,6 +278,9 @@ template <frame::cell_type T, auto... Properties>
 class Out<frame::TSC<T, Properties...>> {
   public:
     explicit Out(TimeSeriesOutputBinding binding) noexcept : binding_{std::move(binding)} {}
+    void apply(const literal::TimeSeriesLiteral &literal) const {
+        frame::details::apply_series_literal(literal, binding_.get());
+    }
     frame::row_id_t add(std::optional<T> value) const {
         const auto id = storage().add(value, binding_->context().evaluation_time(), binding_->allocator());
         binding_->publish();
@@ -315,6 +319,10 @@ template <details::scalar_variable T, auto... Properties>
 class Out<frame::TSC<T, Properties...>> {
   public:
     explicit Out(TimeSeriesOutputBinding binding) noexcept : binding_{std::move(binding)} {}
+
+    void apply(const literal::TimeSeriesLiteral &literal) const {
+        frame::details::apply_series_literal(literal, binding_.get());
+    }
 
     template <frame::cell_type Cell> frame::row_id_t add(std::optional<Cell> value) const {
         const auto id = storage<Cell>().add(value, binding_->context().evaluation_time(), binding_->allocator());
