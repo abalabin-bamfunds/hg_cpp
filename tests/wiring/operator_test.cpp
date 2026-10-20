@@ -532,7 +532,8 @@ TEST_CASE("opt selects optional inputs and keeps that choice distinct in the cac
 }
 
 TEST_CASE("valid_items selects capable overloads and prefers ordinary inputs otherwise",
-          "[feature:operator][feature:wiring][feature:input-guarantee][series:tsd]") {
+          "[feature:operator][feature:wiring][feature:validity][series:tsd]"
+          "[input-guarantee:valid-items]") {
     auto selected = std::string{};
     using TSD = bg::TSD<bg::i64, bg::TS<bg::i64>>;
     auto operation = bg::operator_<auto(TSD) -> bg::TS<bg::i64>>{"valid_items", {"value"}};

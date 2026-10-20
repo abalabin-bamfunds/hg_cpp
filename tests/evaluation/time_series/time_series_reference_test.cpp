@@ -870,7 +870,7 @@ TEST_CASE("reference invalidation unbinds and revalidation resamples consumers",
 }
 
 TEST_CASE("a sampled TSS output includes a same-cycle change to the previous target",
-          "[evaluation][reference][series:tss][feature:sampling][transition:retarget][transition:update]") {
+          "[evaluation][reference][series:tss][feature:sampling][transition:update]") {
     const auto select = bg::node([](bg::In<bg::TS<bool>> condition,
                                     bg::In<bg::REF<bg::TSS<bg::i64>>, bg::passive> old_target,
                                     bg::In<bg::REF<bg::TSS<bg::i64>>, bg::passive> new_target,

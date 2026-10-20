@@ -388,7 +388,7 @@ TEST_CASE("TSS set operations do not publish when a valid reference selects equa
 }
 
 TEST_CASE("TSS set operations include the old target's same-cycle change when a reference is retargeted",
-          "[feature:operator][series:tss][series:reference][transition:update][transition:retarget]") {
+          "[feature:operator][series:tss][series:reference][transition:update]") {
     const auto graph = [](wp<TS<bool>> condition, wp<TSS<i64>> lhs, wp<TSS<i64>> old_target,
                           wp<TSS<i64>> new_target) {
         return lhs | operators::if_then_else(condition, old_target, new_target);
@@ -400,7 +400,7 @@ TEST_CASE("TSS set operations include the old target's same-cycle change when a 
 }
 
 TEST_CASE("TSS set operations do not replay a stale old-target delta when a reference is retargeted",
-          "[feature:operator][series:tss][series:reference][transition:retarget]") {
+          "[feature:operator][series:tss][series:reference][transition:update]") {
     const auto graph = [](wp<TS<bool>> condition, wp<TSS<i64>> lhs, wp<TSS<i64>> old_target,
                           wp<TSS<i64>> new_target) {
         return lhs | operators::if_then_else(condition, old_target, new_target);
@@ -412,7 +412,7 @@ TEST_CASE("TSS set operations do not replay a stale old-target delta when a refe
 }
 
 TEST_CASE("TSS equality sees same-cycle removals from a sampled previous target",
-          "[feature:operator][series:tss][series:reference][transition:update][transition:retarget]") {
+          "[feature:operator][series:tss][series:reference][transition:update]") {
     const auto graph = [](wp<TS<bool>> condition, wp<TSS<i64>> old_target, wp<TSS<i64>> new_target) {
         return operators::if_then_else(condition, old_target, new_target) == new_target;
     };
