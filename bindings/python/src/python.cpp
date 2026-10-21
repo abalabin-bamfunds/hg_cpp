@@ -512,6 +512,10 @@ make_node_signature(std::string_view name, const std::vector<PythonParameter> &p
                     const std::optional<std::vector<std::size_t>> &valid_parameters,
                     const std::vector<std::size_t> &all_valid_parameters) {
     const auto base = make_signature(name, parameters, output);
+    if (!active_parameters && !valid_parameters && all_valid_parameters.empty()) {
+        return base;
+    }
+
     auto resolved_parameters = std::vector<Parameter>{};
     resolved_parameters.reserve(base->signature.parameter_count());
     for (auto index = std::size_t{}; index < base->signature.parameter_count(); ++index) {

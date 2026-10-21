@@ -25,6 +25,21 @@ def test_compute_node_activity_selects_scheduling_inputs_and_samples_passive_val
     assert starts == [True]
 
 
+def test_outputless_compute_node_uses_configured_activity_and_validity():
+    calls = []
+
+    @bg.compute_node(active=("trigger",), valid=("trigger",))
+    def observe(trigger: bg.TS[int], sample: bg.TS[int]) -> None:
+        calls.append((trigger.value, sample.value if sample.valid else None))
+
+    @bg.graph
+    def graph(trigger: bg.TS[int], sample: bg.TS[int]) -> None:
+        observe(trigger, bg.opt(sample))
+
+    assert bg.test_graph(graph, [1, None, 2], [None, 10, None]) == [None, None, None]
+    assert calls == [(1, None), (2, 10)]
+
+
 def test_empty_activity_tuple_selects_no_active_inputs():
     calls = []
 
