@@ -12,9 +12,11 @@
 #include <stdexcept>
 #include <string_view>
 
+using namespace bg;
+
 namespace {
 
-void count_final_release(void *context, const bg::details::StringStorage *) noexcept {
+void count_final_release(void *context, const details::StringStorage *) noexcept {
     ++*static_cast<int *>(context);
 }
 
@@ -24,17 +26,17 @@ TEST_CASE("a stored string view retains its canonical storage",
           "[feature:scalar-storage][scalar:string][storage:variable]") {
     auto memory = std::pmr::unsynchronized_pool_resource{};
     auto allocator = bg::allocator{memory};
-    const auto &runtime_type = bg::cpp_scalar_runtime_type<bg::string>();
+    const auto &runtime_type = cpp_scalar_runtime_type<string>();
     const auto source = std::string_view{"stored string"};
     auto *stored = allocator.allocate_bytes(runtime_type.size(), runtime_type.alignment());
     runtime_type.construct_from_input(
-        stored, bg::details::ScalarData{runtime_type, &source, bg::ScalarDataMode::source_view}, allocator);
+        stored, details::ScalarData{runtime_type, &source, ScalarDataMode::source_view}, allocator);
 
-    const auto *original = *static_cast<bg::details::StringStorage **>(stored);
-    const auto view = bg::Scalar<bg::string>::from(*static_cast<bg::details::StringStorage **>(stored));
-    auto copy = bg::ScalarValue<bg::string>{view};
+    const auto *original = *static_cast<details::StringStorage **>(stored);
+    const auto view = Scalar<string>::from(*static_cast<details::StringStorage **>(stored));
+    auto copy = ScalarValue<string>{view};
 
-    CHECK(bg::details::StringStorage::from(bg::details::scalar_data(copy.view())) == original);
+    CHECK(details::StringStorage::from(details::scalar_data(copy.view())) == original);
     CHECK(copy.view().value() == source);
 
     runtime_type.destroy(stored, allocator);
@@ -45,18 +47,18 @@ TEST_CASE("a stored string view retains its canonical storage",
 TEST_CASE("a string storage hook runs after its last retained value",
           "[feature:scalar-storage][scalar:string][storage:variable]") {
     auto release_count = 0;
-    auto hook = bg::details::StringStorageFinalReleaseHook{count_final_release, &release_count};
+    auto hook = details::StringStorageFinalReleaseHook{count_final_release, &release_count};
 
     {
-        auto value = bg::ScalarValue<bg::string>{"shared string"};
-        auto *storage = bg::details::StringStorage::from(bg::details::scalar_data(value.view()));
+        auto value = ScalarValue<string>{"shared string"};
+        auto *storage = details::StringStorage::from(details::scalar_data(value.view()));
         REQUIRE(storage != nullptr);
         CHECK(storage->install_final_release_hook(&hook) == &hook);
         CHECK(storage->final_release_hook() == &hook);
 
         {
-            auto copy = bg::ScalarValue<bg::string>{value.view()};
-            CHECK(bg::details::StringStorage::from(bg::details::scalar_data(copy.view())) == storage);
+            auto copy = ScalarValue<string>{value.view()};
+            CHECK(details::StringStorage::from(details::scalar_data(copy.view())) == storage);
         }
         CHECK(release_count == 0);
     }
@@ -68,7 +70,7 @@ TEST_CASE("a string builder grows and appends a view of its own value", "[covera
     auto memory = std::pmr::unsynchronized_pool_resource{};
     auto allocator = bg::allocator{memory};
     {
-        auto builder = bg::StringBuilder{allocator, 4};
+        auto builder = StringBuilder{allocator, 4};
         builder.append("abc");
         builder.append(builder.view());
         builder.append("defghijklmnopqrstuvwxyz");
@@ -80,7 +82,7 @@ TEST_CASE("a string builder grows and appends a view of its own value", "[covera
 
 TEST_CASE("a string builder rejects values larger than 4 GiB", "[coverage-exempt]") {
     if constexpr (sizeof(std::size_t) > sizeof(std::uint32_t)) {
-        auto builder = bg::StringBuilder{};
+        auto builder = StringBuilder{};
         const auto too_large = static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()) + 1;
         CHECK_THROWS_AS(builder.reserve(too_large), std::length_error);
     }

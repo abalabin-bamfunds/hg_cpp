@@ -11,63 +11,65 @@
 #include <string_view>
 #include <utility>
 
+using namespace bg;
+
 namespace {
 
 struct value_from_scalar {
-    explicit value_from_scalar(const bg::Scalar<bg::i64> &source) : number{source.value()} {}
+    explicit value_from_scalar(const Scalar<i64> &source) : number{source.value()} {}
 
-    bg::i64 number;
+    i64 number;
 };
 
 } // namespace
 
 TEST_CASE("a scalar value maps signed integers to int64", "[value][scalar][feature:scalar-api][scalar:integer]") {
-    const auto value = bg::ScalarValue{42};
+    const auto value = ScalarValue{42};
 
-    STATIC_CHECK(std::same_as<decltype(value), const bg::ScalarValue<bg::i64>>);
+    STATIC_CHECK(std::same_as<decltype(value), const ScalarValue<i64>>);
     CHECK(value.view().value() == 42);
 }
 
 TEST_CASE("a scalar value accepts lossless unsigned integer conversion",
           "[value][scalar][feature:scalar-api][scalar:integer]") {
-    const auto value = bg::ScalarValue{42U};
+    const auto value = ScalarValue{42U};
 
-    STATIC_CHECK(std::same_as<decltype(value), const bg::ScalarValue<bg::i64>>);
+    STATIC_CHECK(std::same_as<decltype(value), const ScalarValue<i64>>);
     CHECK(value.view().value() == 42);
 }
 
 TEST_CASE("a pointer-sized scalar value uses inline storage",
           "[value][scalar][feature:scalar-api][scalar:integer][storage:inline]") {
     auto allocator = bg::allocator{*std::pmr::null_memory_resource()};
-    const auto value = bg::ScalarValue{42, allocator};
+    const auto value = ScalarValue{42, allocator};
 
-    CHECK(&value.view().runtime_type() == &bg::cpp_scalar_runtime_type<bg::i64>());
+    CHECK(&value.view().runtime_type() == &cpp_scalar_runtime_type<i64>());
     CHECK(value.view().value() == 42);
 }
 
 TEST_CASE("a pointer-sized scalar value copies a borrowed value inline",
           "[value][scalar][feature:scalar-api][scalar:integer][storage:inline]") {
-    const auto source_value = bg::i64{42};
-    const auto source = bg::Scalar<bg::i64>::from(source_value);
+    const auto source_value = i64{42};
+    const auto source = Scalar<i64>::from(source_value);
     auto allocator = bg::allocator{*std::pmr::null_memory_resource()};
-    const auto value = bg::ScalarValue<bg::i64>{source, allocator};
+    const auto value = ScalarValue<i64>{source, allocator};
 
     CHECK(value.view().value() == source_value);
 }
 
 TEST_CASE("a scalar value uses its provider's cross-declaration construction",
           "[value][scalar][feature:scalar-api][declaration:concrete]") {
-    const auto source = bg::ScalarValue{42};
-    const auto value = bg::ScalarValue<bg::Opaque<value_from_scalar>>{source.view()};
+    const auto source = ScalarValue{42};
+    const auto value = ScalarValue<Opaque<value_from_scalar>>{source.view()};
 
     CHECK(value.view()->number == 42);
 }
 
 TEST_CASE("pointer-sized scalar values compare and hash from inline storage",
           "[value][scalar][feature:scalar-api][scalar:integer][storage:inline]") {
-    const auto left = bg::ScalarValue{42};
-    const auto equal = bg::ScalarValue{42};
-    const auto different = bg::ScalarValue{43};
+    const auto left = ScalarValue{42};
+    const auto equal = ScalarValue{42};
+    const auto different = ScalarValue{43};
 
     CHECK(left == equal);
     CHECK_FALSE(left == different);
@@ -77,41 +79,41 @@ TEST_CASE("pointer-sized scalar values compare and hash from inline storage",
 
 TEST_CASE("scalar hash and equality support heterogeneous scalar handles",
           "[value][scalar][feature:scalar-api][scalar:integer]") {
-    const auto stored = bg::ScalarValue<>{42};
-    const auto equal = bg::ScalarValue{42};
-    const auto different = bg::ScalarValue{43};
+    const auto stored = ScalarValue<>{42};
+    const auto equal = ScalarValue{42};
+    const auto different = ScalarValue{43};
 
-    CHECK(bg::ScalarHash{}(stored) == bg::ScalarHash{}(equal.view()));
-    CHECK(bg::ScalarEqual{}(stored, equal.view()));
-    CHECK(bg::ScalarEqual{}(equal.view(), stored));
-    CHECK_FALSE(bg::ScalarEqual{}(stored, different.view()));
+    CHECK(ScalarHash{}(stored) == ScalarHash{}(equal.view()));
+    CHECK(ScalarEqual{}(stored, equal.view()));
+    CHECK(ScalarEqual{}(equal.view(), stored));
+    CHECK_FALSE(ScalarEqual{}(stored, different.view()));
 }
 
 TEST_CASE("an evaluation time scalar value retains its graph type",
           "[value][scalar][feature:scalar-api][scalar:evaluation-time]") {
-    const auto source = bg::MIN_DT + std::chrono::microseconds{42};
-    const auto value = bg::ScalarValue{source};
+    const auto source = MIN_DT + std::chrono::microseconds{42};
+    const auto value = ScalarValue{source};
 
-    STATIC_CHECK(std::same_as<decltype(value), const bg::ScalarValue<bg::EvaluationTime>>);
-    CHECK(&value.view().type() == &bg::evaluation_time_type());
+    STATIC_CHECK(std::same_as<decltype(value), const ScalarValue<EvaluationTime>>);
+    CHECK(&value.view().type() == &evaluation_time_type());
     CHECK(value.view().value() == source);
 }
 
 TEST_CASE("a scalar value owns character data",
           "[value][scalar][feature:scalar-api][scalar:string][storage:variable]") {
     auto source = std::string{"value"};
-    auto value = bg::ScalarValue{source};
+    auto value = ScalarValue{source};
 
-    STATIC_CHECK(std::same_as<decltype(value), bg::ScalarValue<bg::string>>);
+    STATIC_CHECK(std::same_as<decltype(value), ScalarValue<string>>);
     source.assign("changed");
 
     CHECK(value.view().value() == "value");
 }
 
 TEST_CASE("a scalar value accepts a string literal", "[value][scalar][feature:scalar-api][scalar:string]") {
-    const auto value = bg::ScalarValue{"value"};
+    const auto value = ScalarValue{"value"};
 
-    STATIC_CHECK(std::same_as<decltype(value), const bg::ScalarValue<bg::string>>);
+    STATIC_CHECK(std::same_as<decltype(value), const ScalarValue<string>>);
     CHECK(value.view().value() == "value");
 }
 
@@ -145,7 +147,7 @@ TEST_CASE("a scalar value uses the supplied memory resource", "[value][scalar][f
 
     {
         auto allocator = bg::allocator{memory};
-        auto value = bg::ScalarValue{std::string_view{"long enough to require separate character storage"}, allocator};
+        auto value = ScalarValue{std::string_view{"long enough to require separate character storage"}, allocator};
         CHECK(value.view().value() == "long enough to require separate character storage");
     }
 
@@ -155,11 +157,11 @@ TEST_CASE("a scalar value uses the supplied memory resource", "[value][scalar][f
 TEST_CASE("a scalar value uses the current node memory resource", "[value][scalar][feature:scalar-api]") {
     auto memory = counting_memory_resource{};
     const auto graph = 1;
-    auto *scalar_allocation_pool = bg::details::ScalarAllocationPool::create(bg::allocator{memory});
+    auto *scalar_allocation_pool = details::ScalarAllocationPool::create(allocator{memory});
     {
         const auto context =
-            bg::details::ScalarAllocationContext{bg::allocator{memory}, *scalar_allocation_pool, &graph, 2};
-        const auto value = bg::ScalarValue{"long enough to require separate character storage"};
+            details::ScalarAllocationContext{allocator{memory}, *scalar_allocation_pool, &graph, 2};
+        const auto value = ScalarValue{"long enough to require separate character storage"};
 
         CHECK(value.view().value() == "long enough to require separate character storage");
     }
@@ -169,7 +171,7 @@ TEST_CASE("a scalar value uses the current node memory resource", "[value][scala
 }
 
 TEST_CASE("a scalar value transfers ownership when moved", "[value][scalar][feature:scalar-api]") {
-    auto source = bg::ScalarValue{std::string_view{"value"}};
+    auto source = ScalarValue{std::string_view{"value"}};
     auto destination = std::move(source);
 
     CHECK(destination.view().value() == "value");

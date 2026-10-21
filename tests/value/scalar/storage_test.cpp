@@ -15,6 +15,8 @@
 #include <string>
 #include <string_view>
 
+using namespace bg;
+
 namespace {
 
 struct finalizable_value {
@@ -29,20 +31,20 @@ struct finalizable_value {
     int *count{};
 };
 
-class InvalidListRuntimeType final : public bg::ScalarRuntimeType {
+class InvalidListRuntimeType final : public ScalarRuntimeType {
   public:
-    explicit InvalidListRuntimeType(const bg::ScalarType &type) noexcept
-        : ScalarRuntimeType{type, sizeof(bg::i64), alignof(bg::i64), false, false, true} {}
+    explicit InvalidListRuntimeType(const ScalarType &type) noexcept
+        : ScalarRuntimeType{type, sizeof(i64), alignof(i64), false, false, true} {}
 
     void construct_initial_value(void *) const noexcept override {}
-    void copy_construct(void *, const void *, bg::allocator &) const override {}
+    void copy_construct(void *, const void *, allocator &) const override {}
     std::size_t hash(const void *) const noexcept override { return 0; }
-    void destroy(void *, bg::allocator &) const noexcept override {}
+    void destroy(void *, allocator &) const noexcept override {}
 
   private:
-    void do_construct_from_input(void *, const bg::details::ScalarData &, bg::allocator &) const override {}
-    void do_assign_from_input(void *, const bg::details::ScalarData &) const override {}
-    bool equals_same_type(const void *, const bg::details::ScalarData &) const noexcept override { return false; }
+    void do_construct_from_input(void *, const details::ScalarData &, allocator &) const override {}
+    void do_assign_from_input(void *, const details::ScalarData &) const override {}
+    bool equals_same_type(const void *, const details::ScalarData &) const noexcept override { return false; }
 };
 
 } // namespace
@@ -51,16 +53,16 @@ TEST_CASE("C++ scalar storage copies into graph-owned memory", "[scalar][feature
     std::pmr::unsynchronized_pool_resource source_memory;
     std::pmr::unsynchronized_pool_resource graph_memory;
     const std::pmr::string source{"a scalar value long enough to require allocated storage", &source_memory};
-    const bg::ScalarRuntimeType &runtime_type = bg::cpp_scalar_runtime_type<bg::string>();
+    const ScalarRuntimeType &runtime_type = cpp_scalar_runtime_type<string>();
     auto allocator = bg::allocator{graph_memory};
 
     void *storage = allocator.allocate_bytes(runtime_type.size(), runtime_type.alignment());
     const auto source_view = std::string_view{source};
     runtime_type.construct_from_input(
-        storage, bg::details::ScalarData{runtime_type, std::addressof(source_view), bg::ScalarDataMode::source_view},
+        storage, details::ScalarData{runtime_type, std::addressof(source_view), ScalarDataMode::source_view},
         allocator);
 
-    const auto copy = bg::Scalar<bg::string>::from(runtime_type, storage);
+    const auto copy = Scalar<string>::from(runtime_type, storage);
     CHECK(copy.value() == source);
 
     runtime_type.destroy(storage, allocator);
@@ -68,8 +70,8 @@ TEST_CASE("C++ scalar storage copies into graph-owned memory", "[scalar][feature
 }
 
 TEST_CASE("C++ scalar storage reports its destruction requirements", "[scalar][feature:scalar-storage]") {
-    const bg::ScalarRuntimeType &float_runtime_type = bg::cpp_scalar_runtime_type<float>();
-    const bg::ScalarRuntimeType &string_runtime_type = bg::cpp_scalar_runtime_type<bg::string>();
+    const ScalarRuntimeType &float_runtime_type = cpp_scalar_runtime_type<float>();
+    const ScalarRuntimeType &string_runtime_type = cpp_scalar_runtime_type<string>();
 
     CHECK_FALSE(float_runtime_type.uses_variable_memory());
     CHECK_FALSE(float_runtime_type.requires_finalization());
@@ -83,9 +85,9 @@ TEST_CASE("C++ scalar storage reports its destruction requirements", "[scalar][f
 
 TEST_CASE("scalar storage distinguishes variable memory from finalization",
           "[scalar][storage][feature:scalar-storage]") {
-    const auto &opaque = bg::cpp_scalar_runtime_type<bg::Opaque<finalizable_value>>();
-    const auto &strings = bg::cpp_scalar_runtime_type<bg::List<bg::string>>();
-    const auto &opaque_values = bg::cpp_scalar_runtime_type<bg::List<bg::Opaque<finalizable_value>>>();
+    const auto &opaque = cpp_scalar_runtime_type<Opaque<finalizable_value>>();
+    const auto &strings = cpp_scalar_runtime_type<List<string>>();
+    const auto &opaque_values = cpp_scalar_runtime_type<List<Opaque<finalizable_value>>>();
 
     CHECK_FALSE(opaque.uses_variable_memory());
     CHECK(opaque.requires_finalization());
@@ -106,7 +108,7 @@ TEST_CASE("scalar storage distinguishes variable memory from finalization",
 
 TEST_CASE("an opaque scalar runtime constructs a default value through its read type",
           "[feature:scalar-storage][scalar:opaque][storage:fixed]") {
-    const auto &runtime_type = bg::cpp_scalar_runtime_type<bg::Opaque<finalizable_value>>();
+    const auto &runtime_type = cpp_scalar_runtime_type<Opaque<finalizable_value>>();
     auto memory = std::pmr::unsynchronized_pool_resource{};
     auto allocator = bg::allocator{memory};
     alignas(finalizable_value) std::byte storage[sizeof(finalizable_value)];
@@ -121,7 +123,7 @@ TEST_CASE("an opaque scalar runtime constructs a default value through its read 
 }
 
 TEST_CASE("C++ scalar storage constructs an initial runtime value", "[scalar][feature:scalar-storage]") {
-    const bg::ScalarRuntimeType &runtime_type = bg::cpp_scalar_runtime_type<double>();
+    const ScalarRuntimeType &runtime_type = cpp_scalar_runtime_type<double>();
     alignas(double) std::byte storage[sizeof(double)];
 
     runtime_type.construct_initial_value(storage);
@@ -131,30 +133,30 @@ TEST_CASE("C++ scalar storage constructs an initial runtime value", "[scalar][fe
 
 TEST_CASE("evaluation time storage supports byte-copy initialization",
           "[scalar][feature:scalar-storage][scalar:evaluation-time]") {
-    const auto &runtime_type = bg::cpp_scalar_runtime_type<bg::EvaluationTime>();
-    alignas(bg::EvaluationTime) std::byte storage[sizeof(bg::EvaluationTime)];
+    const auto &runtime_type = cpp_scalar_runtime_type<EvaluationTime>();
+    alignas(EvaluationTime) std::byte storage[sizeof(EvaluationTime)];
 
     REQUIRE(runtime_type.supports_byte_copy_initialization());
     runtime_type.construct_initial_value(storage);
 
-    CHECK(*reinterpret_cast<const bg::EvaluationTime *>(storage) == bg::MIN_DT);
+    CHECK(*reinterpret_cast<const EvaluationTime *>(storage) == MIN_DT);
 }
 
 TEST_CASE("resolved collection storage prefers a registered concrete runtime_type",
           "[scalar][storage][collection][feature:scalar-storage]") {
-    const auto &concrete = bg::cpp_scalar_runtime_type<bg::Dict<bg::i64, bg::string>>();
+    const auto &concrete = cpp_scalar_runtime_type<Dict<i64, string>>();
 
-    const auto &resolved = bg::resolve_scalar_runtime_type(concrete.type(), {});
+    const auto &resolved = resolve_scalar_runtime_type(concrete.type(), {});
 
     CHECK(&resolved == &concrete);
 }
 
 TEST_CASE("scalar runtime type boundaries reject an incompatible collection interface",
           "[scalar][storage][collection][feature:scalar-storage][declaration:runtime]") {
-    const auto &type = bg::cpp_scalar_type<bg::List<bg::i64>>();
+    const auto &type = cpp_scalar_type<List<i64>>();
     const auto invalid = InvalidListRuntimeType{type};
-    const auto available = std::array<const bg::ScalarRuntimeType *, 1>{&invalid};
+    const auto available = std::array<const ScalarRuntimeType *, 1>{&invalid};
 
-    CHECK_THROWS_AS(bg::register_scalar_runtime_type(invalid), std::invalid_argument);
-    CHECK_THROWS_AS(bg::resolve_scalar_runtime_type(type, available), std::invalid_argument);
+    CHECK_THROWS_AS(register_scalar_runtime_type(invalid), std::invalid_argument);
+    CHECK_THROWS_AS(resolve_scalar_runtime_type(type, available), std::invalid_argument);
 }

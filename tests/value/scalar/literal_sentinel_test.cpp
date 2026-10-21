@@ -10,6 +10,8 @@
 
 #include "../../type/test_shared_literal_sentinel.hpp"
 
+using namespace bg;
+
 static_assert(!std::is_copy_constructible_v<literal::Sentinel>);
 static_assert(!std::is_copy_assignable_v<literal::Sentinel>);
 static_assert(!std::is_move_constructible_v<literal::Sentinel>);
@@ -22,29 +24,29 @@ TEST_CASE("literal sentinels have shared scalar identity", "[feature:scalar-api]
     CHECK(&literal::INVALID == test_shared_literal_sentinel::invalid());
     CHECK(&literal::REMOVE == test_shared_literal_sentinel::remove());
     CHECK(&literal::REMOVED == test_shared_literal_sentinel::removed());
-    CHECK(test_shared_literal_sentinel::extension()->name == bg::symbol{"test.literal.extension"});
+    CHECK(test_shared_literal_sentinel::extension()->name == symbol{"test.literal.extension"});
     const auto tagged = literal::TaggedLiteral::from(
         literal::ScalarLiteral(*test_shared_literal_sentinel::extension_call()));
     REQUIRE(tagged);
     CHECK(tagged->sentinel == *test_shared_literal_sentinel::extension());
     CHECK(&tagged->argument == test_shared_literal_sentinel::extension_argument());
-    const auto argument_value = bg::ScalarValue<bg::i64>::from_literal(tagged->argument);
+    const auto argument_value = ScalarValue<i64>::from_literal(tagged->argument);
     CHECK(argument_value.view().value() == 71);
-    CHECK(&bg::cpp_scalar_type<literal::Sentinel>() == test_shared_literal_sentinel::semantic_type());
-    CHECK(&bg::cpp_scalar_runtime_type<literal::Sentinel>() == test_shared_literal_sentinel::runtime_type());
-    CHECK(&bg::cpp_scalar_type<literal::TaggedLiteral>() == test_shared_literal_sentinel::tagged_semantic_type());
-    CHECK(&bg::cpp_scalar_runtime_type<literal::TaggedLiteral>() == test_shared_literal_sentinel::tagged_runtime_type());
+    CHECK(&cpp_scalar_type<literal::Sentinel>() == test_shared_literal_sentinel::semantic_type());
+    CHECK(&cpp_scalar_runtime_type<literal::Sentinel>() == test_shared_literal_sentinel::runtime_type());
+    CHECK(&cpp_scalar_type<literal::TaggedLiteral>() == test_shared_literal_sentinel::tagged_semantic_type());
+    CHECK(&cpp_scalar_runtime_type<literal::TaggedLiteral>() == test_shared_literal_sentinel::tagged_runtime_type());
 }
 
 TEST_CASE("literal sentinel storage keeps the singleton address through copies and erasure",
           "[feature:scalar-api][scalar:opaque]") {
-    const auto owned = bg::ScalarValue<literal::Sentinel>{literal::INVALID};
+    const auto owned = ScalarValue<literal::Sentinel>{literal::INVALID};
     const auto scalar = owned.view();
-    const auto erased_scalar = bg::Scalar<>::from(scalar);
-    const auto erased_data = bg::details::scalar_data(erased_scalar);
-    const auto copied = bg::ScalarValue<literal::Sentinel>{bg::Scalar<literal::Sentinel>::from(erased_scalar)};
+    const auto erased_scalar = Scalar<>::from(scalar);
+    const auto erased_data = details::scalar_data(erased_scalar);
+    const auto copied = ScalarValue<literal::Sentinel>{Scalar<literal::Sentinel>::from(erased_scalar)};
     const auto copied_scalar = copied.view();
-    const auto wrapped = bg::ScalarValue<literal::Sentinel>{literal::REMOVED};
+    const auto wrapped = ScalarValue<literal::Sentinel>{literal::REMOVED};
 
     CHECK(&scalar.value() == &literal::INVALID);
     CHECK(&copied_scalar.value() == &literal::INVALID);
@@ -57,16 +59,16 @@ TEST_CASE("literal sentinel storage keeps the singleton address through copies a
     CHECK(literal::Sentinel::from(literal::ScalarLiteral(erased_scalar)) == &literal::INVALID);
     CHECK(literal::Sentinel::from(literal::ScalarLiteral(wrapped)) == &literal::REMOVED);
 
-    static const literal::Sentinel same_name_a{bg::symbol{"test.same-name"}};
-    static const literal::Sentinel same_name_b{bg::symbol{"test.same-name"}};
+    static const literal::Sentinel same_name_a{symbol{"test.same-name"}};
+    static const literal::Sentinel same_name_b{symbol{"test.same-name"}};
     CHECK(same_name_a.name == same_name_b.name);
     CHECK(same_name_a != same_name_b);
     CHECK(literal::Sentinel::from(literal::ScalarLiteral(same_name_a)) == &same_name_a);
-    const auto same_name_value_a = bg::ScalarValue<literal::Sentinel>{same_name_a};
-    const auto same_name_value_b = bg::ScalarValue<literal::Sentinel>{same_name_b};
+    const auto same_name_value_a = ScalarValue<literal::Sentinel>{same_name_a};
+    const auto same_name_value_b = ScalarValue<literal::Sentinel>{same_name_b};
     CHECK_FALSE(same_name_value_a.view().equals(same_name_value_b.view()));
 
-    const auto ordinary = bg::i64{3};
+    const auto ordinary = i64{3};
     CHECK(literal::Sentinel::from(literal::ScalarLiteral(ordinary)) == nullptr);
     const auto children = std::array{literal::ScalarLiteral(ordinary)};
     CHECK(literal::Sentinel::from(literal::ScalarLiteral{std::span{children}}) == nullptr);
@@ -75,8 +77,8 @@ TEST_CASE("literal sentinel storage keeps the singleton address through copies a
 TEST_CASE("tagged literals retain borrowed sentinel and argument references",
           "[feature:scalar-api][scalar:opaque]") {
     const auto &call = *test_shared_literal_sentinel::extension_call();
-    const auto scalar_value = bg::ScalarValue<literal::TaggedLiteral>{call};
-    const auto copied_value = bg::ScalarValue<literal::TaggedLiteral>{scalar_value.view()};
+    const auto scalar_value = ScalarValue<literal::TaggedLiteral>{call};
+    const auto copied_value = ScalarValue<literal::TaggedLiteral>{scalar_value.view()};
     const auto copied_call = copied_value.view().value();
 
     CHECK(&copied_call.sentinel == test_shared_literal_sentinel::extension());

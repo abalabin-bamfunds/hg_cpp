@@ -5,6 +5,8 @@
 #include <array>
 #include <memory_resource>
 
+using namespace bg;
+
 namespace {
 
 struct private_data {
@@ -19,7 +21,7 @@ struct private_data {
 } // namespace
 
 TEST_CASE("an opaque scalar value owns a copy", "[value][scalar][opaque][scalar:opaque][feature:scalar-api]") {
-    using PrivateDataValue = bg::ScalarValue<bg::Opaque<private_data>>;
+    using PrivateDataValue = ScalarValue<Opaque<private_data>>;
 
     auto source = private_data{{1, 2, 3, 4}};
     const auto value = PrivateDataValue{source};
@@ -28,12 +30,12 @@ TEST_CASE("an opaque scalar value owns a copy", "[value][scalar][opaque][scalar:
 
     const auto view = value.view();
     CHECK(view->values == std::array{1, 2, 3, 4});
-    CHECK(&view.type() == &bg::cpp_scalar_type<bg::Opaque<private_data>>());
+    CHECK(&view.type() == &cpp_scalar_type<Opaque<private_data>>());
 }
 
 TEST_CASE("a pointer-sized opaque scalar value uses inline storage",
           "[value][scalar][opaque][scalar:opaque][feature:scalar-api][storage:inline]") {
-    using PrivatePointerValue = bg::ScalarValue<bg::Opaque<private_data *>>;
+    using PrivatePointerValue = ScalarValue<Opaque<private_data *>>;
 
     auto source = private_data{{1, 2, 3, 4}};
     auto allocator = bg::allocator{*std::pmr::null_memory_resource()};

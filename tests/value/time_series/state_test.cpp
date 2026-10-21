@@ -5,22 +5,24 @@
 
 #include <chrono>
 
+using namespace bg;
+
 TEST_CASE("a time series state records validity transitions",
           "[feature:validity][series:generic][transition:update][transition:invalidation]"
           "[transition:revalidation]") {
-    const auto first_time = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto first_time = MIN_DT + std::chrono::microseconds{1};
     const auto second_time = first_time + std::chrono::microseconds{1};
     const auto third_time = second_time + std::chrono::microseconds{1};
     const auto fourth_time = third_time + std::chrono::microseconds{1};
 
-    auto state = bg::TimeSeriesState{};
+    auto state = TimeSeriesState{};
     CHECK_FALSE(state.valid());
     CHECK(state.never_valid());
     CHECK_FALSE(state.became_valid());
     CHECK_FALSE(state.became_invalid());
-    CHECK(state.time() == bg::MIN_DT);
+    CHECK(state.time() == MIN_DT);
 
-    const auto initial_state = bg::TimeSeriesState{bg::MIN_DT};
+    const auto initial_state = TimeSeriesState{MIN_DT};
     CHECK_FALSE(initial_state.valid());
     CHECK(initial_state.never_valid());
     CHECK_FALSE(initial_state.became_valid());
@@ -59,34 +61,34 @@ TEST_CASE("a time series state records validity transitions",
 }
 
 TEST_CASE("a time series state represents supported timestamps", "[feature:validity][series:generic]") {
-    const auto first_time = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto first_time = MIN_DT + std::chrono::microseconds{1};
     const auto largest_time =
-        bg::EvaluationTime{bg::EvaluationTime::duration{(bg::i64{1} << 62) - 1}};
+        EvaluationTime{EvaluationTime::duration{(i64{1} << 62) - 1}};
     const auto too_large = largest_time + std::chrono::microseconds{1};
 
-    CHECK_FALSE(bg::TimeSeriesState::can_represent(bg::MIN_DT));
-    CHECK(bg::TimeSeriesState::can_represent(first_time));
-    CHECK(bg::TimeSeriesState::can_represent(largest_time));
-    CHECK_FALSE(bg::TimeSeriesState::can_represent(too_large));
+    CHECK_FALSE(TimeSeriesState::can_represent(MIN_DT));
+    CHECK(TimeSeriesState::can_represent(first_time));
+    CHECK(TimeSeriesState::can_represent(largest_time));
+    CHECK_FALSE(TimeSeriesState::can_represent(too_large));
 }
 
 TEST_CASE("a time series state orders change times", "[feature:validity][series:generic]") {
-    const auto early_time = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto early_time = MIN_DT + std::chrono::microseconds{1};
     const auto time = early_time + std::chrono::microseconds{1};
     const auto later_time = time + std::chrono::microseconds{1};
     const auto largest_time =
-        bg::EvaluationTime{bg::EvaluationTime::duration{(bg::i64{1} << 62) - 1}};
+        EvaluationTime{EvaluationTime::duration{(i64{1} << 62) - 1}};
 
-    const auto never_valid = bg::TimeSeriesState{};
-    const auto ordinary_early = bg::TimeSeriesState{early_time};
-    const auto ordinary = bg::TimeSeriesState{time};
-    const auto ordinary_later = bg::TimeSeriesState{later_time};
-    const auto largest = bg::TimeSeriesState{largest_time};
+    const auto never_valid = TimeSeriesState{};
+    const auto ordinary_early = TimeSeriesState{early_time};
+    const auto ordinary = TimeSeriesState{time};
+    const auto ordinary_later = TimeSeriesState{later_time};
+    const auto largest = TimeSeriesState{largest_time};
 
-    auto became_valid = bg::TimeSeriesState{};
+    auto became_valid = TimeSeriesState{};
     became_valid.publish(time);
 
-    auto became_invalid = bg::TimeSeriesState{time};
+    auto became_invalid = TimeSeriesState{time};
     became_invalid.invalidate(time);
 
     CHECK(ordinary_early.later_than(never_valid));
