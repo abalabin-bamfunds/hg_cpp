@@ -1,5 +1,6 @@
 import copy
 import gc
+import queue
 import threading
 import weakref
 
@@ -649,6 +650,69 @@ def test_unread_python_object_queue_payloads_are_released_after_early_stop():
     assert received == [True]
     gc.collect()
     assert [reference() for reference in references] == [None, None]
+
+
+def test_python_object_queue_payload_is_released_during_realtime_execution():
+    class Value:
+        def __init__(self, released):
+            self.released = released
+
+        def __del__(self):
+            self.released.set()
+
+    stop = bg.StopSource()
+    ready = threading.Event()
+    received = queue.Queue()
+    writers = []
+    references = []
+    failures = []
+
+    @bg.queue
+    def source(writer: bg.Queue = None) -> bg.TS[Value]:
+        writers.append(copy.copy(writer))
+        ready.set()
+
+    @bg.compute_node
+    def observe(value: bg.TS[Value]) -> None:
+        received.put(True)
+
+    @bg.graph
+    def graph() -> None:
+        observe(source())
+
+    def run():
+        try:
+            bg.run_graph(graph, engine=bg.EvaluationEngine.realtime, stop_token=stop.get_token())
+        except BaseException as error:
+            failures.append(error)
+
+    engine = threading.Thread(target=run, daemon=True)
+    engine.start()
+    released = threading.Event()
+    try:
+        assert ready.wait(5)
+
+        first = Value(released)
+        references.append(weakref.ref(first))
+        assert writers[0].write(first)
+        del first
+        assert received.get(timeout=5)
+
+        second = Value(threading.Event())
+        assert writers[0].write(second)
+        del second
+        assert received.get(timeout=5)
+
+        assert released.wait(5)
+        assert engine.is_alive()
+        assert not stop.stop_requested()
+        assert references[0]() is None
+    finally:
+        stop.request_stop()
+        engine.join(5)
+
+    assert not engine.is_alive()
+    assert failures == []
 
 
 def test_queue_handle_closes_and_releases_payload_after_startup_failure():
