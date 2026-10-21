@@ -645,8 +645,11 @@ bit offset. Borrowed export retains the packed buffer; gather-copy export packs
 one dense chunk. Release Arrow-on build and all six frame CTest suites passed
 on this lane. Arrow-off and Debug/ASan verification remain for the root review.
 
-Fixed-name `Out<TSF<Schema>, frame::computed<"mid">>` outputs are implemented
-through the shared runtime-schema view backend. Dedicated Arrow-on tests cover
+Fixed-name `Out<TSF<Schema>, frame::computed<"mid">>` and runtime-selected
+`Out<TSF<Schema>, frame::computed<>>` outputs use the shared runtime-schema
+view backend. Runtime-selected names come from an output runtime type hook;
+without one, wiring rejects the declaration. Outputs accept writes by name or
+schema ordinal. Dedicated Arrow-on tests cover
 concrete and runtime schemas, independent computed buffers, shared slot maps,
 row removal and reuse, null batches, validation before mutation, downstream
 views, set-only later invocations, cache identity, and child revalidation.
@@ -664,10 +667,8 @@ the domain change while keeping row deltas empty. Graph tests cover computed
 TSC, all-computed TSF, and a selected TSF child; same-domain empty bindings
 remain unticked. Root reviewed the correction and test fixtures.
 
-The declaration for computed TSF field names selected at wiring remains
-undecided; standalone computed TSC outputs use the approved `computed<>`
-declaration. Frame division returns `double` and uses the shared column block
-callback path.
+Standalone computed TSC outputs use the approved `computed<>` declaration.
+Frame division returns `double` and uses the shared column block callback path.
 
 The two BG changes integrated in this task are scalar copy runtime selection
 and wiring-time output runtime selection. The frame extension uses scalar copy

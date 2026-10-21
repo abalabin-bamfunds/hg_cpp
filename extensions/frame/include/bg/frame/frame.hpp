@@ -3123,30 +3123,36 @@ inline const TimeSeriesRuntimeType &canonical_frame_view_runtime_type(
 
 } // namespace details
 
-template <template <template <typename, auto...> typename> typename Schema,
-          util::compile_time_string... Names>
-const TimeSeriesRuntimeType &frame_computed_time_series_runtime_type(const TimeSeriesType &type,
-                                                                     computed_option<Names...>) {
+inline const TimeSeriesRuntimeType &frame_computed_time_series_runtime_type(
+    const TimeSeriesType &type, std::span<const util::symbol> names) {
     const auto *series = dynamic_cast<const FrameSeriesType *>(std::addressof(type));
     if (series == nullptr || !series->is_resolved() ||
         series->guarantee().value() != TimeSeriesGuarantee::ordinary)
         throw std::invalid_argument{"computed TSF runtime requires a resolved ordinary type"};
     const auto &schema = static_cast<const bg::Schema &>(series->schema_type());
     auto indices = std::vector<std::size_t>{};
-    indices.reserve(sizeof...(Names));
-    const auto add = [&](util::symbol name) {
+    indices.reserve(names.size());
+    for (const auto name : names) {
         auto index = std::size_t{};
         while (index != schema.field_count() && schema.field(index).name != name)
             ++index;
         if (index == schema.field_count())
-            throw std::invalid_argument{"computed frame field name is absent from its resolved schema"};
+            throw std::invalid_argument{"computed frame field name '" + std::string{name.text()} +
+                                        "' is absent from its resolved schema"};
         if (std::ranges::find(indices, index) != indices.end())
-            throw std::invalid_argument{"computed frame field name is duplicated"};
+            throw std::invalid_argument{"computed frame field name '" + std::string{name.text()} + "' is duplicated"};
         indices.push_back(index);
-    };
-    (add(util::symbol{Names.view()}), ...);
+    }
     std::ranges::sort(indices);
     return details::canonical_frame_view_runtime_type(type, std::move(indices));
+}
+
+template <template <template <typename, auto...> typename> typename Schema,
+          util::compile_time_string... Names>
+const TimeSeriesRuntimeType &frame_computed_time_series_runtime_type(const TimeSeriesType &type,
+                                                                     computed_option<Names...>) {
+    const auto names = std::array<util::symbol, sizeof...(Names)>{util::symbol{Names.view()}...};
+    return frame_computed_time_series_runtime_type(type, std::span<const util::symbol>{names});
 }
 
 namespace details {
@@ -3156,7 +3162,11 @@ template <typename Option> struct ComputedFrameRuntime;
 template <util::compile_time_string... Names> struct ComputedFrameRuntime<computed_option<Names...>> {
     template <template <template <typename, auto...> typename> typename Schema>
     static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
-        return frame_computed_time_series_runtime_type<Schema>(type, computed_option<Names...>{});
+        if constexpr (sizeof...(Names) == 0) {
+            throw WiringError{"computed<> TSF output requires an output_runtime_type hook"};
+        } else {
+            return frame_computed_time_series_runtime_type<Schema>(type, computed_option<Names...>{});
+        }
     }
 };
 
@@ -3628,11 +3638,10 @@ class FrameViewOutputImplementation {
         return changed;
     }
 
-    template <util::compile_time_string Name, ::bg::frame::cell_type Cell>
-    void set_computed_cell(::bg::frame::row_id_t id, std::optional<Cell> value) const {
+    template <::bg::frame::cell_type Cell>
+    void set_computed_cell(std::size_t index, ::bg::frame::row_id_t id, std::optional<Cell> value) const {
         auto &output = runtime_storage();
-        const auto index = output.field_index(util::symbol{Name.view()});
-        if (!output.is_computed(index))
+        if (index >= output.layout->fields.size() || !output.is_computed(index))
             throw std::invalid_argument{"frame output field is not declared computed"};
         if (output.layout->schema->field(index).type != std::addressof(cpp_scalar_type<Cell>()))
             throw std::invalid_argument{"computed frame cell type does not match its schema"};
@@ -3643,11 +3652,9 @@ class FrameViewOutputImplementation {
         }
     }
 
-    template <util::compile_time_string Name>
-    void set_computed_null(::bg::frame::row_id_t id) const {
+    void set_computed_null(std::size_t index, ::bg::frame::row_id_t id) const {
         auto &output = runtime_storage();
-        const auto index = output.field_index(util::symbol{Name.view()});
-        if (!output.is_computed(index))
+        if (index >= output.layout->fields.size() || !output.is_computed(index))
             throw std::invalid_argument{"frame output field is not declared computed"};
         auto value = std::variant<std::optional<bool>, std::optional<i64>, std::optional<double>>{};
         const void *cell = nullptr;
@@ -3665,14 +3672,13 @@ class FrameViewOutputImplementation {
         }
     }
 
-    template <util::compile_time_string Name, ::bg::frame::cell_type Cell>
-    void set_computed_batch(std::span<const ::bg::frame::row_id_t> ids,
+    template <::bg::frame::cell_type Cell>
+    void set_computed_batch(std::size_t index, std::span<const ::bg::frame::row_id_t> ids,
                             const ::bg::frame::ColumnBatch<Cell> &batch) const {
         if (batch.size != ids.size())
             throw std::invalid_argument{"computed frame batch length does not match its row IDs"};
         auto &output = runtime_storage();
-        const auto index = output.field_index(util::symbol{Name.view()});
-        if (!output.is_computed(index))
+        if (index >= output.layout->fields.size() || !output.is_computed(index))
             throw std::invalid_argument{"frame output field is not declared computed"};
         if (output.layout->schema->field(index).type != std::addressof(cpp_scalar_type<Cell>()))
             throw std::invalid_argument{"computed frame batch type does not match its schema"};
@@ -3818,10 +3824,8 @@ template <template <template <typename, auto...> typename> typename Schema, auto
 class Out<frame::TSF<Schema, Properties...>, Option>
     : private frame::details::FrameViewOutputImplementation {
     using Base = frame::details::FrameViewOutputImplementation;
-    using OptionType = std::remove_cv_t<decltype(Option)>;
 
   public:
-    static_assert(OptionType::field_count != 0, "computed TSF output requires at least one field name");
     using Base::Base;
     using Base::invalidate;
     using Base::runtime_type;
@@ -3837,22 +3841,64 @@ class Out<frame::TSF<Schema, Properties...>, Option>
 
     template <util::compile_time_string Name, frame::cell_type Cell>
     void set(frame::row_id_t id, std::optional<Cell> value) const {
-        this->template set_computed_cell<Name>(id, std::move(value));
+        this->template set_computed_cell(this->runtime_storage().field_index(util::symbol{Name.view()}), id,
+                                         std::move(value));
     }
 
     template <util::compile_time_string Name, frame::cell_type Cell>
     void set(frame::row_id_t id, Cell value) const {
-        this->template set_computed_cell<Name>(id, std::optional<Cell>{std::move(value)});
+        set<Name>(id, std::optional<Cell>{std::move(value)});
     }
 
     template <util::compile_time_string Name>
     void set(frame::row_id_t id, std::nullopt_t) const {
-        this->template set_computed_null<Name>(id);
+        this->set_computed_null(this->runtime_storage().field_index(util::symbol{Name.view()}), id);
     }
 
     template <util::compile_time_string Name, frame::cell_type Cell>
     void set_batch(std::span<const frame::row_id_t> ids, const frame::ColumnBatch<Cell> &batch) const {
-        this->template set_computed_batch<Name>(ids, batch);
+        this->template set_computed_batch(this->runtime_storage().field_index(util::symbol{Name.view()}), ids,
+                                          batch);
+    }
+
+    template <frame::cell_type Cell>
+    void set(util::symbol name, frame::row_id_t id, std::optional<Cell> value) const {
+        this->template set_computed_cell(this->runtime_storage().field_index(name), id, std::move(value));
+    }
+
+    template <frame::cell_type Cell>
+    void set(util::symbol name, frame::row_id_t id, Cell value) const {
+        set(name, id, std::optional<Cell>{std::move(value)});
+    }
+
+    void set(util::symbol name, frame::row_id_t id, std::nullopt_t) const {
+        this->set_computed_null(this->runtime_storage().field_index(name), id);
+    }
+
+    template <frame::cell_type Cell>
+    void set(std::size_t index, frame::row_id_t id, std::optional<Cell> value) const {
+        this->template set_computed_cell(index, id, std::move(value));
+    }
+
+    template <frame::cell_type Cell>
+    void set(std::size_t index, frame::row_id_t id, Cell value) const {
+        set(index, id, std::optional<Cell>{std::move(value)});
+    }
+
+    void set(std::size_t index, frame::row_id_t id, std::nullopt_t) const {
+        this->set_computed_null(index, id);
+    }
+
+    template <frame::cell_type Cell>
+    void set_batch(util::symbol name, std::span<const frame::row_id_t> ids,
+                   const frame::ColumnBatch<Cell> &batch) const {
+        this->template set_computed_batch(this->runtime_storage().field_index(name), ids, batch);
+    }
+
+    template <frame::cell_type Cell>
+    void set_batch(std::size_t index, std::span<const frame::row_id_t> ids,
+                   const frame::ColumnBatch<Cell> &batch) const {
+        this->template set_computed_batch(index, ids, batch);
     }
 };
 

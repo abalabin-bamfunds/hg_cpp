@@ -490,6 +490,7 @@ Include `<bg/frame/frame.hpp>` for concrete and runtime-schema frames.
 | `Out<TSF<Schema>>` | `schema`, `add`, `set`, `erase`, `clear`, `invalidate` |
 | `Out<TSF<Schema>, frame::view>` | `schema`, `bind_projection(source, ordinals/names/columns<...>())`, `invalidate` |
 | `Out<TSF<Schema>, frame::computed<"mid">>` | `schema`, `bind(source)`, `set<"mid">`, `set_batch<"mid">`, `invalidate` |
+| `Out<TSF<Schema>, frame::computed<>>` | `schema`, `bind(source)`, runtime-selected `set(name/ordinal, ...)`, `set_batch(name/ordinal, ...)`, `invalidate` |
 | Column selection | `select_column<"bid">(frame)` returns a `wp<TSC<T>>` |
 | Projection helper | `project<TargetSchema, "bid", "ask">(frame)` |
 | Filter helper | `filter(frame, col("size") > threshold)` |
@@ -526,6 +527,14 @@ name and exact cell type. The source can omit computed fields and use a differen
 schema order. Both concrete and runtime schemas use the same output implementation.
 Computed names must be distinct and present in the resolved output schema;
 wiring rejects invalid names.
+
+An output runtime type hook can select computed fields for `frame::computed<>`
+from immutable wiring configuration. Without the hook, wiring rejects this
+declaration. The hook passes a span of field names to
+`frame_computed_time_series_runtime_type`; the runtime cache canonicalizes name
+order. Runtime-selected outputs write by `util::symbol` name or resolved schema
+ordinal. Named and ordinal writes use the same validation and publication rules
+as fixed-name writes.
 
 The output preserves source row IDs, row domain, and current traversal order.
 Computed columns share one local physical slot map. New computed cells start
