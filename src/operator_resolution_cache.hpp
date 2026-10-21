@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/graph/details/operator_resolution.hpp>
 #include <bg/graph/wiring_argument.hpp>
 #include <bg/graph/wiring_template.hpp>
 #include <bg/scalar/value.hpp>
@@ -13,6 +14,12 @@
 #include <vector>
 
 namespace bg::details {
+
+struct OperatorScalarRead {
+    const WiringTemplate *implementation;
+    std::size_t index;
+    ScalarValue<> value;
+};
 
 struct OperatorArgumentKey {
     const Type *type{};
@@ -40,12 +47,6 @@ struct OperatorArgumentKey {
         }
         return true;
     }
-};
-
-struct OperatorScalarRead {
-    const WiringTemplate *implementation;
-    std::size_t index;
-    ScalarValue<> value;
 };
 
 struct OperatorResolutionCache {

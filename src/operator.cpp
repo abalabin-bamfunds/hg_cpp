@@ -23,6 +23,7 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <utility>
 
@@ -426,6 +427,11 @@ struct ScalarReads {
     std::vector<ScalarRead> values;
 };
 
+struct OperatorResolutionAnalysis {
+    details::OperatorResolutionResult resolution;
+    ScalarReads scalar_reads;
+};
+
 void record_scalar_read(void *context, std::size_t index, Scalar<> value) {
     auto &reads = *static_cast<ScalarReads *>(context);
     if (!value.type().supports_equality() || !value.type().supports_hash()) {
@@ -456,8 +462,26 @@ void Operator::add_overload(std::unique_ptr<WiringTemplate> implementation) {
     overloads_.push_back(std::move(implementation));
 }
 
-std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const WiringArgument> arguments,
-                                            const TypeMap *seed_type_map) const {
+template <typename CandidateRange>
+auto Operator::analyze_overloads(
+    GraphWiring &wiring, std::span<const WiringArgument> arguments, const TypeMap *seed_type_map,
+    const CandidateRange &candidates, bool record_reads) const {
+    struct Candidate {
+        const WiringTemplate *implementation;
+        SignatureResolution resolution;
+        std::vector<const Type *> argument_types;
+        std::vector<std::optional<std::size_t>> supplied_argument_indices;
+        std::vector<InputValidity> argument_validity;
+        std::vector<unsigned char> argument_valid_items;
+        std::vector<WiringArgumentFormMatch> argument_forms;
+        double materialisation_cost;
+        double binding_cost;
+    };
+
+    auto analysis = OperatorResolutionAnalysis{};
+    auto &result = analysis.resolution;
+    auto &scalar_reads = analysis.scalar_reads;
+    const auto &prototype = signature();
     auto explicit_type_parameters = std::vector<const Variable *>{};
     if (seed_type_map != nullptr) {
         for (const auto *variable : type_parameters_) {
@@ -475,8 +499,8 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
         }
 
         auto used = false;
-        for (auto index = std::size_t{}; index < prototype_.parameter_count(); ++index) {
-            if (prototype_.parameter(index).type != variable_type) {
+        for (auto index = std::size_t{}; index < prototype.parameter_count(); ++index) {
+            if (prototype.parameter(index).type != variable_type) {
                 continue;
             }
             used = true;
@@ -487,6 +511,293 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
         return used;
     };
 
+    const auto applicable_failure = [](const Candidate &candidate, std::string message) {
+        return matched_failure(*candidate.implementation, candidate.resolution.signature, candidate.argument_forms,
+                               candidate.materialisation_cost, WiringFailureStage::applicable, std::move(message));
+    };
+
+    auto applicable = std::vector<Candidate>{};
+    auto failures = std::vector<WiringCandidateDiagnostic>{};
+    applicable.reserve(std::ranges::size(candidates));
+    failures.reserve(std::ranges::size(candidates));
+    auto temporary_records = details::WiringRecordOverlay{wiring};
+
+    for (auto variadic = false;; variadic = true) {
+        for (const auto *implementation : candidates) {
+            if (implementation->signature().has_variadic_parameters() != variadic) {
+                continue;
+            }
+
+            const auto &signature = implementation->signature();
+            auto preserved_inputs = std::vector<unsigned char>{};
+            preserved_inputs.reserve(signature.parameter_count());
+            for (auto index = std::size_t{}; index < signature.parameter_count(); ++index) {
+                preserved_inputs.push_back(static_cast<unsigned char>(implementation->preserves_input_point(index)));
+            }
+            auto normalized = details::NormalizedWiringArguments{};
+            try {
+                temporary_records.clear();
+                normalized = details::probe_wiring_arguments(signature, arguments, temporary_records, &prototype);
+            } catch (const std::exception &error) {
+                failures.push_back(failure(*implementation, WiringFailureStage::argument_count, error.what()));
+                continue;
+            }
+
+            auto argument_validity = std::vector<InputValidity>{};
+            argument_validity.reserve(normalized.arguments.size());
+            auto argument_valid_items = std::vector<unsigned char>{};
+            argument_valid_items.reserve(normalized.arguments.size());
+            for (const auto &argument : normalized.arguments) {
+                argument_validity.push_back(argument.requires_optional() ? optional : required);
+                argument_valid_items.push_back(static_cast<unsigned char>(argument.annotations().valid_items));
+            }
+
+            auto matches = std::vector<WiringSignatureMatch>{};
+            try {
+                matches = signature.match_wiring_arguments(normalized.arguments, seed_type_map);
+            } catch (const TypeResolutionError &error) {
+                failures.push_back(failure(*implementation, error));
+                continue;
+            }
+
+            if (matches.empty()) {
+                auto supplied_types = std::vector<const Type *>{};
+                supplied_types.reserve(normalized.arguments.size());
+                for (const auto &argument : normalized.arguments) {
+                    if (!argument.is_time_series()) {
+                        supplied_types.push_back(&argument.type());
+                        continue;
+                    }
+                    const auto point = argument.time_series();
+                    if (point.has_default_materialisation()) {
+                        supplied_types.push_back(&argument.type());
+                        continue;
+                    }
+                    const auto options = point.materialisation_options();
+                    supplied_types.push_back(options.empty() ? &argument.type() : options.front().target_type);
+                }
+                try {
+                    (void)signature.match_arguments(supplied_types, seed_type_map);
+                    failures.push_back(failure(*implementation, WiringFailureStage::type_match,
+                                               "no supplied form satisfies the signature"));
+                } catch (const TypeResolutionError &error) {
+                    failures.push_back(failure(*implementation, error));
+                }
+                continue;
+            }
+
+            for (auto &match : matches) {
+                auto requirement = accept;
+                auto requirement_exception = std::exception_ptr{};
+                scalar_reads.implementation = implementation;
+                const auto make_arguments = [&](const TypeMap &type_map) {
+                    if (record_reads) {
+                        return WiringArguments{signature, type_map, normalized.descriptors, &scalar_reads,
+                                               &record_scalar_read};
+                    }
+                    return WiringArguments{signature, type_map, normalized.descriptors};
+                };
+                auto argument_context = make_arguments(match.type_map);
+                auto completed = std::optional<ResolvedWiringSignatureMatch>{};
+                auto observed_type_variables = std::vector<const Variable *>{};
+                try {
+                    completed.emplace(signature.complete_wiring_match(
+                        std::move(match), argument_context, [&](const TypeMap &resolved_type_map) {
+                            implementation->resolve_additional_types(resolved_type_map);
+                            try {
+                                requirement = implementation->requirement(make_arguments(resolved_type_map));
+                            } catch (const details::ResolverTypeResolutionError &) {
+                                throw;
+                            } catch (...) {
+                                requirement_exception = std::current_exception();
+                            }
+                        }, explicit_type_parameters.empty() ? nullptr : &observed_type_variables));
+                } catch (const TypeResolutionError &error) {
+                    failures.push_back(failure(*implementation, error));
+                    continue;
+                } catch (const std::exception &error) {
+                    failures.push_back(failure(*implementation, WiringFailureStage::callback, error.what()));
+                    throw WiringError{diagnostic(prototype, current_path(), arguments, std::move(failures)),
+                                      std::current_exception()};
+                } catch (...) {
+                    failures.push_back(failure(*implementation, WiringFailureStage::callback,
+                                               "non-standard exception"));
+                    throw WiringError{diagnostic(prototype, current_path(), arguments, std::move(failures)),
+                                      std::current_exception()};
+                }
+
+                if (requirement_exception != nullptr) {
+                    try {
+                        std::rethrow_exception(requirement_exception);
+                    } catch (const std::exception &error) {
+                        failures.push_back(matched_failure(*implementation, completed->resolution.signature,
+                                                           completed->argument_forms,
+                                                           completed->materialisation_cost,
+                                                           WiringFailureStage::callback, error.what()));
+                        throw WiringError{diagnostic(prototype, current_path(), arguments, std::move(failures)),
+                                          requirement_exception};
+                    } catch (...) {
+                        failures.push_back(matched_failure(*implementation, completed->resolution.signature,
+                                                           completed->argument_forms,
+                                                           completed->materialisation_cost,
+                                                           WiringFailureStage::callback,
+                                                           "non-standard exception"));
+                        throw WiringError{diagnostic(prototype, current_path(), arguments, std::move(failures)),
+                                          requirement_exception};
+                    }
+                }
+
+                if (!requirement.accepted()) {
+                    failures.push_back(matched_failure(
+                        *implementation, completed->resolution.signature, completed->argument_forms,
+                        completed->materialisation_cost, WiringFailureStage::requirement,
+                        requirement.message().empty() ? "requirement rejected the arguments"
+                                                     : std::string{requirement.message()}));
+                    continue;
+                }
+
+                const auto unused = std::ranges::find_if(explicit_type_parameters, [&](const auto *variable) {
+                    return !std::ranges::contains(observed_type_variables, variable) &&
+                           !matches_prototype_parameter(*variable, completed->resolution.signature);
+                });
+                if (unused != explicit_type_parameters.end()) {
+                    failures.push_back(failure(*implementation, TypeResolutionError{
+                        TypeResolutionErrorCode::mismatch, (*unused)->name(),
+                        "overload does not accept the explicit type argument"}));
+                    continue;
+                }
+
+                auto prepared_call = details::PreparedWiringCall{
+                    std::move(*completed), std::span<const unsigned char>{preserved_inputs}};
+                const auto binding_cost = prepared_call.binding_cost(normalized.arguments);
+                auto candidate_types = std::vector<const Type *>{};
+                candidate_types.reserve(normalized.arguments.size());
+                for (auto index = std::size_t{}; index < normalized.arguments.size(); ++index) {
+                    candidate_types.push_back(prepared_call.argument_type(index, normalized.arguments[index]));
+                }
+                applicable.push_back({implementation, std::move(prepared_call.resolution),
+                                      std::move(candidate_types), normalized.supplied_argument_indices,
+                                      argument_validity, argument_valid_items,
+                                      std::move(prepared_call.argument_forms),
+                                      prepared_call.materialisation_cost, binding_cost});
+            }
+        }
+
+        if (!applicable.empty() || variadic) {
+            break;
+        }
+    }
+
+    const auto output_ambiguous = [&](const Candidate &candidate) {
+        return std::ranges::any_of(applicable, [&](const auto &other) {
+            return candidate.implementation == other.implementation &&
+                   candidate.resolution.signature.output != other.resolution.signature.output;
+        });
+    };
+    if (std::ranges::any_of(applicable, output_ambiguous)) {
+        failures.clear();
+        for (const auto &candidate : applicable) {
+            if (output_ambiguous(candidate)) {
+                failures.push_back(
+                    applicable_failure(candidate, "viable forms resolve to different semantic output types"));
+            }
+        }
+        result.ambiguous = true;
+        result.failures = std::move(failures);
+    } else {
+        const auto same_concrete_binding = [&](const Candidate &left, const Candidate &right) {
+            if (left.implementation != right.implementation ||
+                left.resolution.signature.output != right.resolution.signature.output ||
+                !left.implementation->same_binding_type_map(left.resolution.type_map, right.resolution.type_map)) {
+                return false;
+            }
+            const auto &signature = left.implementation->signature();
+            for (auto index = std::size_t{}; index < signature.parameter_count(); ++index) {
+                if (left.implementation->preserves_input_point(index)) {
+                    continue;
+                }
+                if (left.resolution.signature.parameters[index].type !=
+                        right.resolution.signature.parameters[index].type ||
+                    left.argument_forms[index].materialisation_target !=
+                        right.argument_forms[index].materialisation_target) {
+                    return false;
+                }
+            }
+            return true;
+        };
+        auto unique_applicable = std::vector<Candidate>{};
+        unique_applicable.reserve(applicable.size());
+        for (auto &candidate : applicable) {
+            const auto existing = std::ranges::find_if(unique_applicable, [&](const auto &other) {
+                return same_concrete_binding(candidate, other);
+            });
+            if (existing == unique_applicable.end()) {
+                unique_applicable.push_back(std::move(candidate));
+            } else if (candidate.binding_cost < existing->binding_cost) {
+                *existing = std::move(candidate);
+            }
+        }
+        applicable = std::move(unique_applicable);
+
+        if (!applicable.empty()) {
+            const auto lowest_cost =
+                std::ranges::min_element(applicable, {}, &Candidate::binding_cost)->binding_cost;
+            std::erase_if(applicable, [&](const auto &candidate) {
+                return candidate.binding_cost != lowest_cost;
+            });
+        }
+
+        Candidate *selected = nullptr;
+        for (auto &candidate : applicable) {
+            const auto least_generic = std::ranges::all_of(applicable, [&](const auto &other) {
+                return &candidate == &other ||
+                       preferred(*candidate.implementation, candidate.resolution.signature, *other.implementation,
+                                 other.resolution.signature, candidate.argument_types, other.argument_types,
+                                 candidate.supplied_argument_indices, other.supplied_argument_indices,
+                                 candidate.argument_validity, other.argument_validity,
+                                 candidate.argument_valid_items);
+            });
+            if (least_generic) {
+                selected = &candidate;
+                break;
+            }
+        }
+
+        if (selected == nullptr) {
+            result.ambiguous = !applicable.empty();
+            if (result.ambiguous) {
+                failures.clear();
+                for (const auto &candidate : applicable) {
+                    failures.push_back(applicable_failure(candidate, "applicable"));
+                }
+            }
+            result.failures = std::move(failures);
+        } else {
+            auto selected_forms = std::vector<const TimeSeriesType *>{};
+            selected_forms.reserve(selected->argument_forms.size());
+            for (const auto &form : selected->argument_forms) {
+                selected_forms.push_back(form.materialisation_target);
+            }
+            result.selected.emplace(details::OperatorResolutionMatch{
+                selected->implementation,
+                {std::move(selected->resolution.signature), std::move(selected->resolution.type_map)},
+                std::move(selected_forms)});
+            result.failures = std::move(failures);
+        }
+    }
+
+    return analysis;
+}
+
+details::OperatorResolutionResult Operator::resolve_overloads(
+    GraphWiring &wiring, std::span<const WiringArgument> arguments, const TypeMap *seed_type_map,
+    std::span<const WiringTemplate *const> candidates) const {
+    auto analysis = analyze_overloads(wiring, arguments, seed_type_map, candidates, false);
+    return std::move(analysis.resolution);
+}
+
+std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const WiringArgument> arguments,
+                                            const TypeMap *seed_type_map) const {
     auto &cache = wiring.operator_resolution_cache(*this);
     if (cache.operator_identity != cache_identity_ || cache.overload_count != overloads_.size()) {
         cache.entries.clear();
@@ -610,307 +921,35 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
         }
     }
 
-    struct Candidate {
-        const WiringTemplate *implementation;
-        SignatureResolution resolution;
-        std::vector<const Type *> argument_types;
-        std::vector<std::optional<std::size_t>> supplied_argument_indices;
-        std::vector<InputValidity> argument_validity;
-        std::vector<unsigned char> argument_valid_items;
-        std::vector<WiringArgumentFormMatch> argument_forms;
-        double materialisation_cost;
-        double binding_cost;
-    };
-
-    const auto applicable_failure = [](const Candidate &candidate, std::string message) {
-        return matched_failure(*candidate.implementation, candidate.resolution.signature, candidate.argument_forms,
-                               candidate.materialisation_cost, WiringFailureStage::applicable, std::move(message));
-    };
-
-    auto applicable = std::vector<Candidate>{};
-    auto failures = std::vector<WiringCandidateDiagnostic>{};
-    auto scalar_reads = ScalarReads{};
-    applicable.reserve(overloads_.size());
-    failures.reserve(overloads_.size());
-    auto temporary_records = details::WiringRecordOverlay{wiring};
-
-    for (auto variadic = false;; variadic = true) {
-        for (const auto &implementation : overloads_) {
-            if (implementation->signature().has_variadic_parameters() != variadic) {
-                continue;
-            }
-
-            const auto &signature = implementation->signature();
-            auto preserved_inputs = std::vector<unsigned char>{};
-            preserved_inputs.reserve(signature.parameter_count());
-            for (auto index = std::size_t{}; index < signature.parameter_count(); ++index) {
-                preserved_inputs.push_back(
-                    static_cast<unsigned char>(implementation->preserves_input_point(index)));
-            }
-            auto normalized = details::NormalizedWiringArguments{};
-            try {
-                temporary_records.clear();
-                normalized = details::probe_wiring_arguments(signature, arguments, temporary_records, &prototype);
-            } catch (const std::exception &error) {
-                failures.push_back(failure(*implementation, WiringFailureStage::argument_count, error.what()));
-                continue;
-            }
-
-            auto argument_validity = std::vector<InputValidity>{};
-            argument_validity.reserve(normalized.arguments.size());
-            auto argument_valid_items = std::vector<unsigned char>{};
-            argument_valid_items.reserve(normalized.arguments.size());
-            for (const auto &argument : normalized.arguments) {
-                argument_validity.push_back(argument.requires_optional() ? optional : required);
-                argument_valid_items.push_back(static_cast<unsigned char>(argument.annotations().valid_items));
-            }
-
-            auto matches = std::vector<WiringSignatureMatch>{};
-            try {
-                matches = signature.match_wiring_arguments(normalized.arguments, seed_type_map);
-            } catch (const TypeResolutionError &error) {
-                failures.push_back(failure(*implementation, error));
-                continue;
-            }
-
-            if (matches.empty()) {
-                auto supplied_types = std::vector<const Type *>{};
-                supplied_types.reserve(normalized.arguments.size());
-                for (const auto &argument : normalized.arguments) {
-                    if (!argument.is_time_series()) {
-                        supplied_types.push_back(&argument.type());
-                        continue;
-                    }
-                    const auto point = argument.time_series();
-                    if (point.has_default_materialisation()) {
-                        supplied_types.push_back(&argument.type());
-                        continue;
-                    }
-                    const auto options = point.materialisation_options();
-                    supplied_types.push_back(options.empty() ? &argument.type() : options.front().target_type);
-                }
-                try {
-                    (void)signature.match_arguments(supplied_types, seed_type_map);
-                    failures.push_back(failure(*implementation, WiringFailureStage::type_match,
-                                               "no supplied form satisfies the signature"));
-                } catch (const TypeResolutionError &error) {
-                    failures.push_back(failure(*implementation, error));
-                }
-                continue;
-            }
-
-            for (auto &match : matches) {
-                auto requirement = accept;
-                auto requirement_exception = std::exception_ptr{};
-                scalar_reads.implementation = implementation.get();
-                auto argument_context = WiringArguments{signature, match.type_map, normalized.descriptors,
-                                                        &scalar_reads, &record_scalar_read};
-                auto completed = std::optional<ResolvedWiringSignatureMatch>{};
-                auto observed_type_variables = std::vector<const Variable *>{};
-                try {
-                    completed.emplace(signature.complete_wiring_match(
-                        std::move(match), argument_context, [&](const TypeMap &resolved_type_map) {
-                            implementation->resolve_additional_types(resolved_type_map);
-                            try {
-                                requirement = implementation->requirement(
-                                    WiringArguments{signature, resolved_type_map, normalized.descriptors,
-                                                    &scalar_reads, &record_scalar_read});
-                            } catch (const details::ResolverTypeResolutionError &) {
-                                throw;
-                            } catch (...) {
-                                requirement_exception = std::current_exception();
-                            }
-                        }, explicit_type_parameters.empty() ? nullptr : &observed_type_variables));
-                } catch (const TypeResolutionError &error) {
-                    failures.push_back(failure(*implementation, error));
-                    continue;
-                } catch (const std::exception &error) {
-                    failures.push_back(failure(*implementation, WiringFailureStage::callback, error.what()));
-                    throw WiringError{diagnostic(prototype, current_path(), arguments, std::move(failures)),
-                                      std::current_exception()};
-                } catch (...) {
-                    failures.push_back(failure(*implementation, WiringFailureStage::callback,
-                                               "non-standard exception"));
-                    throw WiringError{diagnostic(prototype, current_path(), arguments, std::move(failures)),
-                                      std::current_exception()};
-                }
-
-                if (requirement_exception != nullptr) {
-                    try {
-                        std::rethrow_exception(requirement_exception);
-                    } catch (const std::exception &error) {
-                        failures.push_back(matched_failure(*implementation, completed->resolution.signature,
-                                                           completed->argument_forms,
-                                                           completed->materialisation_cost,
-                                                           WiringFailureStage::callback, error.what()));
-                        throw WiringError{diagnostic(prototype, current_path(), arguments, std::move(failures)),
-                                          requirement_exception};
-                    } catch (...) {
-                        failures.push_back(matched_failure(*implementation, completed->resolution.signature,
-                                                           completed->argument_forms,
-                                                           completed->materialisation_cost,
-                                                           WiringFailureStage::callback,
-                                                           "non-standard exception"));
-                        throw WiringError{diagnostic(prototype, current_path(), arguments, std::move(failures)),
-                                          requirement_exception};
-                    }
-                }
-
-                if (!requirement.accepted()) {
-                    failures.push_back(matched_failure(
-                        *implementation, completed->resolution.signature, completed->argument_forms,
-                        completed->materialisation_cost, WiringFailureStage::requirement,
-                        requirement.message().empty() ? "requirement rejected the arguments"
-                                                     : std::string{requirement.message()}));
-                    continue;
-                }
-
-                const auto unused = std::ranges::find_if(explicit_type_parameters, [&](const auto *variable) {
-                    return !std::ranges::contains(observed_type_variables, variable) &&
-                           !matches_prototype_parameter(*variable, completed->resolution.signature);
-                });
-                if (unused != explicit_type_parameters.end()) {
-                    failures.push_back(failure(*implementation, TypeResolutionError{
-                        TypeResolutionErrorCode::mismatch, (*unused)->name(),
-                        "overload does not accept the explicit type argument"}));
-                    continue;
-                }
-
-                auto prepared_call = details::PreparedWiringCall{
-                    std::move(*completed), std::span<const unsigned char>{preserved_inputs}};
-                const auto binding_cost = prepared_call.binding_cost(normalized.arguments);
-                auto candidate_types = std::vector<const Type *>{};
-                candidate_types.reserve(normalized.arguments.size());
-                for (auto index = std::size_t{}; index < normalized.arguments.size(); ++index) {
-                    candidate_types.push_back(
-                        prepared_call.argument_type(index, normalized.arguments[index]));
-                }
-                applicable.push_back({implementation.get(), std::move(prepared_call.resolution),
-                                      std::move(candidate_types), normalized.supplied_argument_indices,
-                                      argument_validity,
-                                      argument_valid_items,
-                                      std::move(prepared_call.argument_forms),
-                                      prepared_call.materialisation_cost, binding_cost});
-            }
-        }
-
-        if (!applicable.empty() || variadic) {
-            break;
-        }
+    auto candidates = overloads_ | std::views::transform([](const auto &implementation) {
+                         return implementation.get();
+                     });
+    auto analysis = analyze_overloads(wiring, arguments, seed_type_map, candidates, true);
+    auto &resolution = analysis.resolution;
+    if (!resolution.selected) {
+        throw WiringError{diagnostic(prototype, current_path(), arguments, std::move(resolution.failures),
+                                     resolution.ambiguous)};
     }
+    auto &selected = *resolution.selected;
 
-    const auto output_ambiguous = [&](const Candidate &candidate) {
-        return std::ranges::any_of(applicable, [&](const auto &other) {
-            return candidate.implementation == other.implementation &&
-                   candidate.resolution.signature.output != other.resolution.signature.output;
-        });
-    };
-    if (std::ranges::any_of(applicable, output_ambiguous)) {
-        failures.clear();
-        for (const auto &candidate : applicable) {
-            if (output_ambiguous(candidate)) {
-                failures.push_back(
-                    applicable_failure(candidate, "viable forms resolve to different semantic output types"));
-            }
-        }
-        throw WiringError{diagnostic(prototype, current_path(), arguments, std::move(failures), true)};
-    }
-
-    const auto same_concrete_binding = [&](const Candidate &left, const Candidate &right) {
-        if (left.implementation != right.implementation ||
-            left.resolution.signature.output != right.resolution.signature.output ||
-            !left.implementation->same_binding_type_map(left.resolution.type_map, right.resolution.type_map)) {
-            return false;
-        }
-        const auto &signature = left.implementation->signature();
-        for (auto index = std::size_t{}; index < signature.parameter_count(); ++index) {
-            if (left.implementation->preserves_input_point(index)) {
-                continue;
-            }
-            if (left.resolution.signature.parameters[index].type !=
-                    right.resolution.signature.parameters[index].type ||
-                left.argument_forms[index].materialisation_target !=
-                    right.argument_forms[index].materialisation_target) {
-                return false;
-            }
-        }
-        return true;
-    };
-    auto unique_applicable = std::vector<Candidate>{};
-    unique_applicable.reserve(applicable.size());
-    for (auto &candidate : applicable) {
-        const auto existing = std::ranges::find_if(unique_applicable, [&](const auto &other) {
-            return same_concrete_binding(candidate, other);
-        });
-        if (existing == unique_applicable.end()) {
-            unique_applicable.push_back(std::move(candidate));
-        } else if (candidate.binding_cost < existing->binding_cost) {
-            *existing = std::move(candidate);
-        }
-    }
-    applicable = std::move(unique_applicable);
-
-    if (!applicable.empty()) {
-        const auto lowest_cost =
-            std::ranges::min_element(applicable, {}, &Candidate::binding_cost)->binding_cost;
-        std::erase_if(applicable, [&](const auto &candidate) {
-            return candidate.binding_cost != lowest_cost;
-        });
-    }
-
-    Candidate *selected = nullptr;
-    for (auto &candidate : applicable) {
-        const auto least_generic = std::ranges::all_of(applicable, [&](const auto &other) {
-            return &candidate == &other ||
-                   preferred(*candidate.implementation, candidate.resolution.signature, *other.implementation,
-                             other.resolution.signature, candidate.argument_types, other.argument_types,
-                             candidate.supplied_argument_indices, other.supplied_argument_indices,
-                             candidate.argument_validity, other.argument_validity,
-                             candidate.argument_valid_items);
-        });
-        if (least_generic) {
-            selected = &candidate;
-            break;
-        }
-    }
-
-    if (selected == nullptr) {
-        const auto ambiguous = !applicable.empty();
-        if (ambiguous) {
-            failures.clear();
-            for (const auto &candidate : applicable) {
-                failures.push_back(applicable_failure(candidate, "applicable"));
-            }
-        }
-        throw WiringError{diagnostic(prototype, current_path(), arguments, std::move(failures), ambiguous)};
-    }
-
-    if (scalar_reads.cacheable && cache_key) {
+    if (analysis.scalar_reads.cacheable && cache_key) {
         if (cache.entries.size() == details::OperatorResolutionCache::maximum_entries) {
             cache.entries.pop_front();
         }
-        auto selected_forms = std::vector<const TimeSeriesType *>{};
-        selected_forms.reserve(selected->argument_forms.size());
-        for (const auto &form : selected->argument_forms) {
-            selected_forms.push_back(form.materialisation_target);
-        }
-        cache.entries.push_back({std::move(*cache_key), std::move(seed_key), std::move(scalar_reads.values),
-                                 selected->implementation,
-                                 {selected->resolution.signature, selected->resolution.type_map.copy()},
-                                 std::move(selected_forms)});
+        cache.entries.push_back({std::move(*cache_key), std::move(seed_key),
+                                 std::move(analysis.scalar_reads.values),
+                                 selected.implementation,
+                                 {selected.resolution.signature, selected.resolution.type_map.copy()},
+                                 selected.argument_forms});
     }
 
-    auto committed = details::normalize_wiring_arguments(selected->implementation->signature(), arguments,
+    auto committed = details::normalize_wiring_arguments(selected.implementation->signature(), arguments,
                                                          wiring.allocation(), &prototype);
-    const auto &signature = selected->implementation->signature();
-    auto selected_forms = std::vector<const TimeSeriesType *>{};
-    selected_forms.reserve(selected->argument_forms.size());
-    for (const auto &form : selected->argument_forms) {
-        selected_forms.push_back(form.materialisation_target);
-    }
-    details::bind_materialisation_forms(wiring, *selected->implementation, committed.arguments, selected_forms);
-    require_concrete_materialisation_forms(wiring, *selected->implementation, committed.arguments, selected_forms);
-    return invoke_resolved(wiring, *selected->implementation, std::move(selected->resolution), committed.arguments,
+    details::bind_materialisation_forms(wiring, *selected.implementation, committed.arguments,
+                                        selected.argument_forms);
+    require_concrete_materialisation_forms(wiring, *selected.implementation, committed.arguments,
+                                           selected.argument_forms);
+    return invoke_resolved(wiring, *selected.implementation, std::move(selected.resolution), committed.arguments,
                            committed.descriptors, prototype.name());
 }
 
