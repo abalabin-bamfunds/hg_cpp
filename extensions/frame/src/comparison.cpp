@@ -32,32 +32,39 @@ void compare_operands(std::span<const row_id_t> ids, const ColumnOperandBatch<T>
 
 template <cell_type T, typename Comparator, typename Operator>
 void register_comparison(Operator &operation, std::string_view name) {
-    using LhsOperand = Union<"FRAME_COMPARISON_LHS", TSC<T>, TS<T>, TSB<LEFT_EXPRESSION>>;
-    using RhsOperand = Union<"FRAME_COMPARISON_RHS", TSC<T>, TS<T>, TSB<RIGHT_EXPRESSION>>;
+    using ColumnOperand = Union<"FRAME_COMPARISON_COLUMN", TSC<T>, TSB<LEFT_EXPRESSION>>;
+    using AnyOperand = Union<"FRAME_COMPARISON_ANY", TSC<T>, TS<T>, TSB<RIGHT_EXPRESSION>>;
 
     const auto graph_name = std::string{"frame_"} + std::string{name};
-    const auto binary_graph = graph(
+    const auto column_any_graph = graph(
         "name"_n = util::symbol{graph_name},
         require = [](const WiringArguments &arguments) {
-            const auto &lhs = arguments.original_type(0);
-            const auto &rhs = arguments.original_type(1);
-            return details::is_operand(lhs, cpp_scalar_type<T>()) &&
-                   details::is_operand(rhs, cpp_scalar_type<T>()) &&
-                   (details::is_column_operand(lhs, cpp_scalar_type<T>()) ||
-                    details::is_column_operand(rhs, cpp_scalar_type<T>()));
+            return details::is_column_operand(arguments.original_type(0), cpp_scalar_type<T>()) &&
+                   details::is_operand(arguments.original_type(1), cpp_scalar_type<T>());
         },
-        [](wp<LhsOperand> lhs, wp<RhsOperand> rhs) {
+        [](wp<ColumnOperand> lhs, wp<AnyOperand> rhs) {
             return make_column_expression(ColumnBlockFunction<bool, T, T>{&compare_operands<T, Comparator>}, lhs,
                                           rhs);
         });
-    operation.overload(binary_graph);
+    operation.overload(column_any_graph);
+
+    const auto time_series_column_graph = graph(
+        "name"_n = util::symbol{graph_name + "_time_series_column"},
+        require = [](const WiringArguments &arguments) {
+            return details::is_column_operand(arguments.original_type(1), cpp_scalar_type<T>());
+        },
+        [](wp<TS<T>> lhs, wp<ColumnOperand> rhs) {
+            return make_column_expression(ColumnBlockFunction<bool, T, T>{&compare_operands<T, Comparator>}, lhs,
+                                          rhs);
+        });
+    operation.overload(time_series_column_graph);
 
     const auto column_parameter_graph = graph(
         "name"_n = util::symbol{graph_name + "_column_parameter"},
         require = [](const WiringArguments &arguments) {
             return details::is_column_operand(arguments.original_type(0), cpp_scalar_type<T>());
         },
-        [operation_ptr = std::addressof(operation)](wp<LhsOperand> column, T value) -> wp<TSC<bool>> {
+        [operation_ptr = std::addressof(operation)](wp<ColumnOperand> column, T value) -> wp<TSC<bool>> {
             return (*operation_ptr)(column, operators::const_(value).template as<TS<T>>()).template as<TSC<bool>>();
         });
     operation.overload(column_parameter_graph);
@@ -67,7 +74,7 @@ void register_comparison(Operator &operation, std::string_view name) {
         require = [](const WiringArguments &arguments) {
             return details::is_column_operand(arguments.original_type(1), cpp_scalar_type<T>());
         },
-        [operation_ptr = std::addressof(operation)](T value, wp<RhsOperand> column) -> wp<TSC<bool>> {
+        [operation_ptr = std::addressof(operation)](T value, wp<ColumnOperand> column) -> wp<TSC<bool>> {
             return (*operation_ptr)(operators::const_(value).template as<TS<T>>(), column).template as<TSC<bool>>();
         });
     operation.overload(parameter_column_graph);
@@ -91,26 +98,24 @@ const auto registered = [] {
     register_comparison<double, std::greater<>>(operators::gt, "double_greater");
     register_comparison<double, std::greater_equal<>>(operators::ge, "double_greater_equal");
 
-    const auto numeric_operand = [](const Type &type) {
-        return details::is_operand(type, cpp_scalar_type<i64>()) ||
-               details::is_operand(type, cpp_scalar_type<double>());
-    };
-    const auto numeric_scalar = [](const Type &type) {
-        return std::addressof(type) == std::addressof(cpp_scalar_type<i64>()) ||
-               std::addressof(type) == std::addressof(cpp_scalar_type<double>());
-    };
-    details::register_mixed_binary(operators::eq, details::ExpressionOperation::eq, "equal", numeric_operand,
-                                   numeric_scalar);
-    details::register_mixed_binary(operators::ne, details::ExpressionOperation::ne, "not_equal", numeric_operand,
-                                   numeric_scalar);
-    details::register_mixed_binary(operators::lt, details::ExpressionOperation::lt, "less", numeric_operand,
-                                   numeric_scalar);
-    details::register_mixed_binary(operators::le, details::ExpressionOperation::le, "less_equal", numeric_operand,
-                                   numeric_scalar);
-    details::register_mixed_binary(operators::gt, details::ExpressionOperation::gt, "greater", numeric_operand,
-                                   numeric_scalar);
-    details::register_mixed_binary(operators::ge, details::ExpressionOperation::ge, "greater_equal", numeric_operand,
-                                   numeric_scalar);
+    register_overloads<details::MixedBinaryOverloads<operators::eq, details::ExpressionOperation::eq,
+                                                      details::MIXED_NUMERIC_SCALAR,
+                                                      details::MIXED_NUMERIC_SERIES>>();
+    register_overloads<details::MixedBinaryOverloads<operators::ne, details::ExpressionOperation::ne,
+                                                      details::MIXED_NUMERIC_SCALAR,
+                                                      details::MIXED_NUMERIC_SERIES>>();
+    register_overloads<details::MixedBinaryOverloads<operators::lt, details::ExpressionOperation::lt,
+                                                      details::MIXED_NUMERIC_SCALAR,
+                                                      details::MIXED_NUMERIC_SERIES>>();
+    register_overloads<details::MixedBinaryOverloads<operators::le, details::ExpressionOperation::le,
+                                                      details::MIXED_NUMERIC_SCALAR,
+                                                      details::MIXED_NUMERIC_SERIES>>();
+    register_overloads<details::MixedBinaryOverloads<operators::gt, details::ExpressionOperation::gt,
+                                                      details::MIXED_NUMERIC_SCALAR,
+                                                      details::MIXED_NUMERIC_SERIES>>();
+    register_overloads<details::MixedBinaryOverloads<operators::ge, details::ExpressionOperation::ge,
+                                                      details::MIXED_NUMERIC_SCALAR,
+                                                      details::MIXED_NUMERIC_SERIES>>();
     return true;
 }();
 

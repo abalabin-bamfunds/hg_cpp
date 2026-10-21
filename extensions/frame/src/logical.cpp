@@ -18,8 +18,8 @@ using LEFT_EXPRESSION = BundleSchemaVariableDeclaration<"FRAME_LOGICAL_LEFT_EXPR
 template <template <typename, auto...> typename Field>
 using RIGHT_EXPRESSION = BundleSchemaVariableDeclaration<"FRAME_LOGICAL_RIGHT_EXPRESSION", Field>;
 
-using LogicalLhsOperand = Union<"FRAME_LOGICAL_LHS", TSC<bool>, TS<bool>, TSB<LEFT_EXPRESSION>>;
-using LogicalRhsOperand = Union<"FRAME_LOGICAL_RHS", TSC<bool>, TS<bool>, TSB<RIGHT_EXPRESSION>>;
+using LogicalColumnOperand = Union<"FRAME_LOGICAL_COLUMN", TSC<bool>, TSB<LEFT_EXPRESSION>>;
+using LogicalAnyOperand = Union<"FRAME_LOGICAL_ANY", TSC<bool>, TS<bool>, TSB<RIGHT_EXPRESSION>>;
 
 void logical_and(std::span<const row_id_t> rows, const ColumnOperandBatch<bool> &lhs,
                  const ColumnOperandBatch<bool> &rhs, MutableColumnBatch<bool> output) {
@@ -75,20 +75,26 @@ template <typename Operator>
 void register_binary_logical_operator(Operator &operation, std::string_view name,
                                       ColumnBlockFunction<bool, bool, bool>::function_type function) {
     const auto graph_name = std::string{"frame_"} + std::string{name};
-    const auto binary_graph = graph(
+    const auto column_any_graph = graph(
         "name"_n = util::symbol{graph_name},
         require = [](const WiringArguments &arguments) {
-            const auto &lhs = arguments.original_type(0);
-            const auto &rhs = arguments.original_type(1);
-            return details::is_operand(lhs, cpp_scalar_type<bool>()) &&
-                   details::is_operand(rhs, cpp_scalar_type<bool>()) &&
-                   (details::is_column_operand(lhs, cpp_scalar_type<bool>()) ||
-                    details::is_column_operand(rhs, cpp_scalar_type<bool>()));
+            return details::is_column_operand(arguments.original_type(0), cpp_scalar_type<bool>()) &&
+                   details::is_operand(arguments.original_type(1), cpp_scalar_type<bool>());
         },
-        [function](wp<LogicalLhsOperand> lhs, wp<LogicalRhsOperand> rhs) {
+        [function](wp<LogicalColumnOperand> lhs, wp<LogicalAnyOperand> rhs) {
             return make_column_expression(ColumnBlockFunction<bool, bool, bool>{function}, lhs, rhs);
         });
-    operation.overload(binary_graph);
+    operation.overload(column_any_graph);
+
+    const auto time_series_column_graph = graph(
+        "name"_n = util::symbol{graph_name + "_time_series_column"},
+        require = [](const WiringArguments &arguments) {
+            return details::is_column_operand(arguments.original_type(1), cpp_scalar_type<bool>());
+        },
+        [function](wp<TS<bool>> lhs, wp<LogicalColumnOperand> rhs) {
+            return make_column_expression(ColumnBlockFunction<bool, bool, bool>{function}, lhs, rhs);
+        });
+    operation.overload(time_series_column_graph);
 
     auto *operation_ptr = std::addressof(operation);
     const auto column_parameter_graph = graph(
@@ -96,7 +102,7 @@ void register_binary_logical_operator(Operator &operation, std::string_view name
         require = [](const WiringArguments &arguments) {
             return details::is_column_operand(arguments.original_type(0), cpp_scalar_type<bool>());
         },
-        [operation_ptr](wp<LogicalLhsOperand> column, bool value) -> wp<TSC<bool>> {
+        [operation_ptr](wp<LogicalColumnOperand> column, bool value) -> wp<TSC<bool>> {
             return (*operation_ptr)(column, operators::const_(value).template as<TS<bool>>()).template as<TSC<bool>>();
         });
     operation.overload(column_parameter_graph);
@@ -106,7 +112,7 @@ void register_binary_logical_operator(Operator &operation, std::string_view name
         require = [](const WiringArguments &arguments) {
             return details::is_column_operand(arguments.original_type(1), cpp_scalar_type<bool>());
         },
-        [operation_ptr](bool value, wp<LogicalRhsOperand> column) -> wp<TSC<bool>> {
+        [operation_ptr](bool value, wp<LogicalColumnOperand> column) -> wp<TSC<bool>> {
             return (*operation_ptr)(operators::const_(value).template as<TS<bool>>(), column).template as<TSC<bool>>();
         });
     operation.overload(parameter_column_graph);
@@ -123,20 +129,18 @@ const auto registered = [] {
         require = [](const WiringArguments &arguments) {
             return details::is_column_operand(arguments.original_type(0), cpp_scalar_type<bool>());
         },
-        [](wp<LogicalLhsOperand> value) {
+        [](wp<LogicalColumnOperand> value) {
             return make_column_expression(ColumnBlockFunction<bool, bool>{&logical_not}, value);
         });
     operators::not_.overload(not_graph);
 
-    const auto boolean_operand = [](const Type &type) { return details::is_operand(type, cpp_scalar_type<bool>()); };
-    const auto boolean_scalar = [](const Type &type) {
-        return std::addressof(type) == std::addressof(cpp_scalar_type<bool>());
-    };
-    details::register_mixed_binary(operators::and_, details::ExpressionOperation::and_, "and", boolean_operand,
-                                   boolean_scalar);
-    details::register_mixed_binary(operators::or_, details::ExpressionOperation::or_, "or", boolean_operand,
-                                   boolean_scalar);
-    details::register_mixed_unary(operators::not_, details::ExpressionOperation::not_, "not");
+    register_overloads<details::MixedBinaryOverloads<operators::and_, details::ExpressionOperation::and_,
+                                                      details::MIXED_BOOLEAN_SCALAR,
+                                                      details::MIXED_BOOLEAN_SERIES>>();
+    register_overloads<details::MixedBinaryOverloads<operators::or_, details::ExpressionOperation::or_,
+                                                      details::MIXED_BOOLEAN_SCALAR,
+                                                      details::MIXED_BOOLEAN_SERIES>>();
+    register_overloads<details::MixedUnaryOverloads<operators::not_, details::ExpressionOperation::not_>>();
     return true;
 }();
 

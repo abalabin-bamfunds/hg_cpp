@@ -1,7 +1,8 @@
 # Frame foundation handoff
 
-Updated: 2026-10-22. The frame lane is rebased onto main `146ee478`.
-Main includes shared schema metadata (`6419e073`), process-lifetime ownership
+Updated: 2026-10-22. The mixed-overload refactor is based on main `21a0f87c`.
+Earlier frame foundation work was rebased onto main `146ee478`, which included
+shared schema metadata (`6419e073`), process-lifetime ownership
 of registered type metadata (`160f128b`), compatible generic input-view casts
 (`a17a8ffd`), and stateful test-graph literal comparison (`04518839`). Frame
 implementation remains on the lane.
@@ -25,7 +26,7 @@ completed lane retirement, and consumer verification.
 
 | Work | Location / branch | State |
 | --- | --- | --- |
-| Main baseline | `/home/abalabin/_bg`, `main` | `146ee478` |
+| Main baseline | `/home/abalabin/_bg`, `main` | `21a0f87c` |
 | Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Frame foundation, expressions, scalar literals, native keyed storage, TSF/TSC input literals, and native/view/computed capture |
 | Generic input-view casts | Main | `a17a8ffd`; tested build preserved in `.lanes/generic-input-cast` |
 | Shared schema metadata and BG lifetime fix | Main | `6419e073`, `160f128b`; consumer builds use matching lane-local installs |
@@ -182,6 +183,16 @@ BG installs, and these lane-root build directories:
 The sanitizer CTest used `ASAN_OPTIONS=detect_leaks=1` and
 `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1`. It ran outside the sandbox
 because LeakSanitizer cannot operate under sandbox ptrace.
+
+Mixed binary overload verification used task baseline `21a0f87c`. The scalar-
+expression cleanup results above remain historical results at baseline
+`146ee478`.
+
+| Build | Configuration | Result |
+| --- | --- | --- |
+| `build/tsf-row-release-arrow-on` | Release, Arrow 24.0.0 | Build passed; CTest 6/6 |
+| `build/tsf-row-release-arrow-off` | Release, Arrow disabled | Build passed; CTest 5/5 |
+| `build/tsf-row-debug-asan-arrow-on` | Debug, Arrow 24.0.0, ASan/UBSan | Build passed; CTest 6/6 with leak detection; no sanitizer diagnostics |
 
 Expression regressions cover scalar construction outside graph wiring, scalar
 conversion targets, owned scalar captures reused across graphs, mixed operands
@@ -431,6 +442,13 @@ Arithmetic supports matching `i64` or `double` columns, constants, and captured
 convenience graphs declare their `TSC<T>` result type. Overload requirements
 require a column operand; ordinary BG scalar arithmetic keeps its existing
 overloads.
+
+Concrete arithmetic, comparison, and logical binary graphs declare disjoint
+column/any and `TS<T>`/column signatures. Their requirements check original
+operand types where a deferred Union can also offer a generic TSB form. Mixed
+expression overloads use named aggregate registrations and separate left and
+right binding variables. Tests verify independent `TS<i64>` and `TS<double>`
+captures, native `TS<i64>` addition, and rejection of Boolean/numeric addition.
 
 `ExpressionCompiler` collects distinct captured time series into an ordinary
 TSB. A separate parameter-update node publishes their current values as

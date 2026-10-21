@@ -27,9 +27,9 @@ template <template <typename, auto...> typename Field>
 using CONVERSION_EXPRESSION = BundleSchemaVariableDeclaration<"FRAME_COLUMN_CONVERSION_EXPRESSION", Field>;
 
 template <cell_type T>
-using ArithmeticLhsOperand = Union<"FRAME_ARITHMETIC_LHS", TSC<T>, TS<T>, TSB<LEFT_EXPRESSION>>;
+using ArithmeticColumnOperand = Union<"FRAME_ARITHMETIC_COLUMN", TSC<T>, TSB<LEFT_EXPRESSION>>;
 template <cell_type T>
-using ArithmeticRhsOperand = Union<"FRAME_ARITHMETIC_RHS", TSC<T>, TS<T>, TSB<RIGHT_EXPRESSION>>;
+using ArithmeticAnyOperand = Union<"FRAME_ARITHMETIC_ANY", TSC<T>, TS<T>, TSB<RIGHT_EXPRESSION>>;
 template <cell_type T>
 using ConversionOperand = Union<"FRAME_CONVERSION_SOURCE", TSC<T>, TSB<CONVERSION_EXPRESSION>>;
 
@@ -82,32 +82,38 @@ void binary_operands(std::span<const row_id_t> rows, const ColumnOperandBatch<SO
 
 template <cell_type T, cell_type RESULT, auto FUNCTION, typename Operator>
 void register_binary_arithmetic(Operator &operation, std::string_view name) {
-    using LhsOperand = ArithmeticLhsOperand<T>;
-    using RhsOperand = ArithmeticRhsOperand<T>;
+    using ColumnOperand = ArithmeticColumnOperand<T>;
+    using AnyOperand = ArithmeticAnyOperand<T>;
     using Function = ColumnBlockFunction<RESULT, T, T>;
 
     const auto graph_name = std::string{"frame_"} + std::string{name} + "_" + std::string{cell_name<T>()};
-    const auto binary_graph = graph(
+    const auto column_any_graph = graph(
         "name"_n = util::symbol{graph_name},
         require = [](const WiringArguments &arguments) {
-            const auto &lhs = arguments.original_type(0);
-            const auto &rhs = arguments.original_type(1);
-            return details::is_operand(lhs, cpp_scalar_type<T>()) &&
-                   details::is_operand(rhs, cpp_scalar_type<T>()) &&
-                   (details::is_column_operand(lhs, cpp_scalar_type<T>()) ||
-                    details::is_column_operand(rhs, cpp_scalar_type<T>()));
+            return details::is_column_operand(arguments.original_type(0), cpp_scalar_type<T>()) &&
+                   details::is_operand(arguments.original_type(1), cpp_scalar_type<T>());
         },
-        [](wp<LhsOperand> lhs, wp<RhsOperand> rhs) {
+        [](wp<ColumnOperand> lhs, wp<AnyOperand> rhs) {
             return make_column_expression(Function{&binary_operands<T, RESULT, FUNCTION>}, lhs, rhs);
         });
-    operation.overload(binary_graph);
+    operation.overload(column_any_graph);
+
+    const auto time_series_column_graph = graph(
+        "name"_n = util::symbol{graph_name + "_time_series_column"},
+        require = [](const WiringArguments &arguments) {
+            return details::is_column_operand(arguments.original_type(1), cpp_scalar_type<T>());
+        },
+        [](wp<TS<T>> lhs, wp<ColumnOperand> rhs) {
+            return make_column_expression(Function{&binary_operands<T, RESULT, FUNCTION>}, lhs, rhs);
+        });
+    operation.overload(time_series_column_graph);
 
     const auto column_parameter_graph = graph(
         "name"_n = util::symbol{graph_name + "_column_parameter"},
         require = [](const WiringArguments &arguments) {
             return details::is_column_operand(arguments.original_type(0), cpp_scalar_type<T>());
         },
-        [operation_ptr = std::addressof(operation)](wp<LhsOperand> column, T value) -> wp<TSC<RESULT>> {
+        [operation_ptr = std::addressof(operation)](wp<ColumnOperand> column, T value) -> wp<TSC<RESULT>> {
             return (*operation_ptr)(column, operators::const_(value).template as<TS<T>>()).template as<TSC<RESULT>>();
         });
     operation.overload(column_parameter_graph);
@@ -117,7 +123,7 @@ void register_binary_arithmetic(Operator &operation, std::string_view name) {
         require = [](const WiringArguments &arguments) {
             return details::is_column_operand(arguments.original_type(1), cpp_scalar_type<T>());
         },
-        [operation_ptr = std::addressof(operation)](T value, wp<RhsOperand> column) -> wp<TSC<RESULT>> {
+        [operation_ptr = std::addressof(operation)](T value, wp<ColumnOperand> column) -> wp<TSC<RESULT>> {
             return (*operation_ptr)(operators::const_(value).template as<TS<T>>(), column).template as<TSC<RESULT>>();
         });
     operation.overload(parameter_column_graph);
@@ -208,22 +214,18 @@ const auto registered = [] {
     register_column_conversion<double, i64>();
     register_column_conversion<i64, double>();
 
-    const auto numeric_operand = [](const Type &type) {
-        return details::is_operand(type, cpp_scalar_type<i64>()) ||
-               details::is_operand(type, cpp_scalar_type<double>());
-    };
-    const auto numeric_scalar = [](const Type &type) {
-        return std::addressof(type) == std::addressof(cpp_scalar_type<i64>()) ||
-               std::addressof(type) == std::addressof(cpp_scalar_type<double>());
-    };
-    details::register_mixed_binary(operators::add, details::ExpressionOperation::add, "add", numeric_operand,
-                                   numeric_scalar);
-    details::register_mixed_binary(operators::sub, details::ExpressionOperation::sub, "subtract", numeric_operand,
-                                   numeric_scalar);
-    details::register_mixed_binary(operators::mul, details::ExpressionOperation::mul, "multiply", numeric_operand,
-                                   numeric_scalar);
-    details::register_mixed_binary(operators::div, details::ExpressionOperation::div, "divide", numeric_operand,
-                                   numeric_scalar);
+    register_overloads<details::MixedBinaryOverloads<operators::add, details::ExpressionOperation::add,
+                                                      details::MIXED_NUMERIC_SCALAR,
+                                                      details::MIXED_NUMERIC_SERIES>>();
+    register_overloads<details::MixedBinaryOverloads<operators::sub, details::ExpressionOperation::sub,
+                                                      details::MIXED_NUMERIC_SCALAR,
+                                                      details::MIXED_NUMERIC_SERIES>>();
+    register_overloads<details::MixedBinaryOverloads<operators::mul, details::ExpressionOperation::mul,
+                                                      details::MIXED_NUMERIC_SCALAR,
+                                                      details::MIXED_NUMERIC_SERIES>>();
+    register_overloads<details::MixedBinaryOverloads<operators::div, details::ExpressionOperation::div,
+                                                      details::MIXED_NUMERIC_SCALAR,
+                                                      details::MIXED_NUMERIC_SERIES>>();
     return true;
 }();
 

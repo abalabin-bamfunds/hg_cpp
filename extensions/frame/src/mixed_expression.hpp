@@ -1,106 +1,131 @@
 #pragma once
 
 #include <bg/frame/expression.hpp>
+#include <bg/frame/tsc.hpp>
 #include <bg/graph.hpp>
 #include <bg/library/operators.hpp>
-#include <bg/util/symbol.hpp>
+#include <bg/overload.hpp>
+#include <bg/schema/reflection.hpp>
 
 #include <array>
-#include <string>
-#include <string_view>
 
 namespace bg::frame::details {
 
-using namespace bg::literals;
-
-using MIXED_LEFT = TimeSeriesVariable<"FRAME_MIXED_LEFT">;
-using MIXED_RIGHT = TimeSeriesVariable<"FRAME_MIXED_RIGHT">;
-using MIXED_INPUT = TimeSeriesVariable<"FRAME_MIXED_INPUT">;
+using MIXED_NUMERIC_SCALAR = ScalarVariable<"FRAME_MIXED_NUMERIC_SCALAR", i64, double, Expression>;
+using MIXED_BOOLEAN_SCALAR = ScalarVariable<"FRAME_MIXED_BOOLEAN_SCALAR", bool, Expression>;
 
 template <template <typename, auto...> typename Field> struct MixedOneBindingSchema {
     Field<TS<Expression, TimeSeriesGuarantee::const_>> expression;
-    Field<MIXED_INPUT> binding_0;
+    Field<TimeSeriesVariable<"FRAME_MIXED_LEFT">> binding_0;
 };
 
-template <template <typename, auto...> typename Field> struct MixedTwoBindingSchema {
+template <template <typename, auto...> typename Field>
+struct MixedTwoBindingSchema : schema_extends<MixedOneBindingSchema, Field> {
+    Field<TimeSeriesVariable<"FRAME_MIXED_RIGHT">> binding_1;
+};
+
+template <template <typename, auto...> typename Field> struct MixedInputLeftOneBindingSchema {
     Field<TS<Expression, TimeSeriesGuarantee::const_>> expression;
-    Field<MIXED_LEFT> binding_0;
-    Field<MIXED_RIGHT> binding_1;
+    Field<TimeSeriesVariable<"FRAME_MIXED_PATTERN_LEFT_INPUT">> binding_0;
 };
 
-inline bool is_expression_type(const Type &type) {
-    return std::addressof(type) == std::addressof(scalar_type_traits<Expression>::type());
-}
+template <template <typename, auto...> typename Field>
+struct MixedInputLeftTwoBindingSchema : schema_extends<MixedInputLeftOneBindingSchema, Field> {
+    Field<TimeSeriesVariable<"FRAME_MIXED_PATTERN_LEFT_RIGHT">> binding_1;
+};
 
-template <typename Operator, typename OperandPredicate, typename ScalarPredicate>
-void register_mixed_binary(Operator &operation, ExpressionOperation expression_operation,
-                           std::string_view name, OperandPredicate is_operand,
-                           ScalarPredicate is_scalar_operand) {
-    const auto prefix = std::string{"frame_mixed_"} + std::string{name};
-    const auto make_one_binding_result = [expression_operation](auto lhs, auto rhs) {
+template <template <typename, auto...> typename Field> struct MixedInputRightOneBindingSchema {
+    Field<TS<Expression, TimeSeriesGuarantee::const_>> expression;
+    Field<TimeSeriesVariable<"FRAME_MIXED_PATTERN_RIGHT_INPUT">> binding_0;
+};
+
+template <template <typename, auto...> typename Field>
+struct MixedInputRightTwoBindingSchema : schema_extends<MixedInputRightOneBindingSchema, Field> {
+    Field<TimeSeriesVariable<"FRAME_MIXED_PATTERN_RIGHT_RIGHT">> binding_1;
+};
+
+using MIXED_SERIES_LEFT = Union<"FRAME_MIXED_SERIES_LEFT", TSB<MixedInputLeftOneBindingSchema>,
+                                TSB<MixedInputLeftTwoBindingSchema>>;
+using MIXED_SERIES_RIGHT = Union<"FRAME_MIXED_SERIES_RIGHT", TSB<MixedInputRightOneBindingSchema>,
+                                 TSB<MixedInputRightTwoBindingSchema>>;
+using MIXED_NUMERIC_SERIES = Union<"FRAME_MIXED_NUMERIC_SERIES", TSC<operators::NUMERIC>, TS<operators::NUMERIC>>;
+using MIXED_BOOLEAN_SERIES = Union<"FRAME_MIXED_BOOLEAN_SERIES", TSC<operators::BOOL>, TS<operators::BOOL>>;
+
+template <ExpressionOperation Operation, typename ScalarDeclaration, typename Series> struct ScalarSeriesGraph {
+    Scalar<ScalarDeclaration> scalar;
+    wp<Series> series;
+
+    auto wire() const {
+        const auto operands = std::array{WiringArgument{scalar}, WiringArgument{series}};
+        return wp<TSB<MixedOneBindingSchema>>{make_mixed_expression(Operation, operands)};
+    }
+
+    static const Type &resolve(TimeSeriesVariable<"FRAME_MIXED_LEFT">, const WiringArguments &arguments) {
+        return arguments.original_type(1);
+    }
+};
+
+template <ExpressionOperation Operation, typename Series, typename ScalarDeclaration> struct SeriesScalarGraph {
+    wp<Series> series;
+    Scalar<ScalarDeclaration> scalar;
+
+    auto wire() const {
+        const auto operands = std::array{WiringArgument{series}, WiringArgument{scalar}};
+        return wp<TSB<MixedOneBindingSchema>>{make_mixed_expression(Operation, operands)};
+    }
+
+    static const Type &resolve(TimeSeriesVariable<"FRAME_MIXED_LEFT">, const WiringArguments &arguments) {
+        return arguments.original_type(0);
+    }
+};
+
+template <ExpressionOperation Operation, typename Lhs, typename Rhs> struct MixedSeriesSeriesGraph {
+    wp<Lhs> lhs;
+    wp<Rhs> rhs;
+
+    auto wire() const {
         const auto operands = std::array{WiringArgument{lhs}, WiringArgument{rhs}};
-        return wp<TSB<MixedOneBindingSchema>>{make_mixed_expression(expression_operation, operands)};
-    };
-    const auto make_two_binding_result = [expression_operation](auto lhs, auto rhs) {
-        const auto operands = std::array{WiringArgument{lhs}, WiringArgument{rhs}};
-        return wp<TSB<MixedTwoBindingSchema>>{make_mixed_expression(expression_operation, operands)};
-    };
+        return wp<TSB<MixedTwoBindingSchema>>{make_mixed_expression(Operation, operands)};
+    }
 
-    const auto scalar_series_graph = graph(
-        "name"_n = util::symbol{prefix + "_scalar_series"},
-        require = [is_operand, is_scalar_operand](const WiringArguments &arguments) {
-            const auto &lhs = arguments.original_type(0);
-            const auto &rhs = arguments.original_type(1);
-            return (is_expression_type(lhs) &&
-                    (is_operand(rhs) || is_mixed_expression_bundle_type(rhs))) ||
-                   (is_mixed_expression_bundle_type(rhs) && is_scalar_operand(lhs));
-        },
-        [make_one_binding_result](Scalar<SCALAR> lhs, wp<MIXED_INPUT> rhs) {
-            return make_one_binding_result(lhs, rhs);
-        });
-    operation.overload(scalar_series_graph);
+    static const Type &resolve(TimeSeriesVariable<"FRAME_MIXED_LEFT">, const WiringArguments &arguments) {
+        return arguments.original_type(0);
+    }
 
-    const auto series_scalar_graph = graph(
-        "name"_n = util::symbol{prefix + "_series_scalar"},
-        require = [is_operand, is_scalar_operand](const WiringArguments &arguments) {
-            const auto &lhs = arguments.original_type(0);
-            const auto &rhs = arguments.original_type(1);
-            return (is_operand(lhs) && is_expression_type(rhs)) ||
-                   (is_mixed_expression_bundle_type(lhs) && is_expression_type(rhs)) ||
-                   (is_mixed_expression_bundle_type(lhs) && is_scalar_operand(rhs));
-        },
-        [make_one_binding_result](wp<MIXED_INPUT> lhs, Scalar<SCALAR> rhs) {
-            return make_one_binding_result(lhs, rhs);
-        });
-    operation.overload(series_scalar_graph);
+    static const Type &resolve(TimeSeriesVariable<"FRAME_MIXED_RIGHT">, const WiringArguments &arguments) {
+        return arguments.original_type(1);
+    }
+};
 
-    const auto series_series_graph = graph(
-        "name"_n = util::symbol{prefix + "_series_series"},
-        require = [is_operand](const WiringArguments &arguments) {
-            const auto &lhs = arguments.original_type(0);
-            const auto &rhs = arguments.original_type(1);
-            return (is_mixed_expression_bundle_type(lhs) &&
-                    (is_operand(rhs) || is_mixed_expression_bundle_type(rhs))) ||
-                   (is_operand(lhs) && is_mixed_expression_bundle_type(rhs));
-        },
-        [make_two_binding_result](wp<MIXED_LEFT> lhs, wp<MIXED_RIGHT> rhs) {
-            return make_two_binding_result(lhs, rhs);
-        });
-    operation.overload(series_series_graph);
-}
+template <ExpressionOperation Operation> struct MixedUnaryGraph {
+    wp<MIXED_SERIES_LEFT> value;
 
-template <typename Operator>
-void register_mixed_unary(Operator &operation, ExpressionOperation expression_operation, std::string_view name) {
-    const auto mixed_graph = graph(
-        "name"_n = util::symbol{std::string{"frame_mixed_"} + std::string{name}},
-        require = [](const WiringArguments &arguments) {
-            return is_mixed_expression_bundle_type(arguments.original_type(0));
-        },
-        [expression_operation](wp<MIXED_INPUT> value) {
-            const auto operands = std::array{WiringArgument{value}};
-            return wp<TSB<MixedOneBindingSchema>>{make_mixed_expression(expression_operation, operands)};
-        });
-    operation.overload(mixed_graph);
-}
+    auto wire() const {
+        const auto operands = std::array{WiringArgument{value}};
+        return wp<TSB<MixedOneBindingSchema>>{make_mixed_expression(Operation, operands)};
+    }
+
+    static const Type &resolve(TimeSeriesVariable<"FRAME_MIXED_LEFT">, const WiringArguments &arguments) {
+        return arguments.original_type(0);
+    }
+};
+
+template <auto &Operator, ExpressionOperation Operation, typename ScalarDeclaration, typename Series>
+struct MixedBinaryOverloads {
+    overload<Operator> expression_series{graph<ScalarSeriesGraph<Operation, Expression, Series>>()};
+    overload<Operator> scalar_mixed_series{
+        graph<ScalarSeriesGraph<Operation, ScalarDeclaration, MIXED_SERIES_RIGHT>>()};
+    overload<Operator> series_expression{graph<SeriesScalarGraph<Operation, Series, Expression>>()};
+    overload<Operator> mixed_series_scalar{
+        graph<SeriesScalarGraph<Operation, MIXED_SERIES_LEFT, ScalarDeclaration>>()};
+    overload<Operator> mixed_series_series{graph<MixedSeriesSeriesGraph<Operation, MIXED_SERIES_LEFT, Series>>()};
+    overload<Operator> series_mixed_series{graph<MixedSeriesSeriesGraph<Operation, Series, MIXED_SERIES_RIGHT>>()};
+    overload<Operator> nested_mixed_series{
+        graph<MixedSeriesSeriesGraph<Operation, MIXED_SERIES_LEFT, MIXED_SERIES_RIGHT>>()};
+};
+
+template <auto &Operator, ExpressionOperation Operation> struct MixedUnaryOverloads {
+    overload<Operator> not_impl{graph<MixedUnaryGraph<Operation>>()};
+};
 
 } // namespace bg::frame::details

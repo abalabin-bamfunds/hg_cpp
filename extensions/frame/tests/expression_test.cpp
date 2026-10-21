@@ -5,6 +5,7 @@
 #include <bg/library.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/testing/test_graph.hpp>
+#include <bg/testing/test_wiring.hpp>
 #include <bg/util/named_argument.hpp>
 
 #include <algorithm>
@@ -575,6 +576,46 @@ void test_mixed_expression_chaining_and_filter() {
             "converted expression reuse did not resolve each mixed binding independently");
 }
 
+void test_mixed_series_bindings_keep_independent_types() {
+    const auto integer_source = node([](Out<TS<i64>>) {});
+    const auto double_source = node([](Out<TS<double>>) {});
+    const auto boolean_source = node([](Out<TS<bool>>) {});
+    const auto frame_source = node([](Out<TSF<NumericFrame>>) {});
+
+    testing::test_wiring([&] {
+        const auto integer_capture = integer_source();
+        const auto double_capture = double_source();
+        const auto integer_mixed = col("value") + integer_capture;
+        const auto double_mixed = col("price") + double_capture;
+
+        const auto *integer_type = dynamic_cast<const TimeSeriesBundleType *>(&integer_mixed.type());
+        const auto *double_type = dynamic_cast<const TimeSeriesBundleType *>(&double_mixed.type());
+        require(integer_type != nullptr && double_type != nullptr && integer_type->item_count() == 2 &&
+                    double_type->item_count() == 2,
+                "mixed numeric operands did not retain their binding schemas");
+        require(std::addressof(integer_type->item_type(1)) == std::addressof(TS<i64>::type()) &&
+                    std::addressof(double_type->item_type(1)) == std::addressof(TS<double>::type()),
+                "mixed operands did not retain their independent capture types");
+
+        const auto predicate = (integer_mixed > i64{0}) && (double_mixed > 0.0);
+        const auto bound_predicate = bind_expression(frame_source(), predicate);
+        require(std::addressof(bound_predicate.type()) == std::addressof(TSC<bool>::type()),
+                "binding a mixed predicate with heterogeneous captures failed");
+
+        const auto native_sum = operators::add(integer_capture, integer_source());
+        require(std::addressof(native_sum.type()) == std::addressof(TS<i64>::type()),
+                "native TS<i64> addition did not resolve to the core operator");
+
+        auto rejected_boolean_numeric_addition = false;
+        try {
+            static_cast<void>(operators::add(boolean_source(), integer_capture));
+        } catch (const WiringError &) {
+            rejected_boolean_numeric_addition = true;
+        }
+        require(rejected_boolean_numeric_addition, "boolean and numeric time series were accepted by addition");
+    });
+}
+
 void test_mixed_operator_requirements() {
     struct observation {
         std::vector<std::optional<i64>> after_constant;
@@ -1084,6 +1125,7 @@ int main() {
         test_numeric_comparison_expression_wiring();
         test_filter_expression_with_multiple_parameters();
         test_mixed_expression_chaining_and_filter();
+        test_mixed_series_bindings_keep_independent_types();
         test_mixed_operator_requirements();
         test_mixed_expression_parameter_invalidation();
         test_comparison_runtime<i64, std::equal_to<>>(operators::eq);
