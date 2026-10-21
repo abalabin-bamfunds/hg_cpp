@@ -338,6 +338,25 @@ that parameter's value. Other registration arguments are passed to the
 implementation graph as installation arguments. The catalogue retains the
 Python service and graph wrappers while its native registrations are in use.
 
+Wrap a request/reply or subscription implementation with
+`bg.feedback_service_implementation(service, implementation)` to delay each
+request by one cycle before the implementation receives it. The returned
+service implementation keeps the service and graph alive. Pass it to
+`ServiceCatalogue.register_impl` with the same scalar filters and installation
+arguments:
+
+```python
+catalogue.register_impl(
+    echo,
+    bg.feedback_service_implementation(echo, echo_implementation),
+    mode=2,
+    factor=3,
+)
+```
+
+The service must accept requests and declare an output. The implementation
+graph must declare an output.
+
 One graph can implement several services through a multiservice registration.
 Connect each service's request and reply ports inside the graph, then register
 the graph and its service claims:

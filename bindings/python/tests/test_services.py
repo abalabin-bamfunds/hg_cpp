@@ -1,5 +1,6 @@
 import gc
 import weakref
+from typing import TypeVar
 
 import pytest
 
@@ -150,6 +151,146 @@ def test_request_reply_service_supports_scalar_filter_and_installation_argument(
     catalogue.register_impl(transform, implementation, mode=2, factor=3)
 
     assert bg.test_graph(client, [2, 4], catalogue=catalogue) == [6, 12]
+
+
+def test_feedback_service_implementation_delays_request_reply():
+    @bg.service
+    def echo(value: bg.TS[int]) -> bg.TS[int]:
+        """Return each request value."""
+
+    @bg.compute_node
+    def respond(requests: bg.TSD[int, bg.TS[int]]) -> bg.TSD[int, bg.TS[int]]:
+        return {key: requests[key].value for key in requests.valid_keys()}
+
+    @bg.graph
+    def implementation(value: bg.TSD[int, bg.TS[int]]) -> bg.TSD[int, bg.TS[int]]:
+        return respond(value)
+
+    feedback = bg.feedback_service_implementation(echo, implementation)
+
+    @bg.graph
+    def client(value: bg.TS[int]) -> bg.TS[int]:
+        return echo(value)
+
+    catalogue = bg.ServiceCatalogue()
+    catalogue.register_impl(echo, feedback)
+    assert bg.test_graph(client, [2, 4], catalogue=catalogue) == [None, 2, 4]
+
+
+def test_feedback_service_implementation_preserves_filter_installation_and_generic_types():
+    VALUE = TypeVar("VALUE")
+
+    @bg.service
+    def transform(value: bg.TS[VALUE], mode: int) -> bg.TS[VALUE]:
+        """Transform each request using an installation factor."""
+
+    @bg.compute_node
+    def transform_values(requests: bg.TSD[int, bg.TS[VALUE]], factor: int) -> bg.TSD[int, bg.TS[VALUE]]:
+        return {key: requests[key].value * factor for key in requests.valid_keys()}
+
+    @bg.graph
+    def implementation(value: bg.TSD[int, bg.TS[VALUE]], mode: int,
+                       factor: int) -> bg.TSD[int, bg.TS[VALUE]]:
+        return transform_values(value, factor)
+
+    feedback = bg.feedback_service_implementation(transform, implementation)
+
+    @bg.graph
+    def client(value: bg.TS[int]) -> bg.TS[int]:
+        return transform(value, mode=2)
+
+    catalogue = bg.ServiceCatalogue()
+    catalogue.register_impl(transform, feedback, mode=2, factor=3)
+    assert bg.test_graph(client, [2, 4], catalogue=catalogue) == [None, 6, 12]
+
+
+def test_feedback_subscription_implementation_delays_keys_and_keeps_installation_argument():
+    @bg.subscription_service
+    def lookup(key: bg.TS[int, bg.final]) -> bg.TS[int]:
+        """Return a value for every requested key."""
+
+    @bg.compute_node
+    def answer(keys: bg.TSS[int], offset: int) -> bg.TSD[int, bg.TS[int]]:
+        return {key: key * 10 + offset for key in keys.value}
+
+    @bg.graph
+    def implementation(requests: bg.TSS[int], offset: int) -> bg.TSD[int, bg.TS[int]]:
+        return answer(requests, offset)
+
+    @bg.source_node
+    def final_key() -> bg.TS[int, bg.final]:
+        return 3
+
+    @bg.graph
+    def client(tick: bg.TS[int]) -> bg.TS[int]:
+        _ = tick
+        return lookup(final_key())
+
+    catalogue = bg.ServiceCatalogue()
+    catalogue.register_impl(lookup, bg.feedback_service_implementation(lookup, implementation), offset=5)
+    assert bg.test_graph(client, [0], catalogue=catalogue) == [None, 35]
+
+
+def test_feedback_service_implementation_retains_service_and_graph():
+    @bg.service
+    def local_service(value: bg.TS[int]) -> bg.TS[int]:
+        pass
+
+    @bg.graph
+    def local_implementation(value: bg.TSD[int, bg.TS[int]]) -> bg.TSD[int, bg.TS[int]]:
+        return value
+
+    service_reference = weakref.ref(local_service)
+    graph_reference = weakref.ref(local_implementation)
+    feedback = bg.feedback_service_implementation(local_service, local_implementation)
+
+    del local_service, local_implementation
+    gc.collect()
+
+    assert service_reference() is not None
+    assert graph_reference() is not None
+
+    del feedback
+    gc.collect()
+
+    assert service_reference() is None
+    assert graph_reference() is None
+
+
+def test_feedback_service_implementation_rejects_unsupported_signatures():
+    @bg.reference_service
+    def source() -> bg.TS[int]:
+        pass
+
+    @bg.service
+    def sink(value: bg.TS[int]) -> None:
+        pass
+
+    @bg.service
+    def echo_service(value: bg.TS[int]) -> bg.TS[int]:
+        pass
+
+    @bg.graph
+    def outputless_implementation(value: bg.TSD[int, bg.TS[int]]) -> None:
+        pass
+
+    @bg.graph
+    def implementation(value: bg.TSD[int, bg.TS[int]]) -> bg.TSD[int, bg.TS[int]]:
+        return value
+
+    with pytest.raises(ValueError, match="requires a service with requests and an output"):
+        bg.feedback_service_implementation(source, implementation)
+
+    with pytest.raises(ValueError, match="requires a service with requests and an output"):
+        bg.feedback_service_implementation(sink, implementation)
+
+    with pytest.raises(ValueError, match="implementation must have an output"):
+        bg.feedback_service_implementation(echo_service, outputless_implementation)
+
+    catalogue = bg.ServiceCatalogue()
+    feedback = bg.feedback_service_implementation(echo_service, implementation)
+    with pytest.raises(ValueError, match="different service"):
+        catalogue.register_impl(sink, feedback)
 
 
 def test_subscription_service_accepts_final_and_const_keys():
