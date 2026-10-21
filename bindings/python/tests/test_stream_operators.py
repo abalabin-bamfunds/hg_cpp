@@ -1,6 +1,46 @@
+from datetime import timedelta
+
 import pytest
 
 import bg
+
+
+def test_take_drop_and_step_are_available_to_python_graphs():
+    @bg.graph
+    def take(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.take(value, 2)
+
+    @bg.graph
+    def drop(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.drop(value, 2)
+
+    @bg.graph
+    def step(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.step(value, 2)
+
+    assert bg.test_graph(take, [10, bg.INVALID, 20, 30, bg.INVALID, 40]) == [10, None, 20, None, None, None]
+    assert bg.test_graph(drop, [10, bg.INVALID, 20, 30, bg.INVALID, 40]) == [None, None, None, 30, None, 40]
+    assert bg.test_graph(step, [10, 10, 20, bg.INVALID, 30, 40, 50]) == [10, None, 20, None, None, 40, None]
+
+
+def test_resample_is_available_to_python_graphs():
+    @bg.graph
+    def resample(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.resample(value, timedelta(microseconds=2))
+
+    @bg.graph
+    def passthrough(value: bg.TS[int]) -> bg.TS[int]:
+        return value
+
+    @bg.graph
+    def selected(selector: bg.TS[int], value: bg.TS[int]) -> bg.TS[int]:
+        return bg.switch_(selector, {1: resample, 0: passthrough}, value)
+
+    assert bg.test_graph(
+        selected,
+        [1, 1, 1, 1, 1, 1, 1, 1, 0],
+        [10, 20, 30, bg.INVALID, None, 50, None, 60, 70],
+    ) == [None, None, 30, None, None, None, 50, None, 70]
 
 
 def test_valid_and_all_valid_publish_only_validity_changes():

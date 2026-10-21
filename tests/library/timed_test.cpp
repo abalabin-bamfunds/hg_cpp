@@ -352,3 +352,61 @@ TEST_CASE("a nested timed source stops with its selected graph",
     CHECK(testing::test_graph(selected_schedule, {1, 0, 0})
               .equals<bool>({std::nullopt, false, std::nullopt}));
 }
+
+TEST_CASE("resample samples on its schedule and stops with its switch branch",
+          "[feature:operator][feature:scheduling][feature:timed-scheduling][feature:switch]"
+          "[feature:nested-graph][series:tss][series:tsd][transition:update][transition:stop]") {
+    const auto resample = [](wp<TS<i64>> value) {
+        return operators::resample(value, timedelta_t{2}).as<TS<i64>>();
+    };
+    const auto passthrough = [](wp<TS<i64>> value) { return value; };
+    const auto select = [&](wp<TS<i64>> selector, wp<TS<i64>> value) {
+        return switch_(selector, cases{case_(i64{1}, resample), case_(i64{0}, passthrough)}, value)
+            .as<TS<i64>>();
+    };
+
+    CHECK(testing::test_graph(select,
+                              {1, 1, 1, 1, 1, 1, 1, 1, 0},
+                              {10, 20, 30, literal::INVALID, literal::SKIP, 50, literal::SKIP, 60, 70})
+              .equals<i64>({std::nullopt, std::nullopt, 30, std::nullopt, std::nullopt, std::nullopt, 50,
+                            std::nullopt, 70}));
+
+    const auto resample_dictionary = [](wp<TSD<i64, TS<i64>>> value) {
+        return operators::resample(value, timedelta_t{2}).as<TSD<i64, TS<i64>>>();
+    };
+    const auto passthrough_dictionary = [](wp<TSD<i64, TS<i64>>> value) { return value; };
+    const auto select_dictionary = [&](wp<TS<i64>> selector, wp<TSD<i64, TS<i64>>> value) {
+        const auto selected = switch_(selector,
+                                      cases{case_(i64{1}, resample_dictionary),
+                                            case_(i64{0}, passthrough_dictionary)},
+                                      value);
+        return operators::sum_(selected).as<TS<i64>>();
+    };
+    CHECK(testing::test_graph(select_dictionary,
+                              {1, 1, 1, 1, 1, 0},
+                              {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}, {3, 30}},
+                               {{1, literal::REMOVE}, {4, 40}}, literal::SKIP, literal::SKIP})
+              .equals<i64>({std::nullopt, std::nullopt, 41, std::nullopt, 70, 70}));
+
+    const auto resample_set = [](wp<TSS<i64>> value) {
+        return operators::resample(value, timedelta_t{2}).as<TSS<i64>>();
+    };
+    const auto passthrough_set = [](wp<TSS<i64>> value) { return value; };
+    const auto select_set = [&](wp<TS<i64>> selector, wp<TSS<i64>> value) {
+        const auto selected =
+            switch_(selector, cases{case_(i64{1}, resample_set), case_(i64{0}, passthrough_set)}, value);
+        return operators::sum_(selected).as<TS<i64>>();
+    };
+    CHECK(testing::test_graph(select_set,
+                              {1, 1, 1, 1, 1, 0},
+                              {{1, 2}, {3}, {literal::REMOVED(1), 4}, {literal::REMOVED(3), 5},
+                               literal::SKIP, literal::SKIP})
+              .equals<i64>({std::nullopt, std::nullopt, 9, std::nullopt, 11, 11}));
+}
+
+TEST_CASE("resample validates its period",
+          "[feature:operator][feature:wiring][feature:timed-scheduling]") {
+    CHECK_THROWS_AS(testing::test_graph(
+                        [] { return operators::resample(operators::const_(i64{1}), timedelta_t{}); }),
+                    WiringError);
+}

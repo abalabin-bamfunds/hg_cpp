@@ -88,6 +88,9 @@ extern BG_LIBRARY_EXPORT operator_<auto(TS<SCALAR>) -> const Type *> type_;
 extern BG_LIBRARY_EXPORT operator_<auto(SIGNAL, TS_T) -> TS_T> sample;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> TS_T> dedup;
 extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TS_T) -> TS_T> filter_;
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T, i64) -> OUT> take;
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T, i64) -> OUT> drop;
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T, i64) -> OUT> step;
 extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TRUE_TS, FALSE_TS) -> OUT> if_then_else;
 
 // Counting and lag.
@@ -103,6 +106,7 @@ extern BG_LIBRARY_EXPORT operator_<auto(TS<double>, double, i64) -> OUT> ewma;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T, timedelta_t) -> OUT> delay;
 extern BG_LIBRARY_EXPORT operator_<auto(timedelta_t, bool, i64) -> TS<bool>> schedule;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T, timedelta_t, bool) -> OUT> throttle;
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T, timedelta_t) -> OUT> resample;
 
 // Running numeric aggregates. A valid reset-input tick clears the current aggregate.
 extern BG_LIBRARY_EXPORT operator_<auto(TS<NUMERIC>) -> OUT> sums;

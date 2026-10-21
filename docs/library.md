@@ -322,6 +322,38 @@ cycles do not advance the state.
 With zero warmup, EWMA retains the input guarantee. Positive warmup limits the
 output guarantee for a `const` input to `final` because its only tick may be
 suppressed. Other input guarantees are retained.
+## Counted tick selection
+
+`take(value, n)` forwards the first `n` valid input ticks, then preserves its
+output. `drop(value, n)` skips the first `n` valid input ticks and forwards
+subsequent ticks. `step(value, n)` forwards the first valid input tick and then
+every `n`th valid tick: positions `0`, `n`, `2n`, and so on.
+
+These operators count valid root ticks, not collection items. Equal ordinary
+ticks count separately. Skipped cycles and root invalidation neither advance
+nor reset the count. Revalidation resumes the existing count.
+
+`take` propagates invalidation until its count is complete; later invalidation
+preserves its output. `drop` propagates invalidation after forwarding begins.
+`step` propagates invalidation independently of valid-tick selection. For TSS
+and TSD, propagation follows the normal [copying rules](node-api.md#output-parameters)
+and clears an existing output to a valid empty collection.
+
+The first forwarded collection value includes changes made while ticks were
+skipped. Each selected `step` tick copies the complete current collection,
+including removals, rather than only the latest delta.
+`take` forwards deltas. `drop` copies the complete value when forwarding begins
+and forwards deltas afterward.
+
+Counts are scalar arguments. `take` and `drop` require `n >= 0`; `take(value, 0)`
+publishes nothing, and `drop(value, 0)` forwards every tick. `step` requires
+`n > 0`; `step(value, 1)` forwards every tick. Invalid counts fail during wiring.
+None of these operators schedules on start.
+
+`take` retains the observed input type and its guarantees, except that a zero
+count limits const guarantees to final. `drop` and `step` retain the observed
+root guarantee up to final and limit contained guarantees to that same level.
+ This permits complete-value copies of unchanged items after skipped ticks.
 
 ## Timed operators
 
@@ -355,6 +387,12 @@ publication time contributes to that publication. Collection publication
 reconciles the complete current value, so changes that cancel within the
 period need not produce an output tick. The output retains input guarantees up
 to final. Throttle retains timing state, not a copy of the input value.
+
+`resample(value, period)` composes `schedule(period)` and `sample`. Its first
+sampling time is one period after graph start. Each scheduled tick samples the
+complete current valid value; input changes alone do not publish. Invalid input
+preserves the previous output, following `sample` above. Collection mutation
+rules still apply, so an unchanged collection need not publish another root tick.
 
 Durations are scalar arguments: use `bg::timedelta_t` in C++ and
 `datetime.timedelta` in Python. Timed work uses evaluation time and stops with

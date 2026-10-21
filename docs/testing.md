@@ -643,6 +643,13 @@ For each reusable node and graph, test:
 - analytical `diff`, `clip`, and `ewma`, including numeric types, changing
   bounds, warmup, invalidation, configuration errors, guarantees, and nested
   graph state
+- counted take, drop, and step selection, including count bounds, equal valid
+  ticks, skipped cycles, invalidation without advancing or resetting the count,
+  take completion, collection reconciliation after skipped changes, reference
+  retargeting, guarantees, and independent nested-graph state
+- periodic resampling through schedule and sample, including the first period,
+  simultaneous input changes, invalid input, collection reconciliation, and
+  nested-graph stop cleanup
 - running sums, extrema, and means, including skipped cycles, repeated values,
   invalidation, reset-only and simultaneous reset/value ticks, reset invalidation,
   numeric limits, NaN comparisons, guarantees, references, and independent nested graph state

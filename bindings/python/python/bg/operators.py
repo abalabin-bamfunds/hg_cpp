@@ -44,6 +44,9 @@ count = _native.count
 sample = _native.sample
 dedup = _native.dedup
 filter_ = _native.filter_
+take = _native.take
+drop = _native.drop
+step = _native.step
 if_then_else = _native.if_then_else
 lag = _native.lag
 diff = _native.diff
@@ -52,6 +55,7 @@ ewma = _native.ewma
 delay = _native.delay
 schedule = _native.schedule
 throttle = _native.throttle
+resample = _native.resample
 sums = _native.sums
 mins = _native.mins
 maxs = _native.maxs
@@ -94,6 +98,7 @@ __all__ = [
     "dedup",
     "dispatch",
     "diff",
+    "drop",
     "div",
     "eq",
     "ewma",
@@ -134,6 +139,7 @@ __all__ = [
     "replace",
     "pos",
     "round",
+    "resample",
     "sample",
     "schedule",
     "casefold",
@@ -141,6 +147,8 @@ __all__ = [
     "substr",
     "str_",
     "sum_",
+    "step",
+    "take",
     "switch_",
     "split",
     "join",

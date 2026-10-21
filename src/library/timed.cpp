@@ -291,6 +291,20 @@ struct timed_overloads {
     };
 
     overload<throttle> throttle_impl{graph<throttle_graph>()};
+
+    struct resample_graph {
+        wp<TS_T> value;
+        timedelta_t period;
+
+        static const TimeSeriesType *resolve(OUT, const WiringArguments &arguments) {
+            const auto &value_type = type_cast<TimeSeriesType>(arguments.resolved_type("value"));
+            return &value_type.with_guarantee_limit(TimeSeriesGuarantee::ordinary);
+        }
+
+        wp<OUT> wire() const { return wp<OUT>{operators::sample(operators::schedule(period), value)}; }
+    };
+
+    overload<resample> resample_impl{graph<resample_graph>()};
 };
 
 } // namespace

@@ -129,6 +129,123 @@ struct stream_overloads {
 
     overload<filter_, filter_impl> filter_impl;
 
+    struct take_impl {
+        In<TS_T, optional, dynamic_activity> value;
+        Scalar<i64> n;
+        State<i64> remaining;
+        Out<OUT> output;
+
+        static const TimeSeriesType *resolve(OUT, const WiringArguments &arguments) {
+            const auto &value_type = type_cast<TimeSeriesType>(arguments.resolved_type("value"));
+            const auto count = scalar_cast<i64>(*arguments.scalar("n")).value();
+            return count == 0 ? &value_type.with_guarantee_limit(TimeSeriesGuarantee::final) : &value_type;
+        }
+
+        static RequirementResult require(const WiringArguments &arguments) {
+            const auto count = scalar_cast<i64>(*arguments.scalar("n")).value();
+            return count < 0 ? reject("n must be nonnegative") : accept;
+        }
+
+        void start() const {
+            *remaining = n.value();
+            if (*remaining == 0) {
+                value.make_passive();
+            }
+        }
+
+        void evaluate() const {
+            if (*remaining == 0) {
+                return;
+            }
+
+            if (!value.valid()) {
+                output.copy(value);
+                return;
+            }
+
+            output.copy_tick(value);
+
+            if (--*remaining == 0) {
+                value.make_passive();
+            }
+        }
+    };
+
+    overload<take, take_impl> take_impl;
+
+    struct drop_impl {
+        In<TS_T, optional> value;
+        Scalar<i64> n;
+        State<i64> remaining;
+        Out<OUT> output;
+
+        static const TimeSeriesType *resolve(OUT, const WiringArguments &arguments) {
+            const auto &value_type = type_cast<TimeSeriesType>(arguments.resolved_type("value"));
+            const auto limit = weakest(*value_type.guarantee().value(), TimeSeriesGuarantee::final);
+            return &value_type.with_guarantee_limit(limit);
+        }
+
+        static RequirementResult require(const WiringArguments &arguments) {
+            const auto count = scalar_cast<i64>(*arguments.scalar("n")).value();
+            return count < 0 ? reject("n must be nonnegative") : accept;
+        }
+
+        void start() const { *remaining = n.value(); }
+
+        void evaluate() const {
+            if (!value.valid()) {
+                output.copy(value);
+                return;
+            }
+            if (*remaining > 0) {
+                --*remaining;
+                return;
+            }
+            if (!output.valid()) {
+                output.copy(value);
+                return;
+            }
+
+            output.copy_tick(value);
+        }
+    };
+
+    overload<drop, drop_impl> drop_impl;
+
+    struct step_impl {
+        In<TS_T, optional> value;
+        Scalar<i64> n;
+        State<i64> until_next;
+        Out<OUT> output;
+
+        static const TimeSeriesType *resolve(OUT, const WiringArguments &arguments) {
+            const auto &value_type = type_cast<TimeSeriesType>(arguments.resolved_type("value"));
+            const auto limit = weakest(*value_type.guarantee().value(), TimeSeriesGuarantee::final);
+            return &value_type.with_guarantee_limit(limit);
+        }
+
+        static RequirementResult require(const WiringArguments &arguments) {
+            const auto count = scalar_cast<i64>(*arguments.scalar("n")).value();
+            return count < 1 ? reject("n must be positive") : accept;
+        }
+
+        void evaluate() const {
+            if (!value.valid()) {
+                output.copy(value);
+                return;
+            }
+            if (*until_next > 0) {
+                --*until_next;
+                return;
+            }
+
+            output.copy(value);
+            *until_next = n.value() - 1;
+        }
+    };
+
+    overload<step, step_impl> step_impl;
+
     struct if_then_else_impl {
         In<TS<bool>> condition;
         In<REF<TRUE_TS>, optional> true_value;
