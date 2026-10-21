@@ -144,6 +144,7 @@ add_executable(
     value/time_series/list/storage_test.cpp
     value/time_series/reference/storage_test.cpp
     value/time_series/set/storage_test.cpp
+    wiring/dispatch_selector_test.cpp
     wiring/graph_template_test.cpp
     wiring/with_signature_test.cpp
     wiring/context_time_series_test.cpp
