@@ -113,6 +113,8 @@ TEST_CASE("direct runtime graph lifecycle paths use the system wall clock",
     lifecycle_definition::identity = {};
 }
 
+namespace {
+
 struct scheduled_lifecycle_definition {
     static constexpr bool uses_timed_scheduling = true;
 
@@ -137,6 +139,8 @@ struct scheduled_lifecycle_definition {
     inline static std::size_t evaluation_count{};
     inline static observed_wall_clock identity{};
 };
+
+} // namespace
 
 TEST_CASE("one simulation wall clock follows each outer evaluation cycle",
           "[evaluation][simulation][context][feature:wall-clock][transition:lifecycle]") {
@@ -165,6 +169,8 @@ TEST_CASE("one simulation wall clock follows each outer evaluation cycle",
     scheduled_lifecycle_definition::identity = {};
 }
 
+namespace {
+
 struct failing_lifecycle_definition {
     void start(EvaluationContext *context) const {
         identity.observe(context);
@@ -186,6 +192,8 @@ struct failing_lifecycle_definition {
     inline static std::array<EvaluationTime, 3> observations{};
     inline static observed_wall_clock identity{};
 };
+
+} // namespace
 
 TEST_CASE("failure stop functions retain the active wall clock",
           "[evaluation][simulation][lifecycle][failure][feature:wall-clock][transition:stop]") {
@@ -209,6 +217,8 @@ TEST_CASE("failure stop functions retain the active wall clock",
     CHECK(failing_lifecycle_definition::identity.matches);
     failing_lifecycle_definition::identity = {};
 }
+
+namespace {
 
 struct invalidating_source_definition {
     static constexpr bool uses_timed_scheduling = true;
@@ -242,6 +252,8 @@ struct invalidation_observer_definition {
     inline static bool shares_clock{};
 };
 
+} // namespace
+
 TEST_CASE("invalidation functions retain the active wall clock",
           "[evaluation][simulation][invalidation][feature:wall-clock][transition:invalidation]") {
     const auto source = bg::node<invalidating_source_definition>();
@@ -267,6 +279,8 @@ TEST_CASE("invalidation functions retain the active wall clock",
     invalidating_source_definition::clock = nullptr;
 }
 
+namespace {
+
 struct nested_lifecycle_definition {
     Out<TS<i64>> output;
 
@@ -291,6 +305,8 @@ struct nested_lifecycle_definition {
     inline static std::array<EvaluationTime, 3> observations{};
     inline static observed_wall_clock identity{};
 };
+
+} // namespace
 
 TEST_CASE("nested graph contexts share the outer simulation wall clock",
           "[evaluation][simulation][nested][context][feature:wall-clock]") {

@@ -166,6 +166,8 @@ TEST_CASE("simulation periodic callback failure at termination stops a started g
     scheduled_source_definition::evaluation_delay = std::chrono::milliseconds{};
 }
 
+namespace {
+
 struct periodic_callback_chain_definition {
     static constexpr bool uses_timed_scheduling = true;
 
@@ -186,6 +188,8 @@ struct periodic_callback_chain_definition {
     inline static std::size_t evaluation_count{};
     inline static std::size_t stop_count{};
 };
+
+} // namespace
 
 TEST_CASE("simulation polls periodic callbacks after eight completed cycles",
           "[evaluation][simulation][feature:simulation][feature:lifecycle][failure]") {

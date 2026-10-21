@@ -358,7 +358,7 @@ TEST_CASE("compact reduce profiles pair-slot reuse as stop then start of the sam
     const auto add =
         bg::node([](In<TS<i64>> left, In<TS<i64>> right, Out<TS<i64>> output) { output.set(*left + *right); });
     const auto reducer = bg::graph("name"_n = "profile_reduce_pair",
-                                   [add](bg::wp<TS<i64>> left, bg::wp<TS<i64>> right) { return add(left, right); });
+                                   [&add](bg::wp<TS<i64>> left, bg::wp<TS<i64>> right) { return add(left, right); });
     const auto sink = bg::node([](In<TS<i64>>) {});
     const auto source = bg::node<profiling_counter_source>();
 
@@ -413,6 +413,8 @@ TEST_CASE("compact reduce profiles pair-slot reuse as stop then start of the sam
     CHECK(std::ranges::none_of(graph_is_active, [](const auto &entry) { return entry.second; }));
 }
 
+namespace {
+
 struct profile_start_only {
     void start(EvaluationContext *context) const {
         ++starts;
@@ -421,6 +423,8 @@ struct profile_start_only {
 
     inline static std::size_t starts{};
 };
+
+} // namespace
 
 TEST_CASE("runtime graph profiling records scheduled nodes without evaluation functions",
           "[evaluation][profile][feature:profiling]") {
@@ -786,6 +790,8 @@ TEST_CASE("runtime graph rejects a profile that was not used at start",
     runtime.stop();
 }
 
+namespace {
+
 struct profile_stop_context_source {
     Out<TS<i64>> output;
 
@@ -795,6 +801,8 @@ struct profile_stop_context_source {
 
     inline static EvaluationProfile *stopped_profile{};
 };
+
+} // namespace
 
 TEST_CASE("runtime graph keeps the profile selected at start",
           "[evaluation][profile][feature:profiling]") {

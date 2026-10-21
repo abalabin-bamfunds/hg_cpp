@@ -286,10 +286,9 @@ TEST_CASE("a changing reference context evaluates only consuming map switch bran
         });
     };
 
-    const auto actual = testing::test_graph(tested, std::array<i64, 3>{1, 2, 1},
-                                            std::array<std::optional<i64>, 3>{10, std::nullopt, std::nullopt},
-                                            std::array<std::optional<i64>, 3>{20, std::nullopt, std::nullopt},
-                                            std::array<std::optional<bool>, 3>{true, std::nullopt, std::nullopt});
+    const auto actual = testing::test_graph(tested, {1, 2, 1}, {10, literal::SKIP, literal::SKIP},
+                                            {20, literal::SKIP, literal::SKIP},
+                                            {true, literal::SKIP, literal::SKIP});
 
     CHECK(actual.equals({10, 20, 10}));
     auto expected = std::array<std::size_t, branch_count>{};
@@ -362,11 +361,9 @@ TEST_CASE("a changing reference context updates through two nested boundaries in
         return with_context("value"_n = selected, [&] { return nested(middle, run, run); });
     };
 
-    const auto actual =
-        testing::test_graph(tested, std::array<i64, 4>{1, 2, 1, 2},
-                            std::array<std::optional<i64>, 4>{10, std::nullopt, std::nullopt, std::nullopt},
-                            std::array<std::optional<i64>, 4>{20, std::nullopt, std::nullopt, std::nullopt},
-                            std::array{true, true, true, true});
+    const auto actual = testing::test_graph(tested, {1, 2, 1, 2}, {10, literal::SKIP, literal::SKIP, literal::SKIP},
+                                            {20, literal::SKIP, literal::SKIP, literal::SKIP},
+                                            {true, true, true, true});
 
     CHECK(actual.equals({10, 20, 10, 20}));
 }

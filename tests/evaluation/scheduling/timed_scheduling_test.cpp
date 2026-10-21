@@ -20,10 +20,12 @@
 #include <new>
 #include <stdexcept>
 
+using namespace bg;
+
 namespace {
 
-[[nodiscard]] bg::EvaluationTime time(bg::i64 microseconds) {
-    return bg::MIN_DT + std::chrono::microseconds{microseconds};
+[[nodiscard]] EvaluationTime time(i64 microseconds) {
+    return MIN_DT + std::chrono::microseconds{microseconds};
 }
 
 struct unscheduled_node_definition {
@@ -42,24 +44,24 @@ struct scheduling_node_definition {
 
 TEST_CASE("timed scheduling adds storage only to graphs that declare it",
           "[evaluation][timed_scheduling][feature:timed-scheduling][transition:addition]") {
-    const auto unscheduled_node = bg::node<unscheduled_node_definition>();
-    const auto scheduling_node = bg::node<scheduling_node_definition>();
-    auto unscheduled_wiring = bg::GraphWiring{};
+    const auto unscheduled_node = node<unscheduled_node_definition>();
+    const auto scheduling_node = node<scheduling_node_definition>();
+    auto unscheduled_wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{unscheduled_wiring};
+        auto context = WiringContext{unscheduled_wiring};
         unscheduled_node(0);
     }
 
-    auto scheduling_wiring = bg::GraphWiring{};
+    auto scheduling_wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{scheduling_wiring};
+        auto context = WiringContext{scheduling_wiring};
         scheduling_node(0);
     }
 
     unscheduled_wiring.finalize();
-    const auto unscheduled = bg::CompiledGraph{unscheduled_wiring};
+    const auto unscheduled = CompiledGraph{unscheduled_wiring};
     scheduling_wiring.finalize();
-    const auto scheduling = bg::CompiledGraph{scheduling_wiring};
+    const auto scheduling = CompiledGraph{scheduling_wiring};
 
     CHECK(scheduling.runtime_storage_size() == unscheduled.runtime_storage_size() + sizeof(void *));
 }
@@ -67,24 +69,24 @@ TEST_CASE("timed scheduling adds storage only to graphs that declare it",
 struct cancelling_source_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::Out<bg::TS<bg::i64>> output;
+    Out<TS<i64>> output;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         const auto cancelled = context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
         context->cancel(cancelled);
         context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
     }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(EvaluationContext *context) const {
         evaluation_time = context->evaluation_time();
         output.set(1);
     }
 
-    inline static bg::EvaluationTime evaluation_time{bg::MIN_DT};
+    inline static EvaluationTime evaluation_time{MIN_DT};
 };
 
 struct int_sink_definition {
-    bg::In<bg::TS<bg::i64>> input;
+    In<TS<i64>> input;
 
     void evaluate() const {}
 };
@@ -92,7 +94,7 @@ struct int_sink_definition {
 struct simulation_timer_progression_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         context->schedule_now();
         context->schedule_at(evaluation_deadline);
         if (!schedule_wall_clock_during_evaluation) {
@@ -100,7 +102,7 @@ struct simulation_timer_progression_definition {
         }
     }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(EvaluationContext *context) const {
         evaluation_times[evaluation_count++] = context->evaluation_time();
         if (schedule_wall_clock_during_evaluation && context->evaluation_time() == time(1)) {
             context->schedule_wall_clock_at(wall_clock_deadline);
@@ -108,23 +110,23 @@ struct simulation_timer_progression_definition {
     }
 
     inline static bool schedule_wall_clock_during_evaluation{};
-    inline static bg::EvaluationTime evaluation_deadline{bg::MIN_DT};
-    inline static bg::EvaluationTime wall_clock_deadline{bg::MIN_DT};
-    inline static std::array<bg::EvaluationTime, 4> evaluation_times{};
+    inline static EvaluationTime evaluation_deadline{MIN_DT};
+    inline static EvaluationTime wall_clock_deadline{MIN_DT};
+    inline static std::array<EvaluationTime, 4> evaluation_times{};
     inline static std::size_t evaluation_count{};
 };
 
 struct nested_pending_timer_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::State<int> attempts;
-    bg::Out<bg::TS<bg::i64>> output;
+    State<int> attempts;
+    Out<TS<i64>> output;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         initial_handle = context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
-    bool evaluate(bg::EvaluationContext *context) const {
+    bool evaluate(EvaluationContext *context) const {
         ++*attempts;
         if (*attempts == 1) {
             fired_during_pending = context->timer_fired(initial_handle);
@@ -144,8 +146,8 @@ struct nested_pending_timer_definition {
         return true;
     }
 
-    inline static bg::ScheduleHandle initial_handle;
-    inline static bg::ScheduleHandle resumed_handle;
+    inline static ScheduleHandle initial_handle;
+    inline static ScheduleHandle resumed_handle;
     inline static bool fired_during_pending{};
     inline static bool fired_after_resume{};
     inline static bool initial_handle_retired{};
@@ -155,23 +157,23 @@ struct nested_pending_timer_definition {
 struct nested_pending_controller_state {
     static constexpr bool supports_byte_copy_initialization = true;
 
-    bg::RuntimeGraphEvaluator evaluator;
-    bg::RuntimeGraph *runtime_graph{};
+    RuntimeGraphEvaluator evaluator;
+    RuntimeGraph *runtime_graph{};
 };
 
 struct nested_pending_controller_definition {
-    bg::State<nested_pending_controller_state> state;
+    State<nested_pending_controller_state> state;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         auto &parent = context->runtime_graph();
         state->evaluator.bind_owner(parent, context->node_index());
-        state->runtime_graph = parent.allocation().new_object<bg::RuntimeGraph>(
+        state->runtime_graph = parent.allocation().new_object<RuntimeGraph>(
             *inner_graph, parent.allocation(), state->evaluator, 0);
         auto inner_context = context->child(*state->runtime_graph, nullptr);
         state->runtime_graph->start(inner_context);
     }
 
-    bool evaluate(bg::EvaluationContext *context) const {
+    bool evaluate(EvaluationContext *context) const {
         auto inner_context = context->child(*state->runtime_graph, nullptr);
         if (state->runtime_graph->evaluate(inner_context)) {
             return true;
@@ -181,7 +183,7 @@ struct nested_pending_controller_definition {
         return resumed;
     }
 
-    void stop(bg::EvaluationContext *context) const noexcept {
+    void stop(EvaluationContext *context) const noexcept {
         if (state->runtime_graph == nullptr) {
             return;
         }
@@ -192,7 +194,7 @@ struct nested_pending_controller_definition {
         state->runtime_graph = nullptr;
     }
 
-    inline static const bg::CompiledGraph *inner_graph{};
+    inline static const CompiledGraph *inner_graph{};
     inline static bool saw_pending{};
     inline static bool resumed{};
 };
@@ -202,26 +204,26 @@ TEST_CASE("fired handles remain visible while a nested graph resumes in one oute
           "[transition:lifecycle]") {
     using namespace bg::literals;
 
-    const auto inner_timer = bg::node<nested_pending_timer_definition>();
-    bg::GraphWiring inner_wiring;
+    const auto inner_timer = node<nested_pending_timer_definition>();
+    GraphWiring inner_wiring;
     {
-        bg::WiringContext context{inner_wiring};
+        WiringContext context{inner_wiring};
         (void)inner_timer();
     }
     inner_wiring.finalize();
-    const bg::CompiledGraph inner_compiled{inner_wiring};
+    const CompiledGraph inner_compiled{inner_wiring};
     nested_pending_controller_definition::inner_graph = &inner_compiled;
 
-    const auto controller = bg::node<nested_pending_controller_definition>();
-    bg::GraphWiring wiring;
+    const auto controller = node<nested_pending_controller_definition>();
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         controller();
     }
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, global_state};
+    const CompiledGraph compiled{wiring};
+    auto global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, global_state};
     nested_pending_timer_definition::fired_during_pending = false;
     nested_pending_timer_definition::fired_after_resume = false;
     nested_pending_timer_definition::initial_handle_retired = false;
@@ -252,7 +254,7 @@ struct indexed_heap_cancellation_definition {
     static constexpr std::size_t deadline_for(std::size_t index) { return (index * 37) % timer_count + 2; }
     static constexpr bool is_cancelled(std::size_t index) { return (index * 13) % 17 < 6; }
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         for (std::size_t index = 0; index < timer_count; ++index) {
             handles[index] = context->schedule_at(time(deadline_for(index)));
         }
@@ -264,7 +266,7 @@ struct indexed_heap_cancellation_definition {
         }
     }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(EvaluationContext *context) const {
         for (std::size_t index = 0; index < timer_count; ++index) {
             if (!is_cancelled(index) && time(deadline_for(index)) == context->evaluation_time()) {
                 fired_in_order[observed_count] = context->timer_fired(handles[index]);
@@ -275,7 +277,7 @@ struct indexed_heap_cancellation_definition {
         }
     }
 
-    inline static std::array<bg::ScheduleHandle, timer_count> handles{};
+    inline static std::array<ScheduleHandle, timer_count> handles{};
     inline static std::array<std::size_t, timer_count> observed_deadlines{};
     inline static std::array<bool, timer_count> fired_in_order{};
     inline static std::size_t observed_count{};
@@ -284,15 +286,15 @@ struct indexed_heap_cancellation_definition {
 TEST_CASE("arbitrary timer cancellations preserve heap order",
           "[evaluation][timed_scheduling][feature:timed-scheduling][transition:removal]") {
     const auto node = bg::node<indexed_heap_cancellation_definition>();
-    bg::GraphWiring wiring;
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         node();
     }
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, global_state};
+    const CompiledGraph compiled{wiring};
+    auto global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, global_state};
     indexed_heap_cancellation_definition::observed_count = 0;
     runtime.start(time(1));
     runtime.evaluate(time(1));
@@ -321,11 +323,11 @@ TEST_CASE("arbitrary timer cancellations preserve heap order",
 struct fired_timer_lifecycle_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         original_handle = context->schedule_at(time(2));
     }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(EvaluationContext *context) const {
         if (context->evaluation_time() == time(2)) {
             fired_before_cancel = context->timer_fired(original_handle);
             context->cancel(original_handle);
@@ -350,9 +352,9 @@ struct fired_timer_lifecycle_definition {
         }
     }
 
-    inline static bg::ScheduleHandle original_handle;
-    inline static bg::ScheduleHandle replacement_handle;
-    inline static bg::ScheduleHandle reused_slot_handle;
+    inline static ScheduleHandle original_handle;
+    inline static ScheduleHandle replacement_handle;
+    inline static ScheduleHandle reused_slot_handle;
     inline static bool fired_before_cancel{};
     inline static bool fired_after_cancel{};
     inline static bool original_retired{};
@@ -367,15 +369,15 @@ struct fired_timer_lifecycle_definition {
 TEST_CASE("fired handles survive cancellation and become stale after the next cycle",
           "[evaluation][timed_scheduling][feature:timed-scheduling][transition:lifecycle]") {
     const auto node = bg::node<fired_timer_lifecycle_definition>();
-    bg::GraphWiring wiring;
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         node();
     }
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, global_state};
+    const CompiledGraph compiled{wiring};
+    auto global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, global_state};
     fired_timer_lifecycle_definition::fired_before_cancel = false;
     fired_timer_lifecycle_definition::fired_after_cancel = false;
     fired_timer_lifecycle_definition::original_retired = false;
@@ -408,69 +410,69 @@ TEST_CASE("simulation advances to mixed evaluation and wall-clock deadlines",
           "[evaluation][simulation][timed_scheduling][feature:simulation][feature:wall-clock]"
           "[feature:timed-scheduling][transition:lifecycle]") {
     const auto node = bg::node<simulation_timer_progression_definition>();
-    bg::GraphWiring wiring;
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         node();
     }
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, global_state};
+    const CompiledGraph compiled{wiring};
+    auto global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, global_state};
     simulation_timer_progression_definition::evaluation_deadline = time(10);
     simulation_timer_progression_definition::wall_clock_deadline = time(5);
     simulation_timer_progression_definition::schedule_wall_clock_during_evaluation = false;
     simulation_timer_progression_definition::evaluation_count = 0;
 
-    bg::SimulationEvaluationEngine{}.run(runtime, time(1));
+    SimulationEvaluationEngine{}.run(runtime, time(1));
 
     REQUIRE(simulation_timer_progression_definition::evaluation_count == 3);
     CHECK(simulation_timer_progression_definition::evaluation_times == std::array{time(1), time(5), time(10),
-                                                                                  bg::MIN_DT});
+                                                                                  MIN_DT});
 }
 
 TEST_CASE("simulation advances overdue wall-clock timers at the next minimum time",
           "[evaluation][simulation][timed_scheduling][feature:simulation][feature:wall-clock]"
           "[feature:timed-scheduling][transition:lifecycle]") {
     const auto node = bg::node<simulation_timer_progression_definition>();
-    bg::GraphWiring wiring;
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         node();
     }
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, global_state};
+    const CompiledGraph compiled{wiring};
+    auto global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, global_state};
     simulation_timer_progression_definition::evaluation_deadline = time(7);
     simulation_timer_progression_definition::wall_clock_deadline = time(0);
     simulation_timer_progression_definition::schedule_wall_clock_during_evaluation = true;
     simulation_timer_progression_definition::evaluation_count = 0;
 
-    bg::SimulationEvaluationEngine{}.run(runtime, time(1));
+    SimulationEvaluationEngine{}.run(runtime, time(1));
 
     REQUIRE(simulation_timer_progression_definition::evaluation_count == 3);
     CHECK(simulation_timer_progression_definition::evaluation_times == std::array{time(1), time(2), time(7),
-                                                                                  bg::MIN_DT});
+                                                                                  MIN_DT});
 }
 
 struct wall_clock_readiness_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    void start(bg::EvaluationContext *context) const {
-        deadline = bg::SystemWallClock::instance().now() + std::chrono::hours{1};
+    void start(EvaluationContext *context) const {
+        deadline = SystemWallClock::instance().now() + std::chrono::hours{1};
         handle = context->schedule_wall_clock_at(deadline);
         context->schedule_now();
     }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(EvaluationContext *context) const {
         fired = context->timer_fired(handle);
         evaluation_time = context->evaluation_time();
     }
 
-    inline static bg::EvaluationTime deadline{bg::MIN_DT};
-    inline static bg::EvaluationTime evaluation_time{bg::MIN_DT};
-    inline static bg::ScheduleHandle handle;
+    inline static EvaluationTime deadline{MIN_DT};
+    inline static EvaluationTime evaluation_time{MIN_DT};
+    inline static ScheduleHandle handle;
     inline static bool fired{};
 };
 
@@ -478,15 +480,15 @@ TEST_CASE("wall-clock readiness does not follow evaluation time",
           "[evaluation][timed_scheduling][feature:wall-clock][feature:timed-scheduling]"
           "[transition:lifecycle]") {
     const auto node = bg::node<wall_clock_readiness_definition>();
-    bg::GraphWiring wiring;
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         node();
     }
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, global_state};
+    const CompiledGraph compiled{wiring};
+    auto global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, global_state};
     wall_clock_readiness_definition::fired = false;
     runtime.start(time(1));
     const auto evaluation_time = wall_clock_readiness_definition::deadline + std::chrono::hours{1};
@@ -502,21 +504,21 @@ TEST_CASE("wall-clock readiness does not follow evaluation time",
 struct overdue_wall_clock_coalescing_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         for (auto index = std::size_t{}; index != handles.size(); ++index) {
-            handles[index] = context->schedule_wall_clock_at(time(static_cast<bg::i64>(index)));
+            handles[index] = context->schedule_wall_clock_at(time(static_cast<i64>(index)));
         }
         context->schedule_now();
     }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(EvaluationContext *context) const {
         ++evaluation_count;
         for (const auto handle : handles) {
             all_fired = all_fired && context->timer_fired(handle);
         }
     }
 
-    inline static std::array<bg::ScheduleHandle, 3> handles{};
+    inline static std::array<ScheduleHandle, 3> handles{};
     inline static int evaluation_count{};
     inline static bool all_fired{true};
 };
@@ -525,15 +527,15 @@ TEST_CASE("overdue wall-clock timers coalesce in one outer cycle",
           "[evaluation][timed_scheduling][feature:wall-clock][feature:timed-scheduling]"
           "[transition:lifecycle]") {
     const auto node = bg::node<overdue_wall_clock_coalescing_definition>();
-    bg::GraphWiring wiring;
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         node();
     }
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, global_state};
+    const CompiledGraph compiled{wiring};
+    auto global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, global_state};
     overdue_wall_clock_coalescing_definition::evaluation_count = 0;
     overdue_wall_clock_coalescing_definition::all_fired = true;
     runtime.start(time(1));
@@ -548,19 +550,19 @@ TEST_CASE("overdue wall-clock timers coalesce in one outer cycle",
 
 TEST_CASE("a runtime graph activates timed scheduling at the start of evaluation",
           "[evaluation][timed_scheduling][feature:timed-scheduling][transition:start]") {
-    const auto cancelling_source = bg::node<cancelling_source_definition>();
-    const auto int_sink = bg::node<int_sink_definition>();
-    auto wiring = bg::GraphWiring{};
+    const auto cancelling_source = node<cancelling_source_definition>();
+    const auto int_sink = node<int_sink_definition>();
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         int_sink(cancelling_source());
     }
 
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
-    cancelling_source_definition::evaluation_time = bg::MIN_DT;
+    const auto compiled = CompiledGraph{wiring};
+    auto runtime_global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, runtime_global_state};
+    cancelling_source_definition::evaluation_time = MIN_DT;
 
     runtime.start(time(1));
     runtime.evaluate(time(1));
@@ -575,7 +577,7 @@ TEST_CASE("a runtime graph activates timed scheduling at the start of evaluation
 struct coalescing_node_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         const auto scheduled_time = context->evaluation_time() + std::chrono::microseconds{2};
         context->schedule_at(scheduled_time);
         context->schedule_at(scheduled_time);
@@ -588,17 +590,17 @@ struct coalescing_node_definition {
 
 TEST_CASE("schedule requests for one node at the same time coalesce",
           "[evaluation][timed_scheduling][feature:timed-scheduling]") {
-    const auto coalescing_node = bg::node<coalescing_node_definition>();
-    bg::GraphWiring wiring;
+    const auto coalescing_node = node<coalescing_node_definition>();
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         coalescing_node();
     }
 
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, runtime_global_state};
+    const CompiledGraph compiled{wiring};
+    auto runtime_global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, runtime_global_state};
     coalescing_node_definition::evaluation_count = 0;
 
     runtime.start(time(1));
@@ -617,7 +619,7 @@ struct delayed_node_definition {
     int id;
     int delay;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         context->schedule_at(context->evaluation_time() + std::chrono::microseconds{delay});
     }
 
@@ -628,18 +630,18 @@ struct delayed_node_definition {
 
 TEST_CASE("evaluation activates every overdue schedule request",
           "[evaluation][timed_scheduling][feature:timed-scheduling]") {
-    const auto delayed_node = bg::node<delayed_node_definition>();
-    bg::GraphWiring wiring;
+    const auto delayed_node = node<delayed_node_definition>();
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         delayed_node(0, 2);
         delayed_node(1, 6);
     }
 
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, runtime_global_state};
+    const CompiledGraph compiled{wiring};
+    auto runtime_global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, runtime_global_state};
     delayed_node_definition::evaluation_counts = {0, 0};
 
     runtime.start(time(1));
@@ -655,37 +657,37 @@ TEST_CASE("evaluation activates every overdue schedule request",
 struct schedule_owner_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         handle = context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
     }
 
     void evaluate() const { ++evaluation_count; }
 
-    inline static bg::ScheduleHandle handle;
+    inline static ScheduleHandle handle;
     inline static int evaluation_count{};
 };
 
 struct foreign_canceller_definition {
-    void start(bg::EvaluationContext *context) const { context->cancel(schedule_owner_definition::handle); }
+    void start(EvaluationContext *context) const { context->cancel(schedule_owner_definition::handle); }
 
     void evaluate() const {}
 };
 
 TEST_CASE("a schedule handle identifies the node that created it",
           "[evaluation][timed_scheduling][feature:timed-scheduling]") {
-    const auto schedule_owner = bg::node<schedule_owner_definition>();
-    const auto foreign_canceller = bg::node<foreign_canceller_definition>();
-    bg::GraphWiring wiring;
+    const auto schedule_owner = node<schedule_owner_definition>();
+    const auto foreign_canceller = node<foreign_canceller_definition>();
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         schedule_owner();
         foreign_canceller();
     }
 
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, runtime_global_state};
+    const CompiledGraph compiled{wiring};
+    auto runtime_global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, runtime_global_state};
     schedule_owner_definition::evaluation_count = 0;
 
     runtime.start(time(1));
@@ -700,30 +702,30 @@ TEST_CASE("a schedule handle identifies the node that created it",
 struct invalid_time_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    void start(bg::EvaluationContext *context) const { context->schedule_at(context->evaluation_time()); }
+    void start(EvaluationContext *context) const { context->schedule_at(context->evaluation_time()); }
 
     void evaluate() const {}
 };
 
 TEST_CASE("timed scheduling requires a time after the current outer cycle",
           "[evaluation][timed_scheduling][feature:timed-scheduling]") {
-    const auto invalid_time = bg::node<invalid_time_definition>();
-    bg::GraphWiring wiring;
+    const auto invalid_time = node<invalid_time_definition>();
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         invalid_time();
     }
 
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, runtime_global_state};
+    const CompiledGraph compiled{wiring};
+    auto runtime_global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, runtime_global_state};
 
     CHECK_THROWS_AS(runtime.start(time(1)), std::invalid_argument);
 }
 
 struct undeclared_scheduling_definition {
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
@@ -731,17 +733,17 @@ struct undeclared_scheduling_definition {
 };
 
 TEST_CASE("a node must declare timed scheduling", "[evaluation][timed_scheduling][feature:timed-scheduling]") {
-    const auto undeclared_scheduling = bg::node<undeclared_scheduling_definition>();
-    bg::GraphWiring wiring;
+    const auto undeclared_scheduling = node<undeclared_scheduling_definition>();
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         undeclared_scheduling();
     }
 
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, runtime_global_state};
+    const CompiledGraph compiled{wiring};
+    auto runtime_global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, runtime_global_state};
 
     CHECK_THROWS_AS(runtime.start(time(1)), std::logic_error);
 }
@@ -749,17 +751,17 @@ TEST_CASE("a node must declare timed scheduling", "[evaluation][timed_scheduling
 TEST_CASE("stopping a runtime graph clears schedule requests",
           "[evaluation][timed_scheduling][lifecycle][feature:timed-scheduling][transition:removal]"
           "[transition:stop]") {
-    const auto coalescing_node = bg::node<coalescing_node_definition>();
-    bg::GraphWiring wiring;
+    const auto coalescing_node = node<coalescing_node_definition>();
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         coalescing_node();
     }
 
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, runtime_global_state};
+    const CompiledGraph compiled{wiring};
+    auto runtime_global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, runtime_global_state};
     runtime.start(time(1));
     REQUIRE(runtime.next_scheduled_time() == time(3));
 
@@ -771,7 +773,7 @@ TEST_CASE("stopping a runtime graph clears schedule requests",
 struct startup_failure_with_timer_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
         throw std::runtime_error{"startup failed"};
     }
@@ -782,15 +784,15 @@ struct startup_failure_with_timer_definition {
 TEST_CASE("startup failure clears timers registered before the failure",
           "[evaluation][timed_scheduling][failure][feature:timed-scheduling][transition:lifecycle]") {
     const auto node = bg::node<startup_failure_with_timer_definition>();
-    bg::GraphWiring wiring;
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         node();
     }
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, global_state};
+    const CompiledGraph compiled{wiring};
+    auto global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, global_state};
 
     CHECK_THROWS_AS(runtime.start(time(1)), std::runtime_error);
     CHECK_FALSE(runtime.next_scheduled_time());
@@ -799,12 +801,12 @@ TEST_CASE("startup failure clears timers registered before the failure",
 struct evaluation_failure_with_timer_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         context->schedule_at(context->evaluation_time() + std::chrono::microseconds{5});
         context->schedule_now();
     }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(EvaluationContext *context) const {
         context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
         throw std::runtime_error{"evaluation failed"};
     }
@@ -813,15 +815,15 @@ struct evaluation_failure_with_timer_definition {
 TEST_CASE("evaluation failure clears timers registered before the failure",
           "[evaluation][timed_scheduling][failure][feature:timed-scheduling][transition:lifecycle]") {
     const auto node = bg::node<evaluation_failure_with_timer_definition>();
-    bg::GraphWiring wiring;
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         node();
     }
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, global_state};
+    const CompiledGraph compiled{wiring};
+    auto global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, global_state};
     runtime.start(time(1));
 
     CHECK_THROWS_AS(runtime.evaluate(time(1)), std::runtime_error);
@@ -834,17 +836,17 @@ struct stop_callback_timer_definition {
 
     stop_callback_timer_definition() : signature_{bg::util::symbol{"stop_callback_timer"}, {}} {}
 
-    const bg::Signature &signature() const noexcept { return signature_; }
+    const Signature &signature() const noexcept { return signature_; }
 
-    static void start(bg::NodeInvocation<> invocation) {
+    static void start(NodeInvocation<> invocation) {
         auto &context = invocation.context();
         context.schedule_at(context.evaluation_time() + std::chrono::microseconds{5});
         context.add_cycle_callback(&callback_ran, schedule_timer, true);
     }
 
-    static void evaluate(bg::NodeInvocation<>) {}
+    static void evaluate(NodeInvocation<>) {}
 
-    static void schedule_timer(void *receiver, bg::EvaluationContext &context) noexcept {
+    static void schedule_timer(void *receiver, EvaluationContext &context) noexcept {
         *static_cast<bool *>(receiver) = true;
         (void)context.schedule_at(context.evaluation_time() + std::chrono::microseconds{1});
     }
@@ -852,7 +854,7 @@ struct stop_callback_timer_definition {
     inline static bool callback_ran{};
 
   private:
-    bg::Signature signature_;
+    Signature signature_;
 };
 
 struct deferred_cleanup_timer_definition {
@@ -861,16 +863,16 @@ struct deferred_cleanup_timer_definition {
 
     deferred_cleanup_timer_definition() : signature_{bg::util::symbol{"deferred_cleanup_timer"}, {}} {}
 
-    const bg::Signature &signature() const noexcept { return signature_; }
+    const Signature &signature() const noexcept { return signature_; }
 
-    static void start(bg::NodeInvocation<> invocation) {
+    static void start(NodeInvocation<> invocation) {
         auto &context = invocation.context();
         node_index = context.node_index();
         initial_handle = context.schedule_at(context.evaluation_time() + std::chrono::microseconds{1});
         context.schedule_now();
     }
 
-    static void evaluate(bg::NodeInvocation<> invocation) {
+    static void evaluate(NodeInvocation<> invocation) {
         auto &context = invocation.context();
         if (context.evaluation_time() == time(1)) {
             context.add_cycle_callback(&callback_ran, schedule_timer);
@@ -884,7 +886,7 @@ struct deferred_cleanup_timer_definition {
         }
     }
 
-    static void schedule_timer(void *, bg::EvaluationContext &context) noexcept {
+    static void schedule_timer(void *, EvaluationContext &context) noexcept {
         callback_ran = true;
         callback_time = context.evaluation_time();
         try {
@@ -902,9 +904,9 @@ struct deferred_cleanup_timer_definition {
     }
 
     inline static std::size_t node_index{};
-    inline static bg::ScheduleHandle initial_handle;
-    inline static bg::ScheduleHandle deferred_handle;
-    inline static bg::EvaluationTime callback_time{bg::MIN_DT};
+    inline static ScheduleHandle initial_handle;
+    inline static ScheduleHandle deferred_handle;
+    inline static EvaluationTime callback_time{MIN_DT};
     inline static bool callback_ran{};
     inline static bool current_time_rejected{};
     inline static bool registration_failed{};
@@ -912,29 +914,29 @@ struct deferred_cleanup_timer_definition {
     inline static bool deferred_timer_fired{};
 
   private:
-    bg::Signature signature_;
+    Signature signature_;
 };
 
 TEST_CASE("cycle cleanup schedules timers relative to the new invocation time",
           "[evaluation][timed_scheduling][feature:timed-scheduling][transition:lifecycle]") {
-    const auto prefix = bg::node<unscheduled_node_definition>();
+    const auto prefix = node<unscheduled_node_definition>();
     const auto node = bg::node(deferred_cleanup_timer_definition{});
-    bg::GraphWiring wiring;
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         prefix(0);
         (void)node();
     }
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, global_state};
+    const CompiledGraph compiled{wiring};
+    auto global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, global_state};
     deferred_cleanup_timer_definition::callback_ran = false;
     deferred_cleanup_timer_definition::current_time_rejected = false;
     deferred_cleanup_timer_definition::registration_failed = false;
     deferred_cleanup_timer_definition::initial_timer_fired = false;
     deferred_cleanup_timer_definition::deferred_timer_fired = false;
-    deferred_cleanup_timer_definition::callback_time = bg::MIN_DT;
+    deferred_cleanup_timer_definition::callback_time = MIN_DT;
     runtime.start(time(1));
     runtime.evaluate(time(1));
     REQUIRE(runtime.next_scheduled_time() == time(2));
@@ -956,15 +958,15 @@ TEST_CASE("cycle cleanup schedules timers relative to the new invocation time",
 TEST_CASE("stop callbacks can register timers that stop then clears",
           "[evaluation][timed_scheduling][lifecycle][feature:timed-scheduling][transition:stop]") {
     const auto node = bg::node(stop_callback_timer_definition{});
-    bg::GraphWiring wiring;
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         (void)node();
     }
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, global_state};
+    const CompiledGraph compiled{wiring};
+    auto global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, global_state};
     stop_callback_timer_definition::callback_ran = false;
     runtime.start(time(1));
 
@@ -978,15 +980,15 @@ TEST_CASE("finalizing a running graph clears timers registered by stop callbacks
           "[evaluation][timed_scheduling][lifecycle][feature:timed-scheduling][feature:finalization]"
           "[transition:lifecycle]") {
     const auto node = bg::node(stop_callback_timer_definition{});
-    bg::GraphWiring wiring;
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         (void)node();
     }
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, global_state};
+    const CompiledGraph compiled{wiring};
+    auto global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, global_state};
     stop_callback_timer_definition::callback_ran = false;
     runtime.start(time(1));
 
@@ -999,7 +1001,7 @@ TEST_CASE("finalizing a running graph clears timers registered by stop callbacks
 struct timer_allocation_failure_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         for (auto index = std::size_t{}; index < initial_timers.size(); ++index) {
             initial_timers[index] = context->schedule_at(
                 context->evaluation_time() + std::chrono::microseconds{static_cast<std::int64_t>(index) + 2});
@@ -1007,7 +1009,7 @@ struct timer_allocation_failure_definition {
         context->schedule_now();
     }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(EvaluationContext *context) const {
         resource->fail_after(2);
         try {
             (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{100});
@@ -1020,15 +1022,15 @@ struct timer_allocation_failure_definition {
     }
 
     inline static counting_memory_resource *resource{};
-    inline static std::array<bg::ScheduleHandle, 8> initial_timers{};
-    inline static bg::ScheduleHandle retry{};
+    inline static std::array<ScheduleHandle, 8> initial_timers{};
+    inline static ScheduleHandle retry{};
     inline static bool registration_failed{};
 };
 
 struct first_timer_allocation_failure_definition {
     static constexpr bool uses_timed_scheduling = true;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         resource->fail_after(failure_budget);
         try {
             const auto handle = context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
@@ -1052,18 +1054,18 @@ struct first_timer_allocation_failure_definition {
 TEST_CASE("first timer registration rolls back each allocation boundary",
           "[evaluation][timed_scheduling][failure][feature:timed-scheduling][transition:lifecycle]") {
     const auto node = bg::node<first_timer_allocation_failure_definition>();
-    bg::GraphWiring wiring;
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         node();
     }
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto global_state = bg::GlobalState{};
+    const CompiledGraph compiled{wiring};
+    auto global_state = GlobalState{};
 
     for (auto failure_budget = std::size_t{}; failure_budget != 3; ++failure_budget) {
         auto memory = counting_memory_resource{};
-        bg::RuntimeGraph runtime{compiled, bg::allocator{memory}, global_state};
+        RuntimeGraph runtime{compiled, allocator{memory}, global_state};
         first_timer_allocation_failure_definition::resource = &memory;
         first_timer_allocation_failure_definition::failure_budget = failure_budget;
         first_timer_allocation_failure_definition::registration_failed = false;
@@ -1079,16 +1081,16 @@ TEST_CASE("first timer registration rolls back each allocation boundary",
 TEST_CASE("failed timer registration rolls back its slot, heap and owner links",
           "[evaluation][timed_scheduling][failure][feature:timed-scheduling][transition:lifecycle]") {
     const auto node = bg::node<timer_allocation_failure_definition>();
-    bg::GraphWiring wiring;
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         node();
     }
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto global_state = bg::GlobalState{};
+    const CompiledGraph compiled{wiring};
+    auto global_state = GlobalState{};
     auto memory = counting_memory_resource{};
-    bg::RuntimeGraph runtime{compiled, bg::allocator{memory}, global_state};
+    RuntimeGraph runtime{compiled, allocator{memory}, global_state};
     timer_allocation_failure_definition::resource = &memory;
     timer_allocation_failure_definition::registration_failed = false;
     timer_allocation_failure_definition::retry = {};

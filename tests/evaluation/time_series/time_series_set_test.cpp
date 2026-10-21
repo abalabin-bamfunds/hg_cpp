@@ -60,14 +60,14 @@ namespace {
 struct tss_membership_evaluation_count_definition {
     static constexpr bool uses_cycle_callbacks = true;
 
-    bg::In<bg::REF<bg::TSS<bg::i64>>> collection;
-    bg::In<bg::TS<bool>, bg::optional, bg::dynamic_binding> membership;
-    bg::Out<bg::TS<bool>> output;
+    In<REF<TSS<i64>>> collection;
+    In<TS<bool>, optional, dynamic_binding> membership;
+    Out<TS<bool>> output;
 
     void evaluate() const {
         ++evaluation_count;
-        const auto key = bg::i64{7};
-        membership.bind(collection.membership(bg::Scalar<bg::i64>::from(key)));
+        const auto key = i64{7};
+        membership.bind(collection.membership(Scalar<i64>::from(key)));
         output.copy(membership);
     }
 
@@ -84,11 +84,11 @@ struct tss_membership_evaluation_count_definition {
 TEST_CASE("a TSS membership binding ignores changes to other keys",
           "[evaluation][tss][series:tss][series:reference][feature:collection-change]"
           "[scalar:integer][transition:addition][transition:removal][definition:aggregate]") {
-    const auto observe = bg::node<tss_membership_evaluation_count_definition>();
-    const auto graph = [&](bg::wp<bg::TSS<bg::i64>> input) { return observe(input); };
+    const auto observe = node<tss_membership_evaluation_count_definition>();
+    const auto graph = [&](wp<TSS<i64>> input) { return observe(input); };
     tss_membership_evaluation_count_definition::evaluation_count = 0;
 
-    const auto actual = bg::testing::test_graph(graph, {{7}, {8}, {literal::REMOVED(7)}, {7}});
+    const auto actual = testing::test_graph(graph, {{7}, {8}, {literal::REMOVED(7)}, {7}});
 
     CHECK(actual.equals<bool>({true, std::nullopt, false, true}));
     CHECK(tss_membership_evaluation_count_definition::evaluation_count == 3);
@@ -253,7 +253,7 @@ TEST_CASE("a time series set accepts its exact non-canonical item type",
 
 TEST_CASE("Out<TSS>::for_each supports erasing visited members across index words",
           "[evaluation][feature:node-api][series:tss][transition:removal][transition:update]") {
-    const auto update = bg::node([](bg::In<bg::TS<bg::i64>> trigger, bg::Out<bg::TSS<bg::i64>> output) {
+    const auto update = node([](In<TS<i64>> trigger, Out<TSS<i64>> output) {
         auto visited = std::size_t{};
         output.for_each([&](const auto &key) {
             ++visited;
@@ -262,17 +262,17 @@ TEST_CASE("Out<TSS>::for_each supports erasing visited members across index word
         CHECK(visited == (*trigger == 1 ? 130 : 0));
 
         if (*trigger == 0) {
-            for (auto key = bg::i64{}; key < 130; ++key) {
+            for (auto key = i64{}; key < 130; ++key) {
                 output.insert(key);
             }
         }
     });
-    const auto size = bg::node([](bg::In<bg::TSS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
-        output.set(static_cast<bg::i64>(input.size()));
+    const auto size = node([](In<TSS<i64>> input, Out<TS<i64>> output) {
+        output.set(static_cast<i64>(input.size()));
     });
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> trigger) { return size(update(trigger)); };
+    const auto graph = [&](wp<TS<i64>> trigger) { return size(update(trigger)); };
 
-    CHECK(bg::testing::test_graph(graph, {0, 1, 2}).equals<bg::i64>({130, 0, std::nullopt}));
+    CHECK(bg::testing::test_graph(graph, {0, 1, 2}).equals<i64>({130, 0, std::nullopt}));
 }
 
 namespace {

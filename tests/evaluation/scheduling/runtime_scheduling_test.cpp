@@ -10,17 +10,19 @@
 #include <chrono>
 #include <stdexcept>
 
+using namespace bg;
+
 namespace {
 
 struct constant_definition {
     float value;
-    bg::Out<bg::TS<float>> output;
+    Out<TS<float>> output;
 
     void evaluate() const { output.set(value); }
 };
 
-[[nodiscard]] bg::EvaluationTime time(bg::i64 microseconds) {
-    return bg::MIN_DT + std::chrono::microseconds{microseconds};
+[[nodiscard]] EvaluationTime time(i64 microseconds) {
+    return MIN_DT + std::chrono::microseconds{microseconds};
 }
 
 } // namespace
@@ -28,9 +30,9 @@ struct constant_definition {
 namespace {
 
 struct add_definition {
-    bg::In<bg::TS<float>> lhs;
-    bg::In<bg::TS<float>> rhs;
-    bg::Out<bg::TS<float>> output;
+    In<TS<float>> lhs;
+    In<TS<float>> rhs;
+    Out<TS<float>> output;
 
     void evaluate() const {
         ++evaluation_count;
@@ -47,19 +49,19 @@ struct add_definition {
 TEST_CASE("a runtime graph evaluates scheduled nodes in topological order",
           "[evaluation][scheduling][feature:scheduling][shape:chain][series:value]"
           "[scalar:floating-point]") {
-    const auto constant = bg::node<constant_definition>();
-    const auto add = bg::node<add_definition>();
-    bg::GraphWiring wiring;
+    const auto constant = node<constant_definition>();
+    const auto add = node<add_definition>();
+    GraphWiring wiring;
 
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         (void)add(constant(1.0F), constant(2.0F));
     }
 
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, runtime_global_state};
+    const CompiledGraph compiled{wiring};
+    auto runtime_global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, runtime_global_state};
     add_definition::evaluation_count = 0;
 
     runtime.start(time(1));
@@ -81,13 +83,13 @@ TEST_CASE("a runtime graph evaluates scheduled nodes in topological order",
 namespace {
 
 struct start_only_definition {
-    bg::Out<bg::TS<float>> output;
+    Out<TS<float>> output;
 
     void start() const { output.set(3.0F); }
 };
 
 struct start_only_sink_definition {
-    bg::In<bg::TS<float>> input;
+    In<TS<float>> input;
 
     void evaluate() const {
         ++evaluation_count;
@@ -101,7 +103,7 @@ struct start_only_sink_definition {
 struct initially_scheduled_source_definition {
     static constexpr bool schedule_on_start = true;
 
-    bg::Out<bg::TS<float>> output;
+    Out<TS<float>> output;
 
     void evaluate() const {
         ++evaluation_count;
@@ -115,7 +117,7 @@ struct initially_scheduled_scalar_definition {
     static constexpr bool schedule_on_start = true;
 
     int value;
-    bg::Out<bg::TS<float>> output;
+    Out<TS<float>> output;
 
     void evaluate() const {
         ++evaluation_count;
@@ -134,7 +136,7 @@ struct inert_scalar_definition {
 };
 
 struct initial_value_sink_definition {
-    bg::In<bg::TS<float>> input;
+    In<TS<float>> input;
 
     void evaluate() const { last_value = *input; }
 
@@ -145,19 +147,19 @@ struct initial_value_sink_definition {
 
 TEST_CASE("a scheduled node can omit evaluation",
           "[evaluation][scheduling][feature:scheduling][series:value][scalar:floating-point]") {
-    const auto source = bg::node<start_only_definition>();
-    const auto sink = bg::node<start_only_sink_definition>();
-    auto wiring = bg::GraphWiring{};
+    const auto source = node<start_only_definition>();
+    const auto sink = node<start_only_sink_definition>();
+    auto wiring = GraphWiring{};
 
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         sink(source());
     }
 
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto runtime_global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, runtime_global_state};
     start_only_sink_definition::evaluation_count = 0;
     start_only_sink_definition::last_value = 0.0F;
 
@@ -175,29 +177,29 @@ TEST_CASE("a scheduled node can omit evaluation",
 
 TEST_CASE("a node can request evaluation in the first cycle",
           "[evaluation][scheduling][feature:scheduling][shape:source][series:value][scalar:floating-point]") {
-    const auto source = bg::node<initially_scheduled_source_definition>();
-    const auto scalar_source = bg::node<initially_scheduled_scalar_definition>();
+    const auto source = node<initially_scheduled_source_definition>();
+    const auto scalar_source = node<initially_scheduled_scalar_definition>();
     auto callable_evaluation_count = 0;
-    const auto callable_source = bg::node(
-        bg::eval =
-            [&](bg::Out<bg::TS<float>> output) {
+    const auto callable_source = node(
+        eval =
+            [&](Out<TS<float>> output) {
                 ++callable_evaluation_count;
                 output.set(13.0F);
             },
-        bg::schedule_on_start = true);
-    const auto sink = bg::node<initial_value_sink_definition>();
-    auto wiring = bg::GraphWiring{};
+        schedule_on_start = true);
+    const auto sink = node<initial_value_sink_definition>();
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         sink(source());
         sink(scalar_source(11));
         sink(callable_source());
     }
 
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto runtime_global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, runtime_global_state};
     initially_scheduled_source_definition::evaluation_count = 0;
     initially_scheduled_scalar_definition::evaluation_count = 0;
     initial_value_sink_definition::last_value = 0.0F;
@@ -213,17 +215,17 @@ TEST_CASE("a node can request evaluation in the first cycle",
 
 TEST_CASE("a scalar-only node is inert unless it requests initial evaluation",
           "[evaluation][scheduling][feature:scheduling][scalar:floating-point]") {
-    const auto inert = bg::node<inert_scalar_definition>();
-    auto wiring = bg::GraphWiring{};
+    const auto inert = node<inert_scalar_definition>();
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         inert(3);
     }
 
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto runtime_global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, runtime_global_state};
     inert_scalar_definition::evaluation_count = 0;
 
     runtime.start(time(1));
@@ -250,20 +252,20 @@ struct indexed_definition {
 
 TEST_CASE("a runtime graph processes set scheduling bits in node order",
           "[evaluation][scheduling][feature:scheduling][series:value][scalar:floating-point]") {
-    const auto indexed = bg::node<indexed_definition>();
-    bg::GraphWiring wiring;
+    const auto indexed = node<indexed_definition>();
+    GraphWiring wiring;
 
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         for (auto i = 0; i < 130; ++i) {
             indexed(i);
         }
     }
 
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, runtime_global_state};
+    const CompiledGraph compiled{wiring};
+    auto runtime_global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, runtime_global_state};
     indexed_definition::evaluation_count = 0;
 
     runtime.start(time(1));
@@ -281,7 +283,7 @@ TEST_CASE("a runtime graph processes set scheduling bits in node order",
 namespace {
 
 struct float_sink_definition {
-    bg::In<bg::TS<float>> input;
+    In<TS<float>> input;
 
     void evaluate() const {
         ++evaluation_count;
@@ -295,7 +297,7 @@ struct float_sink_definition {
 struct cross_block_scheduling_definition {
     int index;
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(EvaluationContext *context) const {
         evaluation_order[evaluation_count++] = index;
         if (index == trigger_index) {
             context->runtime_graph().schedule(previous_block_index);
@@ -314,7 +316,7 @@ struct cross_block_scheduling_definition {
 struct same_block_rescheduling_definition {
     int index;
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(EvaluationContext *context) const {
         evaluation_order[evaluation_count++] = index;
         if (index == trigger_index) {
             context->runtime_graph().schedule(previous_index);
@@ -334,19 +336,19 @@ struct same_block_rescheduling_definition {
 TEST_CASE("scheduling honors the processed-node boundary within and across blocks",
           "[evaluation][scheduling][feature:scheduling][shape:chain]") {
     SECTION("a request for an earlier block waits until the next cycle") {
-        const auto indexed = bg::node<cross_block_scheduling_definition>();
-        bg::GraphWiring wiring;
+        const auto indexed = node<cross_block_scheduling_definition>();
+        GraphWiring wiring;
         {
-            bg::WiringContext context{wiring};
+            WiringContext context{wiring};
             for (auto node_index = 0; node_index < 130; ++node_index) {
                 indexed(node_index);
             }
         }
 
         wiring.finalize();
-        const bg::CompiledGraph compiled{wiring};
-        auto global_state = bg::GlobalState{};
-        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        const CompiledGraph compiled{wiring};
+        auto global_state = GlobalState{};
+        auto runtime = RuntimeGraph{compiled, global_state};
         cross_block_scheduling_definition::evaluation_count = 0;
         runtime.start(time(1));
         runtime.schedule(cross_block_scheduling_definition::trigger_index);
@@ -372,19 +374,19 @@ TEST_CASE("scheduling honors the processed-node boundary within and across block
     }
 
     SECTION("a request for an earlier node in the current block is discarded") {
-        const auto indexed = bg::node<same_block_rescheduling_definition>();
-        bg::GraphWiring wiring;
+        const auto indexed = node<same_block_rescheduling_definition>();
+        GraphWiring wiring;
         {
-            bg::WiringContext context{wiring};
+            WiringContext context{wiring};
             for (auto node_index = 0; node_index < 130; ++node_index) {
                 indexed(node_index);
             }
         }
 
         wiring.finalize();
-        const bg::CompiledGraph compiled{wiring};
-        auto global_state = bg::GlobalState{};
-        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        const CompiledGraph compiled{wiring};
+        auto global_state = GlobalState{};
+        auto runtime = RuntimeGraph{compiled, global_state};
         same_block_rescheduling_definition::evaluation_count = 0;
         runtime.start(time(1));
         runtime.schedule(same_block_rescheduling_definition::trigger_index);
@@ -402,22 +404,22 @@ TEST_CASE("scheduling honors the processed-node boundary within and across block
 
 TEST_CASE("scheduling during evaluation crosses a scheduling block boundary",
           "[evaluation][scheduling][feature:scheduling][series:value][scalar:floating-point]") {
-    const auto constant = bg::node<constant_definition>();
-    const auto indexed = bg::node<indexed_definition>();
-    const auto float_sink = bg::node<float_sink_definition>();
-    bg::GraphWiring wiring;
+    const auto constant = node<constant_definition>();
+    const auto indexed = node<indexed_definition>();
+    const auto float_sink = node<float_sink_definition>();
+    GraphWiring wiring;
 
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         for (auto i = 0; i < 63; ++i) {
             indexed(i);
         }
 
         (void)wiring.complete_pending_wiring();
         const auto value = constant(1.0F);
-        const auto source_identity = wiring.node_call_identity(static_cast<bg::WiringPoint>(value));
+        const auto source_identity = wiring.node_call_identity(static_cast<WiringPoint>(value));
         REQUIRE(source_identity);
-        const auto sink_arguments = std::array{bg::WiringArgument{value}};
+        const auto sink_arguments = std::array{WiringArgument{value}};
         const auto sink_identity = wiring.invoke_node(float_sink, sink_arguments).identity;
 
         wiring.finalize();
@@ -425,9 +427,9 @@ TEST_CASE("scheduling during evaluation crosses a scheduling block boundary",
         CHECK(wiring.node_index(sink_identity) == 64);
     }
 
-    const bg::CompiledGraph compiled{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, runtime_global_state};
+    const CompiledGraph compiled{wiring};
+    auto runtime_global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, runtime_global_state};
     float_sink_definition::evaluation_count = 0;
     float_sink_definition::last_value = 0.0F;
 
@@ -441,21 +443,21 @@ TEST_CASE("scheduling during evaluation crosses a scheduling block boundary",
 
 TEST_CASE("evaluation time must increase between outer cycles",
           "[evaluation][scheduling][feature:scheduling][series:value][scalar:floating-point]") {
-    const auto indexed = bg::node<indexed_definition>();
-    bg::GraphWiring wiring;
+    const auto indexed = node<indexed_definition>();
+    GraphWiring wiring;
 
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         indexed(0);
     }
 
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, runtime_global_state};
+    const CompiledGraph compiled{wiring};
+    auto runtime_global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, runtime_global_state};
     runtime.start(time(1));
     runtime.evaluate(time(1));
 
     CHECK_THROWS_AS(runtime.evaluate(time(1)), std::invalid_argument);
-    CHECK_THROWS_AS(runtime.evaluate(bg::MIN_DT), std::invalid_argument);
+    CHECK_THROWS_AS(runtime.evaluate(MIN_DT), std::invalid_argument);
 }
