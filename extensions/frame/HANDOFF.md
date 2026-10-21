@@ -196,10 +196,9 @@ Prior rebase verification against main `a17a8ffd` rebuilt the Release BG depende
 and Release Arrow-on consumer with `-j12`; the complete consumer suite passed
 6/6. Extension files were unchanged by the rebase.
 
-Native keyed capture verification before this rebase passed the complete
-extension suite in all three consumer builds below. Each build used `-j12` and a
-lane-local BG install rebuilt from `368bded7` with a matching configuration.
-Root independently reran the Release Arrow-on suite after the final source edits.
+Final filtering verification used lane-local BG installs matching each consumer
+configuration below. Root independently reran the complete suite in all three
+configurations after the final source edits.
 
 | Consumer | Build | Test |
 | --- | --- | --- |
