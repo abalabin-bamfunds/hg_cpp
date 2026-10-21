@@ -630,6 +630,9 @@ For each reusable node and graph, test:
   and generic items, positional conversion, arity errors, and immutable results
 - declaration metadata lifetime after definition destruction and callback ownership
 - scalar-or-time-series node input resolution and concrete binding
+- Python node decorator activity and validity selection, passive sampling,
+  empty and omitted policy defaults, lifecycle callback registration,
+  optional and all-valid gating, and invalid declarations
 - wiring failures preserving Python exception identity, type, traceback, and context notes
 - runner engine selection, default and explicit start times, simulation-only test capture,
   profiling, explicit cancellation, stop-state lifetime, and GIL release while waiting

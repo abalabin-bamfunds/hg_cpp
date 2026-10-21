@@ -58,6 +58,7 @@
 
 #include <Python.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <exception>
 #include <limits>
@@ -501,6 +502,39 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
     }();
 
     return std::make_shared<const PythonNodeDefinition::SignatureDefinition>(std::move(wiring_parameter_types),
+                                                                              std::move(signature));
+}
+
+std::shared_ptr<const PythonNodeDefinition::SignatureDefinition>
+make_node_signature(std::string_view name, const std::vector<PythonParameter> &parameters,
+                    const std::optional<TypeDescriptor> &output,
+                    const std::optional<std::vector<std::size_t>> &active_parameters,
+                    const std::optional<std::vector<std::size_t>> &valid_parameters,
+                    const std::vector<std::size_t> &all_valid_parameters) {
+    const auto base = make_signature(name, parameters, output);
+    auto resolved_parameters = std::vector<Parameter>{};
+    resolved_parameters.reserve(base->signature.parameter_count());
+    for (auto index = std::size_t{}; index < base->signature.parameter_count(); ++index) {
+        auto parameter = base->signature.parameter(index);
+        if (active_parameters) {
+            parameter.activity = std::ranges::find(*active_parameters, index) != active_parameters->end() ? active
+                                                                                                          : passive;
+        }
+        if (valid_parameters) {
+            parameter.validity = std::ranges::find(*valid_parameters, index) != valid_parameters->end()
+                                     ? InputValidity::required
+                                     : InputValidity::optional;
+        }
+        if (std::ranges::find(all_valid_parameters, index) != all_valid_parameters.end()) {
+            parameter.validity = InputValidity::all_valid;
+        }
+        resolved_parameters.push_back(parameter);
+    }
+
+    auto signature = base->signature.output() == nullptr
+                         ? Signature{base->signature.name(), std::move(resolved_parameters)}
+                         : Signature{base->signature.name(), std::move(resolved_parameters), *base->signature.output()};
+    return std::make_shared<const PythonNodeDefinition::SignatureDefinition>(base->wiring_parameter_types,
                                                                               std::move(signature));
 }
 
@@ -1103,7 +1137,10 @@ void bind_core(nb::module_ &module) {
                                 const std::vector<std::pair<std::string, std::size_t>> &start_arguments,
                                 const std::vector<std::pair<std::string, std::size_t>> &stop_arguments,
                                 const std::vector<std::pair<std::string, std::size_t>> &invalidation_arguments,
-                                std::optional<nb::object> state_factory, bool generator, QueueMode queue_mode) {
+                                std::optional<nb::object> state_factory, bool generator, QueueMode queue_mode,
+                                std::optional<std::vector<std::size_t>> active_parameters,
+                                std::optional<std::vector<std::size_t>> valid_parameters,
+                                std::vector<std::size_t> all_valid_parameters) {
         const auto callback = [](const std::optional<nb::object> &function,
                                  const std::vector<std::pair<std::string, std::size_t>> &arguments) {
             auto result = PythonNodeDefinition::CallbackDefinition{};
@@ -1135,7 +1172,8 @@ void bind_core(nb::module_ &module) {
             return result;
         };
         return PythonNodeDefinition{
-            make_signature(name, parameters, output), schedule_on_start, pass_time_series_values,
+            make_node_signature(name, parameters, output, active_parameters, valid_parameters, all_valid_parameters),
+            schedule_on_start, pass_time_series_values,
             callback(evaluation, evaluation_arguments), callback(start, start_arguments),
             callback(stop, stop_arguments), callback(invalidation, invalidation_arguments),
             state_factory.value_or(nb::none()), generator, queue_mode};
@@ -1338,6 +1376,7 @@ void bind_core(nb::module_ &module) {
     nb::class_<TypeDescriptor>(module, "_Type")
         .def_prop_ro("is_time_series", [](const TypeDescriptor &value) { return value.type().is_time_series(); })
         .def_prop_ro("valid_items", &TypeDescriptor::valid_items)
+        .def_prop_ro("accepts_time_series_value", &TypeDescriptor::accepts_time_series_value)
         .def_prop_ro("accepts_absent_scalar", &TypeDescriptor::accepts_absent_scalar);
     nb::class_<PythonWiringPoint>(module, "WiringPoint")
         .def_prop_ro("has_output", &PythonWiringPoint::has_output)
