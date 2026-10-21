@@ -13,11 +13,6 @@ namespace {
 inline constexpr auto G = guarantee_variable<"BOOLEAN_REDUCTION_G">;
 using KEY = ScalarVariable<"BOOLEAN_REDUCTION_KEY", Hashable>;
 
-bool fixed_tsl(const WiringArguments &arguments) {
-    const auto &type = type_cast<TimeSeriesType>(arguments.resolved_type("values"));
-    return type_cast<TimeSeriesListType>(type.target_type()).item_count() != std::dynamic_extent;
-}
-
 struct logical_overloads {
     // Equality.
     overload<eq> eq_bool{[](bool lhs, bool rhs) { return lhs == rhs; }};
@@ -42,8 +37,6 @@ struct logical_overloads {
     template <InputValidity Validity, auto OUTPUT_G> struct all_tsl_impl {
         In<TSL<TS<bool, G>, SIZE, G>, Validity> values;
         Out<TS<bool, OUTPUT_G>> output;
-
-        static bool require(const WiringArguments &arguments) { return fixed_tsl(arguments); }
 
         void evaluate() const {
             if constexpr (Validity == optional) {
@@ -116,8 +109,6 @@ struct logical_overloads {
     template <InputValidity Validity, auto OUTPUT_G> struct any_tsl_impl {
         In<TSL<TS<bool, G>, SIZE, G>, Validity> values;
         Out<TS<bool, OUTPUT_G>> output;
-
-        static bool require(const WiringArguments &arguments) { return fixed_tsl(arguments); }
 
         void evaluate() const {
             if constexpr (Validity == optional) {
