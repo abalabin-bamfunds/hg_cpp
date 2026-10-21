@@ -304,7 +304,9 @@ const TimeSeriesRuntimeType &frame::column_view_time_series_runtime_type(const T
     if (&type != &ordinary_column_series_type<T>())
         throw std::invalid_argument{"frame TSC view runtime requires resolved ordinary type"};
 
-    return column_view_series_runtime_type<T>();
+    const auto &runtime = column_view_series_runtime_type<T>();
+    details::register_column_series_tick_writer(runtime);
+    return runtime;
 }
 
 template <frame::cell_type T>
@@ -312,7 +314,9 @@ const TimeSeriesRuntimeType &frame::column_binding_view_time_series_runtime_type
     if (&type != &ordinary_column_series_type<T>())
         throw std::invalid_argument{"frame TSC binding view runtime requires resolved ordinary type"};
 
-    return column_binding_view_series_runtime_type<T>();
+    const auto &runtime = column_binding_view_series_runtime_type<T>();
+    details::register_column_series_tick_writer(runtime);
+    return runtime;
 }
 
 namespace {
@@ -340,7 +344,9 @@ const TimeSeriesRuntimeType &frame::column_computed_time_series_runtime_type(con
     if (std::addressof(type) != std::addressof(ordinary_column_series_type<T>()))
         throw std::invalid_argument{"computed TSC runtime requires resolved ordinary type"};
     static_cast<void>(column_time_series_type<T>(TimeSeriesGuarantee::ordinary));
-    return computed_column_series_runtime_type<T>(type);
+    const auto &runtime = computed_column_series_runtime_type<T>(type);
+    details::register_column_series_tick_writer(runtime);
+    return runtime;
 }
 
 const TimeSeriesRuntimeType &frame::column_time_series_runtime_type(const TimeSeriesType &type) {

@@ -3012,16 +3012,25 @@ inline FrameViewRuntimeCache &frame_view_runtime_cache() {
 inline const TimeSeriesRuntimeType &canonical_frame_view_runtime_type(
     const TimeSeriesType &type, std::vector<std::size_t> computed_fields) {
     auto &cache = frame_view_runtime_cache();
-    const auto lock = std::lock_guard{cache.mutex};
-    auto &candidates = cache.runtimes[std::addressof(type)];
-    for (const auto &candidate : candidates)
-        if (candidate->computed_fields() == computed_fields) {
-            frame_series_scalar_runtime_type(*candidate);
-            return *candidate;
+    auto *runtime = static_cast<const RuntimeSchemaFrameViewSeriesRuntimeType *>(nullptr);
+    {
+        const auto lock = std::lock_guard{cache.mutex};
+        auto &candidates = cache.runtimes[std::addressof(type)];
+        for (const auto &candidate : candidates) {
+            if (candidate->computed_fields() == computed_fields) {
+                runtime = candidate.get();
+                break;
+            }
         }
-    candidates.push_back(std::make_unique<RuntimeSchemaFrameViewSeriesRuntimeType>(type, std::move(computed_fields)));
-    frame_series_scalar_runtime_type(*candidates.back());
-    return *candidates.back();
+        if (runtime == nullptr) {
+            candidates.push_back(
+                std::make_unique<RuntimeSchemaFrameViewSeriesRuntimeType>(type, std::move(computed_fields)));
+            runtime = candidates.back().get();
+        }
+    }
+    frame_series_scalar_runtime_type(*runtime);
+    details::register_frame_series_tick_writer(*runtime);
+    return *runtime;
 }
 
 } // namespace details

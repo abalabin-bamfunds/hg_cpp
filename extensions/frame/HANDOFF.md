@@ -1,21 +1,22 @@
 # Frame foundation handoff
 
-Updated: 2026-10-20. The frame lane is rebased onto main `0bd4cb10`.
-Main includes shared schema metadata (`6419e073`) and process-lifetime ownership
-of registered type metadata (`160f128b`), plus compatible generic input-view
-casts (`a17a8ffd`). Frame implementation remains on the lane.
+Updated: 2026-10-21. The frame lane is rebased onto main `08302061`.
+Main includes shared schema metadata (`6419e073`), process-lifetime ownership
+of registered type metadata (`160f128b`), compatible generic input-view casts
+(`a17a8ffd`), and stateful test-graph literal comparison (`04518839`). Frame
+implementation remains on the lane.
 
 The rebase required adapting frame snapshot ownership to main's
 `ScalarAllocationPool` API. Commit `cd7b73ad` retains a matching context pool
 and preserves direct allocation when the caller supplies an unrelated allocator.
 Release Arrow-on verification passed all six suites after this change.
 
-Native keyed TSF capture and native TSC input literals are implemented and verified.
-Its typed writer uses `In<TS_T>::as<TSF<SCHEMA>>()`; `as()` now accepts compatible
-generic declarations and preserves the actual runtime type. Incompatible
-declarations still throw `std::bad_cast`. Named row-history capture for native
-TSC and unkeyed TSF is implemented on this lane. BG comparison state is in
-`466f812c` and was cherry-picked here as `40716ce5`.
+TSF capture supports native and frame view outputs. TSC capture supports native,
+view, and computed outputs. Writers register by exact runtime and read through
+extension descriptors and borrowed column views. Stateful named row-history
+comparison handles TSC and unkeyed TSF; keyed TSF comparison tracks keys by
+internal row ID so removal records only need the ID. The shared BG comparison
+state is on main through merge `04518839`.
 
 ## Work locations
 
@@ -24,8 +25,8 @@ completed lane retirement, and consumer verification.
 
 | Work | Location / branch | State |
 | --- | --- | --- |
-| Main baseline | `/home/abalabin/_bg`, `main` | `0bd4cb10` |
-| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Frame foundation, expressions, scalar literals, native keyed storage, TSF/TSC input literals, keyed capture, and named row-history capture |
+| Main baseline | `/home/abalabin/_bg`, `main` | `08302061` |
+| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Frame foundation, expressions, scalar literals, native keyed storage, TSF/TSC input literals, and native/view/computed capture |
 | Generic input-view casts | Main | `a17a8ffd`; tested build preserved in `.lanes/generic-input-cast` |
 | Shared schema metadata and BG lifetime fix | Main | `6419e073`, `160f128b`; consumer builds use matching lane-local installs |
 | Test graph output capture | Main | Integrated through `36eb21fb`, including shared extension comparison dispatch |
@@ -210,11 +211,11 @@ The sanitizer build uses `-fsanitize=address,undefined -fno-omit-frame-pointer`.
 CTest ran with `ASAN_OPTIONS=detect_leaks=0` and
 `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1`.
 
-The BG stateful comparison API passed its core suite, 2,113/2,113. The frame
-integration in `40716ce5` builds with Release and Arrow 24.0.0; all six consumer
-suites pass. GCC reports repeated `-Wstringop-overflow` diagnostics from the
-existing `concurrent_buffer_reservation::write_bytes` implementation in
-`bg/util/buffer.hpp:444`; the build succeeds.
+The stateful comparison API is integrated on main through merge `04518839`.
+At the current rebased frame baseline `08302061`, all six Release Arrow-on
+consumer suites pass. GCC reports repeated `-Wstringop-overflow` diagnostics
+from the existing `concurrent_buffer_reservation::write_bytes` implementation
+in `bg/util/buffer.hpp:444`; the build succeeds.
 
 The generic input-view cast fix passed its focused provider tests (16 assertions
 in 2 cases) and the complete Release `bg_tests` binary (2,936,101 assertions in
@@ -473,22 +474,23 @@ focused suite passed 15 cases and 70 assertions, covering literal identity,
 collection updates, provider marker handling, and queue cleanup.
 
 Main `36eb21fb` captures provider-defined time series through tick serialization.
-Frame registers `TimeSeriesTickOperations` writers for exact native keyed
-runtimes, with discard and `testing::TickLiteralComparison` handlers registered
-by resolved semantic series type. Capture does not require replay. The framework
-handles invalidation and skipped ticks before calling a comparison handler;
-successful comparison consumes one valid payload
-without changing its encoded values. See [BG testing](../../docs/testing.md).
+Frame registers `TimeSeriesTickOperations` writers by exact runtime, with
+discard and `testing::TickLiteralComparison` handlers registered by resolved
+semantic series type. Capture does not require replay. The framework handles
+invalidation and skipped ticks before calling a comparison handler; successful
+comparison consumes one valid payload without changing its encoded values. See
+[BG testing](../../docs/testing.md).
 
-The native keyed writer visits added, changed, and removed row sets without
-scanning the complete frame. It copies keys and changed cells into the capture
-buffer. Each payload records the actual canonical schema and contains no
-internal row IDs or borrowed cell pointers. This preserves Derived fields and
-permits comparison and discard after graph destruction, including capture
+Frame writers visit delta row sets and copy values through extension descriptors
+and borrowed column views. Payloads record the actual schema, row IDs, and
+copied cells; they contain no borrowed cell pointers. Keyed removals record
+only the internal row ID. The comparison state remembers keys from additions
+and uses that mapping to match later removals. This preserves Derived fields
+and permits comparison and discard after graph destruction, including capture
 under an unkeyed Base annotation. Expected keyed deltas match by key,
 independent of row order, with exact patch field sets and omitted addition
-fields interpreted as null.
-See [native keyed capture](README.md#native-keyed-tsf-result-capture).
+fields interpreted as null. See
+[keyed capture](README.md#keyed-tsf-result-capture).
 
 Scalar `TS<Frame<...>>` and `TS<Column<...>>` use scalar capture and comparison.
 The capture buffer's generic fallback retains an owning `ScalarValue<>`;
@@ -513,22 +515,25 @@ construction. See [scalar literal syntax](README.md#scalar-literals-and-equality
 ## Named row-history capture
 
 The frame extension adds TSC and unkeyed TSF tick writers and stateful result
-comparators. Their payloads retain internal row IDs for each valid tick; the
-comparison state joins add, modify, remove, and invalidation events into row
-histories across one `equals()` call. TSC history values support `i64` and
-`double`. Unkeyed TSF history values use the actual runtime schema and preserve
-the sparse field set for each patch. Keyed TSF comparison remains key-based.
+comparators for native, view, and computed outputs. Their payloads retain
+internal row IDs for each valid tick; the comparison state joins add, modify,
+remove, and invalidation events into row histories across one `equals()` call.
+TSC history values support `i64` and `double`. Unkeyed TSF history values use
+the actual runtime schema and preserve the sparse field set for each patch.
+Keyed TSF comparison uses its row-ID-to-key history for removals.
 
 Expected names identify one row lifetime within an `equals()` call. Names stay
 reserved after removal or invalidation. Different names may match actual rows
 with equal complete histories. Reused internal IDs start a new actual history.
 The tests use named expectations and cover row-ID reuse, invalidation, nullable
-TSC cells, identical histories, complete-history matching, exact TSF patch
-fields, name reuse rejection, empty published deltas, and skipped ticks.
+TSC cells, nullable pass-through and computed cells, filtering membership,
+source-domain switches, identical histories, complete-history matching, exact
+TSF patch fields, name reuse rejection, empty published deltas, and skipped
+ticks.
 
-The Release Arrow-on consumer build and all six CTest suites pass. The BG
-stateful comparison API is `466f812c`; this lane carries it as `40716ce5`. The
-verified frame implementation is recorded on the active frame lane.
+All six Release Arrow-on consumer suites pass against the current rebased main
+baseline `08302061`, which includes the stateful comparison merge `04518839`.
+The verified frame implementation is recorded on the active frame lane.
 
 ## Performance artifacts
 
@@ -552,9 +557,9 @@ design; they do not replace the consumer verification recorded above.
 ## Status and remaining work
 
 BG test-graph output capture, frame scalar literals and content equality,
-TSF row-literal updates, TSC append literals, and native keyed TSF result capture
-and delta comparison are implemented. Named TSC and unkeyed TSF row-history
-comparison is implemented and verified. Frame view capture remains outstanding.
+TSF row-literal updates, TSC append literals, and keyed TSF result capture and
+delta comparison are implemented. Named TSC and unkeyed TSF row-history
+comparison is implemented and verified for native, view, and computed outputs.
 
 Unkeyed TSF and TSC input literals append rows. Nodes can also modify and remove
 rows through their internal IDs, so output deltas can contain all three
@@ -622,9 +627,9 @@ validate key uniqueness with a temporary hash index of row positions. The
 validator records batch starts for collision checks; it does not add persistent
 key-index state to scalar frames. TSF row literal updates use key columns for
 insert, patch, and removal as documented in the [extension README](README.md#tsf-row-updates).
-Keyed view behavior remains open. Frame view capture needs a decision on
-preserving source keys and a design for removed-key access when the source row
-domain changes.
+Keyed view validation remains open. Decide whether a keyed view must preserve
+the source's complete ordered key mapping. Capture serializes row IDs for
+removals and uses comparison-owned key history to match keyed removal literals.
 
 Tests cover allocation rollback for keyed insertion and removal-key retention,
 including retry after failure. Scalar validation tests cover duplicate single

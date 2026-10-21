@@ -3468,6 +3468,13 @@ struct computed_frame_writer {
             static_cast<void>(output.add(
                 Quotes<Cell>{.size = Cell<i64>{11}, .bid = Cell<double>{40.0}, .ask = Cell<double>{42.0}}));
             return;
+        case 12:
+            state->first = output.add(
+                Quotes<Cell>{.size = Cell<i64>{13}, .bid = Cell<double>{50.0}, .ask = Cell<double>{std::nullopt}});
+            return;
+        case 13:
+            output.set(state->first, RowPatch<Quotes>{.ask = 54.0});
+            return;
         default:
             throw std::runtime_error{"unknown computed TSF writer command"};
         }
@@ -4167,6 +4174,238 @@ void test_keyed_tsf_delta_capture() {
                              {{"id", i64{1}}, {"sequence", i64{1}}, {"price", 12.0}}},
                             {literal::REMOVE({{"id", i64{2}}, {"sequence", i64{1}}})}}),
             "keyed TSF capture accepted duplicate expected row keys");
+}
+
+void test_frame_view_tick_capture() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto write = node<tsf_writer>();
+    const auto projected_graph = [&](wp<TS<i64>> command) {
+        return project<BidOnly, "bid">(write(command));
+    };
+    const auto projected = testing::test_graph(projected_graph, {0, 1, 2, 3, 5, 6, 7});
+    require(projected.equals({
+                {},
+                {{"first", {{"price", 10.5}}}},
+                {{"first", {{"price", 11.5}}}},
+                literal::SKIP,
+                {{"first", literal::REMOVED}},
+                literal::INVALID,
+                {},
+            }),
+            "TSF projection view capture did not preserve selected row changes and validity");
+
+    const auto nullable_projection = [&](wp<TS<i64>> command) {
+        return project<BidOnly, "ask">(write(command));
+    };
+    const auto nullable = testing::test_graph(nullable_projection, {1, 3, 5});
+    require(nullable.equals({{{"first", {{"price", NULL_VALUE}}}},
+                             {{"first", {{"price", 12.5}}}},
+                             {{"first", literal::REMOVED}}}),
+            "TSF projection view capture did not preserve null and valid selected cells");
+
+    const auto column_graph = [&](wp<TS<i64>> command) { return select_column<"bid">(write(command)); };
+    const auto column = testing::test_graph(column_graph, {0, 1, 3, 5, 6, 7});
+    require(column.equals({
+                {},
+                {{"first", 10.5}},
+                literal::SKIP,
+                {{"first", literal::REMOVED}},
+                literal::INVALID,
+                {},
+            }),
+            "TSC binding-view capture did not preserve its source column changes and validity");
+
+    const auto &keyed_runtime = frame_time_series_runtime_type<KeyedQuotes>(TSF<KeyedQuotes>::type());
+    const auto keyed_graph = [](wp<TSF<KeyedQuotes>> input) {
+        return project<KeyedQuotes, "id", "price">(input);
+    };
+    const auto keyed = testing::test_graph(
+        keyed_graph,
+        testing::input(keyed_runtime,
+                       {literal::TimeSeriesLiteral{},
+                        {{{"id", i64{7}}, {"price", 10.0}}},
+                        {{{"id", i64{7}}, {"price", 11.0}}},
+                        {literal::REMOVE({{"id", i64{7}}})}}));
+    require(keyed.equals({literal::TimeSeriesLiteral{},
+                          {{{"id", i64{7}}, {"price", 10.0}}},
+                          {{{"id", i64{7}}, {"price", 11.0}}},
+                          {literal::REMOVE({{"id", i64{7}}})}}),
+            "key-preserving TSF projection view capture lost keyed changes or removals");
+}
+
+void test_computed_tsc_tick_capture() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto write = node<filter_writer>();
+    const auto graph = [&](wp<TS<i64>> command) {
+        const auto frame = write(command);
+        return operators::add(select_column<"bid">(frame), select_column<"ask">(frame));
+    };
+    const auto result = testing::test_graph(graph, {0, 1, 3, 6, 7, 8, 9});
+    require(result.equals({
+                {},
+                {{"first", 20.5}},
+                {{"first", 21.5}},
+                {{"first", literal::REMOVED}},
+                {{"second", 24.5}},
+                literal::INVALID,
+                {},
+            }),
+            "computed TSC capture did not preserve row changes, reuse, and validity");
+
+    const auto nullable_write = node<tsf_writer>();
+    const auto nullable_graph = [&](wp<TS<i64>> command) {
+        const auto frame = nullable_write(command);
+        return operators::add(select_column<"bid">(frame), select_column<"ask">(frame));
+    };
+    const auto nullable = testing::test_graph(nullable_graph, {1, 3, 5});
+    require(nullable.equals({{{"first", NULL_VALUE}}, {{"first", 23.0}}, {{"first", literal::REMOVED}}}),
+            "computed TSC capture did not preserve null and valid results");
+}
+
+void test_computed_tsf_tick_capture() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto write = node<computed_frame_writer>();
+    const auto compute = node<computed_quote_node>();
+    const auto graph = [&](wp<TS<i64>> command) { return compute(write(command), command); };
+    const auto result = testing::test_graph(graph, {0, 1, 2, 6, 7, 8, 9, 10});
+    require(result.equals({
+                {},
+                {{"first", {{"mid", 11.0}, {"ask", 12.0}, {"bid", 10.0}}}},
+                {{"first", {{"mid", 12.0}, {"bid", 12.0}}}},
+                {{"first", literal::REMOVED}},
+                {{"second", {{"mid", 31.0}, {"ask", 32.0}, {"bid", 30.0}}}},
+                literal::INVALID,
+                {},
+                {{"third", {{"mid", 41.0}, {"ask", 42.0}, {"bid", 40.0}}}},
+            }),
+            "mixed computed TSF capture did not preserve pass-through and computed field changes");
+
+    const auto nullable_write = node<computed_frame_writer>();
+    const auto nullable_compute = node<computed_quote_node>();
+    const auto nullable_graph = [&](wp<TS<i64>> command) {
+        return nullable_compute(nullable_write(command), command);
+    };
+    const auto nullable = testing::test_graph(nullable_graph, {12, 13});
+    require(nullable.equals({{{"first", {{"mid", NULL_VALUE}, {"ask", NULL_VALUE}, {"bid", 50.0}}}},
+                             {{"first", {{"mid", 52.0}, {"ask", 54.0}}}}}),
+            "computed TSF capture did not preserve nullable pass-through and computed cells");
+}
+
+void test_filter_tsf_tick_capture() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto write = node<filter_writer>();
+    const auto filter = node([](In<TSF<Quotes>, optional> input, Out<TSF<Quotes>, view> output) {
+        output.bind_filter<"size">(input, [&](row_id_t id) { return input.cell<0>(id).value_or(0) > 4; });
+    });
+    const auto graph = [&](wp<TS<i64>> command) { return filter(write(command)); };
+    const auto result = testing::test_graph(graph, {0, 1, 4});
+    require(result.equals({{},
+                          {{"first", {{"size", i64{5}}, {"bid", 10.5}, {"ask", 10.0}}}},
+                          {{"first", literal::REMOVED}}}),
+            "filtered TSF capture did not preserve row inclusion and removal");
+}
+
+void test_tsc_view_and_computed_capture_rebinds_overlapping_row_ids() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto first_source = node([](In<TS<i64>> command, Out<TSF<Quotes>> output) {
+        if (*command == 0)
+            output.clear();
+        else if (*command == 1)
+            static_cast<void>(output.add(
+                Quotes<Cell>{.size = Cell<i64>{5}, .bid = Cell<double>{std::nullopt}, .ask = Cell<double>{10.0}}));
+    });
+    const auto second_source = node([](In<TS<i64>> command, Out<TSF<Quotes>> output) {
+        if (*command == 0)
+            output.clear();
+        else if (*command == 1)
+            static_cast<void>(output.add(
+                Quotes<Cell>{.size = Cell<i64>{8}, .bid = Cell<double>{20.5}, .ask = Cell<double>{20.0}}));
+    });
+
+    const auto bind_view = node([](In<TSC<double>> first, In<TSC<double>> second, In<TS<i64>> selection,
+                                   Out<TSC<double>, view> output) {
+        output.bind(*selection == 0 ? first : second);
+    });
+    const auto view_graph = [&](wp<TS<i64>> command, wp<TS<i64>> selection) {
+        const auto first = first_source(command);
+        const auto second = second_source(command);
+        return bind_view(select_column<"bid">(first), select_column<"bid">(second), selection);
+    };
+    const auto view = testing::test_graph(view_graph, {0, 1, literal::SKIP}, {0, 0, 1});
+    require(view.equals({{},
+                         {{"first", NULL_VALUE}},
+                         {{"first", literal::REMOVED}, {"second", 20.5}}}),
+            "TSC view capture did not remove the old domain before adding an overlapping row ID");
+
+    const auto bind_computed = node([](In<TSC<double>> first, In<TSC<double>> second, In<TS<i64>> selection,
+                                       Out<TSC<double>, computed<>> output) {
+        const auto input = *selection == 0 ? first : second;
+        output.bind(input);
+        input.for_each_row([&](row_id_t id, std::size_t) {
+            const auto value = input.cell(id);
+            if (value)
+                output.set(id, *value * 2.0);
+            else
+                output.set(id, std::nullopt);
+        });
+    });
+    const auto computed_graph = [&](wp<TS<i64>> command, wp<TS<i64>> selection) {
+        const auto first = first_source(command);
+        const auto second = second_source(command);
+        return bind_computed(select_column<"bid">(first), select_column<"bid">(second), selection);
+    };
+    const auto computed = testing::test_graph(computed_graph, {0, 1, literal::SKIP}, {0, 0, 1});
+    require(computed.equals({{},
+                             {{"first", NULL_VALUE}},
+                             {{"first", literal::REMOVED}, {"second", 41.0}}}),
+            "computed TSC capture did not remove the old domain before adding an overlapping row ID");
+}
+
+void test_tsf_view_capture_rebinds_overlapping_row_ids() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto first_source = node([](In<TS<i64>> command, Out<TSF<Quotes>> output) {
+        if (*command == 0)
+            output.clear();
+        else if (*command == 1)
+            static_cast<void>(output.add(
+                Quotes<Cell>{.size = Cell<i64>{5}, .bid = Cell<double>{10.5}, .ask = Cell<double>{10.0}}));
+    });
+    const auto second_source = node([](In<TS<i64>> command, Out<TSF<Quotes>> output) {
+        if (*command == 0)
+            output.clear();
+        else if (*command == 1)
+            static_cast<void>(output.add(
+                Quotes<Cell>{.size = Cell<i64>{8}, .bid = Cell<double>{20.5}, .ask = Cell<double>{20.0}}));
+    });
+    const auto select = node([](In<TSF<Quotes>, optional> first, In<TSF<Quotes>, optional> second,
+                                In<TS<i64>> selection, Out<TSF<Quotes>, view> output) {
+        if (*selection == 0)
+            output.bind_projection(first, columns<"size", "bid", "ask">());
+        else
+            output.bind_projection(second, columns<"size", "bid", "ask">());
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> selection) {
+        return select(first_source(command), second_source(command), selection);
+    };
+    const auto result = testing::test_graph(graph, {0, 1, literal::SKIP}, {0, 0, 1});
+    require(result.equals({
+                {},
+                {{"first", {{"size", i64{5}}, {"bid", 10.5}, {"ask", 10.0}}}},
+                {{"first", literal::REMOVED}, {"second", {{"size", i64{8}}, {"bid", 20.5}, {"ask", 20.0}}}},
+            }),
+            "TSF view capture did not process removal before an addition reusing the same row ID");
 }
 
 struct capture_writer_state {
@@ -6359,6 +6598,12 @@ int main() {
         test_keyed_tsf_capture_supports_null_composite_keys();
         test_keyed_tsf_capture_invalidates_and_revalidates_without_old_deltas();
         test_keyed_tsf_capture_rejects_missing_actual_patch_fields();
+        test_frame_view_tick_capture();
+        test_computed_tsc_tick_capture();
+        test_computed_tsf_tick_capture();
+        test_filter_tsf_tick_capture();
+        test_tsc_view_and_computed_capture_rebinds_overlapping_row_ids();
+        test_tsf_view_capture_rebinds_overlapping_row_ids();
         test_borrowed_tsf_input_with_native_and_view_runtimes();
         test_generic_tsf_input_schema_and_columns();
         test_generic_declared_tsf_rows_follow_resolved_cell_type();

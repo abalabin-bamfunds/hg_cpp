@@ -157,10 +157,11 @@ Nodes can also call `Out<TSF<Schema>>::apply()` with one
 runtime schema, including Derived fields when the node input is declared as a
 Base schema.
 
-### Native keyed TSF result capture
+### Keyed TSF result capture
 
-`test_graph` captures native keyed TSF deltas and compares them with the row
-literal syntax above. Expected rows match by key, independent of entry order.
+`test_graph` captures keyed TSF deltas from native and frame view outputs and
+compares them with the row literal syntax above. Expected rows match by key,
+independent of entry order.
 An addition compares every non-key field; omitted fields mean null. A patch
 must name exactly the modified non-key fields. A removal compares only its key.
 One removal and one insertion of the same key may occur in the same delta.
@@ -179,10 +180,11 @@ auto matches = actual.equals({
 });
 ```
 
-Captured deltas own their cell and key values and remain usable after graph
-destruction. Comparisons use the actual schema, including Derived fields
-observed through a Base annotation. Frame views do not yet support result
-capture.
+Captured deltas own copied cell and key values and remain usable after graph
+destruction. A removal record contains the internal row ID only. Keyed
+comparison state remembers each added row's key by row ID and uses that key to
+match a later removal. Comparisons use the actual schema, including Derived
+fields observed through a Base annotation.
 
 ### TSC literal updates
 
@@ -199,7 +201,7 @@ Use `set` and `erase` with IDs obtained from node APIs to modify existing rows.
 
 ### Named row expectations
 
-Native unkeyed `TSF` and native `TSC` result expectations assign names to rows.
+Unkeyed `TSF` and `TSC` result expectations assign names to rows.
 The first occurrence of a name expects an addition; later occurrences expect
 modifications of that row. `{name, literal::REMOVED}` expects removal.
 For example, a captured native `TSC<double>` result can be checked with:
