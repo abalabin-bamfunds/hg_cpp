@@ -410,6 +410,46 @@ void test_numeric_comparison_expression_wiring() {
         rejected_mixed_types = true;
     }
     require(rejected_mixed_types, "comparison expression accepted implicit numeric promotion");
+
+    auto rejected_numeric_filter = false;
+    try {
+        static_cast<void>(frame::filter(source, col("bid") + col("ask")));
+    } catch (const WiringError &) {
+        rejected_numeric_filter = true;
+    }
+    require(rejected_numeric_filter, "frame filter accepted a numeric predicate");
+}
+
+void test_filter_expression_with_multiple_parameters() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto selected_counts = std::vector<std::size_t>{};
+    const auto observe = node([&](In<TSF<ComparisonFrame>> input, Out<TS<i64>> output) {
+        auto count = std::size_t{};
+        input.for_each_row([&](row_id_t, std::size_t) { ++count; });
+        selected_counts.push_back(count);
+        output.set(static_cast<i64>(count));
+    });
+    const auto graph = [&](wp<TSF<ComparisonFrame>> source, wp<TS<double>> first, wp<TS<double>> second,
+                           wp<TS<double>> third, wp<TS<double>> fourth, wp<TS<double>> fifth) {
+        const auto predicate =
+            col("ask") + first + second + third + fourth + param("fifth") > 130.0;
+        return observe(frame::filter(source, predicate, "fifth"_n = fifth));
+    };
+
+    const auto result = testing::test_graph(
+        graph,
+        testing::input(TSF<ComparisonFrame>::type(),
+                       {literal::TimeSeriesLiteral{}, {{{"size", i64{1}}, {"bid", 10.0}, {"ask", 100.0}}},
+                        literal::TimeSeriesLiteral{}}),
+        testing::input(cpp_time_series_runtime_type<TS<double>>(), {1.0, 1.0, 1.0}),
+        testing::input(cpp_time_series_runtime_type<TS<double>>(), {2.0, 2.0, 2.0}),
+        testing::input(cpp_time_series_runtime_type<TS<double>>(), {4.0, 4.0, 4.0}),
+        testing::input(cpp_time_series_runtime_type<TS<double>>(), {8.0, 8.0, 8.0}),
+        testing::input(cpp_time_series_runtime_type<TS<double>>(), {16.0, 16.0, 15.0}));
+    require(result.equals<i64>({0, 1, 0}) && selected_counts == std::vector<std::size_t>{0, 1, 0},
+            "frame filter did not evaluate parameters stored across multiple aligned blocks");
 }
 
 template <cell_type T, typename Comparator, typename Operation>
@@ -645,6 +685,7 @@ int main() {
         test_binary_expression_bundle_schema();
         test_static_frame_expression_binding();
         test_numeric_comparison_expression_wiring();
+        test_filter_expression_with_multiple_parameters();
         test_comparison_runtime<i64, std::equal_to<>>(operators::eq);
         test_comparison_runtime<i64, std::not_equal_to<>>(operators::ne);
         test_comparison_runtime<i64, std::less<>>(operators::lt);

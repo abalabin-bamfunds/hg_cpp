@@ -203,13 +203,16 @@ Root independently reran the Release Arrow-on suite after the final source edits
 
 | Consumer | Build | Test |
 | --- | --- | --- |
-| `build/tsf-row-release-arrow-off`, Release, Arrow disabled | Passed | 5/5 suites passed |
-| `build/tsf-row-release-arrow-on`, Release, Arrow 24.0.0 enabled | Passed | 6/6 suites passed |
-| `build/tsf-row-debug-asan-arrow-on`, Debug, Arrow 24.0.0, ASan/UBSan | Passed | 6/6 suites passed; no sanitizer diagnostics |
+| `build/tsf-row-release-arrow-off`, Release, Arrow disabled | Passed | 5/5 suites passed after runtime-stop guards |
+| `build/tsf-row-release-arrow-on`, Release, Arrow 24.0.0 enabled | Passed | 6/6 suites passed after runtime-stop guards |
+| `build/tsf-row-debug-asan-arrow-on`, Debug, Arrow 24.0.0, ASan/UBSan | Passed | 6/6 suites passed with leak detection enabled; no sanitizer diagnostics |
 
-The sanitizer build uses `-fsanitize=address,undefined -fno-omit-frame-pointer`.
-CTest ran with `ASAN_OPTIONS=detect_leaks=0` and
-`UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1`.
+The Debug test target was rebuilt after adding scope-bound `stop()` calls to
+both runtime graphs in `test_compiled_graph_runtime_storage_is_independent`.
+The sanitizer build used `-fsanitize=address,undefined -fno-omit-frame-pointer`;
+CTest ran with `ASAN_OPTIONS=detect_leaks=1` and
+`UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1`. LeakSanitizer ran outside
+the sandbox because it cannot operate under sandbox ptrace.
 
 The stateful comparison API is integrated on main through merge `04518839`.
 At the current rebased frame baseline `b7d52da5`, all six Release Arrow-on
@@ -422,8 +425,8 @@ source nodes.
 
 Boolean storage is implemented across columns, TSC/TSF, literals, tick capture,
 computed outputs, and Arrow import/export. Matching `i64` and `double` column
-comparisons use the shared expression compiler and block evaluation path.
-Explicit column conversion and expression-based filtering remain later work.
+comparisons and expression-based filtering use the shared expression compiler
+and block evaluation path. Explicit column conversion remains later work.
 
 The [shared block-operation contract](block_operation_proposal.md) and
 [computation nodes and input bindings](expression_node_proposal.md) are
@@ -437,7 +440,8 @@ addition; it adds no compiler or evaluator behavior. Boolean values use packed
 storage with separate validity. The expression callback test covers a Boolean
 result. All six comparison operators are registered for `i64` and `double`;
 they return nullable `TSC<bool>` and propagate null operands. Expression-based
-filtering remains later work.
+filtering uses the ordinary `filter_` operator with a graph-only predicate
+union and a `TSF` view output.
 Subtraction tests cover column, constant, and captured-time-series operand
 order, nulls around block boundaries, sparse row updates, and parameter ticks.
 Mixed addition/subtraction tests verify callback values, fusion, and forced
@@ -572,8 +576,8 @@ Unkeyed TSF and TSC input literals append rows. Nodes can also modify and remove
 rows through their internal IDs, so output deltas can contain all three
 operations.
 
-Boolean storage, Arrow support, and numeric comparisons are implemented.
-Expression-based filtering remains later work.
+Boolean storage, Arrow support, numeric comparisons, and expression-based
+filtering are implemented.
 
 The Boolean foundation uses packed value bits with separate nullable validity.
 It covers `Column<bool>`, frame fields, TSC/TSF storage and deltas, literals,
@@ -613,8 +617,9 @@ selection for owning frame copies and the output hook to select frame layouts.
 Frame output layout options remain extension-owned.
 
 The shared numeric function extraction remains held. The arithmetic and
-comparison implementations are described above. Other numeric operators,
-explicit column conversion, and expression-based filtering remain later work.
+comparison implementations are described above. Other numeric operators and
+explicit column conversion remain later work. Expression-based filtering is
+described in [filter_proposal.md](filter_proposal.md).
 
 ## Key metadata and native keyed storage
 

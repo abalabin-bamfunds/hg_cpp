@@ -1,3 +1,4 @@
+#include <bg/frame/frame.hpp>
 #include <bg/frame/expression.hpp>
 #include <bg/frame/tsc.hpp>
 #include <bg/graph.hpp>
@@ -26,6 +27,8 @@
 
 namespace bg::frame {
 namespace {
+
+using namespace bg::literals;
 
 inline constexpr auto expression_batch_rows = std::size_t{128};
 
@@ -102,6 +105,12 @@ const ScalarType *expression_cell_type(const Type &type) {
         return std::addressof(column->cell_type());
     if (const auto *value = dynamic_cast<const TimeSeriesValueType *>(std::addressof(resolved_type)))
         return std::addressof(value->value_type());
+    if (details::is_column_expression_bundle_type(resolved_type)) {
+        const auto &bundle = static_cast<const TimeSeriesBundleType &>(resolved_type);
+        const auto &compute = bundle.item_type(bundle.item_count() - 1).dereferenced_type();
+        const auto &value = static_cast<const TimeSeriesValueType &>(compute);
+        return std::addressof(static_cast<const ColumnBlockFunctionType &>(value.value_type()).result_type());
+    }
     return nullptr;
 }
 
@@ -121,6 +130,7 @@ struct Instruction {
 };
 
 struct CompiledExpression {
+    Operand result;
     std::vector<Instruction> instructions;
     std::vector<ColumnBinding> columns;
     std::vector<ParameterBinding> parameters;
@@ -187,7 +197,18 @@ struct CompiledExpression {
                             ColumnBatchValidity::from_bitmap(validity, 0)};
                     }
 
-                    function(batch_ids, operation_batches.back());
+                    const auto result_batch = [&] {
+                        switch (result.kind) {
+                        case Operand::Kind::column:
+                            return batches[result.index].subspan(offset, count);
+                        case Operand::Kind::instruction:
+                            return operation_batches[result.index];
+                        case Operand::Kind::parameter:
+                            std::unreachable();
+                        }
+                        std::unreachable();
+                    }();
+                    function(batch_ids, result_batch);
                 }
             });
     }
@@ -243,6 +264,39 @@ struct PreparedColumns {
     std::pmr::vector<ColumnActivity> activity;
     bool mapping_changed{};
     bool delta_lost{};
+};
+
+struct PreparedExpressionInputs {
+    struct ParameterStorageBlock {
+        alignas(std::max_align_t) std::byte bytes[sizeof(std::max_align_t)];
+    };
+
+    PreparedExpressionInputs(const CompiledExpression &expression, const In<TSB<COLUMNS>, all_valid> &columns,
+                             const In<TS<Bundle<PARAMETERS>>> &parameters, BindingCache &cache,
+                             std::pmr::memory_resource &memory)
+        : columns{columns, std::span{expression.columns}, std::span{cache.columns}, &memory},
+          parameter_storage{&memory},
+          parameter_addresses{std::pmr::polymorphic_allocator<const void *>{&memory}} {
+        parameter_storage.resize((expression.parameter_storage_size + sizeof(std::max_align_t) - 1) /
+                                 sizeof(std::max_align_t));
+        parameter_addresses.reserve(expression.parameters.size());
+        const auto parameter_bundle = parameters.value_view();
+        for (auto index = std::size_t{}; index != expression.parameters.size(); ++index) {
+            const auto &binding = expression.parameters[index];
+            auto *value = parameter_storage[binding.offset / sizeof(ParameterStorageBlock)].bytes +
+                          binding.offset % sizeof(ParameterStorageBlock);
+            const auto parameter = parameter_bundle[binding.field_index];
+            binding.read(Scalar<>::from(parameter), value);
+            parameter_addresses.push_back(value);
+        }
+    }
+
+    PreparedExpressionInputs(const PreparedExpressionInputs &) = delete;
+    PreparedExpressionInputs &operator=(const PreparedExpressionInputs &) = delete;
+
+    PreparedColumns columns;
+    std::pmr::vector<ParameterStorageBlock> parameter_storage;
+    std::pmr::vector<const void *> parameter_addresses;
 };
 
 struct EvaluationRows {
@@ -348,32 +402,13 @@ template <cell_type RESULT> struct ColumnExpressionNode {
         const auto &compiled_expression = **expression;
         auto *cache = *bindings;
         auto memory = ScratchResource{context->scratch()};
-        auto prepared_columns = PreparedColumns{columns, std::span{compiled_expression.columns},
-                                                std::span{cache->columns}, &memory};
-        const auto &views = prepared_columns.views;
-
-        const auto parameter_bytes = compiled_expression.parameter_storage_size;
-        auto *parameter_data = parameter_bytes == 0 ? nullptr : memory.allocate(parameter_bytes, alignof(std::max_align_t));
-        auto release_parameter_data = util::scope_exit{[&]() noexcept {
-            if (parameter_data != nullptr)
-                memory.deallocate(parameter_data, parameter_bytes, alignof(std::max_align_t));
-        }};
-        auto parameter_addresses = std::pmr::vector<const void *>{
-            std::pmr::polymorphic_allocator<const void *>{&memory}};
-        parameter_addresses.reserve(compiled_expression.parameters.size());
-        const auto parameter_bundle = parameters.value_view();
-        for (auto index = std::size_t{}; index != compiled_expression.parameters.size(); ++index) {
-            const auto &binding = compiled_expression.parameters[index];
-            auto *value = static_cast<std::byte *>(parameter_data) + binding.offset;
-            const auto parameter = parameter_bundle[binding.field_index];
-            binding.read(Scalar<>::from(parameter), value);
-            parameter_addresses.push_back(value);
-        }
+        auto prepared = PreparedExpressionInputs{compiled_expression, columns, parameters, *cache, memory};
+        const auto &views = prepared.columns.views;
 
         const auto output_invalid = !output.valid();
         const auto parameters_changed = parameters.modified();
         const auto rebuild_values =
-            output_invalid || prepared_columns.mapping_changed || prepared_columns.delta_lost || parameters_changed;
+            output_invalid || prepared.columns.mapping_changed || prepared.columns.delta_lost || parameters_changed;
 
         const auto &first_binding = compiled_expression.columns.front();
         const auto first_input = columns[first_binding.field_index];
@@ -381,11 +416,11 @@ template <cell_type RESULT> struct ColumnExpressionNode {
         const auto &rows = views.front().visible_rows();
         auto selected_rows = EvaluationRows{rows, &memory};
         if (!rebuild_values)
-            selected_rows.select_changes(std::span{prepared_columns.activity}, std::span{views});
+            selected_rows.select_changes(std::span{prepared.columns.activity}, std::span{views});
 
         if (rebuild_values || !selected_rows.ids.empty()) {
             compiled_expression.for_each_result_batch(
-                views, parameter_addresses, selected_rows.requested, memory,
+                views, prepared.parameter_addresses, selected_rows.requested, memory,
                 [&](std::span<const row_id_t> ids, const ColumnBatch<> &result) {
                     output.set_batch(ids, ColumnBatch<RESULT>{result.first_slot, result.size,
                                                               static_cast<typename ColumnValueTraits<RESULT>::pointer>(
@@ -422,6 +457,18 @@ template <cell_type RESULT> class ExpressionCompiler {
         const auto *identity = point.record();
         const auto options = point.materialisation_options();
         const auto *cell_type = expression_cell_type(point.type());
+        if (details::is_column_expression_bundle_type(point.type().dereferenced_type())) {
+            if (cell_type == nullptr)
+                throw WiringError{"column expression result has no supported cell type"};
+            if (const auto found = expressions_.find(identity); found != expressions_.end())
+                return found->second;
+            if (!active_.insert(identity).second)
+                throw WiringError{"column expression contains a wiring cycle"};
+            auto remove_active = util::scope_exit{[&]() noexcept { active_.erase(identity); }};
+            const auto result = compile_operation(point, *cell_type);
+            expressions_.emplace(identity, result);
+            return result;
+        }
         const auto *concrete_type = cell_type == std::addressof(cpp_scalar_type<bool>())
                                         ? std::addressof(TSC<bool>::type())
                                         : cell_type == std::addressof(cpp_scalar_type<i64>())
@@ -462,7 +509,7 @@ template <cell_type RESULT> class ExpressionCompiler {
         return result;
     }
 
-    void compile_root(WiringPoint point) {
+    Operand compile_root(WiringPoint point) {
         const auto options = point.materialisation_options();
         const auto option = std::ranges::find_if(options, [&](const auto &candidate) {
             return details::is_column_expression_bundle_type(*candidate.target_type);
@@ -473,12 +520,13 @@ template <cell_type RESULT> class ExpressionCompiler {
         const auto *result_type = expression_cell_type(point.type());
         if (result_type == nullptr)
             throw WiringError{"column expression root has no supported cell type"};
-        static_cast<void>(compile_operation(bundle_point, *result_type));
+        return compile_operation(bundle_point, *result_type);
     }
 
     std::span<const WiringPoint> leaves() const noexcept { return leaves_; }
     std::span<const WiringPoint> parameters() const noexcept { return parameters_; }
-    std::shared_ptr<const CompiledExpression> finish() && {
+    std::shared_ptr<const CompiledExpression> finish(Operand result) && {
+        expression_.result = result;
         expression_.columns = std::move(column_bindings_);
         expression_.parameters = std::move(parameter_bindings_);
         for (auto &binding : expression_.parameters) {
@@ -596,16 +644,74 @@ template <cell_type RESULT> const auto &column_expression_node() {
     return node_template;
 }
 
+template <template <template <typename, auto...> typename> typename Schema> struct ColumnFilterNode {
+    Scalar<Opaque<CompiledExpressionOwner>> expression;
+    In<TSF<Schema>> source;
+    In<TSB<COLUMNS>, all_valid> columns;
+    In<TS<Bundle<PARAMETERS>>> parameters;
+    Out<TSF<Schema>, view> output;
+    State<BindingCache *> bindings;
+
+    void evaluate(EvaluationContext *context) const {
+        const auto &compiled_expression = **expression;
+        auto *cache = *bindings;
+        auto memory = ScratchResource{context->scratch()};
+        auto prepared = PreparedExpressionInputs{compiled_expression, columns, parameters, *cache, memory};
+        const auto &input_rows = source.extension_descriptor().rows;
+        if (prepared.columns.views.front().visible_rows() != input_rows)
+            throw std::invalid_argument{"frame filter predicate columns must share the source row selection"};
+
+        const auto rebuild_predicate = !output.valid() || prepared.columns.mapping_changed ||
+                                       prepared.columns.delta_lost || parameters.modified();
+        auto changed_rows = EvaluationRows{input_rows, &memory};
+        if (!rebuild_predicate)
+            changed_rows.select_changes(std::span{prepared.columns.activity},
+                                        std::span{prepared.columns.views});
+
+        const auto evaluate_predicate = [&](const RowSet &requested, auto consume) {
+            compiled_expression.for_each_result_batch(
+                prepared.columns.views, prepared.parameter_addresses, requested, memory,
+                [&](std::span<const row_id_t> ids, const ColumnBatch<> &result) {
+                    consume(ids, ColumnBatch<bool>{
+                                    result.first_slot, result.size,
+                                    static_cast<typename ColumnValueTraits<bool>::pointer>(result.values),
+                                    result.value_bit_offset, result.valid});
+                });
+        };
+        output.bind_filter(source, rebuild_predicate, changed_rows.ids, evaluate_predicate);
+        cache->columns.assign(prepared.columns.views.begin(), prepared.columns.views.end());
+    }
+
+    void start(EvaluationContext *context) const {
+        auto allocation = context->runtime_graph().allocation();
+        *bindings = allocation.new_object<BindingCache>(&allocation.memory_resource());
+    }
+
+    void stop(EvaluationContext *context) const noexcept {
+        auto allocation = context->runtime_graph().allocation();
+        allocation.delete_object(*bindings);
+        *bindings = nullptr;
+    }
+};
+
+template <template <template <typename, auto...> typename> typename Schema>
+const auto &column_filter_node() {
+    static const auto node_template = node<ColumnFilterNode<Schema>>();
+    return node_template;
+}
+
+struct ExpressionNodeInputs {
+    ScalarValue<Opaque<CompiledExpressionOwner>> expression;
+    WiringPoint columns;
+    WiringPoint parameters;
+};
+
 template <cell_type RESULT>
-WiringPoint materialize_column_expression_impl(WiringPoint result) {
-    auto &graph_wiring = static_cast<WiringPoint>(result).record()->wiring();
-    auto compiler = ExpressionCompiler<RESULT>{graph_wiring};
-    compiler.compile_root(result);
-    if (compiler.leaves().empty())
-        throw WiringError{"column expression requires at least one column operand"};
+ExpressionNodeInputs prepare_expression_node_inputs(GraphWiring &graph_wiring,
+                                                    ExpressionCompiler<RESULT> &&compiler, Operand result) {
     const auto leaf_points = std::vector<WiringPoint>{compiler.leaves().begin(), compiler.leaves().end()};
     const auto parameter_points = std::vector<WiringPoint>{compiler.parameters().begin(), compiler.parameters().end()};
-    const auto expression = std::move(compiler).finish();
+    auto expression = std::move(compiler).finish(result);
 
     const auto named_fields = [](std::span<const WiringPoint> points, std::string_view prefix) {
         auto fields = std::vector<WiringArgument>{};
@@ -626,8 +732,8 @@ WiringPoint materialize_column_expression_impl(WiringPoint result) {
 
     const auto column_fields = named_fields(leaf_points, "c");
     const auto free_columns = static_cast<WiringPoint>(bg::bundle(std::span<const WiringArgument>{column_fields}));
-    const auto column_bundle = graph_wiring.materialize(free_columns, bundle_type(column_fields));
-    const auto parameter_values = [&] {
+    auto column_bundle = graph_wiring.materialize(free_columns, bundle_type(column_fields));
+    auto parameter_values = [&] {
         if (parameter_points.empty()) {
             auto parameter_memory = allocator{};
             return operators::const_(bg::details::make_hierarchical_bundle<EmptyParameterSchema>(
@@ -637,14 +743,72 @@ WiringPoint materialize_column_expression_impl(WiringPoint result) {
         const auto parameter_fields = named_fields(parameter_points, "p");
         const auto free_parameters =
             static_cast<WiringPoint>(bg::bundle(std::span<const WiringArgument>{parameter_fields}));
-        const auto parameter_bundle = graph_wiring.materialize(free_parameters, bundle_type(parameter_fields));
+        auto parameter_bundle = graph_wiring.materialize(free_parameters, bundle_type(parameter_fields));
         const auto parameter_inputs = wp<TSB<PARAMETER_INPUTS>>{parameter_bundle};
         return parameter_update_node(parameter_inputs);
     }();
 
-    return column_expression_node<RESULT>()(
-        ScalarValue<Opaque<CompiledExpressionOwner>>{expression}, wp<TSB<COLUMNS>>{column_bundle}, parameter_values);
+    return {ScalarValue<Opaque<CompiledExpressionOwner>>{std::move(expression)}, column_bundle, parameter_values};
 }
+
+template <cell_type RESULT>
+WiringPoint materialize_column_expression_impl(WiringPoint result) {
+    auto &graph_wiring = static_cast<WiringPoint>(result).record()->wiring();
+    auto compiler = ExpressionCompiler<RESULT>{graph_wiring};
+    const auto root = compiler.compile_root(result);
+    if (compiler.leaves().empty())
+        throw WiringError{"column expression requires at least one column operand"};
+    auto inputs = prepare_expression_node_inputs(graph_wiring, std::move(compiler), root);
+    return column_expression_node<RESULT>()(
+        std::move(inputs.expression), wp<TSB<COLUMNS>>{inputs.columns}, wp<TS<Bundle<PARAMETERS>>>{inputs.parameters});
+}
+
+template <template <template <typename, auto...> typename> typename Schema>
+WiringPoint materialize_column_filter(WiringPoint condition, wp<TSF<Schema>> source) {
+    auto &graph_wiring = static_cast<WiringPoint>(source).record()->wiring();
+    auto compiler = ExpressionCompiler<bool>{graph_wiring};
+    const auto result = compiler.compile(condition);
+    if (compiler.leaves().empty())
+        throw WiringError{"frame filter predicate requires at least one column operand"};
+    auto inputs = prepare_expression_node_inputs(graph_wiring, std::move(compiler), result);
+    return column_filter_node<Schema>()(
+        std::move(inputs.expression), source, wp<TSB<COLUMNS>>{inputs.columns},
+        wp<TS<Bundle<PARAMETERS>>>{inputs.parameters});
+}
+
+template <template <typename, auto...> typename Field>
+using FILTER_EXPRESSION = BundleSchemaVariableDeclaration<"FRAME_FILTER_EXPRESSION", Field>;
+using FILTER_CONDITION = Union<"FRAME_FILTER_CONDITION", TSC<bool>, TSB<FILTER_EXPRESSION>>;
+template <template <typename, auto...> typename Field>
+using FILTER_SCHEMA = SchemaVariableDeclaration<"FRAME_FILTER_SCHEMA">;
+
+const auto registered_filter = operators::filter_.overload(graph<schema_type<FILTER_SCHEMA>>(
+    "name"_n = "frame_filter",
+    require = [](const WiringArguments &arguments) {
+        return expression_cell_type(arguments.original_type("condition")) == std::addressof(cpp_scalar_type<bool>())
+                   ? accept
+                   : reject("frame filter condition must produce bool");
+    },
+    [](wp<FILTER_CONDITION, "condition"_n> condition,
+       wp<TSF<FILTER_SCHEMA>, "value"_n> value) -> wp<TSF<FILTER_SCHEMA>> {
+        auto &wiring = WiringContext::current().wiring();
+        const auto &output_type = value.type().with_guarantee(TimeSeriesGuarantee::ordinary);
+        const auto arguments = bg::details::make_wiring_arguments(condition, value);
+        auto output = wiring.create_wp(output_type, arguments);
+
+        const auto builder = [](wp<FILTER_CONDITION, "condition"_n> condition,
+                                wp<TSF<FILTER_SCHEMA>, "value"_n> value) {
+            return materialize_column_filter(static_cast<WiringPoint>(condition), wp<TSF<FILTER_SCHEMA>>{value});
+        };
+        auto input_signature = bg::details::make_graph_input_signature<decltype(builder)>(
+            util::symbol{"materialisation"});
+        auto erased_builder = [builder](std::span<const WiringArgument> builder_arguments) -> WiringPoint {
+            return bg::details::invoke_graph_function(builder, builder_arguments);
+        };
+        output.add_materialisation_option(output_type, 0.0, std::move(input_signature),
+                                          WiringMaterialisationBuilder{std::move(erased_builder)});
+        return output.template as<TSF<FILTER_SCHEMA>>();
+    }));
 
 } // namespace
 

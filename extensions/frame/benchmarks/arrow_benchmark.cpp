@@ -1,4 +1,5 @@
 #include <bg/frame/arrow.hpp>
+#include <bg/frame/expression.hpp>
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
@@ -54,7 +55,7 @@ template <typename Definition> const auto &node_template() {
     return value;
 }
 
-constexpr auto cases = std::array{
+constexpr auto benchmark_cases = std::array{
     BenchmarkCase{"50% clustered selection, clustered deletion", 50, false, 128, false},
     BenchmarkCase{"50% scattered selection, clustered deletion", 50, true, 128, false},
     BenchmarkCase{"50% clustered selection, scattered deletion", 50, false, 128, true},
@@ -262,7 +263,7 @@ RunResult run_case(const BenchmarkCase &benchmark_case) {
     {
         auto context = WiringContext{wiring};
         const auto source = node_template<Source>()();
-        const auto selected_rows = filter_greater_than<"selected">(source, 0);
+        const auto selected_rows = filter(source, col("selected") > i64{0});
         const auto column = select_column<"payload">(selected_rows);
         static_cast<void>(node_template<Consumer>()(column));
     }
@@ -407,7 +408,7 @@ int main(int argc, char **argv) {
 
     const auto write_report_header = [](std::ostream &report) {
         report << std::fixed << std::setprecision(3)
-               << "RuntimeGraph source -> filter_greater_than -> select_column -> sum consumer.\n"
+               << "RuntimeGraph source -> filter(selected > 0) -> select_column -> sum consumer.\n"
                   "Each case starts with 100,000 all-valid rows. The 50% cases delete 128 rows per cycle "
                   "(1,664 total); the dense case has no deletions; the 10% scattered case deletes 768 rows "
                   "per cycle (9,984 total).\n"
@@ -437,7 +438,7 @@ int main(int argc, char **argv) {
                 "consumer_sum_median_ms,consumer_sum_min_ms,consumer_sum_max_ms,plain_arrow_sum_median_ms,"
                 "plain_arrow_sum_min_ms,plain_arrow_sum_max_ms\n";
 
-    for (const auto &benchmark_case : cases) {
+    for (const auto &benchmark_case : benchmark_cases) {
         if (benchmark_case.selection_percent == 100) {
             run_case<100, false, 0, false>(benchmark_case, report_file, std::cout, csv_file);
         } else if (benchmark_case.selection_percent == 10) {

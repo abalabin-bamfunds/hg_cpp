@@ -18,11 +18,14 @@
 #include <bg/time_series/tick_serializer.hpp>
 
 #include <array>
+#include <cstdint>
+#include <functional>
 #include <initializer_list>
 #include <iostream>
 #include <limits>
 #include <memory_resource>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <type_traits>
 #include <vector>
@@ -480,13 +483,35 @@ void with_runtime_view_storage(allocator memory, Function &&function) {
                 runtime);
 }
 
+template <typename Predicate> auto runtime_filter_evaluator(Predicate &predicate) {
+    return [&predicate](const RowSet &rows, auto &&consume) {
+        auto ids = std::vector<row_id_t>{};
+        ids.reserve(rows.count());
+        rows.each([&](row_id_t id) { ids.push_back(id); });
+        auto values = std::vector<std::uint8_t>((ids.size() + 7) / 8);
+        for (auto position = std::size_t{}; position != ids.size(); ++position)
+            if (std::invoke(predicate, ids[position]))
+                values[position / 8] |= std::uint8_t{1} << (position % 8);
+        const auto batch = ColumnBatch<bool>{0, ids.size(), values.data(), 0, ColumnBatchValidity::all_valid()};
+        std::invoke(std::forward<decltype(consume)>(consume), std::span<const row_id_t>{ids}, batch);
+    };
+}
+
+auto changed_predicate_rows(const FrameReadStorage &input, std::size_t index) {
+    auto rows = std::vector<row_id_t>{};
+    if (const auto *modified = input.modified_at(index); modified != nullptr)
+        for (auto id : *modified)
+            rows.push_back(id);
+    return rows;
+}
+
 template <typename Predicate>
-auto runtime_predicate(Predicate &predicate) {
-    return std::pair{
-        static_cast<void *>(std::addressof(predicate)),
-        static_cast<RuntimeFrameViewOutputStorage::predicate_function>([](void *context, row_id_t id) {
-            return std::invoke(*static_cast<Predicate *>(context), id);
-        })};
+bool bind_filter(RuntimeFrameViewOutputStorage &output, const FrameReadStorage &input,
+                 std::span<const std::size_t> source_indices, std::size_t predicate_index,
+                 Predicate &predicate, EvaluationTime time, allocator memory) {
+    const auto changed = changed_predicate_rows(input, predicate_index);
+    const auto evaluator = runtime_filter_evaluator(predicate);
+    return output.bind_filter(input, source_indices, false, changed, evaluator, time, memory);
 }
 
 struct FrameReadBindings {
@@ -1786,19 +1811,17 @@ void test_inherited_frame_fields_and_views() {
 
     auto input = native_frame_input(source);
     auto predicate = [&](row_id_t id) { return source.cell<1>(id).value_or(0.0) > 10.0; };
-    const auto [predicate_context, predicate_function] = runtime_predicate(predicate);
     const auto predicate_index = input.field_index(util::symbol{"bid"});
     const auto all_fields = std::array<std::size_t, 3>{0, 1, 2};
     const auto bid_field = std::array{predicate_index};
     with_runtime_view_storage<InheritedFrame>(memory, [&](auto &filter, const auto &) {
-        require(filter.bind(input, all_fields, predicate_index, predicate_context, predicate_function, second_time,
-                            memory),
+        require(bind_filter(filter, input, all_fields, predicate_index, predicate, second_time, memory),
                 "inherited frame filter did not bind its logical predicate field");
         require(!filter.selected_rows.contains(first) && filter.selected_rows.contains(second),
                 "inherited frame filter selected rows using the shadowed base field");
 
         with_runtime_view_storage<BidOnly>(memory, [&](auto &projection, const auto &runtime) {
-            require(projection.bind(input, bid_field, std::nullopt, nullptr, nullptr, second_time, memory),
+            require(projection.bind_projection(input, bid_field, second_time, memory),
                     "inherited frame projection did not bind a direct field");
             auto projected = runtime.input_storage(std::addressof(projection));
             require(projected.generic_column(0).template view<double>().cell(1) == 23.0,
@@ -1806,7 +1829,7 @@ void test_inherited_frame_fields_and_views() {
 
             const auto third_time = second_time + EvaluationTime::duration{1};
             const auto ask_field = std::array{input.field_index(util::symbol{"ask"})};
-            require(projection.bind(input, ask_field, std::nullopt, nullptr, nullptr, third_time, memory),
+            require(projection.bind_projection(input, ask_field, third_time, memory),
                     "inherited frame projection did not rebind to another logical field");
             projected = runtime.input_storage(std::addressof(projection));
             require(projected.generic_column(0).template view<double>().cell(1) == 21.5,
@@ -1814,7 +1837,7 @@ void test_inherited_frame_fields_and_views() {
         });
 
         with_runtime_view_storage<InheritedFrameBase>(memory, [&](auto &base_filter, const auto &runtime) {
-            require(base_filter.bind(input, {}, 1, predicate_context, predicate_function, second_time, memory),
+            require(bind_filter(base_filter, input, {}, predicate_index, predicate, second_time, memory),
                     "base-schema filter did not map its declared fields to the derived input schema");
             const auto output = runtime.input_storage(std::addressof(base_filter));
             require(output.schema->field_count() == 2 && output.size == 1 &&
@@ -1826,8 +1849,8 @@ void test_inherited_frame_fields_and_views() {
         const auto third_time = second_time + EvaluationTime::duration{1};
         require(source.erase(second, third_time, memory), "inherited native frame could not remove a row");
         input = native_frame_input(source);
-        require(filter.bind(input, all_fields, predicate_index, predicate_context, predicate_function, third_time,
-                            memory) && filter.removed_rows.contains(second),
+        require(bind_filter(filter, input, all_fields, predicate_index, predicate, third_time, memory) &&
+                    filter.removed_rows.contains(second),
                 "inherited frame filter did not forward row removal");
     });
 }
@@ -2413,6 +2436,19 @@ struct filter_writer {
     }
 };
 
+std::vector<row_id_t> counted_filter_rows;
+
+void count_filter_predicate(std::span<const row_id_t> ids, const ColumnOperandBatch<i64> &column,
+                            const ColumnOperandBatch<i64> &threshold, MutableColumnBatch<bool> output) {
+    counted_filter_rows.insert(counted_filter_rows.end(), ids.begin(), ids.end());
+    for (auto position = std::size_t{}; position != ids.size(); ++position) {
+        const auto valid = column.is_valid(position) && threshold.is_valid(position);
+        output.set_valid(position, valid);
+        if (valid)
+            output.set_value(position, column.value(position) > threshold.value(position));
+    }
+}
+
 struct wide_column_writer_state {
     std::array<row_id_t, 257> rows{};
 };
@@ -2639,7 +2675,7 @@ void test_double_column_addition_accepts_projected_columns_with_shared_selection
     });
     const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
         const auto frame = write(command);
-        const auto filtered = filter_greater_than<"size">(frame, i64{4});
+        const auto filtered = filter(frame, col("size") > i64{4});
         const auto projected = project<BidOnly, "bid">(filtered);
         const auto sum = operators::add(select_column<"price">(projected), select_column<"ask">(filtered));
         return observe(operators::add(sum, sum), tick);
@@ -2682,7 +2718,7 @@ void test_double_column_addition_rejects_different_domains_and_membership() {
     const auto write = node<filter_writer>();
     const auto membership_graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
         const auto frame = write(command);
-        const auto filtered = filter_greater_than<"size">(frame, i64{4});
+        const auto filtered = filter(frame, col("size") > i64{4});
         return observe(operators::add(select_column<"bid">(frame), select_column<"bid">(filtered)), tick);
     };
     auto membership_rejected = false;
@@ -2696,8 +2732,8 @@ void test_double_column_addition_rejects_different_domains_and_membership() {
     const auto distinct_filters_write = node<filter_writer>();
     const auto distinct_filters_graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
         const auto frame = distinct_filters_write(command);
-        const auto first = filter_greater_than<"size">(frame, i64{4});
-        const auto second = filter_greater_than<"size">(frame, i64{3});
+        const auto first = filter(frame, col("size") > i64{4});
+        const auto second = filter(frame, col("size") > i64{3});
         return observe(operators::add(select_column<"bid">(first), select_column<"ask">(second)), tick);
     };
     auto distinct_filters_rejected = false;
@@ -3623,7 +3659,7 @@ void test_compiled_graph_runtime_storage_is_independent() {
         trigger_identity = wiring.node_call_identity(static_cast<WiringPoint>(trigger_input));
         const auto frame = write(command_input);
         capture(frame, trigger_input);
-        capture_view(filter_greater_than<"size">(frame, 4), trigger_input);
+        capture_view(filter(frame, col("size") > i64{4}), trigger_input);
     }
 
     wiring.finalize();
@@ -3636,7 +3672,9 @@ void test_compiled_graph_runtime_storage_is_independent() {
     auto second = RuntimeGraph{compiled, second_global_state};
     const auto first_time = MIN_DT + EvaluationTime::duration{1};
     first.start(first_time);
+    auto stop_first = util::scope_exit{[&]() noexcept { first.stop(); }};
     second.start(first_time);
+    auto stop_second = util::scope_exit{[&]() noexcept { second.stop(); }};
     first.schedule(command_index);
     first.schedule(trigger_index);
     second.schedule(command_index);
@@ -3752,7 +3790,7 @@ void test_tsf_graph_behavior() {
         observe_column(select_column<"bid">(frame), tick);
         observe_bid(select_column<"bid">(frame));
         observe_ask(select_column<"ask">(frame));
-        const auto filtered = filter_greater_than<"size">(frame, 4);
+        const auto filtered = filter(frame, col("size") > i64{4});
         observe_filtered_bid(select_column<"bid">(filtered));
         observe_filtered_ask(select_column<"ask">(filtered));
         observe_frame(frame);
@@ -4366,10 +4404,7 @@ void test_filter_tsf_tick_capture() {
     using namespace bg::frame;
 
     const auto write = node<filter_writer>();
-    const auto filter = node([](In<TSF<Quotes>, optional> input, Out<TSF<Quotes>, view> output) {
-        output.bind_filter<"size">(input, [&](row_id_t id) { return input.cell<0>(id).value_or(0) > 4; });
-    });
-    const auto graph = [&](wp<TS<i64>> command) { return filter(write(command)); };
+    const auto graph = [&](wp<TS<i64>> command) { return filter(write(command), col("size") > i64{4}); };
     const auto result = testing::test_graph(graph, {0, 1, 4});
     require(result.equals({{},
                           {{"first", {{"size", i64{5}}, {"bid", 10.5}, {"ask", 10.0}}}},
@@ -5666,7 +5701,7 @@ void test_tsf_projection_rejects_empty_row_domain_mismatch() {
     auto rejected = false;
     with_runtime_view_storage<BidOnly>(memory, [&](auto &output, const auto &) {
         try {
-            static_cast<void>(output.bind(mismatched, bid_field, std::nullopt, nullptr, nullptr, time, memory));
+            static_cast<void>(output.bind_projection(mismatched, bid_field, time, memory));
         } catch (const std::invalid_argument &) {
             rejected = true;
         }
@@ -5714,7 +5749,7 @@ void test_tsf_projection_rejects_native_columns_from_another_logical_domain() {
     const auto bid_field = std::array{bid_index};
     with_runtime_view_storage<BidOnly>(memory, [&](auto &projection, const auto &) {
         try {
-            static_cast<void>(projection.bind(input, bid_field, std::nullopt, nullptr, nullptr, time, memory));
+            static_cast<void>(projection.bind_projection(input, bid_field, time, memory));
         } catch (const std::invalid_argument &) {
             rejected = true;
         }
@@ -5752,13 +5787,11 @@ void test_view_updates_do_not_traverse_source_rows() {
     const auto all_fields = std::array<std::size_t, 3>{0, 1, 2};
     const auto predicate_index = input.field_index(util::symbol{"size"});
     auto predicate = [&](row_id_t row) { return source.cell<0>(row).value_or(0) > 4; };
-    const auto [predicate_context, predicate_function] = runtime_predicate(predicate);
 
     with_runtime_view_storage<BidOnly>(memory, [&](auto &projection, const auto &) {
         with_runtime_view_storage<Quotes>(memory, [&](auto &filter, const auto &) {
-            static_cast<void>(projection.bind(input, bid_field, std::nullopt, nullptr, nullptr, first_time, memory));
-            static_cast<void>(filter.bind(input, all_fields, predicate_index, predicate_context, predicate_function,
-                                          first_time, memory));
+            static_cast<void>(projection.bind_projection(input, bid_field, first_time, memory));
+            static_cast<void>(bind_filter(filter, input, all_fields, predicate_index, predicate, first_time, memory));
 
             auto size_patch = Quotes<PatchCell>{};
             size_patch.size = 6;
@@ -5766,8 +5799,7 @@ void test_view_updates_do_not_traverse_source_rows() {
             source.set(id, size_patch, second_time, memory);
             input = make_input();
             row_counter.traversals = 0;
-            static_cast<void>(filter.bind(input, all_fields, predicate_index, predicate_context, predicate_function,
-                                          second_time, memory));
+            static_cast<void>(bind_filter(filter, input, all_fields, predicate_index, predicate, second_time, memory));
             require(row_counter.traversals == 0,
                     "steady-state predicate-column update traversed all source rows");
 
@@ -5777,9 +5809,8 @@ void test_view_updates_do_not_traverse_source_rows() {
             source.set(id, bid_patch, third_time, memory);
             input = make_input();
             row_counter.traversals = 0;
-            static_cast<void>(projection.bind(input, bid_field, std::nullopt, nullptr, nullptr, third_time, memory));
-            static_cast<void>(filter.bind(input, all_fields, predicate_index, predicate_context, predicate_function,
-                                          third_time, memory));
+            static_cast<void>(projection.bind_projection(input, bid_field, third_time, memory));
+            static_cast<void>(bind_filter(filter, input, all_fields, predicate_index, predicate, third_time, memory));
             require(row_counter.traversals == 0,
                     "steady-state projection and payload updates traversed all source rows");
         });
@@ -5813,10 +5844,9 @@ void test_filter_row_set_reads_cached_source_order() {
     const auto all_fields = std::array<std::size_t, 3>{0, 1, 2};
     const auto predicate_index = input.field_index(util::symbol{"size"});
     auto predicate = [&](row_id_t id) { return source.cell<0>(id).value_or(0) > 4; };
-    const auto [predicate_context, predicate_function] = runtime_predicate(predicate);
+
     with_runtime_view_storage<Quotes>(memory, [&](auto &filter, const auto &runtime) {
-        static_cast<void>(filter.bind(input, all_fields, predicate_index, predicate_context, predicate_function,
-                                      first_time, memory));
+        static_cast<void>(bind_filter(filter, input, all_fields, predicate_index, predicate, first_time, memory));
         const auto second_time = first_time + EvaluationTime::duration{1};
         require(source.erase(first, second_time, memory), "filter ordering test could not remove its first row");
         const auto reused_slot = source.add(Quotes<Cell>{.size = Cell<i64>{7}, .bid = Cell<double>{30.0},
@@ -5827,8 +5857,7 @@ void test_filter_row_set_reads_cached_source_order() {
                 "filter ordering test did not add a later row ID into the earlier physical slot");
         input = make_input();
         row_counter.traversals = 0;
-        static_cast<void>(filter.bind(input, all_fields, predicate_index, predicate_context, predicate_function,
-                                      second_time, memory));
+        static_cast<void>(bind_filter(filter, input, all_fields, predicate_index, predicate, second_time, memory));
         const auto traversals_after_bind = row_counter.traversals;
         const auto filtered = static_cast<const FrameSeriesRuntimeType &>(runtime).input_storage(&filter);
         auto observed = std::vector<row_id_t>{};
@@ -5893,7 +5922,7 @@ void test_tsf_view_uses_local_physical_rows_incrementally() {
     auto input = make_input(first_time);
     const auto bid_field = std::array{bid_index};
     with_runtime_view_storage<BidOnly>(memory, [&](auto &projection, const auto &runtime) {
-        require(projection.bind(input, bid_field, std::nullopt, nullptr, nullptr, first_time, memory),
+        require(projection.bind_projection(input, bid_field, first_time, memory),
                 "TSF view did not bind a local physical row mapping");
         auto projected = runtime.input_storage(std::addressof(projection));
         auto column = projected.generic_column(0).template view<double>();
@@ -5908,8 +5937,7 @@ void test_tsf_view_uses_local_physical_rows_incrementally() {
         local_bid.add(physical_rows, third_id, double{30.5}, memory);
         input = make_input(second_time);
         row_counter.traversals = 0;
-        require(projection.bind(input, bid_field, std::nullopt, nullptr, nullptr, second_time, memory) &&
-                    row_counter.traversals == 0,
+        require(projection.bind_projection(input, bid_field, second_time, memory) && row_counter.traversals == 0,
                 "TSF view traversed existing local rows instead of validating the added row delta");
         projected = runtime.input_storage(std::addressof(projection));
         column = projected.generic_column(0).template view<double>();
@@ -5939,11 +5967,9 @@ void test_filtered_column_coverage_rejects_a_different_row_set() {
     const auto bid_field = std::array{bid_index};
     const auto predicate_index = input.field_index(util::symbol{"size"});
     auto predicate = [&](row_id_t id) { return source.cell<0>(id).value_or(0) > 6; };
-    const auto [predicate_context, predicate_function] = runtime_predicate(predicate);
     with_runtime_view_storage<Quotes>(memory, [&](auto &filter, const auto &filter_runtime) {
         with_runtime_view_storage<BidOnly>(memory, [&](auto &projection, const auto &projection_runtime) {
-            static_cast<void>(filter.bind(input, all_fields, predicate_index, predicate_context, predicate_function,
-                                          time, memory));
+            static_cast<void>(bind_filter(filter, input, all_fields, predicate_index, predicate, time, memory));
 
             auto mismatched = input;
             auto bindings = FrameReadBindings{};
@@ -5953,8 +5979,7 @@ void test_filtered_column_coverage_rejects_a_different_row_set() {
             bindings.apply(mismatched);
             auto rejected = false;
             try {
-                static_cast<void>(projection.bind(mismatched, bid_field, std::nullopt, nullptr, nullptr, time,
-                                                  memory));
+                static_cast<void>(projection.bind_projection(mismatched, bid_field, time, memory));
             } catch (const std::invalid_argument &) {
                 rejected = true;
             }
@@ -5962,22 +5987,20 @@ void test_filtered_column_coverage_rejects_a_different_row_set() {
 
             auto operation_switch_rejected = false;
             try {
-                static_cast<void>(filter.bind(input, all_fields, std::nullopt, nullptr, nullptr,
-                                              time + EvaluationTime::duration{1}, memory));
+                static_cast<void>(filter.bind_projection(input, all_fields, time + EvaluationTime::duration{1},
+                                                        memory));
             } catch (const std::logic_error &) {
                 operation_switch_rejected = true;
             }
             require(operation_switch_rejected, "a TSF view output silently switched from filtering to projection");
 
-            static_cast<void>(projection.bind(input, bid_field, std::nullopt, nullptr, nullptr, time, memory));
+            static_cast<void>(projection.bind_projection(input, bid_field, time, memory));
             auto projected = projection_runtime.input_storage(std::addressof(projection));
             auto always_true = [](row_id_t) { return true; };
-            const auto [always_true_context, always_true_function] = runtime_predicate(always_true);
             operation_switch_rejected = false;
             try {
-                static_cast<void>(projection.bind(projected, std::array<std::size_t, 1>{0}, 0,
-                                                  always_true_context, always_true_function,
-                                                  time + EvaluationTime::duration{1}, memory));
+                static_cast<void>(bind_filter(projection, projected, std::array<std::size_t, 1>{0}, 0,
+                                              always_true, time + EvaluationTime::duration{1}, memory));
             } catch (const std::logic_error &) {
                 operation_switch_rejected = true;
             }
@@ -6001,16 +6024,7 @@ void test_incremental_numeric_filter() {
         std::vector<double> bids;
     };
     auto observations = std::vector<observation>{};
-    auto predicate_visits = std::vector<std::size_t>{};
     const auto write = node<filter_writer>();
-    const auto filter = node([&](In<TSF<Quotes>, optional> input, Out<TSF<Quotes>, view> output) {
-        auto visits = std::size_t{};
-        output.template bind_filter<"size">(input, [&](row_id_t id) {
-            ++visits;
-            return input.cell<0>(id).value_or(0) > 4;
-        });
-        predicate_visits.push_back(visits);
-    });
     const auto observe = node([&](In<TSF<Quotes>, optional> input, In<TS<i64>> tick,
                                   Out<TS<Frame<Quotes>>> snapshot) {
         auto result = observation{.valid = input.valid(),
@@ -6029,15 +6043,13 @@ void test_incremental_numeric_filter() {
         static_cast<void>(tick);
     });
     const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
-        return observe(filter(write(command)), tick);
+        return observe(filter(write(command), col("size") > i64{4}), tick);
     };
     const auto commands = std::array<i64, 10>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
     const auto ticks = std::array<i64, 10>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
     const auto snapshots = testing::test_graph(graph, commands, ticks);
 
     require(observations.size() == commands.size(), "numeric filter observer missed a cycle");
-    require(predicate_visits == std::vector<std::size_t>{0, 1, 1, 0, 1, 1, 0, 1, 0, 0},
-            "numeric filter evaluated rows outside additions and predicate-column modifications");
     require(observations[0].valid && observations[0].became_valid && observations[0].modified &&
                 observations[0].rows.empty(),
             "numeric filter did not bind its first empty source");
@@ -6079,7 +6091,145 @@ void test_incremental_numeric_filter() {
             "numeric filter snapshots did not retain stable row data");
 }
 
-void test_filter_greater_than_composes_with_column_projection() {
+void test_expression_filter_evaluates_only_required_rows() {
+    using namespace bg;
+
+    register_column_block_function<bool, i64, i64>();
+    struct observation {
+        bool valid{};
+        std::vector<row_id_t> rows;
+        std::vector<row_id_t> callback_rows;
+    };
+    auto observations = std::vector<observation>{};
+    const auto write = node<filter_writer>();
+    const auto observe = node([&](In<TSF<Quotes>, optional> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto result = observation{.valid = input.valid()};
+        if (input.valid())
+            input.for_each_row([&](row_id_t id, std::size_t) { result.rows.push_back(id); });
+        result.callback_rows = counted_filter_rows;
+        std::ranges::sort(result.rows);
+        std::ranges::sort(result.callback_rows);
+        counted_filter_rows.clear();
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> threshold, wp<TS<i64>> tick) {
+        const auto frame = write(command);
+        const auto predicate = make_column_expression(
+            ColumnBlockFunction<bool, i64, i64>{&count_filter_predicate}, select_column<"size">(frame), threshold);
+        return observe(filter(frame, predicate), tick);
+    };
+
+    counted_filter_rows.clear();
+    const auto result = testing::test_graph(
+        graph,
+        testing::input<TS<i64>>(
+            {0, 1, 2, 3, 4, 5, 6, 7, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP}),
+        testing::input<TS<i64>>({4, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP,
+                                 literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP, literal::INVALID, 6,
+                                 9}),
+        testing::input<TS<i64>>({0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}));
+
+    require(result.equals<i64>({0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}) &&
+                observations.size() == 13,
+            "counted expression filter observer missed a cycle");
+    require(observations[1].callback_rows == std::vector<row_id_t>{0} &&
+                observations[2].callback_rows == std::vector<row_id_t>{1},
+            "expression filter did not evaluate only the added rows");
+    require(observations[3].callback_rows.empty() && observations[6].callback_rows.empty() &&
+                observations[8].callback_rows.empty() && observations[9].callback_rows.empty(),
+            "expression filter evaluated the predicate for a payload change, removal, or unchanged parameter");
+    require(observations[4].callback_rows == std::vector<row_id_t>{0} &&
+                observations[5].callback_rows == std::vector<row_id_t>{0},
+            "expression filter did not reevaluate a modified predicate column");
+    require(!observations[10].valid && observations[10].callback_rows.empty() &&
+                observations[11].valid && observations[11].callback_rows == std::vector<row_id_t>{0, 1} &&
+                observations[11].rows == std::vector<row_id_t>{0, 1} &&
+                observations[12].callback_rows == std::vector<row_id_t>{0, 1} && observations[12].rows.empty(),
+            "expression filter did not propagate parameter invalidation and reevaluate on revalidation");
+}
+
+void test_runtime_schema_filter_uses_nullable_boolean_field() {
+    using namespace bg;
+
+    const auto fields = std::array{SchemaField{util::symbol{"keep"}, &cpp_scalar_type<bool>()}};
+    const auto &schema = anonymous_schema(fields);
+    auto selected_rows = std::vector<row_id_t>{};
+    const auto observe = node([&](In<TSF<SCHEMA>> input, Out<TS<i64>> output) {
+        auto rows = std::vector<row_id_t>{};
+        input.for_each_row([&](row_id_t id, std::size_t) { rows.push_back(id); });
+        selected_rows = rows;
+        output.set(static_cast<i64>(rows.size()));
+    });
+    const auto graph = [&](wp<TSF<SCHEMA>> source) {
+        return observe(filter(source, col("keep")));
+    };
+    const auto &series_type = frame_series_type(schema, TimeSeriesGuarantee::ordinary);
+    const auto &runtime = frame_time_series_runtime_type<SCHEMA>(series_type);
+    const auto result = testing::test_graph(
+        graph, testing::input(runtime, {{{{"keep", true}}, {{"keep", NULL_VALUE}}, {{"keep", false}},
+                                         {{"keep", true}}}}));
+
+    require(result.equals<i64>({2}) && selected_rows == std::vector<row_id_t>{0, 3},
+            "runtime-schema filter did not exclude null and false Boolean predicate cells");
+}
+
+void test_filter_reuses_forced_materialized_predicate() {
+    using namespace bg;
+
+    register_column_block_function<bool, i64, i64>();
+    struct observation {
+        std::vector<row_id_t> predicate_rows;
+        std::vector<std::optional<bool>> predicate_values;
+        std::vector<row_id_t> selected_rows;
+        std::vector<row_id_t> callback_rows;
+    };
+    auto observations = std::vector<observation>{};
+    const auto write = node<filter_writer>();
+    const auto observe = node([&](In<TSC<bool>> predicate, In<TSF<Quotes>> selected, In<TS<i64>> tick,
+                                  Out<TS<i64>> output) {
+        auto result = observation{};
+        predicate.for_each_row([&](row_id_t id, std::size_t) {
+            result.predicate_rows.push_back(id);
+            result.predicate_values.push_back(predicate.cell(id));
+        });
+        selected.for_each_row([&](row_id_t id, std::size_t) { result.selected_rows.push_back(id); });
+        result.callback_rows = counted_filter_rows;
+        std::ranges::sort(result.predicate_rows);
+        std::ranges::sort(result.selected_rows);
+        std::ranges::sort(result.callback_rows);
+        counted_filter_rows.clear();
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto frame = write(command);
+        const auto predicate = make_column_expression(
+            ColumnBlockFunction<bool, i64, i64>{&count_filter_predicate}, select_column<"size">(frame),
+            operators::const_(i64{4}).as<TS<i64>>());
+        return observe(predicate, filter(frame, predicate), tick);
+    };
+
+    counted_filter_rows.clear();
+    const auto commands = std::array<i64, 5>{0, 1, 3, 4, 6};
+    const auto ticks = std::array<i64, 5>{0, 1, 2, 3, 4};
+    static_cast<void>(testing::test_graph(graph, commands, ticks));
+
+    require(observations.size() == commands.size() && observations[1].predicate_values ==
+                std::vector<std::optional<bool>>{true} && observations[1].selected_rows ==
+                std::vector<row_id_t>{0} && observations[1].callback_rows == std::vector<row_id_t>{0},
+            "filter did not reuse the forced Boolean column for its first selected row");
+    require(observations[2].callback_rows.empty() && observations[2].selected_rows == std::vector<row_id_t>{0},
+            "filter recomputed a forced predicate after an unrelated payload change");
+    require(observations[3].predicate_values == std::vector<std::optional<bool>>{false} &&
+                observations[3].selected_rows.empty() && observations[3].callback_rows ==
+                    std::vector<row_id_t>{0},
+            "filter did not reuse the forced Boolean column after a predicate-column change");
+    require(observations[4].selected_rows.empty() && observations[4].callback_rows.empty(),
+            "filter recomputed a forced predicate for a removed row");
+}
+
+void test_expression_filter_composes_with_column_projection() {
     using namespace bg;
     using namespace bg::frame;
 
@@ -6104,9 +6254,9 @@ void test_filter_greater_than_composes_with_column_projection() {
         output.set(*tick);
     });
     const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
-        const auto filtered = filter_greater_than<"size">(write(command), 6);
+        const auto filtered = filter(write(command), col("size") > i64{6});
         const auto projected = project<BidOnly, "bid">(filtered);
-        const auto price_filtered = filter_greater_than<"price">(projected, 15.0);
+        const auto price_filtered = filter(projected, col("price") > 15.0);
         return observe(select_column<"price">(price_filtered), tick);
     };
     const auto commands = std::array<i64, 10>{0, 1, 2, 3, 4, 5, 6, 7, 10, 11};
@@ -6212,7 +6362,7 @@ void test_computed_tsf_outputs_and_downstream_views() {
         const auto source = write(command);
         const auto aggregate = compute(source, command);
         const auto copied = copy(aggregate);
-        const auto filtered = filter_greater_than<"mid">(copied, 20.0);
+        const auto filtered = filter(copied, col("mid") > 20.0);
         return observe(source, aggregate, copied, select_column<"mid">(filtered), tick);
     };
     const auto commands = std::array<i64, 12>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
@@ -6492,7 +6642,7 @@ void test_computed_tsf_runtime_cache_and_source_rebinding() {
     }};
     auto &output = *static_cast<RuntimeFrameViewOutputStorage *>(allocation);
     auto first_input = native_frame_input(first);
-    require(output.bind(first_input, {}, std::nullopt, nullptr, nullptr, first_time, memory),
+    require(output.bind_projection(first_input, {}, first_time, memory),
             "computed TSF output did not bind its first source domain");
     auto first_mid = std::optional<double>{11.0};
     require(output.set_computed(0, first_id, std::addressof(first_mid), first_time, memory),
@@ -6510,7 +6660,7 @@ void test_computed_tsf_runtime_cache_and_source_rebinding() {
             "computed TSF columns did not share their row-to-slot mapping");
 
     auto second_input = native_frame_input(second);
-    require(output.bind(second_input, {}, std::nullopt, nullptr, nullptr, second_time, memory) &&
+    require(output.bind_projection(second_input, {}, second_time, memory) &&
                 output.added_rows.contains(second_id) && output.removed_rows.contains(first_id),
             "computed TSF output did not report a source row-domain rebind");
     const auto output_storage = static_cast<const FrameSeriesRuntimeType &>(runtime).input_storage(allocation);
@@ -6704,6 +6854,9 @@ int main() {
         test_tsf_view_uses_local_physical_rows_incrementally();
         test_filtered_column_coverage_rejects_a_different_row_set();
         test_incremental_numeric_filter();
+        test_expression_filter_evaluates_only_required_rows();
+        test_runtime_schema_filter_uses_nullable_boolean_field();
+        test_filter_reuses_forced_materialized_predicate();
         test_double_column_addition_updates_and_nulls();
         test_double_column_addition_crosses_scratch_batch_boundaries();
         test_double_column_addition_accepts_projected_columns_with_shared_selection();
@@ -6720,7 +6873,7 @@ int main() {
         test_double_column_addition_reuses_forced_materialisation_form();
         test_double_column_arithmetic_fusion_and_forced_materialization();
         test_double_column_addition_preserves_null_cells();
-        test_filter_greater_than_composes_with_column_projection();
+        test_expression_filter_composes_with_column_projection();
         test_computed_tsf_outputs_and_downstream_views();
         test_all_computed_tsf_publishes_empty_domain_rebinding();
         test_computed_tsf_callable_and_aggregate_runtime_hooks();

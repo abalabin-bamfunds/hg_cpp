@@ -21,7 +21,7 @@ arrays; validity remains separate. Gather-copy export produces one dense chunk.
 Double-column addition and subtraction support deferred expressions and block
 evaluation. Matching `i64` and `double` operands support `==`, `!=`, `<`, `<=`,
 `>`, and `>=`; comparisons return nullable `TSC<bool>` and propagate nulls.
-Previous-cell subscriptions and expression-based filtering are later work.
+Previous-cell subscriptions are later work.
 
 `frame::view` is an output option owned by this extension. Use it with
 `Out<TSC<T>, frame::view>` and `Out<TSF<Schema>, frame::view>`. BG does not
@@ -332,8 +332,22 @@ const auto predicate = bind_expression(q, col("ask") - col("bid") < tolerance);
 
 Each comparison returns nullable `TSC<bool>`. A result is null when either
 operand is null. Mixed integer and double operands fail during wiring; use an
-explicit conversion operator when conversion is required. Expression-based
-filtering remains future work.
+explicit conversion operator when conversion is required.
+
+`frame::filter(frame, predicate)` accepts a `TSC<bool>` predicate. A scalar
+`TS<bool>` retains BG's tick-selection meaning. False and null predicate
+results exclude a row.
+
+```cpp
+auto selected = frame::filter(q, col("size") > bg::i64{10});
+auto changing_threshold = frame::filter(q, col("ask") - col("bid") < tolerance);
+
+auto named_predicate = col("size") > param("minimum");
+auto named_filter = frame::filter(q, named_predicate, "minimum"_n = minimum);
+```
+
+Scalar constants are owned by the expression. `TS<T>` operands remain ordinary
+BG dependencies.
 
 ### Expression construction and binding
 
@@ -452,7 +466,7 @@ Include `<bg/frame/frame.hpp>` for concrete and runtime-schema frames.
 | `Out<TSF<Schema>, frame::computed<"mid">>` | `schema`, `bind(source)`, `set<"mid">`, `set_batch<"mid">`, `invalidate` |
 | Column selection | `select_column<"bid">(frame)` returns a `wp<TSC<T>>` |
 | Projection helper | `project<TargetSchema, "bid", "ask">(frame)` |
-| Filter helper | `filter_greater_than<"size">(frame, threshold)` |
+| Filter helper | `filter(frame, col("size") > threshold)` |
 
 The selected column shares native cell storage with its frame. A row membership
 change publishes every child column; a cell patch publishes the changed child
@@ -515,19 +529,17 @@ output.set_batch<"mid">(rows, batch);
 binds the named source columns to the target schema in order. The projection
 shares the source cells.
 
-`filter_greater_than<"size">(frame, threshold)` creates a filter node with a
-numeric scalar threshold. The filter retains the source schema and shares its
-column storage. It tests added rows and rows whose predicate column changed.
+The filter output retains the source schema and has the ordinary TSF
+guarantee. `frame::view` selects its borrowed runtime layout, which shares the
+source column storage.
+
+The node evaluates added rows and rows whose predicate columns changed.
 Changes to other columns are forwarded for selected rows without reevaluating
 the predicate. A selected column view covers only the filter's visible rows.
 If the source changed but its delta timestamp does not match the input's last
 update, the filter reconciles current membership and reevaluates its predicate.
-The predicate must remain stable while the binding is retained. Changing a
-captured threshold does not signal a rebuild; dynamic thresholds and
-expression-based filtering are later work.
-The existing `bind_filter` callback and `filter_greater_than` helper are numeric
-probes. The planned filter API belongs to nodes, evaluates expression blocks,
-and uses BG materialisation options.
+Output invalidation, source rebinding, lost delta continuity, and parameter
+updates rebuild predicate membership.
 
 ```cpp
 template <template <typename, auto...> typename Field> struct BidOnly {

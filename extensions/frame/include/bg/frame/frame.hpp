@@ -1967,7 +1967,6 @@ struct RuntimeFrameViewLayout {
 class RuntimeFrameViewOutputStorage {
   public:
     static constexpr bool supports_byte_copy_initialization = true;
-    using predicate_function = bool (*)(void *, row_id_t);
 
     struct ColumnMapping {
         const void *native{};
@@ -2055,6 +2054,33 @@ class RuntimeFrameViewOutputStorage {
             }};
     }
 
+    RowSet requested_predicate_rows(RowSet rows) const noexcept {
+        return RowSet{
+            .context = this,
+            .native_rows = nullptr,
+            .identity = rows.identity,
+            .size = [](const void *context) noexcept {
+                return static_cast<std::size_t>(
+                    static_cast<const RuntimeFrameViewOutputStorage *>(context)->predicate_rows.size());
+            },
+            .contains = [](const void *context, row_id_t id) noexcept {
+                return static_cast<const RuntimeFrameViewOutputStorage *>(context)->predicate_rows.contains(id);
+            },
+            .id_at = [](const void *context, std::size_t position) {
+                const auto &storage = *static_cast<const RuntimeFrameViewOutputStorage *>(context);
+                if (position >= storage.predicate_rows.size())
+                    throw std::out_of_range{"filter request row position"};
+                auto current = storage.predicate_rows.begin();
+                std::ranges::advance(current, position);
+                return *current;
+            },
+            .for_each = [](const void *context, void *target, RowSet::visit_function visit) {
+                const auto &storage = *static_cast<const RuntimeFrameViewOutputStorage *>(context);
+                for (auto id : storage.predicate_rows)
+                    visit(target, id);
+            }};
+    }
+
     void rebuild_selected_order(RowSet rows, allocator memory) {
         clear_selected_order(memory);
         rows.each([&](row_id_t id) {
@@ -2125,20 +2151,34 @@ class RuntimeFrameViewOutputStorage {
             child_state(this, index).publish(time);
     }
 
-    bool bind(const FrameReadStorage &input, std::span<const std::size_t> source_indices,
-              std::optional<std::size_t> predicate_index, void *predicate_context,
-              predicate_function predicate, EvaluationTime time, allocator memory) {
+    struct ProjectionOperation {};
+
+    bool bind_projection(const FrameReadStorage &input, std::span<const std::size_t> source_indices,
+                         EvaluationTime time, allocator memory) {
+        return bind_impl(input, source_indices, false, {}, ProjectionOperation{}, time, memory);
+    }
+
+    template <typename Evaluator>
+    bool bind_filter(const FrameReadStorage &input, std::span<const std::size_t> source_indices,
+                     bool rebuild_predicate, std::span<const row_id_t> changed_predicate_rows,
+                     Evaluator &&evaluator, EvaluationTime time, allocator memory) {
+        return bind_impl(input, source_indices, rebuild_predicate, changed_predicate_rows,
+                         std::forward<Evaluator>(evaluator), time, memory);
+    }
+
+    template <typename Evaluator>
+    bool bind_impl(const FrameReadStorage &input, std::span<const std::size_t> source_indices,
+                   bool rebuild_requested_predicate, std::span<const row_id_t> changed_predicate_rows,
+                   Evaluator &&evaluator, EvaluationTime time, allocator memory) {
+        constexpr auto filtering = !std::is_same_v<std::remove_cvref_t<Evaluator>, ProjectionOperation>;
         if (layout == nullptr || input.schema == nullptr)
             throw std::logic_error{"TSF view has no resolved schema layout"};
-        if (valid && filtering != predicate_index.has_value())
+        if (valid && filtering != this->filtering)
             throw std::logic_error{"a TSF view output cannot switch between projection and filtering"};
         const auto infer_source_indices = source_indices.empty();
         const auto identity_source_indices = infer_source_indices && input.schema == layout->schema;
         if (!infer_source_indices && source_indices.size() != layout->fields.size())
             throw std::invalid_argument{"frame view column count does not match its output schema"};
-        if (predicate_index.has_value() && (*predicate_index >= layout->fields.size() || predicate == nullptr))
-            throw std::invalid_argument{"frame view filter has no resolved predicate"};
-
         const auto source_index = [&](std::size_t index) {
             if (!infer_source_indices)
                 return source_indices[index];
@@ -2150,7 +2190,6 @@ class RuntimeFrameViewOutputStorage {
         const auto row_domain_changed = previous.identity != nullptr && previous.identity != input.rows.identity;
         const auto row_set_rebound = !valid || previous.context != input.rows.context;
         const auto input_delta_current = input.modified && input.change_time == input.last_updated;
-        auto predicate_mapping_changed = false;
         for (std::size_t index = 0; index != layout->fields.size(); ++index) {
             if (is_computed(index))
                 continue;
@@ -2187,18 +2226,15 @@ class RuntimeFrameViewOutputStorage {
                             validate_row(id);
                 }
             }
-            if (predicate_index == index)
-                predicate_mapping_changed = mapping_changed;
         }
         if (row_domain_changed)
             clear_computed_fields(memory);
 
         const auto new_cycle = !valid || delta_time != time;
-        const auto rebuild_predicate = predicate_index.has_value() &&
-                                       (!valid || row_set_rebound || row_domain_changed ||
-                                        predicate_mapping_changed ||
-                                        (input.modified && !input_delta_current));
-        auto selected_order_dirty = predicate_index.has_value() && rebuild_predicate;
+        const auto rebuild_predicate = filtering &&
+                                       (rebuild_requested_predicate || !valid || row_set_rebound ||
+                                        row_domain_changed || (input.modified && !input_delta_current));
+        auto selected_order_dirty = filtering && rebuild_predicate;
         if (new_cycle) {
             added_rows.clear();
             removed_rows.clear();
@@ -2251,7 +2287,7 @@ class RuntimeFrameViewOutputStorage {
         };
 
         if (row_domain_changed) {
-            if (predicate_index.has_value()) {
+            if (filtering) {
                 selected_rows.for_each_selected([&](row_id_t id) { remove_filter_row(id, true); });
                 selected_rows.clear();
             } else {
@@ -2260,7 +2296,7 @@ class RuntimeFrameViewOutputStorage {
             previous_rows.clear();
             input.rows.each([&](row_id_t id) {
                 previous_rows.include(id, memory);
-                if (predicate_index.has_value())
+                if (filtering)
                     predicate_rows.set(id, memory.memory_resource());
                 else
                     add_projection_row(id, true);
@@ -2271,7 +2307,7 @@ class RuntimeFrameViewOutputStorage {
                     predicate_rows.set(id, memory.memory_resource());
             });
             for (auto id : predicate_rows) {
-                if (predicate_index.has_value())
+                if (filtering)
                     remove_filter_row(id, false);
                 else
                     remove_projection_row(id, false);
@@ -2280,7 +2316,7 @@ class RuntimeFrameViewOutputStorage {
             predicate_rows.clear();
             input.rows.each([&](row_id_t id) {
                 if (!previous_rows.contains(id)) {
-                    if (predicate_index.has_value())
+                    if (filtering)
                         predicate_rows.set(id, memory.memory_resource());
                     else
                         add_projection_row(id, false);
@@ -2291,7 +2327,7 @@ class RuntimeFrameViewOutputStorage {
             if (input.removed != nullptr)
                 for (auto id : *input.removed)
                     if (!input.rows.has(id) && previous_rows.contains(id)) {
-                        if (predicate_index.has_value())
+                        if (filtering)
                             remove_filter_row(id, false);
                         else
                             remove_projection_row(id, false);
@@ -2300,7 +2336,7 @@ class RuntimeFrameViewOutputStorage {
             if (input.added != nullptr)
                 for (auto id : *input.added)
                     if (input.rows.has(id) && !previous_rows.contains(id)) {
-                        if (predicate_index.has_value())
+                        if (filtering)
                             predicate_rows.set(id, memory.memory_resource());
                         else
                             add_projection_row(id, false);
@@ -2308,30 +2344,32 @@ class RuntimeFrameViewOutputStorage {
                     }
         }
 
-        if (predicate_index.has_value()) {
+        if constexpr (filtering) {
             if (rebuild_predicate)
                 input.rows.each([&](row_id_t id) { predicate_rows.set(id, memory.memory_resource()); });
-            else if (input_delta_current)
-                if (const auto *modified = input.modified_at(source_index(*predicate_index)); modified != nullptr)
-                    for (auto id : *modified)
-                        if (input.rows.has(id))
-                            predicate_rows.set(id, memory.memory_resource());
+            else
+                for (const auto id : changed_predicate_rows)
+                    if (input.rows.has(id))
+                        predicate_rows.set(id, memory.memory_resource());
 
             selected_rows.bind(input.rows);
-            for (auto id : predicate_rows) {
-                if (predicate(predicate_context, id)) {
-                    add_filter_row(id, row_domain_changed);
-                } else {
-                    remove_filter_row(id, false);
+            const auto consume_batch = [&](std::span<const row_id_t> ids, const ColumnBatch<bool> &values) {
+                for (auto position = std::size_t{}; position != ids.size(); ++position) {
+                    if (values.is_valid(position) && values.value_at(position))
+                        add_filter_row(ids[position], row_domain_changed);
+                    else
+                        remove_filter_row(ids[position], false);
                 }
-            }
+            };
+            if (!predicate_rows.empty())
+                std::invoke(evaluator, requested_predicate_rows(input.rows), consume_batch);
             if (selected_order_dirty)
                 rebuild_selected_order(input.rows, memory);
         }
         previous_rows.bind(input.rows);
         source_rows = input.rows;
 
-        const auto output_rows = predicate_index.has_value() ? filter_rows() : input.rows;
+        const auto output_rows = filtering ? filter_rows() : input.rows;
         const auto membership_changed = !added_rows.empty() || !removed_rows.empty();
         auto any_change = !valid || row_domain_changed || membership_changed;
         for (std::size_t index = 0; index != layout->fields.size(); ++index) {
@@ -2383,7 +2421,7 @@ class RuntimeFrameViewOutputStorage {
                 std::addressof(output_modified), std::addressof(removed_rows), time);
         }
 
-        filtering = predicate_index.has_value();
+        this->filtering = filtering;
         valid = true;
         return any_change;
     }
@@ -2529,6 +2567,21 @@ wp<> bind_expression(wp<TSF<Schema, Properties...>> source, const Expression &ex
         return WiringArgument{select_column<SCALAR>(source, name)};
     };
     return wp<>{details::bind_expression(expression, bindings, column_resolver)};
+}
+
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties,
+          typename... Bindings>
+    requires(bg::details::graph_code_argument<Bindings> && ...)
+auto filter(wp<TSF<Schema, Properties...>> source, const Expression &predicate, Bindings &&...bindings) {
+    return operators::filter_(bind_expression(source, predicate, std::forward<Bindings>(bindings)...), source)
+        .template as<TSF<Schema>>();
+}
+
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties,
+          typename Predicate>
+    requires bg::details::graph_code_argument<Predicate>
+auto filter(wp<TSF<Schema, Properties...>> source, Predicate &&predicate) {
+    return operators::filter_(std::forward<Predicate>(predicate), source).template as<TSF<Schema>>();
 }
 
 template <std::size_t Index, template <template <typename, auto...> typename> typename Schema, auto... Properties>
@@ -3542,8 +3595,8 @@ class FrameViewOutputImplementation {
                 binding_->invalidate();
             return false;
         }
-        const auto changed = output.bind(input, {}, std::nullopt, nullptr, nullptr,
-                                         binding_->context().evaluation_time(), binding_->allocator());
+        const auto changed = output.bind_projection(input, {}, binding_->context().evaluation_time(),
+                                                    binding_->allocator());
         if (changed) {
             for (auto index : output.changed_columns)
                 binding_->publish_item(binding_->runtime_type(), static_cast<item_id_t>(index));
@@ -3671,8 +3724,8 @@ class Out<frame::TSF<Schema, Properties...>, frame::view>
                 binding_->invalidate();
             return false;
         }
-        const auto changed = output.bind(input, source_indices, std::nullopt, nullptr, nullptr,
-                                         binding_->context().evaluation_time(), binding_->allocator());
+        const auto changed = output.bind_projection(input, source_indices,
+                                                    binding_->context().evaluation_time(), binding_->allocator());
         if (changed) {
             for (auto index : output.changed_columns)
                 binding_->publish_item(binding_->runtime_type(), static_cast<item_id_t>(index));
@@ -3707,11 +3760,11 @@ class Out<frame::TSF<Schema, Properties...>, frame::view>
         return bind_projection(source, std::span<const std::size_t>{source_indices});
     }
 
-    template <util::compile_time_string Name,
-              template <template <typename, auto...> typename> typename SourceSchema,
-              auto... SeriesProperties, auto... InputProperties, typename Predicate>
+    template <template <template <typename, auto...> typename> typename SourceSchema,
+              auto... SeriesProperties, auto... InputProperties, typename Evaluator>
     bool bind_filter(const In<frame::TSF<SourceSchema, SeriesProperties...>, InputProperties...> &source,
-                     Predicate &&predicate) const {
+                     bool rebuild_predicate, std::span<const frame::row_id_t> changed_predicate_rows,
+                     Evaluator &&evaluator) const {
         const auto input = source.extension_descriptor();
         auto &output = runtime_storage();
         if (!input.valid) {
@@ -3719,15 +3772,9 @@ class Out<frame::TSF<Schema, Properties...>, frame::view>
                 binding_->invalidate();
             return false;
         }
-        using PredicateType = std::remove_reference_t<Predicate>;
-        auto *predicate_context = std::addressof(predicate);
-        const auto predicate_function = [](void *context, frame::row_id_t id) {
-            return std::invoke(*static_cast<PredicateType *>(context), id);
-        };
-        const auto predicate_index = output.field_index(util::symbol{Name.view()});
-        const auto changed = output.bind(input, {}, predicate_index, predicate_context,
-                                         predicate_function, binding_->context().evaluation_time(),
-                                         binding_->allocator());
+        const auto changed = output.bind_filter(input, {}, rebuild_predicate, changed_predicate_rows,
+                                                std::forward<Evaluator>(evaluator),
+                                                binding_->context().evaluation_time(), binding_->allocator());
         if (changed) {
             for (auto index : output.changed_columns)
                 binding_->publish_item(binding_->runtime_type(), static_cast<item_id_t>(index));
@@ -3865,53 +3912,6 @@ struct ProjectNode {
     }
 };
 
-template <util::compile_time_string Name,
-          template <template <typename, auto...> typename> typename Schema, typename Threshold>
-struct FilterGreaterThanNode {
-    static_assert(std::is_arithmetic_v<std::remove_cvref_t<Threshold>> &&
-                      !std::same_as<std::remove_cvref_t<Threshold>, bool>,
-                  "filter threshold must be numeric");
-
-    void operator()(In<TSF<Schema>, optional> input, Threshold threshold, Out<TSF<Schema>, frame::view> output) const {
-        if constexpr (bg::details::schema_variable_template<Schema> ||
-                      frame_schema_declaration_traits<Schema>::has_generic_fields) {
-            if (!input.valid()) {
-                output.template bind_filter<Name>(input, [](row_id_t) { return false; });
-                return;
-            }
-            const auto column = input.column(util::symbol{Name.view()});
-            const auto &column_type = static_cast<const ColumnSeriesType &>(column.runtime_type().type());
-            if (std::addressof(column_type.cell_type()) == std::addressof(cpp_scalar_type<i64>())) {
-                const auto typed_column = column.template input<i64>();
-                output.template bind_filter<Name>(input, [&](row_id_t id) {
-                    const auto value = typed_column.cell(id);
-                    return value && *value > threshold;
-                });
-                return;
-            }
-            if (std::addressof(column_type.cell_type()) == std::addressof(cpp_scalar_type<double>())) {
-                const auto typed_column = column.template input<double>();
-                output.template bind_filter<Name>(input, [&](row_id_t id) {
-                    const auto value = typed_column.cell(id);
-                    return value && *value > threshold;
-                });
-                return;
-            }
-            throw std::invalid_argument{"filter predicate column has an unsupported cell type"};
-        } else {
-            constexpr auto predicate_index = frame_column_index<Name, Schema>();
-            static_assert(predicate_index < bg::details::hierarchical_scalar_schema_reflection<Schema>::field_count,
-                          "filter names an unknown predicate column");
-            using Cell = frame_schema_cell_t<predicate_index, Schema>;
-            static_assert(numeric_cell_type<Cell>, "filter predicate column must have a supported numeric cell type");
-            output.template bind_filter<Name>(input, [&](row_id_t id) {
-                const auto value = input.template cell<predicate_index>(id);
-                return value && *value > threshold;
-            });
-        }
-    }
-};
-
 } // namespace details
 
 template <template <template <typename, auto...> typename> typename TargetSchema,
@@ -3921,15 +3921,6 @@ auto project(wp<TSF<SourceSchema, Properties...>> source) {
     static const auto projection =
         bg::node(details::ProjectNode<SourceSchema, TargetSchema, Names...>{});
     return projection(source);
-}
-
-template <util::compile_time_string Name,
-          template <template <typename, auto...> typename> typename Schema, auto... Properties, typename Threshold>
-    requires(std::is_arithmetic_v<std::remove_cvref_t<Threshold>> &&
-             !std::same_as<std::remove_cvref_t<Threshold>, bool>)
-auto filter_greater_than(wp<TSF<Schema, Properties...>> source, Threshold threshold) {
-    static const auto filter = bg::node(details::FilterGreaterThanNode<Name, Schema, Threshold>{});
-    return filter(source, threshold);
 }
 
 } // namespace bg::frame
