@@ -17,64 +17,42 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
-#include <chrono>
 #include <optional>
 #include <span>
-#include <stdexcept>
 #include <utility>
 #include <vector>
+
+using namespace bg;
+using namespace bg::literals;
 
 namespace {
 
 template <template <typename, auto...> typename Field> struct BaseBundle {
-    Field<bg::TS<bg::i64>> count;
+    Field<TS<i64>> count;
 };
 
-template <template <typename, auto...> typename Field> struct DerivedBundle : bg::bundle_extends<BaseBundle, Field> {
-    Field<bg::TS<float>> value;
+template <template <typename, auto...> typename Field> struct DerivedBundle : bundle_extends<BaseBundle, Field> {
+    Field<TS<float>> value;
 };
 
-template <template <typename, auto...> typename Field> struct SharedBundle {
-    Field<bg::i64> count;
-    Field<double> value;
-};
+} // namespace
 
-template <template <typename, auto...> typename Field> struct NestedSharedBundle {
-    Field<bg::Bundle<SharedBundle>> value;
-};
+TEST_CASE("node code selects a named bundle field",
+          "[evaluation][tsb][feature:getitem][series:tsb][schema:named][scalar:integer][scalar:floating-point]"
+          "[representation:native][declaration:concrete][binding:direct]") {
+    const auto count = node([](In<TSB<DerivedBundle>> input) { return *input->count; });
 
-template <template <typename, auto...> typename Field> struct Instrument {
-    Field<bg::symbol> symbol;
-};
+    const auto actual = testing::test_graph(count, {{{"count", 2}, {"value", 3.5F}}});
 
-template <template <typename, auto...> typename Field> struct Equity : bg::schema_extends<Instrument, Field> {
-    Field<bg::i64> lot_size;
-};
+    CHECK(actual.equals({2}));
+}
 
-struct bundle_sink_definition {
-    bg::In<bg::TSB<DerivedBundle>> input;
+namespace {
 
-    void evaluate() const {
-        values = {static_cast<float>(*input->count), *input->value};
-        updated = {input.item_updated(0), input.item_updated(1)};
-    }
+const auto base_bundle_count = [](In<TSB<BaseBundle>> input) { return *input->count; };
 
-    inline static std::array<float, 2> values{};
-    inline static std::array<bool, 2> updated{};
-};
-
-struct base_bundle_value_definition {
-    bg::In<bg::TSB<BaseBundle>> input;
-    bg::Out<bg::TS<bg::i64>> output;
-
-    void evaluate() const { output.set(*input->count); }
-};
-
-struct bundle_sum_definition {
-    bg::In<bg::TSB<DerivedBundle>> input;
-    bg::Out<bg::TS<float>> output;
-
-    void evaluate() const { output.set(static_cast<float>(*input->count) + *input->value); }
+const auto derived_bundle_sum = [](In<TSB<DerivedBundle>> input) {
+    return static_cast<float>(*input->count) + *input->value;
 };
 
 } // namespace
@@ -83,32 +61,37 @@ TEST_CASE("a typed bundle publishes inherited and direct fields",
           "[evaluation][tsb][series:tsb][feature:collection-change][transition:update][scalar:integer]"
           "[scalar:floating-point][representation:native][declaration:concrete][binding:direct]"
           "[schema:named]") {
-    using namespace bg::literals;
-    const auto sink = bg::node<bundle_sink_definition>();
-    const auto graph = bg::graph("name"_n = "bundle_input",
-                                 [&](bg::wp<bg::TSB<DerivedBundle>> input) { sink(input); });
-    (void)bg::testing::test_graph(graph, {{{"count", 2}, {"value", 3.5F}}});
+    auto values = std::vector<std::array<float, 2>>{};
+    auto updated = std::vector<std::array<bool, 2>>{};
+    const auto observe = node([&](In<TSB<DerivedBundle>> input) {
+        values.push_back({static_cast<float>(*input->count), *input->value});
+        updated.push_back({input.item_updated(0), input.item_updated(1)});
+    });
 
-    CHECK(bundle_sink_definition::values == std::array{2.0F, 3.5F});
-    CHECK(bundle_sink_definition::updated == std::array{true, true});
+    const auto wiring = graph("name"_n = "bundle_input", [&](wp<TSB<DerivedBundle>> input) { observe(input); });
+
+    (void)testing::test_graph(wiring, {{{"count", 2}, {"value", 3.5F}}, {{"count", 4}}, {{"value", 6.5F}}});
+
+    CHECK(values == std::vector{std::array{2.0F, 3.5F}, std::array{4.0F, 3.5F}, std::array{4.0F, 6.5F}});
+    CHECK(updated == std::vector{std::array{true, true}, std::array{true, false}, std::array{false, true}});
 }
 
 TEST_CASE("a span-backed free TSB retains its fields through materialisation and evaluation",
           "[evaluation][tsb][series:tsb][free][representation:free][feature:wiring-materialisation]"
           "[schema:named]") {
-    const auto sum = bg::node<bundle_sum_definition>();
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> count, bg::wp<bg::TS<float>> value) {
+    const auto sum = node(derived_bundle_sum);
+
+    const auto graph = [&](wp<TS<i64>> count, wp<TS<float>> value) {
         const auto collection = [&] {
-            auto fields = std::vector<bg::WiringArgument>{};
-            fields.emplace_back(bg::util::symbol{"count"}, count);
-            fields.emplace_back(bg::util::symbol{"value"}, value);
-            return bg::bundle(std::span<const bg::WiringArgument>{fields}).as<bg::TSB<DerivedBundle>>();
+            auto fields = std::vector<WiringArgument>{};
+            fields.emplace_back(util::symbol{"count"}, count);
+            fields.emplace_back(util::symbol{"value"}, value);
+            return bundle(std::span<const WiringArgument>{fields}).as<TSB<DerivedBundle>>();
         }();
         return sum(collection);
     };
 
-    const auto result = bg::testing::test_graph(graph, std::array<bg::i64, 2>{1, 2},
-                                                 std::array{10.0F, 20.0F});
+    const auto result = testing::test_graph(graph, {1, 2}, {10.0F, 20.0F});
 
     CHECK(result.equals({11.0F, 22.0F}));
 }
@@ -117,79 +100,195 @@ namespace {
 
 template <template <typename, auto...> typename> struct EmptyBundle {};
 
+template <template <typename, auto...> typename Field> struct SharedBundle {
+    Field<i64> count;
+    Field<double> value;
+};
+
 } // namespace
 
 TEST_CASE("an empty free TSB publishes valid at graph start",
           "[evaluation][tsb][series:tsb][free][feature:wiring-materialisation][representation:free]"
           "[transition:start]") {
-    const auto observe = bg::node([](bg::In<bg::TSB<EmptyBundle>> input,
-                                     bg::Out<bg::TS<bg::i64>> output) {
-        output.set(input.valid() ? 1 : 0);
-    });
+    const auto observe = node([](In<TSB<EmptyBundle>> input) { return input.valid() ? 1 : 0; });
+
     const auto graph = [&] {
-        const auto collection = [&] {
-            const auto fields = std::vector<bg::WiringArgument>{};
-            return bg::bundle(fields).as<bg::TSB<EmptyBundle>>();
-        }();
-        return observe(collection);
+        const auto fields = std::vector<WiringArgument>{};
+        return observe(bundle(fields).as<TSB<EmptyBundle>>());
     };
 
-    CHECK(bg::testing::test_graph(graph).equals({1}));
+    CHECK(testing::test_graph(graph).equals({1}));
 }
 
 TEST_CASE("a scalar schema lifts mixed scalar and time series fields into a TSB",
           "[feature:wiring][feature:constant][series:tsb][schema:named][scalar:hierarchical]") {
-    const auto graph = [](bg::wp<bg::TS<bg::i64>> count) {
-        return bg::bundle<SharedBundle>(count, 2.5)->count;
-    };
+    const auto graph = [](wp<TS<i64>> count) { return bundle<SharedBundle>(count, 2.5); };
 
-    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 2>{1, 2});
+    const auto actual = testing::test_graph(graph, {1, 2});
 
-    CHECK(actual.equals({1, 2}));
+    CHECK(actual.equals({{{"count", 1}, {"value", 2.5}}, {{"count", 2}}}));
 }
 
 TEST_CASE("an explicit TSB construction lifts every scalar field",
           "[feature:wiring][feature:constant][series:tsb][schema:named][scalar:hierarchical]") {
-    const auto graph = [] { return bg::bundle<bg::TSB<SharedBundle>>(bg::i64{1}, 2.5)->count; };
+    const auto graph = [] { return bundle<TSB<SharedBundle>>(i64{1}, 2.5); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = testing::test_graph(graph);
 
-    CHECK(actual.equals({1}));
+    CHECK(actual.equals({{{"count", 1}, {"value", 2.5}}}));
 }
 
 TEST_CASE("typed TSB construction uses inherited logical field order",
           "[feature:wiring][feature:constant][series:tsb][schema:named][binding:covariant]") {
-    const auto graph = [] {
-        return bg::bundle<bg::TSB<DerivedBundle>>(bg::ScalarValue<bg::i64>{1}, bg::ScalarValue<float>{2.5F})->value;
-    };
+    const auto graph = [] { return bundle<TSB<DerivedBundle>>(ScalarValue<i64>{1}, ScalarValue<float>{2.5F})->value; };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = testing::test_graph(graph);
 
     CHECK(actual.equals({2.5F}));
 }
 
 TEST_CASE("an explicit time series schema selects TSB construction for scalar arguments",
           "[feature:wiring][feature:constant][series:tsb][schema:named][declaration:concrete]") {
-    const auto graph = [] { return bg::bundle<BaseBundle>(bg::ScalarValue<bg::i64>{1})->count; };
+    const auto graph = [] { return bundle<BaseBundle>(ScalarValue<i64>{1})->count; };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = testing::test_graph(graph);
 
     CHECK(actual.equals({1}));
 }
 
-TEST_CASE("a hierarchical scalar is lifted through a shared TSB schema",
-          "[feature:wiring][feature:constant][series:value][series:tsb][scalar:hierarchical][shape:nested]") {
-    auto allocator = bg::allocator{};
-    const auto read = bg::node(
-        [](bg::In<bg::TS<bg::Bundle<SharedBundle>>> input, bg::Out<bg::TS<bg::i64>> output) {
-            output.set(bg::scalar_cast<bg::i64>(input.value()[0]).value());
-        });
-    const auto graph = [&] {
-        const auto value = bg::bundle<SharedBundle>(allocator, bg::i64{3}, 2.5);
-        return read(bg::bundle<bg::TSB<NestedSharedBundle>>(value)->value);
+TEST_CASE("a typed TSB wiring point selects an inherited field",
+          "[evaluation][series:tsb][feature:getattr][schema:named][representation:native]"
+          "[transition:update]") {
+    const auto graph = [](wp<TSB<DerivedBundle>> input) { return input->count; };
+
+    const auto actual = testing::test_graph(graph, {{{"count", 2}, {"value", 3.5F}}});
+
+    CHECK(actual.equals({2}));
+}
+
+TEST_CASE("a typed free TSB wiring point selects its original source",
+          "[evaluation][series:tsb][feature:getattr][schema:named][representation:free]"
+          "[transition:update]") {
+    const auto graph = [](wp<TS<i64>> count, wp<TS<float>> value) {
+        return bundle("value"_n = value, "count"_n = count).as<TSB<DerivedBundle>>()->count;
     };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = testing::test_graph(graph, {1, 2, 3}, {0.5F, 1.5F, 2.5F});
+
+    CHECK(actual.equals({1, 2, 3}));
+}
+
+TEST_CASE("a free bundle follows the receiving named schema",
+          "[evaluation][tsb][series:tsb][free][representation:free][feature:collection-change]"
+          "[scalar:integer][scalar:floating-point][declaration:concrete][binding:direct]") {
+    const auto sum = node(derived_bundle_sum);
+    const auto graph = [&](wp<TS<i64>> count, wp<TS<float>> value) {
+        return sum(bundle("value"_n = value, "count"_n = count));
+    };
+
+    const auto result = testing::test_graph(graph, {1, 2}, {0.5F, 1.5F});
+
+    CHECK(result.equals({1.5F, 3.5F}));
+}
+
+TEST_CASE("a named bundle input accepts extra free bundle fields",
+          "[evaluation][tsb][series:tsb][wiring][schema:named][scalar:integer][scalar:floating-point]"
+          "[representation:native][declaration:concrete][binding:direct][feature:wiring]") {
+    const auto sum = node(derived_bundle_sum);
+    const auto graph = [&](wp<TS<i64>> count, wp<TS<float>> value) {
+        return sum(bundle("extra"_n = count, "value"_n = value, "count"_n = count));
+    };
+
+    const auto result = testing::test_graph(graph, {1, 2}, {0.5F, 1.5F});
+
+    CHECK(result.equals({1.5F, 3.5F}));
+}
+
+TEST_CASE("a base bundle input accepts a derived bundle",
+          "[evaluation][tsb][series:tsb][inheritance][feature:collection-change][scalar:integer]"
+          "[scalar:floating-point][representation:native][declaration:concrete][binding:covariant]"
+          "[schema:named]") {
+    const auto value = node(base_bundle_count);
+    const auto graph = [&](wp<TSB<DerivedBundle>> input) { return value(input); };
+
+    const auto actual = testing::test_graph(graph, {{{"count", 2}, {"value", 3.5F}}});
+
+    CHECK(actual.equals({2}));
+}
+
+namespace {
+
+template <template <typename, auto...> typename Field> struct RedefinedBundle : bundle_extends<BaseBundle, Field> {
+    Field<TS<i64>> count;
+    Field<TS<float>> value;
+};
+
+} // namespace
+
+TEST_CASE("a redefined bundle field shares its inherited storage",
+          "[evaluation][tsb][series:tsb][inheritance][feature:collection-change][schema:named]"
+          "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
+          "[binding:direct]") {
+    const auto value = node(base_bundle_count);
+    const auto graph = [&](wp<TSB<RedefinedBundle>> input) { return value(input); };
+
+    const auto actual = testing::test_graph(graph, {{{"count", 4}, {"value", 2.5F}}});
+
+    CHECK(actual.equals({4}));
+}
+
+namespace {
+
+template <template <typename, auto...> typename Field> struct NestedBundle {
+    Field<TSB<BaseBundle>> nested;
+    Field<TS<float>> value;
+};
+
+} // namespace
+
+TEST_CASE("a bundle field can contain another bundle",
+          "[evaluation][tsb][series:tsb][nested][feature:collection-change][schema:named]"
+          "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
+          "[binding:direct]") {
+    const auto sum =
+        node([](In<TSB<NestedBundle>> input) { return static_cast<float>(*input->nested->count) + *input->value; });
+
+    const auto actual = testing::test_graph(sum, {{{"nested", {{"count", 3}}}, {"value", 1.5F}}});
+
+    CHECK(actual.equals({4.5F}));
+}
+
+TEST_CASE("fixed time series lists can contain runtime-sized time series",
+          "[evaluation][tsl][series:fixed-tsl][tsb][series:tsb][feature:collection-change]"
+          "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
+          "[binding:direct][schema:named]") {
+    const auto value = node([](In<TSL<TSB<DerivedBundle>, 2>> input) { return *input[1]->value; });
+
+    const auto actual = testing::test_graph(value, {{{1, {{"value", 4.5F}}}}});
+
+    CHECK(actual.equals({4.5F}));
+}
+
+namespace {
+
+template <template <typename, auto...> typename Field> struct NestedSharedBundle {
+    Field<Bundle<SharedBundle>> value;
+};
+
+} // namespace
+
+TEST_CASE("a hierarchical scalar is lifted through a shared TSB schema",
+          "[feature:wiring][feature:constant][series:value][series:tsb][scalar:hierarchical][shape:nested]") {
+    auto memory = allocator{};
+    const auto read =
+        node([](In<TS<Bundle<SharedBundle>>> input) { return scalar_cast<i64>(input.value()[0]).value(); });
+
+    const auto graph = [&] {
+        const auto value = bundle<SharedBundle>(memory, i64{3}, 2.5);
+        return read(bundle<TSB<NestedSharedBundle>>(value)->value);
+    };
+
+    const auto actual = testing::test_graph(graph);
 
     CHECK(actual.equals({3}));
 }
@@ -197,77 +296,81 @@ TEST_CASE("a hierarchical scalar is lifted through a shared TSB schema",
 TEST_CASE("a hierarchical time series output accepts input views and suppresses equal updates",
           "[feature:scalar-api][series:value][scalar:hierarchical][guarantee:deduplicated]"
           "[transition:update]") {
-    auto allocator = bg::allocator{};
-    const auto publish = bg::node(
-        [](bg::In<bg::TS<bg::i64>> trigger, bg::Scalar<bg::Bundle<SharedBundle>> value,
-           bg::Out<bg::TS<bg::Bundle<SharedBundle>, bg::TimeSeriesGuarantee::deduplicated>> output) {
-            (void)trigger;
-            output.set(value);
-        });
-    const auto copy = bg::node(
-        [](bg::In<bg::TS<bg::Bundle<SharedBundle>>> input,
-           bg::Out<bg::TS<bg::Bundle<SharedBundle>>> output) { output.set(input.value()); });
-    const auto read = bg::node(
-        [](bg::In<bg::TS<bg::Bundle<SharedBundle>>> input, bg::Out<bg::TS<bg::i64>> output) {
-            output.set(bg::scalar_cast<bg::i64>((*input)[0]).value());
-        });
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> trigger) {
-        const auto value = bg::bundle<SharedBundle>(allocator, bg::i64{3}, 2.5);
+    auto memory = allocator{};
+    const auto publish =
+        node([](i64, Scalar<Bundle<SharedBundle>> value,
+                Out<TS<Bundle<SharedBundle>, TimeSeriesGuarantee::deduplicated>> output) { output.set(value); });
+
+    const auto copy = node(
+        [](In<TS<Bundle<SharedBundle>>> input, Out<TS<Bundle<SharedBundle>>> output) { output.set(input.value()); });
+
+    const auto read = node([](In<TS<Bundle<SharedBundle>>> input) { return scalar_cast<i64>((*input)[0]).value(); });
+
+    const auto graph = [&](wp<TS<i64>> trigger) {
+        const auto value = bundle<SharedBundle>(memory, i64{3}, 2.5);
         return read(copy(publish(trigger, value)));
     };
 
-    const auto actual = bg::testing::test_graph(graph, std::array{1, 2, 3});
+    const auto actual = testing::test_graph(graph, {1, 2, 3});
 
     CHECK(actual.equals({3, std::nullopt, std::nullopt}));
 }
 
+namespace {
+
+template <template <typename, auto...> typename Field> struct Instrument {
+    Field<bg::symbol> symbol;
+};
+
+template <template <typename, auto...> typename Field> struct Equity : schema_extends<Instrument, Field> {
+    Field<i64> lot_size;
+};
+
+} // namespace
+
 TEST_CASE("a hierarchical time series output accepts a derived scalar representation",
           "[feature:scalar-api][series:value][scalar:hierarchical][binding:covariant]"
           "[representation:covariant][transition:update]") {
-    auto allocator = bg::allocator{};
-    const auto publish = bg::node(
-        [](bg::In<bg::TS<bg::i64>> trigger, bg::Scalar<bg::Bundle<Equity>> value,
-           bg::Out<bg::TS<bg::Bundle<Instrument>>> output) {
-            (void)trigger;
-            output.set(value);
-        });
-    const auto equity = bg::bundle<Equity>(allocator, bg::symbol{"ABC"}, bg::i64{100});
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> trigger) { return publish(trigger, equity); };
+    auto memory = allocator{};
+    const auto publish =
+        node([](i64, Scalar<Bundle<Equity>> value, Out<TS<Bundle<Instrument>>> output) { output.set(value); });
 
-    const auto actual = bg::testing::test_graph(graph, std::array{1});
+    const auto equity = bundle<Equity>(memory, symbol{"ABC"}, i64{100});
+
+    const auto graph = [&](wp<TS<i64>> trigger) { return publish(trigger, equity); };
+
+    const auto actual = testing::test_graph(graph, {1});
     const auto result = actual[0];
 
     REQUIRE(result.has_value());
     CHECK(&result->type() == &equity.type());
-    CHECK(bg::scalar_cast<bg::symbol>(result->view()[0]).value().text() == "ABC");
+    CHECK(scalar_cast<symbol>(result->view()[0]).value().text() == "ABC");
 }
 
 TEST_CASE("a generic bundle node forwards a derived runtime scalar through its base schema",
           "[evaluation][feature:node-api][series:value][scalar:hierarchical][schema:named][declaration:generic]"
           "[binding:covariant][transition:update]") {
-    auto allocator = bg::allocator{};
-    const auto publish = bg::node(
-        [](bg::In<bg::TS<bg::i64>> trigger, bg::Scalar<bg::Bundle<Equity>> value,
-           bg::Out<bg::TS<bg::Bundle<Instrument>>> output) {
-            (void)trigger;
-            output.set(value);
-        });
-    const auto forward = bg::node(
-        [](bg::In<bg::TS<bg::Bundle<bg::SCHEMA>>> input,
-           bg::Out<bg::TS<bg::Bundle<bg::SCHEMA>>> output) { output.set(input.value()); });
-    const auto inspect = bg::node(
-        [](bg::In<bg::TS<bg::Bundle<Instrument>>> input, bg::Out<bg::TS<bg::i64>> output) {
-            const auto equity = bg::scalar_cast<bg::Bundle<Equity>>(input.value());
-            output.set(bg::scalar_cast<bg::i64>(equity[1]).value());
-        });
-    const auto equity = bg::bundle<Equity>(allocator, bg::symbol{"ABC"}, bg::i64{100});
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> trigger) {
+    auto memory = allocator{};
+    const auto publish =
+        node([](i64, Scalar<Bundle<Equity>> value, Out<TS<Bundle<Instrument>>> output) { output.set(value); });
+
+    const auto forward =
+        node([](In<TS<Bundle<SCHEMA>>> input, Out<TS<Bundle<SCHEMA>>> output) { output.set(input.value()); });
+
+    const auto inspect = node([](In<TS<Bundle<Instrument>>> input) {
+        const auto equity = scalar_cast<Bundle<Equity>>(input.value());
+        return scalar_cast<i64>(equity[1]).value();
+    });
+
+    const auto equity = bundle<Equity>(memory, symbol{"ABC"}, i64{100});
+
+    const auto graph = [&](wp<TS<i64>> trigger) {
         const auto forwarded = forward(publish(trigger, equity));
-        CHECK(&forwarded.type() == &bg::TS<bg::Bundle<Instrument>>::type());
+        CHECK(&forwarded.type() == &TS<Bundle<Instrument>>::type());
         return inspect(forwarded);
     };
 
-    const auto actual = bg::testing::test_graph(graph, std::array{1});
+    const auto actual = testing::test_graph(graph, {1});
 
     CHECK(actual.equals({100}));
 }
@@ -276,44 +379,43 @@ TEST_CASE("a generic bundle node constructs a runtime schema inside its allocati
           "[evaluation][feature:node-api][series:value][scalar:hierarchical][schema:named]"
           "[declaration:runtime][transition:update]") {
     const auto schema_fields = std::array{
-        bg::SchemaField{bg::util::symbol{"value"}, &bg::cpp_scalar_type<bg::i64>(), false},
-        bg::SchemaField{bg::util::symbol{"comment"}, &bg::cpp_scalar_type<bg::symbol>(), true},
+        SchemaField{util::symbol{"value"}, &cpp_scalar_type<i64>(), false},
+        SchemaField{util::symbol{"comment"}, &cpp_scalar_type<symbol>(), true},
     };
-    const auto &schema = bg::schema(
-        bg::util::symbol{"RuntimeNodeBundle"}, bg::new_runtime_schema_id(), nullptr, schema_fields);
-    const auto initial_field = bg::ScalarValue<bg::i64>{42};
+    const auto &runtime_schema =
+        schema(util::symbol{"RuntimeNodeBundle"}, new_runtime_schema_id(), nullptr, schema_fields);
+    const auto initial_field = ScalarValue<i64>{42};
     const auto initial_field_view = initial_field.view();
     const auto initial_inputs = std::array{
-        std::optional<bg::Scalar<>>{bg::Scalar<>::from(initial_field_view)},
-        std::optional<bg::Scalar<>>{},
+        std::optional<Scalar<>>{Scalar<>::from(initial_field_view)},
+        std::optional<Scalar<>>{},
     };
-    auto allocator = bg::allocator{};
-    const auto initial = bg::bundle(allocator, schema, initial_inputs);
-    const auto rebuild = bg::node(
-        bg::eval = [](bg::Scalar<bg::Bundle<bg::SCHEMA>> input,
-                      bg::Out<bg::TS<bg::Bundle<bg::SCHEMA>>> output) {
-            auto fields = std::vector<std::optional<bg::Scalar<>>>{};
-            fields.reserve(input.field_count());
-            for (auto index = std::size_t{}; index < input.field_count(); ++index) {
-                if (input.present(index)) {
-                    const auto field = input[index];
-                    fields.emplace_back(bg::Scalar<>::from(field));
-                } else {
-                    fields.emplace_back(std::nullopt);
+    auto memory = allocator{};
+    const auto initial = bundle(memory, runtime_schema, initial_inputs);
+    const auto rebuild = node(
+        eval =
+            [](Scalar<Bundle<SCHEMA>> input, Out<TS<Bundle<SCHEMA>>> output) {
+                auto fields = std::vector<std::optional<Scalar<>>>{};
+                fields.reserve(input.field_count());
+                for (auto index = std::size_t{}; index < input.field_count(); ++index) {
+                    if (input.present(index)) {
+                        const auto field = input[index];
+                        fields.emplace_back(Scalar<>::from(field));
+                    } else {
+                        fields.emplace_back(std::nullopt);
+                    }
                 }
-            }
 
-            const auto value = bg::bundle(input.type().schema(), fields);
-            output.set_value(value.view());
-        },
-        bg::schedule_on_start = true);
-    const auto read = bg::node(
-        [](bg::In<bg::TS<bg::Bundle<bg::SCHEMA>>> input, bg::Out<bg::TS<bg::i64>> output) {
-            output.set(bg::scalar_cast<bg::i64>(input.value()[0]).value());
-        });
+                const auto value = bundle(input.type().schema(), fields);
+                output.set_value(value.view());
+            },
+        schedule_on_start = true);
+
+    const auto read = node([](In<TS<Bundle<SCHEMA>>> input) { return scalar_cast<i64>(input.value()[0]).value(); });
+
     const auto graph = [&] { return read(rebuild(initial)); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = testing::test_graph(graph);
 
     CHECK(actual.equals({42}));
 }
@@ -321,27 +423,26 @@ TEST_CASE("a generic bundle node constructs a runtime schema inside its allocati
 TEST_CASE("a derived hierarchical value crosses a nested graph boundary",
           "[feature:nested-graph][series:value][scalar:hierarchical]"
           "[binding:value-to-reference][binding:reference-to-value][shape:nested]") {
-    using namespace bg::literals;
+    const auto make =
+        node([](i64 lot_size, Out<TS<Bundle<Equity>>> output) { output.set(bundle<Equity>(symbol{"ABC"}, lot_size)); });
 
-    const auto make = bg::node([](bg::In<bg::TS<bg::i64>> lot_size, bg::Out<bg::TS<bg::Bundle<Equity>>> output) {
-        output.set(bg::bundle<Equity>(bg::symbol{"ABC"}, lot_size.value()));
+    const auto read = node([](In<TS<Bundle<Equity>>> input) {
+        const auto equity = scalar_cast<Bundle<Equity>>(input.value());
+        return scalar_cast<i64>(equity[1]).value();
     });
-    const auto read = bg::node([](bg::In<bg::TS<bg::Bundle<Equity>>> input, bg::Out<bg::TS<bg::i64>> output) {
-        const auto equity = bg::scalar_cast<bg::Bundle<Equity>>(input.value());
-        output.set(bg::scalar_cast<bg::i64>(equity[1]).value());
-    });
-    const auto copy = bg::node([](bg::In<bg::TS<bg::Bundle<Equity>>> input,
-                                  bg::Out<bg::TS<bg::Bundle<Equity>>> output) { output.set(input.value()); });
-    const auto pass_through = bg::graph(
-        "name"_n = "pass_hierarchical_scalar",
-        [&](bg::wp<bg::TS<bg::Bundle<Equity>>> input) -> bg::wp<bg::TS<bg::Bundle<Equity>>> {
-            return copy(input);
-        });
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> lot_size, bg::wp<bg::TS<bool>> run) {
-        return read(bg::nested(pass_through, run, make(lot_size)));
+
+    const auto copy =
+        node([](In<TS<Bundle<Equity>>> input, Out<TS<Bundle<Equity>>> output) { output.set(input.value()); });
+
+    const auto pass_through =
+        graph("name"_n = "pass_hierarchical_scalar",
+              [&](wp<TS<Bundle<Equity>>> input) -> wp<TS<Bundle<Equity>>> { return copy(input); });
+
+    const auto graph = [&](wp<TS<i64>> lot_size, wp<TS<bool>> run) {
+        return read(nested(pass_through, run, make(lot_size)));
     };
 
-    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 2>{100, 200}, std::array{true, true});
+    const auto actual = testing::test_graph(graph, {100, 200}, {true, true});
 
     CHECK(actual.equals({100, 200}));
 }
@@ -349,187 +450,102 @@ TEST_CASE("a derived hierarchical value crosses a nested graph boundary",
 TEST_CASE("a time series output copies a covariant scalar collection representation",
           "[feature:scalar-api][series:value][scalar:hierarchical][scalar:list][scalar:dict]"
           "[binding:covariant][transition:update]") {
-    auto allocator = bg::allocator{};
-    const auto list_source = bg::node(
-        [](bg::In<bg::TS<bg::i64>> trigger, bg::Scalar<bg::List<bg::Bundle<Equity>>> value,
-           bg::Out<bg::TS<bg::List<bg::Bundle<Equity>>>> output) {
-            (void)trigger;
-            output.set_value(value);
-        });
-    const auto copy_list = bg::node(
-        [](bg::In<bg::TS<bg::List<bg::Bundle<Equity>>>> input,
-           bg::Out<bg::TS<bg::List<bg::Bundle<Instrument>>>> output) { output.set_value(input.value_view()); });
+    auto memory = allocator{};
+    const auto list_source = node(
+        [](i64, Scalar<List<Bundle<Equity>>> value, Out<TS<List<Bundle<Equity>>>> output) { output.set_value(value); });
 
-    const auto dictionary_source = bg::node(
-        [](bg::In<bg::TS<bg::i64>> trigger,
-           bg::Scalar<bg::Dict<bg::i64, bg::Bundle<Equity>>> value,
-           bg::Out<bg::TS<bg::Dict<bg::i64, bg::Bundle<Equity>>>> output) {
-            (void)trigger;
-            output.set_value(value);
-        });
-    const auto copy_dictionary = bg::node(
-        [](bg::In<bg::TS<bg::Dict<bg::i64, bg::Bundle<Equity>>>> input,
-           bg::Out<bg::TS<bg::Dict<bg::i64, bg::Bundle<Instrument>>>> output) {
+    const auto copy_list = node([](In<TS<List<Bundle<Equity>>>> input, Out<TS<List<Bundle<Instrument>>>> output) {
+        output.set_value(input.value_view());
+    });
+
+    const auto dictionary_source = node([](i64, Scalar<Dict<i64, Bundle<Equity>>> value,
+                                           Out<TS<Dict<i64, Bundle<Equity>>>> output) { output.set_value(value); });
+
+    const auto copy_dictionary =
+        node([](In<TS<Dict<i64, Bundle<Equity>>>> input, Out<TS<Dict<i64, Bundle<Instrument>>>> output) {
             output.set_value(input.value_view());
         });
 
-    const auto equity = bg::bundle<Equity>(allocator, bg::symbol{"ABC"}, bg::i64{100});
-    const auto list = bg::ScalarValue<bg::List<bg::Bundle<Equity>>>{
-        std::array<bg::Scalar<bg::Bundle<Equity>>, 1>{equity.view()}};
-    const auto dictionary = bg::ScalarValue<bg::Dict<bg::i64, bg::Bundle<Equity>>>{
-        std::array{std::pair{bg::i64{1}, equity.view()}}};
-    const auto list_graph = [&](bg::wp<bg::TS<bg::i64>> trigger) { return copy_list(list_source(trigger, list)); };
-    const auto dictionary_graph = [&](bg::wp<bg::TS<bg::i64>> trigger) {
+    const auto equity = bundle<Equity>(memory, symbol{"ABC"}, i64{100});
+
+    const auto list = ScalarValue<List<Bundle<Equity>>>{std::array<Scalar<Bundle<Equity>>, 1>{equity.view()}};
+    const auto dictionary = ScalarValue<Dict<i64, Bundle<Equity>>>{std::array{std::pair{i64{1}, equity.view()}}};
+
+    const auto list_graph = [&](wp<TS<i64>> trigger) { return copy_list(list_source(trigger, list)); };
+
+    const auto dictionary_graph = [&](wp<TS<i64>> trigger) {
         return copy_dictionary(dictionary_source(trigger, dictionary));
     };
 
-    const auto actual_list = bg::testing::test_graph(list_graph, std::array{1});
-    const auto actual_dictionary = bg::testing::test_graph(dictionary_graph, std::array{1});
+    const auto actual_list = testing::test_graph(list_graph, {1});
+    const auto actual_dictionary = testing::test_graph(dictionary_graph, {1});
 
     const auto list_result = actual_list[0];
     REQUIRE(list_result.has_value());
     const auto list_value = list_result->view();
     REQUIRE(list_value.size() == 1);
     CHECK(&list_value[0].type() == &equity.type());
-    CHECK(bg::scalar_cast<bg::symbol>(list_value[0][0]).value().text() == "ABC");
+    CHECK(scalar_cast<symbol>(list_value[0][0]).value().text() == "ABC");
 
     const auto dictionary_result = actual_dictionary[0];
     REQUIRE(dictionary_result.has_value());
     const auto dictionary_value = dictionary_result->view();
     REQUIRE(dictionary_value.size() == 1);
     CHECK(&dictionary_value.at(1).type() == &equity.type());
-    const auto stored_equity = bg::scalar_cast<bg::Bundle<Equity>>(dictionary_value.at(1));
-    CHECK(bg::scalar_cast<bg::i64>(stored_equity[1]).value() == 100);
-}
-
-TEST_CASE("fixed time series lists can contain runtime-sized time series",
-          "[evaluation][tsl][series:fixed-tsl][tsb][series:tsb][feature:collection-change]"
-          "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
-          "[binding:direct][schema:named]") {
-    const auto value = bg::node([](bg::In<bg::TSL<bg::TSB<DerivedBundle>, 2>> input, bg::Out<bg::TS<float>> output) {
-        output.set(*input[1]->value);
-    });
-    const auto graph = [&](bg::wp<bg::TSL<bg::TSB<DerivedBundle>, 2>> input) { return value(input); };
-
-    const auto actual = bg::testing::test_graph(graph, {{{1, {{"value", 4.5F}}}}});
-
-    CHECK(actual.equals({4.5F}));
-}
-
-TEST_CASE("node code selects a named bundle field",
-          "[evaluation][tsb][feature:getitem][series:tsb][schema:named][scalar:integer][scalar:floating-point]"
-          "[representation:native][declaration:concrete][binding:direct]") {
-    const auto count =
-        bg::node([](bg::In<bg::TSB<DerivedBundle>> input, bg::Out<bg::TS<bg::i64>> output) { output.set(*input->count); });
-    const auto graph = [&](bg::wp<bg::TSB<DerivedBundle>> input) { return count(input); };
-
-    const auto actual = bg::testing::test_graph(graph, {{{"count", 2}, {"value", 3.5F}}});
-
-    CHECK(actual.equals({2}));
-}
-
-TEST_CASE("a base bundle input accepts a derived bundle",
-          "[evaluation][tsb][series:tsb][inheritance][feature:collection-change][scalar:integer]"
-          "[scalar:floating-point][representation:native][declaration:concrete][binding:covariant]"
-          "[schema:named]") {
-    const auto value = bg::node<base_bundle_value_definition>();
-    const auto graph = [&](bg::wp<bg::TSB<DerivedBundle>> input) { return value(input); };
-
-    const auto actual = bg::testing::test_graph(graph, {{{"count", 2}, {"value", 3.5F}}});
-
-    CHECK(actual.equals({2}));
-}
-
-TEST_CASE("a typed TSB wiring point selects an inherited field",
-          "[evaluation][series:tsb][feature:getattr][schema:named][representation:native]"
-          "[transition:update]") {
-    const auto graph = [](bg::wp<bg::TSB<DerivedBundle>> input) { return input->count; };
-
-    const auto actual = bg::testing::test_graph(graph, {{{"count", 2}, {"value", 3.5F}}});
-
-    CHECK(actual.equals({2}));
+    const auto stored_equity = scalar_cast<Bundle<Equity>>(dictionary_value.at(1));
+    CHECK(scalar_cast<i64>(stored_equity[1]).value() == 100);
 }
 
 template <template <typename, auto...> typename Field> struct ReferenceBundle {
-    Field<bg::TS<bg::i64>> value;
-    Field<bg::REF<bg::TS<bg::i64>>> selected;
+    Field<TS<i64>> value;
+    Field<REF<TS<i64>>> selected;
 };
 
 TEST_CASE("getattr follows a reference field in a referenced native bundle",
           "[evaluation][series:tsb][series:reference][feature:getattr][schema:named]"
           "[representation:native][binding:reference-to-reference][transition:update]") {
-    const auto select = bg::node(
-        [](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TS<bg::i64>>> first,
-           bg::In<bg::REF<bg::TS<bg::i64>>> second, bg::Out<bg::REF<bg::TS<bg::i64>>> output) {
-            output.copy(*use_second ? second : first);
-        });
-    const auto make_bundle = bg::node(
-        [](bg::In<bg::TS<bg::i64>> value, bg::In<bg::REF<bg::TS<bg::i64>>> selected,
-           bg::Out<bg::TSB<ReferenceBundle>> output) {
-            output->value.set(*value);
-            output->selected.copy(selected);
-        });
-    const auto reference = bg::node(
-        [](bg::In<bg::REF<bg::TSB<ReferenceBundle>>> input,
-           bg::Out<bg::REF<bg::TSB<ReferenceBundle>>> output) { output.copy(input); });
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> first, bg::wp<bg::TS<bg::i64>> second,
-                           bg::wp<bg::TS<bool>> use_second, bg::wp<bg::TS<bg::i64>> value) {
+    const auto select = node([](bool use_second, In<REF<TS<i64>>> first, In<REF<TS<i64>>> second,
+                                Out<REF<TS<i64>>> output) { output.copy(use_second ? second : first); });
+
+    const auto make_bundle = node([](i64 value, In<REF<TS<i64>>> selected, Out<TSB<ReferenceBundle>> output) {
+        output->value.set(value);
+        output->selected.copy(selected);
+    });
+
+    const auto reference =
+        node([](In<REF<TSB<ReferenceBundle>>> input, Out<REF<TSB<ReferenceBundle>>> output) { output.copy(input); });
+
+    const auto graph = [&](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<bool>> use_second, wp<TS<i64>> value) {
         const auto selected = select(use_second, first, second);
         const auto bundle_reference = reference(make_bundle(value, selected));
-        const auto bundle = bg::wp<bg::TSB<ReferenceBundle>>{bundle_reference};
+        const auto bundle = wp<TSB<ReferenceBundle>>{bundle_reference};
 
         return bundle->selected;
     };
 
     const auto actual =
-        bg::testing::test_graph(graph, std::array{10, 20, 30}, std::array{100, 200, 300},
-                                std::array<std::optional<bool>, 3>{false, true, std::nullopt}, std::array{1, 2, 3});
+        testing::test_graph(graph, std::array{10, 20, 30}, std::array{100, 200, 300},
+                            std::array<std::optional<bool>, 3>{false, true, std::nullopt}, std::array{1, 2, 3});
 
     CHECK(actual.equals({10, 200, 300}));
-}
-
-TEST_CASE("a typed free TSB wiring point selects its original source",
-          "[evaluation][series:tsb][feature:getattr][schema:named][representation:free]"
-          "[transition:update]") {
-    using namespace bg::literals;
-
-    const auto graph = [](bg::wp<bg::TS<bg::i64>> count, bg::wp<bg::TS<float>> value) {
-        return bg::bundle("value"_n = value, "count"_n = count).as<bg::TSB<DerivedBundle>>()->count;
-    };
-
-    const auto actual = bg::testing::test_graph(graph, std::vector{1, 2, 3}, std::vector{0.5F, 1.5F, 2.5F});
-
-    CHECK(actual.equals({1, 2, 3}));
-}
-
-TEST_CASE("a free bundle follows the receiving named schema",
-          "[evaluation][tsb][series:tsb][free][representation:free][feature:collection-change]"
-          "[scalar:integer][scalar:floating-point][declaration:concrete][binding:direct]") {
-    using namespace bg::literals;
-    const auto sum = bg::node<bundle_sum_definition>();
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> count, bg::wp<bg::TS<float>> value) {
-        return sum(bg::bundle("value"_n = value, "count"_n = count));
-    };
-
-    const auto result = bg::testing::test_graph(graph, std::vector{1, 2}, std::vector{0.5F, 1.5F});
-
-    CHECK(result.equals({1.5F, 3.5F}));
 }
 
 TEST_CASE("a free bundle reuses materialization for the same input type",
           "[wiring][tsb][series:tsb][representation:free][feature:wiring][shape:fan-out]"
           "[schema:named][binding:representation]") {
-    using namespace bg::literals;
-    const auto count = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
-    const auto value = bg::node([](bg::Out<bg::TS<float>>) {});
-    const auto first_sum = bg::node<bundle_sum_definition>();
-    const auto second_sum = bg::node<bundle_sum_definition>();
-    auto wiring = bg::GraphWiring{};
+    const auto count = node([](Out<TS<i64>>) {});
 
-    const auto context = bg::WiringContext{wiring};
-    const auto bundle = bg::bundle("value"_n = value(), "count"_n = count());
-    (void)first_sum(bundle);
-    (void)second_sum(bundle);
+    const auto value = node([](Out<TS<float>>) {});
+
+    const auto first_sum = node(derived_bundle_sum);
+
+    const auto second_sum = node(derived_bundle_sum);
+    auto wiring = GraphWiring{};
+
+    const auto context = WiringContext{wiring};
+    const auto fields = bundle("value"_n = value(), "count"_n = count());
+    (void)first_sum(fields);
+    (void)second_sum(fields);
 
     (void)wiring.complete_pending_wiring();
     REQUIRE(wiring.nodes().size() == 5);
@@ -539,164 +555,82 @@ TEST_CASE("a free bundle reuses materialization for the same input type",
 TEST_CASE("a free bundle materializes independently for different input schemas",
           "[wiring][tsb][series:tsb][representation:free][feature:wiring][schema:named]"
           "[binding:representation]") {
-    using namespace bg::literals;
-    const auto count_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
-    const auto value_source = bg::node([](bg::Out<bg::TS<float>>) {});
-    const auto sum = bg::node<bundle_sum_definition>();
-    const auto count = bg::node<base_bundle_value_definition>();
-    auto wiring = bg::GraphWiring{};
+    const auto count_source = node([](Out<TS<i64>>) {});
 
-    const auto context = bg::WiringContext{wiring};
-    const auto bundle = bg::bundle("value"_n = value_source(), "count"_n = count_source());
-    (void)sum(bundle);
-    (void)count(bundle);
+    const auto value_source = node([](Out<TS<float>>) {});
+
+    const auto sum = node(derived_bundle_sum);
+
+    const auto count = node(base_bundle_count);
+    auto wiring = GraphWiring{};
+
+    const auto context = WiringContext{wiring};
+    const auto fields = bundle("value"_n = value_source(), "count"_n = count_source());
+    (void)sum(fields);
+    (void)count(fields);
 
     (void)wiring.complete_pending_wiring();
     REQUIRE(wiring.nodes().size() == 6);
     CHECK(wiring.nodes()[3].inputs()[0] != wiring.nodes()[5].inputs()[0]);
 }
 
+TEST_CASE("invalidating a bundle invalidates every field",
+          "[evaluation][tsb][series:tsb][validity][feature:collection-change][transition:invalidation]"
+          "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
+          "[binding:direct][schema:named]") {
+    auto validity = std::vector<std::array<bool, 3>>{};
+    auto modified = std::vector<std::array<bool, 3>>{};
+    auto transitions = std::vector<bool>{};
+    const auto observe = node([&](In<TSB<DerivedBundle>, optional> input) {
+        validity.push_back({input.valid(), input->count.valid(), input->value.valid()});
+        modified.push_back({input.modified(), input->count.modified(), input->value.modified()});
+    });
+
+    const auto observe_transition = node([&](In<TS_T> input) { transitions.push_back(input.became_valid()); });
+
+    const auto wiring = graph("name"_n = "invalidating_bundle_input", [&](wp<TSB<DerivedBundle>> bundle) {
+        observe(bundle);
+        observe_transition(bundle);
+    });
+    (void)testing::test_graph(wiring, {{{"count", 2}, {"value", 3.5F}}, literal::INVALID});
+
+    CHECK(validity == std::vector{std::array{true, true, true}, std::array{false, false, false}});
+    CHECK(modified == std::vector{std::array{true, true, true}, std::array{false, false, false}});
+    CHECK(transitions == std::vector{true});
+}
+
 TEST_CASE("a free bundle requires every field of the receiving schema",
           "[evaluation][tsb][series:tsb][wiring][scalar:integer][scalar:floating-point]"
           "[representation:native][declaration:concrete][binding:direct][schema:named][feature:wiring]") {
-    using namespace bg::literals;
-    const auto count = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
-    const auto sum = bg::node<bundle_sum_definition>();
+    const auto count = node([](Out<TS<i64>>) {});
 
-    CHECK_THROWS(bg::run_graph([&] { return sum(bg::bundle("count"_n = count())); }));
+    const auto sum = node(derived_bundle_sum);
+
+    CHECK_THROWS(run_graph([&] { return sum(bundle("count"_n = count())); }));
 }
 
 TEST_CASE("a free bundle requires compatible field types",
           "[evaluation][tsb][series:tsb][wiring][scalar:integer][scalar:floating-point]"
           "[representation:native][declaration:concrete][binding:direct][schema:named][feature:wiring]") {
-    using namespace bg::literals;
-    const auto count = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
-    const auto value = bg::node([](bg::Out<bg::TS<float>>) {});
-    const auto sum = bg::node<bundle_sum_definition>();
+    const auto count = node([](Out<TS<i64>>) {});
 
-    CHECK_THROWS(bg::run_graph([&] { return sum(bg::bundle("count"_n = value(), "value"_n = count())); }));
+    const auto value = node([](Out<TS<float>>) {});
+
+    const auto sum = node(derived_bundle_sum);
+
+    CHECK_THROWS(run_graph([&] { return sum(bundle("count"_n = value(), "value"_n = count())); }));
 }
 
 TEST_CASE("a free bundle rejects duplicate field names",
           "[evaluation][tsb][series:tsb][wiring][scalar:integer][scalar:floating-point]"
           "[representation:native][declaration:concrete][binding:direct][schema:named][feature:wiring]") {
-    using namespace bg::literals;
-    const auto count = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
-    const auto value = bg::node([](bg::Out<bg::TS<float>>) {});
-    const auto sum = bg::node<bundle_sum_definition>();
+    const auto count = node([](Out<TS<i64>>) {});
+
+    const auto value = node([](Out<TS<float>>) {});
+
+    const auto sum = node(derived_bundle_sum);
 
     CHECK_THROWS_AS(
-        bg::run_graph([&] { return sum(bg::bundle("count"_n = count(), "count"_n = count(), "value"_n = value())); }),
-        bg::WiringError);
-}
-
-TEST_CASE("a named bundle input accepts extra free bundle fields",
-          "[evaluation][tsb][series:tsb][wiring][schema:named][scalar:integer][scalar:floating-point]"
-          "[representation:native][declaration:concrete][binding:direct][feature:wiring]") {
-    using namespace bg::literals;
-    const auto sum = bg::node<bundle_sum_definition>();
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> count, bg::wp<bg::TS<float>> value) {
-        return sum(bg::bundle("extra"_n = count, "value"_n = value, "count"_n = count));
-    };
-
-    const auto result = bg::testing::test_graph(graph, std::vector{1, 2}, std::vector{0.5F, 1.5F});
-
-    CHECK(result.equals({1.5F, 3.5F}));
-}
-
-namespace {
-
-template <template <typename, auto...> typename Field> struct RedefinedBundle : bg::bundle_extends<BaseBundle, Field> {
-    Field<bg::TS<bg::i64>> count;
-    Field<bg::TS<float>> value;
-};
-
-} // namespace
-
-TEST_CASE("a redefined bundle field shares its inherited storage",
-          "[evaluation][tsb][series:tsb][inheritance][feature:collection-change][schema:named]"
-          "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
-          "[binding:direct]") {
-    const auto value = bg::node<base_bundle_value_definition>();
-    const auto graph = [&](bg::wp<bg::TSB<RedefinedBundle>> input) { return value(input); };
-
-    const auto actual = bg::testing::test_graph(graph, {{{"count", 4}, {"value", 2.5F}}});
-
-    CHECK(actual.equals({4}));
-}
-
-namespace {
-
-template <template <typename, auto...> typename Field> struct NestedBundle {
-    Field<bg::TSB<BaseBundle>> nested;
-    Field<bg::TS<float>> value;
-};
-
-struct nested_bundle_sum_definition {
-    bg::In<bg::TSB<NestedBundle>> input;
-    bg::Out<bg::TS<float>> output;
-
-    void evaluate() const { output.set(static_cast<float>(*input->nested->count) + *input->value); }
-};
-
-} // namespace
-
-TEST_CASE("a bundle field can contain another bundle",
-          "[evaluation][tsb][series:tsb][nested][feature:collection-change][schema:named]"
-          "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
-          "[binding:direct]") {
-    const auto sum = bg::node<nested_bundle_sum_definition>();
-    const auto graph = [&](bg::wp<bg::TSB<NestedBundle>> input) { return sum(input); };
-
-    const auto actual = bg::testing::test_graph(graph, {{{"nested", {{"count", 3}}}, {"value", 1.5F}}});
-
-    CHECK(actual.equals({4.5F}));
-}
-
-namespace {
-
-struct optional_bundle_sink_definition {
-    bg::In<bg::TSB<DerivedBundle>, bg::optional> input;
-
-    void evaluate() const {
-        validity.push_back({input.valid(), input->count.valid(), input->value.valid()});
-        modified.push_back({input.modified(), input->count.modified(), input->value.modified()});
-    }
-
-    inline static std::vector<std::array<bool, 3>> validity;
-    inline static std::vector<std::array<bool, 3>> modified;
-};
-
-struct bundle_transition_sink_definition {
-    bg::In<bg::TS_T> input;
-
-    void evaluate() const { transitions.push_back(input.became_valid()); }
-
-    inline static std::vector<bool> transitions;
-};
-
-} // namespace
-
-TEST_CASE("invalidating a bundle invalidates every field",
-          "[evaluation][tsb][series:tsb][validity][feature:collection-change][transition:invalidation]"
-          "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
-          "[binding:direct][schema:named]") {
-    using namespace bg::literals;
-    const auto sink = bg::node<optional_bundle_sink_definition>();
-    const auto transition_sink = bg::node<bundle_transition_sink_definition>();
-    optional_bundle_sink_definition::validity.clear();
-    optional_bundle_sink_definition::modified.clear();
-    bundle_transition_sink_definition::transitions.clear();
-
-    const auto graph = bg::graph("name"_n = "invalidating_bundle_input", [&](bg::wp<bg::TSB<DerivedBundle>> bundle) {
-        sink(bundle);
-        transition_sink(bundle);
-    });
-    (void)bg::testing::test_graph(graph, {{{"count", 2}, {"value", 3.5F}}, literal::INVALID});
-
-    CHECK(optional_bundle_sink_definition::validity ==
-          std::vector<std::array<bool, 3>>{{true, true, true}, {false, false, false}});
-    CHECK(optional_bundle_sink_definition::modified ==
-          std::vector<std::array<bool, 3>>{{true, true, true}, {false, false, false}});
-    CHECK(bundle_transition_sink_definition::transitions == std::vector{true});
+        run_graph([&] { return sum(bundle("count"_n = count(), "count"_n = count(), "value"_n = value())); }),
+        WiringError);
 }
