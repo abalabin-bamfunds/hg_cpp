@@ -268,7 +268,9 @@ TEST_CASE("Out<TSS>::for_each supports erasing visited members across index word
             }
         }
     });
-    const auto size = bg::node<set_size_definition>();
+    const auto size = bg::node([](bg::In<bg::TSS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
+        output.set(static_cast<bg::i64>(input.size()));
+    });
     const auto graph = [&](bg::wp<bg::TS<bg::i64>> trigger) { return size(update(trigger)); };
 
     CHECK(bg::testing::test_graph(graph, {0, 1, 2}).equals<bg::i64>({130, 0, std::nullopt}));
