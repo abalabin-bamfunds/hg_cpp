@@ -25,7 +25,6 @@ using namespace literals;
 
 TEST_CASE("test_graph evaluates a node over input ticks",
           "[testing][evaluation][feature:test-graph][transition:update][series:value][scalar:integer]") {
-
     const auto add = node([](float lhs, float rhs) { return lhs + rhs; });
     const auto lhs = std::vector{1.0F, 2.0F, 3.0F};
     const auto rhs = std::vector{10.0F, 20.0F, 30.0F};
@@ -37,7 +36,6 @@ TEST_CASE("test_graph evaluates a node over input ticks",
 
 TEST_CASE("test_graph infers literal types for plain callable inputs",
           "[testing][evaluation][feature:test-graph][transition:update][scalar:integer]") {
-
     const auto add_plain = node([](int lhs, int rhs) { return lhs + rhs; });
 
     const auto actual = testing::test_graph(
@@ -71,7 +69,6 @@ TEST_CASE("test_graph infers literal types for optional aggregate plain inputs",
 }
 
 TEST_CASE("test_graph records a profile for a graph function", "[testing][evaluation][feature:profiling]") {
-
     const auto graph = [](wp<TS<i64>> input) { return input; };
     auto profiler = EvaluationProfiler{};
 
@@ -131,7 +128,6 @@ TEST_CASE("test_graph applies its configured start time to every input path",
 }
 
 TEST_CASE("test_graph rejects realtime evaluation options", "[testing][evaluation][feature:test-graph]") {
-
     const auto identity = [](wp<TS<i64>> input) { return input; };
 
     CHECK_THROWS_AS((testing::test_graph(
@@ -140,7 +136,6 @@ TEST_CASE("test_graph rejects realtime evaluation options", "[testing][evaluatio
 }
 
 TEST_CASE("test_graph records a profile for runtime-typed inputs", "[testing][evaluation][feature:profiling]") {
-
     const auto identity = graph("name"_n = "identity", [](wp<TS<i64>> input) { return input; });
     auto ticks = std::vector<std::optional<ScalarValue<>>>{};
     ticks.emplace_back(std::in_place, i64{1});
@@ -160,7 +155,6 @@ TEST_CASE("test_graph records a profile for runtime-typed inputs", "[testing][ev
 }
 
 TEST_CASE("test_graph records a profile for a wiring template", "[testing][evaluation][feature:profiling]") {
-
     const auto identity = graph("name"_n = "identity", [](wp<TS<i64>> input) { return input; });
     const auto ticks = std::vector<i64>{1, 2};
     auto profiler = EvaluationProfiler{};
@@ -174,7 +168,6 @@ TEST_CASE("test_graph records a profile for a wiring template", "[testing][evalu
 
 TEST_CASE("test_graph supports skipped input ticks",
           "[testing][evaluation][feature:test-graph][transition:update][series:value][scalar:integer]") {
-
     const auto add = node([](float lhs, float rhs) { return lhs + rhs; });
 
     const auto add_graph = graph(
@@ -190,7 +183,6 @@ TEST_CASE("test_graph supports skipped input ticks",
 
 TEST_CASE("test_graph accepts literal time-series dictionary updates",
           "[testing][evaluation][feature:test-graph][series:tsd][transition:update][scalar:integer]") {
-
     const auto observe = node([](In<TSD<i64, TS<i64>>> input,
                                     Out<TS<i64>> output) {
         output.set(input.contains(7) ? *input[7] : 0);
@@ -211,7 +203,6 @@ template <template <typename, auto...> typename Field> struct LiteralNestedDicti
 TEST_CASE("test_graph accepts literals for deeply nested collection inputs",
           "[testing][evaluation][feature:test-graph][series:tsd][shape:deeply-nested][transition:removal]"
           "[scalar:integer]") {
-
     const auto observe = node([](In<TSD<i64, TSB<LiteralNestedDictionaryBundle>>> input,
                                     Out<TS<i64>> output) {
         output.set(static_cast<i64>(input[1]->items[2].size()));
@@ -229,7 +220,6 @@ TEST_CASE("test_graph accepts literals for deeply nested collection inputs",
 
 TEST_CASE("test_graph literal annotations support generic and multiple inputs",
           "[testing][evaluation][feature:test-graph][declaration:generic][series:value]") {
-
     const auto identity = graph("name"_n = "identity", [](wp<> input) { return wp<>{input}; });
     const auto typed_result = testing::test_graph(identity, testing::input<TS<i64>>({1, 2}));
     const auto runtime_result =
@@ -297,7 +287,6 @@ TEST_CASE("test_graph literal annotations support generic and multiple inputs",
 
 TEST_CASE("test_graph accepts raw nested scalar list literals",
           "[testing][evaluation][feature:test-graph][series:value][scalar:list]") {
-
     const auto observe = node([](In<TS<List<i64>>> input,
                                     Out<TS<i64>> output) {
         output.set(static_cast<i64>(input.value_view().size()));
@@ -312,7 +301,6 @@ TEST_CASE("test_graph accepts raw nested scalar list literals",
 
 TEST_CASE("test_graph accepts fixed time-series list literals",
           "[testing][evaluation][feature:test-graph][series:fixed-tsl][scalar:integer]") {
-
     const auto observe = node([](In<TSL<TS<i64>, 2>> input,
                                     Out<TS<i64>> output) {
         output.set(*input[0] + *input[1]);
@@ -327,7 +315,6 @@ TEST_CASE("test_graph accepts fixed time-series list literals",
 
 TEST_CASE("test_graph runs literal sources when every tick is skipped",
           "[testing][evaluation][feature:test-graph][series:value]") {
-
     const auto identity = [](wp<TS<i64>> input) { return input; };
 
     const auto actual = testing::test_graph(identity, {literal::SKIP, literal::SKIP, literal::SKIP});
@@ -337,7 +324,6 @@ TEST_CASE("test_graph runs literal sources when every tick is skipped",
 
 TEST_CASE("test_graph rejects tagged SKIP as an incompatible scalar payload",
           "[testing][evaluation][feature:test-graph][series:value]") {
-
     const auto identity = [](wp<TS<i64>> input) { return input; };
 
     CHECK_THROWS_AS(
@@ -347,7 +333,6 @@ TEST_CASE("test_graph rejects tagged SKIP as an incompatible scalar payload",
 
 TEST_CASE("test_graph accepts empty raw inputs for functions and wiring templates",
           "[testing][evaluation][feature:test-graph][series:value][scalar:list]") {
-
     const auto count_items = node([](In<TS<List<i64>>> input,
                                          Out<TS<i64>> output) {
         output.set(static_cast<i64>(input.value_view().size()));
@@ -367,7 +352,6 @@ TEST_CASE("test_graph accepts empty raw inputs for functions and wiring template
 
 TEST_CASE("test_graph literal inputs coerce values and revalidate after INVALID",
           "[testing][evaluation][feature:test-graph][transition:invalidation][transition:revalidation]") {
-
     const auto float_identity = [](wp<TS<float>> input) { return input; };
     const auto float_result = testing::test_graph(float_identity, {1, 2});
 
@@ -402,7 +386,6 @@ TEST_CASE("test_graph accepts descriptor spans with more than four inputs",
 
 TEST_CASE("test_graph preserves zero-input wiring template option calls",
           "[testing][evaluation][feature:test-graph][feature:profiling]") {
-
     const auto produce = node([](Out<TS<i64>> output) { output.set(42); });
 
     const auto zero_input = graph("name"_n = "zero_input", [&] { return produce(); });
@@ -451,7 +434,6 @@ TEST_CASE("test_graph uses the supplied global state",
 
 TEST_CASE("test_graph accepts literal inputs with profiler and services",
           "[testing][evaluation][feature:test-graph][feature:profiling]") {
-
     const auto observe = node([](In<TSD<i64, TS<i64>>> input,
                                     Out<TS<i64>> output) {
         output.set(input.contains(7) ? *input[7] : 0);
@@ -474,7 +456,6 @@ TEST_CASE("test_graph accepts literal inputs with profiler and services",
 
 TEST_CASE("test_graph accepts a graph function and reports skipped cycles",
           "[testing][evaluation][feature:test-graph][definition:function][series:value][scalar:integer]") {
-
     const auto increment = node([](i64 input) { return input + 1; });
 
     const auto graph = [&](wp<TS<i64>> input) { return increment(input); };
@@ -484,7 +465,6 @@ TEST_CASE("test_graph accepts a graph function and reports skipped cycles",
 
 TEST_CASE("test_graph captures a runtime-typed output",
           "[testing][evaluation][feature:test-graph][declaration:generic][series:value]") {
-
     const auto graph = [](wp<TS<i64>> input) { return wp<>{input}; };
 
     CHECK(testing::test_graph(graph, {1, 2, std::nullopt, 4}).equals<i64>({1, 2, std::nullopt, 4}));
@@ -523,7 +503,6 @@ TEST_CASE("runtime-typed test_graph inputs can contain only skipped ticks",
 
 TEST_CASE("wiring converts C++ string arguments to the canonical graph type",
           "[testing][evaluation][feature:test-graph][definition:function][series:value][scalar:string]") {
-
     const auto publish = node(
         [](In<TS<i64>>, std::string value, Out<TS<i64>> output) {
             output.set(static_cast<int>(value.size()));
@@ -536,7 +515,6 @@ TEST_CASE("wiring converts C++ string arguments to the canonical graph type",
 
 TEST_CASE("wiring converts optional C++ scalar arguments to the canonical graph type",
           "[testing][evaluation][feature:test-graph][definition:function][series:value][scalar:integer]") {
-
     const auto add = node(
         [](In<TS<i64>> input, std::optional<int> amount, Out<TS<i64>> output) {
             output.set(*input + amount.value_or(0));

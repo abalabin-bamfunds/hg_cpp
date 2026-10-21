@@ -188,7 +188,6 @@ TEST_CASE("an operator cache keys scalar values read by aggregate requirements",
     operation.overload(node<nonzero_mode_copy_definition>());
 
     const auto run = [&](int mode) {
-
         const auto graph = [&](wp<TS<float>> input) -> wp<TS<float>> {
             const auto result = operation(input, mode);
             (void)operation(input, 1 - mode);
@@ -236,7 +235,6 @@ TEST_CASE("callable requirements control overload applicability",
             }));
 
     const auto run = [&](int mode) {
-
         const auto graph = [&](wp<TS<float>> input) -> wp<TS<float>> {
             const auto result = operation(input, mode);
             (void)operation(input, 1 - mode);

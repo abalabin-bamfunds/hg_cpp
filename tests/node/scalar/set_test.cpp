@@ -12,7 +12,6 @@ using namespace bg;
 
 TEST_CASE("a scalar set propagates through a value time series",
           "[node][time_series][scalar][set][scalar:set][feature:state]") {
-
     const auto source = node([](Scalar<Set<i64>> value, Out<TS<Set<i64>>> output) { output.set_value(value); });
 
     const auto sum = node([](In<TS<Set<i64>>> input) {
@@ -43,7 +42,6 @@ struct inspect_scalar_set_state {
 
 TEST_CASE("scalar set state is available during node start",
           "[node][state][scalar][set][scalar:set][feature:state][transition:start]") {
-
     const auto inspect = node<inspect_scalar_set_state>();
 
     const auto graph = [&] { return inspect(); };
@@ -66,7 +64,6 @@ struct inspect_scalar_set {
 
 TEST_CASE("a scalar set is available from packed graph scalar storage",
           "[node][scalar][set][scalar:set][feature:state]") {
-
     const auto inspect = node<inspect_scalar_set>();
 
     const auto input = ScalarValue<Set<i64>>{std::array<i64, 2>{1, 2}};

@@ -576,7 +576,6 @@ TEST_CASE("valid_items selects capable overloads and prefers ordinary inputs oth
 
 TEST_CASE("scalar-only overloads prefer presence and keep absent calls distinct in the cache",
           "[feature:operator][feature:wiring][scalar:integer][definition:function]") {
-
     const auto required = graph("name"_n = "requires_presence", [](i64 value) {
         return operators::const_(value + 10).as<TS<i64, TimeSeriesGuarantee::const_>>();
     });
@@ -612,7 +611,6 @@ TEST_CASE("scalar-only overloads prefer presence and keep absent calls distinct 
 
 TEST_CASE("a graph can omit an optional scalar parameter",
           "[feature:wiring][scalar:integer][definition:function]") {
-
     const auto optional_graph = graph("name"_n = "optional_scalar", [](std::optional<i64> value) {
         return operators::const_(value.value_or(7)).as<TS<i64, TimeSeriesGuarantee::const_>>();
     });
@@ -623,7 +621,6 @@ TEST_CASE("a graph can omit an optional scalar parameter",
 
 TEST_CASE("promoted node overloads prefer presence for scalar arguments",
           "[feature:operator][feature:wiring][scalar:integer][definition:function]") {
-
     const auto required = node([](int value) { return value + 10; });
 
     const auto optional = node([](std::optional<int> value) { return value.value_or(0) + 20; });
@@ -666,7 +663,6 @@ TEST_CASE("named omission and scalar presence remain distinct in one root wiring
 
 TEST_CASE("type specificity precedes scalar presence preference",
           "[feature:operator][feature:wiring][scalar:integer][definition:function]") {
-
     const auto promoted = node([](int value) { return value + 100; });
 
     const auto explicit_scalar = bg::graph("name"_n = "optional_scalar", [](std::optional<i64> value) {
@@ -857,7 +853,6 @@ TEST_CASE("conflicting required-input preferences remain ambiguous",
 
 TEST_CASE("named validity preferences align with supplied arguments",
           "[feature:operator][feature:wiring][feature:validity][input-guarantee:valid-items][series:tsd]") {
-
     const auto source = node([](Out<TSD<i64, TS<i64>>>) {});
 
     const auto left_first = graph(
@@ -889,7 +884,6 @@ TEST_CASE("named validity preferences align with supplied arguments",
 
 TEST_CASE("positional validity preferences follow supplied argument order",
           "[feature:operator][feature:wiring][feature:validity][input-guarantee:valid-items][series:tsd]") {
-
     const auto source = node([](Out<TSD<i64, TS<i64>>>) {});
 
     for (const auto reverse : {false, true}) {
@@ -964,7 +958,6 @@ TEST_CASE("operator diagnostics own signatures and retain prototype argument nam
 
         try {
             testing::test_wiring([&] {
-
                 const auto source = node([](Out<TS<double>>) {});
                 (void)operation(source());
             });
@@ -985,7 +978,6 @@ TEST_CASE("operator diagnostics own signatures and retain prototype argument nam
 
 TEST_CASE("operator matching treats a reference argument transparently",
           "[feature:operator][feature:wiring][feature:reference][binding:reference-to-value]") {
-
     const auto source = node([](Out<REF<TS<float>>>) {});
     auto operation = operator_<auto(TS<float>)->TS<float>>{"identity", {"value"}};
     operation.overload(graph("name"_n = "direct", [](wp<TS<float>> value) { return value; }));

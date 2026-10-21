@@ -207,7 +207,6 @@ struct StaticTimedSchedulingDefinition {
 
 TEST_CASE("a runtime-signature node exposes resolved parameters, compiled data, and state",
           "[node][runtime-signature][definition:runtime][feature:node-api][declaration:runtime]") {
-
     const auto runtime_node = node(RuntimeNodeDefinition{});
 
     const auto graph = [&](wp<TS<i64>> input) -> wp<TS<i64>> {
@@ -253,7 +252,6 @@ TEST_CASE("a callable selects its output runtime type from wiring arguments",
         });
 
     const auto run = [&](i64 layout) {
-
         const auto graph = [&](wp<TS<i64>> input) -> wp<TS<i64>> {
             return wp<TS<i64>>{compute(input, layout)};
         };
@@ -287,7 +285,6 @@ TEST_CASE("a concrete callable evaluates using its selected output runtime type"
         });
 
     const auto run = [&](i64 layout) {
-
         const auto graph = [&](wp<TS<i64>> input) -> wp<TS<i64>> {
             return wp<TS<i64>>{compute(input, layout)};
         };
@@ -378,7 +375,6 @@ TEST_CASE("a callable's repeated identical invocation reuses its output record",
 
 TEST_CASE("a callable without an output runtime hook uses the declaration runtime type",
           "[feature:node-api][series:value][declaration:concrete][definition:function]") {
-
     const auto copy = node([](In<TS<i64>> input, Out<TS<i64>> output) {
         output.set(*input);
     });
@@ -415,7 +411,6 @@ TEST_CASE("a runtime-signature definition can select an output runtime type from
 TEST_CASE("graph wiring owns a temporary runtime-signature node template",
           "[node][runtime-signature][definition:runtime][lifetime][feature:node-api]"
           "[declaration:runtime]") {
-
     const auto graph = [](wp<TS<i64>> input) -> wp<TS<i64>> {
         return wp<TS<i64>>{*node(RuntimeNodeDefinition{})(input)};
     };
@@ -459,14 +454,12 @@ struct EmptyInvocationSourceDefinition {
 
 TEST_CASE("a runtime-signature node with no parameters exposes empty input and scalar ranges",
           "[node][runtime-signature][definition:runtime][feature:node-api]") {
-
     const auto source = node(EmptyInvocationSourceDefinition{});
     CHECK(testing::test_graph(source).equals<i64>({1}));
 }
 
 TEST_CASE("a runtime-signature node can omit its output",
           "[node][runtime-signature][definition:runtime][output][feature:node-api][declaration:runtime]") {
-
     const auto sink = node(RuntimeSinkDefinition{});
 
     const auto graph = [&](wp<TS<i64>> input) -> wp<TS<i64>> {
@@ -498,7 +491,6 @@ struct RuntimeDynamicActivityDefinition {
 
 TEST_CASE("a runtime-signature input changes its activity",
           "[feature:input-activity][series:value][definition:runtime][activity:active][transition:update]") {
-
     const auto dynamic = node(RuntimeDynamicActivityDefinition{});
 
     const auto graph = [&](wp<TS<i64>> input) -> wp<TS<i64>> {
@@ -539,7 +531,6 @@ struct OptionalScalarDefinition {
 
 TEST_CASE("an absent optional scalar remains enumerable",
           "[node][runtime-signature][definition:runtime][scalar][feature:node-api]") {
-
     const auto runtime_node = node(OptionalScalarDefinition{});
 
     const auto graph = [&](wp<TS<i64>> input) -> wp<TS<i64>> {
@@ -588,7 +579,6 @@ struct RuntimeAllValidDefinition {
 TEST_CASE("a runtime-signature node applies all_valid using invocation metadata",
           "[node][runtime-signature][definition:runtime][feature:validity][validity:all-valid]"
           "[series:fixed-tsl][scalar:i64]") {
-
     const auto runtime_node = node(RuntimeAllValidDefinition{});
 
     const auto graph = [&](wp<TS<i64>> known,
@@ -625,7 +615,6 @@ struct RuntimeBundleAllValidDefinition {
 TEST_CASE("a runtime-signature input checks the declared base bundle schema",
           "[node][runtime-signature][definition:runtime][feature:validity][validity:all-valid]"
           "[series:tsb][schema:named][binding:covariant][representation:native]") {
-
     const auto runtime_node = node(RuntimeBundleAllValidDefinition{});
 
     const auto graph = [&](wp<TSB<RuntimeValidityDerivedBundle>> input) {
@@ -670,7 +659,6 @@ struct RuntimeDictionarySinkDefinition {
 TEST_CASE("a runtime-signature node constructs runtime-defined dictionary storage",
           "[node][runtime-signature][definition:runtime][tsd][series:tsd][feature:node-api]"
           "[declaration:runtime]") {
-
     const auto source = node(RuntimeDictionarySourceDefinition{});
 
     const auto sink = node<RuntimeDictionarySinkDefinition>();

@@ -19,7 +19,6 @@ using namespace bg;
 TEST_CASE("a constant value updates only in the first test graph cycle",
           "[feature:constant][feature:test-graph][series:value][scalar:integer][guarantee:const]"
           "[shape:single-node][transition:first-tick]") {
-
     const auto graph = [](wp<TS<i64>>) {
         return operators::const_(3).as<TS<i64, TimeSeriesGuarantee::const_>>();
     };

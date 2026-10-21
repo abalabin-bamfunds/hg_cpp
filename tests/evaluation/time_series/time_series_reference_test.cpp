@@ -76,7 +76,6 @@ struct reference_pass {
 TEST_CASE("a dereferenced input subscribes directly to a fixed target",
           "[evaluation][reference][feature:reference][series:value][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value]") {
-
     const auto source = node<changing_reference_target>();
 
     const auto pass = node<reference_pass>();
@@ -93,7 +92,6 @@ TEST_CASE("an ordinary reference can retarget a value input between stronger tar
           "[feature:reference][feature:type-system][feature:test-graph][series:value][scalar:floating-point]"
           "[guarantee:ordinary][guarantee:final][guarantee:const][binding:reference-to-value]"
           "[shape:chain][transition:update][definition:function]") {
-
     const auto final_value = node([](Out<TS<double, TimeSeriesGuarantee::final>> output) {
         output.set(1.0);
     });
@@ -130,7 +128,6 @@ TEST_CASE("a deduplicated reference retarget samples equal constant values",
           "[feature:reference][feature:type-system][feature:test-graph][series:value][scalar:floating-point]"
           "[guarantee:deduplicated][guarantee:const][binding:reference-to-value]"
           "[shape:chain][transition:update][definition:function]") {
-
     const auto select = node(
         [](In<TS<bool>> use_second,
            In<REF<TS<double, TimeSeriesGuarantee::const_>,
@@ -162,7 +159,6 @@ TEST_CASE("a deduplicated reference retarget samples equal constant values",
 TEST_CASE("a dereferenced list keeps the target runtime type when only guarantees differ",
           "[evaluation][reference][tsl][feature:reference][series:fixed-tsl][guarantee:ordinary]"
           "[guarantee:final][binding:reference-to-value]") {
-
     const auto first = node(
         [](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(1); });
 
@@ -197,7 +193,6 @@ TEST_CASE("a dereferenced list keeps the target runtime type when only guarantee
 TEST_CASE("a materialized free TSL samples retargeted ordinary references",
           "[evaluation][reference][tsl][feature:reference][feature:test-graph][series:fixed-tsl]"
           "[guarantee:ordinary][guarantee:const][binding:reference-to-value][transition:update]") {
-
     const auto read = node([](In<TSL<TS<i64, G>, 1>> input) { return *input[0]; });
 
     const auto select = node(
@@ -228,7 +223,6 @@ TEST_CASE("a materialized free TSL samples retargeted ordinary references",
 TEST_CASE("an ordinary list reference samples the selected list with final items",
           "[evaluation][reference][feature:reference][series:fixed-tsl][guarantee:ordinary]"
           "[guarantee:final][binding:reference-to-value][activity:active][transition:update][shape:chain]") {
-
     const auto first_item = node(
         [](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(10); });
 
@@ -276,7 +270,6 @@ template <template <typename, auto...> typename Field> struct DictionaryBundle {
 TEST_CASE("plain and notifying inputs share one sampled dictionary",
           "[evaluation][reference][series:tsd][series:tsb][feature:sampling][transition:update]"
           "[binding:reference-to-value]") {
-
     const auto select = node(
         [](In<TS<bool>> use_second, In<REF<TSD<i64, TS<i64>>>> first,
            In<REF<TSD<i64, TS<i64>>>> second,
@@ -313,7 +306,6 @@ TEST_CASE("plain and notifying inputs share one sampled dictionary",
 TEST_CASE("a nested graph releases its sampled reference change when it stops",
           "[evaluation][nested][reference][series:tsd][feature:sampling][feature:nested-graph]"
           "[transition:update][transition:stop][transition:restart][binding:reference-to-value]") {
-
     const auto select = node(
         [](In<TS<bool>> use_second, In<REF<TSD<i64, TS<i64>>>> first,
            In<REF<TSD<i64, TS<i64>>>> second,
@@ -360,7 +352,6 @@ TEST_CASE("a nested graph releases its sampled reference change when it stops",
 TEST_CASE("a default reference output does not schedule subscribers for the same reference",
           "[evaluation][reference][feature:reference][transition:update][series:value][scalar:integer]"
           "[guarantee:deduplicated][binding:value-to-reference][binding:reference-to-reference]") {
-
     const auto forward = node([](In<TS<i64>>, In<REF<TS<i64>>, passive> input,
                                      Out<REF<TS<i64>>> output) { output.copy(input); });
     auto evaluations = 0;
@@ -691,7 +682,6 @@ TEST_CASE("changing a reference samples its target",
 TEST_CASE("a passive dereferenced input observes its current target",
           "[evaluation][reference][activity][feature:reference][series:value][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value][activity:passive]") {
-
     const auto left = node<sampled_left_source>();
 
     const auto right = node<sampled_right_source>();
@@ -714,7 +704,6 @@ TEST_CASE("a passive dereferenced input observes its current target",
 TEST_CASE("a dynamic dereferenced input rebinds while passive",
           "[feature:input-activity][feature:reference][series:value][binding:reference-to-value]"
           "[definition:aggregate][activity:passive][transition:update]") {
-
     const auto left = node<sampled_left_source>();
 
     const auto right = node<sampled_right_source>();
@@ -735,7 +724,6 @@ TEST_CASE("a dynamic dereferenced input rebinds while passive",
 TEST_CASE("dynamic reference input unbinding reports one invalidation cycle",
           "[evaluation][reference][validity][feature:reference][transition:invalidation]"
           "[binding:reference-to-value][series:value][series:reference][guarantee:ordinary]") {
-
     const auto unbind = node<dynamic_reference_unbinder>();
 
     const auto graph = [&](wp<TSL<TS<i64>, 1>> collection,
@@ -766,7 +754,6 @@ TEST_CASE("changing a reference to an invalid target invalidates required consum
           "[evaluation][reference][validity][feature:reference][validity:required]"
           "[transition:invalidation][scalar:integer][binding:value-to-reference]"
           "[binding:reference-to-value][series:value]") {
-
     const auto left = node<sampled_left_source>();
 
     const auto right = node<invalid_reference_target>();
@@ -857,7 +844,6 @@ struct reference_list_observer {
 TEST_CASE("a dereferenced input subscribes directly to a fixed collection item",
           "[evaluation][reference][tsl][feature:reference][series:fixed-tsl][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value]") {
-
     const auto pass = node<reference_pass>();
 
     const auto first = node(
@@ -875,7 +861,6 @@ TEST_CASE("a dereferenced input subscribes directly to a fixed collection item",
 TEST_CASE("a fixed collection can pass through a reference",
           "[evaluation][reference][tsl][series:fixed-tsl][feature:reference][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value]") {
-
     const auto pass = node<list_reference_pass>();
 
     const auto value = node<referenced_list_value>();
@@ -890,7 +875,6 @@ TEST_CASE("a fixed collection can pass through a reference",
 TEST_CASE("a generic fixed collection input uses the referenced target runtime_type",
           "[evaluation][reference][tsl][series:fixed-tsl][feature:reference][declaration:generic]"
           "[scalar:integer][binding:value-to-reference][binding:reference-to-value]") {
-
     const auto pass = node<generic_list_reference_pass>();
 
     const auto value = node<generic_referenced_list_value>();
@@ -936,7 +920,6 @@ struct pair_sum_definition {
 TEST_CASE("a dereferenced list reference selects the current target runtime_type",
           "[evaluation][reference][tsl][free][feature:reference][series:fixed-tsl][representation:free]"
           "[scalar:integer][binding:value-to-reference][binding:reference-to-value]") {
-
     const auto owned_pair = node<owned_pair_definition>();
 
     const auto select = node<pair_reference_selector_definition>();
@@ -965,7 +948,6 @@ TEST_CASE("a dereferenced list reference selects the current target runtime_type
 TEST_CASE("a reference stored in a fixed collection item updates its consumer",
           "[evaluation][reference][tsl][series:fixed-tsl][feature:reference][transition:update]"
           "[scalar:integer][binding:value-to-reference][binding:reference-to-value]") {
-
     const auto source = node<changing_reference_target>();
 
     const auto list = node<reference_list>();
@@ -982,7 +964,6 @@ TEST_CASE("a reference stored in a fixed collection item updates its consumer",
 TEST_CASE("a fixed collection output suppresses an equal nested reference update",
           "[evaluation][reference][tsl][series:fixed-tsl][feature:reference][transition:update]"
           "[guarantee:deduplicated]") {
-
     const auto source = node<repeated_value_target>();
 
     const auto copy = node<reference_list_copy>();
@@ -1029,7 +1010,6 @@ TEST_CASE("reference invalidation unbinds and revalidation resamples consumers",
           "[evaluation][reference][validity][feature:reference][transition:invalidation]"
           "[transition:revalidation][scalar:integer][binding:value-to-reference]"
           "[binding:reference-to-value][series:value]") {
-
     const auto source = node<sampled_left_source>();
 
     const auto reference = node<invalidating_reference>();
@@ -1042,7 +1022,6 @@ TEST_CASE("reference invalidation unbinds and revalidation resamples consumers",
 
 TEST_CASE("a sampled TSS output includes a same-cycle change to the previous target",
           "[evaluation][reference][series:tss][feature:sampling][transition:update]") {
-
     const auto select = node([](In<TS<bool>> condition,
                                     In<REF<TSS<i64>>, passive> old_target,
                                     In<REF<TSS<i64>>, passive> new_target,

@@ -13,7 +13,6 @@ using namespace bg;
 
 TEST_CASE("a scalar dictionary propagates through a value time series",
           "[node][time_series][scalar][dict][scalar:dict][feature:state]") {
-
     const auto source = node(
         [](Scalar<Dict<i64, i64>> value, Out<TS<Dict<i64, i64>>> output) { output.set_value(value); });
 
@@ -46,7 +45,6 @@ struct inspect_scalar_dict_state {
 
 TEST_CASE("scalar dictionary state is available during node start",
           "[node][state][scalar][dict][scalar:dict][feature:state][transition:start]") {
-
     const auto inspect = node<inspect_scalar_dict_state>();
 
     const auto graph = [&] { return inspect(); };
@@ -69,7 +67,6 @@ struct inspect_scalar_dict {
 
 TEST_CASE("a scalar dictionary is available from packed graph scalar storage",
           "[node][scalar][dict][scalar:dict][feature:state]") {
-
     const auto inspect = node<inspect_scalar_dict>();
 
     const auto input = ScalarValue<Dict<i64, i64>>{

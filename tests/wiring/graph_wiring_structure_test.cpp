@@ -218,7 +218,6 @@ details::GraphWiringStructure context_structure(bool alternate_provider) {
 }
 
 details::GraphWiringStructure inherited_requirement_structure(const void *identity, bool alternate_provider) {
-
     const auto first_provider = node<boundary_node>();
 
     const auto second_provider = node<alternate_boundary_node>();

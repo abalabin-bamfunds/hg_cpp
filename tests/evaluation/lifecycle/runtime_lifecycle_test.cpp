@@ -69,7 +69,6 @@ struct run_graph_start_time_probe {
 TEST_CASE("run_graph starts, evaluates, and stops a graph",
           "[evaluation][lifecycle][feature:lifecycle][transition:start][transition:stop][series:value]"
           "[scalar:floating-point]") {
-
     const auto starting_source = node<starting_source_definition>();
 
     const auto add = node<add_definition>();
@@ -197,7 +196,6 @@ struct lifecycle_definition {
 TEST_CASE("start and stop follow topological order",
           "[evaluation][lifecycle][feature:lifecycle][shape:chain][transition:stop][series:value]"
           "[scalar:floating-point]") {
-
     const auto lifecycle = node<lifecycle_definition>();
     lifecycle_definition::events.clear();
     lifecycle_definition::events.reserve(6);
@@ -226,7 +224,6 @@ TEST_CASE("start and stop follow topological order",
 TEST_CASE("a start failure stops nodes whose start completed",
           "[evaluation][lifecycle][failure][feature:lifecycle][transition:start][transition:stop]"
           "[series:value][scalar:floating-point]") {
-
     const auto lifecycle = node<lifecycle_definition>();
     lifecycle_definition::events.clear();
     lifecycle_definition::events.reserve(4);
@@ -254,7 +251,6 @@ TEST_CASE("a start failure stops nodes whose start completed",
 TEST_CASE("an evaluation failure stops nodes in reverse topological order",
           "[evaluation][lifecycle][failure][feature:lifecycle][shape:chain][transition:stop]"
           "[series:value][scalar:floating-point]") {
-
     const auto lifecycle = node<lifecycle_definition>();
     lifecycle_definition::events.clear();
     lifecycle_definition::events.reserve(8);
@@ -283,7 +279,6 @@ TEST_CASE("an evaluation failure stops nodes in reverse topological order",
 TEST_CASE("a runtime graph has one lifecycle",
           "[evaluation][lifecycle][feature:lifecycle][transition:restart][series:value]"
           "[scalar:floating-point]") {
-
     const auto lifecycle = node<lifecycle_definition>();
     lifecycle_definition::events.clear();
     lifecycle_definition::start_failure = 0;
@@ -357,7 +352,6 @@ struct immediate_definition {
 
 TEST_CASE("start can schedule evaluation in the first outer cycle",
           "[evaluation][lifecycle][scheduling][feature:lifecycle][series:value][scalar:floating-point]") {
-
     const auto immediate = node<immediate_definition>();
     immediate_definition::start_time = MIN_DT;
     immediate_definition::evaluation_time = MIN_DT;

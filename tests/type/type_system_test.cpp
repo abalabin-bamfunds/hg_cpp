@@ -257,7 +257,6 @@ TEST_CASE("a resolved ordinary time-series value accepts stronger guarantees",
 
 TEST_CASE("an omitted time-series variable guarantee preserves the supplied guarantee",
           "[type_system][feature:type-system][declaration:generic][series:value][guarantee:final]") {
-
     const auto identity = node([](In<TS_T>, Out<TS_T>) {});
     const auto arguments = std::array<const bg::Type *, 1>{&TS<i64, TimeSeriesGuarantee::final>::type()};
 

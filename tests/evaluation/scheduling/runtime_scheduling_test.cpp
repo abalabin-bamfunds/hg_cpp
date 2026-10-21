@@ -49,7 +49,6 @@ struct add_definition {
 TEST_CASE("a runtime graph evaluates scheduled nodes in topological order",
           "[evaluation][scheduling][feature:scheduling][shape:chain][series:value]"
           "[scalar:floating-point]") {
-
     const auto constant = node<constant_definition>();
 
     const auto add = node<add_definition>();
@@ -149,7 +148,6 @@ struct initial_value_sink_definition {
 
 TEST_CASE("a scheduled node can omit evaluation",
           "[evaluation][scheduling][feature:scheduling][series:value][scalar:floating-point]") {
-
     const auto source = node<start_only_definition>();
 
     const auto sink = node<start_only_sink_definition>();
@@ -181,7 +179,6 @@ TEST_CASE("a scheduled node can omit evaluation",
 
 TEST_CASE("a node can request evaluation in the first cycle",
           "[evaluation][scheduling][feature:scheduling][shape:source][series:value][scalar:floating-point]") {
-
     const auto source = node<initially_scheduled_source_definition>();
 
     const auto scalar_source = node<initially_scheduled_scalar_definition>();
@@ -223,7 +220,6 @@ TEST_CASE("a node can request evaluation in the first cycle",
 
 TEST_CASE("a scalar-only node is inert unless it requests initial evaluation",
           "[evaluation][scheduling][feature:scheduling][scalar:floating-point]") {
-
     const auto inert = node<inert_scalar_definition>();
     auto wiring = GraphWiring{};
     {
@@ -261,7 +257,6 @@ struct indexed_definition {
 
 TEST_CASE("a runtime graph processes set scheduling bits in node order",
           "[evaluation][scheduling][feature:scheduling][series:value][scalar:floating-point]") {
-
     const auto indexed = node<indexed_definition>();
     GraphWiring wiring;
 
@@ -346,7 +341,6 @@ struct same_block_rescheduling_definition {
 TEST_CASE("scheduling honors the processed-node boundary within and across blocks",
           "[evaluation][scheduling][feature:scheduling][shape:chain]") {
     SECTION("a request for an earlier block waits until the next cycle") {
-
         const auto indexed = node<cross_block_scheduling_definition>();
         GraphWiring wiring;
         {
@@ -385,7 +379,6 @@ TEST_CASE("scheduling honors the processed-node boundary within and across block
     }
 
     SECTION("a request for an earlier node in the current block is discarded") {
-
         const auto indexed = node<same_block_rescheduling_definition>();
         GraphWiring wiring;
         {
@@ -416,7 +409,6 @@ TEST_CASE("scheduling honors the processed-node boundary within and across block
 
 TEST_CASE("scheduling during evaluation crosses a scheduling block boundary",
           "[evaluation][scheduling][feature:scheduling][series:value][scalar:floating-point]") {
-
     const auto constant = node<constant_definition>();
 
     const auto indexed = node<indexed_definition>();
@@ -458,7 +450,6 @@ TEST_CASE("scheduling during evaluation crosses a scheduling block boundary",
 
 TEST_CASE("evaluation time must increase between outer cycles",
           "[evaluation][scheduling][feature:scheduling][series:value][scalar:floating-point]") {
-
     const auto indexed = node<indexed_definition>();
     GraphWiring wiring;
 

@@ -139,7 +139,6 @@ struct delayed_final_source {
 
 TEST_CASE("callable plain parameters accept scalar and time-series arguments",
           "[feature:node-api][definition:function][series:value][scalar:integer]") {
-
     const auto add = node([](int lhs, int rhs) { return lhs + rhs; });
     const std::array<const Type *, 2> scalar_inputs{&int64_type(), &int64_type()};
     REQUIRE(add.signature().resolve(scalar_inputs).output == &TS<i64, TimeSeriesGuarantee::const_>::type());
@@ -157,7 +156,6 @@ TEST_CASE("callable plain parameters accept scalar and time-series arguments",
 TEST_CASE("callable return guarantees follow the weakest observed input guarantee",
           "[feature:node-api][definition:function][series:value][guarantee:const][guarantee:final]"
           "[guarantee:deduplicated]") {
-
     const auto add = node([](int lhs, int rhs) { return lhs + rhs; });
 
     const std::array<const Type *, 2> final_inputs{&TS<i64, TimeSeriesGuarantee::final>::type(),
@@ -178,7 +176,6 @@ TEST_CASE("callable return guarantees follow the weakest observed input guarante
 
 TEST_CASE("callable inferred output uses ordinary guarantee when its value has no equality",
           "[feature:node-api][definition:function][series:value][guarantee:ordinary][guarantee:deduplicated]") {
-
     const auto wrap = node([](double value) {
         return callable_test::no_equality_value{static_cast<i64>(value)};
     });
@@ -191,7 +188,6 @@ TEST_CASE("callable inferred output uses ordinary guarantee when its value has n
 TEST_CASE("callable return guarantee inference requires required input-driven evaluation",
           "[feature:node-api][definition:function][series:value][guarantee:ordinary][validity:optional]"
           "[feature:scheduling]") {
-
     const auto optional_input = node([](std::optional<int> value) { return value.value_or(0); });
 
     const auto dynamic_input = node([](In<TS<i64>, dynamic_activity> value) { return *value; });
@@ -230,7 +226,6 @@ TEST_CASE("callable dynamic activity controls inputs around promoted scalars",
 
 TEST_CASE("callable generic scalar runtime types follow runtime-type input slots",
           "[feature:node-api][definition:function][declaration:generic][series:value][scalar:integer]") {
-
     const auto combine = node([](Scalar<SCALAR> scalar, In<TS<SCALAR>> input) {
         return scalar_cast<i64>(scalar).value() + scalar_cast<i64>(input.value_view()).value();
     });
@@ -262,7 +257,6 @@ TEST_CASE("callable output deduplication suppresses equal results from changing 
 
 TEST_CASE("callable final output waits for both final inputs when they tick in separate cycles",
           "[feature:node-api][definition:function][series:value][guarantee:final][feature:scheduling]") {
-
     const auto source = node<delayed_final_source>();
 
     const auto add = node([](int lhs, int rhs) { return lhs + rhs; });
@@ -274,7 +268,6 @@ TEST_CASE("callable final output waits for both final inputs when they tick in s
 
 TEST_CASE("callable ordinary inputs schedule independently",
           "[feature:node-api][definition:function][series:value][guarantee:ordinary][feature:scheduling]") {
-
     const auto add = node([](int lhs, int rhs) { return lhs + rhs; });
 
     const auto graph = [=](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return add(lhs, rhs); };
@@ -284,7 +277,6 @@ TEST_CASE("callable ordinary inputs schedule independently",
 
 TEST_CASE("callable return infers const from const time-series inputs",
           "[feature:node-api][definition:function][series:value][guarantee:const][feature:constant]") {
-
     const auto add = node([](int lhs, int rhs) { return lhs + rhs; });
     const std::array<const Type *, 2> const_inputs{&TS<i64, TimeSeriesGuarantee::const_>::type(),
                                                    &TS<i64, TimeSeriesGuarantee::const_>::type()};
@@ -301,7 +293,6 @@ TEST_CASE("callable return infers const from const time-series inputs",
 
 TEST_CASE("callable return combines promoted scalars with explicit required inputs",
           "[feature:node-api][definition:function][series:value][guarantee:final]") {
-
     const auto source = node<delayed_final_source>();
 
     const auto combine = node([](int offset, In<TS<i64, TimeSeriesGuarantee::final>> input) {
@@ -315,7 +306,6 @@ TEST_CASE("callable return combines promoted scalars with explicit required inpu
 
 TEST_CASE("passive callable inputs lower the active input guarantee",
           "[feature:node-api][definition:function][series:value][guarantee:ordinary][activity:passive]") {
-
     const auto source = node<delayed_final_source>();
 
     const auto combine = node([](In<TS<i64, TimeSeriesGuarantee::final>> active_input,
@@ -334,7 +324,6 @@ TEST_CASE("passive callable inputs lower the active input guarantee",
 
 TEST_CASE("callable explicit output guarantee takes precedence over input inference",
           "[feature:node-api][definition:function][series:value][guarantee:final]") {
-
     const auto copy = node([](In<TS<i64>> input, Out<TS<i64, TimeSeriesGuarantee::final>> output) {
         output.set(*input);
     });
@@ -349,7 +338,6 @@ TEST_CASE("callable explicit output guarantee takes precedence over input infere
 
 TEST_CASE("callable optional arguments and return values preserve absence",
           "[feature:node-api][definition:function][series:value][scalar:integer][validity:optional]") {
-
     const auto select = node([](int value) -> std::optional<int> {
         if (value == 2) {
             return std::nullopt;
@@ -377,7 +365,6 @@ TEST_CASE("callable optional arguments and return values preserve absence",
 
 TEST_CASE("required promoted callable inputs invalidate and recover their outputs",
           "[feature:node-api][definition:function][series:value][scalar:integer][validity:required]") {
-
     const auto twice = node([](int value) { return value * 2; });
 
     const auto gate = node([](In<TS<i64>> input, Out<TS<i64>> output) {
@@ -397,7 +384,6 @@ TEST_CASE("required promoted callable inputs invalidate and recover their output
 
 TEST_CASE("callable bool returns produce bool time series outputs",
           "[feature:node-api][definition:function][series:value][scalar:boolean]") {
-
     const auto negate = node([](bool value) { return !value; });
 
     const auto graph = [=](wp<TS<bool>> input) { return negate(input); };
@@ -407,7 +393,6 @@ TEST_CASE("callable bool returns produce bool time series outputs",
 
 TEST_CASE("callable start scheduling can be disabled for scalar-only nodes",
           "[feature:node-api][definition:function][series:value][scalar:integer][feature:scheduling]") {
-
     const auto source = node([](int value) { return value; });
 
     const auto disabled = node(eval = [](int value) { return value; }, schedule_on_start = false);
@@ -422,7 +407,6 @@ TEST_CASE("callable start scheduling can be disabled for scalar-only nodes",
 
 TEST_CASE("callable scalar-or-time-series inputs accept constant and default bindings",
           "[feature:node-api][definition:function][series:value][scalar:integer][guarantee:const]") {
-
     const auto add = node([](int lhs, int rhs) { return lhs + rhs; });
 
     const auto graph = [=](wp<TS<i64>> input) {
@@ -434,7 +418,6 @@ TEST_CASE("callable scalar-or-time-series inputs accept constant and default bin
 
 TEST_CASE("callable scalar-or-time-series inputs read references to values",
           "[feature:node-api][feature:reference][definition:function][series:value]") {
-
     const auto identity = node([](int value) { return value; });
 
     const auto graph = [=](wp<TS<i64>> input) { return identity(input.as<REF<TS<i64>>>()); };
@@ -444,7 +427,6 @@ TEST_CASE("callable scalar-or-time-series inputs read references to values",
 
 TEST_CASE("callable scalar-or-time-series inputs preserve stronger guarantees",
           "[feature:node-api][definition:function][series:value][scalar:integer][guarantee:final][guarantee:const]") {
-
     const auto identity = node([](int value) { return value; });
     const std::array<const Type *, 1> final_input{&TS<i64, TimeSeriesGuarantee::final>::type()};
     const std::array<const Type *, 1> const_input{&TS<i64, TimeSeriesGuarantee::const_>::type()};
@@ -455,7 +437,6 @@ TEST_CASE("callable scalar-or-time-series inputs preserve stronger guarantees",
 
 TEST_CASE("promoted callable parameters coexist with explicit input, scalar, and output fields",
           "[feature:node-api][definition:function][series:value][scalar:integer]") {
-
     const auto combine = node([](int offset, In<TS<i64>> input, Scalar<i64> factor, Out<TS<i64>> output) {
         output.set(offset + *input * factor.value());
     });
@@ -469,7 +450,6 @@ TEST_CASE("promoted callable parameters coexist with explicit input, scalar, and
 
 TEST_CASE("aggregate plain fields accept scalar or time-series bindings beside explicit fields",
           "[feature:node-api][definition:aggregate][series:value][scalar:integer]") {
-
     const auto sum = node<promoted_aggregate>();
 
     const auto graph = [=](wp<TS<i64>> input) { return sum(2, input, 3, std::optional<int>{4}); };
@@ -487,7 +467,6 @@ TEST_CASE("aggregate plain fields accept scalar or time-series bindings beside e
 
 TEST_CASE("aggregate lifecycle functions reject promoted time-series fields",
           "[feature:node-api][definition:aggregate][series:value][scalar:integer][feature:lifecycle]") {
-
     const auto node_template = node<lifecycle_aggregate>();
 
     const auto valid_graph = [=](wp<TS<i64>> input) { return node_template(3, input); };
@@ -505,7 +484,6 @@ TEST_CASE("aggregate lifecycle functions reject promoted time-series fields",
 
 TEST_CASE("aggregate invalidation receives promoted scalar and empty optional fields",
           "[feature:node-api][definition:aggregate][series:value][scalar:integer][feature:lifecycle]") {
-
     const auto node_template = node<promoted_invalidation_aggregate>();
 
     const auto gate = node([](In<TS<i64>> input, Out<TS<i64>> output) {
@@ -530,7 +508,6 @@ TEST_CASE("aggregate invalidation receives promoted scalar and empty optional fi
 
 TEST_CASE("promoted fields coexist with aggregate dynamic reference inputs",
           "[feature:node-api][definition:aggregate][series:value][feature:reference]") {
-
     const auto node_template = node<promoted_dynamic_reference_aggregate>();
 
     const auto scalar_graph = [=](wp<TS<i64>> input) {
@@ -549,7 +526,6 @@ TEST_CASE("promoted fields coexist with aggregate dynamic reference inputs",
 
 TEST_CASE("compiled runtime metadata locates interleaved parameters, output, and dynamic reference slots",
           "[feature:node-api][definition:aggregate][series:value][scalar:integer][feature:reference]") {
-
     const auto combine = node<compiled_runtime_metadata_aggregate>();
 
     const auto read = node([](i64 value) { return value; });

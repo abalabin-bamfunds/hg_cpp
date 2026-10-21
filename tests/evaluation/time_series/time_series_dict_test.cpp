@@ -19,7 +19,6 @@ using namespace bg;
 
 TEST_CASE("a dictionary graph preserves its input updates",
           "[evaluation][tsd][feature:collection-change][series:tsd][scalar:integer][transition:update]") {
-
     const auto identity = [](wp<TSD<i64, TS<i64>>> input) { return input; };
 
     const auto actual = testing::test_graph(identity, {{{1, 10}, {2, 20}}, {{1, 11}}});
@@ -29,7 +28,6 @@ TEST_CASE("a dictionary graph preserves its input updates",
 
 TEST_CASE("a node can read one dictionary item",
           "[evaluation][tsd][feature:getitem][series:tsd][scalar:integer][binding:direct][transition:update]") {
-
     const auto select = node([](In<TSD<i64, TS<i64>>> input, Out<TS<i64>> output) {
         auto changed = input.item_modified(1);
         input.for_each_added([&](const auto &key) { changed = changed || key.value() == 1; });
@@ -48,7 +46,6 @@ TEST_CASE("a node can read one dictionary item",
 TEST_CASE("a node can select a dictionary item using a time series key",
           "[evaluation][tsd][feature:getitem][series:tsd][series:value][scalar:integer]"
           "[binding:direct][transition:update]") {
-
     const auto select = node([](In<TSD<i64, TS<i64>>> input, i64 key) { return *input[key]; });
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input, wp<TS<i64>> key) {
@@ -175,7 +172,6 @@ TEST_CASE("a TSD update removes an entry with REMOVE",
 
 TEST_CASE("a TSD update rejects a root INVALID marker",
           "[evaluation][tsd][series:tsd][feature:collection-change][validity]") {
-
     const auto source = node([](Out<TSD<i64, TS<i64>>> output) {
         output.apply(literal::INVALID);
     });
@@ -302,7 +298,6 @@ TEST_CASE("a time series dictionary valid cursor skips invalid items",
 TEST_CASE("dictionary item queries distinguish addition from modification",
           "[evaluation][tsd][feature:collection-change][series:tsd][scalar:integer]"
           "[transition:addition][transition:update][binding:direct]") {
-
     const auto modified = node([](In<TSD<i64, TS<i64>>> input) { return input.item_modified(1); });
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return modified(input); };
@@ -348,7 +343,6 @@ const auto rekey_reference_dictionary = node([](In<TSD<i64, REF<TS<i64>>>> input
 TEST_CASE("rekeying a reference dictionary preserves item updates and removals",
           "[evaluation][tsd][reference][feature:reference][series:tsd][scalar:integer]"
           "[binding:reference-to-value][binding:value-to-reference][transition:update][transition:removal]") {
-
     const auto summarize = node([](In<TSD<i64, TS<i64>>> input) {
         return static_cast<int>(input.size() * 100) + (input.contains(10) ? *input[10] : -1);
     });
@@ -363,7 +357,6 @@ TEST_CASE("rekeying a reference dictionary preserves item updates and removals",
 TEST_CASE("source dictionary item routes batch fan-out to reference dictionaries",
           "[evaluation][tsd][reference][feature:reference][series:tsd][scalar:integer]"
           "[binding:reference-to-value][binding:value-to-reference][shape:fan-out][transition:update]") {
-
     const auto source = node(
         [](i64 input, Out<TSD<i64, TS<i64>>> output) {
             for (auto key = i64{}; key != 31; ++key) {
@@ -404,7 +397,6 @@ TEST_CASE("source dictionary item routes batch fan-out to reference dictionaries
 TEST_CASE("a reference dictionary dereferences unrelated node outputs",
           "[evaluation][tsd][reference][feature:reference][series:tsd][series:value][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value][transition:update]") {
-
     const auto increment = node([](i64 input) { return input + 1; });
 
     const auto scale = node([](i64 input) { return input * 10; });
@@ -428,7 +420,6 @@ TEST_CASE("an explicit dictionary reference input receives a recursively adapted
           "[evaluation][tsd][reference][feature:reference][series:tsd][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-reference][binding:reference-to-value]"
           "[transition:update][transition:removal]") {
-
     const auto pass = node([](In<REF<TSD<i64, REF<TS<i64>>>>> input,
                               Out<REF<TSD<i64, REF<TS<i64>>>>> output) { output.copy(input); });
 
@@ -446,7 +437,6 @@ TEST_CASE("an explicit dictionary reference input receives a recursively adapted
 TEST_CASE("a node observes dictionary item addition, removal, and restoration",
           "[evaluation][tsd][feature:getitem][series:tsd][scalar:integer][binding:direct][transition:addition]"
           "[transition:removal][transition:resurrection]") {
-
     const auto select = node([](In<TSD<i64, TS<i64>>> input, Out<TS<i64>> output) {
         if (input.contains(3)) {
             output.set(*input[3]);
@@ -465,7 +455,6 @@ TEST_CASE("a node observes dictionary item addition, removal, and restoration",
 TEST_CASE("a node can publish a contained dictionary reference",
           "[evaluation][tsd][reference][feature:getitem][series:tsd][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value][transition:update]") {
-
     const auto select = node([](In<TSD<i64, REF<TS<i64>>>> input,
                                     Out<REF<TS<i64>>> output) { output.copy(input[10]); });
 
@@ -479,7 +468,6 @@ TEST_CASE("a node can publish a contained dictionary reference",
 TEST_CASE("a node can read a collection-valued dictionary item",
           "[evaluation][tsd][tsl][feature:getitem][series:tsd][series:fixed-tsl][scalar:integer]"
           "[binding:direct][transition:update]") {
-
     const auto sum = node([](In<TSL<TS<i64>, 2>> input) { return *input[0] + *input[1]; });
 
     const auto select = node([](In<TSD<i64, TSL<TS<i64>, 2>>> input,
@@ -522,7 +510,6 @@ struct resurrecting_selected_item_definition {
 TEST_CASE("a node observes same-cycle dictionary item resurrection",
           "[evaluation][tsd][feature:getitem][series:tsd][scalar:integer][binding:direct]"
           "[transition:resurrection]") {
-
     const auto source = node<resurrecting_selected_item_definition>();
 
     const auto select = node([](In<TSD<i64, TS<i64>>> input) { return *input[3]; });
@@ -536,7 +523,6 @@ TEST_CASE("a node observes same-cycle dictionary item resurrection",
 TEST_CASE("time series dictionaries can contain time series dictionaries",
           "[evaluation][tsd][series:tsd][feature:collection-change][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct]") {
-
     const auto select = node([](In<TSD<i64, TSD<i64, TS<i64>>>> input) { return *input[1][2]; });
 
     const auto graph = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> input) {
@@ -559,7 +545,6 @@ template <template <typename, auto...> typename Field> struct DictionaryBundle {
 TEST_CASE("time series dictionaries can contain runtime-sized time series",
           "[evaluation][tsd][series:tsd][tsb][series:tsb][feature:collection-change][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct][schema:named]") {
-
     const auto extract = node([](In<TSD<i64, TSB<DictionaryBundle>>> input) { return *input[1]->value; });
 
     const auto graph = [&](wp<TSD<i64, TSB<DictionaryBundle>>> input) { return extract(input); };
@@ -588,7 +573,6 @@ TEST_CASE("adding and removing a new dictionary item in one invocation produces 
           "[evaluation][tsd][series:tsd][feature:collection-change][transition:removal]"
           "[transition:update][scalar:integer][representation:native][declaration:concrete]"
           "[binding:direct][transition:addition]") {
-
     const auto source = node<canceled_add_source_definition>();
 
     const auto marker = node([](In<TSD<i64, TS<i64>>>) { return true; });
@@ -671,7 +655,6 @@ struct nested_item_resurrecting_source_definition {
 TEST_CASE("resurrecting a dictionary collection item reports a modification",
           "[evaluation][tsd][series:tsd][feature:collection-change][transition:resurrection]"
           "[scalar:integer][representation:native][declaration:concrete][binding:direct]") {
-
     const auto source = node<nested_item_resurrecting_source_definition>();
 
     const auto count = node([](In<TSD<i64, TSD<i64, TS<i64>>>> input) {
@@ -689,7 +672,6 @@ TEST_CASE("resurrecting a dictionary collection item reports a modification",
 TEST_CASE("a generic dictionary view uses its resolved item type",
           "[evaluation][tsd][series:tsd][generic][declaration:generic][feature:collection-change]"
           "[scalar:integer][representation:native][binding:direct]") {
-
     const auto copy = node([](In<TSD<i64, TS<SCALAR>>> input, Out<TSD<i64, TS<SCALAR>>> output) {
         input.for_each([&](const auto &key, const auto &item) { output[key].set_value(item.value_view()); });
     });
@@ -756,7 +738,6 @@ struct invalidating_dict_input_definition {
 TEST_CASE("a dictionary preserves its value when a required input becomes invalid",
           "[evaluation][tsd][series:tsd][validity][feature:collection-change][validity:required]"
           "[scalar:integer][representation:native][declaration:concrete][binding:direct]") {
-
     const auto source = node<invalidating_dict_input_definition>();
 
     const auto dict_from_value = node([](i64 input, Out<TSD<i64, TS<i64>>> output) {
@@ -862,7 +843,6 @@ TEST_CASE("an invalid dictionary input has no entries to enumerate",
 TEST_CASE("a dictionary view accepts its exact non-canonical key type",
           "[evaluation][series:tsd][feature:time-series-view][feature:collection-change]"
           "[scalar:integer][transition:addition][transition:removal][binding:direct]") {
-
     const auto read = node([](In<TSD<i64, TS<i64>>> input) {
         return input.contains(7) && !input.item_modified(7) ? *input[7] : -1;
     });
@@ -876,7 +856,6 @@ TEST_CASE("a dictionary view accepts its exact non-canonical key type",
 
 TEST_CASE("a dictionary input accepts its exact non-canonical key type",
           "[evaluation][feature:getitem][series:tsd][scalar:integer][binding:direct]") {
-
     const auto select = node([](In<TSD<i64, TS<i64>>> input, Out<TS<i64>> output) {
         if (input.contains(7)) {
             output.set(*input[7]);

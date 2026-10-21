@@ -85,7 +85,6 @@ TEST_CASE("a node can delay time series ticks by one evaluation cycle",
           "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
           "[series:value][scalar:i64]"
           "[shape:single-node][transition:update]") {
-
     const auto delay = bg::node<one_tick_delay_definition<TS<i64>>>();
 
     const auto graph = [&](bg::wp<TS<i64>> input) { return delay(input); };
@@ -491,7 +490,6 @@ TEST_CASE("queue tick application accepts no-ops and leaves an effective tick pe
 
 TEST_CASE("queue tick application invalidates only untouched collection items",
           "[feature:time-series-storage][series:fixed-tsl][queue][transition:invalidation]") {
-
     const auto source = bg::node([](In<TS<bool>> initialize, Out<TSL<TS<i64>, 2>> output) {
         if (*initialize) {
             output[0].set(1);
@@ -857,7 +855,6 @@ TEST_CASE("discarding a scalar tick consumes a chain record across blocks",
 TEST_CASE("discarding a collection tick consumes keys across chain blocks",
           "[evaluation][feature:test-graph][feature:time-series-storage][series:tss][scalar:i64]"
           "[shape:chain][transition:addition]") {
-
     const auto discard_record = bg::node([](In<TSS<i64>> input, Out<TS<bool>> output) {
         const auto buffer = bg::util::buffer::chain(3);
         auto writer = TimeSeriesTickWriter{buffer};
@@ -878,7 +875,6 @@ TEST_CASE("discarding a collection tick consumes keys across chain blocks",
 
 TEST_CASE("a set tick stores only added and removed keys",
           "[feature:time-series-storage][series:tss][scalar:i64][transition:update]") {
-
     const auto measure_set = bg::node<set_record_size_definition>();
 
     const auto set_graph = [&](bg::wp<TSS<i64>> input) { return measure_set(input); };
@@ -889,7 +885,6 @@ TEST_CASE("a set tick stores only added and removed keys",
 
 TEST_CASE("a dictionary tick stores only its added or modified item",
           "[feature:time-series-storage][series:tsd][scalar:i64][transition:update]") {
-
     const auto measure_dictionary = bg::node<dictionary_record_size_definition>();
 
     const auto dictionary_graph = [&](bg::wp<TSD<i64, TS<i64>>> input) { return measure_dictionary(input); };
@@ -899,7 +894,6 @@ TEST_CASE("a dictionary tick stores only its added or modified item",
 }
 
 TEST_CASE("an empty TSS tick contains a terminator", "[feature:time-series-storage][series:tss][scalar:i64]") {
-
     const auto measure_set = bg::node([](In<TSS<i64>> input, Out<TS<i64>> output) {
         const auto buffer = bg::util::buffer::contiguous(16);
         auto writer = TimeSeriesTickWriter{buffer};
@@ -917,7 +911,6 @@ TEST_CASE("an empty TSS tick contains a terminator", "[feature:time-series-stora
 }
 
 TEST_CASE("an empty TSD tick contains a terminator", "[feature:time-series-storage][series:tsd][scalar:i64]") {
-
     const auto measure_dictionary = bg::node([](In<TSD<i64, TS<i64>>> input, Out<TS<i64>> output) {
         const auto buffer = bg::util::buffer::contiguous(16);
         auto writer = TimeSeriesTickWriter{buffer};
@@ -937,7 +930,6 @@ TEST_CASE("an empty TSD tick contains a terminator", "[feature:time-series-stora
 TEST_CASE("a node delays the first valid empty TSS tick by one evaluation cycle",
           "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
           "[series:tss][scalar:i64][shape:chain][transition:first-tick]") {
-
     const auto delay = bg::node<one_tick_delay_definition<TSS<i64>>>();
 
     const auto size = bg::node<collection_size_definition<TSS<i64>>>();
@@ -952,7 +944,6 @@ TEST_CASE("a node delays the first valid empty TSS tick by one evaluation cycle"
 TEST_CASE("a node delays the first valid empty TSD tick by one evaluation cycle",
           "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
           "[series:tsd][scalar:i64][shape:chain][transition:first-tick]") {
-
     const auto delay = bg::node<one_tick_delay_definition<TSD<i64, TS<i64>>>>();
 
     const auto size = bg::node<collection_size_definition<TSD<i64, TS<i64>>>>();
@@ -967,7 +958,6 @@ TEST_CASE("a node delays the first valid empty TSD tick by one evaluation cycle"
 TEST_CASE("a node delays a new TSD key with an invalid TSS child",
           "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
           "[series:tsd][scalar:i64][shape:chain][transition:addition]") {
-
     const auto add_key = bg::node([](In<TS<i64>> trigger, Out<TSD<i64, TSS<i64>>> output) {
         if (trigger.modified()) {
             (void)output[1];
@@ -992,7 +982,6 @@ TEST_CASE("a node delays a new TSD key with an invalid TSS child",
 TEST_CASE("a node delays a new TSD key with an invalid TSD child",
           "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
           "[series:tsd][scalar:i64][shape:chain][transition:addition]") {
-
     const auto add_key = bg::node([](In<TS<i64>> trigger, Out<TSD<i64, TSD<i64, TS<i64>>>> output) {
         if (trigger.modified()) {
             (void)output[1];
@@ -1018,7 +1007,6 @@ TEST_CASE("a node delays time series invalidation and revalidation by one evalua
           "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
           "[feature:validity][series:value][scalar:i64][shape:chain]"
           "[transition:invalidation][transition:revalidation]") {
-
     const auto invalidate_on_zero = bg::node([](In<TS<i64>> input, Out<TS<i64>> output) {
         if (*input == 0) {
             output.invalidate();
@@ -1040,7 +1028,6 @@ TEST_CASE("a node delays time series invalidation and revalidation by one evalua
 TEST_CASE("an older invalidation is not retained again when another input ticks",
           "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
           "[feature:validity][series:value][scalar:i64][shape:chain][transition:invalidation]") {
-
     const auto invalidate_on_zero = bg::node([](In<TS<i64>> input, Out<TS<i64>> output) {
         if (*input == 0) {
             output.invalidate();
@@ -1065,7 +1052,6 @@ TEST_CASE("an older invalidation is not retained again when another input ticks"
 TEST_CASE("a node delays time series set changes by one evaluation cycle",
           "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
           "[series:tss][scalar:i64][shape:chain][transition:addition][transition:removal]") {
-
     const auto delay = bg::node<one_tick_delay_definition<TSS<i64>>>();
 
     const auto sum = bg::node<set_sum_definition>();
@@ -1081,7 +1067,6 @@ TEST_CASE("a node delays time series set changes by one evaluation cycle",
 TEST_CASE("a node delays fixed list item changes by one evaluation cycle",
           "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
           "[series:fixed-tsl][scalar:i64][shape:chain][transition:update]") {
-
     const auto delay = bg::node<one_tick_delay_definition<TSL<TS<i64>, 2>>>();
 
     const auto sum = bg::node<fixed_list_sum_definition>();
@@ -1103,7 +1088,6 @@ TEST_CASE("a node delays fixed list item changes by one evaluation cycle",
 TEST_CASE("a first fixed list tick can contain a never-valid item",
           "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
           "[series:fixed-tsl][scalar:i64][shape:chain][transition:first-tick]") {
-
     const auto delay = bg::node<one_tick_delay_definition<TSL<TS<i64>, 2>>>();
 
     const auto track_updates = bg::node<fixed_list_update_tracker_definition>();
@@ -1123,7 +1107,6 @@ TEST_CASE("a first fixed list tick can contain a never-valid item",
 TEST_CASE("a later fixed list item tick does not repeat an earlier invalidation",
           "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
           "[series:fixed-tsl][scalar:i64][shape:chain][transition:invalidation][transition:update]") {
-
     const auto delay = bg::node<one_tick_delay_definition<TSL<TS<i64>, 2>>>();
 
     const auto track_updates = bg::node<fixed_list_update_tracker_definition>();
@@ -1153,7 +1136,6 @@ TEST_CASE("a later fixed list item tick does not repeat an earlier invalidation"
 TEST_CASE("a node delays bundle field changes by one evaluation cycle",
           "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
           "[series:tsb][scalar:i64][shape:chain][transition:update]") {
-
     const auto delay = bg::node<one_tick_delay_definition<TSB<TickPair>>>();
 
     const auto sum = bg::node<bundle_sum_definition>();
@@ -1168,7 +1150,6 @@ TEST_CASE("a node delays bundle field changes by one evaluation cycle",
 TEST_CASE("a node delays dictionary item changes by one evaluation cycle",
           "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
           "[series:tsd][scalar:i64][shape:chain][transition:addition][transition:update]") {
-
     const auto delay = bg::node<one_tick_delay_definition<TSD<i64, TS<i64>>>>();
 
     const auto sum = bg::node<dictionary_sum_definition>();
@@ -1184,7 +1165,6 @@ TEST_CASE("a node delays dictionary item changes by one evaluation cycle",
 TEST_CASE("a node delays nested dictionary changes by one evaluation cycle",
           "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
           "[series:tsd][scalar:i64][shape:chain][transition:addition][transition:update][transition:removal]") {
-
     const auto delay = bg::node<one_tick_delay_definition<TSD<i64, TSD<i64, TS<i64>>>>>();
 
     const auto sum = bg::node<nested_dictionary_sum_definition>();
@@ -1200,7 +1180,6 @@ TEST_CASE("a node delays nested dictionary changes by one evaluation cycle",
 TEST_CASE("a node delays changes to nested dictionary keys by one evaluation cycle",
           "[evaluation][feature:test-graph][feature:time-series-storage][feature:timed-scheduling]"
           "[series:tsd][scalar:i64][shape:chain][transition:addition][transition:removal]") {
-
     const auto delay = bg::node<one_tick_delay_definition<TSD<i64, TSD<i64, TS<i64>>>>>();
 
     const auto sum = bg::node<nested_dictionary_sum_definition>();
@@ -1724,7 +1703,6 @@ TEST_CASE("queue message projection rejects malformed collection selectors",
 
 TEST_CASE("queue message nested dictionaries replay into output storage",
           "[evaluation][feature:test-graph][feature:time-series-storage][series:tsd][scalar:i64]") {
-
     const auto replay = bg::node([](In<TS<i64>> input, Out<TSD<i64, TSD<i64, TS<i64>>>> output) {
         const auto &runtime_type = bg::cpp_time_series_runtime_type<TSD<i64, TSD<i64, TS<i64>>>>();
         const auto buffer = bg::util::buffer::concurrent_chain(256, 4);

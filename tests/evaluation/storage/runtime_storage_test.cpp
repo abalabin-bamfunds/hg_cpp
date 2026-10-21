@@ -91,7 +91,6 @@ struct float_sink_definition {
 } // namespace
 
 TEST_CASE("a node without output uses no output storage", "[evaluation][storage][feature:graph-compilation]") {
-
     const auto constant = bg::node<constant_definition>();
 
     const auto float_sink = bg::node<float_sink_definition>();
@@ -137,7 +136,6 @@ struct add_definition {
 } // namespace
 
 TEST_CASE("runtime graphs keep separate runtime storage", "[evaluation][storage][feature:graph-compilation]") {
-
     const auto constant = bg::node<constant_definition>();
 
     const auto add = bg::node<add_definition>();
@@ -185,7 +183,6 @@ struct string_dictionary_source_definition {
 
 TEST_CASE("a runtime graph releases dictionary time-series storage",
           "[evaluation][storage][tsd][series:tsd][feature:graph-compilation]") {
-
     const auto source = bg::node<string_dictionary_source_definition>();
     auto wiring = GraphWiring{};
 
@@ -251,7 +248,6 @@ struct int_sink_definition {
 } // namespace
 
 TEST_CASE("scalar fields and state bind to their storage", "[evaluation][storage][feature:graph-compilation]") {
-
     const auto stateful_scalar = bg::node<stateful_scalar_definition>();
 
     const auto int_sink = bg::node<int_sink_definition>();

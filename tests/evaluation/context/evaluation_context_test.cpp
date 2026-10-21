@@ -52,7 +52,6 @@ struct scratch_pad_source_definition {
 
 TEST_CASE("an evaluation context scratch pad uses caller-owned storage first",
           "[evaluation][context][scratch][feature:evaluation-context]") {
-
     const auto scratch_pad_source = bg::node<scratch_pad_source_definition>();
 
     bg::run_graph([&] { scratch_pad_source(); });
@@ -89,7 +88,6 @@ struct scratch_reuse_sink_definition {
 
 TEST_CASE("evaluation contexts reset node scratch before publishing output",
           "[evaluation][context][scratch][feature:evaluation-context]") {
-
     const auto source = bg::node<scratch_reuse_source_definition>();
 
     const auto sink = bg::node<scratch_reuse_sink_definition>();

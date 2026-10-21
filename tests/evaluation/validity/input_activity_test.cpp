@@ -17,7 +17,6 @@ using namespace bg::literals;
 
 TEST_CASE("an active input schedules evaluation and a passive input supplies its latest value",
           "[evaluation][input_activity][feature:input-activity][activity:active][activity:passive]") {
-
     const auto combine = node([](float trigger, In<TS<float>, passive> sampled) { return trigger + *sampled; });
 
     const auto consume = node([](float sum) { return sum; });
@@ -35,7 +34,6 @@ TEST_CASE("an active input schedules evaluation and a passive input supplies its
 TEST_CASE("an active optional input schedules evaluation on invalidation and revalidation",
           "[evaluation][input_activity][validity][feature:input-activity][activity:active]"
           "[validity:optional][transition:invalidation][transition:revalidation]") {
-
     const auto observe = node([](In<TS<float>, optional> input) { return input.valid(); });
 
     CHECK(testing::test_graph(observe, {1.0F, literal::INVALID, 1.0F}).equals({true, false, true}));
@@ -44,7 +42,6 @@ TEST_CASE("an active optional input schedules evaluation on invalidation and rev
 TEST_CASE("a passive optional input does not schedule evaluation",
           "[evaluation][input_activity][validity][feature:input-activity][activity:passive]"
           "[validity:optional]") {
-
     const auto observe = node([](In<TS<float>, passive, optional> input, bool) { return input.valid(); });
 
     const auto actual = testing::test_graph(
@@ -57,7 +54,6 @@ TEST_CASE("a passive optional input does not schedule evaluation",
 TEST_CASE("a passive required input propagates invalidation without evaluation",
           "[evaluation][input_activity][validity][feature:input-activity][activity:passive]"
           "[validity:required][transition:invalidation]") {
-
     const auto copy = node([](In<TS<float>, passive> input, bool) { return *input; });
 
     const auto observe = node([](std::optional<float> input) { return input.value_or(-1.0F); });
@@ -127,7 +123,6 @@ TEST_CASE("a passive dynamic input starts passive",
 
 TEST_CASE("a callable dynamic input controls only its own scheduling",
           "[feature:input-activity][series:value][definition:function][activity:active][shape:multiple]") {
-
     const auto gate = node([](In<TS<i64>, dynamic_activity> input, In<TS<i64>, optional> control) {
         if (control.valid()) {
             if (*control == 0) {
@@ -148,7 +143,6 @@ TEST_CASE("a callable dynamic input controls only its own scheduling",
 TEST_CASE("a dynamic input controls scheduling for a default binding",
           "[feature:input-activity][feature:operator][series:value][definition:function]"
           "[activity:active][shape:multiple]") {
-
     const auto gate = node([](In<TS<i64>, dynamic_activity> input, In<TS<i64>, optional> control) {
         if (control.valid()) {
             if (*control == 0) {
@@ -270,7 +264,6 @@ TEST_CASE("a dynamic optional input applies its current activity to validity cha
 TEST_CASE("a dynamic input connected to a collection item controls its scheduling",
           "[feature:input-activity][feature:collection-change][series:fixed-tsl][definition:function]"
           "[activity:active][shape:chain]") {
-
     const auto gate = node([](In<TS<i64>, dynamic_activity> input) {
         const auto value = *input;
         input.make_passive();
@@ -309,7 +302,6 @@ struct runtime_local_activity_definition {
 TEST_CASE("runtime graphs created from one compiled graph have independent input activity",
           "[feature:input-activity][feature:graph-compilation][series:value][definition:aggregate]"
           "[activity:active][shape:multiple]") {
-
     const auto source = node([] { return 1.0F; });
 
     const auto controlled = node<runtime_local_activity_definition>();

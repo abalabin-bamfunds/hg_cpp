@@ -19,7 +19,6 @@ using namespace bg::literals;
 TEST_CASE("map validates collection key types for every graph form",
           "[feature:map][feature:wiring][feature:type-system][series:tsd]"
           "[definition:function][definition:runtime]") {
-
     const auto integers = node([](Out<TSD<i64, TS<float>>>) {});
 
     const auto booleans = node([](Out<TSD<bool, TS<float>>>) {});
@@ -46,7 +45,6 @@ TEST_CASE("map validates collection key types for every graph form",
 
 TEST_CASE("map rejects a graph template with an unmatched argument count",
           "[feature:map][feature:wiring][series:tsd][definition:runtime]") {
-
     const auto values = node([](Out<TSD<i64, TS<float>>>) {});
 
     const auto two_parameters = graph(
@@ -58,7 +56,6 @@ TEST_CASE("map rejects a graph template with an unmatched argument count",
 
 TEST_CASE("map requires one selected TSS for every graph form",
           "[feature:map][feature:wiring][series:tss][definition:function][definition:runtime]") {
-
     const auto first = node([](Out<TSS<i64>>) {});
 
     const auto second = node([](Out<TSS<i64>>) {});
@@ -121,7 +118,6 @@ TEST_CASE("map passes reference items and pass-through collections consistently"
 TEST_CASE("map resolves explicit and inferred key arguments for every graph form",
           "[feature:map][feature:wiring][series:tsd][definition:function]"
           "[definition:runtime][guarantee:const]") {
-
     const auto values = node([](Out<TSD<i64, TS<float>>>) {});
 
     const auto function = [](wp<TS<i64, TimeSeriesGuarantee::const_>> key,
@@ -148,7 +144,6 @@ TEST_CASE("map resolves explicit and inferred key arguments for every graph form
 
 TEST_CASE("map reports option errors through its public call forms",
           "[feature:map][feature:wiring][series:tsd][definition:function][definition:runtime]") {
-
     const auto values = node([](Out<TSD<i64, TS<float>>>) {});
 
     const auto function = [](wp<TS<float>> value) { return value; };

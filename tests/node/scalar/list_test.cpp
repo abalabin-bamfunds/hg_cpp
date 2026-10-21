@@ -15,7 +15,6 @@ using namespace bg;
 
 TEST_CASE("a scalar list propagates through a value time series",
           "[node][time_series][scalar][list][scalar:list][feature:state]") {
-
     const auto source = node([](Scalar<List<i64>> value, Out<TS<List<i64>>> output) { output.set_value(value); });
 
     const auto sum = node([](In<TS<List<i64>>> input) {
@@ -45,7 +44,6 @@ struct inspect_scalar_list_state {
 
 TEST_CASE("scalar list state is available during node start",
           "[node][state][scalar][list][scalar:list][feature:state][transition:start]") {
-
     const auto inspect = node<inspect_scalar_list_state>();
 
     const auto graph = [&] { return inspect(); };
@@ -64,7 +62,6 @@ struct inspect_scalar_list {
 
 TEST_CASE("a scalar list is available from packed graph scalar storage",
           "[node][scalar][list][scalar:list][feature:state]") {
-
     const auto inspect = node<inspect_scalar_list>();
 
     const auto input = ScalarValue<List<i64>>{std::array<i64, 2>{1, 2}};
@@ -76,7 +73,6 @@ TEST_CASE("a scalar list is available from packed graph scalar storage",
 
 TEST_CASE("a runtime graph releases scalar list time-series storage",
           "[node][time_series][scalar][list][scalar:list][allocation][feature:state]") {
-
     const auto source = node([](Scalar<List<i64>> value, Out<TS<List<i64>>> output) { output.set_value(value); });
 
     const auto input = ScalarValue<List<i64>>{std::array<i64, 2>{1, 2}};

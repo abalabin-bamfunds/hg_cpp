@@ -18,7 +18,6 @@ using namespace bg::literals;
 TEST_CASE("all_valid checks every item in a fixed list",
           "[evaluation][validity][feature:validity][validity:all-valid][series:fixed-tsl][feature:collection-change]"
           "[transition:invalidation][transition:revalidation]") {
-
     const auto sum = node([](In<TSL<TS<i64>, 2>, all_valid> input) {
         return *input[0] + *input[1];
     });
@@ -57,7 +56,6 @@ struct NestedValidityDerivedBundle : bundle_extends<NestedValidityBaseBundle, Fi
 TEST_CASE("all_valid rejects an unpopulated fixed-list position",
           "[evaluation][validity][feature:validity][validity:all-valid][series:fixed-tsl]"
           "[feature:collection-change]") {
-
     const auto query = node([](In<TSL<TS<i64>, 3>> input) { return input.all_valid(); });
 
     const auto gate = node([](In<TSL<TS<i64>, 3>, all_valid> input) {
@@ -70,7 +68,6 @@ TEST_CASE("all_valid rejects an unpopulated fixed-list position",
 TEST_CASE("an erased all_valid input uses the resolved runtime type",
           "[evaluation][validity][feature:validity][validity:all-valid][declaration:generic]"
           "[series:fixed-tsl][transition:invalidation][transition:revalidation]") {
-
     const auto query = node([](In<TS_T> input) { return input.all_valid(); });
 
     const auto gate = node([](In<TS_T, all_valid>) { return i64{1}; });
@@ -87,7 +84,6 @@ TEST_CASE("an erased all_valid input uses the resolved runtime type",
 
 TEST_CASE("all_valid treats a valid empty set as valid",
           "[evaluation][validity][feature:validity][validity:all-valid][series:tss][transition:start]") {
-
     const auto size = node([](In<TSS<i64>, all_valid> input) { return static_cast<i64>(input.size()); });
 
     const auto query = node([](In<TSS<i64>> input) { return input.all_valid(); });
@@ -98,7 +94,6 @@ TEST_CASE("all_valid treats a valid empty set as valid",
 
 TEST_CASE("all_valid reports an invalid root even when the collection has no data",
           "[evaluation][validity][feature:validity][validity:all-valid][series:fixed-tsl][transition:start]") {
-
     const auto query = node(
         eval = [](In<TSL<TS<i64>, 2>, optional> input) { return input.all_valid(); },
         schedule_on_start = true);
@@ -139,7 +134,6 @@ TEST_CASE("aggregate all_valid inputs gate evaluation until every list item is v
 TEST_CASE("free TSL queries and enforces immediate item validity",
           "[evaluation][validity][feature:validity][validity:all-valid][series:fixed-tsl][free]"
           "[representation:free][transition:invalidation][transition:revalidation]") {
-
     const auto query = node([](In<TSL<TS<i64>, 2>> input) { return input.all_valid(); });
 
     const auto sum = node([](In<TSL<TS<i64>, 2>, all_valid> input) {
@@ -164,7 +158,6 @@ TEST_CASE("all_valid includes optional fields in a bundle",
           "[evaluation][validity][feature:validity][validity:all-valid][series:tsb][schema:named]"
           "[feature:collection-change]"
           "[transition:first-tick][transition:revalidation]") {
-
     const auto sum = node([](In<TSB<OptionalFieldBundle>, all_valid> input) {
         return *input->first + *input->second;
     });
@@ -176,7 +169,6 @@ TEST_CASE("all_valid includes optional fields in a bundle",
 TEST_CASE("free TSB queries and enforces immediate field validity",
           "[evaluation][validity][feature:validity][validity:all-valid][series:tsb][free]"
           "[representation:free][transition:invalidation][transition:revalidation]") {
-
     const auto query = node([](In<TSB<OptionalFieldBundle>> input) { return input.all_valid(); });
 
     const auto sum = node([](In<TSB<OptionalFieldBundle>, all_valid> input) {
@@ -201,7 +193,6 @@ TEST_CASE("all_valid uses the declared base schema for native derived bundle sto
           "[evaluation][validity][feature:validity][validity:all-valid][series:tsb][schema:named]"
           "[binding:covariant][representation:native]"
           "[transition:invalidation][transition:revalidation]") {
-
     const auto inspect = node([](In<TSB<ValidityBaseBundle>, all_valid> input) {
         return *input->value;
     });
@@ -217,7 +208,6 @@ TEST_CASE("all_valid uses the declared base schema for native derived bundle sto
 TEST_CASE("all_valid uses the declared base schema for free derived bundle fields",
           "[evaluation][validity][feature:validity][validity:all-valid][series:tsb][schema:named]"
           "[binding:covariant][representation:free][transition:invalidation][transition:revalidation]") {
-
     const auto inspect_base = node([](In<TSB<ValidityBaseBundle>> input) { return input.all_valid(); });
 
     const auto inspect_derived = node([](In<TSB<ValidityDerivedBundle>> input) { return input.all_valid(); });
@@ -251,7 +241,6 @@ TEST_CASE("all_valid uses the declared base schema for free derived bundle field
 TEST_CASE("all_valid checks nested bundle roots without recursively checking their fields",
           "[evaluation][validity][feature:validity][validity:all-valid][series:tsb][schema:named]"
           "[binding:covariant][representation:native][feature:collection-change]") {
-
     const auto inspect = node([](In<TSB<NestedValidityBaseBundle>, all_valid> input) {
         return input.all_valid() && !input->nested.all_valid();
     });
@@ -296,7 +285,6 @@ TEST_CASE("all_valid follows a selected reference using the declared base schema
 TEST_CASE("all_valid ignores removed TSD items and accepts an empty live set",
           "[evaluation][validity][feature:validity][validity:all-valid][series:tsd][feature:collection-change]"
           "[transition:invalidation][transition:removal]") {
-
     const auto sum = node([](In<TS<i64>, all_valid> constant, In<TS<i64>> value, i64 adjustment,
                              In<TSD<i64, TS<i64>>, all_valid> input) {
         auto total = i64{};
@@ -318,7 +306,6 @@ TEST_CASE("all_valid ignores removed TSD items and accepts an empty live set",
 TEST_CASE("all_valid descriptors stay aligned across collection inputs, constants, and scalars",
           "[evaluation][validity][feature:validity][validity:all-valid][series:fixed-tsl][series:tsd]"
           "[guarantee:const][transition:start]") {
-
     const auto sum = node([](In<TS<i64>, all_valid> constant, In<TSL<TS<i64>, 2>, all_valid> list,
                              In<TS<i64>> pulse, i64 adjustment, In<TSD<i64, TS<i64>>, all_valid> dictionary) {
         return *constant + *list[0] + *list[1] + *pulse + adjustment + *dictionary[1];
@@ -334,7 +321,6 @@ TEST_CASE("all_valid descriptors stay aligned across collection inputs, constant
 
 TEST_CASE("all_valid accepts a constant leaf time series",
           "[evaluation][validity][feature:validity][validity:all-valid][series:value][feature:constant]") {
-
     const auto copy = node([](In<TS<i64>, all_valid> input) { return *input; });
 
     const auto graph = [&] { return copy(operators::const_(i64{42})); };
@@ -345,7 +331,6 @@ TEST_CASE("all_valid accepts a constant leaf time series",
 TEST_CASE("all_valid observes a defaulted input changing to its fallback",
           "[evaluation][validity][feature:validity][validity:all-valid][transition:invalidation]"
           "[transition:revalidation]") {
-
     const auto copy = node([](In<TS<i64>, all_valid> input) { return *input; });
 
     const auto graph = [&](wp<TS<i64>> source) { return copy(operators::default_(source, i64{0})); };
@@ -496,7 +481,6 @@ TEST_CASE("an all_valid invalidation handler runs once per failed transition",
 TEST_CASE("all_valid checks immediate nested items without recursively checking them",
           "[evaluation][validity][feature:validity][validity:all-valid][series:fixed-tsl]"
           "[feature:collection-change]") {
-
     const auto inspect = node([](In<TSL<TSL<TS<i64>, 2>, 1>, all_valid> input) {
         return input[0].valid() && !input[0].all_valid();
     });
@@ -509,7 +493,6 @@ TEST_CASE("all_valid checks immediate nested items without recursively checking 
 TEST_CASE("all_valid on a reference checks the reference rather than its target items",
           "[evaluation][validity][feature:validity][validity:all-valid][series:reference]"
           "[series:fixed-tsl]") {
-
     const auto inspect = node([](In<REF<TSL<TS<i64>, 2>>, all_valid> input) { return input.valid(); });
 
     const auto graph = [&](wp<TSL<TS<i64>, 2>> input) {
@@ -522,7 +505,6 @@ TEST_CASE("all_valid on a reference checks the reference rather than its target 
 TEST_CASE("a passive all_valid input checks items on scheduled evaluation attempts",
           "[evaluation][validity][feature:validity][validity:all-valid][feature:input-activity][series:fixed-tsl]"
           "[activity:passive][transition:invalidation]") {
-
     const auto combine = node([](In<TSL<TS<i64>, 2>, passive, all_valid> input, In<TS<i64>> pulse) {
         return *input[0] + *input[1] + *pulse;
     });
@@ -542,7 +524,6 @@ TEST_CASE("a passive all_valid input checks items on scheduled evaluation attemp
 TEST_CASE("dynamic activity defers all_valid item checks until a scheduled attempt",
           "[evaluation][validity][feature:validity][validity:all-valid][feature:input-activity]"
           "[series:fixed-tsl][activity:active][transition:invalidation][transition:revalidation]") {
-
     const auto observe = node([](In<TSL<TS<i64>, 2>, all_valid, dynamic_activity> input, In<TS<i64>> pulse) {
         const auto value = *input[0] + *input[1] + *pulse;
         input.make_passive();
@@ -579,7 +560,6 @@ struct timed_all_valid_input_gate {
 TEST_CASE("a timer evaluation checks passive all_valid items",
           "[evaluation][validity][feature:validity][validity:all-valid][series:fixed-tsl]"
           "[activity:passive][feature:timed-scheduling][transition:invalidation][transition:revalidation]") {
-
     const auto gate = node<timed_all_valid_input_gate>();
 
     const auto observe = node([](In<TS<i64>, optional> input) { return input.valid(); });

@@ -25,7 +25,6 @@ const auto add_graph = graph("name"_n = "add_values_for_reduce", [](wp<TS<i64>> 
 
 TEST_CASE("reduce combines all valid TSD items through nested reducer graphs",
           "[feature:reduce][feature:nested-graph][series:tsd][shape:nested]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> values) {
         return reduce(add_graph, values);
     };
@@ -37,7 +36,6 @@ TEST_CASE("reduce combines all valid TSD items through nested reducer graphs",
 
 TEST_CASE("reduce carries an odd item to the next level of its tree",
           "[feature:reduce][feature:nested-graph][series:tsd][shape:nested]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> values) {
         return reduce(add_graph, values);
     };
@@ -49,7 +47,6 @@ TEST_CASE("reduce carries an odd item to the next level of its tree",
 
 TEST_CASE("reduce combines final TSD items with a nested reducer",
           "[feature:reduce][feature:nested-graph][series:tsd][shape:nested][guarantee:final]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> values) {
         return reduce(add_graph, values);
     };
@@ -61,10 +58,8 @@ TEST_CASE("reduce combines final TSD items with a nested reducer",
 
 TEST_CASE("compact reduce does not propagate a dirty path when a child reducer does not publish",
           "[feature:reduce][series:tsd][shape:single-node][transition:update][notification:suppressed]") {
-
     const auto suppress_selected_value = graph(
         "name"_n = "suppress_selected_reduce_value", [](wp<TS<i64>> left, wp<TS<i64>> right) -> wp<TS<i64>> {
-
             const auto selected = node([](In<TS<i64>> left_value, In<TS<i64>> right_value, Out<TS<i64>> output) {
                 if (*left_value != 99) {
                     output.set(*left_value + *right_value);
@@ -84,7 +79,6 @@ TEST_CASE("compact reduce does not propagate a dirty path when a child reducer d
 
 TEST_CASE("compact reduce does not republish an unchanged root when membership changes",
           "[feature:reduce][series:tsd][shape:single-node][transition:removal][notification:suppressed]") {
-
     const auto make_dictionary = node([](In<TS<bool>> initialize, Out<TSD<i64, TS<i64>>> output) {
         if (*initialize) {
             output[10].set(1);
@@ -140,7 +134,6 @@ TEST_CASE("compact reduce does not republish an unchanged root when membership c
 
 TEST_CASE("nested reduce preserves the reducer selected for reference-backed inputs",
           "[feature:reduce][series:tsd][shape:nested][binding:reference-to-value]") {
-
     const auto multiply_values = node([](i64 left, i64 right) { return left * right; });
 
     const auto representation_sensitive_graph = graph(
@@ -164,7 +157,6 @@ TEST_CASE("nested reduce preserves the reducer selected for reference-backed inp
 TEST_CASE("nested reduce tracks keys when a sampled TSD reassigns physical item IDs",
           "[feature:reduce][series:tsd][series:reference][feature:item-id-remapping][transition:rebind]"
           "[shape:nested]") {
-
     const auto select_dictionary = node(
         [](In<TS<bool>> use_second, In<REF<TSD<i64, TS<i64>>>> first,
            In<REF<TSD<i64, TS<i64>>>> second, Out<REF<TSD<i64, TS<i64>>>> output) {
@@ -190,7 +182,6 @@ TEST_CASE("nested reduce tracks keys when a sampled TSD reassigns physical item 
 
 TEST_CASE("compact reduce handles addition that reuses an expired physical item ID",
           "[feature:reduce][series:tsd][transition:removal][transition:addition][storage:item-id-reuse]") {
-
     const auto make_dictionary = node([](In<TS<i64>> phase, Out<TSD<i64, TS<i64>>> output) {
         if (*phase == 0) {
             output[10].set(2);
@@ -222,7 +213,6 @@ TEST_CASE("compact reduce handles addition that reuses an expired physical item 
 
 TEST_CASE("compact reduce updates a sparse path in a larger TSD",
           "[feature:reduce][series:tsd][shape:single-node][transition:update][activity:sparse]") {
-
     const auto make_dictionary = node([](In<TS<bool>> initialize, In<TS<i64>> changed_key,
                                          In<TS<i64>> changed_value, Out<TSD<i64, TS<i64>>> output) {
         if (*initialize) {
@@ -290,7 +280,6 @@ const auto context_add_graph = graph("name"_n = "context_add_for_reduce", [](wp<
 TEST_CASE("reduce combines final TSD items through a context-dependent fallback reducer",
           "[feature:reduce][feature:context-time-series][feature:nested-graph][series:tsd][shape:nested]"
           "[guarantee:final]") {
-
     const auto tested = [=](wp<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> dictionary,
                             wp<TS<i64>> factor) {
         auto context_scope = with_context("factor"_n = factor);
@@ -331,7 +320,6 @@ TEST_CASE("reduce retains untouched multi-node results and passive input state",
 
 TEST_CASE("reduce adapts a generic lambda to the TSD item type",
           "[feature:reduce][feature:operator][series:tsd][definition:function]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> values) {
         return reduce([](auto first, auto second) { return add_values(first, second); }, values);
     };
@@ -343,7 +331,6 @@ TEST_CASE("reduce adapts a generic lambda to the TSD item type",
 
 TEST_CASE("reduce carries inherited context references into its reducer graphs",
           "[feature:reduce][feature:context-time-series][feature:nested-graph]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> dictionary, wp<TS<i64>> factor) {
         auto context_scope = with_context("factor"_n = factor);
         return reduce(context_add_graph, dictionary);
@@ -358,7 +345,6 @@ TEST_CASE("reduce carries inherited context references into its reducer graphs",
 TEST_CASE("reduce fallback reads values from reference TSD items with inherited context",
           "[feature:reduce][feature:context-time-series][feature:nested-graph][series:tsd]"
           "[series:reference][binding:reference-to-value][transition:update]") {
-
     const auto make_target = node([](i64 value) { return value; });
 
     const auto retain_references = node([](In<TS<bool>> install, In<REF<TS<i64>>, passive> first,
@@ -386,7 +372,6 @@ TEST_CASE("reduce fallback reads values from reference TSD items with inherited 
 TEST_CASE("reduce publishes a singleton fallback value after retiring a pair graph",
           "[feature:reduce][feature:nested-graph][series:tsd][shape:nested]"
           "[transition:removal][transition:update]") {
-
     const auto tested = [=](wp<TSD<i64, TS<i64>>> dictionary, wp<TS<i64>> factor) {
         auto context_scope = with_context("factor"_n = factor);
         return reduce(context_add_graph, dictionary);
@@ -403,7 +388,6 @@ TEST_CASE("reduce fallback refreshes a singleton reference item after selection 
           "[feature:reduce][feature:context-time-series][feature:nested-graph][series:tsd]"
           "[series:reference][binding:reference-to-value][transition:update][transition:invalidation]"
           "[transition:revalidation]") {
-
     const auto make_target = node([](In<TS<i64>> command, Out<TS<i64>> output) {
         if (*command == 0) {
             output.invalidate();
@@ -432,7 +416,6 @@ TEST_CASE("reduce fallback refreshes a singleton reference item after selection 
 
 TEST_CASE("reduce updates its tree when TSD membership changes and uses the default only when empty",
           "[feature:reduce][feature:nested-graph][series:tsd][validity:optional]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> dictionary) {
         return reduce(add_graph, dictionary, "default"_n = i64{20});
     };
@@ -454,7 +437,6 @@ TEST_CASE("reduce updates its tree when TSD membership changes and uses the defa
 
 TEST_CASE("reduce omits invalid items while valid items remain",
           "[feature:reduce][series:tsd][validity:optional][transition:invalidation]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> dictionary) {
         return reduce(add_graph, dictionary, "default"_n = i64{20});
     };
@@ -465,7 +447,6 @@ TEST_CASE("reduce omits invalid items while valid items remain",
 
 TEST_CASE("reduce uses the default when a valid TSD has keys but no valid items",
           "[feature:reduce][series:tsd][validity:optional][transition:invalidation]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> dictionary) {
         return reduce(add_graph, dictionary, "default"_n = i64{20});
     };
@@ -489,7 +470,6 @@ TEST_CASE("reduce uses the default when a valid TSD is empty",
 
 TEST_CASE("reduce does not use the default when the TSD is invalid",
           "[feature:reduce][series:tsd][validity:optional][transition:invalidation]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> dictionary) {
         return reduce(add_graph, dictionary, "default"_n = i64{20});
     };
@@ -501,7 +481,6 @@ TEST_CASE("reduce does not use the default when the TSD is invalid",
 TEST_CASE("reduce follows a stable reference to a single TSD item",
           "[feature:reduce][series:tsd][series:reference][transition:update][transition:invalidation]"
           "[transition:revalidation]") {
-
     const auto make_target = node([](In<TS<i64>> command, Out<TS<i64>> output) {
         if (*command == 0) {
             output.invalidate();
@@ -532,7 +511,6 @@ TEST_CASE("reduce follows a stable reference to a single TSD item",
 TEST_CASE("reduce follows stable TSD references as initially invalid items become valid",
           "[feature:reduce][series:tsd][series:reference][transition:update][transition:invalidation]"
           "[transition:revalidation][shape:nested]") {
-
     const auto make_target = node([](In<TS<i64>> command, Out<TS<i64>> output) {
         if (*command == 0) {
             output.invalidate();

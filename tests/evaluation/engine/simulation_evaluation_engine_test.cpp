@@ -62,7 +62,6 @@ struct int_sink_definition {
 
 TEST_CASE("a simulation evaluation engine runs until timed scheduling is empty",
           "[evaluation][simulation][feature:simulation][series:value][scalar:integer]") {
-
     const auto scheduled_source = bg::node<scheduled_source_definition>();
 
     const auto int_sink = bg::node<int_sink_definition>();
@@ -110,7 +109,6 @@ struct unordered_schedule_definition {
 
 TEST_CASE("timed scheduling orders requests by evaluation time",
           "[evaluation][simulation][feature:simulation][series:value][scalar:integer]") {
-
     const auto unordered_schedule = bg::node<unordered_schedule_definition>();
     auto wiring = GraphWiring{};
     {
@@ -131,7 +129,6 @@ TEST_CASE("timed scheduling orders requests by evaluation time",
 
 TEST_CASE("simulation periodic callback failure at termination stops a started graph",
           "[evaluation][simulation][feature:simulation][feature:lifecycle][failure]") {
-
     const auto scheduled_source = bg::node<scheduled_source_definition>();
 
     const auto int_sink = bg::node<int_sink_definition>();
@@ -198,7 +195,6 @@ struct periodic_callback_chain_definition {
 
 TEST_CASE("simulation polls periodic callbacks after eight completed cycles",
           "[evaluation][simulation][feature:simulation][feature:lifecycle][failure]") {
-
     const auto source = bg::node<periodic_callback_chain_definition>();
     auto wiring = GraphWiring{};
     {
@@ -233,7 +229,6 @@ TEST_CASE("simulation polls periodic callbacks after eight completed cycles",
 
 TEST_CASE("simulation validates an enabled periodic callback interval before starting",
           "[evaluation][simulation][feature:simulation][failure]") {
-
     const auto scheduled_source = bg::node<scheduled_source_definition>();
     auto wiring = GraphWiring{};
     {

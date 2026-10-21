@@ -58,7 +58,6 @@ TEST_CASE("opt preserves optionality through typed views and explicit required a
 
 TEST_CASE("opt keeps its qualifier across graph boundaries",
           "[feature:wiring][feature:operator][validity:optional][series:value][shape:nested]") {
-
     const auto optional_input = node([](In<TS<i64>, optional>) {});
 
     const auto required_boundary = graph("name"_n = "required_boundary", [&](wp<TS<i64>> value) {
@@ -113,7 +112,6 @@ TEST_CASE("valid_items annotations compose with opt and typed views",
 
 TEST_CASE("valid_items annotations require a capable receiver and survive references",
           "[feature:wiring][feature:operator][series:tsd][series:reference]") {
-
     const auto source = node([](Out<TSD<i64, TS<i64>>>) {});
 
     const auto reference_source = node([](Out<REF<TSD<i64, TS<i64>>>>) {});
@@ -184,7 +182,6 @@ template <template <typename, auto...> typename Field> struct optional_expansion
 
 TEST_CASE("args and kwargs preserve opt on every expanded bundle field",
           "[feature:wiring][feature:variadic-wiring][validity:optional][series:tsb][schema:named]") {
-
     const auto source = node([](Out<TSB<optional_expansion_bundle>>) {});
     const auto optional_positional =
         graph("name"_n = "optional_positional", [](wp<TS<i64>, optional>, wp<TS<float>, optional>) {});

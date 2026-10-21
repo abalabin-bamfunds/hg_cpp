@@ -63,7 +63,6 @@ TEST_CASE("mesh dependencies require mesh branch wiring",
 
 TEST_CASE("mesh runtime declarations preserve valid_items inputs",
           "[feature:mesh][feature:wiring][feature:validity][series:tsd][input-guarantee:valid-items]") {
-
     const auto identity = graph(
         "name"_n = "valid_items_mesh_identity",
         [](wp<TS<i64>> value, wp<TSD<i64, TS<i64>>, valid_items>) { return value; });
@@ -90,7 +89,6 @@ TEST_CASE("mesh runtime declarations preserve valid_items inputs",
 
 TEST_CASE("mesh dependencies accept a scalar key",
           "[feature:mesh][feature:wiring][feature:operator][shape:nested][scalar:integer]") {
-
     const auto values = node([](Out<TSD<i64, TS<i64>>>) {});
 
     const auto consume = node([](In<TS<i64>, optional>) {});
@@ -137,7 +135,6 @@ class CountingMeshBranch final : public WiringTemplate {
 
 TEST_CASE("mesh resolves and checks its branch graph once",
           "[feature:mesh][feature:wiring][feature:operator][shape:nested]") {
-
     const auto values = node([](Out<TSD<i64, TS<i64>>>) {});
     auto requirement_calls = std::size_t{};
     const auto branch = CountingMeshBranch{requirement_calls};
@@ -152,7 +149,6 @@ TEST_CASE("mesh resolves and checks its branch graph once",
 
 TEST_CASE("mesh selects named enclosing scopes",
           "[feature:mesh][feature:wiring][feature:operator][shape:deeply-nested]") {
-
     const auto values = node([](Out<TSD<i64, TS<i64>>>) {});
 
     const auto consume = node([](In<TS<i64>, optional>) {});
@@ -176,7 +172,6 @@ TEST_CASE("mesh selects named enclosing scopes",
 
 TEST_CASE("mesh reports invalid enclosing names",
           "[feature:mesh][feature:wiring][feature:operator][shape:deeply-nested]") {
-
     const auto values = node([](Out<TSD<i64, TS<i64>>>) {});
 
     CHECK_THROWS_WITH(testing::test_wiring([&] {
@@ -205,7 +200,6 @@ TEST_CASE("mesh reports invalid enclosing names",
 TEST_CASE("mesh accepts fully runtime graph and argument values",
           "[feature:mesh][feature:operator][feature:graph-argument][feature:wiring]"
           "[series:tsd][definition:runtime]") {
-
     const auto values = node([](Out<TSD<i64, TS<i64>>>) {});
 
     const auto identity = graph("name"_n = "runtime_mesh_identity", [](wp<TS<i64>> value) { return value; });
@@ -228,7 +222,6 @@ TEST_CASE("mesh accepts fully runtime graph and argument values",
 TEST_CASE("mesh selects a custom operator overload",
           "[feature:mesh][feature:operator][feature:graph-argument][feature:wiring]"
           "[series:tsd]") {
-
     const auto values = node([](Out<TSD<i64, TS<i64>>>) {});
 
     const auto identity = graph("name"_n = "custom_mesh_identity", [](wp<TS<i64>> value) { return value; });
@@ -249,7 +242,6 @@ TEST_CASE("mesh selects a custom operator overload",
 TEST_CASE("mesh resolves untyped arguments and selected outputs",
           "[feature:mesh][feature:operator][feature:wiring][series:tsd]"
           "[declaration:runtime]") {
-
     const auto values = node([](Out<TSD<i64, TS<i64>>>) {});
 
     const auto consume = node([](In<TS<i64>>) {});
@@ -270,7 +262,6 @@ TEST_CASE("mesh resolves untyped arguments and selected outputs",
 TEST_CASE("an explicit mesh output type resolves a raw branch lambda before selection wiring",
           "[feature:mesh][feature:operator][feature:wiring][feature:type-system]"
           "[declaration:generic][series:tsd]") {
-
     const auto values = node([](Out<TSD<i64, TS<i64>>>) {});
 
     testing::test_wiring([&] {
@@ -289,7 +280,6 @@ TEST_CASE("an explicit mesh output type resolves a raw branch lambda before sele
 
 TEST_CASE("mesh selection has the branch output item type before it is consumed",
           "[feature:mesh][feature:operator][feature:wiring][series:tsd]") {
-
     const auto values = node([](Out<TSD<i64, TS<i64>>>) {});
 
     const auto consume = node([](In<TS<i64>>) {});
@@ -306,7 +296,6 @@ TEST_CASE("mesh selection has the branch output item type before it is consumed"
 }
 
 TEST_CASE("mesh diagnostics identify mesh arguments", "[feature:mesh][feature:operator][feature:wiring][series:tsd]") {
-
     const auto integers = node([](Out<TSD<i64, TS<i64>>>) {});
 
     const auto floating_point_keys = node([](Out<TSD<float, TS<i64>>>) {});

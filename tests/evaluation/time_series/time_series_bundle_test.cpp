@@ -40,7 +40,6 @@ template <template <typename, auto...> typename Field> struct DerivedBundle : bu
 TEST_CASE("node code selects a named bundle field",
           "[evaluation][tsb][feature:getitem][series:tsb][schema:named][scalar:integer][scalar:floating-point]"
           "[representation:native][declaration:concrete][binding:direct]") {
-
     const auto count = node([](In<TSB<DerivedBundle>> input) { return *input->count; });
 
     const auto actual = testing::test_graph(count, {{{"count", 2}, {"value", 3.5F}}});
@@ -89,7 +88,6 @@ TEST_CASE("a typed bundle publishes inherited and direct fields",
 TEST_CASE("a span-backed free TSB retains its fields through materialisation and evaluation",
           "[evaluation][tsb][series:tsb][free][representation:free][feature:wiring-materialisation]"
           "[schema:named]") {
-
     const auto sum = node(derived_bundle_sum);
 
     const auto graph = [&](wp<TS<i64>> count, wp<TS<float>> value) {
@@ -121,7 +119,6 @@ template <template <typename, auto...> typename Field> struct SharedBundle {
 TEST_CASE("an empty free TSB publishes valid at graph start",
           "[evaluation][tsb][series:tsb][free][feature:wiring-materialisation][representation:free]"
           "[transition:start]") {
-
     const auto observe = node([](In<TSB<EmptyBundle>> input) { return input.valid() ? 1 : 0; });
 
     const auto graph = [&] {
@@ -134,7 +131,6 @@ TEST_CASE("an empty free TSB publishes valid at graph start",
 
 TEST_CASE("a scalar schema lifts mixed scalar and time series fields into a TSB",
           "[feature:wiring][feature:constant][series:tsb][schema:named][scalar:hierarchical]") {
-
     const auto graph = [](wp<TS<i64>> count) { return bundle<SharedBundle>(count, 2.5); };
 
     const auto actual = testing::test_graph(graph, {1, 2});
@@ -172,7 +168,6 @@ TEST_CASE("an explicit time series schema selects TSB construction for scalar ar
 TEST_CASE("a typed TSB wiring point selects an inherited field",
           "[evaluation][series:tsb][feature:getattr][schema:named][representation:native]"
           "[transition:update]") {
-
     const auto graph = [](wp<TSB<DerivedBundle>> input) { return input->count; };
 
     const auto actual = testing::test_graph(graph, {{{"count", 2}, {"value", 3.5F}}});
@@ -183,7 +178,6 @@ TEST_CASE("a typed TSB wiring point selects an inherited field",
 TEST_CASE("a typed free TSB wiring point selects its original source",
           "[evaluation][series:tsb][feature:getattr][schema:named][representation:free]"
           "[transition:update]") {
-
     const auto graph = [](wp<TS<i64>> count, wp<TS<float>> value) {
         return bundle("value"_n = value, "count"_n = count).as<TSB<DerivedBundle>>()->count;
     };
@@ -196,7 +190,6 @@ TEST_CASE("a typed free TSB wiring point selects its original source",
 TEST_CASE("a free bundle follows the receiving named schema",
           "[evaluation][tsb][series:tsb][free][representation:free][feature:collection-change]"
           "[scalar:integer][scalar:floating-point][declaration:concrete][binding:direct]") {
-
     const auto sum = node(derived_bundle_sum);
 
     const auto graph = [&](wp<TS<i64>> count, wp<TS<float>> value) {
@@ -211,7 +204,6 @@ TEST_CASE("a free bundle follows the receiving named schema",
 TEST_CASE("a named bundle input accepts extra free bundle fields",
           "[evaluation][tsb][series:tsb][wiring][schema:named][scalar:integer][scalar:floating-point]"
           "[representation:native][declaration:concrete][binding:direct][feature:wiring]") {
-
     const auto sum = node(derived_bundle_sum);
 
     const auto graph = [&](wp<TS<i64>> count, wp<TS<float>> value) {
@@ -227,7 +219,6 @@ TEST_CASE("a base bundle input accepts a derived bundle",
           "[evaluation][tsb][series:tsb][inheritance][feature:collection-change][scalar:integer]"
           "[scalar:floating-point][representation:native][declaration:concrete][binding:covariant]"
           "[schema:named]") {
-
     const auto value = node(base_bundle_count);
 
     const auto graph = [&](wp<TSB<DerivedBundle>> input) { return value(input); };
@@ -250,7 +241,6 @@ TEST_CASE("a redefined bundle field shares its inherited storage",
           "[evaluation][tsb][series:tsb][inheritance][feature:collection-change][schema:named]"
           "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
           "[binding:direct]") {
-
     const auto value = node(base_bundle_count);
 
     const auto graph = [&](wp<TSB<RedefinedBundle>> input) { return value(input); };
@@ -285,7 +275,6 @@ TEST_CASE("fixed time series lists can contain runtime-sized time series",
           "[evaluation][tsl][series:fixed-tsl][tsb][series:tsb][feature:collection-change]"
           "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
           "[binding:direct][schema:named]") {
-
     const auto value = node([](In<TSL<TSB<DerivedBundle>, 2>> input) { return *input[1]->value; });
 
     const auto actual = testing::test_graph(value, {{{1, {{"value", 4.5F}}}}});
@@ -530,7 +519,6 @@ template <template <typename, auto...> typename Field> struct ReferenceBundle {
 TEST_CASE("getattr follows a reference field in a referenced native bundle",
           "[evaluation][series:tsb][series:reference][feature:getattr][schema:named]"
           "[representation:native][binding:reference-to-reference][transition:update]") {
-
     const auto select = node([](bool use_second, In<REF<TS<i64>>> first, In<REF<TS<i64>>> second,
                                 Out<REF<TS<i64>>> output) { output.copy(use_second ? second : first); });
 
@@ -560,7 +548,6 @@ TEST_CASE("getattr follows a reference field in a referenced native bundle",
 TEST_CASE("a free bundle reuses materialization for the same input type",
           "[wiring][tsb][series:tsb][representation:free][feature:wiring][shape:fan-out]"
           "[schema:named][binding:representation]") {
-
     const auto count = node([](Out<TS<i64>>) {});
 
     const auto value = node([](Out<TS<float>>) {});
@@ -583,7 +570,6 @@ TEST_CASE("a free bundle reuses materialization for the same input type",
 TEST_CASE("a free bundle materializes independently for different input schemas",
           "[wiring][tsb][series:tsb][representation:free][feature:wiring][schema:named]"
           "[binding:representation]") {
-
     const auto count_source = node([](Out<TS<i64>>) {});
 
     const auto value_source = node([](Out<TS<float>>) {});
@@ -653,7 +639,6 @@ TEST_CASE("invalidating a bundle invalidates every field",
 TEST_CASE("a free bundle requires every field of the receiving schema",
           "[evaluation][tsb][series:tsb][wiring][scalar:integer][scalar:floating-point]"
           "[representation:native][declaration:concrete][binding:direct][schema:named][feature:wiring]") {
-
     const auto count = node([](Out<TS<i64>>) {});
 
     const auto sum = node(derived_bundle_sum);
@@ -664,7 +649,6 @@ TEST_CASE("a free bundle requires every field of the receiving schema",
 TEST_CASE("a free bundle requires compatible field types",
           "[evaluation][tsb][series:tsb][wiring][scalar:integer][scalar:floating-point]"
           "[representation:native][declaration:concrete][binding:direct][schema:named][feature:wiring]") {
-
     const auto count = node([](Out<TS<i64>>) {});
 
     const auto value = node([](Out<TS<float>>) {});
@@ -677,7 +661,6 @@ TEST_CASE("a free bundle requires compatible field types",
 TEST_CASE("a free bundle rejects duplicate field names",
           "[evaluation][tsb][series:tsb][wiring][scalar:integer][scalar:floating-point]"
           "[representation:native][declaration:concrete][binding:direct][schema:named][feature:wiring]") {
-
     const auto count = node([](Out<TS<i64>>) {});
 
     const auto value = node([](Out<TS<float>>) {});

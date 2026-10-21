@@ -18,7 +18,6 @@ namespace {
 
 TEST_CASE("test_graph captures TSL and TSS output deltas",
           "[testing][evaluation][feature:test-graph][series:fixed-tsl][series:tss][transition:update]") {
-
     const auto list_identity = [](wp<TSL<TS<i64>, 2>> input) { return input; };
     const auto list =
         testing::test_graph(list_identity, {{{0, 1}, {1, 10}}, {{1, 20}}, literal::INVALID, {{0, 3}}});
@@ -45,7 +44,6 @@ template <template <typename, auto...> typename Field> struct OutputScalarBundle
 
 TEST_CASE("test_graph compares runtime-typed scalar bundle literals",
           "[testing][evaluation][feature:test-graph][series:value][scalar:hierarchical][declaration:generic]") {
-
     const auto identity = [](wp<> input) { return wp<>{input}; };
     const auto actual = testing::test_graph(
         identity, testing::input<TS<Bundle<OutputScalarBundle>>>({{{"value", 42}}}));
@@ -377,7 +375,6 @@ TEST_CASE("test_graph stateful extension comparison spans cycles and nested life
 
 TEST_CASE("test_graph preserves missing and empty collection output ticks",
           "[testing][evaluation][feature:test-graph][series:tss][transition:first-tick]") {
-
     const auto identity = [](wp<TSS<i64>> input) { return input; };
 
     const auto skipped = testing::test_graph(
@@ -393,7 +390,6 @@ TEST_CASE("test_graph preserves missing and empty collection output ticks",
 
 TEST_CASE("test_graph result visits captured ticks without consuming owning scalar values",
           "[testing][evaluation][feature:test-graph][series:value][scalar:string][feature:scalar-storage]") {
-
     const auto identity = [](wp<TS<string>> input) { return input; };
     const auto result = testing::test_graph(identity, {"first", literal::SKIP, literal::INVALID, "last"});
 
@@ -519,7 +515,6 @@ template <template <typename, auto...> typename Field> struct OutputBundle {
 
 TEST_CASE("test_graph captures nested TSD and TSB output deltas",
           "[testing][evaluation][feature:test-graph][series:tsd][series:tsb][shape:nested]") {
-
     const auto bundle_identity = [](wp<TSB<OutputBundle>> input) { return input; };
     const auto bundle = testing::test_graph(
         bundle_identity,
@@ -552,7 +547,6 @@ TEST_CASE("test_graph captures nested TSD and TSB output deltas",
 
 TEST_CASE("test_graph compares invalid nested collection values",
           "[testing][evaluation][feature:test-graph][series:tsd][shape:nested][transition:invalidation]") {
-
     const auto invalidate_set = node([](Out<TSD<i64, TSS<i64>>> output) {
         output[1].invalidate();
     });
@@ -579,7 +573,6 @@ TEST_CASE("test_graph compares invalid nested collection values",
 TEST_CASE("test_graph captures a top-level reference to a collection",
           "[testing][evaluation][feature:test-graph][feature:reference][series:tsd]"
           "[binding:reference-to-value][transition:update]") {
-
     const auto select = node([](In<TS<bool>> choose_second,
                                     In<REF<TSD<i64, TS<i64>>>> first,
                                     In<REF<TSD<i64, TS<i64>>>> second,
@@ -600,7 +593,6 @@ TEST_CASE("test_graph captures a top-level reference to a collection",
 TEST_CASE("test_graph rejects nested references in collection output capture",
           "[testing][evaluation][feature:test-graph][feature:reference][series:tsd][series:tss]"
           "[binding:reference-to-value][shape:nested]") {
-
     const auto make_dictionary = node([](In<REF<TSS<i64>>> item,
                                              Out<TSD<i64, REF<TSS<i64>>>> output) {
         output[1].copy(item);
@@ -630,7 +622,6 @@ TEST_CASE("test_graph owns string keys and values in captured collection deltas"
 
 TEST_CASE("test_graph rejects duplicate and extra expected collection removals",
           "[testing][evaluation][feature:test-graph][series:tss][series:tsd][transition:removal]") {
-
     const auto set_identity = [](wp<TSS<i64>> input) { return input; };
     const auto set = testing::test_graph(set_identity, {{1}, {literal::REMOVED(1)}});
     const auto dictionary_identity =
@@ -647,7 +638,6 @@ TEST_CASE("test_graph rejects duplicate and extra expected collection removals",
 
 TEST_CASE("test_graph scalar result access rejects collection ticks",
           "[testing][evaluation][feature:test-graph][series:tsd]") {
-
     const auto identity = [](wp<TSD<i64, TS<i64>>> input) { return input; };
     const auto actual = testing::test_graph(identity, {{{1, 10}}});
 

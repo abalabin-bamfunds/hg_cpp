@@ -24,7 +24,6 @@ using namespace literals;
 TEST_CASE("a node can select an item from a free fixed time series list",
           "[evaluation][tsl][feature:getitem][series:fixed-tsl][free][representation:free][scalar:integer]"
           "[declaration:concrete][binding:direct]") {
-
     const auto select = node([](In<TSL<TS<i64>, 2>> input) { return *input[1]; });
 
     const auto graph = [&](wp<TS<i64>> first, wp<TS<i64>> second) {
@@ -103,7 +102,6 @@ TEST_CASE("a free fixed time series list coalesces source changes",
 TEST_CASE("a free fixed time series list follows the receiving item runtime_type",
           "[evaluation][tsl][series:fixed-tsl][free][representation:free][reference]"
           "[feature:collection-change][scalar:integer][declaration:concrete][binding:direct]") {
-
     const auto reference = node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) { output.copy(input); });
 
     const auto sum = node([](In<TSL<TS<i64>, 2>> input) { return *input[0] + *input[1]; });
@@ -119,7 +117,6 @@ TEST_CASE("a free fixed time series list follows the receiving item runtime_type
 TEST_CASE("a span-backed free TSL retains its items through materialisation and evaluation",
           "[evaluation][tsl][series:fixed-tsl][free][representation:free][feature:wiring-materialisation]"
           "[scalar:integer]") {
-
     const auto sum = node([](In<TSL<TS<i64>, 2>> input) { return *input[0] + *input[1]; });
 
     const auto graph = [&](wp<TS<i64>> first, wp<TS<i64>> second) {
@@ -138,7 +135,6 @@ TEST_CASE("a span-backed free TSL retains its items through materialisation and 
 TEST_CASE("an empty typed TSL publishes valid at graph start",
           "[evaluation][tsl][series:fixed-tsl][feature:wiring-materialisation][representation:free]"
           "[transition:start]") {
-
     const auto observe = node([](In<TSL<TS<i64>, 0>> input) { return input.valid() && input.size() == 0; });
 
     const auto graph = [&] { return observe(tsl<TS<i64>>()); };
@@ -316,7 +312,6 @@ TEST_CASE("a list becomes invalid when its last valid item is invalidated and re
           "[evaluation][tsl][series:fixed-tsl][feature:validity][validity:optional][feature:collection-change]"
           "[transition:invalidation][transition:revalidation][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct]") {
-
     const auto valid = node([](In<TSL<TS<i64>, 3>, optional> input) { return input.valid(); });
 
     const auto actual = testing::test_graph(valid, {{{0, 10}}, {{0, literal::INVALID}}, {{1, 20}}});
@@ -328,7 +323,6 @@ TEST_CASE("required-input invalidation invalidates list items",
           "[evaluation][tsl][series:fixed-tsl][validity][feature:collection-change][validity:required]"
           "[transition:invalidation][scalar:integer][representation:native][declaration:concrete]"
           "[binding:direct]") {
-
     const auto list = node([](i64 input, Out<TSL<TS<i64>, 3>> output) { output[0].set(input); });
 
     const auto first = node([](In<TSL<TS<i64>, 3>> input) { return *input[0]; });
@@ -385,7 +379,6 @@ struct sequential_item_access_definition {
 TEST_CASE("sequential item views reuse evaluation scratch storage",
           "[evaluation][tsl][series:fixed-tsl][storage][feature:collection-change][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct]") {
-
     const auto source = node<sequential_item_access_definition>();
     auto wiring = GraphWiring{};
     {
@@ -430,7 +423,6 @@ TEST_CASE("inverse nested dictionary mutations publish their containing list",
           "[evaluation][tsl][series:fixed-tsl][tsd][series:tsd][feature:collection-change]"
           "[transition:update][scalar:integer][representation:native][declaration:concrete]"
           "[binding:direct]") {
-
     const auto source = node<canceled_nested_dictionary_source_definition>();
 
     const auto marker = node([](In<TSL<TSD<i64, TS<i64>>, 2>>) { return true; });
@@ -463,7 +455,6 @@ struct retained_nested_item_source_definition {
 TEST_CASE("a nested item view retains its containing path",
           "[evaluation][tsl][series:fixed-tsl][storage][feature:collection-change][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct]") {
-
     const auto source = node<retained_nested_item_source_definition>();
 
     const auto item = node([](In<TSL<TSL<TS<i64>, 2>, 2>> input) { return *input[0][1]; });

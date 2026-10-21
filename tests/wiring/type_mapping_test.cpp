@@ -37,7 +37,6 @@ struct generic_dictionary_source_definition {
 
 struct generic_source_graph_definition {
     wp<RESULT> wire() const {
-
         const auto source = node([](Out<TS<i64>>) {});
         return wp<RESULT>{source()};
     }
@@ -128,7 +127,6 @@ struct callable_operator_invocation {
 
 TEST_CASE("a positional type argument resolves a callable node output",
           "[feature:wiring][feature:type-system][definition:function][declaration:generic]") {
-
     const auto source = node<RESULT>([](Out<RESULT>) {});
 
     testing::test_wiring([&] {
@@ -139,7 +137,6 @@ TEST_CASE("a positional type argument resolves a callable node output",
 
 TEST_CASE("ordered type arguments resolve an aggregate node output",
           "[feature:wiring][feature:type-system][definition:aggregate][declaration:generic][series:tsd]") {
-
     const auto source = node<KEY, VALUE, generic_dictionary_source_definition>();
 
     testing::test_wiring([&] {
@@ -150,7 +147,6 @@ TEST_CASE("ordered type arguments resolve an aggregate node output",
 
 TEST_CASE("a named type mapping does not require positional type parameters",
           "[feature:wiring][feature:type-system][definition:function][declaration:generic]") {
-
     const auto source = node([](Out<RESULT>) {});
 
     testing::test_wiring([&] {
@@ -161,7 +157,6 @@ TEST_CASE("a named type mapping does not require positional type parameters",
 
 TEST_CASE("an explicit type argument must agree with a supplied argument",
           "[feature:wiring][feature:type-system][definition:function][declaration:generic]") {
-
     const auto identity = node<RESULT>([](In<RESULT>, Out<RESULT>) {});
 
     const auto source = node([](Out<TS<i64>>) {});
@@ -174,7 +169,6 @@ TEST_CASE("an explicit type argument must agree with a supplied argument",
 
 TEST_CASE("conflicting explicit type arguments are rejected",
           "[feature:wiring][feature:type-system][definition:function][declaration:generic]") {
-
     const auto source = node<RESULT>([](Out<RESULT>) {});
 
     CHECK_THROWS_AS((source[type<TS<i64>>, type<RESULT> = type<TS<float>>]), TypeResolutionError);
@@ -183,7 +177,6 @@ TEST_CASE("conflicting explicit type arguments are rejected",
 TEST_CASE("an explicit schema argument resolves a bundle schema variable",
           "[feature:wiring][feature:type-system][definition:aggregate][declaration:generic]"
           "[series:tsb][schema:generic]") {
-
     const auto source = node<schema_type<SCHEMA>, generic_bundle_source_definition>();
 
     testing::test_wiring([&] {
@@ -208,7 +201,6 @@ TEST_CASE("a scalar bundle argument resolves a generic bundle node output",
 
 TEST_CASE("a positional type argument resolves a callable graph output",
           "[feature:wiring][feature:type-system][definition:function][declaration:generic]") {
-
     const auto source = node([](Out<TS<i64>>) {});
 
     const auto function = graph<RESULT>(
@@ -222,7 +214,6 @@ TEST_CASE("a positional type argument resolves a callable graph output",
 
 TEST_CASE("a positional type argument resolves an aggregate graph output",
           "[feature:wiring][feature:type-system][definition:aggregate][declaration:generic]") {
-
     const auto function = graph<RESULT, generic_source_graph_definition>();
 
     testing::test_wiring([&] {
@@ -234,7 +225,6 @@ TEST_CASE("a positional type argument resolves an aggregate graph output",
 TEST_CASE("a shared guarantee variable resolves from a TSS and a time series input",
           "[feature:wiring][feature:type-system][series:tss][guarantee:ordinary][guarantee:final]"
           "[declaration:generic]") {
-
     const auto sink = node([](In<TSS<i64, guarantee_variable<"G">>>,
                               In<TS<i64, guarantee_variable<"G">>>) {});
 
@@ -324,7 +314,6 @@ TEST_CASE("operator resolution caches explicit type mappings",
 TEST_CASE("a mapped wiring proxy can be reused",
           "[feature:wiring][feature:type-system][definition:function][declaration:generic]"
           "[shape:multiple]") {
-
     const auto source = node<RESULT>([](Out<RESULT>) {});
     const auto integer_source = source[type<TS<i64>>];
     auto wiring = GraphWiring{};
@@ -350,7 +339,6 @@ TEST_CASE("a mapped temporary callable node transfers ownership to graph wiring"
 TEST_CASE("a mapped temporary callable graph is valid for its wiring call",
           "[feature:wiring][feature:type-system][definition:function][declaration:generic][lifetime]") {
     testing::test_wiring([] {
-
         const auto output = graph<RESULT>("name"_n = "temporary", []() -> wp<RESULT> {
                                 return wp<RESULT>{*node([](Out<TS<i64>>) {})()};
                             })[type<TS<i64>>]();
@@ -360,7 +348,6 @@ TEST_CASE("a mapped temporary callable graph is valid for its wiring call",
 
 TEST_CASE("an incompatible explicit type argument is rejected",
           "[feature:wiring][feature:type-system][definition:function][declaration:generic]") {
-
     const auto source = node<RESULT>([](Out<RESULT>) {});
 
     CHECK_THROWS_AS((source[type<int>]), TypeResolutionError);

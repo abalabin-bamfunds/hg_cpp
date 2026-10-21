@@ -41,7 +41,6 @@ static_assert(!TemporaryWeightedAddCall<decltype(node<weighted_add>())>);
 } // namespace
 
 TEST_CASE("an aggregate node class generates a signature", "[node_template][feature:node-api][definition:aggregate]") {
-
     const auto weighted_add_node = node<weighted_add>();
     static_assert(std::derived_from<std::remove_cv_t<decltype(weighted_add_node)>, NodeTemplate>);
 
@@ -84,7 +83,6 @@ struct dynamic_reference_input_node {
 TEST_CASE("a dynamic reference input is internal to an aggregate node",
           "[node_template][feature:node-api][feature:reference][definition:aggregate]"
           "[series:reference][guarantee:ordinary][guarantee:final]") {
-
     const auto node = bg::node<dynamic_input_test::dynamic_reference_input_node>();
 
     const auto check_dynamic_reference = [&](const Type &argument, TimeSeriesGuarantee guarantee,
@@ -126,7 +124,6 @@ struct dynamic_reference_input_default_guarantee_node {
 TEST_CASE("an internal dynamic reference input defaults its root guarantee to ordinary",
           "[node_template][feature:node-api][feature:reference][definition:aggregate]"
           "[series:reference][guarantee:ordinary]") {
-
     const auto node = bg::node<dynamic_input_test::dynamic_reference_input_default_guarantee_node>();
 
     const auto resolution = node.signature().resolve_with_type_map(std::array<const Type *, 0>{});
@@ -190,7 +187,6 @@ struct reference_bundle_source {
 TEST_CASE("aggregate and callable reference outputs default to deduplicated",
           "[node_template][reference][feature:node-api][definition:aggregate][definition:function]"
           "[guarantee:deduplicated]") {
-
     const auto aggregate = node<reference_source>();
 
     const auto callable = node([](Out<REF<TS<i64>>>) {});
@@ -202,7 +198,6 @@ TEST_CASE("aggregate and callable reference outputs default to deduplicated",
 TEST_CASE("callable and aggregate collection outputs apply reference defaults to nested fields",
           "[node_template][reference][feature:node-api][definition:aggregate][definition:function]"
           "[series:tsb][guarantee:ordinary][guarantee:deduplicated]") {
-
     const auto aggregate = node<reference_bundle_source>();
 
     const auto callable = node([](Out<TSB<ReferenceBundle>>) {});
@@ -256,7 +251,6 @@ static_assert(AggregateNodeClass<key_sink>);
 } // namespace
 
 TEST_CASE("a scalar variable enforces required operations", "[node_template][feature:node-api]") {
-
     const auto key_sink_node = node<key_sink>();
     const std::array<const Type *, 1> hashable_argument{&int64_type()};
     const auto signature = key_sink_node.signature().resolve(hashable_argument);
@@ -270,7 +264,6 @@ TEST_CASE("a scalar variable enforces required operations", "[node_template][fea
 
 TEST_CASE("an aggregate node template exposes its polymorphic interface",
           "[node_template][feature:node-api][definition:aggregate]") {
-
     const auto weighted_add_node = node<weighted_add>();
     const NodeTemplate &node_template = weighted_add_node;
 
@@ -290,7 +283,6 @@ static_assert(AggregateNodeClass<sink>);
 } // namespace
 
 TEST_CASE("an aggregate node can omit its output", "[node_template][feature:node-api][definition:aggregate]") {
-
     const auto sink_node = node<sink>();
     static_assert(std::same_as<decltype(sink_node(std::declval<WiringPoint>())), void>);
 
@@ -313,7 +305,6 @@ struct final_identity {
 
 TEST_CASE("an aggregate signature retains specified guarantees",
           "[node_template][feature:node-api][definition:aggregate][guarantee:const][guarantee:final]") {
-
     const auto final_identity_node = node<final_identity>();
     const auto &ts_const = TS<float, TimeSeriesGuarantee::const_>::type();
     const auto &ts_final = TS<float, TimeSeriesGuarantee::final>::type();
@@ -357,7 +348,6 @@ static_assert(AggregateNodeClass<scalar_state_node>);
 
 TEST_CASE("aggregate scalar and state fields have distinct roles",
           "[node_template][feature:node-api][definition:aggregate][scalar:symbol]") {
-
     const auto scalar_state = node<scalar_state_node>();
     const std::array<const Type *, 3> arguments{&float_type(), &symbol_type(), &int64_type()};
     const ResolvedSignature signature = scalar_state.signature().resolve(arguments);
@@ -395,7 +385,6 @@ static_assert(AggregateNodeClass<generic_pair>);
 } // namespace
 
 TEST_CASE("scalar variable declarations retain their identity", "[node_template][feature:node-api]") {
-
     const auto generic_pair_node = node<generic_pair>();
     const auto &ts_float = TS<float>::type();
     const auto &ts_double = TS<double>::type();
@@ -440,7 +429,6 @@ static_assert(AggregateNodeClass<time_series_variable_guarantee>);
 
 TEST_CASE("a time series variable can expose its guarantee as another variable",
           "[node_template][type_system][feature:node-api]") {
-
     const auto node = bg::node<time_series_variable_guarantee>();
     const auto &list =
         TSL<TS<float, TimeSeriesGuarantee::ordinary>, 2, TimeSeriesGuarantee::final>::type();
@@ -466,7 +454,6 @@ static_assert(AggregateNodeClass<generic_scalar_source>);
 } // namespace
 
 TEST_CASE("a scalar variable can declare a scalar view field", "[node_template][feature:node-api]") {
-
     const auto generic_scalar_source_node = node<generic_scalar_source>();
     const std::array<const Type *, 1> arguments{&float_type()};
 
@@ -586,7 +573,6 @@ TEST_CASE("collection inputs retain their resolved runtime layout", "[node_templ
 
 TEST_CASE("direct TSS inputs keep concrete and resolved key runtime types",
           "[node_template][time_series][feature:node-api]") {
-
     const auto read_concrete = node([](In<TSS<i64>> input, Out<TS<i64>> output) {
         output.set(input.item_at(0).value());
     });
@@ -651,7 +637,6 @@ TEST_CASE("only outputs with unresolved declarations store an output runtime typ
 
 TEST_CASE("runtime type use follows resolved input types",
           "[node_template][feature:type-system][feature:node-api]") {
-
     const auto node = bg::node(scalar_or_time_series_input_definition{});
     const auto scalar_arguments = std::array<const Type *, 1>{&int64_type()};
     const auto time_series_arguments = std::array<const Type *, 1>{&TS<i64>::type()};
@@ -681,7 +666,6 @@ static_assert(AggregateNodeClass<numeric_sink>);
 } // namespace
 
 TEST_CASE("a scalar variable declaration constrains its resolved type", "[node_template][feature:node-api]") {
-
     const auto numeric_sink_node = node<numeric_sink>();
     const auto &ts_double = TS<double>::type();
     const auto &ts_int = TS<i64>::type();
@@ -739,7 +723,6 @@ TEST_CASE("aggregate node validation rejects ambiguous output definitions",
 
 TEST_CASE("an aggregate node evaluation can report pending",
           "[node_template][feature:node-api][definition:aggregate]") {
-
     const auto pending = node<pending_output>();
     const auto signature = pending.signature().resolve(std::array<const Type *, 0>{});
 

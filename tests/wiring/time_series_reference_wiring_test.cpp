@@ -31,7 +31,6 @@ struct reference_wiring_pass {
 
 TEST_CASE("wiring inserts and reuses a reference-making node",
           "[wiring][reference][feature:wiring][binding:value-to-reference]") {
-
     const auto source = node<reference_wiring_source>();
 
     const auto pass = node<reference_wiring_pass>();
@@ -54,7 +53,6 @@ TEST_CASE("wiring inserts and reuses a reference-making node",
 
 TEST_CASE("wiring preserves an existing reference",
           "[wiring][reference][feature:wiring][binding:reference-to-reference]") {
-
     const auto source = node<reference_wiring_source>();
 
     const auto pass = node<reference_wiring_pass>();
@@ -74,7 +72,6 @@ TEST_CASE("wiring preserves an existing reference",
 
 TEST_CASE("wiring rejects materializing a borrowed input as a reference",
           "[wiring][reference][feature:borrowed-input]") {
-
     const auto pass = node<reference_wiring_pass>();
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};

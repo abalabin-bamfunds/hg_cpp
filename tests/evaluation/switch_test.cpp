@@ -30,7 +30,6 @@ const auto add = node([](i64 value, int amount) { return value + amount; });
 TEST_CASE("switch selects a case graph from its key",
           "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
           "[series:value][definition:function]") {
-
     const auto tested = [](wp<TS<i64>> key, wp<TS<i64>> value) {
         return switch_(
                    key,
@@ -126,7 +125,6 @@ const auto mapped_switch = graph(
 TEST_CASE("switch releases cached string graph arguments with its root wiring",
           "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
           "[series:value][scalar:string]") {
-
     const auto identity = graph("name"_n = "string_identity", [](wp<TS<string>> value) { return value; });
 
     const auto fallback = graph("name"_n = "string_fallback", [](wp<TS<string>>) {
@@ -147,7 +145,6 @@ TEST_CASE("switch releases cached string graph arguments with its root wiring",
 TEST_CASE("switch accepts an optional wiring argument as its key",
           "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
           "[series:value][validity:optional][definition:function]") {
-
     const auto tested = [](wp<TS<i64>> key, wp<TS<i64>> value) {
         return switch_(opt(key), cases{case_(1, [](auto input) { return add(input, 10); })}, value)
             .as<TS<i64>>();
@@ -161,7 +158,6 @@ TEST_CASE("switch accepts an optional wiring argument as its key",
 TEST_CASE("switch uses DEFAULT for invalid and unmatched keys",
           "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
           "[series:value][transition:invalidation][definition:function]") {
-
     const auto selected = graph("name"_n = "selected", [](wp<TS<i64>> value) {
         return add(value, 10);
     });
@@ -185,7 +181,6 @@ TEST_CASE("switch uses DEFAULT for invalid and unmatched keys",
 TEST_CASE("switch reports an unmatched or invalid key without DEFAULT",
           "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
           "[series:value][feature:validity][transition:invalidation][definition:function]") {
-
     const auto tested = [](wp<TS<i64>> key, wp<TS<i64>> value) {
         return switch_(key,
                        cases{case_(i64{1}, [](auto input) { return add(input, 1); })},
@@ -259,7 +254,6 @@ TEST_CASE("switch matches named graph arguments and omits unused named arguments
 TEST_CASE("switch forwards positional arguments to a variadic case graph",
           "[feature:switch][feature:nested-graph][feature:operator][feature:variadic-wiring]"
           "[shape:nested][series:value][series:tsb][schema:generic][definition:function]") {
-
     const auto select_second = graph(
         "name"_n = "select_second_switch_argument",
         [](wp<TSB<SCHEMA>, var_args> arguments) {
@@ -280,7 +274,6 @@ TEST_CASE("switch forwards positional arguments to a variadic case graph",
 TEST_CASE("switch forwards named arguments to a variadic case graph",
           "[feature:switch][feature:nested-graph][feature:operator][feature:variadic-wiring]"
           "[shape:nested][series:value][series:tsb][schema:generic][definition:function]") {
-
     const auto select_item = graph(
         "name"_n = "select_named_switch_argument",
         [](wp<TSB<SCHEMA>, var_kwargs> arguments) {
@@ -300,7 +293,6 @@ TEST_CASE("switch forwards named arguments to a variadic case graph",
 TEST_CASE("switch captures scalar case arguments at wiring time",
           "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
           "[series:value][definition:function]") {
-
     const auto tested = [](wp<TS<i64>> key, wp<TS<i64>> value) {
         return switch_(
                    key,
@@ -362,7 +354,6 @@ TEST_CASE("switching between tuple keys recreates the case graph",
 TEST_CASE("switch supports source and sink case graphs",
           "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
           "[shape:source][shape:sink][series:value][definition:function]") {
-
     const auto source_tested = [](wp<TS<i64>> key) {
         return switch_(key,
                        cases{case_(i64{1}, []() -> wp<TS<i64,
@@ -393,7 +384,6 @@ TEST_CASE("switch supports source and sink case graphs",
 TEST_CASE("switch accepts fully runtime cases and arguments",
           "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
           "[series:value][definition:runtime]") {
-
     const auto branch = graph("name"_n = "runtime_switch_branch", [](wp<TS<i64>> value) {
         return add(value, 3);
     });
@@ -418,7 +408,6 @@ TEST_CASE("switch accepts fully runtime cases and arguments",
 TEST_CASE("runtime switch preserves an optional key qualifier",
           "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
           "[series:value][validity:optional][definition:runtime]") {
-
     const auto branch = graph("name"_n = "optional_runtime_switch_branch", [](wp<TS<i64>> value) {
         return add(value, 3);
     });
@@ -459,7 +448,6 @@ TEST_CASE("runtime switch preserves an optional key qualifier",
 TEST_CASE("switch forwards optional positional and named inputs only to optional branch parameters",
           "[feature:switch][feature:nested-graph][feature:operator][feature:wiring]"
           "[validity:optional][definition:function]") {
-
     const auto keys = node([](Out<TS<i64>>) {});
 
     const auto values = node([](Out<TS<i64>>) {});
@@ -495,7 +483,6 @@ TEST_CASE("switch forwards optional positional and named inputs only to optional
 TEST_CASE("switch DEFAULT handles an invalid key",
           "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
           "[series:value][transition:invalidation][definition:function]") {
-
     const auto tested = [](wp<TS<i64>> key, wp<TS<i64>> value) {
         return switch_(optional_key(key),
                        cases{
@@ -513,7 +500,6 @@ TEST_CASE("switch DEFAULT handles an invalid key",
 TEST_CASE("switch starts a DEFAULT source when its key is initially invalid",
           "[feature:switch][feature:nested-graph][feature:operator][shape:source]"
           "[series:value][transition:invalidation][definition:function]") {
-
     const auto tested = [](wp<TS<i64>> key) {
         return switch_(
                    optional_key(key),
@@ -549,7 +535,6 @@ TEST_CASE("switches inside a map retain and replace state independently",
           "[feature:switch][feature:map][feature:nested-graph][feature:operator]"
           "[shape:doubly-nested][series:value][series:tsd][transition:update]"
           "[definition:function]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> values,
                            wp<TSD<i64, TS<i64>>> selectors) {
         const auto result = map(mapped_switch, values, selectors);
@@ -568,7 +553,6 @@ TEST_CASE("removing and recreating a map entry recreates its switch graph",
           "[feature:switch][feature:map][feature:nested-graph][feature:operator]"
           "[shape:doubly-nested][series:value][series:tsd][transition:addition]"
           "[transition:removal][definition:function]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> values,
                            wp<TSD<i64, TS<i64>>> selectors) {
         const auto result = map(mapped_switch, values, selectors);
@@ -586,7 +570,6 @@ TEST_CASE("an unmatched switch key inside a map fails the outer graph",
           "[feature:switch][feature:map][feature:nested-graph][feature:operator]"
           "[feature:lifecycle][shape:doubly-nested][series:value][series:tsd]"
           "[definition:function]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> values,
                            wp<TSD<i64, TS<i64>>> selectors) {
         const auto result = map(mapped_switch, values, selectors);
@@ -625,7 +608,6 @@ TEST_CASE("switch crosses an additional nested graph boundary",
           "[feature:switch][feature:nested-graph][feature:operator][shape:doubly-nested]"
           "[series:value][binding:value-to-reference][binding:reference-to-value]"
           "[definition:function]") {
-
     const auto inner = graph(
         "name"_n = "nested_switch",
         [](wp<TS<i64>> key, wp<TS<i64>> value) {

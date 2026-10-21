@@ -28,7 +28,6 @@ const auto add_mesh_dependency = node([](i64 value, std::optional<i64> dependenc
 TEST_CASE("mesh evaluates a dependency branch before the branch that depends on it",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[binding:reference-to-value][transition:addition]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> values,
                            wp<TSD<i64, TS<i64>>> dependencies) {
         const auto result =
@@ -48,7 +47,6 @@ const auto observe_mesh_dependency =
 TEST_CASE("mesh forwards optional positional input only to an optional branch parameter",
           "[feature:mesh][feature:nested-graph][feature:operator][feature:wiring][series:tsd]"
           "[validity:optional][definition:function]") {
-
     const auto dictionaries = node([](Out<TSD<i64, TS<i64>>>) {});
 
     const auto values = node([](Out<TS<i64>>) {});
@@ -128,7 +126,6 @@ TEST_CASE("mesh resumes a dependency node after its dependency completes",
 TEST_CASE("mesh creates a branch for a requested missing key",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[transition:addition]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> dependencies) {
         const auto result = mesh(
             [](auto key, auto dependency_key) {
@@ -148,7 +145,6 @@ TEST_CASE("mesh creates a branch for a requested missing key",
 TEST_CASE("mesh follows a time-series dependency key",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][series:value]"
           "[shape:nested][transition:update]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> values,
                            wp<TSD<i64, TS<i64>>> dependencies) {
         const auto result =
@@ -166,7 +162,6 @@ TEST_CASE("mesh follows a time-series dependency key",
 TEST_CASE("mesh invalidates a dependency when the dependency branch output becomes invalid",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[transition:invalidation]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> values,
                            wp<TSD<i64, TS<i64>>> dependencies) {
         const auto result =
@@ -184,7 +179,6 @@ TEST_CASE("mesh invalidates a dependency when the dependency branch output becom
 TEST_CASE("mesh retains a dependency-only branch until its last dependent is removed",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[transition:addition][transition:removal]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> values,
                            wp<TSD<i64, TS<i64>>> dependencies) {
         const auto result = mesh(
@@ -206,7 +200,6 @@ TEST_CASE("mesh retains a dependency-only branch until its last dependent is rem
 TEST_CASE("mesh destroys removed dependent branches and their dependency branches",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[transition:removal][transition:lifecycle]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> values,
                            wp<TSD<i64, TS<i64>>> dependencies) {
         const auto result = mesh(
@@ -228,7 +221,6 @@ TEST_CASE("mesh destroys removed dependent branches and their dependency branche
 TEST_CASE("mesh destroys a removed dependency while its dependent remains",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[transition:invalidation][transition:lifecycle]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> values,
                            wp<TSD<i64, TS<i64>>> dependencies) {
         const auto result = mesh(
@@ -250,7 +242,6 @@ TEST_CASE("mesh destroys a removed dependency while its dependent remains",
 TEST_CASE("mesh transfers a dependency after its previous dependent releases it",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[transition:invalidation][transition:revalidation][transition:lifecycle]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> values,
                            wp<TSD<i64, TS<i64>>> dependencies) {
         const auto result = mesh(
@@ -272,7 +263,6 @@ TEST_CASE("mesh transfers a dependency after its previous dependent releases it"
 
 TEST_CASE("mesh rejects self and multi-branch dependency cycles",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> values,
                            wp<TSD<i64, TS<i64>>> dependencies) {
         const auto result =
@@ -348,7 +338,6 @@ TEST_CASE("mesh does not reevaluate a clean dependency branch",
 
 TEST_CASE("mesh runs inside map", "[feature:mesh][feature:map][feature:nested-graph][feature:operator][series:tsd]"
                                   "[shape:doubly-nested]") {
-
     const auto mesh_values = node([](In<TS<i64>> value, Out<TSD<i64, TS<i64>>> output) {
         output[2].set(*value * 10);
         output[1].set(*value);
@@ -376,7 +365,6 @@ TEST_CASE("mesh runs inside map", "[feature:mesh][feature:map][feature:nested-gr
 
 TEST_CASE("map runs inside mesh", "[feature:mesh][feature:map][feature:nested-graph][feature:operator][series:tsd]"
                                   "[shape:doubly-nested]") {
-
     const auto increment_mesh_value = node([](i64 value) { return value + 1; });
 
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
@@ -398,7 +386,6 @@ TEST_CASE("map runs inside mesh", "[feature:mesh][feature:map][feature:nested-gr
 TEST_CASE("a named outer mesh is selected through an inner mesh and switch",
           "[feature:mesh][feature:switch][feature:nested-graph][feature:operator]"
           "[series:tsd][shape:deeply-nested][transition:addition]") {
-
     const auto tested = [=](wp<TSD<i64, TS<i64>>> values) {
         const auto outer = mesh(
             "name"_n = "outer",
@@ -438,7 +425,6 @@ TEST_CASE("a mesh dependency follows switch output replacement",
           "[feature:mesh][feature:switch][feature:nested-graph][feature:operator][feature:reference]"
           "[series:tsd][shape:deeply-nested][binding:reference-to-value][transition:update]"
           "[transition:lifecycle]") {
-
     const auto add_amount = node([](i64 value, int amount) { return value + amount; });
 
     const auto tested = [&](wp<TS<i64>> selected_case, wp<TSD<i64, TS<i64>>> values) {
@@ -494,7 +480,6 @@ TEST_CASE("a mesh dependency follows switch output replacement",
 TEST_CASE("runtime map instances keep independent outer mesh dependencies",
           "[feature:mesh][feature:map][feature:nested-graph][feature:operator]"
           "[series:tsd][shape:deeply-nested][shape:multiple]") {
-
     const auto inner_values = node([](In<TS<i64>> value, Out<TSD<i64, TS<i64>>> output) {
         output[10].set(*value);
         output[20].set(*value * 2);
@@ -538,7 +523,6 @@ TEST_CASE("runtime map instances keep independent outer mesh dependencies",
 TEST_CASE("a map removes and recreates branches after pending mesh dependencies",
           "[feature:mesh][feature:map][feature:nested-graph][feature:operator]"
           "[series:tsd][shape:deeply-nested][transition:removal][transition:addition]") {
-
     const auto optional_inner_mesh_values = node([](In<TS<bool>> present, Out<TSD<i64, TS<i64>>> output) {
         if (*present) {
             output[1].set(0);
@@ -585,7 +569,6 @@ TEST_CASE("a map removes and recreates branches after pending mesh dependencies"
 TEST_CASE("a mesh dependency branch reports timed work through its owner",
           "[feature:mesh][feature:nested-graph][feature:operator][feature:timed-scheduling]"
           "[series:tsd][shape:nested]") {
-
     const auto tested = [](wp<TSD<i64, TS<i64>>> values,
                            wp<TSD<i64, TS<i64>>> dependencies) {
         const auto result = mesh(

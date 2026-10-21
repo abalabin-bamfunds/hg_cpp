@@ -12,7 +12,6 @@ using namespace bg;
 
 TEST_CASE("symbol time series can store default and interned values",
           "[feature:test-graph][series:value][scalar:symbol][shape:single-node]") {
-
     const auto pass_through = node([](symbol input) { return input; });
 
     const auto graph = [&](wp<TS<symbol>> input) { return pass_through(input); };
@@ -157,7 +156,6 @@ TEST_CASE("a deduplicated value output schedules subscribers only for changed va
 
 TEST_CASE("a direct output uses its resolved guarantee",
           "[evaluation][feature:type-system][series:value][guarantee:deduplicated]") {
-
     const auto deduplicate = node<deduplicating_value_source>();
 
     const auto preserve_guarantee = node<preserve_value_guarantee>();
@@ -173,7 +171,6 @@ TEST_CASE("a direct output uses its resolved guarantee",
 
 TEST_CASE("a nested direct output uses its resolved item guarantee",
           "[evaluation][feature:type-system][series:tsd][guarantee:deduplicated]") {
-
     const auto deduplicate = node<deduplicating_value_source>();
 
     const auto make_dictionary = node<make_dictionary_with_guarantee>();

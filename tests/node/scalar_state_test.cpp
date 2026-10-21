@@ -44,7 +44,6 @@ struct collection_state_node {
 } // namespace
 
 TEST_CASE("collection state is mutable during a node invocation", "[node][state][scalar][feature:state]") {
-
     const auto collection_state = node<collection_state_node>();
 
     const auto graph = [&] { return collection_state(); };
@@ -96,7 +95,6 @@ struct collection_copy_node {
 TEST_CASE("compiled graph collection copies retain their string items",
           "[node][scalar][scalar:list][scalar:set][scalar:dict][scalar:string]"
           "[feature:scalar-storage][feature:graph-compilation][feature:global-state][storage:variable]") {
-
     const auto collection_copy = node<collection_copy_node>();
 
     const auto list = ScalarValue<List<string>>{std::array<std::string_view, 1>{"list item"}};
@@ -140,7 +138,6 @@ TEST_CASE("compiled graph collection copies retain their string items",
 }
 
 TEST_CASE("a runtime graph releases collection state storage", "[node][state][scalar][allocation][feature:state]") {
-
     const auto collection_state = node<collection_state_node>();
 
     auto wiring = GraphWiring{};
@@ -215,7 +212,6 @@ struct unsupported_scalar_state_node {
 
 TEST_CASE("generic collection state uses its resolved storage",
           "[node][state][scalar][generic][declaration:generic][feature:state][scalar:generic]") {
-
     const auto generic_list_state = node<generic_list_state_node>();
 
     const auto input = ScalarValue<List<i64>>{std::array<i64, 2>{3, 4}};
@@ -227,7 +223,6 @@ TEST_CASE("generic collection state uses its resolved storage",
 
 TEST_CASE("generic scalar state resolves constrained types and owns its value",
           "[node][state][scalar][generic][declaration:generic][feature:state][scalar:generic]") {
-
     const auto state_node = node<generic_scalar_state_node>();
 
     const auto retain = [&](wp<TS<string>> value) { return state_node(value); };
@@ -277,7 +272,6 @@ TEST_CASE("runtime-resolved scalar state reset releases its owned storage",
 
 TEST_CASE("runtime-resolved scalar state rejects types without initial-state support",
           "[node][state][scalar][generic][feature:state][scalar:generic]") {
-
     const auto state_node = node<unsupported_scalar_state_node>();
     const auto input = ScalarValue<Opaque<int>>{42};
     auto wiring = GraphWiring{};
@@ -328,7 +322,6 @@ struct generic_set_dict_state_node {
 TEST_CASE("generic set and dictionary state use resolved storage",
           "[node][state][scalar][generic][declaration:generic][feature:state][scalar:set][scalar:dict]"
           "[scalar:generic]") {
-
     const auto generic_set_dict_state = node<generic_set_dict_state_node>();
 
     const auto set_type = ScalarValue<Set<i64>>{std::array<i64, 1>{2}};
@@ -368,7 +361,6 @@ struct composed_dict_state_node {
 TEST_CASE("generic dictionary state composes storage from separate resolved types",
           "[node][state][scalar][generic][declaration:generic][feature:state][scalar:dict]"
           "[scalar:generic]") {
-
     const auto composed_dict_state = node<composed_dict_state_node>();
 
     const auto key = ScalarValue{i64{2}};
@@ -406,7 +398,6 @@ struct composed_list_set_state_node {
 TEST_CASE("generic list and set state compose storage from their resolved item type",
           "[node][state][scalar][generic][declaration:generic][feature:state][scalar:list][scalar:set]"
           "[scalar:generic]") {
-
     const auto composed_list_set_state = node<composed_list_set_state_node>();
 
     const auto value = ScalarValue{i64{3}};
@@ -418,7 +409,6 @@ TEST_CASE("generic list and set state compose storage from their resolved item t
 
 TEST_CASE("a runtime graph releases composed collection state storage",
           "[node][state][scalar][generic][declaration:generic][allocation][feature:state]") {
-
     const auto composed_dict_state = node<composed_dict_state_node>();
 
     const auto key = ScalarValue{i64{2}};
@@ -466,7 +456,6 @@ struct generic_nested_state_node {
 TEST_CASE("generic nested collection state returns mutable resolved items",
           "[node][state][scalar][generic][declaration:generic][collection][feature:state]"
           "[scalar:generic]") {
-
     const auto generic_nested_state = node<generic_nested_state_node>();
 
     const auto key = ScalarValue{i64{2}};
@@ -498,7 +487,6 @@ struct nested_collection_state_node {
 } // namespace
 
 TEST_CASE("nested collection state returns mutable child views", "[node][state][scalar][collection][feature:state]") {
-
     const auto nested_collection_state = node<nested_collection_state_node>();
 
     const auto initial = ScalarValue<List<i64>>{std::array<i64, 1>{7}};
@@ -510,7 +498,6 @@ TEST_CASE("nested collection state returns mutable child views", "[node][state][
 
 TEST_CASE("runtime graphs have independent generic collection state",
           "[node][state][scalar][generic][declaration:generic][runtime][feature:state][scalar:generic]") {
-
     const auto generic_list_state = node<generic_list_state_node>();
 
     auto results = std::vector<i64>{};

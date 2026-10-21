@@ -45,7 +45,6 @@ template <template <typename, auto...> typename Field> struct ContextBundle {
 
 TEST_CASE("a callable node receives a context time series",
           "[feature:context-time-series][feature:wiring][definition:function]") {
-
     const auto tested = [](wp<TS<i64>> value) {
         return with_context("value"_n = value, [] { return copy_context(); });
     };
@@ -57,7 +56,6 @@ TEST_CASE("a callable node receives a context time series",
 
 TEST_CASE("an aggregate node receives a context time series",
           "[feature:context-time-series][feature:wiring][definition:aggregate]") {
-
     const auto tested = [](wp<TS<i64>> value) {
         auto scope = with_context("value"_n = value);
         return copy_aggregate_context();
@@ -70,7 +68,6 @@ TEST_CASE("an aggregate node receives a context time series",
 
 TEST_CASE("an aggregate graph establishes a context time series",
           "[feature:context-time-series][feature:wiring][definition:aggregate]") {
-
     const auto tested = [](wp<TS<i64>> value) {
         return with_context("value"_n = value, [] { return copy_aggregate_graph_context(); });
     };
@@ -82,7 +79,6 @@ TEST_CASE("an aggregate graph establishes a context time series",
 
 TEST_CASE("a TSL graph parameter can request lexical context",
           "[feature:context-time-series][feature:wiring][series:fixed-tsl][definition:function]") {
-
     const auto first_item = graph("name"_n = "context_list_item", [](wp<TSL<TS<i64>, 2>, "values"_n, context> values) {
         return values[0].as<TS<i64>>();
     });
@@ -98,7 +94,6 @@ TEST_CASE("a TSL graph parameter can request lexical context",
 
 TEST_CASE("a TSB graph parameter can request lexical context",
           "[feature:context-time-series][feature:wiring][series:tsb][definition:function]") {
-
     const auto value_field = graph("name"_n = "context_bundle_item",
                                    [](wp<TSB<ContextBundle>, "values"_n, context> values) { return values->value; });
 
@@ -135,7 +130,6 @@ TEST_CASE("a callable graph context parameter can be supplied explicitly by name
 
 TEST_CASE("a callable node context parameter can be supplied explicitly by name",
           "[feature:context-time-series][feature:wiring][definition:function]") {
-
     const auto tested = [](wp<TS<i64>> value) { return copy_context("value"_n = value).as<TS<i64>>(); };
 
     const auto actual = testing::test_graph(tested, {7, 11});
@@ -145,7 +139,6 @@ TEST_CASE("a callable node context parameter can be supplied explicitly by name"
 
 TEST_CASE("an aggregate node context parameter can be supplied explicitly by name",
           "[feature:context-time-series][feature:wiring][definition:aggregate]") {
-
     const auto tested = [](wp<TS<i64>> value) { return copy_aggregate_context("value"_n = value).as<TS<i64>>(); };
 
     const auto actual = testing::test_graph(tested, {9, 13});
@@ -155,7 +148,6 @@ TEST_CASE("an aggregate node context parameter can be supplied explicitly by nam
 
 TEST_CASE("an aggregate graph context parameter can be supplied explicitly by name",
           "[feature:context-time-series][feature:wiring][definition:aggregate]") {
-
     const auto tested = [](wp<TS<i64>> value) { return copy_aggregate_graph_context("value"_n = value).as<TS<i64>>(); };
 
     const auto actual = testing::test_graph(tested, {10, 14});
@@ -193,7 +185,6 @@ TEST_CASE("a graph context parameter inherits and shadows lexical context",
 
 TEST_CASE("repeated context imports share the same pending boundary provider",
           "[feature:context-time-series][feature:wiring][shape:fan-out]") {
-
     const auto source = node([](Out<TS<i64>>) {});
     auto root = GraphWiring{};
     const auto root_context = WiringContext{root};
@@ -233,7 +224,6 @@ TEST_CASE("a missing context time series reports its name", "[feature:context-ti
 
 TEST_CASE("the nearest incompatible context time series is an error",
           "[feature:context-time-series][feature:wiring][feature:type-system]") {
-
     const auto incompatible = node([](Out<TS<double>>) {});
 
     const auto compatible = node([](Out<TS<i64>>) {});
@@ -447,7 +437,6 @@ TEST_CASE("rejected operator overloads do not import context requirements",
 
 TEST_CASE("a context callback restores the previous scope after an exception",
           "[feature:context-time-series][feature:wiring]") {
-
     const auto source = node([](Out<TS<i64>>) {});
 
     testing::test_wiring([&] {

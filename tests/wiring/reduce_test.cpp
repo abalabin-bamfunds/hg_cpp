@@ -38,7 +38,6 @@ const auto reference_source = node([](Out<REF<TS<i64>>>) {});
 
 TEST_CASE("reduce wiring records a binary graph over TSD item values",
           "[feature:reduce][feature:wiring][feature:graph-argument][series:tsd]") {
-
     const auto reducer = graph("name"_n = "add_values", [](wp<TS<i64>> left,
                                                               wp<TS<i64>> right) {
         return add_values(left, right);
@@ -71,7 +70,6 @@ TEST_CASE("reduce wiring records a binary graph over TSD item values",
 
 TEST_CASE("reduce selects nested wiring for a reference-wrapped TSD",
           "[feature:reduce][feature:wiring][series:tsd][series:reference][shape:nested]") {
-
     const auto reducer = graph("name"_n = "add_values", [](wp<TS<i64>> left,
                                                               wp<TS<i64>> right) {
         return add_values(left, right);
@@ -90,7 +88,6 @@ TEST_CASE("reduce selects nested wiring for a reference-wrapped TSD",
 
 TEST_CASE("reduce wiring records a graph whose result forwards one of its inputs",
           "[feature:reduce][feature:wiring][feature:graph-argument][series:tsd]") {
-
     const auto first_value = graph("name"_n = "first_value", [](wp<TS<i64>> left,
                                                                  wp<TS<i64>>) { return left; });
 
@@ -111,7 +108,6 @@ TEST_CASE("reduce wiring records a graph whose result forwards one of its inputs
 
 TEST_CASE("reduce wiring rejects reducer graphs with a non-item result",
           "[feature:reduce][feature:wiring][feature:graph-argument][series:tsd]") {
-
     const auto wrong_result = graph("name"_n = "wrong_result", [](wp<TS<i64>>,
                                                                     wp<TS<i64>>) {
         return float_source();
@@ -128,7 +124,6 @@ TEST_CASE("reduce wiring rejects reducer graphs with a non-item result",
 
 TEST_CASE("reduce wiring rejects a reference as the reducer result",
           "[feature:reduce][feature:wiring][feature:graph-argument][series:tsd]") {
-
     const auto reference_result = graph("name"_n = "reference_result", [](wp<TS<i64>>,
                                                                               wp<TS<i64>>) {
         return reference_source();
@@ -145,7 +140,6 @@ TEST_CASE("reduce wiring rejects a reference as the reducer result",
 
 TEST_CASE("reduce wiring rejects reducer graphs with the wrong input type",
           "[feature:reduce][feature:wiring][feature:graph-argument][series:tsd]") {
-
     const auto wrong_input = graph("name"_n = "wrong_input", [](wp<TS<float>> left, wp<TS<float>> right) {
         return left;
     });
@@ -160,7 +154,6 @@ TEST_CASE("reduce wiring rejects reducer graphs with the wrong input type",
 
 TEST_CASE("reduce wiring rejects reducer graphs with other than two inputs",
           "[feature:reduce][feature:wiring][feature:graph-argument][series:tsd]") {
-
     const auto wrong_arity = graph("name"_n = "wrong_arity", [](wp<TS<i64>> value) { return value; });
 
     testing::test_wiring([&] {
@@ -174,7 +167,6 @@ TEST_CASE("reduce wiring rejects reducer graphs with other than two inputs",
 
 TEST_CASE("reduce wiring preserves inherited context requirements",
           "[feature:reduce][feature:wiring][feature:context-time-series][series:tsd]") {
-
     const auto reducer = graph("name"_n = "context_reducer", [](wp<TS<i64>> left,
                                                                    wp<TS<i64>> right) {
         return add_with_context(left, right);
@@ -196,7 +188,6 @@ TEST_CASE("reduce wiring preserves inherited context requirements",
 
 TEST_CASE("an isolated compact reducer rejects context requirements without changing outer wiring",
           "[feature:reduce][feature:wiring][feature:context-time-series][series:tsd]") {
-
     const auto representation_sensitive = graph(
         "name"_n = "representation_sensitive_context_reducer",
         [](wp<TS<i64>> left, wp<TS<i64>> right) {
@@ -252,7 +243,6 @@ TEST_CASE("an isolated compact reducer rejects service requirements without chan
 
 TEST_CASE("reduce wires its TSD input and output type through the default overload",
           "[feature:reduce][feature:operator][feature:graph-argument][feature:wiring][series:tsd]") {
-
     const auto add = node([](In<TS<i64>> left, In<TS<i64>> right,
                              Out<TS<i64>> output) {});
 
@@ -274,7 +264,6 @@ TEST_CASE("reduce wires its TSD input and output type through the default overlo
 
 TEST_CASE("reduce accepts final TSD items and keeps an ordinary output guarantee",
           "[feature:reduce][feature:operator][feature:wiring][series:tsd][guarantee:final]") {
-
     const auto reducer = graph("name"_n = "add_final_items",
                                 [](wp<TS<i64>> left, wp<TS<i64>> right) {
                                     return add_values(left, right);

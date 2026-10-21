@@ -66,7 +66,6 @@ class scale_template final : public NodeTemplate {
 } // namespace
 
 TEST_CASE("compiled nodes keep hot data in node-local sections", "[compiled_graph][feature:graph-compilation]") {
-
     const auto source = node<source_definition>();
     const auto scale = scale_template{};
     GraphWiring wiring;
@@ -127,7 +126,6 @@ struct runtime_signature_identity_definition {
 
 TEST_CASE("typed callable nodes omit runtime-signature metadata",
           "[compiled_graph][feature:graph-compilation][definition:runtime]") {
-
     const auto typed_identity = node([](In<TS<i64>>, Out<TS<i64>>) {});
 
     const auto runtime_identity = node(runtime_signature_identity_definition{});
@@ -409,7 +407,6 @@ struct input_node_index_sink {
 
 TEST_CASE("compiled node input producer indices use compiled node order",
           "[feature:graph-compilation][series:value][shape:chain]") {
-
     const auto source = node<source_definition>();
 
     const auto sink = node<input_node_index_sink>();
@@ -460,7 +457,6 @@ struct all_valid_input_node_index_sink {
 
 TEST_CASE("compiled nodes retain all_valid metadata with input producer indices",
           "[feature:graph-compilation][feature:validity][series:value][scalar:i64][shape:chain]") {
-
     const auto source = node<integer_source_definition>();
 
     const auto sink = node<all_valid_input_node_index_sink>();
@@ -503,7 +499,6 @@ struct runtime_valid_items_all_valid_definition {
 
 TEST_CASE("compiled all_valid descriptors omit valid_items dictionary checks",
           "[compiled_graph][feature:validity][validity:all-valid][input-guarantee:valid-items][series:tsd]") {
-
     const auto source = node([](Out<TSD<i64, TS<i64>>>) {});
 
     const auto sink = node(runtime_valid_items_all_valid_definition{});
@@ -592,7 +587,6 @@ struct two_reference_input_sink {
 
 TEST_CASE("compiled reference notifications identify each receiving input slot",
           "[compiled_graph][subscriptions][feature:graph-compilation]") {
-
     const auto source = node<reference_subscription_source>();
 
     const auto pass = node<reference_subscription_pass>();
@@ -634,7 +628,6 @@ TEST_CASE("compiled reference notifications identify each receiving input slot",
 }
 
 TEST_CASE("graph wiring can compile more than once", "[compiled_graph][feature:graph-compilation]") {
-
     const auto source = node<source_definition>();
     const auto scale = scale_template{};
     GraphWiring wiring;
@@ -669,7 +662,6 @@ struct passive_copy_definition {
 
 TEST_CASE("compiled parameters retain validity without a passive subscription",
           "[compiled_graph][feature:graph-compilation]") {
-
     const auto source = node<source_definition>();
 
     const auto passive_copy = node<passive_copy_definition>();
@@ -688,7 +680,6 @@ TEST_CASE("compiled parameters retain validity without a passive subscription",
 }
 
 TEST_CASE("a compiled graph owns its scalar copies", "[compiled_graph][feature:graph-compilation]") {
-
     const auto source = node<source_definition>();
     const auto scale = scale_template{};
     std::unique_ptr<CompiledGraph> graph;
@@ -732,7 +723,6 @@ class counting_memory_resource final : public std::pmr::memory_resource {
 } // namespace
 
 TEST_CASE("compiled fixed storage uses one allocation", "[compiled_graph][feature:graph-compilation][storage:fixed]") {
-
     const auto source = node<source_definition>();
     const auto scale = scale_template{};
     GraphWiring wiring;
@@ -766,7 +756,6 @@ struct evaluation_time_source_definition {
 } // namespace
 
 TEST_CASE("a compiled graph stores an evaluation time output", "[compiled_graph][feature:graph-compilation]") {
-
     const auto evaluation_time_source = node<evaluation_time_source_definition>();
     GraphWiring wiring;
 
@@ -818,7 +807,6 @@ static_assert(!AggregateNodeClass<unsupported_opaque_output>);
 } // namespace
 
 TEST_CASE("a compiled graph owns an opaque scalar copy", "[compiled_graph][feature:graph-compilation]") {
-
     const auto opaque_sink = node<opaque_sink_definition>();
     auto value = private_data{42};
     const auto pointer = ScalarValue<Opaque<private_data *>>{&value};

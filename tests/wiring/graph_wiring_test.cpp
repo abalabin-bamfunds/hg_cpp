@@ -103,7 +103,6 @@ static_assert(std::is_trivially_copyable_v<WiringPoint>);
 } // namespace
 
 TEST_CASE("node calls add wired nodes to the active graph", "[graph_wiring][feature:wiring]") {
-
     const auto source = node<source_definition>();
 
     const auto copy = node<copy_definition>();
@@ -129,7 +128,6 @@ TEST_CASE("node calls add wired nodes to the active graph", "[graph_wiring][feat
 
 TEST_CASE("collected node calls have identities separate from output indices",
           "[graph_wiring][feature:wiring]") {
-
     const auto source = node<source_definition>();
 
     const auto consume = node([](In<TS<float>>) {});
@@ -160,7 +158,6 @@ TEST_CASE("collected node calls have identities separate from output indices",
 }
 
 TEST_CASE("wiring point re-annotation checks type compatibility", "[graph_wiring][feature:wiring]") {
-
     const auto source = node([](Out<TS<float>>) {});
     auto wiring = GraphWiring{};
 
@@ -216,7 +213,6 @@ TEST_CASE("wiring point reference annotations check guarantee compatibility",
 }
 
 TEST_CASE("wiring reuses a node called with the same arguments", "[graph_wiring][feature:wiring]") {
-
     const auto source = node([](Out<TS<float>>) {});
 
     const auto scale = node([](In<TS<float>>, float, Out<TS<float>>) {});
@@ -232,7 +228,6 @@ TEST_CASE("wiring reuses a node called with the same arguments", "[graph_wiring]
 }
 
 TEST_CASE("wiring keeps calls with different scalar arguments separate", "[graph_wiring][feature:wiring]") {
-
     const auto source = node([](Out<TS<float>>) {});
 
     const auto scale = node([](In<TS<float>>, float, Out<TS<float>>) {});
@@ -248,7 +243,6 @@ TEST_CASE("wiring keeps calls with different scalar arguments separate", "[graph
 }
 
 TEST_CASE("wiring resolves a runtime-selected scalar argument", "[graph_wiring][feature:wiring][scalar:generic]") {
-
     const auto sink = node([](Scalar<SCALAR>) {});
     auto value = ScalarValue<>{std::string{"runtime scalar"}};
     const auto arguments = std::array{WiringArgument{std::move(value)}};
@@ -266,7 +260,6 @@ TEST_CASE("wiring resolves a runtime-selected scalar argument", "[graph_wiring][
 
 TEST_CASE("a graph forwards an extension scalar through a generic parameter",
           "[graph_wiring][feature:wiring][scalar:generic]") {
-
     const auto sink = node([](Scalar<SCALAR>, Out<TS<float>>) {});
 
     const auto forward = graph([&](Scalar<SCALAR> value) { return sink(value); });
@@ -289,7 +282,6 @@ TEST_CASE("a graph forwards an extension scalar through a generic parameter",
 
 TEST_CASE("a graph resolves a scalar variable nested in a list view",
           "[feature:wiring][scalar:list][declaration:partially-generic]") {
-
     const auto sink = node([](Scalar<List<SCALAR>>) {});
 
     const auto forward = graph([&](Scalar<List<SCALAR>> value) { sink(value); });
@@ -353,7 +345,6 @@ TEST_CASE("constant and scalar arguments wire through the erased template interf
 }
 
 TEST_CASE("wiring keeps calls with different input sources separate", "[graph_wiring][feature:wiring]") {
-
     const auto first_source = node([](Out<TS<float>>) {});
 
     const auto second_source = node([](Out<TS<float>>) {});
@@ -370,7 +361,6 @@ TEST_CASE("wiring keeps calls with different input sources separate", "[graph_wi
 }
 
 TEST_CASE("wiring reuses a node called with the same absent scalar", "[graph_wiring][feature:wiring]") {
-
     const auto source = node([](std::optional<int>, Out<TS<float>>) {});
     auto wiring = GraphWiring{};
 
@@ -406,7 +396,6 @@ TEST_CASE("wiring does not reuse calls with an unhashable scalar", "[graph_wirin
 }
 
 TEST_CASE("wiring does not reuse outputless node calls", "[graph_wiring][feature:wiring]") {
-
     const auto source = node([](Out<TS<float>>) {});
 
     const auto sink = node([](In<TS<float>>) {});
@@ -422,7 +411,6 @@ TEST_CASE("wiring does not reuse outputless node calls", "[graph_wiring][feature
 }
 
 TEST_CASE("a node can disable wiring deduplication", "[graph_wiring][feature:wiring]") {
-
     const auto source = node(eval = [](Out<TS<float>>) {}, deduplicate_wiring = false);
     auto wiring = GraphWiring{};
 
@@ -447,7 +435,6 @@ struct non_deduplicated_source {
 } // namespace
 
 TEST_CASE("an aggregate node can disable wiring deduplication", "[graph_wiring][feature:wiring]") {
-
     const auto source = node<non_deduplicated_source>();
     auto wiring = GraphWiring{};
 
@@ -460,7 +447,6 @@ TEST_CASE("an aggregate node can disable wiring deduplication", "[graph_wiring][
 }
 
 TEST_CASE("a node call requires a wiring context", "[graph_wiring][feature:wiring]") {
-
     const auto source = node<source_definition>();
     CHECK_THROWS_AS(source(), WiringError);
 }
@@ -478,7 +464,6 @@ struct bound_reference_source {
 } // namespace
 
 TEST_CASE("a node call can seed type resolution", "[graph_wiring][type_system][feature:wiring]") {
-
     const auto source = node<bound_reference_source>();
     const auto &target = TS<i64>::type();
     const auto &expected = REF<TS<i64>, TimeSeriesGuarantee::deduplicated>::type();
@@ -566,7 +551,6 @@ class scalar_or_time_series_node_template final : public NodeTemplate {
 
 TEST_CASE("runtime node templates reject a Union with multiple time-series forms",
           "[feature:wiring][feature:type-system]") {
-
     const auto source = node([](Out<TS<float>>) {});
     const auto sink = union_input_node_template{};
     auto wiring = GraphWiring{};
@@ -578,7 +562,6 @@ TEST_CASE("runtime node templates reject a Union with multiple time-series forms
 
 TEST_CASE("runtime node templates reject a time-series-only Union",
           "[feature:wiring][feature:type-system]") {
-
     const auto source = node([](Out<TS<float>>) {});
     const auto sink = series_only_union_input_node_template{};
     auto wiring = GraphWiring{};
@@ -608,7 +591,6 @@ TEST_CASE("runtime node templates resolve scalar and selected time-series Union 
     }
 
     SECTION("a deferred source binds its selected time-series form") {
-
         const auto integer_source = node([](Out<TS<i64>>) {});
 
         const auto float_source = node([](Out<TS<float>>) {});
@@ -676,7 +658,6 @@ TEST_CASE("invoke_node captures the intended template while importing context",
 }
 
 TEST_CASE("wired nodes retain scalar arguments", "[graph_wiring][feature:wiring]") {
-
     const auto source = node<source_definition>();
     const auto scale = scale_template{};
     GraphWiring wiring;
@@ -724,7 +705,6 @@ class optional_scalar_type_node_template final : public NodeTemplate {
 } // namespace
 
 TEST_CASE("optional scalar parameters can record absence", "[graph_wiring][feature:wiring]") {
-
     const auto optional_scalar = node<optional_scalar_definition>();
     GraphWiring wiring;
 
@@ -765,7 +745,6 @@ struct required_scalar_definition {
 } // namespace
 
 TEST_CASE("required scalar parameters reject absence", "[graph_wiring][feature:wiring]") {
-
     const auto required_scalar = node<required_scalar_definition>();
     GraphWiring wiring;
     const WiringContext context{wiring};
@@ -834,7 +813,6 @@ TEST_CASE("an output runtime callback failure retains the node's wiring context"
 
 TEST_CASE("explicit scalar values preserve their declared graph type",
           "[graph_wiring][feature:wiring][scalar:integer]") {
-
     const auto consume = node([](Scalar<int>) {});
     const auto value = ScalarValue<int>{1};
     auto wiring = GraphWiring{};
@@ -858,7 +836,6 @@ struct scheduled_times_definition {
 } // namespace
 
 TEST_CASE("evaluation time lists pass through normal wiring", "[graph_wiring][feature:wiring]") {
-
     const auto scheduled_times = node<scheduled_times_definition>();
     const auto times =
         std::vector{MIN_DT + std::chrono::microseconds{2}, MIN_DT + std::chrono::microseconds{5}};
@@ -878,7 +855,6 @@ TEST_CASE("evaluation time lists pass through normal wiring", "[graph_wiring][fe
 }
 
 TEST_CASE("nested wiring contexts keep graph connections explicit", "[graph_wiring][feature:wiring]") {
-
     const auto source = node<source_definition>();
 
     const auto copy = node<copy_definition>();

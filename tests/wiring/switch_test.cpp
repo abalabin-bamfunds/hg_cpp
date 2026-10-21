@@ -61,7 +61,6 @@ class SwitchCacheOverload final : public WiringTemplate {
 TEST_CASE("switch validates its case set",
           "[feature:switch][feature:wiring][feature:operator][series:value]"
           "[definition:function]") {
-
     const auto key = node([](Out<TS<i64>>) {});
 
     const auto value = node([](Out<TS<i64>>) {});
@@ -124,7 +123,6 @@ TEST_CASE("switch preserves named arguments around an omitted case default",
 
 TEST_CASE("switch runtime declarations preserve valid_items inputs",
           "[feature:switch][feature:wiring][feature:validity][series:tsd][input-guarantee:valid-items]") {
-
     const auto key = node([](Out<TS<i64>>) {});
 
     const auto source = node([](Out<TSD<i64, TS<i64>>>) {});
@@ -152,7 +150,6 @@ TEST_CASE("switch runtime declarations preserve valid_items inputs",
 TEST_CASE("switch rejects incompatible case output shapes",
           "[feature:switch][feature:wiring][feature:operator][series:value]"
           "[definition:function]") {
-
     const auto key = node([](Out<TS<i64>>) {});
 
     const auto integers = graph(
@@ -188,7 +185,6 @@ TEST_CASE("switch output is a deduplicated reference to the common case output",
           "[feature:switch][feature:wiring][feature:operator][feature:reference]"
           "[series:value][binding:value-to-reference][guarantee:deduplicated]"
           "[definition:function]") {
-
     const auto key = node([](Out<TS<i64>>) {});
 
     const auto value = node([](Out<TS<i64>>) {});
@@ -207,7 +203,6 @@ TEST_CASE("switch output is a deduplicated reference to the common case output",
 TEST_CASE("switch uses the weakest compatible case output guarantee",
           "[feature:switch][feature:wiring][feature:operator][feature:type-system]"
           "[series:value][guarantee:ordinary][guarantee:final][definition:function]") {
-
     const auto key = node([](Out<TS<i64>>) {});
 
     const auto final_source = graph(
@@ -230,7 +225,6 @@ TEST_CASE("switch uses the weakest compatible case output guarantee",
 TEST_CASE("switch resolves bundles whose matching fields have different guarantees",
           "[feature:switch][feature:wiring][feature:operator][feature:type-system]"
           "[series:tsb][schema:named][guarantee:ordinary][guarantee:final][definition:function]") {
-
     const auto key = node([](Out<TS<i64>>) {});
 
     const auto final_source = node([](Out<TSB<switch_bundle, TimeSeriesGuarantee::final>>) {});
@@ -254,7 +248,6 @@ TEST_CASE("switch resolves bundles whose matching fields have different guarante
 TEST_CASE("switch resolution cache includes every case graph",
           "[feature:switch][feature:wiring][feature:operator][feature:graph-argument]"
           "[series:value][definition:function]") {
-
     const auto key = node([](Out<TS<i64>>) {});
 
     const auto first = graph("name"_n = "first_switch_source",

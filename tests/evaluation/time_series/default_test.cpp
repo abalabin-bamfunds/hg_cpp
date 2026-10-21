@@ -20,7 +20,6 @@ using namespace bg;
 TEST_CASE("a default value supplies an initially invalid source input",
           "[feature:operator][feature:validity][series:value][scalar:integer]"
           "[shape:single-node][activity:active][validity:required][transition:first-tick]") {
-
     const auto graph = [](wp<TS<i64>> input) { return operators::default_(input, 7).as<TS<i64>>(); };
 
     const auto actual = testing::test_graph(graph, {std::nullopt, 3, std::nullopt, 4});
@@ -106,7 +105,6 @@ struct direct_default_observer_definition {
 TEST_CASE("a default binding dereferences a reference source",
           "[feature:operator][feature:reference][feature:validity][series:value][series:reference]"
           "[binding:reference-to-value][scalar:integer][transition:invalidation]") {
-
     const auto source = node<changing_source>();
 
     const auto pass = node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) { output.copy(input); });
@@ -121,7 +119,6 @@ TEST_CASE("a default binding dereferences a reference source",
 TEST_CASE("a default binding switches on source invalidation and revalidation",
           "[feature:operator][feature:validity][feature:invalidation][feature:scheduling][series:value]"
           "[scalar:integer][transition:invalidation][transition:revalidation]") {
-
     const auto source = node<changing_source>();
 
     const auto graph = [&] { return operators::default_(source(), 7).as<TS<i64>>(); };
@@ -134,7 +131,6 @@ TEST_CASE("a default binding switches on source invalidation and revalidation",
 TEST_CASE("a default binding updates its timestamp across source validity changes",
           "[feature:operator][feature:validity][feature:invalidation][feature:scheduling][series:value]"
           "[scalar:integer][shape:chain][transition:update][transition:invalidation][transition:revalidation]") {
-
     const auto source = node<changing_source>();
 
     const auto graph = [&] { return observe_default(operators::default_(source(), 7)); };
@@ -176,7 +172,6 @@ struct equal_default_source {
 TEST_CASE("a default binding publishes equal fallback validity switches",
           "[feature:operator][feature:validity][feature:invalidation][feature:scheduling][series:value]"
           "[scalar:integer][shape:chain][transition:invalidation][transition:revalidation]") {
-
     const auto source = node<equal_default_source>();
 
     const auto graph = [&] { return observe_default(operators::default_(source(), 7)); };
@@ -191,7 +186,6 @@ TEST_CASE("a reference over a default binding receives fallback updates",
           "[feature:operator][feature:reference][feature:validity][feature:invalidation][series:value]"
           "[series:reference][scalar:integer][shape:chain][binding:value-to-reference]"
           "[binding:reference-to-value][transition:invalidation][transition:revalidation]") {
-
     const auto source = node<changing_source>();
 
     const auto pass = node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) { output.copy(input); });
@@ -209,7 +203,6 @@ TEST_CASE("a default binding initializes a reference consumer while its source i
           "[feature:operator][feature:reference][feature:validity][feature:scheduling][series:value]"
           "[series:reference][scalar:integer][shape:chain][binding:value-to-reference]"
           "[binding:reference-to-value][transition:first-tick][transition:revalidation]") {
-
     const auto source = node<initially_invalid_source>();
 
     const auto pass = node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) { output.copy(input); });
@@ -224,7 +217,6 @@ TEST_CASE("a default binding initializes a reference consumer while its source i
 TEST_CASE("nested defaults preserve the first fallback",
           "[feature:operator][feature:validity][feature:scheduling][series:value][scalar:integer]"
           "[shape:chain][transition:first-tick][transition:revalidation]") {
-
     const auto source = node<initially_invalid_source>();
 
     const auto observe = node([](i64 input) { return input; });
@@ -312,7 +304,6 @@ TEST_CASE("a default binding has no default node for a value consumer",
 
 TEST_CASE("a default binding has an ordinary result for a final source",
           "[feature:operator][feature:wiring][series:value][scalar:integer][guarantee:ordinary][guarantee:final]") {
-
     const auto source = node([](Out<TS<i64, TimeSeriesGuarantee::final>>) {});
     auto wiring = GraphWiring{};
     auto context = WiringContext{wiring};
@@ -355,7 +346,6 @@ TEST_CASE("a default binding materializes only for a reference consumer",
 
 TEST_CASE("equal default adapter nodes deduplicate",
           "[feature:operator][feature:graph-compilation][series:value][scalar:integer][shape:fan-out]") {
-
     const auto first_sink = node([](In<TS<i64>>, Out<TS<i64>>) {});
 
     const auto second_sink = node([](In<TS<i64>>, Out<TS<i64>>) {});
@@ -376,7 +366,6 @@ TEST_CASE("equal default adapter nodes deduplicate",
 
 TEST_CASE("a default binding adds one timestamp to runtime storage",
           "[feature:operator][feature:graph-compilation][series:value][scalar:integer][shape:single-node]") {
-
     const auto sink = node([](In<TS<i64>>, Out<TS<i64>>) {});
     const auto runtime_storage_size = [&](bool with_default) {
         auto wiring = GraphWiring{};

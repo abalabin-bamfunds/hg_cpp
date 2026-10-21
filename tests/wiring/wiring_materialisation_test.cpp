@@ -207,7 +207,6 @@ TEST_CASE("deferred wiring points cache each advertised target independently",
 TEST_CASE("deferred wiring validates options, freezes their set, and rejects implicit routes",
           "[feature:wiring-materialisation][feature:wiring][series:value][schema:generic]"
           "[declaration:concrete]") {
-
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
 
     const auto float_source = bg::node([](bg::Out<bg::TS<double>>) {});
@@ -280,7 +279,6 @@ TEST_CASE("deferred wiring validates options, freezes their set, and rejects imp
 
 TEST_CASE("deferred wiring rejects points from another graph wiring",
           "[feature:wiring-materialisation][feature:wiring][series:value][shape:source]") {
-
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
     auto first_wiring = bg::GraphWiring{};
     auto second_wiring = bg::GraphWiring{};
@@ -1011,7 +1009,6 @@ TEST_CASE("signature materialisation cost counts each point and target once",
 
 TEST_CASE("binding cost charges one contained and one top-level reference adaptation per input",
           "[feature:wiring-materialisation][feature:wiring][feature:reference][series:fixed-tsl]") {
-
     const auto source = bg::node([](bg::Out<bg::TSL<bg::TS<bg::i64>, 2>>) {});
 
     const auto scalar_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
@@ -1452,7 +1449,6 @@ TEST_CASE("a failed direct-form match does not reject an offered bundle form",
 
 TEST_CASE("independent form matches resolve a shared variable from offered forms",
           "[feature:wiring-materialisation][feature:wiring][series:value][schema:generic]") {
-
     const auto int_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
 
     const auto double_source = bg::node([](bg::Out<bg::TS<double>>) {});
@@ -1547,7 +1543,6 @@ TEST_CASE("independent form matches preserve guarantees in captured bundle schem
 
 TEST_CASE("signature matching resolves constrained variables from selected forms",
           "[feature:wiring-materialisation][feature:wiring][series:value][schema:generic]") {
-
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
@@ -1603,7 +1598,6 @@ TEST_CASE("signature matching resolves a guarantee variable from each selected f
 
 TEST_CASE("signature matching resolves a reference target from each selected form",
           "[feature:wiring-materialisation][feature:wiring][series:reference][schema:generic]") {
-
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
@@ -1654,7 +1648,6 @@ TEST_CASE("an ambiguous union form does not hide another valid materialisation f
 
 TEST_CASE("signature matching branches independent unions and unifies shared inner variables",
           "[feature:wiring-materialisation][feature:wiring][series:value][schema:generic]") {
-
     const auto source = bg::node([](bg::Out<bg::TS<bool>>) {});
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
@@ -1813,7 +1806,6 @@ TEST_CASE("failed transitive materialisation collection preserves committed requ
 
 TEST_CASE("materialisation builder failures include callback and wiring path context",
           "[feature:wiring-materialisation][feature:wiring]") {
-
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
 
     const auto consume = bg::node([](bg::In<bg::TS<float>>) {});
@@ -1880,7 +1872,6 @@ TEST_CASE("materialisation errors retain causes and owned contexts after graph d
 
     auto saved_error = std::optional<bg::WiringError>{};
     {
-
         const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
 
         const auto consume = bg::node([](bg::In<bg::TS<float>>) {});
@@ -2007,7 +1998,6 @@ TEST_CASE("shared materialisation preparation retains each consumer context once
 
 TEST_CASE("materialisation return type failures report expected and actual types",
           "[feature:wiring-materialisation][feature:wiring]") {
-
     const auto integer_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
 
     const auto boolean_source = bg::node([](bg::Out<bg::TS<bool>>) {});
@@ -2049,7 +2039,6 @@ TEST_CASE("materialisation collection shares concrete demands with Union consume
     using FORM = bg::Union<"SHARED_FORM", bg::TS<bg::i64>, bg::TSB<OneValue>>;
 
     const auto run = [&](bool concrete_first) {
-
         const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
 
         const auto bool_source = bg::node([](bg::Out<bg::TS<bool>>) {});
@@ -2197,7 +2186,6 @@ TEST_CASE("materialisation expansion permits another target on the same point",
 
 TEST_CASE("materialisation dependency cycles fail and failed callbacks leave no active request",
           "[feature:wiring-materialisation][feature:wiring][series:value][shape:chain]") {
-
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
@@ -2403,7 +2391,6 @@ TEST_CASE("materialisation preparation follows collection, item, and variadic de
 
 TEST_CASE("materialisation preparation rejects an incompatible target for a default materialisation",
           "[feature:wiring-materialisation][feature:wiring]") {
-
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};

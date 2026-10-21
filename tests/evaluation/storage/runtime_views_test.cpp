@@ -83,7 +83,6 @@ struct generic_list_source_definition {
 
 TEST_CASE("a generic scalar list resolves its item view",
           "[evaluation][views][feature:time-series-view][declaration:generic]") {
-
     const auto generic_list_source = bg::node<generic_list_source_definition>();
     const auto values = std::vector{2.5F};
     const auto list = ScalarValue<List<float>>{values};
@@ -116,7 +115,6 @@ struct generic_value_copy_definition {
 
 TEST_CASE("a generic scalar time-series view preserves its resolved scalar type",
           "[evaluation][views][feature:time-series-view][declaration:generic]") {
-
     const auto starting_source = bg::node<starting_source_definition>();
 
     const auto generic_value_copy = bg::node<generic_value_copy_definition>();
@@ -150,7 +148,6 @@ struct double_source_definition {
 
 TEST_CASE("a generic time-series view preserves its resolved time-series type",
           "[evaluation][views][feature:time-series-view][declaration:generic]") {
-
     const auto generic_copy = bg::node<generic_copy_definition>();
 
     const auto double_source = bg::node<double_source_definition>();
@@ -195,7 +192,6 @@ struct generic_list_view_value_definition {
 
 TEST_CASE("generic time-series list views expose their resolved size and items",
           "[evaluation][views][tsl][series:fixed-tsl][feature:time-series-view][declaration:generic]") {
-
     const auto copy = bg::node<generic_list_view_copy_definition>();
 
     const auto value = bg::node<generic_list_view_value_definition>();
@@ -255,7 +251,6 @@ struct generic_bundle_view_value_definition {
 TEST_CASE("generic bundle views expose their resolved schema and items",
           "[evaluation][views][tsb][series:tsb][feature:time-series-view][declaration:generic]"
           "[schema:generic]") {
-
     const auto copy = bg::node<generic_bundle_view_copy_definition>();
 
     const auto value = bg::node<generic_bundle_view_value_definition>();

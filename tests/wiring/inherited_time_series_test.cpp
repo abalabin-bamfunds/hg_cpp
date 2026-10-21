@@ -78,7 +78,6 @@ TEST_CASE("a late inherited provider crosses a nested graph boundary",
 
 TEST_CASE("a named context requirement cannot be provided after wiring",
           "[feature:inherited-time-series][feature:context-time-series][feature:wiring]") {
-
     const auto source = node([](Out<TS<i64>> output) { output.set(1); });
     auto wiring = GraphWiring{};
     const auto wiring_context = WiringContext{wiring};

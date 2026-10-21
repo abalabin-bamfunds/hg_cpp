@@ -557,7 +557,6 @@ TEST_CASE("callable graph time series unions accept each form and preserve the s
 
 TEST_CASE("callable graph union names share variables inside their alternatives",
           "[feature:wiring][feature:type-system][feature:graph-argument]") {
-
     const auto inspect = graph("name"_n = "inspect_union_variables",
                                [](wp<GRAPH_LEFT_FORM>, wp<GRAPH_RIGHT_FORM>) {});
 
@@ -695,7 +694,6 @@ TEST_CASE("graph types with the same pattern retain signature specificity",
 
 TEST_CASE("a callable operator overload resolves variables nested in a graph type",
           "[feature:operator][feature:type-system][feature:graph-argument][definition:function]") {
-
     const auto result_source = node<graph_result_node>();
 
     const auto implementation = graph(
@@ -728,7 +726,6 @@ TEST_CASE("graph type variables constrain other overload parameters",
     operation.overload(implementation);
 
     testing::test_wiring([&] {
-
         const auto integer_source = node<boundary_node>();
 
         const auto floating_point_source = node<float_boundary_node>();
@@ -743,7 +740,6 @@ TEST_CASE("graph type variables constrain other overload parameters",
 
 TEST_CASE("an aggregate graph resolves variables nested in a graph type",
           "[feature:wiring][feature:type-system][feature:graph-argument][definition:aggregate]") {
-
     const auto sink = graph<typed_aggregate_graph_argument_sink>();
 
     testing::test_wiring([&] {
@@ -772,7 +768,6 @@ TEST_CASE("graph structure rejects overlapping external boundaries",
 
 TEST_CASE("a callable graph receives an owning graph argument",
           "[feature:wiring][feature:graph-argument][definition:function]") {
-
     const auto sink = graph("name"_n = "graph_argument_sink", [](const GraphArgument &function) {
         CHECK(function.structure().boundary_count() == 1);
     });
@@ -782,7 +777,6 @@ TEST_CASE("a callable graph receives an owning graph argument",
 
 TEST_CASE("an aggregate graph receives an owning graph argument",
           "[feature:wiring][feature:graph-argument][definition:aggregate]") {
-
     const auto sink = graph<aggregate_graph_argument_sink>();
 
     testing::test_wiring([&] { sink(argument(identity_structure())); });
@@ -790,7 +784,6 @@ TEST_CASE("an aggregate graph receives an owning graph argument",
 
 TEST_CASE("a typed operator prototype accepts a graph argument",
           "[feature:operator][feature:wiring][feature:graph-argument][definition:function]") {
-
     const auto result_source = node<graph_result_node>();
 
     const auto implementation = graph("name"_n = "apply_graph", [result_source](const GraphArgument &function) {
@@ -808,7 +801,6 @@ TEST_CASE("a typed operator prototype accepts a graph argument",
 
 TEST_CASE("graph patterns are less generic than any graph and distinct patterns are unordered",
           "[feature:operator][feature:type-system][feature:graph-argument]") {
-
     const auto add_node_template = node<add_node>();
 
     const auto multiply_node_template = node<multiply_node>();
@@ -987,7 +979,6 @@ TEST_CASE("operator diagnostics retain graph argument types",
 
 TEST_CASE("variadic parameters reject graph arguments",
           "[feature:wiring][feature:graph-argument][feature:variadic-wiring][series:tsb][schema:generic]") {
-
     const auto variadic = graph("name"_n = "variadic", [](wp<TSB<SCHEMA>, var_args>) {});
 
     CHECK_THROWS_WITH(testing::test_wiring([&] { variadic(argument(identity_structure())); }),

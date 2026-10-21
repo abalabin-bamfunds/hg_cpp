@@ -51,7 +51,6 @@ TEST_CASE("reference declarations are neutral and outputs default to deduplicate
 TEST_CASE("an omitted reference input guarantee remains unconstrained",
           "[type][reference][feature:type-system][declaration:generic][guarantee:ordinary]"
           "[guarantee:deduplicated]") {
-
     const auto sink = node([](In<REF<TS<i64>>>) {});
     const auto &input = static_cast<const TimeSeriesType &>(*sink.signature().parameter(0).type);
 

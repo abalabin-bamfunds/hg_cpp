@@ -98,7 +98,6 @@ TEST_CASE("a graph function can receive wiring arguments without adding a graph 
 
 TEST_CASE("a graph can map its output type into a nested implementation",
           "[graph_template][feature:wiring][feature:type-system]") {
-
     const auto integer_source = node([](Out<TS<i64>>) {});
 
     const auto generic_output = graph<NESTED_OUTPUT>(
@@ -148,7 +147,6 @@ TEST_CASE("a graph template expands into the active graph", "[graph_template][fe
 }
 
 TEST_CASE("a graph template can omit its output", "[graph_template][feature:wiring]") {
-
     const auto scale_sink_graph = graph(
         "name"_n = "scale_sink_graph", [](wp<TS<float>> input, float factor) { (void)scale(input, factor); });
     GraphWiring wiring;
@@ -232,7 +230,6 @@ TEST_CASE("callable graph requirements reject before wiring the body",
 
 TEST_CASE("callable graph requirements return rejection diagnostics with graph labels",
           "[graph_template][feature:wiring]") {
-
     const auto guarded = graph(
         "name"_n = "guarded",
         "label"_n = [](i64 value) { return std::string{"value="} + std::to_string(value); },
@@ -266,7 +263,6 @@ TEST_CASE("callable graph requirements return rejection diagnostics with graph l
 
 TEST_CASE("callable output guarantee inference is local to its node signature",
           "[graph_template][feature:wiring][feature:node-api][definition:function][series:value]") {
-
     const auto increment = node([](double value) { return value + 1.0; });
 
     const auto inferred_output_graph = graph("name"_n = "inferred_callable_output",
@@ -344,7 +340,6 @@ struct struct_scale_graph {
 } // namespace
 
 TEST_CASE("a struct graph definition supplies its signature", "[graph_template][feature:wiring]") {
-
     const auto reflected_scale_graph = graph<struct_scale_graph>();
     const auto &signature = reflected_scale_graph.signature();
     const auto &time_series = TS<float>::type();

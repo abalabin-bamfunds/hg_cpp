@@ -531,7 +531,6 @@ TEST_CASE("a scalar provider read type controls collection aliases and reads",
 TEST_CASE("a scalar provider read type passes through a time series output",
           "[feature:test-graph][feature:scalar-api][feature:scalar-storage][series:value][storage:fixed]"
           "[declaration:concrete][shape:single-node][binding:direct][transition:first-tick]") {
-
     const auto copy = node([](In<TS<Value>> input, Out<TS<Value>> output) { output.set(input.value()); });
 
     const auto graph = [&](wp<TS<Value>> input) { return copy(input); };
@@ -760,7 +759,6 @@ TEST_CASE("typed output writes through a prefixed scalar runtime layout",
 TEST_CASE("aggregate optional provider scalars handle present and absent values",
           "[feature:node-api][feature:scalar-storage][definition:aggregate][declaration:concrete]"
           "[validity:optional]") {
-
     const auto reader = node<OptionalProviderPromotedReader>();
 
     const auto present_graph = [&] { return reader(std::optional<Value>{Value{17}}); };

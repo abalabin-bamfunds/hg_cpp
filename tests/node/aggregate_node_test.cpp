@@ -137,7 +137,6 @@ TEST_CASE("an aggregate definition selects its output runtime type during wiring
 
 TEST_CASE("a concrete aggregate retains its selected output descriptor in the wiring record",
           "[feature:node-api][series:value][declaration:concrete][definition:aggregate]") {
-
     const auto source = node([](Out<TS<i64>>) {});
 
     const auto aggregate = node<selected_concrete_runtime_output>();
@@ -156,7 +155,6 @@ TEST_CASE("a concrete aggregate retains its selected output descriptor in the wi
 
 TEST_CASE("a concrete aggregate evaluates using its selected output descriptor",
           "[feature:node-api][series:value][declaration:concrete][definition:aggregate]") {
-
     const auto aggregate = node<selected_concrete_runtime_output>();
 
     const auto graph = [&](wp<TS<i64>> input) -> wp<TS<i64>> {
