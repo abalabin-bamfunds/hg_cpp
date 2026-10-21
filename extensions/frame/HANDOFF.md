@@ -1,6 +1,6 @@
 # Frame foundation handoff
 
-Updated: 2026-10-21. The frame lane is rebased onto main `08302061`.
+Updated: 2026-10-21. The frame lane is rebased onto main `8fcc3da7`.
 Main includes shared schema metadata (`6419e073`), process-lifetime ownership
 of registered type metadata (`160f128b`), compatible generic input-view casts
 (`a17a8ffd`), and stateful test-graph literal comparison (`04518839`). Frame
@@ -25,7 +25,7 @@ completed lane retirement, and consumer verification.
 
 | Work | Location / branch | State |
 | --- | --- | --- |
-| Main baseline | `/home/abalabin/_bg`, `main` | `08302061` |
+| Main baseline | `/home/abalabin/_bg`, `main` | `8fcc3da7` |
 | Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Frame foundation, expressions, scalar literals, native keyed storage, TSF/TSC input literals, and native/view/computed capture |
 | Generic input-view casts | Main | `a17a8ffd`; tested build preserved in `.lanes/generic-input-cast` |
 | Shared schema metadata and BG lifetime fix | Main | `6419e073`, `160f128b`; consumer builds use matching lane-local installs |
@@ -212,7 +212,7 @@ CTest ran with `ASAN_OPTIONS=detect_leaks=0` and
 `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1`.
 
 The stateful comparison API is integrated on main through merge `04518839`.
-At the current rebased frame baseline `08302061`, all six Release Arrow-on
+At the current rebased frame baseline `8fcc3da7`, all six Release Arrow-on
 consumer suites pass. GCC reports repeated `-Wstringop-overflow` diagnostics
 from the existing `concurrent_buffer_reservation::write_bytes` implementation
 in `bg/util/buffer.hpp:444`; the build succeeds.
@@ -533,7 +533,7 @@ TSF patch fields, name reuse rejection, empty published deltas, and skipped
 ticks.
 
 All six Release Arrow-on consumer suites pass against the current rebased main
-baseline `08302061`, which includes the stateful comparison merge `04518839`.
+baseline `8fcc3da7`, which includes the stateful comparison merge `04518839`.
 The verified frame implementation is recorded on the active frame lane.
 
 ## Performance artifacts

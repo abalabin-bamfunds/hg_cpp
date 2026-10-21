@@ -6,13 +6,11 @@
 #include <bg/time_series/tick_operations.hpp>
 #include <bg/time_series/tick_serializer.hpp>
 #include <bg/time_series/details/scalar_literal.hpp>
-#include <bg/util/static_storage.hpp>
 #include "literal_helpers.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cstdint>
-#include <mutex>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -190,11 +188,6 @@ class RowHistoryMatcher {
     std::array<std::size_t, 3> expected_counts_{};
     std::array<std::size_t, 3> actual_counts_{};
 };
-
-std::mutex &capture_registration_mutex() {
-    static bg::util::static_storage<std::mutex> mutex;
-    return mutex.get();
-}
 
 template <typename T> void write_cell(ScalarBufferWriteContext &writer, std::optional<T> value) {
     const auto valid = static_cast<std::uint8_t>(value.has_value());
@@ -704,7 +697,6 @@ template <cell_type T> void discard_column_tick(util::buffer_reader &reader) {
 } // namespace
 
 void register_frame_series_tick_comparison(const TimeSeriesType &type) {
-    const auto lock = std::lock_guard{capture_registration_mutex()};
     static_cast<void>(TimeSeriesDispatch<TimeSeriesTickOperations>::instance().add(
         type, TimeSeriesTickOperations::for_discard(&discard_frame_tick)));
     static_cast<void>(TimeSeriesDispatch<testing::TickLiteralComparison>::instance().add(
@@ -718,44 +710,24 @@ void register_frame_series_tick_writer(const TimeSeriesRuntimeType &runtime) {
         [](const In<TSF<SCHEMA>> &input, ScalarBufferWriteContext &writer, allocator &) {
             write_frame_tick(input, writer);
         });
-    const auto lock = std::lock_guard{capture_registration_mutex()};
     static_cast<void>(TimeSeriesDispatch<TimeSeriesTickOperations>::instance().add(runtime, std::move(operations)));
 }
 
-void register_column_series_tick_writer(const TimeSeriesRuntimeType &runtime) {
-    const auto &series_type = static_cast<const ColumnSeriesType &>(runtime.type());
-    const auto &cell_type = series_type.cell_type();
-    auto semantic_operations = TimeSeriesTickOperations{};
-    auto runtime_operations = TimeSeriesTickOperations{};
-    if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<i64>())) {
-        semantic_operations = TimeSeriesTickOperations::for_discard(&discard_column_tick<i64>);
-        runtime_operations = TimeSeriesTickOperations::for_write<TSC<i64>>(
-            [](const In<TSC<i64>> &input, ScalarBufferWriteContext &writer, allocator &) {
-                write_column_tick(input, writer);
-            });
-    } else if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<double>())) {
-        semantic_operations = TimeSeriesTickOperations::for_discard(&discard_column_tick<double>);
-        runtime_operations = TimeSeriesTickOperations::for_write<TSC<double>>(
-            [](const In<TSC<double>> &input, ScalarBufferWriteContext &writer, allocator &) {
-                write_column_tick(input, writer);
-            });
-    } else {
-        throw std::invalid_argument{"frame TSC supports only i64 and double cell types"};
-    }
-
-    const auto lock = std::lock_guard{capture_registration_mutex()};
+template <typename T> void register_column_series_tick_writer(const TimeSeriesRuntimeType &runtime) {
     auto &dispatch = TimeSeriesDispatch<TimeSeriesTickOperations>::instance();
-    static_cast<void>(dispatch.add(runtime.type(), std::move(semantic_operations)));
-    static_cast<void>(dispatch.add(runtime, std::move(runtime_operations)));
-
-    auto comparison = testing::TickLiteralComparison{};
-    if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<i64>())) {
-        comparison.create_state = [] { return std::make_unique<ColumnHistoryComparison<i64>>(); };
-    } else {
-        comparison.create_state = [] { return std::make_unique<ColumnHistoryComparison<double>>(); };
-    }
-    static_cast<void>(TimeSeriesDispatch<testing::TickLiteralComparison>::instance().add(runtime.type(),
-                                                                                          std::move(comparison)));
+    static_cast<void>(dispatch.add(runtime.type(), TimeSeriesTickOperations::for_discard(&discard_column_tick<T>)));
+    static_cast<void>(dispatch.add(
+        runtime, TimeSeriesTickOperations::for_write<TSC<T>>(
+                     [](const In<TSC<T>> &input, ScalarBufferWriteContext &writer, allocator &) {
+                         write_column_tick(input, writer);
+                     })));
+    static_cast<void>(TimeSeriesDispatch<testing::TickLiteralComparison>::instance().add(
+        runtime.type(), testing::TickLiteralComparison{.create_state = [] {
+                           return std::make_unique<ColumnHistoryComparison<T>>();
+                       }}));
 }
+
+template BG_FRAME_EXPORT void register_column_series_tick_writer<i64>(const TimeSeriesRuntimeType &runtime);
+template BG_FRAME_EXPORT void register_column_series_tick_writer<double>(const TimeSeriesRuntimeType &runtime);
 
 } // namespace bg::frame::details

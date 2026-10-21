@@ -22,7 +22,10 @@ BG_FRAME_EXPORT void register_frame_series_literal_runtime(const TimeSeriesRunti
 BG_FRAME_EXPORT void register_column_series_literal_runtime(const TimeSeriesRuntimeType &runtime);
 BG_FRAME_EXPORT void register_frame_series_tick_comparison(const TimeSeriesType &type);
 BG_FRAME_EXPORT void register_frame_series_tick_writer(const TimeSeriesRuntimeType &runtime);
+template <typename T>
 BG_FRAME_EXPORT void register_column_series_tick_writer(const TimeSeriesRuntimeType &runtime);
+extern template BG_FRAME_EXPORT void register_column_series_tick_writer<i64>(const TimeSeriesRuntimeType &runtime);
+extern template BG_FRAME_EXPORT void register_column_series_tick_writer<double>(const TimeSeriesRuntimeType &runtime);
 } // namespace details
 
 } // namespace bg::frame

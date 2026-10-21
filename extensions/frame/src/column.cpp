@@ -185,14 +185,14 @@ void register_column_series_default_runtime(const bg::TimeSeriesType &type) {
         const auto &runtime = ordinary_column_series_runtime_type<bg::i64>(type);
         bg::register_time_series_runtime_type(runtime);
         bg::frame::details::register_column_series_literal_runtime(runtime);
-        bg::frame::details::register_column_series_tick_writer(runtime);
+        bg::frame::details::register_column_series_tick_writer<bg::i64>(runtime);
         return;
     }
     if (cell_type == std::addressof(bg::cpp_scalar_type<double>())) {
         const auto &runtime = ordinary_column_series_runtime_type<double>(type);
         bg::register_time_series_runtime_type(runtime);
         bg::frame::details::register_column_series_literal_runtime(runtime);
-        bg::frame::details::register_column_series_tick_writer(runtime);
+        bg::frame::details::register_column_series_tick_writer<double>(runtime);
         return;
     }
     throw std::invalid_argument{"frame TSC supports only i64 and double cell types"};
@@ -305,7 +305,7 @@ const TimeSeriesRuntimeType &frame::column_view_time_series_runtime_type(const T
         throw std::invalid_argument{"frame TSC view runtime requires resolved ordinary type"};
 
     const auto &runtime = column_view_series_runtime_type<T>();
-    details::register_column_series_tick_writer(runtime);
+    details::register_column_series_tick_writer<T>(runtime);
     return runtime;
 }
 
@@ -315,7 +315,7 @@ const TimeSeriesRuntimeType &frame::column_binding_view_time_series_runtime_type
         throw std::invalid_argument{"frame TSC binding view runtime requires resolved ordinary type"};
 
     const auto &runtime = column_binding_view_series_runtime_type<T>();
-    details::register_column_series_tick_writer(runtime);
+    details::register_column_series_tick_writer<T>(runtime);
     return runtime;
 }
 
@@ -345,7 +345,7 @@ const TimeSeriesRuntimeType &frame::column_computed_time_series_runtime_type(con
         throw std::invalid_argument{"computed TSC runtime requires resolved ordinary type"};
     static_cast<void>(column_time_series_type<T>(TimeSeriesGuarantee::ordinary));
     const auto &runtime = computed_column_series_runtime_type<T>(type);
-    details::register_column_series_tick_writer(runtime);
+    details::register_column_series_tick_writer<T>(runtime);
     return runtime;
 }
 
