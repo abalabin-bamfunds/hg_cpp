@@ -419,7 +419,10 @@ std::unique_ptr<TimeSeriesType> generic_time_series_type(const TimeSeriesType &t
 
 std::shared_ptr<const PythonNodeDefinition::SignatureDefinition>
 make_signature(std::string_view name, const std::vector<PythonParameter> &parameters,
-               const std::optional<TypeDescriptor> &output) {
+               const std::optional<TypeDescriptor> &output,
+               const std::optional<std::vector<std::size_t>> &active_parameters = std::nullopt,
+               const std::optional<std::vector<std::size_t>> &valid_parameters = std::nullopt,
+               const std::vector<std::size_t> &all_valid_parameters = {}) {
     auto resolved_parameters = std::vector<Parameter>{};
     resolved_parameters.reserve(parameters.size());
     auto wiring_parameter_types = std::vector<const Type *>{};
@@ -460,6 +463,19 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
         }
         if (parameter_type.accepts_time_series_value() && parameter_type.accepts_absent_scalar()) {
             parameter.validity = optional;
+        }
+        const auto index = resolved_parameters.size();
+        if (active_parameters) {
+            parameter.activity = std::ranges::find(*active_parameters, index) != active_parameters->end() ? active
+                                                                                                          : passive;
+        }
+        if (valid_parameters) {
+            parameter.validity = std::ranges::find(*valid_parameters, index) != valid_parameters->end()
+                                     ? InputValidity::required
+                                     : InputValidity::optional;
+        }
+        if (std::ranges::find(all_valid_parameters, index) != all_valid_parameters.end()) {
+            parameter.validity = InputValidity::all_valid;
         }
         if (!variadic.empty()) {
             auto mode = bg::details::VariadicMode::none;
@@ -502,43 +518,6 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
     }();
 
     return std::make_shared<const PythonNodeDefinition::SignatureDefinition>(std::move(wiring_parameter_types),
-                                                                              std::move(signature));
-}
-
-std::shared_ptr<const PythonNodeDefinition::SignatureDefinition>
-make_node_signature(std::string_view name, const std::vector<PythonParameter> &parameters,
-                    const std::optional<TypeDescriptor> &output,
-                    const std::optional<std::vector<std::size_t>> &active_parameters,
-                    const std::optional<std::vector<std::size_t>> &valid_parameters,
-                    const std::vector<std::size_t> &all_valid_parameters) {
-    const auto base = make_signature(name, parameters, output);
-    if (!active_parameters && !valid_parameters && all_valid_parameters.empty()) {
-        return base;
-    }
-
-    auto resolved_parameters = std::vector<Parameter>{};
-    resolved_parameters.reserve(base->signature.parameter_count());
-    for (auto index = std::size_t{}; index < base->signature.parameter_count(); ++index) {
-        auto parameter = base->signature.parameter(index);
-        if (active_parameters) {
-            parameter.activity = std::ranges::find(*active_parameters, index) != active_parameters->end() ? active
-                                                                                                          : passive;
-        }
-        if (valid_parameters) {
-            parameter.validity = std::ranges::find(*valid_parameters, index) != valid_parameters->end()
-                                     ? InputValidity::required
-                                     : InputValidity::optional;
-        }
-        if (std::ranges::find(all_valid_parameters, index) != all_valid_parameters.end()) {
-            parameter.validity = InputValidity::all_valid;
-        }
-        resolved_parameters.push_back(parameter);
-    }
-
-    auto signature = base->signature.output() == nullptr
-                         ? Signature{base->signature.name(), std::move(resolved_parameters)}
-                         : Signature{base->signature.name(), std::move(resolved_parameters), *base->signature.output()};
-    return std::make_shared<const PythonNodeDefinition::SignatureDefinition>(base->wiring_parameter_types,
                                                                               std::move(signature));
 }
 
@@ -1176,7 +1155,7 @@ void bind_core(nb::module_ &module) {
             return result;
         };
         return PythonNodeDefinition{
-            make_node_signature(name, parameters, output, active_parameters, valid_parameters, all_valid_parameters),
+            make_signature(name, parameters, output, active_parameters, valid_parameters, all_valid_parameters),
             schedule_on_start, pass_time_series_values,
             callback(evaluation, evaluation_arguments), callback(start, start_arguments),
             callback(stop, stop_arguments), callback(invalidation, invalidation_arguments),
