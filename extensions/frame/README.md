@@ -519,6 +519,13 @@ A valid TSF view output uses either projection or filtering. Switching between
 these operations throws `std::logic_error`; invalidate the output before
 changing its operation.
 
+A keyed view output must preserve the source's complete ordered key tuple.
+Projection may rename key fields, but its target key fields must map to the
+source key fields in key order. Binding from an unkeyed source, dropping or
+reordering a key field, or mapping another source field to a key is rejected
+before output state changes. An unkeyed view may project a keyed source without
+retaining its key. Computed TSF outputs cannot compute key fields.
+
 ### Mixed computed and borrowed columns
 
 `Out<TSF<Schema>, frame::computed<Names...>>` owns the named computed columns

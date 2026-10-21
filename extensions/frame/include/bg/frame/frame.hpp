@@ -1957,6 +1957,7 @@ struct RuntimeFrameViewFieldLayout {
 
 struct RuntimeFrameViewLayout {
     const bg::Schema *schema{};
+    std::span<const std::size_t> key_fields;
     std::size_t size{};
     std::size_t alignment{};
     std::size_t computed_rows_offset{};
@@ -1998,6 +1999,7 @@ class RuntimeFrameViewOutputStorage {
     EvaluationTime delta_time{MIN_DT};
     bool filtering{};
     bool valid{};
+    const details::NativeFrameLayout *source_layout{};
 
     void initialize(const RuntimeFrameViewLayout &runtime_layout) noexcept {
         layout = std::addressof(runtime_layout);
@@ -2009,6 +2011,20 @@ class RuntimeFrameViewOutputStorage {
     }
 
     bool is_computed(std::size_t index) const noexcept { return layout->fields[index].computed; }
+
+    void validate_key_mapping(const FrameReadStorage &input, std::span<const std::size_t> source_indices) {
+        if (layout->key_fields.empty())
+            return;
+
+        const auto &source_keys = source_key_fields(input);
+        if (source_keys.size() != layout->key_fields.size())
+            throw std::invalid_argument{"keyed TSF view must retain the complete source key tuple"};
+        for (std::size_t key_index = 0; key_index != layout->key_fields.size(); ++key_index) {
+            const auto target_index = layout->key_fields[key_index];
+            if (source_field_index(input, source_indices, target_index) != source_keys[key_index])
+                throw std::invalid_argument{"keyed TSF view must preserve all source key fields in order"};
+        }
+    }
 
     std::size_t field_index(util::symbol name) const {
         const auto fields = layout->schema->fields();
@@ -2151,6 +2167,21 @@ class RuntimeFrameViewOutputStorage {
             child_state(this, index).publish(time);
     }
 
+    const std::vector<std::size_t> &source_key_fields(const FrameReadStorage &input) {
+        if (source_layout == nullptr || source_layout->schema != input.schema)
+            source_layout = std::addressof(details::native_frame_layout(*input.schema));
+        return source_layout->key_fields;
+    }
+
+    std::size_t source_field_index(const FrameReadStorage &input, std::span<const std::size_t> source_indices,
+                                   std::size_t target_index) const {
+        if (!source_indices.empty())
+            return source_indices[target_index];
+        if (input.schema == layout->schema)
+            return target_index;
+        return input.field_index(layout->schema->field(target_index).name);
+    }
+
     struct ProjectionOperation {};
 
     bool bind_projection(const FrameReadStorage &input, std::span<const std::size_t> source_indices,
@@ -2175,17 +2206,12 @@ class RuntimeFrameViewOutputStorage {
             throw std::logic_error{"TSF view has no resolved schema layout"};
         if (valid && filtering != this->filtering)
             throw std::logic_error{"a TSF view output cannot switch between projection and filtering"};
-        const auto infer_source_indices = source_indices.empty();
-        const auto identity_source_indices = infer_source_indices && input.schema == layout->schema;
-        if (!infer_source_indices && source_indices.size() != layout->fields.size())
+        if (!source_indices.empty() && source_indices.size() != layout->fields.size())
             throw std::invalid_argument{"frame view column count does not match its output schema"};
         const auto source_index = [&](std::size_t index) {
-            if (!infer_source_indices)
-                return source_indices[index];
-            if (identity_source_indices)
-                return index;
-            return input.field_index(layout->schema->fields()[index].name);
+            return source_field_index(input, source_indices, index);
         };
+        validate_key_mapping(input, source_indices);
         const auto previous = previous_rows.source();
         const auto row_domain_changed = previous.identity != nullptr && previous.identity != input.rows.identity;
         const auto row_set_rebound = !valid || previous.context != input.rows.context;
@@ -2874,6 +2900,7 @@ class RuntimeSchemaFrameViewSeriesRuntimeType final : public FrameSeriesRuntimeT
         const auto &native = native_frame_layout(series->schema_type());
         auto result = RuntimeFrameViewLayout{};
         result.schema = native.schema;
+        result.key_fields = native.key_fields;
         result.alignment = alignof(Storage);
         auto offset = sizeof(Storage);
         result.has_computed_fields = !computed_fields.empty();
@@ -2887,6 +2914,8 @@ class RuntimeSchemaFrameViewSeriesRuntimeType final : public FrameSeriesRuntimeT
         for (std::size_t index = 0; index != native.fields.size(); ++index) {
             const auto &column = native.fields[index];
             const auto is_computed = std::ranges::find(computed_fields, index) != computed_fields.end();
+            if (is_computed && std::ranges::find(native.key_fields, index) != native.key_fields.end())
+                throw WiringError{"a computed TSF output cannot own a key field"};
             const auto align = [&](std::size_t alignment) {
                 result.alignment = std::max(result.alignment, alignment);
                 offset = (offset + alignment - 1) / alignment * alignment;
@@ -3624,6 +3653,7 @@ class FrameViewOutputImplementation {
         if (input.schema == nullptr)
             throw std::logic_error{"TSF view has no resolved source schema"};
         if (!input.valid) {
+            output.validate_key_mapping(input, {});
             if (output.valid)
                 binding_->invalidate();
             return false;
@@ -3749,6 +3779,7 @@ class Out<frame::TSF<Schema, Properties...>, frame::view>
                 throw std::invalid_argument{"frame view projection column type does not match its output schema"};
         }
         if (!input.valid) {
+            output.validate_key_mapping(input, source_indices);
             if (output.valid)
                 binding_->invalidate();
             return false;
@@ -3796,7 +3827,10 @@ class Out<frame::TSF<Schema, Properties...>, frame::view>
                      Evaluator &&evaluator) const {
         const auto input = source.extension_descriptor();
         auto &output = runtime_storage();
+        if (input.schema == nullptr)
+            throw std::logic_error{"TSF view has no resolved source schema"};
         if (!input.valid) {
+            output.validate_key_mapping(input, {});
             if (output.valid)
                 binding_->invalidate();
             return false;

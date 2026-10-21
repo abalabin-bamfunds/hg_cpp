@@ -706,9 +706,14 @@ validate key uniqueness with a temporary hash index of row positions. The
 validator records batch starts for collision checks; it does not add persistent
 key-index state to scalar frames. TSF row literal updates use key columns for
 insert, patch, and removal as documented in the [extension README](README.md#tsf-row-updates).
-Keyed view validation remains open. Decide whether a keyed view must preserve
-the source's complete ordered key mapping. Capture serializes row IDs for
-removals and uses comparison-owned key history to match keyed removal literals.
+Keyed TSF view outputs preserve the source's complete ordered key tuple. A
+projection can rename key fields, but target key fields must map to the source
+key fields in key order. Binding rejects unkeyed sources, incomplete or
+reordered mappings, and other source fields before changing output state.
+Unkeyed outputs do not constrain the source key mapping. Computed TSF outputs
+cannot own key fields. See the [view contract](README.md#tsf-inputoutput-surface).
+Capture serializes row IDs for removals and uses comparison-owned key history to
+match keyed removal literals.
 
 Tests cover allocation rollback for keyed insertion and removal-key retention,
 including retry after failure. Scalar validation tests cover duplicate single
@@ -717,6 +722,12 @@ Arrow validation tests cover duplicate keys across chunks, a valid composite
 key import with unequal chunk boundaries and a sliced nullable array, and a
 collision chain with a distinct key before a duplicate. Current consumer
 configurations and results are in [Verification](#verification).
+
+Keyed-view tests cover renamed single and composite key fields, partial and
+reordered key mappings, keyed outputs from unkeyed sources, unkeyed projections
+from keyed sources, filtering, runtime schema cache refresh, computed key
+rejection, and rejection before invalidating a previously bound output.
+The Release Arrow-on build and all six consumer test suites pass for this change.
 
 Registered types, canonical runtime descriptors, and schema metadata follow
 BG's [process-lifetime ownership rule](../../docs/decisions/0071-process-lifetime-type-storage.md).

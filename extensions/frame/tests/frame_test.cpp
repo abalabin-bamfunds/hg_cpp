@@ -57,6 +57,21 @@ template <template <typename, auto...> typename Field> struct CompositeKeyRows {
     static bg::SchemaMetadata metadata() { return key_metadata<"id", "sequence">(); }
 };
 
+template <template <typename, auto...> typename Field> struct RenamedCompositeKeyRows {
+    Field<i64> sequence;
+    Field<i64> account;
+    Field<double> amount;
+
+    static bg::SchemaMetadata metadata() { return key_metadata<"account", "sequence">(); }
+};
+
+template <template <typename, auto...> typename Field> struct RenamedKeyedQuotes {
+    Field<i64> row_id;
+    Field<double> amount;
+
+    static bg::SchemaMetadata metadata() { return key_metadata<"row_id">(); }
+};
+
 template <template <typename, auto...> typename Field> struct OtherKeyedQuotes {
     Field<i64> id;
     Field<i64> other_id;
@@ -87,6 +102,14 @@ struct KeyedQuotesDerivedFromUnkeyed : bg::schema_extends<UnkeyedQuotesBase, Fie
     Field<double> bid;
 
     static bg::SchemaMetadata metadata() { return key_metadata<"id">(); }
+};
+
+template <template <typename, auto...> typename Field>
+struct OtherKeyedQuotesDerivedFromUnkeyed : bg::schema_extends<UnkeyedQuotesBase, Field> {
+    Field<i64> other_id;
+    Field<double> bid;
+
+    static bg::SchemaMetadata metadata() { return key_metadata<"other_id">(); }
 };
 
 template <template <typename, auto...> typename Field>
@@ -5933,6 +5956,81 @@ void test_tsf_projection_rejects_invalid_mappings_before_invalidation() {
             "invalid ordinal or cell type mapping invalidated a previously valid TSF projection");
 }
 
+void test_keyed_tsf_projection_rejects_invalid_source_before_invalidation() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    struct observation {
+        bool valid{};
+        bool modified{};
+        const void *row_domain{};
+        std::vector<row_id_t> rows;
+        std::vector<row_id_t> changed;
+        std::vector<row_id_t> removed;
+        std::optional<double> amount;
+    };
+    auto observations = std::vector<observation>{};
+    auto invalid_source_rejected = false;
+
+    const auto project = node([&](In<TSF<UnkeyedQuotesBase>, optional> matching,
+                                  In<TSF<UnkeyedQuotesBase>, optional> mismatched, In<TS<i64>> selection,
+                                  Out<TSF<RenamedKeyedQuotes>, view> output) {
+        const auto mapping = std::array<std::size_t, 2>{0, 1};
+        if (*selection == 0) {
+            output.bind_projection(matching, mapping);
+            return;
+        }
+
+        try {
+            output.bind_projection(mismatched, mapping);
+        } catch (const std::invalid_argument &) {
+            invalid_source_rejected = true;
+            return;
+        }
+        throw std::runtime_error{"keyed TSF projection accepted an invalid source with a different key"};
+    });
+    const auto observe = node([&](In<TSF<RenamedKeyedQuotes>, optional> input, In<TS<i64>> selection,
+                                  Out<TS<i64>> output) {
+        auto result = observation{.valid = input.valid(), .modified = input.modified(),
+                                  .row_domain = input.row_domain()};
+        if (input.valid()) {
+            input.for_each_row([&](row_id_t id, std::size_t) {
+                result.rows.push_back(id);
+                result.amount = input.cell<1>(id);
+            });
+        }
+        input.for_each_changed([&](row_id_t id) { result.changed.push_back(id); });
+        input.for_each_removed([&](row_id_t id) { result.removed.push_back(id); });
+        observations.push_back(std::move(result));
+        output.set(static_cast<i64>(input.valid() ? input.size() : 0));
+        static_cast<void>(selection);
+    });
+    const auto graph = [&](wp<TSF<UnkeyedQuotesBase>> matching, wp<TSF<UnkeyedQuotesBase>> mismatched,
+                           wp<TS<i64>> selection) {
+        return observe(project(matching, mismatched, selection), selection);
+    };
+
+    const auto &matching_runtime = frame_time_series_runtime_type<KeyedQuotesDerivedFromUnkeyed>(
+        TSF<KeyedQuotesDerivedFromUnkeyed>::type());
+    const auto &mismatched_runtime = frame_time_series_runtime_type<OtherKeyedQuotesDerivedFromUnkeyed>(
+        TSF<OtherKeyedQuotesDerivedFromUnkeyed>::type());
+    const auto result = testing::test_graph(
+        graph,
+        testing::input(matching_runtime,
+                       {{{{"id", i64{7}}, {"price", 10.0}, {"bid", 20.0}}}, literal::SKIP}),
+        testing::input(mismatched_runtime, {literal::INVALID, literal::INVALID}),
+        testing::input<TS<i64>>({0, 1}));
+
+    require(invalid_source_rejected && observations.size() == 2 && observations[0].valid &&
+                observations[0].modified && observations[0].rows.size() == 1 && observations[0].amount == 10.0 &&
+                observations[0].changed == observations[0].rows && observations[0].removed.empty() &&
+                observations[1].valid && !observations[1].modified &&
+                observations[1].row_domain == observations[0].row_domain &&
+                observations[1].rows == observations[0].rows && observations[1].amount == observations[0].amount &&
+                observations[1].changed.empty() && observations[1].removed.empty() && result.equals<i64>({1, 1}),
+            "failed invalid-source key validation invalidated or changed the previous TSF view output");
+}
+
 void test_tsf_projection_rejects_empty_row_domain_mismatch() {
     using namespace bg;
     using namespace bg::frame;
@@ -6194,6 +6292,192 @@ void test_tsf_view_uses_local_physical_rows_incrementally() {
         column = projected.generic_column(0).template view<double>();
         require(column.cell(2) == 30.5, "TSF view did not read a newly added local physical slot");
     });
+}
+
+void test_tsf_view_preserves_ordered_key_mappings() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    auto memory = allocator{resource};
+    auto source = NativeFrame<CompositeKeyRows>{};
+    auto source_release = util::scope_exit{[&]() noexcept { source.release(memory); }};
+    const auto time = MIN_DT + EvaluationTime::duration{1};
+    const auto row = source.add(CompositeKeyRows<Cell>{.id = Cell<i64>{1}, .sequence = Cell<i64>{2},
+                                                       .price = Cell<double>{10.0}, .value = Cell<i64>{3}},
+                                time, memory);
+    const auto row_counter = RowTraversalCounter{std::addressof(source.rows())};
+    auto bindings = FrameReadBindings{};
+    const auto make_input = [&] {
+        auto input = native_frame_input(source);
+        const auto rows = row_counter.row_set();
+        input.rows = rows;
+        bindings.visible_rows = rows;
+        bindings.override_visible_rows = true;
+        bindings.apply(input);
+        return input;
+    };
+    auto input = make_input();
+    const auto renamed_columns = std::array<std::size_t, 3>{1, 0, 2};
+    const auto reordered_columns = std::array<std::size_t, 3>{0, 1, 2};
+
+    with_runtime_view_storage<RenamedCompositeKeyRows>(memory, [&](auto &projection, const auto &runtime) {
+        require(projection.bind_projection(input, renamed_columns, time, memory),
+                "TSF view rejected a renamed projection that preserved its composite key tuple");
+        const auto next_time = time + EvaluationTime::duration{1};
+        row_counter.traversals = 0;
+        input = make_input();
+        input.modified = false;
+        require(!projection.bind_projection(input, renamed_columns, next_time, memory) && row_counter.traversals == 0,
+                "keyed TSF view scanned source rows on an unchanged binding");
+        const auto source_rows = projection.source_rows;
+        const auto changed_columns = projection.changed_columns.size();
+        const auto changed_rows = projection.changed_rows.size();
+        const auto output = runtime.input_storage(std::addressof(projection));
+        const auto amount = output.generic_column(2).template view<double>().cell(row);
+        auto reordered_key_rejected = false;
+        try {
+            static_cast<void>(projection.bind_projection(input, reordered_columns, next_time, memory));
+        } catch (const std::invalid_argument &) {
+            reordered_key_rejected = true;
+        }
+        require(reordered_key_rejected && projection.valid && projection.source_rows.identity == source_rows.identity &&
+                    projection.source_rows.has(row) && projection.changed_columns.size() == changed_columns &&
+                    projection.changed_rows.size() == changed_rows &&
+                    runtime.input_storage(std::addressof(projection))
+                            .generic_column(2)
+                            .template view<double>()
+                            .cell(row) == amount,
+                "TSF view accepted a reordered key tuple or changed output before rejecting it");
+    });
+
+    with_runtime_view_storage<BidOnly>(memory, [&](auto &projection, const auto &) {
+        const auto price_column = std::array<std::size_t, 1>{2};
+        require(projection.bind_projection(input, price_column, time, memory),
+                "unkeyed TSF view could not project a non-key column from a keyed source");
+    });
+
+    const auto partial_columns = std::array<std::size_t, 2>{0, 2};
+    with_runtime_view_storage<KeyedQuotes>(memory, [&](auto &projection, const auto &) {
+        auto partial_key_rejected = false;
+        try {
+            static_cast<void>(projection.bind_projection(input, partial_columns, time, memory));
+        } catch (const std::invalid_argument &) {
+            partial_key_rejected = true;
+        }
+        require(partial_key_rejected && !projection.valid,
+                "TSF view accepted a projection that dropped one component of its source key");
+    });
+
+    auto unkeyed_source = NativeFrame<Quotes>{};
+    auto unkeyed_source_release = util::scope_exit{[&]() noexcept { unkeyed_source.release(memory); }};
+    static_cast<void>(unkeyed_source.add(Quotes<Cell>{.size = Cell<i64>{7}, .bid = Cell<double>{20.0},
+                                                     .ask = Cell<double>{21.0}},
+                                        time, memory));
+    const auto unkeyed_columns = std::array<std::size_t, 2>{0, 1};
+    with_runtime_view_storage<RenamedKeyedQuotes>(memory, [&](auto &projection, const auto &) {
+        auto unkeyed_source_rejected = false;
+        try {
+            static_cast<void>(projection.bind_projection(native_frame_input(unkeyed_source), unkeyed_columns,
+                                                         time, memory));
+        } catch (const std::invalid_argument &) {
+            unkeyed_source_rejected = true;
+        }
+        require(unkeyed_source_rejected && !projection.valid,
+                "keyed TSF view accepted a projection from an unkeyed source");
+    });
+
+    auto keyed_source = NativeFrame<KeyedQuotes>{};
+    auto keyed_source_release = util::scope_exit{[&]() noexcept { keyed_source.release(memory); }};
+    static_cast<void>(keyed_source.add(KeyedQuotes<Cell>{.id = Cell<i64>{7}, .price = Cell<double>{20.0}}, time,
+                                       memory));
+    auto differently_keyed_source = NativeFrame<OtherKeyedQuotes>{};
+    auto differently_keyed_source_release = util::scope_exit{[&]() noexcept {
+        differently_keyed_source.release(memory);
+    }};
+    static_cast<void>(differently_keyed_source.add(OtherKeyedQuotes<Cell>{.id = Cell<i64>{7},
+                                                                          .other_id = Cell<i64>{8},
+                                                                          .price = Cell<double>{30.0}},
+                                                   time, memory));
+    const auto renamed_columns_single_key = std::array<std::size_t, 2>{0, 1};
+    with_runtime_view_storage<RenamedKeyedQuotes>(memory, [&](auto &projection, const auto &) {
+        const auto keyed_input = native_frame_input(keyed_source);
+        require(projection.bind_projection(keyed_input, renamed_columns_single_key, time, memory),
+                "TSF view rejected a renamed single key field");
+
+        const auto prior_rows = projection.source_rows;
+        auto wrong_key_rejected = false;
+        try {
+            const auto wrong_input = native_frame_input(differently_keyed_source);
+            static_cast<void>(projection.bind_projection(wrong_input, renamed_columns_single_key, time, memory));
+        } catch (const std::invalid_argument &) {
+            wrong_key_rejected = true;
+        }
+        auto invalid_key_rejected = false;
+        try {
+            auto invalid_input = native_frame_input(differently_keyed_source);
+            invalid_input.valid = false;
+            projection.validate_key_mapping(invalid_input, renamed_columns_single_key);
+        } catch (const std::invalid_argument &) {
+            invalid_key_rejected = true;
+        }
+        require(wrong_key_rejected && invalid_key_rejected && projection.valid &&
+                    projection.source_rows.identity == prior_rows.identity,
+                "TSF view changed a valid output before rejecting an incorrect source key mapping");
+    });
+
+    const auto keyed_input = native_frame_input(keyed_source);
+    with_runtime_view_storage<KeyedQuotes>(memory, [&](auto &filter, const auto &) {
+        auto predicate = [](row_id_t) { return true; };
+        require(bind_filter(filter, keyed_input, std::span<const std::size_t>{}, 0, predicate, time, memory) &&
+                    filter.valid,
+                "key-preserving TSF filter rejected its complete source key tuple");
+    });
+
+    const auto source_fields = std::array{SchemaField{util::symbol{"id"}, &cpp_scalar_type<i64>()},
+                                          SchemaField{util::symbol{"sequence"}, &cpp_scalar_type<i64>()},
+                                          SchemaField{util::symbol{"price"}, &cpp_scalar_type<double>()}};
+    const auto target_fields = std::array{SchemaField{util::symbol{"sequence"}, &cpp_scalar_type<i64>()},
+                                          SchemaField{util::symbol{"account"}, &cpp_scalar_type<i64>()},
+                                          SchemaField{util::symbol{"amount"}, &cpp_scalar_type<double>()}};
+    const auto &runtime_source_schema = anonymous_schema(source_fields, key_metadata<"id", "sequence">());
+    const auto &single_key_source_schema = anonymous_schema(source_fields, key_metadata<"id">());
+    const auto &runtime_target_schema = anonymous_schema(target_fields, key_metadata<"account", "sequence">());
+    const auto &runtime_type = frame_series_type(runtime_target_schema, TimeSeriesGuarantee::ordinary);
+    const auto &view_runtime = static_cast<const FrameSeriesRuntimeType &>(
+        frame_view_time_series_runtime_type<RenamedCompositeKeyRows>(runtime_type));
+    auto *allocation = ::operator new(view_runtime.value_size(), std::align_val_t{view_runtime.value_alignment()});
+    view_runtime.construct_initial_value(allocation);
+    auto release_output = util::scope_exit{[&]() noexcept {
+        view_runtime.destroy_value(allocation, memory);
+        ::operator delete(allocation, std::align_val_t{view_runtime.value_alignment()});
+    }};
+    auto &runtime_projection = *static_cast<RuntimeFrameViewOutputStorage *>(allocation);
+    auto runtime_input = FrameReadStorage{};
+    runtime_input.schema = std::addressof(runtime_source_schema);
+    runtime_projection.validate_key_mapping(runtime_input, renamed_columns);
+
+    auto runtime_schema_change_rejected = false;
+    try {
+        runtime_input.schema = std::addressof(single_key_source_schema);
+        runtime_projection.validate_key_mapping(runtime_input, renamed_columns);
+    } catch (const std::invalid_argument &) {
+        runtime_schema_change_rejected = true;
+    }
+    runtime_input.schema = std::addressof(runtime_source_schema);
+    runtime_projection.validate_key_mapping(runtime_input, renamed_columns);
+    require(runtime_schema_change_rejected,
+            "runtime-schema TSF view reused a stale source key layout after a schema change");
+
+    auto computed_key_rejected = false;
+    try {
+        const auto computed_names = std::array{util::symbol{"account"}};
+        static_cast<void>(frame_computed_time_series_runtime_type(
+            runtime_type, std::span<const util::symbol>{computed_names}));
+    } catch (const WiringError &) {
+        computed_key_rejected = true;
+    }
+    require(computed_key_rejected, "computed TSF view accepted a computed key field");
 }
 
 void test_filtered_column_coverage_rejects_a_different_row_set() {
@@ -7141,11 +7425,13 @@ int main() {
         test_tsf_projection_empty_columns_match_target_schema();
         test_tsf_projection_selection_change();
         test_tsf_projection_rejects_invalid_mappings_before_invalidation();
+        test_keyed_tsf_projection_rejects_invalid_source_before_invalidation();
         test_tsf_projection_rejects_empty_row_domain_mismatch();
         test_tsf_projection_rejects_native_columns_from_another_logical_domain();
         test_view_updates_do_not_traverse_source_rows();
         test_filter_row_set_reads_cached_source_order();
         test_tsf_view_uses_local_physical_rows_incrementally();
+        test_tsf_view_preserves_ordered_key_mappings();
         test_filtered_column_coverage_rejects_a_different_row_set();
         test_incremental_numeric_filter();
         test_expression_filter_evaluates_only_required_rows();
