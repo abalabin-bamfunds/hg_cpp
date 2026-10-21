@@ -29,11 +29,13 @@ auto wire(const Graph &graph, const TypeMap *seed_type_map, Run &&run,
 
     auto &outer_wiring = WiringContext::current().wiring();
     auto temporary_records = details::WiringRecordOverlay{outer_wiring};
-    auto normalized_result = details::probe_wiring_arguments(
+    auto probed = details::probe_wiring_arguments(
         graph.signature(), std::span<const WiringArgument>{supplied}, temporary_records);
+    auto resolution = graph.signature().resolve_wiring_arguments(probed.arguments, probed.descriptors, seed_type_map);
+
+    auto normalized_result = details::normalize_wiring_arguments(
+        graph.signature(), std::span<const WiringArgument>{supplied}, outer_wiring.allocation(), temporary_records);
     auto &normalized = normalized_result.arguments;
-    auto resolution = graph.signature().resolve_wiring_arguments(normalized, normalized_result.descriptors,
-                                                                 seed_type_map);
     const auto &resolved = resolution.signature;
 
     const auto outer_diagnostics = details::WiringDiagnosticContext::current(outer_wiring);

@@ -2,6 +2,7 @@
 
 #include <bg/evaluation_context.hpp>
 #include <bg/graph/details/variadic_wiring_operations.hpp>
+#include <bg/graph/wiring_parameter.hpp>
 #include <bg/graph/wiring_arguments.hpp>
 #include <bg/graph/node.hpp>
 #include <bg/node/details/aggregate_resolver.hpp>
@@ -597,9 +598,17 @@ template <typename Definition, std::size_t... Index>
 }
 
 template <typename Definition> [[nodiscard]] const Signature &aggregate_node_signature() {
-    static const Signature signature =
-        make_signature<Definition>(util::symbol{util::unqualified_type_name<Definition>()},
-                                   std::make_index_sequence<util::aggregate_member_count<Definition>>{});
+    static const Signature signature = [] {
+        auto result = make_signature<Definition>(
+            util::symbol{util::unqualified_type_name<Definition>()},
+            std::make_index_sequence<util::aggregate_member_count<Definition>>{});
+        if constexpr (requires { typename Definition::defaults; }) {
+            const auto defaults = typename Definition::defaults{};
+            const auto parameters = aggregate_wiring_parameters(defaults);
+            return result.with_defaults(parameters);
+        }
+        return result;
+    }();
 
     return signature;
 }

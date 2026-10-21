@@ -43,6 +43,22 @@ TEST_CASE("map applies a graph to each TSD item",
     CHECK(actual.equals({{{1, 2}, {2, 11}}, {{1, 5}}, {{2, 21}}, {{1, literal::REMOVE}}}));
 }
 
+TEST_CASE("map applies an inner graph's omitted scalar default",
+          "[feature:map][feature:nested-graph][feature:wiring-defaults][series:tsd][shape:nested]"
+          "[definition:function]") {
+    const auto add = node([](i64 value, i64 amount) { return value + amount; });
+    const auto add_default = graph(
+        {"item"_n, "amount"_n = i64{2}},
+        [=](wp<TS<i64>> item, i64 amount) { return add(item, amount); });
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
+        return map(add_default, values)[i64{1}].as<TS<i64>>();
+    };
+
+    const auto actual = testing::test_graph(tested, {{{1, 2}}, {{1, 5}}});
+
+    CHECK(actual.equals<i64>({4, 7}));
+}
+
 TEST_CASE("map invokes a generic graph function",
           "[feature:map][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[definition:function]") {

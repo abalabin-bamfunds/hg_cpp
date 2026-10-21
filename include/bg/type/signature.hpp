@@ -9,6 +9,7 @@
 
 #include <compare>
 #include <functional>
+#include <initializer_list>
 #include <memory>
 #include <optional>
 #include <span>
@@ -20,6 +21,7 @@ namespace bg {
 class GraphArgumentConstraint;
 class WiringArguments;
 class WiringArgument;
+class WiringParameter;
 
 namespace details {
 class WiringArgumentDescriptor;
@@ -38,6 +40,7 @@ struct Parameter {
     bool dynamic_activity{};
     std::shared_ptr<const GraphArgumentConstraint> graph_constraint{};
     bool valid_items{};
+    bool name_is_explicit{};
 };
 
 struct VariableResolver {
@@ -153,6 +156,10 @@ class Signature {
         return result;
     }
 
+    [[nodiscard]] Signature with_parameters(std::span<const WiringParameter> parameters) const;
+    [[nodiscard]] Signature with_defaults(std::span<const WiringParameter> parameters) const;
+    const WiringArgument *default_argument(std::size_t index) const noexcept;
+
     std::size_t parameter_count() const noexcept { return parameters_.size(); }
 
     const Parameter &parameter(std::size_t index) const noexcept { return parameters_[index]; }
@@ -190,6 +197,7 @@ class Signature {
     std::vector<Parameter> parameters_;
     const TimeSeriesType *output_;
     std::vector<VariableResolver> resolvers_;
+    std::vector<std::shared_ptr<const WiringArgument>> defaults_;
 };
 
 [[nodiscard]] std::partial_ordering compare_specificity(const Signature &left, const Signature &right);

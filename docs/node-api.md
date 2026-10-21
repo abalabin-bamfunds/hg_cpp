@@ -79,6 +79,10 @@ Parameters can be `In<>`, plain values, `Scalar<>`, or one `Out<>`. An `In<>` na
 supplies its signature name. Captures are immutable compiled node data. Use an
 aggregate declaration when the node needs state or lifecycle functions.
 
+Callable nodes declare parameter names and defaults together in the
+[wiring-parameter initializer list](graph-wiring.md#default-arguments).
+Aggregate nodes declare defaults in a nested `defaults` aggregate.
+
 ## Queue nodes
 
 `queue<TS_T>()` creates a node template whose start callback receives an injected

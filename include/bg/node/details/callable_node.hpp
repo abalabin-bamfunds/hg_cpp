@@ -2,6 +2,7 @@
 
 #include <bg/graph/requirement.hpp>
 #include <bg/graph/wiring_arguments.hpp>
+#include <bg/graph/wiring_parameter.hpp>
 #include <bg/node/details/callable_node_options.hpp>
 #include <bg/node/details/callable_signature.hpp>
 #include <bg/node/details/resolver.hpp>
@@ -15,6 +16,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <functional>
+#include <initializer_list>
 #include <optional>
 #include <tuple>
 #include <type_traits>
@@ -188,9 +190,16 @@ template <typename Function, typename... Options> class CallableNodeDefinition {
 
     explicit CallableNodeDefinition(Function function, Options... options)
         : function_{std::move(function)}, options_{std::move(options)...},
-          signature_{make_callable_signature<Function, Function>(util::symbol{util::unqualified_type_name<Function>()},
-                                                                 callable_resolvers(options_),
-                                                                 callable_schedule_on_start_option(options_))} {}
+          signature_{make_callable_signature<Function, Function>(
+              util::symbol{util::unqualified_type_name<Function>()}, callable_resolvers(options_),
+              callable_schedule_on_start_option(options_))} {}
+
+    CallableNodeDefinition(Function function, std::initializer_list<WiringParameter> parameters, Options... options)
+        : function_{std::move(function)}, options_{std::move(options)...},
+          signature_{make_callable_signature<Function, Function>(
+                         util::symbol{util::unqualified_type_name<Function>()}, callable_resolvers(options_),
+                         callable_schedule_on_start_option(options_))
+                         .with_parameters(parameters)} {}
 
     const Signature &signature() const { return signature_; }
 

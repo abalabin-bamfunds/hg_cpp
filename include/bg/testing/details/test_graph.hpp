@@ -901,8 +901,8 @@ inline auto run_template_literals(const WiringTemplate &tested, const GraphRunOp
     if (tested.signature().has_variadic_parameters()) {
         throw std::invalid_argument{"test_graph literal inputs do not support variadic wiring templates"};
     }
-    if (inputs.size() != tested.signature().parameter_count()) {
-        throw std::invalid_argument{"test_graph literal input count does not match the wiring template"};
+    if (inputs.size() > tested.signature().parameter_count()) {
+        throw std::invalid_argument{"test_graph literal input count exceeds the wiring template"};
     }
 
     const auto start_time = options.start_time.value_or(MIN_DT + EvaluationTime::duration{1});

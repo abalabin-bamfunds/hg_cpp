@@ -23,6 +23,14 @@ struct NormalizedWiringArguments {
                                                                    std::span<const WiringArgument> arguments,
                                                                    allocator &memory,
                                                                    const Signature *parameter_aliases = nullptr);
+// The overlay and supplied arguments must outlive returned captures. This
+// overload commits defaults to the graph and stores capture records in the
+// overlay; those records borrow supplied argument values.
+[[nodiscard]] NormalizedWiringArguments normalize_wiring_arguments(const Signature &signature,
+                                                                   std::span<const WiringArgument> arguments,
+                                                                   allocator &memory,
+                                                                   WiringRecordOverlay &temporary_captures,
+                                                                   const Signature *parameter_aliases = nullptr);
 // Records must outlive the returned arguments.
 [[nodiscard]] NormalizedWiringArguments probe_wiring_arguments(const Signature &signature,
                                                                std::span<const WiringArgument> arguments,
