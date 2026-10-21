@@ -33,6 +33,8 @@ TEST_CASE("valid publishes the input validity",
 }
 
 namespace stream_test {
+using namespace bg::literals;
+
 struct non_comparable_value {
     i64 value;
 };
@@ -48,6 +50,15 @@ template <template <typename, auto...> typename Field> struct mixed_guarantee_bu
 };
 
 } // namespace stream_test
+
+TEST_CASE("type_ reports scalar type and deduplicates repeated values",
+          "[feature:operator][feature:type][series:value][scalar:builtin]"
+          "[transition:update][transition:invalidation][transition:revalidation]") {
+    const auto graph = [](wp<TS<i64>> value) { return operators::type_(value); };
+
+    CHECK(testing::test_graph(graph, {1, 2, literal::INVALID, 3})
+              .equals<const Type *>({&cpp_scalar_type<i64>(), std::nullopt, std::nullopt, &cpp_scalar_type<i64>()}));
+}
 
 namespace {
 

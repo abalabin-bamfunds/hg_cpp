@@ -144,6 +144,17 @@ class PythonObjectScalarRuntimeType final : public ScalarRuntimeType {
         return object_type_.accepts_type(source.type());
     }
 
+    const ScalarType &concrete_type(const details::ScalarData &value) const override {
+        auto *object = python_object(value);
+        if (object == nullptr) {
+            return type();
+        }
+
+        auto gil = nanobind::gil_scoped_acquire{};
+        return scalar_conversions().type_from_python(
+            nanobind::handle{reinterpret_cast<PyObject *>(Py_TYPE(object))});
+    }
+
     void construct_initial_value(void *destination) const noexcept override {
         std::construct_at(static_cast<PythonObjectStorage **>(destination), nullptr);
     }

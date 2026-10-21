@@ -79,6 +79,7 @@ extern BG_LIBRARY_EXPORT operator_<BOOL, auto(BOOL) -> bool> not_;
 // Validity queries.
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> bool> valid;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> bool> all_valid;
+extern BG_LIBRARY_EXPORT operator_<auto(TS<SCALAR>) -> const Type *> type_;
 
 // Tick selection.
 extern BG_LIBRARY_EXPORT operator_<auto(SIGNAL, TS_T) -> TS_T> sample;

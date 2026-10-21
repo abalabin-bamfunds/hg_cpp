@@ -29,6 +29,22 @@ struct stream_overloads {
         },
         schedule_on_start = true};
 
+    struct type_impl {
+        In<TS<SCALAR>, optional> value;
+        Out<TS<const Type *, TimeSeriesGuarantee::deduplicated>> output;
+
+        void evaluate() const {
+            if (!value.valid()) {
+                output.invalidate();
+                return;
+            }
+
+            output.set(std::addressof(value.value_view().concrete_type()));
+        }
+    };
+
+    overload<type_, type_impl> type_impl;
+
     // Tick counting.
     struct count_impl {
         In<TS_T::with<G>> value;

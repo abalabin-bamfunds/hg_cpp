@@ -4,6 +4,7 @@ import bg
 from bg._bg_test_extension import (
     can_convert_python_type,
     copy_release_python_scalar_without_gil,
+    native_concrete_type_name,
     python_type_supports_value_covariance,
 )
 
@@ -40,6 +41,48 @@ def test_python_object_scalar_types_report_value_covariance():
     assert python_type_supports_value_covariance(Base)
     assert python_type_supports_value_covariance(Derived)
     assert not python_type_supports_value_covariance(int)
+
+
+def test_type_operator_reports_concrete_python_object_classes_from_base_typed_input():
+    class Base:
+        pass
+
+    class DerivedA(Base):
+        pass
+
+    class DerivedB(Base):
+        pass
+
+    @bg.graph
+    def graph(value: bg.TS[Base]) -> bg.TS[str]:
+        return native_concrete_type_name(value)
+
+    assert bg.test_graph(graph, [DerivedA(), DerivedA(), DerivedB(), Base()]) == [
+        "DerivedA",
+        "DerivedA",
+        "DerivedB",
+        "Base",
+    ]
+
+
+def test_type_operator_reports_concrete_dataclass_schema_from_base_typed_input():
+    @bg.schema
+    class BaseRecord:
+        value: int
+
+    @bg.schema
+    class DerivedRecord(BaseRecord):
+        extra: int
+
+    @bg.graph
+    def graph(value: bg.TS[bg.Bundle[BaseRecord]]) -> bg.TS[str]:
+        return native_concrete_type_name(value)
+
+    assert bg.test_graph(graph, [DerivedRecord(1, 2), DerivedRecord(2, 3), BaseRecord(4)]) == [
+        "DerivedRecord",
+        "DerivedRecord",
+        "BaseRecord",
+    ]
 
 
 def test_python_object_scalars_support_multiple_inheritance():

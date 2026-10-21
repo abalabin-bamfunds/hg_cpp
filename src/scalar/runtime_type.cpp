@@ -31,6 +31,10 @@ namespace bg {
 
 ScalarRuntimeType::~ScalarRuntimeType() = default;
 
+const ScalarType &ScalarRuntimeType::concrete_type(const details::ScalarData &value) const {
+    return value.type();
+}
+
 bool ScalarRuntimeType::accepts_input(const ScalarRuntimeType &source) const noexcept {
     return &type() == &source.type();
 }

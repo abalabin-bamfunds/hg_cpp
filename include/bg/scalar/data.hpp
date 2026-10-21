@@ -49,6 +49,7 @@ class ScalarData {
         return direct ? std::addressof(data_) : reinterpret_cast<const void *>(data_);
     }
     const ScalarType &type() const noexcept { return runtime_type().type(); }
+    const ScalarType &concrete_type() const { return runtime_type().concrete_type(*this); }
     bool empty() const noexcept { return !runtime_type_; }
     std::uintptr_t data_word() const noexcept { return data_; }
 
