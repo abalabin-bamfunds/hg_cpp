@@ -179,9 +179,10 @@ TEST_CASE("queue declarations require ordinary guarantees in every mode",
         for (const auto guarantee :
              {TimeSeriesGuarantee::deduplicated, TimeSeriesGuarantee::final, TimeSeriesGuarantee::const_}) {
             const auto &output_type = TS<List<i64>>::type().with_guarantee(guarantee);
-            require_rejected(queue(output_type = output_type, start = [](Queue) {}, mode = mode));
+            require_rejected(queue(bg::output_type = output_type, start = [](Queue) {}, bg::mode = mode));
         }
-        require_rejected(queue<TSD<i64, TS<List<i64>, TimeSeriesGuarantee::final>>>(start = [](Queue) {}, mode = mode));
+        require_rejected(
+            queue<TSD<i64, TS<List<i64>, TimeSeriesGuarantee::final>>>(start = [](Queue) {}, bg::mode = mode));
     }
 }
 
