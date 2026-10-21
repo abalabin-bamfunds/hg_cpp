@@ -302,6 +302,37 @@ limit const to final because an empty collection has no result. This applies
 to both overload versions. Each evaluation takes O(N) work and O(1) auxiliary
 storage.
 
+## Boolean collection reductions
+
+`all_(values)` and `any_(values)` reduce a Boolean fixed-size TSL, TSD, or TSS.
+`all_` tests whether every contributing value is true; `any_` tests whether at
+least one is true. They accept one collection argument. An ordinary call
+requires a valid root and valid immediate items. `opt(values)` selects an
+overload that skips invalid items and treats an invalid root as empty:
+
+```cpp
+auto complete = operators::all_(values);
+auto available = operators::any_(opt(values));
+```
+
+```python
+complete = bg.operators.all_(values)
+available = bg.operators.any_(bg.opt(values))
+```
+
+Use `valid_items(values)` to exclude invalid TSD items while still requiring
+root validity, following the [valid-item rules](operators.md#valid-item-arguments).
+It can also be combined with `opt()`.
+
+With no contributing items, `all_` publishes true and `any_` publishes false.
+Input changes recalculate the result, including item validity changes and
+removals. Neither operator schedules on start. Ordinary outputs publish equal
+results on separate evaluations. Required overloads propagate the observed
+collection guarantee; optional overloads produce ordinary outputs.
+
+Each calculation retains no state. TSL and TSD evaluation takes O(N) work in
+the worst case; TSS uses one Boolean membership lookup.
+
 ## Collection queries
 
 `len_(value)` returns an `i64` length. It counts current TSS membership or the

@@ -56,6 +56,8 @@ decltype(sum_) sum_{"sum_", {"values"}};
 decltype(min_) min_{"min_", {"values"}};
 decltype(max_) max_{"max_", {"values"}};
 decltype(mean) mean{"mean", {"values"}};
+decltype(all_) all_{"all_", {"values"}};
+decltype(any_) any_{"any_", {"values"}};
 
 namespace {
 
