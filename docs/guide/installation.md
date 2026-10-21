@@ -52,9 +52,9 @@ These commands work in a Linux/macOS shell or Windows PowerShell. They install
 BG and its C++ dependencies into the repository's `install` directory.
 Python is not required for this build.
 
-The next lesson uses a small CMake project to find this installation and link
-to `bg::bg`.
+[A first BG program](getting-started.md) uses a small CMake project
+to find this installation and link to `bg::library`.
 :::
 ::::
 
-Continue to [Your first graph](getting-started.md).
+For a complete runnable example, see [A first BG program](getting-started.md).

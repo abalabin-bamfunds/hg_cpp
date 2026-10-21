@@ -1,34 +1,34 @@
-# Your first graph
+# A first BG program
 
-Write a calculation that adds a calibration offset to each temperature reading,
-then run it with three readings. A single calculation is enough to start:
-this example runs a graph with one calculation node.
+To run a small BG calculation, define a graph function and pass it to
+`test_graph`. This program returns the fixed value `18`.
 
-First, [install BG](installation.md) if you have not installed it yet.
+BG must be [installed](installation.md) to run the examples.
 
 ## Write and run the example
 
-::::{tab-set}
+::::::{tab-set}
 :sync-group: language
 
-:::{tab-item} Python
+:::::{tab-item} Python
 :sync: python
 
-Save this complete example as `first_graph.py`:
+This complete example can run as `first_graph.py`:
 
 ```python
-import bg
+from bg import graph, test_graph
+from bg.operators import const_
 
 
-@bg.graph
-def calibrated_temperature(reading: int) -> int:
-    return reading + 2
+@graph
+def example() -> int:
+    return const_(18)
 
 
-print(bg.run_graph(calibrated_temperature, [18, 20, 19]))
+print(test_graph(example))
 ```
 
-Run it:
+To run the file:
 
 ```sh
 python first_graph.py
@@ -37,39 +37,66 @@ python first_graph.py
 Output:
 
 ```text
-[20, 22, 21]
+[18]
 ```
 
-`@bg.graph` marks a function that constructs a graph. The `int` annotations
-describe the input and output value types. Inside the function, `reading`
-identifies the changing input. The expression `reading + 2` connects an
-addition; BG performs that addition during evaluation.
+`from bg import ...` imports graph authoring and testing functions. `@graph`
+marks `example` as a graph function. The empty parentheses mean it has no
+parameters; `-> int` declares an integer result. `return` identifies its output.
 
-`bg.run_graph` runs the graph with the supplied input updates and returns a
-result containing the output updates.
-:::
+`const_(18)` provides the fixed value to the graph. `test_graph(example)` runs
+the graph and returns a list containing its result. It takes the graph function
+by name, without calling `example()` here.
+:::::
 
-:::{tab-item} C++
+:::::{tab-item} C++
 :sync: cpp
 
-Create `examples/first-graph/first_graph.cpp` in the BG repository with this
-complete example:
+::::{tab-set}
+
+:::{tab-item} Code
 
 ```cpp
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <bg/library.hpp>
+#include <bg/testing/test_graph.hpp>
 
 #include <iostream>
 
-int main() {
-    const auto calibrated_temperature = bg::node([](int reading) {
-        return reading + 2;
-    });
+using namespace bg;
+using namespace bg::testing;
+using namespace bg::operators;
 
-    const auto result = bg::run_graph(calibrated_temperature, {18, 20, 19});
-    std::cout << std::boolalpha << result.equals({20, 22, 21}) << '\n';
+auto example() {
+    return const_(18);
+}
+
+int main() {
+    const auto result = test_graph(example);
+    std::cout << std::boolalpha << result.equals({18}) << '\n';
 }
 ```
+
+Output:
+
+```text
+true
+```
+
+The headers provide library calculations and `test_graph`. The `using namespace`
+declarations make their names available without a prefix.
+
+`example` is a graph function. The empty parentheses mean it has no parameters;
+`auto` infers its return type. `const_(18)` provides a fixed value, and `return`
+identifies the graph's output.
+
+`main` runs the graph with `test_graph(example)`. `equals({18})` checks the
+recorded result; `std::boolalpha` prints that check as `true` or `false`.
+:::
+
+:::{tab-item} Build and run
+
+Create `examples/first-graph/` in the BG repository and save the code there
+as `first_graph.cpp`.
 
 Save this alongside it as `CMakeLists.txt`:
 
@@ -80,7 +107,7 @@ project(first_graph LANGUAGES CXX)
 find_package(bg CONFIG REQUIRED)
 
 add_executable(first_graph first_graph.cpp)
-target_link_libraries(first_graph PRIVATE bg::bg)
+target_link_libraries(first_graph PRIVATE bg::library)
 ```
 
 From the repository directory, configure and build:
@@ -103,36 +130,11 @@ DLL directory to this PowerShell session and run:
 $env:PATH = "$PWD/install/bin;$env:PATH"
 .\build\first-graph\Release\first_graph.exe
 ```
-
-Output:
-
-```text
-true
-```
-
-`bg::node` defines a calculation with plain `int` values. BG calls the lambda
-with the current reading during evaluation and publishes its return value.
-
-`bg::run_graph` builds and runs a graph containing that node.
-`{18, 20, 19}` supplies the input updates. The runner infers their type from
-the plain `int` parameter. `equals` compares the recorded updates with the
-expected literal sequence. C++ examples print `true` when the updates match.
 :::
 ::::
 
-## Follow the updates
+:::::
+::::::
 
-`run_graph` supplies one reading per evaluation step:
-
-| Step | Reading | Calibrated temperature |
-| --- | --- | --- |
-| 1 | 18 | 20 |
-| 2 | 20 | 22 |
-| 3 | 19 | 21 |
-
-Change the offset from `2` to `5` and run the example again. The output updates
-become `23`, `25`, and `24`. In C++, update the expected values in `equals` too;
-it prints `false` while they differ.
-
-Continue to [Values that change](changing-values.md) to skip an update and
-connect two inputs that update independently.
+For expressions that combine values, [Arithmetic](arithmetic.md) covers
+operators and named results.

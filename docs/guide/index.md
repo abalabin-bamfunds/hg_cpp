@@ -24,16 +24,38 @@ many items.
 
 ## Start here
 
-Every example has Python and C++ versions. Choose either language and follow
-it throughout the guide. You need basic knowledge of functions and types in
-that language. You do not need previous experience with graphs.
+Every example has Python and C++ versions. The language tabs remember your
+choice across pages. The guide assumes basic knowledge of functions and types
+in either language and introduces graph concepts from the beginning.
 
-[Install BG](installation.md), then follow these lessons:
+### Getting started
 
-1. [Your first graph](getting-started.md): write a calculation and run it with
-   a sequence of inputs.
-2. [Values that change](changing-values.md): skip an update and connect inputs
-   that update independently.
+- [Installation](installation.md): set up BG for Python or C++.
+- [A first BG program](getting-started.md): imports, declarations, a fixed result,
+  and a test run.
+
+### Graph basics
+
+- [Arithmetic](arithmetic.md): combine values with expressions and name results.
+- [Graph functions](connect-calculations.md): give a calculation parameters and
+  call it from another graph.
+- [Values that change](changing-values.md): supply input sequences to `test_graph`,
+  combine fixed arguments with changing inputs, and handle skipped or simultaneous updates.
+- [Conditionals](conditions.md): choose during construction or evaluation,
+  combine conditions, handle several outcomes, and follow updates from the selected input.
+
+### Working with updates
+
+- [Suppress repeated values](dedup.md): publish changes with `dedup` and choose
+  where to suppress repeated updates.
+- [Forward updates conditionally](filter.md): forward readings while enabled
+  and preserve the last output while forwarding is closed.
+- [Read a value when signalled](sample.md): publish the latest value on each
+  signal update.
+- [Count and remember updates](count-and-lag.md): count readings and read the
+  preceding calibrated value.
+- [Running calculations](running-calculations.md): maintain totals and means
+  across successive readings.
 
 The examples begin with plain types such as `int`. Each chapter introduces
 additional syntax when its examples need it.
