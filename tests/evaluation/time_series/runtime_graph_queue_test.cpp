@@ -43,6 +43,77 @@ using namespace bg;
 
 namespace {
 
+[[nodiscard]] EvaluationTime time(i64 microseconds) {
+    return MIN_DT + std::chrono::microseconds{microseconds};
+}
+
+} // namespace
+
+TEST_CASE("outer evaluation drains standard and eliding queues and publishes each changed target once",
+          "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][transition:update]") {
+    auto standard_values = std::vector<i64>{};
+    auto elided_values = std::vector<i64>{};
+    const auto standard_queue = queue<TS<i64>>(start = [](Queue) {}, mode = QueueMode::standard);
+
+    const auto elided_queue = queue<TS<i64>>(start = [](Queue) {}, mode = QueueMode::elide);
+
+    const auto standard_sink = node([&](i64 value) { standard_values.push_back(value); });
+
+    const auto elided_sink = node([&](i64 value) { elided_values.push_back(value); });
+
+    auto wiring = GraphWiring{};
+    WiringPoint standard_output;
+    WiringPoint elided_output;
+    {
+        const auto context = WiringContext{wiring};
+        standard_output = standard_queue();
+        elided_output = elided_queue();
+        standard_sink(standard_output);
+        elided_sink(elided_output);
+    }
+    wiring.finalize();
+    const auto standard_target = wiring.output_node_index(standard_output);
+    const auto elided_target = wiring.output_node_index(elided_output);
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
+    runtime.start(time(1));
+
+    auto standard = runtime.make_queue(standard_target);
+    auto elided = runtime.make_queue(elided_target);
+    CHECK_FALSE(standard.write(::literal::TimeSeriesLiteral(::literal::SKIP)));
+    CHECK_FALSE(elided.write(::literal::TimeSeriesLiteral(::literal::SKIP)));
+    runtime.evaluate(time(2));
+    CHECK(standard_values.empty());
+    CHECK(elided_values.empty());
+
+    REQUIRE(elided.write(::literal::TimeSeriesLiteral(i64{20})));
+    REQUIRE(elided.write(::literal::TimeSeriesLiteral(i64{21})));
+    REQUIRE(standard.write(::literal::TimeSeriesLiteral(i64{10})));
+    REQUIRE(standard.write(::literal::TimeSeriesLiteral(i64{11})));
+    REQUIRE(standard.write(::literal::TimeSeriesLiteral(i64{12})));
+    runtime.evaluate(time(3));
+
+    CHECK(standard_values == std::vector<i64>{10});
+    CHECK(elided_values == std::vector<i64>{21});
+    CHECK(runtime.node(standard_target).output_last_updated().time() == time(3));
+    CHECK(runtime.node(elided_target).output_last_updated().time() == time(3));
+
+    runtime.evaluate(time(4));
+    CHECK(standard_values == std::vector<i64>{10, 11});
+    CHECK(elided_values == std::vector<i64>{21});
+    runtime.evaluate(time(5));
+    CHECK(standard_values == std::vector<i64>{10, 11, 12});
+
+    runtime.schedule(elided_target);
+    runtime.evaluate(time(6));
+    CHECK(standard_values == std::vector<i64>{10, 11, 12});
+    CHECK(elided_values == std::vector<i64>{21});
+    runtime.stop();
+}
+
+namespace {
+
 struct QueueNodeDefinition {
     static constexpr bool uses_queue = true;
 
@@ -70,10 +141,6 @@ struct QueueNodeDefinition {
     const TimeSeriesRuntimeType *runtime_type_;
     Signature signature_;
 };
-
-[[nodiscard]] EvaluationTime time(i64 microseconds) {
-    return MIN_DT + std::chrono::microseconds{microseconds};
-}
 
 bool wait_for_notification(details::EngineWakeup &wakeup) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
@@ -123,6 +190,7 @@ TEST_CASE("a stopped runtime graph creates closed queue handles",
 TEST_CASE("an outer runtime graph shares and closes queues before stop callbacks",
           "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][lifecycle]") {
     auto first_node = node(QueueNodeDefinition{});
+
     auto second_node = node(QueueNodeDefinition{});
     auto wiring = GraphWiring{};
     std::optional<WiringPoint> first_output;
@@ -343,6 +411,7 @@ TEST_CASE("queue readiness remains visible alongside an evaluation timer deadlin
           "[evaluation][feature:time-series-storage][feature:timed-scheduling][series:value][scalar:i64][queue]"
           "[wakeup]") {
     auto timed_node = node(QueueLayoutNodeDefinition<true, false, false>{});
+
     auto queue_node = node(QueueNodeDefinition{});
     auto wiring = GraphWiring{};
     std::optional<WiringPoint> queue_output;
@@ -523,6 +592,7 @@ TEST_CASE("queue discard destroys unread typed payloads after stop callbacks and
           "[evaluation][feature:time-series-storage][series:value][scalar:compound][queue][lifecycle]") {
     REQUIRE(QueuePayloadBufferHandlers::register_operations());
     auto integer_node = node(QueueNodeDefinition{});
+
     auto payload_node = node(PayloadQueueNodeDefinition{});
     auto wiring = GraphWiring{};
     std::optional<WiringPoint> integer_output;
@@ -837,6 +907,7 @@ TEST_CASE("queue storage follows timed scheduling and cycle callback pointers",
           "[evaluation][feature:time-series-storage][queue][layout]") {
     const auto verify_layout = []<typename Definition, typename WithoutQueue>(std::size_t expected_offset) {
         auto definition_node = node(Definition{});
+
         auto node_without_queue = node(WithoutQueue{});
         auto wiring = GraphWiring{};
         auto wiring_without_queue = GraphWiring{};
@@ -893,6 +964,7 @@ TEST_CASE("pending queue messages schedule a minimum-tick simulation cycle",
             throw std::logic_error{"queue write was rejected during start"};
         }
     });
+
     const auto observer = node([&](In<TS<i64>> input) { values.emplace_back(*input, input.last_updated()); });
     auto wiring = GraphWiring{};
     {
@@ -931,7 +1003,9 @@ TEST_CASE("cancelling a timer lets pending queue work use the minimum-tick cycle
             throw std::logic_error{"queue write was rejected during start"};
         }
     });
+
     const auto observer = node([&](In<TS<i64>> input) { values.emplace_back(*input, input.last_updated()); });
+
     const auto timer = node<QueueTimerCancellation>();
     auto wiring = GraphWiring{};
     {
@@ -977,7 +1051,9 @@ TEST_CASE("due and overdue timers leave pending queue frames for the next minimu
             throw std::logic_error{"queue write was rejected during start"};
         }
     });
+
     const auto observer = node([&](In<TS<i64>> input) { values.emplace_back(*input, input.last_updated()); });
+
     const auto timer = node<QueueDueTimer>();
     auto wiring = GraphWiring{};
     {
@@ -1035,7 +1111,9 @@ TEST_CASE("due wall-clock timers leave committed queue frames for the next minim
             throw std::logic_error{"queue write was rejected during start"};
         }
     });
+
     const auto observer = node([&](In<TS<i64>> input) { values.emplace_back(*input, input.last_updated()); });
+
     const auto timer = node<QueueWallClockTimer>();
     auto wiring = GraphWiring{};
     {
@@ -1091,8 +1169,11 @@ TEST_CASE("nested minimum-tick timers keep queued frames unread until the chain 
             throw std::logic_error{"queue write was rejected during start"};
         }
     });
+
     const auto observer = node([&](In<TS<i64>> input) { values.emplace_back(*input, input.last_updated()); });
+
     const auto timer = node<QueuePriorityInnerTimer>();
+
     const auto inner = graph("name"_n = "queue_priority_inner_timer", [&]() -> wp<TS<i64>> { return timer(); });
     auto wiring = GraphWiring{};
     {
@@ -1226,72 +1307,14 @@ TEST_CASE("a retained graph queue is closed before its output runtime type expir
     CHECK_FALSE(retained.write(::literal::TimeSeriesLiteral(::literal::REMOVE)));
 }
 
-TEST_CASE("outer evaluation drains standard and eliding queues and publishes each changed target once",
-          "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][transition:update]") {
-    auto standard_values = std::vector<i64>{};
-    auto elided_values = std::vector<i64>{};
-    const auto standard_queue = queue<TS<i64>>(start = [](Queue) {}, mode = QueueMode::standard);
-    const auto elided_queue = queue<TS<i64>>(start = [](Queue) {}, mode = QueueMode::elide);
-    const auto standard_sink = node([&](In<TS<i64>> input) { standard_values.push_back(*input); });
-    const auto elided_sink = node([&](In<TS<i64>> input) { elided_values.push_back(*input); });
-
-    auto wiring = GraphWiring{};
-    WiringPoint standard_output;
-    WiringPoint elided_output;
-    {
-        const auto context = WiringContext{wiring};
-        standard_output = standard_queue();
-        elided_output = elided_queue();
-        standard_sink(standard_output);
-        elided_sink(elided_output);
-    }
-    wiring.finalize();
-    const auto standard_target = wiring.output_node_index(standard_output);
-    const auto elided_target = wiring.output_node_index(elided_output);
-    const auto compiled = CompiledGraph{wiring};
-    auto global_state = GlobalState{};
-    auto runtime = RuntimeGraph{compiled, global_state};
-    runtime.start(time(1));
-
-    auto standard = runtime.make_queue(standard_target);
-    auto elided = runtime.make_queue(elided_target);
-    CHECK_FALSE(standard.write(::literal::TimeSeriesLiteral(::literal::SKIP)));
-    CHECK_FALSE(elided.write(::literal::TimeSeriesLiteral(::literal::SKIP)));
-    runtime.evaluate(time(2));
-    CHECK(standard_values.empty());
-    CHECK(elided_values.empty());
-
-    REQUIRE(elided.write(::literal::TimeSeriesLiteral(i64{20})));
-    REQUIRE(elided.write(::literal::TimeSeriesLiteral(i64{21})));
-    REQUIRE(standard.write(::literal::TimeSeriesLiteral(i64{10})));
-    REQUIRE(standard.write(::literal::TimeSeriesLiteral(i64{11})));
-    REQUIRE(standard.write(::literal::TimeSeriesLiteral(i64{12})));
-    runtime.evaluate(time(3));
-
-    CHECK(standard_values == std::vector<i64>{10});
-    CHECK(elided_values == std::vector<i64>{21});
-    CHECK(runtime.node(standard_target).output_last_updated().time() == time(3));
-    CHECK(runtime.node(elided_target).output_last_updated().time() == time(3));
-
-    runtime.evaluate(time(4));
-    CHECK(standard_values == std::vector<i64>{10, 11});
-    CHECK(elided_values == std::vector<i64>{21});
-    runtime.evaluate(time(5));
-    CHECK(standard_values == std::vector<i64>{10, 11, 12});
-
-    runtime.schedule(elided_target);
-    runtime.evaluate(time(6));
-    CHECK(standard_values == std::vector<i64>{10, 11, 12});
-    CHECK(elided_values == std::vector<i64>{21});
-    runtime.stop();
-}
-
 TEST_CASE("batch queues append copied handle values and encode nested scalar list items",
           "[evaluation][feature:time-series-storage][series:value][scalar:list][scalar:i64][queue][batch]") {
     auto batch_values = std::vector<std::vector<i64>>{};
     auto nested_values = std::vector<std::vector<std::vector<i64>>>{};
     const auto batch_queue = queue<TS<List<i64>>>(start = [](Queue) {}, mode = QueueMode::batch);
+
     const auto nested_queue = queue<TS<List<List<i64>>>>(start = [](Queue) {}, mode = QueueMode::batch);
+
     const auto batch_sink = node([&](In<TS<List<i64>>> input) {
         auto values = std::vector<i64>{};
         const auto list = input.value_view();
@@ -1300,6 +1323,7 @@ TEST_CASE("batch queues append copied handle values and encode nested scalar lis
         }
         batch_values.push_back(std::move(values));
     });
+
     const auto nested_sink = node([&](In<TS<List<List<i64>>>> input) {
         auto values = std::vector<std::vector<i64>>{};
         const auto outer = input.value_view();
@@ -1360,8 +1384,11 @@ TEST_CASE("batch queues accumulate scalar lists inside TSL, TSB, and TSD values"
     auto bundle_values = std::vector<std::vector<std::vector<i64>>>{};
     auto dictionary_values = std::vector<std::vector<std::vector<i64>>>{};
     const auto list_queue = queue<TSL<TS<List<i64>>, 2>>(start = [](Queue) {}, mode = QueueMode::batch);
+
     const auto bundle_queue = queue<TSB<BatchQueueBundle>>(start = [](Queue) {}, mode = QueueMode::batch);
+
     const auto dictionary_queue = queue<TSD<i64, TS<List<i64>>>>(start = [](Queue) {}, mode = QueueMode::batch);
+
     const auto list_sink = node([&](In<TSL<TS<List<i64>>, 2>> input) {
         auto values = std::vector<std::vector<i64>>{};
         for (auto index = std::size_t{}; index < input.size(); ++index) {
@@ -1374,6 +1401,7 @@ TEST_CASE("batch queues accumulate scalar lists inside TSL, TSB, and TSD values"
         }
         list_values.push_back(std::move(values));
     });
+
     const auto bundle_sink = node([&](In<TSB<BatchQueueBundle>> input) {
         auto values = std::vector<std::vector<i64>>{};
         for (const auto field : {input->first, input->second}) {
@@ -1386,6 +1414,7 @@ TEST_CASE("batch queues accumulate scalar lists inside TSL, TSB, and TSD values"
         }
         bundle_values.push_back(std::move(values));
     });
+
     const auto dictionary_sink = node([&](In<TSD<i64, TS<List<i64>>>> input) {
         auto values = std::vector<std::vector<i64>>{};
         for (const auto key : {i64{1}, i64{2}}) {
@@ -1453,6 +1482,7 @@ TEST_CASE("batch queue admission keeps conflicting bundle frames pending as a wh
     using Event = std::pair<std::optional<Values>, std::optional<Values>>;
     auto events = std::vector<Event>{};
     const auto queue_node = queue<TSB<BatchQueueBundle>>(start = [](Queue) {}, mode = QueueMode::batch);
+
     const auto sink = node([&](In<TSB<BatchQueueBundle>> input) {
         const auto values = [](const auto &field) -> std::optional<Values> {
             if (!field.valid()) {
@@ -1502,6 +1532,7 @@ TEST_CASE("batch queue invalidations wait for changes and redundant invalidation
     using Values = std::vector<i64>;
     auto events = std::vector<std::optional<Values>>{};
     const auto queue_node = queue<TS<List<i64>>>(start = [](Queue) {}, mode = QueueMode::batch);
+
     const auto sink = node([&](In<TS<List<i64>>, optional> input) {
         if (!input.valid()) {
             events.emplace_back(std::nullopt);
@@ -1561,6 +1592,7 @@ TEST_CASE("batch dictionary admission preserves per-key removal and recreation b
     using Event = std::pair<std::optional<Values>, std::optional<Values>>;
     auto events = std::vector<Event>{};
     const auto queue_node = queue<TSD<i64, TS<List<i64>>>>(start = [](Queue) {}, mode = QueueMode::batch);
+
     const auto sink = node([&](In<TSD<i64, TS<List<i64>>>> input) {
         const auto values = [&](i64 key) -> std::optional<Values> {
             if (!input.contains(key)) {
@@ -1627,6 +1659,7 @@ TEST_CASE("batch queue replay preserves owned scalar values in the output list",
           "[evaluation][feature:time-series-storage][series:value][scalar:list][scalar:string][queue][batch]") {
     auto batch_values = std::vector<std::vector<std::string>>{};
     const auto queue_node = queue<TS<List<string>>>(start = [](Queue) {}, mode = QueueMode::batch);
+
     const auto sink = node([&](In<TS<List<string>>> input) {
         auto values = std::vector<std::string>{};
         const auto list = input.value_view();
@@ -1673,6 +1706,7 @@ TEST_CASE("batch queue retains owned payloads while an invalidated leaf waits pe
     REQUIRE(QueuePayloadBufferHandlers::register_operations());
     auto values = std::vector<std::vector<i64>>{};
     const auto queue_node = queue<TS<List<QueuePayload>>>(start = [](Queue) {}, mode = QueueMode::batch);
+
     const auto sink = node([&](In<TS<List<QueuePayload>>> input) {
         auto items = std::vector<i64>{};
         const auto list = input.value_view();
@@ -1732,10 +1766,11 @@ TEST_CASE("a standard queue conflict retains its frame and stops later targets",
     auto dictionary_values = std::vector<i64>{};
     auto scalar_values = std::vector<i64>{};
     const auto dictionary_queue = queue<TSD<i64, TS<i64>>>(start = [](Queue) {}, mode = QueueMode::standard);
+
     const auto scalar_queue = queue<TS<i64>>(start = [](Queue) {}, mode = QueueMode::standard);
     const auto dictionary_sink =
         node([&](In<TSD<i64, TS<i64>>> input) { dictionary_values.push_back(input.contains(1) ? *input[1] : -1); });
-    const auto scalar_sink = node([&](In<TS<i64>> input) { scalar_values.push_back(*input); });
+    const auto scalar_sink = node([&](i64 value) { scalar_values.push_back(value); });
 
     auto wiring = GraphWiring{};
     WiringPoint dictionary_output;
@@ -1776,7 +1811,9 @@ TEST_CASE("batch queue values after a standard conflict start the next cycle wit
     auto batch_values = std::vector<std::vector<i64>>{};
     auto standard_values = std::vector<i64>{};
     const auto batch_queue = queue<TS<List<i64>>>(start = [](Queue) {}, mode = QueueMode::batch);
+
     const auto standard_queue = queue<TS<i64>>(start = [](Queue) {}, mode = QueueMode::standard);
+
     const auto batch_sink = node([&](In<TS<List<i64>>> input) {
         auto values = std::vector<i64>{};
         const auto list = input.value_view();
@@ -1785,7 +1822,8 @@ TEST_CASE("batch queue values after a standard conflict start the next cycle wit
         }
         batch_values.push_back(std::move(values));
     });
-    const auto standard_sink = node([&](In<TS<i64>> input) { standard_values.push_back(*input); });
+
+    const auto standard_sink = node([&](i64 value) { standard_values.push_back(value); });
 
     auto wiring = GraphWiring{};
     auto batch_output = WiringPoint{};
@@ -1835,6 +1873,7 @@ TEST_CASE("queue dictionary updates, removal, no-op removal, and recreation publ
     };
     auto events = std::vector<Event>{};
     const auto queue_node = queue<TSD<i64, TS<i64>>>(start = [](Queue) {}, mode = QueueMode::standard);
+
     const auto sink = node([&](In<TSD<i64, TS<i64>>> input) {
         auto added = std::size_t{};
         auto removed = std::size_t{};
@@ -1894,7 +1933,9 @@ TEST_CASE("queued output changes notify required, optional, and reference subscr
     auto optional_values = std::vector<std::optional<i64>>{};
     auto reference_values = std::vector<i64>{};
     const auto queue_node = queue<TS<i64>>(start = [](Queue) {}, mode = QueueMode::standard);
+
     const auto required_sink = node([&](In<TS<i64>> input) { required_values.push_back(*input); });
+
     const auto optional_sink = node([&](In<TS<i64>, optional> input) {
         optional_values.push_back(input.valid() ? std::optional<i64>{*input} : std::nullopt);
     });

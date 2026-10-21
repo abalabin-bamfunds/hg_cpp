@@ -22,6 +22,7 @@ TEST_CASE("service requests dispatch to a worker and queued replies reach the cl
     const auto response_queue = queue<TSD<service_client_id_t, TS<i64>>>(
         start = [&](Queue queue) { replies = std::move(queue); },
         stop = [&]() noexcept { if (worker.joinable()) worker.join(); });
+
     const auto dispatch = node([&](In<TSD<service_client_id_t, TS<i64>>> requests) {
         requests.for_each_added([&](const auto &client_id) {
             worker = std::jthread{[&, id = *client_id, value = *requests[client_id], queue = replies]() mutable {
@@ -29,6 +30,7 @@ TEST_CASE("service requests dispatch to a worker and queued replies reach the cl
             }};
         });
     });
+
     const auto implementation = graph(
         "name"_n = "double_impl", [&](wp<TSD<service_client_id_t, TS<i64>>, "value"_n> requests) {
             dispatch(requests);

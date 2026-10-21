@@ -46,6 +46,7 @@ TEST_CASE("queue node declarations route writes to their declared output types a
                 probe.integer_write_accepted = queue.write(::literal::TimeSeriesLiteral(i64{19}));
             },
         mode = QueueMode::standard);
+
     const auto boolean_node = queue<TS<bool>>(
         start =
             [&probe](Queue queue) {
@@ -157,6 +158,7 @@ TEST_CASE("queue factories reject unsupported modes and time-series scalar input
     }
 
     const auto source = node([](Out<TS<i64>>) {});
+
     const auto scalar_queue = queue<TS<i64>>(start = [](i64, Queue) {});
     auto wiring = GraphWiring{};
     {
