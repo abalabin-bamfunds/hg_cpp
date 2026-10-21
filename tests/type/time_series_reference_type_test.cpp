@@ -806,7 +806,7 @@ class ReferenceContainingExtensionType final : public TimeSeriesType {
 } // namespace
 
 TEST_CASE("reference-free types remove references recursively through collections",
-          "[type][reference][feature:type-system][series:tsd][series:tsl]") {
+          "[type][reference][feature:type-system][series:tsd][series:fixed-tsl]") {
     using SOURCE = TSD<i64, TSL<REF<TS<i64>>, 2>>;
     using EXPECTED = TSD<i64, TSL<TS<i64>, 2>>;
 

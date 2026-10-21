@@ -91,7 +91,7 @@ TEST_CASE("run time is relative to start and the earlier explicit stop time wins
 }
 
 TEST_CASE("graph run limits apply through the profiler recorder",
-          "[evaluation][simulation][feature:simulation][feature:profiler]") {
+          "[evaluation][simulation][feature:simulation][feature:profiling]") {
     ScheduledSource::reset();
     auto profiler = EvaluationProfiler{};
     const auto start = time(30);
@@ -156,7 +156,8 @@ TEST_CASE("graph run options reject invalid and overflowing limits before startu
 }
 
 TEST_CASE("evaluation engines reject a stop time at the start before starting the graph",
-          "[evaluation][simulation][realtime][lifecycle][failure]") {
+          "[evaluation][simulation][realtime][feature:simulation][feature:realtime]"
+          "[transition:lifecycle][lifecycle][failure]") {
     ScheduledSource::reset();
     const auto source = node<ScheduledSource>();
     auto wiring = GraphWiring{};

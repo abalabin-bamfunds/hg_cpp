@@ -536,7 +536,7 @@ TEST_CASE("a dereferenced dictionary reports a removed item once",
 
 TEST_CASE("a sampled dereferenced dictionary preserves physical IDs and remappings",
           "[evaluation][series:tsd][series:value][reference][feature:reference][feature:sampling]"
-          "[feature:item-id-remapping][transition:rebind]") {
+          "[feature:item-id-remapping][rebind]") {
     const auto select_dictionary = node(
         [](In<TS<bool>> select_second, In<REF<TSD<i64, REF<TS<i64>>>>> first,
            In<REF<TSD<i64, REF<TS<i64>>>>> second,
