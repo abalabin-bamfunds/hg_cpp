@@ -908,7 +908,7 @@ void test_tsc_graph_behavior() {
             "clear did not report every removed row");
     require(observations[11].valid && observations[11].cells == std::vector<std::optional<bg::i64>>{70},
             "row before invalidation was not published");
-    require(!observations[12].valid && observations[12].became_invalid && !observations[12].modified &&
+    require(!observations[12].valid && observations[12].became_invalid && observations[12].modified &&
                 observations[12].changed.empty() && observations[12].removed.empty(),
             "invalidation of a live column was not observed");
     require(!observations[13].valid && !observations[13].modified && observations[13].changed.empty() &&

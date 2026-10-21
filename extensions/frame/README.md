@@ -242,14 +242,13 @@ Include `<bg/frame/tsc.hpp>` for the typed views.
 | `Out<TSC<i64>, frame::view>` | `bind(source)`, `invalidate` |
 | `Out<TSC<i64>, frame::computed<>>` | `bind(source)`, `set(id, value)`, `set_batch(ids, batch)`, `invalidate` |
 
-Delta reads require a modified input with matching change time. An accepted
+Delta reads require a valid, modified input with matching change time. An accepted
 ordinary set publishes even when the value is equal. An addition followed by
 removal in one cycle cancels its row delta while retaining publication.
 `clear()` supplies a valid empty value; `invalidate()` clears native rows and
-removes the current value.
-BG reports invalidation through `became_invalid()`, with `modified()` false
-and no public row delta. Consumers discard their row state on invalidation
-and rebuild from the current value on revalidation.
+removes the current value. Invalidation sets `became_invalid()` and
+`modified()`; a TSC exposes no row delta while invalid. Consumers discard their
+row state on invalidation and rebuild from the current value on revalidation.
 
 A `TSC` view output borrows its source cells. Its first binding reports all
 visible rows as additions. Later bindings preserve source additions, removals,

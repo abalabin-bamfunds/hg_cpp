@@ -184,7 +184,9 @@ class In<frame::TSC<T, SeriesProperties...>, Properties...>
     frame::ColumnSeriesView<T> storage() const noexcept {
         return static_cast<const frame::ColumnSeriesRuntimeType<T> &>(data_.runtime_type()).input_view(data_.data());
     }
-    bool changes_current() const noexcept { return modified() && storage().change_time() == last_updated(); }
+    bool changes_current() const noexcept {
+        return valid() && modified() && storage().change_time() == last_updated();
+    }
     TimeSeriesInputData data_;
 };
 
