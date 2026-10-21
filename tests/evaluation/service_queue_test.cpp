@@ -8,9 +8,11 @@
 #include <thread>
 #include <utility>
 
+using namespace bg;
+
 TEST_CASE("service requests dispatch to a worker and queued replies reach the client",
           "[evaluation][feature:service][feature:realtime][queue][concurrency]") {
-    const auto service = bg::service<auto(TS<i64>)->TS<i64>>{"double", {"value"}};
+    const auto service_definition = service<auto(TS<i64>)->TS<i64>>{"double", {"value"}};
     auto replies = Queue{};
     auto write_accepted = false;
     auto worker = std::jthread{};
@@ -33,7 +35,7 @@ TEST_CASE("service requests dispatch to a worker and queued replies reach the cl
             return response_queue();
         });
     auto catalogue = ServiceCatalogue{};
-    catalogue.register_impl(service, implementation);
+    catalogue.register_impl(service_definition, implementation);
 
     run_graph(
         [&] {

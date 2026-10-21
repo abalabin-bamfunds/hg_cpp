@@ -39,268 +39,43 @@
 #include <utility>
 #include <vector>
 
+using namespace bg;
+
 namespace {
-
-class LocalRuntimeType final : public bg::TimeSeriesValueRuntimeType {
-  public:
-    LocalRuntimeType()
-        : TimeSeriesValueRuntimeType{bg::TS<bg::i64>::type(), bg::cpp_scalar_runtime_type<bg::i64>(),
-                                     sizeof(bg::i64), alignof(bg::i64), false, false, true} {}
-
-    void construct_initial_value(void *destination) const noexcept override {
-        std::construct_at(static_cast<bg::i64 *>(destination), bg::i64{});
-    }
-    void destroy_value(void *value, bg::allocator &) const noexcept override {
-        std::destroy_at(static_cast<bg::i64 *>(value));
-    }
-};
 
 struct QueueNodeDefinition {
     static constexpr bool uses_queue = true;
 
-    QueueNodeDefinition(
-        const bg::TimeSeriesRuntimeType &runtime_type = bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>())
-        : runtime_type_{&runtime_type}, signature_{bg::util::symbol{"queue_node"}, {}, bg::TS<bg::i64>::type()} {}
+    QueueNodeDefinition(const TimeSeriesRuntimeType &runtime_type = cpp_time_series_runtime_type<TS<i64>>())
+        : runtime_type_{&runtime_type}, signature_{util::symbol{"queue_node"}, {}, TS<i64>::type()} {}
 
-    const bg::Signature &signature() const noexcept { return signature_; }
+    const Signature &signature() const noexcept { return signature_; }
     bool uses_output_runtime_type() const noexcept { return true; }
-    const bg::TimeSeriesRuntimeType &output_runtime_type(const bg::WiringArguments &) const noexcept {
-        return *runtime_type_;
-    }
+    const TimeSeriesRuntimeType &output_runtime_type(const WiringArguments &) const noexcept { return *runtime_type_; }
 
-    static void start(bg::NodeInvocation<>) {}
-    static void evaluate(bg::NodeInvocation<>) {}
-    static void stop(bg::NodeInvocation<>) noexcept {
+    static void start(NodeInvocation<>) {}
+    static void evaluate(NodeInvocation<>) {}
+    static void stop(NodeInvocation<>) noexcept {
         ++stop_count;
         if (stop_probe != nullptr) {
-            stop_write_accepted = stop_probe->write(::literal::TimeSeriesLiteral(bg::i64{100}));
+            stop_write_accepted = stop_probe->write(::literal::TimeSeriesLiteral(i64{100}));
         }
     }
 
-    inline static bg::Queue *stop_probe{};
+    inline static Queue *stop_probe{};
     inline static bool stop_write_accepted{};
     inline static std::size_t stop_count{};
 
   private:
-    const bg::TimeSeriesRuntimeType *runtime_type_;
-    bg::Signature signature_;
+    const TimeSeriesRuntimeType *runtime_type_;
+    Signature signature_;
 };
 
-struct FailingQueueNodeDefinition {
-    static constexpr bool uses_queue = true;
-    static constexpr bool schedule_on_start = true;
-
-    FailingQueueNodeDefinition()
-        : signature_{bg::util::symbol{"failing_queue_node"}, {}, bg::TS<bg::i64>::type()} {}
-
-    const bg::Signature &signature() const noexcept { return signature_; }
-    bool uses_output_runtime_type() const noexcept { return true; }
-    const bg::TimeSeriesRuntimeType &output_runtime_type(const bg::WiringArguments &) const noexcept {
-        return bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>();
-    }
-
-    static void start(bg::NodeInvocation<> invocation) {
-        queue = invocation.context().runtime_graph().make_queue(0);
-        if (!queue.write(::literal::TimeSeriesLiteral(bg::i64{1}))) {
-            throw std::logic_error{"queue write was rejected during start"};
-        }
-        if (fail_start) {
-            throw std::runtime_error{"start failure"};
-        }
-    }
-
-    static void evaluate(bg::NodeInvocation<>) {
-        if (fail_evaluation) {
-            throw std::runtime_error{"evaluation failure"};
-        }
-    }
-
-    static void stop(bg::NodeInvocation<>) noexcept {
-        stop_write_accepted = queue.write(::literal::TimeSeriesLiteral(bg::i64{2}));
-    }
-
-    inline static bg::Queue queue;
-    inline static bool fail_start{};
-    inline static bool fail_evaluation{};
-    inline static bool stop_write_accepted{};
-
-  private:
-    bg::Signature signature_;
-};
-
-struct QueuePayload {
-    bg::i64 number{};
-};
-
-template <template <typename, auto...> typename Field> struct BatchQueueBundle {
-    Field<bg::TS<bg::List<bg::i64>>> first;
-    Field<bg::TS<bg::List<bg::i64>>> second;
-};
-
-struct QueuePayloadBufferHandlers {
-    static bool register_operations() {
-        static const auto registered = [] {
-            auto semantic = bg::ScalarBufferOperations::for_read<QueuePayload>(
-                [](bg::util::buffer_reader &reader, auto consume) {
-                    if (++read_calls == fail_on_read) {
-                        throw std::runtime_error{"injected queue payload read failure"};
-                    }
-                    const auto number = reader.read_raw<bg::i64>();
-                    reader.consume<std::shared_ptr<int>>();
-                    const auto value = QueuePayload{number};
-                    consume(bg::Scalar<QueuePayload>::from(value));
-                });
-            if (!semantic.set_discard([](bg::util::buffer_reader &reader) {
-                    (void)reader.read_raw<bg::i64>();
-                    reader.skip<std::shared_ptr<int>>();
-                })) {
-                return false;
-            }
-
-            auto runtime = bg::ScalarBufferOperations{};
-            if (!runtime.set_write<QueuePayload>([](bg::Scalar<QueuePayload> value,
-                                                    bg::ScalarBufferWriteContext &writer, bg::allocator &) {
-                    const auto number = value.value().number;
-                    writer.write_bytes(std::as_bytes(std::span{&number, std::size_t{1}}));
-                    writer.write(writing_payload);
-                    if (number == block_after_write_for.load(std::memory_order_acquire)) {
-                        provider_write_blocked.release();
-                        while (!release_provider_write.load(std::memory_order_acquire)) {
-                            release_provider_write.wait(false, std::memory_order_acquire);
-                        }
-                    }
-                    if (number == fail_after_write_for.load(std::memory_order_acquire)) {
-                        throw std::runtime_error{"injected selected queue payload write failure"};
-                    }
-                    if (fail_after_write) {
-                        fail_after_write = false;
-                        throw std::runtime_error{"injected queue payload write failure"};
-                    }
-                }) ||
-                !runtime.set_project<QueuePayload>([](bg::Scalar<QueuePayload> value,
-                                                      bg::ScalarBufferProjectionContext &projection) {
-                    (void)value;
-                    projection.write_bytes(sizeof(bg::i64));
-                    projection.emplace<std::shared_ptr<int>>();
-                })) {
-                return false;
-            }
-
-            auto &dispatch = bg::ScalarDispatch<bg::ScalarBufferOperations>::instance();
-            return dispatch.add(bg::cpp_scalar_type<QueuePayload>(), std::move(semantic)) &&
-                   dispatch.add(bg::cpp_scalar_runtime_type<QueuePayload>(), std::move(runtime));
-        }();
-        return registered;
-    }
-
-    inline static std::shared_ptr<int> writing_payload;
-    inline static std::size_t read_calls{};
-    inline static std::size_t fail_on_read{};
-    inline static bool fail_after_write{};
-    inline static std::atomic<bg::i64> block_after_write_for{std::numeric_limits<bg::i64>::min()};
-    inline static std::atomic<bg::i64> fail_after_write_for{std::numeric_limits<bg::i64>::min()};
-    inline static std::binary_semaphore provider_write_blocked{0};
-    inline static std::atomic<bool> release_provider_write{};
-};
-
-struct PayloadQueueNodeDefinition {
-    static constexpr bool uses_queue = true;
-
-    PayloadQueueNodeDefinition()
-        : signature_{bg::util::symbol{"payload_queue_node"}, {}, bg::TS<QueuePayload>::type()} {}
-
-    const bg::Signature &signature() const noexcept { return signature_; }
-    bool uses_output_runtime_type() const noexcept { return true; }
-    const bg::TimeSeriesRuntimeType &output_runtime_type(const bg::WiringArguments &) const noexcept {
-        return bg::cpp_time_series_runtime_type<bg::TS<QueuePayload>>();
-    }
-
-    static void start(bg::NodeInvocation<>) {}
-    static void evaluate(bg::NodeInvocation<>) {}
-    static void stop(bg::NodeInvocation<>) noexcept {
-        payload_alive_during_stop = !payload_probe.expired();
-    }
-
-    inline static std::weak_ptr<int> payload_probe;
-    inline static bool payload_alive_during_stop{};
-
-  private:
-    bg::Signature signature_;
-};
-
-struct PayloadFailingQueueNodeDefinition {
-    static constexpr bool uses_queue = true;
-    static constexpr bool schedule_on_start = true;
-
-    PayloadFailingQueueNodeDefinition()
-        : signature_{bg::util::symbol{"payload_failing_queue_node"}, {}, bg::TS<QueuePayload>::type()} {}
-
-    const bg::Signature &signature() const noexcept { return signature_; }
-    bool uses_output_runtime_type() const noexcept { return true; }
-    const bg::TimeSeriesRuntimeType &output_runtime_type(const bg::WiringArguments &) const noexcept {
-        return bg::cpp_time_series_runtime_type<bg::TS<QueuePayload>>();
-    }
-
-    static void start(bg::NodeInvocation<> invocation) {
-        queue = invocation.context().runtime_graph().make_queue(0);
-        auto payload = std::make_shared<int>(31);
-        payload_probe = payload;
-        QueuePayloadBufferHandlers::writing_payload = payload;
-        auto value = bg::ScalarValue<QueuePayload>{QueuePayload{31}};
-        const auto accepted = queue.write(::literal::TimeSeriesLiteral(value));
-        const auto retained = queue.write(::literal::TimeSeriesLiteral(value));
-        QueuePayloadBufferHandlers::writing_payload.reset();
-        if (!accepted || !retained) {
-            throw std::logic_error{"queue write was rejected during start"};
-        }
-        if (fail_start) {
-            throw std::runtime_error{"payload queue start failure"};
-        }
-    }
-
-    static void evaluate(bg::NodeInvocation<>) {
-        if (fail_evaluation) {
-            throw std::runtime_error{"payload queue evaluation failure"};
-        }
-    }
-
-    static void stop(bg::NodeInvocation<>) noexcept { payload_alive_during_stop = !payload_probe.expired(); }
-
-    inline static bg::Queue queue;
-    inline static std::weak_ptr<int> payload_probe;
-    inline static bool payload_alive_during_stop{};
-    inline static bool fail_start{};
-    inline static bool fail_evaluation{};
-
-  private:
-    bg::Signature signature_;
-};
-
-template <bool Timed, bool Cycle, bool Queue = true>
-struct QueueLayoutNodeDefinition : QueueNodeDefinition {
-    static constexpr bool uses_queue = Queue;
-    static constexpr bool uses_timed_scheduling = Timed;
-    static constexpr bool uses_cycle_callbacks = Cycle;
-
-    static void start(bg::NodeInvocation<> invocation) {
-        if constexpr (Timed) {
-            invocation.context().schedule_at(invocation.context().evaluation_time() + std::chrono::microseconds{2});
-        }
-        if constexpr (Cycle) {
-            invocation.context().add_cycle_callback(nullptr, &run_cycle_callback);
-        }
-    }
-
-    static void run_cycle_callback(void *, bg::EvaluationContext &) noexcept { ++cycle_callback_count; }
-
-    inline static std::size_t cycle_callback_count{};
-};
-
-[[nodiscard]] bg::EvaluationTime time(bg::i64 microseconds) {
-    return bg::MIN_DT + std::chrono::microseconds{microseconds};
+[[nodiscard]] EvaluationTime time(i64 microseconds) {
+    return MIN_DT + std::chrono::microseconds{microseconds};
 }
 
-bool wait_for_notification(bg::details::EngineWakeup &wakeup) {
+bool wait_for_notification(details::EngineWakeup &wakeup) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
     while (std::chrono::steady_clock::now() < deadline) {
         if (wakeup.wait_until(deadline)) {
@@ -312,15 +87,48 @@ bool wait_for_notification(bg::details::EngineWakeup &wakeup) {
 
 } // namespace
 
+TEST_CASE("a stopped runtime graph creates closed queue handles",
+          "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][lifecycle]") {
+    auto queue_node = node(QueueNodeDefinition{});
+    auto wiring = GraphWiring{};
+    {
+        auto context = WiringContext{wiring};
+        (void)queue_node();
+    }
+    wiring.finalize();
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+
+    {
+        auto runtime = RuntimeGraph{compiled, global_state};
+        runtime.start(time(1));
+        auto queue = runtime.make_queue(0);
+        runtime.stop();
+
+        auto closed = runtime.make_queue(0);
+        CHECK_FALSE(closed.write(::literal::TimeSeriesLiteral(i64{1})));
+        CHECK_FALSE(queue.write(::literal::TimeSeriesLiteral(i64{2})));
+    }
+
+    {
+        auto runtime = RuntimeGraph{compiled, global_state};
+        runtime.start(time(2));
+        runtime.stop();
+
+        auto closed = runtime.make_queue(0);
+        CHECK_FALSE(closed.write(::literal::TimeSeriesLiteral(i64{3})));
+    }
+}
+
 TEST_CASE("an outer runtime graph shares and closes queues before stop callbacks",
           "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][lifecycle]") {
-    auto first_node = bg::node(QueueNodeDefinition{});
-    auto second_node = bg::node(QueueNodeDefinition{});
-    auto wiring = bg::GraphWiring{};
-    std::optional<bg::WiringPoint> first_output;
-    std::optional<bg::WiringPoint> second_output;
+    auto first_node = node(QueueNodeDefinition{});
+    auto second_node = node(QueueNodeDefinition{});
+    auto wiring = GraphWiring{};
+    std::optional<WiringPoint> first_output;
+    std::optional<WiringPoint> second_output;
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         first_output = first_node();
         second_output = second_node();
     }
@@ -328,13 +136,13 @@ TEST_CASE("an outer runtime graph shares and closes queues before stop callbacks
 
     const auto first_target = wiring.output_node_index(*first_output);
     const auto second_target = wiring.output_node_index(*second_output);
-    const auto compiled = bg::CompiledGraph{wiring};
+    const auto compiled = CompiledGraph{wiring};
     REQUIRE(compiled.has_queue());
     CHECK_FALSE(compiled.supports_borrowed_evaluation());
 
-    auto global_state = bg::GlobalState{};
-    auto wakeup = bg::details::EngineWakeup{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    auto global_state = GlobalState{};
+    auto wakeup = details::EngineWakeup{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     CHECK_FALSE(runtime.has_committed_queue_messages());
     runtime.bind_queue_wakeup(wakeup);
     CHECK_THROWS_AS(runtime.bind_queue_wakeup(wakeup), std::logic_error);
@@ -345,8 +153,8 @@ TEST_CASE("an outer runtime graph shares and closes queues before stop callbacks
 
     auto first = runtime.make_queue(first_target);
     auto second = runtime.make_queue(second_target);
-    REQUIRE(first.write(::literal::TimeSeriesLiteral(bg::i64{11})));
-    REQUIRE(second.write(::literal::TimeSeriesLiteral(bg::i64{22})));
+    REQUIRE(first.write(::literal::TimeSeriesLiteral(i64{11})));
+    REQUIRE(second.write(::literal::TimeSeriesLiteral(i64{22})));
     REQUIRE(wait_for_notification(wakeup));
     CHECK(runtime.has_committed_queue_messages());
     CHECK(runtime.next_scheduled_time() == time(2));
@@ -359,63 +167,75 @@ TEST_CASE("an outer runtime graph shares and closes queues before stop callbacks
     CHECK(QueueNodeDefinition::stop_count == 2);
     CHECK_FALSE(runtime.has_committed_queue_messages());
     CHECK_FALSE(QueueNodeDefinition::stop_write_accepted);
-    CHECK_FALSE(first.write(::literal::TimeSeriesLiteral(bg::i64{33})));
-    CHECK_FALSE(second.write(::literal::TimeSeriesLiteral(bg::i64{44})));
+    CHECK_FALSE(first.write(::literal::TimeSeriesLiteral(i64{33})));
+    CHECK_FALSE(second.write(::literal::TimeSeriesLiteral(i64{44})));
     QueueNodeDefinition::stop_probe = nullptr;
 }
 
-TEST_CASE("a stopped runtime graph creates closed queue handles",
-          "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][lifecycle]") {
-    auto node = bg::node(QueueNodeDefinition{});
-    auto wiring = bg::GraphWiring{};
-    {
-        auto context = bg::WiringContext{wiring};
-        (void)node();
-    }
-    wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
+namespace {
 
-    {
-        auto runtime = bg::RuntimeGraph{compiled, global_state};
-        runtime.start(time(1));
-        auto queue = runtime.make_queue(0);
-        runtime.stop();
+struct FailingQueueNodeDefinition {
+    static constexpr bool uses_queue = true;
+    static constexpr bool schedule_on_start = true;
 
-        auto closed = runtime.make_queue(0);
-        CHECK_FALSE(closed.write(::literal::TimeSeriesLiteral(bg::i64{1})));
-        CHECK_FALSE(queue.write(::literal::TimeSeriesLiteral(bg::i64{2})));
+    FailingQueueNodeDefinition() : signature_{util::symbol{"failing_queue_node"}, {}, TS<i64>::type()} {}
+
+    const Signature &signature() const noexcept { return signature_; }
+    bool uses_output_runtime_type() const noexcept { return true; }
+    const TimeSeriesRuntimeType &output_runtime_type(const WiringArguments &) const noexcept {
+        return cpp_time_series_runtime_type<TS<i64>>();
     }
 
-    {
-        auto runtime = bg::RuntimeGraph{compiled, global_state};
-        runtime.start(time(2));
-        runtime.stop();
-
-        auto closed = runtime.make_queue(0);
-        CHECK_FALSE(closed.write(::literal::TimeSeriesLiteral(bg::i64{3})));
+    static void start(NodeInvocation<> invocation) {
+        queue = invocation.context().runtime_graph().make_queue(0);
+        if (!queue.write(::literal::TimeSeriesLiteral(i64{1}))) {
+            throw std::logic_error{"queue write was rejected during start"};
+        }
+        if (fail_start) {
+            throw std::runtime_error{"start failure"};
+        }
     }
-}
+
+    static void evaluate(NodeInvocation<>) {
+        if (fail_evaluation) {
+            throw std::runtime_error{"evaluation failure"};
+        }
+    }
+
+    static void stop(NodeInvocation<>) noexcept {
+        stop_write_accepted = queue.write(::literal::TimeSeriesLiteral(i64{2}));
+    }
+
+    inline static Queue queue;
+    inline static bool fail_start{};
+    inline static bool fail_evaluation{};
+    inline static bool stop_write_accepted{};
+
+  private:
+    Signature signature_;
+};
+
+} // namespace
 
 TEST_CASE("queue shutdown handles startup and evaluation failures",
           "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][failure]") {
-    auto node = bg::node(FailingQueueNodeDefinition{});
-    auto wiring = bg::GraphWiring{};
+    auto failing_node = node(FailingQueueNodeDefinition{});
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
-        (void)node();
+        auto context = WiringContext{wiring};
+        (void)failing_node();
     }
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
 
     FailingQueueNodeDefinition::fail_start = true;
     FailingQueueNodeDefinition::fail_evaluation = false;
     FailingQueueNodeDefinition::stop_write_accepted = true;
     {
-        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        auto runtime = RuntimeGraph{compiled, global_state};
         CHECK_THROWS_AS(runtime.start(time(1)), std::runtime_error);
-        CHECK_FALSE(FailingQueueNodeDefinition::queue.write(::literal::TimeSeriesLiteral(bg::i64{3})));
+        CHECK_FALSE(FailingQueueNodeDefinition::queue.write(::literal::TimeSeriesLiteral(i64{3})));
         CHECK(FailingQueueNodeDefinition::stop_write_accepted);
     }
 
@@ -423,11 +243,11 @@ TEST_CASE("queue shutdown handles startup and evaluation failures",
     FailingQueueNodeDefinition::fail_evaluation = true;
     FailingQueueNodeDefinition::stop_write_accepted = true;
     {
-        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        auto runtime = RuntimeGraph{compiled, global_state};
         runtime.start(time(2));
         CHECK_THROWS_AS(runtime.evaluate(time(3)), std::runtime_error);
         CHECK_FALSE(FailingQueueNodeDefinition::stop_write_accepted);
-        CHECK_FALSE(FailingQueueNodeDefinition::queue.write(::literal::TimeSeriesLiteral(bg::i64{4})));
+        CHECK_FALSE(FailingQueueNodeDefinition::queue.write(::literal::TimeSeriesLiteral(i64{4})));
     }
     FailingQueueNodeDefinition::fail_start = false;
     FailingQueueNodeDefinition::fail_evaluation = false;
@@ -435,41 +255,41 @@ TEST_CASE("queue shutdown handles startup and evaluation failures",
 
 TEST_CASE("finalization closes and discards queues without invoking stop functions",
           "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][finalization]") {
-    auto node = bg::node(QueueNodeDefinition{});
-    auto wiring = bg::GraphWiring{};
+    auto queue_node = node(QueueNodeDefinition{});
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
-        (void)node();
+        auto context = WiringContext{wiring};
+        (void)queue_node();
     }
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     QueueNodeDefinition::stop_count = 0;
     runtime.start(time(1));
     auto queue = runtime.make_queue(0);
-    REQUIRE(queue.write(::literal::TimeSeriesLiteral(bg::i64{55})));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(i64{55})));
 
     runtime.finalize(global_state);
 
     CHECK(QueueNodeDefinition::stop_count == 0);
-    CHECK_FALSE(queue.write(::literal::TimeSeriesLiteral(bg::i64{56})));
+    CHECK_FALSE(queue.write(::literal::TimeSeriesLiteral(i64{56})));
     CHECK_THROWS_AS(runtime.make_queue(0), std::logic_error);
 }
 
 TEST_CASE("queue wakeup binding is closed by finalization before graph startup",
           "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][wakeup][finalization]") {
-    auto node = bg::node(QueueNodeDefinition{});
-    auto wiring = bg::GraphWiring{};
+    auto queue_node = node(QueueNodeDefinition{});
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
-        (void)node();
+        auto context = WiringContext{wiring};
+        (void)queue_node();
     }
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto wakeup = bg::details::EngineWakeup{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto wakeup = details::EngineWakeup{};
+    auto runtime = RuntimeGraph{compiled, global_state};
 
     runtime.bind_queue_wakeup(wakeup);
     CHECK_FALSE(runtime.has_committed_queue_messages());
@@ -479,48 +299,70 @@ TEST_CASE("queue wakeup binding is closed by finalization before graph startup",
 
 TEST_CASE("queue wakeup binding is optional for graphs without queues",
           "[evaluation][feature:time-series-storage][queue][wakeup][lifecycle]") {
-    auto node = bg::node([] {});
-    auto wiring = bg::GraphWiring{};
+    auto source_node = node([] {});
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
-        (void)node();
+        auto context = WiringContext{wiring};
+        (void)source_node();
     }
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto wakeup = bg::details::EngineWakeup{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto wakeup = details::EngineWakeup{};
+    auto runtime = RuntimeGraph{compiled, global_state};
 
     CHECK_FALSE(compiled.has_queue());
     runtime.bind_queue_wakeup(wakeup);
     CHECK_FALSE(runtime.has_committed_queue_messages());
 }
 
+namespace {
+
+template <bool Timed, bool Cycle, bool Queue = true> struct QueueLayoutNodeDefinition : QueueNodeDefinition {
+    static constexpr bool uses_queue = Queue;
+    static constexpr bool uses_timed_scheduling = Timed;
+    static constexpr bool uses_cycle_callbacks = Cycle;
+
+    static void start(NodeInvocation<> invocation) {
+        if constexpr (Timed) {
+            invocation.context().schedule_at(invocation.context().evaluation_time() + std::chrono::microseconds{2});
+        }
+        if constexpr (Cycle) {
+            invocation.context().add_cycle_callback(nullptr, &run_cycle_callback);
+        }
+    }
+
+    static void run_cycle_callback(void *, EvaluationContext &) noexcept { ++cycle_callback_count; }
+
+    inline static std::size_t cycle_callback_count{};
+};
+
+} // namespace
+
 TEST_CASE("queue readiness remains visible alongside an evaluation timer deadline",
           "[evaluation][feature:time-series-storage][feature:timed-scheduling][series:value][scalar:i64][queue]"
           "[wakeup]") {
-    auto timed_node = bg::node(QueueLayoutNodeDefinition<true, false, false>{});
-    auto queue_node = bg::node(QueueNodeDefinition{});
-    auto wiring = bg::GraphWiring{};
-    std::optional<bg::WiringPoint> queue_output;
+    auto timed_node = node(QueueLayoutNodeDefinition<true, false, false>{});
+    auto queue_node = node(QueueNodeDefinition{});
+    auto wiring = GraphWiring{};
+    std::optional<WiringPoint> queue_output;
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         (void)timed_node();
         queue_output = queue_node();
     }
     wiring.finalize();
     const auto queue_target = wiring.output_node_index(*queue_output);
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     runtime.start(time(1));
     runtime.evaluate(time(2));
     auto queue = runtime.make_queue(queue_target);
-    REQUIRE(queue.write(::literal::TimeSeriesLiteral(bg::i64{43})));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(i64{43})));
 
-    auto scratch = bg::details::EvaluationScratch{runtime.allocation().memory_resource()};
-    auto global_context =
-        runtime.make_global_evaluation_context(global_state, scratch, bg::SystemWallClock::instance());
+    auto scratch = details::EvaluationScratch{runtime.allocation().memory_resource()};
+    auto global_context = runtime.make_global_evaluation_context(global_state, scratch, SystemWallClock::instance());
     REQUIRE(global_context.root_runtime_graph_evaluator != nullptr);
     CHECK(global_context.root_runtime_graph_evaluator->next_scheduled_time() == time(3));
     CHECK(runtime.has_committed_queue_messages());
@@ -528,36 +370,185 @@ TEST_CASE("queue readiness remains visible alongside an evaluation timer deadlin
     CHECK_FALSE(runtime.has_committed_queue_messages());
 }
 
+namespace {
+
+struct QueuePayload {
+    i64 number{};
+};
+
+template <template <typename, auto...> typename Field> struct BatchQueueBundle {
+    Field<TS<List<i64>>> first;
+    Field<TS<List<i64>>> second;
+};
+
+struct QueuePayloadBufferHandlers {
+    static bool register_operations() {
+        static const auto registered = [] {
+            auto semantic =
+                ScalarBufferOperations::for_read<QueuePayload>([](util::buffer_reader &reader, auto consume) {
+                    if (++read_calls == fail_on_read) {
+                        throw std::runtime_error{"injected queue payload read failure"};
+                    }
+                    const auto number = reader.read_raw<i64>();
+                    reader.consume<std::shared_ptr<int>>();
+                    const auto value = QueuePayload{number};
+                    consume(Scalar<QueuePayload>::from(value));
+                });
+            if (!semantic.set_discard([](util::buffer_reader &reader) {
+                    (void)reader.read_raw<i64>();
+                    reader.skip<std::shared_ptr<int>>();
+                })) {
+                return false;
+            }
+
+            auto runtime = ScalarBufferOperations{};
+            if (!runtime.set_write<QueuePayload>(
+                    [](Scalar<QueuePayload> value, ScalarBufferWriteContext &writer, allocator &) {
+                        const auto number = value.value().number;
+                        writer.write_bytes(std::as_bytes(std::span{&number, std::size_t{1}}));
+                        writer.write(writing_payload);
+                        if (number == block_after_write_for.load(std::memory_order_acquire)) {
+                            provider_write_blocked.release();
+                            while (!release_provider_write.load(std::memory_order_acquire)) {
+                                release_provider_write.wait(false, std::memory_order_acquire);
+                            }
+                        }
+                        if (number == fail_after_write_for.load(std::memory_order_acquire)) {
+                            throw std::runtime_error{"injected selected queue payload write failure"};
+                        }
+                        if (fail_after_write) {
+                            fail_after_write = false;
+                            throw std::runtime_error{"injected queue payload write failure"};
+                        }
+                    }) ||
+                !runtime.set_project<QueuePayload>(
+                    [](Scalar<QueuePayload> value, ScalarBufferProjectionContext &projection) {
+                        (void)value;
+                        projection.write_bytes(sizeof(i64));
+                        projection.emplace<std::shared_ptr<int>>();
+                    })) {
+                return false;
+            }
+
+            auto &dispatch = ScalarDispatch<ScalarBufferOperations>::instance();
+            return dispatch.add(cpp_scalar_type<QueuePayload>(), std::move(semantic)) &&
+                   dispatch.add(cpp_scalar_runtime_type<QueuePayload>(), std::move(runtime));
+        }();
+        return registered;
+    }
+
+    inline static std::shared_ptr<int> writing_payload;
+    inline static std::size_t read_calls{};
+    inline static std::size_t fail_on_read{};
+    inline static bool fail_after_write{};
+    inline static std::atomic<i64> block_after_write_for{std::numeric_limits<i64>::min()};
+    inline static std::atomic<i64> fail_after_write_for{std::numeric_limits<i64>::min()};
+    inline static std::binary_semaphore provider_write_blocked{0};
+    inline static std::atomic<bool> release_provider_write{};
+};
+
+struct PayloadQueueNodeDefinition {
+    static constexpr bool uses_queue = true;
+
+    PayloadQueueNodeDefinition() : signature_{util::symbol{"payload_queue_node"}, {}, TS<QueuePayload>::type()} {}
+
+    const Signature &signature() const noexcept { return signature_; }
+    bool uses_output_runtime_type() const noexcept { return true; }
+    const TimeSeriesRuntimeType &output_runtime_type(const WiringArguments &) const noexcept {
+        return cpp_time_series_runtime_type<TS<QueuePayload>>();
+    }
+
+    static void start(NodeInvocation<>) {}
+    static void evaluate(NodeInvocation<>) {}
+    static void stop(NodeInvocation<>) noexcept { payload_alive_during_stop = !payload_probe.expired(); }
+
+    inline static std::weak_ptr<int> payload_probe;
+    inline static bool payload_alive_during_stop{};
+
+  private:
+    Signature signature_;
+};
+
+struct PayloadFailingQueueNodeDefinition {
+    static constexpr bool uses_queue = true;
+    static constexpr bool schedule_on_start = true;
+
+    PayloadFailingQueueNodeDefinition()
+        : signature_{util::symbol{"payload_failing_queue_node"}, {}, TS<QueuePayload>::type()} {}
+
+    const Signature &signature() const noexcept { return signature_; }
+    bool uses_output_runtime_type() const noexcept { return true; }
+    const TimeSeriesRuntimeType &output_runtime_type(const WiringArguments &) const noexcept {
+        return cpp_time_series_runtime_type<TS<QueuePayload>>();
+    }
+
+    static void start(NodeInvocation<> invocation) {
+        queue = invocation.context().runtime_graph().make_queue(0);
+        auto payload = std::make_shared<int>(31);
+        payload_probe = payload;
+        QueuePayloadBufferHandlers::writing_payload = payload;
+        auto value = ScalarValue<QueuePayload>{QueuePayload{31}};
+        const auto accepted = queue.write(::literal::TimeSeriesLiteral(value));
+        const auto retained = queue.write(::literal::TimeSeriesLiteral(value));
+        QueuePayloadBufferHandlers::writing_payload.reset();
+        if (!accepted || !retained) {
+            throw std::logic_error{"queue write was rejected during start"};
+        }
+        if (fail_start) {
+            throw std::runtime_error{"payload queue start failure"};
+        }
+    }
+
+    static void evaluate(NodeInvocation<>) {
+        if (fail_evaluation) {
+            throw std::runtime_error{"payload queue evaluation failure"};
+        }
+    }
+
+    static void stop(NodeInvocation<>) noexcept { payload_alive_during_stop = !payload_probe.expired(); }
+
+    inline static Queue queue;
+    inline static std::weak_ptr<int> payload_probe;
+    inline static bool payload_alive_during_stop{};
+    inline static bool fail_start{};
+    inline static bool fail_evaluation{};
+
+  private:
+    Signature signature_;
+};
+
+} // namespace
+
 TEST_CASE("queue discard destroys unread typed payloads after stop callbacks and finalization",
           "[evaluation][feature:time-series-storage][series:value][scalar:compound][queue][lifecycle]") {
     REQUIRE(QueuePayloadBufferHandlers::register_operations());
-    auto integer_node = bg::node(QueueNodeDefinition{});
-    auto payload_node = bg::node(PayloadQueueNodeDefinition{});
-    auto wiring = bg::GraphWiring{};
-    std::optional<bg::WiringPoint> integer_output;
-    std::optional<bg::WiringPoint> payload_output;
+    auto integer_node = node(QueueNodeDefinition{});
+    auto payload_node = node(PayloadQueueNodeDefinition{});
+    auto wiring = GraphWiring{};
+    std::optional<WiringPoint> integer_output;
+    std::optional<WiringPoint> payload_output;
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         integer_output = integer_node();
         payload_output = payload_node();
     }
     wiring.finalize();
     const auto integer_target = wiring.output_node_index(*integer_output);
     const auto payload_target = wiring.output_node_index(*payload_output);
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
 
     SECTION("stop callbacks run before unread payload destruction") {
-        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        auto runtime = RuntimeGraph{compiled, global_state};
         runtime.start(time(1));
         auto integer_queue = runtime.make_queue(integer_target);
         auto payload_queue = runtime.make_queue(payload_target);
-        REQUIRE(integer_queue.write(::literal::TimeSeriesLiteral(bg::i64{7})));
+        REQUIRE(integer_queue.write(::literal::TimeSeriesLiteral(i64{7})));
         auto payload = std::make_shared<int>(17);
         PayloadQueueNodeDefinition::payload_probe = payload;
         QueuePayloadBufferHandlers::writing_payload = payload;
         {
-            auto value = bg::ScalarValue<QueuePayload>{QueuePayload{17}};
+            auto value = ScalarValue<QueuePayload>{QueuePayload{17}};
             REQUIRE(payload_queue.write(::literal::TimeSeriesLiteral(value)));
         }
         QueuePayloadBufferHandlers::writing_payload.reset();
@@ -574,16 +565,16 @@ TEST_CASE("queue discard destroys unread typed payloads after stop callbacks and
     }
 
     SECTION("finalization discards unread payloads without stop callbacks") {
-        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        auto runtime = RuntimeGraph{compiled, global_state};
         runtime.start(time(1));
         auto integer_queue = runtime.make_queue(integer_target);
         auto payload_queue = runtime.make_queue(payload_target);
-        REQUIRE(integer_queue.write(::literal::TimeSeriesLiteral(bg::i64{8})));
+        REQUIRE(integer_queue.write(::literal::TimeSeriesLiteral(i64{8})));
         auto payload = std::make_shared<int>(23);
         PayloadQueueNodeDefinition::payload_probe = payload;
         QueuePayloadBufferHandlers::writing_payload = payload;
         {
-            auto value = bg::ScalarValue<QueuePayload>{QueuePayload{23}};
+            auto value = ScalarValue<QueuePayload>{QueuePayload{23}};
             REQUIRE(payload_queue.write(::literal::TimeSeriesLiteral(value)));
         }
         QueuePayloadBufferHandlers::writing_payload.reset();
@@ -603,27 +594,26 @@ TEST_CASE("batch queue shutdown and failed writes discard owning item payloads",
           "[evaluation][feature:time-series-storage][series:value][scalar:compound][scalar:list][queue][batch]"
           "[lifecycle][failure]") {
     REQUIRE(QueuePayloadBufferHandlers::register_operations());
-    const auto queue_node = bg::queue<bg::TS<bg::List<QueuePayload>>>(
-        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
-    auto wiring = bg::GraphWiring{};
-    bg::WiringPoint output;
+    const auto queue_node = queue<TS<List<QueuePayload>>>(start = [](Queue) {}, mode = QueueMode::batch);
+    auto wiring = GraphWiring{};
+    WiringPoint output;
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         output = queue_node();
     }
     wiring.finalize();
     const auto target = wiring.output_node_index(output);
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
 
     SECTION("shutdown discards the semantic batch item") {
-        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        auto runtime = RuntimeGraph{compiled, global_state};
         runtime.start(time(1));
         auto queue = runtime.make_queue(target);
         auto payload = std::make_shared<int>(41);
         auto probe = std::weak_ptr<int>{payload};
         QueuePayloadBufferHandlers::writing_payload = payload;
-        auto value = bg::ScalarValue<QueuePayload>{QueuePayload{41}};
+        auto value = ScalarValue<QueuePayload>{QueuePayload{41}};
         REQUIRE(queue.write(::literal::TimeSeriesLiteral(value)));
         QueuePayloadBufferHandlers::writing_payload.reset();
         payload.reset();
@@ -635,8 +625,8 @@ TEST_CASE("batch queue shutdown and failed writes discard owning item payloads",
     }
 
     SECTION("writer rollback discards the semantic batch item") {
-        auto wakeup = bg::details::EngineWakeup{};
-        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        auto wakeup = details::EngineWakeup{};
+        auto runtime = RuntimeGraph{compiled, global_state};
         runtime.bind_queue_wakeup(wakeup);
         runtime.start(time(1));
         auto queue = runtime.make_queue(target);
@@ -648,18 +638,18 @@ TEST_CASE("batch queue shutdown and failed writes discard owning item payloads",
         QueuePayloadBufferHandlers::block_after_write_for.store(42, std::memory_order_release);
         QueuePayloadBufferHandlers::fail_after_write_for.store(42, std::memory_order_release);
         QueuePayloadBufferHandlers::release_provider_write.store(false, std::memory_order_release);
-        auto failed_value = bg::ScalarValue<QueuePayload>{QueuePayload{42}};
+        auto failed_value = ScalarValue<QueuePayload>{QueuePayload{42}};
         auto write_error = std::exception_ptr{};
         auto writer_entered_provider = false;
         auto later_payload = std::make_shared<int>(43);
-        auto later_value = bg::ScalarValue<QueuePayload>{QueuePayload{43}};
+        auto later_value = ScalarValue<QueuePayload>{QueuePayload{43}};
         auto later_written = false;
         auto later_notification = false;
         auto later_message_visible_before_failure = true;
 
         {
             auto failing_writer = std::jthread{};
-            auto release_blocked_writer = bg::util::scope_exit{[&]() noexcept {
+            auto release_blocked_writer = util::scope_exit{[&]() noexcept {
                 QueuePayloadBufferHandlers::release_provider_write.store(true, std::memory_order_release);
                 QueuePayloadBufferHandlers::release_provider_write.notify_all();
                 if (failing_writer.joinable()) {
@@ -668,10 +658,10 @@ TEST_CASE("batch queue shutdown and failed writes discard owning item payloads",
                 while (QueuePayloadBufferHandlers::provider_write_blocked.try_acquire()) {
                 }
                 QueuePayloadBufferHandlers::writing_payload.reset();
-                QueuePayloadBufferHandlers::block_after_write_for.store(
-                    std::numeric_limits<bg::i64>::min(), std::memory_order_release);
-                QueuePayloadBufferHandlers::fail_after_write_for.store(
-                    std::numeric_limits<bg::i64>::min(), std::memory_order_release);
+                QueuePayloadBufferHandlers::block_after_write_for.store(std::numeric_limits<i64>::min(),
+                                                                        std::memory_order_release);
+                QueuePayloadBufferHandlers::fail_after_write_for.store(std::numeric_limits<i64>::min(),
+                                                                       std::memory_order_release);
                 QueuePayloadBufferHandlers::fail_after_write = false;
             }};
             failing_writer = std::jthread{[&] {
@@ -714,19 +704,18 @@ TEST_CASE("batch queue replay failure discards later values in the same nested f
           "[evaluation][feature:time-series-storage][series:fixed-tsl][scalar:compound][scalar:list][queue][batch]"
           "[failure]") {
     REQUIRE(QueuePayloadBufferHandlers::register_operations());
-    const auto queue_node = bg::queue<bg::TSL<bg::TS<bg::List<QueuePayload>>, 3>>(
-        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
-    auto wiring = bg::GraphWiring{};
-    bg::WiringPoint output;
+    const auto queue_node = queue<TSL<TS<List<QueuePayload>>, 3>>(start = [](Queue) {}, mode = QueueMode::batch);
+    auto wiring = GraphWiring{};
+    WiringPoint output;
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         output = queue_node();
     }
     wiring.finalize();
     const auto target = wiring.output_node_index(output);
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     runtime.start(time(1));
     auto queue = runtime.make_queue(target);
 
@@ -751,21 +740,21 @@ TEST_CASE("batch queue replay failure discards later values in the same nested f
 TEST_CASE("queue shutdown destroys typed unread payloads after startup and evaluation failures",
           "[evaluation][feature:time-series-storage][series:value][scalar:compound][queue][failure]") {
     REQUIRE(QueuePayloadBufferHandlers::register_operations());
-    auto node = bg::node(PayloadFailingQueueNodeDefinition{});
-    auto wiring = bg::GraphWiring{};
+    auto payload_node = node(PayloadFailingQueueNodeDefinition{});
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
-        (void)node();
+        auto context = WiringContext{wiring};
+        (void)payload_node();
     }
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
 
     PayloadFailingQueueNodeDefinition::fail_start = true;
     PayloadFailingQueueNodeDefinition::fail_evaluation = false;
     PayloadFailingQueueNodeDefinition::payload_alive_during_stop = false;
     {
-        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        auto runtime = RuntimeGraph{compiled, global_state};
         CHECK_THROWS_AS(runtime.start(time(1)), std::runtime_error);
         CHECK_FALSE(PayloadFailingQueueNodeDefinition::payload_alive_during_stop);
         CHECK(PayloadFailingQueueNodeDefinition::payload_probe.expired());
@@ -776,7 +765,7 @@ TEST_CASE("queue shutdown destroys typed unread payloads after startup and evalu
     PayloadFailingQueueNodeDefinition::fail_evaluation = true;
     PayloadFailingQueueNodeDefinition::payload_alive_during_stop = false;
     {
-        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        auto runtime = RuntimeGraph{compiled, global_state};
         runtime.start(time(2));
         CHECK_THROWS_AS(runtime.evaluate(time(3)), std::runtime_error);
         CHECK(PayloadFailingQueueNodeDefinition::payload_alive_during_stop);
@@ -788,17 +777,17 @@ TEST_CASE("queue shutdown destroys typed unread payloads after startup and evalu
 
 TEST_CASE("runtime graph queues have independent lifetimes",
           "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][lifecycle]") {
-    auto node = bg::node(QueueNodeDefinition{});
-    auto wiring = bg::GraphWiring{};
+    auto queue_node = node(QueueNodeDefinition{});
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
-        (void)node();
+        auto context = WiringContext{wiring};
+        (void)queue_node();
     }
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto first_runtime = bg::RuntimeGraph{compiled, global_state};
-    auto second_runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto first_runtime = RuntimeGraph{compiled, global_state};
+    auto second_runtime = RuntimeGraph{compiled, global_state};
     first_runtime.start(time(1));
     second_runtime.start(time(1));
     auto first_queue = first_runtime.make_queue(0);
@@ -806,35 +795,35 @@ TEST_CASE("runtime graph queues have independent lifetimes",
 
     first_runtime.stop();
 
-    CHECK_FALSE(first_queue.write(::literal::TimeSeriesLiteral(bg::i64{1})));
-    CHECK(second_queue.write(::literal::TimeSeriesLiteral(bg::i64{2})));
+    CHECK_FALSE(first_queue.write(::literal::TimeSeriesLiteral(i64{1})));
+    CHECK(second_queue.write(::literal::TimeSeriesLiteral(i64{2})));
 
     second_runtime.stop();
-    CHECK_FALSE(second_queue.write(::literal::TimeSeriesLiteral(bg::i64{3})));
+    CHECK_FALSE(second_queue.write(::literal::TimeSeriesLiteral(i64{3})));
 }
 
 TEST_CASE("inner runtime graphs cannot create graph queues",
           "[evaluation][nested][feature:nested-graph][series:value][queue][lifecycle]") {
-    auto node = bg::node(QueueNodeDefinition{});
-    auto outer_wiring = bg::GraphWiring{};
-    auto inner_wiring = bg::GraphWiring{};
+    auto queue_node = node(QueueNodeDefinition{});
+    auto outer_wiring = GraphWiring{};
+    auto inner_wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{outer_wiring};
-        (void)node();
+        auto context = WiringContext{outer_wiring};
+        (void)queue_node();
     }
     {
-        auto context = bg::WiringContext{inner_wiring};
-        (void)node();
+        auto context = WiringContext{inner_wiring};
+        (void)queue_node();
     }
     outer_wiring.finalize();
     inner_wiring.finalize();
-    const auto outer_compiled = bg::CompiledGraph{outer_wiring};
-    const auto inner_compiled = bg::CompiledGraph{inner_wiring};
-    auto global_state = bg::GlobalState{};
-    auto outer = bg::RuntimeGraph{outer_compiled, global_state};
-    auto evaluator = bg::RuntimeGraphEvaluator{};
+    const auto outer_compiled = CompiledGraph{outer_wiring};
+    const auto inner_compiled = CompiledGraph{inner_wiring};
+    auto global_state = GlobalState{};
+    auto outer = RuntimeGraph{outer_compiled, global_state};
+    auto evaluator = RuntimeGraphEvaluator{};
     evaluator.bind_owner(outer, 0);
-    auto inner = bg::RuntimeGraph{inner_compiled, outer.allocation(), evaluator, 0};
+    auto inner = RuntimeGraph{inner_compiled, outer.allocation(), evaluator, 0};
 
     outer.start(time(1));
     inner.start(time(1), global_state);
@@ -847,33 +836,33 @@ TEST_CASE("inner runtime graphs cannot create graph queues",
 TEST_CASE("queue storage follows timed scheduling and cycle callback pointers",
           "[evaluation][feature:time-series-storage][queue][layout]") {
     const auto verify_layout = []<typename Definition, typename WithoutQueue>(std::size_t expected_offset) {
-        auto node = bg::node(Definition{});
-        auto node_without_queue = bg::node(WithoutQueue{});
-        auto wiring = bg::GraphWiring{};
-        auto wiring_without_queue = bg::GraphWiring{};
+        auto definition_node = node(Definition{});
+        auto node_without_queue = node(WithoutQueue{});
+        auto wiring = GraphWiring{};
+        auto wiring_without_queue = GraphWiring{};
         {
-            auto context = bg::WiringContext{wiring};
-            (void)node();
+            auto context = WiringContext{wiring};
+            (void)definition_node();
         }
         {
-            auto context = bg::WiringContext{wiring_without_queue};
+            auto context = WiringContext{wiring_without_queue};
             (void)node_without_queue();
         }
         wiring.finalize();
         wiring_without_queue.finalize();
-        const auto compiled = bg::CompiledGraph{wiring};
-        const auto compiled_without_queue = bg::CompiledGraph{wiring_without_queue};
+        const auto compiled = CompiledGraph{wiring};
+        const auto compiled_without_queue = CompiledGraph{wiring_without_queue};
         CHECK(compiled.has_queue());
         CHECK(compiled.queue_offset() == expected_offset);
         CHECK_FALSE(compiled_without_queue.has_queue());
         CHECK(compiled.runtime_storage_size() == compiled_without_queue.runtime_storage_size() + sizeof(void *));
 
-        auto global_state = bg::GlobalState{};
-        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        auto global_state = GlobalState{};
+        auto runtime = RuntimeGraph{compiled, global_state};
         Definition::cycle_callback_count = 0;
         runtime.start(time(1));
         auto queue = runtime.make_queue(0);
-        REQUIRE(queue.write(::literal::TimeSeriesLiteral(bg::i64{42})));
+        REQUIRE(queue.write(::literal::TimeSeriesLiteral(i64{42})));
         if constexpr (Definition::uses_timed_scheduling) {
             CHECK(runtime.next_scheduled_time() == time(2));
         }
@@ -898,79 +887,73 @@ TEST_CASE("queue storage follows timed scheduling and cycle callback pointers",
 TEST_CASE("pending queue messages schedule a minimum-tick simulation cycle",
           "[evaluation][simulation][queue][feature:simulation][feature:time-series-storage]"
           "[feature:timed-scheduling][series:value][scalar:i64]") {
-    auto values = std::vector<std::pair<bg::i64, bg::EvaluationTime>>{};
-    const auto queue_node = bg::queue<bg::TS<bg::i64>>(bg::start = [](bg::Queue queue) {
-        if (!queue.write(::literal::TimeSeriesLiteral(bg::i64{1})) ||
-            !queue.write(::literal::TimeSeriesLiteral(bg::i64{2}))) {
+    auto values = std::vector<std::pair<i64, EvaluationTime>>{};
+    const auto queue_node = queue<TS<i64>>(start = [](Queue queue) {
+        if (!queue.write(::literal::TimeSeriesLiteral(i64{1})) || !queue.write(::literal::TimeSeriesLiteral(i64{2}))) {
             throw std::logic_error{"queue write was rejected during start"};
         }
     });
-    const auto observer = bg::node([&](bg::In<bg::TS<bg::i64>> input) {
-        values.emplace_back(*input, input.last_updated());
-    });
-    auto wiring = bg::GraphWiring{};
+    const auto observer = node([&](In<TS<i64>> input) { values.emplace_back(*input, input.last_updated()); });
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         observer(queue_node());
     }
     wiring.finalize();
 
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
-    bg::SimulationEvaluationEngine{}.run(runtime, time(1));
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
+    SimulationEvaluationEngine{}.run(runtime, time(1));
 
-    CHECK(values == std::vector<std::pair<bg::i64, bg::EvaluationTime>>{{1, time(1)}, {2, time(2)}});
+    CHECK(values == std::vector<std::pair<i64, EvaluationTime>>{{1, time(1)}, {2, time(2)}});
 }
 
 struct QueueTimerCancellation {
     static constexpr bool uses_timed_scheduling = true;
     static constexpr bool schedule_on_start = true;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         handle = context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
-    void evaluate(bg::EvaluationContext *context) const { context->cancel(handle); }
+    void evaluate(EvaluationContext *context) const { context->cancel(handle); }
 
-    inline static bg::ScheduleHandle handle;
+    inline static ScheduleHandle handle;
 };
 
 TEST_CASE("cancelling a timer lets pending queue work use the minimum-tick cycle",
           "[evaluation][queue][feature:time-series-storage][feature:timed-scheduling]"
           "[series:value][scalar:i64][transition:removal]") {
-    auto values = std::vector<std::pair<bg::i64, bg::EvaluationTime>>{};
-    const auto queue_node = bg::queue<bg::TS<bg::i64>>(bg::start = [](bg::Queue queue) {
-        if (!queue.write(::literal::TimeSeriesLiteral(bg::i64{1})) ||
-            !queue.write(::literal::TimeSeriesLiteral(bg::i64{2}))) {
+    auto values = std::vector<std::pair<i64, EvaluationTime>>{};
+    const auto queue_node = queue<TS<i64>>(start = [](Queue queue) {
+        if (!queue.write(::literal::TimeSeriesLiteral(i64{1})) || !queue.write(::literal::TimeSeriesLiteral(i64{2}))) {
             throw std::logic_error{"queue write was rejected during start"};
         }
     });
-    const auto observer = bg::node([&](bg::In<bg::TS<bg::i64>> input) {
-        values.emplace_back(*input, input.last_updated());
-    });
-    const auto timer = bg::node<QueueTimerCancellation>();
-    auto wiring = bg::GraphWiring{};
+    const auto observer = node([&](In<TS<i64>> input) { values.emplace_back(*input, input.last_updated()); });
+    const auto timer = node<QueueTimerCancellation>();
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         observer(queue_node());
         timer();
     }
     wiring.finalize();
 
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     QueueTimerCancellation::handle = {};
     runtime.start(time(1));
     runtime.evaluate(time(1));
 
-    CHECK(values == std::vector<std::pair<bg::i64, bg::EvaluationTime>>{{1, time(1)}});
+    CHECK(values == std::vector<std::pair<i64, EvaluationTime>>{{1, time(1)}});
     REQUIRE(runtime.next_scheduled_time() == time(2));
 
     runtime.evaluate(time(2));
 
-    CHECK(values == std::vector<std::pair<bg::i64, bg::EvaluationTime>>{{1, time(1)}, {2, time(2)}});
+    CHECK(values == std::vector<std::pair<i64, EvaluationTime>>{{1, time(1)}, {2, time(2)}});
     CHECK_FALSE(runtime.next_scheduled_time().has_value());
     runtime.stop();
 }
@@ -978,7 +961,7 @@ TEST_CASE("cancelling a timer lets pending queue work use the minimum-tick cycle
 struct QueueDueTimer {
     static constexpr bool uses_timed_scheduling = true;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
     }
 
@@ -988,43 +971,40 @@ struct QueueDueTimer {
 TEST_CASE("due and overdue timers leave pending queue frames for the next minimum-tick cycle",
           "[evaluation][queue][feature:time-series-storage][feature:timed-scheduling]"
           "[series:value][scalar:i64]") {
-    auto values = std::vector<std::pair<bg::i64, bg::EvaluationTime>>{};
-    const auto queue_node = bg::queue<bg::TS<bg::i64>>(bg::start = [](bg::Queue queue) {
-        if (!queue.write(::literal::TimeSeriesLiteral(bg::i64{1})) ||
-            !queue.write(::literal::TimeSeriesLiteral(bg::i64{2}))) {
+    auto values = std::vector<std::pair<i64, EvaluationTime>>{};
+    const auto queue_node = queue<TS<i64>>(start = [](Queue queue) {
+        if (!queue.write(::literal::TimeSeriesLiteral(i64{1})) || !queue.write(::literal::TimeSeriesLiteral(i64{2}))) {
             throw std::logic_error{"queue write was rejected during start"};
         }
     });
-    const auto observer = bg::node([&](bg::In<bg::TS<bg::i64>> input) {
-        values.emplace_back(*input, input.last_updated());
-    });
-    const auto timer = bg::node<QueueDueTimer>();
-    auto wiring = bg::GraphWiring{};
+    const auto observer = node([&](In<TS<i64>> input) { values.emplace_back(*input, input.last_updated()); });
+    const auto timer = node<QueueDueTimer>();
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         observer(queue_node());
         timer();
     }
     wiring.finalize();
 
-    const auto compiled = bg::CompiledGraph{wiring};
+    const auto compiled = CompiledGraph{wiring};
     for (const auto next_cycle : std::array{time(3), time(10)}) {
-        auto global_state = bg::GlobalState{};
-        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        auto global_state = GlobalState{};
+        auto runtime = RuntimeGraph{compiled, global_state};
         values.clear();
         runtime.start(time(1));
         runtime.evaluate(time(1));
-        CHECK(values == std::vector<std::pair<bg::i64, bg::EvaluationTime>>{{1, time(1)}});
+        CHECK(values == std::vector<std::pair<i64, EvaluationTime>>{{1, time(1)}});
         REQUIRE(runtime.next_scheduled_time() == time(2));
 
         runtime.evaluate(next_cycle);
 
-        CHECK(values == std::vector<std::pair<bg::i64, bg::EvaluationTime>>{{1, time(1)}});
+        CHECK(values == std::vector<std::pair<i64, EvaluationTime>>{{1, time(1)}});
         REQUIRE(runtime.next_scheduled_time() == next_cycle + std::chrono::microseconds{1});
         runtime.evaluate(next_cycle + std::chrono::microseconds{1});
 
-        CHECK(values == std::vector<std::pair<bg::i64, bg::EvaluationTime>>{
-                            {1, time(1)}, {2, next_cycle + std::chrono::microseconds{1}}});
+        CHECK(values == std::vector<std::pair<i64, EvaluationTime>>{{1, time(1)},
+                                                                    {2, next_cycle + std::chrono::microseconds{1}}});
         runtime.stop();
     }
 }
@@ -1032,66 +1012,63 @@ TEST_CASE("due and overdue timers leave pending queue frames for the next minimu
 struct QueueWallClockTimer {
     static constexpr bool uses_timed_scheduling = true;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         handle = context->schedule_wall_clock_at(context->wall_clock().now() + std::chrono::microseconds{1});
     }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(EvaluationContext *context) const {
         fired = context->timer_fired(handle);
         evaluation_time = context->evaluation_time();
     }
 
-    inline static bg::ScheduleHandle handle;
+    inline static ScheduleHandle handle;
     inline static bool fired{};
-    inline static bg::EvaluationTime evaluation_time{bg::MIN_DT};
+    inline static EvaluationTime evaluation_time{MIN_DT};
 };
 
 TEST_CASE("due wall-clock timers leave committed queue frames for the next minimum-tick cycle",
           "[evaluation][simulation][queue][feature:simulation][feature:wall-clock]"
           "[feature:time-series-storage][feature:timed-scheduling][series:value][scalar:i64]") {
-    auto values = std::vector<std::pair<bg::i64, bg::EvaluationTime>>{};
-    const auto queue_node = bg::queue<bg::TS<bg::i64>>(bg::start = [](bg::Queue queue) {
-        if (!queue.write(::literal::TimeSeriesLiteral(bg::i64{1})) ||
-            !queue.write(::literal::TimeSeriesLiteral(bg::i64{2}))) {
+    auto values = std::vector<std::pair<i64, EvaluationTime>>{};
+    const auto queue_node = queue<TS<i64>>(start = [](Queue queue) {
+        if (!queue.write(::literal::TimeSeriesLiteral(i64{1})) || !queue.write(::literal::TimeSeriesLiteral(i64{2}))) {
             throw std::logic_error{"queue write was rejected during start"};
         }
     });
-    const auto observer = bg::node([&](bg::In<bg::TS<bg::i64>> input) {
-        values.emplace_back(*input, input.last_updated());
-    });
-    const auto timer = bg::node<QueueWallClockTimer>();
-    auto wiring = bg::GraphWiring{};
+    const auto observer = node([&](In<TS<i64>> input) { values.emplace_back(*input, input.last_updated()); });
+    const auto timer = node<QueueWallClockTimer>();
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         observer(queue_node());
         timer();
     }
     wiring.finalize();
 
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     QueueWallClockTimer::fired = false;
-    QueueWallClockTimer::evaluation_time = bg::MIN_DT;
+    QueueWallClockTimer::evaluation_time = MIN_DT;
 
-    bg::SimulationEvaluationEngine{}.run(runtime, time(1));
+    SimulationEvaluationEngine{}.run(runtime, time(1));
 
     CHECK(QueueWallClockTimer::fired);
     CHECK(QueueWallClockTimer::evaluation_time == time(2));
-    CHECK(values == std::vector<std::pair<bg::i64, bg::EvaluationTime>>{{1, time(1)}, {2, time(3)}});
+    CHECK(values == std::vector<std::pair<i64, EvaluationTime>>{{1, time(1)}, {2, time(3)}});
 }
 
 struct QueuePriorityInnerTimer {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::State<int> step;
-    bg::Out<bg::TS<bg::i64>> output;
+    State<int> step;
+    Out<TS<i64>> output;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(EvaluationContext *context) const {
         evaluation_times.push_back(context->evaluation_time());
         ++*step;
         output.set(*step);
@@ -1100,97 +1077,91 @@ struct QueuePriorityInnerTimer {
         }
     }
 
-    inline static std::vector<bg::EvaluationTime> evaluation_times;
+    inline static std::vector<EvaluationTime> evaluation_times;
 };
 
 TEST_CASE("nested minimum-tick timers keep queued frames unread until the chain completes",
           "[evaluation][simulation][nested][queue][feature:simulation][feature:time-series-storage]"
           "[feature:timed-scheduling][feature:nested-graph][series:value][scalar:i64]") {
-    using namespace bg::literals;
+    using namespace literals;
 
-    auto values = std::vector<std::pair<bg::i64, bg::EvaluationTime>>{};
-    const auto queue_node = bg::queue<bg::TS<bg::i64>>(bg::start = [](bg::Queue queue) {
-        if (!queue.write(::literal::TimeSeriesLiteral(bg::i64{1})) ||
-            !queue.write(::literal::TimeSeriesLiteral(bg::i64{2}))) {
+    auto values = std::vector<std::pair<i64, EvaluationTime>>{};
+    const auto queue_node = queue<TS<i64>>(start = [](Queue queue) {
+        if (!queue.write(::literal::TimeSeriesLiteral(i64{1})) || !queue.write(::literal::TimeSeriesLiteral(i64{2}))) {
             throw std::logic_error{"queue write was rejected during start"};
         }
     });
-    const auto observer = bg::node([&](bg::In<bg::TS<bg::i64>> input) {
-        values.emplace_back(*input, input.last_updated());
-    });
-    const auto timer = bg::node<QueuePriorityInnerTimer>();
-    const auto inner = bg::graph("name"_n = "queue_priority_inner_timer", [&]() -> bg::wp<bg::TS<bg::i64>> {
-        return timer();
-    });
-    auto wiring = bg::GraphWiring{};
+    const auto observer = node([&](In<TS<i64>> input) { values.emplace_back(*input, input.last_updated()); });
+    const auto timer = node<QueuePriorityInnerTimer>();
+    const auto inner = graph("name"_n = "queue_priority_inner_timer", [&]() -> wp<TS<i64>> { return timer(); });
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         observer(queue_node());
-        (void)bg::nested(inner, bg::operators::const_(true));
+        (void)nested(inner, operators::const_(true));
     }
     wiring.finalize();
 
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     QueuePriorityInnerTimer::evaluation_times.clear();
 
-    bg::SimulationEvaluationEngine{}.run(runtime, time(1));
+    SimulationEvaluationEngine{}.run(runtime, time(1));
 
     CHECK(QueuePriorityInnerTimer::evaluation_times == std::vector{time(2), time(3), time(4)});
-    CHECK(values == std::vector<std::pair<bg::i64, bg::EvaluationTime>>{{1, time(1)}, {2, time(5)}});
+    CHECK(values == std::vector<std::pair<i64, EvaluationTime>>{{1, time(1)}, {2, time(5)}});
 }
 
 struct QueueTimedCleanupNodeDefinition {
     static constexpr bool uses_queue = true;
     static constexpr bool uses_timed_scheduling = true;
 
-    QueueTimedCleanupNodeDefinition()
-        : signature_{bg::util::symbol{"queue_timed_cleanup_node"}, {}, bg::TS<bg::i64>::type()} {}
+    QueueTimedCleanupNodeDefinition() : signature_{util::symbol{"queue_timed_cleanup_node"}, {}, TS<i64>::type()} {}
 
-    const bg::Signature &signature() const noexcept { return signature_; }
+    const Signature &signature() const noexcept { return signature_; }
     bool uses_output_runtime_type() const noexcept { return true; }
-    const bg::TimeSeriesRuntimeType &output_runtime_type(const bg::WiringArguments &) const noexcept {
-        return bg::cpp_time_series_runtime_type<bg::TS<bg::i64>>();
+    const TimeSeriesRuntimeType &output_runtime_type(const WiringArguments &) const noexcept {
+        return cpp_time_series_runtime_type<TS<i64>>();
     }
 
-    static void start(bg::NodeInvocation<> invocation) {
+    static void start(NodeInvocation<> invocation) {
         auto &context = invocation.context();
         queue = context.runtime_graph().make_queue(0);
         context.schedule_at(context.evaluation_time() + std::chrono::microseconds{2});
-        if (!queue.write(::literal::TimeSeriesLiteral(bg::i64{42}))) {
+        if (!queue.write(::literal::TimeSeriesLiteral(i64{42}))) {
             throw std::logic_error{"queue write was rejected during start"};
         }
     }
 
-    static void evaluate(bg::NodeInvocation<>) {}
+    static void evaluate(NodeInvocation<>) {}
 
-    static void stop(bg::NodeInvocation<> invocation) noexcept {
+    static void stop(NodeInvocation<> invocation) noexcept {
         next_scheduled_time_during_stop = invocation.context().runtime_graph().next_scheduled_time();
     }
 
-    inline static bg::Queue queue;
-    inline static std::optional<bg::EvaluationTime> next_scheduled_time_during_stop;
+    inline static Queue queue;
+    inline static std::optional<EvaluationTime> next_scheduled_time_during_stop;
 
   private:
-    bg::Signature signature_;
+    Signature signature_;
 };
 
 TEST_CASE("stopped and finalized graphs suppress queue readiness and clear pending timers",
           "[evaluation][queue][lifecycle][feature:time-series-storage][feature:timed-scheduling]"
           "[series:value][scalar:i64]") {
-    const auto node = bg::node(QueueTimedCleanupNodeDefinition{});
-    auto wiring = bg::GraphWiring{};
+    const auto cleanup_node = node(QueueTimedCleanupNodeDefinition{});
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
-        (void)node();
+        auto context = WiringContext{wiring};
+        (void)cleanup_node();
     }
     wiring.finalize();
 
-    const auto compiled = bg::CompiledGraph{wiring};
+    const auto compiled = CompiledGraph{wiring};
     {
-        auto global_state = bg::GlobalState{};
-        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        auto global_state = GlobalState{};
+        auto runtime = RuntimeGraph{compiled, global_state};
         runtime.start(time(1));
         REQUIRE(runtime.next_scheduled_time() == time(2));
 
@@ -1201,8 +1172,8 @@ TEST_CASE("stopped and finalized graphs suppress queue readiness and clear pendi
     }
 
     {
-        auto global_state = bg::GlobalState{};
-        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        auto global_state = GlobalState{};
+        auto runtime = RuntimeGraph{compiled, global_state};
         runtime.start(time(1));
         REQUIRE(runtime.next_scheduled_time() == time(2));
 
@@ -1212,27 +1183,43 @@ TEST_CASE("stopped and finalized graphs suppress queue readiness and clear pendi
     }
 }
 
+namespace {
+
+class LocalRuntimeType final : public TimeSeriesValueRuntimeType {
+  public:
+    LocalRuntimeType()
+        : TimeSeriesValueRuntimeType{
+              TS<i64>::type(), cpp_scalar_runtime_type<i64>(), sizeof(i64), alignof(i64), false, false, true} {}
+
+    void construct_initial_value(void *destination) const noexcept override {
+        std::construct_at(static_cast<i64 *>(destination), i64{});
+    }
+    void destroy_value(void *value, allocator &) const noexcept override { std::destroy_at(static_cast<i64 *>(value)); }
+};
+
+} // namespace
+
 TEST_CASE("a retained graph queue is closed before its output runtime type expires",
           "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][lifetime]") {
-    auto retained = bg::Queue{};
+    auto retained = Queue{};
     {
         auto runtime_type = LocalRuntimeType{};
-        auto node = bg::node(QueueNodeDefinition{runtime_type});
-        auto wiring = bg::GraphWiring{};
-        std::optional<bg::WiringPoint> output;
+        auto queue_node = node(QueueNodeDefinition{runtime_type});
+        auto wiring = GraphWiring{};
+        std::optional<WiringPoint> output;
         {
-            auto context = bg::WiringContext{wiring};
-            output = node();
+            auto context = WiringContext{wiring};
+            output = queue_node();
         }
         wiring.finalize();
         const auto target = wiring.output_node_index(*output);
-        const auto compiled = bg::CompiledGraph{wiring};
-        auto global_state = bg::GlobalState{};
+        const auto compiled = CompiledGraph{wiring};
+        auto global_state = GlobalState{};
         {
-            auto runtime = bg::RuntimeGraph{compiled, global_state};
+            auto runtime = RuntimeGraph{compiled, global_state};
             runtime.start(time(1));
             retained = runtime.make_queue(target);
-            REQUIRE(retained.write(::literal::TimeSeriesLiteral(bg::i64{77})));
+            REQUIRE(retained.write(::literal::TimeSeriesLiteral(i64{77})));
         }
     }
 
@@ -1241,20 +1228,18 @@ TEST_CASE("a retained graph queue is closed before its output runtime type expir
 
 TEST_CASE("outer evaluation drains standard and eliding queues and publishes each changed target once",
           "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][transition:update]") {
-    auto standard_values = std::vector<bg::i64>{};
-    auto elided_values = std::vector<bg::i64>{};
-    const auto standard_queue = bg::queue<bg::TS<bg::i64>>(
-        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::standard);
-    const auto elided_queue = bg::queue<bg::TS<bg::i64>>(
-        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::elide);
-    const auto standard_sink = bg::node([&](bg::In<bg::TS<bg::i64>> input) { standard_values.push_back(*input); });
-    const auto elided_sink = bg::node([&](bg::In<bg::TS<bg::i64>> input) { elided_values.push_back(*input); });
+    auto standard_values = std::vector<i64>{};
+    auto elided_values = std::vector<i64>{};
+    const auto standard_queue = queue<TS<i64>>(start = [](Queue) {}, mode = QueueMode::standard);
+    const auto elided_queue = queue<TS<i64>>(start = [](Queue) {}, mode = QueueMode::elide);
+    const auto standard_sink = node([&](In<TS<i64>> input) { standard_values.push_back(*input); });
+    const auto elided_sink = node([&](In<TS<i64>> input) { elided_values.push_back(*input); });
 
-    auto wiring = bg::GraphWiring{};
-    bg::WiringPoint standard_output;
-    bg::WiringPoint elided_output;
+    auto wiring = GraphWiring{};
+    WiringPoint standard_output;
+    WiringPoint elided_output;
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         standard_output = standard_queue();
         elided_output = elided_queue();
         standard_sink(standard_output);
@@ -1263,9 +1248,9 @@ TEST_CASE("outer evaluation drains standard and eliding queues and publishes eac
     wiring.finalize();
     const auto standard_target = wiring.output_node_index(standard_output);
     const auto elided_target = wiring.output_node_index(elided_output);
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     runtime.start(time(1));
 
     auto standard = runtime.make_queue(standard_target);
@@ -1276,52 +1261,50 @@ TEST_CASE("outer evaluation drains standard and eliding queues and publishes eac
     CHECK(standard_values.empty());
     CHECK(elided_values.empty());
 
-    REQUIRE(elided.write(::literal::TimeSeriesLiteral(bg::i64{20})));
-    REQUIRE(elided.write(::literal::TimeSeriesLiteral(bg::i64{21})));
-    REQUIRE(standard.write(::literal::TimeSeriesLiteral(bg::i64{10})));
-    REQUIRE(standard.write(::literal::TimeSeriesLiteral(bg::i64{11})));
-    REQUIRE(standard.write(::literal::TimeSeriesLiteral(bg::i64{12})));
+    REQUIRE(elided.write(::literal::TimeSeriesLiteral(i64{20})));
+    REQUIRE(elided.write(::literal::TimeSeriesLiteral(i64{21})));
+    REQUIRE(standard.write(::literal::TimeSeriesLiteral(i64{10})));
+    REQUIRE(standard.write(::literal::TimeSeriesLiteral(i64{11})));
+    REQUIRE(standard.write(::literal::TimeSeriesLiteral(i64{12})));
     runtime.evaluate(time(3));
 
-    CHECK(standard_values == std::vector<bg::i64>{10});
-    CHECK(elided_values == std::vector<bg::i64>{21});
+    CHECK(standard_values == std::vector<i64>{10});
+    CHECK(elided_values == std::vector<i64>{21});
     CHECK(runtime.node(standard_target).output_last_updated().time() == time(3));
     CHECK(runtime.node(elided_target).output_last_updated().time() == time(3));
 
     runtime.evaluate(time(4));
-    CHECK(standard_values == std::vector<bg::i64>{10, 11});
-    CHECK(elided_values == std::vector<bg::i64>{21});
+    CHECK(standard_values == std::vector<i64>{10, 11});
+    CHECK(elided_values == std::vector<i64>{21});
     runtime.evaluate(time(5));
-    CHECK(standard_values == std::vector<bg::i64>{10, 11, 12});
+    CHECK(standard_values == std::vector<i64>{10, 11, 12});
 
     runtime.schedule(elided_target);
     runtime.evaluate(time(6));
-    CHECK(standard_values == std::vector<bg::i64>{10, 11, 12});
-    CHECK(elided_values == std::vector<bg::i64>{21});
+    CHECK(standard_values == std::vector<i64>{10, 11, 12});
+    CHECK(elided_values == std::vector<i64>{21});
     runtime.stop();
 }
 
 TEST_CASE("batch queues append copied handle values and encode nested scalar list items",
           "[evaluation][feature:time-series-storage][series:value][scalar:list][scalar:i64][queue][batch]") {
-    auto batch_values = std::vector<std::vector<bg::i64>>{};
-    auto nested_values = std::vector<std::vector<std::vector<bg::i64>>>{};
-    const auto batch_queue = bg::queue<bg::TS<bg::List<bg::i64>>>(
-        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
-    const auto nested_queue = bg::queue<bg::TS<bg::List<bg::List<bg::i64>>>>(
-        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
-    const auto batch_sink = bg::node([&](bg::In<bg::TS<bg::List<bg::i64>>> input) {
-        auto values = std::vector<bg::i64>{};
+    auto batch_values = std::vector<std::vector<i64>>{};
+    auto nested_values = std::vector<std::vector<std::vector<i64>>>{};
+    const auto batch_queue = queue<TS<List<i64>>>(start = [](Queue) {}, mode = QueueMode::batch);
+    const auto nested_queue = queue<TS<List<List<i64>>>>(start = [](Queue) {}, mode = QueueMode::batch);
+    const auto batch_sink = node([&](In<TS<List<i64>>> input) {
+        auto values = std::vector<i64>{};
         const auto list = input.value_view();
         for (auto index = std::size_t{}; index < list.size(); ++index) {
             values.push_back(list[index].value());
         }
         batch_values.push_back(std::move(values));
     });
-    const auto nested_sink = bg::node([&](bg::In<bg::TS<bg::List<bg::List<bg::i64>>>> input) {
-        auto values = std::vector<std::vector<bg::i64>>{};
+    const auto nested_sink = node([&](In<TS<List<List<i64>>>> input) {
+        auto values = std::vector<std::vector<i64>>{};
         const auto outer = input.value_view();
         for (auto index = std::size_t{}; index < outer.size(); ++index) {
-            auto inner_values = std::vector<bg::i64>{};
+            auto inner_values = std::vector<i64>{};
             const auto inner = outer[index];
             for (auto item = std::size_t{}; item < inner.size(); ++item) {
                 inner_values.push_back(inner[item].value());
@@ -1331,11 +1314,11 @@ TEST_CASE("batch queues append copied handle values and encode nested scalar lis
         nested_values.push_back(std::move(values));
     });
 
-    auto wiring = bg::GraphWiring{};
-    auto batch_output = bg::WiringPoint{};
-    auto nested_output = bg::WiringPoint{};
+    auto wiring = GraphWiring{};
+    auto batch_output = WiringPoint{};
+    auto nested_output = WiringPoint{};
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         batch_output = batch_queue();
         nested_output = nested_queue();
         batch_sink(batch_output);
@@ -1344,48 +1327,45 @@ TEST_CASE("batch queues append copied handle values and encode nested scalar lis
     wiring.finalize();
     const auto batch_target = wiring.output_node_index(batch_output);
     const auto nested_target = wiring.output_node_index(nested_output);
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     runtime.start(time(1));
 
     auto batch = runtime.make_queue(batch_target);
     auto batch_copy = batch;
     auto nested = runtime.make_queue(nested_target);
-    REQUIRE(batch.write(::literal::TimeSeriesLiteral(bg::i64{10})));
-    REQUIRE(batch_copy.write(::literal::TimeSeriesLiteral(bg::i64{20})));
-    REQUIRE(batch.write(::literal::TimeSeriesLiteral(bg::i64{30})));
+    REQUIRE(batch.write(::literal::TimeSeriesLiteral(i64{10})));
+    REQUIRE(batch_copy.write(::literal::TimeSeriesLiteral(i64{20})));
+    REQUIRE(batch.write(::literal::TimeSeriesLiteral(i64{30})));
     REQUIRE(nested.write(::literal::TimeSeriesLiteral{1, 2}));
     REQUIRE(nested.write(::literal::TimeSeriesLiteral{3}));
     runtime.evaluate(time(2));
 
-    CHECK(batch_values == std::vector<std::vector<bg::i64>>{{10, 20, 30}});
-    CHECK(nested_values == std::vector<std::vector<std::vector<bg::i64>>>{{{1, 2}, {3}}});
+    CHECK(batch_values == std::vector<std::vector<i64>>{{10, 20, 30}});
+    CHECK(nested_values == std::vector<std::vector<std::vector<i64>>>{{{1, 2}, {3}}});
 
-    REQUIRE(batch_copy.write(::literal::TimeSeriesLiteral(bg::i64{40})));
-    REQUIRE(batch.write(::literal::TimeSeriesLiteral(bg::i64{50})));
+    REQUIRE(batch_copy.write(::literal::TimeSeriesLiteral(i64{40})));
+    REQUIRE(batch.write(::literal::TimeSeriesLiteral(i64{50})));
     runtime.evaluate(time(3));
-    CHECK(batch_values == std::vector<std::vector<bg::i64>>{{10, 20, 30}, {40, 50}});
-    CHECK(nested_values == std::vector<std::vector<std::vector<bg::i64>>>{{{1, 2}, {3}}});
+    CHECK(batch_values == std::vector<std::vector<i64>>{{10, 20, 30}, {40, 50}});
+    CHECK(nested_values == std::vector<std::vector<std::vector<i64>>>{{{1, 2}, {3}}});
     runtime.stop();
 }
 
 TEST_CASE("batch queues accumulate scalar lists inside TSL, TSB, and TSD values",
           "[evaluation][feature:time-series-storage][series:fixed-tsl][series:tsb][series:tsd]"
           "[scalar:list][scalar:i64][queue][batch]") {
-    auto list_values = std::vector<std::vector<std::vector<bg::i64>>>{};
-    auto bundle_values = std::vector<std::vector<std::vector<bg::i64>>>{};
-    auto dictionary_values = std::vector<std::vector<std::vector<bg::i64>>>{};
-    const auto list_queue = bg::queue<bg::TSL<bg::TS<bg::List<bg::i64>>, 2>>(
-        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
-    const auto bundle_queue = bg::queue<bg::TSB<BatchQueueBundle>>(
-        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
-    const auto dictionary_queue = bg::queue<bg::TSD<bg::i64, bg::TS<bg::List<bg::i64>>>>(
-        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
-    const auto list_sink = bg::node([&](bg::In<bg::TSL<bg::TS<bg::List<bg::i64>>, 2>> input) {
-        auto values = std::vector<std::vector<bg::i64>>{};
+    auto list_values = std::vector<std::vector<std::vector<i64>>>{};
+    auto bundle_values = std::vector<std::vector<std::vector<i64>>>{};
+    auto dictionary_values = std::vector<std::vector<std::vector<i64>>>{};
+    const auto list_queue = queue<TSL<TS<List<i64>>, 2>>(start = [](Queue) {}, mode = QueueMode::batch);
+    const auto bundle_queue = queue<TSB<BatchQueueBundle>>(start = [](Queue) {}, mode = QueueMode::batch);
+    const auto dictionary_queue = queue<TSD<i64, TS<List<i64>>>>(start = [](Queue) {}, mode = QueueMode::batch);
+    const auto list_sink = node([&](In<TSL<TS<List<i64>>, 2>> input) {
+        auto values = std::vector<std::vector<i64>>{};
         for (auto index = std::size_t{}; index < input.size(); ++index) {
-            auto items = std::vector<bg::i64>{};
+            auto items = std::vector<i64>{};
             const auto list = input[index].value_view();
             for (auto item = std::size_t{}; item < list.size(); ++item) {
                 items.push_back(list[item].value());
@@ -1394,10 +1374,10 @@ TEST_CASE("batch queues accumulate scalar lists inside TSL, TSB, and TSD values"
         }
         list_values.push_back(std::move(values));
     });
-    const auto bundle_sink = bg::node([&](bg::In<bg::TSB<BatchQueueBundle>> input) {
-        auto values = std::vector<std::vector<bg::i64>>{};
+    const auto bundle_sink = node([&](In<TSB<BatchQueueBundle>> input) {
+        auto values = std::vector<std::vector<i64>>{};
         for (const auto field : {input->first, input->second}) {
-            auto items = std::vector<bg::i64>{};
+            auto items = std::vector<i64>{};
             const auto list = field.value_view();
             for (auto item = std::size_t{}; item < list.size(); ++item) {
                 items.push_back(list[item].value());
@@ -1406,10 +1386,10 @@ TEST_CASE("batch queues accumulate scalar lists inside TSL, TSB, and TSD values"
         }
         bundle_values.push_back(std::move(values));
     });
-    const auto dictionary_sink = bg::node([&](bg::In<bg::TSD<bg::i64, bg::TS<bg::List<bg::i64>>>> input) {
-        auto values = std::vector<std::vector<bg::i64>>{};
-        for (const auto key : {bg::i64{1}, bg::i64{2}}) {
-            auto items = std::vector<bg::i64>{};
+    const auto dictionary_sink = node([&](In<TSD<i64, TS<List<i64>>>> input) {
+        auto values = std::vector<std::vector<i64>>{};
+        for (const auto key : {i64{1}, i64{2}}) {
+            auto items = std::vector<i64>{};
             const auto list = input[key].value_view();
             for (auto item = std::size_t{}; item < list.size(); ++item) {
                 items.push_back(list[item].value());
@@ -1419,12 +1399,12 @@ TEST_CASE("batch queues accumulate scalar lists inside TSL, TSB, and TSD values"
         dictionary_values.push_back(std::move(values));
     });
 
-    auto wiring = bg::GraphWiring{};
-    auto list_output = bg::WiringPoint{};
-    auto bundle_output = bg::WiringPoint{};
-    auto dictionary_output = bg::WiringPoint{};
+    auto wiring = GraphWiring{};
+    auto list_output = WiringPoint{};
+    auto bundle_output = WiringPoint{};
+    auto dictionary_output = WiringPoint{};
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         list_output = list_queue();
         bundle_output = bundle_queue();
         dictionary_output = dictionary_queue();
@@ -1436,9 +1416,9 @@ TEST_CASE("batch queues accumulate scalar lists inside TSL, TSB, and TSD values"
     const auto list_target = wiring.output_node_index(list_output);
     const auto bundle_target = wiring.output_node_index(bundle_output);
     const auto dictionary_target = wiring.output_node_index(dictionary_output);
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     runtime.start(time(1));
 
     auto list = runtime.make_queue(list_target);
@@ -1452,29 +1432,28 @@ TEST_CASE("batch queues accumulate scalar lists inside TSL, TSB, and TSD values"
     REQUIRE(dictionary.write(::literal::TimeSeriesLiteral{{1, 6}, {2, 60}}));
     runtime.evaluate(time(2));
 
-    CHECK(list_values == std::vector<std::vector<std::vector<bg::i64>>>{{{1, 2}, {10, 20}}});
-    CHECK(bundle_values == std::vector<std::vector<std::vector<bg::i64>>>{{{3, 4}, {30, 40}}});
-    CHECK(dictionary_values == std::vector<std::vector<std::vector<bg::i64>>>{{{5, 6}, {50, 60}}});
+    CHECK(list_values == std::vector<std::vector<std::vector<i64>>>{{{1, 2}, {10, 20}}});
+    CHECK(bundle_values == std::vector<std::vector<std::vector<i64>>>{{{3, 4}, {30, 40}}});
+    CHECK(dictionary_values == std::vector<std::vector<std::vector<i64>>>{{{5, 6}, {50, 60}}});
 
     REQUIRE(list.write(::literal::TimeSeriesLiteral{{0, 7}}));
     REQUIRE(bundle.write(::literal::TimeSeriesLiteral{{"first", 8}}));
     REQUIRE(dictionary.write(::literal::TimeSeriesLiteral{{1, 9}}));
     runtime.evaluate(time(3));
 
-    CHECK(list_values == std::vector<std::vector<std::vector<bg::i64>>>{{{1, 2}, {10, 20}}, {{7}, {10, 20}}});
-    CHECK(bundle_values == std::vector<std::vector<std::vector<bg::i64>>>{{{3, 4}, {30, 40}}, {{8}, {30, 40}}});
-    CHECK(dictionary_values == std::vector<std::vector<std::vector<bg::i64>>>{{{5, 6}, {50, 60}}, {{9}, {50, 60}}});
+    CHECK(list_values == std::vector<std::vector<std::vector<i64>>>{{{1, 2}, {10, 20}}, {{7}, {10, 20}}});
+    CHECK(bundle_values == std::vector<std::vector<std::vector<i64>>>{{{3, 4}, {30, 40}}, {{8}, {30, 40}}});
+    CHECK(dictionary_values == std::vector<std::vector<std::vector<i64>>>{{{5, 6}, {50, 60}}, {{9}, {50, 60}}});
     runtime.stop();
 }
 
 TEST_CASE("batch queue admission keeps conflicting bundle frames pending as a whole",
           "[evaluation][feature:time-series-storage][series:tsb][scalar:list][scalar:i64][queue][batch][failure]") {
-    using Values = std::vector<bg::i64>;
+    using Values = std::vector<i64>;
     using Event = std::pair<std::optional<Values>, std::optional<Values>>;
     auto events = std::vector<Event>{};
-    const auto queue_node = bg::queue<bg::TSB<BatchQueueBundle>>(
-        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
-    const auto sink = bg::node([&](bg::In<bg::TSB<BatchQueueBundle>> input) {
+    const auto queue_node = queue<TSB<BatchQueueBundle>>(start = [](Queue) {}, mode = QueueMode::batch);
+    const auto sink = node([&](In<TSB<BatchQueueBundle>> input) {
         const auto values = [](const auto &field) -> std::optional<Values> {
             if (!field.valid()) {
                 return std::nullopt;
@@ -1489,18 +1468,18 @@ TEST_CASE("batch queue admission keeps conflicting bundle frames pending as a wh
         events.emplace_back(values(input->first), values(input->second));
     });
 
-    auto wiring = bg::GraphWiring{};
-    bg::WiringPoint output;
+    auto wiring = GraphWiring{};
+    WiringPoint output;
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         output = queue_node();
         sink(output);
     }
     wiring.finalize();
     const auto target = wiring.output_node_index(output);
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     runtime.start(time(1));
     auto queue = runtime.make_queue(target);
 
@@ -1520,11 +1499,10 @@ TEST_CASE("batch queue admission keeps conflicting bundle frames pending as a wh
 TEST_CASE("batch queue invalidations wait for changes and redundant invalidations remain no-ops",
           "[evaluation][feature:time-series-storage][series:value][scalar:list][scalar:i64][queue][batch]"
           "[transition:invalidation]") {
-    using Values = std::vector<bg::i64>;
+    using Values = std::vector<i64>;
     auto events = std::vector<std::optional<Values>>{};
-    const auto queue_node = bg::queue<bg::TS<bg::List<bg::i64>>>(
-        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
-    const auto sink = bg::node([&](bg::In<bg::TS<bg::List<bg::i64>>, bg::optional> input) {
+    const auto queue_node = queue<TS<List<i64>>>(start = [](Queue) {}, mode = QueueMode::batch);
+    const auto sink = node([&](In<TS<List<i64>>, optional> input) {
         if (!input.valid()) {
             events.emplace_back(std::nullopt);
             return;
@@ -1537,22 +1515,22 @@ TEST_CASE("batch queue invalidations wait for changes and redundant invalidation
         events.emplace_back(std::move(values));
     });
 
-    auto wiring = bg::GraphWiring{};
-    bg::WiringPoint output;
+    auto wiring = GraphWiring{};
+    WiringPoint output;
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         output = queue_node();
         sink(output);
     }
     wiring.finalize();
     const auto target = wiring.output_node_index(output);
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     runtime.start(time(1));
     auto queue = runtime.make_queue(target);
 
-    REQUIRE(queue.write(::literal::TimeSeriesLiteral(bg::i64{10})));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(i64{10})));
     REQUIRE(queue.write(::literal::TimeSeriesLiteral(::literal::INVALID)));
     runtime.evaluate(time(2));
     CHECK(events == std::vector<std::optional<Values>>{Values{10}});
@@ -1562,12 +1540,12 @@ TEST_CASE("batch queue invalidations wait for changes and redundant invalidation
 
     REQUIRE(queue.write(::literal::TimeSeriesLiteral(::literal::INVALID)));
     REQUIRE(queue.write(::literal::TimeSeriesLiteral(::literal::INVALID)));
-    REQUIRE(queue.write(::literal::TimeSeriesLiteral(bg::i64{20})));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(i64{20})));
     runtime.evaluate(time(4));
     CHECK(events == std::vector<std::optional<Values>>{Values{10}, std::nullopt, Values{20}});
 
     REQUIRE(queue.write(::literal::TimeSeriesLiteral(::literal::INVALID)));
-    REQUIRE(queue.write(::literal::TimeSeriesLiteral(bg::i64{30})));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(i64{30})));
     runtime.evaluate(time(5));
     CHECK(events == std::vector<std::optional<Values>>{Values{10}, std::nullopt, Values{20}, std::nullopt});
 
@@ -1579,13 +1557,12 @@ TEST_CASE("batch queue invalidations wait for changes and redundant invalidation
 TEST_CASE("batch dictionary admission preserves per-key removal and recreation boundaries",
           "[evaluation][feature:time-series-storage][series:tsd][scalar:list][scalar:i64][queue][batch]"
           "[transition:removal][transition:addition]") {
-    using Values = std::vector<bg::i64>;
+    using Values = std::vector<i64>;
     using Event = std::pair<std::optional<Values>, std::optional<Values>>;
     auto events = std::vector<Event>{};
-    const auto queue_node = bg::queue<bg::TSD<bg::i64, bg::TS<bg::List<bg::i64>>>>(
-        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
-    const auto sink = bg::node([&](bg::In<bg::TSD<bg::i64, bg::TS<bg::List<bg::i64>>>> input) {
-        const auto values = [&](bg::i64 key) -> std::optional<Values> {
+    const auto queue_node = queue<TSD<i64, TS<List<i64>>>>(start = [](Queue) {}, mode = QueueMode::batch);
+    const auto sink = node([&](In<TSD<i64, TS<List<i64>>>> input) {
+        const auto values = [&](i64 key) -> std::optional<Values> {
             if (!input.contains(key)) {
                 return std::nullopt;
             }
@@ -1604,18 +1581,18 @@ TEST_CASE("batch dictionary admission preserves per-key removal and recreation b
         events.emplace_back(values(1), values(2));
     });
 
-    auto wiring = bg::GraphWiring{};
-    bg::WiringPoint output;
+    auto wiring = GraphWiring{};
+    WiringPoint output;
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         output = queue_node();
         sink(output);
     }
     wiring.finalize();
     const auto target = wiring.output_node_index(output);
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     runtime.start(time(1));
     auto queue = runtime.make_queue(target);
 
@@ -1649,9 +1626,8 @@ TEST_CASE("batch dictionary admission preserves per-key removal and recreation b
 TEST_CASE("batch queue replay preserves owned scalar values in the output list",
           "[evaluation][feature:time-series-storage][series:value][scalar:list][scalar:string][queue][batch]") {
     auto batch_values = std::vector<std::vector<std::string>>{};
-    const auto queue_node = bg::queue<bg::TS<bg::List<bg::string>>>(
-        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
-    const auto sink = bg::node([&](bg::In<bg::TS<bg::List<bg::string>>> input) {
+    const auto queue_node = queue<TS<List<string>>>(start = [](Queue) {}, mode = QueueMode::batch);
+    const auto sink = node([&](In<TS<List<string>>> input) {
         auto values = std::vector<std::string>{};
         const auto list = input.value_view();
         for (auto index = std::size_t{}; index < list.size(); ++index) {
@@ -1660,18 +1636,18 @@ TEST_CASE("batch queue replay preserves owned scalar values in the output list",
         batch_values.push_back(std::move(values));
     });
 
-    auto wiring = bg::GraphWiring{};
-    auto output = bg::WiringPoint{};
+    auto wiring = GraphWiring{};
+    auto output = WiringPoint{};
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         output = queue_node();
         sink(output);
     }
     wiring.finalize();
     const auto target = wiring.output_node_index(output);
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     runtime.start(time(1));
     auto queue = runtime.make_queue(target);
 
@@ -1695,11 +1671,10 @@ TEST_CASE("batch queue retains owned payloads while an invalidated leaf waits pe
           "[evaluation][feature:time-series-storage][series:value][scalar:compound][scalar:list][queue][batch]"
           "[lifetime][transition:invalidation]") {
     REQUIRE(QueuePayloadBufferHandlers::register_operations());
-    auto values = std::vector<std::vector<bg::i64>>{};
-    const auto queue_node = bg::queue<bg::TS<bg::List<QueuePayload>>>(
-        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
-    const auto sink = bg::node([&](bg::In<bg::TS<bg::List<QueuePayload>>> input) {
-        auto items = std::vector<bg::i64>{};
+    auto values = std::vector<std::vector<i64>>{};
+    const auto queue_node = queue<TS<List<QueuePayload>>>(start = [](Queue) {}, mode = QueueMode::batch);
+    const auto sink = node([&](In<TS<List<QueuePayload>>> input) {
+        auto items = std::vector<i64>{};
         const auto list = input.value_view();
         for (auto index = std::size_t{}; index < list.size(); ++index) {
             items.push_back(list[index].value().number);
@@ -1707,18 +1682,18 @@ TEST_CASE("batch queue retains owned payloads while an invalidated leaf waits pe
         values.push_back(std::move(items));
     });
 
-    auto wiring = bg::GraphWiring{};
-    bg::WiringPoint output;
+    auto wiring = GraphWiring{};
+    WiringPoint output;
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         output = queue_node();
         sink(output);
     }
     wiring.finalize();
     const auto target = wiring.output_node_index(output);
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     runtime.start(time(1));
     auto queue = runtime.make_queue(target);
 
@@ -1731,7 +1706,7 @@ TEST_CASE("batch queue retains owned payloads while an invalidated leaf waits pe
     CHECK_FALSE(initial_probe.expired());
     runtime.evaluate(time(2));
     CHECK(initial_probe.expired());
-    CHECK(values == std::vector<std::vector<bg::i64>>{{1}});
+    CHECK(values == std::vector<std::vector<i64>>{{1}});
 
     auto pending_payload = std::make_shared<int>(2);
     auto pending_probe = std::weak_ptr<int>{pending_payload};
@@ -1744,32 +1719,29 @@ TEST_CASE("batch queue retains owned payloads while an invalidated leaf waits pe
 
     runtime.evaluate(time(3));
     CHECK_FALSE(pending_probe.expired());
-    CHECK(values == std::vector<std::vector<bg::i64>>{{1}});
+    CHECK(values == std::vector<std::vector<i64>>{{1}});
 
     runtime.evaluate(time(4));
     CHECK(pending_probe.expired());
-    CHECK(values == std::vector<std::vector<bg::i64>>{{1}, {2}});
+    CHECK(values == std::vector<std::vector<i64>>{{1}, {2}});
     runtime.stop();
 }
 
 TEST_CASE("a standard queue conflict retains its frame and stops later targets",
           "[evaluation][feature:time-series-storage][series:tsd][series:value][scalar:i64][queue][failure]") {
-    auto dictionary_values = std::vector<bg::i64>{};
-    auto scalar_values = std::vector<bg::i64>{};
-    const auto dictionary_queue = bg::queue<bg::TSD<bg::i64, bg::TS<bg::i64>>>(
-        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::standard);
-    const auto scalar_queue = bg::queue<bg::TS<bg::i64>>(
-        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::standard);
-    const auto dictionary_sink = bg::node([&](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) {
-        dictionary_values.push_back(input.contains(1) ? *input[1] : -1);
-    });
-    const auto scalar_sink = bg::node([&](bg::In<bg::TS<bg::i64>> input) { scalar_values.push_back(*input); });
+    auto dictionary_values = std::vector<i64>{};
+    auto scalar_values = std::vector<i64>{};
+    const auto dictionary_queue = queue<TSD<i64, TS<i64>>>(start = [](Queue) {}, mode = QueueMode::standard);
+    const auto scalar_queue = queue<TS<i64>>(start = [](Queue) {}, mode = QueueMode::standard);
+    const auto dictionary_sink =
+        node([&](In<TSD<i64, TS<i64>>> input) { dictionary_values.push_back(input.contains(1) ? *input[1] : -1); });
+    const auto scalar_sink = node([&](In<TS<i64>> input) { scalar_values.push_back(*input); });
 
-    auto wiring = bg::GraphWiring{};
-    bg::WiringPoint dictionary_output;
-    bg::WiringPoint scalar_output;
+    auto wiring = GraphWiring{};
+    WiringPoint dictionary_output;
+    WiringPoint scalar_output;
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         dictionary_output = dictionary_queue();
         scalar_output = scalar_queue();
         dictionary_sink(dictionary_output);
@@ -1778,52 +1750,48 @@ TEST_CASE("a standard queue conflict retains its frame and stops later targets",
     wiring.finalize();
     const auto dictionary_target = wiring.output_node_index(dictionary_output);
     const auto scalar_target = wiring.output_node_index(scalar_output);
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     runtime.start(time(1));
 
     auto dictionary = runtime.make_queue(dictionary_target);
     auto scalar = runtime.make_queue(scalar_target);
     REQUIRE(dictionary.write(::literal::TimeSeriesLiteral{{1, 10}}));
     REQUIRE(dictionary.write(::literal::TimeSeriesLiteral{{1, ::literal::REMOVE}}));
-    REQUIRE(scalar.write(::literal::TimeSeriesLiteral(bg::i64{20})));
+    REQUIRE(scalar.write(::literal::TimeSeriesLiteral(i64{20})));
 
     runtime.evaluate(time(2));
-    CHECK(dictionary_values == std::vector<bg::i64>{10});
+    CHECK(dictionary_values == std::vector<i64>{10});
     CHECK(scalar_values.empty());
 
     runtime.evaluate(time(3));
-    CHECK(dictionary_values == std::vector<bg::i64>{10, -1});
-    CHECK(scalar_values == std::vector<bg::i64>{20});
+    CHECK(dictionary_values == std::vector<i64>{10, -1});
+    CHECK(scalar_values == std::vector<i64>{20});
     runtime.stop();
 }
 
 TEST_CASE("batch queue values after a standard conflict start the next cycle with a fresh list",
           "[evaluation][feature:time-series-storage][series:value][scalar:list][scalar:i64][queue][batch][failure]") {
-    auto batch_values = std::vector<std::vector<bg::i64>>{};
-    auto standard_values = std::vector<bg::i64>{};
-    const auto batch_queue = bg::queue<bg::TS<bg::List<bg::i64>>>(
-        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::batch);
-    const auto standard_queue = bg::queue<bg::TS<bg::i64>>(
-        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::standard);
-    const auto batch_sink = bg::node([&](bg::In<bg::TS<bg::List<bg::i64>>> input) {
-        auto values = std::vector<bg::i64>{};
+    auto batch_values = std::vector<std::vector<i64>>{};
+    auto standard_values = std::vector<i64>{};
+    const auto batch_queue = queue<TS<List<i64>>>(start = [](Queue) {}, mode = QueueMode::batch);
+    const auto standard_queue = queue<TS<i64>>(start = [](Queue) {}, mode = QueueMode::standard);
+    const auto batch_sink = node([&](In<TS<List<i64>>> input) {
+        auto values = std::vector<i64>{};
         const auto list = input.value_view();
         for (auto index = std::size_t{}; index < list.size(); ++index) {
             values.push_back(list[index].value());
         }
         batch_values.push_back(std::move(values));
     });
-    const auto standard_sink = bg::node([&](bg::In<bg::TS<bg::i64>> input) {
-        standard_values.push_back(*input);
-    });
+    const auto standard_sink = node([&](In<TS<i64>> input) { standard_values.push_back(*input); });
 
-    auto wiring = bg::GraphWiring{};
-    auto batch_output = bg::WiringPoint{};
-    auto standard_output = bg::WiringPoint{};
+    auto wiring = GraphWiring{};
+    auto batch_output = WiringPoint{};
+    auto standard_output = WiringPoint{};
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         batch_output = batch_queue();
         standard_output = standard_queue();
         batch_sink(batch_output);
@@ -1832,26 +1800,26 @@ TEST_CASE("batch queue values after a standard conflict start the next cycle wit
     wiring.finalize();
     const auto batch_target = wiring.output_node_index(batch_output);
     const auto standard_target = wiring.output_node_index(standard_output);
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     runtime.start(time(1));
 
     auto batch = runtime.make_queue(batch_target);
     auto standard = runtime.make_queue(standard_target);
-    REQUIRE(batch.write(::literal::TimeSeriesLiteral(bg::i64{10})));
-    REQUIRE(batch.write(::literal::TimeSeriesLiteral(bg::i64{20})));
-    REQUIRE(standard.write(::literal::TimeSeriesLiteral(bg::i64{1})));
-    REQUIRE(standard.write(::literal::TimeSeriesLiteral(bg::i64{2})));
-    REQUIRE(batch.write(::literal::TimeSeriesLiteral(bg::i64{30})));
+    REQUIRE(batch.write(::literal::TimeSeriesLiteral(i64{10})));
+    REQUIRE(batch.write(::literal::TimeSeriesLiteral(i64{20})));
+    REQUIRE(standard.write(::literal::TimeSeriesLiteral(i64{1})));
+    REQUIRE(standard.write(::literal::TimeSeriesLiteral(i64{2})));
+    REQUIRE(batch.write(::literal::TimeSeriesLiteral(i64{30})));
     runtime.evaluate(time(2));
 
-    CHECK(batch_values == std::vector<std::vector<bg::i64>>{{10, 20}});
-    CHECK(standard_values == std::vector<bg::i64>{1});
+    CHECK(batch_values == std::vector<std::vector<i64>>{{10, 20}});
+    CHECK(standard_values == std::vector<i64>{1});
 
     runtime.evaluate(time(3));
-    CHECK(batch_values == std::vector<std::vector<bg::i64>>{{10, 20}, {30}});
-    CHECK(standard_values == std::vector<bg::i64>{1, 2});
+    CHECK(batch_values == std::vector<std::vector<i64>>{{10, 20}, {30}});
+    CHECK(standard_values == std::vector<i64>{1, 2});
     runtime.stop();
 }
 
@@ -1859,16 +1827,15 @@ TEST_CASE("queue dictionary updates, removal, no-op removal, and recreation publ
           "[evaluation][feature:time-series-storage][feature:collection-change][series:tsd][scalar:i64]"
           "[queue][transition:update][transition:removal]") {
     struct Event {
-        bg::i64 value;
+        i64 value;
         std::size_t added;
         std::size_t removed;
         std::size_t modified;
-        bg::EvaluationTime time;
+        EvaluationTime time;
     };
     auto events = std::vector<Event>{};
-    const auto queue_node = bg::queue<bg::TSD<bg::i64, bg::TS<bg::i64>>>(
-        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::standard);
-    const auto sink = bg::node([&](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) {
+    const auto queue_node = queue<TSD<i64, TS<i64>>>(start = [](Queue) {}, mode = QueueMode::standard);
+    const auto sink = node([&](In<TSD<i64, TS<i64>>> input) {
         auto added = std::size_t{};
         auto removed = std::size_t{};
         auto modified = std::size_t{};
@@ -1878,18 +1845,18 @@ TEST_CASE("queue dictionary updates, removal, no-op removal, and recreation publ
         events.push_back({input.contains(1) ? *input[1] : -1, added, removed, modified, input.last_updated()});
     });
 
-    auto wiring = bg::GraphWiring{};
-    bg::WiringPoint output;
+    auto wiring = GraphWiring{};
+    WiringPoint output;
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         output = queue_node();
         sink(output);
     }
     wiring.finalize();
     const auto target = wiring.output_node_index(output);
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     runtime.start(time(1));
     auto queue = runtime.make_queue(target);
 
@@ -1923,25 +1890,22 @@ TEST_CASE("queue dictionary updates, removal, no-op removal, and recreation publ
 TEST_CASE("queued output changes notify required, optional, and reference subscribers",
           "[evaluation][feature:time-series-storage][feature:reference][feature:validity][series:value]"
           "[queue][scalar:i64][validity:optional][transition:invalidation][transition:revalidation]") {
-    auto required_values = std::vector<bg::i64>{};
-    auto optional_values = std::vector<std::optional<bg::i64>>{};
-    auto reference_values = std::vector<bg::i64>{};
-    const auto queue_node = bg::queue<bg::TS<bg::i64>>(
-        bg::start = [](bg::Queue) {}, bg::mode = bg::QueueMode::standard);
-    const auto required_sink = bg::node([&](bg::In<bg::TS<bg::i64>> input) { required_values.push_back(*input); });
-    const auto optional_sink = bg::node([&](bg::In<bg::TS<bg::i64>, bg::optional> input) {
-        optional_values.push_back(input.valid() ? std::optional<bg::i64>{*input} : std::nullopt);
+    auto required_values = std::vector<i64>{};
+    auto optional_values = std::vector<std::optional<i64>>{};
+    auto reference_values = std::vector<i64>{};
+    const auto queue_node = queue<TS<i64>>(start = [](Queue) {}, mode = QueueMode::standard);
+    const auto required_sink = node([&](In<TS<i64>> input) { required_values.push_back(*input); });
+    const auto optional_sink = node([&](In<TS<i64>, optional> input) {
+        optional_values.push_back(input.valid() ? std::optional<i64>{*input} : std::nullopt);
     });
-    const auto reference_pass = bg::node([](bg::In<bg::REF<bg::TS<bg::i64>>> input,
-                                           bg::Out<bg::REF<bg::TS<bg::i64>>> output) {
-        output.set_value(input.value());
-    });
-    const auto reference_sink = bg::node([&](bg::In<bg::TS<bg::i64>> input) { reference_values.push_back(*input); });
+    const auto reference_pass =
+        node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) { output.set_value(input.value()); });
+    const auto reference_sink = node([&](In<TS<i64>> input) { reference_values.push_back(*input); });
 
-    auto wiring = bg::GraphWiring{};
-    bg::WiringPoint output;
+    auto wiring = GraphWiring{};
+    WiringPoint output;
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         output = queue_node();
         required_sink(output);
         optional_sink(output);
@@ -1949,22 +1913,22 @@ TEST_CASE("queued output changes notify required, optional, and reference subscr
     }
     wiring.finalize();
     const auto target = wiring.output_node_index(output);
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     runtime.start(time(1));
     auto queue = runtime.make_queue(target);
 
-    REQUIRE(queue.write(::literal::TimeSeriesLiteral(bg::i64{10})));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(i64{10})));
     runtime.evaluate(time(2));
     REQUIRE(queue.write(::literal::TimeSeriesLiteral(::literal::INVALID)));
     runtime.evaluate(time(3));
-    REQUIRE(queue.write(::literal::TimeSeriesLiteral(bg::i64{11})));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(i64{11})));
     runtime.evaluate(time(4));
 
-    CHECK(required_values == std::vector<bg::i64>{10, 11});
-    CHECK(optional_values == std::vector<std::optional<bg::i64>>{10, std::nullopt, 11});
-    CHECK(reference_values == std::vector<bg::i64>{10, 11});
+    CHECK(required_values == std::vector<i64>{10, 11});
+    CHECK(optional_values == std::vector<std::optional<i64>>{10, std::nullopt, 11});
+    CHECK(reference_values == std::vector<i64>{10, 11});
     runtime.stop();
 }
 
@@ -1975,31 +1939,30 @@ TEST_CASE("queue replay failure releases typed unread payloads after stop callba
     QueuePayloadBufferHandlers::fail_on_read = 0;
     auto third_payload = std::weak_ptr<int>{};
     auto third_payload_alive_during_stop = false;
-    const auto queue_node = bg::queue<bg::TS<QueuePayload>>(
-        bg::start = [](bg::Queue) {},
-        bg::stop = [&]() noexcept { third_payload_alive_during_stop = !third_payload.expired(); },
-        bg::mode = bg::QueueMode::elide);
-    auto wiring = bg::GraphWiring{};
-    std::optional<bg::WiringPoint> output;
+    const auto queue_node = queue<TS<QueuePayload>>(
+        start = [](Queue) {}, stop = [&]() noexcept { third_payload_alive_during_stop = !third_payload.expired(); },
+        mode = QueueMode::elide);
+    auto wiring = GraphWiring{};
+    std::optional<WiringPoint> output;
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         output = queue_node();
     }
     wiring.finalize();
     const auto target = wiring.output_node_index(*output);
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     runtime.start(time(1));
     auto queue = runtime.make_queue(target);
 
-    const auto write_payload = [&](bg::i64 number, std::weak_ptr<int> *probe = nullptr) {
+    const auto write_payload = [&](i64 number, std::weak_ptr<int> *probe = nullptr) {
         auto payload = std::make_shared<int>(static_cast<int>(number));
         if (probe != nullptr) {
             *probe = payload;
         }
         QueuePayloadBufferHandlers::writing_payload = payload;
-        auto value = bg::ScalarValue<QueuePayload>{QueuePayload{number}};
+        auto value = ScalarValue<QueuePayload>{QueuePayload{number}};
         const auto accepted = queue.write(::literal::TimeSeriesLiteral(value));
         QueuePayloadBufferHandlers::writing_payload.reset();
         return accepted;
