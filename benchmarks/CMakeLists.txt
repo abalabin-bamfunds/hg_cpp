@@ -4,6 +4,9 @@ target_link_libraries(bg_container_benchmark PRIVATE bg::bg)
 add_executable(bg_runtime_scheduling_benchmark runtime_scheduling_benchmark.cpp)
 target_link_libraries(bg_runtime_scheduling_benchmark PRIVATE bg::bg)
 
+add_executable(bg_queue_realtime_benchmark queue_realtime_benchmark.cpp)
+target_link_libraries(bg_queue_realtime_benchmark PRIVATE bg::bg Threads::Threads)
+
 add_executable(bg_evaluation_context_benchmark evaluation_context_benchmark.cpp)
 target_link_libraries(bg_evaluation_context_benchmark PRIVATE bg::bg)
 

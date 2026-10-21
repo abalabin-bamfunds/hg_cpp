@@ -15,6 +15,27 @@
 
 namespace {
 
+struct periodic_callback_chain_definition {
+    static constexpr bool uses_timed_scheduling = true;
+
+    void start(bg::EvaluationContext *context) const {
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate(bg::EvaluationContext *context) const {
+        ++evaluation_count;
+        std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        if (evaluation_count < 20) {
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        }
+    }
+
+    void stop() const noexcept { ++stop_count; }
+
+    inline static std::size_t evaluation_count{};
+    inline static std::size_t stop_count{};
+};
+
 struct scheduled_source_definition {
     static constexpr bool uses_timed_scheduling = true;
 
@@ -124,7 +145,7 @@ TEST_CASE("timed scheduling orders requests by evaluation time",
     CHECK(unordered_schedule_definition::evaluation_times == std::vector{time(3), time(6), time(10)});
 }
 
-TEST_CASE("simulation periodic callback runs between cycles and stops a started graph on failure",
+TEST_CASE("simulation periodic callback failure at termination stops a started graph",
           "[evaluation][simulation][feature:simulation][feature:lifecycle][failure]") {
     const auto scheduled_source = bg::node<scheduled_source_definition>();
     const auto int_sink = bg::node<int_sink_definition>();
@@ -156,11 +177,44 @@ TEST_CASE("simulation periodic callback runs between cycles and stops a started 
 
     CHECK_THROWS_AS(bg::SimulationEvaluationEngine{}.run(runtime, time(1), periodic_callback), std::runtime_error);
     CHECK(callback_calls >= 2);
-    CHECK(scheduled_source_definition::evaluation_times == std::vector{time(3)});
-    CHECK(int_sink_definition::values == std::vector{1, 2});
+    CHECK(scheduled_source_definition::evaluation_times == std::vector{time(3), time(6)});
+    CHECK(int_sink_definition::values == std::vector{1, 2, 3});
     CHECK(scheduled_source_definition::stop_count == 1);
-    CHECK(runtime.evaluation_time() == time(3));
+    CHECK(runtime.evaluation_time() == time(6));
     scheduled_source_definition::evaluation_delay = std::chrono::milliseconds{};
+}
+
+TEST_CASE("simulation polls periodic callbacks after eight completed cycles",
+          "[evaluation][simulation][feature:simulation][feature:lifecycle][failure]") {
+    const auto source = bg::node<periodic_callback_chain_definition>();
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        (void)source();
+    }
+
+    wiring.finalize();
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto runtime_global_state = bg::GlobalState{};
+    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
+    periodic_callback_chain_definition::evaluation_count = 0;
+    periodic_callback_chain_definition::stop_count = 0;
+    auto callback_calls = std::size_t{};
+    const auto periodic_callback = bg::PeriodicCallback{
+        .callback = [&] {
+            if (++callback_calls == 2) {
+                throw std::runtime_error{"periodic callback failed"};
+            }
+        },
+        .interval = std::chrono::milliseconds{1},
+    };
+
+    CHECK_THROWS_AS(bg::SimulationEvaluationEngine{}.run(runtime, time(1), periodic_callback), std::runtime_error);
+    CHECK(callback_calls == 2);
+    // The initial outer cycle has no timer firing, so seven source evaluations complete eight cycles.
+    CHECK(periodic_callback_chain_definition::evaluation_count == 7);
+    CHECK(periodic_callback_chain_definition::stop_count == 1);
+    CHECK(runtime.evaluation_time() == time(8));
 }
 
 TEST_CASE("simulation validates an enabled periodic callback interval before starting",

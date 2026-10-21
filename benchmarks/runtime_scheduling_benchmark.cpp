@@ -49,6 +49,7 @@ class CountingMemoryResource : public std::pmr::memory_resource {
         }
     }
 
+    wiring.finalize();
     return bg::CompiledGraph{wiring};
 }
 

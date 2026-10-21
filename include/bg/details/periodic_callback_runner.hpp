@@ -3,12 +3,15 @@
 #include <bg/periodic_callback.hpp>
 
 #include <chrono>
+#include <cstddef>
 #include <stdexcept>
 
 namespace bg::details {
 
 class PeriodicCallbackRunner {
   public:
+    static constexpr auto cycles_per_poll = std::size_t{8};
+
     explicit PeriodicCallbackRunner(const PeriodicCallback &periodic_callback)
         : periodic_callback_{periodic_callback} {
         if (periodic_callback_.callback && periodic_callback_.interval <= std::chrono::steady_clock::duration::zero()) {
@@ -30,18 +33,31 @@ class PeriodicCallbackRunner {
         next_run_ = periodic_callback_.interval >= remaining
                         ? std::chrono::steady_clock::time_point::max()
                         : now + periodic_callback_.interval;
+        cycles_until_poll_ = cycles_per_poll;
     }
 
-    void run_if_due() {
+    bool run_if_due() {
+        cycles_until_poll_ = cycles_per_poll;
         if (!enabled() || std::chrono::steady_clock::now() < next_run_) {
-            return;
+            return false;
         }
         run_now();
+        return true;
+    }
+
+    void poll_after_cycle() {
+        if (!enabled()) {
+            return;
+        }
+        if (--cycles_until_poll_ == 0) {
+            run_if_due();
+        }
     }
 
   private:
     const PeriodicCallback &periodic_callback_;
     std::chrono::steady_clock::time_point next_run_{};
+    std::size_t cycles_until_poll_{cycles_per_poll};
 };
 
 } // namespace bg::details
