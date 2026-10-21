@@ -142,8 +142,8 @@ Use BG's existing `ScalarDispatch<Handler>` optional-operation facility to
 attach the erased entry point to each supported callback signature. The frame
 library supplies the shared instance anchor for its handler type. Register
 handlers before graph wiring, alongside the corresponding operator providers.
-Callbacks with the same signature share one typed adapter; addition and
-subtraction do not need separate adapter registrations.
+Callbacks with the same signature share one typed adapter; operators with the
+same callback signature do not need separate adapter registrations.
 
 The compiler looks up the adapter using the retained callback's actual scalar
 runtime type and stores its stable handler pointer in the instruction.
@@ -174,16 +174,12 @@ concrete intermediate reuse retain the accepted block-operation contract.
 
 ## Code review scope
 
-The first implementation replaces addition-specific compilation and execution
-while retaining double addition as the registered operator. Review the typed
-callback provider, generic bundles, shared materialisation, heterogeneous
-alignment, and resulting addition registration together.
-
-Verification must retain the existing addition regressions and cover unary
-compilation, independently typed operands and results using current numeric
-cell types, and heterogeneous parameter snapshots. These cases can use test
-operator registrations. Comparison, boolean storage, and filtering
-remain later implementation steps.
+Production arithmetic and conversion use the shared expression compiler,
+callback provider, generic bundles, shared materialisation, and heterogeneous
+alignment. Verification covers integer boundaries, double arithmetic,
+conversion bounds, null handling, incremental changes, and captured scalar
+parameters. Comparison, Boolean storage, and filtering use the same expression
+path.
 
 This proposal uses existing BG extension APIs. Any missing capability requires
 discussion before implementation.

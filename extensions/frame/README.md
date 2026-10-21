@@ -18,9 +18,9 @@ support computed outputs. `TSF` supports borrowed projections and row filters. T
 optional Arrow adapter supports scalar and frame imports and exports for these
 cell types. Boolean values use packed bits in native storage and Arrow Boolean
 arrays; validity remains separate. Gather-copy export produces one dense chunk.
-Double-column addition and subtraction support deferred expressions and block
-evaluation. Matching `i64` and `double` operands support `==`, `!=`, `<`, `<=`,
-`>`, and `>=`; comparisons return nullable `TSC<bool>` and propagate nulls.
+Matching `i64` and `double` operands support arithmetic and comparisons through
+deferred expressions and block evaluation. Arithmetic includes explicit column
+conversion; comparisons return nullable `TSC<bool>` and propagate nulls.
 Previous-cell subscriptions are later work.
 
 `frame::view` is an output option owned by this extension. Use it with
@@ -282,25 +282,31 @@ described below.
 ## Column arithmetic
 
 Include `<bg/library/operators.hpp>` and link `bg::frame`. The extension
-registers double-column operations on BG's existing `operators::add` and
-`operators::sub`; binary C++ `+` and `-` use those operators. An operand can be
-another double column, a double constant, or a `TS<double>` broadcast across
-the rows.
+registers column implementations on BG's existing arithmetic and conversion
+operators. Matching `i64` or `double` operands support add, subtract, multiply,
+and divide. Division returns `double`. Column conversions between `i64` and
+`double` are explicit through `convert<T>()`; arithmetic does not promote mixed
+operands. An operand can be another matching column, a matching constant, or a
+matching `TS<T>` broadcast across the rows.
 
 ```cpp
 // q is a wp<TSF<Quotes>> with double bid and ask columns.
 const auto bid = bg::frame::select_column<"bid">(q);
 const auto ask = bg::frame::select_column<"ask">(q);
-const auto sum = bid + ask;
+const auto midpoint = (bid + ask) / 2.0;
 const auto consume = bg::node([](bg::In<bg::frame::TSC<double>>) {});
-consume(sum + sum);
+consume(midpoint);
 ```
 
-Each operation returns a deferred `TSC<double>` wiring point. It offers an expression
+Use `bg::frame::convert<double>(bg::frame::col("size"))` inside an unbound
+expression, or `bg::frame::convert<double>(column)` for a bound
+`wp<TSC<i64>>`, before combining it with a `double` expression.
+
+Each operation returns a deferred `TSC<T>` wiring point. It offers an expression
 TSB at cost zero and a computed TSC at cost one. BG materialisation records
 concrete demands before compiling the expression. The example uses one BG
-compute node and evaluates the shared `sum` once per changed row. A separate
-concrete consumer of `sum` makes downstream expressions read that materialised
+compute node and evaluates the shared `midpoint` once per changed row. A
+separate concrete consumer makes downstream expressions read that materialised
 column. Independently constructed equal expressions are not merged.
 
 The compute node receives an immutable operation sequence and a deduplicated
@@ -315,9 +321,13 @@ membership. Lost delta continuity, source replacement, parameter changes, and
 revalidation cause a full recomputation. A null operand produces a null result.
 
 Operand types must match exactly. Mixed integer/double arithmetic fails during
-wiring. This checkpoint implements addition and subtraction with double operands;
-column conversion and the remaining arithmetic operators are not implemented.
-Conversion will use BG's explicit `operators::convert` API.
+wiring unless one operand is explicitly converted. Integer addition,
+subtraction, and multiplication wrap modulo 2^64. Division converts both
+operands to `double`; a valid zero divisor throws `std::domain_error`. Null
+operands produce null without evaluating the operation. Converting `double` to
+`i64` truncates toward zero, throws `std::domain_error` for NaN, and throws
+`std::overflow_error` for values outside the `i64` range. Identity conversion
+retains the original wiring point.
 
 ## Column comparisons
 

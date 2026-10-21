@@ -35,8 +35,8 @@ type `TSC<bool>` and can retain its expression materialisation option. A scalar
 The output retains the source schema, key metadata, row identities, and row
 traversal order. A valid null predicate excludes its row, as does false. Only
 true selects a row. Comparison callbacks return null when either cell is null.
-Operand cell types must match; mixed types fail during wiring. Explicit column
-conversion remains later work.
+Operand cell types must match; mixed types fail during wiring unless an operand
+is explicitly converted with `convert<T>()`.
 
 ## Wiring
 

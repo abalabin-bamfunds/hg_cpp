@@ -8,6 +8,7 @@
 #include <bg/graph/details/wiring_callable.hpp>
 #include <bg/graph/wiring_point.hpp>
 #include <bg/graph/wiring_template.hpp>
+#include <bg/graph/type_mapping.hpp>
 #include <bg/library/operators.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/time_series/tsb/details/wiring.hpp>
@@ -370,12 +371,17 @@ class Expression {
   private:
     explicit Expression(std::shared_ptr<const details::ExpressionNode> node) noexcept : node_{std::move(node)} {}
 
+    static Expression operation(const WiringTemplate &operation, const TypeMap *type_map,
+                                std::span<const Expression> operands);
+
     std::shared_ptr<const details::ExpressionNode> node_;
 
     friend Expression col(util::symbol name);
     friend Expression param(util::symbol name);
     friend Expression capture(WiringArgument argument);
     friend Expression apply(const WiringTemplate &operation, std::span<const Expression> operands);
+    friend Expression apply(const WiringTemplate &operation, const TypeMap &type_map,
+                            std::span<const Expression> operands);
     friend WiringPoint details::bind_expression(const Expression &, std::span<const WiringArgument>,
                                                 const details::ExpressionColumnResolver &);
 };
@@ -388,6 +394,13 @@ Expression param(std::string_view name);
 // Construct one operation node. The operation must outlive binding and graph compilation that use the expression.
 // The node retains the operation identity and shared operand nodes.
 Expression apply(const WiringTemplate &operation, std::span<const Expression> operands);
+Expression apply(const WiringTemplate &operation, const TypeMap &type_map, std::span<const Expression> operands);
+
+template <typename Target, typename... Parameters>
+Expression apply(const bg::details::MappedWiring<Target, Parameters...> &operation,
+                 std::span<const Expression> operands) {
+    return apply(operation.target(), operation.type_map(), operands);
+}
 
 // Capture a graph argument or scalar value in an expression. Scalar data is copied into owned storage.
 Expression capture(WiringArgument argument);
@@ -400,6 +413,8 @@ Expression capture(Argument &&argument) {
 
 Expression operator+(const Expression &lhs, const Expression &rhs);
 Expression operator-(const Expression &lhs, const Expression &rhs);
+Expression operator*(const Expression &lhs, const Expression &rhs);
+Expression operator/(const Expression &lhs, const Expression &rhs);
 Expression operator==(const Expression &lhs, const Expression &rhs);
 Expression operator!=(const Expression &lhs, const Expression &rhs);
 Expression operator<(const Expression &lhs, const Expression &rhs);
@@ -432,6 +447,30 @@ template <typename Argument>
     requires bg::details::graph_code_argument<Argument>
 Expression operator-(Argument &&lhs, const Expression &rhs) {
     return capture(std::forward<Argument>(lhs)) - rhs;
+}
+
+template <typename Argument>
+    requires bg::details::graph_code_argument<Argument>
+Expression operator*(const Expression &lhs, Argument &&rhs) {
+    return lhs * capture(std::forward<Argument>(rhs));
+}
+
+template <typename Argument>
+    requires bg::details::graph_code_argument<Argument>
+Expression operator*(Argument &&lhs, const Expression &rhs) {
+    return capture(std::forward<Argument>(lhs)) * rhs;
+}
+
+template <typename Argument>
+    requires bg::details::graph_code_argument<Argument>
+Expression operator/(const Expression &lhs, Argument &&rhs) {
+    return lhs / capture(std::forward<Argument>(rhs));
+}
+
+template <typename Argument>
+    requires bg::details::graph_code_argument<Argument>
+Expression operator/(Argument &&lhs, const Expression &rhs) {
+    return capture(std::forward<Argument>(lhs)) / rhs;
 }
 
 template <typename Argument>
@@ -536,6 +575,24 @@ template <typename... Arguments>
 wp<> bind_expression(const Expression &expression, Arguments &&...arguments) {
     auto bindings = bg::details::make_wiring_arguments(std::forward<Arguments>(arguments)...);
     return wp<>{details::bind_expression(expression, bindings, {})};
+}
+
+// Convert a column expression to one of the frame extension's supported cell types.
+template <cell_type TARGET> Expression convert(const Expression &value) {
+    const auto operands = std::array{value};
+    return bg::frame::apply(operators::convert[type<TSC<TARGET>>], operands);
+}
+
+// Convert a bound column through BG's explicit conversion operator.
+template <cell_type TARGET, typename SOURCE, auto... Properties>
+wp<TSC<TARGET>> convert(wp<TSC<SOURCE, Properties...>> column) {
+    return operators::convert[type<TSC<TARGET>>](column).template as<TSC<TARGET>>();
+}
+
+// Convert an erased wiring point, such as the result of bind_expression.
+template <cell_type TARGET>
+wp<TSC<TARGET>> convert(wp<> column) {
+    return operators::convert[type<TSC<TARGET>>](column).template as<TSC<TARGET>>();
 }
 
 } // namespace bg::frame

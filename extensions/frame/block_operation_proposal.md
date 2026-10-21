@@ -32,11 +32,12 @@ using Less = ColumnBlockFunction<bool, double, double>;
 using Negate = ColumnBlockFunction<double, double>;
 ```
 
-The implementation supports unary and binary callbacks. Double addition and
-subtraction and all six comparisons for matching `i64` and `double` operands
-use this contract. Comparison callbacks produce nullable Boolean columns.
-Operand types must match the selected BG overload. Conversion requires an
-explicit BG conversion operator.
+The implementation supports unary and binary callbacks. Add, subtract,
+multiply, and divide use matching `i64` or `double` operands. Division returns
+`double`. All six comparisons use matching `i64` or `double` operands and
+produce nullable Boolean columns. Explicit conversion supports `i64` to
+`double` and `double` to `i64`. Operand types must match the selected BG
+overload; arithmetic does not implicitly promote mixed types.
 
 `ColumnOperandBatch<T>` remains a typed column batch or scalar broadcast.
 `MutableColumnBatch<T>` remains caller-owned output storage. Each column batch
@@ -45,9 +46,13 @@ without allocating a column. The callback receives borrowed views valid only
 for that call and must not retain them.
 
 Callbacks write the validity bit for every output row and the value for every
-valid output row. Arithmetic and comparisons propagate null operands. The
-callback owns this rule so future operations such as null tests can define
-different null behaviour. No universal input-validity mask is imposed by the
+valid output row. Arithmetic and comparisons propagate null operands. Integer
+addition, subtraction, and multiplication wrap modulo 2^64. Division converts
+both operands to `double`; a valid zero divisor throws `std::domain_error`.
+Conversion to `i64` truncates finite values toward zero, throws
+`std::domain_error` for NaN, and throws `std::overflow_error` outside the `i64`
+range. The callback owns null handling so operations such as null tests can
+define different behaviour. No universal input-validity mask is imposed by the
 evaluator. Invalid BG time series inputs follow BG's normal node validity rules.
 Callbacks must check `is_valid(position)` before reading a column operand with
 `value(position)`. Scalar broadcasts are always valid.
@@ -114,8 +119,7 @@ concrete form for each deferred column point.
 The shared expression builder attaches the expression form and the concrete
 materialisation recipe. It declares its dependencies using BG's existing
 materialisation API and creates `compute` with `operators::const_` so the
-compiler can read the callback during wiring. Addition supplies the typed
-callback and operands.
+compiler can read each operation's typed callback during wiring.
 
 Compilation runs inside the selected concrete materialisation recipe after
 BG records concrete demands. The compiler processes the root and upstream
@@ -151,5 +155,5 @@ Each operator supplies its callback and BG operator registration. The
 `ask - bid < tolerance` expression, where `tolerance` is `TS<double>`, uses the
 same compiler and computation path as arithmetic.
 
-Boolean physical layout and expression-based filtering receive separate
-design reviews before implementation.
+Boolean storage is implemented by the frame types. Expression-based filtering
+uses this block-operation contract; see [filter_proposal.md](filter_proposal.md).

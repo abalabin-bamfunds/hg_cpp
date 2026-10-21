@@ -36,6 +36,7 @@ struct ExpressionNode {
     util::symbol name;
     const WiringTemplate *operation{};
     std::vector<std::shared_ptr<const ExpressionNode>> operands;
+    std::optional<TypeMap> type_map;
     std::optional<WiringArgument> argument;
 };
 
@@ -165,7 +166,10 @@ WiringPoint bind_expression(const Expression &expression, std::span<const Wiring
                 }
                 for (auto &argument : arguments)
                     argument.clear_name();
-                const auto output = wiring.invoke(*node.operation, std::span<const WiringArgument>{arguments});
+                const auto output = node.type_map
+                                        ? wiring.invoke(*node.operation, std::span<const WiringArgument>{arguments},
+                                                        std::addressof(*node.type_map))
+                                        : wiring.invoke(*node.operation, std::span<const WiringArgument>{arguments});
                 if (!output) {
                     throw WiringError{"expression operation '" + std::string{node.operation->signature().name().text()} +
                                       "' did not produce a time series"};
@@ -225,7 +229,8 @@ Expression capture(WiringArgument argument) {
     })};
 }
 
-Expression apply(const WiringTemplate &operation, std::span<const Expression> operands) {
+Expression Expression::operation(const WiringTemplate &operation, const TypeMap *type_map,
+                                 std::span<const Expression> operands) {
     auto children = std::vector<std::shared_ptr<const details::ExpressionNode>>{};
     children.reserve(operands.size());
     for (const auto &operand : operands) {
@@ -238,7 +243,16 @@ Expression apply(const WiringTemplate &operation, std::span<const Expression> op
         .kind = details::ExpressionNode::Kind::operation,
         .operation = std::addressof(operation),
         .operands = std::move(children),
+        .type_map = type_map == nullptr ? std::nullopt : std::optional<TypeMap>{type_map->copy()},
     })};
+}
+
+Expression apply(const WiringTemplate &operation, std::span<const Expression> operands) {
+    return Expression::operation(operation, nullptr, operands);
+}
+
+Expression apply(const WiringTemplate &operation, const TypeMap &type_map, std::span<const Expression> operands) {
+    return Expression::operation(operation, std::addressof(type_map), operands);
 }
 
 Expression operator+(const Expression &lhs, const Expression &rhs) {
@@ -249,6 +263,16 @@ Expression operator+(const Expression &lhs, const Expression &rhs) {
 Expression operator-(const Expression &lhs, const Expression &rhs) {
     const auto operands = std::array{lhs, rhs};
     return bg::frame::apply(operators::sub, operands);
+}
+
+Expression operator*(const Expression &lhs, const Expression &rhs) {
+    const auto operands = std::array{lhs, rhs};
+    return bg::frame::apply(operators::mul, operands);
+}
+
+Expression operator/(const Expression &lhs, const Expression &rhs) {
+    const auto operands = std::array{lhs, rhs};
+    return bg::frame::apply(operators::div, operands);
 }
 
 Expression operator==(const Expression &lhs, const Expression &rhs) {

@@ -1,6 +1,6 @@
 # Frame foundation handoff
 
-Updated: 2026-10-21. The frame lane is rebased onto main `b7d52da5`.
+Updated: 2026-10-22. The frame lane is rebased onto main `7a52dc93`.
 Main includes shared schema metadata (`6419e073`), process-lifetime ownership
 of registered type metadata (`160f128b`), compatible generic input-view casts
 (`a17a8ffd`), and stateful test-graph literal comparison (`04518839`). Frame
@@ -25,7 +25,7 @@ completed lane retirement, and consumer verification.
 
 | Work | Location / branch | State |
 | --- | --- | --- |
-| Main baseline | `/home/abalabin/_bg`, `main` | `b7d52da5` |
+| Main baseline | `/home/abalabin/_bg`, `main` | `7a52dc93` |
 | Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Frame foundation, expressions, scalar literals, native keyed storage, TSF/TSC input literals, and native/view/computed capture |
 | Generic input-view casts | Main | `a17a8ffd`; tested build preserved in `.lanes/generic-input-cast` |
 | Shared schema metadata and BG lifetime fix | Main | `6419e073`, `160f128b`; consumer builds use matching lane-local installs |
@@ -72,7 +72,7 @@ schema migration and extension boundary.
 - Concrete and runtime schemas use one native layout and mutation implementation,
   one view implementation, and one Arrow frame implementation.
 - Runtime schemas resolve during wiring and remain fixed for the graph lifetime.
-- Current cells are nullable `i64` and `double`. All columns are present;
+- Current cells are nullable `bool`, `i64`, and `double`. All columns are present;
   optional schema fields are rejected independently of nullable cells.
 - Internal recycled 32-bit row IDs are separate from user index columns.
   Removal reserves an ID through its removal cycle. Physical slots can be
@@ -170,6 +170,19 @@ erased Arrow copies preserve Arrow representation.
 
 ## Verification
 
+Current numeric arithmetic and conversion verification used the lane-local BG
+installs and these lane-root build directories:
+
+| Build | Configuration | Result |
+| --- | --- | --- |
+| `build/tsf-row-release-arrow-on` | Release, Arrow 24.0.0 | Build passed; CTest 6/6 |
+| `build/tsf-row-release-arrow-off` | Release, Arrow disabled | Build passed; CTest 5/5 |
+| `build/tsf-row-debug-asan-arrow-on` | Debug, Arrow 24.0.0, ASan/UBSan | Build passed; CTest 6/6 with leak detection; no sanitizer diagnostics |
+
+The sanitizer CTest used `ASAN_OPTIONS=detect_leaks=1` and
+`UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1`. It ran outside the sandbox
+because LeakSanitizer cannot operate under sandbox ptrace.
+
 Coverage includes native and runtime schemas, numeric columns, snapshots,
 borrowing, Arrow views and copies, projection, and concrete and generic
 Row/RowPatch writes. Tests cover schema/type validation before mutation,
@@ -196,9 +209,9 @@ Prior rebase verification against main `a17a8ffd` rebuilt the Release BG depende
 and Release Arrow-on consumer with `-j12`; the complete consumer suite passed
 6/6. Extension files were unchanged by the rebase.
 
-Final filtering verification used lane-local BG installs matching each consumer
-configuration below. Root independently reran the complete suite in all three
-configurations after the final source edits.
+Historical filtering verification used lane-local BG installs matching each
+consumer configuration below. Root independently reran the complete suite in
+all three configurations after the final filter source edits.
 
 | Consumer | Build | Test |
 | --- | --- | --- |
@@ -214,7 +227,7 @@ CTest ran with `ASAN_OPTIONS=detect_leaks=1` and
 the sandbox because it cannot operate under sandbox ptrace.
 
 The stateful comparison API is integrated on main through merge `04518839`.
-At the current rebased frame baseline `b7d52da5`, all six Release Arrow-on
+At historical frame baseline `b7d52da5`, all six Release Arrow-on
 consumer suites pass after the TSC invalidation compatibility update and literal
 registration cleanup. GCC reports repeated `-Wstringop-overflow` diagnostics
 from the existing `concurrent_buffer_reservation::write_bytes` implementation
@@ -313,12 +326,12 @@ CTest command with `ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1`.
 
 Committed prerequisites are `5b846d94` (expression scalar and TSB schema),
 `f384f1eb` (n-ary aligned batches), and `1bc4569e` (batch subspan).
-`src/arithmetic.cpp` provides arithmetic callbacks and registrations,
-and `src/column_expression.cpp` provides shared compilation and execution. The extension links
-`bg::library` and registers double-column addition and subtraction on
-`operators::add` and `operators::sub`. It uses exact cell types; mixed
-integer/double operands fail during wiring. Explicit column conversion is
-future work. Preserve the held numeric extraction.
+`src/arithmetic.cpp` provides arithmetic and conversion registrations, and
+`src/column_expression.cpp` provides shared compilation and execution. The
+extension links `bg::library` and registers matching `i64` and `double`
+arithmetic through BG operators. Mixed integer/double operands fail during
+wiring unless explicitly converted. Identity conversion retains the source
+wiring point; cross-type conversion uses a mapped BG operator.
 
 The expression option has cost zero; the computed TSC option has cost one.
 `make_column_expression` creates the expression bundle and concrete recipe
@@ -396,10 +409,11 @@ upstream dependencies. Block evaluation and concrete intermediate reuse use the
 existing expression compilation path. Manually constructed expression bundles are not the
 graph-author API.
 
-Addition and subtraction support double columns, double constants, and captured `TS<double>`
-values. Constants use the existing `operators::const_` path. Scalar convenience
-graphs declare their `TSC<double>` return type. Overload requirements require a
-column operand; ordinary BG scalar arithmetic keeps its existing overloads.
+Arithmetic supports matching `i64` or `double` columns, constants, and captured
+`TS<T>` values. Constants use the existing `operators::const_` path. Scalar
+convenience graphs declare their `TSC<T>` result type. Overload requirements
+require a column operand; ordinary BG scalar arithmetic keeps its existing
+overloads.
 
 `ExpressionCompiler` collects distinct captured time series into an ordinary
 TSB. A separate parameter-update node publishes their current values as
@@ -425,11 +439,21 @@ source nodes.
 Boolean storage is implemented across columns, TSC/TSF, literals, tick capture,
 computed outputs, and Arrow import/export. Matching `i64` and `double` column
 comparisons and expression-based filtering use the shared expression compiler
-and block evaluation path. Explicit column conversion remains later work.
+and block evaluation path. Matching `i64` and `double` columns now support
+addition, subtraction, multiplication, and division; division returns `double`.
+Explicit column conversion uses the existing mapped BG `operators::convert`
+path. Identity conversion retains its source wiring point. Numeric conversion
+supports `i64` to `double` and `double` to `i64`.
 
 The [shared block-operation contract](block_operation_proposal.md) and
 [computation nodes and input bindings](expression_node_proposal.md) are
-accepted and implemented. Production arithmetic supports double addition and subtraction.
+accepted and implemented. Production arithmetic uses the shared expression
+compiler for matching `i64` and `double` operands. Integer addition,
+subtraction, and multiplication wrap modulo 2^64. Division converts both
+operands to `double`; a valid zero divisor throws `std::domain_error`. Null
+operands produce null without evaluating the operation. `double` to `i64`
+conversion truncates toward zero, throws `std::domain_error` for NaN, and
+throws `std::overflow_error` outside the `i64` range.
 Tests exercise unary callbacks with a different result type, heterogeneous
 column inputs, and captured scalar types. The mixed-type graph verifies one
 fused computation node and one `Bundle<{i64, double}>` parameter snapshot.
@@ -541,9 +565,9 @@ source-domain switches, identical histories, complete-history matching, exact
 TSF patch fields, name reuse rejection, empty published deltas, and skipped
 ticks.
 
-All six Release Arrow-on consumer suites pass against the current rebased main
-baseline `b7d52da5`, which includes the stateful comparison merge `04518839`.
-The verified frame implementation is recorded on the active frame lane.
+At historical main baseline `b7d52da5`, all six Release Arrow-on consumer
+suites passed after the stateful comparison merge `04518839`. The verified
+frame implementation is recorded on the active frame lane.
 
 ## Performance artifacts
 
@@ -607,18 +631,18 @@ remain unticked. Root reviewed the correction and test fixtures.
 
 The declaration for computed TSF field names selected at wiring remains
 undecided; standalone computed TSC outputs use the approved `computed<>`
-declaration. Exposing BG's existing integer-division helper also remains
-undecided; do not duplicate its implementation.
+declaration. Frame division returns `double` and uses the shared column block
+callback path.
 
 The two BG changes integrated in this task are scalar copy runtime selection
 and wiring-time output runtime selection. The frame extension uses scalar copy
 selection for owning frame copies and the output hook to select frame layouts.
 Frame output layout options remain extension-owned.
 
-The shared numeric function extraction remains held. The arithmetic and
-comparison implementations are described above. Other numeric operators and
-explicit column conversion remain later work. Expression-based filtering is
-described in [filter_proposal.md](filter_proposal.md).
+The shared numeric function extraction remains held. The arithmetic,
+conversion, and comparison implementations use the frame extension's existing
+column expression path. Expression-based filtering is described in
+[filter_proposal.md](filter_proposal.md).
 
 ## Key metadata and native keyed storage
 

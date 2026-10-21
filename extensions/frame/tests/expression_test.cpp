@@ -9,9 +9,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <optional>
 #include <stdexcept>
@@ -32,6 +34,14 @@ template <template <typename, auto...> typename Field> struct ComparisonFrame {
     Field<i64> size;
     Field<double> bid;
     Field<double> ask;
+};
+
+template <template <typename, auto...> typename Field> struct NumericFrame {
+    Field<i64> id;
+    Field<i64> value;
+    Field<double> price;
+
+    static SchemaMetadata metadata() { return key_metadata<"id">(); }
 };
 
 template <template <typename, auto...> typename Field>
@@ -348,6 +358,25 @@ void test_static_frame_expression_binding() {
     require(std::addressof(scalar_difference.type()) == std::addressof(TSC<double>::type()),
             "subtraction did not capture a scalar on the left side");
 
+    const auto converted_bound_column = frame::convert<i64>(bind_expression(source, col("bid")));
+    require(std::addressof(converted_bound_column.type()) == std::addressof(TSC<i64>::type()),
+            "column conversion did not accept an erased bound expression result");
+    const auto bound_column = bind_expression(source, col("bid"));
+    const auto identity_bound_column = frame::convert<double>(bound_column);
+    require(std::addressof(identity_bound_column.type()) == std::addressof(TSC<double>::type()) &&
+                static_cast<WiringPoint>(identity_bound_column).record() ==
+                    static_cast<WiringPoint>(bound_column).record(),
+            "identity conversion did not preserve an erased bound column");
+    const auto deferred_column = bind_expression(source, col("bid") + col("ask"));
+    const auto identity_deferred_column = frame::convert<double>(deferred_column);
+    require(std::addressof(identity_deferred_column.type()) == std::addressof(TSC<double>::type()) &&
+                static_cast<WiringPoint>(identity_deferred_column).record() ==
+                    static_cast<WiringPoint>(deferred_column).record(),
+            "identity conversion did not preserve a deferred column expression");
+    const auto converted_expression = bind_expression(source, frame::convert<i64>(col("bid")));
+    require(std::addressof(converted_expression.type()) == std::addressof(TSC<i64>::type()),
+            "unbound column conversion did not retain its requested output type");
+
     const auto missing_column = [&] {
         static_cast<void>(bind_expression(source, col("missing")));
     };
@@ -393,6 +422,12 @@ void test_numeric_comparison_expression_wiring() {
         require(std::addressof(result.type()) == std::addressof(TSC<bool>::type()),
                 "double comparison expression did not produce TSC<bool>");
     }
+
+    const auto integer_product = bind_expression(source, col("size") * col("size"));
+    const auto integer_quotient = bind_expression(source, col("size") / col("size"));
+    require(std::addressof(integer_product.type()) == std::addressof(TSC<i64>::type()) &&
+                std::addressof(integer_quotient.type()) == std::addressof(TSC<double>::type()),
+            "integer multiplication or division expression produced the wrong column type");
 
     const auto tolerance = wp<TS<double>>{wiring.borrowed_input(TS<double>::type())};
     const auto captured_predicate = col("ask") - col("bid") < tolerance;
@@ -569,6 +604,192 @@ void test_comparison_uses_forced_concrete_intermediate() {
             "comparison did not reuse a forced concrete arithmetic intermediate");
 }
 
+void test_numeric_arithmetic_and_conversion_updates() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    struct observation {
+        std::vector<std::optional<i64>> sums;
+        std::vector<std::optional<i64>> differences;
+        std::vector<std::optional<i64>> products;
+        std::vector<std::optional<double>> quotients;
+        std::vector<std::optional<double>> double_products;
+        std::vector<std::optional<double>> double_quotients;
+        std::vector<std::optional<i64>> prices;
+        std::vector<std::optional<double>> fused;
+        std::vector<row_id_t> sum_changed;
+        std::vector<row_id_t> difference_changed;
+        std::vector<row_id_t> product_changed;
+        std::vector<row_id_t> product_removed;
+        std::vector<row_id_t> price_changed;
+        std::vector<row_id_t> price_removed;
+        std::vector<row_id_t> fused_changed;
+        std::vector<row_id_t> fused_removed;
+    };
+
+    auto observations = std::vector<observation>{};
+    const auto observe = node([&](In<TSC<i64>> sum, In<TSC<i64>> difference, In<TSC<i64>> product,
+                                  In<TSC<double>> quotient, In<TSC<double>> double_product,
+                                  In<TSC<double>> double_quotient, In<TSC<i64>> price,
+                                  In<TSC<double>> fused, In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto result = observation{};
+        sum.for_each_row([&](row_id_t id, std::size_t) { result.sums.push_back(sum.cell(id)); });
+        difference.for_each_row([&](row_id_t id, std::size_t) { result.differences.push_back(difference.cell(id)); });
+        product.for_each_row([&](row_id_t id, std::size_t) { result.products.push_back(product.cell(id)); });
+        quotient.for_each_row([&](row_id_t id, std::size_t) { result.quotients.push_back(quotient.cell(id)); });
+        double_product.for_each_row(
+            [&](row_id_t id, std::size_t) { result.double_products.push_back(double_product.cell(id)); });
+        double_quotient.for_each_row(
+            [&](row_id_t id, std::size_t) { result.double_quotients.push_back(double_quotient.cell(id)); });
+        price.for_each_row([&](row_id_t id, std::size_t) { result.prices.push_back(price.cell(id)); });
+        fused.for_each_row([&](row_id_t id, std::size_t) { result.fused.push_back(fused.cell(id)); });
+        sum.for_each_changed([&](row_id_t id) { result.sum_changed.push_back(id); });
+        difference.for_each_changed([&](row_id_t id) { result.difference_changed.push_back(id); });
+        product.for_each_changed([&](row_id_t id) { result.product_changed.push_back(id); });
+        product.for_each_removed([&](row_id_t id) { result.product_removed.push_back(id); });
+        price.for_each_changed([&](row_id_t id) { result.price_changed.push_back(id); });
+        price.for_each_removed([&](row_id_t id) { result.price_removed.push_back(id); });
+        fused.for_each_changed([&](row_id_t id) { result.fused_changed.push_back(id); });
+        fused.for_each_removed([&](row_id_t id) { result.fused_removed.push_back(id); });
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TSF<NumericFrame>> source, wp<TS<double>> tolerance, wp<TS<i64>> tick) {
+        const auto sum = bind_expression(source, col("value") + i64{1});
+        const auto difference = bind_expression(source, col("value") - i64{1});
+        const auto product = bind_expression(source, col("value") * i64{2});
+        const auto quotient = bind_expression(source, col("value") / i64{-1});
+        const auto double_product = bind_expression(source, col("price") * 2.0);
+        const auto double_quotient = bind_expression(source, col("price") / 2.0);
+        const auto price = bind_expression(source, convert<i64>(col("price")));
+        const auto fused = bind_expression(source, convert<double>(col("value")) + tolerance);
+        return observe(sum, difference, product, quotient, double_product, double_quotient, price, fused, tick);
+    };
+
+    const auto two_to_63 = std::ldexp(1.0, 63);
+    const auto below_limit = std::nextafter(two_to_63, 0.0);
+    const auto result = testing::test_graph(
+        graph,
+        testing::input(TSF<NumericFrame>::type(),
+                       {literal::TimeSeriesLiteral{},
+                        {{{"id", i64{1}}, {"value", std::numeric_limits<i64>::max()}, {"price", 2.9}}},
+                        {{{"id", i64{2}}, {"value", std::numeric_limits<i64>::min()}, {"price", -2.9}}},
+                        {{{"id", i64{2}}, {"price", -two_to_63}}},
+                        {{{"id", i64{2}}, {"price", below_limit}}},
+                        {literal::REMOVE({{"id", i64{1}}})}}),
+        testing::input(cpp_time_series_runtime_type<TS<double>>(),
+                       {4096.0, literal::SKIP, literal::SKIP, literal::SKIP, 8192.0, literal::SKIP}),
+        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1, 2, 3, 4, 5}));
+
+    require(result.equals<i64>({0, 1, 2, 3, 4, 5}) && observations.size() == 6,
+            "numeric arithmetic and conversion graph missed an input cycle");
+    require(observations[1].products == std::vector<std::optional<i64>>{-2} &&
+                observations[1].sums == std::vector<std::optional<i64>>{std::numeric_limits<i64>::min()} &&
+                observations[1].differences ==
+                    std::vector<std::optional<i64>>{std::numeric_limits<i64>::max() - 1} &&
+                observations[1].quotients == std::vector<std::optional<double>>{-two_to_63} &&
+                observations[1].double_products == std::vector<std::optional<double>>{5.8} &&
+                observations[1].double_quotients == std::vector<std::optional<double>>{1.45} &&
+                observations[1].prices == std::vector<std::optional<i64>>{2} &&
+                observations[1].fused == std::vector<std::optional<double>>{two_to_63 + 4096.0} &&
+                observations[1].product_changed == std::vector<row_id_t>{0},
+            "integer arithmetic, double arithmetic, or explicit conversion produced an incorrect result");
+    require(observations[2].products == std::vector<std::optional<i64>>{-2, 0} &&
+                observations[2].sums == std::vector<std::optional<i64>>{std::numeric_limits<i64>::min(),
+                                                                        std::numeric_limits<i64>::min() + 1} &&
+                observations[2].differences == std::vector<std::optional<i64>>{
+                                                   std::numeric_limits<i64>::max() - 1,
+                                                   std::numeric_limits<i64>::max()} &&
+                observations[2].quotients == std::vector<std::optional<double>>{-two_to_63, two_to_63} &&
+                observations[2].double_products == std::vector<std::optional<double>>{5.8, -5.8} &&
+                observations[2].double_quotients == std::vector<std::optional<double>>{1.45, -1.45} &&
+                observations[2].prices == std::vector<std::optional<i64>>{2, -2} &&
+                observations[2].fused == std::vector<std::optional<double>>{two_to_63 + 4096.0,
+                                                                           -two_to_63 + 4096.0} &&
+                observations[2].product_changed == std::vector<row_id_t>{1},
+            "numeric operators failed at signed boundaries or when conversion captured a scalar TS");
+    require(observations[3].products == observations[2].products && observations[3].product_changed.empty() &&
+                observations[3].sum_changed.empty() && observations[3].difference_changed.empty() &&
+                observations[3].fused_changed.empty() &&
+                observations[3].prices == std::vector<std::optional<i64>>{2, std::numeric_limits<i64>::min()} &&
+                observations[3].price_changed == std::vector<row_id_t>{1},
+            "a price-only patch recomputed unrelated arithmetic or rejected the inclusive lower boundary");
+    require(observations[4].prices == std::vector<std::optional<i64>>{2, static_cast<i64>(below_limit)} &&
+                observations[4].price_changed == std::vector<row_id_t>{1} &&
+                observations[4].fused == std::vector<std::optional<double>>{two_to_63 + 8192.0,
+                                                                           -two_to_63 + 8192.0} &&
+                observations[4].fused_changed == std::vector<row_id_t>{0, 1},
+            "conversion or fused scalar capture failed at the upper i64 boundary");
+    require(observations[5].product_removed == std::vector<row_id_t>{0} &&
+                observations[5].price_removed == std::vector<row_id_t>{0} &&
+                observations[5].fused_removed == std::vector<row_id_t>{0},
+            "arithmetic or conversion did not propagate a keyed row removal");
+}
+
+void test_numeric_null_and_range_errors() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto values = std::vector<std::optional<double>>{};
+    const auto observe = node([&](In<TSC<double>> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        values.clear();
+        input.for_each_row([&](row_id_t id, std::size_t) { values.push_back(input.cell(id)); });
+        output.set(*tick);
+    });
+    const auto nullable_division = [&](wp<TSF<NumericFrame>> source, wp<TS<i64>> tick) {
+        return observe(bind_expression(source, col("value") / i64{0}), tick);
+    };
+    const auto null_result = testing::test_graph(
+        nullable_division,
+        testing::input(TSF<NumericFrame>::type(),
+                       {literal::TimeSeriesLiteral{}, {{{"id", i64{1}}, {"price", 1.0}}}}),
+        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1}));
+    require(null_result.equals<i64>({0, 1}) && values == std::vector<std::optional<double>>{std::nullopt},
+            "a null numerator evaluated division by zero instead of remaining null");
+
+    const auto rejects_conversion = [&](double value, bool domain_error) {
+        const auto convert_graph = [](wp<TSF<NumericFrame>> source) {
+            return bind_expression(source, convert<i64>(col("price")));
+        };
+        auto rejected = false;
+        try {
+            static_cast<void>(testing::test_graph(
+                convert_graph,
+                testing::input(TSF<NumericFrame>::type(),
+                               {literal::TimeSeriesLiteral{}, {{{"id", i64{1}}, {"price", value}}}})));
+        } catch (const std::domain_error &) {
+            rejected = domain_error;
+        } catch (const std::overflow_error &) {
+            rejected = !domain_error;
+        }
+        return rejected;
+    };
+    require(rejects_conversion(std::numeric_limits<double>::quiet_NaN(), true),
+            "numeric conversion accepted NaN as an i64");
+    require(rejects_conversion(std::numeric_limits<double>::infinity(), false) &&
+                rejects_conversion(-std::numeric_limits<double>::infinity(), false) &&
+                rejects_conversion(std::nextafter(-std::ldexp(1.0, 63), -std::numeric_limits<double>::infinity()),
+                                   false) &&
+                rejects_conversion(std::ldexp(1.0, 63), false),
+            "numeric conversion accepted a value outside the i64 range");
+
+    for (const auto zero : {0.0, -0.0}) {
+        const auto division_graph = [zero](wp<TSF<NumericFrame>> source) {
+            return bind_expression(source, col("price") / zero);
+        };
+        auto rejected = false;
+        try {
+            static_cast<void>(testing::test_graph(
+                division_graph,
+                testing::input(TSF<NumericFrame>::type(),
+                               {literal::TimeSeriesLiteral{}, {{{"id", i64{1}}, {"price", 1.0}}}})));
+        } catch (const std::domain_error &) {
+            rejected = true;
+        }
+        require(rejected, "division by positive or negative zero did not report a domain error");
+    }
+}
+
 void test_runtime_schema_expression_binding() {
     const auto fields = std::array{SchemaField{util::symbol{"price"}, &cpp_scalar_type<double>()}};
     const auto &schema = anonymous_schema(fields);
@@ -700,6 +921,8 @@ int main() {
         test_comparison_runtime<double, std::greater_equal<>>(operators::ge);
         test_comparison_expression_with_tick_parameter();
         test_comparison_uses_forced_concrete_intermediate();
+        test_numeric_arithmetic_and_conversion_updates();
+        test_numeric_null_and_range_errors();
         test_runtime_schema_expression_binding();
         test_expression_bindings_are_per_call_and_owned();
         test_expression_binding_errors_name_the_binding();
