@@ -8,11 +8,6 @@ import pytest
 import bg
 
 
-def _run_realtime_script(source: str) -> None:
-    result = subprocess.run([sys.executable, "-c", source], capture_output=True, text=True, timeout=5)
-    assert result.returncode == 0, result.stdout + result.stderr
-
-
 def test_compute_node_injects_clock_between_inputs():
     calls = 0
 
@@ -149,8 +144,7 @@ def test_scheduler_injects_and_cancels_timed_node_evaluations():
 
 
 def test_scheduler_handles_wall_clock_timers_and_preserves_callback_scope():
-    _run_realtime_script(
-        """
+    script = """
 from datetime import timedelta
 import bg
 
@@ -198,7 +192,8 @@ except RuntimeError as error:
 else:
     raise AssertionError("a retained Scheduler must reject scheduling after its callback")
 """
-    )
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=5)
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_node_injectables_are_rejected_on_graphs_and_variadic_parameters():

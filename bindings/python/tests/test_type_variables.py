@@ -7,22 +7,6 @@ import pytest
 import bg
 
 
-def test_type_variable_descriptors_are_released_at_shutdown():
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "from typing import TypeVar; import bg; VALUE = TypeVar('VALUE'); bg.TS[VALUE]",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert "nanobind: leaked" not in result.stderr
-
-
 def test_scalar_type_variable_in_time_series_input_and_output():
     VALUE = TypeVar("VALUE")
 
@@ -218,3 +202,19 @@ def test_time_series_marker_is_only_valid_as_a_typevar_bound():
         @bg.graph
         def invalid(value: bg.TimeSeries) -> bg.TS[int]:
             return bg.operators.const_(value=1)
+
+
+def test_type_variable_descriptors_are_released_at_shutdown():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from typing import TypeVar; import bg; VALUE = TypeVar('VALUE'); bg.TS[VALUE]",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "nanobind: leaked" not in result.stderr

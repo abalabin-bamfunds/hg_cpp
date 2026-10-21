@@ -3,14 +3,14 @@ import pytest
 import bg
 
 
-@bg.compute_node
-def add(left: bg.TS[int], right: bg.TS[int]) -> bg.TS[int]:
-    return left.value + right.value
+@bg.node
+def add(left: int, right: int) -> int:
+    return left + right
 
 
-@bg.compute_node
-def add_amount(value: bg.TS[int], amount: int) -> bg.TS[int]:
-    return value.value + amount
+@bg.node
+def add_amount(value: int, amount: int) -> int:
+    return value + amount
 
 
 @bg.compute_node
@@ -49,7 +49,13 @@ def test_map_uses_the_union_of_mapped_dictionaries():
         mapped = bg.map(available, make_left(trigger), make_right(trigger))
         return mapped[2]
 
+    @bg.graph
+    def branch_count(trigger: bg.TS[int]) -> bg.TS[int]:
+        mapped = bg.map(available, make_left(trigger), make_right(trigger))
+        return bg.operators.len_(mapped)
+
     assert bg.test_graph(graph, [1, 3]) == [10, 30]
+    assert bg.test_graph(branch_count, [1]) == [2]
 
 
 def test_map_selects_a_named_key_set_argument():
@@ -76,7 +82,19 @@ def test_map_selects_a_named_key_set_argument():
         )
         return mapped[2]
 
+    @bg.graph
+    def selected_left_value(trigger: bg.TS[int]) -> bg.TS[int]:
+        mapped = bg.map(
+            branch,
+            left=make_left(trigger),
+            right=make_right(trigger),
+            __key_arg__="key",
+            __key_set_arg__="left",
+        )
+        return mapped[1]
+
     assert bg.test_graph(graph, [1, 2]) == [None, None]
+    assert bg.test_graph(selected_left_value, [1]) == [1]
 
 
 def test_map_pass_through_preserves_the_complete_time_series():

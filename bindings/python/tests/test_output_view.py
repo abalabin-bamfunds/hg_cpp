@@ -72,7 +72,9 @@ def test_output_view_reads_previous_collection_value():
     def graph(value: bg.TS[int]) -> bg.TSD[int, bg.TS[int]]:
         return update(value)
 
-    bg.test_graph(graph, [10, 20, 30])
+    actual = bg.test_graph(graph, [10, 20, 30])
+
+    assert actual == [{5: 10}, {5: 20}, {5: 30}]
     assert observed == [
         (0, False, None, False, None),
         (1, True, 10, False, None),

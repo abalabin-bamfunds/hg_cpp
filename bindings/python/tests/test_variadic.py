@@ -1,7 +1,8 @@
 import inspect
 
-import bg
 import pytest
+
+import bg
 
 
 @bg.compute_node
