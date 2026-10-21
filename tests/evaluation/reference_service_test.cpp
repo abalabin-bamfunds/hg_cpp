@@ -124,6 +124,7 @@ TEST_CASE("run_graph builds registered services before compilation",
 
     auto values = std::vector<i64>{};
     const auto observe = node([&](i64 value) { values.push_back(value); });
+
     const auto wire = [&] { observe(service().as<TS<i64>>()); };
 
     run_graph(wire, GraphRunOptions{.services = &catalogue});
