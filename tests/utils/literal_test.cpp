@@ -4,6 +4,8 @@
 
 #include <vector>
 
+using namespace bg;
+
 TEST_CASE("literal sequences can reference caller-owned nested storage", "[coverage-exempt]") {
     using Literal = literal::Literal<int>;
 

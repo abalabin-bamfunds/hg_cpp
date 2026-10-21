@@ -5,6 +5,8 @@
 #include <concepts>
 #include <string_view>
 
+using namespace bg;
+
 namespace {
 
 struct reflected_values {
@@ -17,14 +19,14 @@ struct reflected_values {
 } // namespace
 
 TEST_CASE("aggregate reflection exposes names and member types", "[reflection][coverage-exempt]") {
-    STATIC_CHECK(bg::util::aggregate_member_count<reflected_values> == 2);
-    STATIC_CHECK(bg::util::aggregate_member_names<reflected_values>[0] == "first");
-    STATIC_CHECK(bg::util::aggregate_member_names<reflected_values>[1] == "second");
-    STATIC_CHECK(std::same_as<bg::util::aggregate_member_type<0, reflected_values>, int>);
-    STATIC_CHECK(std::same_as<bg::util::aggregate_member_type<1, reflected_values>, float>);
-    STATIC_CHECK(bg::util::type_name<float>() == "float");
-    STATIC_CHECK(bg::util::unqualified_type_name<reflected_values>() == "reflected_values");
-    STATIC_CHECK(bg::util::function_name<reflected_function>() == "reflected_function");
+    STATIC_CHECK(util::aggregate_member_count<reflected_values> == 2);
+    STATIC_CHECK(util::aggregate_member_names<reflected_values>[0] == "first");
+    STATIC_CHECK(util::aggregate_member_names<reflected_values>[1] == "second");
+    STATIC_CHECK(std::same_as<util::aggregate_member_type<0, reflected_values>, int>);
+    STATIC_CHECK(std::same_as<util::aggregate_member_type<1, reflected_values>, float>);
+    STATIC_CHECK(util::type_name<float>() == "float");
+    STATIC_CHECK(util::unqualified_type_name<reflected_values>() == "reflected_values");
+    STATIC_CHECK(util::function_name<reflected_function>() == "reflected_function");
 }
 
 namespace {
@@ -52,6 +54,6 @@ struct wide_node {
 } // namespace
 
 TEST_CASE("aggregate reflection supports seventeen members", "[reflection][coverage-exempt]") {
-    STATIC_CHECK(bg::util::aggregate_member_count<wide_node> == 17);
-    STATIC_CHECK(bg::util::aggregate_member_names<wide_node>[16] == "output");
+    STATIC_CHECK(util::aggregate_member_count<wide_node> == 17);
+    STATIC_CHECK(util::aggregate_member_names<wide_node>[16] == "output");
 }

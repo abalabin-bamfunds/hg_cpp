@@ -11,11 +11,13 @@
 #include <string>
 #include <type_traits>
 
+using namespace bg;
+
 TEST_CASE("sparse bunches share one occupancy index", "[sparse_bunch][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto positions = bg::util::occupancy_index{};
-    auto keys = bg::util::sparse_bunch<std::uint32_t>{};
-    auto values = bg::util::sparse_bunch<std::string>{};
+    auto positions = util::occupancy_index{};
+    auto keys = util::sparse_bunch<std::uint32_t>{};
+    auto values = util::sparse_bunch<std::string>{};
 
     for (auto position = std::uint32_t{}; position < 9; ++position) {
         keys.emplace_at(position, memory, position);
@@ -49,8 +51,8 @@ TEST_CASE("sparse bunches share one occupancy index", "[sparse_bunch][coverage-e
 
 TEST_CASE("a sparse bunch releases an empty element block", "[sparse_bunch][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto positions = bg::util::occupancy_index{};
-    auto values = bg::util::sparse_bunch<std::uint32_t>{};
+    auto positions = util::occupancy_index{};
+    auto values = util::sparse_bunch<std::uint32_t>{};
 
     values.emplace_at(0, memory, 10);
     values.emplace_at(8, memory, 20);
@@ -69,8 +71,8 @@ TEST_CASE("a sparse bunch releases an empty element block", "[sparse_bunch][cove
 
 TEST_CASE("a sparse bunch handles growth and capped-block boundaries", "[sparse_bunch][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto positions = bg::util::occupancy_index{};
-    auto values = bg::util::sparse_bunch<std::uint32_t>{};
+    auto positions = util::occupancy_index{};
+    auto values = util::sparse_bunch<std::uint32_t>{};
     constexpr auto selected = std::array{std::uint32_t{0},      std::uint32_t{7},       std::uint32_t{8},
                                          std::uint32_t{23},     std::uint32_t{24},      std::uint32_t{65'527},
                                          std::uint32_t{65'528}, std::uint32_t{131'063}, std::uint32_t{131'064}};
@@ -108,8 +110,8 @@ struct counted_value {
 
 TEST_CASE("a sparse bunch destroys each occupied value once", "[sparse_bunch][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto positions = bg::util::occupancy_index{};
-    auto values = bg::util::sparse_bunch<counted_value>{};
+    auto positions = util::occupancy_index{};
+    auto values = util::sparse_bunch<counted_value>{};
 
     for (const auto position : std::array{std::uint32_t{0}, std::uint32_t{8}, std::uint32_t{40}}) {
         values.emplace_at(position, memory, position);
@@ -129,7 +131,7 @@ TEST_CASE("a sparse bunch destroys each occupied value once", "[sparse_bunch][co
 
 TEST_CASE("a sparse bunch releases a constructed prefix", "[sparse_bunch][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto values = bg::util::sparse_bunch<counted_value, 1>{};
+    auto values = util::sparse_bunch<counted_value, 1>{};
 
     for (auto position = std::uint32_t{}; position != 9; ++position) {
         values.emplace_at(position, memory, position);
@@ -143,8 +145,8 @@ TEST_CASE("a sparse bunch releases a constructed prefix", "[sparse_bunch][covera
 
 TEST_CASE("a sparse bunch exposes raw storage block bounds", "[sparse_bunch][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto positions = bg::util::occupancy_index{};
-    auto values = bg::util::sparse_bunch<std::uint32_t>{};
+    auto positions = util::occupancy_index{};
+    auto values = util::sparse_bunch<std::uint32_t>{};
 
     const auto first = values.block_containing(7);
     const auto geometric = values.block_containing(8);
@@ -166,7 +168,7 @@ TEST_CASE("a sparse bunch exposes raw storage block bounds", "[sparse_bunch][cov
     CHECK(last.data == nullptr);
     CHECK(memory.allocations() == 0);
 
-    const auto bytes = bg::util::sparse_bunch<std::byte>{};
+    const auto bytes = util::sparse_bunch<std::byte>{};
     const auto byte_capped = bytes.block_containing(262'136);
     CHECK(byte_capped.first == 262'136);
     CHECK(byte_capped.end == 524'280);

@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <type_traits>
 
+using namespace bg;
+
 namespace {
 
 enum class PointerState : std::uintptr_t {
@@ -21,25 +23,11 @@ struct Second {
     int value;
 };
 
-struct RecursiveFirst;
-struct RecursiveSecond;
-
-using RecursivePointer =
-    bg::util::variant_ptr_with_alignment<alignof(void *), RecursiveFirst, RecursiveSecond>;
-
-struct RecursiveFirst {
-    RecursivePointer next;
-};
-
-struct RecursiveSecond {
-    RecursivePointer next;
-};
-
 } // namespace
 
 TEST_CASE("a tagged pointer stores a pointer and tag in one word", "[utils][coverage-exempt]") {
     auto first = First{12};
-    auto pointer = bg::util::tagged_ptr<First, 2, PointerState>{&first, PointerState::second};
+    auto pointer = util::tagged_ptr<First, 2, PointerState>{&first, PointerState::second};
 
     STATIC_CHECK(sizeof(pointer) == sizeof(void *));
     CHECK(pointer.get() == &first);
@@ -52,7 +40,7 @@ TEST_CASE("a tagged pointer stores a pointer and tag in one word", "[utils][cove
 }
 
 TEST_CASE("a null tagged pointer has no tag", "[utils][coverage-exempt]") {
-    auto pointer = bg::util::tagged_ptr<First, 2, PointerState>{nullptr};
+    auto pointer = util::tagged_ptr<First, 2, PointerState>{nullptr};
 
     pointer.reset(nullptr, PointerState::third);
 
@@ -64,7 +52,7 @@ TEST_CASE("a null tagged pointer has no tag", "[utils][coverage-exempt]") {
 TEST_CASE("a variant pointer identifies and visits its active type", "[utils][coverage-exempt]") {
     auto first = First{12};
     auto second = Second{34};
-    auto pointer = bg::util::variant_ptr<First, Second>{&first};
+    auto pointer = util::variant_ptr<First, Second>{&first};
 
     STATIC_CHECK(sizeof(pointer) == sizeof(void *));
     CHECK(pointer.holds<First>());
@@ -87,11 +75,28 @@ TEST_CASE("a variant pointer identifies and visits its active type", "[utils][co
 
 TEST_CASE("a tagged pointer preserves the pointed-to const type", "[utils][coverage-exempt]") {
     const auto value = First{12};
-    const auto pointer = bg::util::tagged_ptr<const First>{&value};
+    const auto pointer = util::tagged_ptr<const First>{&value};
 
     STATIC_CHECK(std::is_same_v<decltype(pointer.get()), const First *>);
     CHECK(pointer.get() == &value);
 }
+
+namespace {
+
+struct RecursiveFirst;
+struct RecursiveSecond;
+
+using RecursivePointer = util::variant_ptr_with_alignment<alignof(void *), RecursiveFirst, RecursiveSecond>;
+
+struct RecursiveFirst {
+    RecursivePointer next;
+};
+
+struct RecursiveSecond {
+    RecursivePointer next;
+};
+
+} // namespace
 
 TEST_CASE("a variant pointer supports recursive alternatives", "[utils][coverage-exempt]") {
     auto first = RecursiveFirst{};

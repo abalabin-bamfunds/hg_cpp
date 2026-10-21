@@ -9,6 +9,8 @@
 #include <string_view>
 #include <vector>
 
+using namespace bg;
+
 namespace {
 
 struct string_hash {
@@ -24,7 +26,7 @@ struct string_hash {
 TEST_CASE("a hash set inserts, finds, and removes keys",
           "[hash_set][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto set = bg::util::hash_set<std::string, string_hash>{};
+    auto set = util::hash_set<std::string, string_hash>{};
 
     const auto [first, first_inserted] = set.insert(std::string{"one"}, memory);
     const auto [same, second_inserted] = set.insert(std::string{"one"}, memory);
@@ -44,7 +46,7 @@ TEST_CASE("a hash set inserts, finds, and removes keys",
 
 TEST_CASE("a hash set retains key addresses while it grows", "[hash_set][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto set = bg::util::hash_set<int>{};
+    auto set = util::hash_set<int>{};
     const auto *first = set.insert(1, memory).first;
 
     for (auto value = 2; value < 500; ++value) {
@@ -70,7 +72,7 @@ struct equal_hash {
 
 TEST_CASE("a hash set resolves collisions", "[hash_set][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto set = bg::util::hash_set<int, equal_hash>{};
+    auto set = util::hash_set<int, equal_hash>{};
 
     for (auto value = 0; value < 40; ++value) {
         set.insert(value, memory);
