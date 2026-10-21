@@ -155,9 +155,6 @@ struct timed_overloads {
             if (duration == timedelta_t{}) {
                 return wp<OUT>{value};
             }
-            if (value.type().target_type().contains_reference()) {
-                throw WiringError{"delay does not support time series types containing references"};
-            }
 
             static const auto delay = node<delay_node>();
             return delay(value, duration);

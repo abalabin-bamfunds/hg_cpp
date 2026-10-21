@@ -21,7 +21,8 @@ The [validity design](time-series-validity.md) defines invalidation and
 revalidation for these types.
 
 TSS and TSD validity starts with their first tick and then remains valid. TSD
-item validity remains independent.
+item validity remains independent. When an input samples an invalid reference
+target, the target's former items or keys are reported as removals.
 
 ## Type summary
 
@@ -103,8 +104,11 @@ a valid root header and an empty collection body. Replay marks an invalid
 output valid for this event; it leaves an already-valid output unchanged.
 
 The built-in writer supports value, fixed-list, bundle, set, and dictionary time
-series. It does not support references. TSS and TSD themselves cannot be
-invalidated through their output APIs, so such an event cannot be retained.
+series. It does not serialize reference bindings. TSS and TSD do not support root
+invalidation through their output APIs; an invalid sampled reference target is
+represented by its item or key removals.
+An invalid TSS target contained in a fixed TSL does not currently propagate
+that removal through the enclosing list tick.
 Provider-defined time series register `TimeSeriesTickOperations` with
 `TimeSeriesDispatch<TimeSeriesTickOperations>::instance()`, declared in
 `<bg/time_series/tick_operations.hpp>`. This registry is

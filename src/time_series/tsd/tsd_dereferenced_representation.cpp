@@ -1,7 +1,7 @@
 #include "tsd_reference_representation.hpp"
 
 #include <bg/allocator.hpp>
-#include "tsd_reference_sample.hpp"
+#include <bg/time_series/ref/ref_input_sample.hpp>
 
 #include <bg/util/occupancy_index.hpp>
 #include <bg/util/scope_exit.hpp>
@@ -113,7 +113,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
 
     TimeSeriesRuntimeType::ConstItem item(item_id_t id) const {
         if (const auto *sample = samples_.get(id, sample_positions_)) {
-            return (*sample)->input();
+            return sample->input();
         }
         if (id >= item_references_.size() || !item_references_[id]) {
             return {*item_runtime_type_, initial_time_series_state, nullptr};
@@ -366,10 +366,10 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
                        ResolvedTimeSeries previous = {}) {
         auto previous_last_updated = TimeSeriesState{};
         if (auto *existing = samples_.get(id, sample_positions_)) {
-            previous = (*existing)->previous;
+            previous = existing->previous();
             previous_last_updated = *previous.last_updated;
             previous.last_updated = &previous_last_updated;
-            (*existing)->release();
+            existing->release();
             samples_.erase_at(id, provider_->allocation());
             sample_positions_.reset(id);
         }
@@ -377,11 +377,11 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
         if (previous.runtime_type == nullptr && id < item_references_.size() && item_references_[id]) {
             previous = ResolvedTimeSeries::resolve(item_references_[id]);
         }
-        auto *sample = SampledDictionary::create(previous, current, evaluation_time, provider_->allocation());
-        if (sample == nullptr) {
+        const auto sample = SampledReferenceChange::create(previous, current, evaluation_time, provider_->allocation());
+        if (!sample) {
             return;
         }
-        auto destroy_sample = util::scope_exit{[&]() noexcept { sample->release(); }};
+        auto release_sample = util::scope_exit{[&]() noexcept { sample.release(); }};
         if (!sample_cleanup_registered_) {
             provider_->add_cycle_callback(this, clear_samples_callback);
             sample_cleanup_registered_ = true;
@@ -391,7 +391,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
         auto reset_position = util::scope_exit{[&]() noexcept { sample_positions_.reset(id); }};
         samples_.emplace_at(id, provider_->allocation(), sample);
         reset_position.release();
-        destroy_sample.release();
+        release_sample.release();
     }
 
     static void clear_samples_callback(void *value, EvaluationContext &) noexcept {
@@ -401,7 +401,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
     void clear_samples() noexcept {
         auto &memory = provider_->allocation();
         for (const auto id : sample_positions_) {
-            samples_[id]->release();
+            samples_[id].release();
         }
         samples_.release(sample_positions_, memory);
         sample_positions_.release(memory);
@@ -472,7 +472,7 @@ class DereferencedTimeSeriesDictionaryRepresentation final : public TimeSeriesDi
     TimeSeriesState last_updated_;
     std::pmr::vector<Reference> item_references_;
     util::occupancy_index sample_positions_;
-    util::sparse_bunch<SampledDictionary *> samples_;
+    util::sparse_bunch<SampledReferenceChange> samples_;
     util::index<> modified_;
     EvaluationTime change_time_{MIN_DT};
     bool sample_cleanup_registered_{};

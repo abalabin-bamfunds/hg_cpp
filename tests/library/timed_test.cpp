@@ -6,6 +6,7 @@
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
+#include <bg/time_series/tsl/tsl.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -96,6 +97,25 @@ TEST_CASE("delay replays fixed-list ticks",
               .equals<i64>({std::nullopt, std::nullopt, 11, 22}));
 }
 
+TEST_CASE("delay retains target ticks in a fixed list of references",
+          "[feature:operator][feature:timed-scheduling][series:fixed-tsl][series:reference]"
+          "[binding:reference-to-value][transition:update]") {
+    const auto make_reference_list = node([](In<REF<TS<i64>>> value, Out<TSL<REF<TS<i64>>, 1>> output) {
+        output[0].copy(value);
+    });
+    const auto observe = node([](In<TSL<TS<i64>, 1>> values) { return *values[0]; });
+    const auto delayed = [&](wp<TS<i64>> value) {
+        const auto values = make_reference_list(value.as<REF<TS<i64>>>());
+        CHECK(values.type().contains_reference());
+
+        const auto delayed_values = operators::delay(values, timedelta_t{2});
+        CHECK_FALSE(delayed_values.type().contains_reference());
+        return observe(delayed_values);
+    };
+
+    CHECK(testing::test_graph(delayed, {10, 20, 30}).equals<i64>({std::nullopt, std::nullopt, 10, 20, 30}));
+}
+
 template <template <typename, auto...> typename Field> struct TimedPair {
     Field<TS<i64>> left;
     Field<TS<i64>> right;
@@ -110,6 +130,30 @@ TEST_CASE("delay replays bundle ticks", "[feature:operator][feature:timed-schedu
     };
     CHECK(testing::test_graph(delayed_bundle, {1, 2}, {10, 20})
               .equals<i64>({std::nullopt, std::nullopt, 11, 22}));
+}
+
+template <template <typename, auto...> typename Field> struct TimedReference {
+    Field<REF<TS<i64>>> value;
+};
+
+template <template <typename, auto...> typename Field> struct TimedValue {
+    Field<TS<i64>> value;
+};
+
+TEST_CASE("delay retains target ticks in a bundle of references",
+          "[feature:operator][feature:timed-scheduling][series:tsb][series:reference]"
+          "[binding:reference-to-value][transition:update]") {
+    const auto observe = node([](In<TSB<TimedValue>> values) { return *values->value; });
+    const auto delayed = [&](wp<TS<i64>> value) {
+        const auto bundle_value = bundle<TimedReference>("value"_n = value.as<REF<TS<i64>>>());
+        CHECK(bundle_value.type().contains_reference());
+
+        const auto delayed_values = operators::delay(bundle_value, timedelta_t{2});
+        CHECK_FALSE(delayed_values.type().contains_reference());
+        return observe(delayed_values);
+    };
+
+    CHECK(testing::test_graph(delayed, {10, 20, 30}).equals<i64>({std::nullopt, std::nullopt, 10, 20, 30}));
 }
 
 TEST_CASE("delay zero preserves the input type and negative delay fails during wiring",
@@ -143,34 +187,36 @@ TEST_CASE("delay follows reference retargets and target ticks",
               .equals<i64>({std::nullopt, 10, 20, 100}));
 }
 
-TEST_CASE("delay fails when a reference retargets from valid TSS to an invalid target",
+TEST_CASE("delay replays an invalid TSS reference target as removals",
           "[feature:operator][feature:timed-scheduling][series:tss][series:reference]"
           "[transition:invalidation][transition:update][rebind]") {
     const auto select = node([](In<TS<i64>> cycle, In<REF<TSS<i64>>, passive> populated,
                                 In<REF<TSS<i64>>, passive> invalid, Out<REF<TSS<i64>>> output) {
-        output.copy(*cycle == 0 ? populated : invalid);
+        output.copy(*cycle == 1 ? invalid : populated);
     });
     const auto delayed = [&](wp<TS<i64>> cycle, wp<TSS<i64>> populated, wp<TSS<i64>> invalid) {
-        return operators::delay(select(cycle, populated, invalid), timedelta_t{1});
+        return operators::sum_(operators::delay(select(cycle, populated, invalid), timedelta_t{1}));
     };
 
-    CHECK_THROWS_AS(testing::test_graph(delayed, {0, 1}, {{1}, literal::SKIP}, {}), std::invalid_argument);
+    CHECK(testing::test_graph(delayed, {0, 1, 2}, {{1}, literal::SKIP, {2}}, {})
+              .equals<i64>({std::nullopt, 1, 0, 3}));
 }
 
-TEST_CASE("delay fails when a reference retargets from valid TSD to an invalid target",
+TEST_CASE("delay replays an invalid TSD reference target as removals",
           "[feature:operator][feature:timed-scheduling][series:tsd][series:reference]"
           "[transition:invalidation][transition:update][rebind]") {
     const auto select = node([](In<TS<i64>> cycle, In<REF<TSD<i64, TS<i64>>>, passive> populated,
                                 In<REF<TSD<i64, TS<i64>>>, passive> invalid,
                                 Out<REF<TSD<i64, TS<i64>>>> output) {
-        output.copy(*cycle == 0 ? populated : invalid);
+        output.copy(*cycle == 1 ? invalid : populated);
     });
     const auto delayed = [&](wp<TS<i64>> cycle, wp<TSD<i64, TS<i64>>> populated,
                              wp<TSD<i64, TS<i64>>> invalid) {
-        return operators::delay(select(cycle, populated, invalid), timedelta_t{1});
+        return operators::sum_(operators::delay(select(cycle, populated, invalid), timedelta_t{1}));
     };
 
-    CHECK_THROWS_AS(testing::test_graph(delayed, {0, 1}, {{{1, 10}}, literal::SKIP}, {}), std::invalid_argument);
+    CHECK(testing::test_graph(delayed, {0, 1, 2}, {{{1, 10}}, literal::SKIP, {{1, 20}}}, {})
+              .equals<i64>({std::nullopt, 10, 0, 20}));
 }
 
 TEST_CASE("delay replays TSS membership changes when a reference selects another valid set",
@@ -203,6 +249,107 @@ TEST_CASE("delay replays TSD key changes when a reference selects another valid 
               .equals<i64>({std::nullopt, 10, 20}));
 }
 
+TEST_CASE("delay retains target-only updates from a contained string reference",
+          "[feature:operator][feature:timed-scheduling][series:tsd][series:reference][scalar:string]"
+          "[binding:reference-to-value][shape:nested][transition:update]") {
+    const auto bind_reference = node([](In<TS<bool>> bind, In<REF<TS<string>>> value,
+                                        Out<TSD<i64, REF<TS<string>>>> output) {
+        if (bind.modified() && *bind) {
+            output[1].copy(value);
+        }
+    });
+
+    const auto delayed = [&](wp<TS<bool>> bind, wp<TS<string>> value) {
+        return operators::delay(bind_reference(bind, value), timedelta_t{2});
+    };
+
+    CHECK(testing::test_graph(delayed, {true, literal::SKIP, literal::SKIP}, {"first", "second", literal::SKIP})
+              .equals({literal::SKIP, literal::SKIP, {{1, "first"}}, {{1, "second"}}}));
+}
+
+TEST_CASE("delay retains dereferenced TSD values inside a TSD",
+          "[feature:operator][feature:timed-scheduling][series:tsd][series:reference]"
+          "[binding:reference-to-value][shape:doubly-nested][transition:removal]") {
+    const auto select_dictionary = node([](In<TS<bool>> choose_second,
+                                           In<REF<TSD<i64, TS<i64>>>> first,
+                                           In<REF<TSD<i64, TS<i64>>>> second,
+                                           Out<TSD<i64, REF<TSD<i64, TS<i64>>>>> output) {
+        output[1].copy(*choose_second ? second : first);
+    });
+    const auto sum = node([](In<TSD<i64, TSD<i64, TS<i64>>>> input) {
+        if (!input.contains(1)) {
+            return i64{-2};
+        }
+
+        const auto inner = input[1];
+        if (!inner.valid()) {
+            return i64{-1};
+        }
+
+        auto result = i64{};
+        inner.for_each_key([&](const auto &key) { result += *inner[key]; });
+        return result;
+    });
+
+    const auto delayed_sum = [&](wp<TS<bool>> choose_second, wp<TSD<i64, TS<i64>>> first,
+                                 wp<TSD<i64, TS<i64>>> second) {
+        return sum(operators::delay(select_dictionary(choose_second, first, second), timedelta_t{1}));
+    };
+
+    CHECK(testing::test_graph(delayed_sum, {false, true}, {{{2, 10}}, literal::SKIP}, {})
+              .equals<i64>({std::nullopt, 10, 0}));
+}
+
+TEST_CASE("delay replays removals from an invalid TSS inside a TSD",
+          "[feature:operator][feature:timed-scheduling][series:tsd][series:tss][series:reference]"
+          "[binding:reference-to-value][shape:doubly-nested][transition:removal]") {
+    const auto select_set = node([](In<TS<bool>> choose_second, In<REF<TSS<i64>>> first,
+                                    In<REF<TSS<i64>>> second, Out<TSD<i64, REF<TSS<i64>>>> output) {
+        output[1].copy(*choose_second ? second : first);
+    });
+    const auto sum = node([](In<TSD<i64, TSS<i64>>> input) {
+        if (!input.contains(1)) {
+            return i64{-2};
+        }
+
+        const auto values = input[1];
+        if (!values.valid()) {
+            return i64{-1};
+        }
+
+        auto result = i64{};
+        values.for_each([&](Scalar<i64> value) { result += value.value(); });
+        return result;
+    });
+
+    const auto delayed_sum = [&](wp<TS<bool>> choose_second, wp<TSS<i64>> first, wp<TSS<i64>> second) {
+        return sum(operators::delay(select_set(choose_second, first, second), timedelta_t{1}));
+    };
+
+    const auto current_sum = [&](wp<TS<bool>> choose_second, wp<TSS<i64>> first, wp<TSS<i64>> second) {
+        return sum(select_set(choose_second, first, second));
+    };
+    const auto removed_count = node([](In<TSD<i64, TSS<i64>>> input) {
+        const auto removed_key = i64{1};
+        auto result = i64{};
+        if (input.contains(1) && input[1].was_removed(Scalar<i64>::from(removed_key))) {
+            ++result;
+        }
+        return result;
+    });
+    const auto current_removed_count = [&](wp<TS<bool>> choose_second, wp<TSS<i64>> first,
+                                           wp<TSS<i64>> second) {
+        return removed_count(select_set(choose_second, first, second));
+    };
+
+    CHECK(testing::test_graph(current_sum, {false, true, false}, {{1}, literal::SKIP, {2}}, {})
+              .equals<i64>({1, -1, 3}));
+    CHECK(testing::test_graph(current_removed_count, {false, true, false}, {{1}, literal::SKIP, {2}}, {})
+              .equals<i64>({0, 1, 0}));
+    const auto result = testing::test_graph(delayed_sum, {false, true, false}, {{1}, literal::SKIP, {2}}, {});
+    CHECK(result.equals<i64>({std::nullopt, 1, 0, 3}));
+}
+
 TEST_CASE("throttle follows reference retargets and target ticks",
           "[feature:operator][feature:timed-scheduling][series:reference][transition:update]"
           "[binding:reference-to-value]") {
@@ -221,9 +368,9 @@ TEST_CASE("throttle follows reference retargets and target ticks",
               .equals<i64>({10, 20, 100, std::nullopt}));
 }
 
-TEST_CASE("delay limits const guarantees and rejects contained references",
+TEST_CASE("delay limits const guarantees and rejects sparse TSL",
           "[feature:operator][feature:wiring][feature:timed-scheduling][guarantee:final][series:tsd]"
-          "[series:reference]") {
+          "[series:fixed-tsl]") {
     testing::test_wiring([] {
         auto &wiring = WiringContext::current().wiring();
         const auto &constant = wiring.borrowed_input(TS<i64, TimeSeriesGuarantee::const_>::type());
@@ -238,7 +385,9 @@ TEST_CASE("delay limits const guarantees and rejects contained references",
         CHECK(final_dictionary.value_type().guarantee().value() == TimeSeriesGuarantee::final);
 
         const auto &reference_collection = wiring.borrowed_input(TSD<i64, REF<TS<i64>>>::type());
-        CHECK_THROWS_AS(operators::delay(reference_collection, timedelta_t{1}), WiringError);
+        const auto &dereferenced_type = type_cast<TimeSeriesDictionaryType>(
+            operators::delay(reference_collection, timedelta_t{1}).type());
+        CHECK_FALSE(dereferenced_type.contains_reference());
 
         const auto &sparse_type = time_series_list_type(TS<i64>::type(), std::dynamic_extent,
                                                         TimeSeriesGuarantee::ordinary);

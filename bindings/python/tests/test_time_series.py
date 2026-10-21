@@ -431,6 +431,34 @@ def test_tsd_of_references_notifies_a_dereferenced_python_input():
     assert bg.test_graph(graph, [1, 2, 3], [10, 20, 30], [1, 2, 3]) == [11, 22, 33]
 
 
+def test_delay_retains_target_only_updates_from_a_contained_reference():
+    from datetime import timedelta
+
+    @bg.compute_node
+    def select_target(
+        bind: bg.TS[bool], value: bg.REF[bg.TS[str]]
+    ) -> bg.TSD[int, bg.REF[bg.TS[str]]]:
+        if bind.value:
+            return {1: value.value}
+
+    @bg.compute_node
+    def read(values: bg.TSD[int, bg.TS[str]]) -> bg.TS[str]:
+        return values.value[1]
+
+    @bg.graph
+    def graph(bind: bg.TS[bool], value: bg.TS[str]) -> bg.TS[str]:
+        delayed = bg.operators.delay(select_target(bind, value), timedelta(microseconds=2))
+        return read(delayed)
+
+    assert bg.test_graph(graph, [True, None, None], ["first", "second", "third"]) == [
+        None,
+        None,
+        "first",
+        "second",
+        "third",
+    ]
+
+
 def test_sampled_tsd_delta_keeps_removed_keys_available_for_lookup():
 
     @bg.compute_node

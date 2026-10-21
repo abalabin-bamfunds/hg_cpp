@@ -378,11 +378,15 @@ time plus `duration`. It retains ticks, including invalidation and collection
 deltas, rather than sampling the value later. Equal ordinary ticks remain
 separate events. Zero duration returns the input; negative duration is a wiring
 error. Positive delay limits const guarantees to final, including contained
-time series. Retained ticks follow the supported types and ownership rules in
-[retaining ticks](time-series-types.md#retaining-ticks). Delay rejects contained
-references and sparse TSL values. TSS and TSD root invalidation cannot be
-replayed, so retargeting from a valid TSS or TSD to an invalid target fails.
-Initially unbound references are supported.
+time series. Contained references are dereferenced before ticks reach delay, so
+it retains target values and collection deltas rather than reference bindings.
+If a referenced TSS or TSD target becomes invalid, its removal delta is retained
+and replayed for direct TSS/TSD values and TSD-contained references. A fixed
+TSL containing a reference to a TSS does not currently propagate the target's
+invalidating removal through the list. Delay rejects sparse TSL values.
+Retained ticks follow the supported types and ownership rules in
+[retaining ticks](time-series-types.md#retaining-ticks). Initially unbound
+references are supported.
 
 `schedule(period, initial_delay=true, max_ticks=...)` publishes ordinary
 `TS<bool>` ticks whose value is true. The first tick occurs one period after
