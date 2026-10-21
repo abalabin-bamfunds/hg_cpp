@@ -91,9 +91,7 @@ TEST_CASE("test_graph applies its configured start time to every input path",
         output.set(static_cast<i64>(context->evaluation_time().time_since_epoch().count()));
     });
 
-    const auto function = [&](wp<TS<i64>> input) {
-        return observe(input);
-    };
+    const auto function = [&](wp<TS<i64>> input) { return observe(input); };
 
     const auto template_target = graph("name"_n = "observe_time", function);
     const auto start_time = EvaluationTime{std::chrono::microseconds{42}};
@@ -131,8 +129,7 @@ TEST_CASE("test_graph applies its configured start time to every input path",
         const auto runtime_inputs = std::array{
             testing::TestGraphInput{cpp_scalar_runtime_type<i64>(), ticks},
         };
-        CHECK(testing::test_graph(template_target, options,
-                                  std::span<const testing::TestGraphInput>{runtime_inputs})
+        CHECK(testing::test_graph(template_target, options, std::span<const testing::TestGraphInput>{runtime_inputs})
                   .equals<i64>(expected));
     }
 }

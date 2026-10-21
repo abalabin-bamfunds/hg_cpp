@@ -71,18 +71,16 @@ TEST_CASE("run time is relative to start and the earlier explicit stop time wins
     ScheduledSource::reset();
     const auto start = time(20);
 
-    run_scheduled_source(GraphRunOptions{.start_time = start,
-                                         .stop_time = time(22),
-                                         .run_time = std::chrono::microseconds{5}});
+    run_scheduled_source(
+        GraphRunOptions{.start_time = start, .stop_time = time(22), .run_time = std::chrono::microseconds{5}});
 
     CHECK(ScheduledSource::evaluation_times == std::vector{start, time(21)});
     CHECK(ScheduledSource::stop_time == time(21));
 
     ScheduledSource::reset();
     const auto duration_start = time(30);
-    run_scheduled_source(GraphRunOptions{.start_time = duration_start,
-                                         .stop_time = time(35),
-                                         .run_time = std::chrono::microseconds{2}});
+    run_scheduled_source(
+        GraphRunOptions{.start_time = duration_start, .stop_time = time(35), .run_time = std::chrono::microseconds{2}});
     CHECK(ScheduledSource::evaluation_times == std::vector{duration_start, time(31)});
     CHECK(ScheduledSource::stop_time == time(31));
 }
@@ -93,9 +91,8 @@ TEST_CASE("graph run limits apply through the profiler recorder",
     auto profiler = EvaluationProfiler{};
     const auto start = time(30);
 
-    run_scheduled_source(GraphRunOptions{.recorder = profiler.recorder(),
-                                         .start_time = start,
-                                         .run_time = std::chrono::microseconds{2}});
+    run_scheduled_source(GraphRunOptions{
+        .recorder = profiler.recorder(), .start_time = start, .run_time = std::chrono::microseconds{2}});
 
     CHECK(ScheduledSource::evaluation_times == std::vector{start, time(31)});
     CHECK(profiler.outer_totals().cycles == 2);
@@ -104,10 +101,9 @@ TEST_CASE("graph run limits apply through the profiler recorder",
 TEST_CASE("test graph leaves positions beyond its run limit empty",
           "[evaluation][simulation][feature:simulation][test-graph]") {
     const auto start = time(40);
-    const auto actual = testing::test_graph(
-        [](wp<TS<i64>> input) { return input; },
-        GraphRunOptions{.start_time = start, .stop_time = time(42)},
-        std::array{i64{1}, i64{2}, i64{3}, i64{4}});
+    const auto actual = testing::test_graph([](wp<TS<i64>> input) { return input; },
+                                            GraphRunOptions{.start_time = start, .stop_time = time(42)},
+                                            std::array{i64{1}, i64{2}, i64{3}, i64{4}});
 
     CHECK(actual.equals<i64>({1, 2, std::nullopt, std::nullopt}));
 }
@@ -119,8 +115,7 @@ TEST_CASE("realtime run time ends an idle graph and closes its queue",
     const auto before = std::chrono::steady_clock::now();
 
     run_graph([&] { (void)queue(); },
-              GraphRunOptions{.engine = EvaluationEngine::realtime,
-                              .run_time = std::chrono::milliseconds{40}});
+              GraphRunOptions{.engine = EvaluationEngine::realtime, .run_time = std::chrono::milliseconds{40}});
 
     CHECK(std::chrono::steady_clock::now() - before >= std::chrono::milliseconds{20});
     CHECK_FALSE(writer.write(::literal::TimeSeriesLiteral{i64{1}}));
@@ -131,9 +126,8 @@ TEST_CASE("realtime run limits drain exact timers before the stop time",
     ScheduledSource::reset();
     const auto start = time(10);
 
-    run_scheduled_source(GraphRunOptions{.engine = EvaluationEngine::realtime,
-                                         .start_time = start,
-                                         .stop_time = time(13)});
+    run_scheduled_source(
+        GraphRunOptions{.engine = EvaluationEngine::realtime, .start_time = start, .stop_time = time(13)});
 
     CHECK(ScheduledSource::evaluation_times == std::vector{start, time(11), time(12)});
     CHECK(ScheduledSource::stop_time == time(12));
@@ -142,16 +136,17 @@ TEST_CASE("realtime run limits drain exact timers before the stop time",
 TEST_CASE("graph run options reject invalid and overflowing limits before startup",
           "[evaluation][simulation][feature:simulation][failure]") {
     auto start_count = std::size_t{};
-    const auto source = node([&] { ++start_count; return i64{1}; });
-    const auto run = [&](const GraphRunOptions &options) {
-        run_graph([&] { (void)source(); }, options);
-    };
+    const auto source = node([&] {
+        ++start_count;
+        return i64{1};
+    });
+
+    const auto run = [&](const GraphRunOptions &options) { run_graph([&] { (void)source(); }, options); };
 
     CHECK_THROWS_AS(run(GraphRunOptions{.start_time = time(10), .stop_time = time(10)}), std::invalid_argument);
     CHECK_THROWS_AS(run(GraphRunOptions{.run_time = std::chrono::microseconds{0}}), std::invalid_argument);
     CHECK_THROWS_AS(run(GraphRunOptions{.run_time = std::chrono::microseconds{-1}}), std::invalid_argument);
-    CHECK_THROWS_AS(run(GraphRunOptions{.start_time = EvaluationTime::max() -
-                                            std::chrono::microseconds{1},
+    CHECK_THROWS_AS(run(GraphRunOptions{.start_time = EvaluationTime::max() - std::chrono::microseconds{1},
                                         .run_time = std::chrono::microseconds{2}}),
                     std::overflow_error);
     CHECK(start_count == 0);
