@@ -87,9 +87,16 @@ TEST_CASE("test_graph records a profile for a graph function", "[testing][evalua
 
 TEST_CASE("test_graph applies its configured start time to every input path",
           "[testing][evaluation][feature:test-graph][feature:simulation]") {
-    const auto observe = node([](EvaluationContext *context, In<TS<i64>>, Out<TS<i64>> output) {
-        output.set(static_cast<i64>(context->evaluation_time().time_since_epoch().count()));
-    });
+    struct test_graph_time_observer {
+        In<TS<i64>> input;
+        Out<TS<i64>> output;
+
+        void evaluate(EvaluationContext *context) const {
+            output.set(static_cast<i64>(context->evaluation_time().time_since_epoch().count()));
+        }
+    };
+
+    const auto observe = node<test_graph_time_observer>();
 
     const auto function = [&](wp<TS<i64>> input) { return observe(input); };
 
