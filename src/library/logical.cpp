@@ -70,13 +70,6 @@ struct logical_overloads {
         Out<TS<bool, OUTPUT_G>> output;
 
         void evaluate() const {
-            if constexpr (Validity == optional) {
-                if (!values.valid()) {
-                    output.set(true);
-                    return;
-                }
-            }
-
             auto result = true;
             values.for_each_value([&](auto item) {
                 if constexpr (Validity == optional && !decltype(values)::valid_items) {
@@ -142,13 +135,6 @@ struct logical_overloads {
         Out<TS<bool, OUTPUT_G>> output;
 
         void evaluate() const {
-            if constexpr (Validity == optional) {
-                if (!values.valid()) {
-                    output.set(false);
-                    return;
-                }
-            }
-
             auto result = false;
             values.for_each_value([&](auto item) {
                 if constexpr (Validity == optional && !decltype(values)::valid_items) {

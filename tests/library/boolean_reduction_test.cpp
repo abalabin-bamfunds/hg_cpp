@@ -62,30 +62,51 @@ TEST_CASE("required Boolean TSL reductions wait for every immediate item",
               .equals<bool>({true, std::nullopt, false}));
 }
 
-TEST_CASE("Boolean reductions accept native fixed TSL node outputs",
-          "[feature:operator][series:fixed-tsl][scalar:boolean][shape:chain][validity:all-valid]"
-          "[validity:optional][transition:invalidation][transition:revalidation]") {
-    const auto make_values = node([](In<TS<i64>> step, Out<TSL<TS<bool>, 2>> values) {
-        if (*step == 0) {
-            values[0].set(true);
-            values[1].set(true);
-        } else if (*step == 1) {
-            values[0].set(false);
-            values[1].invalidate();
-        } else {
-            values[0].set(true);
-            values[1].set(true);
-        }
-    });
-    const auto all = [&](wp<TS<i64>> step) { return operators::all_(make_values(step)); };
-    const auto any = [&](wp<TS<i64>> step) { return operators::any_(make_values(step)); };
-    const auto optional_all = [&](wp<TS<i64>> step) { return operators::all_(opt(make_values(step))); };
-    const auto optional_any = [&](wp<TS<i64>> step) { return operators::any_(opt(make_values(step))); };
+TEST_CASE("Boolean reductions read direct TSL inputs and report required output validity",
+          "[feature:operator][series:fixed-tsl][scalar:boolean][shape:single-node]"
+          "[validity:all-valid][validity:optional][transition:invalidation][transition:revalidation]") {
+    const auto all = [](wp<TSL<TS<bool>, 2>> values) { return operators::all_(values); };
+    const auto any = [](wp<TSL<TS<bool>, 2>> values) { return operators::any_(values); };
+    const auto optional_all = [](wp<TSL<TS<bool>, 2>> values) { return operators::all_(opt(values)); };
+    const auto optional_any = [](wp<TSL<TS<bool>, 2>> values) { return operators::any_(opt(values)); };
+    const auto all_valid = [](wp<TSL<TS<bool>, 2>> values) {
+        return operators::valid(operators::all_(values));
+    };
 
-    CHECK(testing::test_graph(all, {0, 1, 2}).equals<bool>({true, std::nullopt, true}));
-    CHECK(testing::test_graph(any, {0, 1, 2}).equals<bool>({true, std::nullopt, true}));
-    CHECK(testing::test_graph(optional_all, {0, 1, 2}).equals<bool>({true, false, true}));
-    CHECK(testing::test_graph(optional_any, {0, 1, 2}).equals<bool>({true, false, true}));
+    CHECK(testing::test_graph(all, testing::input<TSL<TS<bool>, 2>>(
+                                      {literal::SKIP, {{0, true}}, {{1, true}}, {{1, literal::INVALID}},
+                                       {{1, false}}}))
+              .equals<bool>({std::nullopt, std::nullopt, true, std::nullopt, false}));
+    CHECK(testing::test_graph(any, testing::input<TSL<TS<bool>, 2>>(
+                                      {literal::SKIP, {{0, true}}, {{1, true}}, {{1, literal::INVALID}},
+                                       {{1, false}}}))
+              .equals<bool>({std::nullopt, std::nullopt, true, std::nullopt, true}));
+    CHECK(testing::test_graph(optional_all, testing::input<TSL<TS<bool>, 2>>(
+                                               {literal::SKIP, {{0, true}}, {{1, true}},
+                                                {{1, literal::INVALID}}, {{1, false}}}))
+              .equals<bool>({std::nullopt, true, true, true, false}));
+    CHECK(testing::test_graph(optional_any, testing::input<TSL<TS<bool>, 2>>(
+                                               {literal::SKIP, {{0, true}}, {{1, true}},
+                                                {{1, literal::INVALID}}, {{1, false}}}))
+              .equals<bool>({std::nullopt, true, true, true, true}));
+    CHECK(testing::test_graph(all_valid, testing::input<TSL<TS<bool>, 2>>(
+                                             {literal::SKIP, {{0, true}}, {{1, true}},
+                                              {{1, literal::INVALID}}, {{1, false}}}))
+              .equals<bool>({false, std::nullopt, true, false, true}));
+}
+
+TEST_CASE("optional Boolean TSL reductions treat an invalid root as empty",
+          "[feature:operator][series:fixed-tsl][scalar:boolean][validity:optional]"
+          "[transition:invalidation][transition:revalidation]") {
+    const auto all = [](wp<TSL<TS<bool>, 2>> values) { return operators::all_(opt(values)); };
+    const auto any = [](wp<TSL<TS<bool>, 2>> values) { return operators::any_(opt(values)); };
+
+    CHECK(testing::test_graph(all, testing::input<TSL<TS<bool>, 2>>(
+                                       {literal::SKIP, {{0, false}}, {{0, literal::INVALID}}, {{1, true}}}))
+              .equals<bool>({std::nullopt, false, true, true}));
+    CHECK(testing::test_graph(any, testing::input<TSL<TS<bool>, 2>>(
+                                       {literal::SKIP, {{0, false}}, {{0, literal::INVALID}}, {{1, true}}}))
+              .equals<bool>({std::nullopt, false, false, true}));
 }
 
 TEST_CASE("Boolean TSD reductions track updates, invalid items, removals, and empty membership",
@@ -132,6 +153,26 @@ TEST_CASE("Boolean TSS reductions use membership and empty identities",
                                                 {{}, {false}, {literal::REMOVED(false), true},
                                                  {literal::REMOVED(true)}}))
               .equals<bool>({false, false, true, false}));
+}
+
+TEST_CASE("optional Boolean TSS reductions treat an invalid selected target as empty",
+          "[feature:operator][series:tss][series:reference][scalar:boolean][validity:optional]"
+          "[transition:invalidation][transition:revalidation]") {
+    const auto all = [](wp<TS<bool>> select_invalid, wp<TSS<bool>> populated, wp<TSS<bool>> invalid) {
+        const auto values = operators::if_then_else(select_invalid, invalid, populated);
+        return operators::all_(opt(values));
+    };
+    const auto any = [](wp<TS<bool>> select_invalid, wp<TSS<bool>> populated, wp<TSS<bool>> invalid) {
+        const auto values = operators::if_then_else(select_invalid, invalid, populated);
+        return operators::any_(opt(values));
+    };
+
+    CHECK(testing::test_graph(all, {false, true, false}, {{false}, literal::SKIP, literal::SKIP},
+                              {literal::SKIP, literal::SKIP, literal::SKIP})
+              .equals<bool>({false, true, false}));
+    CHECK(testing::test_graph(any, {false, true, false}, {{true}, literal::SKIP, literal::SKIP},
+                              {literal::SKIP, literal::SKIP, literal::SKIP})
+              .equals<bool>({true, false, true}));
 }
 
 TEST_CASE("Boolean reductions preserve const, final, and deduplicated guarantees",
@@ -296,9 +337,9 @@ TEST_CASE("optional Boolean TSD reductions use empty identities for invalid refe
     CHECK(testing::test_graph(all, {false, true, false}, {{{1, false}}, literal::SKIP, literal::SKIP},
                               {literal::SKIP, literal::SKIP, literal::SKIP})
               .equals<bool>({false, true, false}));
-    CHECK(testing::test_graph(any, {false, true, false}, {{{1, false}}, literal::SKIP, literal::SKIP},
+    CHECK(testing::test_graph(any, {false, true, false}, {{{1, true}}, literal::SKIP, literal::SKIP},
                               {literal::SKIP, literal::SKIP, literal::SKIP})
-              .equals<bool>({false, false, false}));
+              .equals<bool>({true, false, true}));
 }
 
 TEST_CASE("Boolean reductions return identities for empty collections",

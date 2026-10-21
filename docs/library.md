@@ -267,7 +267,7 @@ over the current items of a numeric fixed-size TSL, TSD, or TSS. They accept `i6
 `double` and accumulates in `double`; integer sums use the wrapping policy
 described above.
 
-An ordinary call requires a valid collection and valid immediate items.
+A required overload needs a valid collection and valid immediate items.
 `opt(values)` selects an optional overload that skips invalid items:
 
 ```cpp
@@ -306,8 +306,8 @@ storage.
 
 `all_(values)` and `any_(values)` reduce a Boolean fixed-size TSL, TSD, or TSS.
 `all_` tests whether every contributing value is true; `any_` tests whether at
-least one is true. They accept one collection argument. An ordinary call
-requires a valid root and valid immediate items. `opt(values)` selects an
+least one is true. They accept one collection argument. A required overload
+needs a valid root and valid immediate items. `opt(values)` selects an
 overload that skips invalid items and treats an invalid root as empty:
 
 ```cpp
