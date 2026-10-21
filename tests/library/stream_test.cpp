@@ -52,7 +52,7 @@ template <template <typename, auto...> typename Field> struct mixed_guarantee_bu
 } // namespace stream_test
 
 TEST_CASE("type_ reports scalar type and deduplicates repeated values",
-          "[feature:operator][feature:type][series:value][scalar:builtin]"
+          "[feature:operator][feature:type-system][series:value][scalar:i64]"
           "[transition:update][transition:invalidation][transition:revalidation]") {
     const auto graph = [](wp<TS<i64>> value) { return operators::type_(value); };
 
