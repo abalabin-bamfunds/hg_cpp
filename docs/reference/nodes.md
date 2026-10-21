@@ -1,0 +1,73 @@
+# Node declarations
+
+A node performs one calculation or side effect when BG evaluates it. A
+required input needs a current value. An active input schedules evaluation
+when it changes. Inputs are active and required unless declared otherwise.
+
+## Python declarations
+
+| Declaration | Parameters | Result | Initial evaluation |
+| --- | --- | --- | --- |
+| `@node` | Plain scalar annotations; fixed scalars or current `TS` values | Plain scalar return, optional return, or no output | When all resolved arguments are scalars |
+| `@compute_node` | Explicit time series views and fixed scalar arguments | Explicit time series delta or no output | Input driven |
+| `@source_node` | Scalar arguments and permitted injectables | Explicit time series delta | At graph start |
+| `@generator` | Scalar arguments, clock, or state | Yields timed deltas | First source invocation at graph start |
+| `@queue` | Scalar arguments, one `Queue`, optional state or clock | Output type annotation; callback return ignored | Start callback writes messages |
+
+A plain `int` parameter on `@compute_node` is scalar-only. Use `TS[int]` to
+receive a changing input view. `@node` parameters cannot use time series
+annotations. `Scalar[T]` restricts a plain parameter to a scalar.
+
+`int | None` on a plain node input permits an absent value. `TS[int] | None` on
+a compute input permits an invalid input view; the callback still receives a
+view and must inspect `.valid`. An optional scalar return controls whether an
+output update is published. Returning `None` leaves the output unchanged.
+
+A callback returning a valid scalar publishes an update even if equal to the
+previous value, unless the output's guarantee suppresses it. Returning `INVALID`
+removes a supported output's current value. Collection results are deltas; see
+[literals](literals.md).
+
+## C++ declarations
+
+`node(callable)` infers a node from a callable. Plain scalar parameters receive
+fixed arguments or current input values. `std::optional<T>` permits absence.
+A scalar return declares `TS<T>`; `std::optional<T>` returns no update when
+disengaged. A `void` return declares no output unless an `Out<>` parameter
+supplies it.
+
+`node<Definition>()` uses an aggregate with input, scalar, state, and output
+fields. Its `evaluate()` method is `const`. It can define `start`, `stop`, and
+`on_invalidation` callbacks. Fields such as `In<TS<i64>>` and `Out<TS<i64>>`
+provide access during callbacks. Evaluation callbacks can receive
+`EvaluationContext*`.
+
+`In<TS_T, ...>` requests a complete input view. Properties include `optional`,
+`all_valid`, `passive`, and a parameter name. `passive` suppresses scheduling by
+that input; it does not relax its validity requirement. `all_valid` requires the
+root and all immediate contained inputs to be valid. `set_active` and
+`set_passive` adjust a dynamic input's subscriptions during evaluation where
+supported by its declaration. Python declarations do not currently expose
+custom active/passive properties; use `sample` for request-driven reads.
+
+## Scheduling and validity
+
+An input update schedules at most one evaluation in the outer cycle. Evaluation
+reads dependency results from that cycle. All required input constraints must
+hold before the callback runs. A node can also be scheduled at start or by a
+timer. Startup scheduling does not bypass required inputs.
+
+C++ `schedule_on_start` selects initial evaluation explicitly. Aggregate sources
+with no inputs need `static constexpr bool schedule_on_start = true` when they
+rely on initial evaluation rather than a start callback or timer.
+
+Required-input invalidation normally invalidates the output without evaluating
+the ordinary callback. C++ `on_invalidation = preserve_output` keeps it; a custom
+invalidation callback can implement another policy. Python registers
+`@definition.on_invalidation`; it runs when required-input invalidation prevents
+ordinary evaluation. Optional inputs permit the ordinary callback to handle
+absence itself. See [output access](outputs.md) and [state](state.md).
+
+Exceptions propagate from construction or evaluation to the runner after graph
+cleanup. Stop cleanup must not throw; Python reports stop failures through the
+unraisable-exception hook. Error context identifies affected graph calls.

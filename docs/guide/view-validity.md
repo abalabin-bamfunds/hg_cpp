@@ -4,6 +4,8 @@ To inspect an input that may not have a value, request an optional input view.
 Check validity before reading the value. This supports decisions based on both
 availability and update information.
 
+Prerequisites: [Input views](input-views.md).
+
 <!-- runnable-example -->
 ::::::{tab-set}
 :sync-group: language
@@ -12,10 +14,11 @@ availability and update information.
 :sync: python
 
 ```python
+from typing import Optional
 from bg import TS, compute_node, graph, test_graph
 
 @compute_node
-def corrected(reading: TS[int], offset: TS[int] | None) -> TS[int]:
+def corrected(reading: TS[int], offset: Optional[TS[int]]) -> TS[int]:
     return reading.value + (offset.value if offset.valid else 2)
 
 @graph

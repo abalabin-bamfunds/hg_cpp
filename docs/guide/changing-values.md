@@ -310,3 +310,5 @@ true
 For results that depend on a threshold,
 [Conditionals](conditions.md) explains how to choose results during construction
 or as inputs change.
+
+[Test input and recording reference](../reference/testing.md) specifies the full contract.

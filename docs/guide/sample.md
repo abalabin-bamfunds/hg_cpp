@@ -118,3 +118,5 @@ produces no output; a later reading alone still does not publish a sample.
 Another signal can sample it once it is available.
 
 Skipped signals preserve the last sampled value, as at step 4.
+
+[Sampling reference](../reference/library-selection.md#sample) specifies the full contract.

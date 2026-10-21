@@ -138,3 +138,5 @@ it does not apply a tolerance.
 Suppress updates when an unchanged value carries no new information for the
 calculations that follow. When every reading contributes to a count or total,
 use the original input so repeated readings still contribute.
+
+[Deduplication reference](../reference/library-selection.md#dedup) specifies the full contract.

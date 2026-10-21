@@ -3,6 +3,8 @@
 To remove a current reading, publish `INVALID` rather than skipping an update.
 Use `valid` when downstream graph code needs to observe whether a value exists.
 
+Prerequisites: [Optional inputs](optional-inputs.md).
+
 <!-- runnable-example -->
 ::::::{tab-set}
 :sync-group: language

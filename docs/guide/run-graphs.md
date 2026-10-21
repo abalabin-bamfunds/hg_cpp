@@ -4,6 +4,8 @@ To run a complete application graph, connect a source to a sink and call
 `run_graph`. A source introduces values; a sink consumes values without
 producing a graph output. Use `test_graph` when recorded output updates are needed.
 
+Prerequisites: [Calculation nodes](calculation-nodes.md).
+
 <!-- runnable-example -->
 ::::::{tab-set}
 :sync-group: language

@@ -118,3 +118,5 @@ updates too, apply [deduplication](dedup.md) after filtering.
 
 To read the current value on each separate request, use
 [sampling](sample.md).
+
+[Conditional forwarding reference](../reference/library-selection.md#filter_) specifies the full contract.

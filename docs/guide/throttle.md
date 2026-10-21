@@ -4,6 +4,8 @@ To limit how often a changing result publishes, use `throttle`. It forwards the
 first event immediately and combines later events during a period into the
 latest pending state.
 
+Prerequisites: [Evaluation time](time.md).
+
 <!-- runnable-example -->
 ::::::{tab-set}
 :sync-group: language

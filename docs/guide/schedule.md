@@ -3,6 +3,8 @@
 To request work periodically, use `schedule`. A bounded source gives a finite
 simulation and makes its termination explicit. Each signal carries `True`.
 
+Prerequisites: [Evaluation time](time.md).
+
 <!-- runnable-example -->
 ::::::{tab-set}
 :sync-group: language

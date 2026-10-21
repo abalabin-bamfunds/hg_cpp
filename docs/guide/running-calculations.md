@@ -174,3 +174,5 @@ should contribute.
 
 Each call to `sums` or `means` keeps its own history. A new `test_graph` run starts
 with a fresh history.
+
+[Running calculation reference](../reference/library-stateful.md) specifies the full contract.

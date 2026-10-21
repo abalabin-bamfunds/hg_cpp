@@ -10,7 +10,7 @@ source_suffix = {".md": "markdown"}
 root_doc = "index"
 
 # Publish the user documentation; engine documents remain in the repository.
-include_patterns = ["index.md", "guide/**", "reference/**"]
+include_patterns = ["index.md", "guide/**", "how-to/**", "reference/**"]
 nitpicky = True
 myst_heading_anchors = 3
 myst_enable_extensions = ["colon_fence"]

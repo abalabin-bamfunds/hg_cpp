@@ -4,6 +4,8 @@ To retain information specific to one calculation instance, request `State`.
 Use library [running calculations](running-calculations.md) for standard totals
 and means; custom state supports application-specific rules.
 
+Prerequisites: [Calculation nodes](calculation-nodes.md), [running calculations](running-calculations.md).
+
 <!-- runnable-example -->
 ::::::{tab-set}
 :sync-group: language

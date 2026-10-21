@@ -4,6 +4,8 @@ To apply a calculation that the library does not provide, define a node. Node
 code receives current values and returns a result each time BG evaluates it.
 Ordinary language control flow works on these values.
 
+Prerequisites: [Graph functions](connect-calculations.md), [changing inputs](changing-values.md).
+
 <!-- runnable-example -->
 ::::::{tab-set}
 :sync-group: language

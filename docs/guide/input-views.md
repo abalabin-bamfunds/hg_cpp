@@ -4,6 +4,8 @@ To identify which input updated during a calculation, use input views. A view
 provides the current value and information about its update. Plain value
 parameters remain sufficient when the calculation only needs values.
 
+Prerequisites: [Calculation nodes](calculation-nodes.md), [validity](validity.md).
+
 <!-- runnable-example -->
 ::::::{tab-set}
 :sync-group: language

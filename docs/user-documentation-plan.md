@@ -293,34 +293,34 @@ needed for the current example and link to the reference.
 
 ## Draft status
 
-- [Introduction to BG](guide/index.md)
-- [Install BG](guide/installation.md)
-- [A first BG program](guide/getting-started.md)
-- [Arithmetic](guide/arithmetic.md)
-- [Graph functions](guide/connect-calculations.md)
-- [Values that change](guide/changing-values.md)
-- [Conditionals](guide/conditions.md)
-- [Suppress repeated values](guide/dedup.md)
-- [Forward updates conditionally](guide/filter.md)
-- [Read a value when signalled](guide/sample.md)
-- [Count and remember updates](guide/count-and-lag.md)
-- [Running calculations](guide/running-calculations.md)
+All guide sections, task guides, API reference, and library reference are drafted
+on `agent/user-documentation`. The opening chapters retain their established
+URLs. The published navigation includes complete pages rather than placeholders.
 
-Review the opening for whether a new reader can read the syntax, combine
-expressions, and call a graph function before reasoning about changing inputs.
-Keep calibration and display scaling consistent through these chapters.
-Values that change owns fixed versus changing arguments and input update
-behavior. Conditionals uses calibrated temperatures in degrees, before display
-scaling, and owns both conditional choices and selected-input updates. Reuse
-belongs in Graph functions and needs no separate chapter. The later feature
-sections follow the structure above.
+The implementation is checked against `docs/python.md`, `docs/node-api.md`,
+`docs/graph-wiring.md`, `docs/evaluation.md`, `docs/library.md`, the collection and
+higher-order contracts, and their production declarations and tests. The
+language support matrix is explicit where C++ facilities lack a Python API.
 
-For each new chapter, validate both complete language examples and every supplied
-excerpt against the documented outputs. Check skipped and repeated
-updates when they establish the behavior. Build Sphinx with warnings treated as
-errors. Check tabs and mobile presentation when their markup changes.
+## Review and improvement sequence
 
-The plan itself does not add empty chapters to the published navigation.
+Perform at least four distinct cycles. Each cycle reviews the complete body and
+applies corrections before the next cycle.
+
+1. Structure and prerequisites: order concepts, identify each chapter's purpose,
+   remove duplication, and link guide tasks to their reference contracts.
+2. API and behavior: execute examples in both languages against the lane's code;
+   correct signatures, update behavior, defaults, validity, and lifetime claims.
+3. Readability and consistency: remove narrative, imperative lesson language,
+   unexplained syntax, terminology drift, and unnecessary repetition.
+4. Publication and retrieval: check navigation, reference coverage, internal
+   fragments, synchronized language tabs, hidden build instructions, search,
+   and desktop/mobile presentation; fix discovered defects and rebuild.
+
+Record concrete corrections and validation in [documentation review](documentation-review.md).
+`docs/check_examples.py` validates runnable examples. Sphinx builds with
+warnings treated as errors. The lane owns its build artifacts and does not
+modify engine behavior to make examples pass.
 
 ## Documentation site and publication
 

@@ -3,6 +3,8 @@
 To calculate before an offset is available, make the offset optional and choose
 a fallback in node code. Required inputs still need current values.
 
+Prerequisites: [Output publication](skip-output.md).
+
 <!-- runnable-example -->
 ::::::{tab-set}
 :sync-group: language

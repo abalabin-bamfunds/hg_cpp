@@ -112,3 +112,5 @@ BG then evaluates the connected addition and multiplication to produce `200`.
 
 When readings arrive during a run, [Values that change](changing-values.md)
 covers input parameters and the sequences supplied to `test_graph`.
+
+[Graph declaration reference](../reference/graph-code.md) specifies the full contract.

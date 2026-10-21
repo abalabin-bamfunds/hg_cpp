@@ -138,3 +138,5 @@ $env:PATH = "$PWD/install/bin;$env:PATH"
 
 For expressions that combine values, [Arithmetic](arithmetic.md) covers
 operators and named results.
+
+[Constant sources](../reference/sources.md) specifies the full contract.

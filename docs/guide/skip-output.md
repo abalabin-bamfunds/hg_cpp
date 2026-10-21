@@ -3,6 +3,8 @@
 To reject a reading without replacing the last accepted result, return no
 output update. Python uses `None`; C++ uses a disengaged `std::optional` return.
 
+Prerequisites: [Calculation nodes](calculation-nodes.md).
+
 <!-- runnable-example -->
 ::::::{tab-set}
 :sync-group: language
@@ -14,7 +16,7 @@ output update. Python uses `None`; C++ uses a disengaged `std::optional` return.
 from bg import graph, node, test_graph
 
 @node
-def accepted(reading: int) -> int | None:
+def accepted(reading: int) -> int:
     if reading < 0:
         return None
     return reading + 2

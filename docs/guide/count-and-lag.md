@@ -168,3 +168,5 @@ would be published when another reading arrives.
 
 [Running calculations](running-calculations.md) use the same reading sequence to
 maintain a total and a mean across the updates received so far.
+
+[Count and lag reference](../reference/library-stateful.md) specifies the full contract.

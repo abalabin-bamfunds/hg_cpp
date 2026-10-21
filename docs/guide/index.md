@@ -57,5 +57,41 @@ in either language and introduces graph concepts from the beginning.
 - [Running calculations](running-calculations.md): maintain totals and means
   across successive readings.
 
+### Writing nodes
+
+[Calculation nodes](calculation-nodes.md) add value computations. [Optional outputs](skip-output.md)
+and [optional inputs](optional-inputs.md) address missing updates and values.
+[Validity](validity.md) distinguishes absence from a retained current value.
+[Input views](input-views.md) then expose update information and
+[optional view access](view-validity.md).
+
+### Running graphs
+
+[Sources and sinks](run-graphs.md) form complete graphs. [Evaluation time](time.md),
+[periodic signals](schedule.md), [delay](delay.md), and [throttle](throttle.md)
+control timing. [Resetting history](reset-history.md), [custom state](state.md),
+and [lifecycle callbacks](lifecycle.md) define retained information and resources.
+[Custom sources](sources.md) and [queues](queues.md) supply timed or external data.
+
+### Collections
+
+Use [fixed lists](fixed-lists.md), [named bundles](bundles.md), [keyed dictionaries](dictionaries.md),
+or [sets](sets.md) for the required shape. [Collection reductions](collection-reductions.md)
+summarize current items. [Map](map.md) creates a calculation per key;
+[custom aggregation](reduce.md) combines items with application-specific rules.
+
+### Advanced graphs
+
+[Guarantees](guarantees.md) constrain publication. [References](references.md)
+follow changing sources. [Switch](switch.md) selects graph instances;
+[mesh](mesh.md) resolves dependencies between keys. [Generic signatures](generics.md)
+and [variadic inputs](variadic.md) reuse declarations across types and argument counts.
+[Shared inputs](shared-inputs.md), [application state](global-state.md), and
+[services](services.md) address different application-level sharing requirements.
+
+For a specific task, use the [operation chooser](../how-to/choose-operation.md),
+[testing guide](../how-to/testing.md), or [error guide](../how-to/errors.md).
+The [API and library reference](../reference/index.md) provides complete contracts.
+
 The examples begin with plain types such as `int`. Each chapter introduces
 additional syntax when its examples need it.

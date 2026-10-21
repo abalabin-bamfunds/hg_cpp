@@ -112,3 +112,5 @@ uses its output. A named result can also be used in several expressions.
 
 For a calculation used in several places,
 [Graph functions](connect-calculations.md) covers parameters and calls.
+
+[Arithmetic reference](../reference/library-numeric.md) specifies the full contract.

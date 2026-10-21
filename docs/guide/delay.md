@@ -3,6 +3,8 @@
 To preserve each input event and publish it later, use `delay(value, duration)`.
 Delay retains the event's value, so later source changes do not replace it.
 
+Prerequisites: [Evaluation time](time.md).
+
 <!-- runnable-example -->
 ::::::{tab-set}
 :sync-group: language

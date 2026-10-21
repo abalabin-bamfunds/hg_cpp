@@ -429,3 +429,5 @@ calculation from division by zero. A node can use ordinary language `if` on its
 current input values when an operation must run only in one case. Node definitions
 are introduced later. Starting and stopping a selected graph is the separate
 purpose of `switch_`, covered after stateful graphs.
+
+[Selection reference](../reference/library-selection.md) specifies the full contract.
