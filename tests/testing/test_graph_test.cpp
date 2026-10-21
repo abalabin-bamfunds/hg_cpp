@@ -87,18 +87,11 @@ TEST_CASE("test_graph records a profile for a graph function", "[testing][evalua
 
 TEST_CASE("test_graph applies its configured start time to every input path",
           "[testing][evaluation][feature:test-graph][feature:simulation]") {
-    struct test_graph_time_observer {
-        In<TS<i64>> input;
-        Out<TS<i64>> output;
+    const auto observe = node([](EvaluationContext *context, In<TS<i64>>, Out<TS<i64>> output) {
+        output.set(static_cast<i64>(context->evaluation_time().time_since_epoch().count()));
+    });
 
-        void evaluate(EvaluationContext *context) const {
-            output.set(static_cast<i64>(context->evaluation_time().time_since_epoch().count()));
-        }
-    };
-
-    const auto observe = node<test_graph_time_observer>();
-
-    const auto function = [&](wp<TS<i64>> input) -> wp<TS<i64>> {
+    const auto function = [&](wp<TS<i64>> input) {
         return observe(input);
     };
 
@@ -106,25 +99,42 @@ TEST_CASE("test_graph applies its configured start time to every input path",
     const auto start_time = EvaluationTime{std::chrono::microseconds{42}};
     const auto options = GraphRunOptions{.start_time = start_time};
     const auto expected = {std::optional<i64>{42}, std::optional<i64>{43}};
-    CHECK(testing::test_graph(function, options, testing::input<TS<i64>>({1, 2}))
-              .equals<i64>(expected));
-    CHECK(testing::test_graph(template_target, options,
-                                  testing::input<TS<i64>>({1, 2}))
-              .equals<i64>(expected));
-    CHECK(testing::test_graph(function, options, {1, 2}).equals<i64>(expected));
-    CHECK(testing::test_graph(template_target, options, {1, 2}).equals<i64>(expected));
-    CHECK(testing::test_graph(function, options, std::array<i64, 2>{1, 2}).equals<i64>(expected));
-    CHECK(testing::test_graph(template_target, options, std::array<i64, 2>{1, 2}).equals<i64>(expected));
 
-    auto ticks = std::vector<std::optional<ScalarValue<>>>{};
-    ticks.emplace_back(std::in_place, i64{1});
-    ticks.emplace_back(std::in_place, i64{2});
-    const auto runtime_inputs = std::array{
-        testing::TestGraphInput{cpp_scalar_runtime_type<i64>(), ticks},
-    };
-    CHECK(testing::test_graph(template_target, options,
+    SECTION("function typed literal") {
+        CHECK(testing::test_graph(function, options, testing::input<TS<i64>>({1, 2})).equals<i64>(expected));
+    }
+
+    SECTION("template typed literal") {
+        CHECK(testing::test_graph(template_target, options, testing::input<TS<i64>>({1, 2})).equals<i64>(expected));
+    }
+
+    SECTION("function inferred braces") {
+        CHECK(testing::test_graph(function, options, {1, 2}).equals<i64>(expected));
+    }
+
+    SECTION("template inferred braces") {
+        CHECK(testing::test_graph(template_target, options, {1, 2}).equals<i64>(expected));
+    }
+
+    SECTION("function numeric array") {
+        CHECK(testing::test_graph(function, options, std::array<i64, 2>{1, 2}).equals<i64>(expected));
+    }
+
+    SECTION("template numeric array") {
+        CHECK(testing::test_graph(template_target, options, std::array<i64, 2>{1, 2}).equals<i64>(expected));
+    }
+
+    SECTION("template runtime descriptor span") {
+        auto ticks = std::vector<std::optional<ScalarValue<>>>{};
+        ticks.emplace_back(std::in_place, i64{1});
+        ticks.emplace_back(std::in_place, i64{2});
+        const auto runtime_inputs = std::array{
+            testing::TestGraphInput{cpp_scalar_runtime_type<i64>(), ticks},
+        };
+        CHECK(testing::test_graph(template_target, options,
                                   std::span<const testing::TestGraphInput>{runtime_inputs})
-              .equals<i64>(expected));
+                  .equals<i64>(expected));
+    }
 }
 
 TEST_CASE("test_graph rejects realtime evaluation options", "[testing][evaluation][feature:test-graph]") {
