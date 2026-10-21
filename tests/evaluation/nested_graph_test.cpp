@@ -20,6 +20,22 @@ namespace {
 
 using namespace bg::literals;
 
+TEST_CASE("nested graph commits omitted scalar defaults before creating boundaries",
+          "[wiring][nested][feature:nested-graph][feature:wiring-defaults][definition:function][series:value]") {
+    const auto combine = bg::node([](bg::In<bg::TS<bg::i64>> x, bg::In<bg::TS<bg::i64>> n,
+                                     bg::Out<bg::TS<bg::i64>> output) {
+        output.set(*x + *n * 10);
+    });
+    const auto inner = bg::graph(
+        {"x"_n, "n"_n = bg::i64{2}},
+        [=](bg::wp<bg::TS<bg::i64>> x, bg::wp<bg::TS<bg::i64>> n) { return combine(x, n); });
+    const auto outer = [=](bg::wp<bg::TS<bg::i64>> x, bg::wp<bg::TS<bool>> run) {
+        return bg::nested(inner, run, x);
+    };
+
+    CHECK(bg::testing::test_graph(outer, std::array{3}, std::array{true}).equals({23}));
+}
+
 struct LifecycleIncrement {
     bg::In<bg::TS<bg::i64>> input;
     bg::Out<bg::TS<bg::i64>> output;

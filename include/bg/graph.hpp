@@ -48,6 +48,17 @@ template <typename... TypeParameters, typename... Arguments>
                                                            std::forward<Arguments>(arguments)...);
 }
 
+template <typename... TypeParameters, typename... Arguments>
+    requires((details::type_parameter_declaration<TypeParameters> && ...) &&
+             details::unnamed_argument_count<Arguments...> == 1 &&
+             details::named_argument_count<"name", Arguments...> <= 1)
+[[nodiscard]] auto graph(std::initializer_list<WiringParameter> parameters, Arguments &&...arguments) {
+    auto &&function = details::unnamed_argument(std::forward<Arguments>(arguments)...);
+
+    return details::make_callable_graph<TypeParameters...>(parameters, std::forward<decltype(function)>(function),
+                                                            std::forward<Arguments>(arguments)...);
+}
+
 template <typename... Declaration, typename... Arguments>
     requires(sizeof...(Declaration) != 0 && details::aggregate_graph_declaration_parts<Declaration...>::valid)
 [[nodiscard]] auto graph(Arguments &&...arguments) {

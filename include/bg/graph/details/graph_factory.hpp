@@ -2,9 +2,12 @@
 
 #include <bg/graph/details/aggregate_graph.hpp>
 #include <bg/graph/graph_template.hpp>
+#include <bg/graph/wiring_parameter.hpp>
 #include <bg/util/named_argument.hpp>
 
 #include <cstddef>
+#include <initializer_list>
+#include <span>
 #include <type_traits>
 #include <utility>
 
@@ -39,10 +42,9 @@ template <typename First, typename... Rest> decltype(auto) callable_graph_requir
     }
 }
 
-template <typename T> inline constexpr bool supported_aggregate_graph_argument = named_argument_is<"label", T>;
-
 template <typename... TypeParameters, typename Function, typename... Arguments>
-[[nodiscard]] auto make_callable_graph(Function &&function, Arguments &&...arguments) {
+[[nodiscard]] auto make_callable_graph_impl(Function &&function, std::span<const WiringParameter> declarations,
+                                            bool declares_parameters, Arguments &&...arguments) {
     static_assert((supported_callable_graph_argument<Arguments> && ...), "unsupported named graph argument");
     static_assert(named_argument_count<"name", Arguments...> <= 1, "a lambda graph accepts one name argument");
     static_assert(named_argument_count<"label", Arguments...> <= 1, "a graph accepts one label metadata argument");
@@ -58,6 +60,9 @@ template <typename... TypeParameters, typename Function, typename... Arguments>
         }
     }();
     auto signature = make_graph_signature<StoredFunction>(name);
+    if (declares_parameters) {
+        signature = signature.with_parameters(declarations);
+    }
 
     if constexpr (callable_graph_requirement_count<Arguments...> == 0 &&
                   named_argument_count<"label", Arguments...> == 0) {
@@ -88,6 +93,23 @@ template <typename... TypeParameters, typename Function, typename... Arguments>
     }
 }
 
+template <typename... TypeParameters, typename Function, typename... Arguments>
+[[nodiscard]] auto make_callable_graph(Function &&function, Arguments &&...arguments) {
+    return make_callable_graph_impl<TypeParameters...>(std::forward<Function>(function), {}, false,
+                                                       std::forward<Arguments>(arguments)...);
+}
+
+template <typename... TypeParameters, typename Function, typename... Arguments>
+[[nodiscard]] auto make_callable_graph(std::initializer_list<WiringParameter> declarations, Function &&function,
+                                       Arguments &&...arguments) {
+    return make_callable_graph_impl<TypeParameters...>(
+        std::forward<Function>(function), std::span<const WiringParameter>{declarations}, true,
+        std::forward<Arguments>(arguments)...);
+}
+
+template <typename T>
+inline constexpr bool supported_aggregate_graph_argument = named_argument_is<"label", T>;
+
 template <typename Definition, typename... TypeParameters, typename... Arguments>
 [[nodiscard]] auto make_aggregate_graph(Arguments &&...arguments) {
     static_assert((supported_aggregate_graph_argument<Arguments> && ...), "unsupported named graph argument");
@@ -95,15 +117,13 @@ template <typename Definition, typename... TypeParameters, typename... Arguments
 
     using Function = aggregate_graph_function_t<Definition>;
     auto signature = aggregate_graph_signature<Definition>();
-
     if constexpr (named_argument_count<"label", Arguments...> == 0) {
         return GraphTemplate<Function, default_wiring_label, TypeParameters...>{std::move(signature), Function{}};
     } else {
         using Label = std::decay_t<decltype(named_argument_value<"label">(
             std::forward<Arguments>(arguments)...))>;
         return GraphTemplate<Function, Label, TypeParameters...>{
-            std::move(signature), Function{},
-            named_argument_value<"label">(std::forward<Arguments>(arguments)...)};
+            std::move(signature), Function{}, named_argument_value<"label">(std::forward<Arguments>(arguments)...)};
     }
 }
 

@@ -5,6 +5,7 @@
 #include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/graph_argument.hpp>
 #include <bg/graph/wiring_arguments.hpp>
+#include <bg/graph/wiring_parameter.hpp>
 #include <bg/type/guarantee_variable.hpp>
 #include <bg/type/size_variable.hpp>
 #include <bg/type/details/resolver_type_resolution_error.hpp>
@@ -131,6 +132,112 @@ bool same_resolved_signature(const ResolvedSignature &left, const ResolvedSignat
 bool Signature::is_union_parameter(std::size_t index) const noexcept {
     const auto *variable = dynamic_cast<const TypeVariableType<Type> *>(parameters_[index].type);
     return variable != nullptr && !variable->alternatives().empty();
+}
+
+Signature Signature::with_parameters(std::span<const WiringParameter> declarations) const {
+    const auto expected_count = static_cast<std::size_t>(std::ranges::count_if(
+        parameters_, [](const auto &parameter) { return !parameter.context; }));
+    if (declarations.size() != expected_count) {
+        throw std::invalid_argument{"a wiring parameter list requires one entry for every non-context parameter"};
+    }
+
+    auto result = *this;
+    auto defaults = std::vector<std::shared_ptr<const WiringArgument>>{};
+    auto has_defaults = false;
+    auto declaration = declarations.begin();
+    auto seen = std::vector<util::symbol>{};
+    seen.reserve(declarations.size());
+    for (auto index = std::size_t{}; index < result.parameters_.size(); ++index) {
+        auto &parameter = result.parameters_[index];
+        if (parameter.context) {
+            continue;
+        }
+
+        const auto &entry = *declaration++;
+        if (entry.name().text().empty()) {
+            throw std::invalid_argument{"a wiring parameter name cannot be empty"};
+        }
+        if (std::ranges::find(seen, entry.name()) != seen.end()) {
+            throw std::invalid_argument{"a wiring parameter name is repeated"};
+        }
+        seen.push_back(entry.name());
+        if (parameter.name_is_explicit && parameter.name != entry.name()) {
+            throw std::invalid_argument{"a wiring parameter name conflicts with its explicit input name"};
+        }
+        parameter.name = entry.name();
+        parameter.name_is_explicit = true;
+
+        if (const auto &default_argument = entry.default_argument()) {
+            if (parameter.variadic_mode != details::VariadicMode::none) {
+                throw std::invalid_argument{"a variadic parameter cannot have a default"};
+            }
+            if (!default_argument->is_scalar()) {
+                throw std::invalid_argument{"a wiring parameter default must be a scalar value"};
+            }
+            if (!has_defaults) {
+                defaults.resize(result.parameters_.size());
+                has_defaults = true;
+            }
+            defaults[index] = default_argument;
+        }
+    }
+
+    for (const auto &parameter : result.parameters_) {
+        if (parameter.context && std::ranges::find(seen, parameter.name) != seen.end()) {
+            throw std::invalid_argument{"a wiring parameter name conflicts with a context parameter"};
+        }
+    }
+
+    result.defaults_ = std::move(defaults);
+    return result;
+}
+
+Signature Signature::with_defaults(std::span<const WiringParameter> declarations) const {
+    auto result = *this;
+    auto defaults = std::vector<std::shared_ptr<const WiringArgument>>{};
+    auto seen = std::vector<util::symbol>{};
+    seen.reserve(declarations.size());
+    for (const auto &entry : declarations) {
+        if (!entry.default_argument()) {
+            throw std::invalid_argument{"an aggregate default entry must provide a value"};
+        }
+        if (entry.name().text().empty()) {
+            throw std::invalid_argument{"a wiring parameter name cannot be empty"};
+        }
+        if (std::ranges::find(seen, entry.name()) != seen.end()) {
+            throw std::invalid_argument{"a wiring parameter has more than one default"};
+        }
+        seen.push_back(entry.name());
+
+        const auto parameter = std::ranges::find_if(result.parameters_, [&](const auto &candidate) {
+            return candidate.name == entry.name();
+        });
+        if (parameter == result.parameters_.end()) {
+            throw std::invalid_argument{"a wiring default names an unknown parameter"};
+        }
+        if (parameter->context || parameter->variadic_mode != details::VariadicMode::none) {
+            throw std::invalid_argument{"a context or variadic parameter cannot have a wiring default"};
+        }
+        if (!entry.default_argument()->is_scalar()) {
+            throw std::invalid_argument{"a wiring parameter default must be a scalar value"};
+        }
+
+        if (defaults.empty()) {
+            defaults = std::vector<std::shared_ptr<const WiringArgument>>(result.parameters_.size());
+        }
+        const auto index = static_cast<std::size_t>(parameter - result.parameters_.begin());
+        defaults[index] = entry.default_argument();
+    }
+
+    result.defaults_ = std::move(defaults);
+    return result;
+}
+
+const WiringArgument *Signature::default_argument(std::size_t index) const noexcept {
+    if (defaults_.empty() || !defaults_[index]) {
+        return nullptr;
+    }
+    return defaults_[index].get();
 }
 
 void Signature::validate_variadic_parameters() const {

@@ -166,11 +166,14 @@ The operator performs overload resolution within its wiring call.
 
 For each candidate, resolution proceeds in this order:
 
-1. Validate argument qualifiers and scalar presence, then match the supplied types.
-2. Resolve its parameter and output types. This demands only mappings those types use.
-3. Resolve any additional types needed by the wiring template's metadata.
-4. Run the requirement while resolver lookup remains active.
-5. Retain the candidate when each demand and its requirement succeeds.
+1. Bind supplied arguments and fill omissions from the operator prototype's
+   [signature defaults](graph-wiring.md#default-arguments), then from the
+   candidate implementation's defaults.
+2. Validate argument qualifiers and scalar presence, then match the argument types.
+3. Resolve its parameter and output types. This demands only mappings those types use.
+4. Resolve any additional types needed by the wiring template's metadata.
+5. Run the requirement while resolver lookup remains active.
+6. Retain the candidate when each demand and its requirement succeeds.
 
 An explicit operator type argument makes an overload applicable when its
 signature, additional type resolution, or requirement uses that variable.

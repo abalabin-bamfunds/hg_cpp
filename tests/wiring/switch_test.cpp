@@ -2,7 +2,9 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
+#include <bg/operators.hpp>
 #include <bg/switch.hpp>
+#include <bg/testing/test_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tsb/tsb_type.hpp>
@@ -95,6 +97,23 @@ TEST_CASE("switch validates its case set",
             (void)switch_(key(), cases{case_(1, identity)}, value(), value()),
             "switch case graph does not accept every positional argument");
     });
+}
+
+TEST_CASE("switch preserves named arguments around an omitted case default",
+          "[feature:switch][feature:wiring][feature:wiring-defaults][series:value]") {
+    const auto combine = node([](In<TS<i64>> x, In<TS<i64>> y, In<TS<i64>> z, Out<TS<i64>> output) {
+        output.set(*x + *y * 10 + *z * 100);
+    });
+    const auto selected = graph(
+        {"x"_n, "y"_n = i64{2}, "z"_n},
+        [&](wp<TS<i64>> x, wp<TS<i64>> y, wp<TS<i64>> z) { return combine(x, y, z); });
+    const auto run = [&] {
+        return switch_(operators::const_(i64{1}), cases{case_(i64{1}, selected)},
+                       "x"_n = operators::const_(i64{3}), "z"_n = operators::const_(i64{4}))
+            .as<TS<i64>>();
+    };
+
+    CHECK(testing::test_graph(run).equals({423}));
 }
 
 TEST_CASE("switch runtime declarations preserve valid_items inputs",

@@ -271,6 +271,86 @@ hashing also prevents reuse. The first call supplies the retained wiring path.
 Set `deduplicate_wiring` to `false` on a node definition when equal calls must
 create distinct wired nodes.
 
+## Default arguments
+
+Callable nodes and graphs declare parameter names and defaults in one
+initializer list:
+
+```cpp
+using namespace bg::literals;
+
+const auto identity = bg::graph(
+    {"value"_n = bg::i64{7}},
+    [](bg::wp<bg::TS<bg::i64>> value) { return value; });
+
+auto defaulted = identity();
+```
+
+The same initializer-list form is available for callable nodes. Declaration
+names define callable parameter names; use names that match explicit names on
+typed wiring-point parameters. Aggregate nodes and graphs declare defaults in
+a nested `defaults` aggregate whose reflected member names match the input
+fields. An aggregate's default values can be scalar values, including defaults
+for time-series inputs. C++ function default expressions are not available
+through callable type information.
+
+```cpp
+using namespace bg;
+using namespace bg::literals;
+
+struct defaulted_node {
+    In<TS<i64>> value;
+    Out<TS<i64>> output;
+
+    struct defaults {
+        i64 value{7};
+    };
+
+    void evaluate() const { output.set(*value); }
+};
+
+const auto copy = node<defaulted_node>();
+```
+
+Callable nodes use the same declarations before `eval`:
+
+```cpp
+using namespace bg;
+using namespace bg::literals;
+
+const auto copy = node(
+    {"value"_n = i64{7}},
+    eval = [](In<TS<i64>> value, Out<TS<i64>> output) { output.set(*value); });
+```
+
+Wiring substitutes a default only when its argument is omitted. An explicitly
+supplied absent optional scalar overrides the default. Positional calls can
+omit trailing arguments; named calls can omit any parameter with a default.
+Defaults participate in type resolution, requirements, and node-call
+deduplication. Normalization represents a scalar default for a time-series
+parameter with a lazy wiring record. Candidate probes keep the record in an
+overlay; committed normalization gives it to `GraphWiring`, and materialization
+calls `const_()`. For operator calls, a prototype default takes precedence over
+an implementation default.
+An operator prototype declares defaults in its parameter list:
+
+```cpp
+using namespace bg;
+using namespace bg::literals;
+
+auto add = operator_<auto(TS<i64>, TS<i64>) -> TS<i64>>{
+    "add", {"lhs"_n, "rhs"_n = i64{0}}};
+```
+
+Signatures own their scalar defaults. Their source objects need not outlive the
+declaration. A default cannot be a graph-owned wiring point. Context and
+variadic parameters do not accept defaults. Unknown or repeated declaration
+names are errors. An incompatible default fails when a call uses it.
+
+Runtime-signature definitions use `signature.with_defaults(parameters)` to add
+defaults to named parameters. Callable declarations use
+`signature.with_parameters(parameters)` to set names and defaults together.
+
 ## Context time series
 
 A context parameter requests a named time series without adding it to each

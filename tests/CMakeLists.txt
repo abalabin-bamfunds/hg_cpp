@@ -150,6 +150,7 @@ add_executable(
     wiring/compilation_order_test.cpp
     wiring/graph_argument_test.cpp
     wiring/graph_wiring_test.cpp
+    wiring/wiring_defaults_test.cpp
     wiring/graph_wiring_structure_test.cpp
     wiring/fallible_identity_test.cpp
     wiring/map_call_test.cpp

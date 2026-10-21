@@ -149,6 +149,9 @@ class SwitchGraphArgumentBuilder {
                     ++next_positional;
                 }
                 if (next_positional == arguments_.size()) {
+                    if (signature.default_argument(parameter_index) != nullptr) {
+                        continue;
+                    }
                     throw WiringError{"switch case graph is missing argument '" + std::string{name.text()} + "'"};
                 }
                 supplied_index = next_positional++;
@@ -156,7 +159,8 @@ class SwitchGraphArgumentBuilder {
 
             used[supplied_index] = true;
             auto value = WiringArgument::borrow(arguments_[supplied_index]);
-            value.clear_name();
+            value.set_name(name);
+            value.match_fixed_parameter_by_name();
             selected.push_back({supplied_index, std::move(value)});
         }
 

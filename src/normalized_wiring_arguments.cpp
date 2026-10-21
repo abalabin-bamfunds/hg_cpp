@@ -2,11 +2,14 @@
 
 #include <bg/graph/context.hpp>
 #include <bg/graph/details/variadic_wiring_record.hpp>
+#include <bg/graph/details/wiring_record.hpp>
 #include <bg/graph/details/wiring_record_overlay.hpp>
 #include <bg/graph/wiring_error.hpp>
+#include <bg/operators.hpp>
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/time_series/tsb/details/wiring.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
+#include <bg/type/time_series_value_type.hpp>
 #include <bg/type/type_variable.hpp>
 
 #include <algorithm>
@@ -98,11 +101,15 @@ std::vector<WiringArgument> bind_wiring_arguments(const Signature &signature,
             if (signature.parameter(index).context) {
                 continue;
             }
+            if (signature.default_argument(index) != nullptr) {
+                continue;
+            }
             throw WiringError{"a call is missing a fixed argument"};
         }
         bound.push_back(WiringArgument::borrow(*argument));
         if (!signature.parameter(index).context) {
-            bound.back().clear_name();
+            bound.back().set_name(signature.parameter(index).name);
+            bound.back().match_fixed_parameter_by_name();
         }
     }
     for (const auto *argument : extra_positional) {
@@ -124,6 +131,19 @@ struct VariadicCaptureArguments {
 struct PreparedWiringArguments {
     std::vector<WiringArgument> arguments;
     std::vector<std::optional<std::size_t>> supplied_argument_indices;
+};
+
+class ScalarDefaultWiringRecord final : public WiringRecord {
+  public:
+    explicit ScalarDefaultWiringRecord(WiringArgument value)
+        : WiringRecord{time_series_value_type(static_cast<const ScalarType &>(value.type()),
+                                              TimeSeriesGuarantee::const_)},
+          value_{std::move(value)} {}
+
+    WiringPoint materialize(const TimeSeriesType &) const override { return operators::const_(value_); }
+
+  private:
+    WiringArgument value_;
 };
 
 const ScalarType *optional_scalar_type(const Type &type) {
@@ -187,7 +207,8 @@ PreparedWiringArguments prepare_arguments(const Signature &signature, std::span<
                     const auto &parameter = signature.parameter(index);
                     if (parameter.name == *name &&
                         (parameter.context || parameter_aliases != nullptr ||
-                         argument.matches_fixed_parameter_by_name())) {
+                         argument.matches_fixed_parameter_by_name() || !signature.has_variadic_parameters() ||
+                         fixed[index] == nullptr)) {
                         return index;
                     }
                 }
@@ -247,6 +268,12 @@ PreparedWiringArguments prepare_arguments(const Signature &signature, std::span<
             }
             argument = &*context_argument;
         }
+        if (argument == nullptr && parameter_aliases != nullptr && index < parameter_aliases->parameter_count()) {
+            argument = parameter_aliases->default_argument(index);
+        }
+        if (argument == nullptr) {
+            argument = signature.default_argument(index);
+        }
         if (argument == nullptr) {
             if (!parameter.accepts_absent_scalar) {
                 throw WiringError{"a call is missing a fixed argument"};
@@ -271,6 +298,27 @@ PreparedWiringArguments prepare_arguments(const Signature &signature, std::span<
 
 NormalizedWiringArguments normalize_prepared(const Signature &signature, PreparedWiringArguments prepared_arguments,
                                              allocator *memory, WiringRecordOverlay *temporary_records) {
+    const auto add_record = [&](std::unique_ptr<WiringRecord> record) {
+        return temporary_records != nullptr ? temporary_records->add(std::move(record))
+                                            : add_wiring_record(std::move(record));
+    };
+    const auto add_default_record = [&](std::unique_ptr<WiringRecord> record) {
+        return memory != nullptr ? add_wiring_record(std::move(record)) : add_record(std::move(record));
+    };
+    auto *capture_memory = temporary_records == nullptr ? memory : nullptr;
+
+    const auto fixed_count = signature.first_variadic_parameter().value_or(signature.parameter_count());
+    for (auto index = std::size_t{}; index < fixed_count; ++index) {
+        auto &argument = prepared_arguments.arguments[index];
+        if (!argument.is_scalar() || !argument.present() || prepared_arguments.supplied_argument_indices[index] ||
+            !signature.parameter(index).type->is_time_series()) {
+            continue;
+        }
+
+        argument =
+            WiringArgument{add_default_record(std::make_unique<ScalarDefaultWiringRecord>(WiringArgument{argument}))};
+    }
+
     const auto arguments = std::span<const WiringArgument>{prepared_arguments.arguments};
     const auto supplied_argument_indices =
         std::span<const std::optional<std::size_t>>{prepared_arguments.supplied_argument_indices};
@@ -307,11 +355,6 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, Prepare
     normalized.reserve(signature.parameter_count());
     descriptors.reserve(arguments.size());
     normalized_supplied_indices.reserve(signature.parameter_count());
-
-    const auto add_record = [&](std::unique_ptr<WiringRecord> record) {
-        return temporary_records != nullptr ? temporary_records->add(std::move(record))
-                                            : add_wiring_record(std::move(record));
-    };
 
     for (auto index = std::size_t{}; index < *first_variadic; ++index) {
         const auto &argument = arguments[index];
@@ -432,7 +475,7 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, Prepare
                                 operations.accepts_direct(static_cast<const TimeSeriesType &>(argument.type()));
             if (direct) {
                 const auto collection = argument.time_series();
-                auto record = std::make_unique<VariadicWiringRecord>(collection, mode, operations, memory);
+                auto record = std::make_unique<VariadicWiringRecord>(collection, mode, operations, capture_memory);
                 const auto contains_optional_argument = append_record_descriptors(*record);
                 normalized.emplace_back(add_record(std::move(record)));
                 normalized_supplied_indices.emplace_back(std::nullopt);
@@ -474,7 +517,7 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, Prepare
         }
 
         auto record = std::make_unique<VariadicWiringRecord>(static_cast<const TimeSeriesType &>(*parameter.type), mode,
-                                                             operations, std::move(captured), memory);
+                                                             operations, std::move(captured), capture_memory);
         append_record_descriptors(*record);
         normalized.emplace_back(add_record(std::move(record)));
         normalized_supplied_indices.emplace_back(std::nullopt);
@@ -506,6 +549,13 @@ NormalizedWiringArguments normalize_wiring_arguments(const Signature &signature,
                                                      std::span<const WiringArgument> arguments, allocator &memory,
                                                      const Signature *parameter_aliases) {
     return normalize(signature, arguments, true, &memory, nullptr, parameter_aliases);
+}
+
+NormalizedWiringArguments normalize_wiring_arguments(const Signature &signature,
+                                                     std::span<const WiringArgument> arguments, allocator &memory,
+                                                     WiringRecordOverlay &temporary_captures,
+                                                     const Signature *parameter_aliases) {
+    return normalize(signature, arguments, true, &memory, &temporary_captures, parameter_aliases);
 }
 
 NormalizedWiringArguments probe_wiring_arguments(const Signature &signature, std::span<const WiringArgument> arguments,

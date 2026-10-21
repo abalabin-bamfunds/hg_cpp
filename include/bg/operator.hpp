@@ -63,8 +63,9 @@ class OperatorTemplate final
         : Operator(details::operator_typed_prototype<Prototype>::signature(util::symbol{name}, parameter_names),
                    declared_type_parameters()) {}
 
-    OperatorTemplate(std::string_view name, std::initializer_list<std::string_view> parameter_names)
-        : OperatorTemplate(name, std::span<const std::string_view>{parameter_names}) {}
+    OperatorTemplate(std::string_view name, std::initializer_list<WiringParameter> parameters)
+        : Operator(details::operator_typed_prototype<Prototype>::signature(util::symbol{name}, parameters),
+                   declared_type_parameters()) {}
 
     template <typename... Arguments>
     auto operator()(Arguments &&...arguments) const & {
