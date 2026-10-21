@@ -27,51 +27,53 @@
 #include <variant>
 #include <vector>
 
+using namespace bg;
+
 namespace {
 
 using namespace bg::literals;
 
-using RESOLVED_SCALAR = bg::ScalarVariable<"RESOLVED_SCALAR">;
-using RESOLVED_NUMBER = bg::ScalarVariable<"RESOLVED_NUMBER", int, float>;
-using DEPENDENT_KEY = bg::ScalarVariable<"DEPENDENT_KEY">;
-using DEPENDENT_VALUE = bg::ScalarVariable<"DEPENDENT_VALUE">;
-using CYCLIC_LEFT = bg::ScalarVariable<"CYCLIC_LEFT">;
-using CYCLIC_RIGHT = bg::ScalarVariable<"CYCLIC_RIGHT">;
-using RESOLVED_TIME_SERIES = bg::TimeSeriesVariable<"RESOLVED_TIME_SERIES">;
-using NESTED_RESULT = bg::ScalarVariable<"NESTED_RESULT">;
-using VARIADIC_RESULT = bg::ScalarVariable<"VARIADIC_RESULT">;
-using UNMATCHED_FORM_VALUE = bg::ScalarVariable<"UNMATCHED_FORM_VALUE">;
-using STATE_ONLY_VALUE = bg::ScalarVariable<"STATE_ONLY_VALUE", bg::i64, float>;
-using REQUIREMENT_ONLY_VALUE = bg::ScalarVariable<"REQUIREMENT_ONLY_VALUE", bg::i64, float>;
+using RESOLVED_SCALAR = ScalarVariable<"RESOLVED_SCALAR">;
+using RESOLVED_NUMBER = ScalarVariable<"RESOLVED_NUMBER", int, float>;
+using DEPENDENT_KEY = ScalarVariable<"DEPENDENT_KEY">;
+using DEPENDENT_VALUE = ScalarVariable<"DEPENDENT_VALUE">;
+using CYCLIC_LEFT = ScalarVariable<"CYCLIC_LEFT">;
+using CYCLIC_RIGHT = ScalarVariable<"CYCLIC_RIGHT">;
+using RESOLVED_TIME_SERIES = TimeSeriesVariable<"RESOLVED_TIME_SERIES">;
+using NESTED_RESULT = ScalarVariable<"NESTED_RESULT">;
+using VARIADIC_RESULT = ScalarVariable<"VARIADIC_RESULT">;
+using UNMATCHED_FORM_VALUE = ScalarVariable<"UNMATCHED_FORM_VALUE">;
+using STATE_ONLY_VALUE = ScalarVariable<"STATE_ONLY_VALUE", i64, float>;
+using REQUIREMENT_ONLY_VALUE = ScalarVariable<"REQUIREMENT_ONLY_VALUE", i64, float>;
 
 template <template <typename, auto...> typename Field> struct ResolvedBundle {
-    Field<bg::TS<bg::i64>> value;
+    Field<TS<i64>> value;
 };
 
 template <template <typename, auto...> typename Field> struct UnmatchedFormBundle {
-    Field<bg::TS<UNMATCHED_FORM_VALUE>> value;
+    Field<TS<UNMATCHED_FORM_VALUE>> value;
 };
 
-inline constexpr auto RESOLVED_GUARANTEE = bg::guarantee_variable<"RESOLVED_GUARANTEE">;
+inline constexpr auto RESOLVED_GUARANTEE = guarantee_variable<"RESOLVED_GUARANTEE">;
 using RESOLVED_GUARANTEE_DECLARATION = std::remove_cv_t<decltype(RESOLVED_GUARANTEE)>;
-using SIZE_DECLARATION = std::remove_cv_t<decltype(bg::SIZE)>;
+using SIZE_DECLARATION = std::remove_cv_t<decltype(SIZE)>;
 
 struct resolved_source_definition {
     int kind;
-    bg::Out<bg::TS<RESOLVED_SCALAR>> output;
+    Out<TS<RESOLVED_SCALAR>> output;
 
     inline static auto resolver_calls = 0;
 
-    static const bg::ScalarType *resolve(RESOLVED_SCALAR, const bg::WiringArguments &arguments) {
+    static const ScalarType *resolve(RESOLVED_SCALAR, const WiringArguments &arguments) {
         ++resolver_calls;
-        const auto kind = bg::scalar_cast<bg::i64>(*arguments.scalar("kind")).value();
+        const auto kind = scalar_cast<i64>(*arguments.scalar("kind")).value();
 
         if (kind == 0) {
-            return &bg::int64_type();
+            return &int64_type();
         }
 
         if (kind == 1) {
-            return &bg::float_type();
+            return &float_type();
         }
 
         return nullptr;
@@ -81,89 +83,89 @@ struct resolved_source_definition {
 };
 
 struct state_only_resolver_definition {
-    bg::State<bg::List<STATE_ONLY_VALUE>> state;
-    bg::Out<bg::TS<bg::i64>> output;
+    State<List<STATE_ONLY_VALUE>> state;
+    Out<TS<i64>> output;
 
     inline static auto resolver_calls = 0;
 
-    static const bg::ScalarType &resolve(STATE_ONLY_VALUE, const bg::WiringArguments &) {
+    static const ScalarType &resolve(STATE_ONLY_VALUE, const WiringArguments &) {
         ++resolver_calls;
-        return bg::int64_type();
+        return int64_type();
     }
 
     void evaluate() const {}
 };
 
 struct invalid_state_only_resolver_definition {
-    bg::In<bg::TS<bg::SCALAR>> input;
-    bg::State<bg::List<STATE_ONLY_VALUE>> state;
-    bg::Out<bg::TS<bg::i64>> output;
+    In<TS<SCALAR>> input;
+    State<List<STATE_ONLY_VALUE>> state;
+    Out<TS<i64>> output;
 
     inline static auto resolver_calls = 0;
 
-    static const bg::ScalarType &resolve(STATE_ONLY_VALUE, const bg::WiringArguments &) {
+    static const ScalarType &resolve(STATE_ONLY_VALUE, const WiringArguments &) {
         ++resolver_calls;
-        return bg::string_type();
+        return string_type();
     }
 
     void evaluate() const {}
 };
 
 struct resolved_graph_definition {
-    bg::wp<bg::TS_T> input;
+    wp<TS_T> input;
     int kind;
 
     inline static auto resolver_calls = 0;
 
-    static const bg::ScalarType *resolve(RESOLVED_SCALAR, const bg::WiringArguments &arguments) {
+    static const ScalarType *resolve(RESOLVED_SCALAR, const WiringArguments &arguments) {
         ++resolver_calls;
-        return bg::scalar_cast<bg::i64>(*arguments.scalar("kind")).value() == 0 ? &bg::int64_type()
-                                                                                      : &bg::float_type();
+        return scalar_cast<i64>(*arguments.scalar("kind")).value() == 0 ? &int64_type()
+                                                                                      : &float_type();
     }
 
-    bg::wp<bg::TS<RESOLVED_SCALAR>> wire() const { return bg::wp<bg::TS<RESOLVED_SCALAR>>{input}; }
+    wp<TS<RESOLVED_SCALAR>> wire() const { return wp<TS<RESOLVED_SCALAR>>{input}; }
 };
 
 struct invalid_number_source_definition {
-    bg::Out<bg::TS<RESOLVED_NUMBER>> output;
+    Out<TS<RESOLVED_NUMBER>> output;
 
-    static const bg::ScalarType &resolve(RESOLVED_NUMBER, const bg::WiringArguments &) { return bg::string_type(); }
+    static const ScalarType &resolve(RESOLVED_NUMBER, const WiringArguments &) { return string_type(); }
 
     void evaluate() const {}
 };
 
 struct dependent_dictionary_source_definition {
-    bg::Out<bg::TSD<DEPENDENT_KEY, bg::TS<DEPENDENT_VALUE>>> output;
+    Out<TSD<DEPENDENT_KEY, TS<DEPENDENT_VALUE>>> output;
 
-    static const bg::ScalarType &resolve(DEPENDENT_KEY, const bg::WiringArguments &arguments) {
+    static const ScalarType &resolve(DEPENDENT_KEY, const WiringArguments &arguments) {
         const auto *mapping = arguments.type_map().find(DEPENDENT_VALUE::type());
-        return static_cast<const bg::ScalarType &>(**std::get_if<const bg::Type *>(mapping));
+        return static_cast<const ScalarType &>(**std::get_if<const Type *>(mapping));
     }
 
-    static const bg::ScalarType &resolve(DEPENDENT_VALUE, const bg::WiringArguments &) { return bg::float_type(); }
+    static const ScalarType &resolve(DEPENDENT_VALUE, const WiringArguments &) { return float_type(); }
 
     void evaluate() const {}
 };
 
 struct collection_source_definition {
-    bg::Out<bg::TSL<bg::TS<RESOLVED_SCALAR, RESOLVED_GUARANTEE>, bg::SIZE>> output;
+    Out<TSL<TS<RESOLVED_SCALAR, RESOLVED_GUARANTEE>, SIZE>> output;
 
-    static const bg::ScalarType &resolve(RESOLVED_SCALAR, const bg::WiringArguments &) { return bg::int64_type(); }
+    static const ScalarType &resolve(RESOLVED_SCALAR, const WiringArguments &) { return int64_type(); }
 
-    static bg::TimeSeriesGuarantee resolve(RESOLVED_GUARANTEE_DECLARATION, const bg::WiringArguments &) {
-        return bg::TimeSeriesGuarantee::final;
+    static TimeSeriesGuarantee resolve(RESOLVED_GUARANTEE_DECLARATION, const WiringArguments &) {
+        return TimeSeriesGuarantee::final;
     }
 
-    static std::size_t resolve(SIZE_DECLARATION, const bg::WiringArguments &) { return 3; }
+    static std::size_t resolve(SIZE_DECLARATION, const WiringArguments &) { return 3; }
 
     void evaluate() const {}
 };
 
 struct resolved_bundle_source_definition {
-    bg::Out<bg::TSB<bg::SCHEMA>> output;
+    Out<TSB<SCHEMA>> output;
 
-    static const bg::SchemaType &resolve(bg::schema_type<bg::SCHEMA>, const bg::WiringArguments &) {
-        return bg::TSB<ResolvedBundle>::type().schema_type();
+    static const SchemaType &resolve(schema_type<SCHEMA>, const WiringArguments &) {
+        return TSB<ResolvedBundle>::type().schema_type();
     }
 
     void evaluate() const {}
@@ -171,19 +173,19 @@ struct resolved_bundle_source_definition {
 
 struct flat_positional_resolver_definition {
     std::optional<int> fixed;
-    bg::In<bg::TSB<bg::SCHEMA>, bg::var_args> values;
-    bg::Out<bg::TS<VARIADIC_RESULT>> output;
+    In<TSB<SCHEMA>, var_args> values;
+    Out<TS<VARIADIC_RESULT>> output;
 
     inline static auto calls = 0;
 
-    static const bg::ScalarType &resolve(VARIADIC_RESULT, const bg::WiringArguments &arguments) {
+    static const ScalarType &resolve(VARIADIC_RESULT, const WiringArguments &arguments) {
         ++calls;
         REQUIRE(arguments.size() == 2);
         CHECK_FALSE(arguments.present("fixed"));
         CHECK(arguments.argument_name(1).text() == "1");
 
-        return bg::scalar_cast<bg::i64>(*arguments.scalar(1)).value() == 7 ? bg::int64_type()
-                                                                                : bg::float_type();
+        return scalar_cast<i64>(*arguments.scalar(1)).value() == 7 ? int64_type()
+                                                                                : float_type();
     }
 
     void evaluate() const {}
@@ -193,49 +195,49 @@ TEST_CASE("an aggregate resolver completes an output type",
           "[feature:operator][feature:wiring][definition:aggregate]") {
     resolved_source_definition::resolver_calls = 0;
 
-    auto operation = bg::operator_<auto(int)->bg::TS<float>>{"resolved_source", {"kind"}};
-    operation.overload(bg::node<resolved_source_definition>());
+    auto operation = operator_<auto(int)->TS<float>>{"resolved_source", {"kind"}};
+    operation.overload(node<resolved_source_definition>());
 
-    auto wiring = bg::GraphWiring{};
-    auto context = bg::WiringContext{wiring};
-    const auto resolve = [&](int kind) -> const bg::TimeSeriesType & {
+    auto wiring = GraphWiring{};
+    auto context = WiringContext{wiring};
+    const auto resolve = [&](int kind) -> const TimeSeriesType & {
         return operation(kind).type();
     };
 
-    CHECK(&resolve(0) == &bg::TS<bg::i64>::type());
-    CHECK(&resolve(0) == &bg::TS<bg::i64>::type());
+    CHECK(&resolve(0) == &TS<i64>::type());
+    CHECK(&resolve(0) == &TS<i64>::type());
     CHECK(resolved_source_definition::resolver_calls == 1);
-    CHECK(&resolve(1) == &bg::TS<float>::type());
+    CHECK(&resolve(1) == &TS<float>::type());
     CHECK(resolved_source_definition::resolver_calls == 2);
 
     try {
         (void)resolve(2);
         FAIL("expected an invalid resolver result");
-    } catch (const bg::WiringError &error) {
+    } catch (const WiringError &error) {
         REQUIRE(error.diagnostic());
         REQUIRE(error.diagnostic()->candidates.size() == 1);
-        CHECK(error.diagnostic()->candidates.front().stage == bg::WiringFailureStage::resolver);
+        CHECK(error.diagnostic()->candidates.front().stage == WiringFailureStage::resolver);
     }
 }
 
 TEST_CASE("resolvers in unmatched union alternatives stay unused",
           "[feature:wiring][declaration:generic]") {
-    using FORM = bg::Union<"FORM", bg::TS<bg::i64>, bg::TSB<UnmatchedFormBundle>>;
+    using FORM = Union<"FORM", TS<i64>, TSB<UnmatchedFormBundle>>;
 
     auto calls = 0;
-    auto resolvers = std::vector<bg::VariableResolver>{};
-    resolvers.emplace_back(&UNMATCHED_FORM_VALUE::type(), [&](const bg::TypeMap &) -> bg::TypeMapValue {
+    auto resolvers = std::vector<VariableResolver>{};
+    resolvers.emplace_back(&UNMATCHED_FORM_VALUE::type(), [&](const TypeMap &) -> TypeMapValue {
         ++calls;
-        return static_cast<const bg::Type *>(&bg::int64_type());
+        return static_cast<const Type *>(&int64_type());
     });
-    const auto signature = bg::Signature{
-        bg::util::symbol{"consume"}, {{bg::util::symbol{"value"}, &FORM::type()}}, std::move(resolvers)};
-    const auto arguments = std::array<const bg::Type *, 1>{&bg::TS<bg::i64>::type()};
+    const auto signature = Signature{
+        util::symbol{"consume"}, {{util::symbol{"value"}, &FORM::type()}}, std::move(resolvers)};
+    const auto arguments = std::array<const Type *, 1>{&TS<i64>::type()};
     auto type_map = signature.match_arguments(arguments);
     const auto resolved = signature.complete_resolution(type_map);
 
     REQUIRE(resolved.parameters.size() == 1);
-    CHECK(resolved.parameters.front().type == &bg::TS<bg::i64>::type());
+    CHECK(resolved.parameters.front().type == &TS<i64>::type());
     CHECK(calls == 0);
 }
 
@@ -243,10 +245,10 @@ TEST_CASE("candidate metadata demands state-only resolver mappings",
           "[feature:operator][feature:wiring][definition:aggregate]") {
     state_only_resolver_definition::resolver_calls = 0;
 
-    auto operation = bg::operator_<auto() -> bg::TS<bg::i64>>{"state_source"};
-    operation.overload(bg::node<state_only_resolver_definition>());
+    auto operation = operator_<auto() -> TS<i64>>{"state_source"};
+    operation.overload(node<state_only_resolver_definition>());
 
-    bg::testing::test_wiring([&] { CHECK(&operation().type() == &bg::TS<bg::i64>::type()); });
+    testing::test_wiring([&] { CHECK(&operation().type() == &TS<i64>::type()); });
 
     CHECK(state_only_resolver_definition::resolver_calls == 1);
 }
@@ -257,16 +259,16 @@ TEST_CASE("a failed state-only resolver rejects its candidate before fallback se
 
     invalid_state_only_resolver_definition::resolver_calls = 0;
     auto fallback_selected = false;
-    auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS<bg::i64>>{"state_fallback", {"input"}};
-    operation.overload(bg::node<invalid_state_only_resolver_definition>());
-    operation.overload(bg::graph("name"_n = "fallback", [&](bg::wp<bg::TS<bg::i64>> input) {
+    auto operation = operator_<auto(TS_T) -> TS<i64>>{"state_fallback", {"input"}};
+    operation.overload(node<invalid_state_only_resolver_definition>());
+    operation.overload(graph("name"_n = "fallback", [&](wp<TS<i64>> input) {
         fallback_selected = true;
         return input;
     }));
-    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    const auto source = node([](Out<TS<i64>>) {});
 
-    bg::testing::test_wiring([&] {
-        CHECK(&operation(source()).type() == &bg::TS<bg::i64>::type());
+    testing::test_wiring([&] {
+        CHECK(&operation(source()).type() == &TS<i64>::type());
         CHECK(fallback_selected);
     });
 
@@ -277,25 +279,25 @@ TEST_CASE("requirements demand auxiliary resolvers and their scalar reads partic
           "[feature:operator][feature:wiring][definition:function]") {
     auto resolver_calls = 0;
     auto requirement_calls = 0;
-    auto operation = bg::operator_<void(bg::i64, bg::TS<bg::i64>)>{"consume", {"kind", "input"}};
-    operation.overload(bg::node(
-        bg::eval = [](bg::i64, bg::In<bg::TS<bg::i64>>) {},
-        bg::resolve<REQUIREMENT_ONLY_VALUE> = [&](const bg::WiringArguments &arguments) -> const bg::ScalarType & {
+    auto operation = operator_<void(i64, TS<i64>)>{"consume", {"kind", "input"}};
+    operation.overload(node(
+        eval = [](i64, In<TS<i64>>) {},
+        resolve<REQUIREMENT_ONLY_VALUE> = [&](const WiringArguments &arguments) -> const ScalarType & {
             ++resolver_calls;
-            return bg::scalar_cast<bg::i64>(*arguments.scalar(0)).value() == 0 ? bg::int64_type()
-                                                                                   : bg::float_type();
+            return scalar_cast<i64>(*arguments.scalar(0)).value() == 0 ? int64_type()
+                                                                                   : float_type();
         },
-        bg::require = [&](const bg::WiringArguments &arguments) {
+        require = [&](const WiringArguments &arguments) {
             ++requirement_calls;
             const auto *mapping = arguments.type_map().find(REQUIREMENT_ONLY_VALUE::type());
             REQUIRE(mapping != nullptr);
-            const auto *type = std::get_if<const bg::Type *>(mapping);
+            const auto *type = std::get_if<const Type *>(mapping);
             REQUIRE(type != nullptr);
-            return *type == &bg::int64_type() ? bg::accept : bg::reject("resolved value is not int64");
+            return *type == &int64_type() ? accept : reject("resolved value is not int64");
         }));
-    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    const auto source = node([](Out<TS<i64>>) {});
 
-    bg::testing::test_wiring([&] {
+    testing::test_wiring([&] {
         const auto input = source();
         operation(0, input);
         operation(0, input);
@@ -305,10 +307,10 @@ TEST_CASE("requirements demand auxiliary resolvers and their scalar reads partic
         try {
             operation(1, input);
             FAIL("expected the requirement to reject the second resolved type");
-        } catch (const bg::WiringError &error) {
+        } catch (const WiringError &error) {
             REQUIRE(error.diagnostic());
             REQUIRE(error.diagnostic()->candidates.size() == 1);
-            CHECK(error.diagnostic()->candidates.front().stage == bg::WiringFailureStage::requirement);
+            CHECK(error.diagnostic()->candidates.front().stage == WiringFailureStage::requirement);
         }
     });
 
@@ -318,31 +320,31 @@ TEST_CASE("requirements demand auxiliary resolvers and their scalar reads partic
 
 TEST_CASE("a requirement error remains a callback error after catching a resolver failure",
           "[feature:operator][feature:wiring][definition:function]") {
-    auto operation = bg::operator_<void()>{"requirement_error"};
-    operation.overload(bg::node(
-        bg::eval = [] {},
-        bg::resolve<REQUIREMENT_ONLY_VALUE> = [](const bg::WiringArguments &) -> const bg::ScalarType & {
-            return bg::string_type();
+    auto operation = operator_<void()>{"requirement_error"};
+    operation.overload(node(
+        eval = [] {},
+        resolve<REQUIREMENT_ONLY_VALUE> = [](const WiringArguments &) -> const ScalarType & {
+            return string_type();
         },
-        bg::require = [](const bg::WiringArguments &arguments) {
+        require = [](const WiringArguments &arguments) {
             try {
                 (void)arguments.type_map().find(REQUIREMENT_ONLY_VALUE::type());
-            } catch (const bg::TypeResolutionError &) {
-                throw bg::TypeResolutionError{bg::TypeResolutionErrorCode::invalid_type_map,
-                                              bg::util::symbol{"requirement"}, "requirement owns this error"};
+            } catch (const TypeResolutionError &) {
+                throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map,
+                                              util::symbol{"requirement"}, "requirement owns this error"};
             }
 
-            return bg::accept;
+            return accept;
         }));
 
-    bg::testing::test_wiring([&] {
+    testing::test_wiring([&] {
         try {
             operation();
             FAIL("expected the requirement callback to fail");
-        } catch (const bg::WiringError &error) {
+        } catch (const WiringError &error) {
             REQUIRE(error.diagnostic());
             REQUIRE(error.diagnostic()->candidates.size() == 1);
-            CHECK(error.diagnostic()->candidates.front().stage == bg::WiringFailureStage::callback);
+            CHECK(error.diagnostic()->candidates.front().stage == WiringFailureStage::callback);
             CHECK(std::string{error.what()}.contains("requirement owns this error"));
         }
     });
@@ -354,25 +356,25 @@ TEST_CASE("an invalid resolver demanded by a requirement rejects its candidate",
 
     auto resolver_calls = 0;
     auto fallback_selected = false;
-    auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS<bg::i64>>{"requirement_fallback", {"input"}};
-    operation.overload(bg::node(
-        bg::eval = [](bg::In<bg::TS<bg::SCALAR>>, bg::Out<bg::TS<bg::i64>>) {},
-        bg::resolve<REQUIREMENT_ONLY_VALUE> = [&](const bg::WiringArguments &) -> const bg::ScalarType & {
+    auto operation = operator_<auto(TS_T) -> TS<i64>>{"requirement_fallback", {"input"}};
+    operation.overload(node(
+        eval = [](In<TS<SCALAR>>, Out<TS<i64>>) {},
+        resolve<REQUIREMENT_ONLY_VALUE> = [&](const WiringArguments &) -> const ScalarType & {
             ++resolver_calls;
-            return bg::string_type();
+            return string_type();
         },
-        bg::require = [](const bg::WiringArguments &arguments) {
+        require = [](const WiringArguments &arguments) {
             (void)arguments.type_map().find(REQUIREMENT_ONLY_VALUE::type());
-            return bg::accept;
+            return accept;
         }));
-    operation.overload(bg::graph("name"_n = "fallback", [&](bg::wp<bg::TS<bg::i64>> input) {
+    operation.overload(graph("name"_n = "fallback", [&](wp<TS<i64>> input) {
         fallback_selected = true;
         return input;
     }));
-    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    const auto source = node([](Out<TS<i64>>) {});
 
-    bg::testing::test_wiring([&] {
-        CHECK(&operation(source()).type() == &bg::TS<bg::i64>::type());
+    testing::test_wiring([&] {
+        CHECK(&operation(source()).type() == &TS<i64>::type());
         CHECK(fallback_selected);
     });
 
@@ -383,13 +385,15 @@ TEST_CASE("an aggregate graph resolver completes its output type",
           "[feature:wiring][definition:aggregate][declaration:generic]") {
     resolved_graph_definition::resolver_calls = 0;
 
-    const auto resolved = bg::graph<resolved_graph_definition>();
-    const auto integer_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
-    const auto float_source = bg::node([](bg::Out<bg::TS<float>>) {});
+    const auto resolved = graph<resolved_graph_definition>();
 
-    bg::testing::test_wiring([&] {
-        CHECK(&resolved(integer_source(), 0).type() == &bg::TS<bg::i64>::type());
-        CHECK(&resolved(float_source(), 1).type() == &bg::TS<float>::type());
+    const auto integer_source = node([](Out<TS<i64>>) {});
+
+    const auto float_source = node([](Out<TS<float>>) {});
+
+    testing::test_wiring([&] {
+        CHECK(&resolved(integer_source(), 0).type() == &TS<i64>::type());
+        CHECK(&resolved(float_source(), 1).type() == &TS<float>::type());
     });
 
     CHECK(resolved_graph_definition::resolver_calls == 2);
@@ -399,18 +403,18 @@ TEST_CASE("resolvers see one flat positional argument sequence",
           "[feature:operator][feature:wiring][feature:variadic-wiring][definition:aggregate]") {
     flat_positional_resolver_definition::calls = 0;
 
-    auto operation = bg::operator_<auto(int, bg::TS_T) -> bg::TS<bg::i64>>{"resolve", {"fixed", "values"}};
-    operation.overload(bg::node<flat_positional_resolver_definition>());
-    const auto sender = bg::graph(
+    auto operation = operator_<auto(int, TS_T) -> TS<i64>>{"resolve", {"fixed", "values"}};
+    operation.overload(node<flat_positional_resolver_definition>());
+    const auto sender = graph(
         "name"_n = "sender",
         [&](std::optional<int> fixed,
-            bg::wp<bg::TSB<bg::SCHEMA>, bg::var_args> values) -> bg::wp<bg::TS<bg::i64>> {
-            return operation(fixed, values).as<bg::TS<bg::i64>>();
+            wp<TSB<SCHEMA>, var_args> values) -> wp<TS<i64>> {
+            return operation(fixed, values).as<TS<i64>>();
         });
 
-    bg::testing::test_wiring([&] {
-        CHECK(&operation(std::optional<int>{}, std::optional<int>{}, 7).type() == &bg::TS<bg::i64>::type());
-        CHECK(&sender(std::optional<int>{}, std::optional<int>{}, 7).type() == &bg::TS<bg::i64>::type());
+    testing::test_wiring([&] {
+        CHECK(&operation(std::optional<int>{}, std::optional<int>{}, 7).type() == &TS<i64>::type());
+        CHECK(&sender(std::optional<int>{}, std::optional<int>{}, 7).type() == &TS<i64>::type());
     });
 
     CHECK(flat_positional_resolver_definition::calls == 2);
@@ -419,27 +423,27 @@ TEST_CASE("resolvers see one flat positional argument sequence",
 TEST_CASE("resolvers find direct and forwarded named captures",
           "[feature:operator][feature:wiring][feature:variadic-wiring][definition:function]") {
     auto calls = 0;
-    auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS<bg::i64>>{"resolve", {"values"}};
-    operation.overload(bg::node(
-        bg::eval = [](bg::In<bg::TSB<bg::SCHEMA>, bg::var_kwargs>, bg::Out<bg::TS<VARIADIC_RESULT>>) {},
-        bg::resolve<VARIADIC_RESULT> = [&](const bg::WiringArguments &arguments) -> const bg::ScalarType & {
+    auto operation = operator_<auto(TS_T) -> TS<i64>>{"resolve", {"values"}};
+    operation.overload(node(
+        eval = [](In<TSB<SCHEMA>, var_kwargs>, Out<TS<VARIADIC_RESULT>>) {},
+        resolve<VARIADIC_RESULT> = [&](const WiringArguments &arguments) -> const ScalarType & {
             ++calls;
             REQUIRE(arguments.size() == 2);
             CHECK(arguments.argument_index("kind") == 0);
             CHECK(arguments.argument_index("value") == 1);
 
-            return bg::scalar_cast<bg::i64>(*arguments.scalar("kind")).value() == 0 ? bg::int64_type()
-                                                                                          : bg::float_type();
+            return scalar_cast<i64>(*arguments.scalar("kind")).value() == 0 ? int64_type()
+                                                                                          : float_type();
         }));
-    const auto sender = bg::graph(
+    const auto sender = graph(
         "name"_n = "sender",
-        [&](bg::wp<bg::TSB<bg::SCHEMA>, bg::var_kwargs> values) -> bg::wp<bg::TS<bg::i64>> {
-            return operation(values).as<bg::TS<bg::i64>>();
+        [&](wp<TSB<SCHEMA>, var_kwargs> values) -> wp<TS<i64>> {
+            return operation(values).as<TS<i64>>();
         });
 
-    bg::testing::test_wiring([&] {
-        CHECK(&operation("kind"_n = 0, "value"_n = 1).type() == &bg::TS<bg::i64>::type());
-        CHECK(&sender("kind"_n = 0, "value"_n = 1).type() == &bg::TS<bg::i64>::type());
+    testing::test_wiring([&] {
+        CHECK(&operation("kind"_n = 0, "value"_n = 1).type() == &TS<i64>::type());
+        CHECK(&sender("kind"_n = 0, "value"_n = 1).type() == &TS<i64>::type());
     });
 
     CHECK(calls == 2);
@@ -447,19 +451,19 @@ TEST_CASE("resolvers find direct and forwarded named captures",
 
 TEST_CASE("a callable resolver completes an output type", "[feature:operator][feature:wiring][definition:function]") {
     auto resolver_calls = 0;
-    auto operation = bg::operator_<auto(int)->bg::TS<float>>{"resolved_source", {"kind"}};
-    operation.overload(bg::node(
-        bg::eval = [](int, bg::Out<bg::TS<RESOLVED_SCALAR>>) {},
-        bg::resolve<RESOLVED_SCALAR> = [&](const bg::WiringArguments &arguments) -> const bg::ScalarType * {
+    auto operation = operator_<auto(int)->TS<float>>{"resolved_source", {"kind"}};
+    operation.overload(node(
+        eval = [](int, Out<TS<RESOLVED_SCALAR>>) {},
+        resolve<RESOLVED_SCALAR> = [&](const WiringArguments &arguments) -> const ScalarType * {
             ++resolver_calls;
-            return bg::scalar_cast<bg::i64>(*arguments.scalar(0)).value() == 0 ? &bg::int64_type()
-                                                                                    : &bg::float_type();
+            return scalar_cast<i64>(*arguments.scalar(0)).value() == 0 ? &int64_type()
+                                                                                    : &float_type();
         }));
 
-    bg::testing::test_wiring([&] {
-        CHECK(&operation(0).type() == &bg::TS<bg::i64>::type());
-        CHECK(&operation(0).type() == &bg::TS<bg::i64>::type());
-        CHECK(&operation(1).type() == &bg::TS<float>::type());
+    testing::test_wiring([&] {
+        CHECK(&operation(0).type() == &TS<i64>::type());
+        CHECK(&operation(0).type() == &TS<i64>::type());
+        CHECK(&operation(1).type() == &TS<float>::type());
     });
 
     CHECK(resolver_calls == 2);
@@ -467,63 +471,63 @@ TEST_CASE("a callable resolver completes an output type", "[feature:operator][fe
 
 TEST_CASE("an aggregate resolver cannot bypass a variable constraint",
           "[feature:operator][feature:wiring][definition:aggregate]") {
-    auto operation = bg::operator_<auto()->bg::TS<float>>{"number_source"};
-    operation.overload(bg::node<invalid_number_source_definition>());
+    auto operation = operator_<auto()->TS<float>>{"number_source"};
+    operation.overload(node<invalid_number_source_definition>());
 
-    bg::testing::test_wiring([&] {
+    testing::test_wiring([&] {
         try {
             (void)operation();
             FAIL("expected an incompatible resolver result");
-        } catch (const bg::WiringError &error) {
+        } catch (const WiringError &error) {
             REQUIRE(error.diagnostic());
             REQUIRE(error.diagnostic()->candidates.size() == 1);
-            CHECK(error.diagnostic()->candidates.front().stage == bg::WiringFailureStage::resolver);
+            CHECK(error.diagnostic()->candidates.front().stage == WiringFailureStage::resolver);
         }
     });
 }
 
 TEST_CASE("a callable resolver cannot bypass a variable constraint",
           "[feature:operator][feature:wiring][definition:function]") {
-    auto operation = bg::operator_<auto()->bg::TS<float>>{"number_source"};
-    operation.overload(bg::node(
-        bg::eval = [](bg::Out<bg::TS<RESOLVED_NUMBER>>) {},
-        bg::resolve<RESOLVED_NUMBER> = [](const bg::WiringArguments &) -> const bg::ScalarType & {
-            return bg::string_type();
+    auto operation = operator_<auto()->TS<float>>{"number_source"};
+    operation.overload(node(
+        eval = [](Out<TS<RESOLVED_NUMBER>>) {},
+        resolve<RESOLVED_NUMBER> = [](const WiringArguments &) -> const ScalarType & {
+            return string_type();
         }));
 
-    bg::testing::test_wiring([&] { CHECK_THROWS_AS(operation(), bg::WiringError); });
+    testing::test_wiring([&] { CHECK_THROWS_AS(operation(), WiringError); });
 }
 
 TEST_CASE("a resolver-produced time-series type can apply a guarantee",
           "[feature:operator][feature:wiring][feature:type-system][declaration:generic]"
           "[scalar:opaque][guarantee:deduplicated]") {
-    using OPAQUE_SERIES = bg::TimeSeriesVariable<"OPAQUE_SERIES">;
-    using DEDUPLICATED_RESULT = RESOLVED_TIME_SERIES::with<bg::TimeSeriesGuarantee::deduplicated>;
-    (void)bg::cpp_scalar_runtime_type<bg::Opaque<int>>();
+    using OPAQUE_SERIES = TimeSeriesVariable<"OPAQUE_SERIES">;
+    using DEDUPLICATED_RESULT = RESOLVED_TIME_SERIES::with<TimeSeriesGuarantee::deduplicated>;
+    (void)cpp_scalar_runtime_type<Opaque<int>>();
     const auto unsupported = [] {
-        return bg::node(
-            bg::eval = [](bg::Out<DEDUPLICATED_RESULT>) {},
-            bg::resolve<RESOLVED_TIME_SERIES> = [](const bg::WiringArguments &) -> const bg::TimeSeriesType & {
-                return bg::time_series_value_type(bg::cpp_scalar_type<bg::Opaque<int>>(),
-                                                  bg::TimeSeriesGuarantee::ordinary)
-                    .with_guarantee(bg::TimeSeriesGuarantee::deduplicated);
+        return node(
+            eval = [](Out<DEDUPLICATED_RESULT>) {},
+            resolve<RESOLVED_TIME_SERIES> = [](const WiringArguments &) -> const TimeSeriesType & {
+                return time_series_value_type(cpp_scalar_type<Opaque<int>>(),
+                                                  TimeSeriesGuarantee::ordinary)
+                    .with_guarantee(TimeSeriesGuarantee::deduplicated);
             });
     };
-    const auto &opaque_type = bg::time_series_value_type(bg::cpp_scalar_type<bg::Opaque<int>>(),
-                                                         bg::TimeSeriesGuarantee::ordinary);
+    const auto &opaque_type = time_series_value_type(cpp_scalar_type<Opaque<int>>(),
+                                                         TimeSeriesGuarantee::ordinary);
 
     const auto check_registration_order = [&](bool unsupported_first) {
-        auto operation = bg::operator_<auto() -> bg::TS_T>{"deduplicated_output"};
+        auto operation = operator_<auto() -> TS_T>{"deduplicated_output"};
         auto fallback_selected = false;
-        const auto concrete = bg::node(
-            bg::eval = [](bg::Out<OPAQUE_SERIES>) {},
-            bg::require = [&](const bg::WiringArguments &) {
+        const auto concrete = node(
+            eval = [](Out<OPAQUE_SERIES>) {},
+            require = [&](const WiringArguments &) {
                 fallback_selected = true;
-                return bg::accept;
+                return accept;
             },
-            bg::resolve<OPAQUE_SERIES> = []() -> const bg::TimeSeriesType & {
-                return bg::time_series_value_type(bg::cpp_scalar_type<bg::Opaque<int>>(),
-                                                  bg::TimeSeriesGuarantee::ordinary);
+            resolve<OPAQUE_SERIES> = []() -> const TimeSeriesType & {
+                return time_series_value_type(cpp_scalar_type<Opaque<int>>(),
+                                                  TimeSeriesGuarantee::ordinary);
             });
         if (unsupported_first) {
             operation.overload(unsupported());
@@ -533,7 +537,7 @@ TEST_CASE("a resolver-produced time-series type can apply a guarantee",
             operation.overload(unsupported());
         }
 
-        bg::testing::test_wiring([&] {
+        testing::test_wiring([&] {
             CHECK(&operation().type() == &opaque_type);
             CHECK(fallback_selected);
         });
@@ -542,16 +546,16 @@ TEST_CASE("a resolver-produced time-series type can apply a guarantee",
     check_registration_order(true);
     check_registration_order(false);
 
-    auto operation = bg::operator_<auto() -> bg::TS_T>{"deduplicated_output_without_fallback"};
+    auto operation = operator_<auto() -> TS_T>{"deduplicated_output_without_fallback"};
     operation.overload(unsupported());
-    bg::testing::test_wiring([&] {
+    testing::test_wiring([&] {
         try {
             (void)operation();
             FAIL("expected no applicable overload");
-        } catch (const bg::WiringError &error) {
+        } catch (const WiringError &error) {
             REQUIRE(error.diagnostic());
             REQUIRE(error.diagnostic()->candidates.size() == 1);
-            CHECK(error.diagnostic()->candidates.front().stage == bg::WiringFailureStage::resolver);
+            CHECK(error.diagnostic()->candidates.front().stage == WiringFailureStage::resolver);
             CHECK(std::string{error.what()}.contains("requires a scalar type that supports equality"));
         }
     });
@@ -560,26 +564,26 @@ TEST_CASE("a resolver-produced time-series type can apply a guarantee",
 TEST_CASE("a generic deduplicated output rejects an unsupported scalar before fallback selection",
           "[feature:operator][feature:wiring][declaration:generic][scalar:opaque]"
           "[guarantee:deduplicated]") {
-    using OPAQUE_SERIES = bg::TimeSeriesVariable<"OPAQUE_SERIES">;
-    using VALUE = bg::ScalarVariable<"DEDUPLICATED_OUTPUT_VALUE">;
-    (void)bg::cpp_scalar_runtime_type<bg::Opaque<int>>();
-    const auto source = bg::node(
-        bg::eval = [](bg::Out<OPAQUE_SERIES>) {},
-        bg::resolve<OPAQUE_SERIES> = []() -> const bg::TimeSeriesType & {
-            return bg::time_series_value_type(bg::cpp_scalar_type<bg::Opaque<int>>(),
-                                              bg::TimeSeriesGuarantee::ordinary);
+    using OPAQUE_SERIES = TimeSeriesVariable<"OPAQUE_SERIES">;
+    using VALUE = ScalarVariable<"DEDUPLICATED_OUTPUT_VALUE">;
+    (void)cpp_scalar_runtime_type<Opaque<int>>();
+    const auto source = node(
+        eval = [](Out<OPAQUE_SERIES>) {},
+        resolve<OPAQUE_SERIES> = []() -> const TimeSeriesType & {
+            return time_series_value_type(cpp_scalar_type<Opaque<int>>(),
+                                              TimeSeriesGuarantee::ordinary);
         });
-    const auto generic = bg::node(bg::eval = [](bg::In<bg::TS<VALUE>>,
-                                                bg::Out<bg::TS<VALUE, bg::TimeSeriesGuarantee::deduplicated>>) {});
-    const auto &opaque_type = bg::time_series_value_type(bg::cpp_scalar_type<bg::Opaque<int>>(),
-                                                         bg::TimeSeriesGuarantee::ordinary);
+    const auto generic = node(eval = [](In<TS<VALUE>>,
+                                                Out<TS<VALUE, TimeSeriesGuarantee::deduplicated>>) {});
+    const auto &opaque_type = time_series_value_type(cpp_scalar_type<Opaque<int>>(),
+                                                         TimeSeriesGuarantee::ordinary);
 
     const auto check_registration_order = [&](bool generic_first) {
-        auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS_T>{"generic_deduplicated_output", {"input"}};
+        auto operation = operator_<auto(TS_T) -> TS_T>{"generic_deduplicated_output", {"input"}};
         auto fallback_selected = false;
-        const auto fallback = bg::graph(
+        const auto fallback = graph(
             "name"_n = "concrete_fallback",
-            [&](bg::wp<OPAQUE_SERIES> input) {
+            [&](wp<OPAQUE_SERIES> input) {
                 fallback_selected = true;
                 return input;
             });
@@ -592,7 +596,7 @@ TEST_CASE("a generic deduplicated output rejects an unsupported scalar before fa
             operation.overload(generic);
         }
 
-        bg::testing::test_wiring([&] {
+        testing::test_wiring([&] {
             CHECK(&operation(source()).type() == &opaque_type);
             CHECK(fallback_selected);
         });
@@ -604,24 +608,24 @@ TEST_CASE("a generic deduplicated output rejects an unsupported scalar before fa
 
 TEST_CASE("a resolver callback invalid_argument remains a fatal wiring error",
           "[feature:operator][feature:wiring][definition:function][declaration:generic]") {
-    auto operation = bg::operator_<auto() -> bg::TS<float>>{"resolver_callback_error"};
-    const auto concrete = bg::node([](bg::Out<bg::TS<float>>) {});
-    operation.overload(bg::graph("name"_n = "concrete_fallback", [concrete] { return concrete(); }));
-    operation.overload(bg::node(
-        bg::eval = [](bg::Out<bg::TS<RESOLVED_SCALAR>>) {},
-        bg::resolve<RESOLVED_SCALAR> = [](const bg::WiringArguments &) -> const bg::ScalarType & {
+    auto operation = operator_<auto() -> TS<float>>{"resolver_callback_error"};
+    const auto concrete = node([](Out<TS<float>>) {});
+    operation.overload(graph("name"_n = "concrete_fallback", [concrete] { return concrete(); }));
+    operation.overload(node(
+        eval = [](Out<TS<RESOLVED_SCALAR>>) {},
+        resolve<RESOLVED_SCALAR> = [](const WiringArguments &) -> const ScalarType & {
             throw std::invalid_argument{"resolver callback failure"};
         }));
 
-    bg::testing::test_wiring([&] {
+    testing::test_wiring([&] {
         try {
             (void)operation();
             FAIL("expected a resolver callback failure");
-        } catch (const bg::WiringError &error) {
+        } catch (const WiringError &error) {
             REQUIRE(error.diagnostic());
             auto callback_failure_found = false;
             for (const auto &candidate : error.diagnostic()->candidates) {
-                callback_failure_found |= candidate.stage == bg::WiringFailureStage::callback;
+                callback_failure_found |= candidate.stage == WiringFailureStage::callback;
             }
             CHECK(callback_failure_found);
             CHECK(std::string{error.what()}.contains("resolver callback failure"));
@@ -632,36 +636,36 @@ TEST_CASE("a resolver callback invalid_argument remains a fatal wiring error",
 TEST_CASE("generic identity overloads accept no-equality final and const values",
           "[feature:operator][feature:wiring][declaration:generic][scalar:opaque]"
           "[guarantee:final][guarantee:const]") {
-    using OPAQUE_SERIES = bg::TimeSeriesVariable<"OPAQUE_SERIES">;
-    const auto &opaque = bg::cpp_scalar_type<bg::Opaque<int>>();
-    (void)bg::cpp_scalar_runtime_type<bg::Opaque<int>>();
-    const auto make_source = [](bg::TimeSeriesGuarantee guarantee) {
-        return bg::node(
-            bg::eval = [](bg::Out<OPAQUE_SERIES>) {},
-            bg::resolve<OPAQUE_SERIES> = [guarantee]() -> const bg::TimeSeriesType & {
-                return bg::time_series_value_type(bg::cpp_scalar_type<bg::Opaque<int>>(), guarantee);
+    using OPAQUE_SERIES = TimeSeriesVariable<"OPAQUE_SERIES">;
+    const auto &opaque = cpp_scalar_type<Opaque<int>>();
+    (void)cpp_scalar_runtime_type<Opaque<int>>();
+    const auto make_source = [](TimeSeriesGuarantee guarantee) {
+        return node(
+            eval = [](Out<OPAQUE_SERIES>) {},
+            resolve<OPAQUE_SERIES> = [guarantee]() -> const TimeSeriesType & {
+                return time_series_value_type(cpp_scalar_type<Opaque<int>>(), guarantee);
             });
     };
-    auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS_T>{"opaque_identity", {"value"}};
+    auto operation = operator_<auto(TS_T) -> TS_T>{"opaque_identity", {"value"}};
     auto generic_selected = 0;
     auto deduplicated_selected = 0;
-    operation.overload(bg::node(
-        bg::eval = [](bg::In<bg::TS_T::with<bg::TimeSeriesGuarantee::deduplicated>>,
-                      bg::Out<bg::TS_T::with<bg::TimeSeriesGuarantee::deduplicated>>) {},
-        bg::require = [&](const bg::WiringArguments &) {
+    operation.overload(node(
+        eval = [](In<TS_T::with<TimeSeriesGuarantee::deduplicated>>,
+                      Out<TS_T::with<TimeSeriesGuarantee::deduplicated>>) {},
+        require = [&](const WiringArguments &) {
             ++deduplicated_selected;
-            return bg::accept;
+            return accept;
         }));
-    operation.overload(bg::graph("name"_n = "identity", [&](bg::wp<bg::TS_T> value) {
+    operation.overload(graph("name"_n = "identity", [&](wp<TS_T> value) {
         ++generic_selected;
         return value;
     }));
-    const auto final_source = make_source(bg::TimeSeriesGuarantee::final);
-    const auto const_source = make_source(bg::TimeSeriesGuarantee::const_);
-    const auto &final_type = bg::time_series_value_type(opaque, bg::TimeSeriesGuarantee::final);
-    const auto &const_type = bg::time_series_value_type(opaque, bg::TimeSeriesGuarantee::const_);
+    const auto final_source = make_source(TimeSeriesGuarantee::final);
+    const auto const_source = make_source(TimeSeriesGuarantee::const_);
+    const auto &final_type = time_series_value_type(opaque, TimeSeriesGuarantee::final);
+    const auto &const_type = time_series_value_type(opaque, TimeSeriesGuarantee::const_);
 
-    bg::testing::test_wiring([&] {
+    testing::test_wiring([&] {
         CHECK(&operation(final_source()).type() == &final_type);
         CHECK(&operation(const_source()).type() == &const_type);
     });
@@ -672,119 +676,120 @@ TEST_CASE("generic identity overloads accept no-equality final and const values"
 
 TEST_CASE("aggregate resolvers resolve dependencies on demand",
           "[feature:operator][feature:wiring][definition:aggregate]") {
-    auto operation = bg::operator_<auto()->bg::TSD<bg::i64, bg::TS<float>>>{"dictionary_source"};
-    operation.overload(bg::node<dependent_dictionary_source_definition>());
+    auto operation = operator_<auto()->TSD<i64, TS<float>>>{"dictionary_source"};
+    operation.overload(node<dependent_dictionary_source_definition>());
 
-    bg::testing::test_wiring([&] { CHECK(&operation().type() == &bg::TSD<float, bg::TS<float>>::type()); });
+    testing::test_wiring([&] { CHECK(&operation().type() == &TSD<float, TS<float>>::type()); });
 }
 
 TEST_CASE("callable resolvers resolve dependencies on demand",
           "[feature:operator][feature:wiring][definition:function]") {
-    auto operation = bg::operator_<auto()->bg::TSD<bg::i64, bg::TS<float>>>{"dictionary_source"};
-    operation.overload(bg::node(
-        bg::eval = [](bg::Out<bg::TSD<DEPENDENT_KEY, bg::TS<DEPENDENT_VALUE>>>) {},
-        bg::resolve<DEPENDENT_KEY> = [](const bg::TypeMap &type_map) -> const bg::ScalarType & {
+    auto operation = operator_<auto()->TSD<i64, TS<float>>>{"dictionary_source"};
+    operation.overload(node(
+        eval = [](Out<TSD<DEPENDENT_KEY, TS<DEPENDENT_VALUE>>>) {},
+        resolve<DEPENDENT_KEY> = [](const TypeMap &type_map) -> const ScalarType & {
             const auto *mapping = type_map.find(DEPENDENT_VALUE::type());
-            return static_cast<const bg::ScalarType &>(**std::get_if<const bg::Type *>(mapping));
+            return static_cast<const ScalarType &>(**std::get_if<const Type *>(mapping));
         },
-        bg::resolve<DEPENDENT_VALUE> = []() -> const bg::ScalarType & { return bg::int64_type(); }));
+        resolve<DEPENDENT_VALUE> = []() -> const ScalarType & { return int64_type(); }));
 
-    bg::testing::test_wiring([&] { CHECK(&operation().type() == &bg::TSD<bg::i64, bg::TS<bg::i64>>::type()); });
+    testing::test_wiring([&] { CHECK(&operation().type() == &TSD<i64, TS<i64>>::type()); });
 }
 
 TEST_CASE("resolver dependency cycles reject an overload", "[feature:operator][feature:wiring][definition:function]") {
-    auto operation = bg::operator_<auto()->bg::TSD<bg::i64, bg::TS<bg::i64>>>{"cyclic_source"};
-    operation.overload(bg::node(
-        bg::eval = [](bg::Out<bg::TSD<CYCLIC_LEFT, bg::TS<CYCLIC_RIGHT>>>) {},
-        bg::resolve<CYCLIC_LEFT> = [](const bg::TypeMap &type_map) -> const bg::ScalarType & {
+    auto operation = operator_<auto()->TSD<i64, TS<i64>>>{"cyclic_source"};
+    operation.overload(node(
+        eval = [](Out<TSD<CYCLIC_LEFT, TS<CYCLIC_RIGHT>>>) {},
+        resolve<CYCLIC_LEFT> = [](const TypeMap &type_map) -> const ScalarType & {
             const auto *mapping = type_map.find(CYCLIC_RIGHT::type());
-            return static_cast<const bg::ScalarType &>(**std::get_if<const bg::Type *>(mapping));
+            return static_cast<const ScalarType &>(**std::get_if<const Type *>(mapping));
         },
-        bg::resolve<CYCLIC_RIGHT> = [](const bg::TypeMap &type_map) -> const bg::ScalarType & {
+        resolve<CYCLIC_RIGHT> = [](const TypeMap &type_map) -> const ScalarType & {
             const auto *mapping = type_map.find(CYCLIC_LEFT::type());
-            return static_cast<const bg::ScalarType &>(**std::get_if<const bg::Type *>(mapping));
+            return static_cast<const ScalarType &>(**std::get_if<const Type *>(mapping));
         }));
 
-    bg::testing::test_wiring([&] { CHECK_THROWS_AS(operation(), bg::WiringError); });
+    testing::test_wiring([&] { CHECK_THROWS_AS(operation(), WiringError); });
 }
 
 TEST_CASE("aggregate resolver discovery follows nested type traits",
           "[feature:operator][feature:wiring][definition:aggregate]") {
-    auto operation = bg::operator_<auto()->bg::TSL<bg::TS<bg::i64>, 3>>{"collection_source"};
-    operation.overload(bg::node<collection_source_definition>());
+    auto operation = operator_<auto()->TSL<TS<i64>, 3>>{"collection_source"};
+    operation.overload(node<collection_source_definition>());
 
-    bg::testing::test_wiring(
-        [&] { CHECK(&operation().type() == &bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, 3>::type()); });
+    testing::test_wiring(
+        [&] { CHECK(&operation().type() == &TSL<TS<i64, TimeSeriesGuarantee::final>, 3>::type()); });
 }
 
 TEST_CASE("callable resolver discovery follows nested type traits",
           "[feature:operator][feature:wiring][definition:function]") {
-    auto operation = bg::operator_<auto()->bg::TSL<bg::TS<bg::i64>, 2>>{"collection_source"};
-    operation.overload(bg::node(
-        bg::eval = [](bg::Out<bg::TSL<bg::TS<RESOLVED_SCALAR, RESOLVED_GUARANTEE>, bg::SIZE>>) {},
-        bg::resolve<RESOLVED_SCALAR> = []() -> const bg::ScalarType & { return bg::float_type(); },
-        bg::resolve<RESOLVED_GUARANTEE_DECLARATION> = [] { return bg::TimeSeriesGuarantee::const_; },
-        bg::resolve<SIZE_DECLARATION> = [] { return std::size_t{2}; }));
+    auto operation = operator_<auto()->TSL<TS<i64>, 2>>{"collection_source"};
+    operation.overload(node(
+        eval = [](Out<TSL<TS<RESOLVED_SCALAR, RESOLVED_GUARANTEE>, SIZE>>) {},
+        resolve<RESOLVED_SCALAR> = []() -> const ScalarType & { return float_type(); },
+        resolve<RESOLVED_GUARANTEE_DECLARATION> = [] { return TimeSeriesGuarantee::const_; },
+        resolve<SIZE_DECLARATION> = [] { return std::size_t{2}; }));
 
-    bg::testing::test_wiring(
-        [&] { CHECK(&operation().type() == &bg::TSL<bg::TS<float, bg::TimeSeriesGuarantee::const_>, 2>::type()); });
+    testing::test_wiring(
+        [&] { CHECK(&operation().type() == &TSL<TS<float, TimeSeriesGuarantee::const_>, 2>::type()); });
 }
 
 TEST_CASE("a callable resolver can resolve a time-series variable",
           "[feature:operator][feature:wiring][definition:function][declaration:generic]") {
-    auto operation = bg::operator_<auto()->bg::TS<float>>{"resolved_source"};
-    operation.overload(bg::node(
-        bg::eval = [](bg::Out<RESOLVED_TIME_SERIES>) {},
-        bg::resolve<RESOLVED_TIME_SERIES> = []() -> const bg::TimeSeriesType & { return bg::TS<float>::type(); }));
+    auto operation = operator_<auto()->TS<float>>{"resolved_source"};
+    operation.overload(node(
+        eval = [](Out<RESOLVED_TIME_SERIES>) {},
+        resolve<RESOLVED_TIME_SERIES> = []() -> const TimeSeriesType & { return TS<float>::type(); }));
 
-    bg::testing::test_wiring([&] { CHECK(&operation().type() == &bg::TS<float>::type()); });
+    testing::test_wiring([&] { CHECK(&operation().type() == &TS<float>::type()); });
 }
 
 TEST_CASE("an aggregate resolver can resolve a bundle schema variable",
           "[feature:operator][feature:wiring][definition:aggregate][declaration:generic][series:tsb]") {
-    auto operation = bg::operator_<auto()->bg::TSB<ResolvedBundle>>{"resolved_bundle"};
-    operation.overload(bg::node<resolved_bundle_source_definition>());
+    auto operation = operator_<auto()->TSB<ResolvedBundle>>{"resolved_bundle"};
+    operation.overload(node<resolved_bundle_source_definition>());
 
-    bg::testing::test_wiring([&] { CHECK(&operation().type() == &bg::TSB<ResolvedBundle>::type()); });
+    testing::test_wiring([&] { CHECK(&operation().type() == &TSB<ResolvedBundle>::type()); });
 }
 
 TEST_CASE("a callable resolver can resolve a bundle schema variable",
           "[feature:operator][feature:wiring][definition:function][declaration:generic][series:tsb]") {
-    auto operation = bg::operator_<auto()->bg::TSB<ResolvedBundle>>{"resolved_bundle"};
-    operation.overload(bg::node(
-        bg::eval = [](bg::Out<bg::TSB<bg::SCHEMA>>) {},
-        bg::resolve<bg::schema_type<bg::SCHEMA>> = []() -> const bg::SchemaType & {
-            return bg::TSB<ResolvedBundle>::type().schema_type();
+    auto operation = operator_<auto()->TSB<ResolvedBundle>>{"resolved_bundle"};
+    operation.overload(node(
+        eval = [](Out<TSB<SCHEMA>>) {},
+        resolve<schema_type<SCHEMA>> = []() -> const SchemaType & {
+            return TSB<ResolvedBundle>::type().schema_type();
         }));
 
-    bg::testing::test_wiring([&] { CHECK(&operation().type() == &bg::TSB<ResolvedBundle>::type()); });
+    testing::test_wiring([&] { CHECK(&operation().type() == &TSB<ResolvedBundle>::type()); });
 }
 
 TEST_CASE("nested graph resolution provides wiring arguments to resolvers",
           "[feature:wiring][feature:nested-graph][definition:function][shape:nested]") {
     auto resolver_calls = 0;
-    auto resolvers = std::vector<bg::VariableResolver>{};
-    auto resolve_result = [&](const bg::TypeMap &, const bg::WiringArguments &arguments) -> bg::TypeMapValue {
+    auto resolvers = std::vector<VariableResolver>{};
+    auto resolve_result = [&](const TypeMap &, const WiringArguments &arguments) -> TypeMapValue {
         ++resolver_calls;
-        const auto kind = bg::scalar_cast<bg::i64>(*arguments.scalar("kind")).value();
-        return static_cast<const bg::Type *>(kind == 0 ? &bg::int64_type() : &bg::float_type());
+        const auto kind = scalar_cast<i64>(*arguments.scalar("kind")).value();
+        return static_cast<const Type *>(kind == 0 ? &int64_type() : &float_type());
     };
     resolvers.emplace_back(&NESTED_RESULT::type(), resolve_result);
-    auto parameters = std::vector<bg::Parameter>{
-        {bg::util::symbol{"kind"}, &bg::cpp_scalar_type<bg::i64>()},
-        {bg::util::symbol{"input"}, &bg::TS<bg::i64>::type()},
+    auto parameters = std::vector<Parameter>{
+        {util::symbol{"kind"}, &cpp_scalar_type<i64>()},
+        {util::symbol{"input"}, &TS<i64>::type()},
     };
-    auto signature = bg::Signature{bg::util::symbol{"inner"}, std::move(parameters),
-                                   bg::TS<NESTED_RESULT>::type(), std::move(resolvers)};
-    auto inner = bg::GraphTemplate{std::move(signature),
-                                   [](int, bg::wp<bg::TS<bg::i64>> input) { return input; }};
-    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
-    const auto run = bg::node([](bg::Out<bg::TS<bool>>) {});
+    auto signature = Signature{util::symbol{"inner"}, std::move(parameters),
+                                   TS<NESTED_RESULT>::type(), std::move(resolvers)};
+    auto inner = GraphTemplate{std::move(signature),
+                                   [](int, wp<TS<i64>> input) { return input; }};
+    const auto source = node([](Out<TS<i64>>) {});
 
-    bg::testing::test_wiring(
+    const auto run = node([](Out<TS<bool>>) {});
+
+    testing::test_wiring(
         [&] {
-            CHECK(&bg::nested(inner, run(), 0, source()).type() ==
-                  &bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::deduplicated>::type());
+            CHECK(&nested(inner, run(), 0, source()).type() ==
+                  &REF<TS<i64>, TimeSeriesGuarantee::deduplicated>::type());
         });
     CHECK(resolver_calls == 1);
 }

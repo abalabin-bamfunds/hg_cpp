@@ -20,24 +20,75 @@ namespace {
 template <typename T> concept has_optional_wrapper = requires(T value) { opt(value); };
 template <typename Source, typename Target> concept can_reannotate = requires(Source value) { Target{value}; };
 
-static_assert(!has_optional_wrapper<i64>);
-
-static_assert(sizeof(wp<TSD<i64, TS<i64>>, valid_items>) == sizeof(WiringPoint));
-static_assert(wp<TSD<i64, TS<i64>>, valid_items>::annotations.valid_items);
-static_assert(wp<TSD<i64, TS<i64>>, optional, valid_items>::annotations.optional);
-static_assert(wp<TSD<i64, TS<i64>>, optional, valid_items>::annotations.valid_items);
-static_assert(can_reannotate<wp<TSD<i64, TS<i64>>, valid_items>, wp<TSD<i64, TS<i64>>, valid_items>>);
-static_assert(can_reannotate<wp<TSD<i64, TS<i64>>, valid_items>,
-                             wp<TSD<i64, TS<i64>>, optional, valid_items>>);
-static_assert(!can_reannotate<wp<TSD<i64, TS<i64>>, valid_items>, wp<TSD<i64, TS<i64>>>>);
-static_assert(!can_reannotate<wp<TSD<i64, TS<i64>>, optional, valid_items>,
-                              wp<TSD<i64, TS<i64>>, valid_items>>);
-
 } // namespace
+
+TEST_CASE("opt preserves optionality through typed views and explicit required annotations",
+          "[feature:wiring][feature:operator][validity:optional][series:value]") {
+    static_assert(!has_optional_wrapper<i64>);
+
+    auto selected = std::string{};
+    auto optional_only = operator_<auto(TS_T)->TS_T>{"optional_only", {"value"}};
+    optional_only.overload(graph("name"_n = "optional", [&](wp<TS<i64>, optional> value) {
+        selected = "optional";
+        return value;
+    }));
+
+    const auto source = node([](Out<TS<i64>>) {});
+    testing::test_wiring([&] {
+        const auto value = source();
+        const auto required_point = wp<TS<i64>, required>{value};
+        const auto optional_point = opt(required_point);
+        const auto typed = optional_point.as<TS<i64>>();
+        const auto repeated = opt(typed);
+
+        static_assert(std::is_same_v<std::remove_cvref_t<decltype(optional_point)>, wp<TS<i64>, optional>>);
+        static_assert(std::is_same_v<std::remove_cvref_t<decltype(typed)>, wp<TS<i64>, optional>>);
+        static_assert(std::is_same_v<std::remove_cvref_t<decltype(repeated)>, wp<TS<i64>, optional>>);
+
+        (void)optional_only(value);
+        CHECK(selected == "optional");
+
+        (void)optional_only(repeated);
+        CHECK(selected == "optional");
+
+        (void)optional_only(opt(WiringArgument{value}));
+        CHECK(selected == "optional");
+    });
+}
+
+TEST_CASE("opt keeps its qualifier across graph boundaries",
+          "[feature:wiring][feature:operator][validity:optional][series:value][shape:nested]") {
+    const auto optional_input = node([](In<TS<i64>, optional>) {});
+
+    const auto required_boundary = graph("name"_n = "required_boundary", [&](wp<TS<i64>> value) {
+        optional_input(value);
+    });
+
+    const auto optional_boundary = graph("name"_n = "optional_boundary", [&](wp<TS<i64>, optional> value) {
+        optional_input(value);
+    });
+
+    const auto source = node([](Out<TS<i64>>) {});
+
+    testing::test_wiring([&] { optional_boundary(opt(source())); });
+    CHECK_THROWS_AS(testing::test_wiring([&] { required_boundary(opt(source())); }), TypeResolutionError);
+}
 
 TEST_CASE("valid_items annotations compose with opt and typed views",
           "[feature:wiring][feature:operator][validity:optional][series:tsd]") {
+    static_assert(sizeof(wp<TSD<i64, TS<i64>>, valid_items>) == sizeof(WiringPoint));
+    static_assert(wp<TSD<i64, TS<i64>>, valid_items>::annotations.valid_items);
+    static_assert(wp<TSD<i64, TS<i64>>, optional, valid_items>::annotations.optional);
+    static_assert(wp<TSD<i64, TS<i64>>, optional, valid_items>::annotations.valid_items);
+    static_assert(can_reannotate<wp<TSD<i64, TS<i64>>, valid_items>, wp<TSD<i64, TS<i64>>, valid_items>>);
+    static_assert(can_reannotate<wp<TSD<i64, TS<i64>>, valid_items>,
+                                 wp<TSD<i64, TS<i64>>, optional, valid_items>>);
+    static_assert(!can_reannotate<wp<TSD<i64, TS<i64>>, valid_items>, wp<TSD<i64, TS<i64>>>>);
+    static_assert(!can_reannotate<wp<TSD<i64, TS<i64>>, optional, valid_items>,
+                                  wp<TSD<i64, TS<i64>>, valid_items>>);
+
     const auto source = node([](Out<TSD<i64, TS<i64>>>) {});
+
     const auto optional_input = node([](In<TSD<i64, TS<i64>>, optional, valid_items>) {});
 
     testing::test_wiring([&] {
@@ -73,21 +124,6 @@ TEST_CASE("valid_items annotations require a capable receiver and survive refere
     });
 }
 
-TEST_CASE("opt keeps its qualifier across graph boundaries",
-          "[feature:wiring][feature:operator][validity:optional][series:value][shape:nested]") {
-    const auto optional_input = node([](In<TS<i64>, optional>) {});
-    const auto required_boundary = graph("name"_n = "required_boundary", [&](wp<TS<i64>> value) {
-        optional_input(value);
-    });
-    const auto optional_boundary = graph("name"_n = "optional_boundary", [&](wp<TS<i64>, optional> value) {
-        optional_input(value);
-    });
-    const auto source = node([](Out<TS<i64>>) {});
-
-    testing::test_wiring([&] { optional_boundary(opt(source())); });
-    CHECK_THROWS_AS(testing::test_wiring([&] { required_boundary(opt(source())); }), TypeResolutionError);
-}
-
 TEST_CASE("aggregate graph inputs preserve optionality",
           "[feature:wiring][validity:optional][series:value][shape:nested][definition:aggregate]") {
     struct optional_identity {
@@ -102,38 +138,6 @@ TEST_CASE("aggregate graph inputs preserve optionality",
     testing::test_wiring([&] {
         const auto output = identity(opt(source()));
         CHECK(&output.type() == &TS<i64>::type());
-    });
-}
-
-TEST_CASE("opt preserves optionality through typed views and explicit required annotations",
-          "[feature:wiring][feature:operator][validity:optional][series:value]") {
-    auto selected = std::string{};
-    auto optional_only = operator_<auto(TS_T)->TS_T>{"optional_only", {"value"}};
-    optional_only.overload(graph("name"_n = "optional", [&](wp<TS<i64>, optional> value) {
-        selected = "optional";
-        return value;
-    }));
-
-    const auto source = node([](Out<TS<i64>>) {});
-    testing::test_wiring([&] {
-        const auto value = source();
-        const auto required_point = wp<TS<i64>, required>{value};
-        const auto optional_point = opt(required_point);
-        const auto typed = optional_point.as<TS<i64>>();
-        const auto repeated = opt(typed);
-
-        static_assert(std::is_same_v<std::remove_cvref_t<decltype(optional_point)>, wp<TS<i64>, optional>>);
-        static_assert(std::is_same_v<std::remove_cvref_t<decltype(typed)>, wp<TS<i64>, optional>>);
-        static_assert(std::is_same_v<std::remove_cvref_t<decltype(repeated)>, wp<TS<i64>, optional>>);
-
-        (void)optional_only(value);
-        CHECK(selected == "optional");
-
-        (void)optional_only(repeated);
-        CHECK(selected == "optional");
-
-        (void)optional_only(opt(WiringArgument{value}));
-        CHECK(selected == "optional");
     });
 }
 

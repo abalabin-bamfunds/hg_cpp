@@ -12,9 +12,11 @@
 #include <cstdint>
 #include <optional>
 
+using namespace bg;
+
 namespace callable_test {
 struct no_equality_value {
-    bg::i64 value;
+    i64 value;
 };
 } // namespace callable_test
 
@@ -29,7 +31,6 @@ template <> struct scalar_storage_traits<callable_test::no_equality_value>
 
 namespace {
 
-using namespace bg;
 using namespace bg::literals;
 
 struct promoted_aggregate {
@@ -188,8 +189,11 @@ TEST_CASE("callable return guarantee inference requires required input-driven ev
           "[feature:node-api][definition:function][series:value][guarantee:ordinary][validity:optional]"
           "[feature:scheduling]") {
     const auto optional_input = node([](std::optional<int> value) { return value.value_or(0); });
+
     const auto dynamic_input = node([](In<TS<i64>, dynamic_activity> value) { return *value; });
+
     const auto scheduled_input = node(eval = [](In<TS<i64>> value) { return *value; }, schedule_on_start = true);
+
     const auto passive_input = node([](In<TS<i64>, passive> value) { return *value; });
 
     const std::array<const Type *, 1> final_input{&TS<i64, TimeSeriesGuarantee::final>::type()};
@@ -213,6 +217,7 @@ TEST_CASE("callable dynamic activity controls inputs around promoted scalars",
         }
         return *left + offset + *right;
     });
+
     const auto graph = [=](wp<TS<i64>> left, wp<TS<i64>> right) { return combine(left, 5, right); };
     const auto left_values = std::array<std::optional<i64>, 3>{1, 2, std::nullopt};
     const auto right_values = std::array<std::optional<i64>, 3>{10, std::nullopt, 11};
@@ -226,6 +231,7 @@ TEST_CASE("callable generic scalar runtime types follow runtime-type input slots
     const auto combine = node([](Scalar<SCALAR> scalar, In<TS<SCALAR>> input) {
         return scalar_cast<i64>(scalar).value() + scalar_cast<i64>(input.value_view()).value();
     });
+
     const auto graph = [=](wp<TS<i64>> input) { return combine(5, input); };
 
     CHECK(testing::test_graph(graph, {1, 2, 3}).equals({6, 7, 8}));
@@ -241,7 +247,9 @@ TEST_CASE("callable output deduplication suppresses equal results from changing 
     };
 
     const auto deduplicate = node<deduplicated_source>();
+
     const auto add = node([](int lhs, int rhs) { return lhs + rhs; });
+
     const auto graph = [=](wp<TS<i64>> lhs, wp<TS<i64>> rhs) {
         return add(deduplicate(lhs), deduplicate(rhs));
     };
@@ -253,7 +261,9 @@ TEST_CASE("callable output deduplication suppresses equal results from changing 
 TEST_CASE("callable final output waits for both final inputs when they tick in separate cycles",
           "[feature:node-api][definition:function][series:value][guarantee:final][feature:scheduling]") {
     const auto source = node<delayed_final_source>();
+
     const auto add = node([](int lhs, int rhs) { return lhs + rhs; });
+
     const auto graph = [=] { return add(source(1, 1), source(2, 2)); };
 
     CHECK(testing::test_graph(graph).equals({std::nullopt, std::nullopt, 3}));
@@ -262,6 +272,7 @@ TEST_CASE("callable final output waits for both final inputs when they tick in s
 TEST_CASE("callable ordinary inputs schedule independently",
           "[feature:node-api][definition:function][series:value][guarantee:ordinary][feature:scheduling]") {
     const auto add = node([](int lhs, int rhs) { return lhs + rhs; });
+
     const auto graph = [=](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return add(lhs, rhs); };
     const auto lhs = std::array<std::optional<i64>, 4>{1, 2, std::nullopt, std::nullopt};
     const auto rhs = std::array<std::optional<i64>, 4>{10, std::nullopt, 20, std::nullopt};
@@ -274,6 +285,7 @@ TEST_CASE("callable return infers const from const time-series inputs",
     const auto add = node([](int lhs, int rhs) { return lhs + rhs; });
     const std::array<const Type *, 2> const_inputs{&TS<i64, TimeSeriesGuarantee::const_>::type(),
                                                    &TS<i64, TimeSeriesGuarantee::const_>::type()};
+
     const auto graph = [=] {
         const auto lhs = operators::const_(2).as<TS<i64, TimeSeriesGuarantee::const_>>();
         const auto rhs = operators::const_(3).as<TS<i64, TimeSeriesGuarantee::const_>>();
@@ -287,9 +299,11 @@ TEST_CASE("callable return infers const from const time-series inputs",
 TEST_CASE("callable return combines promoted scalars with explicit required inputs",
           "[feature:node-api][definition:function][series:value][guarantee:final]") {
     const auto source = node<delayed_final_source>();
+
     const auto combine = node([](int offset, In<TS<i64, TimeSeriesGuarantee::final>> input) {
         return offset + *input;
     });
+
     const auto graph = [=] { return combine(10, source(2, 1)); };
 
     CHECK(testing::test_graph(graph).equals({std::nullopt, 12}));
@@ -298,10 +312,12 @@ TEST_CASE("callable return combines promoted scalars with explicit required inpu
 TEST_CASE("passive callable inputs lower the active input guarantee",
           "[feature:node-api][definition:function][series:value][guarantee:ordinary][activity:passive]") {
     const auto source = node<delayed_final_source>();
+
     const auto combine = node([](In<TS<i64, TimeSeriesGuarantee::final>> active_input,
                                  In<TS<i64>, passive> passive_input) {
         return *active_input + *passive_input;
     });
+
     const auto graph = [=](wp<TS<i64>> sample) {
         const auto output = combine(source(5, 2), sample);
         CHECK(&output.type() == &TS<i64>::type());
@@ -316,6 +332,7 @@ TEST_CASE("callable explicit output guarantee takes precedence over input infere
     const auto copy = node([](In<TS<i64>> input, Out<TS<i64, TimeSeriesGuarantee::final>> output) {
         output.set(*input);
     });
+
     const auto graph = [=] {
         return copy(operators::const_(7).as<TS<i64, TimeSeriesGuarantee::const_>>());
     };
@@ -352,6 +369,7 @@ TEST_CASE("callable optional arguments and return values preserve absence",
 TEST_CASE("required promoted callable inputs invalidate and recover their outputs",
           "[feature:node-api][definition:function][series:value][scalar:integer][validity:required]") {
     const auto twice = node([](int value) { return value * 2; });
+
     const auto gate = node([](In<TS<i64>> input, Out<TS<i64>> output) {
         if (*input == -1) {
             output.invalidate();
@@ -359,6 +377,7 @@ TEST_CASE("required promoted callable inputs invalidate and recover their output
             output.set(*input);
         }
     });
+
     const auto graph = [=](wp<TS<i64>> input) {
         return operators::default_(twice(gate(input)), -1).as<TS<i64>>();
     };
@@ -369,6 +388,7 @@ TEST_CASE("required promoted callable inputs invalidate and recover their output
 TEST_CASE("callable bool returns produce bool time series outputs",
           "[feature:node-api][definition:function][series:value][scalar:boolean]") {
     const auto negate = node([](bool value) { return !value; });
+
     const auto graph = [=](wp<TS<bool>> input) { return negate(input); };
 
     CHECK(testing::test_graph(graph, {true, false, true}).equals({false, true, false}));
@@ -377,6 +397,7 @@ TEST_CASE("callable bool returns produce bool time series outputs",
 TEST_CASE("callable start scheduling can be disabled for scalar-only nodes",
           "[feature:node-api][definition:function][series:value][scalar:integer][feature:scheduling]") {
     const auto source = node([](int value) { return value; });
+
     const auto disabled = node(eval = [](int value) { return value; }, schedule_on_start = false);
 
     CHECK(testing::test_graph([=] { return source(5); }).equals({5}));
@@ -390,6 +411,7 @@ TEST_CASE("callable start scheduling can be disabled for scalar-only nodes",
 TEST_CASE("callable scalar-or-time-series inputs accept constant and default bindings",
           "[feature:node-api][definition:function][series:value][scalar:integer][guarantee:const]") {
     const auto add = node([](int lhs, int rhs) { return lhs + rhs; });
+
     const auto graph = [=](wp<TS<i64>> input) {
         return add(operators::const_(3), operators::default_(input, 7));
     };
@@ -400,6 +422,7 @@ TEST_CASE("callable scalar-or-time-series inputs accept constant and default bin
 TEST_CASE("callable scalar-or-time-series inputs read references to values",
           "[feature:node-api][feature:reference][definition:function][series:value]") {
     const auto identity = node([](int value) { return value; });
+
     const auto graph = [=](wp<TS<i64>> input) { return identity(input.as<REF<TS<i64>>>()); };
 
     CHECK(testing::test_graph(graph, {1, 2, 3}).equals({1, 2, 3}));
@@ -431,6 +454,7 @@ TEST_CASE("promoted callable parameters coexist with explicit input, scalar, and
 TEST_CASE("aggregate plain fields accept scalar or time-series bindings beside explicit fields",
           "[feature:node-api][definition:aggregate][series:value][scalar:integer]") {
     const auto sum = node<promoted_aggregate>();
+
     const auto graph = [=](wp<TS<i64>> input) { return sum(2, input, 3, std::optional<int>{4}); };
 
     CHECK(testing::test_graph(graph, {1, 2, 3}).equals({10, 11, 12}));
@@ -463,6 +487,7 @@ TEST_CASE("aggregate lifecycle functions reject promoted time-series fields",
 TEST_CASE("aggregate invalidation receives promoted scalar and empty optional fields",
           "[feature:node-api][definition:aggregate][series:value][scalar:integer][feature:lifecycle]") {
     const auto node_template = node<promoted_invalidation_aggregate>();
+
     const auto gate = node([](In<TS<i64>> input, Out<TS<i64>> output) {
         if (*input == -1) {
             output.invalidate();
@@ -470,6 +495,7 @@ TEST_CASE("aggregate invalidation receives promoted scalar and empty optional fi
             output.set(*input);
         }
     });
+
     const auto graph = [=](wp<TS<i64>> input) {
         const auto value = gate(input);
         return node_template(value, 5, value, value);
@@ -501,7 +527,9 @@ TEST_CASE("promoted fields coexist with aggregate dynamic reference inputs",
 TEST_CASE("compiled runtime metadata locates interleaved parameters, output, and dynamic reference slots",
           "[feature:node-api][definition:aggregate][series:value][scalar:integer][feature:reference]") {
     const auto combine = node<compiled_runtime_metadata_aggregate>();
+
     const auto read = node([](i64 value) { return value; });
+
     const auto graph = [=](wp<TS<i64>> input, wp<TS<bool>> select_second, wp<TS<i64>> first,
                            wp<TS<i64>> second) {
         return read(combine(5, input, 3, select_second, tsl(first, second)));

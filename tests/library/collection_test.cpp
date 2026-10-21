@@ -276,6 +276,7 @@ TEST_CASE("valid-item TSD membership uses REF item validity, not target validity
     const auto run = [&]<bool ValidItems>() {
         using Definition = tsd_membership_evaluation_count_definition<ValidItems, REF<TS<i64>>>;
         const auto observe = node<Definition>();
+
         const auto graph = [&](wp<TS<i64>> target_value, wp<TS<i64>> command) {
             return observe(make_dictionary(command, target_value));
         };
@@ -300,6 +301,7 @@ TEST_CASE("an aggregate can bind a dynamic reference and dynamic value input tog
           "[feature:reference][series:reference][series:value][binding:reference-to-value]"
           "[shape:multiple][definition:aggregate][transition:update]") {
     const auto observe = node<mixed_dynamic_input_definition>();
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> values, wp<TSS<i64>> keys, wp<TS<i64>> key) {
         return observe(values, keys, key, i64{0});
     };
@@ -315,6 +317,7 @@ TEST_CASE("a TSD membership binding ignores unrelated keys and item updates",
           "[binding:reference-to-value][transition:addition][transition:invalidation][transition:revalidation]") {
     using Definition = tsd_membership_evaluation_count_definition<false>;
     const auto observe = node<Definition>();
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return observe(input); };
     Definition::evaluation_count = 0;
 
@@ -368,6 +371,7 @@ TEST_CASE("TSD membership supports shared consumers and release followed by rebi
           "[evaluation][series:tsd][series:reference][feature:collection-change]"
           "[shape:multiple][definition:aggregate][transition:removal][transition:addition]") {
     const auto observe = node<shared_tsd_membership_definition>();
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> collection, wp<TS<i64>> key, wp<TS<bool>> first_active,
                            wp<TS<bool>> second_active) {
         return observe(collection, key, first_active, second_active);
@@ -387,6 +391,7 @@ TEST_CASE("a failed dynamic membership subscription preserves the previous bindi
           "[evaluation][series:tsd][series:reference][feature:collection-change]"
           "[shape:single-node][definition:aggregate][transition:update]") {
     const auto observe = node<failed_membership_rebind_definition>();
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> collection) { return observe(collection); };
 
     CHECK(testing::test_graph(graph, {{{7, 70}}, {{7, literal::REMOVE}}}).equals<bool>({true, false}));
@@ -447,6 +452,7 @@ TEST_CASE("valid-item TSD membership observes selected item validity only",
           "[binding:reference-to-value][transition:invalidation][transition:revalidation]") {
     using Definition = tsd_membership_evaluation_count_definition<true>;
     const auto observe = node<Definition>();
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return observe(input); };
     Definition::evaluation_count = 0;
 
@@ -532,6 +538,7 @@ TEST_CASE("contains_ follows a stable nested TSD reference when its backing chan
         observed_references.push_back(input.value().raw());
         output.copy(input);
     });
+
     const auto tested = [&](wp<TS<bool>> select_second, wp<TSD<i64, TS<i64>>> first,
                             wp<TSD<i64, TS<i64>>> second) {
         const auto selected = forward_dictionary(select_dictionary(select_second, first, second))[i64{1}];
@@ -544,13 +551,10 @@ TEST_CASE("contains_ follows a stable nested TSD reference when its backing chan
         {{}, literal::SKIP, literal::SKIP, literal::SKIP});
 
     CHECK(actual.equals<bool>({true, false, true, false}));
-    CHECK(observed_references.size() == 4);
-    CAPTURE(observed_references);
-    if (!observed_references.empty()) {
-        CHECK(std::ranges::all_of(observed_references, [reference = observed_references.front()](auto value) {
-            return value == reference;
-        }));
-    }
+    REQUIRE(observed_references.size() == 4);
+    CHECK(observed_references[1] == observed_references[0]);
+    CHECK(observed_references[2] == observed_references[0]);
+    CHECK(observed_references[3] == observed_references[0]);
 }
 
 TEST_CASE("TSD membership resubscribes when its switch branch is recreated",
@@ -564,6 +568,7 @@ TEST_CASE("TSD membership resubscribes when its switch branch is recreated",
     const auto selected_branch = graph("name"_n = "selected_membership_branch", [&](wp<TS<i64>> value) {
         return observe(make_dictionary(value));
     });
+
     const auto tested = [&](wp<TS<i64>> selector, wp<TS<i64>> value) {
         return switch_(selector,
                        cases{case_(i64{1}, selected_branch),
@@ -799,6 +804,7 @@ TEST_CASE("TSS set operations retain members while a required reference is inval
                                 In<REF<TSS<i64>>, passive> invalid, Out<REF<TSS<i64>>> output) {
         output.copy(*phase == 1 || *phase == 2 ? invalid : populated);
     });
+
     const auto graph = [&](wp<TS<i64>> phase, wp<TSS<i64>> populated, wp<TSS<i64>> invalid,
                            wp<TSS<i64>> rhs) {
         return select(phase, populated, invalid) | rhs;
@@ -927,6 +933,7 @@ TEST_CASE("mapped contains_ branches share an outer TSS and release removed subs
         [&](wp<TS<i64, TimeSeriesGuarantee::const_>> key, wp<TSS<i64>> collection) {
             return record_membership(key, operators::contains_("collection"_n = collection, "key"_n = key));
         });
+
     const auto tested = [&](wp<TSS<i64>> branch_keys, wp<TSS<i64>> collection) {
         const auto result = map(branch, branch_keys, pass_through(collection), "__key_arg__"_n = 0);
         return result[i64{7}].as<TS<bool>>();

@@ -17,60 +17,62 @@
 #include <utility>
 #include <vector>
 
+using namespace bg;
+
 namespace {
 
 using namespace bg::literals;
 
 struct weighted_add {
-    bg::In<bg::TS<float>> lhs;
-    bg::In<bg::TS<float>, bg::optional, bg::passive> rhs;
-    bg::Out<bg::TS<float>> output;
+    In<TS<float>> lhs;
+    In<TS<float>, optional, passive> rhs;
+    Out<TS<float>> output;
 
     void evaluate() const { output.set(*lhs + *rhs); }
 };
 
-static_assert(bg::AggregateNodeClass<weighted_add>);
+static_assert(AggregateNodeClass<weighted_add>);
 
 template <typename Template>
-concept TemporaryWeightedAddCall = requires(Template &&node, bg::WiringPoint input) { std::move(node)(input, input); };
+concept TemporaryWeightedAddCall = requires(Template &&node, WiringPoint input) { std::move(node)(input, input); };
 
-static_assert(!TemporaryWeightedAddCall<decltype(bg::node<weighted_add>())>);
+static_assert(!TemporaryWeightedAddCall<decltype(node<weighted_add>())>);
 
 } // namespace
 
 TEST_CASE("an aggregate node class generates a signature", "[node_template][feature:node-api][definition:aggregate]") {
-    const auto weighted_add_node = bg::node<weighted_add>();
-    static_assert(std::derived_from<std::remove_cv_t<decltype(weighted_add_node)>, bg::NodeTemplate>);
+    const auto weighted_add_node = node<weighted_add>();
+    static_assert(std::derived_from<std::remove_cv_t<decltype(weighted_add_node)>, NodeTemplate>);
 
-    const auto &ts_final = bg::TS<float, bg::TimeSeriesGuarantee::final>::type();
-    const auto &ts_deduplicated = bg::TS<float, bg::TimeSeriesGuarantee::deduplicated>::type();
-    const std::array<const bg::Type *, 2> arguments{&ts_final, &ts_deduplicated};
+    const auto &ts_final = TS<float, TimeSeriesGuarantee::final>::type();
+    const auto &ts_deduplicated = TS<float, TimeSeriesGuarantee::deduplicated>::type();
+    const std::array<const Type *, 2> arguments{&ts_final, &ts_deduplicated};
 
-    const bg::ResolvedSignature signature = weighted_add_node.signature().resolve(arguments);
+    const ResolvedSignature signature = weighted_add_node.signature().resolve(arguments);
 
     REQUIRE(signature.parameters.size() == 2);
     CHECK(signature.name.text() == "weighted_add");
     CHECK(signature.parameters[0].name.text() == "lhs");
     CHECK(signature.parameters[0].type == &ts_final);
-    CHECK(signature.parameters[0].activity == bg::active);
-    CHECK(signature.parameters[0].validity == bg::required);
+    CHECK(signature.parameters[0].activity == active);
+    CHECK(signature.parameters[0].validity == required);
     CHECK(signature.parameters[1].name.text() == "rhs");
     CHECK(signature.parameters[1].type == &ts_deduplicated);
-    CHECK(signature.parameters[1].activity == bg::passive);
-    CHECK(signature.parameters[1].validity == bg::optional);
-    CHECK(signature.output == &bg::TS<float>::type());
+    CHECK(signature.parameters[1].activity == passive);
+    CHECK(signature.parameters[1].validity == optional);
+    CHECK(signature.output == &TS<float>::type());
 }
 
 namespace {
 namespace dynamic_input_test {
 
-using ITEM = bg::TimeSeriesVariable<"ITEM">;
-inline constexpr auto G = bg::guarantee_variable<"G">;
+using ITEM = TimeSeriesVariable<"ITEM">;
+inline constexpr auto G = guarantee_variable<"G">;
 
 struct dynamic_reference_input_node {
-    bg::In<bg::REF<bg::TSD<bg::i64, ITEM, G>, G>> dictionary;
-    bg::In<bg::REF<ITEM, G>, bg::dynamic_binding, bg::optional, "selected"_n> item;
-    bg::Out<bg::REF<ITEM, G>> output;
+    In<REF<TSD<i64, ITEM, G>, G>> dictionary;
+    In<REF<ITEM, G>, dynamic_binding, optional, "selected"_n> item;
+    Out<REF<ITEM, G>> output;
 
     void evaluate() const {}
 };
@@ -83,9 +85,9 @@ TEST_CASE("a dynamic reference input is internal to an aggregate node",
           "[series:reference][guarantee:ordinary][guarantee:final]") {
     const auto node = bg::node<dynamic_input_test::dynamic_reference_input_node>();
 
-    const auto check_dynamic_reference = [&](const bg::Type &argument, bg::TimeSeriesGuarantee guarantee,
-                                             const bg::Type &target) {
-        const std::array<const bg::Type *, 1> arguments{&argument};
+    const auto check_dynamic_reference = [&](const Type &argument, TimeSeriesGuarantee guarantee,
+                                             const Type &target) {
+        const std::array<const Type *, 1> arguments{&argument};
         const auto resolution = node.signature().resolve_with_type_map(arguments);
         const auto dynamic_inputs = node.dynamic_input_types(resolution.type_map);
 
@@ -93,23 +95,23 @@ TEST_CASE("a dynamic reference input is internal to an aggregate node",
         CHECK(resolution.signature.parameters[0].name.text() == "dictionary");
         REQUIRE(dynamic_inputs.size() == 1);
         CHECK(dynamic_inputs[0] == resolution.signature.output);
-        const auto &reference = static_cast<const bg::TimeSeriesReferenceType &>(*dynamic_inputs[0]);
+        const auto &reference = static_cast<const TimeSeriesReferenceType &>(*dynamic_inputs[0]);
         CHECK(reference.guarantee().value() == guarantee);
         CHECK(&reference.target_type() == &target);
     };
 
-    check_dynamic_reference(bg::TSD<bg::i64, bg::TS<float>>::type(), bg::TimeSeriesGuarantee::ordinary,
-                            bg::TS<float>::type());
-    check_dynamic_reference(bg::TSD<bg::i64, bg::TS<float>, bg::TimeSeriesGuarantee::final>::type(),
-                            bg::TimeSeriesGuarantee::final,
-                            bg::TS<float, bg::TimeSeriesGuarantee::final>::type());
+    check_dynamic_reference(TSD<i64, TS<float>>::type(), TimeSeriesGuarantee::ordinary,
+                            TS<float>::type());
+    check_dynamic_reference(TSD<i64, TS<float>, TimeSeriesGuarantee::final>::type(),
+                            TimeSeriesGuarantee::final,
+                            TS<float, TimeSeriesGuarantee::final>::type());
 }
 
 namespace {
 namespace dynamic_input_test {
 
 struct dynamic_reference_input_default_guarantee_node {
-    bg::In<bg::REF<bg::TS<float>>, bg::dynamic_binding, bg::optional> item;
+    In<REF<TS<float>>, dynamic_binding, optional> item;
 
     void evaluate() const {}
 };
@@ -121,53 +123,55 @@ TEST_CASE("an internal dynamic reference input defaults its root guarantee to or
           "[node_template][feature:node-api][feature:reference][definition:aggregate]"
           "[series:reference][guarantee:ordinary]") {
     const auto node = bg::node<dynamic_input_test::dynamic_reference_input_default_guarantee_node>();
-    const auto resolution = node.signature().resolve_with_type_map(std::array<const bg::Type *, 0>{});
+    const auto resolution = node.signature().resolve_with_type_map(std::array<const Type *, 0>{});
     const auto dynamic_inputs = node.dynamic_input_types(resolution.type_map);
 
     REQUIRE(dynamic_inputs.size() == 1);
-    const auto &reference = static_cast<const bg::TimeSeriesReferenceType &>(*dynamic_inputs[0]);
-    CHECK(reference.guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
-    CHECK(&reference.target_type() == &bg::TS<float>::type());
+    const auto &reference = static_cast<const TimeSeriesReferenceType &>(*dynamic_inputs[0]);
+    CHECK(reference.guarantee().value() == TimeSeriesGuarantee::ordinary);
+    CHECK(&reference.target_type() == &TS<float>::type());
 }
 
 TEST_CASE("a callable node receives typed inputs, scalars, and output",
           "[node_template][feature:node-api][definition:function]") {
     const auto factor = 2;
-    const auto add = bg::node([factor](bg::In<bg::TS<bg::i64>, "input"_n> input, int offset, bg::Out<bg::TS<bg::i64>> output) {
+    const auto add = node([factor](In<TS<i64>, "input"_n> input, int offset, Out<TS<i64>> output) {
         output.set(*input * factor + offset);
     });
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return add(input, 1); };
 
-    CHECK(bg::testing::test_graph(graph, {1, 2, 3}).equals({3, 5, 7}));
+    const auto graph = [&](wp<TS<i64>> input) { return add(input, 1); };
+
+    CHECK(testing::test_graph(graph, {1, 2, 3}).equals({3, 5, 7}));
 }
 
 TEST_CASE("a callable node can omit its output", "[node_template][feature:node-api][definition:function]") {
     auto sum = 0;
-    const auto sink = bg::node([&](bg::In<bg::TS<bg::i64>> input) { sum += *input; });
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) {
+    const auto sink = node([&](In<TS<i64>> input) { sum += *input; });
+
+    const auto graph = [&](wp<TS<i64>> input) {
         sink(input);
         return input;
     };
 
-    STATIC_CHECK(std::same_as<decltype(sink(std::declval<bg::WiringPoint>())), void>);
-    CHECK(bg::testing::test_graph(graph, {1, 2, 3}).equals({1, 2, 3}));
+    STATIC_CHECK(std::same_as<decltype(sink(std::declval<WiringPoint>())), void>);
+    CHECK(testing::test_graph(graph, {1, 2, 3}).equals({1, 2, 3}));
     CHECK(sum == 6);
 }
 
 namespace {
 
 struct reference_source {
-    bg::Out<bg::REF<bg::TS<bg::i64>>> output;
+    Out<REF<TS<i64>>> output;
 
     void evaluate() const {}
 };
 
 template <template <typename, auto...> typename Field> struct ReferenceBundle {
-    Field<bg::REF<bg::TS<bg::i64>>> reference;
+    Field<REF<TS<i64>>> reference;
 };
 
 struct reference_bundle_source {
-    bg::Out<bg::TSB<ReferenceBundle>> output;
+    Out<TSB<ReferenceBundle>> output;
 
     void evaluate() const {}
 };
@@ -177,56 +181,58 @@ struct reference_bundle_source {
 TEST_CASE("aggregate and callable reference outputs default to deduplicated",
           "[node_template][reference][feature:node-api][definition:aggregate][definition:function]"
           "[guarantee:deduplicated]") {
-    const auto aggregate = bg::node<reference_source>();
-    const auto callable = bg::node([](bg::Out<bg::REF<bg::TS<bg::i64>>>) {});
+    const auto aggregate = node<reference_source>();
 
-    CHECK(aggregate.signature().output()->guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
-    CHECK(callable.signature().output()->guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
+    const auto callable = node([](Out<REF<TS<i64>>>) {});
+
+    CHECK(aggregate.signature().output()->guarantee().value() == TimeSeriesGuarantee::deduplicated);
+    CHECK(callable.signature().output()->guarantee().value() == TimeSeriesGuarantee::deduplicated);
 }
 
 TEST_CASE("callable and aggregate collection outputs apply reference defaults to nested fields",
           "[node_template][reference][feature:node-api][definition:aggregate][definition:function]"
           "[series:tsb][guarantee:ordinary][guarantee:deduplicated]") {
-    const auto aggregate = bg::node<reference_bundle_source>();
-    const auto callable = bg::node([](bg::Out<bg::TSB<ReferenceBundle>>) {});
+    const auto aggregate = node<reference_bundle_source>();
+
+    const auto callable = node([](Out<TSB<ReferenceBundle>>) {});
     const auto &aggregate_output =
-        static_cast<const bg::TimeSeriesBundleType &>(*aggregate.signature().output());
-    const auto &callable_output = static_cast<const bg::TimeSeriesBundleType &>(*callable.signature().output());
+        static_cast<const TimeSeriesBundleType &>(*aggregate.signature().output());
+    const auto &callable_output = static_cast<const TimeSeriesBundleType &>(*callable.signature().output());
 
-    CHECK(aggregate_output.item_type(0).guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
-    CHECK(callable_output.item_type(0).guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
+    CHECK(aggregate_output.item_type(0).guarantee().value() == TimeSeriesGuarantee::deduplicated);
+    CHECK(callable_output.item_type(0).guarantee().value() == TimeSeriesGuarantee::deduplicated);
 
-    const auto enclosing_reference = bg::node([](bg::Out<bg::REF<bg::TSB<ReferenceBundle>>>) {});
-    const auto &reference = static_cast<const bg::TimeSeriesReferenceType &>(*enclosing_reference.signature().output());
-    const auto &target = static_cast<const bg::TimeSeriesBundleType &>(reference.target_type());
+    const auto enclosing_reference = node([](Out<REF<TSB<ReferenceBundle>>>) {});
+    const auto &reference = static_cast<const TimeSeriesReferenceType &>(*enclosing_reference.signature().output());
+    const auto &target = static_cast<const TimeSeriesBundleType &>(reference.target_type());
 
-    CHECK(reference.guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
-    CHECK(target.item_type(0).guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+    CHECK(reference.guarantee().value() == TimeSeriesGuarantee::deduplicated);
+    CHECK(target.item_type(0).guarantee().value() == TimeSeriesGuarantee::ordinary);
 
-    const auto enclosing_dictionary_reference = bg::node(
-        [](bg::Out<bg::REF<bg::TSD<bg::i64, bg::REF<bg::TS<bg::i64>>>>>) {});
-    const auto &dictionary_reference = static_cast<const bg::TimeSeriesReferenceType &>(
+    const auto enclosing_dictionary_reference = node(
+        [](Out<REF<TSD<i64, REF<TS<i64>>>>>) {});
+    const auto &dictionary_reference = static_cast<const TimeSeriesReferenceType &>(
         *enclosing_dictionary_reference.signature().output());
     const auto &dictionary_target =
-        static_cast<const bg::TimeSeriesDictionaryType &>(dictionary_reference.target_type());
-    CHECK(dictionary_reference.guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
-    CHECK(dictionary_target.value_type().guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+        static_cast<const TimeSeriesDictionaryType &>(dictionary_reference.target_type());
+    CHECK(dictionary_reference.guarantee().value() == TimeSeriesGuarantee::deduplicated);
+    CHECK(dictionary_target.value_type().guarantee().value() == TimeSeriesGuarantee::ordinary);
 
-    const auto enclosing_list_reference = bg::node(
-        [](bg::Out<bg::REF<bg::TSL<bg::REF<bg::TS<bg::i64>>, 2>>>) {});
-    const auto &list_reference = static_cast<const bg::TimeSeriesReferenceType &>(
+    const auto enclosing_list_reference = node(
+        [](Out<REF<TSL<REF<TS<i64>>, 2>>>) {});
+    const auto &list_reference = static_cast<const TimeSeriesReferenceType &>(
         *enclosing_list_reference.signature().output());
-    const auto &list_target = static_cast<const bg::TimeSeriesListType &>(list_reference.target_type());
-    CHECK(list_reference.guarantee().value() == bg::TimeSeriesGuarantee::deduplicated);
-    CHECK(list_target.item_type().guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+    const auto &list_target = static_cast<const TimeSeriesListType &>(list_reference.target_type());
+    CHECK(list_reference.guarantee().value() == TimeSeriesGuarantee::deduplicated);
+    CHECK(list_target.item_type().guarantee().value() == TimeSeriesGuarantee::ordinary);
 }
 
 namespace {
 
-using KEY_SCALAR = bg::ScalarVariable<"KEY", bg::EqualityComparable, bg::Hashable>;
+using KEY_SCALAR = ScalarVariable<"KEY", EqualityComparable, Hashable>;
 
 struct key_sink {
-    bg::Scalar<KEY_SCALAR> key;
+    Scalar<KEY_SCALAR> key;
 
     void evaluate() const {
         static_cast<void>(key == key);
@@ -234,26 +240,26 @@ struct key_sink {
     }
 };
 
-static_assert(bg::AggregateNodeClass<key_sink>);
+static_assert(AggregateNodeClass<key_sink>);
 
 } // namespace
 
 TEST_CASE("a scalar variable enforces required operations", "[node_template][feature:node-api]") {
-    const auto key_sink_node = bg::node<key_sink>();
-    const std::array<const bg::Type *, 1> hashable_argument{&bg::int64_type()};
+    const auto key_sink_node = node<key_sink>();
+    const std::array<const Type *, 1> hashable_argument{&int64_type()};
     const auto signature = key_sink_node.signature().resolve(hashable_argument);
 
-    CHECK(signature.parameters[0].type == &bg::int64_type());
+    CHECK(signature.parameters[0].type == &int64_type());
 
-    const auto &opaque_type = bg::cpp_scalar_type<bg::Opaque<int>>();
-    const std::array<const bg::Type *, 1> opaque_argument{&opaque_type};
-    CHECK_THROWS_AS(key_sink_node.signature().resolve(opaque_argument), bg::TypeResolutionError);
+    const auto &opaque_type = cpp_scalar_type<Opaque<int>>();
+    const std::array<const Type *, 1> opaque_argument{&opaque_type};
+    CHECK_THROWS_AS(key_sink_node.signature().resolve(opaque_argument), TypeResolutionError);
 }
 
 TEST_CASE("an aggregate node template exposes its polymorphic interface",
           "[node_template][feature:node-api][definition:aggregate]") {
-    const auto weighted_add_node = bg::node<weighted_add>();
-    const bg::NodeTemplate &node_template = weighted_add_node;
+    const auto weighted_add_node = node<weighted_add>();
+    const NodeTemplate &node_template = weighted_add_node;
 
     CHECK(&node_template.signature() == &weighted_add_node.signature());
 }
@@ -261,21 +267,21 @@ TEST_CASE("an aggregate node template exposes its polymorphic interface",
 namespace {
 
 struct sink {
-    bg::In<bg::TS<float>> input;
+    In<TS<float>> input;
 
     void evaluate() const {}
 };
 
-static_assert(bg::AggregateNodeClass<sink>);
+static_assert(AggregateNodeClass<sink>);
 
 } // namespace
 
 TEST_CASE("an aggregate node can omit its output", "[node_template][feature:node-api][definition:aggregate]") {
-    const auto sink_node = bg::node<sink>();
-    static_assert(std::same_as<decltype(sink_node(std::declval<bg::WiringPoint>())), void>);
+    const auto sink_node = node<sink>();
+    static_assert(std::same_as<decltype(sink_node(std::declval<WiringPoint>())), void>);
 
-    const std::array<const bg::Type *, 1> arguments{&bg::TS<float>::type()};
-    const bg::ResolvedSignature signature = sink_node.signature().resolve(arguments);
+    const std::array<const Type *, 1> arguments{&TS<float>::type()};
+    const ResolvedSignature signature = sink_node.signature().resolve(arguments);
 
     CHECK(signature.output == nullptr);
 }
@@ -283,8 +289,8 @@ TEST_CASE("an aggregate node can omit its output", "[node_template][feature:node
 namespace {
 
 struct final_identity {
-    bg::In<bg::TS<float, bg::TimeSeriesGuarantee::final>> input;
-    bg::Out<bg::TS<float, bg::TimeSeriesGuarantee::final>> output;
+    In<TS<float, TimeSeriesGuarantee::final>> input;
+    Out<TS<float, TimeSeriesGuarantee::final>> output;
 
     void evaluate() const { output.set(*input); }
 };
@@ -293,12 +299,12 @@ struct final_identity {
 
 TEST_CASE("an aggregate signature retains specified guarantees",
           "[node_template][feature:node-api][definition:aggregate][guarantee:const][guarantee:final]") {
-    const auto final_identity_node = bg::node<final_identity>();
-    const auto &ts_const = bg::TS<float, bg::TimeSeriesGuarantee::const_>::type();
-    const auto &ts_final = bg::TS<float, bg::TimeSeriesGuarantee::final>::type();
-    const std::array<const bg::Type *, 1> arguments{&ts_const};
+    const auto final_identity_node = node<final_identity>();
+    const auto &ts_const = TS<float, TimeSeriesGuarantee::const_>::type();
+    const auto &ts_final = TS<float, TimeSeriesGuarantee::final>::type();
+    const std::array<const Type *, 1> arguments{&ts_const};
 
-    const bg::ResolvedSignature signature = final_identity_node.signature().resolve(arguments);
+    const ResolvedSignature signature = final_identity_node.signature().resolve(arguments);
 
     REQUIRE(signature.parameters.size() == 1);
     CHECK(signature.parameters[0].type == &ts_final);
@@ -317,11 +323,11 @@ struct alignas(16) aligned_state {
 
 struct scalar_state_node {
     float factor;
-    bg::util::symbol name;
+    util::symbol name;
     std::optional<int> retries;
-    bg::State<invocation_state> state;
-    bg::State<aligned_state> aligned;
-    bg::Out<bg::TS<float>> output;
+    State<invocation_state> state;
+    State<aligned_state> aligned;
+    Out<TS<float>> output;
 
     void evaluate() const {
         ++state->count;
@@ -330,24 +336,24 @@ struct scalar_state_node {
     }
 };
 
-static_assert(bg::AggregateNodeClass<scalar_state_node>);
+static_assert(AggregateNodeClass<scalar_state_node>);
 
 } // namespace
 
 TEST_CASE("aggregate scalar and state fields have distinct roles",
           "[node_template][feature:node-api][definition:aggregate][scalar:symbol]") {
-    const auto scalar_state = bg::node<scalar_state_node>();
-    const std::array<const bg::Type *, 3> arguments{&bg::float_type(), &bg::symbol_type(), &bg::int64_type()};
-    const bg::ResolvedSignature signature = scalar_state.signature().resolve(arguments);
+    const auto scalar_state = node<scalar_state_node>();
+    const std::array<const Type *, 3> arguments{&float_type(), &symbol_type(), &int64_type()};
+    const ResolvedSignature signature = scalar_state.signature().resolve(arguments);
 
     REQUIRE(signature.parameters.size() == 3);
     CHECK(signature.parameters[0].name.text() == "factor");
-    CHECK(signature.parameters[0].type == &bg::float_type());
-    CHECK(signature.parameters[0].validity == bg::required);
+    CHECK(signature.parameters[0].type == &float_type());
+    CHECK(signature.parameters[0].validity == required);
     CHECK(signature.parameters[1].name.text() == "name");
-    CHECK(signature.parameters[1].type == &bg::symbol_type());
+    CHECK(signature.parameters[1].type == &symbol_type());
     CHECK(signature.parameters[2].name.text() == "retries");
-    CHECK(signature.parameters[2].type == &bg::int64_type());
+    CHECK(signature.parameters[2].type == &int64_type());
     CHECK(signature.parameters[2].accepts_absent_scalar);
     const auto layout = scalar_state.state_layout(signature, {}, {});
     CHECK(layout.size == alignof(aligned_state) + sizeof(aligned_state));
@@ -356,27 +362,27 @@ TEST_CASE("aggregate scalar and state fields have distinct roles",
 
 namespace {
 
-using LEFT_SCALAR = bg::ScalarVariable<"LEFT">;
-using RIGHT_SCALAR = bg::ScalarVariable<"RIGHT">;
+using LEFT_SCALAR = ScalarVariable<"LEFT">;
+using RIGHT_SCALAR = ScalarVariable<"RIGHT">;
 
 struct generic_pair {
-    bg::In<bg::TS<LEFT_SCALAR>> first;
-    bg::In<bg::TS<LEFT_SCALAR>> second;
-    bg::In<bg::TS<RIGHT_SCALAR>> other;
-    bg::Out<bg::TS<LEFT_SCALAR>> output;
+    In<TS<LEFT_SCALAR>> first;
+    In<TS<LEFT_SCALAR>> second;
+    In<TS<RIGHT_SCALAR>> other;
+    Out<TS<LEFT_SCALAR>> output;
 
     void evaluate() const { output.set_value(first.value_view()); }
 };
 
-static_assert(bg::AggregateNodeClass<generic_pair>);
+static_assert(AggregateNodeClass<generic_pair>);
 
 } // namespace
 
 TEST_CASE("scalar variable declarations retain their identity", "[node_template][feature:node-api]") {
-    const auto generic_pair_node = bg::node<generic_pair>();
-    const auto &ts_float = bg::TS<float>::type();
-    const auto &ts_double = bg::TS<double>::type();
-    const std::array<const bg::Type *, 3> arguments{&ts_float, &ts_float, &ts_double};
+    const auto generic_pair_node = node<generic_pair>();
+    const auto &ts_float = TS<float>::type();
+    const auto &ts_double = TS<double>::type();
+    const std::array<const Type *, 3> arguments{&ts_float, &ts_float, &ts_double};
 
     const auto signature = generic_pair_node.signature().resolve(arguments);
 
@@ -388,30 +394,30 @@ TEST_CASE("scalar variable declarations retain their identity", "[node_template]
 
 namespace {
 
-inline constexpr auto G = bg::guarantee_variable<"G">;
-using CAPTURED_TIME_SERIES = bg::TimeSeriesVariable<"T">;
+inline constexpr auto G = guarantee_variable<"G">;
+using CAPTURED_TIME_SERIES = TimeSeriesVariable<"T">;
 
 struct concrete_output_definition {
-    bg::Out<bg::TS<bg::i64>> output;
+    Out<TS<i64>> output;
 
     void evaluate() const {}
 };
 
 struct guarantee_variable_output_definition {
-    bg::In<bg::TS<bg::i64, G>> input;
-    bg::Out<bg::TS<bg::i64, G>> output;
+    In<TS<i64, G>> input;
+    Out<TS<i64, G>> output;
 
     void evaluate() const { output.set(*input); }
 };
 
 struct time_series_variable_guarantee {
-    bg::In<CAPTURED_TIME_SERIES::with<G>> input;
-    bg::Out<bg::TS<bg::i64, G>> output;
+    In<CAPTURED_TIME_SERIES::with<G>> input;
+    Out<TS<i64, G>> output;
 
     void evaluate() const {}
 };
 
-static_assert(bg::AggregateNodeClass<time_series_variable_guarantee>);
+static_assert(AggregateNodeClass<time_series_variable_guarantee>);
 
 } // namespace
 
@@ -419,60 +425,60 @@ TEST_CASE("a time series variable can expose its guarantee as another variable",
           "[node_template][type_system][feature:node-api]") {
     const auto node = bg::node<time_series_variable_guarantee>();
     const auto &list =
-        bg::TSL<bg::TS<float, bg::TimeSeriesGuarantee::ordinary>, 2, bg::TimeSeriesGuarantee::final>::type();
-    const auto arguments = std::array<const bg::Type *, 1>{&list};
+        TSL<TS<float, TimeSeriesGuarantee::ordinary>, 2, TimeSeriesGuarantee::final>::type();
+    const auto arguments = std::array<const Type *, 1>{&list};
 
     const auto signature = node.signature().resolve(arguments);
 
     CHECK(signature.parameters[0].type == &list);
-    CHECK(signature.output == &bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>::type());
+    CHECK(signature.output == &TS<i64, TimeSeriesGuarantee::final>::type());
 }
 
 namespace {
 
 struct generic_scalar_source {
-    bg::Scalar<bg::SCALAR> value;
-    bg::Out<bg::TS<bg::SCALAR>> output;
+    Scalar<SCALAR> value;
+    Out<TS<SCALAR>> output;
 
     void evaluate() const { output.set_value(value); }
 };
 
-static_assert(bg::AggregateNodeClass<generic_scalar_source>);
+static_assert(AggregateNodeClass<generic_scalar_source>);
 
 } // namespace
 
 TEST_CASE("a scalar variable can declare a scalar view field", "[node_template][feature:node-api]") {
-    const auto generic_scalar_source_node = bg::node<generic_scalar_source>();
-    const std::array<const bg::Type *, 1> arguments{&bg::float_type()};
+    const auto generic_scalar_source_node = node<generic_scalar_source>();
+    const std::array<const Type *, 1> arguments{&float_type()};
 
     const auto signature = generic_scalar_source_node.signature().resolve(arguments);
 
-    CHECK(signature.parameters[0].type == &bg::float_type());
-    CHECK(signature.output == &bg::TS<float>::type());
+    CHECK(signature.parameters[0].type == &float_type());
+    CHECK(signature.output == &TS<float>::type());
 }
 
 namespace {
 
 template <template <typename, auto...> typename Field> struct runtime_layout_bundle {
-    Field<bg::TS<bg::i64>> value;
+    Field<TS<i64>> value;
 };
 
 template <template <typename, auto...> typename Field> struct guarantee_variable_bundle {
-    Field<bg::TS<bg::i64, bg::guarantee_variable<"G">>> value;
+    Field<TS<i64, guarantee_variable<"G">>> value;
 };
 
 struct runtime_layout_collection_sink {
-    bg::In<bg::TSS<bg::i64>> set;
-    bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> dictionary;
-    bg::In<bg::TSL<bg::TS<bg::i64>, 2>> list;
-    bg::In<bg::TSB<runtime_layout_bundle>> bundle;
+    In<TSS<i64>> set;
+    In<TSD<i64, TS<i64>>> dictionary;
+    In<TSL<TS<i64>, 2>> list;
+    In<TSB<runtime_layout_bundle>> bundle;
 
     void evaluate() const {}
 };
 
 struct guarantee_variable_input_sink {
-    bg::In<bg::TS<bg::i64, bg::guarantee_variable<"G">>> input;
-    bg::Out<bg::TS<bg::i64>> output;
+    In<TS<i64, guarantee_variable<"G">>> input;
+    Out<TS<i64>> output;
 
     void evaluate() const {
         if (!input.runtime_type().type().is_resolved()) {
@@ -483,53 +489,53 @@ struct guarantee_variable_input_sink {
 };
 
 struct generic_set_input_sink {
-    bg::In<bg::TSS<bg::SCALAR>> input;
+    In<TSS<SCALAR>> input;
 
     void evaluate() const { (void)input.size(); }
 };
 
 struct scalar_or_time_series_input_definition {
-    using VALUE = bg::Union<"VALUE", bg::i64, bg::TS<bg::i64, bg::guarantee_variable<"G">>>;
+    using VALUE = Union<"VALUE", i64, TS<i64, guarantee_variable<"G">>>;
 
-    const bg::Signature &signature() const {
-        static const auto value = bg::Signature{
-            bg::util::symbol{"scalar_or_time_series"},
-            std::vector<bg::Parameter>{{bg::util::symbol{"value"}, &VALUE::type()}}};
+    const Signature &signature() const {
+        static const auto value = Signature{
+            util::symbol{"scalar_or_time_series"},
+            std::vector<Parameter>{{util::symbol{"value"}, &VALUE::type()}}};
         return value;
     }
 
-    static void evaluate(bg::NodeInvocation<>) {}
+    static void evaluate(NodeInvocation<>) {}
 };
 
 } // namespace
 
 TEST_CASE("collection inputs retain their resolved runtime layout", "[node_template][time_series][feature:node-api]") {
-    static_assert(!bg::details::direct_time_series_input<bg::In<bg::TS<bg::SCALAR>>>);
-    static_assert(bg::details::direct_time_series_input<bg::In<bg::TS<bg::i64, bg::guarantee_variable<"G">>>>);
-    static_assert(bg::details::input_requires_runtime_type<
-                  bg::In<bg::TS<bg::i64, bg::guarantee_variable<"G">>>>);
-    static_assert(bg::details::direct_time_series_input<bg::In<bg::TSS<bg::i64>>>);
-    static_assert(bg::details::input_requires_runtime_type<bg::In<bg::TSS<bg::i64>>>);
-    static_assert(bg::details::input_requires_runtime_type<bg::In<bg::TSS<bg::SCALAR>>>);
-    static_assert(bg::details::direct_time_series_input<bg::In<bg::TSS<bg::i64, bg::guarantee_variable<"G">>>>);
-    static_assert(bg::details::input_requires_runtime_type<
-                  bg::In<bg::TSS<bg::i64, bg::guarantee_variable<"G">>>>);
-    static_assert(!bg::details::direct_time_series_input<bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>>>);
-    static_assert(!bg::details::direct_time_series_input<bg::In<bg::TSL<bg::TS<bg::i64>, 2>>>);
-    static_assert(!bg::details::direct_time_series_input<bg::In<bg::TSB<bg::SCHEMA>>>);
-    static_assert(bg::details::direct_time_series_input<bg::In<bg::REF<bg::TS<bg::i64>>>>);
-    static_assert(bg::details::direct_time_series_input<bg::In<bg::REF<bg::TS<bg::SCALAR>>>>);
-    static_assert(bg::details::input_requires_runtime_type<bg::In<bg::REF<bg::TS<bg::SCALAR>>>>);
-    static_assert(bg::details::direct_time_series_input<
-                  bg::In<bg::REF<bg::TS<bg::i64, bg::guarantee_variable<"G">>>>>);
-    static_assert(bg::details::direct_time_series_input<bg::In<bg::TS<bg::i64>>>);
-    static_assert(bg::details::direct_time_series_input<
-                  bg::In<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>>>);
+    static_assert(!details::direct_time_series_input<In<TS<SCALAR>>>);
+    static_assert(details::direct_time_series_input<In<TS<i64, guarantee_variable<"G">>>>);
+    static_assert(details::input_requires_runtime_type<
+                  In<TS<i64, guarantee_variable<"G">>>>);
+    static_assert(details::direct_time_series_input<In<TSS<i64>>>);
+    static_assert(details::input_requires_runtime_type<In<TSS<i64>>>);
+    static_assert(details::input_requires_runtime_type<In<TSS<SCALAR>>>);
+    static_assert(details::direct_time_series_input<In<TSS<i64, guarantee_variable<"G">>>>);
+    static_assert(details::input_requires_runtime_type<
+                  In<TSS<i64, guarantee_variable<"G">>>>);
+    static_assert(!details::direct_time_series_input<In<TSD<i64, TS<i64>>>>);
+    static_assert(!details::direct_time_series_input<In<TSL<TS<i64>, 2>>>);
+    static_assert(!details::direct_time_series_input<In<TSB<SCHEMA>>>);
+    static_assert(details::direct_time_series_input<In<REF<TS<i64>>>>);
+    static_assert(details::direct_time_series_input<In<REF<TS<SCALAR>>>>);
+    static_assert(details::input_requires_runtime_type<In<REF<TS<SCALAR>>>>);
+    static_assert(details::direct_time_series_input<
+                  In<REF<TS<i64, guarantee_variable<"G">>>>>);
+    static_assert(details::direct_time_series_input<In<TS<i64>>>);
+    static_assert(details::direct_time_series_input<
+                  In<TS<i64, TimeSeriesGuarantee::final>>>);
 
-    const auto sink = bg::node<runtime_layout_collection_sink>();
-    const auto arguments = std::array<const bg::Type *, 4>{
-        &bg::TSS<bg::i64>::type(), &bg::TSD<bg::i64, bg::TS<bg::i64>>::type(),
-        &bg::TSL<bg::TS<bg::i64>, 2>::type(), &bg::TSB<runtime_layout_bundle>::type()};
+    const auto sink = node<runtime_layout_collection_sink>();
+    const auto arguments = std::array<const Type *, 4>{
+        &TSS<i64>::type(), &TSD<i64, TS<i64>>::type(),
+        &TSL<TS<i64>, 2>::type(), &TSB<runtime_layout_bundle>::type()};
     const auto signature = sink.signature().resolve(arguments);
 
     CHECK(sink.uses_time_series_input_runtime_type(signature, 0));
@@ -537,92 +543,93 @@ TEST_CASE("collection inputs retain their resolved runtime layout", "[node_templ
     CHECK(sink.uses_time_series_input_runtime_type(signature, 2));
     CHECK(sink.uses_time_series_input_runtime_type(signature, 3));
 
-    const auto guarantee_input = bg::node<guarantee_variable_input_sink>();
-    const std::array<const bg::Type *, 1> guarantee_arguments{&bg::TS<bg::i64>::type()};
+    const auto guarantee_input = node<guarantee_variable_input_sink>();
+    const std::array<const Type *, 1> guarantee_arguments{&TS<i64>::type()};
     const auto guarantee_signature = guarantee_input.signature().resolve(guarantee_arguments);
     CHECK(guarantee_input.uses_time_series_input_runtime_type(guarantee_signature, 0));
 
-    const auto generic_set_input = bg::node<generic_set_input_sink>();
-    const std::array<const bg::Type *, 1> generic_set_arguments{&bg::TSS<bg::i64>::type()};
+    const auto generic_set_input = node<generic_set_input_sink>();
+    const std::array<const Type *, 1> generic_set_arguments{&TSS<i64>::type()};
     const auto generic_set_signature = generic_set_input.signature().resolve(generic_set_arguments);
     CHECK(generic_set_input.uses_time_series_input_runtime_type(generic_set_signature, 0));
 
-    const auto check_guarantee = bg::node([](bg::In<bg::TS<bg::i64, bg::guarantee_variable<"G">>> input,
-                                             bg::Out<bg::TS<bg::i64>> output) {
+    const auto check_guarantee = node([](In<TS<i64, guarantee_variable<"G">>> input,
+                                             Out<TS<i64>> output) {
         if (!input.runtime_type().type().is_resolved()) {
             throw std::logic_error{"a guarantee-variable input must keep its resolved runtime type"};
         }
         output.set(*input);
     });
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return check_guarantee(input); };
-    CHECK(bg::testing::test_graph(graph, std::array<bg::i64, 1>{42}).equals<bg::i64>({42}));
+
+    const auto graph = [&](wp<TS<i64>> input) { return check_guarantee(input); };
+    CHECK(testing::test_graph(graph, std::array<i64, 1>{42}).equals<i64>({42}));
 }
 
 TEST_CASE("direct TSS inputs keep concrete and resolved key runtime types",
           "[node_template][time_series][feature:node-api]") {
-    const auto read_concrete = bg::node([](bg::In<bg::TSS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
+    const auto read_concrete = node([](In<TSS<i64>> input, Out<TS<i64>> output) {
         output.set(input.item_at(0).value());
     });
-    const auto read_generic = bg::node([](bg::In<bg::TSS<bg::SCALAR>> input, bg::Out<bg::TS<bg::i64>> output) {
+    const auto read_generic = node([](In<TSS<SCALAR>> input, Out<TS<i64>> output) {
         if (!input.runtime_type().type().is_resolved()) {
             throw std::logic_error{"a generic TSS input must keep its resolved runtime type"};
         }
-        output.set(bg::scalar_cast<bg::i64>(input.item_at(0)).value());
+        output.set(scalar_cast<i64>(input.item_at(0)).value());
     });
-    const auto read_guarantee = bg::node([](bg::In<bg::TSS<bg::i64, bg::guarantee_variable<"G">>> input,
-                                            bg::Out<bg::TS<bg::i64>> output) {
+    const auto read_guarantee = node([](In<TSS<i64, guarantee_variable<"G">>> input,
+                                            Out<TS<i64>> output) {
         if (!input.runtime_type().type().is_resolved()) {
             throw std::logic_error{"a guarantee-variable TSS input must keep its resolved runtime type"};
         }
         output.set(input.item_at(0).value());
     });
 
-    const auto concrete_graph = [&](bg::wp<bg::TSS<bg::i64>> input) { return read_concrete(input); };
-    const auto generic_graph = [&](bg::wp<bg::TSS<bg::i64>> input) { return read_generic(input); };
-    const auto guarantee_graph = [&](bg::wp<bg::TSS<bg::i64>> input) { return read_guarantee(input); };
+    const auto concrete_graph = [&](wp<TSS<i64>> input) { return read_concrete(input); };
+    const auto generic_graph = [&](wp<TSS<i64>> input) { return read_generic(input); };
+    const auto guarantee_graph = [&](wp<TSS<i64>> input) { return read_guarantee(input); };
 
-    CHECK(bg::testing::test_graph(concrete_graph, {{42}}).equals<bg::i64>({42}));
-    CHECK(bg::testing::test_graph(generic_graph, {{42}}).equals<bg::i64>({42}));
-    CHECK(bg::testing::test_graph(guarantee_graph, {{42}}).equals<bg::i64>({42}));
+    CHECK(testing::test_graph(concrete_graph, {{42}}).equals<i64>({42}));
+    CHECK(testing::test_graph(generic_graph, {{42}}).equals<i64>({42}));
+    CHECK(testing::test_graph(guarantee_graph, {{42}}).equals<i64>({42}));
 }
 
 TEST_CASE("native collection outputs bind directly only for concrete declarations",
           "[node_template][time_series][feature:node-api]") {
-    static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TS<bg::SCALAR>>>);
-    static_assert(bg::details::direct_time_series_output<bg::Out<bg::TSS<bg::i64>>>);
-    static_assert(bg::details::direct_time_series_output<bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>>>);
-    static_assert(bg::details::direct_time_series_output<bg::Out<bg::TSL<bg::TS<bg::i64>, 2>>>);
-    static_assert(bg::details::direct_time_series_output<bg::Out<bg::TS<bg::i64, bg::guarantee_variable<"G">>>>);
-    static_assert(bg::details::output_requires_runtime_type<
-                  bg::Out<bg::TS<bg::i64, bg::guarantee_variable<"G">>>>);
-    static_assert(bg::details::output_requires_runtime_type<
-                  bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64, bg::guarantee_variable<"G">>>>>);
-    using GuaranteedReference = bg::REF<bg::TS<bg::i64, bg::guarantee_variable<"G">>>;
-    static_assert(bg::details::output_requires_runtime_type<bg::Out<bg::TSD<bg::i64, GuaranteedReference>>>);
-    static_assert(bg::details::output_requires_runtime_type<
-                  bg::Out<bg::TSD<bg::i64, bg::TSB<guarantee_variable_bundle>>>>);
-    static_assert(!bg::details::output_requires_runtime_type<bg::Out<bg::TS<bg::i64>>>);
-    static_assert(!bg::details::output_requires_runtime_type<bg::Out<bg::TSS<bg::i64>>>);
-    static_assert(!bg::details::output_requires_runtime_type<bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>>>);
-    static_assert(!bg::details::output_requires_runtime_type<bg::Out<bg::TSL<bg::TS<bg::i64>, 2>>>);
-    static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TSS<bg::SCALAR>>>);
-    static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TSD<bg::SCALAR, bg::TS_T>>>);
-    static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TSL<bg::TS_T, 2>>>);
-    static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TSL<bg::TS<bg::i64>>>>);
-    static_assert(!bg::details::direct_time_series_output<bg::Out<bg::TSB<runtime_layout_bundle>>>);
+    static_assert(!details::direct_time_series_output<Out<TS<SCALAR>>>);
+    static_assert(details::direct_time_series_output<Out<TSS<i64>>>);
+    static_assert(details::direct_time_series_output<Out<TSD<i64, TS<i64>>>>);
+    static_assert(details::direct_time_series_output<Out<TSL<TS<i64>, 2>>>);
+    static_assert(details::direct_time_series_output<Out<TS<i64, guarantee_variable<"G">>>>);
+    static_assert(details::output_requires_runtime_type<
+                  Out<TS<i64, guarantee_variable<"G">>>>);
+    static_assert(details::output_requires_runtime_type<
+                  Out<TSD<i64, TS<i64, guarantee_variable<"G">>>>>);
+    using GuaranteedReference = REF<TS<i64, guarantee_variable<"G">>>;
+    static_assert(details::output_requires_runtime_type<Out<TSD<i64, GuaranteedReference>>>);
+    static_assert(details::output_requires_runtime_type<
+                  Out<TSD<i64, TSB<guarantee_variable_bundle>>>>);
+    static_assert(!details::output_requires_runtime_type<Out<TS<i64>>>);
+    static_assert(!details::output_requires_runtime_type<Out<TSS<i64>>>);
+    static_assert(!details::output_requires_runtime_type<Out<TSD<i64, TS<i64>>>>);
+    static_assert(!details::output_requires_runtime_type<Out<TSL<TS<i64>, 2>>>);
+    static_assert(!details::direct_time_series_output<Out<TSS<SCALAR>>>);
+    static_assert(!details::direct_time_series_output<Out<TSD<SCALAR, TS_T>>>);
+    static_assert(!details::direct_time_series_output<Out<TSL<TS_T, 2>>>);
+    static_assert(!details::direct_time_series_output<Out<TSL<TS<i64>>>>);
+    static_assert(!details::direct_time_series_output<Out<TSB<runtime_layout_bundle>>>);
 }
 
 TEST_CASE("only outputs with unresolved declarations store an output runtime type",
           "[node_template][time_series][feature:type-system]") {
-    CHECK_FALSE(bg::node<concrete_output_definition>().uses_output_runtime_type());
-    CHECK(bg::node<guarantee_variable_output_definition>().uses_output_runtime_type());
+    CHECK_FALSE(node<concrete_output_definition>().uses_output_runtime_type());
+    CHECK(node<guarantee_variable_output_definition>().uses_output_runtime_type());
 }
 
 TEST_CASE("runtime type use follows resolved input types",
           "[node_template][feature:type-system][feature:node-api]") {
     const auto node = bg::node(scalar_or_time_series_input_definition{});
-    const auto scalar_arguments = std::array<const bg::Type *, 1>{&bg::int64_type()};
-    const auto time_series_arguments = std::array<const bg::Type *, 1>{&bg::TS<bg::i64>::type()};
+    const auto scalar_arguments = std::array<const Type *, 1>{&int64_type()};
+    const auto time_series_arguments = std::array<const Type *, 1>{&TS<i64>::type()};
     const auto scalar_signature = node.signature().resolve(scalar_arguments);
     const auto time_series_signature = node.signature().resolve(time_series_arguments);
 
@@ -634,60 +641,60 @@ TEST_CASE("runtime type use follows resolved input types",
 
 namespace {
 
-using NUMERIC_SCALAR = bg::ScalarVariable<"NUMERIC", float, double>;
+using NUMERIC_SCALAR = ScalarVariable<"NUMERIC", float, double>;
 
 struct numeric_sink {
-    bg::In<bg::TS<NUMERIC_SCALAR>> input;
+    In<TS<NUMERIC_SCALAR>> input;
 
     void evaluate() const {}
 };
 
-static_assert(bg::AggregateNodeClass<numeric_sink>);
+static_assert(AggregateNodeClass<numeric_sink>);
 
 } // namespace
 
 TEST_CASE("a scalar variable declaration constrains its resolved type", "[node_template][feature:node-api]") {
-    const auto numeric_sink_node = bg::node<numeric_sink>();
-    const auto &ts_double = bg::TS<double>::type();
-    const auto &ts_int = bg::TS<bg::i64>::type();
-    const std::array<const bg::Type *, 1> accepted{&ts_double};
-    const std::array<const bg::Type *, 1> rejected{&ts_int};
+    const auto numeric_sink_node = node<numeric_sink>();
+    const auto &ts_double = TS<double>::type();
+    const auto &ts_int = TS<i64>::type();
+    const std::array<const Type *, 1> accepted{&ts_double};
+    const std::array<const Type *, 1> rejected{&ts_int};
 
     CHECK(numeric_sink_node.signature().resolve(accepted).parameters[0].type == &ts_double);
-    CHECK_THROWS_AS(numeric_sink_node.signature().resolve(rejected), bg::TypeResolutionError);
+    CHECK_THROWS_AS(numeric_sink_node.signature().resolve(rejected), TypeResolutionError);
 }
 
 namespace {
 
 struct repeated_output {
-    bg::Out<bg::TS<float>> first;
-    bg::Out<bg::TS<float>> second;
+    Out<TS<float>> first;
+    Out<TS<float>> second;
 
     void evaluate() const {}
 };
 
 struct returned_output {
-    bg::Out<bg::TS<float>> output;
+    Out<TS<float>> output;
 
     float evaluate() { return 0.0F; }
 };
 
 struct pending_output {
-    bg::Out<bg::TS<float>> output;
+    Out<TS<float>> output;
 
     bool evaluate() const { return false; }
 };
 
 struct repeated_input_name {
-    bg::In<bg::TS<float>, "input"_n> input;
-    bg::Out<bg::TS<float>> output;
+    In<TS<float>, "input"_n> input;
+    Out<TS<float>> output;
 
     void evaluate() const {}
 };
 
 struct int_identity {
-    bg::In<bg::TS<bg::i64>> input;
-    bg::Out<bg::TS<bg::i64>> output;
+    In<TS<i64>> input;
+    Out<TS<i64>> output;
 
     void evaluate() const { output.set(*input); }
 };
@@ -696,16 +703,16 @@ struct int_identity {
 
 TEST_CASE("aggregate node validation rejects ambiguous output definitions",
           "[node_template][feature:node-api][definition:aggregate]") {
-    STATIC_CHECK_FALSE(bg::AggregateNodeClass<repeated_output>);
-    STATIC_CHECK_FALSE(bg::AggregateNodeClass<returned_output>);
-    STATIC_CHECK_FALSE(bg::AggregateNodeClass<repeated_input_name>);
-    STATIC_CHECK(bg::AggregateNodeClass<int_identity>);
+    STATIC_CHECK_FALSE(AggregateNodeClass<repeated_output>);
+    STATIC_CHECK_FALSE(AggregateNodeClass<returned_output>);
+    STATIC_CHECK_FALSE(AggregateNodeClass<repeated_input_name>);
+    STATIC_CHECK(AggregateNodeClass<int_identity>);
 }
 
 TEST_CASE("an aggregate node evaluation can report pending",
           "[node_template][feature:node-api][definition:aggregate]") {
-    const auto pending = bg::node<pending_output>();
-    const auto signature = pending.signature().resolve(std::array<const bg::Type *, 0>{});
+    const auto pending = node<pending_output>();
+    const auto signature = pending.signature().resolve(std::array<const Type *, 0>{});
 
     CHECK(pending.evaluation_function(signature) != nullptr);
 }

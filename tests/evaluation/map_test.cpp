@@ -138,6 +138,7 @@ TEST_CASE("map invokes a graph through runtime arguments",
                   wp<TS<i64, TimeSeriesGuarantee::const_>> key) {
             return add_key(value, key);
         });
+
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
         const auto arguments = std::vector<MapArgument>{
             {WiringArgument{values}},
@@ -177,6 +178,7 @@ TEST_CASE("map retains a named argument for a graph template",
         [](wp<TSB<SCHEMA>, var_kwargs> arguments) {
             return wp<TS<i64>>{arguments["item"].time_series()};
         });
+
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
         return map(named_identity,
                    "item"_n = values)[i64{1}]
@@ -209,6 +211,7 @@ TEST_CASE("map retains a named reference collection as a variadic graph argument
     const auto build_context = graph("name"_n = "build_context", [&](wp<TS<i64>> value) {
         return values_at_key_one(value);
     });
+
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values,
                             wp<TS<i64>> context, wp<TS<bool>> run) {
         const auto reference_context = nested(build_context, run, context);
@@ -228,6 +231,7 @@ TEST_CASE("map infers a leading key for a graph function with an output",
     const auto add_key = node([](i64 value, In<TS<i64, TimeSeriesGuarantee::const_>> key) {
         return value + static_cast<int>(*key);
     });
+
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
         return map([&](auto key, auto item) { return add_key(item, key); },
                    values)[i64{1}]
@@ -245,6 +249,7 @@ TEST_CASE("map passes a const key to an indexed graph parameter",
     const auto add_key = node([](i64 value, In<TS<i64, TimeSeriesGuarantee::const_>> key) {
         return value + static_cast<int>(*key);
     });
+
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
         return map([&](auto item, auto key) { return add_key(item, key); },
                    values, "__key_arg__"_n = 1)
@@ -268,6 +273,7 @@ TEST_CASE("map uses the union of mapped TSD key sets",
                            [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) {
         return add_values(lhs, rhs);
     });
+
     const auto tested = [&](wp<TSD<i64, TS<i64>>> left, wp<TSD<i64, TS<i64>>> right) {
         const auto result = map(sum, left, right);
         return result[i64{2}].as<TS<i64>>();
@@ -278,16 +284,17 @@ TEST_CASE("map uses the union of mapped TSD key sets",
     CHECK(actual.equals<i64>({10, 30}));
 }
 
-struct KeySourceGraph {
-    wp<TS<i64, TimeSeriesGuarantee::const_>> key;
-
-    auto wire() const { return key; }
-};
-
 TEST_CASE("map runs a source graph for keys selected by a TSS",
           "[feature:map][feature:nested-graph][feature:operator][series:tss][series:tsd]"
           "[shape:nested][guarantee:const][definition:aggregate]") {
+    struct KeySourceGraph {
+        wp<TS<i64, TimeSeriesGuarantee::const_>> key;
+
+        auto wire() const { return key; }
+    };
+
     const auto source = graph<KeySourceGraph>();
+
     const auto tested = [&](wp<TSS<i64>> keys) {
         return map(source, keys)[i64{7}]
             .as<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::ordinary>>();
@@ -315,6 +322,7 @@ TEST_CASE("a map key schedules its consumer when a branch starts",
           "[feature:map][feature:nested-graph][feature:operator][series:tss][series:tsd]"
           "[shape:nested][guarantee:const][transition:addition][transition:removal][definition:function]") {
     const auto copy_key = node([](In<TS<i64, TimeSeriesGuarantee::const_>> key) { return *key; });
+
     const auto tested = [&](wp<TSS<i64>> keys) {
         return map([&](auto key) { return copy_key(key); }, keys)[i64{5}].as<TS<i64>>();
     };
@@ -346,6 +354,7 @@ TEST_CASE("map uses an explicitly selected TSD key set",
     const auto select_value = graph(
         "name"_n = "select_value",
         [](wp<TS<i64>> value, wp<TS<i64>>) { return value; });
+
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values,
                             wp<TSD<i64, TS<i64>>> key_set) {
         const auto result = map(select_value, values, key_set,
@@ -384,6 +393,7 @@ TEST_CASE("a pass-through TSD remains one input to every mapped graph",
         [](wp<TS<i64>> value, wp<TSD<i64, TS<i64>>> factor_by_key) {
             return add_values(value, factor_by_key[i64{9}].as<TS<i64>>());
         });
+
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values,
                             wp<TSD<i64, TS<i64>>> factors) {
         const auto result = map(add_factor, values, pass_through(factors));
@@ -413,6 +423,7 @@ TEST_CASE("map passes direct and reference TSD inputs through to every mapped gr
     const auto make_factors = graph("name"_n = "make_factors", [&](wp<TS<i64>> factor) {
         return factors(factor);
     });
+
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values,
                             wp<TSD<i64, TS<i64>>> direct_factors,
                             wp<TS<i64>> reference_factor, wp<TS<bool>> run) {
@@ -454,6 +465,7 @@ TEST_CASE("a mapped inner graph survives one TSD item removal while another TSD 
         [&](wp<TS<i64, G>, optional> first, wp<TS<i64, G>> second) {
             return sum(first, second);
         });
+
     const auto tested = [&](wp<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> first,
                             wp<TSD<i64, TS<i64>>> second) {
         return map(branch, first, second)[i64{7}].as<TS<i64>>();
@@ -500,16 +512,16 @@ TEST_CASE("map forwards optional positional and named inputs only to optional br
     });
 }
 
-struct NamedMapKey {
-    wp<TS<i64>> value;
-    wp<TS<i64, TimeSeriesGuarantee::const_>> selected_key;
-
-    auto wire() const { return selected_key; }
-};
-
 TEST_CASE("map selects a key parameter by name",
           "[feature:map][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[guarantee:const][definition:aggregate]") {
+    struct NamedMapKey {
+        wp<TS<i64>> value;
+        wp<TS<i64, TimeSeriesGuarantee::const_>> selected_key;
+
+        auto wire() const { return selected_key; }
+    };
+
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
         const auto result = map(graph<NamedMapKey>(), "value"_n = values,
                                 "__key_arg__"_n = "selected_key");
@@ -528,6 +540,7 @@ TEST_CASE("map reads a TSD through a nested graph reference",
     const auto build_values = graph(
         "name"_n = "build_values",
         [](wp<TS<i64>> value) { return values_at_key_one(value); });
+
     const auto tested = [&](wp<TS<i64>> value, wp<TS<bool>> run) {
         const auto nested_values = nested(build_values, run, value);
         const auto result = map(
@@ -554,6 +567,7 @@ TEST_CASE("map reads a TSS through a nested graph reference",
     const auto build_keys = graph("name"_n = "build_keys", [&](wp<TS<bool>> present) {
         return keys(present);
     });
+
     const auto tested = [&](wp<TS<bool>> present, wp<TS<bool>> run) {
         const auto nested_keys = nested(build_keys, run, present);
         const auto result = map(
@@ -580,6 +594,7 @@ TEST_CASE("map reads values using a nested TSS reference as its key set",
     const auto build_keys = graph("name"_n = "build_generic_keys", [&](wp<TS<bool>> present) {
         return keys(present);
     });
+
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values, wp<TS<bool>> present, wp<TS<bool>> run) {
         const auto reference_keys = nested(build_keys, run, present);
         const auto result = map([](auto, auto item) { return item; }, values, reference_keys,

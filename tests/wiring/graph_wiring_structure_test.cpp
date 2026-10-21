@@ -96,8 +96,11 @@ details::GraphWiringStructure add_structure() {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
     const auto boundary = node<boundary_node>();
+
     const auto add = node<add_node>();
+
     const auto first_sink = node<first_sink_node>();
+
     const auto second_sink = node<second_sink_node>();
     first_sink();
     second_sink();
@@ -114,8 +117,11 @@ details::GraphWiringStructure renamed_add_structure() {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
     const auto input = node<boundary_node>();
+
     const auto operation = node<add_node>();
+
     const auto first_sink = node<first_sink_node>();
+
     const auto second_sink = node<second_sink_node>();
     second_sink();
     first_sink();
@@ -132,6 +138,7 @@ details::GraphWiringStructure multiply_structure() {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
     const auto boundary = node<boundary_node>();
+
     const auto multiply = node<multiply_node>();
     const auto x = boundary();
     const auto y = boundary();
@@ -146,7 +153,9 @@ details::GraphWiringStructure branch_structure(bool shared) {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
     const auto boundary = node<boundary_node>();
+
     const auto branch = node<branch_node>();
+
     const auto add = node<add_node>();
     const auto input = boundary();
     const auto left = branch(input);
@@ -162,10 +171,12 @@ details::GraphWiringStructure nested_structure() {
     using namespace bg::literals;
 
     const auto add = node<add_node>();
+
     const auto inner = graph("name"_n = "inner", [&](wp<TS<i64>> value) { return add(value, value); });
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
     const auto value_boundary = node<boundary_node>();
+
     const auto run_boundary = node<bool_boundary_node>();
     const auto value = value_boundary();
     const auto run = run_boundary();
@@ -180,7 +191,9 @@ details::GraphWiringStructure context_structure(bool alternate_provider) {
     using namespace bg::literals;
 
     const auto first_provider = node<boundary_node>();
+
     const auto second_provider = node<alternate_boundary_node>();
+
     const auto copy = node<context_copy_node>();
     auto outer = GraphWiring{};
     const auto outer_context = WiringContext{outer};
@@ -201,7 +214,9 @@ details::GraphWiringStructure context_structure(bool alternate_provider) {
 
 details::GraphWiringStructure inherited_requirement_structure(const void *identity, bool alternate_provider) {
     const auto first_provider = node<boundary_node>();
+
     const auto second_provider = node<alternate_boundary_node>();
+
     const auto copy = node<add_node>();
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
@@ -336,15 +351,15 @@ TEST_CASE("service clients have equivalent structure across root wirings",
 }
 
 TEST_CASE("an unhashable wired scalar disables graph structure caching", "[graph_wiring][feature:wiring]") {
-    auto wiring = bg::GraphWiring{};
-    const auto context = bg::WiringContext{wiring};
-    const auto source = bg::node<opaque_source_node>();
-    const auto value = bg::ScalarValue<bg::Opaque<opaque_value>>{opaque_value{1}};
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto source = node<opaque_source_node>();
+    const auto value = ScalarValue<Opaque<opaque_value>>{opaque_value{1}};
     const auto result = source(value);
     (void)wiring.complete_pending_wiring(result);
 
-    const auto structure = bg::details::graph_wiring_structure(wiring, std::span<const bg::WiringPoint>{},
-                                                               static_cast<bg::WiringPoint>(result));
+    const auto structure = details::graph_wiring_structure(
+        wiring, std::span<const WiringPoint>{}, static_cast<WiringPoint>(result));
 
     CHECK_FALSE(structure.cacheable());
     CHECK(structure.hash() == 0);

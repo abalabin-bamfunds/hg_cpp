@@ -19,35 +19,9 @@ using namespace bg::literals;
 
 const auto add_values = node([](i64 left, i64 right) { return left + right; });
 
-const auto multiply_values = node([](i64 left, i64 right) { return left * right; });
-
 const auto add_graph = graph("name"_n = "add_values_for_reduce", [](wp<TS<i64>> left, wp<TS<i64>> right) {
     return add_values(left, right);
 });
-
-const auto representation_sensitive_graph = graph(
-    "name"_n = "representation_sensitive_reduce",
-    [](wp<TS<i64>> left, wp<TS<i64>> right) {
-        if (type_cast<TimeSeriesReferenceType>(&left.type()) != nullptr) {
-            return add_values(left, right);
-        }
-        return multiply_values(left, right);
-    });
-
-const auto add_values_and_context = node([](i64 left, i64 right, In<TS<i64>, "factor"_n, context> factor) {
-    return left + right + *factor;
-});
-
-const auto context_add_graph = graph("name"_n = "context_add_for_reduce", [](wp<TS<i64>> left,
-                                                                               wp<TS<i64>> right) {
-    return add_values_and_context(left, right);
-});
-
-const auto namespace_scope_reduce_with_default = graph(
-    "name"_n = "namespace_scope_reduce_with_default",
-    [](wp<TSD<i64, TS<i64>>> dictionary) -> wp<TS<i64>> {
-        return wp<TS<i64>>{reduce(add_graph, dictionary, "default"_n = i64{20})};
-    });
 
 TEST_CASE("reduce combines all valid TSD items through nested reducer graphs",
           "[feature:reduce][feature:nested-graph][series:tsd][shape:nested]") {
@@ -93,6 +67,7 @@ TEST_CASE("compact reduce does not propagate a dirty path when a child reducer d
             })(left, right);
             return wp<TS<i64>>{*selected};
         });
+
     const auto tested = [=](wp<TSD<i64, TS<i64>>> dictionary) {
         return reduce(suppress_selected_value, dictionary);
     };
@@ -153,7 +128,18 @@ TEST_CASE("compact reduce does not republish an unchanged root when membership c
 
 TEST_CASE("nested reduce preserves the reducer selected for reference-backed inputs",
           "[feature:reduce][series:tsd][shape:nested][binding:reference-to-value]") {
-    const auto tested = [](wp<TSD<i64, TS<i64>>> dictionary) {
+    const auto multiply_values = node([](i64 left, i64 right) { return left * right; });
+
+    const auto representation_sensitive_graph = graph(
+        "name"_n = "representation_sensitive_reduce",
+        [&](wp<TS<i64>> left, wp<TS<i64>> right) {
+            if (type_cast<TimeSeriesReferenceType>(&left.type()) != nullptr) {
+                return add_values(left, right);
+            }
+            return multiply_values(left, right);
+        });
+
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> dictionary) {
         return reduce(representation_sensitive_graph, dictionary);
     };
 
@@ -170,6 +156,7 @@ TEST_CASE("nested reduce tracks keys when a sampled TSD reassigns physical item 
            In<REF<TSD<i64, TS<i64>>>> second, Out<REF<TSD<i64, TS<i64>>>> output) {
             output.copy(*use_second ? second : first);
         });
+
     const auto tested = [=](wp<TSD<i64, TS<i64>>> first, wp<TSD<i64, TS<i64>>> second,
                             wp<TS<bool>> use_second) {
         const auto selected = select_dictionary(use_second, first.as<REF<TSD<i64, TS<i64>>>>(),
@@ -207,6 +194,7 @@ TEST_CASE("compact reduce handles addition that reuses an expired physical item 
         const auto reused_id = output.item_id(40) == 0;
         new_item.set(reused_id ? i64{11} : i64{1'011});
     });
+
     const auto tested = [=](wp<TS<i64>> phase) { return reduce(add_graph, make_dictionary(phase)); };
 
     const auto actual = testing::test_graph(tested, {0, 1, 2});
@@ -230,6 +218,7 @@ TEST_CASE("compact reduce updates a sparse path in a larger TSD",
 
         output[*changed_key].set(*changed_value);
     });
+
     const auto tested = [=](wp<TS<bool>> initialize, wp<TS<i64>> changed_key, wp<TS<i64>> changed_value) {
         return reduce(add_graph, make_dictionary(initialize, changed_key, changed_value));
     };
@@ -253,6 +242,7 @@ TEST_CASE("compact reduce timestamps a replacement input in its cycle and leaves
                                                                                      wp<TS<i64>> right) {
         return observe_inputs(left, right);
     });
+
     const auto tested = [=](wp<TSD<i64, TS<i64>>> dictionary) {
         return reduce(timestamp_reducer, dictionary);
     };
@@ -269,6 +259,15 @@ TEST_CASE("compact reduce timestamps a replacement input in its cycle and leaves
     CHECK(actual.equals<i64>({6, 5, 32}));
     CHECK(retained_cycle_two_timestamp);
 }
+
+const auto add_values_and_context = node([](i64 left, i64 right, In<TS<i64>, "factor"_n, context> factor) {
+    return left + right + *factor;
+});
+
+const auto context_add_graph = graph("name"_n = "context_add_for_reduce", [](wp<TS<i64>> left,
+                                                                               wp<TS<i64>> right) {
+    return add_values_and_context(left, right);
+});
 
 TEST_CASE("reduce combines final TSD items through a context-dependent fallback reducer",
           "[feature:reduce][feature:context-time-series][feature:nested-graph][series:tsd][shape:nested]"
@@ -345,6 +344,7 @@ TEST_CASE("reduce fallback reads values from reference TSD items with inherited 
             output[2].copy(second);
         }
     });
+
     const auto tested = [=](wp<TS<i64>> first_value, wp<TS<i64>> second_value, wp<TS<bool>> install,
                             wp<TS<i64>> factor) {
         auto context_scope = with_context("factor"_n = factor);
@@ -390,6 +390,7 @@ TEST_CASE("reduce fallback refreshes a singleton reference item after selection 
             output[1].copy(target);
         }
     });
+
     const auto tested = [=](wp<TS<i64>> command, wp<TS<bool>> install, wp<TS<i64>> factor) {
         auto context_scope = with_context("factor"_n = factor);
         const auto target = make_target(command);
@@ -441,6 +442,12 @@ TEST_CASE("reduce uses the default when a valid TSD has keys but no valid items"
 
     CHECK(actual.equals<i64>({20}));
 }
+
+const auto namespace_scope_reduce_with_default = graph(
+    "name"_n = "namespace_scope_reduce_with_default",
+    [](wp<TSD<i64, TS<i64>>> dictionary) -> wp<TS<i64>> {
+        return wp<TS<i64>>{reduce(add_graph, dictionary, "default"_n = i64{20})};
+    });
 
 TEST_CASE("reduce uses the default when a valid TSD is empty",
           "[feature:reduce][series:tsd][validity:optional][transition:removal]") {

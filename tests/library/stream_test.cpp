@@ -25,6 +25,12 @@
 
 using namespace bg;
 
+TEST_CASE("valid publishes the input validity", "[feature:operator][feature:validity][validity:optional][series:value]") {
+    const auto query = [](wp<TS<i64>> value) { return operators::valid(value); };
+
+    CHECK(testing::test_graph(query, {literal::INVALID, 1}).equals<bool>({false, true}));
+}
+
 namespace stream_test {
 struct non_comparable_value {
     i64 value;
@@ -43,18 +49,6 @@ template <template <typename, auto...> typename Field> struct mixed_guarantee_bu
 } // namespace stream_test
 
 namespace {
-
-struct delayed_value_source {
-    static constexpr bool uses_timed_scheduling = true;
-
-    Out<TS<i64>> output;
-
-    void start(EvaluationContext *context) const {
-        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
-    }
-
-    void evaluate() const { output.set(1); }
-};
 
 struct changing_item_source {
     static constexpr bool uses_timed_scheduling = true;
@@ -78,12 +72,6 @@ struct changing_item_source {
     }
 };
 
-struct deduplicated_source {
-    Out<TS<i64, TimeSeriesGuarantee::deduplicated>> output;
-
-    void start() const { output.set(1); }
-};
-
 struct stable_value_source {
     Out<TS<i64>> output;
 
@@ -91,33 +79,14 @@ struct stable_value_source {
     void evaluate() const {}
 };
 
-struct first_equal_value_source {
-    Out<TS<i64>> output;
-
-    void start() const { output.set(10); }
-};
-
-struct second_equal_value_source {
-    Out<TS<i64>> output;
-
-    void start() const { output.set(10); }
-};
-
 } // namespace
-
-TEST_CASE("valid publishes the input validity", "[feature:operator][feature:validity][validity:optional][series:value]") {
-    const auto source = node<delayed_value_source>();
-    const auto query = [&](wp<TS<i64>> value) { return operators::valid(value); };
-    const auto graph = [&] { return query(source()); };
-
-    CHECK(testing::test_graph(graph).equals<bool>({false, true}));
-}
 
 TEST_CASE("valid observes target validity through a reference",
           "[feature:operator][feature:validity][series:reference][binding:reference-to-value]"
           "[transition:invalidation][transition:revalidation]") {
     const auto source = node<changing_item_source>();
     const auto reference = node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) { output.copy(input); });
+
     const auto graph = [&] { return operators::valid(reference(source())); };
 
     CHECK(testing::test_graph(graph).equals<bool>({true, false, true}));
@@ -137,6 +106,7 @@ TEST_CASE("all_valid tracks immediate item invalidation in a free list",
           "[feature:operator][feature:validity][validity:all-valid][series:fixed-tsl][representation:free]"
           "[transition:invalidation][transition:revalidation]") {
     const auto changing_item = node<changing_item_source>();
+
     const auto graph = [&](wp<TS<i64>> first) { return operators::all_valid(tsl(first, changing_item())); };
 
     CHECK(testing::test_graph(graph, {10}).equals<bool>({true, false, true}));
@@ -202,13 +172,22 @@ TEST_CASE("filter reconciles a fixed list when it reopens",
               .equals<i64>({11, std::nullopt, 31, 41}));
 }
 
+namespace stream_test {
+struct filter_observation {
+    i64 value;
+    bool constant_item_updated;
+
+    bool operator==(const filter_observation &) const = default;
+};
+} // namespace stream_test
+
+using stream_test::filter_observation;
+
 TEST_CASE("filter limits contained guarantees by the input root guarantee",
           "[feature:operator][series:tsb][schema:named][guarantee:ordinary]"
           "[validity:optional][transition:update]") {
-    auto constant_item_updates = std::vector<bool>{};
-    const auto observe = node([&](In<TSB<SCHEMA>> values) {
-        constant_item_updates.push_back(values.item_updated(1));
-        return *values[0].template as<TS<i64>>();
+    const auto observe = node([](In<TSB<SCHEMA>> values) {
+        return filter_observation{*values[0].template as<TS<i64>>(), values.item_updated(1)};
     });
 
     const auto filter = [&](wp<TS<bool>> condition, wp<TS<i64>> ordinary_value) {
@@ -222,19 +201,16 @@ TEST_CASE("filter limits contained guarantees by the input root guarantee",
         return observe(filtered);
     };
 
-    const auto actual = testing::test_graph(filter, {true, false, true, true},
-                                            {10, 20, 30, 40});
-    CHECK(actual.equals<i64>({10, std::nullopt, 30, 40}));
-    CHECK(constant_item_updates == std::vector<bool>{true, true, false});
+    CHECK(testing::test_graph(filter, {true, false, true, true}, {10, 20, 30, 40})
+              .equals<filter_observation>({filter_observation{10, true}, std::nullopt,
+                                           filter_observation{30, true}, filter_observation{40, false}}));
 }
 
 TEST_CASE("filter caps a stronger child at a deduplicated root",
           "[feature:operator][series:tsb][schema:named][guarantee:deduplicated]"
           "[transition:update]") {
-    auto constant_item_updates = std::vector<bool>{};
-    const auto observe = node([&](In<TSB<SCHEMA>> values) {
-        constant_item_updates.push_back(values.item_updated(1));
-        return *values[0].template as<TS<i64>>();
+    const auto observe = node([](In<TSB<SCHEMA>> values) {
+        return filter_observation{*values[0].template as<TS<i64>>(), values.item_updated(1)};
     });
 
     const auto filter = [&](wp<TS<bool>> condition,
@@ -250,8 +226,8 @@ TEST_CASE("filter caps a stronger child at a deduplicated root",
 
     CHECK(testing::test_graph(filter, {true, false, true},
                               {{{"changing", 10}, {"constant", 1}}, {{"changing", 20}}, literal::SKIP})
-              .equals<i64>({10, std::nullopt, 20}));
-    CHECK(constant_item_updates == std::vector<bool>{true, false});
+              .equals<filter_observation>({filter_observation{10, true}, std::nullopt,
+                                           filter_observation{20, false}}));
 }
 
 TEST_CASE("filter reconciles a TSB when it reopens",
@@ -542,9 +518,12 @@ TEST_CASE("if_then_else invalidates for an invalid condition and an invalid sele
 
 TEST_CASE("if_then_else observes selection changes between equal-valued targets",
           "[feature:operator][series:reference][binding:reference-to-reference]") {
-    const auto first = node<first_equal_value_source>();
-    const auto second = node<second_equal_value_source>();
+    const auto first = node([](Out<TS<i64>> output) { output.set(10); });
+
+    const auto second = node([](Out<TS<i64>> output) { output.set(10); });
+
     auto previous = Reference{};
+
     const auto observe_selection = node([&](In<REF<TS<i64>>> selected, Out<TS<bool>> output) {
         output.set(selected.value() != previous);
         previous = selected.value();
@@ -640,9 +619,9 @@ TEST_CASE("sample uses the latest passive value and preserves output on invalida
     const auto retain_passive_value = [](wp<TS<i64>> signal, wp<TS<i64>> value) {
         return operators::sample(signal, value);
     };
-    const auto sparse_signal = std::array<std::optional<i64>, 5>{0, std::nullopt, 2, std::nullopt, 4};
-    const auto sparse_value = std::array<std::optional<i64>, 5>{10, 20, std::nullopt, 30, std::nullopt};
-    CHECK(testing::test_graph(retain_passive_value, sparse_signal, sparse_value)
+    CHECK(testing::test_graph(retain_passive_value,
+                              {0, literal::SKIP, 2, literal::SKIP, 4},
+                              {10, 20, literal::SKIP, 30, literal::SKIP})
               .equals<i64>({10, std::nullopt, 20, std::nullopt, 30}));
 }
 
@@ -716,6 +695,7 @@ TEST_CASE("dedup publishes the same value after invalidation",
         }
         output.copy(value);
     });
+
     const auto graph = [&](wp<TS<i64>> value) { return operators::dedup(invalidate(value)); };
 
     CHECK(testing::test_graph(graph, {1, -1, 1}).equals<i64>({1, std::nullopt, 1}));
@@ -724,8 +704,10 @@ TEST_CASE("dedup publishes the same value after invalidation",
 TEST_CASE("dedup leaves an already deduplicated input as the same graph node",
           "[feature:operator][feature:type-system][series:value][guarantee:deduplicated]"
           "[shape:chain]") {
-    const auto source = node<deduplicated_source>();
+    const auto source = node([](Out<TS<i64, TimeSeriesGuarantee::deduplicated>> output) { output.set(1); });
+
     const auto copy = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.copy(input); });
+
     const auto graph = [&] { return copy(operators::dedup(source())); };
     auto wiring = GraphWiring{};
     {
@@ -750,6 +732,7 @@ TEST_CASE("dedup on a reference observes retargeted values",
         output.copy(*command == 0 ? first : second);
     });
     const auto copy = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.copy(input); });
+
     const auto graph = [&](wp<TS<i64>> command) { return copy(operators::dedup(select(command, first(), second()))); };
 
     CHECK(testing::test_graph(graph, {0, 0, 1, 1})

@@ -13,13 +13,15 @@
 #include <type_traits>
 #include <vector>
 
+using namespace bg;
+
 namespace {
 
 struct collection_state_node {
-    bg::State<bg::List<bg::i64>> list;
-    bg::State<bg::Set<bg::i64>> set;
-    bg::State<bg::Dict<bg::i64, bg::i64>> dict;
-    bg::Out<bg::TS<bg::i64>> output;
+    State<List<i64>> list;
+    State<Set<i64>> set;
+    State<Dict<i64, i64>> dict;
+    Out<TS<i64>> output;
 
     void start() const {
         list->append(1);
@@ -33,7 +35,7 @@ struct collection_state_node {
         dict->insert_or_assign(6, 7);
         dict->insert_or_assign(6, 8);
 
-        output.set(static_cast<bg::i64>(list->size() + set->size() + dict->at(6)));
+        output.set(static_cast<i64>(list->size() + set->size() + dict->at(6)));
     }
 
     void evaluate() const {}
@@ -42,27 +44,27 @@ struct collection_state_node {
 } // namespace
 
 TEST_CASE("collection state is mutable during a node invocation", "[node][state][scalar][feature:state]") {
-    const auto collection_state = bg::node<collection_state_node>();
+    const auto collection_state = node<collection_state_node>();
 
     const auto graph = [&] { return collection_state(); };
 
-    CHECK(bg::testing::test_graph(graph).equals<bg::i64>({12}));
+    CHECK(testing::test_graph(graph).equals<i64>({12}));
 }
 
 namespace {
 
 struct collection_copy_node {
-    bg::Scalar<bg::List<bg::string>> list;
-    bg::Scalar<bg::Set<bg::string>> set;
-    bg::Scalar<bg::Dict<bg::string, bg::string>> dict;
-    bg::Scalar<bg::Dict<bg::string, bg::List<bg::string>>> nested_dict;
-    bg::Scalar<bg::Opaque<const char *>> list_item_data;
-    bg::Scalar<bg::Opaque<const char *>> set_item_data;
-    bg::Scalar<bg::Opaque<const char *>> dict_key_data;
-    bg::Scalar<bg::Opaque<const char *>> dict_value_data;
-    bg::Scalar<bg::Opaque<const char *>> nested_item_data;
+    Scalar<List<string>> list;
+    Scalar<Set<string>> set;
+    Scalar<Dict<string, string>> dict;
+    Scalar<Dict<string, List<string>>> nested_dict;
+    Scalar<Opaque<const char *>> list_item_data;
+    Scalar<Opaque<const char *>> set_item_data;
+    Scalar<Opaque<const char *>> dict_key_data;
+    Scalar<Opaque<const char *>> dict_value_data;
+    Scalar<Opaque<const char *>> nested_item_data;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         auto set_item_matches = false;
         set.for_each([&](const auto item) { set_item_matches = item.value().data() == set_item_data.value(); });
 
@@ -76,12 +78,12 @@ struct collection_copy_node {
         const auto nested_item_matches = nested_dict.at("nested")[0].value().data() == nested_item_data.value();
 
         context->global_state().write([&](auto &values) {
-            values.set(bg::util::symbol{"list_item_matches"},
-                       bg::ScalarValue{list[0].value().data() == list_item_data.value()});
-            values.set(bg::util::symbol{"set_item_matches"}, bg::ScalarValue{set_item_matches});
-            values.set(bg::util::symbol{"dict_key_matches"}, bg::ScalarValue{dict_key_matches});
-            values.set(bg::util::symbol{"dict_value_matches"}, bg::ScalarValue{dict_value_matches});
-            values.set(bg::util::symbol{"nested_item_matches"}, bg::ScalarValue{nested_item_matches});
+            values.set(util::symbol{"list_item_matches"},
+                       ScalarValue{list[0].value().data() == list_item_data.value()});
+            values.set(util::symbol{"set_item_matches"}, ScalarValue{set_item_matches});
+            values.set(util::symbol{"dict_key_matches"}, ScalarValue{dict_key_matches});
+            values.set(util::symbol{"dict_value_matches"}, ScalarValue{dict_value_matches});
+            values.set(util::symbol{"nested_item_matches"}, ScalarValue{nested_item_matches});
         });
     }
 
@@ -93,17 +95,17 @@ struct collection_copy_node {
 TEST_CASE("compiled graph collection copies retain their string items",
           "[node][scalar][scalar:list][scalar:set][scalar:dict][scalar:string]"
           "[feature:scalar-storage][feature:graph-compilation][feature:global-state][storage:variable]") {
-    const auto collection_copy = bg::node<collection_copy_node>();
+    const auto collection_copy = node<collection_copy_node>();
 
-    const auto list = bg::ScalarValue<bg::List<bg::string>>{std::array<std::string_view, 1>{"list item"}};
-    const auto set = bg::ScalarValue<bg::Set<bg::string>>{std::array<std::string_view, 1>{"set item"}};
-    const auto dict = bg::ScalarValue<bg::Dict<bg::string, bg::string>>{
+    const auto list = ScalarValue<List<string>>{std::array<std::string_view, 1>{"list item"}};
+    const auto set = ScalarValue<Set<string>>{std::array<std::string_view, 1>{"set item"}};
+    const auto dict = ScalarValue<Dict<string, string>>{
         std::array{std::pair{std::string_view{"dict key"}, std::string_view{"dict value"}}}};
-    const auto nested_items = bg::ScalarValue<bg::List<bg::string>>{
+    const auto nested_items = ScalarValue<List<string>>{
         std::array<std::string_view, 1>{"nested item"}};
-    const auto nested_dict = bg::ScalarValue<bg::Dict<bg::string, bg::List<bg::string>>>{
+    const auto nested_dict = ScalarValue<Dict<string, List<string>>>{
         std::array{std::pair{std::string_view{"nested"}, nested_items.view()}}};
-    const auto list_item_data = bg::ScalarValue<bg::Opaque<const char *>>{list.view()[0].value().data()};
+    const auto list_item_data = ScalarValue<Opaque<const char *>>{list.view()[0].value().data()};
     auto set_item_text = static_cast<const char *>(nullptr);
     set.view().for_each([&](const auto item) { set_item_text = item.value().data(); });
     auto dict_key_text = static_cast<const char *>(nullptr);
@@ -113,44 +115,44 @@ TEST_CASE("compiled graph collection copies retain their string items",
         dict_value_text = value.value().data();
     });
     const auto nested_item_text = nested_dict.view().at("nested")[0].value().data();
-    const auto set_item_data = bg::ScalarValue<bg::Opaque<const char *>>{set_item_text};
-    const auto dict_key_data = bg::ScalarValue<bg::Opaque<const char *>>{dict_key_text};
-    const auto dict_value_data = bg::ScalarValue<bg::Opaque<const char *>>{dict_value_text};
-    const auto nested_item_data = bg::ScalarValue<bg::Opaque<const char *>>{nested_item_text};
-    auto global_state = bg::GlobalState{};
+    const auto set_item_data = ScalarValue<Opaque<const char *>>{set_item_text};
+    const auto dict_key_data = ScalarValue<Opaque<const char *>>{dict_key_text};
+    const auto dict_value_data = ScalarValue<Opaque<const char *>>{dict_value_text};
+    const auto nested_item_data = ScalarValue<Opaque<const char *>>{nested_item_text};
+    auto global_state = GlobalState{};
 
-    bg::run_graph(
+    run_graph(
         [&] {
             collection_copy(list, set, dict, nested_dict, list_item_data, set_item_data, dict_key_data,
                             dict_value_data, nested_item_data);
         },
-        bg::GraphRunOptions{.global_state = &global_state});
+        GraphRunOptions{.global_state = &global_state});
 
     global_state.read([](const auto &values) {
-        CHECK(*bg::scalar_cast<bool>(values.at("list_item_matches")));
-        CHECK(*bg::scalar_cast<bool>(values.at("set_item_matches")));
-        CHECK(*bg::scalar_cast<bool>(values.at("dict_key_matches")));
-        CHECK(*bg::scalar_cast<bool>(values.at("dict_value_matches")));
-        CHECK(*bg::scalar_cast<bool>(values.at("nested_item_matches")));
+        CHECK(*scalar_cast<bool>(values.at("list_item_matches")));
+        CHECK(*scalar_cast<bool>(values.at("set_item_matches")));
+        CHECK(*scalar_cast<bool>(values.at("dict_key_matches")));
+        CHECK(*scalar_cast<bool>(values.at("dict_value_matches")));
+        CHECK(*scalar_cast<bool>(values.at("nested_item_matches")));
     });
 }
 
 TEST_CASE("a runtime graph releases collection state storage", "[node][state][scalar][allocation][feature:state]") {
-    const auto collection_state = bg::node<collection_state_node>();
+    const auto collection_state = node<collection_state_node>();
 
-    auto wiring = bg::GraphWiring{};
+    auto wiring = GraphWiring{};
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         collection_state();
     }
 
     wiring.finalize();
-    const auto graph = bg::CompiledGraph{wiring};
+    const auto graph = CompiledGraph{wiring};
     auto memory = counting_memory_resource{};
-    auto global_state = bg::GlobalState{};
+    auto global_state = GlobalState{};
     {
-        auto runtime = bg::RuntimeGraph{graph, bg::allocator{memory}, global_state};
-        bg::SimulationEvaluationEngine{}.run(runtime, bg::MIN_DT + std::chrono::microseconds{1});
+        auto runtime = RuntimeGraph{graph, allocator{memory}, global_state};
+        SimulationEvaluationEngine{}.run(runtime, MIN_DT + std::chrono::microseconds{1});
     }
 
     CHECK(memory.allocations() == 0);
@@ -159,9 +161,9 @@ TEST_CASE("a runtime graph releases collection state storage", "[node][state][sc
 namespace {
 
 struct generic_list_state_node {
-    bg::Scalar<bg::List<bg::SCALAR>> values;
-    bg::State<bg::List<bg::SCALAR>> state;
-    bg::Out<bg::TS<bg::SCALAR>> output;
+    Scalar<List<SCALAR>> values;
+    State<List<SCALAR>> state;
+    Out<TS<SCALAR>> output;
 
     void start() const {
         state->append(values[0]);
@@ -176,15 +178,15 @@ struct generic_list_state_node {
     void evaluate() const {}
 };
 
-using K = bg::ScalarVariable<"K", bg::Hashable>;
-using V = bg::ScalarVariable<"V">;
-using TEXT = bg::ScalarVariable<"TEXT", bg::string, bg::EqualityComparable>;
-using OPAQUE = bg::ScalarVariable<"OPAQUE", bg::Opaque<int>>;
+using K = ScalarVariable<"K", Hashable>;
+using V = ScalarVariable<"V">;
+using TEXT = ScalarVariable<"TEXT", string, EqualityComparable>;
+using OPAQUE = ScalarVariable<"OPAQUE", Opaque<int>>;
 
 struct generic_scalar_state_node {
-    bg::In<bg::TS<TEXT>, bg::optional> input;
-    bg::State<TEXT> state;
-    bg::Out<bg::TS<TEXT>> output;
+    In<TS<TEXT>, optional> input;
+    State<TEXT> state;
+    Out<TS<TEXT>> output;
 
     void evaluate() const {
         if (!input.valid()) {
@@ -199,8 +201,8 @@ struct generic_scalar_state_node {
 };
 
 struct unsupported_scalar_state_node {
-    bg::Scalar<OPAQUE> input;
-    bg::State<OPAQUE> state;
+    Scalar<OPAQUE> input;
+    State<OPAQUE> state;
 
     void start() const { state.set(input); }
     void evaluate() const {}
@@ -210,34 +212,34 @@ struct unsupported_scalar_state_node {
 
 TEST_CASE("generic collection state uses its resolved storage",
           "[node][state][scalar][generic][declaration:generic][feature:state][scalar:generic]") {
-    const auto generic_list_state = bg::node<generic_list_state_node>();
+    const auto generic_list_state = node<generic_list_state_node>();
 
-    const auto input = bg::ScalarValue<bg::List<bg::i64>>{std::array<bg::i64, 2>{3, 4}};
+    const auto input = ScalarValue<List<i64>>{std::array<i64, 2>{3, 4}};
 
     const auto graph = [&] { return generic_list_state(input); };
 
-    CHECK(bg::testing::test_graph(graph).equals<bg::i64>({4}));
+    CHECK(testing::test_graph(graph).equals<i64>({4}));
 }
 
 TEST_CASE("generic scalar state resolves constrained types and owns its value",
           "[node][state][scalar][generic][declaration:generic][feature:state][scalar:generic]") {
-    const auto state_node = bg::node<generic_scalar_state_node>();
+    const auto state_node = node<generic_scalar_state_node>();
 
-    const auto retain = [&](bg::wp<bg::TS<bg::string>> value) { return state_node(value); };
+    const auto retain = [&](wp<TS<string>> value) { return state_node(value); };
 
-    CHECK(bg::testing::test_graph(retain, std::array<std::string, 3>{"first", "second", "third"})
-              .equals<bg::string>({"first", "second", "third"}));
+    CHECK(testing::test_graph(retain, std::array<std::string, 3>{"first", "second", "third"})
+              .equals<string>({"first", "second", "third"}));
 }
 
 TEST_CASE("runtime-resolved scalar state reset releases its owned storage",
           "[node][state][scalar][generic][allocation][feature:state][scalar:generic]") {
     auto memory = counting_memory_resource{};
     {
-        auto allocation = bg::allocator{memory};
-        auto state = bg::GlobalState{allocation};
-        const auto &runtime_type = bg::cpp_scalar_runtime_type<bg::string>();
-        using Stored = bg::details::scalar_stored_t<bg::string>;
-        auto input = std::optional{bg::ScalarValue<bg::string>{std::string(256, 'x'), allocation}};
+        auto allocation = allocator{memory};
+        auto state = GlobalState{allocation};
+        const auto &runtime_type = cpp_scalar_runtime_type<string>();
+        using Stored = details::scalar_stored_t<string>;
+        auto input = std::optional{ScalarValue<string>{std::string(256, 'x'), allocation}};
         auto before = std::size_t{};
         auto after_set = std::size_t{};
         auto after_input_release = std::size_t{};
@@ -246,17 +248,17 @@ TEST_CASE("runtime-resolved scalar state reset releases its owned storage",
         state.write([&](auto &) {
             alignas(Stored) std::byte storage[sizeof(Stored)];
             runtime_type.construct_initial_value(storage);
-            const auto cleanup = bg::util::scope_exit{[&]() noexcept {
-                auto allocation = bg::details::current_scalar_allocator();
+            const auto cleanup = util::scope_exit{[&]() noexcept {
+                auto allocation = details::current_scalar_allocator();
                 runtime_type.destroy(storage, allocation);
             }};
-            auto value = bg::State<bg::SCALAR>{runtime_type, storage};
+            auto value = State<SCALAR>{runtime_type, storage};
             before = memory.allocations();
             value.set(input->view());
             after_set = memory.allocations();
             input.reset();
             after_input_release = memory.allocations();
-            CHECK(bg::scalar_cast<bg::string>(value.value()).value() == std::string(256, 'x'));
+            CHECK(scalar_cast<string>(value.value()).value() == std::string(256, 'x'));
             value.reset();
             after_reset = memory.allocations();
         });
@@ -271,29 +273,29 @@ TEST_CASE("runtime-resolved scalar state reset releases its owned storage",
 
 TEST_CASE("runtime-resolved scalar state rejects types without initial-state support",
           "[node][state][scalar][generic][feature:state][scalar:generic]") {
-    const auto state_node = bg::node<unsupported_scalar_state_node>();
-    const auto input = bg::ScalarValue<bg::Opaque<int>>{42};
-    auto wiring = bg::GraphWiring{};
+    const auto state_node = node<unsupported_scalar_state_node>();
+    const auto input = ScalarValue<Opaque<int>>{42};
+    auto wiring = GraphWiring{};
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         state_node(input);
     }
 
     wiring.finalize();
-    CHECK_THROWS_AS(static_cast<void>(bg::CompiledGraph{wiring}), std::invalid_argument);
+    CHECK_THROWS_AS(static_cast<void>(CompiledGraph{wiring}), std::invalid_argument);
 }
 
 namespace {
 
 struct generic_set_dict_state_node {
-    bg::Scalar<bg::Set<K>> set_type;
-    bg::Scalar<bg::Dict<K, V>> dict_type;
-    bg::Scalar<K> key;
-    bg::Scalar<V> value;
-    bg::State<bg::Set<K>> set_state;
-    bg::State<bg::Dict<K, V>> dict_state;
+    Scalar<Set<K>> set_type;
+    Scalar<Dict<K, V>> dict_type;
+    Scalar<K> key;
+    Scalar<V> value;
+    State<Set<K>> set_state;
+    State<Dict<K, V>> dict_state;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         if (!set_type.contains(key)) {
             throw std::logic_error{"generic set input does not contain its test key"};
         }
@@ -306,10 +308,10 @@ struct generic_set_dict_state_node {
         dict_state->insert_or_assign(key, value);
 
         context->global_state().write([&](auto &global_state) {
-            global_state.set(bg::util::symbol{"dict_input"}, dict_type.at(key));
-            global_state.set(bg::util::symbol{"dict_result"}, dict_state->at(key));
-            global_state.set(bg::util::symbol{"set_result"},
-                             bg::ScalarValue{static_cast<bg::i64>(set_state->size())});
+            global_state.set(util::symbol{"dict_input"}, dict_type.at(key));
+            global_state.set(util::symbol{"dict_result"}, dict_state->at(key));
+            global_state.set(util::symbol{"set_result"},
+                             ScalarValue{static_cast<i64>(set_state->size())});
         });
     }
 
@@ -321,31 +323,31 @@ struct generic_set_dict_state_node {
 TEST_CASE("generic set and dictionary state use resolved storage",
           "[node][state][scalar][generic][declaration:generic][feature:state][scalar:set][scalar:dict]"
           "[scalar:generic]") {
-    const auto generic_set_dict_state = bg::node<generic_set_dict_state_node>();
+    const auto generic_set_dict_state = node<generic_set_dict_state_node>();
 
-    const auto set_type = bg::ScalarValue<bg::Set<bg::i64>>{std::array<bg::i64, 1>{2}};
-    const auto dict_type = bg::ScalarValue<bg::Dict<bg::i64, bg::string>>{
-        std::array{std::pair{bg::i64{2}, std::string_view{"one"}}}};
-    const auto key = bg::ScalarValue{bg::i64{2}};
-    const auto value = bg::ScalarValue{"two"};
-    auto state = bg::GlobalState{};
+    const auto set_type = ScalarValue<Set<i64>>{std::array<i64, 1>{2}};
+    const auto dict_type = ScalarValue<Dict<i64, string>>{
+        std::array{std::pair{i64{2}, std::string_view{"one"}}}};
+    const auto key = ScalarValue{i64{2}};
+    const auto value = ScalarValue{"two"};
+    auto state = GlobalState{};
 
-    bg::run_graph([&] { generic_set_dict_state(set_type, dict_type, key, value); }, bg::GraphRunOptions{.global_state = &state});
+    run_graph([&] { generic_set_dict_state(set_type, dict_type, key, value); }, GraphRunOptions{.global_state = &state});
 
     state.read([](const auto &values) {
-        CHECK(*bg::scalar_cast<bg::string>(values.at("dict_input")) == "one");
-        CHECK(*bg::scalar_cast<bg::string>(values.at("dict_result")) == "two");
-        CHECK(*bg::scalar_cast<bg::i64>(values.at("set_result")) == 1);
+        CHECK(*scalar_cast<string>(values.at("dict_input")) == "one");
+        CHECK(*scalar_cast<string>(values.at("dict_result")) == "two");
+        CHECK(*scalar_cast<i64>(values.at("set_result")) == 1);
     });
 }
 
 namespace {
 
 struct composed_dict_state_node {
-    bg::Scalar<K> key;
-    bg::Scalar<V> value;
-    bg::State<bg::Dict<K, V>> state;
-    bg::Out<bg::TS<V>> output;
+    Scalar<K> key;
+    Scalar<V> value;
+    State<Dict<K, V>> state;
+    Out<TS<V>> output;
 
     void start() const {
         state->insert_or_assign(key, value);
@@ -360,22 +362,23 @@ struct composed_dict_state_node {
 TEST_CASE("generic dictionary state composes storage from separate resolved types",
           "[node][state][scalar][generic][declaration:generic][feature:state][scalar:dict]"
           "[scalar:generic]") {
-    const auto composed_dict_state = bg::node<composed_dict_state_node>();
+    const auto composed_dict_state = node<composed_dict_state_node>();
 
-    const auto key = bg::ScalarValue{bg::i64{2}};
-    const auto value = bg::ScalarValue{"two"};
+    const auto key = ScalarValue{i64{2}};
+    const auto value = ScalarValue{"two"};
+
     const auto graph = [&] { return composed_dict_state(key, value); };
 
-    CHECK(bg::testing::test_graph(graph).equals<bg::string>({"two"}));
+    CHECK(testing::test_graph(graph).equals<string>({"two"}));
 }
 
 namespace {
 
 struct composed_list_set_state_node {
-    bg::Scalar<K> value;
-    bg::State<bg::List<K>> list;
-    bg::State<bg::Set<K>> set;
-    bg::Out<bg::TS<K>> output;
+    Scalar<K> value;
+    State<List<K>> list;
+    State<Set<K>> set;
+    Out<TS<K>> output;
 
     void start() const {
         list->append(value);
@@ -396,33 +399,34 @@ struct composed_list_set_state_node {
 TEST_CASE("generic list and set state compose storage from their resolved item type",
           "[node][state][scalar][generic][declaration:generic][feature:state][scalar:list][scalar:set]"
           "[scalar:generic]") {
-    const auto composed_list_set_state = bg::node<composed_list_set_state_node>();
+    const auto composed_list_set_state = node<composed_list_set_state_node>();
 
-    const auto value = bg::ScalarValue{bg::i64{3}};
+    const auto value = ScalarValue{i64{3}};
+
     const auto graph = [&] { return composed_list_set_state(value); };
 
-    CHECK(bg::testing::test_graph(graph).equals<bg::i64>({3}));
+    CHECK(testing::test_graph(graph).equals<i64>({3}));
 }
 
 TEST_CASE("a runtime graph releases composed collection state storage",
           "[node][state][scalar][generic][declaration:generic][allocation][feature:state]") {
-    const auto composed_dict_state = bg::node<composed_dict_state_node>();
+    const auto composed_dict_state = node<composed_dict_state_node>();
 
-    const auto key = bg::ScalarValue{bg::i64{2}};
-    const auto value = bg::ScalarValue{"two"};
-    auto wiring = bg::GraphWiring{};
+    const auto key = ScalarValue{i64{2}};
+    const auto value = ScalarValue{"two"};
+    auto wiring = GraphWiring{};
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         composed_dict_state(key, value);
     }
 
     wiring.finalize();
-    const auto graph = bg::CompiledGraph{wiring};
+    const auto graph = CompiledGraph{wiring};
     auto memory = counting_memory_resource{};
-    auto state = bg::GlobalState{};
+    auto state = GlobalState{};
     {
-        auto runtime = bg::RuntimeGraph{graph, bg::allocator{memory}, state};
-        bg::SimulationEvaluationEngine{}.run(runtime, bg::MIN_DT + std::chrono::microseconds{1});
+        auto runtime = RuntimeGraph{graph, allocator{memory}, state};
+        SimulationEvaluationEngine{}.run(runtime, MIN_DT + std::chrono::microseconds{1});
     }
 
     CHECK(memory.allocations() == 0);
@@ -431,10 +435,10 @@ TEST_CASE("a runtime graph releases composed collection state storage",
 namespace {
 
 struct generic_nested_state_node {
-    bg::Scalar<K> key;
-    bg::Scalar<bg::List<V>> values;
-    bg::State<bg::Dict<K, bg::List<V>>> state;
-    bg::Out<bg::TS<V>> output;
+    Scalar<K> key;
+    Scalar<List<V>> values;
+    State<Dict<K, List<V>>> state;
+    Out<TS<V>> output;
 
     void start() const {
         state->insert_or_assign(key, values);
@@ -453,29 +457,29 @@ struct generic_nested_state_node {
 TEST_CASE("generic nested collection state returns mutable resolved items",
           "[node][state][scalar][generic][declaration:generic][collection][feature:state]"
           "[scalar:generic]") {
-    const auto generic_nested_state = bg::node<generic_nested_state_node>();
+    const auto generic_nested_state = node<generic_nested_state_node>();
 
-    const auto key = bg::ScalarValue{bg::i64{2}};
-    const auto items = bg::ScalarValue<bg::List<bg::string>>{std::array<std::string_view, 2>{"one", "two"}};
+    const auto key = ScalarValue{i64{2}};
+    const auto items = ScalarValue<List<string>>{std::array<std::string_view, 2>{"one", "two"}};
 
     const auto graph = [&] { return generic_nested_state(key, items); };
 
-    CHECK(bg::testing::test_graph(graph).equals<bg::string>({"one"}));
+    CHECK(testing::test_graph(graph).equals<string>({"one"}));
 }
 
 namespace {
 
 struct nested_collection_state_node {
-    bg::Scalar<bg::List<bg::i64>> initial;
-    bg::State<bg::Dict<bg::i64, bg::List<bg::i64>>> state;
-    bg::Out<bg::TS<bg::i64>> output;
+    Scalar<List<i64>> initial;
+    State<Dict<i64, List<i64>>> state;
+    Out<TS<i64>> output;
 
     void start() const {
         state->insert_or_assign(1, initial);
         state->at(1).append(9);
         state->insert_or_assign(1, initial);
 
-        output.set(static_cast<bg::i64>(state->at(1).size()));
+        output.set(static_cast<i64>(state->at(1).size()));
     }
 
     void evaluate() const {}
@@ -484,43 +488,43 @@ struct nested_collection_state_node {
 } // namespace
 
 TEST_CASE("nested collection state returns mutable child views", "[node][state][scalar][collection][feature:state]") {
-    const auto nested_collection_state = bg::node<nested_collection_state_node>();
+    const auto nested_collection_state = node<nested_collection_state_node>();
 
-    const auto initial = bg::ScalarValue<bg::List<bg::i64>>{std::array<bg::i64, 1>{7}};
+    const auto initial = ScalarValue<List<i64>>{std::array<i64, 1>{7}};
 
     const auto graph = [&] { return nested_collection_state(initial); };
 
-    CHECK(bg::testing::test_graph(graph).equals<bg::i64>({1}));
+    CHECK(testing::test_graph(graph).equals<i64>({1}));
 }
 
 TEST_CASE("runtime graphs have independent generic collection state",
           "[node][state][scalar][generic][declaration:generic][runtime][feature:state][scalar:generic]") {
-    const auto generic_list_state = bg::node<generic_list_state_node>();
+    const auto generic_list_state = node<generic_list_state_node>();
 
-    auto results = std::vector<bg::i64>{};
-    const auto observe = bg::node([&](bg::In<bg::TS<bg::i64>> input) {
+    auto results = std::vector<i64>{};
+    const auto observe = node([&](In<TS<i64>> input) {
         results.push_back(*input);
     });
 
-    const auto input = bg::ScalarValue<bg::List<bg::i64>>{std::array<bg::i64, 2>{3, 4}};
-    auto wiring = bg::GraphWiring{};
+    const auto input = ScalarValue<List<i64>>{std::array<i64, 2>{3, 4}};
+    auto wiring = GraphWiring{};
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         observe(generic_list_state(input));
     }
 
     wiring.finalize();
-    const auto graph = bg::CompiledGraph{wiring};
+    const auto graph = CompiledGraph{wiring};
     for (auto run = 0; run < 2; ++run) {
-        auto state = bg::GlobalState{};
-        auto runtime = bg::RuntimeGraph{graph, state};
-        bg::SimulationEvaluationEngine{}.run(runtime, bg::MIN_DT + std::chrono::microseconds{1});
+        auto state = GlobalState{};
+        auto runtime = RuntimeGraph{graph, state};
+        SimulationEvaluationEngine{}.run(runtime, MIN_DT + std::chrono::microseconds{1});
         CHECK(results.size() == static_cast<std::size_t>(run + 1));
         CHECK(results.back() == 4);
     }
 }
 
-static_assert(std::derived_from<bg::MutableList<bg::i64>, bg::List<bg::i64>>);
-static_assert(std::derived_from<bg::MutableSet<bg::i64>, bg::Set<bg::i64>>);
-static_assert(std::derived_from<bg::MutableDict<bg::i64, bg::i64>, bg::Dict<bg::i64, bg::i64>>);
-static_assert(sizeof(bg::State<bg::Dict<bg::SCALAR, bg::List<bg::SCALAR>>>) == 2 * sizeof(void *));
+static_assert(std::derived_from<MutableList<i64>, List<i64>>);
+static_assert(std::derived_from<MutableSet<i64>, Set<i64>>);
+static_assert(std::derived_from<MutableDict<i64, i64>, Dict<i64, i64>>);
+static_assert(sizeof(State<Dict<SCALAR, List<SCALAR>>>) == 2 * sizeof(void *));

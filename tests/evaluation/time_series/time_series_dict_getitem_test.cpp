@@ -28,7 +28,7 @@ TEST_CASE("dictionary getitem follows one scalar key without reacting to unrelat
     const auto actual = testing::test_graph(
         graph, {{{2, 100}}, {{2, 101}}, {{1, 10}}, {{1, 11}}, {{1, literal::REMOVE}}, {{1, 12}}});
 
-    CHECK(actual.equals<bg::i64>({std::nullopt, std::nullopt, 10, 11, std::nullopt, 12}));
+    CHECK(actual.equals<i64>({std::nullopt, std::nullopt, 10, 11, std::nullopt, 12}));
 }
 
 TEST_CASE("dictionary getitem accepts a missing key from an empty value dictionary",
@@ -38,7 +38,7 @@ TEST_CASE("dictionary getitem accepts a missing key from an empty value dictiona
 
     const auto actual = testing::test_graph(graph, {{}, {}});
 
-    CHECK(actual.equals<bg::i64>({std::nullopt, std::nullopt}));
+    CHECK(actual.equals<i64>({std::nullopt, std::nullopt}));
 }
 
 TEST_CASE("dictionary getitem accepts a missing key from an empty reference dictionary",
@@ -46,11 +46,12 @@ TEST_CASE("dictionary getitem accepts a missing key from an empty reference dict
           "[binding:reference-to-reference][binding:reference-to-value][transition:invalidation]") {
     const auto make_dictionary =
         node([](In<TS<i64>>, Out<TSD<i64, REF<TS<i64>>>> output) { output.clear(); });
+
     const auto graph = [&](wp<TS<i64>> input) { return make_dictionary(input)[i64{1}]; };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2});
+    const auto actual = testing::test_graph(graph, {1, 2});
 
-    CHECK(actual.equals<bg::i64>({std::nullopt, std::nullopt}));
+    CHECK(actual.equals<i64>({std::nullopt, std::nullopt}));
 }
 
 TEST_CASE("dictionary getitem follows a missing key when it is added",
@@ -60,7 +61,7 @@ TEST_CASE("dictionary getitem follows a missing key when it is added",
 
     const auto actual = testing::test_graph(graph, {{}, {{1, 10}}, {{1, 20}}});
 
-    CHECK(actual.equals<bg::i64>({std::nullopt, 10, 20}));
+    CHECK(actual.equals<i64>({std::nullopt, 10, 20}));
 }
 
 TEST_CASE("dictionary getitem remains invalid when a value item is added and removed together",
@@ -70,17 +71,19 @@ TEST_CASE("dictionary getitem remains invalid when a value item is added and rem
         output[1].set(*input);
         output.erase(1);
     });
+
     const auto graph = [&](wp<TS<i64>> input) { return make_dictionary(input)[i64{1}]; };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2});
+    const auto actual = testing::test_graph(graph, {1, 2});
 
-    CHECK(actual.equals<bg::i64>({std::nullopt, std::nullopt}));
+    CHECK(actual.equals<i64>({std::nullopt, std::nullopt}));
 }
 
 TEST_CASE("dictionary getitem does not evaluate when its selected value item ticks",
           "[evaluation][series:tsd][series:value][feature:getitem][feature:operator]"
           "[binding:value-to-reference][binding:reference-to-reference][transition:update]") {
     const auto monitor = node([](In<REF<TS<i64>>>) { return i64{1}; });
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> dictionary) {
         return monitor(dictionary[i64{1}]);
     };
@@ -100,13 +103,14 @@ TEST_CASE("dictionary getitem changes its subscription with a time series key",
     const auto actual = testing::test_graph(graph, {{{1, 10}, {2, 100}}, {{1, 11}, {2, 110}}, {{1, 12}, {2, 120}}},
                                             {1, 2, 1});
 
-    CHECK(actual.equals<bg::i64>({10, 110, 12}));
+    CHECK(actual.equals<i64>({10, 110, 12}));
 }
 
 TEST_CASE("dictionary getitem fans out one selected value item without observing another item",
           "[evaluation][series:tsd][series:value][feature:getitem][feature:operator][shape:fan-out]"
           "[binding:value-to-reference][binding:reference-to-value][transition:update]") {
     const auto sum = node([](i64 left, i64 right) { return left + right; });
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> dictionary) {
         return sum(dictionary[i64{1}], dictionary[i64{1}]);
     };
@@ -120,6 +124,7 @@ TEST_CASE("dictionary getitem independently selects distinct value items",
           "[evaluation][series:tsd][series:value][feature:getitem][feature:operator][shape:fan-out]"
           "[binding:value-to-reference][binding:reference-to-value][transition:update]") {
     const auto sum = node([](i64 left, i64 right) { return left + right; });
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> dictionary) {
         return sum(dictionary[i64{1}], dictionary[i64{2}]);
     };
@@ -141,7 +146,7 @@ TEST_CASE("dictionary getitem releases its subscription while a time series key 
         graph, {{{1, 10}, {2, 100}}, {{1, 11}, {2, 110}}, {{1, 12}, {2, 120}}, {{1, 13}, {2, 130}}},
         {1, literal::INVALID, 2, 1});
 
-    CHECK(actual.equals<bg::i64>({10, std::nullopt, 120, 13}));
+    CHECK(actual.equals<i64>({10, std::nullopt, 120, 13}));
 }
 
 TEST_CASE("dictionary getitem selects an item from a dictionary of references",
@@ -156,13 +161,14 @@ TEST_CASE("dictionary getitem selects an item from a dictionary of references",
             output[1].copy(first);
             output[2].copy(second);
         });
+
     const auto graph = [&](wp<TS<i64>> input) {
         return make_dictionary(increment(input), scale(input))[i64{2}];
     };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2, 3});
+    const auto actual = testing::test_graph(graph, {1, 2, 3});
 
-    CHECK(actual.equals<bg::i64>({10, 20, 30}));
+    CHECK(actual.equals<i64>({10, 20, 30}));
 }
 
 TEST_CASE("dictionary getitem follows a replaced reference without evaluating for target updates",
@@ -175,12 +181,14 @@ TEST_CASE("dictionary getitem follows a replaced reference without evaluating fo
     const auto make_dictionary =
         node([](In<TS<bool>> select_second, In<REF<TS<i64>>> first, In<REF<TS<i64>>> second,
                 Out<TSD<i64, REF<TS<i64>>>> output) { output[1].copy(*select_second ? second : first); });
+
     const auto monitor = node([](In<REF<TS<i64>>>) { return i64{1}; });
+
     const auto graph = [&](wp<TS<i64>> input, wp<TS<bool>> select_second) {
         return monitor(make_dictionary(select_second, increment(input), scale(input))[i64{1}]);
     };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2, 3, 4}, std::array{false, false, true, true});
+    const auto actual = testing::test_graph(graph, {1, 2, 3, 4}, {false, false, true, true});
 
     CHECK(actual.equals({1, std::nullopt, 1, std::nullopt}));
 }
@@ -198,13 +206,14 @@ TEST_CASE("dictionary getitem restores a removed reference item after its only s
                 output[1].copy(target);
             }
         });
+
     const auto graph = [&](wp<TS<i64>> input, wp<TS<i64>> command) {
         return make_dictionary(command, make_target(input))[i64{1}];
     };
 
-    const auto actual = testing::test_graph(graph, std::array{10, 20, 30}, std::array{1, 0, 1});
+    const auto actual = testing::test_graph(graph, {10, 20, 30}, {1, 0, 1});
 
-    CHECK(actual.equals<bg::i64>({10, std::nullopt, 30}));
+    CHECK(actual.equals<i64>({10, std::nullopt, 30}));
 }
 
 TEST_CASE("dictionary getitem restores a removed reference item while another item keeps its block live",
@@ -221,13 +230,14 @@ TEST_CASE("dictionary getitem restores a removed reference item while another it
                 output[1].copy(target);
             }
         });
+
     const auto graph = [&](wp<TS<i64>> input, wp<TS<i64>> command) {
         return make_dictionary(command, make_target(input))[i64{1}];
     };
 
-    const auto actual = testing::test_graph(graph, std::array{10, 20, 30}, std::array{1, 0, 1});
+    const auto actual = testing::test_graph(graph, {10, 20, 30}, {1, 0, 1});
 
-    CHECK(actual.equals<bg::i64>({10, std::nullopt, 30}));
+    CHECK(actual.equals<i64>({10, std::nullopt, 30}));
 }
 
 TEST_CASE("dictionary reference getitem ignores another item",
@@ -242,12 +252,14 @@ TEST_CASE("dictionary reference getitem ignores another item",
         output[1].copy(first);
         output[2].copy(*select_second ? second : first);
     });
+
     const auto monitor = node([](In<REF<TS<i64>>>) { return i64{1}; });
+
     const auto graph = [&](wp<TS<i64>> input, wp<TS<bool>> select_second) {
         return monitor(make_dictionary(select_second, increment(input), scale(input))[i64{1}]);
     };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2, 3}, std::array{false, true, false});
+    const auto actual = testing::test_graph(graph, {1, 2, 3}, {false, true, false});
 
     CHECK(actual.equals({1, std::nullopt, std::nullopt}));
 }
@@ -265,6 +277,7 @@ TEST_CASE("a value dictionary provides stable final item references",
         output.set(dictionary_item_type.guarantee().value() == TimeSeriesGuarantee::final &&
                    type.guarantee().value() == TimeSeriesGuarantee::final);
     });
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return inspect(input); };
 
     const auto actual = testing::test_graph(graph, {{{1, 1}}});
@@ -296,9 +309,10 @@ TEST_CASE("a dereferenced dictionary follows a target that is initially invalid"
             output.invalidate();
         }
     });
+
     const auto graph = [&](wp<TS<i64>> command) { return read(make_dictionary(make_target(command))); };
 
-    const auto actual = testing::test_graph(graph, std::array{0, 10});
+    const auto actual = testing::test_graph(graph, {0, 10});
 
     CHECK(actual.equals({std::nullopt, 10}));
 }
@@ -398,15 +412,16 @@ TEST_CASE("a dereferenced dictionary reports later target changes after adding i
     });
     const auto observe_changes = node<dereferenced_dictionary_change_queries>();
     dereferenced_dictionary_change_queries::changes.clear();
+
     const auto graph = [&](wp<TS<i64>> command) {
         const auto dictionary = make_dictionary(make_target(command));
         observe_changes(dictionary);
         return read_item(dictionary[1]);
     };
 
-    const auto actual = testing::test_graph(graph, std::array{10, 0, 20, 21});
+    const auto actual = testing::test_graph(graph, {10, 0, 20, 21});
 
-    CHECK(actual.equals<bg::i64>({10, std::nullopt, 20, 21}));
+    CHECK(actual.equals<i64>({10, std::nullopt, 20, 21}));
     REQUIRE(dereferenced_dictionary_change_queries::changes.size() == 4);
     for (auto index = std::size_t{1}; index < dereferenced_dictionary_change_queries::changes.size(); ++index) {
         const auto &change = dereferenced_dictionary_change_queries::changes[index];
@@ -436,15 +451,16 @@ TEST_CASE("a dereferenced dictionary reports one update when a stored reference 
     const auto read_item = node([](i64 item) { return item; });
     const auto observe_changes = node<dereferenced_dictionary_change_queries>();
     dereferenced_dictionary_change_queries::changes.clear();
+
     const auto graph = [&](wp<TS<i64>> input, wp<TS<bool>> select_second) {
         const auto dictionary = make_dictionary(select_second, make_first(input), make_second(input));
         observe_changes(dictionary);
         return read_item(dictionary[1]);
     };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2}, std::array{false, true});
+    const auto actual = testing::test_graph(graph, {1, 2}, {false, true});
 
-    CHECK(actual.equals<bg::i64>({1, 102}));
+    CHECK(actual.equals<i64>({1, 102}));
     REQUIRE(dereferenced_dictionary_change_queries::changes.size() == 2);
     const auto &change = dereferenced_dictionary_change_queries::changes.back();
     REQUIRE(change.id != util::occupancy_index::npos);
@@ -484,15 +500,16 @@ TEST_CASE("a dereferenced dictionary reports a removed item once",
     });
     const auto observe_changes = node<dereferenced_dictionary_change_queries>();
     dereferenced_dictionary_change_queries::changes.clear();
+
     const auto graph = [&](wp<TS<i64>> command) {
         const auto dictionary = make_dictionary(command, make_target(command));
         observe_changes(dictionary);
         return read_item(dictionary[1]);
     };
 
-    const auto actual = testing::test_graph(graph, std::array{10, 0});
+    const auto actual = testing::test_graph(graph, {10, 0});
 
-    CHECK(actual.equals<bg::i64>({10, std::nullopt}));
+    CHECK(actual.equals<i64>({10, std::nullopt}));
     REQUIRE(dereferenced_dictionary_change_queries::changes.size() == 2);
     const auto &added = dereferenced_dictionary_change_queries::changes.front();
     const auto &removed = dereferenced_dictionary_change_queries::changes.back();
@@ -548,6 +565,7 @@ TEST_CASE("a sampled dereferenced dictionary preserves physical IDs and remappin
                                       selected.has_item_id_remapping() == !expected_remappings.empty();
         output.set(remappings_match && actual_removed == expected_removed ? 1 : 0);
     });
+
     const auto graph = [&](wp<TS<bool>> select_second, wp<TSD<i64, TS<i64>>> first,
                            wp<TSD<i64, TS<i64>>> second) {
         const auto selected = select_dictionary(select_second, first, second);
@@ -591,7 +609,7 @@ TEST_CASE("a dereferenced dictionary follows target invalidation and revalidatio
         return read(dictionary);
     };
 
-    const auto actual = testing::test_graph(graph, std::array{10, 0, 20});
+    const auto actual = testing::test_graph(graph, {10, 0, 20});
 
     CHECK(actual.equals({10, std::nullopt, 20}));
     // Target changes do not change the stable routed reference.
@@ -607,6 +625,7 @@ TEST_CASE("a dictionary reference representation crosses into a nested graph",
     const auto read = node([](In<TSD<i64, TS<i64>>> input, Out<TS<i64>> output) { output.set(*input[1]); });
     const auto inner = graph("name"_n = "consume_dictionary_references",
                              [&](wp<TSD<i64, REF<TS<i64>>>> input) -> wp<TS<i64>> { return read(input); });
+
     const auto outer = [&](wp<TSD<i64, TS<i64>>> input, wp<TS<bool>> run) {
         return nested(inner, run, input);
     };
@@ -625,6 +644,7 @@ TEST_CASE("an inner graph selects an outer dictionary reference across stop and 
                              [&](wp<TSD<i64, REF<TS<i64>>>> input) -> wp<TS<i64>> {
                                  return input[i64{1}].as<TS<i64>>();
                              });
+
     const auto outer = [&](wp<TSD<i64, TS<i64>>> input, wp<TS<bool>> run) {
         return read(nested(inner, run, input));
     };
@@ -632,7 +652,7 @@ TEST_CASE("an inner graph selects an outer dictionary reference across stop and 
     const auto actual = testing::test_graph(outer, {{{1, 10}}, {{1, 20}}, {{1, 30}}, {{1, 40}}},
                                             {true, false, true, true});
 
-    CHECK(actual.equals<bg::i64>({10, std::nullopt, 30, 40}));
+    CHECK(actual.equals<i64>({10, std::nullopt, 30, 40}));
 }
 
 TEST_CASE("an inner dictionary reference representation crosses into its outer graph",
@@ -647,9 +667,10 @@ TEST_CASE("an inner dictionary reference representation crosses into its outer g
     const auto inner = graph("name"_n = "produce_dictionary", [&](wp<TS<i64>> input) -> wp<TSD<i64, TS<i64>>> {
         return make_dictionary(input);
     });
+
     const auto outer = [&](wp<TS<i64>> input, wp<TS<bool>> run) { return read(select(nested(inner, run, input))); };
 
-    const auto actual = testing::test_graph(outer, std::array{10, 20, 30}, std::array{true, false, true});
+    const auto actual = testing::test_graph(outer, {10, 20, 30}, {true, false, true});
 
     CHECK(actual.equals({10, std::nullopt, 30}));
 }
@@ -669,12 +690,13 @@ TEST_CASE("a dictionary reference representation connects two nested graphs",
     const auto consumer =
         graph("name"_n = "consume_dictionary_references",
               [&](wp<TSD<i64, REF<TS<i64>>>> input) -> wp<TS<i64>> { return read(select(input)); });
+
     const auto outer = [&](wp<TS<i64>> input, wp<TS<bool>> run) {
         const auto dictionary = nested(producer, run, input);
         return nested(consumer, run, dictionary);
     };
 
-    const auto actual = testing::test_graph(outer, std::array{10, 20, 30}, std::array{true, false, true});
+    const auto actual = testing::test_graph(outer, {10, 20, 30}, {true, false, true});
 
     CHECK(actual.equals({10, std::nullopt, 30}));
 }
@@ -693,15 +715,16 @@ TEST_CASE("an inner graph selects a dictionary reference from another inner grap
                                 [&](wp<TSD<i64, REF<TS<i64>>>> input) -> wp<TS<i64>> {
                                     return input[i64{1}].as<TS<i64>>();
                                 });
+
     const auto outer = [&](wp<TS<i64>> input, wp<TS<bool>> run_producer, wp<TS<bool>> run_consumer) {
         return read(nested(consumer, run_consumer, nested(producer, run_producer, input)));
     };
 
-    const auto actual = testing::test_graph(outer, std::array{10, 20, 30, 40, 50},
-                                            std::array{true, true, false, true, true},
-                                            std::array{true, false, true, true, true});
+    const auto actual = testing::test_graph(outer, {10, 20, 30, 40, 50},
+                                            {true, true, false, true, true},
+                                            {true, false, true, true, true});
 
-    CHECK(actual.equals<bg::i64>({10, std::nullopt, std::nullopt, 40, 50}));
+    CHECK(actual.equals<i64>({10, std::nullopt, std::nullopt, 40, 50}));
 }
 
 TEST_CASE("dictionary getitem ignores changes to another contained dictionary",
@@ -709,6 +732,7 @@ TEST_CASE("dictionary getitem ignores changes to another contained dictionary",
           "[binding:value-to-reference][binding:reference-to-value][shape:nested]"
           "[transition:update]") {
     const auto read = node([](i64 input) { return input; });
+
     const auto graph = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> dictionary) {
         return read(dictionary[i64{1}][i64{2}]);
     };
@@ -724,6 +748,7 @@ TEST_CASE("dictionary getitem follows removal and restoration of a contained dic
           "[binding:value-to-reference][binding:reference-to-value][shape:nested]"
           "[transition:removal][transition:resurrection]") {
     const auto read = node([](i64 input) { return input; });
+
     const auto graph = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> dictionary) {
         return read(dictionary[i64{1}][i64{2}]);
     };
@@ -748,9 +773,10 @@ TEST_CASE("a contained dictionary reference representation follows removal and r
     const auto select =
         node([](In<TSD<i64, REF<TS<i64>>>> input, Out<REF<TS<i64>>> output) { output.copy(input[2]); });
     const auto read = node([](i64 input) { return input; });
+
     const auto graph = [&](wp<TS<i64>> command) { return read(select(make_dictionary(command)[i64{1}])); };
 
-    const auto actual = testing::test_graph(graph, std::array{10, -1, 20});
+    const auto actual = testing::test_graph(graph, {10, -1, 20});
 
     CHECK(actual.equals({10, std::nullopt, 20}));
 }
@@ -761,6 +787,7 @@ TEST_CASE("dictionary getitem preserves a collection item's runtime representati
     const auto sum = node([](In<TSL<TS<i64>, 2>> input, Out<TS<i64>> output) {
         output.set(*input[0] + *input[1]);
     });
+
     const auto graph = [&](wp<TSD<i64, TSL<TS<i64>, 2>>> dictionary) {
         return sum(dictionary[i64{1}]);
     };
@@ -795,6 +822,7 @@ TEST_CASE("dereferencing a dictionary item samples a new dictionary target",
         item.for_each_modified([&](const auto &key) { modified |= 1 << *key; });
         output.set(added * 100 + removed * 10 + modified);
     });
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> first, wp<TSD<i64, TS<i64>>> second,
                            wp<TS<i64>> selection) {
         return inspect(select(selection, first, second));
@@ -817,6 +845,7 @@ TEST_CASE("dictionary getitem follows a sampled dictionary item",
         output[0].copy(*use_second ? second : first);
     });
     const auto read = node([](i64 input) { return input; });
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> first, wp<TSD<i64, TS<i64>>> second,
                            wp<TS<bool>> use_second) {
         return read(select(use_second, first, second)[i64{0}][i64{2}]);
@@ -855,6 +884,7 @@ TEST_CASE("a sampled dictionary cursor enumerates every removed key",
         expected_ids.push_back(std::move(expected));
         output.set(removed);
     });
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> first, wp<TSD<i64, TS<i64>>> second,
                            wp<TS<bool>> use_second) {
         return inspect(select(use_second, first, second), first);
@@ -883,6 +913,7 @@ TEST_CASE("all consumers see the same dictionary target sample",
         output.set(result);
     });
     const auto sum = node([](i64 left, i64 right) { return left + right; });
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> first, wp<TSD<i64, TS<i64>>> second,
                            wp<TS<bool>> use_second) {
         const auto dictionary = select(use_second, first, second);
@@ -909,6 +940,7 @@ TEST_CASE("a passive consumer does not replay an old dictionary target sample",
             input[0].for_each_removed([&](const auto &key) { result += static_cast<int>(*key) * 10; });
             output.set(result + *trigger * 0);
         });
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> first, wp<TSD<i64, TS<i64>>> second,
                            wp<TS<i64>> selection, wp<TS<i64>> trigger) {
         const auto dictionary = select(selection, first, second);
@@ -941,6 +973,7 @@ TEST_CASE("a contained dictionary target sample recurses into modified items",
             nested.for_each_modified([&](const auto &key) { modified += static_cast<int>(*key); });
             output.set(added * 10'000 + removed * 100 + modified);
         });
+
     const auto graph = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> first,
                            wp<TSD<i64, TSD<i64, TS<i64>>>> second, wp<TS<bool>> use_second) {
         return inspect(select(use_second, first, second));
@@ -973,6 +1006,7 @@ TEST_CASE("a dictionary reference sample reports key-set changes",
         input.for_each_removed([&](const auto &key) { item_removed += static_cast<int>(*key); });
         output.set(item_added * 10'000 + item_removed * 1'000 + added * 100 + removed * 10);
     });
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> first, wp<TSD<i64, TS<i64>>> second,
                            wp<TS<bool>> use_second) {
         return inspect(select(use_second, first, second));
@@ -1021,6 +1055,7 @@ TEST_CASE("a sampled TSD reports item ID exchanges across a reference rebind",
                            (!*use_second || expected.size() == 2);
         output.set(valid ? (*use_second ? 2 : 1) : (*use_second ? 20 : 10));
     });
+
     const auto graph = [&](wp<TS<bool>> use_second, wp<TSD<i64, TS<i64>>> first,
                            wp<TSD<i64, TS<i64>>> second) {
         return inspect(use_second, select(use_second, first, second), first, second);
@@ -1072,6 +1107,7 @@ TEST_CASE("a sampled TSD does not report remapping for additions and removals at
         const auto valid = actual == expected && !input.has_item_id_remapping() && has_addition_and_removal;
         output.set(valid ? (*use_second ? 2 : 1) : (*use_second ? 20 : 10));
     });
+
     const auto graph = [&](wp<TS<bool>> use_second, wp<TSD<i64, TS<i64>>> first,
                            wp<TSD<i64, TS<i64>>> second) {
         return inspect(use_second, select(use_second, first, second), first, second);
@@ -1095,6 +1131,7 @@ TEST_CASE("a TSD reports no item ID remapping for ordinary additions and removal
         const auto remapping_found = input.has_item_id_remapping() || remapping_count != 0;
         output.set(remapping_found ? 10 + *command : *command);
     });
+
     const auto graph = [&](wp<TS<i64>> command, wp<TSD<i64, TS<i64>>> input) {
         return inspect(command, input);
     };
@@ -1118,13 +1155,14 @@ TEST_CASE("a dictionary reference follows a target that becomes valid after sele
     const auto inspect = node([](In<TSD<i64, TS<i64>>> input, Out<TS<i64>> output) {
         output.set(input.contains(1) ? *input[1] : -1);
     });
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> target, wp<TS<bool>> selected) {
         return inspect(select(selected, target));
     };
 
     const auto actual = testing::test_graph(graph, {literal::SKIP, literal::SKIP, {{1, 10}}}, {false, true, true});
 
-    CHECK(actual.equals<bg::i64>({std::nullopt, std::nullopt, 10}));
+    CHECK(actual.equals<i64>({std::nullopt, std::nullopt, 10}));
 }
 
 TEST_CASE("a contained dictionary reference sample recurses into nested TSS changes",
@@ -1145,6 +1183,7 @@ TEST_CASE("a contained dictionary reference sample recurses into nested TSS chan
         nested.for_each_removed([&](const auto &item) { removed += static_cast<int>(*item); });
         output.set(added * 100 + removed);
     });
+
     const auto graph = [&](wp<TSD<i64, TSS<i64>>> first,
                            wp<TSD<i64, TSS<i64>>> second, wp<TS<bool>> use_second) {
         return inspect(select(use_second, first, second));
@@ -1180,6 +1219,7 @@ TEST_CASE("a dictionary reference sample reports nested TSS changes for added an
         });
         output.set(added_keys * 1'000'000 + removed_keys * 100'000 + added_items * 100 + removed_items);
     });
+
     const auto graph = [&](wp<TSD<i64, TSS<i64>>> first,
                            wp<TSD<i64, TSS<i64>>> second, wp<TS<bool>> use_second) {
         return inspect(select(use_second, first, second));
@@ -1243,6 +1283,7 @@ TEST_CASE("sampled dictionary queries work before change enumeration",
         }
         output.set(result);
     });
+
     const auto graph = [&](wp<TS<i64>> query, wp<TS<bool>> use_second,
                            wp<TSD<i64, TS<i64>>> first, wp<TSD<i64, TS<i64>>> second) {
         return inspect(query, select(use_second, first, second));
@@ -1285,9 +1326,10 @@ TEST_CASE("a dictionary item samples nested graph stop and restart",
         item.for_each_removed([&](const auto &key) { removed |= 1 << *key; });
         output.set(added * 100 + removed * 10);
     });
+
     const auto graph = [&](wp<TS<i64>> input, wp<TS<bool>> run) { return inspect(wrap(nested(producer, run, input))); };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2, 3}, std::array{true, false, true});
+    const auto actual = testing::test_graph(graph, {1, 2, 3}, {true, false, true});
 
     CHECK(actual.equals({600, 60, 600}));
 }
@@ -1301,12 +1343,13 @@ TEST_CASE("dictionary getitem releases and restores its subscription across a ne
     const auto inner = graph("name"_n = "dictionary", [&](wp<TS<i64>> input) -> wp<TSD<i64, TS<i64>>> {
         return make_dictionary(input);
     });
+
     const auto outer = [&](wp<TS<i64>> input, wp<TS<bool>> run) -> wp<TS<i64>> {
         return nested(inner, run, input)[i64{1}].as<TS<i64>>();
     };
 
     const auto actual =
-        testing::test_graph(outer, std::array{1, 2, 3, 4, 5}, std::array{true, true, false, true, true});
+        testing::test_graph(outer, {1, 2, 3, 4, 5}, {true, true, false, true, true});
 
-    CHECK(actual.equals<bg::i64>({1, 2, std::nullopt, 4, 5}));
+    CHECK(actual.equals<i64>({1, 2, std::nullopt, 4, 5}));
 }

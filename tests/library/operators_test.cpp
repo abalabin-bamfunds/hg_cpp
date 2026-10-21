@@ -23,39 +23,22 @@
 using namespace bg;
 using namespace bg::literals;
 
-namespace {
-
-struct Quote {
-    i64 quantity;
-    double price;
-
-    friend bool operator==(const Quote &, const Quote &) = default;
-};
-
-template <template <typename, auto...> typename Field> struct BooleanBundle {
-    Field<bool> value;
-};
-
-template <typename T>
-concept ContextuallyConvertibleToBool = requires(const T &value) { value ? 1 : 0; };
-
-template <typename T>
-concept ExplicitlyCastableToBool = requires(const T &value) { static_cast<bool>(value); };
-
-template <typename T>
-concept DirectListInitializableAsBool = requires(const T &value) { bool{value}; };
-
-} // namespace
-
 TEST_CASE("numeric division, floor division, and modulo follow signed arithmetic",
           "[feature:operator][series:value][scalar:i64][scalar:floating-point]") {
     const auto integer_division = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::div(lhs, rhs); };
+
     const auto cxx_integer_division = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return lhs / rhs; };
+
     const auto cxx_scalar_left_division = [](wp<TS<i64>> rhs) { return i64{-7} / rhs; };
+
     const auto floor_division = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::floordiv(lhs, rhs); };
+
     const auto modulo = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::mod(lhs, rhs); };
+
     const auto cxx_modulo = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return lhs % rhs; };
+
     const auto cxx_scalar_left_modulo = [](wp<TS<i64>> rhs) { return i64{-7} % rhs; };
+
     const auto lhs = std::array<i64, 4>{-7, 7, -7, 7};
     const auto rhs = std::array<i64, 4>{3, -3, -3, 3};
 
@@ -63,17 +46,17 @@ TEST_CASE("numeric division, floor division, and modulo follow signed arithmetic
               .equals<double>({-7.0 / 3.0, -7.0 / 3.0, 7.0 / 3.0, 7.0 / 3.0}));
     CHECK(testing::test_graph(cxx_integer_division, lhs, rhs)
               .equals<double>({-7.0 / 3.0, -7.0 / 3.0, 7.0 / 3.0, 7.0 / 3.0}));
-    CHECK(testing::test_graph(cxx_scalar_left_division, std::array<i64, 2>{3, -3})
+    CHECK(testing::test_graph(cxx_scalar_left_division, {3, -3})
               .equals<double>({-7.0 / 3.0, -7.0 / -3.0}));
     CHECK(testing::test_graph(floor_division, lhs, rhs).equals<i64>({-3, -3, 2, 2}));
     CHECK(testing::test_graph(modulo, lhs, rhs).equals<i64>({2, -2, -1, 1}));
     CHECK(testing::test_graph(cxx_modulo, lhs, rhs).equals<i64>({2, -2, -1, 1}));
-    CHECK(testing::test_graph(cxx_scalar_left_modulo, std::array<i64, 2>{3, -3}).equals<i64>({2, -1}));
+    CHECK(testing::test_graph(cxx_scalar_left_modulo, {3, -3}).equals<i64>({2, -1}));
 
     const auto mixed_division = [](wp<TS<i64>> value) { return operators::div(value, 2.0); };
     const auto optional_division = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::div(opt(lhs), rhs); };
     const auto optional_modulo = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::mod(opt(lhs), rhs); };
-    CHECK_THROWS_AS(testing::test_graph(mixed_division, std::array<i64, 1>{7}), WiringError);
+    CHECK_THROWS_AS(testing::test_graph(mixed_division, {7}), WiringError);
     CHECK_THROWS_AS(testing::test_graph(optional_division, lhs, rhs), WiringError);
     CHECK_THROWS_AS(testing::test_graph(optional_modulo, lhs, rhs), WiringError);
 
@@ -106,7 +89,7 @@ TEST_CASE("numeric division, floor division, and modulo follow signed arithmetic
 TEST_CASE("floating division preserves signed zero",
           "[feature:operator][series:value][scalar:floating-point]") {
     const auto divide = [](wp<TS<double>> lhs, wp<TS<double>> rhs) { return operators::div(lhs, rhs); };
-    const auto result = testing::test_graph(divide, std::array{-7.0, -0.0, 0.0}, std::array{2.0, 2.0, -2.0});
+    const auto result = testing::test_graph(divide, {-7.0, -0.0, 0.0}, {2.0, 2.0, -2.0});
 
     CHECK(result.equals<double>({-3.5, -0.0, -0.0}));
     CHECK(std::signbit(scalar_cast<double>(result[1]->view()).value()));
@@ -687,6 +670,13 @@ TEST_CASE("required Boolean operators wait for every valid input",
 
 TEST_CASE("generic equality compares compound time-series values",
           "[feature:operator][feature:scalar-api][scalar:compound][shape:single-node]") {
+    struct Quote {
+        i64 quantity;
+        double price;
+
+        bool operator==(const Quote &) const = default;
+    };
+
     const auto series_equal = [](wp<TS<Quote>> left, wp<TS<Quote>> right) {
         return operators::eq(left, right);
     };
@@ -707,6 +697,23 @@ TEST_CASE("C++ wiring points report output presence explicitly",
     CHECK(output.has_output());
     CHECK_FALSE(wp<>{}.has_output());
 }
+
+namespace {
+
+template <template <typename, auto...> typename Field> struct BooleanBundle {
+    Field<bool> value;
+};
+
+template <typename T>
+concept ContextuallyConvertibleToBool = requires(const T &value) { value ? 1 : 0; };
+
+template <typename T>
+concept ExplicitlyCastableToBool = requires(const T &value) { static_cast<bool>(value); };
+
+template <typename T>
+concept DirectListInitializableAsBool = requires(const T &value) { bool{value}; };
+
+} // namespace
 
 TEST_CASE("wiring points are not Boolean-testable",
           "[feature:operator][feature:wiring][series:value]") {

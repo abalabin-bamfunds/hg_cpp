@@ -106,7 +106,7 @@ TEST_CASE("delay replays bundle ticks", "[feature:operator][feature:timed-schedu
         const auto value = bundle<TimedPair>("left"_n = left, "right"_n = right);
         return observe_bundle(operators::delay(value, timedelta_t{2}));
     };
-    CHECK(testing::test_graph(delayed_bundle, std::array<i64, 2>{1, 2}, std::array<i64, 2>{10, 20})
+    CHECK(testing::test_graph(delayed_bundle, {1, 2}, {10, 20})
               .equals<i64>({std::nullopt, std::nullopt, 11, 22}));
 }
 
