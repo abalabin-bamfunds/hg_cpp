@@ -133,6 +133,10 @@ template <> struct scalar_type_traits<symbol> {
     static const ScalarType &type() noexcept;
 };
 
+template <> struct scalar_type_traits<const Type *> {
+    static const ScalarType &type() noexcept;
+};
+
 template <typename T>
 concept scalar_type_mapped = requires {
     { scalar_type_traits<T>::type() } -> std::same_as<const ScalarType &>;
