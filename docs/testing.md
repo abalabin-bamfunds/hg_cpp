@@ -624,6 +624,9 @@ For each reusable node and graph, test:
 - queue delta conversion, standard and eliding modes, batch element conversion, and collection removals
 - copied Python writers, concurrent submission, realtime wakeups, and closed-handle rejection before conversion
 - queue payload ownership, conversion failures, startup failures, and unread-message cleanup
+- Python multiservice implementation graphs with reference, subscription, and
+  request/reply ports, outputless services, scalar filters, error cases, and
+  catalogue, registration, service, and graph wrapper lifetime
 
 ### Performance and portability
 

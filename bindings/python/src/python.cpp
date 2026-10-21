@@ -13,6 +13,7 @@
 #include <bg/python/scalar_conversion.hpp>
 #include <bg/python/wiring_point.hpp>
 #include <bg/service.hpp>
+#include <bg/service_feedback.hpp>
 #include <bg/service_catalogue.hpp>
 #include <bg/scalar/bundle/scalar_type.hpp>
 #include <bg/scalar/bundle/value.hpp>
@@ -203,14 +204,109 @@ class PythonServiceDefinition {
         return nb::cast(PythonWiringPoint{*result, PythonWiringScope::current()});
     }
 
+    nb::object implementation_requests(nb::sequence positional, nb::dict named) const {
+        auto memory_resource = std::pmr::unsynchronized_pool_resource{};
+        auto memory = allocator{memory_resource};
+        auto arguments = implementation_arguments(positional, named, memory);
+        const auto requests = service_->implementation_requests(TypeMap{}, arguments);
+        return nb::cast(PythonWiringPoint{requests, PythonWiringScope::current()});
+    }
+
+    void implementation_replies(nb::handle reply, nb::sequence positional, nb::dict named) const {
+        if (!nb::isinstance<PythonWiringPoint>(reply)) {
+            throw std::invalid_argument{"a Python service reply requires a time-series wiring point"};
+        }
+
+        auto memory_resource = std::pmr::unsynchronized_pool_resource{};
+        auto memory = allocator{memory_resource};
+        auto arguments = implementation_arguments(positional, named, memory);
+        const auto output = nb::cast<const PythonWiringPoint &>(reply).get(WiringContext::current().wiring());
+        service_->implementation_replies(TypeMap{}, output, arguments);
+    }
+
   private:
+    std::vector<WiringArgument> implementation_arguments(nb::sequence positional, nb::dict named,
+                                                         allocator &memory) const {
+        auto &wiring = WiringContext::current().wiring();
+        auto arguments = std::vector<WiringArgument>{};
+        arguments.reserve(nb::len(positional) + nb::len(named));
+        for (auto index = std::size_t{}; index < nb::len(positional); ++index) {
+            arguments.push_back(details::wiring_argument(positional[index], memory, wiring));
+        }
+        for (const auto [name, value] : named) {
+            auto argument = WiringArgument{util::symbol{nb::cast<std::string>(name)},
+                                           details::wiring_argument(value, memory, wiring)};
+            argument.match_fixed_parameter_by_name();
+            arguments.push_back(std::move(argument));
+        }
+        return arguments;
+    }
+
     std::unique_ptr<ServiceDefinition> service_;
     std::shared_ptr<const PythonNodeDefinition::SignatureDefinition> signature_;
+};
+
+class PythonFeedbackGraphAdapter final : public WiringTemplate,
+                                         public bg::details::TypeParameterizedWiring<PythonFeedbackGraphAdapter> {
+  public:
+    using result_type = wp<bg::details::SERVICE_FEEDBACK_OUTPUT>;
+
+    explicit PythonFeedbackGraphAdapter(std::shared_ptr<const PythonGraphDefinition> implementation)
+        : implementation_{std::move(implementation)} {}
+
+    const Signature &default_signature() const override { return implementation_->signature(); }
+
+  private:
+    std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature, const WiringArguments &arguments,
+                                    std::span<const WiringArgument> supplied) const override {
+        return wiring.invoke(*implementation_, supplied, &arguments.type_map());
+    }
+
+    std::shared_ptr<const PythonGraphDefinition> implementation_;
+};
+
+class PythonFeedbackServiceImplementation {
+  public:
+    PythonFeedbackServiceImplementation(const ServiceDefinition &service,
+                                        std::shared_ptr<const PythonGraphDefinition> implementation) {
+        if (!implementation->signature().has_output()) {
+            throw std::invalid_argument{"a feedback service implementation must have an output"};
+        }
+
+        auto adapter = PythonFeedbackGraphAdapter{std::move(implementation)};
+        auto definition = bg::feedback_service_implementation(service, adapter);
+        graph_ = std::make_shared<const decltype(definition)>(std::move(definition));
+    }
+
+    const std::shared_ptr<const WiringTemplate> &graph() const noexcept { return graph_; }
+
+  private:
+    std::shared_ptr<const WiringTemplate> graph_;
+};
+
+class PythonMultiserviceRegistration {
+  public:
+    explicit PythonMultiserviceRegistration(ServiceCatalogue::MultiserviceRegistration registration)
+        : registration_{std::move(registration)} {}
+
+    void register_impl(const PythonServiceDefinition &service, std::span<const WiringArgument> filters) {
+        registration_.register_impl(service.service(), filters);
+    }
+
+  private:
+    ServiceCatalogue::MultiserviceRegistration registration_;
 };
 
 class PythonServiceCatalogue {
   public:
     void register_impl(const PythonServiceDefinition &service, const PythonGraphDefinition &implementation,
+                       nb::handle service_owner, nb::handle implementation_owner, nb::sequence positional,
+                       nb::dict named) {
+        register_impl(service, std::make_shared<const PythonGraphDefinition>(implementation), service_owner,
+                      implementation_owner, positional, named);
+    }
+
+    void register_impl(const PythonServiceDefinition &service, std::shared_ptr<const WiringTemplate> graph,
                        nb::handle service_owner, nb::handle implementation_owner, nb::sequence positional,
                        nb::dict named) {
         auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
@@ -224,10 +320,46 @@ class PythonServiceCatalogue {
             arguments.push_back(registration_argument(value, memory, util::symbol{nb::cast<std::string>(name)}));
         }
 
-        auto graph = std::make_shared<PythonGraphDefinition>(implementation);
         keep_alive_.emplace_back(service_owner);
         keep_alive_.emplace_back(implementation_owner);
         catalogue_.register_impl(service.service(), std::move(graph), arguments);
+    }
+
+    PythonMultiserviceRegistration register_multiservice(const PythonGraphDefinition &implementation,
+                                                         nb::handle implementation_owner,
+                                                         nb::sequence positional, nb::dict named) {
+        keep_alive_.reserve(keep_alive_.size() + 1);
+        auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
+        auto memory = allocator{temporary_memory};
+        auto arguments = std::vector<WiringArgument>{};
+        arguments.reserve(nb::len(positional) + nb::len(named));
+        for (auto index = std::size_t{}; index < nb::len(positional); ++index) {
+            arguments.push_back(registration_argument(positional[index], memory));
+        }
+        for (const auto [name, value] : named) {
+            arguments.push_back(registration_argument(value, memory, util::symbol{nb::cast<std::string>(name)}));
+        }
+
+        auto graph = std::make_shared<PythonGraphDefinition>(implementation);
+        auto registration = catalogue_.register_multiservice(std::move(graph), arguments);
+        keep_alive_.emplace_back(implementation_owner);
+        return PythonMultiserviceRegistration{std::move(registration)};
+    }
+
+    void register_multiservice_impl(PythonMultiserviceRegistration &registration,
+                                    const PythonServiceDefinition &service, nb::handle service_owner,
+                                    nb::dict named) {
+        keep_alive_.reserve(keep_alive_.size() + 1);
+        auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
+        auto memory = allocator{temporary_memory};
+        auto filters = std::vector<WiringArgument>{};
+        filters.reserve(nb::len(named));
+        for (const auto [name, value] : named) {
+            filters.push_back(registration_argument(value, memory, util::symbol{nb::cast<std::string>(name)}));
+        }
+
+        registration.register_impl(service, filters);
+        keep_alive_.emplace_back(service_owner);
     }
 
     const ServiceCatalogue &catalogue() const noexcept { return catalogue_; }
@@ -433,7 +565,7 @@ std::vector<WiringArgument> wiring_arguments(const Signature &signature, nb::seq
 }
 
 nb::object wire_graph(const PythonGraphDefinition &definition, nb::sequence fixed_values,
-                     nb::sequence positional_values, nb::dict named_values);
+                      nb::sequence positional_values, nb::dict named_values);
 
 nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_sequences,
                     PythonServiceCatalogue *service_catalogue, EvaluationProfiler::Recorder *recorder,
@@ -665,7 +797,9 @@ void bind_core(nb::module_ &module) {
 
     module.def("version", [] { return std::string{bg::version()}; });
     nb::class_<PythonServiceDefinition>(module, "_PythonServiceDefinition");
+    nb::class_<PythonFeedbackServiceImplementation>(module, "_PythonFeedbackServiceImplementation");
     nb::class_<PythonServiceCatalogue>(module, "_ServiceCatalogue").def(nb::init<>());
+    nb::class_<PythonMultiserviceRegistration>(module, "_MultiserviceRegistration");
     module.def("_scalar_type",
                [](nb::handle value) { return TypeDescriptor{scalar_conversions().type_from_python(value)}; });
     module.def("_scalar_variable_type", [](std::string name, const std::vector<TypeDescriptor> &alternatives) {
@@ -1008,15 +1142,50 @@ void bind_core(nb::module_ &module) {
     module.def("_wire_service", [](const PythonServiceDefinition &definition, nb::sequence arguments) {
         return definition.wire(arguments);
     });
+    module.def("_service_implementation_requests",
+               [](const PythonServiceDefinition &definition, nb::sequence positional, nb::dict named) {
+                   return definition.implementation_requests(positional, named);
+               });
+    module.def("_service_implementation_replies",
+               [](const PythonServiceDefinition &definition, nb::handle reply, nb::sequence positional,
+                  nb::dict named) { definition.implementation_replies(reply, positional, named); });
+    module.def("_feedback_service_implementation", [](const PythonServiceDefinition &service,
+                                                       const PythonGraphDefinition &implementation) {
+        return PythonFeedbackServiceImplementation{
+            service.service(), std::make_shared<const PythonGraphDefinition>(implementation)};
+    });
     module.def("_register_service_impl",
                [](PythonServiceCatalogue &catalogue, nb::handle service, nb::handle implementation,
                   nb::sequence positional, nb::dict named) {
                    const auto &service_definition =
                        nb::cast<const PythonServiceDefinition &>(nb::getattr(service, "_native_definition"));
+                   const auto graph = nb::getattr(implementation, "_native_definition");
+                   if (nb::isinstance<PythonGraphDefinition>(graph)) {
+                       catalogue.register_impl(service_definition, nb::cast<const PythonGraphDefinition &>(graph),
+                                               service, implementation, positional, named);
+                       return;
+                   }
+                   if (nb::isinstance<PythonFeedbackServiceImplementation>(graph)) {
+                       const auto &definition = nb::cast<const PythonFeedbackServiceImplementation &>(graph);
+                       catalogue.register_impl(service_definition, definition.graph(), service,
+                                               implementation, positional, named);
+                       return;
+                   }
+                   throw std::invalid_argument{"register_impl expects a Python graph or feedback implementation"};
+               });
+    module.def("_register_multiservice",
+               [](PythonServiceCatalogue &catalogue, nb::handle implementation, nb::sequence positional,
+                  nb::dict named) {
                    const auto &graph_definition =
                        nb::cast<const PythonGraphDefinition &>(nb::getattr(implementation, "_native_definition"));
-                   catalogue.register_impl(service_definition, graph_definition, service, implementation, positional,
-                                           named);
+                   return catalogue.register_multiservice(graph_definition, implementation, positional, named);
+               });
+    module.def("_register_multiservice_impl",
+               [](PythonServiceCatalogue &catalogue, PythonMultiserviceRegistration &registration,
+                  nb::handle service, nb::dict named) {
+                   const auto &service_definition =
+                       nb::cast<const PythonServiceDefinition &>(nb::getattr(service, "_native_definition"));
+                   catalogue.register_multiservice_impl(registration, service_definition, service, named);
                });
     module.def("_wire_node", &wire_node);
     module.def("_wire_graph", &wire_graph);

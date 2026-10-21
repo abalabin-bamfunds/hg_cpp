@@ -47,7 +47,12 @@ from ._bg import (
     _test_graph,
     _make_service,
     _make_service_catalogue,
+    _feedback_service_implementation,
+    _register_multiservice,
+    _register_multiservice_impl,
     _register_service_impl,
+    _service_implementation_requests,
+    _service_implementation_replies,
     _wire_service,
     _time_series_dict_type,
     _time_series_bundle_type,
@@ -636,6 +641,13 @@ class GraphDefinition:
         return GraphDefinition(self.function, native, self._fixed_parameters, self._callback)
 
 
+class _FeedbackServiceImplementation:
+    def __init__(self, service: _ServiceDefinition, implementation: GraphDefinition, native_definition: Any):
+        self._service = service
+        self._implementation = implementation
+        self._native_definition = native_definition
+
+
 class _ServiceDefinition:
     def __init__(self, function: Any, native_definition: Any):
         self.function = function
@@ -649,6 +661,25 @@ class _ServiceDefinition:
         arguments = tuple(bound.arguments[parameter] for parameter in self.signature.parameters)
         return _wire_service(self._native_definition, arguments)
 
+    def implementation_requests(self, *args: Any, **kwargs: Any) -> Any:
+        return _service_implementation_requests(self._native_definition, args, kwargs)
+
+    def implementation_replies(self, reply: Any, *args: Any, **kwargs: Any) -> None:
+        _service_implementation_replies(self._native_definition, reply, args, kwargs)
+
+
+class MultiserviceRegistration:
+    def __init__(self, catalogue: ServiceCatalogue, native_registration: Any):
+        self._catalogue = catalogue
+        self._native_registration = native_registration
+
+    def register_impl(self, service: _ServiceDefinition, **scalar_filters: Any) -> None:
+        if not isinstance(service, _ServiceDefinition):
+            raise TypeError("register_impl expects a Python service declaration")
+        _register_multiservice_impl(
+            self._catalogue._native_catalogue, self._native_registration, service, scalar_filters
+        )
+
 
 class ServiceCatalogue:
     """Register Python graph implementations for service declarations."""
@@ -657,13 +688,29 @@ class ServiceCatalogue:
         self._native_catalogue = _make_service_catalogue()
 
     def register_impl(
-        self, service: _ServiceDefinition, implementation: GraphDefinition, *args: Any, **kwargs: Any
+        self,
+        service: _ServiceDefinition,
+        implementation: GraphDefinition | _FeedbackServiceImplementation,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         if not isinstance(service, _ServiceDefinition):
             raise TypeError("register_impl expects a Python service declaration")
-        if not isinstance(implementation, GraphDefinition):
-            raise TypeError("register_impl expects a decorated @graph implementation")
+        if not isinstance(implementation, (GraphDefinition, _FeedbackServiceImplementation)):
+            raise TypeError("register_impl expects a decorated @graph or feedback service implementation")
+        if isinstance(implementation, _FeedbackServiceImplementation) and implementation._service is not service:
+            raise ValueError("feedback service implementation was created for a different service")
         _register_service_impl(self._native_catalogue, service, implementation, args, kwargs)
+
+    def register_multiservice(
+        self, implementation: GraphDefinition, *installation_args: Any, **installation_kwargs: Any
+    ) -> MultiserviceRegistration:
+        if not isinstance(implementation, GraphDefinition):
+            raise TypeError("register_multiservice expects a decorated @graph implementation")
+        native = _register_multiservice(
+            self._native_catalogue, implementation, installation_args, installation_kwargs
+        )
+        return MultiserviceRegistration(self, native)
 
 
 def _bind_definition_arguments(
@@ -1126,6 +1173,19 @@ def subscription_service(function: Any) -> _ServiceDefinition:
     return _define_service(function, "subscription")
 
 
+def feedback_service_implementation(
+    service: _ServiceDefinition, implementation: GraphDefinition
+) -> _FeedbackServiceImplementation:
+    """Delay each service request by one cycle before running its implementation."""
+    if not isinstance(service, _ServiceDefinition):
+        raise TypeError("feedback_service_implementation expects a Python service declaration")
+    if not isinstance(implementation, GraphDefinition):
+        raise TypeError("feedback_service_implementation expects a decorated @graph implementation")
+
+    native = _feedback_service_implementation(service._native_definition, implementation._native_definition)
+    return _FeedbackServiceImplementation(service, implementation, native)
+
+
 def node(function: Any) -> NodeDefinition:
     """Declare a Python node whose scalar annotations accept scalar or TS[T] inputs."""
     return _define_node(function, schedule_on_start=True, scalar_or_time_series_inputs=True)
@@ -1286,10 +1346,12 @@ __all__ = [
     "const_",
     "deduplicated",
     "final",
+    "feedback_service_implementation",
     "GraphDefinition",
     "DEFAULT",
     "INVALID",
     "NodeDefinition",
+    "MultiserviceRegistration",
     "ordinary",
     "Output",
     "REF",

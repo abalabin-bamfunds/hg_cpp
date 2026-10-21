@@ -161,6 +161,21 @@ ServiceCatalogue::ServiceCatalogue(ServiceCatalogue &&) noexcept = default;
 
 ServiceCatalogue &ServiceCatalogue::operator=(ServiceCatalogue &&) noexcept = default;
 
+ServiceCatalogue::MultiserviceRegistration
+ServiceCatalogue::register_multiservice(std::shared_ptr<const WiringTemplate> implementation,
+                                        std::span<const WiringArgument> arguments) {
+    return MultiserviceRegistration{state_, add_multiservice(std::move(implementation), arguments)};
+}
+
+void ServiceCatalogue::MultiserviceRegistration::register_impl(const ServiceDefinition &service,
+                                                               std::span<const WiringArgument> filters) {
+    auto state = state_.lock();
+    if (!state) {
+        throw std::logic_error{"the multiservice registration's catalogue no longer exists"};
+    }
+    ServiceCatalogue::add_multiservice_impl(state, index_, service, TypeMap{}, std::nullopt, filters);
+}
+
 bool ServiceCatalogue::BuildOperation::same_scalars(std::span<const ScalarValue<>> left,
                                                     std::span<const ScalarValue<>> right) {
     if (left.size() != right.size()) {

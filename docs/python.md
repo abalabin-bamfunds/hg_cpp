@@ -338,6 +338,66 @@ that parameter's value. Other registration arguments are passed to the
 implementation graph as installation arguments. The catalogue retains the
 Python service and graph wrappers while its native registrations are in use.
 
+Wrap a request/reply or subscription implementation with
+`bg.feedback_service_implementation(service, implementation)` to delay each
+request by one cycle before the implementation receives it. The returned
+service implementation keeps the service and graph alive. Pass it to
+`ServiceCatalogue.register_impl` with the same scalar filters and installation
+arguments:
+
+```python
+catalogue.register_impl(
+    echo,
+    bg.feedback_service_implementation(echo, echo_implementation),
+    mode=2,
+    factor=3,
+)
+```
+
+The service must accept requests and declare an output. The implementation
+graph must declare an output.
+
+One graph can implement several services through a multiservice registration.
+Connect each service's request and reply ports inside the graph, then register
+the graph and its service claims:
+
+```python
+@bg.reference_service
+def clock() -> bg.TS[int]:
+    pass
+
+@bg.subscription_service
+def lookup(key: bg.TS[int, bg.final]) -> bg.TS[int]:
+    pass
+
+@bg.source_node
+def clock_source() -> bg.TS[int]:
+    return 5
+
+@bg.compute_node
+def answer(keys: bg.TSS[int]) -> bg.TSD[int, bg.TS[int]]:
+    return {key: key * 10 for key in keys.value}
+
+@bg.graph
+def implementation() -> None:
+    lookup.implementation_replies(answer(lookup.implementation_requests()))
+    clock.implementation_replies(clock_source())
+
+catalogue = bg.ServiceCatalogue()
+registration = catalogue.register_multiservice(implementation)
+registration.register_impl(clock)
+registration.register_impl(lookup)
+```
+
+`implementation_requests` and `implementation_replies` take every scalar
+service parameter as a positional or named argument. A request port is
+available for `@service` and `@subscription_service`; a reply port is
+available for services with an output. An outputless `@service` uses its
+request port without a reply. Generic service type mappings are not supported
+by the Python multiservice API. Scalar filters passed to
+`registration.register_impl(service, **filters)` must be named service
+parameters.
+
 A subscription key uses a final-or-stronger time series, for example
 `bg.TS[int, bg.final]`. Its implementation receives `bg.TSS[int]` and returns
 `bg.TSD[int, R]` for the declared result type `R`. See
