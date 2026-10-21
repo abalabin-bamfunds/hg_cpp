@@ -55,6 +55,7 @@ struct ParameterShape {
     bool dynamic_activity;
     bool accepts_absent_scalar;
     VariadicMode variadic_mode;
+    bool valid_items;
 
     bool operator==(const ParameterShape &) const noexcept = default;
 };
@@ -70,7 +71,7 @@ struct NodeShape {
     const TimeSeriesType *output;
     const TimeSeriesRuntimeType *output_runtime_type{};
     std::vector<const ScalarType *> state_types{};
-    std::vector<const TimeSeriesType *> dynamic_reference_input_types{};
+    std::vector<const TimeSeriesType *> dynamic_input_types{};
     std::vector<StoredScalar> scalars{};
     std::vector<Endpoint> inputs{};
     std::vector<std::size_t> service_bindings{};
@@ -97,7 +98,7 @@ bool same_scalar(const StoredScalar &left, const StoredScalar &right) {
 bool same_node_label(const NodeShape &left, const NodeShape &right) {
     return left.identity == right.identity && left.parameters == right.parameters && left.output == right.output &&
            left.output_runtime_type == right.output_runtime_type && left.state_types == right.state_types &&
-           left.dynamic_reference_input_types == right.dynamic_reference_input_types &&
+           left.dynamic_input_types == right.dynamic_input_types &&
            left.scalars.size() == right.scalars.size() &&
            std::ranges::equal(left.scalars, right.scalars, same_scalar) && left.inputs.size() == right.inputs.size() &&
            left.service_bindings == right.service_bindings;
@@ -112,13 +113,14 @@ std::size_t node_label_hash(const NodeShape &node) {
         combine(result, parameter.dynamic_activity);
         combine(result, parameter.accepts_absent_scalar);
         combine(result, static_cast<std::size_t>(parameter.variadic_mode));
+        combine(result, parameter.valid_items);
     }
     combine_pointer(result, node.output);
     combine_pointer(result, node.output_runtime_type);
     for (const auto *type : node.state_types) {
         combine_pointer(result, type);
     }
-    for (const auto *type : node.dynamic_reference_input_types) {
+    for (const auto *type : node.dynamic_input_types) {
         combine_pointer(result, type);
     }
     for (const auto &scalar : node.scalars) {
@@ -384,15 +386,15 @@ std::shared_ptr<GraphWiringStructure::Data> snapshot(const GraphWiring &wiring,
         for (const auto &parameter : wired.signature().parameters) {
             node.parameters.push_back({parameter.type, parameter.activity, parameter.validity,
                                        parameter.dynamic_activity, parameter.accepts_absent_scalar,
-                                       parameter.variadic_mode});
+                                       parameter.variadic_mode, parameter.valid_items});
         }
         node_indices[original_index] = data->nodes.size();
         if (root_outputs[original_index] != nullptr) {
             node.output_runtime_type = root_outputs[original_index]->runtime_type;
         }
         node.state_types.assign(wired.state_types().begin(), wired.state_types().end());
-        node.dynamic_reference_input_types.assign(wired.dynamic_reference_input_types().begin(),
-                                                  wired.dynamic_reference_input_types().end());
+        node.dynamic_input_types.assign(wired.dynamic_input_types().begin(),
+                                                  wired.dynamic_input_types().end());
         for (const auto &scalar : wired.scalar_values()) {
             auto stored = StoredScalar{.runtime_type = &scalar.runtime_type()};
             const auto &type = scalar.runtime_type().type();

@@ -77,6 +77,30 @@ def test_if_then_else_switches_references_and_follows_only_the_selected_value():
     assert bg.test_graph(repeated_selection, [True, True, False, False, True]) == [10, None, 20, None, 10]
 
 
+def test_if_then_else_samples_tss_changes_when_retargeting():
+    @bg.graph
+    def select(condition: bg.TS[bool], old_target: bg.TSS[int], new_target: bg.TSS[int]) -> bg.TSS[int]:
+        return bg.operators.if_then_else(condition, old_target, new_target)
+
+    assert bg.test_graph(select, [True, False], [{2}, bg.SetDelta(added={3}, removed={2})], [{3}, None]) == [
+        bg.SetDelta(added={2}),
+        bg.SetDelta(added={3}, removed={2}),
+    ]
+
+
+def test_if_then_else_does_not_replay_an_old_tss_delta_when_retargeting():
+    @bg.graph
+    def select(condition: bg.TS[bool], old_target: bg.TSS[int], new_target: bg.TSS[int]) -> bg.TSS[int]:
+        return bg.operators.if_then_else(condition, old_target, new_target)
+
+    assert bg.test_graph(select, [True, True, False],
+                         [{2}, bg.SetDelta(added={3}, removed={2}), None], [{3}, None, None]) == [
+        bg.SetDelta(added={2}),
+        bg.SetDelta(added={3}, removed={2}),
+        bg.SetDelta(),
+    ]
+
+
 def test_if_then_else_rejects_incompatible_branch_structures():
     @bg.compute_node
     def make_set(value: bg.TS[int]) -> bg.TSS[int]:

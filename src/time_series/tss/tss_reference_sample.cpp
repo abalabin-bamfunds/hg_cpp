@@ -4,6 +4,7 @@
 #include <bg/util/static_storage.hpp>
 #include <bg/util/scope_exit.hpp>
 
+#include <cassert>
 #include <exception>
 #include <memory>
 #include <mutex>
@@ -23,9 +24,12 @@ class SampledSetRuntimeType final : public TimeSeriesSetRuntimeType {
     std::size_t set_size(const void *value) const override;
     bool set_contains(const void *value, const ScalarData &key) const override;
     item_id_t find_set_item(const void *value, const ScalarData &key) const override;
+    item_id_t find_set_key(const void *value, const ScalarData &key) const override;
     bool set_was_added(const TimeSeriesState &last_updated, const void *value, const ScalarData &key) const override;
     bool set_was_removed(const TimeSeriesState &last_updated, const void *value,
                          const ScalarData &key) const override;
+    RetainedSetKey retain_key(void *value, const ScalarData &key, allocator &memory) const override;
+    void release_key(void *, item_id_t, allocator &) const noexcept override;
     const void *set_key(const void *value, item_id_t id) const noexcept override;
     item_id_t set_next_item_id(const TimeSeriesState &last_updated, const void *value, Range range,
                                item_id_t start) const override;
@@ -65,6 +69,19 @@ SampledSet::~SampledSet() {
     removed.release(memory);
 }
 
+bool SampledSet::previous_contains(const ScalarData &key) const {
+    if (!previous.valid()) {
+        return false;
+    }
+
+    const auto &previous_type = static_cast<const TimeSeriesSetRuntimeType &>(*previous.runtime_type);
+    const auto changed_this_cycle = previous_last_updated.time() == sampled_last_updated.time();
+    if (previous_type.set_contains(previous.storage, key)) {
+        return !changed_this_cycle || !previous_type.set_was_added(previous_last_updated, previous.storage, key);
+    }
+    return changed_this_cycle && previous_type.set_was_removed(previous_last_updated, previous.storage, key);
+}
+
 void SampledSet::populate_changes() const {
     if (changes_populated) {
         return;
@@ -78,38 +95,60 @@ void SampledSet::populate_changes() const {
         }
     }};
 
-    if (previous.valid()) {
-        const auto &previous_type = static_cast<const TimeSeriesSetRuntimeType &>(*previous.runtime_type);
-        for (auto id = previous_type.set_next_item_id(previous_last_updated, previous.storage,
-                                                      TimeSeriesSetRuntimeType::Range::current, 0);
+    const auto previous_changed_this_cycle =
+        previous.valid() && previous_last_updated.time() == sampled_last_updated.time();
+    const auto *previous_type = previous.valid()
+                                    ? &static_cast<const TimeSeriesSetRuntimeType &>(*previous.runtime_type)
+                                    : nullptr;
+    const auto *current_type = current.valid()
+                                   ? &static_cast<const TimeSeriesSetRuntimeType &>(*current.runtime_type)
+                                   : nullptr;
+
+    const auto record_previous_item = [&](item_id_t id) {
+        const auto key = ScalarData{previous_type->key_runtime_type(), previous_type->set_key(previous.storage, id)};
+        if (previous_changed_this_cycle &&
+            previous_type->set_was_added(previous_last_updated, previous.storage, key)) {
+            return;
+        }
+
+        const auto current_id = current_type == nullptr ? util::occupancy_index::npos
+                                                         : current_type->find_set_item(current.storage, key);
+        if (current_id == util::occupancy_index::npos) {
+            removed.set(id, memory);
+        } else if (current_id != id) {
+            item_id_remappings.push_back({id, current_id});
+        }
+    };
+
+    if (previous_type != nullptr) {
+        for (auto id = previous_type->set_next_item_id(previous_last_updated, previous.storage,
+                                                       TimeSeriesSetRuntimeType::Range::current, 0);
              id != util::occupancy_index::npos;
-             id = previous_type.set_next_item_id(previous_last_updated, previous.storage,
-                                                 TimeSeriesSetRuntimeType::Range::current, id + 1)) {
-            const auto key = ScalarData{previous_type.key_runtime_type(), previous_type.set_key(previous.storage, id)};
-            if (!current.valid() ||
-                !static_cast<const TimeSeriesSetRuntimeType &>(*current.runtime_type)
-                     .set_contains(current.storage, key)) {
-                removed.set(id, memory);
+             id = previous_type->set_next_item_id(previous_last_updated, previous.storage,
+                                                  TimeSeriesSetRuntimeType::Range::current, id + 1)) {
+            record_previous_item(id);
+        }
+
+        if (previous_changed_this_cycle) {
+            for (auto id = previous_type->set_next_item_id(previous_last_updated, previous.storage,
+                                                           TimeSeriesSetRuntimeType::Range::removed, 0);
+                 id != util::occupancy_index::npos;
+                 id = previous_type->set_next_item_id(previous_last_updated, previous.storage,
+                                                      TimeSeriesSetRuntimeType::Range::removed, id + 1)) {
+                record_previous_item(id);
             }
         }
     }
 
-    if (current.valid()) {
-        const auto &current_type = static_cast<const TimeSeriesSetRuntimeType &>(*current.runtime_type);
-        for (auto id = current_type.set_next_item_id(current_last_updated, current.storage,
-                                                     TimeSeriesSetRuntimeType::Range::current, 0);
+    if (current_type != nullptr) {
+        for (auto id = current_type->set_next_item_id(current_last_updated, current.storage,
+                                                      TimeSeriesSetRuntimeType::Range::current, 0);
              id != util::occupancy_index::npos;
-             id = current_type.set_next_item_id(current_last_updated, current.storage,
-                                                TimeSeriesSetRuntimeType::Range::current, id + 1)) {
-            const auto key = ScalarData{current_type.key_runtime_type(), current_type.set_key(current.storage, id)};
-            const auto previous_id = previous.valid()
-                                         ? static_cast<const TimeSeriesSetRuntimeType &>(*previous.runtime_type)
-                                               .find_set_item(previous.storage, key)
-                                         : util::occupancy_index::npos;
-            if (previous_id == util::occupancy_index::npos) {
+             id = current_type->set_next_item_id(current_last_updated, current.storage,
+                                                 TimeSeriesSetRuntimeType::Range::current, id + 1)) {
+            const auto key = ScalarData{current_type->key_runtime_type(), current_type->set_key(current.storage, id)};
+            if (!previous_contains(key)) {
                 added.set(id, memory);
-            } else if (previous_id != id) {
-                item_id_remappings.push_back({previous_id, id});
             }
         }
     }
@@ -148,19 +187,15 @@ const SampledSetRuntimeType &SampledSetRuntimeType::for_shape(const TimeSeriesSe
 
 bool SampledSetRuntimeType::changed(const TimeSeriesState &last_updated, const SampledSet &sample, Range range,
                                     const ScalarData &key) const {
-    sample.populate_changes();
     if (last_updated.time() != sample.sampled_last_updated.time()) {
         return false;
     }
 
-    const auto previous = range == Range::removed;
-    const auto &time_series = previous ? sample.previous : sample.current;
-    if (!time_series.valid()) {
-        return false;
-    }
-    const auto &runtime_type = static_cast<const TimeSeriesSetRuntimeType &>(*time_series.runtime_type);
-    const auto position = runtime_type.find_set_item(time_series.storage, key);
-    return (previous ? sample.removed : sample.added).contains(position);
+    const auto previous_contains = sample.previous_contains(key);
+    const auto current_contains = sample.current.valid() &&
+                                  static_cast<const TimeSeriesSetRuntimeType &>(*sample.current.runtime_type)
+                                      .set_contains(sample.current.storage, key);
+    return range == Range::added ? current_contains && !previous_contains : previous_contains && !current_contains;
 }
 
 std::size_t SampledSetRuntimeType::set_size(const void *value) const {
@@ -183,6 +218,14 @@ item_id_t SampledSetRuntimeType::find_set_item(const void *value, const ScalarDa
                            : util::occupancy_index::npos;
 }
 
+item_id_t SampledSetRuntimeType::find_set_key(const void *value, const ScalarData &key) const {
+    const auto &current = static_cast<const SampledSet *>(value)->current;
+    if (current.runtime_type == nullptr || current.storage == nullptr) {
+        return util::occupancy_index::npos;
+    }
+    return static_cast<const TimeSeriesSetRuntimeType &>(*current.runtime_type).find_set_key(current.storage, key);
+}
+
 bool SampledSetRuntimeType::set_was_added(const TimeSeriesState &last_updated, const void *value,
                                           const ScalarData &key) const {
     return changed(last_updated, *static_cast<const SampledSet *>(value), Range::added, key);
@@ -191,6 +234,24 @@ bool SampledSetRuntimeType::set_was_added(const TimeSeriesState &last_updated, c
 bool SampledSetRuntimeType::set_was_removed(const TimeSeriesState &last_updated, const void *value,
                                             const ScalarData &key) const {
     return changed(last_updated, *static_cast<const SampledSet *>(value), Range::removed, key);
+}
+
+RetainedSetKey SampledSetRuntimeType::retain_key(void *value, const ScalarData &key, allocator &memory) const {
+    if (value == nullptr) {
+        return {};
+    }
+
+    const auto &current = static_cast<SampledSet *>(value)->current;
+    if (current.runtime_type == nullptr || current.storage == nullptr) {
+        return {};
+    }
+
+    return static_cast<const TimeSeriesSetRuntimeType &>(*current.runtime_type)
+        .retain_key(const_cast<void *>(current.storage), key, memory);
+}
+
+void SampledSetRuntimeType::release_key(void *, item_id_t, allocator &) const noexcept {
+    assert(false && "sampled set key retention must be released through its retained runtime type");
 }
 
 const void *SampledSetRuntimeType::set_key(const void *value, item_id_t id) const noexcept {

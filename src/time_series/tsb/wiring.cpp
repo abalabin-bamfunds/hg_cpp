@@ -134,6 +134,8 @@ class FreeTimeSeriesBundleWiringRecord final : public WiringRecord {
         : WiringRecord{type}, fields_{std::move(fields)} {}
 
     WiringArgument argument(std::size_t index) const { return WiringArgument::borrow(fields_.at(index)); }
+    std::span<const WiringArgument> arguments() const noexcept { return fields_; }
+
     bool materialisation_ready_impl() const noexcept override {
         return std::ranges::all_of(fields_, [](const auto &field) {
             return !field.is_time_series() || field.time_series().record()->materialisation_ready();
@@ -259,6 +261,14 @@ class TimeSeriesBundleVariadicWiringOperations final : public VariadicWiringOper
 
     WiringPoint item(WiringPoint collection, std::size_t index) const override {
         return time_series_bundle_field(collection, index);
+    }
+
+    std::optional<std::span<const WiringArgument>>
+    original_arguments(WiringPoint collection) const noexcept override {
+        if (const auto *free = dynamic_cast<const FreeTimeSeriesBundleWiringRecord *>(collection.record())) {
+            return free->arguments();
+        }
+        return std::nullopt;
     }
 
     std::vector<MaterialisationDependency>

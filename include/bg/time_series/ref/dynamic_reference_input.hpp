@@ -56,7 +56,7 @@ class DynamicReferenceInputStorage {
     const TimeSeriesState &last_updated() const noexcept { return last_updated_; }
     const Reference &value() const noexcept { return value_; }
     bool modified(EvaluationTime evaluation_time) const noexcept {
-        return last_updated_.valid() && last_updated_.time() == evaluation_time;
+        return evaluation_time != MIN_DT && last_updated_.time() == evaluation_time;
     }
 
     void bind(ReferenceBinding binding, EvaluationContext &context, std::size_t storage_offset);

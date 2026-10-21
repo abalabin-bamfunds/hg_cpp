@@ -44,7 +44,7 @@ struct running_overloads {
         Out<TS<T, TimeSeriesGuarantee::ordinary>> output;
 
         void evaluate() const {
-            if (reset.modified()) {
+            if (reset.valid() && reset.modified()) {
                 output.invalidate();
             }
             if (!value.modified()) {
@@ -94,7 +94,7 @@ struct running_overloads {
         Out<TS<T, TimeSeriesGuarantee::deduplicated>> output;
 
         void evaluate() const {
-            if (reset.modified()) {
+            if (reset.valid() && reset.modified()) {
                 output.invalidate();
             }
             if (value.modified() && (!output.valid() || value.value() < output.value())) {
@@ -131,7 +131,7 @@ struct running_overloads {
         Out<TS<T, TimeSeriesGuarantee::deduplicated>> output;
 
         void evaluate() const {
-            if (reset.modified()) {
+            if (reset.valid() && reset.modified()) {
                 output.invalidate();
             }
             if (value.modified() && (!output.valid() || value.value() > output.value())) {
@@ -171,7 +171,7 @@ struct running_overloads {
         Out<TS<double, TimeSeriesGuarantee::ordinary>> output;
 
         void evaluate() const {
-            if (reset.modified()) {
+            if (reset.valid() && reset.modified()) {
                 output.invalidate();
             }
             if (!value.modified()) {

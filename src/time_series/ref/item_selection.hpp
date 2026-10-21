@@ -173,7 +173,7 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         queue_release(entry);
 
         return {&entry.selection_time, &item_reference_runtime_type, ReferenceBinding{&entry, binding_type()},
-                entry.selection_time.valid() && entry.selection_time.time() == provider_->owner().evaluation_time()};
+                entry.selection_time.time() == provider_->owner().evaluation_time()};
     }
 
     void release_all() noexcept {

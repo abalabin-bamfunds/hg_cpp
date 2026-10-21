@@ -80,13 +80,42 @@ TEST_CASE("an optional input exposes its latest validity transition",
     CHECK(validity_transition_sink::states == std::vector<std::array<bool, 4>>{
                                                 {true, true, false, true},
                                                 {true, false, false, true},
-                                                {false, false, true, false},
+                                                {false, false, true, true},
                                                 {true, true, false, true},
                                             });
     REQUIRE(validity_transition_sink::times.size() == 4);
     CHECK(validity_transition_sink::times[0] < validity_transition_sink::times[1]);
     CHECK(validity_transition_sink::times[1] < validity_transition_sink::times[2]);
     CHECK(validity_transition_sink::times[2] < validity_transition_sink::times[3]);
+}
+
+TEST_CASE("input changes and validity transitions apply only to the current evaluation",
+          "[evaluation][feature:validity][validity:optional][transition:invalidation]"
+          "[series:value][scalar:integer][shape:chain]") {
+    auto states = std::vector<std::array<bool, 4>>{};
+    const auto sink = bg::node([&](bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input,
+                                   bg::In<bg::TS<bg::i64>> trigger) {
+        states.push_back({input.valid(), input.became_valid(), input.became_invalid(), input.modified()});
+        static_cast<void>(trigger);
+    });
+
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input, bg::wp<bg::TS<bg::i64>> trigger) {
+        sink(input, trigger);
+        return trigger;
+    };
+
+    const auto actual = bg::testing::test_graph(
+        graph, {1, 1, literal::INVALID, literal::SKIP, 2, literal::SKIP}, {1, 2, 3, 4, 5, 6});
+
+    CHECK(actual.equals({1, 2, 3, 4, 5, 6}));
+    CHECK(states == std::vector<std::array<bool, 4>>{
+        {true, true, false, true},
+        {true, false, false, true},
+        {false, false, true, true},
+        {false, false, false, false},
+        {true, true, false, true},
+        {true, false, false, false},
+    });
 }
 
 TEST_CASE("a deduplicated value output schedules subscribers only for changed values",

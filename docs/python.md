@@ -119,14 +119,32 @@ a scalar or time-series key. `getattr` accepts a scalar string or symbol name.
 The output scalar type is inferred from the Python `__getitem__` return
 annotation or the selected attribute's annotation; provide an explicit output
 type when inference is unavailable, for example
-`bg.operators.getitem[bg.TS[int]](value, key)` or
-`bg.operators.getattr[bg.TS[int]](value, "count")`. These overloads return
-scalar time series only.
+`bg.operators.getitem[int](value, key)` or
+`bg.operators.getattr[int](value, "count")`. The bracketed type is the scalar
+value type; these overloads return `TS` of that type.
+Time-series collection overloads do not accept a bracketed output type.
 
 `bg.opt(point)` requires an optional receiving parameter. It returns a new
 wiring proxy for the same time series and leaves `point` unchanged. It adds no
 runtime node or fallback value. The selected node defines how it handles an
 invalid input. See [optional arguments](operators.md#optional-arguments).
+
+`Annotated[TSD[K, V], bg.valid_items]` declares a filtered input view.
+`bg.valid_items(point)` requires that annotation on the receiving parameter:
+
+```python
+from typing import Annotated
+
+@bg.compute_node
+def count(values: Annotated[bg.TSD[int, bg.TS[int]], bg.valid_items]) -> bg.TS[int]:
+    return len(values)
+
+count(bg.valid_items(values))
+```
+
+The annotation adds no runtime node and leaves the original wiring point
+unchanged. Its [input-view behavior](time-series-validity.md#collections)
+matches C++, including immediate-item validity and physical `key_set` access.
 
 Node and graph functions accept positional and named arguments according to
 their Python signatures, including positional-only, keyword-only, `*args`, and
@@ -515,8 +533,9 @@ raised by a callback propagates from `test_graph`. Each test run constructs and
 destroys a new runtime graph.
 
 An input view exposes `valid`, `modified`, `last_modified_time`, `value`, and
-`delta_value`. `last_modified_time` is a Python `datetime` mapped from the
-engine update time. Input views and their lazy values, change views, and
+`delta_value`. Change queries follow the [node input API](node-api.md#complete-time-series-access).
+`last_modified_time` is a Python `datetime` mapped from the engine update time.
+Input views and their lazy values, change views, and
 iterators expire when the callback returns.
 
 `TSS` values are set-like. `added()` and `removed()` return lazy set-like
@@ -616,7 +635,8 @@ updates, not a Python-object scalar value.
 Python object scalars retain their Python object by reference. Copying and
 releasing an existing scalar handle does not acquire the Global Interpreter
 Lock (GIL). A final Python reference is released immediately when the GIL is
-held; otherwise, release is deferred and drained at `test_graph` boundaries.
+held; otherwise, release is deferred until the next periodic Python callback or
+graph-run boundary.
 Python `__hash__` and `__eq__` run with the GIL and their exceptions propagate.
 Python objects used as graph scalars must be immutable, including any state
 that affects equality or hashing.
@@ -690,6 +710,15 @@ view conversion uses the ordinary scalar-to-Python conversion. Runtime-specific
 handlers take precedence over handlers for the scalar type. Register handlers
 when the extension module initializes, before affected values are exposed to
 Python.
+
+Native node declarations use `bg::python::PythonObject` to constrain a scalar
+variable to Python-object values. User-defined Python classes represented by
+Python-object scalars match the root `object` bound:
+
+```cpp
+using PYOBJECT = bg::ScalarVariable<"PYOBJECT", bg::python::PythonObject>;
+bg::In<bg::TS<PYOBJECT>> input;
+```
 
 Python-to-scalar conversion during wiring receives a temporary allocator. A
 conversion whose result can retain shared storage beyond wiring must allocate

@@ -9,6 +9,14 @@
 
 namespace bg::details {
 
+class TimeSeriesSetRuntimeType;
+
+struct RetainedSetKey {
+    const TimeSeriesSetRuntimeType *runtime_type{};
+    void *value{};
+    item_id_t id{util::occupancy_index::npos};
+};
+
 class TimeSeriesSetRuntimeType : public TimeSeriesRuntimeType {
   public:
     TimeSeriesSetRuntimeType(const TimeSeriesSetType &type, const ScalarRuntimeType &key) noexcept
@@ -20,6 +28,7 @@ class TimeSeriesSetRuntimeType : public TimeSeriesRuntimeType {
     virtual std::size_t set_size(const void *value) const;
     virtual bool set_contains(const void *value, const ScalarData &key) const;
     virtual item_id_t find_set_item(const void *value, const ScalarData &key) const;
+    virtual item_id_t find_set_key(const void *value, const ScalarData &key) const;
     virtual bool set_was_added(const TimeSeriesState &last_updated, const void *value, const ScalarData &key) const;
     virtual bool set_was_removed(const TimeSeriesState &last_updated, const void *value,
                                  const ScalarData &key) const;
@@ -30,6 +39,9 @@ class TimeSeriesSetRuntimeType : public TimeSeriesRuntimeType {
     virtual void for_each_item_id_remapping(const void *, void *, ItemIdRemappingFunction) const {}
 
     const ScalarRuntimeType &key_runtime_type() const noexcept { return *key_; }
+
+    virtual RetainedSetKey retain_key(void *value, const ScalarData &key, allocator &memory) const;
+    virtual void release_key(void *value, item_id_t id, allocator &memory) const noexcept;
 
     void construct_initial_value(void *destination) const noexcept override {
         std::construct_at(static_cast<time_series_set_storage *>(destination));

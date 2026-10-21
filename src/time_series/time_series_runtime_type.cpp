@@ -32,8 +32,7 @@ namespace bg {
 TimeSeriesRuntimeType::~TimeSeriesRuntimeType() = default;
 
 void TimeSeriesRuntimeType::copy_tick(const TimeSeriesInputData &input, OutputState &output) const {
-    if (input.last_updated() != output.evaluation_time() ||
-        (!input.modified() && !input.became_invalid())) {
+    if (input.last_updated() != output.evaluation_time() || !input.modified()) {
         return;
     }
     copy(input, output);

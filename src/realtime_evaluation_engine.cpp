@@ -65,6 +65,10 @@ void RealtimeEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime s
         wakeup.wait_until(wake_deadline);
     };
     while (!stop_token.stop_requested() && wall_clock.now() < start_time) {
+        callback_runner.run_if_due();
+        if (stop_token.stop_requested() || wall_clock.now() >= start_time) {
+            break;
+        }
         wait_until(start_time);
         callback_runner.run_if_due();
     }
@@ -93,10 +97,10 @@ void RealtimeEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime s
         }
     };
     evaluate(start_time);
+    callback_runner.poll_after_cycle();
 
     auto &root_evaluator = *global_context.root_runtime_graph_evaluator;
     while (true) {
-        callback_runner.run_if_due();
         if (stop_token.stop_requested()) {
             break;
         }
@@ -118,6 +122,7 @@ void RealtimeEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime s
 
         if (cycle_time && *cycle_time <= now) {
             evaluate(*cycle_time);
+            callback_runner.poll_after_cycle();
             continue;
         }
 
@@ -125,6 +130,13 @@ void RealtimeEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime s
         if (wall_time && *wall_time > now && (!deadline || *wall_time < *deadline)) {
             deadline = wall_time;
         }
+        if (callback_runner.run_if_due()) {
+            continue;
+        }
+        if (stop_token.stop_requested()) {
+            break;
+        }
+
         if (deadline) {
             wait_until(*deadline);
         } else if (callback_runner.enabled()) {
@@ -132,6 +144,7 @@ void RealtimeEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime s
         } else {
             wakeup.wait();
         }
+        callback_runner.run_if_due();
     }
 
     callback_runner.run_now();

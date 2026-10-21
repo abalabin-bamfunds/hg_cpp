@@ -87,8 +87,7 @@ class Out<TS<Variable, Properties...>> {
 
     template <typename Input, auto... TimeSeriesProperties, auto... InputProperties>
     void copy_tick(const In<TS<Input, TimeSeriesProperties...>, InputProperties...> &input) const {
-        if (input.last_updated() != state_->evaluation_time() ||
-            (!input.modified() && !input.became_invalid())) {
+        if (input.last_updated() != state_->evaluation_time() || !input.modified()) {
             return;
         }
         copy(input);
@@ -231,8 +230,7 @@ class Out<TS<T, Properties...>> {
 
     template <auto... TimeSeriesProperties, auto... InputProperties>
     void copy_tick(const In<TS<T, TimeSeriesProperties...>, InputProperties...> &input) const {
-        if (input.last_updated() != state_->evaluation_time() ||
-            (!input.modified() && !input.became_invalid())) {
+        if (input.last_updated() != state_->evaluation_time() || !input.modified()) {
             return;
         }
         copy(input);

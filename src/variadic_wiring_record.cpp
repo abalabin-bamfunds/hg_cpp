@@ -20,8 +20,25 @@ VariadicWiringRecord::VariadicWiringRecord(const TimeSeriesType &parameter_type,
                            operations} {}
 
 VariadicWiringRecord::VariadicWiringRecord(WiringPoint collection, VariadicMode mode,
-                                           const VariadicWiringOperations &operations)
-    : WiringRecord{collection.type()}, operations_{&operations}, direct_{collection}, mode_{mode} {}
+                                           const VariadicWiringOperations &operations, allocator *memory)
+    : WiringRecord{collection.type()}, operations_{&operations}, mode_{mode} {
+    const auto original_arguments = operations.original_arguments(collection);
+    if (!original_arguments) {
+        direct_ = collection;
+        return;
+    }
+
+    arguments_.reserve(original_arguments->size());
+    for (const auto &original : *original_arguments) {
+        auto argument = WiringArgument::borrow(original);
+        const auto name = argument.name();
+        if (!name) {
+            throw std::invalid_argument{"an original variadic collection argument requires a name"};
+        }
+        argument.set_variadic_name(*name, mode_);
+        arguments_.push_back(memory == nullptr ? std::move(argument) : argument.clone(*memory));
+    }
+}
 
 std::size_t VariadicWiringRecord::size() const noexcept {
     return direct_ ? operations_->item_count(direct_->type()) : arguments_.size();

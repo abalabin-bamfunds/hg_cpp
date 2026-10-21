@@ -18,7 +18,7 @@ class VariadicWiringRecord final : public WiringRecord {
                          const VariadicWiringOperations &operations, std::vector<WiringArgument> arguments,
                          allocator *memory);
     VariadicWiringRecord(WiringPoint collection, VariadicMode mode,
-                         const VariadicWiringOperations &operations);
+                         const VariadicWiringOperations &operations, allocator *memory = nullptr);
 
     std::size_t size() const noexcept;
     util::symbol item_name(std::size_t index) const;

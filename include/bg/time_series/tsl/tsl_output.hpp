@@ -66,8 +66,7 @@ template <typename Item, auto Size, auto... Properties> class Out<TSL<Item, Size
 
     template <typename InputItem, auto... InputTimeSeriesProperties, auto... InputProperties>
     void copy_tick(const In<TSL<InputItem, Size, InputTimeSeriesProperties...>, InputProperties...> &input) const {
-        if (input.last_updated() != state_->evaluation_time() ||
-            (!input.modified() && !input.became_invalid())) {
+        if (input.last_updated() != state_->evaluation_time() || !input.modified()) {
             return;
         }
         if (!input.valid()) {

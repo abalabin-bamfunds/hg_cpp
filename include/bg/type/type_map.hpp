@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace bg {
 
@@ -28,6 +29,9 @@ class TypeMap {
         const auto found = values_.find(&variable);
 
         if (found != values_.end()) {
+            if (observed_reads_ != nullptr) {
+                observed_reads_->push_back(&variable);
+            }
             return &found->second;
         }
 
@@ -127,6 +131,7 @@ class TypeMap {
     std::unordered_map<const Variable *, TypeMapValue> values_;
     bool matching_structure_only_{};
     bool matching_reference_target_{};
+    std::vector<const Variable *> *observed_reads_{};
     void *missing_mapping_context_{};
     MissingMappingFunction missing_mapping_{};
 };

@@ -50,6 +50,27 @@ TEST_CASE("operator scalar type-variable results retain their identity",
     bg::testing::test_wiring([&] {
         const auto result = named[bg::type<VALUE> = bg::type<double>](2.5);
         CHECK(&result.type() == &bg::TS<double, bg::TimeSeriesGuarantee::const_>::type());
+        CHECK_THROWS_AS((named[bg::type<VALUE> = bg::type<bg::i64>](2.5)), bg::WiringError);
+    });
+}
+
+TEST_CASE("an explicit operator type argument requires an overload that uses it",
+          "[feature:operator][feature:type-system][declaration:generic]") {
+    using VALUE = bg::ScalarVariable<"VALUE">;
+    auto operation = bg::operator_<VALUE, auto(bg::TS_T) -> bg::TS_T>{"explicit_type_selection", {"value"}};
+    operation.overload(bg::graph("name"_n = "concrete", [](bg::wp<bg::TS<bg::i64>> value) { return value; }));
+
+    bg::testing::test_wiring([&] {
+        const auto value = bg::operators::const_(bg::i64{3});
+        CHECK(&operation(value).type() == &value.type());
+        CHECK_THROWS_AS((operation[bg::type<bg::i64>](value)), bg::WiringError);
+    });
+
+    operation.overload(bg::graph("name"_n = "generic", [](bg::wp<bg::TS<VALUE>> value) { return value; }));
+    bg::testing::test_wiring([&] {
+        const auto value = bg::operators::const_(bg::i64{3});
+        CHECK(&operation[bg::type<bg::i64>](value).type() == &value.type());
+        CHECK_THROWS_AS((operation[bg::type<double>](value)), bg::WiringError);
     });
 }
 
@@ -510,6 +531,36 @@ TEST_CASE("opt selects optional inputs and keeps that choice distinct in the cac
     });
 }
 
+TEST_CASE("valid_items selects capable overloads and prefers ordinary inputs otherwise",
+          "[feature:operator][feature:wiring][feature:validity][series:tsd]"
+          "[input-guarantee:valid-items]") {
+    auto selected = std::string{};
+    using TSD = bg::TSD<bg::i64, bg::TS<bg::i64>>;
+    auto operation = bg::operator_<auto(TSD) -> bg::TS<bg::i64>>{"valid_items", {"value"}};
+    operation.overload(bg::graph("name"_n = "ordinary", [&](bg::wp<TSD> value) {
+        selected = "ordinary";
+        return value;
+    }));
+    operation.overload(bg::graph("name"_n = "valid_items", [&](bg::wp<TSD, bg::valid_items> value) {
+        selected = "valid_items";
+        return value;
+    }));
+
+    const auto source = bg::node([](bg::Out<TSD>) {});
+    bg::testing::test_wiring([&] {
+        const auto value = source();
+
+        (void)operation(value);
+        CHECK(selected == "ordinary");
+
+        (void)operation(bg::valid_items(value));
+        CHECK(selected == "valid_items");
+
+        (void)operation(value);
+        CHECK(selected == "ordinary");
+    });
+}
+
 TEST_CASE("scalar-only overloads prefer presence and keep absent calls distinct in the cache",
           "[feature:operator][feature:wiring][scalar:integer][definition:function]") {
     const auto required = bg::graph("name"_n = "requires_presence", [](bg::i64 value) {
@@ -808,6 +859,81 @@ TEST_CASE("conflicting required-input preferences remain ambiguous",
         REQUIRE(error.diagnostic());
         CHECK(error.diagnostic()->ambiguous);
         CHECK(error.diagnostic()->candidates.size() == 2);
+    }
+}
+
+TEST_CASE("named validity preferences align with supplied arguments",
+          "[feature:operator][feature:wiring][feature:validity][input-guarantee:valid-items][series:tsd]") {
+    const auto source = bg::node([](bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>>) {});
+    const auto left_first = bg::graph(
+        "name"_n = "left_first",
+        [](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "left"_n, bg::valid_items>,
+           bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "right"_n>) {});
+    const auto right_first = bg::graph(
+        "name"_n = "right_first",
+        [](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "right"_n>,
+           bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "left"_n, bg::valid_items>) {});
+
+    for (const auto reverse : {false, true}) {
+        auto operation = bg::operator_<auto(bg::TS_T, bg::TS_T) -> void>{"validity", {"left", "right"}};
+        if (reverse) {
+            operation.overload(right_first);
+            operation.overload(left_first);
+        } else {
+            operation.overload(left_first);
+            operation.overload(right_first);
+        }
+
+        try {
+            bg::testing::test_wiring([&] {
+                operation("left"_n = bg::valid_items(source()), "right"_n = source());
+            });
+            FAIL("expected named validity preferences to be ambiguous");
+        } catch (const bg::WiringError &error) {
+            REQUIRE(error.diagnostic());
+            CHECK(error.diagnostic()->ambiguous);
+            CHECK(error.diagnostic()->candidates.size() == 2);
+        }
+    }
+}
+
+TEST_CASE("positional validity preferences follow supplied argument order",
+          "[feature:operator][feature:wiring][feature:validity][input-guarantee:valid-items][series:tsd]") {
+    const auto source = bg::node([](bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>>) {});
+
+    for (const auto reverse : {false, true}) {
+        auto selected = std::string{};
+        auto operation = bg::operator_<auto(bg::TS_T, bg::TS_T) -> void>{"validity", {"left", "right"}};
+        if (reverse) {
+            operation.overload(bg::graph("name"_n = "right_first",
+                                         [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "right"_n>,
+                                             bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "left"_n,
+                                                    bg::valid_items>) {
+                                             selected = "right_first";
+                                         }));
+            operation.overload(bg::graph("name"_n = "left_first",
+                                         [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "left"_n,
+                                                       bg::valid_items>,
+                                             bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "right"_n>) {
+                                             selected = "left_first";
+                                         }));
+        } else {
+            operation.overload(bg::graph("name"_n = "left_first",
+                                         [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "left"_n,
+                                                       bg::valid_items>,
+                                             bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "right"_n>) {
+                                             selected = "left_first";
+                                         }));
+            operation.overload(bg::graph("name"_n = "right_first",
+                                         [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "right"_n>,
+                                             bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, "left"_n,
+                                                    bg::valid_items>) {
+                                             selected = "right_first";
+                                         }));
+        }
+
+        bg::testing::test_wiring([&] { operation(bg::valid_items(source()), source()); });
+        CHECK(selected == "left_first");
     }
 }
 

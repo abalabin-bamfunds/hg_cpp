@@ -122,6 +122,25 @@ def test_delta_value_is_none_when_an_input_did_not_change():
     assert observed[1] == (False, None, False, None)
 
 
+def test_delta_value_is_none_after_input_invalidation():
+    observed = []
+
+    @bg.compute_node
+    def inspect(trigger: bg.TS[int], value: bg.TSL[bg.TS[int], 2]) -> bg.TS[int]:
+        item = value[0]
+        observed.append((item.valid, item.modified, item.delta_value))
+        return trigger.value
+
+    @bg.graph
+    def graph(trigger: bg.TS[int], value: bg.TSL[bg.TS[int], 2]) -> bg.TS[int]:
+        return inspect(trigger, value)
+
+    assert bg.test_graph(
+        graph, [1, 2, 3, 4], [{0: 10, 1: 1}, {0: bg.INVALID}, None, {0: 20}]
+    ) == [1, 2, 3, 4]
+    assert observed == [(True, True, 10), (False, True, None), (False, False, None), (True, True, 20)]
+
+
 def test_time_series_set_removed_markers_apply_recursively_in_dictionary():
     @bg.compute_node
     def make_dictionary(trigger: bg.TS[int]) -> bg.TSD[int, bg.TSS[int]]:

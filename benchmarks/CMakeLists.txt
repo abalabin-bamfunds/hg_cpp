@@ -4,6 +4,9 @@ target_link_libraries(bg_container_benchmark PRIVATE bg::bg)
 add_executable(bg_runtime_scheduling_benchmark runtime_scheduling_benchmark.cpp)
 target_link_libraries(bg_runtime_scheduling_benchmark PRIVATE bg::bg)
 
+add_executable(bg_queue_realtime_benchmark queue_realtime_benchmark.cpp)
+target_link_libraries(bg_queue_realtime_benchmark PRIVATE bg::bg Threads::Threads)
+
 add_executable(bg_evaluation_context_benchmark evaluation_context_benchmark.cpp)
 target_link_libraries(bg_evaluation_context_benchmark PRIVATE bg::bg)
 
@@ -15,6 +18,9 @@ target_link_libraries(bg_scalar_dict_benchmark PRIVATE bg::bg)
 
 add_executable(bg_tsd_selected_reference_benchmark tsd_selected_reference_benchmark.cpp)
 target_link_libraries(bg_tsd_selected_reference_benchmark PRIVATE bg::bg)
+
+add_executable(bg_tsd_membership_benchmark tsd_membership_benchmark.cpp)
+target_link_libraries(bg_tsd_membership_benchmark PRIVATE bg::library)
 
 add_executable(bg_high_count_map_benchmark high_count_map_benchmark.cpp)
 target_link_libraries(bg_high_count_map_benchmark PRIVATE bg::bg)

@@ -231,6 +231,28 @@ TEST_CASE("invalidating a list invalidates its items",
     CHECK(updated_item_counts == std::vector<std::size_t>{1, 0, 1});
 }
 
+TEST_CASE("a list child input reports its invalidation as modified",
+          "[evaluation][tsl][series:fixed-tsl][validity][transition:invalidation]"
+          "[transition:revalidation][feature:collection-change]") {
+    auto states = std::vector<std::array<bool, 4>>{};
+    const auto observe = node([&](In<TSL<TS<i64>, 2>> input, In<TS<i64>>, Out<TS<bool>> output) {
+        const auto item = input[0];
+        states.push_back({item.valid(), item.became_valid(), item.became_invalid(), item.modified()});
+        output.set(item.became_invalid() && item.modified());
+    });
+    const auto graph = [&](wp<TSL<TS<i64>, 2>> input, wp<TS<i64>> trigger) { return observe(input, trigger); };
+
+    const auto actual = testing::test_graph(
+        graph, {{{0, 10}, {1, 1}}, {{0, literal::INVALID}}, {{0, 20}}}, {1, 2, 3});
+
+    CHECK(actual.equals({false, true, false}));
+    CHECK(states == std::vector<std::array<bool, 4>>{
+        {true, true, false, true},
+        {false, false, true, true},
+        {true, true, false, true},
+    });
+}
+
 TEST_CASE("a list remains valid while one item remains valid",
           "[evaluation][tsl][series:fixed-tsl][validity][feature:collection-change][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct]") {

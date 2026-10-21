@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bg/evaluation_time.hpp>
-#include <bg/graph/dynamic_node_subscriber.hpp>
+#include <bg/graph/dynamic_node_subscriber_storage.hpp>
 #include <bg/time_series/time_series_state.hpp>
 #include <bg/time_series/item_id.hpp>
 #include <bg/util/tagged_ptr.hpp>
@@ -35,21 +35,7 @@ using Reference = util::variant_ptr_with_alignment<alignof(void *), details::Roo
 
 namespace details {
 
-// The destination tag distinguishes inline, allocated, and provider-owned
-// notification state without adding work to the compiled-node lookup.
-struct RootNotifications {
-    using Destination =
-        util::variant_ptr_with_alignment<alignof(void *), RuntimeGraph, DynamicSubscribers, ReferenceProvider>;
-
-    DynamicNodeSubscriber inline_subscriber() const noexcept {
-        assert(destination.holds<RuntimeGraph>());
-        return DynamicNodeSubscriber{*destination.get<RuntimeGraph>(), input_offset, node_and_flags};
-    }
-
-    Destination destination;
-    std::uint32_t input_offset{};
-    std::uint32_t node_and_flags{};
-};
+using RootNotifications = DynamicNodeSubscriberStorage<ReferenceProvider>;
 
 struct ResolvedTimeSeries {
     static ResolvedTimeSeries resolve(Reference reference);
@@ -191,23 +177,14 @@ struct RootReference {
 
     ReferenceProvider *provider() const noexcept { return notifications_.destination.get<ReferenceProvider>(); }
 
-    void set_inline_subscriber(DynamicNodeSubscriber subscriber) noexcept {
-        assert(!notifications_.destination);
-        notifications_.input_offset = subscriber.input_offset;
-        notifications_.node_and_flags = subscriber.node_and_flags;
-        notifications_.destination = subscriber.graph;
-    }
-
-    void set_dynamic_subscribers(DynamicSubscribers *subscribers) noexcept {
-        assert(subscribers != nullptr);
-        assert(!notifications_.destination || has_inline_subscriber());
-        notifications_.destination = subscribers;
-    }
-
     void set_provider(ReferenceProvider &provider) noexcept {
         assert(!notifications_.destination || has_dynamic_subscribers());
         notifications_.destination = &provider;
     }
+
+    void add_subscriber(DynamicNodeSubscriber subscriber);
+    void remove_subscriber(RuntimeGraph &graph, std::size_t input_offset) noexcept;
+    void release_subscribers() noexcept;
 
     DynamicSubscribers &promote_subscribers();
 

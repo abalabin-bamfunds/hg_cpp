@@ -91,10 +91,15 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
         }
     }
 
+    // Visits borrowed views of current members. The callback may erase the member it receives, but must not insert.
+    template <typename Function> void for_each(Function &&function) const {
+        const In<TSS<K, Properties...>> input{state_->mutable_last_updated(), state_->data(), state_->runtime_type()};
+        input.for_each(std::forward<Function>(function));
+    }
+
     template <auto... InputTimeSeriesProperties, auto... InputProperties>
     void copy_tick(const In<TSS<K, InputTimeSeriesProperties...>, InputProperties...> &input) const {
-        if (input.last_updated() != state_->evaluation_time() ||
-            (!input.modified() && !input.became_invalid())) {
+        if (input.last_updated() != state_->evaluation_time() || !input.modified()) {
             return;
         }
         if (!input.valid() && !valid()) {
@@ -117,22 +122,15 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
             return;
         }
 
-        const auto &runtime = static_cast<const details::TimeSeriesSetRuntimeType &>(state_->runtime_type());
         if (!valid()) {
             clear();
         }
 
-        auto id = runtime.set_next_item_id(state_->mutable_last_updated(), state_->data(),
-                                           details::TimeSeriesSetRuntimeType::Range::current, 0);
-        while (id != util::occupancy_index::npos) {
-            const auto next_id = runtime.set_next_item_id(state_->mutable_last_updated(), state_->data(),
-                                                         details::TimeSeriesSetRuntimeType::Range::current, id + 1);
-            const auto item = Scalar<K>::from(key_runtime_type(), runtime.set_key(state_->data(), id));
+        for_each([&](const auto &item) {
             if (!input.contains(item)) {
                 erase(item);
             }
-            id = next_id;
-        }
+        });
 
         input.for_each([&](const auto &item) { insert(item); });
     }

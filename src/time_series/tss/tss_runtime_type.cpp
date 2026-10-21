@@ -48,6 +48,11 @@ item_id_t TimeSeriesSetRuntimeType::find_set_item(const void *value, const Scala
                : util::occupancy_index::npos;
 }
 
+item_id_t TimeSeriesSetRuntimeType::find_set_key(const void *value, const ScalarData &key) const {
+    const auto layout = util::runtime_item_layout{key_->size(), key_->alignment()};
+    return static_cast<const time_series_set_storage *>(value)->find_position(key, *key_, layout);
+}
+
 bool TimeSeriesSetRuntimeType::set_was_added(const TimeSeriesState &last_updated, const void *value,
                                              const ScalarData &key) const {
     const auto &storage = *static_cast<const time_series_set_storage *>(value);
@@ -73,6 +78,17 @@ bool TimeSeriesSetRuntimeType::set_was_removed(const TimeSeriesState &last_updat
 const void *TimeSeriesSetRuntimeType::set_key(const void *value, item_id_t id) const noexcept {
     const auto layout = util::runtime_item_layout{key_->size(), key_->alignment()};
     return static_cast<const time_series_set_storage *>(value)->key(id, layout);
+}
+
+RetainedSetKey TimeSeriesSetRuntimeType::retain_key(void *value, const ScalarData &key, allocator &memory) const {
+    const auto layout = util::runtime_item_layout{key_->size(), key_->alignment()};
+    auto &storage = *static_cast<time_series_set_storage *>(value);
+    return {this, value, storage.retain(key, *key_, layout, memory)};
+}
+
+void TimeSeriesSetRuntimeType::release_key(void *value, item_id_t id, allocator &memory) const noexcept {
+    const auto layout = util::runtime_item_layout{key_->size(), key_->alignment()};
+    static_cast<time_series_set_storage *>(value)->release_retention(id, *key_, layout, memory);
 }
 
 item_id_t TimeSeriesSetRuntimeType::set_next_item_id(const TimeSeriesState &last_updated, const void *value, Range range,

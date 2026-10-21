@@ -205,8 +205,13 @@ class CallArguments {
 nanobind::object PythonNodeDefinition::CompiledData::argument(Invocation invocation, std::size_t index,
                                                               CallbackScope &callback, bool retain_scalar) const {
     const auto &parameter = parameters[index];
-    if (parameter.mode == ParameterMode::input_view) {
+    if (parameter.mode == ParameterMode::input_view || parameter.mode == ParameterMode::input_view_valid_items) {
         auto input = invocation.input<In<TS_T>>(index);
+        if (parameter.mode == ParameterMode::input_view_valid_items) {
+            auto data = input.input_data();
+            data.set_valid_items(true);
+            input = In<TS_T>{data};
+        }
         return make_input_view(input, scalar_conversions(), lifetime, callback.generation());
     }
 
@@ -650,6 +655,8 @@ PythonNodeDefinition::CompiledData PythonNodeDefinition::compile(const ResolvedS
         auto mode = time_series ? ParameterMode::input_view : ParameterMode::scalar;
         if (time_series && pass_time_series_values_) {
             mode = ParameterMode::time_series_value;
+        } else if (time_series && parameter.valid_items) {
+            mode = ParameterMode::input_view_valid_items;
         }
 
         parameter_conversions.push_back({mode});

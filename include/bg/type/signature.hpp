@@ -37,6 +37,7 @@ struct Parameter {
     bool context{};
     bool dynamic_activity{};
     std::shared_ptr<const GraphArgumentConstraint> graph_constraint{};
+    bool valid_items{};
 };
 
 struct VariableResolver {
@@ -68,6 +69,7 @@ struct ResolvedParameter {
     details::VariadicMode variadic_mode{details::VariadicMode::none};
     bool context{};
     bool dynamic_activity{};
+    bool valid_items{};
 };
 
 struct ResolvedSignature {
@@ -131,7 +133,8 @@ class Signature {
     // original descriptors and scalar-read tracking; resolved_type() observes this match's type map.
     [[nodiscard]] ResolvedWiringSignatureMatch complete_wiring_match(
         WiringSignatureMatch match, const WiringArguments &argument_context,
-        const std::function<void(const TypeMap &)> &completion = {}) const;
+        const std::function<void(const TypeMap &)> &completion = {},
+        std::vector<const Variable *> *observed_type_variables = nullptr) const;
     [[nodiscard]] TypeMap match_arguments(std::span<const Type *const> arguments,
                                           const TypeMap *type_map = nullptr) const;
     void validate_wiring_arguments(std::span<const WiringArgument> arguments) const;
@@ -139,7 +142,8 @@ class Signature {
     // It must not retain that lookup scope.
     [[nodiscard]] ResolvedSignature complete_resolution(
         TypeMap &type_map, const WiringArguments *arguments = nullptr,
-        const std::function<void(const TypeMap &)> &completion = {}) const;
+        const std::function<void(const TypeMap &)> &completion = {},
+        std::vector<const Variable *> *observed_type_variables = nullptr) const;
 
     util::symbol name() const noexcept { return name_; }
 

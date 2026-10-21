@@ -8,6 +8,7 @@ from bg._bg_test_extension import (
     native_gil,
     native_node_lifecycle,
     native_python_exception,
+    native_python_object_property,
     native_start_only_source,
     native_stop_exception,
     reset_native_node_lifecycle,
@@ -50,6 +51,35 @@ def test_native_cpp_node_propagates_python_exception_from_callback():
         return native_python_exception(value)
 
     with pytest.raises(ValueError, match="native node Python failure"):
+        bg.test_graph(graph, [1])
+
+
+def test_native_cpp_node_converts_python_object_using_resolved_covariant_type():
+    class Base:
+        pass
+
+    class Derived(Base):
+        @property
+        def native_result(self) -> "Derived":
+            return self
+
+    value = Derived()
+
+    @bg.graph
+    def graph(value: bg.TS[Base]) -> bg.TS[Base]:
+        return native_python_object_property(value)
+
+    result = bg.test_graph(graph, [value])[0]
+    assert type(result) is Derived
+    assert result is value
+
+
+def test_native_cpp_node_rejects_builtin_scalar_for_python_object_input():
+    @bg.graph
+    def graph(value: bg.TS[int]) -> bg.TS[int]:
+        return native_python_object_property(value)
+
+    with pytest.raises(ValueError, match="Cannot resolve operator native_python_object_property"):
         bg.test_graph(graph, [1])
 
 

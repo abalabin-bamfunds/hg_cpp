@@ -172,6 +172,12 @@ For each candidate, resolution proceeds in this order:
 4. Run the requirement while resolver lookup remains active.
 5. Retain the candidate when each demand and its requirement succeeds.
 
+An explicit operator type argument makes an overload applicable when its
+signature, additional type resolution, or requirement uses that variable.
+A concrete overload also accepts a variable used directly as a scalar prototype
+parameter when its corresponding parameter has the requested type. Other
+overloads reject the explicit argument even when their inferred output matches.
+
 Resolvers run only when signature resolution, template metadata, requirements, or
 another resolver requests their variable. A resolver can request dependencies
 through `TypeMap::find`. The resolver lookup scope closes before the candidate
@@ -250,6 +256,19 @@ receives.
 
 Use `default_(point, fallback)` when every consumer should read the supplied
 fallback while the point is invalid.
+
+## Valid-item arguments
+
+`valid_items(point)` requires a receiving parameter with the `valid_items`
+input guarantee. The selected input view filters
+[immediate TSD items](time-series-validity.md#collections); the annotation does
+not modify the time series or create a filtered collection.
+
+For unmarked arguments, an otherwise equivalent parameter without
+`valid_items` is preferred. This preference combines with input validity and
+scalar presence under the same rule: the selected overload must be at least as
+preferred at every parameter and strictly preferred at one. Conflicting
+preferences remain ambiguous.
 
 ## Resolvers
 
@@ -448,12 +467,13 @@ resolve independently. Destroying the root releases cached scalar values and
 graph structures. Registering an overload invalidates cached resolutions for
 that operator in every root.
 
-Cache keys include supplied
-argument types, presence, and `opt` qualifiers, explicit type mappings, and
-only the wiring-time scalar values read by a resolver or requirement function.
-Qualifiers inside forwarded variadic records also contribute to the key. Reads
+Cache keys include supplied argument types, presence, `opt` and `valid_items`
+annotations, explicit type mappings, and only the wiring-time scalar values
+read by a resolver or requirement function. Free TSB fields contribute their
+original argument categories and annotations. Annotations inside forwarded
+variadic records also contribute to the key. Reads
 made by rejected candidates are part of the key when they can affect the selected
-result. The key also includes the presence, type, and qualifier of every implicit
+result. The key also includes the presence, type, and annotations of every implicit
 context value that can affect overload selection. Cache validation rebuilds the flat
 argument sequence for the candidate that made each read.
 

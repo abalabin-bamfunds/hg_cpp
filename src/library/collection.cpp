@@ -16,6 +16,7 @@ namespace {
 using namespace bg::literals;
 
 inline constexpr auto G = guarantee_variable<"G">;
+using K = ScalarVariable<"K", Hashable>;
 
 struct collection_overloads {
     // Length.
@@ -52,16 +53,120 @@ struct collection_overloads {
     overload<len_> len_symbol{[](symbol value) { return static_cast<i64>(value.text().size()); }};
 
     // Membership.
-    overload<contains_> contains_tss{
-        [](In<TSS<K, G>> collection, In<TS<K, G>> key,
-           Out<TS<bool, G>> output) {
-            output.set(collection.contains(key.value_view()));
-        }};
+    struct contains_tss_scalar_definition {
+        static constexpr bool uses_cycle_callbacks = true;
 
-    overload<contains_> contains_tss_scalar{
-        [](In<TSS<K, G>> collection, Scalar<K> key, Out<TS<bool, G>> output) {
-            output.set(collection.contains(key));
-        }};
+        In<REF<TSS<K, G>, G>> collection;
+        Scalar<K> key;
+        In<TS<bool, G>, optional, dynamic_binding> membership;
+        Out<TS<bool, G>> output;
+
+        void evaluate() const {
+            membership.bind(collection.membership(key));
+            output.copy(membership);
+        }
+
+        void on_invalidation() const {
+            membership.unbind();
+            output.invalidate();
+        }
+    };
+
+    overload<contains_> contains_tss_scalar{bg::node<contains_tss_scalar_definition>()};
+
+    struct contains_tss_time_series_key_definition {
+        static constexpr bool uses_cycle_callbacks = true;
+
+        In<REF<TSS<K, G>, G>> collection;
+        In<TS<K, G>> key;
+        In<TS<bool, G>, optional, dynamic_binding> membership;
+        Out<TS<bool, G>> output;
+
+        void evaluate() const {
+            membership.bind(collection.membership(key.value_view()));
+            output.copy(membership);
+        }
+
+        void on_invalidation() const {
+            membership.unbind();
+            output.invalidate();
+        }
+    };
+
+    overload<contains_> contains_tss_time_series_key{bg::node<contains_tss_time_series_key_definition>()};
+
+    template <bool ValidItems> struct contains_tsd_scalar_definition {
+        static constexpr bool uses_cycle_callbacks = true;
+
+        In<REF<TSD<K, TS_T, G>, G>> collection;
+        Scalar<K> key;
+        In<TS<bool, G>, optional, dynamic_binding> membership;
+        Out<TS<bool, G>> output;
+
+        void evaluate() const {
+            if constexpr (ValidItems) {
+                membership.bind(collection.valid_item_membership(key));
+            } else {
+                membership.bind(collection.membership(key));
+            }
+            output.copy(membership);
+        }
+
+        void on_invalidation() const {
+            membership.unbind();
+            output.invalidate();
+        }
+    };
+
+    overload<contains_> contains_tsd_scalar{bg::node<contains_tsd_scalar_definition<false>>()};
+
+    overload<contains_> contains_tsd_physical_scalar{graph([](wp<TSD<K, TS_T, G>> collection, Scalar<K> key) {
+        static const auto contains = bg::node<contains_tsd_scalar_definition<false>>();
+        return contains(collection, key);
+    })};
+
+    overload<contains_> contains_tsd_valid_items_scalar{graph([](wp<TSD<K, TS_T, G>, valid_items> collection,
+                                                                   Scalar<K> key) {
+        static const auto contains = bg::node<contains_tsd_scalar_definition<true>>();
+        return contains(static_cast<WiringPoint>(collection), key);
+    })};
+
+    template <bool ValidItems> struct contains_tsd_time_series_key_definition {
+        static constexpr bool uses_cycle_callbacks = true;
+
+        In<REF<TSD<K, TS_T, G>, G>> collection;
+        In<TS<K, G>> key;
+        In<TS<bool, G>, optional, dynamic_binding> membership;
+        Out<TS<bool, G>> output;
+
+        void evaluate() const {
+            if constexpr (ValidItems) {
+                membership.bind(collection.valid_item_membership(key.value_view()));
+            } else {
+                membership.bind(collection.membership(key.value_view()));
+            }
+            output.copy(membership);
+        }
+
+        void on_invalidation() const {
+            membership.unbind();
+            output.invalidate();
+        }
+    };
+
+    overload<contains_> contains_tsd_time_series_key{bg::node<contains_tsd_time_series_key_definition<false>>()};
+
+    overload<contains_> contains_tsd_physical_time_series_key{
+        graph([](wp<TSD<K, TS_T, G>> collection, wp<TS<K, G>> key) {
+            static const auto contains = bg::node<contains_tsd_time_series_key_definition<false>>();
+            return contains(collection, key);
+        })};
+
+    overload<contains_> contains_tsd_valid_items_time_series_key{
+        graph([](wp<TSD<K, TS_T, G>, valid_items> collection, wp<TS<K, G>> key) {
+            static const auto contains = bg::node<contains_tsd_time_series_key_definition<true>>();
+            return contains(static_cast<WiringPoint>(collection), key);
+        })};
 
     overload<contains_> contains_list{
         [](In<TS<List<EQUALITY_SCALAR>, G>> collection, In<TS<EQUALITY_SCALAR, G>> item,

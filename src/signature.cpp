@@ -9,6 +9,7 @@
 #include <bg/type/size_variable.hpp>
 #include <bg/type/details/resolver_type_resolution_error.hpp>
 #include <bg/type/schema.hpp>
+#include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_variable.hpp>
 #include <bg/type/type_variable.hpp>
@@ -122,7 +123,8 @@ bool same_resolved_signature(const ResolvedSignature &left, const ResolvedSignat
 
     return std::ranges::equal(left.parameters, right.parameters,
                               [](const auto &left_parameter, const auto &right_parameter) {
-                                  return left_parameter.type == right_parameter.type;
+                                  return left_parameter.type == right_parameter.type &&
+                                         left_parameter.valid_items == right_parameter.valid_items;
                               });
 }
 
@@ -392,6 +394,21 @@ Signature::match_wiring_arguments(std::span<const WiringArgument> arguments, con
         if (index == arguments.size()) {
             try {
                 auto candidate_mappings = match_arguments(offered_types, seed);
+                for (const auto &form : selected_forms) {
+                    const auto &argument = arguments[form.argument_index];
+                    if (!argument.annotations().valid_items) {
+                        continue;
+                    }
+                    const auto &resolved_type = form.offered_type->resolve(candidate_mappings);
+                    const auto *time_series = type_cast<TimeSeriesType>(&resolved_type);
+                    if (time_series == nullptr ||
+                        type_cast<TimeSeriesDictionaryType>(&time_series->target_type()) == nullptr) {
+                        const auto &parameter = parameters_[form.argument_index];
+                        throw TypeResolutionError{TypeResolutionErrorCode::mismatch, parameter.name,
+                                                  "a valid_items-qualified argument requires a TSD form",
+                                                  parameter.type, form.offered_type};
+                    }
+                }
                 matches.push_back({std::move(candidate_mappings), selected_forms, materialisation_cost()});
             } catch (const TypeResolutionError &error) {
                 if (error.code() != TypeResolutionErrorCode::mismatch &&
@@ -431,6 +448,11 @@ void Signature::validate_wiring_arguments(std::span<const WiringArgument> argume
                                       "an opt-qualified argument requires an optional input parameter",
                                       parameter.type, &argument.type()};
         }
+        if (argument.annotations().valid_items && !parameter.valid_items) {
+            throw TypeResolutionError{TypeResolutionErrorCode::mismatch, parameter.name,
+                                      "a valid_items-qualified argument requires a valid_items input parameter",
+                                      parameter.type, &argument.type()};
+        }
         if (argument.is_scalar() && !argument.present() && !parameter.accepts_absent_scalar) {
             throw TypeResolutionError{TypeResolutionErrorCode::mismatch, parameter.name,
                                       "a required scalar parameter has no value", parameter.type, &argument.type()};
@@ -440,19 +462,27 @@ void Signature::validate_wiring_arguments(std::span<const WiringArgument> argume
 
 ResolvedWiringSignatureMatch Signature::complete_wiring_match(
     WiringSignatureMatch match, const WiringArguments &argument_context,
-    const std::function<void(const TypeMap &)> &completion) const {
+    const std::function<void(const TypeMap &)> &completion,
+    std::vector<const Variable *> *observed_type_variables) const {
     auto arguments = argument_context.with_type_map(match.type_map);
-    auto signature = complete_resolution(match.type_map, &arguments, completion);
+    auto signature = complete_resolution(match.type_map, &arguments, completion, observed_type_variables);
     auto resolution = SignatureResolution{std::move(signature), std::move(match.type_map)};
     return {std::move(resolution), std::move(match.argument_forms), match.materialisation_cost};
 }
 
 ResolvedSignature Signature::complete_resolution(
     TypeMap &type_map, const WiringArguments *arguments,
-    const std::function<void(const TypeMap &)> &completion) const {
+    const std::function<void(const TypeMap &)> &completion,
+    std::vector<const Variable *> *observed_type_variables) const {
     auto resolver_context = ResolverContext{resolvers_, arguments, std::vector<ResolverState>(resolvers_.size())};
     type_map.missing_mapping_handler(&resolver_context, &resolve_missing_mapping);
     auto clear_handler = util::scope_exit{[&]() noexcept { type_map.missing_mapping_handler(nullptr, nullptr); }};
+
+    auto *previous_reads = type_map.observed_reads_;
+    if (observed_type_variables != nullptr) {
+        type_map.observed_reads_ = observed_type_variables;
+    }
+    auto restore_reads = util::scope_exit{[&]() noexcept { type_map.observed_reads_ = previous_reads; }};
 
     std::vector<ResolvedParameter> parameters;
     parameters.reserve(parameters_.size());
@@ -467,7 +497,7 @@ ResolvedSignature Signature::complete_resolution(
 
         parameters.push_back({parameter.name, &type, parameter.activity, parameter.validity,
                               parameter.accepts_absent_scalar, parameter.variadic_mode, parameter.context,
-                              parameter.dynamic_activity});
+                              parameter.dynamic_activity, parameter.valid_items});
     }
 
     const TimeSeriesType *output = nullptr;

@@ -43,8 +43,10 @@ TEST_CASE("a set input preserves its packed validity state when type erased",
     const auto first_update = bg::MIN_DT + std::chrono::microseconds{1};
     state.publish(first_update);
     CHECK(erased.valid());
+    CHECK_FALSE(erased.became_valid());
+    const auto updated = bg::In<bg::TS_T>{state, nullptr, runtime_type, true};
 
-    const auto became_valid = erased.visit(
+    const auto became_valid = updated.visit(
         [](const bg::In<bg::TSS<bg::SCALAR>> *value) { return value->became_valid(); }, ddv::noop);
 
     REQUIRE(became_valid);
@@ -54,8 +56,9 @@ TEST_CASE("a set input preserves its packed validity state when type erased",
     const auto invalidation_time = first_update + std::chrono::microseconds{1};
     state.invalidate(invalidation_time);
     CHECK_FALSE(erased.valid());
+    const auto invalidated = bg::In<bg::TS_T>{state, nullptr, runtime_type, true};
 
-    const auto became_invalid = erased.visit(
+    const auto became_invalid = invalidated.visit(
         [](const bg::In<bg::TSS<bg::SCALAR>> *value) { return value->became_invalid(); }, ddv::noop);
 
     REQUIRE(became_invalid);

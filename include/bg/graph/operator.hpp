@@ -12,7 +12,7 @@ namespace bg {
 
 class Operator : public WiringTemplate {
   public:
-    explicit Operator(Signature prototype);
+    explicit Operator(Signature prototype, std::span<const Variable *const> type_parameters = {});
     ~Operator() override;
 
     const Signature &default_signature() const final { return prototype_; }
@@ -37,6 +37,7 @@ class Operator : public WiringTemplate {
                                                   std::span<const WiringArgument>) const final;
 
     Signature prototype_;
+    std::vector<const Variable *> type_parameters_;
     std::vector<std::unique_ptr<WiringTemplate>> overloads_;
     std::shared_ptr<const void> cache_identity_{std::make_shared<const char>()};
 };

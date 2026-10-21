@@ -72,9 +72,9 @@ void SimulationEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime
         return next_time;
     };
     evaluate(start_time);
+    callback_runner.poll_after_cycle();
 
     while (true) {
-        callback_runner.run_if_due();
         auto next_time = next_scheduled_time();
         if (!next_time) {
             callback_runner.run_now();
@@ -86,6 +86,7 @@ void SimulationEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime
 
         wall_clock.set_time(*next_time);
         evaluate(*next_time);
+        callback_runner.poll_after_cycle();
     }
 
     const auto stop_time = runtime_graph.evaluation_time();

@@ -46,12 +46,21 @@ time series type and identity and adds no wiring-point storage. See
 [operator optional arguments](operators.md#optional-arguments) for selection
 and invalid-input behavior.
 
+`wp<TSD<K, TS_T>, valid_items>` declares a graph input that requires the
+receiving input view to apply the
+[`valid_items` guarantee](time-series-validity.md#collections).
+`valid_items(point)` supplies this annotation at a call site. Like `opt`, it
+retains the time series type and identity and adds no node or wiring-point
+storage. Both annotations survive graph forwarding, context arguments, and
+materialisation.
+
 `point.as<TS_T>()` returns a typed wiring point when the requested type accepts
 the point's declared type or an advertised materialisation target. Constructing
 `wp<TS_T>` from another wiring point performs the same check using
 [input guarantee rules](type-system.md#time-series-guarantees). Both operations
 retain the original point and actual type without selecting a materialisation.
-`as<TS_T>()` preserves an optional typed point's validity qualifier.
+`as<TS_T>()` preserves the point's `optional` and `valid_items` annotations.
+Typed wiring-point conversions reject discarding either annotation.
 
 `point[key]` forwards to `operators::getitem` and returns its `wp<>` unchanged.
 The selected overload determines the result's semantic type, including its
@@ -78,7 +87,7 @@ normal node. It combines updates from the same cycle and copies no item value.
 same free TSB wiring point. Both forms accept named time series and scalar
 fields. Wiring creates one TSB output when the bundle is consumed; scalar
 fields project to const time series. `args(bundle)` and `kwargs(bundle)` retain
-the original scalar arguments and optional qualifiers when expanding the
+the original scalar arguments and wiring annotations when expanding the
 bundle. Field names can be determined during wiring:
 
 ```cpp
@@ -410,7 +419,9 @@ node definitions, connections, and stored scalar values are semantic. Local
 node indices, wiring paths, and parameter names are not.
 
 `graph(...)` infers the signature from the graph function. A time series
-parameter uses `wp<TS_T>`. Scalar parameters use their scalar types. The return
+parameter uses `wp<TS_T>`. Scalar parameters use their scalar types or
+`Scalar<T>` for borrowed access, including scalar type variables. Forwarding a
+scalar view copies its value into the receiving wiring argument. The return
 type is `wp<TS_T>` or `void`.
 
 Callable and aggregate graph input parameters may use

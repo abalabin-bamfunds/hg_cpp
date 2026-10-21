@@ -103,8 +103,8 @@ consteval bool aggregate_node_has_state(std::index_sequence<Index...>) {
 template <typename Definition> const AggregateNodeDescriptor &aggregate_node_descriptor() {
     constexpr auto MemberCount = util::aggregate_member_count<Definition>;
     using Index = std::make_index_sequence<MemberCount>;
-    constexpr auto HasDynamicReferenceInputs = aggregate_has_dynamic_reference_inputs<Definition>(Index{});
-    constexpr auto HasStoredState = aggregate_node_has_state<Definition>(Index{}) || HasDynamicReferenceInputs;
+    constexpr auto HasDynamicInputs = aggregate_has_dynamic_inputs<Definition>(Index{});
+    constexpr auto HasStoredState = aggregate_node_has_state<Definition>(Index{}) || HasDynamicInputs;
     static_assert(!aggregate_node_has_finalize<Definition> || HasStoredState,
                   "an aggregate node with finalize() must contain state");
     static constexpr auto parameter_runtime_type_uses = aggregate_parameter_runtime_type_uses<Definition>(Index{});
@@ -131,7 +131,7 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
         .schedule_on_start = aggregate_schedules_on_start<Definition>(),
         .stop_function =
             [] {
-                if constexpr (aggregate_node_has_stop<Definition> || HasDynamicReferenceInputs) {
+                if constexpr (aggregate_node_has_stop<Definition> || HasDynamicInputs) {
                     return &stop_aggregate_node<Definition>;
                 } else {
                     return NodeFunction{};
@@ -177,7 +177,7 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
             [] {
                 if constexpr (aggregate_node_has_finalize<Definition> ||
                               aggregate_state_requires_destruction<Definition>(Index{}) ||
-                              HasDynamicReferenceInputs) {
+                              HasDynamicInputs) {
                     return static_cast<NodeFunction>(&finalize_aggregate_node_state<Definition>);
                 } else {
                     return NodeFunction{};
@@ -192,14 +192,14 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
                     return AggregateStateTypesFunction{};
                 }
             }(),
-        .dynamic_reference_input_types =
+        .dynamic_input_types =
             [] {
-                if constexpr (HasDynamicReferenceInputs) {
-                    return AggregateDynamicReferenceInputTypesFunction{[](const TypeMap &type_map) {
-                        return aggregate_dynamic_reference_input_types<Definition>(type_map, Index{});
+                if constexpr (HasDynamicInputs) {
+                    return AggregateDynamicInputTypesFunction{[](const TypeMap &type_map) {
+                        return aggregate_dynamic_input_types<Definition>(type_map, Index{});
                     }};
                 } else {
-                    return AggregateDynamicReferenceInputTypesFunction{};
+                    return AggregateDynamicInputTypesFunction{};
                 }
             }(),
         .requirement =
@@ -224,6 +224,7 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
             return false;
         }(),
         .uses_timed_scheduling = aggregate_uses_timed_scheduling<Definition>(),
+        .uses_cycle_callbacks = aggregate_uses_cycle_callbacks<Definition>(),
         .deduplicate_wiring =
             [] {
                 if constexpr (requires { Definition::deduplicate_wiring; }) {

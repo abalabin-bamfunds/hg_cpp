@@ -53,8 +53,9 @@ class BG_PYTHON_API PythonWiringLifetime {
 class BG_PYTHON_API PythonWiringPoint {
   public:
     PythonWiringPoint(WiringPoint point, std::shared_ptr<PythonWiringLifetime> lifetime,
-                      bool requires_optional = false) noexcept
-        : point_{point}, lifetime_{std::move(lifetime)}, requires_optional_{requires_optional} {}
+                      bool requires_optional = false, bool requires_valid_items = false) noexcept
+        : point_{point}, lifetime_{std::move(lifetime)}, requires_optional_{requires_optional},
+          requires_valid_items_{requires_valid_items} {}
 
     WiringPoint get(const GraphWiring &wiring) const {
         lifetime_->check(wiring);
@@ -64,6 +65,7 @@ class BG_PYTHON_API PythonWiringPoint {
     WiringArgument argument(const GraphWiring &wiring) const;
 
     PythonWiringPoint as_optional() const;
+    PythonWiringPoint as_valid_items() const;
 
     bool has_output() const {
         lifetime_->check();
@@ -79,6 +81,7 @@ class BG_PYTHON_API PythonWiringPoint {
     WiringPoint point_;
     std::shared_ptr<PythonWiringLifetime> lifetime_;
     bool requires_optional_{};
+    bool requires_valid_items_{};
 };
 
 class BG_PYTHON_API PythonWiringScope {

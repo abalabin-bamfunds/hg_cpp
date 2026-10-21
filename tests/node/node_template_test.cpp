@@ -79,18 +79,54 @@ struct dynamic_reference_input_node {
 } // namespace
 
 TEST_CASE("a dynamic reference input is internal to an aggregate node",
-          "[node_template][feature:node-api][feature:reference][definition:aggregate]") {
+          "[node_template][feature:node-api][feature:reference][definition:aggregate]"
+          "[series:reference][guarantee:ordinary][guarantee:final]") {
     const auto node = bg::node<dynamic_input_test::dynamic_reference_input_node>();
-    const std::array<const bg::Type *, 1> arguments{&bg::TSD<bg::i64, bg::TS<float>>::type()};
 
-    const auto resolution = node.signature().resolve_with_type_map(arguments);
-    const auto dynamic_inputs = node.dynamic_reference_input_types(resolution.type_map);
+    const auto check_dynamic_reference = [&](const bg::Type &argument, bg::TimeSeriesGuarantee guarantee,
+                                             const bg::Type &target) {
+        const std::array<const bg::Type *, 1> arguments{&argument};
+        const auto resolution = node.signature().resolve_with_type_map(arguments);
+        const auto dynamic_inputs = node.dynamic_input_types(resolution.type_map);
 
-    REQUIRE(resolution.signature.parameters.size() == 1);
-    CHECK(resolution.signature.parameters[0].name.text() == "dictionary");
+        REQUIRE(resolution.signature.parameters.size() == 1);
+        CHECK(resolution.signature.parameters[0].name.text() == "dictionary");
+        REQUIRE(dynamic_inputs.size() == 1);
+        CHECK(dynamic_inputs[0] == resolution.signature.output);
+        const auto &reference = static_cast<const bg::TimeSeriesReferenceType &>(*dynamic_inputs[0]);
+        CHECK(reference.guarantee().value() == guarantee);
+        CHECK(&reference.target_type() == &target);
+    };
+
+    check_dynamic_reference(bg::TSD<bg::i64, bg::TS<float>>::type(), bg::TimeSeriesGuarantee::ordinary,
+                            bg::TS<float>::type());
+    check_dynamic_reference(bg::TSD<bg::i64, bg::TS<float>, bg::TimeSeriesGuarantee::final>::type(),
+                            bg::TimeSeriesGuarantee::final,
+                            bg::TS<float, bg::TimeSeriesGuarantee::final>::type());
+}
+
+namespace {
+namespace dynamic_input_test {
+
+struct dynamic_reference_input_default_guarantee_node {
+    bg::In<bg::REF<bg::TS<float>>, bg::dynamic_binding, bg::optional> item;
+
+    void evaluate() const {}
+};
+
+} // namespace dynamic_input_test
+} // namespace
+
+TEST_CASE("an internal dynamic reference input defaults its root guarantee to ordinary",
+          "[node_template][feature:node-api][feature:reference][definition:aggregate]"
+          "[series:reference][guarantee:ordinary]") {
+    const auto node = bg::node<dynamic_input_test::dynamic_reference_input_default_guarantee_node>();
+    const auto resolution = node.signature().resolve_with_type_map(std::array<const bg::Type *, 0>{});
+    const auto dynamic_inputs = node.dynamic_input_types(resolution.type_map);
+
     REQUIRE(dynamic_inputs.size() == 1);
-    CHECK(dynamic_inputs[0] == resolution.signature.output);
     const auto &reference = static_cast<const bg::TimeSeriesReferenceType &>(*dynamic_inputs[0]);
+    CHECK(reference.guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
     CHECK(&reference.target_type() == &bg::TS<float>::type());
 }
 

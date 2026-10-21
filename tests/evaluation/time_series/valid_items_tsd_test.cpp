@@ -1,11 +1,98 @@
+#include <bg/graph.hpp>
+#include <bg/graph/context.hpp>
+#include <bg/graph/graph_wiring.hpp>
+#include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
+#include <bg/nested.hpp>
 #include <bg/testing/test_graph.hpp>
+#include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
 #include <cstdint>
+
+TEST_CASE("a nested graph preserves a fixed valid_items input",
+          "[evaluation][feature:nested-graph][feature:validity][series:tsd][input-guarantee:valid-items]") {
+    using namespace bg::literals;
+
+    const auto count = bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>, bg::valid_items> input,
+                                   bg::Out<bg::TS<bg::i64>> output) {
+        output.set(static_cast<bg::i64>(input.size()));
+    });
+    const auto inner = bg::graph("name"_n = "valid_items_inner",
+                                 [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, bg::valid_items> input) {
+                                     return count(input);
+                                 });
+    const auto outer = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input,
+                           bg::wp<bg::TS<bool>> run) { return bg::nested(inner, run, input); };
+
+    const auto actual = bg::testing::test_graph(
+        outer, {{{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}}}, {true, true});
+
+    CHECK(actual.equals<bg::i64>({1, 2}));
+}
+
+TEST_CASE("a nested graph preserves valid_items and scalar fields in a captured TSB",
+          "[evaluation][feature:nested-graph][feature:validity][feature:variadic-wiring][series:tsd][series:tsb]"
+          "[input-guarantee:valid-items][representation:free]") {
+    using namespace bg::literals;
+
+    const auto count = bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>, bg::valid_items> values,
+                                   bg::i64 offset) -> bg::i64 {
+        return static_cast<bg::i64>(values.size()) + offset;
+    });
+    const auto inner = bg::graph([&](bg::wp<bg::TSB<bg::SCHEMA>, "values"_n, bg::var_kwargs> values) {
+        return count(values["dictionary"], values["offset"]);
+    });
+    const auto outer = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> values,
+                           bg::wp<bg::TS<bool>> run) {
+        const auto pack = bg::bundle("dictionary"_n = bg::valid_items(values), "offset"_n = bg::i64{40});
+        return bg::nested(inner, run, "values"_n = pack);
+    };
+
+    const auto actual = bg::testing::test_graph(
+        outer, {{{1, 10}, {2, literal::INVALID}}, {{2, 20}}}, {true, true});
+
+    CHECK(actual.equals<bg::i64>({41, 42}));
+}
+
+TEST_CASE("a lexical context preserves valid_items on a TSD input",
+          "[evaluation][feature:context-time-series][feature:validity][series:tsd][input-guarantee:valid-items]") {
+    using namespace bg::literals;
+
+    const auto count = bg::node(
+        [](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>, "values"_n, bg::context, bg::valid_items> values) -> bg::i64 {
+            return static_cast<bg::i64>(values.size());
+        });
+    const auto contextual = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> values) {
+        return bg::with_context("values"_n = bg::valid_items(values), [&] { return count(); });
+    };
+
+    const auto actual = bg::testing::test_graph(contextual, {{{1, 10}, {2, literal::INVALID}}, {{2, 20}}});
+
+    CHECK(actual.equals<bg::i64>({1, 2}));
+}
+
+TEST_CASE("a materialisation option preserves valid_items on a TSD input",
+          "[evaluation][feature:wiring][feature:validity][feature:wiring-materialisation][series:tsd]"
+          "[input-guarantee:valid-items]") {
+    const auto count = bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>, bg::valid_items> values) -> bg::i64 {
+        return static_cast<bg::i64>(values.size());
+    });
+    const auto materialized = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> values) {
+        auto deferred = bg::WiringContext::current().wiring().create_wp<bg::TSD<bg::i64, bg::TS<bg::i64>>>(
+            bg::valid_items(values));
+        deferred.materialisation_option<bg::TSD<bg::i64, bg::TS<bg::i64>>>(
+            [](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>, bg::valid_items> input) { return input; }, 0.0);
+        return count(bg::valid_items(deferred));
+    };
+
+    const auto actual = bg::testing::test_graph(materialized, {{{1, 10}, {2, literal::INVALID}}, {{2, 20}}});
+
+    CHECK(actual.equals<bg::i64>({1, 2}));
+}
 
 TEST_CASE("all_valid on a valid_items dictionary input requires only a valid dictionary",
           "[evaluation][tsd][feature:validity][series:tsd][validity:all-valid]"

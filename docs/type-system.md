@@ -582,10 +582,10 @@ returns a canonical type, or null for unresolved or incompatible types. This
 lets one output represent alternative producers without discarding their shared
 time series structure.
 
-An omitted input guarantee accepts and preserves the source guarantee. An
-omitted output guarantee resolves to `ordinary`, except that a `REF` output
-resolves to `deduplicated`. An explicit `ordinary` guarantee disables this
-default.
+An omitted guarantee on a node or graph parameter accepts and preserves the
+source guarantee. An omitted output guarantee resolves to `ordinary`, except
+that a `REF` output resolves to `deduplicated`. An explicit `ordinary` guarantee
+disables this default.
 
 Wiring-point annotation checks use normal type compatibility, including
 contained time series. An omitted reference guarantee accepts the supplied
