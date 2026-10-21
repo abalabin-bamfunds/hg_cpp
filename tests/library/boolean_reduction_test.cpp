@@ -4,7 +4,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <array>
 #include <span>
 #include <vector>
 
@@ -14,10 +13,10 @@ using namespace bg::literals;
 TEST_CASE("Boolean TSL reductions read current item values",
           "[feature:operator][series:fixed-tsl][scalar:boolean][shape:single-node][transition:update]") {
     const auto all = [](wp<TS<bool>> first, wp<TS<bool>> second) {
-        return operators::all_("values"_n = tsl(std::array{first, second}));
+        return operators::all_("values"_n = tsl(first, second));
     };
     const auto any = [](wp<TS<bool>> first, wp<TS<bool>> second) {
-        return operators::any_("values"_n = tsl(std::array{first, second}));
+        return operators::any_("values"_n = tsl(first, second));
     };
 
     CHECK(testing::test_graph(all, {true, false, false, true}, {true, true, false, true})
@@ -30,10 +29,10 @@ TEST_CASE("optional Boolean TSL reductions skip invalid items and use empty iden
           "[feature:operator][series:fixed-tsl][scalar:boolean][validity:optional]"
           "[transition:invalidation][transition:revalidation]") {
     const auto all = [](wp<TS<bool>> first, wp<TS<bool>> second) {
-        return operators::all_("values"_n = opt(tsl(std::array{first, second})));
+        return operators::all_("values"_n = opt(tsl(first, second)));
     };
     const auto any = [](wp<TS<bool>> first, wp<TS<bool>> second) {
-        return operators::any_("values"_n = opt(tsl(std::array{first, second})));
+        return operators::any_("values"_n = opt(tsl(first, second)));
     };
 
     CHECK(testing::test_graph(all,
@@ -50,10 +49,10 @@ TEST_CASE("required Boolean TSL reductions wait for every immediate item",
           "[feature:operator][series:fixed-tsl][scalar:boolean][validity:all-valid]"
           "[transition:invalidation][transition:revalidation]") {
     const auto all = [](wp<TS<bool>> first, wp<TS<bool>> second) {
-        return operators::all_("values"_n = tsl(std::array{first, second}));
+        return operators::all_("values"_n = tsl(first, second));
     };
     const auto any = [](wp<TS<bool>> first, wp<TS<bool>> second) {
-        return operators::any_("values"_n = tsl(std::array{first, second}));
+        return operators::any_("values"_n = tsl(first, second));
     };
 
     CHECK(testing::test_graph(all, {true, literal::INVALID, true}, {true, true, false})
@@ -73,25 +72,20 @@ TEST_CASE("Boolean reductions read direct TSL inputs and report required output 
         return operators::valid(operators::all_(values));
     };
 
-    CHECK(testing::test_graph(all, testing::input<TSL<TS<bool>, 2>>(
-                                      {literal::SKIP, {{0, true}}, {{1, true}}, {{1, literal::INVALID}},
-                                       {{1, false}}}))
+    CHECK(testing::test_graph(all, {literal::SKIP, {{0, true}}, {{1, true}}, {{1, literal::INVALID}},
+                                    {{1, false}}})
               .equals<bool>({std::nullopt, std::nullopt, true, std::nullopt, false}));
-    CHECK(testing::test_graph(any, testing::input<TSL<TS<bool>, 2>>(
-                                      {literal::SKIP, {{0, true}}, {{1, true}}, {{1, literal::INVALID}},
-                                       {{1, false}}}))
+    CHECK(testing::test_graph(any, {literal::SKIP, {{0, true}}, {{1, true}}, {{1, literal::INVALID}},
+                                    {{1, false}}})
               .equals<bool>({std::nullopt, std::nullopt, true, std::nullopt, true}));
-    CHECK(testing::test_graph(optional_all, testing::input<TSL<TS<bool>, 2>>(
-                                               {literal::SKIP, {{0, true}}, {{1, true}},
-                                                {{1, literal::INVALID}}, {{1, false}}}))
+    CHECK(testing::test_graph(optional_all, {literal::SKIP, {{0, true}}, {{1, true}},
+                                            {{1, literal::INVALID}}, {{1, false}}})
               .equals<bool>({std::nullopt, true, true, true, false}));
-    CHECK(testing::test_graph(optional_any, testing::input<TSL<TS<bool>, 2>>(
-                                               {literal::SKIP, {{0, true}}, {{1, true}},
-                                                {{1, literal::INVALID}}, {{1, false}}}))
+    CHECK(testing::test_graph(optional_any, {literal::SKIP, {{0, true}}, {{1, true}},
+                                            {{1, literal::INVALID}}, {{1, false}}})
               .equals<bool>({std::nullopt, true, true, true, true}));
-    CHECK(testing::test_graph(all_valid, testing::input<TSL<TS<bool>, 2>>(
-                                             {literal::SKIP, {{0, true}}, {{1, true}},
-                                              {{1, literal::INVALID}}, {{1, false}}}))
+    CHECK(testing::test_graph(all_valid, {literal::SKIP, {{0, true}}, {{1, true}},
+                                         {{1, literal::INVALID}}, {{1, false}}})
               .equals<bool>({false, std::nullopt, true, false, true}));
 }
 
@@ -101,11 +95,9 @@ TEST_CASE("optional Boolean TSL reductions treat an invalid root as empty",
     const auto all = [](wp<TSL<TS<bool>, 2>> values) { return operators::all_(opt(values)); };
     const auto any = [](wp<TSL<TS<bool>, 2>> values) { return operators::any_(opt(values)); };
 
-    CHECK(testing::test_graph(all, testing::input<TSL<TS<bool>, 2>>(
-                                       {literal::SKIP, {{0, false}}, {{0, literal::INVALID}}, {{1, true}}}))
+    CHECK(testing::test_graph(all, {literal::SKIP, {{0, false}}, {{0, literal::INVALID}}, {{1, true}}})
               .equals<bool>({std::nullopt, false, true, true}));
-    CHECK(testing::test_graph(any, testing::input<TSL<TS<bool>, 2>>(
-                                       {literal::SKIP, {{0, false}}, {{0, literal::INVALID}}, {{1, true}}}))
+    CHECK(testing::test_graph(any, {literal::SKIP, {{0, false}}, {{0, literal::INVALID}}, {{1, true}}})
               .equals<bool>({std::nullopt, false, false, true}));
 }
 
@@ -257,7 +249,7 @@ TEST_CASE("Boolean reductions accept free TSL inputs and nested operator results
         return operators::all_("values"_n = tsl(std::span<const WiringPoint>{items}));
     };
     const auto not_any = [](wp<TS<bool>> first, wp<TS<bool>> second) {
-        return operators::not_(operators::any_("values"_n = tsl(std::array{first, second})));
+        return operators::not_(operators::any_("values"_n = tsl(first, second)));
     };
 
     CHECK(testing::test_graph(all, {true, false, true}, {true, true, false}).equals<bool>({true, false, false}));
