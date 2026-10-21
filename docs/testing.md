@@ -591,6 +591,9 @@ For each reusable node and graph, test:
   partial validity, empty results, item removal and replacement, integer limits,
   reference rebinding, free collections, output guarantees, and equal optional
   sums across invalid-to-valid transitions
+- Boolean collection reductions, including all-valid and `opt` overloads,
+  empty identities, partial validity, valid-item views, item updates and removals,
+  references, free collections, output guarantees, and equal results on ordinary ticks
 - TSS union, intersection, difference, symmetric difference, equality, and
   emptiness, including simultaneous membership changes, empty sets, required
   input gating, `opt` treating invalid inputs as empty, reference rebinding,

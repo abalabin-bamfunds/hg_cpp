@@ -92,6 +92,8 @@ extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> OUT> sum_;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> OUT> min_;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> OUT> max_;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> OUT> mean;
+extern BG_LIBRARY_EXPORT operator_<auto(COLLECTION) -> OUT> all_;
+extern BG_LIBRARY_EXPORT operator_<auto(COLLECTION) -> OUT> any_;
 
 // Nested graph operators.
 using ::bg::map;

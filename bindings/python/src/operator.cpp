@@ -204,6 +204,8 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "min_", operators::min_);
     export_operator(operators_module, "max_", operators::max_);
     export_operator(operators_module, "mean", operators::mean);
+    export_operator(operators_module, "all_", operators::all_);
+    export_operator(operators_module, "any_", operators::any_);
     export_operator(operators_module, "contains_", operators::contains_);
     export_operator(operators_module, "is_empty", operators::is_empty);
     export_operator(operators_module, "bit_or", operators::bit_or);

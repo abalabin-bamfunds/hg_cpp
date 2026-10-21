@@ -43,6 +43,8 @@ sum_ = _native.sum_
 min_ = _native.min_
 max_ = _native.max_
 mean = _native.mean
+all_ = _native.all_
+any_ = _native.any_
 contains_ = _native.contains_
 is_empty = _native.is_empty
 bit_or = _native.bit_or
@@ -87,6 +89,8 @@ __all__ = [
     "mesh",
     "maxs",
     "mean",
+    "all_",
+    "any_",
     "means",
     "min_",
     "mins",
