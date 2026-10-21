@@ -4,6 +4,7 @@
 #include <bg/util/symbol.hpp>
 
 #include "operand_type.hpp"
+#include "mixed_expression.hpp"
 
 #include <functional>
 #include <string_view>
@@ -89,6 +90,27 @@ const auto registered = [] {
     register_comparison<double, std::less_equal<>>(operators::le, "double_less_equal");
     register_comparison<double, std::greater<>>(operators::gt, "double_greater");
     register_comparison<double, std::greater_equal<>>(operators::ge, "double_greater_equal");
+
+    const auto numeric_operand = [](const Type &type) {
+        return details::is_operand(type, cpp_scalar_type<i64>()) ||
+               details::is_operand(type, cpp_scalar_type<double>());
+    };
+    const auto numeric_scalar = [](const Type &type) {
+        return std::addressof(type) == std::addressof(cpp_scalar_type<i64>()) ||
+               std::addressof(type) == std::addressof(cpp_scalar_type<double>());
+    };
+    details::register_mixed_binary(operators::eq, details::ExpressionOperation::eq, "equal", numeric_operand,
+                                   numeric_scalar);
+    details::register_mixed_binary(operators::ne, details::ExpressionOperation::ne, "not_equal", numeric_operand,
+                                   numeric_scalar);
+    details::register_mixed_binary(operators::lt, details::ExpressionOperation::lt, "less", numeric_operand,
+                                   numeric_scalar);
+    details::register_mixed_binary(operators::le, details::ExpressionOperation::le, "less_equal", numeric_operand,
+                                   numeric_scalar);
+    details::register_mixed_binary(operators::gt, details::ExpressionOperation::gt, "greater", numeric_operand,
+                                   numeric_scalar);
+    details::register_mixed_binary(operators::ge, details::ExpressionOperation::ge, "greater_equal", numeric_operand,
+                                   numeric_scalar);
     return true;
 }();
 

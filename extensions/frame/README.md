@@ -285,9 +285,9 @@ Include `<bg/library/operators.hpp>` and link `bg::frame`. The extension
 registers column implementations on BG's existing arithmetic and conversion
 operators. Matching `i64` or `double` operands support add, subtract, multiply,
 and divide. Division returns `double`. Column conversions between `i64` and
-`double` are explicit through `convert<T>()`; arithmetic does not promote mixed
-operands. An operand can be another matching column, a matching constant, or a
-matching `TS<T>` broadcast across the rows.
+`double` are explicit; arithmetic does not promote mixed operands. An operand can
+be another matching column, a matching constant, or a matching `TS<T>` broadcast
+across the rows.
 
 ```cpp
 // q is a wp<TSF<Quotes>> with double bid and ask columns.
@@ -298,12 +298,16 @@ const auto consume = bg::node([](bg::In<bg::frame::TSC<double>>) {});
 consume(midpoint);
 ```
 
-Use `bg::frame::convert<double>(bg::frame::col("size"))` inside an unbound
-expression, or `bg::frame::convert<double>(column)` for a bound
-`wp<TSC<i64>>`, before combining it with a `double` expression.
+Use `bg::frame::convert<double>(bg::frame::col("size"))` to describe conversion
+inside a scalar expression. For a column wiring point, use BG's conversion
+operator:
 
-Each operation returns a deferred `TSC<T>` wiring point. It offers an expression
-TSB at cost zero and a computed TSC at cost one. BG materialisation records
+```cpp
+auto converted = bg::operators::convert[bg::type<bg::frame::TSC<double>>](column);
+```
+
+Each column operator call returns a deferred `TSC<T>` wiring point. It offers an
+expression TSB at cost zero and a computed TSC at cost one. BG materialisation records
 concrete demands before compiling the expression. The example uses one BG
 compute node and evaluates the shared `midpoint` once per changed row. A
 separate concrete consumer makes downstream expressions read that materialised
@@ -340,7 +344,7 @@ compiler and block evaluation path as arithmetic.
 const auto predicate = bind_expression(q, col("ask") - col("bid") < tolerance);
 ```
 
-Each comparison returns nullable `TSC<bool>`. A result is null when either
+Bound comparisons produce nullable `TSC<bool>`. A result is null when either
 operand is null. Mixed integer and double operands fail during wiring; use an
 explicit conversion operator when conversion is required.
 
@@ -369,10 +373,15 @@ BG dependencies.
 
 ### Expression construction and binding
 
-Include `<bg/frame/expression.hpp>` to construct an expression before its input
-columns are known. `col(name)` selects a column by name. `param(name)` declares
-a named argument. Captures attach existing graph arguments to the same expression
-representation.
+Include `<bg/frame/expression.hpp>` to construct scalar expressions before
+their input columns or graph are known. `col(name)` identifies a column by
+name. `param(name)` identifies a named argument. Scalar operators construct
+immutable expression nodes and own scalar constants. A conversion node records
+its target scalar type, such as `double`.
+
+Combining an expression with a wiring point calls a registered BG operator
+overload. It returns an ordinary TSB containing a constant expression and its
+time series bindings. The scalar expression contains no wiring points.
 
 ```cpp
 using namespace bg::frame;
@@ -402,15 +411,14 @@ precedence over frame column lookup. A `col` binding must be a TSC. Missing,
 duplicate, and unused names fail during binding. Frame lookup uses the actual
 schema, including a schema supplied during wiring.
 
-Expressions store operations and owned arguments during graph construction.
-Binding emits ordinary BG operator calls. Shared expression children are emitted
-once per binding. The resulting graph uses the column materialisation and block
-evaluation described above. `apply(wiring_template, operands)` constructs a call
-to an existing wiring template; the template must remain alive through binding
-and graph compilation.
+Scalar expression construction requires no wiring context. Binding resolves
+column and parameter references and emits ordinary BG operator calls. These
+calls select typed block functions and their deferred column expressions.
+Shared expression children are emitted once per binding. The resulting graph
+uses the column materialisation and block evaluation described above.
 
-Captured scalar values are copied when the expression is constructed. Captured
-time series remain declared BG inputs. A separate parameter-update node snapshots
+Scalar values are copied when the expression is constructed. Time series
+bindings remain declared BG inputs. A separate parameter-update node snapshots
 each distinct captured time series into a scalar `Bundle<PARAMETERS>`. Its
 schema preserves each parameter's scalar type. The block node reads the
 snapshot once per invocation and prepares native broadcast values for all

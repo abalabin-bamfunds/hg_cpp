@@ -1,6 +1,6 @@
 # Frame foundation handoff
 
-Updated: 2026-10-22. The frame lane is rebased onto main `7a52dc93`.
+Updated: 2026-10-22. The frame lane is rebased onto main `146ee478`.
 Main includes shared schema metadata (`6419e073`), process-lifetime ownership
 of registered type metadata (`160f128b`), compatible generic input-view casts
 (`a17a8ffd`), and stateful test-graph literal comparison (`04518839`). Frame
@@ -25,7 +25,7 @@ completed lane retirement, and consumer verification.
 
 | Work | Location / branch | State |
 | --- | --- | --- |
-| Main baseline | `/home/abalabin/_bg`, `main` | `7a52dc93` |
+| Main baseline | `/home/abalabin/_bg`, `main` | `146ee478` |
 | Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Frame foundation, expressions, scalar literals, native keyed storage, TSF/TSC input literals, and native/view/computed capture |
 | Generic input-view casts | Main | `a17a8ffd`; tested build preserved in `.lanes/generic-input-cast` |
 | Shared schema metadata and BG lifetime fix | Main | `6419e073`, `160f128b`; consumer builds use matching lane-local installs |
@@ -170,8 +170,8 @@ erased Arrow copies preserve Arrow representation.
 
 ## Verification
 
-Current numeric arithmetic and conversion verification used the lane-local BG
-installs and these lane-root build directories:
+Scalar-expression cleanup verification used baseline `146ee478`, the lane-local
+BG installs, and these lane-root build directories:
 
 | Build | Configuration | Result |
 | --- | --- | --- |
@@ -182,6 +182,12 @@ installs and these lane-root build directories:
 The sanitizer CTest used `ASAN_OPTIONS=detect_leaks=1` and
 `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1`. It ran outside the sandbox
 because LeakSanitizer cannot operate under sandbox ptrace.
+
+Expression regressions cover scalar construction outside graph wiring, scalar
+conversion targets, owned scalar captures reused across graphs, mixed operands
+in both orders, chained and shared bindings, typed TSB forwarding to filtering,
+user names matching internal field names, and parameter invalidation and
+revalidation. Existing fusion and concrete intermediate reuse tests pass.
 
 Coverage includes native and runtime schemas, numeric columns, snapshots,
 borrowing, Arrow views and copies, projection, and concrete and generic
@@ -392,22 +398,33 @@ operand order, overload selection, or the expression syntax.
 
 ### Expression construction and binding
 
-The approved graph-code API uses one `Expression` representation for operations,
-unresolved names, and attached arguments. `col(name)` identifies a column;
-`param(name)` identifies a named argument. Captures retain owned `WiringArgument`
-values. Expressions can be constructed before a frame or its schema is known.
+`Expression` is an immutable scalar describing operations, unresolved names,
+and owned scalar values. `col(name)` identifies a column; `param(name)`
+identifies a named argument. Construction requires no graph or wiring context.
+Conversion records its target scalar type. Scalar expressions contain no
+wiring points, wiring templates, or type maps.
+
+Combining a scalar expression with a wiring point invokes a registered BG
+operator overload. Its ordinary TSB result holds the constant expression and
+explicit time series bindings. Internal binding references are separate from
+user column and parameter names. Chaining graph operations preserves these
+dependencies without rebuilding expression trees during evaluation.
 
 `bind_expression(expr, named_arguments...)` resolves names from its arguments.
 `bind_expression(frame, expr, named_arguments...)` also resolves column names
-from the frame. Binding invokes the existing BG operators and returns their
-deferred wiring point. Each binding resolves types independently. Runtime
-schemas are already resolved during wiring. Numeric conversion remains explicit.
+from the frame. The expression argument can be a scalar expression or a TSB
+carrying its bindings. Binding invokes BG operators to select typed block
+functions and returns their deferred column wiring point. Each binding resolves
+types independently. Runtime schemas are already resolved during wiring.
+Numeric conversion remains explicit. Graph conversion uses
+`operators::convert[type<TSC<T>>](column)`; scalar expression conversion uses
+`frame::convert<T>(expression)`.
 
-The syntax tree exists only during graph construction. The internal expression
-TSB is the resolved materialisation form of a BG operation. It retains declared
-upstream dependencies. Block evaluation and concrete intermediate reuse use the
-existing expression compilation path. Manually constructed expression bundles are not the
-graph-author API.
+Binding resolves scalar operations during graph construction. The column
+expression TSB is the resolved materialisation form of a BG operation. It retains
+declared upstream dependencies. Block evaluation and concrete intermediate reuse
+use the existing expression compilation path. Graph authors use operators and
+binding functions to construct these bundles.
 
 Arithmetic supports matching `i64` or `double` columns, constants, and captured
 `TS<T>` values. Constants use the existing `operators::const_` path. Scalar

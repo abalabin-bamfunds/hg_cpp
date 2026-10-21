@@ -2572,15 +2572,38 @@ wp<> bind_expression(wp<TSF<Schema, Properties...>> source, const Expression &ex
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties,
           typename... Bindings>
     requires(bg::details::graph_code_argument<Bindings> && ...)
+wp<> bind_expression(wp<TSF<Schema, Properties...>> source, wp<> expression, Bindings &&...bindings) {
+    auto arguments = bg::details::make_wiring_arguments(std::forward<Bindings>(bindings)...);
+    const auto column_resolver = [source](util::symbol name) {
+        return WiringArgument{select_column<SCALAR>(source, name)};
+    };
+    return wp<>{details::bind_expression(static_cast<WiringPoint>(expression), arguments, column_resolver)};
+}
+
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties,
+          typename... Bindings>
+    requires(bg::details::graph_code_argument<Bindings> && ...)
 auto filter(wp<TSF<Schema, Properties...>> source, const Expression &predicate, Bindings &&...bindings) {
     return operators::filter_(bind_expression(source, predicate, std::forward<Bindings>(bindings)...), source)
         .template as<TSF<Schema>>();
 }
 
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties,
-          typename Predicate>
-    requires bg::details::graph_code_argument<Predicate>
-auto filter(wp<TSF<Schema, Properties...>> source, Predicate &&predicate) {
+          typename Predicate, typename... Bindings>
+    requires bg::details::graph_code_argument<Predicate> &&
+             (bg::details::graph_code_argument<Bindings> && ...) &&
+             (!std::same_as<std::remove_cvref_t<Predicate>, Expression>)
+auto filter(wp<TSF<Schema, Properties...>> source, Predicate &&predicate, Bindings &&...bindings) {
+    if constexpr (bg::details::wiring_point_argument<Predicate>) {
+        const auto point = static_cast<WiringPoint>(predicate);
+        if (details::is_mixed_expression_bundle_type(point.type())) {
+            return operators::filter_(
+                       bind_expression(source, wp<>{point}, std::forward<Bindings>(bindings)...), source)
+                .template as<TSF<Schema>>();
+        }
+    }
+    if constexpr (sizeof...(Bindings) != 0)
+        throw WiringError{"a bound filter predicate cannot receive expression bindings"};
     return operators::filter_(std::forward<Predicate>(predicate), source).template as<TSF<Schema>>();
 }
 

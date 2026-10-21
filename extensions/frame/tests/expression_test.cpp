@@ -44,6 +44,12 @@ template <template <typename, auto...> typename Field> struct NumericFrame {
     static SchemaMetadata metadata() { return key_metadata<"id">(); }
 };
 
+template <template <typename, auto...> typename Field> struct MixedPredicateSchema {
+    Field<TS<Expression, TimeSeriesGuarantee::const_>> expression;
+    Field<TimeSeriesVariable<"FRAME_MIXED_LEFT">> binding_0;
+    Field<TimeSeriesVariable<"FRAME_MIXED_RIGHT">> binding_1;
+};
+
 template <template <typename, auto...> typename Field>
 using ProbeExpression = BundleSchemaVariableDeclaration<"FRAME_PROBE_EXPRESSION", Field>;
 using ProbeForm = Union<"FRAME_PROBE_FORM", TSC<double>, TS<double>, TSB<ProbeExpression>>;
@@ -164,8 +170,10 @@ void test_column_block_function_provider() {
     const std::array ids{row_id_t{7}, row_id_t{12}};
     const std::array left_values{i64{2}, i64{10}};
     const std::array right_values{i64{4}, i64{3}};
-    const auto left = ColumnBatch<i64>{0, left_values.size(), left_values.data(), ColumnBatch<i64>::Validity::all_valid()};
-    const auto right = ColumnBatch<i64>{0, right_values.size(), right_values.data(), ColumnBatch<i64>::Validity::all_valid()};
+    const auto left = ColumnBatch<i64>{0, left_values.size(), left_values.data(),
+                                       ColumnBatch<i64>::Validity::all_valid()};
+    const auto right = ColumnBatch<i64>{0, right_values.size(), right_values.data(),
+                                        ColumnBatch<i64>::Validity::all_valid()};
     std::array<i64, 2> output_values{};
     std::array<std::uint8_t, 1> output_validity{};
 
@@ -270,7 +278,8 @@ void test_column_expression_builder_integration() {
     const auto integer_parameters = std::array<i64, 3>{10, 20, 30};
     const auto double_parameters = std::array{0.5, 1.25, 2.0};
     const auto mixed_ticks = std::array<i64, 3>{0, 1, 2};
-    static_cast<void>(testing::test_graph(mixed_graph, mixed_values, integer_parameters, double_parameters, mixed_ticks));
+    static_cast<void>(testing::test_graph(mixed_graph, mixed_values, integer_parameters, double_parameters,
+                                          mixed_ticks));
     require(mixed_observations == std::vector<std::vector<std::optional<double>>>{{12.5}, {23.25, 25.25},
                                                                                     {34.0, 36.0, 38.0}},
             "shared builder lost heterogeneous columns or parameter snapshots");
@@ -334,6 +343,8 @@ void test_binary_expression_bundle_schema() {
 }
 
 void test_static_frame_expression_binding() {
+    static_assert(std::same_as<decltype(convert<i64>(col("bid"))), Expression>);
+
     auto wiring = GraphWiring{};
     auto context = WiringContext{wiring};
     auto source = wp<TSF<QuoteFrame>>{wiring.borrowed_input(TSF<QuoteFrame>::type())};
@@ -358,21 +369,22 @@ void test_static_frame_expression_binding() {
     require(std::addressof(scalar_difference.type()) == std::addressof(TSC<double>::type()),
             "subtraction did not capture a scalar on the left side");
 
-    const auto converted_bound_column = frame::convert<i64>(bind_expression(source, col("bid")));
+    const auto converted_bound_column = operators::convert[type<TSC<i64>>](bind_expression(source, col("bid")));
     require(std::addressof(converted_bound_column.type()) == std::addressof(TSC<i64>::type()),
             "column conversion did not accept an erased bound expression result");
     const auto bound_column = bind_expression(source, col("bid"));
-    const auto identity_bound_column = frame::convert<double>(bound_column);
+    const auto identity_bound_column = operators::convert[type<TSC<double>>](bound_column);
     require(std::addressof(identity_bound_column.type()) == std::addressof(TSC<double>::type()) &&
                 static_cast<WiringPoint>(identity_bound_column).record() ==
                     static_cast<WiringPoint>(bound_column).record(),
             "identity conversion did not preserve an erased bound column");
     const auto deferred_column = bind_expression(source, col("bid") + col("ask"));
-    const auto identity_deferred_column = frame::convert<double>(deferred_column);
+    const auto identity_deferred_column = operators::convert[type<TSC<double>>](deferred_column);
     require(std::addressof(identity_deferred_column.type()) == std::addressof(TSC<double>::type()) &&
                 static_cast<WiringPoint>(identity_deferred_column).record() ==
                     static_cast<WiringPoint>(deferred_column).record(),
             "identity conversion did not preserve a deferred column expression");
+
     const auto converted_expression = bind_expression(source, frame::convert<i64>(col("bid")));
     require(std::addressof(converted_expression.type()) == std::addressof(TSC<i64>::type()),
             "unbound column conversion did not retain its requested output type");
@@ -453,6 +465,24 @@ void test_numeric_comparison_expression_wiring() {
         rejected_numeric_filter = true;
     }
     require(rejected_numeric_filter, "frame filter accepted a numeric predicate");
+
+    const auto bound_predicate = wp<>{wiring.borrowed_input(TSC<bool>::type())};
+    const auto filtered_column_predicate = frame::filter(source, bound_predicate);
+    require(std::addressof(filtered_column_predicate.type()) == std::addressof(TSF<ComparisonFrame>::type()),
+            "frame filter did not accept a bound TSC<bool> predicate");
+    auto rejected_bindings_for_bound_predicate = false;
+    try {
+        static_cast<void>(frame::filter(source, bound_predicate, "unused"_n = true));
+    } catch (const WiringError &) {
+        rejected_bindings_for_bound_predicate = true;
+    }
+    require(rejected_bindings_for_bound_predicate,
+            "frame filter accepted expression bindings for an already bound predicate");
+
+    const auto bound_series_predicate = wp<>{wiring.borrowed_input(TS<bool>::type())};
+    const auto filtered_series_predicate = frame::filter(source, bound_series_predicate);
+    require(std::addressof(filtered_series_predicate.type()) == std::addressof(TSF<ComparisonFrame>::type()),
+            "frame filter did not accept a bound TS<bool> predicate");
 }
 
 void test_filter_expression_with_multiple_parameters() {
@@ -485,6 +515,159 @@ void test_filter_expression_with_multiple_parameters() {
         testing::input(cpp_time_series_runtime_type<TS<double>>(), {16.0, 16.0, 15.0}));
     require(result.equals<i64>({0, 1, 0}) && selected_counts == std::vector<std::size_t>{0, 1, 0},
             "frame filter did not evaluate parameters stored across multiple aligned blocks");
+}
+
+void test_mixed_expression_chaining_and_filter() {
+    const auto value_plus_one = col("value") + i64{1};
+    const auto threshold = param("binding_0");
+
+    auto selected_counts = std::vector<std::size_t>{};
+    auto first_adjusted_values = std::vector<std::vector<std::optional<double>>>{};
+    auto second_adjusted_values = std::vector<std::vector<std::optional<double>>>{};
+    const auto observe = node([&](In<TSF<NumericFrame>> input, In<TSC<double>> first_adjusted,
+                                  In<TSC<double>> second_adjusted, Out<TS<i64>> output) {
+        auto count = std::size_t{};
+        input.for_each_row([&](row_id_t, std::size_t) { ++count; });
+        selected_counts.push_back(count);
+        auto first_values = std::vector<std::optional<double>>{};
+        first_adjusted.for_each_row([&](row_id_t id, std::size_t) { first_values.push_back(first_adjusted.cell(id)); });
+        first_adjusted_values.push_back(std::move(first_values));
+        auto second_values = std::vector<std::optional<double>>{};
+        second_adjusted.for_each_row(
+            [&](row_id_t id, std::size_t) { second_values.push_back(second_adjusted.cell(id)); });
+        second_adjusted_values.push_back(std::move(second_values));
+        output.set(static_cast<i64>(count));
+    });
+    const auto graph = [&](wp<TSF<NumericFrame>> source, wp<TS<i64>> offset, wp<TS<i64>> limit,
+                           wp<TS<bool>> gate, wp<TS<double>> first_adjustment,
+                           wp<TS<double>> second_adjustment, wp<TS<i64>> tick) {
+        const auto mixed_value = value_plus_one + offset;
+        const auto predicate = mixed_value > threshold;
+        const auto reversed = bind_expression(source, offset - value_plus_one);
+        require(std::addressof(reversed.type()) == std::addressof(TSC<i64>::type()),
+                "reversed mixed operands did not bind to a column result");
+        const auto inverted = wp<TSB<MixedPredicateSchema>>{!predicate && gate};
+        const auto converted_value = convert<double>(col("value"));
+        const auto first_adjusted = bind_expression(source, converted_value + first_adjustment);
+        const auto second_adjusted = bind_expression(source, converted_value + second_adjustment);
+        return observe(frame::filter(source, inverted, "binding_0"_n = limit), first_adjusted, second_adjusted);
+    };
+
+    const auto result = testing::test_graph(
+        graph,
+        testing::input(TSF<NumericFrame>::type(),
+                       {literal::TimeSeriesLiteral{},
+                        {{{"id", i64{1}}, {"value", i64{2}}, {"price", 10.0}},
+                         {{"id", i64{2}}, {"value", i64{4}}, {"price", 20.0}}},
+                        {{{"id", i64{1}}, {"value", i64{6}}}}}),
+        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {2, 2, 2}),
+        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {6, 6, 8}),
+        testing::input(cpp_time_series_runtime_type<TS<bool>>(), {true, true, true}),
+        testing::input(cpp_time_series_runtime_type<TS<double>>(), {1.5, 1.5, 1.5}),
+        testing::input(cpp_time_series_runtime_type<TS<double>>(), {-0.5, -0.5, -0.5}),
+        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1, 2}));
+    require(result.equals<i64>({0, 1, 1}) && selected_counts == std::vector<std::size_t>{0, 1, 1},
+            "mixed expression chaining or filtering lost bound values");
+    require(first_adjusted_values ==
+                std::vector<std::vector<std::optional<double>>>{{}, {3.5, 5.5}, {7.5, 5.5}} &&
+                second_adjusted_values ==
+                    std::vector<std::vector<std::optional<double>>>{{}, {1.5, 3.5}, {5.5, 3.5}},
+            "converted expression reuse did not resolve each mixed binding independently");
+}
+
+void test_mixed_operator_requirements() {
+    struct observation {
+        std::vector<std::optional<i64>> after_constant;
+        std::vector<std::optional<i64>> before_constant;
+        std::vector<std::optional<i64>> mixed_sum;
+        std::vector<std::optional<bool>> disjunction;
+    };
+    auto observations = std::vector<observation>{};
+    const auto observe = node([&](In<TSC<i64>> after_constant, In<TSC<i64>> before_constant,
+                                  In<TSC<i64>> mixed_sum, In<TSC<bool>> disjunction, In<TS<i64>> tick,
+                                  Out<TS<i64>> output) {
+        auto result = observation{};
+        after_constant.for_each_row(
+            [&](row_id_t id, std::size_t) { result.after_constant.push_back(after_constant.cell(id)); });
+        before_constant.for_each_row(
+            [&](row_id_t id, std::size_t) { result.before_constant.push_back(before_constant.cell(id)); });
+        mixed_sum.for_each_row([&](row_id_t id, std::size_t) { result.mixed_sum.push_back(mixed_sum.cell(id)); });
+        disjunction.for_each_row(
+            [&](row_id_t id, std::size_t) { result.disjunction.push_back(disjunction.cell(id)); });
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TSF<NumericFrame>> source, wp<TS<i64>> first_offset,
+                           wp<TS<i64>> second_offset, wp<TS<i64>> tick) {
+        const auto value_plus_one = col("value") + i64{1};
+        const auto first_mixed = value_plus_one + first_offset;
+        const auto second_mixed = value_plus_one + second_offset;
+        const auto after_constant = first_mixed + i64{3};
+        const auto before_constant = i64{3} + first_mixed;
+        const auto mixed_sum = first_mixed + second_mixed;
+        const auto disjunction = (first_mixed > i64{3}) || (second_mixed > i64{4});
+        return observe(bind_expression(source, after_constant), bind_expression(source, before_constant),
+                       bind_expression(source, mixed_sum), bind_expression(source, disjunction), tick);
+    };
+    const auto result = testing::test_graph(
+        graph,
+        testing::input(TSF<NumericFrame>::type(),
+                       {literal::TimeSeriesLiteral{}, {{{"id", i64{1}}, {"value", i64{2}}, {"price", 0.0}}}}),
+        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {1, 1}),
+        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {2, 2}),
+        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1}));
+    require(result.equals<i64>({0, 1}) && observations.size() == 2,
+            "mixed operator observer missed an input cycle");
+    require(observations[1].after_constant == std::vector<std::optional<i64>>{7} &&
+                observations[1].before_constant == std::vector<std::optional<i64>>{7} &&
+                observations[1].mixed_sum == std::vector<std::optional<i64>>{9} &&
+                observations[1].disjunction == std::vector<std::optional<bool>>{true},
+            "mixed operators lost constants, nested bindings, or disjunction results");
+}
+
+void test_mixed_expression_parameter_invalidation() {
+    const auto value_plus_one = col("value") + i64{1};
+    const auto threshold = param("binding_0");
+    struct observation {
+        bool valid{};
+        bool became_invalid{};
+        bool became_valid{};
+        std::vector<std::optional<bool>> cells;
+    };
+    auto observations = std::vector<observation>{};
+
+    const auto observe = node([&](In<TSC<bool>, optional> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto result = observation{.valid = input.valid(),
+                                  .became_invalid = input.became_invalid(),
+                                  .became_valid = input.became_valid()};
+        input.for_each_row([&](row_id_t id, std::size_t) { result.cells.push_back(input.cell(id)); });
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TSF<NumericFrame>> source, wp<TS<i64>> offset, wp<TS<i64>> limit,
+                           wp<TS<i64>> tick) {
+        const auto mixed_value = value_plus_one + offset;
+        const auto predicate = mixed_value > threshold;
+        return observe(opt(bind_expression(source, predicate, "binding_0"_n = limit)), tick);
+    };
+    const auto result = testing::test_graph(
+        graph,
+        testing::input(TSF<NumericFrame>::type(),
+                       {{{{"id", i64{1}}, {"value", i64{2}}, {"price", 10.0}}}, literal::SKIP,
+                        literal::TimeSeriesLiteral{}}),
+        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {2, literal::INVALID, 2}),
+        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {5, literal::SKIP, 6}),
+        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1, 2}));
+    require(result.equals<i64>({0, 1, 2}) && observations.size() == 3,
+            "mixed expression observer missed a parameter cycle");
+    require(observations[0].valid && !observations[0].became_invalid && observations[0].became_valid &&
+                observations[0].cells == std::vector<std::optional<bool>>{false},
+            "mixed expression did not report its first valid publication");
+    require(!observations[1].valid && observations[1].became_invalid,
+            "mixed expression did not report parameter invalidation");
+    require(!observations[2].became_invalid && observations[2].became_valid &&
+                observations[2].cells == std::vector<std::optional<bool>>{false},
+            "mixed expression did not report parameter revalidation");
 }
 
 template <cell_type T, typename Comparator, typename Operation>
@@ -823,11 +1006,6 @@ void test_expression_bindings_are_per_call_and_owned() {
                 std::addressof(first_result.type()) == std::addressof(TSC<double>::type()),
             "expression reuse did not preserve each binding's runtime type");
 
-    const auto captured = capture(WiringArgument{first});
-    const auto captured_result = bind_expression(captured);
-    require(static_cast<WiringPoint>(captured_result).record() == static_cast<WiringPoint>(first).record(),
-            "captured column did not retain its wiring point");
-
     auto foreign_wiring = GraphWiring{};
     auto foreign_point = WiringPoint{};
     {
@@ -836,7 +1014,7 @@ void test_expression_bindings_are_per_call_and_owned() {
     }
     auto rejected_foreign_point = false;
     try {
-        static_cast<void>(bind_expression(capture(foreign_point)));
+        static_cast<void>(bind_expression(col("value"), "value"_n = foreign_point));
     } catch (const WiringError &error) {
         rejected_foreign_point = std::string_view{error.what()}.find("another GraphWiring") !=
                                  std::string_view::npos;
@@ -874,23 +1052,21 @@ void test_expression_binding_errors_name_the_binding() {
     require(unused_named, "unused binding error did not name the binding");
 }
 
-void test_non_inline_scalar_capture_owns_its_value() {
-    const auto add_label_size = node([](std::string label, In<TS<i64>> tick, Out<TS<i64>> output) {
-        output.set(*tick + static_cast<i64>(label.size()));
-    });
-    const auto graph = [&](wp<TS<i64>> tick) {
-        const auto expression = [&] {
-            const auto source = ScalarValue{std::string{"captured string"}};
-            const auto operands = std::array{capture(source), capture(tick)};
-            return bg::frame::apply(add_label_size, operands);
-        }();
-        return bind_expression(expression);
+void test_scalar_capture_and_named_string_parameter() {
+    const auto expression = [] {
+        const auto source = ScalarValue<string>{std::string{"captured string"}};
+        return capture(source) + param("suffix");
+    }();
+    const auto graph = [&](wp<TS<string>> suffix) {
+        return bind_expression(expression, "suffix"_n = suffix);
     };
-
-    const auto ticks = std::array<i64, 3>{1, 2, 3};
-    const auto actual = testing::test_graph(graph, ticks);
-    require(actual.equals<i64>({16, 17, 18}),
-            "a non-inline scalar capture did not survive binding and graph evaluation");
+    const auto values = std::array<std::string_view, 2>{" first", " second"};
+    const auto actual = testing::test_graph(graph, values);
+    const auto next_values = std::array<std::string_view, 2>{" third", " fourth"};
+    const auto next_actual = testing::test_graph(graph, next_values);
+    require(actual.equals<string>({"captured string first", "captured string second"}) &&
+                next_actual.equals<string>({"captured string third", "captured string fourth"}),
+            "a scalar string capture or named string parameter did not survive expression binding");
 }
 
 } // namespace
@@ -907,6 +1083,9 @@ int main() {
         test_static_frame_expression_binding();
         test_numeric_comparison_expression_wiring();
         test_filter_expression_with_multiple_parameters();
+        test_mixed_expression_chaining_and_filter();
+        test_mixed_operator_requirements();
+        test_mixed_expression_parameter_invalidation();
         test_comparison_runtime<i64, std::equal_to<>>(operators::eq);
         test_comparison_runtime<i64, std::not_equal_to<>>(operators::ne);
         test_comparison_runtime<i64, std::less<>>(operators::lt);
@@ -926,7 +1105,7 @@ int main() {
         test_runtime_schema_expression_binding();
         test_expression_bindings_are_per_call_and_owned();
         test_expression_binding_errors_name_the_binding();
-        test_non_inline_scalar_capture_owns_its_value();
+        test_scalar_capture_and_named_string_parameter();
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';
         return 1;

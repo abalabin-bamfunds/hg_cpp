@@ -4,6 +4,7 @@
 #include <bg/util/symbol.hpp>
 
 #include "operand_type.hpp"
+#include "mixed_expression.hpp"
 
 #include <memory>
 
@@ -126,6 +127,16 @@ const auto registered = [] {
             return make_column_expression(ColumnBlockFunction<bool, bool>{&logical_not}, value);
         });
     operators::not_.overload(not_graph);
+
+    const auto boolean_operand = [](const Type &type) { return details::is_operand(type, cpp_scalar_type<bool>()); };
+    const auto boolean_scalar = [](const Type &type) {
+        return std::addressof(type) == std::addressof(cpp_scalar_type<bool>());
+    };
+    details::register_mixed_binary(operators::and_, details::ExpressionOperation::and_, "and", boolean_operand,
+                                   boolean_scalar);
+    details::register_mixed_binary(operators::or_, details::ExpressionOperation::or_, "or", boolean_operand,
+                                   boolean_scalar);
+    details::register_mixed_unary(operators::not_, details::ExpressionOperation::not_, "not");
     return true;
 }();
 

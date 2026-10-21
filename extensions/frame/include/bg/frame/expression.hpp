@@ -357,58 +357,69 @@ wp<TSC<RESULT>> make_column_expression(ColumnBlockFunction<RESULT, ARGS...> call
 class Expression;
 
 namespace details {
+enum class ExpressionOperation { add, sub, mul, div, eq, ne, lt, le, gt, ge, and_, or_, not_, convert };
+
 struct ExpressionNode;
+struct ExpressionBindingSet;
 using ExpressionColumnResolver = std::function<WiringArgument(util::symbol)>;
 
+Expression expression_operation(ExpressionOperation operation, std::span<const Expression> operands,
+                                const ScalarType *conversion_target = nullptr);
+Expression expression_literal(ScalarValue<> value);
+Expression expression_binding(std::size_t index);
+WiringPoint make_mixed_expression(ExpressionOperation operation, std::span<const WiringArgument> operands);
+bool is_mixed_expression_bundle_type(const Type &type);
 WiringPoint bind_expression(const Expression &expression, std::span<const WiringArgument> bindings,
-                           const ExpressionColumnResolver &column_resolver);
+                            const ExpressionColumnResolver &column_resolver);
+WiringPoint bind_expression(WiringPoint expression, std::span<const WiringArgument> bindings,
+                            const ExpressionColumnResolver &column_resolver);
+WiringPoint bind_expression_tree(const Expression &expression, std::span<const WiringArgument> references,
+                                 ExpressionBindingSet &binding_set,
+                                 const ExpressionColumnResolver &column_resolver, GraphWiring &wiring);
 } // namespace details
 
-// An immutable wiring expression. The tree owns scalar captures and retains graph-bound WiringPoints. A retained
-// WiringPoint requires its GraphWiring to remain alive through binding and graph compilation. Binding resolves names
-// and invokes BG operators; the expression is not a runtime scalar or evaluator.
+// An immutable scalar expression. It owns scalar literals and names column and parameter inputs. Binding resolves
+// those names in a graph and invokes the corresponding BG operators.
 class Expression {
   private:
     explicit Expression(std::shared_ptr<const details::ExpressionNode> node) noexcept : node_{std::move(node)} {}
-
-    static Expression operation(const WiringTemplate &operation, const TypeMap *type_map,
-                                std::span<const Expression> operands);
 
     std::shared_ptr<const details::ExpressionNode> node_;
 
     friend Expression col(util::symbol name);
     friend Expression param(util::symbol name);
-    friend Expression capture(WiringArgument argument);
-    friend Expression apply(const WiringTemplate &operation, std::span<const Expression> operands);
-    friend Expression apply(const WiringTemplate &operation, const TypeMap &type_map,
-                            std::span<const Expression> operands);
+    friend Expression details::expression_operation(details::ExpressionOperation, std::span<const Expression>,
+                                                    const ScalarType *);
+    friend Expression details::expression_literal(ScalarValue<> value);
+    friend Expression details::expression_binding(std::size_t index);
     friend WiringPoint details::bind_expression(const Expression &, std::span<const WiringArgument>,
                                                 const details::ExpressionColumnResolver &);
+    friend WiringPoint details::bind_expression_tree(const Expression &, std::span<const WiringArgument>,
+                                                     details::ExpressionBindingSet &,
+                                                     const details::ExpressionColumnResolver &, GraphWiring &);
 };
+
+namespace details {
+template <typename T>
+concept expression_scalar_argument =
+    (bg::details::supported_scalar_argument<T> || bg::details::supported_scalar_value_argument<T>) &&
+    (!std::same_as<std::remove_cvref_t<T>, Expression>);
+} // namespace details
 
 Expression col(util::symbol name);
 Expression col(std::string_view name);
 Expression param(util::symbol name);
 Expression param(std::string_view name);
 
-// Construct one operation node. The operation must outlive binding and graph compilation that use the expression.
-// The node retains the operation identity and shared operand nodes.
-Expression apply(const WiringTemplate &operation, std::span<const Expression> operands);
-Expression apply(const WiringTemplate &operation, const TypeMap &type_map, std::span<const Expression> operands);
-
-template <typename Target, typename... Parameters>
-Expression apply(const bg::details::MappedWiring<Target, Parameters...> &operation,
-                 std::span<const Expression> operands) {
-    return apply(operation.target(), operation.type_map(), operands);
-}
-
-// Capture a graph argument or scalar value in an expression. Scalar data is copied into owned storage.
-Expression capture(WiringArgument argument);
-
+// Capture a scalar value in the expression. The value is copied into owned storage.
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression capture(Argument &&argument) {
-    return capture(WiringArgument{std::forward<Argument>(argument)});
+    if constexpr (bg::details::supported_scalar_value_argument<Argument>) {
+        return details::expression_literal(ScalarValue<>{argument});
+    } else {
+        return details::expression_literal(ScalarValue<>{std::forward<Argument>(argument)});
+    }
 }
 
 Expression operator+(const Expression &lhs, const Expression &rhs);
@@ -426,145 +437,145 @@ Expression operator||(const Expression &lhs, const Expression &rhs);
 Expression operator!(const Expression &value);
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator+(const Expression &lhs, Argument &&rhs) {
     return lhs + capture(std::forward<Argument>(rhs));
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator+(Argument &&lhs, const Expression &rhs) {
     return capture(std::forward<Argument>(lhs)) + rhs;
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator-(const Expression &lhs, Argument &&rhs) {
     return lhs - capture(std::forward<Argument>(rhs));
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator-(Argument &&lhs, const Expression &rhs) {
     return capture(std::forward<Argument>(lhs)) - rhs;
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator*(const Expression &lhs, Argument &&rhs) {
     return lhs * capture(std::forward<Argument>(rhs));
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator*(Argument &&lhs, const Expression &rhs) {
     return capture(std::forward<Argument>(lhs)) * rhs;
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator/(const Expression &lhs, Argument &&rhs) {
     return lhs / capture(std::forward<Argument>(rhs));
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator/(Argument &&lhs, const Expression &rhs) {
     return capture(std::forward<Argument>(lhs)) / rhs;
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator==(const Expression &lhs, Argument &&rhs) {
     return lhs == capture(std::forward<Argument>(rhs));
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator==(Argument &&lhs, const Expression &rhs) {
     return capture(std::forward<Argument>(lhs)) == rhs;
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator!=(const Expression &lhs, Argument &&rhs) {
     return lhs != capture(std::forward<Argument>(rhs));
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator!=(Argument &&lhs, const Expression &rhs) {
     return capture(std::forward<Argument>(lhs)) != rhs;
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator<(const Expression &lhs, Argument &&rhs) {
     return lhs < capture(std::forward<Argument>(rhs));
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator<(Argument &&lhs, const Expression &rhs) {
     return capture(std::forward<Argument>(lhs)) < rhs;
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator<=(const Expression &lhs, Argument &&rhs) {
     return lhs <= capture(std::forward<Argument>(rhs));
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator<=(Argument &&lhs, const Expression &rhs) {
     return capture(std::forward<Argument>(lhs)) <= rhs;
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator>(const Expression &lhs, Argument &&rhs) {
     return lhs > capture(std::forward<Argument>(rhs));
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator>(Argument &&lhs, const Expression &rhs) {
     return capture(std::forward<Argument>(lhs)) > rhs;
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator>=(Argument &&lhs, const Expression &rhs) {
     return capture(std::forward<Argument>(lhs)) >= rhs;
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator>=(const Expression &lhs, Argument &&rhs) {
     return lhs >= capture(std::forward<Argument>(rhs));
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator&&(const Expression &lhs, Argument &&rhs) {
     return lhs && capture(std::forward<Argument>(rhs));
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator&&(Argument &&lhs, const Expression &rhs) {
     return capture(std::forward<Argument>(lhs)) && rhs;
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator||(const Expression &lhs, Argument &&rhs) {
     return lhs || capture(std::forward<Argument>(rhs));
 }
 
 template <typename Argument>
-    requires bg::details::graph_code_argument<Argument>
+    requires details::expression_scalar_argument<Argument>
 Expression operator||(Argument &&lhs, const Expression &rhs) {
     return capture(std::forward<Argument>(lhs)) || rhs;
 }
@@ -577,27 +588,34 @@ wp<> bind_expression(const Expression &expression, Arguments &&...arguments) {
     return wp<>{details::bind_expression(expression, bindings, {})};
 }
 
-// Convert a column expression to one of the frame extension's supported cell types.
+template <typename... Arguments>
+    requires(bg::details::graph_code_argument<Arguments> && ...)
+wp<> bind_expression(wp<> expression, Arguments &&...arguments) {
+    auto bindings = bg::details::make_wiring_arguments(std::forward<Arguments>(arguments)...);
+    return wp<>{details::bind_expression(static_cast<WiringPoint>(expression), bindings, {})};
+}
+
+// Describe conversion to TARGET in a scalar expression.
 template <cell_type TARGET> Expression convert(const Expression &value) {
     const auto operands = std::array{value};
-    return bg::frame::apply(operators::convert[type<TSC<TARGET>>], operands);
-}
-
-// Convert a bound column through BG's explicit conversion operator.
-template <cell_type TARGET, typename SOURCE, auto... Properties>
-wp<TSC<TARGET>> convert(wp<TSC<SOURCE, Properties...>> column) {
-    return operators::convert[type<TSC<TARGET>>](column).template as<TSC<TARGET>>();
-}
-
-// Convert an erased wiring point, such as the result of bind_expression.
-template <cell_type TARGET>
-wp<TSC<TARGET>> convert(wp<> column) {
-    return operators::convert[type<TSC<TARGET>>](column).template as<TSC<TARGET>>();
+    return details::expression_operation(details::ExpressionOperation::convert, operands,
+                                        std::addressof(cpp_scalar_type<TARGET>()));
 }
 
 } // namespace bg::frame
 
 namespace bg {
+
+template <> struct scalar_type_traits<frame::Expression> {
+    static const ScalarType &type() noexcept;
+};
+
+template <> struct scalar_declaration_traits<frame::Expression> {
+    static constexpr bool generic = false;
+    static constexpr bool is_collection = false;
+    static constexpr bool supports_implicit_argument = true;
+    static constexpr bool supports_time_series = true;
+};
 
 template <frame::cell_type RESULT, frame::cell_type... ARGS>
 struct scalar_type_traits<frame::ColumnBlockFunction<RESULT, ARGS...>> {

@@ -8,6 +8,12 @@ Implement the accepted [block-operation contract](block_operation_proposal.md)
 with ordinary BG nodes and generic bundles. Wiring fixes the schemas, cell
 types, and adapters. Evaluation binds current values and executes block calls.
 
+`Expression` construction is scalar code. BG operator overloads combine scalar
+expressions and time series into ordinary TSBs holding a constant expression
+and explicit bindings. Binding the expression to columns selects the typed
+block functions. Time series updates change parameter values without rebuilding
+the scalar expression tree.
+
 ## Computation node
 
 Use separate BG schema variables named `COLUMNS`, `PARAMETER_INPUTS`, and

@@ -4,6 +4,7 @@
 #include <bg/util/symbol.hpp>
 
 #include "operand_type.hpp"
+#include "mixed_expression.hpp"
 
 #include <bit>
 #include <cmath>
@@ -206,6 +207,23 @@ const auto registered = [] {
     register_identity_column_conversion<double>();
     register_column_conversion<double, i64>();
     register_column_conversion<i64, double>();
+
+    const auto numeric_operand = [](const Type &type) {
+        return details::is_operand(type, cpp_scalar_type<i64>()) ||
+               details::is_operand(type, cpp_scalar_type<double>());
+    };
+    const auto numeric_scalar = [](const Type &type) {
+        return std::addressof(type) == std::addressof(cpp_scalar_type<i64>()) ||
+               std::addressof(type) == std::addressof(cpp_scalar_type<double>());
+    };
+    details::register_mixed_binary(operators::add, details::ExpressionOperation::add, "add", numeric_operand,
+                                   numeric_scalar);
+    details::register_mixed_binary(operators::sub, details::ExpressionOperation::sub, "subtract", numeric_operand,
+                                   numeric_scalar);
+    details::register_mixed_binary(operators::mul, details::ExpressionOperation::mul, "multiply", numeric_operand,
+                                   numeric_scalar);
+    details::register_mixed_binary(operators::div, details::ExpressionOperation::div, "divide", numeric_operand,
+                                   numeric_scalar);
     return true;
 }();
 

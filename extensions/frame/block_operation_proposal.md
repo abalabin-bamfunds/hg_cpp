@@ -9,8 +9,12 @@ Give column operators one expression contract and one materialisation path.
 BG selects overloads and resolves operand and result types. The frame extension
 compiles the selected operations into calls over aligned column batches.
 
-The existing `Expression` remains the graph-author API. These declarations are
-extension-facing APIs for implementing operators and expression evaluation.
+`Expression` describes scalar operations, named columns and parameters, and
+owned scalar values. It can be constructed without a wiring context. BG
+operator overloads combine it with time series in ordinary bundles. Binding
+resolves the scalar operations to the column expression contract below.
+These declarations are extension-facing APIs for implementing operators and
+expression evaluation.
 
 ## Typed callback
 

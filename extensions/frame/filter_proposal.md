@@ -22,10 +22,12 @@ auto predicate = bind_expression(q, col("ask") - col("bid") < tolerance);
 auto selected_spreads = frame::filter(q, predicate);
 ```
 
-Direct operands use the existing expression capture support. A scalar is owned
-by the expression; a scalar time series is an ordinary BG dependency whose
-updates reevaluate the predicate for all current rows. Named `param("name")`
-placeholders remain available for expressions bound to different arguments.
+Scalar operands construct an immutable expression and own their scalar values.
+Combining an expression with a wiring point invokes a BG operator overload
+that returns a TSB containing the constant expression and explicit time series
+bindings. A scalar time series update reevaluates the predicate for all current
+rows. Named `param("name")` placeholders remain available for expressions bound
+to different arguments.
 
 Both functions call BG's `operators::filter_(predicate, source)`. The frame
 extension supplies the overload for row predicates. Its predicate has semantic
@@ -35,8 +37,9 @@ type `TSC<bool>` and can retain its expression materialisation option. A scalar
 The output retains the source schema, key metadata, row identities, and row
 traversal order. A valid null predicate excludes its row, as does false. Only
 true selects a row. Comparison callbacks return null when either cell is null.
-Operand cell types must match; mixed types fail during wiring unless an operand
-is explicitly converted with `convert<T>()`.
+Operand cell types must match. Use `frame::convert<T>(expression)` for scalar
+expression construction or BG's `operators::convert[type<TSC<T>>](column)` for
+column wiring points when conversion is required.
 
 ## Wiring
 
