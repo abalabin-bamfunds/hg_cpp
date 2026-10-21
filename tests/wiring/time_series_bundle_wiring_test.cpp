@@ -163,7 +163,7 @@ TEST_CASE("typed field access preserves free TSB sources",
     const auto context = WiringContext{wiring};
     const auto count = count_source();
     const auto value = value_source();
-    const auto bundle = bundle("value"_n = value, "count"_n = count).as<TSB<TestBundle>>();
+    const auto bundle = bg::bundle("value"_n = value, "count"_n = count).as<TSB<TestBundle>>();
     sink(bundle->count);
 
     (void)wiring.complete_pending_wiring();
@@ -213,7 +213,7 @@ TEST_CASE("getattr selects a field from an unnamed free TSB",
     auto wiring = GraphWiring{};
 
     const auto context = WiringContext{wiring};
-    const auto bundle = bundle("count"_n = count_source(), "value"_n = value_source());
+    const auto bundle = bg::bundle("count"_n = count_source(), "value"_n = value_source());
     const auto count = operators::getattr(bundle, "count"_sym);
 
     (void)wiring.complete_pending_wiring();
@@ -296,7 +296,7 @@ TEST_CASE("field selection from an argument-backed TSB does not materialize the 
     auto fields = std::vector<WiringArgument>{};
     fields.emplace_back(util::symbol{"count"}, i64{7});
     fields.emplace_back(util::symbol{"value"}, source());
-    const auto bundle = bundle(std::span<const WiringArgument>{fields});
+    const auto bundle = bg::bundle(std::span<const WiringArgument>{fields});
     const auto value = details::time_series_bundle_field(bundle, util::symbol{"value"});
     const auto count = details::time_series_bundle_field(bundle, util::symbol{"count"});
     CHECK(&count.type() == &TS<i64, TimeSeriesGuarantee::const_>::type());
