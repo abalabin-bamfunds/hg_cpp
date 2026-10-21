@@ -173,7 +173,7 @@ void ServiceCatalogue::MultiserviceRegistration::register_impl(const ServiceDefi
     if (!state) {
         throw std::logic_error{"the multiservice registration's catalogue no longer exists"};
     }
-    ServiceCatalogue::add_multiservice_impl(state, index_, service, TypeMap{}, filters);
+    ServiceCatalogue::add_multiservice_impl(state, index_, service, TypeMap{}, std::nullopt, filters);
 }
 
 bool ServiceCatalogue::BuildOperation::same_scalars(std::span<const ScalarValue<>> left,
