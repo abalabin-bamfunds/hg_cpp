@@ -40,7 +40,7 @@ TEST_CASE("bundle constructs an empty hierarchical scalar",
 namespace {
 
 template <template <typename, auto...> typename Field> struct Instrument {
-    Field<symbol> symbol;
+    Field<bg::symbol> symbol;
     Field<double, optional> price;
 };
 
