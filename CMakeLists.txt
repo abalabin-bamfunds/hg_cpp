@@ -69,6 +69,7 @@ add_library(
     src/guarantee_parameter.cpp
     src/runtime_type.cpp
     src/runtime_graph.cpp
+    src/graph/dynamic_node_subscriber_storage.cpp
     src/scratch_pad.cpp
     src/service.cpp
     src/service_catalogue.cpp
@@ -103,6 +104,7 @@ add_library(
     src/time_series/tsb/wiring.cpp
     src/time_series/tsb/operators.cpp
     src/time_series/ref/dynamic_reference_input.cpp
+    src/time_series/dynamic_value_input.cpp
     src/time_series/ref/fixed_item_selection.cpp
     src/time_series/ref/ref_item_notifications.cpp
     src/time_series/ref/ref_notification.cpp
@@ -122,6 +124,7 @@ add_library(
     src/time_series/tss/tss_type.cpp
     src/time_series/tss/tss_runtime_type.cpp
     src/time_series/tss/tss_reference_sample.cpp
+    src/time_series/collection_membership.cpp
     src/time_series/output_path.cpp
     src/testing/time_series_tick_comparison.cpp
     src/time_series/time_series_runtime_type.cpp

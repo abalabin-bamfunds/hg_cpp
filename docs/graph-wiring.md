@@ -400,7 +400,9 @@ node definitions, connections, and stored scalar values are semantic. Local
 node indices, wiring paths, and parameter names are not.
 
 `graph(...)` infers the signature from the graph function. A time series
-parameter uses `wp<TS_T>`. Scalar parameters use their scalar types. The return
+parameter uses `wp<TS_T>`. Scalar parameters use their scalar types or
+`Scalar<T>` for borrowed access, including scalar type variables. Forwarding a
+scalar view copies its value into the receiving wiring argument. The return
 type is `wp<TS_T>` or `void`.
 
 Callable and aggregate graph input parameters may use

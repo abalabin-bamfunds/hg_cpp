@@ -57,6 +57,45 @@ TEST_CASE("a time series set becomes valid on its first empty tick and remains v
 
 namespace {
 
+struct tss_membership_evaluation_count_definition {
+    static constexpr bool uses_cycle_callbacks = true;
+
+    bg::In<bg::REF<bg::TSS<bg::i64>>> collection;
+    bg::In<bg::TS<bool>, bg::optional, bg::dynamic_binding> membership;
+    bg::Out<bg::TS<bool>> output;
+
+    void evaluate() const {
+        ++evaluation_count;
+        const auto key = bg::i64{7};
+        membership.bind(collection.membership(bg::Scalar<bg::i64>::from(key)));
+        output.copy(membership);
+    }
+
+    void on_invalidation() const {
+        membership.unbind();
+        output.invalidate();
+    }
+
+    inline static std::size_t evaluation_count{};
+};
+
+} // namespace
+
+TEST_CASE("a TSS membership binding ignores changes to other keys",
+          "[evaluation][tss][series:tss][series:reference][feature:collection-change]"
+          "[scalar:integer][transition:addition][transition:removal][definition:aggregate]") {
+    const auto observe = bg::node<tss_membership_evaluation_count_definition>();
+    const auto graph = [&](bg::wp<bg::TSS<bg::i64>> input) { return observe(input); };
+    tss_membership_evaluation_count_definition::evaluation_count = 0;
+
+    const auto actual = bg::testing::test_graph(graph, {{7}, {8}, {literal::REMOVED(7)}, {7}});
+
+    CHECK(actual.equals<bool>({true, std::nullopt, false, true}));
+    CHECK(tss_membership_evaluation_count_definition::evaluation_count == 3);
+}
+
+namespace {
+
 struct composite_literal_set_source_definition {
     static constexpr bool uses_timed_scheduling = true;
 

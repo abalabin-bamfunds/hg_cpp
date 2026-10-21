@@ -54,7 +54,7 @@ struct AllValidInputMetadata {
 
 struct RuntimeTypeMetadata {
     std::uint32_t runtime_type_count;
-    std::uint32_t dynamic_reference_begin;
+    std::uint32_t dynamic_input_begin;
 };
 
 struct AllValidInputDescriptor {
@@ -500,12 +500,12 @@ class CompiledNode {
 
     const TimeSeriesRuntimeType &output_runtime_type() const noexcept {
         return static_cast<const TimeSeriesRuntimeType &>(
-            runtime_type(runtime_type_metadata().dynamic_reference_begin - 1));
+            runtime_type(runtime_type_metadata().dynamic_input_begin - 1));
     }
 
-    const TimeSeriesRuntimeType &dynamic_reference_input_runtime_type(std::size_t index) const noexcept {
+    const TimeSeriesRuntimeType &dynamic_input_runtime_type(std::size_t index) const noexcept {
         return static_cast<const TimeSeriesRuntimeType &>(
-            runtime_type(runtime_type_metadata().dynamic_reference_begin + index));
+            runtime_type(runtime_type_metadata().dynamic_input_begin + index));
     }
 
     const NodeInvocationMetadata *node_invocation_metadata() const noexcept {

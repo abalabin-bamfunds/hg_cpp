@@ -1,14 +1,32 @@
 #include <bg/library.hpp>
+#include <bg/map.hpp>
 #include <bg/node.hpp>
+#include <bg/switch.hpp>
+#include <bg/evaluation_context.hpp>
+#include <bg/graph/compiled_graph.hpp>
+#include <bg/graph/graph_wiring.hpp>
+#include <bg/graph/runtime_graph.hpp>
+#include <bg/graph/wiring_context.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
+#include <bg/time_series/ref/ref_provider.hpp>
+#include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
+
+#include "../utils/counting_memory_resource.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <stdexcept>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 using namespace bg;
 using namespace bg::literals;
@@ -21,6 +39,126 @@ template <template <typename, auto...> typename Field> struct length_bundle {
 };
 
 const auto final_keys = node([](Out<TSS<i64, TimeSeriesGuarantee::final>> output) { output.apply({1, 2}); });
+
+template <bool ValidItems, typename TS_T = TS<i64>> struct tsd_membership_evaluation_count_definition {
+    static constexpr bool uses_cycle_callbacks = true;
+
+    In<REF<TSD<i64, TS_T>>> collection;
+    In<TS<bool>, optional, dynamic_binding> membership;
+    Out<TS<bool>> output;
+
+    void evaluate() const {
+        ++evaluation_count;
+        const auto key_value = i64{7};
+        const auto key = Scalar<i64>::from(key_value);
+        if constexpr (ValidItems) {
+            membership.bind(collection.valid_item_membership(key));
+        } else {
+            membership.bind(collection.membership(key));
+        }
+        output.copy(membership);
+    }
+
+    void on_invalidation() const {
+        membership.unbind();
+        output.invalidate();
+    }
+
+    inline static std::size_t evaluation_count{};
+};
+
+struct mixed_dynamic_input_definition {
+    In<REF<TSD<i64, TS<i64>>>> values;
+    In<REF<TSS<i64>>> keys;
+    In<TS<i64>> key;
+    Scalar<SCALAR> seed;
+    State<SCALAR> state;
+    In<REF<TS<i64>>, dynamic_binding, optional> selected_value;
+    In<TS<bool>, optional, dynamic_binding> selected_membership;
+    Out<TS<bool>> output;
+
+    void evaluate() const {
+        state.set(seed);
+        selected_value.bind(values[key.value_view()]);
+        selected_membership.bind(keys.membership(key.value_view()));
+        output.set(selected_value.valid() && selected_membership.valid() && *selected_membership);
+    }
+
+    void on_invalidation() const {
+        selected_value.unbind();
+        selected_membership.unbind();
+        output.invalidate();
+    }
+};
+
+class FailedDynamicValueBindingType final : public details::DynamicValueBindingType {
+  public:
+    TimeSeriesInputData input_data(const void *, EvaluationTime) const noexcept override { return {}; }
+
+    void subscribe(void *, RuntimeGraph &, std::size_t, std::uint32_t) const override {
+        throw std::runtime_error{"subscription failed"};
+    }
+
+    void unsubscribe(void *, RuntimeGraph &, std::size_t) const noexcept override {}
+};
+
+struct failed_membership_rebind_definition {
+    static constexpr bool uses_cycle_callbacks = true;
+
+    In<REF<TSD<i64, TS<i64>>>> collection;
+    In<TS<bool>, optional, dynamic_binding> membership;
+    Out<TS<bool>> output;
+
+    void evaluate() const {
+        const auto key = i64{7};
+        membership.bind(collection.membership(Scalar<i64>::from(key)));
+        try {
+            static const auto failed_binding_type = FailedDynamicValueBindingType{};
+            static int failed_binding_data{};
+            membership.bind(details::DynamicValueBinding<bool>{&failed_binding_data, &failed_binding_type});
+        } catch (const std::runtime_error &) {
+        }
+        output.copy(membership);
+    }
+};
+
+template <template <typename, auto...> typename Field> struct absent_membership_churn_inputs {
+    Field<TSD<i64, TS<i64>>> collection;
+    Field<TS<i64>> key;
+    Field<TS<i64>> unused_key;
+};
+
+struct absent_membership_churn_source {
+    static constexpr bool schedule_on_start = true;
+    static constexpr bool uses_timed_scheduling = true;
+
+    Out<TSB<absent_membership_churn_inputs>> output;
+
+    void evaluate(EvaluationContext *context) const {
+        if (cycle == 0) {
+            output->collection[0].set(0);
+        }
+        output->key.set(static_cast<i64>(100 + cycle));
+        output->unused_key.set(static_cast<i64>(100'000 + cycle));
+        ++cycle;
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    static inline std::size_t cycle{};
+};
+
+struct unused_membership_descriptor_definition {
+    static constexpr bool uses_cycle_callbacks = true;
+
+    In<REF<TSD<i64, TS<i64>>>> collection;
+    In<TS<i64>> key;
+    Out<TS<bool>> output;
+
+    void evaluate() const {
+        const auto binding = collection.membership(key.value_view());
+        output.set(binding.data != nullptr);
+    }
+};
 
 } // namespace
 
@@ -105,6 +243,339 @@ TEST_CASE("contains_ on a TSS accepts a time-series key",
     };
 
     CHECK(testing::test_graph(graph, {{1}, {2}}, {1, 2}).equals<bool>({true, true}));
+}
+
+TEST_CASE("contains_ on a TSD distinguishes key presence from valid item presence",
+          "[feature:operator][series:tsd][scalar:i64][input-guarantee:valid-items][transition:invalidation]"
+          "[transition:revalidation]") {
+    const auto physical = [](wp<TSD<i64, TS<i64>>> collection) {
+        return operators::contains_("collection"_n = collection, "key"_n = i64{7});
+    };
+    const auto valid_items = [](wp<TSD<i64, TS<i64>>> collection) {
+        return operators::contains_("collection"_n = bg::valid_items(collection), "key"_n = i64{7});
+    };
+    CHECK(testing::test_graph(physical, {{{7, 70}}, {{7, literal::INVALID}}, {{7, 71}}})
+              .equals<bool>({true, std::nullopt, std::nullopt}));
+    CHECK(testing::test_graph(valid_items, {{{7, 70}}, {{7, literal::INVALID}}, {{7, 71}}})
+              .equals<bool>({true, false, true}));
+}
+
+TEST_CASE("valid-item TSD membership uses REF item validity, not target validity",
+          "[feature:operator][series:tsd][series:reference][input-guarantee:valid-items]"
+          "[transition:invalidation][transition:revalidation]") {
+    const auto make_dictionary = node([](In<TS<i64>> command, In<REF<TS<i64>>> target,
+                                         Out<TSD<i64, REF<TS<i64>>>> output) {
+        if (*command == 0) {
+            output[7].copy(target);
+        } else if (*command == 1) {
+            output[7].invalidate();
+        } else if (*command == 2) {
+            output[7].copy(target);
+        }
+    });
+    const auto run = [&]<bool ValidItems>() {
+        using Definition = tsd_membership_evaluation_count_definition<ValidItems, REF<TS<i64>>>;
+        const auto observe = node<Definition>();
+        const auto graph = [&](wp<TS<i64>> target_value, wp<TS<i64>> command) {
+            return observe(make_dictionary(command, target_value));
+        };
+        Definition::evaluation_count = 0;
+        auto actual = testing::test_graph(
+            graph,
+            testing::input<TS<i64>>({literal::INVALID, i64{10}, i64{20}, literal::INVALID, literal::INVALID, i64{30}}),
+            testing::input<TS<i64>>({0, 3, 3, 1, 2, 3}));
+        return std::pair{std::move(actual), Definition::evaluation_count};
+    };
+
+    const auto [physical, physical_evaluation_count] = run.template operator()<false>();
+    CHECK(physical.equals<bool>({true, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt}));
+    CHECK(physical_evaluation_count == 1);
+
+    const auto [valid_items, valid_items_evaluation_count] = run.template operator()<true>();
+    CHECK(valid_items.equals<bool>({true, std::nullopt, std::nullopt, false, true, std::nullopt}));
+    CHECK(valid_items_evaluation_count == 3);
+}
+
+TEST_CASE("an aggregate can bind a dynamic reference and dynamic value input together",
+          "[feature:reference][series:reference][series:value][binding:reference-to-value]"
+          "[shape:multiple][definition:aggregate][transition:update]") {
+    const auto observe = node<mixed_dynamic_input_definition>();
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> values, wp<TSS<i64>> keys, wp<TS<i64>> key) {
+        return observe(values, keys, key, i64{0});
+    };
+
+    const auto actual = testing::test_graph(graph, {{{1, 10}}, {{1, 10}}, {{1, 10}}},
+                                            {{1}, {literal::REMOVED(1)}, {1}}, {1, 1, 1});
+
+    CHECK(actual.equals<bool>({true, false, true}));
+}
+
+TEST_CASE("a TSD membership binding ignores unrelated keys and item updates",
+          "[evaluation][series:tsd][series:reference][feature:collection-change]"
+          "[binding:reference-to-value][transition:addition][transition:invalidation][transition:revalidation]") {
+    using Definition = tsd_membership_evaluation_count_definition<false>;
+    const auto observe = node<Definition>();
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return observe(input); };
+    Definition::evaluation_count = 0;
+
+    const auto actual = testing::test_graph(
+        graph, {{{7, 70}}, {{8, 80}}, {{7, literal::INVALID}}, {{7, literal::REMOVE}}, {{7, 71}}, {{8, 81}}});
+
+    CHECK(actual.equals<bool>({true, std::nullopt, std::nullopt, false, true, std::nullopt}));
+    CHECK(Definition::evaluation_count == 3);
+}
+
+namespace {
+
+struct shared_tsd_membership_definition {
+    static constexpr bool uses_cycle_callbacks = true;
+
+    In<REF<TSD<i64, TS<i64>>>> collection;
+    In<TS<i64>> key;
+    In<TS<bool>> first_active;
+    In<TS<bool>> second_active;
+    In<TS<bool>, optional, dynamic_binding> first_membership;
+    In<TS<bool>, optional, dynamic_binding> second_membership;
+    Out<TS<bool>> output;
+
+    void evaluate() const {
+        if (*first_active) {
+            first_membership.bind(collection.membership(key.value_view()));
+        } else {
+            first_membership.unbind();
+        }
+        if (*second_active) {
+            second_membership.bind(collection.membership(key.value_view()));
+        } else {
+            second_membership.unbind();
+        }
+
+        const auto first_contains_key = *first_active && first_membership.valid() && *first_membership;
+        const auto second_contains_key = *second_active && second_membership.valid() && *second_membership;
+        output.set(first_contains_key || second_contains_key);
+    }
+
+    void on_invalidation() const {
+        first_membership.unbind();
+        second_membership.unbind();
+        output.invalidate();
+    }
+};
+
+} // namespace
+
+TEST_CASE("TSD membership supports shared consumers and release followed by rebinding",
+          "[evaluation][series:tsd][series:reference][feature:collection-change]"
+          "[shape:multiple][definition:aggregate][transition:removal][transition:addition]") {
+    const auto observe = node<shared_tsd_membership_definition>();
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> collection, wp<TS<i64>> key, wp<TS<bool>> first_active,
+                           wp<TS<bool>> second_active) {
+        return observe(collection, key, first_active, second_active);
+    };
+
+    const auto actual = testing::test_graph(graph,
+                                            {{{7, 70}}, {{7, 70}}, {{7, 70}}, {{7, literal::REMOVE}},
+                                             literal::SKIP, literal::SKIP, {{7, 71}}},
+                                            {7, 7, 7, 7, 7, 7, 7},
+                                            {true, false, false, false, false, false, false},
+                                            {true, true, false, false, false, true, true});
+
+    CHECK(actual.equals<bool>({true, true, false, false, false, false, true}));
+}
+
+TEST_CASE("a failed dynamic membership subscription preserves the previous binding",
+          "[evaluation][series:tsd][series:reference][feature:collection-change]"
+          "[shape:single-node][definition:aggregate][transition:update]") {
+    const auto observe = node<failed_membership_rebind_definition>();
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> collection) { return observe(collection); };
+
+    CHECK(testing::test_graph(graph, {{{7, 70}}, {{7, literal::REMOVE}}}).equals<bool>({true, false}));
+}
+
+TEST_CASE("absent TSD membership key churn releases unused descriptors while the graph is alive",
+          "[evaluation][series:tsd][series:reference][feature:collection-change][allocation]"
+          "[shape:multiple][transition:update]") {
+    absent_membership_churn_source::cycle = 0;
+    const auto source = node<absent_membership_churn_source>();
+    const auto inspect_unused = node<unused_membership_descriptor_definition>();
+    const auto sink = node([](In<TS<bool>> selected, In<TS<bool>> unused, Out<TS<bool>> output) {
+        output.set(*selected || *unused);
+    });
+    auto wiring = GraphWiring{};
+    {
+        auto context = WiringContext{wiring};
+        const auto inputs = source();
+        const auto selected = operators::contains_("collection"_n = inputs->collection, "key"_n = inputs->key);
+        const auto unused = inspect_unused(inputs->collection, inputs->unused_key);
+        (void)sink(selected, unused);
+    }
+    wiring.finalize();
+    const auto compiled = CompiledGraph{wiring};
+
+    auto memory = counting_memory_resource{};
+    auto global_state = GlobalState{allocator{memory}};
+    const auto allocations_before_runtime = memory.allocations();
+    {
+        auto runtime = RuntimeGraph{compiled, allocator{memory}, global_state};
+        auto time = MIN_DT + std::chrono::microseconds{1};
+        runtime.start(time);
+        for (auto cycle = std::size_t{}; cycle < 20; ++cycle) {
+            time += std::chrono::microseconds{1};
+            runtime.evaluate(time);
+        }
+
+        const auto steady_allocations = memory.allocations();
+        const auto steady_allocated_bytes = memory.allocated_bytes();
+        auto maximum_allocations = steady_allocations;
+        auto maximum_allocated_bytes = steady_allocated_bytes;
+        for (auto cycle = std::size_t{}; cycle < 2'000; ++cycle) {
+            time += std::chrono::microseconds{1};
+            runtime.evaluate(time);
+            maximum_allocations = std::max(maximum_allocations, memory.allocations());
+            maximum_allocated_bytes = std::max(maximum_allocated_bytes, memory.allocated_bytes());
+        }
+        CHECK(maximum_allocations <= steady_allocations + 1);
+        CHECK(maximum_allocated_bytes <= steady_allocated_bytes + 256);
+        runtime.stop();
+    }
+    CHECK(memory.allocations() == allocations_before_runtime);
+}
+
+TEST_CASE("valid-item TSD membership observes selected item validity only",
+          "[evaluation][series:tsd][series:reference][feature:collection-change][input-guarantee:valid-items]"
+          "[binding:reference-to-value][transition:invalidation][transition:revalidation]") {
+    using Definition = tsd_membership_evaluation_count_definition<true>;
+    const auto observe = node<Definition>();
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return observe(input); };
+    Definition::evaluation_count = 0;
+
+    const auto actual = testing::test_graph(
+        graph, {{{7, 70}}, {{8, 80}}, {{7, literal::INVALID}}, {{8, 81}}, {{7, 71}}});
+
+    CHECK(actual.equals<bool>({true, std::nullopt, false, std::nullopt, true}));
+    CHECK(Definition::evaluation_count == 3);
+}
+
+TEST_CASE("contains_ on a TSD handles an invalid and revalidated time-series key",
+          "[feature:operator][series:tsd][series:value][scalar:i64][transition:invalidation]"
+          "[transition:revalidation]") {
+    const auto graph = [](wp<TSD<i64, TS<i64>>> collection, wp<TS<i64>> key) {
+        return operators::contains_("collection"_n = collection, "key"_n = key);
+    };
+
+    const auto actual = testing::test_graph(graph, {{{7, 70}}, {{7, 70}}, {{7, 70}}}, {7, literal::INVALID, 7});
+
+    CHECK(actual.equals({true, literal::INVALID, true}));
+}
+
+TEST_CASE("contains_ accepts an unchanged ordinary time-series key",
+          "[feature:operator][series:tsd][series:value][scalar:i64][transition:update]") {
+    const auto graph = [](wp<TSD<i64, TS<i64>>> collection, wp<TS<i64>> key) {
+        return operators::contains_("collection"_n = collection, "key"_n = key);
+    };
+
+    const auto actual = testing::test_graph(graph, {{{7, 70}}, {{7, 70}}}, {7, 7});
+
+    CHECK(actual.equals<bool>({true, true}));
+}
+
+TEST_CASE("contains_ follows a time-series key through absent-key churn",
+          "[feature:operator][series:tsd][series:value][scalar:i64][transition:update]") {
+    const auto graph = [](wp<TSD<i64, TS<i64>>> collection, wp<TS<i64>> key) {
+        return operators::contains_("collection"_n = collection, "key"_n = key);
+    };
+
+    const auto actual = testing::test_graph(graph,
+                                            {{{7, 70}}, literal::SKIP, literal::SKIP, literal::SKIP,
+                                             literal::SKIP, literal::SKIP},
+                                            {8, 9, 8, 7, 9, 7});
+
+    CHECK(actual.equals<bool>({false, false, false, true, false, true}));
+}
+
+TEST_CASE("contains_ follows a selected TSD reference when membership is unchanged",
+          "[feature:operator][series:tsd][series:reference][feature:collection-change]"
+          "[binding:reference-to-value][transition:update][transition:removal]") {
+    const auto graph = [](wp<TS<bool>> select_first, wp<TSD<i64, TS<i64>>> first,
+                          wp<TSD<i64, TS<i64>>> second) {
+        const auto selected = operators::if_then_else(select_first, first, second);
+        return operators::contains_("collection"_n = selected, "key"_n = i64{7});
+    };
+
+    const auto actual = testing::test_graph(
+        graph, {true, false, true, false, true, false, true},
+        {{{7, 70}}, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP,
+         {{7, literal::REMOVE}}},
+        {{{7, 70}}, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP});
+
+    CHECK(actual.equals<bool>({true, true, true, true, true, true, false}));
+}
+
+TEST_CASE("contains_ follows a stable nested TSD reference when its backing changes",
+          "[feature:operator][series:tsd][series:reference][feature:collection-change]"
+          "[binding:reference-to-value][transition:update]") {
+    const auto forward_dictionary = node([](In<REF<TSD<i64, TSD<i64, TS<i64>>>>> input,
+                                            Out<REF<TSD<i64, TSD<i64, TS<i64>>>>> output) {
+        const auto stable = details::ReferenceProvider::representation(
+            input.value(), cpp_time_series_runtime_type<TSD<i64, TSD<i64, TS<i64>>>>());
+        output.set_value(stable);
+    });
+    const auto select_dictionary = node([](In<TS<bool>> select_second, In<REF<TSD<i64, TS<i64>>>> first,
+                                           In<REF<TSD<i64, TS<i64>>>> second,
+                                           Out<TSD<i64, REF<TSD<i64, TS<i64>>>>> output) {
+        output[1].copy(*select_second ? second : first);
+    });
+    auto observed_references = std::vector<std::uintptr_t>{};
+    const auto observe_reference = node([&](In<TS<bool>>, In<REF<TSD<i64, TS<i64>>>> input,
+                                            Out<REF<TSD<i64, TS<i64>>>> output) {
+        observed_references.push_back(input.value().raw());
+        output.copy(input);
+    });
+    const auto tested = [&](wp<TS<bool>> select_second, wp<TSD<i64, TS<i64>>> first,
+                            wp<TSD<i64, TS<i64>>> second) {
+        const auto selected = forward_dictionary(select_dictionary(select_second, first, second))[i64{1}];
+        const auto observed = observe_reference(select_second, selected);
+        return operators::contains_("collection"_n = observed, "key"_n = i64{7});
+    };
+
+    const auto actual = testing::test_graph(
+        tested, {false, true, false, true}, {{{7, 70}}, literal::SKIP, literal::SKIP, literal::SKIP},
+        {{}, literal::SKIP, literal::SKIP, literal::SKIP});
+
+    CHECK(actual.equals<bool>({true, false, true, false}));
+    CHECK(observed_references.size() == 4);
+    CAPTURE(observed_references);
+    if (!observed_references.empty()) {
+        CHECK(std::ranges::all_of(observed_references, [reference = observed_references.front()](auto value) {
+            return value == reference;
+        }));
+    }
+}
+
+TEST_CASE("TSD membership resubscribes when its switch branch is recreated",
+          "[evaluation][series:tsd][series:reference][feature:collection-change][feature:switch]"
+          "[feature:nested-graph][shape:nested][transition:stop][transition:restart][definition:function]") {
+    using Definition = tsd_membership_evaluation_count_definition<false>;
+    const auto observe = node<Definition>();
+    const auto make_dictionary = node([](In<TS<i64>> value, Out<TSD<i64, TS<i64>>> output) {
+        output[7].set(*value);
+    });
+    const auto selected_branch = graph("name"_n = "selected_membership_branch", [&](wp<TS<i64>> value) {
+        return observe(make_dictionary(value));
+    });
+    const auto tested = [&](wp<TS<i64>> selector, wp<TS<i64>> value) {
+        return switch_(selector,
+                       cases{case_(i64{1}, selected_branch),
+                             case_(i64{2}, [](wp<TS<i64>>) { return operators::const_(false).as<TS<bool>>(); })},
+                       value)
+            .as<TS<bool>>();
+    };
+
+    Definition::evaluation_count = 0;
+    const auto actual = testing::test_graph(tested, {1, 2, 1, 2, 1}, {10, 20, 30, 40, 50});
+
+    CHECK(actual.equals<bool>({true, false, true, false, true}));
+    CHECK(Definition::evaluation_count == 3);
 }
 
 TEST_CASE("is_empty observes required and optional TSS membership",
@@ -431,6 +902,42 @@ TEST_CASE("TSS set operators support string keys",
               .equals({{"alpha", "beta"}, {"gamma", literal::REMOVED("alpha")}}));
 }
 
+TEST_CASE("contains_ does not reevaluate when unrelated TSS keys change",
+          "[feature:operator][series:tss][scalar:i64][transition:addition][transition:removal]") {
+    const auto graph = [](wp<TSS<i64>> collection) {
+        return operators::contains_("collection"_n = collection, "key"_n = i64{1});
+    };
+
+    CHECK(testing::test_graph(graph, {{2}, {3}, {4}, {1}, {5}, {literal::REMOVED(1)}, {6}})
+              .equals<bool>({false, std::nullopt, std::nullopt, true, std::nullopt, false, std::nullopt}));
+}
+
+TEST_CASE("mapped contains_ branches share an outer TSS and release removed subscriptions",
+          "[feature:map][feature:operator][feature:collection-change][series:tss]"
+          "[shape:doubly-nested][transition:addition][transition:removal]") {
+    auto evaluations = std::array<std::size_t, 2>{};
+    const auto record_membership = node(
+        [&](In<TS<i64, TimeSeriesGuarantee::const_>> key, In<TS<bool>> membership) {
+            ++evaluations[static_cast<std::size_t>(*key - 7)];
+            return *membership;
+        });
+    const auto branch = graph(
+        "name"_n = "mapped_outer_tss_membership",
+        [&](wp<TS<i64, TimeSeriesGuarantee::const_>> key, wp<TSS<i64>> collection) {
+            return record_membership(key, operators::contains_("collection"_n = collection, "key"_n = key));
+        });
+    const auto tested = [&](wp<TSS<i64>> branch_keys, wp<TSS<i64>> collection) {
+        const auto result = map(branch, branch_keys, pass_through(collection), "__key_arg__"_n = 0);
+        return result[i64{7}].as<TS<bool>>();
+    };
+
+    (void)testing::test_graph(tested, {{7, 8}, {}, {}, {literal::REMOVED(7)}, {}, {7}},
+                              {{7}, {9}, {literal::REMOVED(7)}, {}, {7}, {}});
+
+    const auto expected_evaluations = std::array<std::size_t, 2>{3, 1};
+    CHECK(evaluations == expected_evaluations);
+}
+
 TEST_CASE("contains_ follows a time-series key through invalidation and revalidation",
           "[feature:operator][series:tss][scalar:i64][shape:single-node][validity:required]"
           "[transition:invalidation][transition:revalidation]") {
@@ -439,7 +946,7 @@ TEST_CASE("contains_ follows a time-series key through invalidation and revalida
     };
 
     CHECK(testing::test_graph(graph, {{1, 2}, {1, 2}, {1, 2}}, testing::input<TS<i64>>({1, literal::INVALID, 2}))
-              .equals<bool>({true, std::nullopt, true}));
+              .equals({true, literal::INVALID, true}));
 }
 
 TEST_CASE("contains_ follows a selected TSS reference through retargeting and invalidation",
@@ -450,17 +957,26 @@ TEST_CASE("contains_ follows a selected TSS reference through retargeting and in
         return operators::contains_("collection"_n = selected, "key"_n = i64{1});
     };
 
-    CHECK(testing::test_graph(query, testing::input<TS<bool>>({true, false, literal::INVALID, true}),
-                              {{1}, {2}, {3}, {1}}, {{2}, {2}, {3}, {3}})
-              .equals<bool>({true, false, std::nullopt, true}));
+    CHECK(testing::test_graph(query, testing::input<TS<bool>>({true, false, literal::INVALID, true, true, true}),
+                              testing::input<TSS<i64>>({{1}, {2}, {3}, {1}, {1}, {1}}),
+                              testing::input<TSS<i64>>({{2}, {2}, {3}, {3}, {3}, {3}}))
+              .equals({true, false, literal::INVALID, true, literal::SKIP, literal::SKIP}));
+
+    CHECK(testing::test_graph(
+              query, testing::input<TS<bool>>({true, true, true}),
+              testing::input<TSS<i64>>({literal::SKIP, literal::SKIP, literal::SKIP}),
+              testing::input<TSS<i64>>({{1}, {1}, {1}}))
+              .equals({literal::SKIP, literal::SKIP, literal::SKIP}));
 
     const auto observe_validity = [](wp<TS<bool>> condition, wp<TSS<i64>> left, wp<TSS<i64>> right) {
         const auto selected = operators::if_then_else(condition, left, right);
         return operators::valid(operators::contains_("collection"_n = selected, "key"_n = i64{1}));
     };
-    CHECK(testing::test_graph(observe_validity, testing::input<TS<bool>>({true, false, literal::INVALID, true}),
-                              {{1}, {2}, {3}, {1}}, {{2}, {2}, {3}, {3}})
-              .equals<bool>({true, std::nullopt, false, true}));
+    CHECK(testing::test_graph(observe_validity,
+                              testing::input<TS<bool>>({true, false, literal::INVALID, true, true, true}),
+                              testing::input<TSS<i64>>({{1}, {2}, {3}, {1}, {1}, {1}}),
+                              testing::input<TSS<i64>>({{2}, {2}, {3}, {3}, {3}, {3}}))
+              .equals({true, literal::SKIP, false, true, literal::SKIP, literal::SKIP}));
 }
 
 TEST_CASE("contains_ propagates a final TSS guarantee",
@@ -483,6 +999,61 @@ TEST_CASE("contains_ combines a final TSS with an ordinary time-series key",
     };
 
     CHECK(testing::test_graph(graph, {1, 2, 3}).equals<bool>({true, true, false}));
+}
+
+TEST_CASE("contains_ propagates TSD collection and key guarantees",
+          "[feature:operator][series:tsd][scalar:i64][guarantee:final][guarantee:ordinary]") {
+    const auto final_dictionary = node([](Out<TSD<i64, TS<i64>, TimeSeriesGuarantee::final>> output) {
+        output[1].set(1);
+    });
+    const auto final_key = node([](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(1); });
+    const auto ordinary_key = node([](Out<TS<i64>>) {});
+
+    const auto check_final_collection = [&](auto collection) {
+        const auto physical = operators::contains_("collection"_n = collection, "key"_n = i64{1});
+        const auto valid_items = operators::contains_("collection"_n = bg::valid_items(collection), "key"_n = i64{1});
+        CHECK(&physical.type() == &TS<bool, TimeSeriesGuarantee::final>::type());
+        CHECK(&valid_items.type() == &TS<bool, TimeSeriesGuarantee::final>::type());
+    };
+    testing::test_wiring([&] { check_final_collection(final_dictionary()); });
+
+    const auto final_collection_ordinary_key = [&](wp<TS<i64>> key) {
+        const auto result = operators::contains_("collection"_n = final_dictionary(), "key"_n = key);
+        CHECK(&result.type() == &TS<bool>::type());
+        return result;
+    };
+    testing::test_wiring([&] { (void)final_collection_ordinary_key(ordinary_key()); });
+
+    const auto final_collection_and_key = [&] {
+        const auto result = operators::contains_("collection"_n = final_dictionary(), "key"_n = final_key());
+        CHECK(&result.type() == &TS<bool, TimeSeriesGuarantee::final>::type());
+        return result;
+    };
+    testing::test_wiring([&] { (void)final_collection_and_key(); });
+}
+
+TEST_CASE("contains_ rejects optional collection and key inputs for TSS and TSD",
+          "[feature:operator][series:tss][series:tsd][validity:optional]") {
+    const auto tss_source = node([](Out<TSS<i64>>) {});
+    const auto tsd_source = node([](Out<TSD<i64, TS<i64>>>) {});
+    const auto key_source = node([](Out<TS<i64>>) {});
+
+    CHECK_THROWS_AS(testing::test_wiring([&] {
+                        (void)operators::contains_("collection"_n = opt(tss_source()), "key"_n = i64{1});
+                    }),
+                    WiringError);
+    CHECK_THROWS_AS(testing::test_wiring([&] {
+                        (void)operators::contains_("collection"_n = tss_source(), "key"_n = opt(key_source()));
+                    }),
+                    WiringError);
+    CHECK_THROWS_AS(testing::test_wiring([&] {
+                        (void)operators::contains_("collection"_n = opt(tsd_source()), "key"_n = i64{1});
+                    }),
+                    WiringError);
+    CHECK_THROWS_AS(testing::test_wiring([&] {
+                        (void)operators::contains_("collection"_n = tsd_source(), "key"_n = opt(key_source()));
+                    }),
+                    WiringError);
 }
 
 TEST_CASE("len_ forwards equal sizes for ordinary inputs and suppresses them for deduplicated inputs",

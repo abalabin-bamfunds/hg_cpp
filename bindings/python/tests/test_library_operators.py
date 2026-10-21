@@ -2,6 +2,7 @@ import math
 import random
 import subprocess
 import sys
+from typing import Annotated
 
 import pytest
 
@@ -338,6 +339,55 @@ def test_collection_query_operators_accept_public_keyword_names():
     assert bg.test_graph(dictionary_length, [{1: 10, 2: 20}, {}]) == [2, 0]
     assert bg.test_graph(dictionary_contains, [{1: 10, 2: 20}, {}, {3: 30}], [2, 1, 3]) == [True, False, True]
     assert bg.test_graph(dictionary_contains_scalar, [{1: 10, 2: 20}, {}, {3: 30}]) == [True, False, False]
+
+
+def test_tsd_contains_operator_distinguishes_physical_and_valid_items_membership():
+    @bg.graph
+    def physical_contains(collection: bg.TSD[int, bg.TS[int]], key: bg.TS[int]) -> bg.TS[bool]:
+        return bg.operators.contains_(collection=collection, key=key)
+
+    @bg.graph
+    def valid_items_contains(
+        collection: Annotated[bg.TSD[int, bg.TS[int]], bg.valid_items], key: bg.TS[int]
+    ) -> bg.TS[bool]:
+        return bg.operators.contains_(collection=collection, key=key)
+
+    dictionary_updates = [{2: 20}, {2: bg.INVALID}, {2: 21}]
+    keys = [2, 2, 2]
+    assert bg.test_graph(physical_contains, dictionary_updates, keys) == [True, True, True]
+    assert bg.test_graph(valid_items_contains, dictionary_updates, keys) == [True, False, True]
+
+    @bg.graph
+    def physical_scalar_contains(collection: bg.TSD[int, bg.TS[int]]) -> bg.TS[bool]:
+        return bg.operators.contains_(collection=collection, key=2)
+
+    @bg.graph
+    def valid_items_scalar_contains(
+        collection: Annotated[bg.TSD[int, bg.TS[int]], bg.valid_items]
+    ) -> bg.TS[bool]:
+        return bg.operators.contains_(collection=collection, key=2)
+
+    unrelated_key_updates = [{2: 20}, {3: 30}, {3: 31}]
+    assert bg.test_graph(physical_scalar_contains, unrelated_key_updates) == [True, None, None]
+    assert bg.test_graph(valid_items_scalar_contains, unrelated_key_updates) == [True, None, None]
+
+
+def test_tsd_contains_operator_follows_dynamic_keys_through_absent_key_churn():
+    @bg.graph
+    def physical_contains(collection: bg.TSD[int, bg.TS[int]], key: bg.TS[int]) -> bg.TS[bool]:
+        return bg.operators.contains_(collection=collection, key=key)
+
+    @bg.graph
+    def valid_items_contains(
+        collection: Annotated[bg.TSD[int, bg.TS[int]], bg.valid_items], key: bg.TS[int]
+    ) -> bg.TS[bool]:
+        return bg.operators.contains_(collection=collection, key=key)
+
+    collection = [{2: 20, 3: 30}]
+    keys = [2, 4, 5, 3, 4]
+    expected = [True, False, False, True, False]
+    assert bg.test_graph(physical_contains, collection, keys) == expected
+    assert bg.test_graph(valid_items_contains, collection, keys) == expected
 
 
 def test_tss_equality_and_is_empty():

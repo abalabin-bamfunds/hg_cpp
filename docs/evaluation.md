@@ -453,6 +453,10 @@ it applies new input updates. This keeps removed storage available for the
 complete cycle in which it was removed and releases downstream objects before
 objects that they can reference.
 
+A node definition that registers cycle callbacks declares
+`static constexpr bool uses_cycle_callbacks = true`. This is required to reserve
+the runtime graph's callback-storage pointer during graph compilation.
+
 `EvaluationContext::add_cycle_callback()` registers one callback. The callback
 runs at the beginning of the next outer cycle. Registration during stop has no
 effect.

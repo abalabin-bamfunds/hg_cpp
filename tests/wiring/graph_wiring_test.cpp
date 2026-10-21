@@ -1,3 +1,4 @@
+#include <bg/graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/context.hpp>
 #include <bg/graph/wiring_context.hpp>
@@ -15,6 +16,8 @@
 #include <bg/type/type_registry.hpp>
 #include <bg/util/static_storage.hpp>
 #include <bg/type/type_resolution_error.hpp>
+
+#include "../value/scalar/test_scalar_provider.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -43,6 +46,16 @@ struct copy_definition {
 
     void evaluate() const { output.set(*input); }
 };
+
+const auto aggregate_scalar_sink = bg::node([](bg::Scalar<bg::SCALAR>) {});
+
+struct generic_scalar_forward_graph {
+    bg::Scalar<bg::SCALAR> value;
+
+    void wire() const { aggregate_scalar_sink(value); }
+};
+
+const auto aggregate_scalar_forward = bg::graph<generic_scalar_forward_graph>();
 
 class OutputRuntimeSelectorNode final : public bg::NodeTemplate {
   public:
@@ -235,6 +248,60 @@ TEST_CASE("wiring resolves a runtime-selected scalar argument", "[graph_wiring][
     CHECK(wiring.nodes()[0].signature().parameters[0].type == &bg::string_type());
     REQUIRE(wiring.nodes()[0].scalar_values().size() == 1);
     CHECK(&wiring.nodes()[0].scalar_values()[0].runtime_type().type() == &bg::string_type());
+}
+
+TEST_CASE("a graph forwards an extension scalar through a generic parameter",
+          "[graph_wiring][feature:wiring][scalar:generic]") {
+    const auto sink = bg::node([](bg::Scalar<bg::SCALAR>, bg::Out<bg::TS<float>>) {});
+    const auto forward = bg::graph([&](bg::Scalar<bg::SCALAR> value) { return sink(value); });
+    auto value = bg::ScalarValue<test_scalar_provider::value>{test_scalar_provider::value{42}};
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    (void)forward(value);
+
+    (void)wiring.complete_pending_wiring();
+    REQUIRE(wiring.nodes().size() == 1);
+    CHECK(wiring.nodes()[0].signature().parameters[0].type ==
+          &bg::cpp_scalar_type<test_scalar_provider::value>());
+    REQUIRE(wiring.nodes()[0].scalar_values().size() == 1);
+    CHECK(&wiring.nodes()[0].scalar_values()[0].runtime_type().type() ==
+          &bg::cpp_scalar_type<test_scalar_provider::value>());
+    const auto &wired_scalar = wiring.nodes()[0].scalar_values()[0];
+    CHECK(bg::Scalar<>::from(wired_scalar.runtime_type(), wired_scalar.data()).equals(value));
+}
+
+TEST_CASE("a graph resolves a scalar variable nested in a list view",
+          "[feature:wiring][scalar:list][declaration:partially-generic]") {
+    const auto sink = bg::node([](bg::Scalar<bg::List<bg::SCALAR>>) {});
+    const auto forward = bg::graph([&](bg::Scalar<bg::List<bg::SCALAR>> value) { sink(value); });
+    const auto value = bg::ScalarValue<bg::List<bg::i64>>{std::array<bg::i64, 2>{4, 2}};
+    const auto list = bg::Scalar<bg::List<bg::SCALAR>>::from(value);
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    forward(list);
+
+    (void)wiring.complete_pending_wiring();
+    REQUIRE(wiring.nodes().size() == 1);
+    const auto &wired_scalar = wiring.nodes()[0].scalar_values()[0];
+    CHECK(&wired_scalar.runtime_type().type() == &value.runtime_type().type());
+    CHECK(bg::Scalar<>::from(wired_scalar.runtime_type(), wired_scalar.data()).equals(value));
+}
+
+TEST_CASE("an aggregate graph forwards an extension scalar through a generic field",
+          "[graph_wiring][feature:wiring][scalar:generic][definition:aggregate]") {
+    auto value = bg::ScalarValue<test_scalar_provider::value>{test_scalar_provider::value{42}};
+    const auto scalar = bg::Scalar<bg::SCALAR>::from(value);
+    auto wiring = bg::GraphWiring{};
+
+    const auto context = bg::WiringContext{wiring};
+    aggregate_scalar_forward(scalar);
+
+    (void)wiring.complete_pending_wiring();
+    REQUIRE(wiring.nodes().size() == 1);
+    CHECK(wiring.nodes()[0].signature().parameters[0].type ==
+          &bg::cpp_scalar_type<test_scalar_provider::value>());
 }
 
 TEST_CASE("const operator accepts a runtime-selected scalar argument",

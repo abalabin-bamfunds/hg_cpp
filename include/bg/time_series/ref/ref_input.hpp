@@ -15,6 +15,9 @@
 #include <bg/time_series/tsb/tsb_type.hpp>
 #include <bg/time_series/tsd/tsd_key_subscription.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
+#include <bg/time_series/collection_membership.hpp>
+#include <bg/time_series/cpp_runtime_type.hpp>
+#include <bg/time_series/tss/tss_type.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
@@ -102,6 +105,36 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...>
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
     const void *data() const noexcept { return data_.data(); }
     const In *operator->() const noexcept { return this; }
+
+    template <typename T = Target>
+        requires details::is_time_series_set<T>
+    auto membership(const Scalar<typename details::time_series_set<T>::item_type> &key) const {
+        if (!valid()) {
+            return details::DynamicValueBinding<bool>{};
+        }
+
+        return details::tss_membership_binding(value(), Scalar<>::from(key));
+    }
+
+    template <typename T = Target>
+        requires details::is_time_series_dict<T>
+    auto membership(const Scalar<typename details::tsd_item_reference_type<T>::key_type> &key) const {
+        if (!valid()) {
+            return details::DynamicValueBinding<bool>{};
+        }
+
+        return details::tsd_membership_binding(value(), Scalar<>::from(key), false);
+    }
+
+    template <typename T = Target>
+        requires details::is_time_series_dict<T>
+    auto valid_item_membership(const Scalar<typename details::tsd_item_reference_type<T>::key_type> &key) const {
+        if (!valid()) {
+            return details::DynamicValueBinding<bool>{};
+        }
+
+        return details::tsd_membership_binding(value(), Scalar<>::from(key), true);
+    }
 
     template <typename T = Target>
         requires details::is_time_series_dict<T>

@@ -310,10 +310,18 @@ it returns the declared item count as a wiring-time constant, independent of
 item validity. These fixed-size queries add no runtime query node. Sparse TSL
 length is not supplied.
 
-`contains_(collection, key)` tests current membership in TSS or a scalar list,
-set, or dictionary time series. Dictionaries test keys. The key can be a scalar
-or a time series. List membership requires equality; set and dictionary lookup
-also requires hashing.
+`contains_(collection, key)` tests current membership in TSS, TSD, or a scalar
+list, set, or dictionary time series. Dictionaries test keys. The key can be a
+scalar or a time series. List membership requires equality; set and dictionary
+lookup also requires hashing.
+
+TSS and TSD queries subscribe to the selected key. Unrelated key changes do not
+schedule the query. Ordinary TSD membership ignores item validity and value
+updates. Use `contains_(valid_items(collection), key)` to require a valid
+immediate item, following the [valid-item rules](time-series-validity.md#collections).
+A valid collection with no matching key produces `false`; an invalid collection
+has no membership result. A time series key tick recomputes membership,
+including an equal-valued ordinary tick.
 
 String and symbol overloads count bytes with `len_` and test substrings with
 `contains_`, including embedded NUL bytes. Both substring operands have the

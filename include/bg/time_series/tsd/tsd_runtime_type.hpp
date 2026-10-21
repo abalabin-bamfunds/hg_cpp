@@ -58,7 +58,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
 
     virtual void release_key(void *value, item_id_t id, allocator &memory) const noexcept {
         auto &keys = static_cast<time_series_dict_storage *>(value)->key_storage().value;
-        keys.release_retention(id, memory);
+        keys.release_retention(id, *key_, key_layout_, memory);
     }
 
     virtual item_id_t find_key(const void *value, const ScalarData &key) const {

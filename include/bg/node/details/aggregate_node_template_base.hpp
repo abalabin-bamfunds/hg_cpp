@@ -12,7 +12,7 @@ using AggregateStateLayoutFunction = NodeStateLayout (*)(const ResolvedSignature
                                                          std::span<const ScalarType *const>);
 using AggregateStateConstructionFunction = void (*)(const NodeStateLayout &, void *) noexcept;
 using AggregateStateTypesFunction = std::vector<const ScalarType *> (*)(const TypeMap &);
-using AggregateDynamicReferenceInputTypesFunction = std::vector<const TimeSeriesType *> (*)(const TypeMap &);
+using AggregateDynamicInputTypesFunction = std::vector<const TimeSeriesType *> (*)(const TypeMap &);
 using AggregateRequirementFunction = RequirementResult (*)(const WiringArguments &);
 
 enum class AggregateRuntimeTypeUse : unsigned char {
@@ -35,11 +35,12 @@ struct AggregateNodeDescriptor {
     AggregateStateConstructionFunction construct_initial_state;
     NodeFunction state_destruction_function;
     AggregateStateTypesFunction resolve_state_types;
-    AggregateDynamicReferenceInputTypesFunction dynamic_reference_input_types;
+    AggregateDynamicInputTypesFunction dynamic_input_types;
     AggregateRequirementFunction requirement;
     bool uses_output_runtime_type;
     bool uses_input_node_indices;
     bool uses_timed_scheduling;
+    bool uses_cycle_callbacks;
     bool deduplicate_wiring;
 };
 
@@ -63,12 +64,13 @@ class AggregateNodeTemplateBase : public NodeTemplate {
     bool uses_output_runtime_type() const noexcept final;
     bool uses_input_node_indices() const noexcept final;
     bool uses_timed_scheduling() const noexcept final;
+    bool uses_cycle_callbacks() const noexcept final;
     NodeStateLayout state_layout(const ResolvedSignature &signature,
                                  std::span<const ScalarRuntimeType *const> parameter_runtime_types,
                                  std::span<const ScalarType *const> state_types) const final;
     void construct_initial_state(const NodeStateLayout &layout, void *storage) const noexcept final;
     NodeFunction state_destruction_function(const ResolvedSignature &) const noexcept final;
-    std::vector<const TimeSeriesType *> dynamic_reference_input_types(const TypeMap &) const final;
+    std::vector<const TimeSeriesType *> dynamic_input_types(const TypeMap &) const final;
     std::vector<const ScalarType *> resolve_state_types(const TypeMap &type_map) const final;
 
   private:

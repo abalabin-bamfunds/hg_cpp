@@ -4,6 +4,7 @@
 #include <bg/util/static_storage.hpp>
 #include <bg/util/scope_exit.hpp>
 
+#include <cassert>
 #include <exception>
 #include <memory>
 #include <mutex>
@@ -23,9 +24,12 @@ class SampledSetRuntimeType final : public TimeSeriesSetRuntimeType {
     std::size_t set_size(const void *value) const override;
     bool set_contains(const void *value, const ScalarData &key) const override;
     item_id_t find_set_item(const void *value, const ScalarData &key) const override;
+    item_id_t find_set_key(const void *value, const ScalarData &key) const override;
     bool set_was_added(const TimeSeriesState &last_updated, const void *value, const ScalarData &key) const override;
     bool set_was_removed(const TimeSeriesState &last_updated, const void *value,
                          const ScalarData &key) const override;
+    RetainedSetKey retain_key(void *value, const ScalarData &key, allocator &memory) const override;
+    void release_key(void *, item_id_t, allocator &) const noexcept override;
     const void *set_key(const void *value, item_id_t id) const noexcept override;
     item_id_t set_next_item_id(const TimeSeriesState &last_updated, const void *value, Range range,
                                item_id_t start) const override;
@@ -214,6 +218,14 @@ item_id_t SampledSetRuntimeType::find_set_item(const void *value, const ScalarDa
                            : util::occupancy_index::npos;
 }
 
+item_id_t SampledSetRuntimeType::find_set_key(const void *value, const ScalarData &key) const {
+    const auto &current = static_cast<const SampledSet *>(value)->current;
+    if (current.runtime_type == nullptr || current.storage == nullptr) {
+        return util::occupancy_index::npos;
+    }
+    return static_cast<const TimeSeriesSetRuntimeType &>(*current.runtime_type).find_set_key(current.storage, key);
+}
+
 bool SampledSetRuntimeType::set_was_added(const TimeSeriesState &last_updated, const void *value,
                                           const ScalarData &key) const {
     return changed(last_updated, *static_cast<const SampledSet *>(value), Range::added, key);
@@ -222,6 +234,24 @@ bool SampledSetRuntimeType::set_was_added(const TimeSeriesState &last_updated, c
 bool SampledSetRuntimeType::set_was_removed(const TimeSeriesState &last_updated, const void *value,
                                             const ScalarData &key) const {
     return changed(last_updated, *static_cast<const SampledSet *>(value), Range::removed, key);
+}
+
+RetainedSetKey SampledSetRuntimeType::retain_key(void *value, const ScalarData &key, allocator &memory) const {
+    if (value == nullptr) {
+        return {};
+    }
+
+    const auto &current = static_cast<SampledSet *>(value)->current;
+    if (current.runtime_type == nullptr || current.storage == nullptr) {
+        return {};
+    }
+
+    return static_cast<const TimeSeriesSetRuntimeType &>(*current.runtime_type)
+        .retain_key(const_cast<void *>(current.storage), key, memory);
+}
+
+void SampledSetRuntimeType::release_key(void *, item_id_t, allocator &) const noexcept {
+    assert(false && "sampled set key retention must be released through its retained runtime type");
 }
 
 const void *SampledSetRuntimeType::set_key(const void *value, item_id_t id) const noexcept {

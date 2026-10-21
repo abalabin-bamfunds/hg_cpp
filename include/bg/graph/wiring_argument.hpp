@@ -46,6 +46,15 @@ template <typename T> struct scalar_value_argument<ScalarValue<T>> : std::bool_c
 template <typename T>
 inline constexpr bool supported_scalar_value_argument = scalar_value_argument<std::remove_cvref_t<T>>::value;
 
+template <typename T> struct graph_scalar_view : std::false_type {};
+
+template <typename T> struct graph_scalar_view<Scalar<T>> : std::true_type {
+    using scalar_type = T;
+};
+
+template <typename T>
+concept graph_scalar_view_argument = graph_scalar_view<std::remove_cvref_t<T>>::value;
+
 template <typename T>
 concept wiring_point_argument = std::same_as<std::remove_cvref_t<T>, WiringPoint> || is_typed_wiring_point<T> ||
                                 requires(const std::remove_cvref_t<T> &value) { static_cast<WiringPoint>(value); };
@@ -150,6 +159,10 @@ class WiringArgument {
               const auto &type = scalar_declaration_traits<Scalar>::generic ? value.type() : cpp_scalar_type<Scalar>();
               return ScalarArgument{type, value.runtime_type(), nullptr, &details::scalar_data(value)};
           }()) {}
+
+    template <typename T>
+        requires details::graph_scalar_view_argument<Scalar<T>>
+    WiringArgument(const Scalar<T> &value) : WiringArgument{ScalarValue<>{Scalar<>::from(value)}} {}
 
     template <util::compile_time_string Name, typename T>
         requires requires(T &&value) { WiringArgument{std::forward<T>(value)}; }
@@ -327,7 +340,8 @@ namespace bg::details {
 template <typename T>
 concept graph_code_argument_value =
     wiring_point_argument<T> || supported_scalar_argument<T> || supported_optional_scalar_argument<T> ||
-    supported_scalar_value_argument<T> || std::same_as<std::remove_cvref_t<T>, GraphArgument> ||
+    supported_scalar_value_argument<T> || graph_scalar_view_argument<T> ||
+    std::same_as<std::remove_cvref_t<T>, GraphArgument> ||
     std::same_as<std::remove_cvref_t<T>, WiringArgument> ||
     std::same_as<std::remove_cvref_t<T>, WiringArgumentExpansion> || graph_argument_facade<T>;
 

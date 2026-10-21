@@ -102,6 +102,11 @@ template <typename Parameter> [[nodiscard]] decltype(auto) graph_argument(const 
                       "a graph argument parameter must be a value or const lvalue reference");
 
         return argument.graph();
+    } else if constexpr (graph_scalar_view_argument<Value>) {
+        static_assert(!std::is_reference_v<Parameter>);
+
+        const auto scalar = argument.scalar();
+        return Value::from(scalar);
     } else if constexpr (graph_argument_facade<Value>) {
         static_assert(!std::is_reference_v<Parameter> ||
                       (std::is_lvalue_reference_v<Parameter> &&
@@ -198,6 +203,8 @@ bool wiring_parameter_matches(const Parameter &declaration, const ResolvedParame
         return parameter.type->is_time_series();
     } else if constexpr (std::same_as<Value, GraphArgument>) {
         return parameter.type->is_graph();
+    } else if constexpr (graph_scalar_view_argument<Value>) {
+        return declaration.type->accepts(*parameter.type);
     } else if constexpr (graph_argument_facade<Value>) {
         const auto *graph = type_cast<GraphArgumentType>(parameter.type);
         if (graph == nullptr || !Value::type().accepts(*graph)) {

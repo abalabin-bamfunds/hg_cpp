@@ -9,6 +9,7 @@
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/scalar/scalar.hpp>
 #include <bg/time_series/ref/dynamic_reference_input.hpp>
+#include <bg/time_series/dynamic_value_input.hpp>
 #include <bg/time_series/ref/ref_input_storage.hpp>
 #include <bg/time_series/ref/ref_input_sample.hpp>
 #include <bg/time_series/ref/ref_notification.hpp>
@@ -908,11 +909,16 @@ const TimeSeriesRuntimeType *find_output_runtime_type(const WiredNode &node, con
                                            const CompilationPlan &plan) {
     auto layout = node.node_template().state_layout(
         node.signature(), parameter_runtime_types(node, node_plan, outputs, node_plans, plan), node.state_types());
-    for ([[maybe_unused]] const auto *type : node.dynamic_reference_input_types()) {
-        layout.size = align_up(layout.size, alignof(details::DynamicReferenceInputStorage));
+    for (const auto *type : node.dynamic_input_types()) {
+        const auto is_reference = type_cast<TimeSeriesReferenceType>(type) != nullptr;
+        const auto size = is_reference ? sizeof(details::DynamicReferenceInputStorage)
+                                       : sizeof(details::DynamicValueInputStorage);
+        const auto alignment = is_reference ? alignof(details::DynamicReferenceInputStorage)
+                                            : alignof(details::DynamicValueInputStorage);
+        layout.size = align_up(layout.size, alignment);
         layout.field_offsets.push_back(layout.size);
-        layout.size += sizeof(details::DynamicReferenceInputStorage);
-        layout.alignment = std::max(layout.alignment, alignof(details::DynamicReferenceInputStorage));
+        layout.size += size;
+        layout.alignment = std::max(layout.alignment, alignment);
     }
     if (layout.size == 0) {
         return {};
@@ -1077,20 +1083,20 @@ std::size_t item_subscriber_size(const ItemSubscriptionPlan &item) {
 
 struct RuntimeTypeCounts {
     std::size_t parameter_slots{};
-    std::size_t dynamic_reference_inputs{};
+    std::size_t dynamic_inputs{};
     bool output{};
 
-    std::size_t dynamic_reference_begin() const noexcept {
+    std::size_t dynamic_input_begin() const noexcept {
         return parameter_slots + static_cast<std::size_t>(output);
     }
 
     std::size_t total() const noexcept {
-        return dynamic_reference_begin() + dynamic_reference_inputs;
+        return dynamic_input_begin() + dynamic_inputs;
     }
 };
 
 RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
-    auto result = RuntimeTypeCounts{.dynamic_reference_inputs = node.dynamic_reference_input_types().size(),
+    auto result = RuntimeTypeCounts{.dynamic_inputs = node.dynamic_input_types().size(),
                                     .output = node.node_template().uses_output_runtime_type()};
     for (auto parameter = std::size_t{}; parameter < node.signature().parameters.size(); ++parameter) {
         if (node.node_template().uses_time_series_input_runtime_type(node.signature(), parameter) ||
@@ -1560,7 +1566,7 @@ void plan_fixed_storage(CompilationPlan &plan) {
         const auto has_reference_output =
             node.signature().output != nullptr && node.signature().output->contains_reference();
         if (node.node_template().may_pend_evaluation(node.signature()) || node_plan.state.node.size != 0 ||
-            !node.dynamic_reference_input_types().empty() || has_reference_input || has_reference_output ||
+            !node.dynamic_input_types().empty() || has_reference_input || has_reference_output ||
             (node_plan.output.runtime_type != nullptr && node_plan.output.runtime_type->is_reference())) {
             result.supports_borrowed_evaluation = false;
         }
@@ -2074,7 +2080,7 @@ class CompiledGraphBuilder {
         if (layout.runtime_type_metadata.count != 0) {
             std::construct_at(layout.runtime_type_metadata.objects<RuntimeTypeMetadata>(node_storage).data(),
                               RuntimeTypeMetadata{static_cast<std::uint32_t>(layout.runtime_types.count),
-                                                  static_cast<std::uint32_t>(counts.dynamic_reference_begin())});
+                                                  static_cast<std::uint32_t>(counts.dynamic_input_begin())});
         }
         std::ranges::fill(runtime_types, nullptr);
         const auto set_runtime_type = [&](std::size_t index, const RuntimeType *runtime_type) {
@@ -2151,12 +2157,12 @@ class CompiledGraphBuilder {
 
         if (node.node_template().uses_output_runtime_type()) {
             const auto *runtime_type = plan.node_plans[node_index].output.runtime_type;
-            set_runtime_type(counts.dynamic_reference_begin() - 1, runtime_type);
+            set_runtime_type(counts.dynamic_input_begin() - 1, runtime_type);
         }
 
-        auto dynamic_reference_input_index = counts.dynamic_reference_begin();
-        for (const auto *type : node.dynamic_reference_input_types()) {
-            set_runtime_type(dynamic_reference_input_index++, &resolve_time_series_runtime_type(*type));
+        auto dynamic_input_index = counts.dynamic_input_begin();
+        for (const auto *type : node.dynamic_input_types()) {
+            set_runtime_type(dynamic_input_index++, &resolve_time_series_runtime_type(*type));
         }
 
         if (!layout.all_valid_metadata.objects<AllValidInputMetadata>(node_storage).empty()) {

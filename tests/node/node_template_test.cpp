@@ -87,7 +87,7 @@ TEST_CASE("a dynamic reference input is internal to an aggregate node",
                                              const bg::Type &target) {
         const std::array<const bg::Type *, 1> arguments{&argument};
         const auto resolution = node.signature().resolve_with_type_map(arguments);
-        const auto dynamic_inputs = node.dynamic_reference_input_types(resolution.type_map);
+        const auto dynamic_inputs = node.dynamic_input_types(resolution.type_map);
 
         REQUIRE(resolution.signature.parameters.size() == 1);
         CHECK(resolution.signature.parameters[0].name.text() == "dictionary");
@@ -122,7 +122,7 @@ TEST_CASE("an internal dynamic reference input defaults its root guarantee to or
           "[series:reference][guarantee:ordinary]") {
     const auto node = bg::node<dynamic_input_test::dynamic_reference_input_default_guarantee_node>();
     const auto resolution = node.signature().resolve_with_type_map(std::array<const bg::Type *, 0>{});
-    const auto dynamic_inputs = node.dynamic_reference_input_types(resolution.type_map);
+    const auto dynamic_inputs = node.dynamic_input_types(resolution.type_map);
 
     REQUIRE(dynamic_inputs.size() == 1);
     const auto &reference = static_cast<const bg::TimeSeriesReferenceType &>(*dynamic_inputs[0]);

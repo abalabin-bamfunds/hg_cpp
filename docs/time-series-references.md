@@ -122,10 +122,11 @@ representations and subscriber groups. A subscriber identifies a receiving
 runtime graph, node, and input slot. It updates the input and applies the
 input's activity and validity rules.
 
-A root reference stores its first node subscriber directly. A second node
-subscriber or an input callback promotes the root to an allocated subscriber
-collection. Creating a representation promotes the root to a provider, which
-retains any existing subscribers.
+Root references and collection membership values store their first node
+subscriber directly. A second distinct node subscriber requires an allocated
+subscriber collection. A root input callback also requires that collection.
+Creating a representation promotes the root to a provider, which retains any
+existing subscribers.
 
 An observer connects one runtime reference object to another without adding a
 node evaluation. Representations and item selections use observers to maintain
@@ -255,8 +256,8 @@ item reference directly.
 
 A TSD key selection creates selection storage only for that key. It retains the
 key's sparse item ID and creates a non-live key when the key is absent. The key
-set reclaims an unretained non-live ID after the outer cycle in which it was
-released.
+set reclaims a non-live ID when its last retention is released. Removed keys
+remain available until the outer-cycle boundary.
 
 A key selection belongs to the currently selected TSD. When a `REF<TSD<K, TS_T>>`
 changes its target, the selecting node selects the key again and binds its item
@@ -293,6 +294,23 @@ inner runtime graphs.
 References to live time series can persist across outer cycles. A node that
 produces a reference value is responsible for replacing or invalidating it when
 its selected target changes.
+
+## Collection membership subscriptions
+
+The provider shares one membership value for each observed collection key and
+view. A missing key has a valid `false` value. An invalid collection has an
+invalid membership value. The valid-item TSD view also requires the immediate
+item to be valid, following the [validity rules](time-series-validity.md#collections).
+
+A dynamically bound value input subscribes to that membership value. Normal
+updates visit changed item IDs and notify only affected consumers. Initial
+publication, invalidation, and a change of collection can visit all observed
+keys. Native key storage retains sparse IDs while they are observed, including
+IDs for absent keys.
+
+Binding replacement and graph stop remove the subscription. Unused membership
+state remains available until the outer-cycle boundary, like item-selection
+state.
 
 ## Outer-cycle boundary
 

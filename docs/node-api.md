@@ -362,6 +362,13 @@ guarantee defaults to `ordinary`. Explicit type and guarantee variables must
 resolve through the public signature. `bind()` replaces its addressable input and
 `unbind()` removes the binding. The engine manages subscriptions and cleanup.
 
+An internal `In<TS<T>, dynamic_binding, optional>` field binds a value supplied
+by runtime selection, such as membership of one collection key. It must be
+active and optional, with a concrete scalar type `T`. Its time series guarantee
+can use a variable resolved through the public signature. The binding retains
+the selected value's runtime type and validity. The node handles an invalid
+selection explicitly. The engine manages replacement and stop cleanup.
+
 Fully specified and generic inputs expose the same common interface to helper
 functions and visitors. A fully specified value input also provides `value()`
 and `operator*`. `operator->` provides member access when the C++ value type

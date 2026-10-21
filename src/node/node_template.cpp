@@ -146,7 +146,7 @@ std::optional<WiringPoint> NodeTemplate::bind(GraphWiring &wiring, ResolvedSigna
     }
 
     auto state_types = resolve_state_types(type_map);
-    auto dynamic_reference_inputs = dynamic_reference_input_types(type_map);
+    auto dynamic_inputs = dynamic_input_types(type_map);
     const auto has_output = signature.output != nullptr;
     const auto hash = deduplicate_wiring() && has_output
                           ? node_hash(*this, signature, inputs, state_types, materialized_arguments)
@@ -194,7 +194,7 @@ std::optional<WiringPoint> NodeTemplate::bind(GraphWiring &wiring, ResolvedSigna
                           std::move(inputs),
                           std::move(scalar_values),
                           std::move(state_types),
-                          std::move(dynamic_reference_inputs),
+                          std::move(dynamic_inputs),
                           *WiringContext::current().path()};
     release_scalars.release();
 

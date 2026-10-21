@@ -4,6 +4,7 @@
 #include <bg/graph/details/wiring_callable.hpp>
 #include <bg/type/details/time_series_type.hpp>
 #include <bg/type/guarantee_variable.hpp>
+#include <bg/type/scalar_type.hpp>
 #include <bg/type/scalar_variable.hpp>
 #include <bg/type/signature.hpp>
 #include <bg/type/time_series_value_type.hpp>
@@ -65,6 +66,13 @@ template <typename Function, std::size_t Index> const Type &graph_parameter_type
         using Scalar = typename optional_scalar_argument<Parameter>::value_type;
 
         return cpp_scalar_type<canonical_scalar_type_t<Scalar>>();
+    } else if constexpr (graph_scalar_view_argument<Parameter>) {
+        using Scalar = typename graph_scalar_view<Parameter>::scalar_type;
+        if constexpr (scalar_variable<Scalar>) {
+            return scalar_variable_instance<Scalar>();
+        } else {
+            return scalar_type_for<canonical_scalar_type_t<Scalar>>();
+        }
     } else if constexpr (std::same_as<Parameter, GraphArgument>) {
         return GraphArgument::type();
     } else if constexpr (graph_argument_facade<Parameter>) {

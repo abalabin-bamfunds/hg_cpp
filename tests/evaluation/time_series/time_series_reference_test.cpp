@@ -1,4 +1,5 @@
 #include <bg/graph.hpp>
+#include <bg/graph/dynamic_node_subscriber_storage.hpp>
 #include <bg/graph/dynamic_subscribers.hpp>
 #include <bg/literal/sentinel.hpp>
 #include <bg/nested.hpp>
@@ -15,8 +16,11 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "../../utils/counting_memory_resource.hpp"
+
 #include <array>
 #include <chrono>
+#include <new>
 #include <optional>
 #include <vector>
 
@@ -445,6 +449,79 @@ TEST_CASE("a second root subscriber promotes inline storage",
     CHECK(subscriber_count == 2);
 
     bg::details::ReferenceProvider::finalize_root(root, runtime.allocation());
+}
+
+TEST_CASE("dynamic node subscriber storage promotes transactionally",
+          "[evaluation][feature:reference][allocation][shape:multiple]") {
+    auto wiring = bg::GraphWiring{};
+    wiring.finalize();
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+    auto graph = bg::RuntimeGraph{compiled, global_state};
+    auto other_global_state = bg::GlobalState{};
+    auto other_graph = bg::RuntimeGraph{compiled, other_global_state};
+    auto memory = counting_memory_resource{};
+    auto subscribers = bg::details::DynamicNodeSubscriberStorage<>{};
+
+    STATIC_CHECK(sizeof(bg::details::DynamicNodeSubscriberStorage<>) == 2 * sizeof(void *));
+    subscribers.add(bg::details::DynamicNodeSubscriber{graph, 0, 3, true, false, true}, bg::allocator{memory});
+    CHECK(subscribers.has_inline_subscriber());
+    CHECK(memory.allocations() == 0);
+
+    subscribers.add(bg::details::DynamicNodeSubscriber{graph, 0, 7, false, true, false}, bg::allocator{memory});
+    CHECK(subscribers.has_inline_subscriber());
+    CHECK(subscribers.inline_subscriber().node_index() == 3);
+    CHECK(subscribers.inline_subscriber().active());
+    CHECK(subscribers.inline_subscriber().controlled_activity());
+    subscribers.remove(other_graph, 0);
+    CHECK(subscribers.has_inline_subscriber());
+
+    subscribers.remove(graph, 0);
+    CHECK(subscribers.empty());
+    CHECK_FALSE(subscribers.destination);
+    subscribers.add(bg::details::DynamicNodeSubscriber{graph, 0, 3, true, false, true}, bg::allocator{memory});
+
+    auto promoted = false;
+    for (auto failure_point = std::size_t{}; failure_point < 8; ++failure_point) {
+        memory.fail_after(failure_point);
+        try {
+            subscribers.add(bg::details::DynamicNodeSubscriber{other_graph, 0, 5, true, false, false},
+                            bg::allocator{memory});
+            promoted = true;
+            memory.allow_allocations();
+            break;
+        } catch (const std::bad_alloc &) {
+            memory.allow_allocations();
+            CHECK(subscribers.has_inline_subscriber());
+            CHECK(subscribers.inline_subscriber().graph == &graph);
+            CHECK(subscribers.inline_subscriber().input_offset == 0);
+            CHECK(subscribers.inline_subscriber().node_index() == 3);
+            CHECK(memory.allocations() == 0);
+        }
+    }
+    CHECK(promoted);
+    CHECK(subscribers.has_dynamic_subscribers());
+
+    auto subscriber_count = std::size_t{};
+    subscribers.dynamic_subscribers()->for_each_node_subscriber([&](const auto &subscriber) {
+        ++subscriber_count;
+        if (subscriber.graph == &graph) {
+            CHECK(subscriber.node_index() == 3);
+            CHECK(subscriber.active());
+            CHECK(subscriber.controlled_activity());
+        }
+    });
+    CHECK(subscriber_count == 2);
+
+    subscribers.remove(graph, 0);
+    CHECK(subscribers.has_dynamic_subscribers());
+    CHECK_FALSE(subscribers.empty());
+    subscribers.remove(other_graph, 0);
+    CHECK(subscribers.has_dynamic_subscribers());
+    CHECK(subscribers.empty());
+    subscribers.release();
+    CHECK_FALSE(subscribers.destination);
+    CHECK(memory.allocations() == 0);
 }
 
 namespace {
