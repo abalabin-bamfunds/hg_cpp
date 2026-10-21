@@ -420,8 +420,9 @@ for both column leaves and parameters, so direct `GraphWiring::borrowed_input`
 bindings remain unsupported here. Deduplication topology tests use ordinary
 source nodes.
 
-Comparisons, boolean cell storage, and explicit column conversion
-follow this foundation.
+Boolean storage is implemented across columns, TSC/TSF, literals, tick capture,
+computed outputs, and Arrow import/export. Comparisons, explicit column
+conversion, and expression-based filtering remain later work.
 
 The [shared block-operation contract](block_operation_proposal.md) and
 [computation nodes and input bindings](expression_node_proposal.md) are
@@ -431,8 +432,9 @@ column inputs, and captured scalar types. The mixed-type graph verifies one
 fused computation node and one `Bundle<{i64, double}>` parameter snapshot.
 Scalar-only column expressions fail during wiring because they have no row
 domain. Subtraction uses the shared factory and the same callback adapter as
-addition; it adds no compiler or evaluator behavior. Boolean physical layout
-and expression-based filtering require design review before implementation.
+addition; it adds no compiler or evaluator behavior. Boolean values use packed
+storage with separate validity. The expression callback test covers a Boolean
+result; comparison operators and expression-based filtering remain later work.
 Subtraction tests cover column, constant, and captured-time-series operand
 order, nulls around block boundaries, sparse row updates, and parameter ticks.
 Mixed addition/subtraction tests verify callback values, fusion, and forced
@@ -567,8 +569,16 @@ Unkeyed TSF and TSC input literals append rows. Nodes can also modify and remove
 rows through their internal IDs, so output deltas can contain all three
 operations.
 
-Boolean storage, comparisons, and expression-based filtering are the next
-frame features and require design review before implementation.
+Boolean storage and Arrow support are implemented. Comparisons and
+expression-based filtering remain later work.
+
+The Boolean foundation uses packed value bits with separate nullable validity.
+It covers `Column<bool>`, frame fields, TSC/TSF storage and deltas, literals,
+computed outputs, and the expression callback result path. Arrow import handles
+sliced Boolean arrays by adjusting the byte pointer and retaining the residual
+bit offset. Borrowed export retains the packed buffer; gather-copy export packs
+one dense chunk. Release Arrow-on build and all six frame CTest suites passed
+on this lane. Arrow-off and Debug/ASan verification remain for the root review.
 
 Fixed-name `Out<TSF<Schema>, frame::computed<"mid">>` outputs are implemented
 through the shared runtime-schema view backend. Dedicated Arrow-on tests cover

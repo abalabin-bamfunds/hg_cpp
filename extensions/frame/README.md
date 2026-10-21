@@ -1,8 +1,8 @@
 # BG frame extension
 
-`bg_frame` is a separate BG extension. It adds nullable numeric columns,
-frames with BG schemas, and native incremental column storage through BG's
-public type, node, and runtime extension points.
+`bg_frame` is a separate BG extension. It adds nullable Boolean and numeric
+columns, frames with BG schemas, and native incremental column storage through
+BG's public type, node, and runtime extension points.
 
 - `bg::frame::Column<bg::i64>` is an immutable owning scalar.
 - `Frame<Schema>` is an immutable owning scalar with named columns.
@@ -12,11 +12,14 @@ public type, node, and runtime extension points.
   row identity and report current-cycle row changes. `TSF` exposes fixed-schema
   columns as child `TSC` values.
 
-The current cell types are `i64` and `double`. `TSC` and `TSF` use ordinary
-outputs by default. Both support borrowed views; `TSC` and `TSF` also support
-computed outputs. `TSF` supports borrowed projections and row filters. The
-optional Arrow adapter supports numeric scalar imports and exports.
-Double-column addition and subtraction support deferred expressions and block evaluation.
+The current cell types are `bool`, `i64`, and `double`. `TSC` and `TSF` use
+ordinary outputs by default. Both support borrowed views; `TSC` and `TSF` also
+support computed outputs. `TSF` supports borrowed projections and row filters. The
+optional Arrow adapter supports scalar and frame imports and exports for these
+cell types. Boolean values use packed bits in native storage and Arrow Boolean
+arrays; validity remains separate. Gather-copy export produces one dense chunk.
+Double-column addition and subtraction support deferred expressions and block
+evaluation.
 Previous-cell subscriptions and expression-based filtering are later work.
 
 `frame::view` is an output option owned by this extension. Use it with
@@ -149,7 +152,7 @@ Entries apply in written order. At the root of a TSF literal,
 `literal::SKIP` leaves the frame unchanged and `literal::INVALID` invalidates
 it. An empty literal validates an invalid output as an empty frame; on an
 already valid output it does nothing. Key cells may be null, including
-components of a composite key. Literal cells currently support `i64` and
+components of a composite key. Literal cells support `bool`, `i64`, and
 `double` and must match the schema types.
 
 Nodes can also call `Out<TSF<Schema>>::apply()` with one

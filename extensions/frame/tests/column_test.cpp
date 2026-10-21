@@ -141,6 +141,54 @@ void test_empty_and_immutable() {
     require(bg::Scalar<Column>::from(erased_view)->cell(0) == 1, "erased snapshot copy lost values");
 }
 
+void test_packed_boolean_column_values() {
+    using namespace bg::frame;
+
+    auto snapshot = Column<bool>{{true, std::nullopt, false, true, false, true, std::nullopt, false, true}};
+    const auto snapshot_view = snapshot.view();
+    require(snapshot_view.size() == 9 && snapshot_view.cell(0) == true && !snapshot_view.cell(1) &&
+                snapshot_view.cell(2) == false && snapshot_view.cell(8) == true,
+            "packed boolean snapshot values or validity were incorrect");
+
+    auto observed = std::vector<std::optional<bool>>{};
+    snapshot_view.batches([&](const auto &batch) {
+        for (auto position = std::size_t{}; position != batch.size; ++position)
+            observed.push_back(batch.is_valid(position) ? std::optional<bool>{batch.value_at(position)} : std::nullopt);
+    });
+    require(observed == std::vector<std::optional<bool>>{true, std::nullopt, false, true, false, true,
+                                                         std::nullopt, false, true},
+            "packed boolean snapshot batches did not preserve values across byte boundaries");
+
+    auto bytes = std::array<std::uint8_t, 2>{0b00110110, 0b00000101};
+    auto subspan = ColumnBatch<bool>{0, 10, bytes.data(), 1, ColumnBatch<bool>::Validity::all_valid()}
+                       .subspan(6, 4);
+    require(subspan.value_bit_offset == 7 && subspan.value_at(0) == false && subspan.value_at(1) == true &&
+                subspan.value_at(2) == false && subspan.value_at(3) == true,
+            "packed boolean subspan did not advance across a byte boundary");
+
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = bg::allocator{resource};
+    auto native = NativeColumn<bool>{};
+    const auto time = bg::MIN_DT + bg::EvaluationTime::duration{1};
+    const auto first = native.add(true, time, memory);
+    const auto null_row = native.add(std::nullopt, time, memory);
+    const auto last = native.add(false, time, memory);
+    require(native.set(null_row, true, time, memory) && native.erase(first, time, memory),
+            "packed boolean mutation failed");
+    require(native.cell(null_row) == true && native.cell(last) == false && native.size() == 2,
+            "packed boolean mutation changed row validity or values");
+    auto live_values = std::vector<std::optional<bool>>{};
+    native.series_view().for_each_batch([&](const auto &batch) {
+        for (auto position = std::size_t{}; position != batch.ids.size(); ++position)
+            live_values.push_back(batch.cells.is_valid(position)
+                                      ? std::optional<bool>{batch.cells.value_at(position)}
+                                      : std::nullopt);
+    });
+    require(live_values == std::vector<std::optional<bool>>{true, false},
+            "packed boolean native batches exposed stale values after removal");
+    native.release(memory);
+}
+
 void test_double_column_snapshot() {
     using Column = bg::frame::Column<double>;
     auto column = Column{{1.25, std::nullopt, 3.5}};
@@ -1183,6 +1231,7 @@ void test_aligned_batches_keep_null_only_blocks_unreadable() {
 int main() {
     try {
         test_empty_and_immutable();
+        test_packed_boolean_column_values();
         test_double_column_snapshot();
         test_ordinary_time_series_graph();
         test_native_rows_changes_and_batches();

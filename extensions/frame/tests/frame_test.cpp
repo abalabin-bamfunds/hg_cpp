@@ -185,11 +185,11 @@ static_assert(accepts_frame_set<Out<TSF<SCHEMA>>, RowPatch<MixedGenericQuote>>);
 
 template <template <typename, auto...> typename Field> struct EmptySchema {};
 template <template <typename, auto...> typename Field> struct BidOnly { Field<double> price; };
-template <template <typename, auto...> typename Field> struct UnsupportedFrameCell { Field<bool> value; };
+template <template <typename, auto...> typename Field> struct BooleanFrameCell { Field<bool> value; };
 
-static_assert(!scalar_declaration_traits<Column<bool>>::supports_time_series);
-static_assert(!time_series_type_traits<TSC<bool>>::supported);
-static_assert(!time_series_type_traits<TSF<UnsupportedFrameCell>>::supported);
+static_assert(scalar_declaration_traits<Column<bool>>::supports_time_series);
+static_assert(time_series_type_traits<TSC<bool>>::supported);
+static_assert(time_series_type_traits<TSF<BooleanFrameCell>>::supported);
 
 class FailingResource final : public std::pmr::memory_resource {
   public:
@@ -4297,6 +4297,70 @@ void test_computed_tsf_tick_capture() {
             "computed TSF capture did not preserve nullable pass-through and computed cells");
 }
 
+void test_boolean_tsf_row_mutations() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    struct observation {
+        std::vector<std::optional<bool>> values;
+        std::vector<row_id_t> changed;
+        std::vector<row_id_t> removed;
+    };
+    auto observations = std::vector<observation>{};
+    auto row = no_row;
+    const auto write = node([&](In<TS<i64>> command, Out<TSF<BooleanFrameCell>> output) {
+        switch (*command) {
+        case 0:
+            row = output.add(Row<BooleanFrameCell>{.value = Cell<bool>{true}});
+            return;
+        case 1:
+            output.set(row, RowPatch<BooleanFrameCell>{.value = false});
+            return;
+        case 2:
+            output.set(row, RowPatch<BooleanFrameCell>{.value = std::nullopt});
+            return;
+        case 3:
+            require(output.erase(row), "boolean TSF row could not be removed");
+            return;
+        default:
+            throw std::runtime_error{"unknown boolean TSF command"};
+        }
+    });
+    const auto observe = node([&](In<TSF<BooleanFrameCell>, optional> input, In<TS<i64>> command) {
+        auto result = observation{};
+        input.for_each_row([&](row_id_t id, std::size_t) { result.values.push_back(input.cell<0>(id)); });
+        input.for_each_changed([&](row_id_t id) { result.changed.push_back(id); });
+        input.for_each_removed([&](row_id_t id) { result.removed.push_back(id); });
+        observations.push_back(std::move(result));
+        static_cast<void>(command);
+    });
+    const auto graph = [&](wp<TS<i64>> command) {
+        const auto output = write(command);
+        observe(output, command);
+        return output;
+    };
+    const auto commands = std::array<i64, 4>{0, 1, 2, 3};
+    const auto result = testing::test_graph(graph, commands);
+
+    require(result.equals({{{"first", {{"value", true}}}},
+                           {{"first", {{"value", false}}}},
+                           {{"first", {{"value", NULL_VALUE}}}},
+                           {{"first", literal::REMOVED}}}) &&
+                observations.size() == commands.size(),
+            "boolean TSF row mutation literals or cycle capture were incorrect");
+    require(observations[0].values == std::vector<std::optional<bool>>{true} &&
+                observations[0].changed == std::vector<row_id_t>{row},
+            "boolean TSF addition lost its value or row delta");
+    require(observations[1].values == std::vector<std::optional<bool>>{false} &&
+                observations[1].changed == std::vector<row_id_t>{row},
+            "boolean TSF update lost its value or row delta");
+    require(observations[2].values == std::vector<std::optional<bool>>{std::nullopt} &&
+                observations[2].changed == std::vector<row_id_t>{row},
+            "boolean TSF null update lost its validity or row delta");
+    require(observations[3].values.empty() && observations[3].removed == std::vector<row_id_t>{row},
+            "boolean TSF removal lost its row delta");
+}
+
 void test_filter_tsf_tick_capture() {
     using namespace bg;
     using namespace bg::frame;
@@ -6595,6 +6659,7 @@ int main() {
         test_inherited_frame_fields_and_views();
         test_scalar_frame_time_series_graph();
         test_compiled_graph_runtime_storage_is_independent();
+        test_boolean_tsf_row_mutations();
         test_tsf_graph_behavior();
         test_tsf_literal_updates();
         test_tsf_literal_uses_actual_derived_schema();

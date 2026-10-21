@@ -33,14 +33,22 @@ const ScalarRuntimeType &canonical_scalar_runtime(const ScalarType &type, const 
                                                   scalar_runtime_factory factory);
 
 template <cell_type T> std::shared_ptr<arrow::DataType> data_type() {
-    if constexpr (std::same_as<T, i64>)
+    if constexpr (std::same_as<T, bool>)
+        return arrow::boolean();
+    else if constexpr (std::same_as<T, i64>)
         return arrow::int64();
     else
         return arrow::float64();
 }
 
-template <cell_type T> constexpr auto arrow_type_id =
-    std::same_as<T, i64> ? arrow::Type::INT64 : arrow::Type::DOUBLE;
+template <cell_type T> constexpr auto arrow_type_id = [] {
+    if constexpr (std::same_as<T, bool>)
+        return arrow::Type::BOOL;
+    else if constexpr (std::same_as<T, i64>)
+        return arrow::Type::INT64;
+    else
+        return arrow::Type::DOUBLE;
+}();
 
 inline arrow::Status check_length(std::size_t size) {
     if (size > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()))
@@ -63,10 +71,10 @@ template <cell_type T> arrow::Status check_array_buffers(const std::shared_ptr<a
         return arrow::Status::TypeError("Arrow column has an unsupported physical type");
     const auto &buffers = array->data()->buffers;
     if (buffers.size() < 2)
-        return arrow::Status::Invalid("Arrow numeric array has fewer than two buffers");
+        return arrow::Status::Invalid("Arrow array has fewer than two buffers");
     for (const auto &buffer : buffers)
         if (buffer && !buffer->is_cpu())
-            return arrow::Status::NotImplemented("Arrow numeric buffers must be on the CPU");
+            return arrow::Status::NotImplemented("Arrow buffers must be on the CPU");
     return arrow::Status::OK();
 }
 
@@ -118,8 +126,13 @@ template <cell_type T> class ArrowColumnReadSource final : public ColumnReadSour
         if (chunk->IsNull(static_cast<std::int64_t>(local)))
             return std::nullopt;
         const auto value_position = static_cast<std::size_t>(chunk->offset()) + local;
-        const auto *values = chunk->data()->buffers[1]->data_as<T>();
-        return values[value_position];
+        if constexpr (std::same_as<T, bool>) {
+            const auto *values = chunk->data()->buffers[1]->data();
+            return arrow::bit_util::GetBit(values, static_cast<std::int64_t>(value_position));
+        } else {
+            const auto *values = chunk->data()->buffers[1]->data_as<T>();
+            return values[value_position];
+        }
     }
 
     void visit_batches(void *target, typename ColumnReadSource<T>::batch_visitor visit) const override {
@@ -139,11 +152,15 @@ template <cell_type T> class ArrowColumnReadSource final : public ColumnReadSour
             } else if (!all_valid) {
                 validity = ColumnBatch<T>::Validity::from_bitmap(buffers[0]->data(), offset);
             }
-            const auto *values = buffers[1] == nullptr
-                                     ? nullptr
-                                     : buffers[1]->data_as<T>() + static_cast<std::size_t>(offset);
-            std::invoke(visit, target,
-                        ColumnBatch<T>{offset, length, values, validity});
+            if constexpr (std::same_as<T, bool>) {
+                const auto *values = buffers[1] == nullptr ? nullptr : buffers[1]->data() + offset / 8;
+                std::invoke(visit, target, ColumnBatch<T>{offset, length, values, offset % 8, validity});
+            } else {
+                const auto *values = buffers[1] == nullptr
+                                         ? nullptr
+                                         : buffers[1]->data_as<T>() + static_cast<std::size_t>(offset);
+                std::invoke(visit, target, ColumnBatch<T>{offset, length, values, 0, validity});
+            }
         }
     }
 
@@ -160,14 +177,38 @@ template <cell_type T> struct ArrowScalarValueRead<ArrowColumnReadSource<T>, Col
 
 template <cell_type T> arrow::Result<std::shared_ptr<arrow::Array>> make_array(const ColumnBatch<T> &batch) {
     ARROW_RETURN_NOT_OK(check_length(batch.size));
-    if (batch.size > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max() / sizeof(T)))
+    constexpr auto packed_values = std::same_as<T, bool>;
+    if constexpr (packed_values) {
+        if (batch.value_bit_offset > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
+            return arrow::Status::CapacityError("Arrow value buffer exceeds the signed 64-bit size limit");
+    }
+    const auto value_bit_offset = [&] {
+        if constexpr (packed_values)
+            return static_cast<std::int64_t>(batch.value_bit_offset);
+        else
+            return std::int64_t{};
+    }();
+    if constexpr (packed_values) {
+        if (batch.size > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max() - value_bit_offset))
+            return arrow::Status::CapacityError("Arrow value buffer exceeds the signed 64-bit size limit");
+    } else if (batch.size > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max() / sizeof(T))) {
         return arrow::Status::CapacityError("Arrow value buffer exceeds the signed 64-bit size limit");
+    }
 
-    auto validity_bytes = std::vector<std::uint8_t>(batch.size / 8 + (batch.size % 8 != 0), 0);
+    const auto bitmap_bits = batch.size + static_cast<std::size_t>(value_bit_offset);
+    const auto bitmap_bytes = bitmap_bits / 8 + (bitmap_bits % 8 != 0);
+    const auto value_bytes = [&] {
+        if constexpr (packed_values)
+            return bitmap_bytes;
+        else
+            return batch.size * sizeof(T);
+    }();
+    const auto byte_size = static_cast<std::int64_t>(value_bytes);
+    auto validity_bytes = std::vector<std::uint8_t>(bitmap_bytes, 0);
     auto null_count = std::int64_t{};
     for (auto position = std::size_t{}; position != batch.size; ++position) {
         if (batch.is_valid(position)) {
-            arrow::bit_util::SetBit(validity_bytes.data(), static_cast<std::int64_t>(position));
+            arrow::bit_util::SetBit(validity_bytes.data(), value_bit_offset + static_cast<std::int64_t>(position));
         } else {
             ++null_count;
         }
@@ -178,7 +219,6 @@ template <cell_type T> arrow::Result<std::shared_ptr<arrow::Array>> make_array(c
         validity = arrow::Buffer::FromVector(std::move(validity_bytes));
 
     std::shared_ptr<arrow::Buffer> values;
-    const auto byte_size = static_cast<std::int64_t>(batch.size * sizeof(T));
     if (batch.values != nullptr) {
         values = std::make_shared<arrow::Buffer>(reinterpret_cast<const std::uint8_t *>(batch.values), byte_size);
     } else {
@@ -191,7 +231,7 @@ template <cell_type T> arrow::Result<std::shared_ptr<arrow::Array>> make_array(c
     }
 
     auto data = arrow::ArrayData::Make(data_type<T>(), static_cast<std::int64_t>(batch.size),
-                                       {std::move(validity), std::move(values)}, null_count);
+                                       {std::move(validity), std::move(values)}, null_count, value_bit_offset);
     return arrow::MakeArray(data);
 }
 
@@ -199,9 +239,17 @@ template <cell_type T>
 arrow::Result<std::shared_ptr<arrow::ChunkedArray>> export_column(const ColumnView<T> &column, bool copy_values) {
     ARROW_RETURN_NOT_OK(check_length(column.size()));
     if (copy_values) {
-        if (column.size() > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max() / sizeof(T)))
-            return arrow::Status::CapacityError("Arrow value buffer exceeds the signed 64-bit size limit");
-        auto dense_values = std::vector<T>(column.size(), T{});
+        if constexpr (!std::same_as<T, bool>) {
+            if (column.size() > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max() / sizeof(T)))
+                return arrow::Status::CapacityError("Arrow value buffer exceeds the signed 64-bit size limit");
+        }
+
+        using DenseValue = std::conditional_t<std::same_as<T, bool>, std::uint8_t, T>;
+        auto dense_values = std::vector<DenseValue>{};
+        if constexpr (std::same_as<T, bool>)
+            dense_values.resize(column.size() / 8 + (column.size() % 8 != 0));
+        else
+            dense_values.resize(column.size());
         auto validity_bytes = std::vector<std::uint8_t>(column.size() / 8 + (column.size() % 8 != 0), 0);
         auto position = std::size_t{};
         auto null_count = std::int64_t{};
@@ -218,11 +266,16 @@ arrow::Result<std::shared_ptr<arrow::ChunkedArray>> export_column(const ColumnVi
                     ++null_count;
                     continue;
                 }
-                if (batch.values == nullptr) {
+                if (!batch.has_values()) {
                     status = arrow::Status::Invalid("column batch has valid cells without a value buffer");
                     return;
                 }
-                dense_values[position] = batch.values[offset];
+                if constexpr (std::same_as<T, bool>) {
+                    if (batch.value_at(offset))
+                        arrow::bit_util::SetBit(dense_values.data(), static_cast<std::int64_t>(position));
+                } else {
+                    dense_values[position] = batch.value_at(offset);
+                }
                 arrow::bit_util::SetBit(validity_bytes.data(), static_cast<std::int64_t>(position));
             }
         });
@@ -263,6 +316,8 @@ arrow::Result<std::shared_ptr<arrow::ChunkedArray>> export_column(const ColumnVi
 
 inline arrow::Result<std::shared_ptr<arrow::ChunkedArray>> export_column(const ColumnView<> &column,
                                                                           bool copy_values) {
+    if (std::addressof(column.cell_type()) == std::addressof(cpp_scalar_type<bool>()))
+        return export_column(column.view<bool>(), copy_values);
     if (std::addressof(column.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
         return export_column(column.view<i64>(), copy_values);
     if (std::addressof(column.cell_type()) == std::addressof(cpp_scalar_type<double>()))
@@ -282,7 +337,9 @@ arrow::Result<std::shared_ptr<arrow::Table>> export_runtime_frame(const FrameVie
         const auto &field = schema.field(index);
         const auto source = frame.column(index);
         auto column = std::shared_ptr<arrow::ChunkedArray>{};
-        if (&source.cell_type() == std::addressof(cpp_scalar_type<i64>())) {
+        if (&source.cell_type() == std::addressof(cpp_scalar_type<bool>())) {
+            fields.push_back(arrow::field(std::string{field.name.text()}, data_type<bool>(), true));
+        } else if (&source.cell_type() == std::addressof(cpp_scalar_type<i64>())) {
             fields.push_back(arrow::field(std::string{field.name.text()}, data_type<i64>(), true));
         } else if (&source.cell_type() == std::addressof(cpp_scalar_type<double>())) {
             fields.push_back(arrow::field(std::string{field.name.text()}, data_type<double>(), true));
@@ -353,7 +410,7 @@ const ArrowScalarRuntime<Column<T>, ArrowColumnReadSource<T>, ColumnView<T>> &co
 }
 
 using ArrowRuntimeFrameColumn =
-    std::variant<ArrowColumnReadSource<i64>, ArrowColumnReadSource<double>>;
+    std::variant<ArrowColumnReadSource<bool>, ArrowColumnReadSource<i64>, ArrowColumnReadSource<double>>;
 
 class ArrowRuntimeFrameStorage {
   public:
@@ -364,7 +421,10 @@ class ArrowRuntimeFrameStorage {
         columns.reserve(schema->field_count());
         for (auto index = std::size_t{}; index != schema->field_count(); ++index) {
             const auto &field = schema->field(index);
-            if (field.type == std::addressof(cpp_scalar_type<i64>()))
+            if (field.type == std::addressof(cpp_scalar_type<bool>()))
+                columns.emplace_back(std::in_place_type<ArrowColumnReadSource<bool>>,
+                                     table->column(static_cast<int>(index)));
+            else if (field.type == std::addressof(cpp_scalar_type<i64>()))
                 columns.emplace_back(std::in_place_type<ArrowColumnReadSource<i64>>,
                                      table->column(static_cast<int>(index)));
             else
@@ -388,6 +448,8 @@ inline FrameColumnReadBinding runtime_arrow_frame_column_binding(const void *con
     const auto &storage = *static_cast<const ArrowRuntimeFrameStorage *>(context);
     const auto &field = storage.schema->field(index);
     const auto *column = std::addressof(storage.columns.at(index));
+    if (field.type == std::addressof(cpp_scalar_type<bool>()))
+        return {std::addressof(cpp_scalar_type<bool>()), column, &bind_runtime_arrow_column_view<bool>, nullptr};
     if (field.type == std::addressof(cpp_scalar_type<i64>()))
         return {std::addressof(cpp_scalar_type<i64>()), column, &bind_runtime_arrow_column_view<i64>, nullptr};
     return {std::addressof(cpp_scalar_type<double>()), column, &bind_runtime_arrow_column_view<double>, nullptr};
@@ -422,7 +484,9 @@ inline arrow::Status validate_frame(const std::shared_ptr<arrow::Table> &table, 
             return arrow::Status::Invalid("Arrow table column name does not match the frame schema");
 
         arrow::Status status;
-        if (field.type == std::addressof(cpp_scalar_type<i64>())) {
+        if (field.type == std::addressof(cpp_scalar_type<bool>())) {
+            status = check_chunked_buffers<bool>(table->column(static_cast<int>(index)));
+        } else if (field.type == std::addressof(cpp_scalar_type<i64>())) {
             status = check_chunked_buffers<i64>(table->column(static_cast<int>(index)));
         } else if (field.type == std::addressof(cpp_scalar_type<double>())) {
             status = check_chunked_buffers<double>(table->column(static_cast<int>(index)));
@@ -507,10 +571,12 @@ inline arrow::Result<ScalarValue<>> from_arrow(std::shared_ptr<arrow::Table> tab
         const ScalarType *cell_type{};
         if (field->type()->id() == arrow::Type::INT64)
             cell_type = std::addressof(cpp_scalar_type<i64>());
+        else if (field->type()->id() == arrow::Type::BOOL)
+            cell_type = std::addressof(cpp_scalar_type<bool>());
         else if (field->type()->id() == arrow::Type::DOUBLE)
             cell_type = std::addressof(cpp_scalar_type<double>());
         else
-            return arrow::Status::TypeError("Arrow frame import supports only int64 and float64 fields");
+            return arrow::Status::TypeError("Arrow frame import supports only boolean, int64, and float64 fields");
         fields.push_back({util::symbol{field->name()}, cell_type, false});
     }
 

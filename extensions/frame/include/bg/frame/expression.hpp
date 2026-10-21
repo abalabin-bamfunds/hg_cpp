@@ -18,6 +18,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <span>
@@ -38,6 +39,9 @@ template <typename T = void> struct MutableColumnBatch {
     std::span<T> values;
     std::span<std::uint8_t> validity;
 
+    std::size_t size() const noexcept { return values.size(); }
+    T value_at(std::size_t position) const noexcept { return values[position]; }
+    void set_value(std::size_t position, T value) const noexcept { values[position] = value; }
     bool is_valid(std::size_t position) const noexcept {
         return (validity[position / 8] & (std::uint8_t{1} << (position % 8))) != 0;
     }
@@ -52,10 +56,53 @@ template <typename T = void> struct MutableColumnBatch {
     }
 };
 
+template <> struct MutableColumnBatch<bool> {
+    std::span<std::uint8_t> values;
+    std::uint64_t value_bit_offset{};
+    std::span<std::uint8_t> validity;
+
+    MutableColumnBatch(std::span<std::uint8_t> values, std::size_t size, std::uint64_t value_bit_offset,
+                       std::span<std::uint8_t> validity) noexcept
+        : values{values}, size_{size}, value_bit_offset{value_bit_offset}, validity{validity} {}
+
+    std::size_t size() const noexcept { return size_; }
+    bool value_at(std::size_t position) const noexcept {
+        const auto bit = value_bit_offset + position;
+        return (values[bit / 8] & (std::uint8_t{1} << (bit % 8))) != 0;
+    }
+    void set_value(std::size_t position, bool value) const noexcept {
+        const auto bit = value_bit_offset + position;
+        auto &byte = values[bit / 8];
+        const auto mask = std::uint8_t{1} << (bit % 8);
+        if (value)
+            byte |= mask;
+        else
+            byte &= static_cast<std::uint8_t>(~mask);
+    }
+    bool is_valid(std::size_t position) const noexcept {
+        return (validity[position / 8] & (std::uint8_t{1} << (position % 8))) != 0;
+    }
+    void set_valid(std::size_t position, bool valid) const noexcept {
+        auto &byte = validity[position / 8];
+        const auto mask = std::uint8_t{1} << (position % 8);
+        if (valid)
+            byte |= mask;
+        else
+            byte &= static_cast<std::uint8_t>(~mask);
+    }
+
+  private:
+    std::size_t size_{};
+};
+
 template <> struct MutableColumnBatch<void> {
     void *values{};
     std::size_t size{};
     std::span<std::uint8_t> validity;
+
+    MutableColumnBatch() = default;
+    MutableColumnBatch(void *values, std::size_t size, std::span<std::uint8_t> validity) noexcept
+        : values{values}, size{size}, validity{validity} {}
 };
 
 // One expression operand is a row-aligned column batch or an always-valid scalar broadcast. Read a column value only
@@ -70,7 +117,7 @@ template <typename T = void> class ColumnOperandBatch {
     const ColumnBatch<T> &column() const { return std::get<ColumnBatch<T>>(value_); }
     T value(std::size_t position) const {
         const auto *column = std::get_if<ColumnBatch<T>>(&value_);
-        return column == nullptr ? std::get<T>(value_) : column->values[position];
+        return column == nullptr ? std::get<T>(value_) : column->value_at(position);
     }
     bool is_valid(std::size_t position) const noexcept {
         const auto *column = std::get_if<ColumnBatch<T>>(&value_);
@@ -124,6 +171,7 @@ struct ColumnBlockFunctionAdapter {
     std::size_t result_size{};
     std::size_t result_alignment{};
     std::array<std::size_t, 2> operand_sizes{};
+    bool packed_result{};
 };
 
 } // namespace bg::frame
@@ -148,7 +196,9 @@ template <cell_type RESULT, cell_type... ARGS> struct ColumnBlockFunctionAdapter
             return ColumnOperandBatch<ARG>{*static_cast<const ARG *>(source.scalar())};
         const auto &column = source.column();
         return ColumnOperandBatch<ARG>{ColumnBatch<ARG>{column.first_slot, column.size,
-                                                        static_cast<const ARG *>(column.values), column.valid}};
+                                                        static_cast<typename ColumnValueTraits<ARG>::pointer>(
+                                                            column.values),
+                                                        column.value_bit_offset, column.valid}};
     }
 
     template <std::size_t... INDEX>
@@ -159,9 +209,19 @@ template <cell_type RESULT, cell_type... ARGS> struct ColumnBlockFunctionAdapter
         const auto typed_operands = std::tuple{operand<ARGS>(operands[INDEX])...};
         std::apply(
             [&](const auto &...typed) {
-                auto *values = static_cast<RESULT *>(output.values);
-                std::uninitialized_default_construct_n(values, output.size);
-                auto typed_output = MutableColumnBatch<RESULT>{std::span<RESULT>{values, output.size}, output.validity};
+                auto typed_output = [&] {
+                    if constexpr (std::same_as<RESULT, bool>) {
+                        auto *values = static_cast<std::uint8_t *>(output.values);
+                        const auto value_bytes = (output.size + 7) / 8;
+                        std::memset(values, 0, value_bytes);
+                        return MutableColumnBatch<bool>{std::span<std::uint8_t>{values, value_bytes}, output.size, 0,
+                                                        output.validity};
+                    } else {
+                        auto *values = static_cast<RESULT *>(output.values);
+                        std::uninitialized_default_construct_n(values, output.size);
+                        return MutableColumnBatch<RESULT>{std::span<RESULT>{values, output.size}, output.validity};
+                    }
+                }();
                 function.function(rows, typed...,
                                   typed_output);
             },
@@ -183,7 +243,8 @@ template <cell_type RESULT, cell_type... ARGS> void register_column_block_functi
     auto index = std::size_t{};
     ((operand_sizes[index] = sizeof(ARGS), ++index), ...);
     static_cast<void>(ScalarDispatch<ColumnBlockFunctionAdapter>::instance().add(
-        semantic_type, ColumnBlockFunctionAdapter{&Factory::call, sizeof(RESULT), alignof(RESULT), operand_sizes}));
+        semantic_type, ColumnBlockFunctionAdapter{&Factory::call, sizeof(RESULT), alignof(RESULT), operand_sizes,
+                                                   packed_column_value<RESULT>}));
 }
 
 // Compiles an expression bundle selected by BG and returns the expression node's concrete output.

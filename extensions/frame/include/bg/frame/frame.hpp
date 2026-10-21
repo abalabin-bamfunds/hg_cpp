@@ -364,6 +364,11 @@ struct FrameReadStorage {
         const auto binding = column(index);
         if (binding.cell_type == nullptr || binding.bind_column_view == nullptr)
             throw std::logic_error{"frame column has no readable cell type"};
+        if (binding.cell_type == std::addressof(cpp_scalar_type<bool>())) {
+            auto result = ColumnView<bool>{};
+            binding.bind_column_view(binding.payload, std::addressof(result));
+            return ColumnView<>{result};
+        }
         if (binding.cell_type == std::addressof(cpp_scalar_type<i64>())) {
             auto result = ColumnView<i64>{};
             binding.bind_column_view(binding.payload, std::addressof(result));
@@ -374,7 +379,7 @@ struct FrameReadStorage {
             binding.bind_column_view(binding.payload, std::addressof(result));
             return ColumnView<>{result};
         }
-        throw std::invalid_argument{"frame columns support only i64 and double cell types"};
+        throw std::invalid_argument{"frame column has an unsupported cell type"};
     }
     const util::index<> *modified_at(std::size_t index) const noexcept {
         if (modified_column != nullptr)
@@ -595,7 +600,7 @@ void *copy_frame_snapshot_column(const FrameColumnReadBinding &source, std::size
             for (auto index = std::size_t{}; index != batch.size; ++index, ++position) {
                 if (!batch.is_valid(index))
                     continue;
-                snapshot->value_at(position) = batch.values[index];
+                snapshot->set_value(position, batch.value_at(index));
                 snapshot->set_valid(static_cast<row_id_t>(position));
             }
         });
@@ -935,13 +940,16 @@ FrameColumnReadBinding frame_view_column_binding(const void *context, std::size_
                     *static_cast<const Schema<FrameViewColumn> *>(payload));
                 const auto &column = std::get<Index>(columns);
                 const auto &cell_type = column.cell_type();
+                if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<bool>()))
+                    return {std::addressof(cell_type), std::addressof(column),
+                            &bind_generic_frame_view_column<bool>, nullptr};
                 if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<i64>()))
                     return {std::addressof(cell_type), std::addressof(column),
                             &bind_generic_frame_view_column<i64>, nullptr};
                 if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<double>()))
                     return {std::addressof(cell_type), std::addressof(column),
                             &bind_generic_frame_view_column<double>, nullptr};
-                throw std::invalid_argument{"frame columns support only i64 and double cell types"};
+                throw std::invalid_argument{"frame column has an unsupported cell type"};
             } else {
                 return {std::addressof(cpp_scalar_type<Cell>()), payload,
                         &bind_frame_view_column<Schema, Index>, nullptr};
@@ -1688,11 +1696,13 @@ void bind_frame_computed_storage(void *destination, const void *native, const Na
 
 inline FrameColumnReadBinding runtime_frame_column_binding(const ColumnView<> &column) {
     const auto &type = column.cell_type();
+    if (std::addressof(type) == std::addressof(cpp_scalar_type<bool>()))
+        return {std::addressof(type), std::addressof(column), &bind_runtime_frame_column_view<bool>, nullptr};
     if (std::addressof(type) == std::addressof(cpp_scalar_type<i64>()))
         return {std::addressof(type), std::addressof(column), &bind_runtime_frame_column_view<i64>, nullptr};
     if (std::addressof(type) == std::addressof(cpp_scalar_type<double>()))
         return {std::addressof(type), std::addressof(column), &bind_runtime_frame_column_view<double>, nullptr};
-    throw std::invalid_argument{"frame columns support only i64 and double cell types"};
+    throw std::invalid_argument{"frame column has an unsupported cell type"};
 }
 
 } // namespace details
@@ -1925,11 +1935,13 @@ template <cell_type Cell> NativeFrameFieldLayout make_native_frame_field_layout(
 }
 
 inline NativeFrameFieldLayout native_frame_field_layout(const ScalarType &cell_type) {
+    if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<bool>()))
+        return make_native_frame_field_layout<bool>();
     if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<i64>()))
         return make_native_frame_field_layout<i64>();
     if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<double>()))
         return make_native_frame_field_layout<double>();
-    throw std::invalid_argument{"frame columns support only i64 and double cell types"};
+    throw std::invalid_argument{"frame column has an unsupported cell type"};
 }
 
 } // namespace details
@@ -3322,12 +3334,22 @@ class Out<frame::TSF<Schema, Properties...>> {
     using time_series_type = frame::TSF<Schema, Properties...>;
 
   private:
-    using CellValue = std::variant<std::optional<i64>, std::optional<double>>;
+    using CellValue = std::variant<std::optional<bool>, std::optional<i64>, std::optional<double>>;
 
     static const void *decode_cell(const std::optional<Scalar<>> &source, const Type &cell_type,
                                    CellValue &destination) {
-        if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<i64>())) {
+        if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<bool>())) {
             auto &value = destination.emplace<0>();
+            if (source) {
+                if (std::addressof(source->type()) != std::addressof(cpp_scalar_type<bool>()))
+                    throw std::invalid_argument{"frame cell type does not match its schema"};
+                const auto typed_value = Scalar<bool>::from(*source);
+                value = typed_value.value();
+            }
+            return std::addressof(value);
+        }
+        if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<i64>())) {
+            auto &value = destination.emplace<1>();
             if (source) {
                 if (std::addressof(source->type()) != std::addressof(cpp_scalar_type<i64>()))
                     throw std::invalid_argument{"frame cell type does not match its schema"};
@@ -3337,7 +3359,7 @@ class Out<frame::TSF<Schema, Properties...>> {
             return std::addressof(value);
         }
         if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<double>())) {
-            auto &value = destination.emplace<1>();
+            auto &value = destination.emplace<2>();
             if (source) {
                 if (std::addressof(source->type()) != std::addressof(cpp_scalar_type<double>()))
                     throw std::invalid_argument{"frame cell type does not match its schema"};
@@ -3551,12 +3573,14 @@ class FrameViewOutputImplementation {
         const auto index = output.field_index(util::symbol{Name.view()});
         if (!output.is_computed(index))
             throw std::invalid_argument{"frame output field is not declared computed"};
-        auto value = std::variant<std::optional<i64>, std::optional<double>>{};
+        auto value = std::variant<std::optional<bool>, std::optional<i64>, std::optional<double>>{};
         const void *cell = nullptr;
-        if (output.layout->schema->field(index).type == std::addressof(cpp_scalar_type<i64>()))
+        if (output.layout->schema->field(index).type == std::addressof(cpp_scalar_type<bool>()))
             cell = std::addressof(value.emplace<0>());
-        else if (output.layout->schema->field(index).type == std::addressof(cpp_scalar_type<double>()))
+        else if (output.layout->schema->field(index).type == std::addressof(cpp_scalar_type<i64>()))
             cell = std::addressof(value.emplace<1>());
+        else if (output.layout->schema->field(index).type == std::addressof(cpp_scalar_type<double>()))
+            cell = std::addressof(value.emplace<2>());
         else
             throw std::invalid_argument{"computed frame schema has an unsupported cell type"};
         if (output.set_computed(index, id, cell, binding_->context().evaluation_time(), binding_->allocator())) {
@@ -3582,7 +3606,7 @@ class FrameViewOutputImplementation {
                 throw std::out_of_range{"computed frame batch row ID"};
             has_valid_cell = has_valid_cell || batch.is_valid(position);
         }
-        if (has_valid_cell && batch.values == nullptr)
+        if (has_valid_cell && !batch.has_values())
             throw std::invalid_argument{"computed frame batch has valid cells but no values"};
         if (ids.empty())
             return;
@@ -3593,7 +3617,7 @@ class FrameViewOutputImplementation {
         for (std::size_t position = 0; position != ids.size(); ++position) {
             auto value = std::optional<Cell>{};
             if (batch.is_valid(position))
-                value = batch.values[position];
+                value = batch.value_at(position);
             changed = output.write_computed(index, ids[position], std::addressof(value),
                                             binding_->allocator()) || changed;
         }
@@ -3844,7 +3868,9 @@ struct ProjectNode {
 template <util::compile_time_string Name,
           template <template <typename, auto...> typename> typename Schema, typename Threshold>
 struct FilterGreaterThanNode {
-    static_assert(std::is_arithmetic_v<Threshold>, "filter threshold must be numeric");
+    static_assert(std::is_arithmetic_v<std::remove_cvref_t<Threshold>> &&
+                      !std::same_as<std::remove_cvref_t<Threshold>, bool>,
+                  "filter threshold must be numeric");
 
     void operator()(In<TSF<Schema>, optional> input, Threshold threshold, Out<TSF<Schema>, frame::view> output) const {
         if constexpr (bg::details::schema_variable_template<Schema> ||
@@ -3877,7 +3903,7 @@ struct FilterGreaterThanNode {
             static_assert(predicate_index < bg::details::hierarchical_scalar_schema_reflection<Schema>::field_count,
                           "filter names an unknown predicate column");
             using Cell = frame_schema_cell_t<predicate_index, Schema>;
-            static_assert(cell_type<Cell>, "filter predicate column must have a supported numeric cell type");
+            static_assert(numeric_cell_type<Cell>, "filter predicate column must have a supported numeric cell type");
             output.template bind_filter<Name>(input, [&](row_id_t id) {
                 const auto value = input.template cell<predicate_index>(id);
                 return value && *value > threshold;
@@ -3899,7 +3925,8 @@ auto project(wp<TSF<SourceSchema, Properties...>> source) {
 
 template <util::compile_time_string Name,
           template <template <typename, auto...> typename> typename Schema, auto... Properties, typename Threshold>
-    requires std::is_arithmetic_v<Threshold>
+    requires(std::is_arithmetic_v<std::remove_cvref_t<Threshold>> &&
+             !std::same_as<std::remove_cvref_t<Threshold>, bool>)
 auto filter_greater_than(wp<TSF<Schema, Properties...>> source, Threshold threshold) {
     static const auto filter = bg::node(details::FilterGreaterThanNode<Name, Schema, Threshold>{});
     return filter(source, threshold);
@@ -4024,6 +4051,9 @@ inline ScalarValue<Frame<bg::SCHEMA>> make_frame_value(allocator &memory, const 
             throw std::invalid_argument{"frame column type does not match the schema"};
         if (binding.cell_type == std::addressof(cpp_scalar_type<i64>())) {
             if (column.view<i64>().size() != row_count)
+                throw std::invalid_argument{"frame columns have different lengths"};
+        } else if (binding.cell_type == std::addressof(cpp_scalar_type<bool>())) {
+            if (column.view<bool>().size() != row_count)
                 throw std::invalid_argument{"frame columns have different lengths"};
         } else if (column.view<double>().size() != row_count) {
             throw std::invalid_argument{"frame columns have different lengths"};

@@ -26,11 +26,13 @@ void construct_arrow_column_literal(const literal::ScalarLiteral &literal, const
 void construct_arrow_column_literal(const literal::ScalarLiteral &literal, const ScalarRuntimeType &runtime,
                                     void *destination, allocator &memory) {
     const auto &column = static_cast<const ColumnType &>(runtime.type());
+    if (std::addressof(column.cell_type()) == std::addressof(cpp_scalar_type<bool>()))
+        return construct_arrow_column_literal<bool>(literal, runtime, destination, memory);
     if (std::addressof(column.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
         return construct_arrow_column_literal<i64>(literal, runtime, destination, memory);
     if (std::addressof(column.cell_type()) == std::addressof(cpp_scalar_type<double>()))
         return construct_arrow_column_literal<double>(literal, runtime, destination, memory);
-    throw std::invalid_argument{"Arrow column literal supports only i64 and double cells"};
+    throw std::invalid_argument{"Arrow column literal has an unsupported cell type"};
 }
 
 void construct_arrow_frame_literal(const literal::ScalarLiteral &literal, const ScalarRuntimeType &runtime,

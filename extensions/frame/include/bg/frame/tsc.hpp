@@ -223,6 +223,10 @@ class In<frame::TSC<T, SeriesProperties...>, Properties...>
 
     Scalar<frame::Column<T>> value_view() const {
         const auto &type = column_type();
+        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<bool>())) {
+            const auto value = input<bool>().value_view();
+            return Scalar<frame::Column<T>>::from(value);
+        }
         if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<i64>())) {
             const auto value = input<i64>().value_view();
             return Scalar<frame::Column<T>>::from(value);
@@ -236,6 +240,8 @@ class In<frame::TSC<T, SeriesProperties...>, Properties...>
 
     frame::ColumnView<> column_view() const {
         const auto &type = column_type();
+        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<bool>()))
+            return frame::ColumnView<>{view<bool>()};
         if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
             return frame::ColumnView<>{view<i64>()};
         if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<double>()))
@@ -257,6 +263,10 @@ class In<frame::TSC<T, SeriesProperties...>, Properties...>
 
     std::size_t cell_count() const noexcept {
         const auto &type = column_type();
+        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<bool>()))
+            return static_cast<const frame::ColumnSeriesRuntimeType<bool> &>(data_.runtime_type())
+                .input_view(data_.data())
+                .size();
         if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
             return static_cast<const frame::ColumnSeriesRuntimeType<i64> &>(data_.runtime_type())
                 .input_view(data_.data())
@@ -346,6 +356,8 @@ class Out<frame::TSC<T, Properties...>> {
     }
 
     bool erase(frame::row_id_t id) const {
+        if (has_cell_type<bool>())
+            return erase<bool>(id);
         if (has_cell_type<i64>())
             return erase<i64>(id);
         if (has_cell_type<double>())
@@ -354,6 +366,10 @@ class Out<frame::TSC<T, Properties...>> {
     }
 
     void clear() const {
+        if (has_cell_type<bool>()) {
+            clear<bool>();
+            return;
+        }
         if (has_cell_type<i64>()) {
             clear<i64>();
             return;
@@ -454,6 +470,8 @@ class Out<frame::TSC<T, Properties...>, frame::view> {
         }
 
         const auto &source_type = static_cast<const frame::ColumnSeriesType &>(source.runtime_type().type());
+        if (std::addressof(source_type.cell_type()) == std::addressof(cpp_scalar_type<bool>()))
+            return bind_cell<bool>(concrete_input<bool, SourceCell>(source));
         if (std::addressof(source_type.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
             return bind_cell<i64>(concrete_input<i64, SourceCell>(source));
         if (std::addressof(source_type.cell_type()) == std::addressof(cpp_scalar_type<double>()))
@@ -510,6 +528,12 @@ class Out<frame::TSC<T, Properties...>, frame::computed<>> {
             return false;
         }
         const auto &source_type = static_cast<const frame::ColumnSeriesType &>(source.runtime_type().type());
+        if (std::addressof(source_type.cell_type()) == std::addressof(cpp_scalar_type<bool>())) {
+            if constexpr (frame::cell_type<SourceCell>)
+                return bind_source(source);
+            else
+                return bind_source(source.template input<bool>());
+        }
         if (std::addressof(source_type.cell_type()) == std::addressof(cpp_scalar_type<i64>())) {
             if constexpr (frame::cell_type<SourceCell>)
                 return bind_source(source);
@@ -558,6 +582,8 @@ class Out<frame::TSC<T, Properties...>, frame::computed<>> {
             set(id, std::optional<T>{});
         } else if (has_cell_type<i64>()) {
             set<i64>(id, std::optional<i64>{});
+        } else if (has_cell_type<bool>()) {
+            set<bool>(id, std::optional<bool>{});
         } else if (has_cell_type<double>()) {
             set<double>(id, std::optional<double>{});
         } else {
@@ -603,6 +629,8 @@ class Out<frame::TSC<T, Properties...>, frame::computed<>> {
     bool bind_source(const SourceInput &source) const {
         if constexpr (frame::cell_type<T>) {
             return bind_result<T>(source);
+        } else if (has_cell_type<bool>()) {
+            return bind_result<bool>(source);
         } else if (has_cell_type<i64>()) {
             return bind_result<i64>(source);
         } else if (has_cell_type<double>()) {

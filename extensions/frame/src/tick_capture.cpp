@@ -23,7 +23,7 @@
 namespace bg::frame::details {
 namespace {
 
-using Cell = std::variant<std::monostate, std::optional<i64>, std::optional<double>>;
+using Cell = std::variant<std::monostate, std::optional<bool>, std::optional<i64>, std::optional<double>>;
 
 struct FrameChange {
     bg::details::TickOperation operation;
@@ -196,14 +196,18 @@ template <typename T> void write_cell(ScalarBufferWriteContext &writer, std::opt
         bg::details::write_bytes(writer, *value);
 }
 
-using FrameColumnView = std::variant<ColumnSeriesView<i64>, ColumnSeriesView<double>>;
+using FrameColumnView = std::variant<ColumnSeriesView<bool>, ColumnSeriesView<i64>, ColumnSeriesView<double>>;
 
 std::vector<FrameColumnView> bind_frame_columns(const FrameReadStorage &storage) {
     auto columns = std::vector<FrameColumnView>{};
     columns.reserve(storage.schema->field_count());
     for (auto index = std::size_t{}; index != storage.schema->field_count(); ++index) {
         const auto binding = storage.column(index);
-        if (std::addressof(*binding.cell_type) == std::addressof(cpp_scalar_type<i64>())) {
+        if (std::addressof(*binding.cell_type) == std::addressof(cpp_scalar_type<bool>())) {
+            auto view = std::optional<ColumnSeriesView<bool>>{};
+            binding.bind_column_series_view(binding.payload, std::addressof(view));
+            columns.emplace_back(*view);
+        } else if (std::addressof(*binding.cell_type) == std::addressof(cpp_scalar_type<i64>())) {
             auto view = std::optional<ColumnSeriesView<i64>>{};
             binding.bind_column_series_view(binding.payload, std::addressof(view));
             columns.emplace_back(*view);
@@ -325,6 +329,8 @@ template <typename T> std::optional<T> read_cell(util::buffer_reader &reader) {
 }
 
 Cell read_cell(util::buffer_reader &reader, const ScalarType &type) {
+    if (std::addressof(type) == std::addressof(cpp_scalar_type<bool>()))
+        return read_cell<bool>(reader);
     if (std::addressof(type) == std::addressof(cpp_scalar_type<i64>()))
         return read_cell<i64>(reader);
     if (std::addressof(type) == std::addressof(cpp_scalar_type<double>()))
@@ -335,6 +341,10 @@ Cell read_cell(util::buffer_reader &reader, const ScalarType &type) {
 void discard_cell(util::buffer_reader &reader, const ScalarType &type) {
     if (reader.read_raw<std::uint8_t>() == 0)
         return;
+    if (std::addressof(type) == std::addressof(cpp_scalar_type<bool>())) {
+        static_cast<void>(reader.read_raw<bool>());
+        return;
+    }
     if (std::addressof(type) == std::addressof(cpp_scalar_type<i64>())) {
         static_cast<void>(reader.read_raw<i64>());
         return;
@@ -439,7 +449,9 @@ std::vector<ExpectedFrameChange> read_expected_changes(const literal::TimeSeries
             for (auto index = std::size_t{}; index != fields.size(); ++index) {
                 if (fields[index] == nullptr || std::ranges::find(layout.key_fields, index) != layout.key_fields.end())
                     continue;
-                if (std::addressof(*layout.fields[index].cell_type) == std::addressof(cpp_scalar_type<i64>()))
+                if (std::addressof(*layout.fields[index].cell_type) == std::addressof(cpp_scalar_type<bool>()))
+                    change.cells[index] = read_literal_cell<bool>(*fields[index]);
+                else if (std::addressof(*layout.fields[index].cell_type) == std::addressof(cpp_scalar_type<i64>()))
                     change.cells[index] = read_literal_cell<i64>(*fields[index]);
                 else
                     change.cells[index] = read_literal_cell<double>(*fields[index]);
@@ -472,7 +484,10 @@ bool matches_expected(const FrameChange &actual, const ExpectedFrameChange &expe
             continue;
 
         if (actual_addition && std::holds_alternative<std::monostate>(expected.cells[index])) {
-            if (std::addressof(*layout.fields[index].cell_type) == std::addressof(cpp_scalar_type<i64>())) {
+            if (std::addressof(*layout.fields[index].cell_type) == std::addressof(cpp_scalar_type<bool>())) {
+                if (std::get<std::optional<bool>>(actual.cells[index]).has_value())
+                    return false;
+            } else if (std::addressof(*layout.fields[index].cell_type) == std::addressof(cpp_scalar_type<i64>())) {
                 if (std::get<std::optional<i64>>(actual.cells[index]).has_value())
                     return false;
             } else if (std::get<std::optional<double>>(actual.cells[index]).has_value()) {
@@ -491,12 +506,16 @@ Cell read_named_frame_cell(const literal::ScalarLiteral *value, const ScalarType
     if (value == nullptr) {
         if (!omitted_is_null)
             return std::monostate{};
+        if (std::addressof(type) == std::addressof(cpp_scalar_type<bool>()))
+            return std::optional<bool>{};
         if (std::addressof(type) == std::addressof(cpp_scalar_type<i64>()))
             return std::optional<i64>{};
         if (std::addressof(type) == std::addressof(cpp_scalar_type<double>()))
             return std::optional<double>{};
         throw std::invalid_argument{"frame tick payload has an unsupported cell type"};
     }
+    if (std::addressof(type) == std::addressof(cpp_scalar_type<bool>()))
+        return read_literal_cell<bool>(*value);
     if (std::addressof(type) == std::addressof(cpp_scalar_type<i64>()))
         return read_literal_cell<i64>(*value);
     if (std::addressof(type) == std::addressof(cpp_scalar_type<double>()))
@@ -729,5 +748,6 @@ template <typename T> void register_column_series_tick_writer(const TimeSeriesRu
 
 template BG_FRAME_EXPORT void register_column_series_tick_writer<i64>(const TimeSeriesRuntimeType &runtime);
 template BG_FRAME_EXPORT void register_column_series_tick_writer<double>(const TimeSeriesRuntimeType &runtime);
+template BG_FRAME_EXPORT void register_column_series_tick_writer<bool>(const TimeSeriesRuntimeType &runtime);
 
 } // namespace bg::frame::details

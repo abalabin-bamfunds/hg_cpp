@@ -81,6 +81,8 @@ template <cell_type RESULT> ColumnBinding column_binding(const Type &type, std::
         return {index, {&read_column<i64>, &bind_column<i64, RESULT>}};
     if (std::addressof(column->cell_type()) == std::addressof(cpp_scalar_type<double>()))
         return {index, {&read_column<double>, &bind_column<double, RESULT>}};
+    if (std::addressof(column->cell_type()) == std::addressof(cpp_scalar_type<bool>()))
+        return {index, {&read_column<bool>, &bind_column<bool, RESULT>}};
     throw WiringError{"column expression input has an unsupported cell type"};
 }
 
@@ -89,6 +91,8 @@ ParameterBinding parameter_binding(const ScalarType &type, std::size_t index) {
         return {index, 0, sizeof(i64), alignof(i64), &read_parameter<i64>};
     if (std::addressof(type) == std::addressof(cpp_scalar_type<double>()))
         return {index, 0, sizeof(double), alignof(double), &read_parameter<double>};
+    if (std::addressof(type) == std::addressof(cpp_scalar_type<bool>()))
+        return {index, 0, sizeof(bool), alignof(bool), &read_parameter<bool>};
     throw WiringError{"column expression parameter has an unsupported cell type"};
 }
 
@@ -155,12 +159,8 @@ struct CompiledExpression {
                             switch (operand.kind) {
                             case Operand::Kind::column: {
                                 const auto &batch = batches[operand.index];
-                                const auto *values = static_cast<const std::byte *>(batch.values);
-                                operands[operand_index] = ColumnOperandBatch<>{ColumnBatch<>{
-                                    batch.first_slot + offset, count,
-                                    values == nullptr ? nullptr :
-                                        values + offset * instruction.adapter->operand_sizes[operand_index],
-                                    batch.valid.subspan(offset)}};
+                                operands[operand_index] =
+                                    ColumnOperandBatch<>{batch.subspan(offset, count)};
                                 break;
                             }
                             case Operand::Kind::parameter:
@@ -179,9 +179,12 @@ struct CompiledExpression {
                         instruction.adapter->call(
                             instruction.callback.view(), batch_ids,
                             std::span<const ColumnOperandBatch<>>{operands.data(), instruction.operand_count},
-                            MutableColumnBatch<>{values, count, std::span<std::uint8_t>{validity, validity_bytes}});
+                            MutableColumnBatch<>{values, count,
+                                                 std::span<std::uint8_t>{validity, validity_bytes}});
                         operation_batches[operation] = ColumnBatch<>{
-                            0, count, values, ColumnBatchValidity::from_bitmap(validity, 0)};
+                            0, count, values, 0,
+                            instruction.adapter->packed_result ? 1 : instruction.adapter->result_size * 8,
+                            ColumnBatchValidity::from_bitmap(validity, 0)};
                     }
 
                     function(batch_ids, operation_batches.back());
@@ -385,7 +388,9 @@ template <cell_type RESULT> struct ColumnExpressionNode {
                 views, parameter_addresses, selected_rows.requested, memory,
                 [&](std::span<const row_id_t> ids, const ColumnBatch<> &result) {
                     output.set_batch(ids, ColumnBatch<RESULT>{result.first_slot, result.size,
-                                                              static_cast<const RESULT *>(result.values),
+                                                              static_cast<typename ColumnValueTraits<RESULT>::pointer>(
+                                                                  result.values),
+                                                              result.value_bit_offset,
                                                               result.valid});
                 });
         }
@@ -417,11 +422,13 @@ template <cell_type RESULT> class ExpressionCompiler {
         const auto *identity = point.record();
         const auto options = point.materialisation_options();
         const auto *cell_type = expression_cell_type(point.type());
-        const auto *concrete_type = cell_type == std::addressof(cpp_scalar_type<i64>())
-                                        ? std::addressof(TSC<i64>::type())
-                                        : cell_type == std::addressof(cpp_scalar_type<double>())
-                                              ? std::addressof(TSC<double>::type())
-                                              : nullptr;
+        const auto *concrete_type = cell_type == std::addressof(cpp_scalar_type<bool>())
+                                        ? std::addressof(TSC<bool>::type())
+                                        : cell_type == std::addressof(cpp_scalar_type<i64>())
+                                              ? std::addressof(TSC<i64>::type())
+                                              : cell_type == std::addressof(cpp_scalar_type<double>())
+                                                    ? std::addressof(TSC<double>::type())
+                                                    : nullptr;
         const auto concrete_option = std::ranges::find(options, concrete_type,
                                                        &WiringMaterialisationOption::target_type);
         if (concrete_type != nullptr && wiring_->materialisation_required(point, *concrete_type)) {
@@ -561,7 +568,9 @@ template <cell_type RESULT> class ExpressionCompiler {
             throw WiringError{"column expression result alignment is unsupported"};
         auto result_offset = expression_.instruction_storage_size;
         result_offset = (result_offset + adapter->result_alignment - 1) & ~(adapter->result_alignment - 1);
-        expression_.instruction_storage_size = result_offset + expression_batch_rows * adapter->result_size;
+        const auto result_bits = adapter->packed_result ? std::size_t{1} : adapter->result_size * 8;
+        const auto result_bytes = (expression_batch_rows * result_bits + 7) / 8;
+        expression_.instruction_storage_size = result_offset + result_bytes;
         auto saved_operands = std::array<Operand, 2>{};
         std::ranges::copy(operands, saved_operands.begin());
         expression_.instructions.push_back(
@@ -655,6 +664,8 @@ WiringPoint materialize_column_expression(WiringPoint result) {
         return materialize_column_expression_impl<i64>(result);
     if (cell_type == std::addressof(cpp_scalar_type<double>()))
         return materialize_column_expression_impl<double>(result);
+    if (cell_type == std::addressof(cpp_scalar_type<bool>()))
+        return materialize_column_expression_impl<bool>(result);
     throw WiringError{"column expression result has an unsupported cell type"};
 }
 

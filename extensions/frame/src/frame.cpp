@@ -166,7 +166,7 @@ struct KeyColumnBatches {
   private:
     std::optional<i64> cell(std::size_t batch_index, std::size_t offset) const {
         const auto &batch = batches[batch_index];
-        return batch.is_valid(offset) ? std::optional<i64>{batch.values[offset]} : std::nullopt;
+        return batch.is_valid(offset) ? std::optional<i64>{batch.value_at(offset)} : std::nullopt;
     }
 };
 

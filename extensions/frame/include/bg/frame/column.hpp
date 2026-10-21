@@ -23,6 +23,7 @@
 #include <atomic>
 #include <concepts>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -51,8 +52,35 @@ struct is_computed_option<computed_option<Names...>> : std::true_type {};
 using row_id_t = std::uint32_t;
 inline constexpr auto no_row = std::numeric_limits<row_id_t>::max();
 template <typename T>
-concept cell_type = std::same_as<T, i64> || std::same_as<T, double>;
+concept cell_type = std::same_as<T, bool> || std::same_as<T, i64> || std::same_as<T, double>;
+template <typename T>
+concept numeric_cell_type = std::same_as<T, i64> || std::same_as<T, double>;
 inline constexpr auto column_cell_storage_size = std::max(sizeof(i64), sizeof(double));
+
+template <cell_type T> inline constexpr bool packed_column_value = std::same_as<T, bool>;
+
+template <cell_type T> struct ColumnValueTraits {
+    using pointer = const T *;
+
+    static T read(pointer values, std::size_t position, std::uint64_t) noexcept { return values[position]; }
+    static pointer subspan(pointer values, std::size_t offset, std::uint64_t &) noexcept {
+        return values == nullptr ? nullptr : values + offset;
+    }
+};
+
+template <> struct ColumnValueTraits<bool> {
+    using pointer = const std::uint8_t *;
+
+    static bool read(pointer values, std::size_t position, std::uint64_t bit_offset) noexcept {
+        const auto bit = bit_offset + position;
+        return (values[bit / 8] & (std::uint8_t{1} << (bit % 8))) != 0;
+    }
+    static pointer subspan(pointer values, std::size_t offset, std::uint64_t &bit_offset) noexcept {
+        const auto total = bit_offset + offset;
+        bit_offset = total % 8;
+        return values == nullptr ? nullptr : values + total / 8;
+    }
+};
 
 // Extension descriptor for Column<T>; node declarations use Column<T> and do not access this type directly.
 class ColumnType final : public ScalarType {
@@ -170,6 +198,49 @@ const bg::TimeSeriesRuntimeType &column_time_series_runtime_type(const bg::TimeS
 template <cell_type T>
 const bg::TimeSeriesRuntimeType &column_view_time_series_runtime_type(const bg::TimeSeriesType &type);
 
+template <typename T> class ColumnSnapshotValues {
+  public:
+    using pointer = const T *;
+
+    explicit ColumnSnapshotValues(std::pmr::memory_resource *memory) : values_{memory} {}
+    void resize(std::size_t size) { values_.resize(size); }
+    std::size_t size() const noexcept { return values_.size(); }
+    pointer data() const noexcept { return values_.data(); }
+    T value_at(std::size_t position) const noexcept { return values_[position]; }
+    T &value_at(std::size_t position) noexcept { return values_[position]; }
+
+  private:
+    std::pmr::vector<T> values_;
+};
+
+template <> class ColumnSnapshotValues<bool> {
+  public:
+    using pointer = const std::uint8_t *;
+
+    explicit ColumnSnapshotValues(std::pmr::memory_resource *memory) : values_{memory} {}
+    void resize(std::size_t size) {
+        size_ = size;
+        values_.resize(size / 8 + (size % 8 != 0));
+    }
+    std::size_t size() const noexcept { return size_; }
+    pointer data() const noexcept { return values_.data(); }
+    bool value_at(std::size_t position) const noexcept {
+        return (values_[position / 8] & (std::uint8_t{1} << (position % 8))) != 0;
+    }
+    void set_value(std::size_t position, bool value) noexcept {
+        auto &byte = values_[position / 8];
+        const auto mask = std::uint8_t{1} << (position % 8);
+        if (value)
+            byte |= mask;
+        else
+            byte &= static_cast<std::uint8_t>(~mask);
+    }
+
+  private:
+    std::pmr::vector<std::uint8_t> values_;
+    std::size_t size_{};
+};
+
 template <typename T> class ColumnSnapshot {
   public:
     explicit ColumnSnapshot(allocator memory) : memory_{memory}, values_{&memory.memory_resource()} {}
@@ -196,9 +267,14 @@ template <typename T> class ColumnSnapshot {
     }
     allocator memory() const noexcept { return memory_; }
     std::size_t size() const noexcept { return values_.size(); }
-    const T *values() const noexcept { return values_.data(); }
-    T &value_at(std::size_t position) noexcept { return values_[position]; }
-    const T &value_at(std::size_t position) const noexcept { return values_[position]; }
+    typename ColumnSnapshotValues<T>::pointer values() const noexcept { return values_.data(); }
+    T value_at(std::size_t position) const noexcept { return values_.value_at(position); }
+    void set_value(std::size_t position, T value) noexcept {
+        if constexpr (std::same_as<T, bool>)
+            values_.set_value(position, value);
+        else
+            values_.value_at(position) = value;
+    }
     bool is_valid(std::size_t position) const noexcept { return valid_.contains(static_cast<row_id_t>(position)); }
     void set_valid(row_id_t position) { valid_.set(position, memory_.memory_resource()); }
     const util::index<> &valid() const noexcept { return valid_; }
@@ -206,7 +282,7 @@ template <typename T> class ColumnSnapshot {
   private:
     std::atomic_size_t references_{1};
     allocator memory_;
-    std::pmr::vector<T> values_;
+    ColumnSnapshotValues<T> values_;
     util::index<> valid_;
 };
 
@@ -277,13 +353,28 @@ class ColumnBatchValidity {
 template <typename T = void> struct ColumnBatch {
     std::uint64_t first_slot{};
     std::size_t size{};
-    const T *values{};
+    typename ColumnValueTraits<T>::pointer values{};
+    std::uint64_t value_bit_offset{};
     using Validity = ColumnBatchValidity;
     Validity valid;
 
+    ColumnBatch() = default;
+    ColumnBatch(std::uint64_t first_slot, std::size_t size, typename ColumnValueTraits<T>::pointer values,
+                Validity valid) noexcept
+        : first_slot{first_slot}, size{size}, values{values}, valid{valid} {}
+    ColumnBatch(std::uint64_t first_slot, std::size_t size, typename ColumnValueTraits<T>::pointer values,
+                std::uint64_t value_bit_offset, Validity valid) noexcept
+        : first_slot{first_slot}, size{size}, values{values}, value_bit_offset{value_bit_offset}, valid{valid} {}
+
     bool is_valid(std::size_t position) const noexcept { return valid.contains(first_slot, position); }
+    bool has_values() const noexcept { return values != nullptr; }
+    T value_at(std::size_t position) const noexcept {
+        return ColumnValueTraits<T>::read(values, position, value_bit_offset);
+    }
     ColumnBatch subspan(std::size_t offset, std::size_t count) const noexcept {
-        return {first_slot + offset, count, values == nullptr ? nullptr : values + offset, valid.subspan(offset)};
+        auto bit_offset = value_bit_offset;
+        const auto subspan_values = ColumnValueTraits<T>::subspan(values, offset, bit_offset);
+        return {first_slot + offset, count, subspan_values, bit_offset, valid.subspan(offset)};
     }
 };
 
@@ -291,9 +382,30 @@ template <> struct ColumnBatch<void> {
     std::uint64_t first_slot{};
     std::size_t size{};
     const void *values{};
+    std::uint64_t value_bit_offset{};
+    std::size_t value_bits_per_cell{};
     ColumnBatchValidity valid;
 
+    ColumnBatch() = default;
+    ColumnBatch(std::uint64_t first_slot, std::size_t size, const void *values, std::uint64_t value_bit_offset,
+                std::size_t value_bits_per_cell, ColumnBatchValidity valid) noexcept
+        : first_slot{first_slot}, size{size}, values{values}, value_bit_offset{value_bit_offset},
+          value_bits_per_cell{value_bits_per_cell}, valid{valid} {}
+
     bool is_valid(std::size_t position) const noexcept { return valid.contains(first_slot, position); }
+    bool has_values() const noexcept { return values != nullptr; }
+    ColumnBatch subspan(std::size_t offset, std::size_t count) const noexcept {
+        auto result = *this;
+        result.first_slot += offset;
+        result.size = count;
+        result.valid = valid.subspan(offset);
+        const auto bit = value_bit_offset + offset * value_bits_per_cell;
+        if (values != nullptr) {
+            result.values = static_cast<const std::byte *>(values) + bit / 8;
+            result.value_bit_offset = bit % 8;
+        }
+        return result;
+    }
 };
 
 // Extension runtime implementers use this borrowed read interface to expose non-native scalar storage through
@@ -342,7 +454,7 @@ template <typename T = void> class ColumnView {
         }
         if (snapshot_ != nullptr && snapshot_->size() != 0)
             std::invoke(std::forward<Function>(function),
-                        Batch{0, snapshot_->size(), snapshot_->values(),
+                        Batch{0, snapshot_->size(), snapshot_->values(), 0,
                               Batch::Validity::from_index(snapshot_->valid())});
         if (source_ != nullptr) {
             auto invoke = [&](const Batch &batch) { std::invoke(function, batch); };
@@ -373,20 +485,23 @@ template <> class ColumnView<void> {
   public:
     ColumnView() = default;
     ColumnView(bg::details::FieldProbe &probe) noexcept { probe.record(this); }
+    ColumnView(const ColumnView<bool> &view) : value_{view} {}
     ColumnView(const ColumnView<i64> &view) : value_{view} {}
     ColumnView(const ColumnView<double> &view) : value_{view} {}
 
     const ScalarType &cell_type() const {
-        if (const auto *integer = std::get_if<ColumnView<i64>>(&value_)) {
-            static_cast<void>(integer);
+        if (std::holds_alternative<ColumnView<bool>>(value_))
+            return cpp_scalar_type<bool>();
+        if (std::holds_alternative<ColumnView<i64>>(value_))
             return cpp_scalar_type<i64>();
-        }
         if (std::holds_alternative<ColumnView<double>>(value_))
             return cpp_scalar_type<double>();
         throw std::logic_error{"generic column view has no cell type"};
     }
 
     std::size_t size() const {
+        if (const auto *view = std::get_if<ColumnView<bool>>(&value_))
+            return view->size();
         if (const auto *view = std::get_if<ColumnView<i64>>(&value_))
             return view->size();
         if (const auto *view = std::get_if<ColumnView<double>>(&value_))
@@ -397,7 +512,10 @@ template <> class ColumnView<void> {
     template <typename T>
         requires bg::frame::cell_type<T>
     ColumnView<T> view() const {
-        if constexpr (std::same_as<T, i64>) {
+        if constexpr (std::same_as<T, bool>) {
+            if (const auto *view = std::get_if<ColumnView<bool>>(&value_))
+                return *view;
+        } else if constexpr (std::same_as<T, i64>) {
             if (const auto *view = std::get_if<ColumnView<i64>>(&value_))
                 return *view;
         } else if constexpr (std::same_as<T, double>) {
@@ -423,7 +541,7 @@ template <> class ColumnView<void> {
     }
 
   private:
-    std::variant<std::monostate, ColumnView<i64>, ColumnView<double>> value_;
+    std::variant<std::monostate, ColumnView<bool>, ColumnView<i64>, ColumnView<double>> value_;
 };
 
 template <typename T> struct ColumnStorage {
@@ -485,7 +603,7 @@ template <typename T> class Column {
             for (auto position = std::size_t{}; position != cells.size(); ++position) {
                 if (!cells[position])
                     continue;
-                snapshot_->value_at(position) = *cells[position];
+                snapshot_->set_value(position, *cells[position]);
                 snapshot_->set_valid(position);
             }
         } catch (...) {
@@ -720,6 +838,76 @@ inline RowSet RowSet::native(const NativeRows &rows) noexcept {
                   }};
 }
 
+template <cell_type T> class ColumnValueStorage {
+  public:
+    void set(row_id_t slot, T value, allocator memory) {
+        values_.emplace_at(slot, memory.memory_resource(), value);
+    }
+    void assign(row_id_t slot, T value) noexcept { values_[slot] = value; }
+    void clear(row_id_t slot, allocator memory) noexcept { values_.erase_at(slot, memory.memory_resource()); }
+    T value(row_id_t slot) const noexcept { return values_[slot]; }
+    util::storage_block block_containing(row_id_t slot) const noexcept { return values_.block_containing(slot); }
+    ColumnBatch<T> batch(row_id_t first, std::size_t size) const noexcept {
+        const auto block = block_containing(first);
+        const auto *values = block.data == nullptr
+                                 ? nullptr
+                                 : static_cast<const T *>(block.data) + first - block.first;
+        return {first, size, values, 0, ColumnBatch<T>::Validity::all_invalid()};
+    }
+    void release(const util::occupancy_index &constructed, allocator memory) noexcept {
+        values_.release(constructed, memory.memory_resource());
+    }
+
+  private:
+    util::sparse_bunch<T> values_;
+};
+
+template <> class ColumnValueStorage<bool> {
+  public:
+    void set(row_id_t slot, bool value, allocator memory) {
+        const auto byte = static_cast<row_id_t>(slot / 8);
+        if (!allocated_bytes_.contains(byte)) {
+            bytes_.emplace_at(byte, memory.memory_resource(), std::uint8_t{});
+            auto rollback = util::scope_exit{[&]() noexcept { bytes_.erase_at(byte, memory.memory_resource()); }};
+            allocated_bytes_.set(byte, memory.memory_resource());
+            rollback.release();
+        }
+        assign(slot, value);
+    }
+    void assign(row_id_t slot, bool value) noexcept {
+        auto &byte = bytes_[slot / 8];
+        const auto mask = std::uint8_t{1} << (slot % 8);
+        if (value)
+            byte |= mask;
+        else
+            byte &= static_cast<std::uint8_t>(~mask);
+    }
+    void clear(row_id_t, allocator) noexcept {}
+    bool value(row_id_t slot) const noexcept {
+        const auto byte = bytes_[slot / 8];
+        return (byte & (std::uint8_t{1} << (slot % 8))) != 0;
+    }
+    util::storage_block block_containing(row_id_t slot) const noexcept {
+        const auto block = bytes_.block_containing(slot / 8);
+        return {block.first * 8, block.end * 8, block.data};
+    }
+    ColumnBatch<bool> batch(row_id_t first, std::size_t size) const noexcept {
+        const auto block = block_containing(first);
+        const auto bit_offset = static_cast<std::uint64_t>(first) - block.first;
+        const auto *values = static_cast<const std::uint8_t *>(block.data);
+        return {first, size, values == nullptr ? nullptr : values + bit_offset / 8, bit_offset % 8,
+                ColumnBatch<bool>::Validity::all_invalid()};
+    }
+    void release(const util::occupancy_index &, allocator memory) noexcept {
+        bytes_.release(allocated_bytes_, memory.memory_resource());
+        allocated_bytes_.release(memory.memory_resource());
+    }
+
+  private:
+    util::occupancy_index allocated_bytes_;
+    util::sparse_bunch<std::uint8_t> bytes_;
+};
+
 template <typename T> class NativeColumnData {
   public:
     using cell_type = std::optional<T>;
@@ -736,7 +924,7 @@ template <typename T> class NativeColumnData {
     cell_type cell(const NativeRows &rows, row_id_t id) const { return cell(rows.slots(), id); }
     cell_type cell(const NativeRowSlots &rows, row_id_t id) const {
         const auto slot = rows.slot_of(id);
-        return valid_cells_.contains(slot) ? cell_type{cells_[slot]} : std::nullopt;
+        return valid_cells_.contains(slot) ? cell_type{cells_.value(slot)} : std::nullopt;
     }
     cell_type cell_at(const NativeRows &rows, std::size_t position) const { return cell(rows, id_at(rows, position)); }
     const util::occupancy_index &live_slots(const NativeRows &rows) const noexcept { return rows.live_slots(); }
@@ -756,12 +944,12 @@ template <typename T> class NativeColumnData {
         const auto slot = rows.slot_of(id);
         if (!value)
             return;
-        cells_.emplace_at(slot, memory.memory_resource(), *value);
+        cells_.set(slot, *value, memory);
         auto constructed = false;
         auto erase_cell = util::scope_exit{[&]() noexcept {
             if (constructed)
                 constructed_cells_.reset(slot);
-            cells_.erase_at(slot, memory.memory_resource());
+            cells_.clear(slot, memory);
         }};
         constructed_cells_.set(slot, memory.memory_resource());
         constructed = true;
@@ -784,19 +972,19 @@ template <typename T> class NativeColumnData {
                 modified_.reset(id);
         }};
         if (valid_cells_.contains(slot) && value) {
-            cells_[slot] = *value;
+            cells_.assign(slot, *value);
         } else if (valid_cells_.contains(slot)) {
-            cells_.erase_at(slot, memory.memory_resource());
+            cells_.clear(slot, memory);
             constructed_cells_.reset(slot);
             valid_cells_.reset(slot);
         }
         if (!valid_cells_.contains(slot) && value) {
-            cells_.emplace_at(slot, memory.memory_resource(), *value);
+            cells_.set(slot, *value, memory);
             auto constructed = false;
             auto erase_cell = util::scope_exit{[&]() noexcept {
                 if (constructed)
                     constructed_cells_.reset(slot);
-                cells_.erase_at(slot, memory.memory_resource());
+                cells_.clear(slot, memory);
             }};
             constructed_cells_.set(slot, memory.memory_resource());
             constructed = true;
@@ -808,7 +996,7 @@ template <typename T> class NativeColumnData {
     }
     void erase_slot(row_id_t slot, row_id_t id, allocator memory) {
         if (valid_cells_.contains(slot)) {
-            cells_.erase_at(slot, memory.memory_resource());
+            cells_.clear(slot, memory);
             constructed_cells_.reset(slot);
             valid_cells_.reset(slot);
         }
@@ -825,7 +1013,7 @@ template <typename T> class NativeColumnData {
         }
     }
     void release(allocator memory) noexcept {
-        cells_.release(constructed_cells_, memory.memory_resource());
+        cells_.release(constructed_cells_, memory);
         constructed_cells_.release(memory.memory_resource());
         valid_cells_.release(memory.memory_resource());
         modified_.release(memory.memory_resource());
@@ -837,13 +1025,10 @@ template <typename T> class NativeColumnData {
                 const auto id_block = rows.ids_block_containing(first);
                 const auto batch_end =
                     static_cast<row_id_t>(std::min({std::uint64_t{end}, cell_block.end, id_block.end}));
-                const auto *values =
-                    cell_block.data == nullptr ? nullptr
-                                               : static_cast<const T *>(cell_block.data) + first - cell_block.first;
+                auto cells = this->cells_.batch(first, batch_end - first);
+                cells.valid = ColumnBatch<T>::Validity::from_index(valid_cells_);
                 const auto ids = std::span<const row_id_t>{
                     static_cast<const row_id_t *>(id_block.data) + first - id_block.first, batch_end - first};
-                const auto cells = ColumnBatch<T>{first, static_cast<std::size_t>(batch_end - first), values,
-                                                  ColumnBatch<T>::Validity::from_index(valid_cells_)};
                 std::invoke(function, Batch{ids, cells});
                 first = batch_end;
             }
@@ -862,14 +1047,12 @@ template <typename T> class NativeColumnData {
                 return;
 
             const auto size = static_cast<std::size_t>(end_slot - first_slot);
-            const auto *values = cells_block.data == nullptr
-                                     ? nullptr
-                                     : static_cast<const T *>(cells_block.data) + first_slot - cells_block.first;
+            auto cells = this->cells_.batch(first_slot, size);
+            cells.valid = ColumnBatch<T>::Validity::from_index(valid_cells_);
             const auto *ids = static_cast<const row_id_t *>(ids_block.data) + first_slot - ids_block.first;
             std::invoke(function,
                         Batch{std::span<const row_id_t>{ids, size},
-                              ColumnBatch<T>{first_slot, size, values,
-                                             ColumnBatch<T>::Validity::from_index(valid_cells_)}});
+                              cells});
             has_batch = false;
         };
 
@@ -902,7 +1085,7 @@ template <typename T> class NativeColumnData {
 
   private:
     util::occupancy_index constructed_cells_;
-    util::sparse_bunch<T> cells_;
+    ColumnValueStorage<T> cells_;
     util::index<> valid_cells_;
     util::index<> modified_;
 };
@@ -990,7 +1173,7 @@ class ErasedColumnSeriesView {
     template <cell_type T> explicit ErasedColumnSeriesView(const ColumnStorage<T> &storage)
         : native_data_{storage.native}, rows_{storage.rows}, physical_rows_{storage.physical_rows},
           snapshot_{storage.snapshot}, visible_rows_{storage.visible_rows}, coverage_{storage.coverage},
-          cell_size_{sizeof(T)},
+          value_bits_per_cell_{packed_column_value<T> ? 1 : sizeof(T) * 8},
           block_{[](const void *context, row_id_t id) {
               const auto &self = *static_cast<const ErasedColumnSeriesView *>(context);
               return static_cast<const NativeColumnData<T> *>(self.native_data_)->block_containing(
@@ -999,11 +1182,16 @@ class ErasedColumnSeriesView {
           gather_{[](const void *context, std::span<const row_id_t> ids, void *destination,
                      std::span<std::uint8_t> validity) {
               const auto &self = *static_cast<const ErasedColumnSeriesView *>(context);
-              auto *values = static_cast<T *>(destination);
               const auto &cells = *static_cast<const NativeColumnData<T> *>(self.native_data_);
               for (auto index = std::size_t{}; index != ids.size(); ++index) {
                   if (const auto value = cells.cell(*self.physical_rows_, ids[index])) {
-                      values[index] = *value;
+                      if constexpr (std::same_as<T, bool>) {
+                          if (*value)
+                              static_cast<std::uint8_t *>(destination)[index / 8] |=
+                                  std::uint8_t{1} << (index % 8);
+                      } else {
+                          static_cast<T *>(destination)[index] = *value;
+                      }
                       validity[index / 8] |= std::uint8_t{1} << (index % 8);
                   }
               }
@@ -1027,7 +1215,7 @@ class ErasedColumnSeriesView {
     const RowSet &visible_rows() const noexcept { return visible_rows_; }
     const RowSet &coverage() const noexcept { return coverage_; }
     const util::index<> &valid_cells() const noexcept { return *valid_cells_; }
-    std::size_t cell_size() const noexcept { return cell_size_; }
+    std::size_t value_bits_per_cell() const noexcept { return value_bits_per_cell_; }
     bool has_native() const noexcept { return native_data_ != nullptr; }
     bool same_binding(const ErasedColumnSeriesView &other) const noexcept {
         return native_data_ == other.native_data_ && rows_ == other.rows_ &&
@@ -1053,7 +1241,7 @@ class ErasedColumnSeriesView {
     const void *snapshot_{};
     RowSet visible_rows_{};
     RowSet coverage_{};
-    std::size_t cell_size_{};
+    std::size_t value_bits_per_cell_{};
     util::storage_block (*block_)(const void *, row_id_t){};
     void (*gather_)(const void *, std::span<const row_id_t>, void *, std::span<std::uint8_t>){};
     const util::index<> *valid_cells_{};
@@ -1106,11 +1294,12 @@ void for_each_aligned_column_batch(std::span<const ErasedColumnSeriesView> colum
         const auto *ids = static_cast<const row_id_t *>(ids_block.data) + first - ids_block.first;
         for (auto index = std::size_t{}; index != columns.size(); ++index) {
             const auto &block = blocks[index];
+            const auto bit_offset = (first - block.first) * columns[index].value_bits_per_cell();
             const auto *values = block.data == nullptr
                                      ? nullptr
-                                     : static_cast<const std::byte *>(block.data) +
-                                           (first - block.first) * columns[index].cell_size();
-            batches[index] = {first, size, values, ColumnBatchValidity::from_index(columns[index].valid_cells())};
+                                     : static_cast<const std::byte *>(block.data) + bit_offset / 8;
+            batches[index] = {first, size, values, bit_offset % 8, columns[index].value_bits_per_cell(),
+                              ColumnBatchValidity::from_index(columns[index].valid_cells())};
         }
         std::invoke(function, std::span<const row_id_t>{ids, size}, std::span<const ColumnBatch<>>{batches});
     };
@@ -1189,9 +1378,11 @@ void for_each_aligned_column_batch(std::span<const ErasedColumnSeriesView> colum
         if (size == 0)
             return;
         for (auto index = std::size_t{}; index != columns.size(); ++index) {
+            if (columns[index].value_bits_per_cell() == 1)
+                std::memset(values[index].values.data(), 0, (size + 7) / 8);
             columns[index].gather(std::span<const row_id_t>{ids.data(), size}, values[index].values.data(),
                                   validity[index]);
-            batches[index] = {0, size, values[index].values.data(),
+            batches[index] = {0, size, values[index].values.data(), 0, columns[index].value_bits_per_cell(),
                               ColumnBatchValidity::from_bitmap(validity[index].data(), 0)};
         }
         std::invoke(function, std::span<const row_id_t>{ids.data(), size},
@@ -1228,9 +1419,11 @@ void ColumnSeriesView<T>::for_each_aligned_batch(const ColumnSeriesView<U> &othe
         std::span<const ErasedColumnSeriesView>{columns}, requested_rows, memory,
         [&](std::span<const row_id_t> ids, std::span<const ColumnBatch<>> batches) {
             const auto left = ColumnBatch<T>{batches[0].first_slot, batches[0].size,
-                                             static_cast<const T *>(batches[0].values), batches[0].valid};
+                                             static_cast<typename ColumnValueTraits<T>::pointer>(batches[0].values),
+                                             batches[0].value_bit_offset, batches[0].valid};
             const auto right = ColumnBatch<U>{batches[1].first_slot, batches[1].size,
-                                              static_cast<const U *>(batches[1].values), batches[1].valid};
+                                              static_cast<typename ColumnValueTraits<U>::pointer>(batches[1].values),
+                                              batches[1].value_bit_offset, batches[1].valid};
             std::invoke(function, AlignedColumnBatch<T, U>{ids, left, right});
         });
 }
@@ -1250,7 +1443,8 @@ void ColumnSeriesView<T>::for_each_aligned_batch(std::span<const ColumnSeriesVie
         [&](std::span<const row_id_t> ids, std::span<const ColumnBatch<>> batches) {
             for (auto index = std::size_t{}; index != batches.size(); ++index)
                 typed[index] = {batches[index].first_slot, batches[index].size,
-                                static_cast<const T *>(batches[index].values), batches[index].valid};
+                                static_cast<typename ColumnValueTraits<T>::pointer>(batches[index].values),
+                                batches[index].value_bit_offset, batches[index].valid};
             std::invoke(function, ids, std::span<const ColumnBatch<T>>{typed});
         });
 }
@@ -1522,7 +1716,7 @@ template <typename T> struct ColumnComputedOutputStorage {
                 throw std::out_of_range{"computed TSC batch row ID"};
             has_valid_cell = has_valid_cell || batch.is_valid(position);
         }
-        if (has_valid_cell && batch.values == nullptr)
+        if (has_valid_cell && !batch.has_values())
             throw std::invalid_argument{"computed TSC batch has valid cells but no values"};
         if (ids.empty())
             return false;
@@ -1532,7 +1726,7 @@ template <typename T> struct ColumnComputedOutputStorage {
         for (std::size_t position = 0; position != ids.size(); ++position) {
             auto value = std::optional<T>{};
             if (batch.is_valid(position))
-                value = batch.values[position];
+                value = batch.value_at(position);
             changed = cells.set(physical_rows, membership.added_rows, ids[position], value, memory) || changed;
         }
         refresh_scalar(time);
@@ -1689,7 +1883,7 @@ template <cell_type T> bool column_values_equal(const ColumnView<T> &left, const
             const auto &right_batch = right_batches[right_index];
             const auto left_valid = left_batch.is_valid(left_offset);
             if (left_valid != right_batch.is_valid(right_offset) ||
-                (left_valid && left_batch.values[left_offset] != right_batch.values[right_offset])) {
+                (left_valid && left_batch.value_at(left_offset) != right_batch.value_at(right_offset))) {
                 equal = false;
                 return;
             }
@@ -1709,6 +1903,8 @@ inline bool column_values_equal(const ColumnView<> &left, const ColumnView<> &ri
         return false;
     if (std::addressof(left.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
         return column_values_equal(left.view<i64>(), right.view<i64>());
+    if (std::addressof(left.cell_type()) == std::addressof(cpp_scalar_type<bool>()))
+        return column_values_equal(left.view<bool>(), right.view<bool>());
     if (std::addressof(left.cell_type()) == std::addressof(cpp_scalar_type<double>()))
         return column_values_equal(left.view<double>(), right.view<double>());
     return false;
@@ -1799,7 +1995,7 @@ template <frame::cell_type T> struct scalar_storage_traits<frame::Column<T>> {
             source.batches([&](const value_type::Batch &batch) {
                 for (auto offset = std::size_t{}; offset != batch.size; ++offset, ++position) {
                     if (batch.is_valid(offset)) {
-                        snapshot->value_at(position) = batch.values[offset];
+                        snapshot->set_value(position, batch.value_at(offset));
                         snapshot->set_valid(position);
                     }
                 }
@@ -1825,6 +2021,8 @@ template <details::scalar_variable T> struct scalar_storage_traits<frame::Column
 
     static value_type read_value(const ScalarData &source) {
         const auto &type = static_cast<const frame::ColumnType &>(source.type());
+        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<bool>()))
+            return value_type{details::scalar_data_value<frame::Column<bool>>(source)};
         if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
             return value_type{details::scalar_data_value<frame::Column<i64>>(source)};
         if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<double>()))
@@ -1835,4 +2033,5 @@ template <details::scalar_variable T> struct scalar_storage_traits<frame::Column
 };
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<frame::Column<i64>>();
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<frame::Column<double>>();
+extern template const ScalarRuntimeType &cpp_scalar_runtime_type<frame::Column<bool>>();
 } // namespace bg

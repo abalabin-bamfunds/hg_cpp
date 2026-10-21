@@ -34,7 +34,7 @@ void construct_column_literal(const literal::ScalarLiteral &literal, const Scala
             auto rollback = util::scope_exit{[&]() noexcept { snapshot->release(); }};
             for (auto position = std::size_t{}; position != cells.size(); ++position) {
                 if (auto cell = details::read_literal_cell<T>(cells[position])) {
-                    snapshot->value_at(position) = *cell;
+                    snapshot->set_value(position, *cell);
                     snapshot->set_valid(static_cast<row_id_t>(position));
                 }
             }
@@ -46,36 +46,42 @@ void construct_column_literal(const literal::ScalarLiteral &literal, const Scala
 void construct_column_literal(const literal::ScalarLiteral &literal, const ScalarRuntimeType &runtime,
                               void *destination, allocator &memory) {
     const auto &column = static_cast<const ColumnType &>(runtime.type());
+    if (std::addressof(column.cell_type()) == std::addressof(cpp_scalar_type<bool>()))
+        return construct_column_literal<bool>(literal, runtime, destination, memory);
     if (std::addressof(column.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
         return construct_column_literal<i64>(literal, runtime, destination, memory);
     if (std::addressof(column.cell_type()) == std::addressof(cpp_scalar_type<double>()))
         return construct_column_literal<double>(literal, runtime, destination, memory);
-    throw std::invalid_argument{"frame column literal supports only i64 and double cells"};
+    throw std::invalid_argument{"frame column literal has an unsupported cell type"};
 }
 
-using FrameLiteralCell = std::variant<std::optional<i64>, std::optional<double>>;
+using FrameLiteralCell = std::variant<std::optional<bool>, std::optional<i64>, std::optional<double>>;
 
 void initialize_frame_literal_cells(const bg::Schema &schema, std::vector<FrameLiteralCell> &cells) {
     cells.resize(schema.field_count());
     for (auto index = std::size_t{}; index != schema.field_count(); ++index) {
         const auto &type = *schema.field(index).type;
-        if (std::addressof(type) == std::addressof(cpp_scalar_type<i64>()))
+        if (std::addressof(type) == std::addressof(cpp_scalar_type<bool>()))
+            cells[index].emplace<std::optional<bool>>();
+        else if (std::addressof(type) == std::addressof(cpp_scalar_type<i64>()))
             cells[index].emplace<std::optional<i64>>();
         else if (std::addressof(type) == std::addressof(cpp_scalar_type<double>()))
             cells[index].emplace<std::optional<double>>();
         else
-            throw std::invalid_argument{"frame literal supports only i64 and double cells"};
+            throw std::invalid_argument{"frame literal has an unsupported cell type"};
     }
 }
 
 void read_frame_literal_cell(const literal::ScalarLiteral &literal, const Type &type,
                              FrameLiteralCell &destination) {
-    if (std::addressof(type) == std::addressof(cpp_scalar_type<i64>()))
+    if (std::addressof(type) == std::addressof(cpp_scalar_type<bool>()))
+        destination.emplace<std::optional<bool>>(details::read_literal_cell<bool>(literal));
+    else if (std::addressof(type) == std::addressof(cpp_scalar_type<i64>()))
         destination.emplace<std::optional<i64>>(details::read_literal_cell<i64>(literal));
     else if (std::addressof(type) == std::addressof(cpp_scalar_type<double>()))
         destination.emplace<std::optional<double>>(details::read_literal_cell<double>(literal));
     else
-        throw std::invalid_argument{"frame literal supports only i64 and double cells"};
+        throw std::invalid_argument{"frame literal has an unsupported cell type"};
 }
 
 const void *frame_literal_cell_pointer(const FrameLiteralCell &cell) {
@@ -147,12 +153,14 @@ void construct_frame_literal(const literal::ScalarLiteral &literal, const Scalar
             for (auto index = std::size_t{}; index != column_literals.size(); ++index) {
                 const auto &field = schema.field(index);
                 const ScalarRuntimeType *column_runtime{};
-                if (field.type == std::addressof(cpp_scalar_type<i64>()))
+                if (field.type == std::addressof(cpp_scalar_type<bool>()))
+                    column_runtime = std::addressof(cpp_scalar_runtime_type<Column<bool>>());
+                else if (field.type == std::addressof(cpp_scalar_type<i64>()))
                     column_runtime = std::addressof(cpp_scalar_runtime_type<Column<i64>>());
                 else if (field.type == std::addressof(cpp_scalar_type<double>()))
                     column_runtime = std::addressof(cpp_scalar_runtime_type<Column<double>>());
                 else
-                    throw std::invalid_argument{"frame literal supports only i64 and double cells"};
+                    throw std::invalid_argument{"frame literal has an unsupported cell type"};
                 values.push_back(ScalarValue<>::from_literal(*column_runtime, *column_literals[index], memory));
             }
 
@@ -194,11 +202,13 @@ void apply_native_column_series_literal(const literal::TimeSeriesLiteral &litera
 
 void apply_native_column_series_literal(const literal::TimeSeriesLiteral &literal, OutputState &output) {
     const auto &type = static_cast<const ColumnSeriesType &>(output.runtime_type().type());
+    if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<bool>()))
+        return apply_native_column_series_literal<bool>(literal, output);
     if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
         return apply_native_column_series_literal<i64>(literal, output);
     if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<double>()))
         return apply_native_column_series_literal<double>(literal, output);
-    throw std::invalid_argument{"TSC literal supports only i64 and double cell types"};
+    throw std::invalid_argument{"TSC literal has an unsupported cell type"};
 }
 
 void apply_native_frame_series_literal(const literal::TimeSeriesLiteral &literal, OutputState &output) {

@@ -966,6 +966,45 @@ void test_double_tsc_graph() {
     }
 }
 
+void test_boolean_tsc_literals_and_capture() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    struct observation {
+        std::vector<row_id_t> changed;
+        std::vector<row_id_t> removed;
+    };
+    auto observations = std::vector<observation>{};
+    const auto write = node([](In<TS<i64>> tick, Out<TSC<bool>> output) {
+        if (*tick == 0)
+            output.apply({true, NULL_VALUE, false});
+        else
+            output.apply({false, true});
+    });
+    const auto observe = node([&](In<TSC<bool>> input, In<TS<i64>> tick) {
+        auto result = observation{};
+        input.for_each_changed([&](row_id_t id) { result.changed.push_back(id); });
+        input.for_each_removed([&](row_id_t id) { result.removed.push_back(id); });
+        observations.push_back(std::move(result));
+        static_cast<void>(tick);
+    });
+    const auto graph = [&](wp<TS<i64>> tick) {
+        const auto output = write(tick);
+        observe(output, tick);
+        return output;
+    };
+    const auto result = testing::test_graph(graph, std::array<i64, 2>{0, 1});
+
+    require(result.equals({{{"first", true}, {"second", NULL_VALUE}, {"third", false}},
+                           {{"fourth", false}, {"fifth", true}}}) &&
+                observations.size() == 2,
+            "boolean TSC literal capture changed its values or rows");
+    require(observations[0].changed == std::vector<row_id_t>{0, 1, 2} &&
+                observations[1].changed == std::vector<row_id_t>{3, 4} &&
+                observations[0].removed.empty() && observations[1].removed.empty(),
+            "boolean TSC literal capture changed its row deltas");
+}
+
 void test_generic_tsc_output() {
     auto rejected_add = std::vector<bool>{};
     auto rejected_set = std::vector<bool>{};
@@ -1242,6 +1281,7 @@ int main() {
         test_runtime_initialization();
         test_tsc_graph_behavior();
         test_double_tsc_graph();
+        test_boolean_tsc_literals_and_capture();
         test_generic_tsc_output();
         test_generic_tsc_view_output();
         test_generic_computed_tsc_output();

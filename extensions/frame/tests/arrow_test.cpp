@@ -26,6 +26,8 @@ template <template <typename, auto...> typename Field> struct Quotes {
     Field<double> ask;
 };
 
+template <template <typename, auto...> typename Field> struct BooleanArrowRows { Field<bool> enabled; };
+
 template <template <typename, auto...> typename Field> struct InheritedArrowBase {
     Field<i64> size;
     Field<double> bid;
@@ -125,6 +127,91 @@ std::shared_ptr<arrow::Array> double_array(std::initializer_list<std::optional<d
     if (!status.ok())
         throw std::runtime_error{status.ToString()};
     return result;
+}
+
+std::shared_ptr<arrow::Array> boolean_array(std::initializer_list<std::optional<bool>> values) {
+    auto builder = arrow::BooleanBuilder{};
+    for (const auto &value : values) {
+        const auto status = value ? builder.Append(*value) : builder.AppendNull();
+        if (!status.ok())
+            throw std::runtime_error{status.ToString()};
+    }
+    auto result = std::shared_ptr<arrow::Array>{};
+    const auto status = builder.Finish(&result);
+    if (!status.ok())
+        throw std::runtime_error{status.ToString()};
+    return result;
+}
+
+void test_boolean_arrow_import_and_export() {
+    auto source = boolean_array({false, true, std::nullopt, false, true, std::nullopt, true, false,
+                                 true, false, false, true, std::nullopt, false, true, false});
+    auto sliced = source->Slice(9, 6);
+    auto chunks_result = arrow::ChunkedArray::Make({sliced, boolean_array({false, true, std::nullopt})},
+                                                   arrow::boolean());
+    require(chunks_result.ok(), "could not construct sliced Arrow boolean chunks");
+    auto chunks = std::move(chunks_result).ValueUnsafe();
+
+    auto imported_result = from_arrow<bool>(chunks);
+    require(imported_result.ok(), "Arrow boolean column import failed");
+    auto imported = std::move(imported_result).ValueUnsafe();
+    const auto column = Scalar<Column<bool>>::from(imported).value();
+    const auto expected = std::array<std::optional<bool>, 9>{false, false, true, std::nullopt, false,
+                                                              true, false, true, std::nullopt};
+    require(column.size() == expected.size(), "Arrow boolean column import changed its length");
+    for (auto index = std::size_t{}; index != expected.size(); ++index)
+        require(column.cell(index) == expected[index], "Arrow boolean column import lost a sliced bit or null");
+
+    auto borrowed_result = borrow_arrow(column);
+    auto copied_result = copy_to_arrow(column);
+    require(borrowed_result.ok() && copied_result.ok(), "Arrow boolean column export failed");
+    const auto borrowed = std::move(borrowed_result).ValueUnsafe();
+    const auto copied = std::move(copied_result).ValueUnsafe();
+    require(borrowed->length() == static_cast<std::int64_t>(expected.size()) &&
+                copied->num_chunks() == 1 && copied->length() == static_cast<std::int64_t>(expected.size()),
+            "Arrow boolean exports changed the column shape");
+    require(borrowed->chunk(0)->data()->buffers[1]->data() ==
+                source->data()->buffers[1]->data() + 1 && borrowed->chunk(0)->offset() == 1,
+            "borrowed Arrow boolean export copied or misaligned a sliced value buffer");
+    for (auto index = std::size_t{}; index != expected.size(); ++index) {
+        const auto borrowed_chunk = std::static_pointer_cast<arrow::BooleanArray>(
+            borrowed->chunk(static_cast<int>(index < 6 ? 0 : 1)));
+        const auto borrowed_index = static_cast<std::int64_t>(index < 6 ? index : index - 6);
+        const auto copied_chunk = std::static_pointer_cast<arrow::BooleanArray>(copied->chunk(0));
+        require(borrowed_chunk->IsNull(borrowed_index) == !expected[index].has_value() &&
+                    (borrowed_chunk->IsNull(borrowed_index) || borrowed_chunk->Value(borrowed_index) == *expected[index]) &&
+                    copied_chunk->IsNull(static_cast<std::int64_t>(index)) == !expected[index].has_value() &&
+                    (copied_chunk->IsNull(static_cast<std::int64_t>(index)) ||
+                     copied_chunk->Value(static_cast<std::int64_t>(index)) == *expected[index]),
+            "Arrow boolean export changed a bit or validity");
+    }
+
+    auto all_null = Column<bool>{{std::nullopt, std::nullopt, std::nullopt}};
+    auto all_null_copy = copy_to_arrow(all_null.view());
+    require(all_null_copy.ok() && all_null_copy.ValueUnsafe()->chunk(0)->null_count() == 3 &&
+                all_null_copy.ValueUnsafe()->chunk(0)->data()->buffers[1]->data()[0] == 0,
+            "Arrow boolean gather-copy did not preserve all-null values as zero bits");
+
+    auto table = arrow::Table::Make(
+        arrow::schema({arrow::field("enabled", arrow::boolean(), true)}),
+        std::vector<std::shared_ptr<arrow::ChunkedArray>>{chunks});
+    auto frame_result = from_arrow<BooleanArrowRows>(table);
+    require(frame_result.ok(), "Arrow boolean frame import failed");
+    auto frame_owner = std::move(frame_result).ValueUnsafe();
+    const auto frame = Scalar<Frame<BooleanArrowRows>>::from(frame_owner).value();
+    const auto flags = frame.columns().enabled;
+    require(flags.size() == expected.size(), "Arrow boolean frame import changed its row count");
+    for (auto index = std::size_t{}; index != expected.size(); ++index)
+        require(flags.cell(index) == expected[index], "Arrow boolean frame import changed a column bit");
+    auto frame_borrowed = borrow_arrow(frame);
+    auto frame_copied = copy_to_arrow(frame);
+    require(frame_borrowed.ok() && frame_copied.ok(), "Arrow boolean frame export failed");
+    const auto copied_flags = std::static_pointer_cast<arrow::BooleanArray>(frame_copied.ValueUnsafe()->column(0)->chunk(0));
+    require(frame_borrowed.ValueUnsafe()->num_rows() == static_cast<std::int64_t>(expected.size()) &&
+                copied_flags->length() == static_cast<std::int64_t>(expected.size()) &&
+                !copied_flags->Value(0) && !copied_flags->Value(1) && copied_flags->Value(2) &&
+                copied_flags->IsNull(3),
+            "Arrow boolean frame export changed its row values");
 }
 
 void test_arrow_first_column_runtime_registration() {
@@ -688,6 +775,7 @@ int main() {
     test_inferred_arrow_frame_import();
     test_arrow_default_frame_runtime();
     test_exports();
+    test_boolean_arrow_import_and_export();
     test_fragmented_dense_copy_and_source_mutation();
     test_computed_tsc_arrow_export_preserves_traversal_and_copy_ownership();
     test_null_only_and_empty_exports();

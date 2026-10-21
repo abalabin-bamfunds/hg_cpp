@@ -59,9 +59,54 @@ void add_offset_batch(std::span<const row_id_t> ids, const ColumnOperandBatch<i6
     }
 }
 
+void greater_than_batch(std::span<const row_id_t> ids, const ColumnOperandBatch<i64> &lhs,
+                        const ColumnOperandBatch<i64> &rhs, MutableColumnBatch<bool> output) {
+    if (ids.size() != output.size())
+        throw std::runtime_error{"boolean callback batch has an inconsistent size"};
+    for (auto position = std::size_t{}; position != ids.size(); ++position) {
+        const auto valid = lhs.is_valid(position) && rhs.is_valid(position);
+        output.set_valid(position, valid);
+        if (valid)
+            output.set_value(position, lhs.value(position) > rhs.value(position));
+    }
+}
+
 void require(bool condition, const char *message) {
     if (!condition)
         throw std::runtime_error{message};
+}
+
+void test_packed_boolean_expression_result() {
+    register_column_block_function<bool, i64, i64>();
+
+    const auto values_source = node([](In<TS<i64>> tick, Out<TSC<i64>> output) {
+        if (*tick == 0)
+            output.apply({3, 1, 5, 4, 9, 0, 7, 8, 4, 10, NULL_VALUE});
+    });
+    const auto threshold_source = node([](In<TS<i64>> tick, Out<TS<i64>> output) {
+        if (*tick == 0)
+            output.set(5);
+    });
+
+    auto observed = std::vector<std::optional<bool>>{};
+    auto changed = std::vector<row_id_t>{};
+    const auto observe = node([&](In<TSC<bool>> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        input.for_each_row([&](row_id_t id, std::size_t) { observed.push_back(input.cell(id)); });
+        input.for_each_changed([&](row_id_t id) { changed.push_back(id); });
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> tick) {
+        const auto values = values_source(tick);
+        const auto threshold = threshold_source(tick);
+        return observe(
+            make_column_expression(ColumnBlockFunction<bool, i64, i64>{&greater_than_batch}, values, threshold), tick);
+    };
+    const auto result = testing::test_graph(graph, std::array<i64, 1>{0});
+    require(result.equals({0}), "packed boolean expression graph lost its trigger");
+    require(observed == std::vector<std::optional<bool>>{false, false, false, false, true, false,
+                                                         true, true, false, true, std::nullopt} &&
+                changed == std::vector<row_id_t>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+            "packed boolean expression result lost values, nulls, or row changes");
 }
 
 void test_column_block_function_provider() {
@@ -102,9 +147,9 @@ void test_erased_unary_and_mixed_column_callbacks() {
     const auto integers = std::array<i64, 3>{2, 5, 9};
     const auto valid = std::array<std::uint8_t, 1>{0b101};
     const auto all_valid = std::array<std::uint8_t, 1>{0b111};
-    const auto double_column = ColumnBatch<>{0, doubles.size(), doubles.data(),
+    const auto double_column = ColumnBatch<>{0, doubles.size(), doubles.data(), 0, sizeof(double) * 8,
                                               ColumnBatchValidity::from_bitmap(valid.data(), 0)};
-    const auto integer_column = ColumnBatch<>{0, integers.size(), integers.data(),
+    const auto integer_column = ColumnBatch<>{0, integers.size(), integers.data(), 0, sizeof(i64) * 8,
                                                ColumnBatchValidity::from_bitmap(all_valid.data(), 0)};
 
     auto unary_value = ScalarValue<Unary>{Unary{&negate_batch}};
@@ -387,6 +432,7 @@ void test_non_inline_scalar_capture_owns_its_value() {
 
 int main() {
     try {
+        test_packed_boolean_expression_result();
         test_column_block_function_provider();
         test_erased_unary_and_mixed_column_callbacks();
         test_column_expression_builder_integration();
