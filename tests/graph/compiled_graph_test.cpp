@@ -33,47 +33,10 @@ struct source_definition {
     void evaluate() const {}
 };
 
-struct input_node_index_sink {
-    static constexpr bool uses_input_node_indices = true;
-
-    bg::In<bg::TS<float>> first;
-    bg::In<bg::TS<float>> second;
-
-    void evaluate() const {}
-};
-
 struct integer_source_definition {
     bg::Out<bg::TS<bg::i64>> output;
 
     void evaluate() const {}
-};
-
-struct all_valid_input_node_index_sink {
-    static constexpr bool uses_input_node_indices = true;
-
-    bg::In<bg::TS<bg::i64>, bg::all_valid> input;
-
-    void evaluate() const {}
-};
-
-struct cycle_callback_node_definition {
-    static constexpr bool uses_cycle_callbacks = true;
-
-    bg::Out<bg::TS<bg::i64>> output;
-
-    void evaluate() const {}
-};
-
-struct ordinary_two_input_sink {
-    bg::In<bg::TS<float>> first;
-    bg::In<bg::TS<float>> second;
-
-    void evaluate() const {}
-};
-
-struct controlled_sink_definition {
-    bg::In<bg::TS<float>, bg::dynamic_activity> input;
-    void evaluate() const { input.make_passive(); }
 };
 
 class scale_template final : public bg::NodeTemplate {
@@ -157,20 +120,6 @@ struct runtime_signature_identity_definition {
     bg::Signature signature_;
 };
 
-struct runtime_valid_items_all_valid_definition {
-    runtime_valid_items_all_valid_definition()
-        : signature_{bg::util::symbol{"runtime_valid_items_all_valid"},
-                     {bg::Parameter{.name = bg::util::symbol{"input"},
-                                    .type = &bg::TSD<bg::i64, bg::TS<bg::i64>>::type(),
-                                    .validity = bg::InputValidity::all_valid,
-                                    .valid_items = true}}} {}
-
-    const bg::Signature &signature() const noexcept { return signature_; }
-    static void evaluate(bg::NodeInvocation<>) {}
-
-    bg::Signature signature_;
-};
-
 } // namespace
 
 TEST_CASE("typed callable nodes omit runtime-signature metadata",
@@ -205,6 +154,18 @@ TEST_CASE("typed callable nodes omit runtime-signature metadata",
     CHECK(typed_sizes.first < runtime_sizes.first);
     CHECK(typed_sizes.second == runtime_sizes.second);
 }
+
+namespace {
+
+struct cycle_callback_node_definition {
+    static constexpr bool uses_cycle_callbacks = true;
+
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void evaluate() const {}
+};
+
+} // namespace
 
 TEST_CASE("aggregate node declarations reserve cycle callback storage",
           "[compiled_graph][feature:graph-compilation][feature:lifecycle][definition:aggregate]") {
@@ -416,6 +377,19 @@ TEST_CASE("all_valid metadata follows an empty runtime-type array at pointer ali
     CHECK(descriptors[0].declared_type == &bg::TS<bg::i64>::type());
 }
 
+namespace {
+
+struct input_node_index_sink {
+    static constexpr bool uses_input_node_indices = true;
+
+    bg::In<bg::TS<float>> first;
+    bg::In<bg::TS<float>> second;
+
+    void evaluate() const {}
+};
+
+} // namespace
+
 TEST_CASE("compiled node input producer indices use compiled node order",
           "[feature:graph-compilation][series:value][shape:chain]") {
     const auto source = bg::node<source_definition>();
@@ -434,6 +408,13 @@ TEST_CASE("compiled node input producer indices use compiled node order",
     CHECK(graph.node(1).input_node_index(1) == 0);
     CHECK_FALSE(graph.node(0).input_node_index(0).has_value());
 
+    struct ordinary_two_input_sink {
+        bg::In<bg::TS<float>> first;
+        bg::In<bg::TS<float>> second;
+
+        void evaluate() const {}
+    };
+
     const auto ordinary_sink = bg::node<ordinary_two_input_sink>();
     auto ordinary_wiring = bg::GraphWiring{};
     {
@@ -445,6 +426,18 @@ TEST_CASE("compiled node input producer indices use compiled node order",
     const auto ordinary_graph = bg::CompiledGraph{ordinary_wiring};
     CHECK(graph.fixed_storage_size() == ordinary_graph.fixed_storage_size() + 2 * sizeof(std::uint32_t));
 }
+
+namespace {
+
+struct all_valid_input_node_index_sink {
+    static constexpr bool uses_input_node_indices = true;
+
+    bg::In<bg::TS<bg::i64>, bg::all_valid> input;
+
+    void evaluate() const {}
+};
+
+} // namespace
 
 TEST_CASE("compiled nodes retain all_valid metadata with input producer indices",
           "[feature:graph-compilation][feature:validity][series:value][scalar:i64][shape:chain]") {
@@ -468,6 +461,24 @@ TEST_CASE("compiled nodes retain all_valid metadata with input producer indices"
     CHECK(descriptors[0].parameter_index == 0);
     CHECK(descriptors[0].declared_type == &bg::TS<bg::i64>::type());
 }
+
+namespace {
+
+struct runtime_valid_items_all_valid_definition {
+    runtime_valid_items_all_valid_definition()
+        : signature_{bg::util::symbol{"runtime_valid_items_all_valid"},
+                     {bg::Parameter{.name = bg::util::symbol{"input"},
+                                    .type = &bg::TSD<bg::i64, bg::TS<bg::i64>>::type(),
+                                    .validity = bg::InputValidity::all_valid,
+                                    .valid_items = true}}} {}
+
+    const bg::Signature &signature() const noexcept { return signature_; }
+    static void evaluate(bg::NodeInvocation<>) {}
+
+    bg::Signature signature_;
+};
+
+} // namespace
 
 TEST_CASE("compiled all_valid descriptors omit valid_items dictionary checks",
           "[compiled_graph][feature:validity][validity:all-valid][input-guarantee:valid-items][series:tsd]") {
@@ -511,6 +522,11 @@ TEST_CASE("compiled node input producer indices omit lowered inputs and remap di
 TEST_CASE("compiled nodes store one activity record for each controlled input",
           "[feature:input-activity][feature:graph-compilation][series:value][definition:aggregate]"
           "[shape:chain][activity:active]") {
+    struct controlled_sink_definition {
+        bg::In<bg::TS<float>, bg::dynamic_activity> input;
+        void evaluate() const { input.make_passive(); }
+    };
+
     const auto source = bg::node<source_definition>();
     const auto sink = bg::node<controlled_sink_definition>();
     auto wiring = bg::GraphWiring{};
