@@ -61,19 +61,28 @@ TEST_CASE("a typed bundle publishes inherited and direct fields",
           "[evaluation][tsb][series:tsb][feature:collection-change][transition:update][scalar:integer]"
           "[scalar:floating-point][representation:native][declaration:concrete][binding:direct]"
           "[schema:named]") {
-    auto values = std::vector<std::array<float, 2>>{};
-    auto updated = std::vector<std::array<bool, 2>>{};
-    const auto observe = node([&](In<TSB<DerivedBundle>> input) {
-        values.push_back({static_cast<float>(*input->count), *input->value});
-        updated.push_back({input.item_updated(0), input.item_updated(1)});
+    struct Observation {
+        i64 count;
+        double value;
+        bool count_updated;
+        bool value_updated;
+    };
+
+    const auto observe = node([](In<TSB<DerivedBundle>> input) {
+        return Observation{
+            .count = *input->count,
+            .value = *input->value,
+            .count_updated = input.item_updated(0),
+            .value_updated = input.item_updated(1),
+        };
     });
 
-    const auto wiring = graph("name"_n = "bundle_input", [&](wp<TSB<DerivedBundle>> input) { observe(input); });
+    const auto actual =
+        testing::test_graph(observe, {{{"count", 2}, {"value", 3.5F}}, {{"count", 4}}, {{"value", 6.5F}}});
 
-    (void)testing::test_graph(wiring, {{{"count", 2}, {"value", 3.5F}}, {{"count", 4}}, {{"value", 6.5F}}});
-
-    CHECK(values == std::vector{std::array{2.0F, 3.5F}, std::array{4.0F, 3.5F}, std::array{4.0F, 6.5F}});
-    CHECK(updated == std::vector{std::array{true, true}, std::array{true, false}, std::array{false, true}});
+    CHECK(actual.equals({{{"count", 2}, {"value", 3.5}, {"count_updated", true}, {"value_updated", true}},
+                         {{"count", 4}, {"value", 3.5}, {"count_updated", true}, {"value_updated", false}},
+                         {{"count", 4}, {"value", 6.5}, {"count_updated", false}, {"value_updated", true}}}));
 }
 
 TEST_CASE("a span-backed free TSB retains its fields through materialisation and evaluation",
@@ -578,25 +587,47 @@ TEST_CASE("invalidating a bundle invalidates every field",
           "[evaluation][tsb][series:tsb][validity][feature:collection-change][transition:invalidation]"
           "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
           "[binding:direct][schema:named]") {
-    auto validity = std::vector<std::array<bool, 3>>{};
-    auto modified = std::vector<std::array<bool, 3>>{};
-    auto transitions = std::vector<bool>{};
-    const auto observe = node([&](In<TSB<DerivedBundle>, optional> input) {
-        validity.push_back({input.valid(), input->count.valid(), input->value.valid()});
-        modified.push_back({input.modified(), input->count.modified(), input->value.modified()});
+    struct Observation {
+        bool root_valid;
+        bool count_valid;
+        bool value_valid;
+        bool root_modified;
+        bool count_modified;
+        bool value_modified;
+    };
+
+    const auto observe = node([](In<TSB<DerivedBundle>, optional> input) {
+        return Observation{
+            .root_valid = input.valid(),
+            .count_valid = input->count.valid(),
+            .value_valid = input->value.valid(),
+            .root_modified = input.modified(),
+            .count_modified = input->count.modified(),
+            .value_modified = input->value.modified(),
+        };
     });
 
-    const auto observe_transition = node([&](In<TS_T> input) { transitions.push_back(input.became_valid()); });
+    const auto observe_transition = node([](In<TS_T> input) { return input.became_valid(); });
 
-    const auto wiring = graph("name"_n = "invalidating_bundle_input", [&](wp<TSB<DerivedBundle>> bundle) {
-        observe(bundle);
-        observe_transition(bundle);
-    });
-    (void)testing::test_graph(wiring, {{{"count", 2}, {"value", 3.5F}}, literal::INVALID});
+    const auto transition_graph = [&](wp<TSB<DerivedBundle>> bundle) { return observe_transition(bundle); };
 
-    CHECK(validity == std::vector{std::array{true, true, true}, std::array{false, false, false}});
-    CHECK(modified == std::vector{std::array{true, true, true}, std::array{false, false, false}});
-    CHECK(transitions == std::vector{true});
+    const auto actual = testing::test_graph(observe, {{{"count", 2}, {"value", 3.5F}}, literal::INVALID});
+    CHECK(actual.equals({{{"root_valid", true},
+                          {"count_valid", true},
+                          {"value_valid", true},
+                          {"root_modified", true},
+                          {"count_modified", true},
+                          {"value_modified", true}},
+                         {{"root_valid", false},
+                          {"count_valid", false},
+                          {"value_valid", false},
+                          {"root_modified", false},
+                          {"count_modified", false},
+                          {"value_modified", false}}}));
+
+    const auto transitions = testing::test_graph(transition_graph, {{{"count", 2}, {"value", 3.5F}}, literal::INVALID});
+
+    CHECK(transitions.equals({true, std::nullopt}));
 }
 
 TEST_CASE("a free bundle requires every field of the receiving schema",
