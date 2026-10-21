@@ -34,9 +34,9 @@ ScalarDispatch<frame::ColumnBlockFunctionAdapter>::instance() noexcept {
 namespace bg::frame::details {
 
 struct ExpressionNode {
-    enum class Kind { column, parameter, literal, binding, operation };
+    enum class Form { column, parameter, literal, binding, operation };
 
-    Kind kind;
+    Form form;
     util::symbol name;
     std::size_t binding_index{};
     ExpressionOperation operation{};
@@ -166,14 +166,14 @@ WiringPoint bind_expression_tree(const Expression &expression, std::span<const W
 
     const auto resolve = [&](const auto &self, const ExpressionNode &node,
                              std::span<const WiringArgument> current_references) -> WiringArgument {
-        if (node.kind != ExpressionNode::Kind::binding) {
+        if (node.form != ExpressionNode::Form::binding) {
             if (const auto found = resolved.find(std::addressof(node)); found != resolved.end())
                 return WiringArgument::borrow(found->second);
         }
 
         auto result = [&]() -> WiringArgument {
-            switch (node.kind) {
-            case ExpressionNode::Kind::column: {
+            switch (node.form) {
+            case ExpressionNode::Form::column: {
                 const auto *binding = binding_set.find(node.name);
                 if (binding != nullptr) {
                     auto context = column_context(node.name);
@@ -197,7 +197,7 @@ WiringPoint bind_expression_tree(const Expression &expression, std::span<const W
                 }();
                 return validate_column(selected, std::move(context));
             }
-            case ExpressionNode::Kind::parameter: {
+            case ExpressionNode::Form::parameter: {
                 const auto *binding = binding_set.find(node.name);
                 if (binding == nullptr) {
                     throw WiringError{"expression parameter '" + std::string{node.name.text()} +
@@ -205,9 +205,9 @@ WiringPoint bind_expression_tree(const Expression &expression, std::span<const W
                 }
                 return WiringArgument::borrow(*binding);
             }
-            case ExpressionNode::Kind::literal:
+            case ExpressionNode::Form::literal:
                 return WiringArgument{node.literal->view()};
-            case ExpressionNode::Kind::binding: {
+            case ExpressionNode::Form::binding: {
                 if (node.binding_index >= current_references.size())
                     throw WiringError{"mixed expression binding reference is outside its TSB"};
                 const auto &binding = current_references[node.binding_index];
@@ -222,7 +222,7 @@ WiringPoint bind_expression_tree(const Expression &expression, std::span<const W
                 }
                 return WiringArgument::borrow(binding);
             }
-            case ExpressionNode::Kind::operation: {
+            case ExpressionNode::Form::operation: {
                 auto arguments = std::vector<WiringArgument>{};
                 arguments.reserve(node.operands.size());
                 for (const auto &operand : node.operands)
@@ -278,7 +278,7 @@ WiringPoint bind_expression_tree(const Expression &expression, std::span<const W
             throw WiringError{"expression contains an unknown operation"};
         }();
 
-        if (node.kind == ExpressionNode::Kind::binding)
+        if (node.form == ExpressionNode::Form::binding)
             return result;
         const auto entry = resolved.emplace(std::addressof(node), std::move(result)).first;
         return WiringArgument::borrow(entry->second);
@@ -322,21 +322,21 @@ namespace bg::frame {
 
 Expression col(util::symbol name) {
     return Expression{std::make_shared<const details::ExpressionNode>(
-        details::ExpressionNode{.kind = details::ExpressionNode::Kind::column, .name = name})};
+        details::ExpressionNode{.form = details::ExpressionNode::Form::column, .name = name})};
 }
 
 Expression col(std::string_view name) { return col(util::symbol{name}); }
 
 Expression param(util::symbol name) {
     return Expression{std::make_shared<const details::ExpressionNode>(
-        details::ExpressionNode{.kind = details::ExpressionNode::Kind::parameter, .name = name})};
+        details::ExpressionNode{.form = details::ExpressionNode::Form::parameter, .name = name})};
 }
 
 Expression param(std::string_view name) { return param(util::symbol{name}); }
 
 Expression details::expression_literal(ScalarValue<> value) {
     return Expression{std::make_shared<const details::ExpressionNode>(details::ExpressionNode{
-        .kind = details::ExpressionNode::Kind::literal,
+        .form = details::ExpressionNode::Form::literal,
         .literal = std::move(value),
     })};
 }
@@ -348,7 +348,7 @@ Expression details::expression_operation(details::ExpressionOperation operation,
     for (const auto &operand : operands)
         children.push_back(operand.node_);
     return Expression{std::make_shared<const details::ExpressionNode>(details::ExpressionNode{
-        .kind = details::ExpressionNode::Kind::operation,
+        .form = details::ExpressionNode::Form::operation,
         .operation = operation,
         .conversion_target = conversion_target,
         .operands = std::move(children),
@@ -357,7 +357,7 @@ Expression details::expression_operation(details::ExpressionOperation operation,
 
 Expression details::expression_binding(std::size_t index) {
     return Expression{std::make_shared<const details::ExpressionNode>(details::ExpressionNode{
-        .kind = details::ExpressionNode::Kind::binding,
+        .form = details::ExpressionNode::Form::binding,
         .binding_index = index,
     })};
 }

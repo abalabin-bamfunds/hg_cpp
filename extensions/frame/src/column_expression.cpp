@@ -115,10 +115,10 @@ const ScalarType *expression_cell_type(const Type &type) {
 }
 
 struct Operand {
-    enum class Kind { column, parameter, instruction };
+    enum class Source { column, parameter, instruction };
 
     std::size_t index{};
-    Kind kind{Kind::column};
+    Source source{Source::column};
 };
 
 struct Instruction {
@@ -166,17 +166,17 @@ struct CompiledExpression {
                         for (auto operand_index = std::size_t{}; operand_index != instruction.operand_count;
                              ++operand_index) {
                             const auto operand = instruction.operands[operand_index];
-                            switch (operand.kind) {
-                            case Operand::Kind::column: {
+                            switch (operand.source) {
+                            case Operand::Source::column: {
                                 const auto &batch = batches[operand.index];
                                 operands[operand_index] =
                                     ColumnOperandBatch<>{batch.subspan(offset, count)};
                                 break;
                             }
-                            case Operand::Kind::parameter:
+                            case Operand::Source::parameter:
                                 operands[operand_index] = ColumnOperandBatch<>{parameters[operand.index]};
                                 break;
-                            case Operand::Kind::instruction: {
+                            case Operand::Source::instruction: {
                                 const auto &batch = operation_batches[operand.index];
                                 operands[operand_index] = ColumnOperandBatch<>{batch};
                                 break;
@@ -198,12 +198,12 @@ struct CompiledExpression {
                     }
 
                     const auto result_batch = [&] {
-                        switch (result.kind) {
-                        case Operand::Kind::column:
+                        switch (result.source) {
+                        case Operand::Source::column:
                             return batches[result.index].subspan(offset, count);
-                        case Operand::Kind::instruction:
+                        case Operand::Source::instruction:
                             return operation_batches[result.index];
-                        case Operand::Kind::parameter:
+                        case Operand::Source::parameter:
                             std::unreachable();
                         }
                         std::unreachable();
@@ -565,7 +565,7 @@ template <cell_type RESULT> class ExpressionCompiler {
         for (auto index = std::size_t{}; index != operand_count; ++index)
             if (function_type->operand_types()[index] != operand_types[index])
                 throw WiringError{"column expression callback signature does not match its operands"};
-        const auto result = Operand{expression_.instructions.size(), Operand::Kind::instruction};
+        const auto result = Operand{expression_.instructions.size(), Operand::Source::instruction};
         append_instruction(std::span<const Operand>{operands.data(), operand_count}, callback);
         return result;
     }
@@ -573,24 +573,24 @@ template <cell_type RESULT> class ExpressionCompiler {
     Operand add_leaf(WiringPoint source, WiringPoint materialized) {
         const auto *identity = source.record()->source_identity();
         if (const auto found = leaf_indices_.find(identity); found != leaf_indices_.end())
-            return {found->second, Operand::Kind::column};
+            return {found->second, Operand::Source::column};
         const auto index = leaves_.size();
         leaf_indices_.emplace(identity, index);
         leaves_.push_back(materialized);
         column_bindings_.push_back(column_binding<RESULT>(materialized.type().dereferenced_type(), index));
-        return {index, Operand::Kind::column};
+        return {index, Operand::Source::column};
     }
 
     Operand add_parameter(WiringPoint point) {
         const auto *identity = point.record()->source_identity();
         if (const auto found = parameter_indices_.find(identity); found != parameter_indices_.end())
-            return {found->second, Operand::Kind::parameter};
+            return {found->second, Operand::Source::parameter};
         const auto index = parameters_.size();
         parameter_indices_.emplace(identity, index);
         parameters_.push_back(point);
         const auto &parameter_type = static_cast<const TimeSeriesValueType &>(point.type().dereferenced_type());
         parameter_bindings_.push_back(parameter_binding(parameter_type.value_type(), index));
-        return {index, Operand::Kind::parameter};
+        return {index, Operand::Source::parameter};
     }
 
     Scalar<> extract_function(WiringPoint point) {
