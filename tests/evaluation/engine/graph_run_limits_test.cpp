@@ -31,7 +31,10 @@ namespace {
 struct ScheduledSource {
     static constexpr bool uses_timed_scheduling = true;
 
-    void start(EvaluationContext *context) const { context->schedule_now(); }
+    void start(EvaluationContext *context) const {
+        ++start_count;
+        context->schedule_now();
+    }
     void evaluate(EvaluationContext *context) const {
         evaluation_times.push_back(context->evaluation_time());
         if (evaluation_times.size() < 10) {
@@ -40,10 +43,12 @@ struct ScheduledSource {
     }
     void stop(EvaluationContext *context) const noexcept { stop_time = context->evaluation_time(); }
     static void reset() {
+        start_count = 0;
         evaluation_times.clear();
         stop_time.reset();
     }
 
+    inline static std::size_t start_count{};
     inline static std::vector<EvaluationTime> evaluation_times;
     inline static std::optional<EvaluationTime> stop_time;
 };
@@ -135,11 +140,8 @@ TEST_CASE("realtime run limits drain exact timers before the stop time",
 
 TEST_CASE("graph run options reject invalid and overflowing limits before startup",
           "[evaluation][simulation][feature:simulation][failure]") {
-    auto start_count = std::size_t{};
-    const auto source = node([&] {
-        ++start_count;
-        return i64{1};
-    });
+    ScheduledSource::reset();
+    const auto source = node<ScheduledSource>();
 
     const auto run = [&](const GraphRunOptions &options) { run_graph([&] { (void)source(); }, options); };
 
@@ -149,7 +151,8 @@ TEST_CASE("graph run options reject invalid and overflowing limits before startu
     CHECK_THROWS_AS(run(GraphRunOptions{.start_time = EvaluationTime::max() - std::chrono::microseconds{1},
                                         .run_time = std::chrono::microseconds{2}}),
                     std::overflow_error);
-    CHECK(start_count == 0);
+    CHECK(ScheduledSource::start_count == 0);
+    CHECK(ScheduledSource::evaluation_times.empty());
 }
 
 TEST_CASE("evaluation engines reject a stop time at the start before starting the graph",
@@ -170,6 +173,7 @@ TEST_CASE("evaluation engines reject a stop time at the start before starting th
     CHECK_THROWS_AS(SimulationEvaluationEngine{}.run(runtime, start, {}, start), std::invalid_argument);
     CHECK_THROWS_AS(RealtimeEvaluationEngine{}.run(runtime, start, std::stop_token{}, {}, start),
                     std::invalid_argument);
+    CHECK(ScheduledSource::start_count == 0);
     CHECK(ScheduledSource::evaluation_times.empty());
     CHECK_FALSE(ScheduledSource::stop_time.has_value());
 }
