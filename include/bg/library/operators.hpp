@@ -88,6 +88,7 @@ extern BG_LIBRARY_EXPORT operator_<auto(TS<SCALAR>) -> const Type *> type_;
 extern BG_LIBRARY_EXPORT operator_<auto(SIGNAL, TS_T) -> TS_T> sample;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> TS_T> dedup;
 extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TS_T) -> TS_T> filter_;
+extern BG_LIBRARY_EXPORT operator_<auto(TSL<TS_T, SIZE>) -> TS_T> merge;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T, i64) -> OUT> take;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T, i64) -> OUT> drop;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T, i64) -> OUT> step;

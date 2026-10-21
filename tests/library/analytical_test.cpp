@@ -23,6 +23,24 @@ TEST_CASE("diff subtracts the previous valid numeric value",
               .equals<i64>({std::nullopt, 5, 0, 5}));
 }
 
+TEST_CASE("diff wraps integer subtraction and accepts deduplicated inputs",
+          "[feature:operator][series:value][scalar:i64][guarantee:deduplicated][transition:update]") {
+    const auto difference = [](wp<TS<i64>> value) { return operators::diff(value); };
+    const auto deduplicated_difference = [](wp<TS<i64, TimeSeriesGuarantee::deduplicated>> value) {
+        const auto result = operators::diff(value);
+        CHECK(&result.type() == &TS<i64>::type());
+        return result;
+    };
+
+    CHECK(testing::test_graph(difference,
+                              {std::numeric_limits<i64>::max(), std::numeric_limits<i64>::min()})
+              .equals<i64>({std::nullopt, 1}));
+    CHECK(testing::test_graph(
+              deduplicated_difference,
+              testing::input<TS<i64, TimeSeriesGuarantee::deduplicated>>({1, 2, 3}))
+              .equals<i64>({std::nullopt, 1, 1}));
+}
+
 TEST_CASE("diff skips idle cycles and restarts after invalidation",
           "[feature:operator][feature:invalidation][series:value][scalar:i64]"
           "[transition:update][transition:invalidation][transition:revalidation]") {
@@ -68,6 +86,29 @@ TEST_CASE("clip accepts scalar bounds for integer and floating inputs",
     CHECK(testing::test_graph(clip_scalar).equals<i64>({5}));
     CHECK(testing::test_graph(clip_integer, {-5, 5, 20}).equals<i64>({0, 5, 10}));
     CHECK(testing::test_graph(clip_double, {-5.0, 5.0, 20.0}).equals<double>({0.0, 5.0, 10.0}));
+}
+
+TEST_CASE("clip preserves deduplication and recomputes on a maximum-only bound tick",
+          "[feature:operator][series:value][scalar:i64][guarantee:deduplicated][transition:update]") {
+    const auto deduplicated_clip = [](wp<TS<i64, TimeSeriesGuarantee::deduplicated>> value) {
+        const auto result = operators::clip(value, i64{2}, i64{8});
+        CHECK(&result.type() == &TS<i64, TimeSeriesGuarantee::deduplicated>::type());
+        return result;
+    };
+    const auto maximum_clip = [](wp<TS<i64>> value, wp<TS<i64>> maximum) {
+        return operators::clip(value, i64{0}, maximum);
+    };
+    const auto scalar_value_clip = [](wp<TS<i64>> minimum) {
+        return operators::clip(i64{5}, minimum, i64{10});
+    };
+
+    CHECK(testing::test_graph(
+              deduplicated_clip,
+              testing::input<TS<i64, TimeSeriesGuarantee::deduplicated>>({1, 2, 3}))
+              .equals<i64>({2, std::nullopt, 3}));
+    CHECK(testing::test_graph(maximum_clip, {5, literal::SKIP, literal::SKIP}, {10, 4, 8})
+              .equals<i64>({5, 4, 5}));
+    CHECK(testing::test_graph(scalar_value_clip, {0, 6, 3}).equals<i64>({5, 6, 5}));
 }
 
 TEST_CASE("clip evaluates changing bounds and invalidates with required inputs",
@@ -122,6 +163,29 @@ TEST_CASE("clip preserves the weakest input guarantee",
                               testing::input<TS<double, TimeSeriesGuarantee::final>>({5.0}))
               .equals<double>({5.0}));
     CHECK(testing::test_graph(clip_const).equals<double>({5.0}));
+}
+
+TEST_CASE("clip preserves final guarantees and clamps floating infinities",
+          "[feature:operator][series:value][scalar:floating-point][guarantee:final][transition:update]") {
+    const auto final_clip = [](wp<TS<i64, TimeSeriesGuarantee::final>> value,
+                               wp<TS<i64, TimeSeriesGuarantee::final>> minimum,
+                               wp<TS<i64, TimeSeriesGuarantee::final>> maximum) {
+        const auto result = operators::clip(value, minimum, maximum);
+        CHECK(&result.type() == &TS<i64, TimeSeriesGuarantee::final>::type());
+        return result;
+    };
+    const auto floating_clip = [](wp<TS<double>> value) {
+        return operators::clip(value, 0.0, 10.0);
+    };
+
+    CHECK(testing::test_graph(
+              final_clip,
+              testing::input<TS<i64, TimeSeriesGuarantee::final>>({8}),
+              testing::input<TS<i64, TimeSeriesGuarantee::final>>({2}),
+              testing::input<TS<i64, TimeSeriesGuarantee::final>>({6}))
+              .equals<i64>({6}));
+    const auto infinity = std::numeric_limits<double>::infinity();
+    CHECK(testing::test_graph(floating_clip, {-infinity, infinity}).equals<double>({0.0, 10.0}));
 }
 
 TEST_CASE("ewma seeds from the first value and updates on each valid tick",

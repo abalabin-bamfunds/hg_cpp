@@ -273,6 +273,22 @@ applies to the whole collection. Both inputs must have a
 These operators are available under `bg::operators` in C++ and `bg.operators`
 in Python.
 
+## Merge
+
+`merge(values...)` requires at least one input. It merges compatible time
+series of the same shape. With multiple inputs, it weakens the common output
+guarantee to ordinary; one input is forwarded unchanged.
+
+For scalar time series, each tick selects the leftmost valid input that
+changed. If no input changes, the result keeps its previous value. An invalid
+input is skipped. The result remains invalid until a valid input first ticks.
+
+For collections, `merge` combines matching fields or items recursively. TSS
+inputs produce the union of their keys. TSD inputs produce the union of their
+keys and merge the corresponding values. TSB fields merge by name. TSL inputs
+merge corresponding items and must have fixed size; sparse TSL inputs are not
+supported. A named `values` argument can supply a prebuilt TSL of inputs.
+
 ## Counting and one-event lag
 
 `count(value)` publishes `1` on the first valid input tick and increments on

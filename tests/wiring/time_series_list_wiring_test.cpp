@@ -15,6 +15,44 @@
 
 using namespace bg;
 
+namespace {
+inline constexpr auto N = SizeVariableDeclaration<"N">{};
+} // namespace
+
+TEST_CASE("typed fixed TSL wiring points report their size",
+          "[wiring][tsl][series:fixed-tsl][feature:wiring]") {
+    STATIC_CHECK(sizeof(wp<TSL<TS<i64>, 3>>) == sizeof(WiringPoint));
+    STATIC_CHECK(sizeof(wp<TSL<TS<i64>, 3>, optional>) == sizeof(WiringPoint));
+
+    const auto source = node([](Out<TSL<TS<i64>, 3>>) {});
+    testing::test_wiring([&] {
+        const auto list = wp<TSL<TS<i64>, 3>>{source()};
+        CHECK(list.size() == 3);
+        CHECK(opt(list).size() == 3);
+    });
+}
+
+TEST_CASE("typed TSL wiring points report resolved variable and empty sizes",
+          "[wiring][tsl][series:fixed-tsl][feature:wiring]") {
+    const auto source = node([](Out<TSL<TS<i64>, 3>>) {});
+    testing::test_wiring([&] {
+        const auto list = wp<TSL<TS_T, N>>{source()};
+        CHECK(list.size() == 3);
+
+        const auto empty = wp<TSL<TS<i64>, 0>>{tsl<TS<i64>>()};
+        CHECK(empty.size() == 0);
+    });
+}
+
+TEST_CASE("typed TSL wiring points report size through a root reference",
+          "[wiring][tsl][series:fixed-tsl][reference][feature:wiring]") {
+    const auto source = node([](Out<REF<TSL<TS<i64>, 3>>>) {});
+    testing::test_wiring([&] {
+        const auto list = wp<TSL<TS<i64>, 3>>{source()};
+        CHECK(list.size() == 3);
+    });
+}
+
 TEST_CASE("a free fixed time series list is materialized when consumed",
           "[wiring][tsl][series:fixed-tsl][free][representation:free][feature:wiring]"
           "[binding:representation]") {

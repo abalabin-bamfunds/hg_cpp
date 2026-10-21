@@ -78,6 +78,45 @@ def test_sample_uses_passive_value_at_signal_ticks():
     assert bg.test_graph(sample, [0, None, 2, None, 4], [10, 20, None, 30, None]) == [10, None, 20, None, 30]
 
 
+def test_merge_accepts_optional_inputs():
+    @bg.graph
+    def merge(left: bg.TS[int], right: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.merge(bg.opt(left), bg.opt(right))
+
+    assert bg.test_graph(merge, [10, None, 30], [100, 200, 300]) == [10, 200, 30]
+
+
+def test_merge_with_one_input_preserves_invalidation():
+    import bg._bg_test_extension as extension
+
+    @bg.graph
+    def merge(value: bg.TS[int]) -> bg.TS[bool]:
+        return bg.operators.valid(bg.operators.merge(extension.invalidate_on_zero(value)))
+
+    assert bg.test_graph(merge, [10, 0, 30]) == [True, False, True]
+
+
+def test_merge_rejects_zero_inputs():
+    @bg.graph
+    def merge() -> bg.TS[int]:
+        return bg.operators.merge()
+
+    with pytest.raises(ValueError, match="Cannot resolve operator merge"):
+        bg.test_graph(merge)
+
+
+def test_merge_accepts_a_prebuilt_tsl_by_name():
+    @bg.compute_node
+    def make_values(left: bg.TS[int], right: bg.TS[int]) -> bg.TSL[bg.TS[int], 2]:
+        return {0: left.value, 1: right.value}
+
+    @bg.graph
+    def merge_values(left: bg.TS[int], right: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.merge(values=make_values(left, right))
+
+    assert bg.test_graph(merge_values, [1, 2], [10, 20]) == [1, 2]
+
+
 def test_filter_preserves_output_while_closed_and_skips_unchanged_value_on_reopening():
     @bg.graph
     def filter(condition: bg.TS[bool], value: bg.TS[int]) -> bg.TS[int]:

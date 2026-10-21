@@ -21,7 +21,7 @@ Use `[dimension:value]` for each applicable dimension:
   `evaluation-scratch`, `borrowed-input`,
   `lifecycle`, `finalization`, `scheduling`, `timed-scheduling`, `simulation`, `realtime`, `wall-clock`, `profiling`,
   `input-activity`, `validity`,
-  `invalidation`, `operator`, `constant`, `graph-argument`, `map`, `switch`, `dispatch`,
+  `invalidation`, `operator`, `merge`, `constant`, `graph-argument`, `map`, `switch`, `dispatch`,
   `wiring-defaults`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `feedback`,
   `item-id-remapping`, `service`, `getitem`, `getattr`, `nested-graph`, `mesh`,
@@ -640,9 +640,11 @@ For each reusable node and graph, test:
   revalidation, startup scheduling, and distinctions from explicit defaults
 - stateful count and one-event lag, including repeated ticks, validity changes,
   owned scalar snapshots, guarantees, references, and nested graph instances
-- analytical `diff`, `clip`, and `ewma`, including numeric types, changing
-  bounds, warmup, invalidation, configuration errors, guarantees, and nested
-  graph state
+- scalar `merge` selection, optional and empty inputs, compatible shapes,
+  collection merging, fixed TSL constraints, and guarantee propagation
+- analytical `diff`, `clip`, and `ewma`, including integer wraparound,
+  deduplicated inputs and outputs, changing bounds, floating-point infinities,
+  warmup, invalidation, configuration errors, guarantees, and nested graph state
 - counted take, drop, and step selection, including count bounds, equal valid
   ticks, skipped cycles, invalidation without advancing or resetting the count,
   take completion, collection reconciliation after skipped changes, reference

@@ -56,6 +56,7 @@ decltype(count) count{"count", {"value"}};
 decltype(sample) sample{"sample", {"signal", "value"}};
 decltype(dedup) dedup{"dedup", {"value"}};
 decltype(filter_) filter_{"filter_", {"condition", "value"}};
+decltype(merge) merge{"merge", {"values"}};
 decltype(take) take{"take", {"value", "n"}};
 decltype(drop) drop{"drop", {"value", "n"}};
 decltype(step) step{"step", {"value", "n"}};
@@ -100,6 +101,7 @@ const auto registered = [] {
     details::register_string_format_operators();
     details::register_logical_operators();
     details::register_stream_operators();
+    details::register_merge_operators();
     details::register_analytical_operators();
     details::register_running_operators();
     details::register_timed_operators();

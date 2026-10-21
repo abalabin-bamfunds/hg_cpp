@@ -5,6 +5,14 @@ import pytest
 import bg
 
 
+def test_diff_wraps_integer_subtraction_at_i64_width():
+    @bg.graph
+    def diff(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.diff(value)
+
+    assert bg.test_graph(diff, [2**63 - 1, -(2**63)]) == [None, 1]
+
+
 def test_diff_tracks_previous_valid_numeric_tick():
     @bg.graph
     def diff_integer(value: bg.TS[int]) -> bg.TS[int]:
@@ -47,6 +55,47 @@ def test_clip_accepts_scalar_and_time_series_bounds():
         6.0,
         4.0,
     ]
+
+
+def test_clip_recomputes_for_maximum_only_and_scalar_value_bound_ticks():
+    @bg.graph
+    def clip_max(value: bg.TS[int], maximum: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.clip(value, 0, maximum)
+
+    @bg.graph
+    def clip_scalar_value(minimum: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.clip(5, minimum, 10)
+
+    assert bg.test_graph(clip_max, [5, None, None], [10, 4, 8]) == [5, 4, 5]
+    assert bg.test_graph(clip_scalar_value, [0, 6, 3]) == [5, 6, 5]
+
+
+def test_clip_preserves_deduplicated_output():
+    @bg.graph
+    def clip(value: bg.TS[int, bg.deduplicated]) -> bg.TS[int, bg.deduplicated]:
+        return bg.operators.clip(value, 2, 8)
+
+    assert bg.test_graph(clip, [1, 2, 3]) == [2, None, 3]
+
+
+def test_clip_preserves_final_guarantee_when_all_inputs_are_final():
+    @bg.graph
+    def clip(
+        value: bg.TS[int, bg.final],
+        minimum: bg.TS[int, bg.final],
+        maximum: bg.TS[int, bg.final],
+    ) -> bg.TS[int, bg.final]:
+        return bg.operators.clip(value, minimum, maximum)
+
+    assert bg.test_graph(clip, [8], [2], [6]) == [6]
+
+
+def test_clip_clamps_infinite_bounds_and_values():
+    @bg.graph
+    def clip(value: bg.TS[float]) -> bg.TS[float]:
+        return bg.operators.clip(value, 0.0, 10.0)
+
+    assert bg.test_graph(clip, [-math.inf, math.inf]) == [0.0, 10.0]
 
 
 def test_ewma_applies_warmup_to_valid_ticks_and_restarts_after_invalidation():

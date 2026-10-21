@@ -190,6 +190,9 @@ template <typename TimeSeries, auto... Properties> class wp {
     const GraphWiring &graph() const { return point_.graph(); }
     const TimeSeriesType &type() const { return point_.type(); }
 
+    std::size_t size() const
+        requires std::same_as<std::remove_cvref_t<decltype(TimeSeries::type())>, TimeSeriesListType>;
+
     template <typename Target> auto as() const {
         using Result = typename details::annotated_wiring_point<Target, ParsedProperties::validity == optional,
                                                                 ParsedProperties::valid_items>::type;

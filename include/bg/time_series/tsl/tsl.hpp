@@ -80,6 +80,13 @@ class wp<TSL<Item, Size, TimeSeriesProperties...>, WiringProperties...> {
     WiringPoint point_;
 };
 
+template <typename TimeSeries, auto... Properties>
+std::size_t wp<TimeSeries, Properties...>::size() const
+    requires std::same_as<std::remove_cvref_t<decltype(TimeSeries::type())>, TimeSeriesListType>
+{
+    return type_cast<TimeSeriesListType>(point_.type().target_type()).item_count();
+}
+
 [[nodiscard]] wp<> tsl(std::span<const WiringPoint> items);
 [[nodiscard]] wp<> tsl(const TimeSeriesType &item_type);
 

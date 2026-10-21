@@ -80,6 +80,7 @@ node that tracks the selected item.
 `bg::tsl(a, b, ...)` groups item wiring points without creating item storage.
 The receiving parameter determines whether each item is a value or a reference.
 Wiring then creates one TSL output over the selected items.
+A typed TSL wiring point exposes its resolved item count through `size()`.
 Inferred value items use the [dereferenced guarantees](type-system.md#reference-guarantees)
 that consumers can observe, rather than a reference target's guarantees alone.
 

@@ -44,6 +44,7 @@ count = _native.count
 sample = _native.sample
 dedup = _native.dedup
 filter_ = _native.filter_
+merge = _native.merge
 take = _native.take
 drop = _native.drop
 step = _native.step
@@ -117,6 +118,7 @@ __all__ = [
     "len_",
     "lt",
     "map",
+    "merge",
     "match_",
     "matches",
     "max_",

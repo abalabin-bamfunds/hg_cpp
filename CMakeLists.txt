@@ -196,6 +196,7 @@ add_library(
     src/library/string_collection.cpp
     src/library/string_format.cpp
     src/library/stream.cpp
+    src/library/merge.cpp
     src/library/analytical.cpp
     src/library/timed.cpp
     src/library/running.cpp

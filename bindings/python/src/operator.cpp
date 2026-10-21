@@ -206,6 +206,7 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "sample", operators::sample);
     export_operator(operators_module, "dedup", operators::dedup);
     export_operator(operators_module, "filter_", operators::filter_);
+    export_operator(operators_module, "merge", operators::merge);
     export_operator(operators_module, "take", operators::take);
     export_operator(operators_module, "drop", operators::drop);
     export_operator(operators_module, "step", operators::step);
