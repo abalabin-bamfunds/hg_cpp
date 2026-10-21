@@ -39,15 +39,18 @@ void run_graph(Function &&function, const GraphRunOptions &options = {}) {
                                         ? SystemWallClock::instance().now()
                                         : MIN_DT + EvaluationTime::duration{1};
     const auto start_time = options.start_time.value_or(default_start_time);
+    const auto stop_time = options.resolve_stop_time(start_time);
 
     auto run = [&](GlobalState &global_state) {
         auto runtime = RuntimeGraph{compiled, global_state};
         if (options.recorder) {
-            options.recorder->run(runtime, start_time, options.engine, options.stop_token, options.periodic_callback);
+            options.recorder->run(runtime, start_time, options.engine, options.stop_token, options.periodic_callback,
+                                  stop_time);
         } else if (options.engine == EvaluationEngine::realtime) {
-            RealtimeEvaluationEngine{}.run(runtime, start_time, options.stop_token, options.periodic_callback);
+            RealtimeEvaluationEngine{}.run(runtime, start_time, options.stop_token, options.periodic_callback,
+                                           stop_time);
         } else {
-            SimulationEvaluationEngine{}.run(runtime, start_time, options.periodic_callback);
+            SimulationEvaluationEngine{}.run(runtime, start_time, options.periodic_callback, stop_time);
         }
     };
 

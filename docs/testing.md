@@ -144,6 +144,8 @@ auto actual = test_graph(graph, {1, 2}, {10, 20});
 `test_graph` requires `EvaluationEngine::simulation` and rejects realtime
 selection. `GraphRunOptions::start_time` sets the first input time and the origin
 of captured result positions. Input positions remain one microsecond apart.
+The [run limits](evaluation.md#run-limits) bound evaluation of the input sequences; result positions for unevaluated
+inputs remain empty.
 Defaults and shared options follow [direct execution](graph-wiring.md#direct-execution).
 
 Literal input sequences use the [output literal syntax](node-api.md#output-parameters).
@@ -409,6 +411,8 @@ graph compilation or evaluation.
   services, profiling, and existing scalar input compatibility
 - `run_graph` default and explicit simulation selection, realtime selection, engine-specific default start times,
   explicit start times, realtime stop-token forwarding, and services, global state, and profiling in both modes
+- absolute and duration run limits, exclusive boundaries, combined limits, invalid bounds and overflow,
+  idle realtime termination, exact-timer catchup, queue closure, and profiled execution
 - `test_graph` output capture and literal comparison for scalar and nested collection deltas;
   scalar ownership after graph destruction, complete delta comparison, entry order independence,
   empty ticks, skipped cycles, invalidation, revalidation, and removal;
@@ -505,6 +509,7 @@ graph compilation or evaluation.
   and membership changes
 - switch selection, default selection, inner graph evaluation, scheduling, lifecycle, and composition with map and mesh
 - service request deduplication, invalidation, nested graph binding propagation, provider ordering, and client removal
+- service request sinks dispatching work to a background thread and returning queued replies during realtime execution
 
 ### Time series references
 

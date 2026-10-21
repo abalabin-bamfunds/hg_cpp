@@ -18,19 +18,26 @@ namespace bg {
 
 void RealtimeEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
                                    std::stop_token stop_token,
-                                   const PeriodicCallback &periodic_callback) const {
-    run(runtime_graph, start_time, nullptr, stop_token, periodic_callback);
+                                   const PeriodicCallback &periodic_callback,
+                                   std::optional<EvaluationTime> stop_time) const {
+    run(runtime_graph, start_time, nullptr, stop_token, periodic_callback, stop_time);
 }
 
 void RealtimeEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
                                    EvaluationProfile &profile, std::stop_token stop_token,
-                                   const PeriodicCallback &periodic_callback) const {
-    run(runtime_graph, start_time, &profile, stop_token, periodic_callback);
+                                   const PeriodicCallback &periodic_callback,
+                                   std::optional<EvaluationTime> stop_time) const {
+    run(runtime_graph, start_time, &profile, stop_token, periodic_callback, stop_time);
 }
 
 void RealtimeEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
                                    EvaluationProfile *profile, std::stop_token stop_token,
-                                   const PeriodicCallback &periodic_callback) const {
+                                   const PeriodicCallback &periodic_callback,
+                                   std::optional<EvaluationTime> stop_time) const {
+    if (stop_time && *stop_time <= start_time) {
+        throw std::invalid_argument{"stop_time must be later than start_time"};
+    }
+
     if (stop_token.stop_requested()) {
         return;
     }
@@ -120,15 +127,21 @@ void RealtimeEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime s
             }
         }
 
-        if (cycle_time && *cycle_time <= now) {
+        if (cycle_time && *cycle_time <= now && (!stop_time || *cycle_time < *stop_time)) {
             evaluate(*cycle_time);
             callback_runner.poll_after_cycle();
             continue;
+        }
+        if (stop_time && now >= *stop_time) {
+            break;
         }
 
         auto deadline = cycle_time;
         if (wall_time && *wall_time > now && (!deadline || *wall_time < *deadline)) {
             deadline = wall_time;
+        }
+        if (stop_time && (!deadline || *stop_time < *deadline)) {
+            deadline = stop_time;
         }
         if (callback_runner.run_if_due()) {
             continue;

@@ -68,7 +68,8 @@ class EvaluationProfiler {
         explicit Recorder(EvaluationProfiler &profiler) : profiler_{profiler} {}
         void run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
                  EvaluationEngine engine = EvaluationEngine::simulation, std::stop_token stop_token = {},
-                 const PeriodicCallback &periodic_callback = {}) const;
+                 const PeriodicCallback &periodic_callback = {},
+                 std::optional<EvaluationTime> stop_time = std::nullopt) const;
 
       private:
         EvaluationProfiler &profiler_;

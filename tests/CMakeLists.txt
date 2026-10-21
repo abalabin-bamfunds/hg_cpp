@@ -18,6 +18,7 @@ add_executable(
     evaluation/context/wall_clock_test.cpp
     evaluation/engine/realtime_evaluation_engine_test.cpp
     evaluation/engine/simulation_evaluation_engine_test.cpp
+    evaluation/engine/graph_run_limits_test.cpp
     evaluation/engine/evaluation_profile_test.cpp
     evaluation/engine/evaluation_profiler_test.cpp
     evaluation/lifecycle/runtime_lifecycle_test.cpp
@@ -44,6 +45,7 @@ add_executable(
     evaluation/time_series/time_series_dict_getitem_test.cpp
     evaluation/time_series/time_series_reference_test.cpp
     evaluation/service_test.cpp
+    evaluation/service_queue_test.cpp
     evaluation/multiservice_test.cpp
     evaluation/reference_service_test.cpp
     evaluation/subscription_service_test.cpp
