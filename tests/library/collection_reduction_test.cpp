@@ -53,8 +53,11 @@ TEST_CASE("TSD reductions gate invalid items and optional reductions skip them",
     };
     const auto run = [](auto operation) {
         const auto graph = [operation](wp<TSD<i64, TS<i64>>> values) { return operation(values); };
-        return testing::test_graph(graph, testing::input<TSD<i64, TS<i64>>>(
-            {{{1, 10}, {2, 20}}, {{1, literal::INVALID}, {2, 30}}, {{1, literal::REMOVE}, {2, 20}}}));
+        return testing::test_graph(
+            graph,
+            {{{1, 10}, {2, 20}},
+             {{1, literal::INVALID}, {2, 30}},
+             {{1, literal::REMOVE}, {2, 20}}});
     };
 
     CHECK(run(sum).equals<i64>({30, std::nullopt, 20}));
@@ -94,29 +97,29 @@ TEST_CASE("TSL reductions scan fixed items and optional reductions skip invalid 
     const auto optional_mean = [](wp<TS<i64>> first, wp<TS<i64>> second) {
         return operators::mean("values"_n = opt(tsl(std::array{first, second})));
     };
-    CHECK(testing::test_graph(sum, testing::input<TS<i64>>({1, 2, literal::INVALID, 4}),
-                              testing::input<TS<i64>>({10, literal::SKIP, 20, literal::INVALID}))
+    CHECK(testing::test_graph(sum, {1, 2, literal::INVALID, 4},
+                              {10, literal::SKIP, 20, literal::INVALID})
               .equals<i64>({11, 12, std::nullopt, std::nullopt}));
-    CHECK(testing::test_graph(optional_sum, testing::input<TS<i64>>({1, 2, literal::INVALID, 4}),
-                              testing::input<TS<i64>>({10, literal::SKIP, 20, literal::INVALID}))
+    CHECK(testing::test_graph(optional_sum, {1, 2, literal::INVALID, 4},
+                              {10, literal::SKIP, 20, literal::INVALID})
               .equals<i64>({11, 12, 20, 4}));
-    CHECK(testing::test_graph(mean, testing::input<TS<i64>>({1, 2, literal::INVALID, 4}),
-                              testing::input<TS<i64>>({10, literal::SKIP, 20, literal::INVALID}))
+    CHECK(testing::test_graph(mean, {1, 2, literal::INVALID, 4},
+                              {10, literal::SKIP, 20, literal::INVALID})
               .equals<double>({5.5, 6.0, std::nullopt, std::nullopt}));
-    CHECK(testing::test_graph(optional_mean, testing::input<TS<i64>>({1, 2, literal::INVALID, 4}),
-                              testing::input<TS<i64>>({10, literal::SKIP, 20, literal::INVALID}))
+    CHECK(testing::test_graph(optional_mean, {1, 2, literal::INVALID, 4},
+                              {10, literal::SKIP, 20, literal::INVALID})
               .equals<double>({5.5, 6.0, 20.0, 4.0}));
-    CHECK(testing::test_graph(minimum, testing::input<TS<i64>>({1, 2, literal::INVALID, 4}),
-                              testing::input<TS<i64>>({10, literal::SKIP, 20, literal::INVALID}))
+    CHECK(testing::test_graph(minimum, {1, 2, literal::INVALID, 4},
+                              {10, literal::SKIP, 20, literal::INVALID})
               .equals<i64>({1, 2, std::nullopt, std::nullopt}));
-    CHECK(testing::test_graph(optional_minimum, testing::input<TS<i64>>({1, 2, literal::INVALID, 4}),
-                              testing::input<TS<i64>>({10, literal::SKIP, 20, literal::INVALID}))
+    CHECK(testing::test_graph(optional_minimum, {1, 2, literal::INVALID, 4},
+                              {10, literal::SKIP, 20, literal::INVALID})
               .equals<i64>({1, 2, 20, 4}));
-    CHECK(testing::test_graph(maximum, testing::input<TS<i64>>({1, 2, literal::INVALID, 4}),
-                              testing::input<TS<i64>>({10, literal::SKIP, 20, literal::INVALID}))
+    CHECK(testing::test_graph(maximum, {1, 2, literal::INVALID, 4},
+                              {10, literal::SKIP, 20, literal::INVALID})
               .equals<i64>({10, 10, std::nullopt, std::nullopt}));
-    CHECK(testing::test_graph(optional_maximum, testing::input<TS<i64>>({1, 2, literal::INVALID, 4}),
-                              testing::input<TS<i64>>({10, literal::SKIP, 20, literal::INVALID}))
+    CHECK(testing::test_graph(optional_maximum, {1, 2, literal::INVALID, 4},
+                              {10, literal::SKIP, 20, literal::INVALID})
               .equals<i64>({10, 10, 20, 4}));
 }
 
@@ -128,10 +131,15 @@ TEST_CASE("collection reductions accept native fixed TSL inputs",
         return operators::sum_("values"_n = opt(values));
     };
 
-    CHECK(testing::test_graph(sum, {{{0, 1}, {1, 10}}, {{0, 2}}, {{0, literal::INVALID}, {1, 20}}})
+    CHECK(testing::test_graph(sum,
+                              {{{0, 1}, {1, 10}},
+                               {{0, 2}},
+                               {{0, literal::INVALID}, {1, 20}}})
               .equals<i64>({11, 12, std::nullopt}));
     CHECK(testing::test_graph(optional_sum,
-                              {{{0, 1}, {1, 10}}, {{0, 2}}, {{0, literal::INVALID}, {1, 20}}})
+                              {{{0, 1}, {1, 10}},
+                               {{0, 2}},
+                               {{0, literal::INVALID}, {1, 20}}})
               .equals<i64>({11, 12, 20}));
 }
 
@@ -145,8 +153,8 @@ TEST_CASE("collection reductions handle valid empty TSS membership",
     const auto run = [](auto operation) {
         const auto graph = [operation](wp<TSS<i64>> values) { return operation(values); };
         return testing::test_graph(
-            graph, testing::input<TSS<i64>>({literal::SKIP, {}, {4}, {literal::REMOVED(4)}, {5},
-                                             {literal::REMOVED(5)}}));
+            graph, {literal::SKIP, {}, {4}, {literal::REMOVED(4)}, {5},
+                    {literal::REMOVED(5)}});
     };
 
     CHECK(run(sum).equals<i64>({std::nullopt, 0, 4, 0, 5, 0}));
@@ -187,17 +195,13 @@ TEST_CASE("collection reductions observe empty results and revalidate",
     const auto valid_mean = [](wp<TSS<i64>> values) {
         return operators::valid(operators::mean("values"_n = opt(values)));
     };
-    CHECK(testing::test_graph(valid_sum, testing::input<TSS<i64>>(
-                                             {literal::SKIP, {}, {4}, {literal::REMOVED(4)}, {5}}))
+    CHECK(testing::test_graph(valid_sum, {literal::SKIP, {}, {4}, {literal::REMOVED(4)}, {5}})
               .equals<bool>({false, true, std::nullopt, std::nullopt, std::nullopt}));
-    CHECK(testing::test_graph(valid_minimum, testing::input<TSS<i64>>(
-                                                 {literal::SKIP, {}, {4}, {literal::REMOVED(4)}, {5}}))
+    CHECK(testing::test_graph(valid_minimum, {literal::SKIP, {}, {4}, {literal::REMOVED(4)}, {5}})
               .equals<bool>({false, std::nullopt, true, false, true}));
-    CHECK(testing::test_graph(valid_maximum, testing::input<TSS<i64>>(
-                                                 {literal::SKIP, {}, {4}, {literal::REMOVED(4)}, {5}}))
+    CHECK(testing::test_graph(valid_maximum, {literal::SKIP, {}, {4}, {literal::REMOVED(4)}, {5}})
               .equals<bool>({false, std::nullopt, true, false, true}));
-    CHECK(testing::test_graph(valid_mean, testing::input<TSS<i64>>(
-                                               {literal::SKIP, {}, {4}, {literal::REMOVED(4)}, {5}}))
+    CHECK(testing::test_graph(valid_mean, {literal::SKIP, {}, {4}, {literal::REMOVED(4)}, {5}})
               .equals<bool>({false, std::nullopt, true, false, true}));
 }
 

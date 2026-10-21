@@ -1,3 +1,4 @@
+#include <bg/graph.hpp>
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
@@ -10,7 +11,6 @@
 #include <chrono>
 #include <optional>
 #include <stdexcept>
-#include <vector>
 
 using namespace bg;
 
@@ -29,28 +29,22 @@ TEST_CASE("required-input invalidation propagates through a graph",
           "[evaluation][invalidation][feature:invalidation][shape:chain][validity:required]"
           "[transition:invalidation][transition:revalidation][series:value][scalar:floating-point]") {
     auto copy_evaluations = 0;
-    auto consumed_values = std::vector<float>{};
 
     const auto copy = node([&](float input) {
         ++copy_evaluations;
         return input;
     });
 
-    const auto consume = node([&](float input) { consumed_values.push_back(input); });
+    const auto consume = node([](float input) { return input; });
 
-    const auto observe_validity = node([](std::optional<float> input) { return input.has_value(); });
+    const auto graph_template = bg::graph([&](wp<TS<float>> input) {
+        return consume(copy(input));
+    });
 
-    const auto graph = [&](wp<TS<float>> input) {
-        const auto copied = copy(input);
-        consume(copied);
-        return observe_validity(copied);
-    };
+    const auto actual = testing::test_graph(graph_template, {4.0F, literal::INVALID, 6.0F});
 
-    const auto actual = testing::test_graph(graph, {4.0F, literal::INVALID, 6.0F});
-
-    CHECK(actual.equals({true, false, true}));
+    CHECK(actual.equals({4.0F, literal::INVALID, 6.0F}));
     CHECK(copy_evaluations == 2);
-    CHECK(consumed_values == std::vector<float>{4.0F, 6.0F});
 }
 
 namespace {

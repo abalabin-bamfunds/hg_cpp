@@ -29,30 +29,30 @@ TEST_CASE("a time series set publishes only new items",
 TEST_CASE("a time series set becomes valid on its first empty tick and remains valid",
           "[evaluation][tss][series:tss][validity][feature:collection-change][transition:first-tick]"
           "[scalar:integer][representation:native][declaration:concrete][binding:direct]") {
-    auto validity = std::vector<bool>{};
-    auto sizes = std::vector<std::size_t>{};
-    auto added_counts = std::vector<std::size_t>{};
-    auto removed_counts = std::vector<std::size_t>{};
-    const auto observe = node([&](In<TSS<i64>, optional> input) {
-        validity.push_back(input.valid());
-        sizes.push_back(input.size());
+    struct observation {
+        bool valid;
+        i64 size;
+        i64 added;
+        i64 removed;
 
-        auto added_count = std::size_t{};
-        input.for_each_added([&](const auto &) { ++added_count; });
-        added_counts.push_back(added_count);
+        bool operator==(const observation &) const = default;
+    };
 
-        auto removed_count = std::size_t{};
-        input.for_each_removed([&](const auto &) { ++removed_count; });
-        removed_counts.push_back(removed_count);
+    const auto observe = node([](In<TSS<i64>, optional> input) {
+        auto added = i64{};
+        input.for_each_added([&](const auto &) { ++added; });
+
+        auto removed = i64{};
+        input.for_each_removed([&](const auto &) { ++removed; });
+
+        return observation{input.valid(), static_cast<i64>(input.size()), added, removed};
     });
 
-    const auto wiring = graph("name"_n = "literal_set_input", [&](wp<TSS<i64>> input) { observe(input); });
-    (void)testing::test_graph(wiring, {{}, {1, 2}, {literal::REMOVED(1), literal::REMOVED(2)}});
+    const auto wiring = graph("name"_n = "literal_set_input", [&](wp<TSS<i64>> input) { return observe(input); });
+    const auto actual = testing::test_graph(wiring, {{}, {1, 2}, {literal::REMOVED(1), literal::REMOVED(2)}});
 
-    CHECK(validity == std::vector{true, true, true});
-    CHECK(sizes == std::vector<std::size_t>{0, 2, 0});
-    CHECK(added_counts == std::vector<std::size_t>{0, 2, 0});
-    CHECK(removed_counts == std::vector<std::size_t>{0, 0, 2});
+    CHECK(actual.equals<observation>({observation{true, 0, 0, 0}, observation{true, 2, 2, 0},
+                                     observation{true, 0, 0, 2}}));
 }
 
 namespace {
@@ -166,31 +166,30 @@ TEST_CASE("adding and removing a set item in one invocation produces a tick",
           "[evaluation][tss][series:tss][feature:collection-change][transition:removal]"
           "[transition:update][scalar:integer][representation:native][declaration:concrete]"
           "[binding:direct][transition:addition]") {
-    auto validity = std::vector<bool>{};
-    auto sizes = std::vector<std::size_t>{};
-    auto added_counts = std::vector<std::size_t>{};
-    auto removed_counts = std::vector<std::size_t>{};
-    const auto sink = node([&](In<TSS<i64>, optional> input) {
-        validity.push_back(input.valid());
-        sizes.push_back(input.size());
+    struct observation {
+        bool valid;
+        i64 size;
+        i64 added;
+        i64 removed;
 
-        auto added_count = std::size_t{};
-        input.for_each_added([&](const auto &) { ++added_count; });
-        added_counts.push_back(added_count);
+        bool operator==(const observation &) const = default;
+    };
 
-        auto removed_count = std::size_t{};
-        input.for_each_removed([&](const auto &) { ++removed_count; });
-        removed_counts.push_back(removed_count);
+    const auto sink = node([](In<TSS<i64>, optional> input) {
+        auto added = i64{};
+        input.for_each_added([&](const auto &) { ++added; });
+
+        auto removed = i64{};
+        input.for_each_removed([&](const auto &) { ++removed; });
+
+        return observation{input.valid(), static_cast<i64>(input.size()), added, removed};
     });
 
     const auto source = node<inverse_set_mutation_source_definition>();
 
-    run_graph([&] { sink(source()); });
+    const auto actual = testing::test_graph([&] { return sink(source()); });
 
-    CHECK(validity == std::vector{true});
-    CHECK(sizes == std::vector<std::size_t>{0});
-    CHECK(added_counts == std::vector<std::size_t>{0});
-    CHECK(removed_counts == std::vector<std::size_t>{0});
+    CHECK(actual.equals<observation>({observation{true, 0, 0, 0}}));
 }
 
 namespace {
@@ -506,35 +505,37 @@ TEST_CASE("a TSS reports no item ID remapping for ordinary additions and removal
 TEST_CASE("a TSS input does not report stale removals after an invalid target is rewired",
           "[evaluation][reference][series:tss][feature:reference][feature:collection-change]"
           "[validity:optional][transition:removal][binding:reference-to-value][scalar:integer]") {
+    struct observation {
+        bool valid;
+        i64 size;
+        bool key_was_removed;
+
+        bool operator==(const observation &) const = default;
+    };
+
     const auto valid = node<clearing_referenced_set_source_definition>();
 
     const auto invalid = node([](Out<TSS<i64>>) {});
 
     const auto condition = node<delayed_set_reference_condition_definition>();
 
-    auto validity = std::vector<bool>{};
-    auto sizes = std::vector<std::size_t>{};
-    auto removed = std::vector<std::vector<i64>>{};
-    auto was_removed = std::vector<bool>{};
+    auto removed_keys = std::vector<std::vector<i64>>{};
     const auto observe = node([&](In<TSS<i64>, optional> input) {
-        validity.push_back(input.valid());
-        sizes.push_back(input.size());
+        auto removed = std::vector<i64>{};
+        input.for_each_removed([&](const auto &item) { removed.push_back(item.value()); });
 
-        auto removed_items = std::vector<i64>{};
-        input.for_each_removed([&](const auto &item) { removed_items.push_back(item.value()); });
-        removed.push_back(std::move(removed_items));
         const auto removed_key = i64{11};
-        was_removed.push_back(input.was_removed(Scalar<i64>::from(removed_key)));
+        removed_keys.push_back(std::move(removed));
+        return observation{input.valid(), static_cast<i64>(input.size()),
+                           input.was_removed(Scalar<i64>::from(removed_key))};
     });
 
-    const auto wiring = [&] { observe(select_set_reference(condition(), valid(), invalid())); };
+    const auto wiring = [&] { return observe(select_set_reference(condition(), valid(), invalid())); };
+    const auto actual = testing::test_graph(wiring);
 
-    run_graph(wiring);
-
-    CHECK(validity == std::vector{true, true, false});
-    CHECK(sizes == std::vector<std::size_t>{2, 0, 0});
-    CHECK(removed == std::vector<std::vector<i64>>{{}, {11, 12}, {}});
-    CHECK(was_removed == std::vector{false, true, false});
+    CHECK(actual.equals<observation>({observation{true, 2, false}, observation{true, 0, true},
+                                      observation{false, 0, false}}));
+    CHECK(removed_keys == std::vector<std::vector<i64>>{{}, {11, 12}, {}});
 }
 
 TEST_CASE("a TSS reference transition reports removals when the old target clears in the retargeting cycle",

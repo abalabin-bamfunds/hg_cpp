@@ -40,7 +40,7 @@ TEST_CASE("service publishes each valid client input and selects its response",
         return service(invalidate_zero(input)).as<TS<bg::i64>>();
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, {2, 3, 0, 4, 0});
+    const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {2, 3, 0, 4, 0});
 
     CHECK(actual.equals<bg::i64>({4, 6, std::nullopt, 8, std::nullopt}));
     REQUIRE(client_ids.size() == 3);
@@ -112,11 +112,9 @@ TEST_CASE("service keeps a client active while any input is valid",
 
     const auto actual = testing::test_graph(
         tested,
-        bg::GraphRunOptions{.services = &catalogue},
-        std::array<bg::i64,
-        4>{2, 0, 6, 0},
-        std::array<float,
-        4>{-1.0F, 3.0F, 4.0F, -1.0F}
+        GraphRunOptions{.services = &catalogue},
+        {2, 0, 6, 0},
+        {-1.0F, 3.0F, 4.0F, -1.0F}
     );
 
     CHECK(actual.equals<float>({2.0F, 3.0F, 10.0F, std::nullopt}));
@@ -152,8 +150,8 @@ TEST_CASE("service arguments bind by implementation signature before wiring",
 
     auto direct_catalogue = ServiceCatalogue{};
     direct_catalogue.register_impl(service, implementation, 10);
-    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &direct_catalogue},
-                              std::array<bg::i64, 2>{2, 5}, std::array<bg::i64, 2>{3, 7})
+    CHECK(testing::test_graph(tested, GraphRunOptions{.services = &direct_catalogue},
+                              {2, 5}, {3, 7})
               .equals<bg::i64>({15, 22}));
 
     const auto wrapper = graph(
@@ -170,8 +168,8 @@ TEST_CASE("service arguments bind by implementation signature before wiring",
         });
     auto wrapped_catalogue = ServiceCatalogue{};
     wrapped_catalogue.register_impl(service, wrapper, 10);
-    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &wrapped_catalogue},
-                              std::array<bg::i64, 2>{2, 5}, std::array<bg::i64, 2>{3, 7})
+    CHECK(testing::test_graph(tested, GraphRunOptions{.services = &wrapped_catalogue},
+                              {2, 5}, {3, 7})
               .equals<bg::i64>({15, 22}));
 }
 
@@ -194,7 +192,7 @@ TEST_CASE("feedback service wrapper delays requests into its nested implementati
     const auto tested = [&](wp<TS<bg::i64>> value) { return service(value).as<TS<bg::i64>>(); };
 
     const auto actual = testing::test_graph(
-        tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 3>{2, 4, 6});
+        tested, GraphRunOptions{.services = &catalogue}, {2, 4, 6});
     CHECK(actual.equals<bg::i64>({std::nullopt, 2, 4, 6}));
 }
 
@@ -232,9 +230,7 @@ TEST_CASE("feedback service wrapper maps generic types and forwards scalar argum
                             feedback_service_implementation(service, implementation), "route"_n = 11, 7);
     catalogue.register_impl(service[type<VALUE> = type<bg::i64>],
                             feedback_service_implementation(service, implementation), "route"_n = 22, 9);
-    const auto add = node([](In<TS<bg::i64>> first, In<TS<bg::i64>> second, Out<TS<bg::i64>> output) {
-        output.set(*first + *second);
-    });
+    const auto add = node([](i64 first, i64 second) { return first + second; });
     const auto tested = [&](wp<TS<bg::i64>> value) {
         const auto first = service[type<VALUE> = type<bg::i64>](value, 11).as<TS<bg::i64>>();
         const auto second = service[type<VALUE> = type<bg::i64>](value, 22).as<TS<bg::i64>>();
@@ -242,7 +238,7 @@ TEST_CASE("feedback service wrapper maps generic types and forwards scalar argum
     };
 
     const auto actual = testing::test_graph(
-        tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 3>{2, 4, 6});
+        tested, GraphRunOptions{.services = &catalogue}, {2, 4, 6});
 
     CHECK(actual.equals<bg::i64>({std::nullopt, 4, 8, 12}));
     REQUIRE_FALSE(route_11_installation_values.empty());
@@ -271,7 +267,7 @@ TEST_CASE("feedback service wrapper caps a final client request to ordinary",
     catalogue.register_impl(service, feedback_service_implementation(service, implementation));
     const auto tested = [&] { return service(bg::operators::const_(bg::i64{7})).as<TS<bg::i64>>(); };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue});
+    const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue});
     CHECK(actual.equals<bg::i64>({std::nullopt, 7}));
 }
 
@@ -319,13 +315,10 @@ TEST_CASE("service keeps an unbound reference request as an invalid item",
 
     const auto actual = testing::test_graph(
         tested,
-        bg::GraphRunOptions{.services = &catalogue},
-        std::array<bg::i64,
-        6>{10, 20, 30, 40, 50, 60},
-        std::array<bg::i64,
-        6>{101, 102, 103, 104, 105, 106},
-        std::array<bool,
-        6>{false, false, true, false, false, true}
+        GraphRunOptions{.services = &catalogue},
+        {10, 20, 30, 40, 50, 60},
+        {101, 102, 103, 104, 105, 106},
+        {false, false, true, false, false, true}
     );
 
     CHECK(actual.equals<bg::i64>({0, 0, 1, 0, 0, 1}));
@@ -372,7 +365,7 @@ TEST_CASE("sink service receives and withdraws valid client inputs",
         return valid;
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 4>{5, 7, 0, 9});
+    const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {5, 7, 0, 9});
 
     CHECK(actual.equals<bg::i64>({5, 7, std::nullopt, 9}));
     CHECK(received == std::vector<bg::i64>{5, 7, 9});
@@ -402,9 +395,7 @@ TEST_CASE("service scalar arguments select separate implementations", "[feature:
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation, "offset"_n = 10);
     catalogue.register_impl(service, implementation, "offset"_n = 20);
-    const auto sum = node([](In<TS<bg::i64>> first, In<TS<bg::i64>> second, Out<TS<bg::i64>> output) {
-        output.set(*first + *second);
-    });
+    const auto sum = node([](i64 first, i64 second) { return first + second; });
 
     const auto tested = [&](wp<TS<bg::i64>> input) {
         const auto first = service(input, 10).as<TS<bg::i64>>();
@@ -412,7 +403,7 @@ TEST_CASE("service scalar arguments select separate implementations", "[feature:
         return sum(first, second);
     };
 
-    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 2>{1, 4}).equals<bg::i64>({32, 38}));
+    CHECK(testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {1, 4}).equals<bg::i64>({32, 38}));
 }
 
 TEST_CASE("catch-all service combines unmatched scalar instances and yields to an exact implementation",
@@ -650,7 +641,7 @@ TEST_CASE("subscription implementation receives named installation inputs after 
         return service(key_source(1), 10).as<TS<bg::i64>>();
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 3>{2, 3, 4});
+    const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {2, 3, 4});
 
     CHECK(actual.equals<bg::i64>({113, 114, 115}));
 }
@@ -688,7 +679,7 @@ TEST_CASE("service clients in map branches withdraw requests when branches stop"
         return mapped[bg::i64{5}].as<TS<bg::i64>>();
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue},
+    const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue},
                                             {{{5, 7}}, {{5, literal::REMOVE}}, {{5, 7}}});
 
     CHECK(actual.equals<bg::i64>({7, std::nullopt, 7}));
@@ -724,8 +715,7 @@ TEST_CASE("service clients follow repeated switch changes after a map branch ret
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
 
-    const auto add_offset = node([](In<TS<bg::i64>> value, bg::i64 offset,
-                                    Out<TS<bg::i64>> output) { output.set(value.value() + offset); });
+    const auto add_offset = node([](i64 value, i64 offset) { return value + offset; });
     const auto tested = [&](wp<TSD<bg::i64, TS<bg::i64>>> values,
                             wp<TS<bg::i64>> selected_case) {
         const auto mapped = map(
@@ -751,7 +741,7 @@ TEST_CASE("service clients follow repeated switch changes after a map branch ret
 
     const auto actual = testing::test_graph(
         tested,
-        bg::GraphRunOptions{.services = &catalogue},
+        GraphRunOptions{.services = &catalogue},
         {{{5, 7}}, {{5, 7}}, {{5, 7}}, {{5, literal::REMOVE}}, {{5, 7}}, {{5, 7}}},
         {1, 2, 1, 1, 2, 1}
     );
@@ -785,7 +775,7 @@ TEST_CASE("service rejects a response cycle through a client input",
 
     auto diagnostic = std::string{};
     try {
-        (void)testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 1>{1});
+        (void)testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {1});
     } catch (const std::exception &error) {
         diagnostic = error.what();
     }

@@ -24,24 +24,26 @@
 #include <optional>
 #include <vector>
 
+using namespace bg;
+
 namespace {
 
 using namespace bg::literals;
 
-inline constexpr auto G = bg::guarantee_variable<"G">;
+inline constexpr auto G = guarantee_variable<"G">;
 
 struct changing_reference_target {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::State<int> step;
-    bg::Out<bg::TS<bg::i64>> output;
+    State<int> step;
+    Out<TS<i64>> output;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         output.set(10);
         context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(EvaluationContext *context) const {
         if (*step == 0) {
             output.set(20);
         } else if (*step == 1) {
@@ -58,8 +60,8 @@ struct changing_reference_target {
 };
 
 struct reference_pass {
-    bg::In<bg::REF<bg::TS<bg::i64>>> input;
-    bg::Out<bg::REF<bg::TS<bg::i64>>> output;
+    In<REF<TS<i64>>> input;
+    Out<REF<TS<i64>>> output;
 
     void evaluate() const {
         output.copy(input);
@@ -70,13 +72,13 @@ struct reference_pass {
 };
 
 struct optional_reference_consumer {
-    bg::In<bg::TS<bg::i64>, bg::optional> input;
+    In<TS<i64>, optional> input;
 
     void evaluate() const {}
 };
 
 template <template <typename, auto...> typename Field> struct DictionaryBundle {
-    Field<bg::TSD<bg::i64, bg::TS<bg::i64>>> dictionary;
+    Field<TSD<i64, TS<i64>>> dictionary;
 };
 
 } // namespace
@@ -84,12 +86,12 @@ template <template <typename, auto...> typename Field> struct DictionaryBundle {
 TEST_CASE("a dereferenced input subscribes directly to a fixed target",
           "[evaluation][reference][feature:reference][series:value][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value]") {
-    const auto source = bg::node<changing_reference_target>();
-    const auto pass = bg::node<reference_pass>();
+    const auto source = node<changing_reference_target>();
+    const auto pass = node<reference_pass>();
     reference_pass::evaluation_count = 0;
     const auto graph = [&] { return pass(source()); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = testing::test_graph(graph);
 
     CHECK(reference_pass::evaluation_count == 1);
     CHECK(actual.equals({10, 20, std::nullopt, 30}));
@@ -99,31 +101,32 @@ TEST_CASE("an ordinary reference can retarget a value input between stronger tar
           "[feature:reference][feature:type-system][feature:test-graph][series:value][scalar:floating-point]"
           "[guarantee:ordinary][guarantee:final][guarantee:const][binding:reference-to-value]"
           "[shape:chain][transition:update][definition:function]") {
-    const auto final_value = bg::node([](bg::Out<bg::TS<double, bg::TimeSeriesGuarantee::final>> output) {
+    const auto final_value = node([](Out<TS<double, TimeSeriesGuarantee::final>> output) {
         output.set(1.0);
     });
-    const auto select = bg::node(
-        [](bg::In<bg::TS<bool>> use_constant,
-           bg::In<bg::REF<bg::TS<double, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::ordinary>> first,
-           bg::In<bg::REF<bg::TS<double, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::ordinary>> second,
-           bg::Out<bg::REF<bg::TS<double, bg::TimeSeriesGuarantee::final>, bg::TimeSeriesGuarantee::ordinary>> output) {
+
+    const auto select = node(
+        [](In<TS<bool>> use_constant,
+           In<REF<TS<double, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::ordinary>> first,
+           In<REF<TS<double, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::ordinary>> second,
+           Out<REF<TS<double, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::ordinary>> output) {
             output.copy(*use_constant ? second : first);
         });
-    const auto copy = bg::node(
-        [](bg::In<bg::TS<double, bg::guarantee_variable<"G">>> input,
-           bg::Out<bg::TS<double, bg::guarantee_variable<"G">>> output) {
+    const auto copy = node(
+        [](In<TS<double, guarantee_variable<"G">>> input,
+           Out<TS<double, guarantee_variable<"G">>> output) {
             output.set(*input);
         });
-    const auto graph = [&](bg::wp<bg::TS<bool>> use_constant) {
-        const auto constant_value = bg::operators::const_(2.0).as<bg::TS<double, bg::TimeSeriesGuarantee::const_>>();
+    const auto graph = [&](wp<TS<bool>> use_constant) {
+        const auto constant_value = operators::const_(2.0).as<TS<double, TimeSeriesGuarantee::const_>>();
         const auto selected = select(use_constant, final_value(), constant_value);
         const auto output = copy(selected);
 
-        CHECK(&output.type() == &bg::TS<double>::type());
+        CHECK(&output.type() == &TS<double>::type());
         return output;
     };
 
-    const auto actual = bg::testing::test_graph(graph, std::array{false, true, false, true});
+    const auto actual = testing::test_graph(graph, std::array{false, true, false, true});
 
     CHECK(actual.equals<double>({1.0, 2.0, 1.0, 2.0}));
 }
@@ -132,26 +135,27 @@ TEST_CASE("a deduplicated reference retarget samples equal constant values",
           "[feature:reference][feature:type-system][feature:test-graph][series:value][scalar:floating-point]"
           "[guarantee:deduplicated][guarantee:const][binding:reference-to-value]"
           "[shape:chain][transition:update][definition:function]") {
-    const auto select = bg::node(
-        [](bg::In<bg::TS<bool>> use_second,
-           bg::In<bg::REF<bg::TS<double, bg::TimeSeriesGuarantee::const_>,
-                          bg::TimeSeriesGuarantee::deduplicated>> first,
-           bg::In<bg::REF<bg::TS<double, bg::TimeSeriesGuarantee::const_>,
-                          bg::TimeSeriesGuarantee::deduplicated>> second,
-           bg::Out<bg::REF<bg::TS<double, bg::TimeSeriesGuarantee::const_>,
-                           bg::TimeSeriesGuarantee::deduplicated>> output) {
+    const auto select = node(
+        [](In<TS<bool>> use_second,
+           In<REF<TS<double, TimeSeriesGuarantee::const_>,
+                          TimeSeriesGuarantee::deduplicated>> first,
+           In<REF<TS<double, TimeSeriesGuarantee::const_>,
+                          TimeSeriesGuarantee::deduplicated>> second,
+           Out<REF<TS<double, TimeSeriesGuarantee::const_>,
+                           TimeSeriesGuarantee::deduplicated>> output) {
             output.copy(*use_second ? second : first);
         });
-    const auto first = bg::node(
-        [](bg::Out<bg::TS<double, bg::TimeSeriesGuarantee::const_>> output) { output.set(4.0); });
-    const auto second = bg::node(
-        [](bg::Out<bg::TS<double, bg::TimeSeriesGuarantee::const_>> output) { output.set(4.0); });
-    const auto read = bg::node([](bg::In<bg::TS<double, bg::guarantee_variable<"G">>> input) { return *input; });
-    const auto graph = [&](bg::wp<bg::TS<bool>> use_second) {
+    const auto first = node(
+        [](Out<TS<double, TimeSeriesGuarantee::const_>> output) { output.set(4.0); });
+    const auto second = node(
+        [](Out<TS<double, TimeSeriesGuarantee::const_>> output) { output.set(4.0); });
+    const auto read = node([](In<TS<double, guarantee_variable<"G">>> input) { return *input; });
+
+    const auto graph = [&](wp<TS<bool>> use_second) {
         return read(select(use_second, first(), second()));
     };
 
-    const auto actual = bg::testing::test_graph(graph, std::array{false, true, false, true});
+    const auto actual = testing::test_graph(graph, std::array{false, true, false, true});
 
     CHECK(actual.equals<double>({4.0, 4.0, 4.0, 4.0}));
 }
@@ -159,57 +163,59 @@ TEST_CASE("a deduplicated reference retarget samples equal constant values",
 TEST_CASE("a dereferenced list keeps the target runtime type when only guarantees differ",
           "[evaluation][reference][tsl][feature:reference][series:fixed-tsl][guarantee:ordinary]"
           "[guarantee:final][binding:reference-to-value]") {
-    const auto first = bg::node(
-        [](bg::Out<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>> output) { output.set(1); });
-    const auto second = bg::node(
-        [](bg::Out<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>> output) { output.set(2); });
-    const auto pass = bg::node(
-        [](bg::In<bg::REF<bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, 2>>> input,
-           bg::Out<bg::REF<bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, 2>>> output) {
+    const auto first = node(
+        [](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(1); });
+    const auto second = node(
+        [](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(2); });
+    const auto pass = node(
+        [](In<REF<TSL<TS<i64, TimeSeriesGuarantee::final>, 2>>> input,
+           Out<REF<TSL<TS<i64, TimeSeriesGuarantee::final>, 2>>> output) {
             output.copy(input);
         });
-    auto target_type = static_cast<const bg::TimeSeriesType *>(nullptr);
-    auto received_type = static_cast<const bg::TimeSeriesType *>(nullptr);
-    const auto read = bg::node([&](bg::In<bg::TSL<bg::TS<bg::i64>, 2>> input) {
+    auto target_type = static_cast<const TimeSeriesType *>(nullptr);
+    auto received_type = static_cast<const TimeSeriesType *>(nullptr);
+    const auto read = node([&](In<TSL<TS<i64>, 2>> input) {
         received_type = &input.runtime_type().type();
         return *input[0] + *input[1];
     });
+
     const auto graph = [&] {
-        const auto values = bg::tsl(first(), second());
+        const auto values = tsl(first(), second());
         target_type = &values.type();
         return read(pass(values));
     };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = testing::test_graph(graph);
 
-    CHECK(actual.equals<bg::i64>({3}));
+    CHECK(actual.equals<i64>({3}));
     CHECK(received_type == target_type);
 }
 
 TEST_CASE("a materialized free TSL samples retargeted ordinary references",
           "[evaluation][reference][tsl][feature:reference][feature:test-graph][series:fixed-tsl]"
           "[guarantee:ordinary][guarantee:const][binding:reference-to-value][transition:update]") {
-    const auto read = bg::node([](bg::In<bg::TSL<bg::TS<bg::i64, G>, 1>> input) { return *input[0]; });
-    const auto select = bg::node(
-        [](bg::In<bg::TS<bool>> use_second,
-           bg::In<bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>, bg::TimeSeriesGuarantee::ordinary>,
-                  bg::passive> first,
-           bg::In<bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>, bg::TimeSeriesGuarantee::ordinary>,
-                  bg::passive> second,
-           bg::Out<bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>, bg::TimeSeriesGuarantee::ordinary>>
+    const auto read = node([](In<TSL<TS<i64, G>, 1>> input) { return *input[0]; });
+
+    const auto select = node(
+        [](In<TS<bool>> use_second,
+           In<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::ordinary>,
+                  passive> first,
+           In<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::ordinary>,
+                  passive> second,
+           Out<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::ordinary>>
                output) { output.copy(*use_second ? second : first); });
-    const auto graph = [&](bg::wp<bg::TS<bool>> use_second) {
-        const auto first = bg::operators::const_(bg::i64{4}).as<
-            bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
-        const auto second = bg::operators::const_(bg::i64{7}).as<
-            bg::TS<bg::i64, bg::TimeSeriesGuarantee::const_>>();
-        const auto values = bg::tsl(select(use_second, first, second));
-        const auto &type = dynamic_cast<const bg::TimeSeriesListType &>(values.type());
-        CHECK(type.item_type().guarantee().value() == bg::TimeSeriesGuarantee::ordinary);
+    const auto graph = [&](wp<TS<bool>> use_second) {
+        const auto first = operators::const_(i64{4}).as<
+            TS<i64, TimeSeriesGuarantee::const_>>();
+        const auto second = operators::const_(i64{7}).as<
+            TS<i64, TimeSeriesGuarantee::const_>>();
+        const auto values = tsl(select(use_second, first, second));
+        const auto &type = dynamic_cast<const TimeSeriesListType &>(values.type());
+        CHECK(type.item_type().guarantee().value() == TimeSeriesGuarantee::ordinary);
         return read(values);
     };
 
-    const auto actual = bg::testing::test_graph(graph, std::array{false, true, false, true});
+    const auto actual = testing::test_graph(graph, std::array{false, true, false, true});
 
     CHECK(actual.equals({4, 7, 4, 7}));
 }
@@ -217,64 +223,65 @@ TEST_CASE("a materialized free TSL samples retargeted ordinary references",
 TEST_CASE("an ordinary list reference samples the selected list with final items",
           "[evaluation][reference][feature:reference][series:fixed-tsl][guarantee:ordinary]"
           "[guarantee:final][binding:reference-to-value][activity:active][transition:update][shape:chain]") {
-    const auto first_item = bg::node(
-        [](bg::Out<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>> output) { output.set(10); });
-    const auto first_other_item = bg::node(
-        [](bg::Out<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>> output) { output.set(11); });
-    const auto second_item = bg::node(
-        [](bg::Out<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>> output) { output.set(20); });
-    const auto second_other_item = bg::node(
-        [](bg::Out<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>> output) { output.set(21); });
-    const auto select = bg::node(
-        [](bg::In<bg::TS<bool>> use_second,
-           bg::In<bg::REF<bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, 2>,
-                          bg::TimeSeriesGuarantee::ordinary>> first,
-           bg::In<bg::REF<bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, 2>,
-                          bg::TimeSeriesGuarantee::ordinary>> second,
-           bg::Out<bg::REF<bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>, 2>,
-                           bg::TimeSeriesGuarantee::ordinary>> output) {
+    const auto first_item = node(
+        [](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(10); });
+    const auto first_other_item = node(
+        [](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(11); });
+    const auto second_item = node(
+        [](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(20); });
+    const auto second_other_item = node(
+        [](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(21); });
+    const auto select = node(
+        [](In<TS<bool>> use_second,
+           In<REF<TSL<TS<i64, TimeSeriesGuarantee::final>, 2>,
+                          TimeSeriesGuarantee::ordinary>> first,
+           In<REF<TSL<TS<i64, TimeSeriesGuarantee::final>, 2>,
+                          TimeSeriesGuarantee::ordinary>> second,
+           Out<REF<TSL<TS<i64, TimeSeriesGuarantee::final>, 2>,
+                           TimeSeriesGuarantee::ordinary>> output) {
             output.copy(*use_second ? second : first);
         });
-    const auto read = bg::node([](bg::In<bg::TSL<bg::TS<bg::i64>, 2>> input) { return *input[0]; });
-    const auto graph = [&](bg::wp<bg::TS<bool>> use_second) {
-        const auto first = bg::tsl(first_item(), first_other_item());
-        const auto second = bg::tsl(second_item(), second_other_item());
+    const auto read = node([](In<TSL<TS<i64>, 2>> input) { return *input[0]; });
+
+    const auto graph = [&](wp<TS<bool>> use_second) {
+        const auto first = tsl(first_item(), first_other_item());
+        const auto second = tsl(second_item(), second_other_item());
         return read(select(use_second, first, second));
     };
 
-    const auto actual = bg::testing::test_graph(graph, std::array{false, true, false, true});
+    const auto actual = testing::test_graph(graph, std::array{false, true, false, true});
 
-    CHECK(actual.equals<bg::i64>({10, 20, 10, 20}));
+    CHECK(actual.equals<i64>({10, 20, 10, 20}));
 }
 
 TEST_CASE("plain and notifying inputs share one sampled dictionary",
           "[evaluation][reference][series:tsd][series:tsb][feature:sampling][transition:update]"
           "[binding:reference-to-value]") {
-    const auto select = bg::node(
-        [](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> first,
-           bg::In<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> second,
-           bg::Out<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> output) {
+    const auto select = node(
+        [](In<TS<bool>> use_second, In<REF<TSD<i64, TS<i64>>>> first,
+           In<REF<TSD<i64, TS<i64>>>> second,
+           Out<REF<TSD<i64, TS<i64>>>> output) {
             output.copy(*use_second ? second : first);
         });
-    const auto store_reference = bg::node(
-        [](bg::In<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> input,
-           bg::Out<bg::TSD<bg::i64, bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>>> output) {
+    const auto store_reference = node(
+        [](In<REF<TSD<i64, TS<i64>>>> input,
+           Out<TSD<i64, REF<TSD<i64, TS<i64>>>>> output) {
             output[0].copy(input);
         });
-    const auto compare = bg::node(
-        [](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> direct,
-           bg::In<bg::TSB<DictionaryBundle>> packaged, bg::Out<bg::TS<bool>> output) {
+    const auto compare = node(
+        [](In<TSD<i64, TS<i64>>> direct,
+           In<TSB<DictionaryBundle>> packaged, Out<TS<bool>> output) {
             output.set(direct.data() == packaged->dictionary.data());
         });
-    const auto graph = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> first,
-                           bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> second,
-                           bg::wp<bg::TS<bool>> use_second) {
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> first,
+                           wp<TSD<i64, TS<i64>>> second,
+                           wp<TS<bool>> use_second) {
         const auto selected = store_reference(select(use_second, first, second));
-        const auto item = selected[bg::i64{0}];
-        return compare(item, bg::bundle<DictionaryBundle>(item));
+        const auto item = selected[i64{0}];
+        return compare(item, bundle<DictionaryBundle>(item));
     };
 
-    const auto actual = bg::testing::test_graph(graph, {{{1, 10}}, {{1, 10}}}, {{{2, 20}}, {{2, 20}}},
+    const auto actual = testing::test_graph(graph, {{{1, 10}}, {{1, 10}}}, {{{2, 20}}, {{2, 20}}},
                                                 {false, true});
 
     CHECK(actual.equals({true, true}));
@@ -283,38 +290,38 @@ TEST_CASE("plain and notifying inputs share one sampled dictionary",
 TEST_CASE("a nested graph releases its sampled reference change when it stops",
           "[evaluation][nested][reference][series:tsd][feature:sampling][feature:nested-graph]"
           "[transition:update][transition:stop][transition:restart][binding:reference-to-value]") {
-    const auto select = bg::node(
-        [](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> first,
-           bg::In<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> second,
-           bg::Out<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> output) {
+    const auto select = node(
+        [](In<TS<bool>> use_second, In<REF<TSD<i64, TS<i64>>>> first,
+           In<REF<TSD<i64, TS<i64>>>> second,
+           Out<REF<TSD<i64, TS<i64>>>> output) {
             output.copy(*use_second ? second : first);
         });
-    const auto inspect = bg::node(
-        [](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input, bg::Out<bg::TS<bg::i64>> output) {
+    const auto inspect = node(
+        [](In<TSD<i64, TS<i64>>> input, Out<TS<i64>> output) {
             auto added = 0;
             auto removed = 0;
             input.for_each_added([&](const auto &key) { added |= 1 << *key; });
             input.for_each_removed([&](const auto &key) { removed |= 1 << *key; });
             output.set(added * 100 + removed * 10);
         });
-    const auto combine = bg::node(
-        [](bg::In<bg::TS<bg::i64>, bg::optional> inner, bg::In<bg::TS<bg::i64>> direct,
-           bg::Out<bg::TS<bg::i64>> output) {
+    const auto combine = node(
+        [](In<TS<i64>, optional> inner, In<TS<i64>> direct,
+           Out<TS<i64>> output) {
             output.set((inner.valid() ? *inner : 0) + *direct);
         });
-    const auto inner = bg::graph(
+    const auto inner = graph(
         "name"_n = "inspect_sampled_dictionary",
-        [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> input) -> bg::wp<bg::TS<bg::i64>> {
+        [&](wp<TSD<i64, TS<i64>>> input) -> wp<TS<i64>> {
             return inspect(input);
         });
-    const auto outer = [&](bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> first,
-                           bg::wp<bg::TSD<bg::i64, bg::TS<bg::i64>>> second,
-                           bg::wp<bg::TS<bool>> use_second, bg::wp<bg::TS<bool>> run) {
+    const auto outer = [&](wp<TSD<i64, TS<i64>>> first,
+                           wp<TSD<i64, TS<i64>>> second,
+                           wp<TS<bool>> use_second, wp<TS<bool>> run) {
         const auto selected = select(use_second, first, second);
-        return combine(bg::nested(inner, run, selected), inspect(selected));
+        return combine(nested(inner, run, selected), inspect(selected));
     };
 
-    const auto actual = bg::testing::test_graph(
+    const auto actual = testing::test_graph(
         outer, {{{1, 10}}, literal::SKIP, literal::SKIP, literal::SKIP},
         {{{2, 20}}, literal::SKIP, literal::SKIP, literal::SKIP},
         {false, literal::SKIP, true, false}, {true, true, false, true});
@@ -325,16 +332,17 @@ TEST_CASE("a nested graph releases its sampled reference change when it stops",
 TEST_CASE("a default reference output does not schedule subscribers for the same reference",
           "[evaluation][reference][feature:reference][transition:update][series:value][scalar:integer]"
           "[guarantee:deduplicated][binding:value-to-reference][binding:reference-to-reference]") {
-    const auto forward = bg::node([](bg::In<bg::TS<bg::i64>>, bg::In<bg::REF<bg::TS<bg::i64>>, bg::passive> input,
-                                     bg::Out<bg::REF<bg::TS<bg::i64>>> output) { output.copy(input); });
+    const auto forward = node([](In<TS<i64>>, In<REF<TS<i64>>, passive> input,
+                                     Out<REF<TS<i64>>> output) { output.copy(input); });
     auto evaluations = 0;
-    const auto sink = bg::node([&](bg::In<bg::REF<bg::TS<bg::i64>>>) { ++evaluations; });
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) {
+    const auto sink = node([&](In<REF<TS<i64>>>) { ++evaluations; });
+
+    const auto graph = [&](wp<TS<i64>> input) {
         sink(forward(input, input));
         return input;
     };
 
-    const auto actual = bg::testing::test_graph(graph, std::array{1, 2, 3});
+    const auto actual = testing::test_graph(graph, std::array{1, 2, 3});
 
     CHECK(actual.equals({1, 2, 3}));
     CHECK(evaluations == 1);
@@ -343,33 +351,33 @@ TEST_CASE("a default reference output does not schedule subscribers for the same
 TEST_CASE("reference provider access preserves lazy allocation",
           "[evaluation][reference][feature:reference][series:value][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value]") {
-    const auto source = bg::node<changing_reference_target>();
-    const auto pass = bg::node<reference_pass>();
-    const auto sink = bg::node<optional_reference_consumer>();
-    auto wiring = bg::GraphWiring{};
+    const auto source = node<changing_reference_target>();
+    const auto pass = node<reference_pass>();
+    const auto sink = node<optional_reference_consumer>();
+    auto wiring = GraphWiring{};
 
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         sink(pass(source()));
     }
 
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
-    runtime.start(bg::MIN_DT + std::chrono::microseconds{1});
-    runtime.evaluate(bg::MIN_DT + std::chrono::microseconds{2});
+    const auto compiled = CompiledGraph{wiring};
+    auto runtime_global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, runtime_global_state};
+    runtime.start(MIN_DT + std::chrono::microseconds{1});
+    runtime.evaluate(MIN_DT + std::chrono::microseconds{2});
 
-    auto &root = *static_cast<bg::details::RootReference *>(runtime.node(1).state());
+    auto &root = *static_cast<details::RootReference *>(runtime.node(1).state());
     CHECK(root.has_inline_subscriber());
     CHECK_FALSE(root.has_provider());
 
-    const auto reference = bg::Reference{&root};
-    CHECK(bg::details::ReferenceProvider::get({}) == nullptr);
-    CHECK(bg::details::ReferenceProvider::get(reference) == nullptr);
+    const auto reference = Reference{&root};
+    CHECK(details::ReferenceProvider::get({}) == nullptr);
+    CHECK(details::ReferenceProvider::get(reference) == nullptr);
 
-    auto &provider = bg::details::ReferenceProvider::require(reference);
-    CHECK(bg::details::ReferenceProvider::get(reference) == &provider);
+    auto &provider = details::ReferenceProvider::require(reference);
+    CHECK(details::ReferenceProvider::get(reference) == &provider);
     CHECK(root.has_provider());
 
     runtime.stop();
@@ -377,31 +385,31 @@ TEST_CASE("reference provider access preserves lazy allocation",
 
 TEST_CASE("a dynamic input callback crosses a graph boundary immediately",
           "[evaluation][reference][feature:reference][shape:multiple][transition:update]") {
-    auto wiring = bg::GraphWiring{};
+    auto wiring = GraphWiring{};
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto source_global_state = bg::GlobalState{};
-    auto source = bg::RuntimeGraph{compiled, source_global_state};
-    auto receiver_global_state = bg::GlobalState{};
-    auto receiver = bg::RuntimeGraph{compiled, receiver_global_state};
-    const auto start_time = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto compiled = CompiledGraph{wiring};
+    auto source_global_state = GlobalState{};
+    auto source = RuntimeGraph{compiled, source_global_state};
+    auto receiver_global_state = GlobalState{};
+    auto receiver = RuntimeGraph{compiled, receiver_global_state};
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
     const auto update_time = start_time + std::chrono::microseconds{1};
     source.start(start_time);
     receiver.start(start_time);
     source.evaluate(update_time);
 
     struct CallbackResult {
-        bg::RuntimeGraph *graph{};
-        bg::EvaluationTime time{bg::MIN_DT};
-        bg::OutputChange change{};
+        RuntimeGraph *graph{};
+        EvaluationTime time{MIN_DT};
+        OutputChange change{};
         int calls{};
     } result;
 
-    auto *subscribers = static_cast<bg::details::DynamicSubscribers *>(nullptr);
-    auto &subscription = bg::details::DynamicSubscribers::ensure(subscribers, source.allocation());
+    auto *subscribers = static_cast<details::DynamicSubscribers *>(nullptr);
+    auto &subscription = details::DynamicSubscribers::ensure(subscribers, source.allocation());
     subscription.add(
         receiver, 0, reinterpret_cast<std::size_t>(&result), 0, false, false,
-        [](bg::OutputChangeContext &context, std::size_t, std::size_t data, bg::OutputChange change) {
+        [](OutputChangeContext &context, std::size_t, std::size_t data, OutputChange change) {
             auto &result = *reinterpret_cast<CallbackResult *>(data);
             result.graph = &context.runtime_graph();
             result.time = context.evaluation_time();
@@ -409,38 +417,38 @@ TEST_CASE("a dynamic input callback crosses a graph boundary immediately",
             ++result.calls;
         });
 
-    source.notify_dynamic_subscribers(subscription, bg::OutputChange::update);
+    source.notify_dynamic_subscribers(subscription, OutputChange::update);
 
     CHECK(result.graph == &receiver);
     CHECK(result.time == update_time);
-    CHECK(result.change == bg::OutputChange::update);
+    CHECK(result.change == OutputChange::update);
     CHECK(result.calls == 1);
-    bg::details::DynamicSubscribers::release(subscribers);
+    details::DynamicSubscribers::release(subscribers);
 }
 
 TEST_CASE("a second root subscriber promotes inline storage",
           "[evaluation][reference][feature:reference][series:value][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value][shape:fan-out]") {
-    auto wiring = bg::GraphWiring{};
+    auto wiring = GraphWiring{};
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, runtime_global_state};
-    auto root = bg::details::RootReference{};
+    const auto compiled = CompiledGraph{wiring};
+    auto runtime_global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, runtime_global_state};
+    auto root = details::RootReference{};
     root.owner_graph = &runtime;
-    const auto reference = bg::Reference{&root};
+    const auto reference = Reference{&root};
 
-    bg::details::ReferenceProvider::add_subscriber(reference, runtime, 0, 0, 0, true, false);
+    details::ReferenceProvider::add_subscriber(reference, runtime, 0, 0, 0, true, false);
 
     CHECK(root.has_inline_subscriber());
 
-    bg::details::ReferenceProvider::remove_subscriber(reference, runtime, 0);
+    details::ReferenceProvider::remove_subscriber(reference, runtime, 0);
 
     CHECK_FALSE(root.has_inline_subscriber());
     CHECK_FALSE(root.has_dynamic_subscribers());
 
-    bg::details::ReferenceProvider::add_subscriber(reference, runtime, 0, 0, 0, true, false);
-    bg::details::ReferenceProvider::add_subscriber(reference, runtime, 8, 0, 1, true, false);
+    details::ReferenceProvider::add_subscriber(reference, runtime, 0, 0, 0, true, false);
+    details::ReferenceProvider::add_subscriber(reference, runtime, 8, 0, 1, true, false);
 
     CHECK_FALSE(root.has_inline_subscriber());
     CHECK(root.has_dynamic_subscribers());
@@ -448,27 +456,27 @@ TEST_CASE("a second root subscriber promotes inline storage",
     root.dynamic_subscribers()->for_each_node_subscriber([&](const auto &) { ++subscriber_count; });
     CHECK(subscriber_count == 2);
 
-    bg::details::ReferenceProvider::finalize_root(root, runtime.allocation());
+    details::ReferenceProvider::finalize_root(root, runtime.allocation());
 }
 
 TEST_CASE("dynamic node subscriber storage promotes transactionally",
           "[evaluation][feature:reference][allocation][shape:multiple]") {
-    auto wiring = bg::GraphWiring{};
+    auto wiring = GraphWiring{};
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto graph = bg::RuntimeGraph{compiled, global_state};
-    auto other_global_state = bg::GlobalState{};
-    auto other_graph = bg::RuntimeGraph{compiled, other_global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto graph = RuntimeGraph{compiled, global_state};
+    auto other_global_state = GlobalState{};
+    auto other_graph = RuntimeGraph{compiled, other_global_state};
     auto memory = counting_memory_resource{};
-    auto subscribers = bg::details::DynamicNodeSubscriberStorage<>{};
+    auto subscribers = details::DynamicNodeSubscriberStorage<>{};
 
-    STATIC_CHECK(sizeof(bg::details::DynamicNodeSubscriberStorage<>) == 2 * sizeof(void *));
-    subscribers.add(bg::details::DynamicNodeSubscriber{graph, 0, 3, true, false, true}, bg::allocator{memory});
+    STATIC_CHECK(sizeof(details::DynamicNodeSubscriberStorage<>) == 2 * sizeof(void *));
+    subscribers.add(details::DynamicNodeSubscriber{graph, 0, 3, true, false, true}, allocator{memory});
     CHECK(subscribers.has_inline_subscriber());
     CHECK(memory.allocations() == 0);
 
-    subscribers.add(bg::details::DynamicNodeSubscriber{graph, 0, 7, false, true, false}, bg::allocator{memory});
+    subscribers.add(details::DynamicNodeSubscriber{graph, 0, 7, false, true, false}, allocator{memory});
     CHECK(subscribers.has_inline_subscriber());
     CHECK(subscribers.inline_subscriber().node_index() == 3);
     CHECK(subscribers.inline_subscriber().active());
@@ -479,14 +487,14 @@ TEST_CASE("dynamic node subscriber storage promotes transactionally",
     subscribers.remove(graph, 0);
     CHECK(subscribers.empty());
     CHECK_FALSE(subscribers.destination);
-    subscribers.add(bg::details::DynamicNodeSubscriber{graph, 0, 3, true, false, true}, bg::allocator{memory});
+    subscribers.add(details::DynamicNodeSubscriber{graph, 0, 3, true, false, true}, allocator{memory});
 
     auto promoted = false;
     for (auto failure_point = std::size_t{}; failure_point < 8; ++failure_point) {
         memory.fail_after(failure_point);
         try {
-            subscribers.add(bg::details::DynamicNodeSubscriber{other_graph, 0, 5, true, false, false},
-                            bg::allocator{memory});
+            subscribers.add(details::DynamicNodeSubscriber{other_graph, 0, 5, true, false, false},
+                            allocator{memory});
             promoted = true;
             memory.allow_allocations();
             break;
@@ -527,13 +535,13 @@ TEST_CASE("dynamic node subscriber storage promotes transactionally",
 namespace {
 
 struct sampled_left_source {
-    bg::Out<bg::TS<bg::i64>> output;
+    Out<TS<i64>> output;
     void start() const { output.set(10); }
     void evaluate() const {}
 };
 
 struct sampled_right_source {
-    bg::Out<bg::TS<bg::i64>> output;
+    Out<TS<i64>> output;
     void start() const { output.set(20); }
     void evaluate() const {}
 };
@@ -541,9 +549,9 @@ struct sampled_right_source {
 struct sampled_condition_source {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::Out<bg::TS<bg::i64>> output;
+    Out<TS<i64>> output;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         output.set(0);
         context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
@@ -552,40 +560,26 @@ struct sampled_condition_source {
 };
 
 struct reference_selector {
-    bg::In<bg::TS<bg::i64>> condition;
-    bg::In<bg::REF<bg::TS<bg::i64>>, bg::passive, bg::optional> left;
-    bg::In<bg::REF<bg::TS<bg::i64>>, bg::passive, bg::optional> right;
-    bg::Out<bg::REF<bg::TS<bg::i64>>> output;
+    In<TS<i64>> condition;
+    In<REF<TS<i64>>, passive, optional> left;
+    In<REF<TS<i64>>, passive, optional> right;
+    Out<REF<TS<i64>>> output;
 
     void evaluate() const { *condition ? output.copy(right) : output.copy(left); }
 };
 
-struct sampled_reference_sink {
-    bg::In<bg::TS<bg::i64>> input;
-
-    void evaluate(bg::EvaluationContext *context) const {
-        values.push_back(*input);
-        sample_times.push_back(input.last_updated());
-        evaluation_times.push_back(context->evaluation_time());
-    }
-
-    inline static std::vector<int> values;
-    inline static std::vector<bg::EvaluationTime> sample_times;
-    inline static std::vector<bg::EvaluationTime> evaluation_times;
-};
-
 struct passive_reference_value {
-    bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input;
-    bg::In<bg::TS<bg::i64>> trigger;
-    bg::Out<bg::TS<bg::i64>> output;
+    In<TS<i64>, passive, optional> input;
+    In<TS<i64>> trigger;
+    Out<TS<i64>> output;
 
     void evaluate() const { output.set(*input); }
 };
 
 struct dynamic_reference_value {
-    bg::In<bg::TS<bg::i64>, bg::optional, bg::dynamic_activity> input;
-    bg::In<bg::TS<bg::i64>> trigger;
-    bg::Out<bg::TS<bg::i64>> output;
+    In<TS<i64>, optional, dynamic_activity> input;
+    In<TS<i64>> trigger;
+    Out<TS<i64>> output;
 
     void evaluate() const {
         if (*trigger == 0) {
@@ -598,10 +592,10 @@ struct dynamic_reference_value {
 };
 
 struct dynamic_reference_unbinder {
-    bg::In<bg::REF<bg::TSL<bg::TS<bg::i64>, 1>>> collection;
-    bg::In<bg::REF<bg::TS<bg::i64>>, bg::dynamic_binding, bg::optional> input;
-    bg::In<bg::TS<bg::i64>> trigger;
-    bg::Out<bg::TS<bool>> output;
+    In<REF<TSL<TS<i64>, 1>>> collection;
+    In<REF<TS<i64>>, dynamic_binding, optional> input;
+    In<TS<i64>> trigger;
+    Out<TS<bool>> output;
 
     void evaluate() const {
         if (*trigger == 0) {
@@ -617,35 +611,55 @@ struct dynamic_reference_unbinder {
 TEST_CASE("changing a reference samples its target",
           "[evaluation][reference][sampling][feature:reference][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value][series:value]") {
-    const auto left = bg::node<sampled_left_source>();
-    const auto right = bg::node<sampled_right_source>();
-    const auto condition = bg::node<sampled_condition_source>();
-    const auto select = bg::node<reference_selector>();
-    const auto sink = bg::node<sampled_reference_sink>();
-    sampled_reference_sink::values.clear();
-    sampled_reference_sink::sample_times.clear();
-    sampled_reference_sink::evaluation_times.clear();
+    struct Observation {
+        i64 value;
+        EvaluationTime sample_time;
+        EvaluationTime evaluation_time;
 
-    bg::run_graph([&] { sink(select(condition(), left(), right())); });
+        bool operator==(const Observation &) const = default;
+    };
 
-    CHECK(sampled_reference_sink::values == std::vector{10, 20});
-    CHECK(sampled_reference_sink::sample_times == sampled_reference_sink::evaluation_times);
+    struct observe_sample {
+        In<TS<i64>> input;
+        Out<TS<Observation>> output;
+
+        void evaluate(EvaluationContext *context) const {
+            output.set(Observation{*input, input.last_updated(), context->evaluation_time()});
+        }
+    };
+
+    const auto left = node<sampled_left_source>();
+    const auto right = node<sampled_right_source>();
+    const auto condition = node<sampled_condition_source>();
+    const auto select = node<reference_selector>();
+    const auto observe = node<observe_sample>();
+    const auto graph = [&] { return observe(select(condition(), left(), right())); };
+
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
+
+    const auto actual = testing::test_graph(graph, GraphRunOptions{.start_time = start_time});
+
+    CHECK(actual.equals<Observation>({
+        Observation{10, start_time, start_time},
+        Observation{20, start_time + std::chrono::microseconds{1},
+                    start_time + std::chrono::microseconds{1}},
+    }));
 }
 
 TEST_CASE("a passive dereferenced input observes its current target",
           "[evaluation][reference][activity][feature:reference][series:value][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value][activity:passive]") {
-    const auto left = bg::node<sampled_left_source>();
-    const auto right = bg::node<sampled_right_source>();
-    const auto condition = bg::node<sampled_condition_source>();
-    const auto select = bg::node<reference_selector>();
-    const auto value = bg::node<passive_reference_value>();
+    const auto left = node<sampled_left_source>();
+    const auto right = node<sampled_right_source>();
+    const auto condition = node<sampled_condition_source>();
+    const auto select = node<reference_selector>();
+    const auto value = node<passive_reference_value>();
     const auto graph = [&] {
         const auto trigger = condition();
         return value(select(trigger, left(), right()), trigger);
     };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = testing::test_graph(graph);
 
     CHECK(actual.equals({10, 20}));
 }
@@ -653,41 +667,41 @@ TEST_CASE("a passive dereferenced input observes its current target",
 TEST_CASE("a dynamic dereferenced input rebinds while passive",
           "[feature:input-activity][feature:reference][series:value][binding:reference-to-value]"
           "[definition:aggregate][activity:passive][transition:update]") {
-    const auto left = bg::node<sampled_left_source>();
-    const auto right = bg::node<sampled_right_source>();
-    const auto condition = bg::node<sampled_condition_source>();
-    const auto select = bg::node<reference_selector>();
-    const auto value = bg::node<dynamic_reference_value>();
+    const auto left = node<sampled_left_source>();
+    const auto right = node<sampled_right_source>();
+    const auto condition = node<sampled_condition_source>();
+    const auto select = node<reference_selector>();
+    const auto value = node<dynamic_reference_value>();
     const auto graph = [&] {
         const auto trigger = condition();
         return value(select(trigger, left(), right()), trigger);
     };
 
-    CHECK(bg::testing::test_graph(graph).equals({10, 20}));
+    CHECK(testing::test_graph(graph).equals({10, 20}));
 }
 
 TEST_CASE("dynamic reference input unbinding reports one invalidation cycle",
           "[evaluation][reference][validity][feature:reference][transition:invalidation]"
           "[binding:reference-to-value][series:value][series:reference][guarantee:ordinary]") {
-    const auto unbind = bg::node<dynamic_reference_unbinder>();
-    const auto graph = [&](bg::wp<bg::TSL<bg::TS<bg::i64>, 1>> collection,
-                           bg::wp<bg::TS<bg::i64>> trigger) {
+    const auto unbind = node<dynamic_reference_unbinder>();
+    const auto graph = [&](wp<TSL<TS<i64>, 1>> collection,
+                           wp<TS<i64>> trigger) {
         return unbind(collection, trigger);
     };
 
-    CHECK(bg::testing::test_graph(graph, {{{0, 10}}, {{0, 20}}}, {0, 1}).equals({true, false}));
+    CHECK(testing::test_graph(graph, {{{0, 10}}, {{0, 20}}}, {0, 1}).equals({true, false}));
 }
 
 namespace {
 
 struct invalid_reference_target {
-    bg::Out<bg::TS<bg::i64>> output;
+    Out<TS<i64>> output;
     void evaluate() const {}
 };
 
 struct required_reference_forward {
-    bg::In<bg::TS<bg::i64>> input;
-    bg::Out<bg::TS<bg::i64>> output;
+    In<TS<i64>> input;
+    Out<TS<i64>> output;
 
     void evaluate() const { output.set(*input); }
 };
@@ -698,14 +712,14 @@ TEST_CASE("changing a reference to an invalid target invalidates required consum
           "[evaluation][reference][validity][feature:reference][validity:required]"
           "[transition:invalidation][scalar:integer][binding:value-to-reference]"
           "[binding:reference-to-value][series:value]") {
-    const auto left = bg::node<sampled_left_source>();
-    const auto right = bg::node<invalid_reference_target>();
-    const auto condition = bg::node<sampled_condition_source>();
-    const auto select = bg::node<reference_selector>();
-    const auto forward = bg::node<required_reference_forward>();
+    const auto left = node<sampled_left_source>();
+    const auto right = node<invalid_reference_target>();
+    const auto condition = node<sampled_condition_source>();
+    const auto select = node<reference_selector>();
+    const auto forward = node<required_reference_forward>();
     const auto graph = [&] { return forward(select(condition(), left(), right())); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = testing::test_graph(graph);
 
     CHECK(actual.equals({10, std::nullopt}));
 }
@@ -713,36 +727,36 @@ TEST_CASE("changing a reference to an invalid target invalidates required consum
 namespace {
 
 struct list_reference_pass {
-    bg::In<bg::REF<bg::TSL<bg::TS<bg::i64>, 2>>> input;
-    bg::Out<bg::REF<bg::TSL<bg::TS<bg::i64>, 2>>> output;
+    In<REF<TSL<TS<i64>, 2>>> input;
+    Out<REF<TSL<TS<i64>, 2>>> output;
 
     void evaluate() const { output.copy(input); }
 };
 
 struct referenced_list_value {
-    bg::In<bg::TSL<bg::TS<bg::i64>, 2>> input;
-    bg::Out<bg::TS<bg::i64>> output;
+    In<TSL<TS<i64>, 2>> input;
+    Out<TS<i64>> output;
 
     void evaluate() const { output.set(*input[0]); }
 };
 
 struct generic_list_reference_pass {
-    bg::In<bg::REF<bg::TSL<bg::TS<bg::SCALAR>, 2>>> input;
-    bg::Out<bg::REF<bg::TSL<bg::TS<bg::SCALAR>, 2>>> output;
+    In<REF<TSL<TS<SCALAR>, 2>>> input;
+    Out<REF<TSL<TS<SCALAR>, 2>>> output;
 
     void evaluate() const { output.copy(input); }
 };
 
 struct generic_referenced_list_value {
-    bg::In<bg::TSL<bg::TS<bg::SCALAR>, 2>> input;
-    bg::Out<bg::TS<bg::i64>> output;
+    In<TSL<TS<SCALAR>, 2>> input;
+    Out<TS<i64>> output;
 
-    void evaluate() const { output.set(*bg::scalar_cast<bg::i64>(input[0].value_view())); }
+    void evaluate() const { output.set(*scalar_cast<i64>(input[0].value_view())); }
 };
 
 struct reference_list {
-    bg::In<bg::REF<bg::TS<bg::i64>>> input;
-    bg::Out<bg::TSL<bg::REF<bg::TS<bg::i64>>, 1>> output;
+    In<REF<TS<i64>>> input;
+    Out<TSL<REF<TS<i64>>, 1>> output;
 
     void evaluate() const { output[0].copy(input); }
 };
@@ -750,9 +764,9 @@ struct reference_list {
 struct repeated_value_target {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::Out<bg::TS<bg::i64>> output;
+    Out<TS<i64>> output;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         output.set(10);
         context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
@@ -761,9 +775,9 @@ struct repeated_value_target {
 };
 
 struct reference_list_copy {
-    bg::In<bg::TS<bg::i64>> trigger;
-    bg::In<bg::REF<bg::TS<bg::i64>>> input;
-    bg::Out<bg::TSL<bg::REF<bg::TS<bg::i64>>, 1>> output;
+    In<TS<i64>> trigger;
+    In<REF<TS<i64>>> input;
+    Out<TSL<REF<TS<i64>>, 1>> output;
 
     void evaluate() const {
         (void)trigger;
@@ -772,7 +786,7 @@ struct reference_list_copy {
 };
 
 struct reference_list_observer {
-    bg::In<bg::TSL<bg::REF<bg::TS<bg::i64>>, 1>> input;
+    In<TSL<REF<TS<i64>>, 1>> input;
 
     void evaluate() const { ++evaluation_count; }
 
@@ -784,13 +798,13 @@ struct reference_list_observer {
 TEST_CASE("a dereferenced input subscribes directly to a fixed collection item",
           "[evaluation][reference][tsl][feature:reference][series:fixed-tsl][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value]") {
-    const auto pass = bg::node<reference_pass>();
-    const auto first = bg::node(
-        [](bg::In<bg::TSL<bg::TS<bg::i64>, 2>> input, bg::Out<bg::TS<bg::i64>> output) { output.set(*input[0]); });
-    const auto graph = [&](bg::wp<bg::TSL<bg::TS<bg::i64>, 2>> source) { return pass(first(source)); };
+    const auto pass = node<reference_pass>();
+    const auto first = node(
+        [](In<TSL<TS<i64>, 2>> input, Out<TS<i64>> output) { output.set(*input[0]); });
+    const auto graph = [&](wp<TSL<TS<i64>, 2>> source) { return pass(first(source)); };
     reference_pass::evaluation_count = 0;
 
-    const auto actual = bg::testing::test_graph(graph, {{{0, 10}}, {{0, 20}}});
+    const auto actual = testing::test_graph(graph, {{{0, 10}}, {{0, 20}}});
 
     CHECK(reference_pass::evaluation_count == 1);
     CHECK(actual.equals({10, 20}));
@@ -799,11 +813,11 @@ TEST_CASE("a dereferenced input subscribes directly to a fixed collection item",
 TEST_CASE("a fixed collection can pass through a reference",
           "[evaluation][reference][tsl][series:fixed-tsl][feature:reference][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value]") {
-    const auto pass = bg::node<list_reference_pass>();
-    const auto value = bg::node<referenced_list_value>();
-    const auto graph = [&](bg::wp<bg::TSL<bg::TS<bg::i64>, 2>> source) { return value(pass(source)); };
+    const auto pass = node<list_reference_pass>();
+    const auto value = node<referenced_list_value>();
+    const auto graph = [&](wp<TSL<TS<i64>, 2>> source) { return value(pass(source)); };
 
-    const auto actual = bg::testing::test_graph(graph, {{{0, 10}}, {{0, 20}}});
+    const auto actual = testing::test_graph(graph, {{{0, 10}}, {{0, 20}}});
 
     CHECK(actual.equals({10, 20}));
 }
@@ -811,11 +825,11 @@ TEST_CASE("a fixed collection can pass through a reference",
 TEST_CASE("a generic fixed collection input uses the referenced target runtime_type",
           "[evaluation][reference][tsl][series:fixed-tsl][feature:reference][declaration:generic]"
           "[scalar:integer][binding:value-to-reference][binding:reference-to-value]") {
-    const auto pass = bg::node<generic_list_reference_pass>();
-    const auto value = bg::node<generic_referenced_list_value>();
-    const auto graph = [&](bg::wp<bg::TSL<bg::TS<bg::i64>, 2>> source) { return value(pass(source)); };
+    const auto pass = node<generic_list_reference_pass>();
+    const auto value = node<generic_referenced_list_value>();
+    const auto graph = [&](wp<TSL<TS<i64>, 2>> source) { return value(pass(source)); };
 
-    const auto actual = bg::testing::test_graph(graph, {{{0, 10}}, {{0, 20}}});
+    const auto actual = testing::test_graph(graph, {{{0, 10}}, {{0, 20}}});
 
     CHECK(actual.equals({10, 20}));
 }
@@ -823,9 +837,9 @@ TEST_CASE("a generic fixed collection input uses the referenced target runtime_t
 namespace {
 
 struct owned_pair_definition {
-    bg::In<bg::TS<bg::i64>> first;
-    bg::In<bg::TS<bg::i64>> second;
-    bg::Out<bg::TSL<bg::TS<bg::i64>, 2>> output;
+    In<TS<i64>> first;
+    In<TS<i64>> second;
+    Out<TSL<TS<i64>, 2>> output;
 
     void evaluate() const {
         output[0].set(*first);
@@ -834,17 +848,17 @@ struct owned_pair_definition {
 };
 
 struct pair_reference_selector_definition {
-    bg::In<bg::TS<bg::i64>> condition;
-    bg::In<bg::REF<bg::TSL<bg::TS<bg::i64>, 2>>, bg::passive, bg::optional> owned;
-    bg::In<bg::REF<bg::TSL<bg::TS<bg::i64>, 2>>, bg::passive, bg::optional> free;
-    bg::Out<bg::REF<bg::TSL<bg::TS<bg::i64>, 2>>> output;
+    In<TS<i64>> condition;
+    In<REF<TSL<TS<i64>, 2>>, passive, optional> owned;
+    In<REF<TSL<TS<i64>, 2>>, passive, optional> free;
+    Out<REF<TSL<TS<i64>, 2>>> output;
 
     void evaluate() const { *condition == 0 ? output.copy(owned) : output.copy(free); }
 };
 
 struct pair_sum_definition {
-    bg::In<bg::TSL<bg::TS<bg::i64>, 2>> input;
-    bg::Out<bg::TS<bg::i64>> output;
+    In<TSL<TS<i64>, 2>> input;
+    Out<TS<i64>> output;
 
     void evaluate() const { output.set(*input[0] + *input[1]); }
 };
@@ -854,14 +868,14 @@ struct pair_sum_definition {
 TEST_CASE("a dereferenced list reference selects the current target runtime_type",
           "[evaluation][reference][tsl][free][feature:reference][series:fixed-tsl][representation:free]"
           "[scalar:integer][binding:value-to-reference][binding:reference-to-value]") {
-    const auto owned_pair = bg::node<owned_pair_definition>();
-    const auto select = bg::node<pair_reference_selector_definition>();
-    const auto sum = bg::node<pair_sum_definition>();
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> condition, bg::wp<bg::TS<bg::i64>> first_owned,
-                           bg::wp<bg::TS<bg::i64>> second_owned, bg::wp<bg::TS<bg::i64>> first_free_item,
-                           bg::wp<bg::TS<bg::i64>> second_free_item) {
+    const auto owned_pair = node<owned_pair_definition>();
+    const auto select = node<pair_reference_selector_definition>();
+    const auto sum = node<pair_sum_definition>();
+    const auto graph = [&](wp<TS<i64>> condition, wp<TS<i64>> first_owned,
+                           wp<TS<i64>> second_owned, wp<TS<i64>> first_free_item,
+                           wp<TS<i64>> second_free_item) {
         const auto owned = owned_pair(first_owned, second_owned);
-        const auto free = bg::tsl(first_free_item, second_free_item);
+        const auto free = tsl(first_free_item, second_free_item);
         return sum(select(condition, owned, free));
     };
     const auto condition = std::vector{0, 1, 0};
@@ -871,7 +885,7 @@ TEST_CASE("a dereferenced list reference selects the current target runtime_type
     const auto second_free_item = std::vector{20, 40, 60};
 
     const auto result =
-        bg::testing::test_graph(graph, condition, first_owned, second_owned, first_free_item, second_free_item);
+        testing::test_graph(graph, condition, first_owned, second_owned, first_free_item, second_free_item);
 
     CHECK(result.equals({3, 60, 11}));
 }
@@ -879,13 +893,13 @@ TEST_CASE("a dereferenced list reference selects the current target runtime_type
 TEST_CASE("a reference stored in a fixed collection item updates its consumer",
           "[evaluation][reference][tsl][series:fixed-tsl][feature:reference][transition:update]"
           "[scalar:integer][binding:value-to-reference][binding:reference-to-value]") {
-    const auto source = bg::node<changing_reference_target>();
-    const auto list = bg::node<reference_list>();
-    const auto first = bg::node([](bg::In<bg::TSL<bg::REF<bg::TS<bg::i64>>, 1>> input,
-                                   bg::Out<bg::REF<bg::TS<bg::i64>>> output) { output.copy(input[0]); });
+    const auto source = node<changing_reference_target>();
+    const auto list = node<reference_list>();
+    const auto first = node([](In<TSL<REF<TS<i64>>, 1>> input,
+                                   Out<REF<TS<i64>>> output) { output.copy(input[0]); });
     const auto graph = [&] { return first(list(source())); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = testing::test_graph(graph);
 
     CHECK(actual.equals({10, 20, std::nullopt, 30}));
 }
@@ -893,12 +907,12 @@ TEST_CASE("a reference stored in a fixed collection item updates its consumer",
 TEST_CASE("a fixed collection output suppresses an equal nested reference update",
           "[evaluation][reference][tsl][series:fixed-tsl][feature:reference][transition:update]"
           "[guarantee:deduplicated]") {
-    const auto source = bg::node<repeated_value_target>();
-    const auto copy = bg::node<reference_list_copy>();
-    const auto observe = bg::node<reference_list_observer>();
+    const auto source = node<repeated_value_target>();
+    const auto copy = node<reference_list_copy>();
+    const auto observe = node<reference_list_observer>();
     reference_list_observer::evaluation_count = 0;
 
-    bg::run_graph([&] {
+    run_graph([&] {
         const auto target = source();
         observe(copy(target, target));
     });
@@ -911,16 +925,16 @@ namespace {
 struct invalidating_reference {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::In<bg::REF<bg::TS<bg::i64>>, bg::passive, bg::optional> target;
-    bg::State<int> step;
-    bg::Out<bg::REF<bg::TS<bg::i64>>> output;
+    In<REF<TS<i64>>, passive, optional> target;
+    State<int> step;
+    Out<REF<TS<i64>>> output;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         output.copy(target);
         context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(EvaluationContext *context) const {
         if (*step == 0) {
             output.invalidate();
             context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
@@ -937,37 +951,38 @@ TEST_CASE("reference invalidation unbinds and revalidation resamples consumers",
           "[evaluation][reference][validity][feature:reference][transition:invalidation]"
           "[transition:revalidation][scalar:integer][binding:value-to-reference]"
           "[binding:reference-to-value][series:value]") {
-    const auto source = bg::node<sampled_left_source>();
-    const auto reference = bg::node<invalidating_reference>();
+    const auto source = node<sampled_left_source>();
+    const auto reference = node<invalidating_reference>();
     const auto graph = [&] { return reference(source()); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = testing::test_graph(graph);
 
     CHECK(actual.equals({10, std::nullopt, 10}));
 }
 
 TEST_CASE("a sampled TSS output includes a same-cycle change to the previous target",
           "[evaluation][reference][series:tss][feature:sampling][transition:update]") {
-    const auto select = bg::node([](bg::In<bg::TS<bool>> condition,
-                                    bg::In<bg::REF<bg::TSS<bg::i64>>, bg::passive> old_target,
-                                    bg::In<bg::REF<bg::TSS<bg::i64>>, bg::passive> new_target,
-                                    bg::Out<bg::REF<bg::TSS<bg::i64>>> output) {
+    const auto select = node([](In<TS<bool>> condition,
+                                    In<REF<TSS<i64>>, passive> old_target,
+                                    In<REF<TSS<i64>>, passive> new_target,
+                                    Out<REF<TSS<i64>>> output) {
         output.copy(*condition ? old_target : new_target);
     });
-    const auto graph = [&](bg::wp<bg::TS<bool>> condition, bg::wp<bg::TSS<bg::i64>> old_target,
-                           bg::wp<bg::TSS<bg::i64>> new_target) {
-        return select(condition, old_target, new_target).as<bg::TSS<bg::i64>>();
+
+    const auto graph = [&](wp<TS<bool>> condition, wp<TSS<i64>> old_target,
+                           wp<TSS<i64>> new_target) {
+        return select(condition, old_target, new_target).as<TSS<i64>>();
     };
 
-    const auto same_cycle_change = bg::testing::test_graph(
-        graph, bg::testing::input<bg::TS<bool>>({true, false}),
-        bg::testing::input<bg::TSS<bg::i64>>({{2}, {3, literal::REMOVED(2)}}),
-        bg::testing::input<bg::TSS<bg::i64>>({{3}, literal::SKIP}));
+    const auto same_cycle_change = testing::test_graph(
+        graph, testing::input<TS<bool>>({true, false}),
+        testing::input<TSS<i64>>({{2}, {3, literal::REMOVED(2)}}),
+        testing::input<TSS<i64>>({{3}, literal::SKIP}));
     CHECK(same_cycle_change.equals({{2}, {3, literal::REMOVED(2)}}));
 
-    const auto stale_change = bg::testing::test_graph(
-        graph, bg::testing::input<bg::TS<bool>>({true, true, false}),
-        bg::testing::input<bg::TSS<bg::i64>>({{2}, {3, literal::REMOVED(2)}, literal::SKIP}),
-        bg::testing::input<bg::TSS<bg::i64>>({{3}, literal::SKIP, literal::SKIP}));
+    const auto stale_change = testing::test_graph(
+        graph, testing::input<TS<bool>>({true, true, false}),
+        testing::input<TSS<i64>>({{2}, {3, literal::REMOVED(2)}, literal::SKIP}),
+        testing::input<TSS<i64>>({{3}, literal::SKIP, literal::SKIP}));
     CHECK(stale_change.equals({{2}, {3, literal::REMOVED(2)}, {}}));
 }

@@ -6,8 +6,6 @@ import bg
 
 
 def test_time_series_set_value_and_delta():
-    observed = []
-
     @bg.compute_node
     def make_set(trigger: bg.TS[int]) -> bg.TSS[int]:
         if trigger.value == 1:
@@ -15,25 +13,21 @@ def test_time_series_set_value_and_delta():
         return bg.SetDelta(added={3}, removed={1})
 
     @bg.compute_node
-    def inspect(value: bg.TSS[int]) -> bg.TS[int]:
+    def inspect(value: bg.TSS[int]) -> bg.TS[object]:
         delta = value.delta_value
-        observed.append((frozenset(value.value), bg.SetDelta(delta.added, delta.removed)))
-        return sum(value.value)
+        return sum(value.value), frozenset(value.value), bg.SetDelta(delta.added, delta.removed)
 
     @bg.graph
-    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+    def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_set(trigger))
 
-    assert bg.test_graph(graph, [1, 2]) == [3, 5]
-    assert observed == [
-        (frozenset({1, 2}), bg.SetDelta(added={1, 2})),
-        (frozenset({2, 3}), bg.SetDelta(added={3}, removed={1})),
+    assert bg.test_graph(graph, [1, 2]) == [
+        (3, frozenset({1, 2}), bg.SetDelta(added={1, 2})),
+        (5, frozenset({2, 3}), bg.SetDelta(added={3}, removed={1})),
     ]
 
 
 def test_time_series_set_output_accepts_removed_markers():
-    observed = []
-
     @bg.compute_node
     def make_set(trigger: bg.TS[int]) -> bg.TSS[int]:
         if trigger.value == 1:
@@ -43,20 +37,18 @@ def test_time_series_set_output_accepts_removed_markers():
         return frozenset({4, bg.Removed(2)})
 
     @bg.compute_node
-    def inspect(value: bg.TSS[int]) -> bg.TS[int]:
+    def inspect(value: bg.TSS[int]) -> bg.TS[object]:
         delta = value.delta_value
-        observed.append((frozenset(value.value), bg.SetDelta(delta.added, delta.removed)))
-        return sum(value.value)
+        return sum(value.value), frozenset(value.value), bg.SetDelta(delta.added, delta.removed)
 
     @bg.graph
-    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+    def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_set(trigger))
 
-    assert bg.test_graph(graph, [1, 2, 3]) == [3, 5, 7]
-    assert observed == [
-        (frozenset({1, 2}), bg.SetDelta(added={1, 2})),
-        (frozenset({2, 3}), bg.SetDelta(added={3}, removed={1})),
-        (frozenset({3, 4}), bg.SetDelta(added={4}, removed={2})),
+    assert bg.test_graph(graph, [1, 2, 3]) == [
+        (3, frozenset({1, 2}), bg.SetDelta(added={1, 2})),
+        (5, frozenset({2, 3}), bg.SetDelta(added={3}, removed={1})),
+        (7, frozenset({3, 4}), bg.SetDelta(added={4}, removed={2})),
     ]
 
 
@@ -72,26 +64,22 @@ def test_removed_marker_matches_hgraph_value_semantics():
 
 
 def test_input_views_expose_last_modified_time_as_datetime():
-    observed = []
-
     @bg.compute_node
-    def inspect(value: bg.TS[int]) -> bg.TS[int]:
-        observed.append((value.valid, value.modified, value.last_modified_time))
-        return value.value
+    def inspect(value: bg.TS[int]) -> bg.TS[object]:
+        return value.value, value.valid, value.modified, value.last_modified_time
 
     @bg.graph
-    def graph(value: bg.TS[int]) -> bg.TS[int]:
+    def graph(value: bg.TS[int]) -> bg.TS[object]:
         return inspect(value)
 
-    assert bg.test_graph(graph, [1, 2]) == [1, 2]
-    assert [valid for valid, _, _ in observed] == [True, True]
-    assert [modified for _, modified, _ in observed] == [True, True]
-    assert all(isinstance(timestamp, datetime) for _, _, timestamp in observed)
+    actual = bg.test_graph(graph, [1, 2])
+    assert [value for value, _, _, _ in actual] == [1, 2]
+    assert [valid for _, valid, _, _ in actual] == [True, True]
+    assert [modified for _, _, modified, _ in actual] == [True, True]
+    assert all(isinstance(timestamp, datetime) for _, _, _, timestamp in actual)
 
 
 def test_delta_value_is_none_when_an_input_did_not_change():
-    observed = []
-
     @bg.compute_node
     def make_dictionary(value: bg.TS[int]) -> bg.TSD[int, bg.TS[int]]:
         return {1: value.value}
@@ -101,25 +89,24 @@ def test_delta_value_is_none_when_an_input_did_not_change():
         trigger: bg.TS[int],
         value: bg.TS[int],
         dictionary: bg.TSD[int, bg.TS[int]],
-    ) -> bg.TS[int]:
+    ) -> bg.TS[object]:
         dictionary_delta = dictionary.delta_value
-        observed.append(
-            (
-                value.modified,
-                value.delta_value,
-                dictionary.modified,
-                dict(dictionary_delta) if dictionary_delta is not None else None,
-            )
+        return (
+            trigger.value,
+            value.modified,
+            value.delta_value,
+            dictionary.modified,
+            dict(dictionary_delta) if dictionary_delta is not None else None,
         )
-        return trigger.value
 
     @bg.graph
-    def graph(trigger: bg.TS[int], value: bg.TS[int]) -> bg.TS[int]:
+    def graph(trigger: bg.TS[int], value: bg.TS[int]) -> bg.TS[object]:
         return inspect(trigger, value, make_dictionary(value))
 
-    assert bg.test_graph(graph, [1, 2], [10, None]) == [1, 2]
-    assert observed[0] == (True, 10, True, {1: 10})
-    assert observed[1] == (False, None, False, None)
+    assert bg.test_graph(graph, [1, 2], [10, None]) == [
+        (1, True, 10, True, {1: 10}),
+        (2, False, None, False, None),
+    ]
 
 
 def test_delta_value_is_none_after_input_invalidation():
@@ -160,8 +147,6 @@ def test_time_series_set_removed_markers_apply_recursively_in_dictionary():
 
 
 def test_fixed_time_series_list_value_delta_and_item_access():
-    observed = []
-
     @bg.compute_node
     def make_list(trigger: bg.TS[int]) -> bg.TSL[bg.TS[int], 3]:
         if trigger.value == 1:
@@ -169,18 +154,16 @@ def test_fixed_time_series_list_value_delta_and_item_access():
         return {1: 20}
 
     @bg.compute_node
-    def inspect(value: bg.TSL[bg.TS[int], 3]) -> bg.TS[int]:
-        observed.append((list(value.value), dict(value.delta_value), value[1].valid))
-        return sum(item or 0 for item in value.value)
+    def inspect(value: bg.TSL[bg.TS[int], 3]) -> bg.TS[object]:
+        return sum(item or 0 for item in value.value), list(value.value), dict(value.delta_value), value[1].valid
 
     @bg.graph
-    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+    def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_list(trigger))
 
-    assert bg.test_graph(graph, [1, 2]) == [40, 60]
-    assert observed == [
-        ([10, None, 30], {0: 10, 2: 30}, False),
-        ([10, 20, 30], {1: 20}, True),
+    assert bg.test_graph(graph, [1, 2]) == [
+        (40, [10, None, 30], {0: 10, 2: 30}, False),
+        (60, [10, 20, 30], {1: 20}, True),
     ]
 
 
@@ -193,8 +176,6 @@ def test_time_series_bundle_value_delta_inheritance_and_item_access():
     class Pair(Base):
         right: bg.TS[int]
 
-    observed = []
-
     @bg.compute_node
     def make_bundle(trigger: bg.TS[int]) -> bg.TSB[Pair]:
         if trigger.value == 1:
@@ -202,18 +183,21 @@ def test_time_series_bundle_value_delta_inheritance_and_item_access():
         return {"right": 20}
 
     @bg.compute_node
-    def inspect(value: bg.TSB[Pair]) -> bg.TS[int]:
-        observed.append((dict(value.value), dict(value.delta_value), value["right"].valid))
-        return sum(item or 0 for item in value.value.values())
+    def inspect(value: bg.TSB[Pair]) -> bg.TS[object]:
+        return (
+            sum(item or 0 for item in value.value.values()),
+            dict(value.value),
+            dict(value.delta_value),
+            value["right"].valid,
+        )
 
     @bg.graph
-    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+    def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_bundle(trigger))
 
-    assert bg.test_graph(graph, [1, 2]) == [10, 30]
-    assert observed == [
-        ({"left": 10, "right": None}, {"left": 10}, False),
-        ({"left": 10, "right": 20}, {"right": 20}, True),
+    assert bg.test_graph(graph, [1, 2]) == [
+        (10, {"left": 10, "right": None}, {"left": 10}, False),
+        (30, {"left": 10, "right": 20}, {"right": 20}, True),
     ]
 
 
@@ -311,8 +295,6 @@ def test_time_series_schema_rejects_multiple_schema_bases():
 
 
 def test_time_series_dictionary_value_delta_removal_resurrection_and_item_access():
-    observed = []
-
     @bg.compute_node
     def make_dictionary(trigger: bg.TS[int]) -> bg.TSD[int, bg.TS[int]]:
         if trigger.value == 1:
@@ -322,19 +304,17 @@ def test_time_series_dictionary_value_delta_removal_resurrection_and_item_access
         return {1: 30}
 
     @bg.compute_node
-    def inspect(value: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
-        observed.append((dict(value.value), dict(value.delta_value), value[2].value))
-        return sum(value.value.values())
+    def inspect(value: bg.TSD[int, bg.TS[int]]) -> bg.TS[object]:
+        return sum(value.value.values()), dict(value.value), dict(value.delta_value), value[2].value
 
     @bg.graph
-    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+    def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_dictionary(trigger))
 
-    assert bg.test_graph(graph, [1, 2, 3]) == [30, 21, 51]
-    assert observed == [
-        ({1: 10, 2: 20}, {1: 10, 2: 20}, 20),
-        ({2: 21}, {1: bg.REMOVE, 2: 21}, 21),
-        ({1: 30, 2: 21}, {1: 30}, 21),
+    assert bg.test_graph(graph, [1, 2, 3]) == [
+        (30, {1: 10, 2: 20}, {1: 10, 2: 20}, 20),
+        (21, {2: 21}, {1: bg.REMOVE, 2: 21}, 21),
+        (51, {1: 30, 2: 21}, {1: 30}, 21),
     ]
 
 
@@ -373,8 +353,6 @@ def test_nested_collection_deltas_are_applied_recursively():
 
 
 def test_nested_collection_delta_views_expose_child_deltas():
-    observed = []
-
     @bg.compute_node
     def make_nested(trigger: bg.TS[int]) -> bg.TSD[int, bg.TSL[bg.TS[int], 2]]:
         if trigger.value == 1:
@@ -382,16 +360,14 @@ def test_nested_collection_delta_views_expose_child_deltas():
         return {1: {1: 20}}
 
     @bg.compute_node
-    def inspect(value: bg.TSD[int, bg.TSL[bg.TS[int], 2]]) -> bg.TS[int]:
-        observed.append(dict(value.delta_value[1]))
-        return sum(item or 0 for item in value[1].value)
+    def inspect(value: bg.TSD[int, bg.TSL[bg.TS[int], 2]]) -> bg.TS[object]:
+        return sum(item or 0 for item in value[1].value), dict(value.delta_value[1])
 
     @bg.graph
-    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+    def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_nested(trigger))
 
-    assert bg.test_graph(graph, [1, 2]) == [10, 30]
-    assert observed == [{0: 10}, {1: 20}]
+    assert bg.test_graph(graph, [1, 2]) == [(10, {0: 10}), (30, {1: 20})]
 
 
 def test_reference_delta_can_be_forwarded_and_dereferenced():
@@ -456,7 +432,6 @@ def test_tsd_of_references_notifies_a_dereferenced_python_input():
 
 
 def test_sampled_tsd_delta_keeps_removed_keys_available_for_lookup():
-    observed = []
 
     @bg.compute_node
     def first(trigger: bg.TS[bool]) -> bg.TSD[int, bg.TS[int]]:
@@ -475,20 +450,18 @@ def test_sampled_tsd_delta_keeps_removed_keys_available_for_lookup():
         return {0: right.value if use_second.value else left.value}
 
     @bg.compute_node
-    def inspect(values: bg.TSD[int, bg.TSD[int, bg.TS[int]]]) -> bg.TS[int]:
+    def inspect(values: bg.TSD[int, bg.TSD[int, bg.TS[int]]]) -> bg.TS[object]:
         sampled = values[0]
         delta = sampled.delta_value
-        observed.append((dict(sampled.value), dict(delta), delta[1], delta[2]))
-        return sum(sampled.value.values())
+        return dict(sampled.value), dict(delta), delta[1], delta[2], sum(sampled.value.values())
 
     @bg.graph
-    def graph(use_second: bg.TS[bool]) -> bg.TS[int]:
+    def graph(use_second: bg.TS[bool]) -> bg.TS[object]:
         return inspect(select(use_second, first(use_second), second(use_second)))
 
-    assert bg.test_graph(graph, [False, True]) == [60, 300]
-    assert observed == [
-        ({1: 10, 2: 20, 3: 30}, {1: 10, 2: 20, 3: 30}, 10, 20),
-        ({3: 300}, {1: bg.REMOVE, 2: bg.REMOVE, 3: 300}, bg.REMOVE, bg.REMOVE),
+    assert bg.test_graph(graph, [False, True]) == [
+        ({1: 10, 2: 20, 3: 30}, {1: 10, 2: 20, 3: 30}, 10, 20, 60),
+        ({3: 300}, {1: bg.REMOVE, 2: bg.REMOVE, 3: 300}, bg.REMOVE, bg.REMOVE, 300),
     ]
 
 
@@ -662,7 +635,6 @@ def test_set_delta_fields_do_not_interpret_removed_markers():
 
 
 def test_lazy_tsd_views_cover_removal_key_set_and_expiration():
-    observed = []
     captured = []
 
     @bg.compute_node
@@ -672,32 +644,30 @@ def test_lazy_tsd_views_cover_removal_key_set_and_expiration():
         return {1: bg.REMOVE, 2: 21, 3: 30}
 
     @bg.compute_node
-    def inspect(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+    def inspect(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[object]:
         captured.append(values.value)
         delta = values.delta_value
-        observed.append(
-            (
-                dict(values.value),
-                values.value.copy(),
-                dict(delta),
-                list(values.added_keys()),
-                list(values.removed_keys()),
-                list(values.modified_keys()),
-                set(values.key_set.value),
-                1 in delta,
-                delta.get(1),
-            )
+        return (
+            sum(values.value.values()),
+            dict(values.value),
+            values.value.copy(),
+            dict(delta),
+            list(values.added_keys()),
+            list(values.removed_keys()),
+            list(values.modified_keys()),
+            set(values.key_set.value),
+            1 in delta,
+            delta.get(1),
         )
-        return sum(values.value.values())
 
     @bg.graph
-    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+    def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_values(trigger))
 
-    assert bg.test_graph(graph, [1, 2]) == [30, 51]
-    assert observed == [
-        ({1: 10, 2: 20}, {1: 10, 2: 20}, {1: 10, 2: 20}, [1, 2], [], [], {1, 2}, True, 10),
+    assert bg.test_graph(graph, [1, 2]) == [
+        (30, {1: 10, 2: 20}, {1: 10, 2: 20}, {1: 10, 2: 20}, [1, 2], [], [], {1, 2}, True, 10),
         (
+            51,
             {2: 21, 3: 30},
             {2: 21, 3: 30},
             {1: bg.REMOVE, 2: 21, 3: 30},
@@ -714,7 +684,6 @@ def test_lazy_tsd_views_cover_removal_key_set_and_expiration():
 
 
 def test_tsd_key_set_tracks_key_changes_and_keeps_its_update_time():
-    observed = []
     captured_key_sets = []
 
     @bg.compute_node
@@ -730,105 +699,93 @@ def test_tsd_key_set_tracks_key_changes_and_keeps_its_update_time():
         return {1: 30}
 
     @bg.compute_node
-    def inspect(trigger: bg.TS[int], values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+    def inspect(trigger: bg.TS[int], values: bg.TSD[int, bg.TS[int]]) -> bg.TS[object]:
         keys = values.key_set
         delta = keys.delta_value
         captured_key_sets.append(keys.value)
-        observed.append(
-            (
-                keys.valid,
-                keys.modified,
-                set(keys.value),
-                None if delta is None else (set(delta.added), set(delta.removed)),
-                keys.last_modified_time,
-            )
+        return (
+            trigger.value,
+            keys.valid,
+            keys.modified,
+            set(keys.value),
+            None if delta is None else (set(delta.added), set(delta.removed)),
+            keys.last_modified_time,
         )
-        return trigger.value
 
     @bg.graph
-    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+    def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(trigger, make_values(trigger))
 
-    assert bg.test_graph(graph, [1, 2, 3, 4, 5]) == [1, 2, 3, 4, 5]
-    assert [state[:4] for state in observed] == [
-        (True, True, {1}, ({1}, set())),
-        (True, False, {1}, None),
-        (True, False, {1}, None),
-        (True, True, set(), (set(), {1})),
-        (True, True, {1}, ({1}, set())),
+    actual = bg.test_graph(graph, [1, 2, 3, 4, 5])
+    assert [state[:5] for state in actual] == [
+        (1, True, True, {1}, ({1}, set())),
+        (2, True, False, {1}, None),
+        (3, True, False, {1}, None),
+        (4, True, True, set(), (set(), {1})),
+        (5, True, True, {1}, ({1}, set())),
     ]
-    assert observed[0][4] == observed[1][4] == observed[2][4]
-    assert observed[3][4] > observed[2][4]
-    assert observed[4][4] > observed[3][4]
+    assert actual[0][5] == actual[1][5] == actual[2][5]
+    assert actual[3][5] > actual[2][5]
+    assert actual[4][5] > actual[3][5]
     with pytest.raises(RuntimeError, match="outside its callback"):
         set(captured_key_sets[0])
 
 
 def test_tss_input_exposes_lazy_changes_and_membership_queries():
-    observed = []
-
     @bg.compute_node
     def make_set(trigger: bg.TS[int]) -> bg.TSS[int]:
         return {1, 2} if trigger.value == 1 else {3, bg.Removed(1)}
 
     @bg.compute_node
-    def inspect(values: bg.TSS[int]) -> bg.TS[int]:
+    def inspect(values: bg.TSS[int]) -> bg.TS[object]:
         delta = values.delta_value
-        observed.append(
-            (
-                set(values.value),
-                set(delta.added),
-                set(delta.removed),
-                values.was_added(3),
-                values.was_removed(1),
-            )
+        return (
+            len(values),
+            set(values.value),
+            set(delta.added),
+            set(delta.removed),
+            values.was_added(3),
+            values.was_removed(1),
         )
-        return len(values)
 
     @bg.graph
-    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+    def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_set(trigger))
 
-    assert bg.test_graph(graph, [1, 2]) == [2, 2]
-    assert observed == [
-        ({1, 2}, {1, 2}, set(), False, False),
-        ({2, 3}, {3}, {1}, True, True),
+    assert bg.test_graph(graph, [1, 2]) == [
+        (2, {1, 2}, {1, 2}, set(), False, False),
+        (2, {2, 3}, {3}, {1}, True, True),
     ]
 
 
 def test_tsl_input_exposes_child_traversal_and_lazy_values():
-    observed = []
-
     @bg.compute_node
     def make_list(trigger: bg.TS[int]) -> bg.TSL[bg.TS[int], 2]:
         return {0: trigger.value}
 
     @bg.compute_node
-    def inspect(items: bg.TSL[bg.TS[int], 2]) -> bg.TS[int]:
+    def inspect(items: bg.TSL[bg.TS[int], 2]) -> bg.TS[object]:
         with pytest.raises(RuntimeError, match="has no value"):
             _ = items[1].value
 
-        observed.append(
-            (
-                [item.valid for item in items],
-                list(items.keys()),
-                [item.value if item.valid else None for item in items.values()],
-                list(items.modified_keys()),
-                list(items.valid_keys()),
-                list(items.value),
-                dict(items.delta_value),
-            )
+        return (
+            items[0].value,
+            [item.valid for item in items],
+            list(items.keys()),
+            [item.value if item.valid else None for item in items.values()],
+            list(items.modified_keys()),
+            list(items.valid_keys()),
+            list(items.value),
+            dict(items.delta_value),
         )
-        return items[0].value
 
     @bg.graph
-    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+    def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_list(trigger))
 
-    assert bg.test_graph(graph, [1, 2]) == [1, 2]
-    assert observed == [
-        ([True, False], [0, 1], [1, None], [0], [0], [1, None], {0: 1}),
-        ([True, False], [0, 1], [2, None], [0], [0], [2, None], {0: 2}),
+    assert bg.test_graph(graph, [1, 2]) == [
+        (1, [True, False], [0, 1], [1, None], [0], [0], [1, None], {0: 1}),
+        (2, [True, False], [0, 1], [2, None], [0], [0], [2, None], {0: 2}),
     ]
 
 
@@ -838,31 +795,25 @@ def test_tsb_input_exposes_named_child_access_and_lazy_values():
         left: bg.TS[int]
         right: bg.TS[int]
 
-    observed = []
-
     @bg.compute_node
     def make_bundle(trigger: bg.TS[int]) -> bg.TSB[Pair]:
         return {"left": trigger.value}
 
     @bg.compute_node
-    def inspect(pair: bg.TSB[Pair]) -> bg.TS[int]:
-        observed.append(
-            (
-                pair.left.value,
-                pair["left"].value,
-                dict(pair.value),
-                dict(pair.delta_value),
-                list(pair.keys()),
-            )
+    def inspect(pair: bg.TSB[Pair]) -> bg.TS[object]:
+        return (
+            pair.left.value,
+            pair["left"].value,
+            dict(pair.value),
+            dict(pair.delta_value),
+            list(pair.keys()),
         )
-        return pair.left.value
 
     @bg.graph
-    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+    def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_bundle(trigger))
 
-    assert bg.test_graph(graph, [1, 2]) == [1, 2]
-    assert observed == [
+    assert bg.test_graph(graph, [1, 2]) == [
         (1, 1, {"left": 1, "right": None}, {"left": 1}, ["left", "right"]),
         (2, 2, {"left": 2, "right": None}, {"left": 2}, ["left", "right"]),
     ]

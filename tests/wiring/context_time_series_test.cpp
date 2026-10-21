@@ -19,7 +19,7 @@ using namespace bg;
 using namespace bg::literals;
 
 const auto copy_context =
-    node([](In<TS<i64>, "value"_n, context> value, Out<TS<i64>> output) { output.set(*value); });
+    node([](In<TS<i64>, "value"_n, context> value) { return *value; });
 
 struct AggregateContextCopy {
     In<TS<i64>, context> value;

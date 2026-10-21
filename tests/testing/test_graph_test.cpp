@@ -117,8 +117,11 @@ TEST_CASE("test_graph applies its configured start time to every input path",
     const auto expected = {std::optional<bg::i64>{42}, std::optional<bg::i64>{43}};
     CHECK(bg::testing::test_graph(function, options, bg::testing::input<bg::TS<bg::i64>>({1, 2}))
               .equals<bg::i64>(expected));
-    CHECK(bg::testing::test_graph(template_target, options, bg::testing::input<bg::TS<bg::i64>>({1, 2}))
+    CHECK(bg::testing::test_graph(template_target, options,
+                                  bg::testing::input<bg::TS<bg::i64>>({1, 2}))
               .equals<bg::i64>(expected));
+    CHECK(bg::testing::test_graph(function, options, {1, 2}).equals<bg::i64>(expected));
+    CHECK(bg::testing::test_graph(template_target, options, {1, 2}).equals<bg::i64>(expected));
     CHECK(bg::testing::test_graph(function, options, std::array<bg::i64, 2>{1, 2}).equals<bg::i64>(expected));
     CHECK(bg::testing::test_graph(template_target, options, std::array<bg::i64, 2>{1, 2}).equals<bg::i64>(expected));
 

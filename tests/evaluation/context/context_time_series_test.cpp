@@ -20,26 +20,23 @@ namespace {
 using namespace bg;
 using namespace bg::literals;
 
-const auto copy_context =
-    node([](In<TS<i64>, "value"_n, context> value, Out<TS<i64>> output) { output.set(*value); });
+const auto copy_context = node([](In<TS<i64>, "value"_n, context> value) { return *value; });
 
-const auto optional_value = node([](In<TS<i64>> value, In<TS<bool>> valid, Out<TS<i64>> output) {
-    if (*valid) {
-        output.set(*value);
+const auto optional_value = node([](i64 value, bool valid, Out<TS<i64>> output) {
+    if (valid) {
+        output.set(value);
     } else {
         output.invalidate();
     }
 });
 
-const auto copy_context_item = node([](In<TSD<i64, TS<i64>>, "values"_n, context> values,
-                                       Out<TS<i64>> output) { output.set(*values[1]); });
+const auto copy_context_item = node([](In<TSD<i64, TS<i64>>, "values"_n, context> values) { return *values[1]; });
 
-const auto add_contexts =
-    node([](In<TS<i64>, "left"_n, context> left, In<TS<i64>, "right"_n, context> right,
-            Out<TS<i64>> output) { output.set(*left + *right); });
+const auto add_contexts = node([](In<TS<i64>, "left"_n, context> left, In<TS<i64>, "right"_n, context> right) {
+    return *left + *right;
+});
 
-const auto context_reference_is_valid =
-    node([](In<REF<TS<i64>>, "value"_n, context> value, Out<TS<bool>> output) { output.set(value.valid()); });
+const auto context_reference_is_valid = node([](In<REF<TS<i64>>, "value"_n, context> value) { return value.valid(); });
 
 template <template <typename, auto...> typename Field> struct ContextBundle {
     Field<TS<i64>> value;
@@ -54,7 +51,7 @@ TEST_CASE("a context time series crosses a nested graph boundary",
         return with_context("value"_n = value, [&] { return nested(inner, run); });
     };
 
-    const auto actual = testing::test_graph(tested, std::array<bg::i64, 3>{2, 4, 8}, std::array{true, true, true});
+    const auto actual = testing::test_graph(tested, {2, 4, 8}, {true, true, true});
 
     CHECK(actual.equals({2, 4, 8}));
 }
@@ -69,7 +66,7 @@ TEST_CASE("a nested graph can return a context time series directly",
         return with_context("value"_n = value, [&] { return nested(inner, run); });
     };
 
-    const auto actual = testing::test_graph(tested, std::array<bg::i64, 3>{2, 4, 8}, std::array{true, true, true});
+    const auto actual = testing::test_graph(tested, {2, 4, 8}, {true, true, true});
 
     CHECK(actual.equals({2, 4, 8}));
 }
@@ -91,10 +88,8 @@ TEST_CASE("a nested graph can return a changing reference context directly",
         return with_context("value"_n = selected, [&] { return nested(inner, run); });
     };
 
-    const auto actual = testing::test_graph(tested, std::array<bg::i64, 4>{1, 2, 1, 2},
-                                            std::array<bg::i64, 4>{10, 11, 12, 13},
-                                            std::array<bg::i64, 4>{20, 21, 22, 23},
-                                            std::array{true, true, true, true});
+    const auto actual = testing::test_graph(tested, {1, 2, 1, 2}, {10, 11, 12, 13},
+                                            {20, 21, 22, 23}, {true, true, true, true});
 
     CHECK(actual.equals({10, 21, 12, 23}));
 }
@@ -109,8 +104,7 @@ TEST_CASE("a nested graph can select an item from a context TSL during wiring",
         return with_context("values"_n = tsl(first, second), [&] { return nested(inner, run); });
     };
 
-    const auto actual = testing::test_graph(tested, std::array<bg::i64, 2>{1, 2},
-                                            std::array<bg::i64, 2>{10, 20}, std::array{true, true});
+    const auto actual = testing::test_graph(tested, {1, 2}, {10, 20}, {true, true});
 
     CHECK(actual.equals({1, 2}));
 }
@@ -125,7 +119,7 @@ TEST_CASE("a nested graph can select a field from a context TSB during wiring",
         return with_context("values"_n = values, [&] { return nested(inner, run); });
     };
 
-    const auto actual = testing::test_graph(tested, std::array<bg::i64, 2>{3, 6}, std::array{true, true});
+    const auto actual = testing::test_graph(tested, {3, 6}, {true, true});
 
     CHECK(actual.equals({3, 6}));
 }
@@ -138,7 +132,7 @@ TEST_CASE("a nested graph context parameter inherits lexical context",
         return with_context("value"_n = value, [&] { return nested(inner, run); });
     };
 
-    const auto actual = testing::test_graph(tested, std::array<bg::i64, 3>{2, 4, 8}, std::array{true, true, true});
+    const auto actual = testing::test_graph(tested, {2, 4, 8}, {true, true, true});
 
     CHECK(actual.equals({2, 4, 8}));
 }
@@ -151,8 +145,7 @@ TEST_CASE("an explicit nested graph context parameter overrides lexical context"
         return with_context("value"_n = outer, [&] { return nested(inner, run, "value"_n = inner_value); });
     };
 
-    const auto actual = testing::test_graph(tested, std::array<bg::i64, 2>{1, 2},
-                                            std::array<bg::i64, 2>{10, 20}, std::array{true, true});
+    const auto actual = testing::test_graph(tested, {1, 2}, {10, 20}, {true, true});
 
     CHECK(actual.equals({10, 20}));
 }
@@ -160,6 +153,7 @@ TEST_CASE("an explicit nested graph context parameter overrides lexical context"
 TEST_CASE("a context time series crosses two nested graph boundaries",
           "[feature:context-time-series][feature:nested-graph][shape:doubly-nested]") {
     const auto leaf = graph("name"_n = "leaf_context", []() -> wp<TS<bg::i64>> { return copy_context(); });
+
     const auto middle = graph("name"_n = "middle_context", [&](wp<TS<bool>> run) -> wp<TS<bg::i64>> {
         return wp<TS<bg::i64>>{nested(leaf, run)};
     });
@@ -167,7 +161,7 @@ TEST_CASE("a context time series crosses two nested graph boundaries",
         return with_context("value"_n = value, [&] { return nested(middle, run, run); });
     };
 
-    const auto actual = testing::test_graph(tested, std::array<bg::i64, 3>{3, 6, 9}, std::array{true, true, true});
+    const auto actual = testing::test_graph(tested, {3, 6, 9}, {true, true, true});
 
     CHECK(actual.equals({3, 6, 9}));
 }
@@ -179,14 +173,15 @@ TEST_CASE("a collection context retains its semantic type across two nested grap
         "name"_n = "leaf_context_list_item",
         [](wp<TSL<TS<bg::i64>, 2>, "values"_n, context> values)
             -> wp<TS<bg::i64>> { return values[0].as<TS<bg::i64>>(); });
+
     const auto middle = graph("name"_n = "middle_context_list_item",
                               [&](wp<TS<bool>> run) { return nested(leaf, run).as<TS<bg::i64>>(); });
     const auto tested = [&](wp<TS<bg::i64>> first, wp<TS<bg::i64>> second, wp<TS<bool>> run) {
         return with_context("values"_n = tsl(first, second), [&] { return nested(middle, run, run); });
     };
 
-    const auto actual = testing::test_graph(tested, std::array<bg::i64, 2>{1, 2},
-                                            std::array<bg::i64, 2>{10, 20}, std::array{true, true});
+    const auto actual = testing::test_graph(tested, {1, 2},
+                                            {10, 20}, {true, true});
 
     CHECK(actual.equals({1, 2}));
 }
@@ -199,7 +194,7 @@ TEST_CASE("a context time series follows scalar nested graph arguments",
         return with_context("value"_n = value, [&] { return nested(inner, run, bg::i64{1}); });
     };
 
-    const auto actual = testing::test_graph(tested, std::array<bg::i64, 3>{3, 6, 9}, std::array{true, true, true});
+    const auto actual = testing::test_graph(tested, {3, 6, 9}, {true, true, true});
 
     CHECK(actual.equals({3, 6, 9}));
 }
@@ -214,8 +209,7 @@ TEST_CASE("multiple context time series retain distinct nested graph bindings",
         return nested(inner, run);
     };
 
-    const auto actual = testing::test_graph(tested, std::array<bg::i64, 3>{1, 2, 3},
-                                            std::array<bg::i64, 3>{10, 20, 30}, std::array{true, true, true});
+    const auto actual = testing::test_graph(tested, {1, 2, 3}, {10, 20, 30}, {true, true, true});
 
     CHECK(actual.equals({11, 22, 33}));
 }
@@ -228,7 +222,7 @@ TEST_CASE("a reference context input retains its reference across a nested graph
         return with_context("value"_n = value, [&] { return nested(inner, run); });
     };
 
-    const auto actual = testing::test_graph(tested, std::array<bg::i64, 2>{1, 2}, std::array{true, true});
+    const auto actual = testing::test_graph(tested, {1, 2}, {true, true});
 
     CHECK(actual.equals({true, std::nullopt}));
 }
@@ -242,7 +236,7 @@ TEST_CASE("an explicitly supplied context reference propagates target ticks",
         return with_context("value"_n = reference, [&] { return nested(inner, run); });
     };
 
-    const auto actual = testing::test_graph(tested, std::array<bg::i64, 3>{1, 2, 3}, std::array{true, true, true});
+    const auto actual = testing::test_graph(tested, {1, 2, 3}, {true, true, true});
 
     CHECK(actual.equals({1, 2, 3}));
 }
@@ -256,8 +250,7 @@ TEST_CASE("a context time series is available to map branches",
         });
     };
 
-    const auto actual = testing::test_graph(tested, {{{1, 1}}, {{1, 2}}, {{1, 3}}},
-                                            {10, 20, 30});
+    const auto actual = testing::test_graph(tested, {{{1, 1}}, {{1, 2}}, {{1, 3}}}, {10, 20, 30});
 
     CHECK(actual.equals({10, 20, 30}));
 }
@@ -335,8 +328,7 @@ TEST_CASE("a context time series is available to switch branches",
         });
     };
 
-    const auto actual = testing::test_graph(tested, std::array<bg::i64, 4>{1, 1, 2, 2},
-                                            std::array<bg::i64, 4>{10, 20, 30, 40});
+    const auto actual = testing::test_graph(tested, {1, 1, 2, 2}, {10, 20, 30, 40});
 
     CHECK(actual.equals({10, 20, 30, 40}));
 }
@@ -350,8 +342,7 @@ TEST_CASE("a context time series is available to mesh branches",
         });
     };
 
-    const auto actual = testing::test_graph(tested, {{{1, 1}}, {{1, 2}}, {{1, 3}}},
-                                            {10, 20, 30});
+    const auto actual = testing::test_graph(tested, {{{1, 1}}, {{1, 2}}, {{1, 3}}}, {10, 20, 30});
 
     CHECK(actual.equals({10, 20, 30}));
 }
@@ -370,9 +361,8 @@ TEST_CASE("a context time series follows a reference that changes target",
                                       first, second);
         return with_context("value"_n = selected, [&] { return nested(inner, run); });
     };
-    const auto actual = testing::test_graph(
-        tested, std::array<bg::i64, 4>{1, 1, 2, 1}, std::array<bg::i64, 4>{10, 11, 12, 13},
-        std::array<bg::i64, 4>{20, 21, 22, 23}, std::array{true, true, true, true});
+    const auto actual = testing::test_graph(tested, {1, 1, 2, 1}, {10, 11, 12, 13},
+                                            {20, 21, 22, 23}, {true, true, true, true});
 
     CHECK(actual.equals({10, 11, 22, 13}));
 }
@@ -381,6 +371,7 @@ TEST_CASE("a changing reference context updates through two nested boundaries in
           "[feature:context-time-series][feature:nested-graph][series:reference][shape:doubly-nested]") {
     const auto leaf =
         graph("name"_n = "reference_context_leaf", []() -> wp<TS<bg::i64>> { return copy_context(); });
+
     const auto middle = graph("name"_n = "reference_context_middle", [&](wp<TS<bool>> run) {
         return nested(leaf, run).as<TS<bg::i64>>();
     });
@@ -412,8 +403,7 @@ TEST_CASE("a context time series preserves invalidation and revalidation",
         return with_context("value"_n = optional_value(value, valid), [&] { return nested(inner, run); });
     };
 
-    const auto actual = testing::test_graph(tested, std::array<bg::i64, 3>{1, 2, 3}, std::array{true, false, true},
-                                            std::array{true, true, true});
+    const auto actual = testing::test_graph(tested, {1, 2, 3}, {true, false, true}, {true, true, true});
 
     CHECK(actual.equals({1, std::nullopt, 3}));
 }
@@ -427,7 +417,7 @@ TEST_CASE("a context time series can become valid after an inner graph starts",
     };
 
     const auto actual =
-        testing::test_graph(tested, std::array<bg::i64, 2>{1, 2}, std::array{false, true}, std::array{true, true});
+        testing::test_graph(tested, {1, 2}, {false, true}, {true, true});
 
     CHECK(actual.equals({std::nullopt, 2}));
 }
@@ -442,7 +432,7 @@ TEST_CASE("a restarted nested graph samples the current context value",
     };
 
     const auto actual =
-        testing::test_graph(tested, std::array<bg::i64, 4>{1, 2, 3, 4}, std::array{true, false, true, true});
+        testing::test_graph(tested, {1, 2, 3, 4}, {true, false, true, true});
 
     CHECK(actual.equals({1, std::nullopt, 3, 4}));
 }

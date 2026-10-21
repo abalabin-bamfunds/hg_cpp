@@ -67,9 +67,7 @@ TEST_CASE("delay replays dictionary deltas",
         return operators::sum_(operators::delay(value, timedelta_t{2}));
     };
 
-    CHECK(testing::test_graph(
-              delayed_sum,
-              testing::input<TSD<i64, TS<i64>>>({{{1, 10}}, {{1, 20}}, {{1, literal::REMOVE}}}))
+    CHECK(testing::test_graph(delayed_sum, {{{1, 10}}, {{1, 20}}, {{1, literal::REMOVE}}})
               .equals<i64>({std::nullopt, std::nullopt, 10, 20, 0}));
 }
 
@@ -80,16 +78,15 @@ TEST_CASE("delay replays set membership changes",
     };
     CHECK(testing::test_graph(
               delayed_set_sum,
-              testing::input<TSS<i64>>({{1, 2}, {3}, {literal::REMOVED(1), 4},
-                                        {literal::REMOVED(2), literal::REMOVED(3), literal::REMOVED(4)}}))
+              {{1, 2}, {3}, {literal::REMOVED(1), 4},
+               {literal::REMOVED(2), literal::REMOVED(3), literal::REMOVED(4)}})
               .equals<i64>({std::nullopt, std::nullopt, 3, 6, 9, 0}));
 }
 
 TEST_CASE("delay replays fixed-list ticks",
           "[feature:operator][feature:timed-scheduling][series:fixed-tsl][transition:update]") {
-    const auto sum_list = node([](In<TSL<TS<i64>, 2>> input, Out<TS<i64>> output) {
-        output.set(*input[0] + *input[1]);
-    });
+    const auto sum_list = node([](In<TSL<TS<i64>, 2>> input) { return *input[0] + *input[1]; });
+
     const auto delayed_list = [&](wp<TSL<TS<i64>, 2>> value) {
         return sum_list(operators::delay(value, timedelta_t{2}));
     };
@@ -103,9 +100,8 @@ template <template <typename, auto...> typename Field> struct TimedPair {
 };
 
 TEST_CASE("delay replays bundle ticks", "[feature:operator][feature:timed-scheduling][series:tsb][transition:update]") {
-    const auto observe_bundle = node([](In<TSB<TimedPair>> input, Out<TS<i64>> output) {
-        output.set(*input->left + *input->right);
-    });
+    const auto observe_bundle = node([](In<TSB<TimedPair>> input) { return *input->left + *input->right; });
+
     const auto delayed_bundle = [&](wp<TS<i64>> left, wp<TS<i64>> right) {
         const auto value = bundle<TimedPair>("left"_n = left, "right"_n = right);
         return observe_bundle(operators::delay(value, timedelta_t{2}));
@@ -319,9 +315,7 @@ TEST_CASE("throttle reconciles collection state at publication time",
         return operators::sum_(operators::throttle(value, timedelta_t{2}, false));
     };
 
-    CHECK(testing::test_graph(
-              throttled_sum,
-              testing::input<TSD<i64, TS<i64>>>({{{1, 10}}, {{1, literal::REMOVE}}}))
+    CHECK(testing::test_graph(throttled_sum, {{{1, 10}}, {{1, literal::REMOVE}}})
               .equals<i64>({10, std::nullopt, 0}));
 }
 

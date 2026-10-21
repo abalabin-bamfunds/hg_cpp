@@ -37,8 +37,16 @@ TEST_CASE("a node can select an item from a free fixed time series list",
 TEST_CASE("a fixed time series list publishes changed items",
           "[evaluation][tsl][series:fixed-tsl][feature:collection-change][transition:update]"
           "[scalar:integer][representation:native][declaration:concrete][binding:direct]") {
-    auto values = std::array<i64, 3>{};
-    auto updated = std::array<bool, 3>{};
+    struct observation {
+        i64 first_value;
+        i64 third_value;
+        bool first_updated;
+        bool middle_updated;
+        bool third_updated;
+
+        bool operator==(const observation &) const = default;
+    };
+
     auto evaluation_count = 0;
     const auto copy = node([](In<TSL<TS<SCALAR>, 3>> input, Out<TSL<TS<SCALAR>, 3>> output) {
         for (auto item = std::size_t{}; item < 3; ++item) {
@@ -48,29 +56,35 @@ TEST_CASE("a fixed time series list publishes changed items",
         }
     });
 
-    const auto list_sink = node([&](In<TSL<TS<i64>, 3>> input) {
-        values = {*input[0], 0, *input[2]};
-        updated = {input.item_updated(0), input.item_updated(1), input.item_updated(2)};
+    const auto inspect = node([&](In<TSL<TS<i64>, 3>> input) {
         ++evaluation_count;
+        return observation{*input[0], *input[2], input.item_updated(0), input.item_updated(1), input.item_updated(2)};
     });
 
     const auto wiring = graph("name"_n = "literal_list_input",
-                              [&](wp<TSL<TS<i64>, 3>> input) { list_sink(copy(input)); });
+                              [&](wp<TSL<TS<i64>, 3>> input) { return inspect(copy(input)); });
 
-    (void)testing::test_graph(wiring, {{{0, 10}, {2, 30}}});
+    const auto actual = testing::test_graph(wiring, {{{0, 10}, {2, 30}}});
 
+    CHECK(actual.equals<observation>({observation{10, 30, true, false, true}}));
     CHECK(evaluation_count == 1);
-    CHECK(values == std::array<i64, 3>{10, 0, 30});
-    CHECK(updated == std::array{true, false, true});
 }
 
 TEST_CASE("a free fixed time series list coalesces source changes",
           "[evaluation][tsl][series:fixed-tsl][free][representation:free][feature:collection-change]"
           "[transition:update][scalar:integer][declaration:concrete][binding:direct]") {
-    auto updates = std::vector<std::array<bool, 2>>{};
+    struct observation {
+        i64 sum;
+        bool first_updated;
+        bool second_updated;
+
+        bool operator==(const observation &) const = default;
+    };
+
+    auto evaluation_count = 0;
     const auto sum = node([&](In<TSL<TS<i64>, 2>> input) {
-        updates.push_back({input.item_updated(0), input.item_updated(1)});
-        return *input[0] + *input[1];
+        ++evaluation_count;
+        return observation{*input[0] + *input[1], input.item_updated(0), input.item_updated(1)};
     });
 
     const auto graph = [&](wp<TS<i64>> first, wp<TS<i64>> second) {
@@ -79,8 +93,8 @@ TEST_CASE("a free fixed time series list coalesces source changes",
 
     const auto result = testing::test_graph(graph, {1, 2}, {10, literal::SKIP});
 
-    CHECK(result.equals({11, 12}));
-    CHECK(updates == std::vector<std::array<bool, 2>>{{true, true}, {true, false}});
+    CHECK(result.equals<observation>({observation{11, true, true}, observation{12, true, false}}));
+    CHECK(evaluation_count == 2);
 }
 
 TEST_CASE("a free fixed time series list follows the receiving item runtime_type",
@@ -315,18 +329,26 @@ TEST_CASE("nested list invalidation and revalidation propagate through each leve
           "[evaluation][tsl][series:fixed-tsl][validity][feature:collection-change]"
           "[transition:invalidation][transition:revalidation][scalar:integer][representation:native]"
           "[declaration:concrete][binding:direct]") {
-    auto validity = std::vector<std::array<bool, 3>>{};
-    const auto sink = node([&](In<TSL<TSL<TS<i64>, 2>, 2>, optional> input) {
-        validity.push_back({input.valid(), input.valid() && input[0].valid(),
-                            input.valid() && input[0].valid() && input[0][0].valid()});
+    struct observation {
+        bool outer_valid;
+        bool nested_list_valid;
+        bool leaf_valid;
+
+        bool operator==(const observation &) const = default;
+    };
+
+    const auto inspect = node([](In<TSL<TSL<TS<i64>, 2>, 2>, optional> input) {
+        const auto nested_valid = input.valid() && input[0].valid();
+        return observation{input.valid(), nested_valid, nested_valid && input[0][0].valid()};
     });
 
     const auto wiring = graph("name"_n = "literal_nested_list_input",
-                              [&](wp<TSL<TSL<TS<i64>, 2>, 2>> input) { sink(input); });
+                              [&](wp<TSL<TSL<TS<i64>, 2>, 2>> input) { return inspect(input); });
 
-    (void)testing::test_graph(wiring, {{{0, {{0, 10}}}}, literal::INVALID, {{0, {{0, 20}}}}});
+    const auto actual = testing::test_graph(wiring, {{{0, {{0, 10}}}}, literal::INVALID, {{0, {{0, 20}}}}});
 
-    CHECK(validity == std::vector<std::array<bool, 3>>{{true, true, true}, {false, false, false}, {true, true, true}});
+    CHECK(actual.equals<observation>({observation{true, true, true}, observation{false, false, false},
+                                     observation{true, true, true}}));
 }
 
 namespace {

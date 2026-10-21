@@ -17,13 +17,12 @@ TEST_CASE("one multiservice graph wires several reference service replies once",
     registration.register_impl(left);
     registration.register_impl(right);
 
-    const auto add = node([](In<TS<bg::i64>> left, In<TS<bg::i64>> right, In<TS<bg::i64>> tick,
-                             Out<TS<bg::i64>> output) { output.set(*left + *right + *tick); });
+    const auto add = node([](i64 left, i64 right, i64 tick) { return left + right + tick; });
     const auto tested = [&](wp<TS<bg::i64>> tick) {
         return add(left(1).as<TS<bg::i64>>(), right().as<TS<bg::i64>>(), tick);
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 2>{1, 2});
+    const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {1, 2});
 
     CHECK(actual.equals<bg::i64>({85, 86}));
     CHECK(graph_wirings == 1);
@@ -35,10 +34,12 @@ TEST_CASE("a multiservice graph receives subscription requests beside a referenc
     const auto lookup = subscription_service<auto(TS<bg::i64, TimeSeriesGuarantee::final>)->TS<bg::i64>>{
         "lookup", {"key"}};
     const auto source = node<FinalKeySource<bg::i64>>();
+
     const auto respond = node([](In<TSS<bg::i64>> requests, Out<TSD<bg::i64, TS<bg::i64>>> responses) {
         requests.for_each_removed([&](const auto &key) { responses.erase(key); });
         requests.for_each_added([&](const auto &key) { responses[key].set(*key + 1); });
     });
+
     const auto implementation = graph("name"_n = "shared_lookup", [&] {
         lookup.implementation_replies(respond(lookup.implementation_requests()));
         clock.implementation_replies(source(42));
@@ -49,15 +50,13 @@ TEST_CASE("a multiservice graph receives subscription requests beside a referenc
     registration.register_impl(clock);
     registration.register_impl(lookup);
 
-    const auto add_tick = node([](In<TS<bg::i64>> value, In<TS<bg::i64>> tick, Out<TS<bg::i64>> output) {
-        output.set(*value + *tick);
-    });
+    const auto add_tick = node([](i64 value, i64 tick) { return value + tick; });
     const auto tested = [&](wp<TS<bg::i64>> tick) {
         return add_tick(lookup(clock().as<TS<bg::i64, TimeSeriesGuarantee::final>>()).as<TS<bg::i64>>(),
                         tick);
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 2>{2, 3});
+    const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {2, 3});
 
     CHECK(actual.equals<bg::i64>({45, 46}));
 }
@@ -95,15 +94,7 @@ TEST_CASE("multiservice service requests are addressable by declared parameter n
         return combine(integer, fraction).as<TS<float>>();
     };
 
-    const auto actual =
-        testing::test_graph(
-            tested,
-            bg::GraphRunOptions{.services = &catalogue},
-            std::array<bg::i64,
-            2>{2, 5},
-            std::array<float,
-            2>{1.5F, 3.5F}
-        );
+    const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {2, 5}, {1.5F, 3.5F});
 
     CHECK(actual.equals<float>({3.5F, 8.5F}));
     CHECK(graph_wirings == 1);
@@ -120,12 +111,14 @@ TEST_CASE("one multiservice graph handles subscription and service requests",
             requests.for_each_added([&](const auto &key) { replies[key].set(*key * 10); });
             requests.for_each_removed([&](const auto &key) { replies.erase(key); });
         });
+
     const auto answer_transform = node([](In<TSD<service_client_id_t, TS<bg::i64>>> requests,
                                           Out<TSD<service_client_id_t, TS<bg::i64>>> replies) {
         requests.for_each_removed([&](const auto &client_id) { replies.erase(client_id); });
         requests.for_each_key_value(
             [&](const auto &client_id, const auto &value) { replies[client_id].set(*value + 100); });
     });
+
     const auto implementation = graph("name"_n = "combined_services", [&] {
         lookup.implementation_replies(answer_lookup(lookup.implementation_requests()));
         const auto requests = transform.implementation_requests();
@@ -137,14 +130,16 @@ TEST_CASE("one multiservice graph handles subscription and service requests",
     registration.register_impl(lookup);
     registration.register_impl(transform);
 
-    const auto add = node([](In<TS<bg::i64>> lookup_result, In<TS<bg::i64>> transform_result,
-                             Out<TS<bg::i64>> output) { output.set(*lookup_result + *transform_result); });
+    const auto add = node([](i64 lookup_result, i64 transform_result) {
+        return lookup_result + transform_result;
+    });
+
     const auto key_source = node<FinalKeySource<bg::i64>>();
     const auto tested = [&](wp<TS<bg::i64>> value) {
         return add(lookup(key_source(1)).as<TS<bg::i64>>(), transform(value).as<TS<bg::i64>>());
     };
 
-    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 3>{1, 2, 3})
+    CHECK(testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {1, 2, 3})
               .equals<bg::i64>({111, 112, 113}));
 }
 
@@ -169,7 +164,7 @@ TEST_CASE("multiservice outputless service publishes requests",
         return value;
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 3>{4, 6, 8});
+    const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {4, 6, 8});
 
     CHECK(actual.equals<bg::i64>({4, 6, 8}));
     CHECK(received == std::vector<bg::i64>{4, 6, 8});
@@ -181,7 +176,9 @@ TEST_CASE("an unused multiservice service request port can be wired",
     const auto audit = service<auto(TS<bg::i64>)->void>{"audit", {"value"}};
     auto implementation_wirings = std::size_t{};
     const auto source = node<ServiceOutputSource>();
+
     const auto observe = node([](In<TSD<service_client_id_t, TS<bg::i64>>>) {});
+
     const auto implementation = graph("name"_n = "clock_and_audit", [&] {
         ++implementation_wirings;
         const auto requests = audit.implementation_requests();
@@ -194,12 +191,10 @@ TEST_CASE("an unused multiservice service request port can be wired",
     registration.register_impl(clock);
     registration.register_impl(audit);
 
-    const auto add = node([](In<TS<bg::i64>> value, In<TS<bg::i64>> tick, Out<TS<bg::i64>> output) {
-        output.set(*value + *tick);
-    });
+    const auto add = node([](i64 value, i64 tick) { return value + tick; });
     const auto tested = [&](wp<TS<bg::i64>> tick) { return add(clock().as<TS<bg::i64>>(), tick); };
 
-    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 1>{0}).equals<bg::i64>({42}));
+    CHECK(testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {0}).equals<bg::i64>({42}));
     CHECK(implementation_wirings == 1);
 }
 
@@ -231,8 +226,7 @@ TEST_CASE("multiservice request bindings cross map graph boundaries",
         return mapped[bg::i64{1}].as<TS<bg::i64>>();
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue},
-                                            {{{1, 3}}, {{1, 8}}});
+    const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {{{1, 3}}, {{1, 8}}});
 
     CHECK(actual.equals<bg::i64>({3, 8}));
     CHECK(request_sizes == std::vector<std::size_t>{1, 1});
@@ -249,6 +243,7 @@ TEST_CASE("multiservice claims select generic service signatures",
         void evaluate() const noexcept {}
     };
     const auto integer_source = node<ServiceOutputSource>();
+
     const auto floating_source = node<FloatingServiceOutputSource>();
     const auto implementation = graph("name"_n = "typed_identities", [&] {
         identity[type<TS<bg::i64>>].implementation_replies(integer_source());
@@ -269,7 +264,7 @@ TEST_CASE("multiservice claims select generic service signatures",
                    identity[type<TS<float>>]().as<TS<float>>(), tick);
     };
 
-    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 1>{0}).equals<float>({42.5F}));
+    CHECK(testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {0}).equals<float>({42.5F}));
 }
 
 TEST_CASE("multiservice claims separate service scalar values",
@@ -288,6 +283,7 @@ TEST_CASE("multiservice claims separate service scalar values",
         void evaluate() const noexcept {}
     };
     const auto first_source = node<FirstServiceOutputSource>();
+
     const auto second_source = node<SecondServiceOutputSource>();
     const auto implementation = graph("name"_n = "selected_paths", [&] {
         selected.implementation_replies(first_source(), 1);
@@ -299,13 +295,12 @@ TEST_CASE("multiservice claims separate service scalar values",
     registration.register_impl(selected, "path"_n = 1);
     registration.register_impl(selected, "path"_n = 2);
 
-    const auto add = node([](In<TS<bg::i64>> first, In<TS<bg::i64>> second, In<TS<bg::i64>> tick,
-                             Out<TS<bg::i64>> output) { output.set(*first + *second + *tick); });
+    const auto add = node([](i64 first, i64 second, i64 tick) { return first + second + tick; });
     const auto tested = [&](wp<TS<bg::i64>> tick) {
         return add(selected(1).as<TS<bg::i64>>(), selected(2).as<TS<bg::i64>>(), tick);
     };
 
-    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 1>{1}).equals<bg::i64>({31}));
+    CHECK(testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {1}).equals<bg::i64>({31}));
 }
 
 TEST_CASE("multiservice catch-all forwards requests and replies while exact claims take precedence",

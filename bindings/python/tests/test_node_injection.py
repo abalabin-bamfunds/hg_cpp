@@ -14,11 +14,14 @@ def _run_realtime_script(source: str) -> None:
 
 
 def test_compute_node_injects_clock_between_inputs():
-    observed = []
+    calls = 0
 
     @bg.compute_node
     def add(left: bg.TS[int], right: bg.TS[int], clock: bg.EvaluationClock = None) -> bg.TS[int]:
-        observed.append((clock.evaluation_time, clock.now))
+        nonlocal calls
+        calls += 1
+        assert isinstance(clock.evaluation_time, datetime)
+        assert clock.evaluation_time == clock.now
         return left.value + right.value
 
     @bg.graph
@@ -27,17 +30,17 @@ def test_compute_node_injects_clock_between_inputs():
 
     assert list(inspect.signature(add).parameters) == ["left", "right"]
     assert bg.test_graph(graph, [1, 2], [10, 20]) == [11, 22]
-    assert len(observed) == 2
-    assert all(isinstance(evaluation_time, datetime) for evaluation_time, _ in observed)
-    assert all(evaluation_time == now for evaluation_time, now in observed)
+    assert calls == 2
 
 
 def test_node_injects_clock_without_exposing_it_as_a_wiring_argument():
-    observed = []
+    calls = 0
 
     @bg.node
     def increment(value: int, clock: bg.EvaluationClock = None) -> int:
-        observed.append(clock.evaluation_time)
+        nonlocal calls
+        calls += 1
+        assert isinstance(clock.evaluation_time, datetime)
         return value + 1
 
     @bg.graph
@@ -46,8 +49,7 @@ def test_node_injects_clock_without_exposing_it_as_a_wiring_argument():
 
     assert list(inspect.signature(increment).parameters) == ["value"]
     assert bg.test_graph(graph) == [42]
-    assert len(observed) == 1
-    assert isinstance(observed[0], datetime)
+    assert calls == 1
 
 
 def test_source_node_clock_is_callback_scoped():
@@ -63,18 +65,21 @@ def test_source_node_clock_is_callback_scoped():
         return source()
 
     assert bg.test_graph(graph) == [1]
+    assert len(clocks) == 1
     with pytest.raises(RuntimeError, match="outside its callback"):
         _ = clocks[0].evaluation_time
 
 
 def test_keyword_only_clock_preserves_callback_parameter_order():
-    observed = []
+    calls = 0
 
     @bg.compute_node
     def add(
         left: bg.TS[int], *, clock: bg.EvaluationClock = None, right: bg.TS[int]
     ) -> bg.TS[int]:
-        observed.append(clock.evaluation_time)
+        nonlocal calls
+        calls += 1
+        assert isinstance(clock.evaluation_time, datetime)
         return left.value + right.value
 
     @bg.graph
@@ -83,17 +88,19 @@ def test_keyword_only_clock_preserves_callback_parameter_order():
 
     assert list(inspect.signature(add).parameters) == ["left", "right"]
     assert bg.test_graph(graph, [2], [3]) == [5]
-    assert len(observed) == 1
+    assert calls == 1
 
 
 def test_keyword_only_clock_and_variadic_inputs_keep_callback_parameter_order():
-    observed = []
+    calls = 0
 
     @bg.compute_node
     def total(
         *values: bg.TSL[bg.TS[int], bg.SIZE], clock: bg.EvaluationClock = None
     ) -> bg.TS[int]:
-        observed.append(clock.evaluation_time)
+        nonlocal calls
+        calls += 1
+        assert isinstance(clock.evaluation_time, datetime)
         return sum(values.value)
 
     @bg.graph
@@ -102,7 +109,7 @@ def test_keyword_only_clock_and_variadic_inputs_keep_callback_parameter_order():
 
     assert list(inspect.signature(total).parameters) == ["values"]
     assert bg.test_graph(graph, [1, 2], [10, 20]) == [11, 22]
-    assert len(observed) == 2
+    assert calls == 2
 
 
 def test_scheduler_injects_and_cancels_timed_node_evaluations():

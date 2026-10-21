@@ -11,7 +11,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <array>
 #include <chrono>
 #include <optional>
 #include <vector>
@@ -71,29 +70,34 @@ struct initially_invalid_source {
 
 auto time(i64 microseconds) { return MIN_DT + std::chrono::microseconds{microseconds}; }
 
-struct default_timeline_sink {
+struct default_observation {
+    i64 value;
+    EvaluationTime last_updated;
+    bool modified;
+    EvaluationTime evaluation_time;
+
+    friend bool operator==(const default_observation &, const default_observation &) = default;
+};
+
+struct default_observer_definition {
     In<TS<i64>> input;
-    Out<TS<i64>> output;
+    Out<TS<default_observation>> output;
 
     void evaluate(EvaluationContext *context) const {
-        value = *input;
-        last_updated.push_back(input.last_updated());
-        modified.push_back(input.modified());
-        evaluation_times.push_back(context->evaluation_time());
-        output.set(value);
+        output.set(default_observation{*input, input.last_updated(), input.modified(), context->evaluation_time()});
     }
+};
 
-    static void clear() {
-        value = 0;
-        last_updated.clear();
-        modified.clear();
-        evaluation_times.clear();
+const auto observe_default = node<default_observer_definition>();
+
+struct direct_default_observer_definition {
+    inline static std::vector<default_observation> observations{};
+
+    In<TS<i64>> input;
+
+    void evaluate(EvaluationContext *context) const {
+        observations.push_back({*input, input.last_updated(), input.modified(), context->evaluation_time()});
     }
-
-    inline static i64 value{};
-    inline static std::vector<EvaluationTime> last_updated;
-    inline static std::vector<bool> modified;
-    inline static std::vector<EvaluationTime> evaluation_times;
 };
 
 } // namespace
@@ -129,16 +133,13 @@ TEST_CASE("a default binding updates its timestamp across source validity change
           "[scalar:integer][shape:chain][transition:update][transition:invalidation][transition:revalidation]") {
     const auto source = node<changing_source>();
 
-    const auto sink = node<default_timeline_sink>();
-    default_timeline_sink::clear();
-
-    const auto graph = [&] { return sink(operators::default_(source(), 7)); };
+    const auto graph = [&] { return observe_default(operators::default_(source(), 7)); };
     const auto actual = testing::test_graph(graph);
 
-    CHECK(actual.equals({10, 20, 7, 30}));
-    CHECK(default_timeline_sink::last_updated == std::vector{time(1), time(2), time(3), time(4)});
-    CHECK(default_timeline_sink::modified == std::vector<bool>{true, true, true, true});
-    CHECK(default_timeline_sink::evaluation_times == default_timeline_sink::last_updated);
+    CHECK(actual.equals<default_observation>({default_observation{10, time(1), true, time(1)},
+                                              default_observation{20, time(2), true, time(2)},
+                                              default_observation{7, time(3), true, time(3)},
+                                              default_observation{30, time(4), true, time(4)}}));
 }
 
 namespace {
@@ -173,16 +174,12 @@ TEST_CASE("a default binding publishes equal fallback validity switches",
           "[scalar:integer][shape:chain][transition:invalidation][transition:revalidation]") {
     const auto source = node<equal_default_source>();
 
-    const auto sink = node<default_timeline_sink>();
-    default_timeline_sink::clear();
-
-    const auto graph = [&] { return sink(operators::default_(source(), 7)); };
+    const auto graph = [&] { return observe_default(operators::default_(source(), 7)); };
     const auto actual = testing::test_graph(graph);
 
-    CHECK(actual.equals({7, 7, 7}));
-    CHECK(default_timeline_sink::last_updated == std::vector{time(1), time(2), time(3)});
-    CHECK(default_timeline_sink::modified == std::vector<bool>{true, true, true});
-    CHECK(default_timeline_sink::evaluation_times == default_timeline_sink::last_updated);
+    CHECK(actual.equals<default_observation>({default_observation{7, time(1), true, time(1)},
+                                              default_observation{7, time(2), true, time(2)},
+                                              default_observation{7, time(3), true, time(3)}}));
 }
 
 TEST_CASE("a reference over a default binding receives fallback updates",
@@ -193,16 +190,13 @@ TEST_CASE("a reference over a default binding receives fallback updates",
 
     const auto pass = node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) { output.copy(input); });
 
-    const auto sink = node<default_timeline_sink>();
-
-    default_timeline_sink::clear();
-
-    const auto graph = [&] { return sink(pass(operators::default_(source(), 7))); };
+    const auto graph = [&] { return observe_default(pass(operators::default_(source(), 7))); };
     const auto actual = testing::test_graph(graph);
 
-    CHECK(actual.equals({10, 20, 7, 30}));
-    CHECK(default_timeline_sink::last_updated == std::vector{time(1), time(2), time(3), time(4)});
-    CHECK(default_timeline_sink::modified == std::vector<bool>{true, true, true, true});
+    CHECK(actual.equals<default_observation>({default_observation{10, time(1), true, time(1)},
+                                              default_observation{20, time(2), true, time(2)},
+                                              default_observation{7, time(3), true, time(3)},
+                                              default_observation{30, time(4), true, time(4)}}));
 }
 
 TEST_CASE("a default binding initializes a reference consumer while its source is invalid",
@@ -213,16 +207,11 @@ TEST_CASE("a default binding initializes a reference consumer while its source i
 
     const auto pass = node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) { output.copy(input); });
 
-    const auto sink = node<default_timeline_sink>();
-
-    default_timeline_sink::clear();
-
-    const auto graph = [&] { return sink(pass(operators::default_(source(), 7))); };
+    const auto graph = [&] { return observe_default(pass(operators::default_(source(), 7))); };
     const auto actual = testing::test_graph(graph);
 
-    CHECK(actual.equals({7, 10}));
-    CHECK(default_timeline_sink::last_updated == std::vector{time(1), time(2)});
-    CHECK(default_timeline_sink::modified == std::vector<bool>{true, true});
+    CHECK(actual.equals<default_observation>({default_observation{7, time(1), true, time(1)},
+                                              default_observation{10, time(2), true, time(2)}}));
 }
 
 TEST_CASE("nested defaults preserve the first fallback",
@@ -285,8 +274,8 @@ TEST_CASE("a default binding directly reaches a callable value consumer",
 
 TEST_CASE("a default binding has no default node for a value consumer",
           "[feature:operator][feature:graph-compilation][series:value][scalar:integer][shape:single-node]") {
-    default_timeline_sink::clear();
-    const auto sink = node<default_timeline_sink>();
+    direct_default_observer_definition::observations.clear();
+    const auto sink = node<direct_default_observer_definition>();
 
     auto wiring = GraphWiring{};
     {
@@ -307,10 +296,8 @@ TEST_CASE("a default binding has no default node for a value consumer",
     runtime.start(time(1));
     runtime.evaluate(time(1));
 
-    CHECK(default_timeline_sink::value == 3);
-    CHECK(default_timeline_sink::last_updated == std::vector{time(1)});
-    CHECK(default_timeline_sink::evaluation_times == std::vector{time(1)});
-    CHECK(default_timeline_sink::modified == std::vector<bool>{true});
+    CHECK(direct_default_observer_definition::observations ==
+          std::vector{default_observation{3, time(1), true, time(1)}});
 }
 
 TEST_CASE("a default binding has an ordinary result for a final source",

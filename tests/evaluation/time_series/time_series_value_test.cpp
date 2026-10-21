@@ -8,21 +8,36 @@
 #include <optional>
 #include <vector>
 
+using namespace bg;
+
+TEST_CASE("symbol time series can store default and interned values",
+          "[feature:test-graph][series:value][scalar:symbol][shape:single-node]") {
+    const auto pass_through = node([](symbol input) { return input; });
+
+    const auto graph = [&](wp<TS<symbol>> input) { return pass_through(input); };
+
+    const auto input = std::array{symbol{}, symbol{"price"}, symbol{""}};
+
+    const auto actual = testing::test_graph(graph, input);
+
+    CHECK(actual.equals({symbol{}, symbol{"price"}, symbol{""}}));
+}
+
 namespace {
 
-inline constexpr auto G = bg::guarantee_variable<"G">;
+inline constexpr auto G = guarantee_variable<"G">;
 
 struct deduplicating_value_source {
-    bg::In<bg::TS<bg::i64>> input;
-    bg::Out<bg::TS<bg::i64, bg::TimeSeriesGuarantee::deduplicated>> output;
+    In<TS<i64>> input;
+    Out<TS<i64, TimeSeriesGuarantee::deduplicated>> output;
 
     void evaluate() const { output.set(*input); }
 };
 
 struct preserve_value_guarantee {
-    bg::In<bg::TS<bg::i64, G>> input;
-    bg::In<bg::TS<bg::i64>> trigger;
-    bg::Out<bg::TS<bg::i64, G>> output;
+    In<TS<i64, G>> input;
+    In<TS<i64>> trigger;
+    Out<TS<i64, G>> output;
 
     void evaluate() const {
         static_cast<void>(trigger);
@@ -31,9 +46,9 @@ struct preserve_value_guarantee {
 };
 
 struct make_dictionary_with_guarantee {
-    bg::In<bg::TS<bg::i64, G>> input;
-    bg::In<bg::TS<bg::i64>> trigger;
-    bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64, G>>> output;
+    In<TS<i64, G>> input;
+    In<TS<i64>> trigger;
+    Out<TSD<i64, TS<i64, G>>> output;
 
     void evaluate() const {
         static_cast<void>(trigger);
@@ -41,120 +56,126 @@ struct make_dictionary_with_guarantee {
     }
 };
 
-struct validity_transition_sink {
-    bg::In<bg::TS<bg::i64>, bg::optional> input;
-
-    void evaluate() const {
-        states.push_back({input.valid(), input.became_valid(), input.became_invalid(), input.modified()});
-        times.push_back(input.last_updated());
-    }
-
-    inline static std::vector<std::array<bool, 4>> states;
-    inline static std::vector<bg::EvaluationTime> times;
-};
-
 } // namespace
 
 TEST_CASE("an optional input exposes its latest validity transition",
           "[evaluation][series:value][transition:first-tick][transition:update]"
           "[transition:invalidation][transition:revalidation][feature:validity][validity:optional]") {
-    const auto source = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
+    auto states = std::vector<std::array<bool, 4>>{};
+    auto times = std::vector<EvaluationTime>{};
+
+    const auto source = node([](In<TS<i64>> input, Out<TS<i64>> output) {
         if (*input == 0) {
             output.invalidate();
             return;
         }
         output.set(*input);
     });
-    const auto sink = bg::node<validity_transition_sink>();
-    validity_transition_sink::states.clear();
-    validity_transition_sink::times.clear();
 
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) {
+    const auto observe = node([&](In<TS<i64>, optional> input) {
+        states.push_back({input.valid(), input.became_valid(), input.became_invalid(), input.modified()});
+        times.push_back(input.last_updated());
+    });
+
+    const auto graph = [&](wp<TS<i64>> input) {
         const auto output = source(input);
-        sink(output);
+        observe(output);
         return output;
     };
-    const auto actual = bg::testing::test_graph(graph, std::array<bg::i64, 4>{1, 2, 0, 3});
+
+    const auto actual = testing::test_graph(graph, std::array<i64, 4>{1, 2, 0, 3});
 
     CHECK(actual.equals({1, 2, std::nullopt, 3}));
-    CHECK(validity_transition_sink::states == std::vector<std::array<bool, 4>>{
-                                                {true, true, false, true},
-                                                {true, false, false, true},
-                                                {false, false, true, true},
-                                                {true, true, false, true},
-                                            });
-    REQUIRE(validity_transition_sink::times.size() == 4);
-    CHECK(validity_transition_sink::times[0] < validity_transition_sink::times[1]);
-    CHECK(validity_transition_sink::times[1] < validity_transition_sink::times[2]);
-    CHECK(validity_transition_sink::times[2] < validity_transition_sink::times[3]);
+    CHECK(states == std::vector<std::array<bool, 4>>{
+                        {true, true, false, true},
+                        {true, false, false, true},
+                        {false, false, true, true},
+                        {true, true, false, true},
+                    });
+    REQUIRE(times.size() == 4);
+    CHECK(times[0] < times[1]);
+    CHECK(times[1] < times[2]);
+    CHECK(times[2] < times[3]);
 }
 
 TEST_CASE("input changes and validity transitions apply only to the current evaluation",
           "[evaluation][feature:validity][validity:optional][transition:invalidation]"
           "[series:value][scalar:integer][shape:chain]") {
-    auto states = std::vector<std::array<bool, 4>>{};
-    const auto sink = bg::node([&](bg::In<bg::TS<bg::i64>, bg::passive, bg::optional> input,
-                                   bg::In<bg::TS<bg::i64>> trigger) {
-        states.push_back({input.valid(), input.became_valid(), input.became_invalid(), input.modified()});
-        static_cast<void>(trigger);
-    });
+    struct Observation {
+        i64 trigger;
+        bool valid;
+        bool became_valid;
+        bool became_invalid;
+        bool modified;
 
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input, bg::wp<bg::TS<bg::i64>> trigger) {
-        sink(input, trigger);
-        return trigger;
+        bool operator==(const Observation &) const = default;
     };
 
-    const auto actual = bg::testing::test_graph(
+    const auto observe = node([](In<TS<i64>, passive, optional> input,
+                                     In<TS<i64>> trigger) {
+        return Observation{
+            .trigger = *trigger,
+            .valid = input.valid(),
+            .became_valid = input.became_valid(),
+            .became_invalid = input.became_invalid(),
+            .modified = input.modified(),
+        };
+    });
+
+    const auto graph = [&](wp<TS<i64>> input, wp<TS<i64>> trigger) {
+        return observe(input, trigger);
+    };
+
+    const auto actual = testing::test_graph(
         graph, {1, 1, literal::INVALID, literal::SKIP, 2, literal::SKIP}, {1, 2, 3, 4, 5, 6});
 
-    CHECK(actual.equals({1, 2, 3, 4, 5, 6}));
-    CHECK(states == std::vector<std::array<bool, 4>>{
-        {true, true, false, true},
-        {true, false, false, true},
-        {false, false, true, true},
-        {false, false, false, false},
-        {true, true, false, true},
-        {true, false, false, false},
-    });
+    CHECK(actual.equals<Observation>({
+        Observation{1, true, true, false, true},
+        Observation{2, true, false, false, true},
+        Observation{3, false, false, true, true},
+        Observation{4, false, false, false, false},
+        Observation{5, true, true, false, true},
+        Observation{6, true, false, false, false},
+    }));
 }
 
 TEST_CASE("a deduplicated value output schedules subscribers only for changed values",
           "[evaluation][feature:scheduling][transition:update][series:value][scalar:integer]"
           "[guarantee:deduplicated]") {
     const auto deduplicate =
-        bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<bg::TS<bg::i64, bg::TimeSeriesGuarantee::deduplicated>> output) {
+        node([](In<TS<i64>> input, Out<TS<i64, TimeSeriesGuarantee::deduplicated>> output) {
             output.set(*input);
         });
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return deduplicate(input); };
+    const auto graph = [&](wp<TS<i64>> input) { return deduplicate(input); };
 
-    const auto actual = bg::testing::test_graph(graph, std::array{1, 1, 2, 2, 1});
+    const auto actual = testing::test_graph(graph, std::array{1, 1, 2, 2, 1});
 
     CHECK(actual.equals({1, std::nullopt, 2, std::nullopt, 1}));
 }
 
 TEST_CASE("a direct output uses its resolved guarantee",
           "[evaluation][feature:type-system][series:value][guarantee:deduplicated]") {
-    const auto deduplicate = bg::node<deduplicating_value_source>();
-    const auto preserve_guarantee = bg::node<preserve_value_guarantee>();
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) {
+    const auto deduplicate = node<deduplicating_value_source>();
+    const auto preserve_guarantee = node<preserve_value_guarantee>();
+    const auto graph = [&](wp<TS<i64>> input) {
         return preserve_guarantee(deduplicate(input), input);
     };
 
-    const auto actual = bg::testing::test_graph(graph, std::array{1, 1, 2});
+    const auto actual = testing::test_graph(graph, std::array{1, 1, 2});
 
     CHECK(actual.equals({1, std::nullopt, 2}));
 }
 
 TEST_CASE("a nested direct output uses its resolved item guarantee",
           "[evaluation][feature:type-system][series:tsd][guarantee:deduplicated]") {
-    const auto deduplicate = bg::node<deduplicating_value_source>();
-    const auto make_dictionary = bg::node<make_dictionary_with_guarantee>();
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) {
+    const auto deduplicate = node<deduplicating_value_source>();
+    const auto make_dictionary = node<make_dictionary_with_guarantee>();
+    const auto graph = [&](wp<TS<i64>> input) {
         return make_dictionary(deduplicate(input), input)[1].as<
-            bg::REF<bg::TS<bg::i64, bg::TimeSeriesGuarantee::deduplicated>, bg::TimeSeriesGuarantee::ordinary>>();
+            REF<TS<i64, TimeSeriesGuarantee::deduplicated>, TimeSeriesGuarantee::ordinary>>();
     };
 
-    const auto actual = bg::testing::test_graph(graph, std::array{1, 1, 2});
+    const auto actual = testing::test_graph(graph, std::array{1, 1, 2});
 
     CHECK(actual.equals({1, std::nullopt, 2}));
 }
@@ -163,30 +184,16 @@ TEST_CASE("a collection guarantee deduplicates contained value outputs",
           "[evaluation][feature:collection-change][transition:update][series:fixed-tsl]"
           "[scalar:integer][guarantee:ordinary][guarantee:deduplicated]") {
 
-    const auto collect = bg::node(
-        [](bg::In<bg::TS<bg::i64>> input,
-           bg::Out<bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::ordinary>, 1, bg::TimeSeriesGuarantee::deduplicated>>
+    const auto collect = node(
+        [](In<TS<i64>> input,
+           Out<TSL<TS<i64, TimeSeriesGuarantee::ordinary>, 1, TimeSeriesGuarantee::deduplicated>>
                output) { output[0].set(*input); });
-    const auto first = bg::node(
-        [](bg::In<bg::TSL<bg::TS<bg::i64, bg::TimeSeriesGuarantee::ordinary>, 1, bg::TimeSeriesGuarantee::deduplicated>>
-               input,
-           bg::Out<bg::TS<bg::i64>> output) { output.set(*input[0]); });
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return first(collect(input)); };
+    const auto first = node(
+        [](In<TSL<TS<i64, TimeSeriesGuarantee::ordinary>, 1, TimeSeriesGuarantee::deduplicated>>
+               input) { return *input[0]; });
+    const auto graph = [&](wp<TS<i64>> input) { return first(collect(input)); };
 
-    const auto actual = bg::testing::test_graph(graph, std::array{1, 1, 2});
+    const auto actual = testing::test_graph(graph, std::array{1, 1, 2});
 
     CHECK(actual.equals({1, std::nullopt, 2}));
-}
-
-TEST_CASE("symbol time series can store default and interned values",
-          "[feature:test-graph][series:value][scalar:symbol][shape:single-node]") {
-    const auto pass_through = bg::node([](bg::In<bg::TS<bg::symbol>> input, bg::Out<bg::TS<bg::symbol>> output) {
-        output.set(*input);
-    });
-    const auto graph = [&](bg::wp<bg::TS<bg::symbol>> input) { return pass_through(input); };
-    const auto input = std::array{bg::symbol{}, bg::symbol{"price"}, bg::symbol{""}};
-
-    const auto actual = bg::testing::test_graph(graph, input);
-
-    CHECK(actual.equals({bg::symbol{}, bg::symbol{"price"}, bg::symbol{""}}));
 }

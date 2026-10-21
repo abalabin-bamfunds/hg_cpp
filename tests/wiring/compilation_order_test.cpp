@@ -128,7 +128,7 @@ TEST_CASE("ordering constraints include consumers across nested graph boundaries
           "[feature:compilation-order][feature:nested-graph][feature:compilation]") {
     const auto identity = 0;
     const auto requirement_identity = details::NestedBindingIdentity::object(&identity);
-    const auto copy = node([](In<TS<bg::i64>> input, Out<TS<bg::i64>> output) { output.set(*input); });
+    const auto copy = node([](bg::i64 input) { return input; });
     const auto inner = graph("name"_n = "service_client", [&] {
         auto &wiring = WiringContext::current().wiring();
         const auto requirement =

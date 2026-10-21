@@ -146,7 +146,9 @@ def test_dedup_suppresses_consecutive_equal_values():
 
 
 def test_dedup_suppresses_equal_dictionary_items_and_forwards_membership_changes():
-    observed = []
+    @bg.compute_node
+    def inspect(value: bg.TSD[int, bg.TS[int]]) -> bg.TS[dict[int, int]]:
+        return dict(value.value)
 
     @bg.compute_node
     def make_dictionary(trigger: bg.TS[int]) -> bg.TSD[int, bg.TS[int]]:
@@ -158,15 +160,13 @@ def test_dedup_suppresses_equal_dictionary_items_and_forwards_membership_changes
             return {1: 11}
         return {1: bg.REMOVE, 2: 21, 3: 30}
 
-    @bg.compute_node
-    def inspect(value: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
-        snapshot = dict(value.value)
-        observed.append(snapshot)
-        return sum(snapshot.values())
-
     @bg.graph
-    def dedup(trigger: bg.TS[int]) -> bg.TS[int]:
+    def dedup(trigger: bg.TS[int]) -> bg.TS[dict[int, int]]:
         return inspect(bg.operators.dedup(make_dictionary(trigger)))
 
-    assert bg.test_graph(dedup, [0, 1, 2, 3]) == [30, None, 31, 51]
-    assert observed == [{1: 10, 2: 20}, {1: 11, 2: 20}, {2: 21, 3: 30}]
+    assert bg.test_graph(dedup, [0, 1, 2, 3]) == [
+        {1: 10, 2: 20},
+        None,
+        {1: 11, 2: 20},
+        {2: 21, 3: 30},
+    ]

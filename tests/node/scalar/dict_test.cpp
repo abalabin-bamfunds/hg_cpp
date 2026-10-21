@@ -1,4 +1,5 @@
 #include <bg/bg.hpp>
+#include <bg/testing/test_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -8,44 +9,42 @@
 
 namespace {
 
-using IntDictionary = bg::Dict<bg::i64, bg::i64>;
-using IntDictionaryEntry = std::pair<bg::i64, bg::i64>;
+using namespace bg;
 
-struct inspect_scalar_dict {
-    bg::Scalar<IntDictionary> values;
+struct scalar_dict_source {
+    Scalar<Dict<i64, i64>> value;
+    Out<TS<Dict<i64, i64>>> output;
 
-    void start(bg::EvaluationContext *context) const {
-        auto result = bg::i64{};
-        values.for_each([&](const auto, const auto value) { result += value.value(); });
-
-        context->global_state().write(
-            [&](auto &state) { state.set(bg::util::symbol{"result"}, bg::ScalarValue{result}); });
-    }
-
+    void start() const { output.set_value(value); }
     void evaluate() const {}
 };
 
-TEST_CASE("a scalar dictionary is available from packed graph scalar storage",
-          "[node][scalar][dict][scalar:dict][feature:state]") {
-    const auto inspect = bg::node<inspect_scalar_dict>();
-    const auto input = bg::ScalarValue<IntDictionary>{std::array{IntDictionaryEntry{1, 2}, IntDictionaryEntry{3, 4}}};
-    auto state = bg::GlobalState{};
+TEST_CASE("a scalar dictionary propagates through a value time series",
+          "[node][time_series][scalar][dict][scalar:dict][feature:state]") {
+    const auto source = node<scalar_dict_source>();
 
-    bg::run_graph([&] { inspect(input); }, bg::GraphRunOptions{.global_state = &state});
+    const auto sum = node([](In<TS<Dict<i64, i64>>> input) {
+        auto result = i64{};
+        input.value_view().for_each([&](const auto, const auto value) { result += value.value(); });
+        return result;
+    });
 
-    state.read([](const auto &values) { CHECK(bg::scalar_cast<bg::i64>(values.at("result")).value() == 6); });
+    const auto input = ScalarValue<Dict<i64, i64>>{
+        std::array{std::pair<i64, i64>{1, 2}, std::pair<i64, i64>{3, 4}}};
+
+    const auto graph = [&] { return sum(source(input)); };
+
+    CHECK(testing::test_graph(graph).equals<i64>({6}));
 }
 
 struct inspect_scalar_dict_state {
-    bg::State<IntDictionary> values;
+    State<Dict<i64, i64>> values;
+    Out<TS<i64>> output;
 
-    void start(bg::EvaluationContext *context) const {
+    void start() const {
         values->insert_or_assign(1, 2);
         values->insert_or_assign(3, 4);
-
-        context->global_state().write([&](auto &state) {
-            state.set(bg::util::symbol{"result"}, bg::ScalarValue{values->at(1) + values->at(3)});
-        });
+        output.set(values->at(1) + values->at(3));
     }
 
     void evaluate() const {}
@@ -53,44 +52,36 @@ struct inspect_scalar_dict_state {
 
 TEST_CASE("scalar dictionary state is available during node start",
           "[node][state][scalar][dict][scalar:dict][feature:state][transition:start]") {
-    const auto inspect = bg::node<inspect_scalar_dict_state>();
-    auto state = bg::GlobalState{};
+    const auto inspect = node<inspect_scalar_dict_state>();
 
-    bg::run_graph([&] { inspect(); }, bg::GraphRunOptions{.global_state = &state});
+    const auto graph = [&] { return inspect(); };
 
-    state.read([](const auto &values) { CHECK(bg::scalar_cast<bg::i64>(values.at("result")).value() == 6); });
+    CHECK(testing::test_graph(graph).equals<i64>({6}));
 }
 
-struct scalar_dict_source {
-    bg::Scalar<IntDictionary> value;
-    bg::Out<bg::TS<IntDictionary>> output;
+struct inspect_scalar_dict {
+    Scalar<Dict<i64, i64>> values;
+    Out<TS<i64>> output;
 
-    void start() const { output.set_value(value); }
+    void start() const {
+        auto result = i64{};
+        values.for_each([&](const auto, const auto value) { result += value.value(); });
+        output.set(result);
+    }
+
     void evaluate() const {}
 };
 
-struct scalar_dict_sink {
-    bg::In<bg::TS<IntDictionary>> input;
+TEST_CASE("a scalar dictionary is available from packed graph scalar storage",
+          "[node][scalar][dict][scalar:dict][feature:state]") {
+    const auto inspect = node<inspect_scalar_dict>();
 
-    void evaluate(bg::EvaluationContext *context) const {
-        auto result = bg::i64{};
-        input.value_view().for_each([&](const auto, const auto value) { result += value.value(); });
+    const auto input = ScalarValue<Dict<i64, i64>>{
+        std::array{std::pair<i64, i64>{1, 2}, std::pair<i64, i64>{3, 4}}};
 
-        context->global_state().write(
-            [&](auto &state) { state.set(bg::util::symbol{"result"}, bg::ScalarValue{result}); });
-    }
-};
+    const auto graph = [&] { return inspect(input); };
 
-TEST_CASE("a scalar dictionary propagates through a value time series",
-          "[node][time_series][scalar][dict][scalar:dict][feature:state]") {
-    const auto source = bg::node<scalar_dict_source>();
-    const auto sink = bg::node<scalar_dict_sink>();
-    const auto input = bg::ScalarValue<IntDictionary>{std::array{IntDictionaryEntry{1, 2}, IntDictionaryEntry{3, 4}}};
-    auto state = bg::GlobalState{};
-
-    bg::run_graph([&] { sink(source(input)); }, bg::GraphRunOptions{.global_state = &state});
-
-    state.read([](const auto &values) { CHECK(bg::scalar_cast<bg::i64>(values.at("result")).value() == 6); });
+    CHECK(testing::test_graph(graph).equals<i64>({6}));
 }
 
 } // namespace

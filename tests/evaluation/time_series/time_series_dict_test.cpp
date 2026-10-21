@@ -63,7 +63,7 @@ TEST_CASE("a time series dictionary publishes item and key changes",
           "[representation:native][declaration:concrete][binding:direct]") {
     using namespace bg::literals;
     struct Snapshot {
-        std::size_t size;
+        i64 size;
         i64 first_value;
         std::vector<i64> added;
         std::vector<i64> removed;
@@ -73,9 +73,8 @@ TEST_CASE("a time series dictionary publishes item and key changes",
     };
 
     auto snapshots = std::vector<Snapshot>{};
-
     const auto inspect = node([&](In<TSD<i64, TS<i64>>> input) {
-        auto snapshot = Snapshot{.size = input.size(),
+        auto snapshot = Snapshot{.size = static_cast<i64>(input.size()),
                                  .first_value = input.contains(1) ? *input[1] : -1};
         input.for_each_added([&](const auto &key) { snapshot.added.push_back(key.value()); });
         input.for_each_removed([&](const auto &key) { snapshot.removed.push_back(key.value()); });
@@ -83,28 +82,28 @@ TEST_CASE("a time series dictionary publishes item and key changes",
         std::ranges::sort(snapshot.added);
         std::ranges::sort(snapshot.removed);
         std::ranges::sort(snapshot.modified);
+        const auto size = snapshot.size;
         snapshots.push_back(std::move(snapshot));
+        return size;
     });
 
     const auto graph = bg::graph("name"_n = "dictionary_change_input",
-                                 [&](wp<TSD<i64, TS<i64>>> input) { inspect(input); });
+                                 [&](wp<TSD<i64, TS<i64>>> input) { return inspect(input); });
 
-    (void)testing::test_graph(graph,
-                              {{{1, 10}, {2, 20}},
-                               {{1, 11}},
-                               {{1, 12}, {3, 30}},
-                               literal::SKIP,
-                               {{2, literal::REMOVE}, {3, literal::REMOVE}},
-                               {{2, 21}}});
+    const auto actual = testing::test_graph(graph,
+                                            {{{1, 10}, {2, 20}},
+                                             {{1, 11}},
+                                             {{1, 12}, {3, 30}},
+                                             literal::SKIP,
+                                             {{2, literal::REMOVE}, {3, literal::REMOVE}},
+                                             {{2, 21}}});
 
-    const auto expected = std::vector<Snapshot>{
-        {.size = 2, .first_value = 10, .added = {1, 2}},
-        {.size = 2, .first_value = 11, .modified = {1}},
-        {.size = 3, .first_value = 12, .added = {3}, .modified = {1}},
-        {.size = 1, .first_value = 12, .removed = {2, 3}},
-        {.size = 2, .first_value = 12, .added = {2}},
-    };
-    CHECK(snapshots == expected);
+    CHECK(actual.equals<i64>({2, 2, 3, std::nullopt, 1, 2}));
+    CHECK(snapshots == std::vector<Snapshot>{Snapshot{.size = 2, .first_value = 10, .added = {1, 2}},
+                                             Snapshot{.size = 2, .first_value = 11, .modified = {1}},
+                                             Snapshot{.size = 3, .first_value = 12, .added = {3}, .modified = {1}},
+                                             Snapshot{.size = 1, .first_value = 12, .removed = {2, 3}},
+                                             Snapshot{.size = 2, .first_value = 12, .added = {2}}});
 }
 
 namespace {
@@ -131,50 +130,41 @@ struct literal_dict_source_definition {
     }
 };
 
-struct literal_dict_snapshot_definition {
-    In<TSD<i64, TS<i64>>> input;
-
-    void evaluate() const {
-        present.push_back({input.contains(1), input.contains(2), input.contains(99)});
-
-        auto added_count = std::size_t{};
-        input.for_each_added([&](const auto &) { ++added_count; });
-        added.push_back(added_count);
-
-        auto removed_keys = std::vector<i64>{};
-        input.for_each_removed([&](const auto &key) { removed_keys.push_back(key.value()); });
-        removed.push_back(std::move(removed_keys));
-
-        auto modified_count = std::size_t{};
-        input.for_each_modified([&](const auto &) { ++modified_count; });
-        modified.push_back(modified_count);
-    }
-
-    inline static std::vector<std::array<bool, 3>> present;
-    inline static std::vector<std::size_t> added;
-    inline static std::vector<std::vector<i64>> removed;
-    inline static std::vector<std::size_t> modified;
-};
-
 } // namespace
 
 TEST_CASE("a TSD update removes an entry with REMOVE",
           "[evaluation][tsd][series:tsd][feature:collection-change][transition:removal]") {
+    struct observation {
+        bool first_present;
+        bool second_present;
+        bool skipped_key_present;
+        i64 added;
+        i64 modified;
+
+        bool operator==(const observation &) const = default;
+    };
+
     const auto source = node<literal_dict_source_definition>();
-    const auto snapshot = node<literal_dict_snapshot_definition>();
-    literal_dict_snapshot_definition::present.clear();
-    literal_dict_snapshot_definition::added.clear();
-    literal_dict_snapshot_definition::removed.clear();
-    literal_dict_snapshot_definition::modified.clear();
+    auto removed_keys = std::vector<std::vector<i64>>{};
+    const auto inspect = node([&](In<TSD<i64, TS<i64>>> input) {
+        auto added = i64{};
+        input.for_each_added([&](const auto &) { ++added; });
 
-    run_graph([&] { snapshot(source()); });
+        auto removed = std::vector<i64>{};
+        input.for_each_removed([&](const auto &key) { removed.push_back(key.value()); });
 
-    CHECK(literal_dict_snapshot_definition::present ==
-          std::vector<std::array<bool, 3>>{{true, true, false}, {false, true, false}, {true, true, false}});
-    CHECK(literal_dict_snapshot_definition::added == std::vector<std::size_t>{2, 0, 1});
-    CHECK(literal_dict_snapshot_definition::removed ==
-          std::vector<std::vector<i64>>{{}, {1}, {}});
-    CHECK(literal_dict_snapshot_definition::modified == std::vector<std::size_t>{0, 0, 0});
+        removed_keys.push_back(removed);
+
+        auto modified = i64{};
+        input.for_each_modified([&](const auto &) { ++modified; });
+
+        return observation{input.contains(1), input.contains(2), input.contains(99), added, modified};
+    });
+    const auto actual = testing::test_graph([&] { return inspect(source()); });
+
+    CHECK(actual.equals<observation>({observation{true, true, false, 2, 0}, observation{false, true, false, 0, 0},
+                                      observation{true, true, false, 1, 0}}));
+    CHECK(removed_keys == std::vector<std::vector<i64>>{{}, {1}, {}});
 }
 
 TEST_CASE("a TSD update rejects a root INVALID marker",
@@ -594,52 +584,34 @@ struct resurrecting_source_definition {
     }
 };
 
-struct dict_sink_definition {
-    In<TSD<i64, TS<i64>>> input;
-
-    void evaluate() const {
-        sizes.push_back(input.size());
-        values.push_back(input.contains(1) ? *input[1] : -1);
-
-        auto added_count = std::size_t{};
-        input.for_each_added([&](const auto &) { ++added_count; });
-        added.push_back(added_count);
-
-        auto removed_count = std::size_t{};
-        input.for_each_removed([&](const auto &) { ++removed_count; });
-        removed.push_back(removed_count);
-
-        auto modified_count = std::size_t{};
-        input.for_each_modified([&](const auto &) { ++modified_count; });
-        modified.push_back(modified_count);
-    }
-
-    inline static std::vector<std::size_t> sizes;
-    inline static std::vector<int> values;
-    inline static std::vector<std::size_t> added;
-    inline static std::vector<std::size_t> removed;
-    inline static std::vector<std::size_t> modified;
-};
-
 } // namespace
 
 TEST_CASE("resurrecting a dictionary item reports a modification",
           "[evaluation][tsd][series:tsd][feature:collection-change][transition:resurrection]"
           "[scalar:integer][representation:native][declaration:concrete][binding:direct]") {
+    struct observation {
+        i64 size;
+        i64 value;
+        i64 added;
+        i64 removed;
+        i64 modified;
+
+        bool operator==(const observation &) const = default;
+    };
+
     const auto source = node<resurrecting_source_definition>();
-    const auto dict_sink = node<dict_sink_definition>();
-    dict_sink_definition::sizes.clear();
-    dict_sink_definition::values.clear();
-    dict_sink_definition::added.clear();
-    dict_sink_definition::removed.clear();
-    dict_sink_definition::modified.clear();
+    const auto inspect = node([](In<TSD<i64, TS<i64>>> input) {
+        auto added = i64{};
+        input.for_each_added([&](const auto &) { ++added; });
+        auto removed = i64{};
+        input.for_each_removed([&](const auto &) { ++removed; });
+        auto modified = i64{};
+        input.for_each_modified([&](const auto &) { ++modified; });
+        return observation{static_cast<i64>(input.size()), *input[1], added, removed, modified};
+    });
+    const auto actual = testing::test_graph([&] { return inspect(source()); });
 
-    run_graph([&] { dict_sink(source()); });
-
-    CHECK(dict_sink_definition::values == std::vector{10, 20});
-    CHECK(dict_sink_definition::added == std::vector<std::size_t>{1, 0});
-    CHECK(dict_sink_definition::removed == std::vector<std::size_t>{0, 0});
-    CHECK(dict_sink_definition::modified == std::vector<std::size_t>{0, 1});
+    CHECK(actual.equals<observation>({observation{1, 10, 1, 0, 0}, observation{1, 20, 0, 0, 1}}));
 }
 
 namespace {
@@ -696,50 +668,34 @@ TEST_CASE("a generic dictionary view uses its resolved item type",
     CHECK(actual.equals<i64>({10}));
 }
 
-namespace {
-
-struct optional_dict_sink_definition {
-    In<TSD<i64, TS<i64>>, optional> input;
-
-    void evaluate() const {
-        validity.push_back(input.valid());
-        sizes.push_back(input.size());
-
-        auto added_count = std::size_t{};
-        input.for_each_added([&](const auto &) { ++added_count; });
-        added.push_back(added_count);
-
-        auto removed_count = std::size_t{};
-        input.for_each_removed([&](const auto &) { ++removed_count; });
-        removed.push_back(removed_count);
-    }
-
-    inline static std::vector<bool> validity;
-    inline static std::vector<std::size_t> sizes;
-    inline static std::vector<std::size_t> added;
-    inline static std::vector<std::size_t> removed;
-};
-
-} // namespace
-
 TEST_CASE("a dictionary becomes valid on its first empty tick and remains valid",
           "[evaluation][tsd][series:tsd][validity][feature:collection-change][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct][transition:first-tick]") {
-    const auto dict_sink = node<optional_dict_sink_definition>();
-    optional_dict_sink_definition::validity.clear();
-    optional_dict_sink_definition::sizes.clear();
-    optional_dict_sink_definition::added.clear();
-    optional_dict_sink_definition::removed.clear();
+    struct observation {
+        bool valid;
+        i64 size;
+        i64 added;
+        i64 removed;
+
+        bool operator==(const observation &) const = default;
+    };
+
+    const auto inspect = node([](In<TSD<i64, TS<i64>>, optional> input) {
+        auto added = i64{};
+        input.for_each_added([&](const auto &) { ++added; });
+        auto removed = i64{};
+        input.for_each_removed([&](const auto &) { ++removed; });
+        return observation{input.valid(), static_cast<i64>(input.size()), added, removed};
+    });
 
     using namespace bg::literals;
     const auto graph = bg::graph("name"_n = "empty_dictionary_input",
-                                 [&](wp<TSD<i64, TS<i64>>> input) { dict_sink(input); });
-    (void)testing::test_graph(graph, {{}, {{1, 10}, {2, 20}}, {{1, literal::REMOVE}, {2, literal::REMOVE}}});
+                                 [&](wp<TSD<i64, TS<i64>>> input) { return inspect(input); });
+    const auto actual =
+        testing::test_graph(graph, {{}, {{1, 10}, {2, 20}}, {{1, literal::REMOVE}, {2, literal::REMOVE}}});
 
-    CHECK(optional_dict_sink_definition::validity == std::vector{true, true, true});
-    CHECK(optional_dict_sink_definition::sizes == std::vector<std::size_t>{0, 2, 0});
-    CHECK(optional_dict_sink_definition::added == std::vector<std::size_t>{0, 2, 0});
-    CHECK(optional_dict_sink_definition::removed == std::vector<std::size_t>{0, 0, 2});
+    CHECK(actual.equals<observation>({observation{true, 0, 0, 0}, observation{true, 2, 2, 0},
+                                     observation{true, 0, 0, 2}}));
 }
 
 namespace {

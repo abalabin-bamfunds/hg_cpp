@@ -21,9 +21,9 @@ TEST_CASE("count counts valid input ticks and resets after invalidation",
           "[transition:first-tick][transition:update][transition:invalidation][transition:revalidation]") {
     const auto count = [](wp<TS<i64>> value) { return operators::count(value); };
 
-    CHECK(testing::test_graph(count, testing::input<TS<i64>>({literal::INVALID, literal::SKIP, 7, 7,
-                                                              literal::INVALID, literal::SKIP, 9,
-                                                              literal::INVALID, 11}))
+    CHECK(testing::test_graph(count, {literal::INVALID, literal::SKIP, 7, 7,
+                                      literal::INVALID, literal::SKIP, 9,
+                                      literal::INVALID, 11})
               .equals<i64>({std::nullopt, std::nullopt, 1, 2, std::nullopt, std::nullopt, 1,
                             std::nullopt, 1}));
 }
@@ -54,9 +54,7 @@ TEST_CASE("count preserves a final guarantee",
         return result;
     };
 
-    CHECK(testing::test_graph(count, testing::input<TS<i64, TimeSeriesGuarantee::final>>(
-                                        {literal::SKIP, 7}))
-              .equals<i64>({std::nullopt, 1}));
+    CHECK(testing::test_graph(count, {literal::SKIP, 7}).equals<i64>({std::nullopt, 1}));
 }
 
 TEST_CASE("count preserves a deduplicated guarantee",
@@ -67,7 +65,8 @@ TEST_CASE("count preserves a deduplicated guarantee",
         return result;
     };
 
-    CHECK(testing::test_graph(count, testing::input<TS<i64, TimeSeriesGuarantee::deduplicated>>({1, 1, 2}))
+    CHECK(testing::test_graph(
+              count, testing::input<TS<i64, TimeSeriesGuarantee::deduplicated>>({1, 1, 2}))
               .equals<i64>({1, std::nullopt, 2}));
 }
 
@@ -108,8 +107,8 @@ TEST_CASE("lag delays values and invalidations by one input event",
           "[transition:revalidation]") {
     const auto lag = [](wp<TS<i64>> value) { return operators::lag(value); };
 
-    CHECK(testing::test_graph(lag, testing::input<TS<i64>>({literal::SKIP, 10, 20, literal::INVALID,
-                                                            literal::SKIP, 30, literal::INVALID, 40}))
+    CHECK(testing::test_graph(lag, {literal::SKIP, 10, 20, literal::INVALID,
+                                    literal::SKIP, 30, literal::INVALID, 40})
               .equals<i64>({std::nullopt, std::nullopt, 10, 20, std::nullopt, std::nullopt, 30,
                             std::nullopt}));
 }
@@ -119,7 +118,7 @@ TEST_CASE("lag delays invalidation until the next input event",
           "[transition:update][transition:invalidation][transition:revalidation]") {
     const auto observe = [](wp<TS<i64>> value) { return operators::valid(operators::lag(value)); };
 
-    CHECK(testing::test_graph(observe, testing::input<TS<i64>>({10, 20, literal::INVALID, 30, 40}))
+    CHECK(testing::test_graph(observe, {10, 20, literal::INVALID, 30, 40})
               .equals<bool>({false, true, std::nullopt, false, true}));
 }
 

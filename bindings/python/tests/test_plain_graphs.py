@@ -205,11 +205,8 @@ def test_scalar_optional_annotation_also_accepts_an_absent_scalar():
 
 
 def test_optional_plain_graph_input_forwards_opt_to_an_optional_node():
-    received = []
-
     @bg.node
     def observe(value: int | None) -> int:
-        received.append(value)
         return 0 if value is None else value
 
     @bg.graph
@@ -217,7 +214,6 @@ def test_optional_plain_graph_input_forwards_opt_to_an_optional_node():
         return observe(value)
 
     assert bg.test_graph(graph, [None, 4, None, 6]) == [None, 4, None, 6]
-    assert received == [4, 6]
 
 
 def test_optional_plain_graph_input_cannot_forward_to_required_node():
