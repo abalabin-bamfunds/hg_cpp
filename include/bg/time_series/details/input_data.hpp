@@ -20,8 +20,8 @@ class TimeSeriesInputData {
         : runtime_type_{&runtime_type}, last_updated_{&last_updated, flags(modified, valid_items)}, data_{data} {}
 
     bool valid() const noexcept { return last_updated_->valid(); }
-    bool became_valid() const noexcept { return last_updated_->became_valid(); }
-    bool became_invalid() const noexcept { return last_updated_->became_invalid(); }
+    bool became_valid() const noexcept { return modified() && last_updated_->became_valid(); }
+    bool became_invalid() const noexcept { return modified() && last_updated_->became_invalid(); }
     bool modified() const noexcept { return (last_updated_.raw() & modified_flag) != 0; }
     bool valid_items() const noexcept { return (last_updated_.raw() & valid_items_flag) != 0; }
     void set_valid_items(bool valid_items) noexcept {

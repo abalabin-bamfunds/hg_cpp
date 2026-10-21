@@ -62,6 +62,7 @@ from ._bg import (
     _wire_graph,
     _wire_node,
     _with_time_series_guarantee,
+    _with_valid_items,
     version,
 )
 
@@ -188,6 +189,19 @@ ordinary = _TimeSeriesGuarantee.ordinary
 deduplicated = _TimeSeriesGuarantee.deduplicated
 final = _TimeSeriesGuarantee.final
 const_ = _TimeSeriesGuarantee.const_
+
+
+class _ValidItems:
+    def __repr__(self) -> str:
+        return "bg.valid_items"
+
+    def __call__(self, point: Any) -> Any:
+        if not isinstance(point, _WiringPoint):
+            raise TypeError("valid_items expects a time-series wiring point")
+        return point._as_valid_items()
+
+
+valid_items = _ValidItems()
 
 
 class TimeSeries:
@@ -1047,6 +1061,8 @@ def _native_type(annotation: Any) -> Any:
         for item in metadata:
             if isinstance(item, _TimeSeriesGuarantee):
                 native_type = _with_time_series_guarantee(native_type, item)
+            elif item is valid_items:
+                native_type = _with_valid_items(native_type)
         return native_type
     origin = get_origin(annotation)
     if annotation is list or origin is list:

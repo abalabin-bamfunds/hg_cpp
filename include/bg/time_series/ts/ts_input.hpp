@@ -3,9 +3,11 @@
 #include <bg/node/details/input_properties.hpp>
 #include <bg/node/input_fwd.hpp>
 #include <bg/node/input_properties.hpp>
+#include <bg/evaluation_context.hpp>
 #include <bg/scalar/details/value_access.hpp>
 #include <bg/scalar/scalar.hpp>
 #include <bg/time_series/details/input_data.hpp>
+#include <bg/time_series/dynamic_value_input.hpp>
 #include <bg/time_series/time_series_input.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/time_series_type.hpp>
@@ -89,6 +91,13 @@ class In<TS<T, TimeSeriesProperties...>, Properties...>
        bool modified = false, bool *activity = nullptr) noexcept
         : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}
 
+    In(details::DynamicValueInputStorage &storage, const TimeSeriesRuntimeType &runtime_type,
+       EvaluationContext &context, std::size_t storage_offset) noexcept
+        requires ParsedProperties::dynamic_binding
+        : activity_control{},
+          data_{storage.input_data(runtime_type, context.evaluation_time())},
+          dynamic_{&storage, &context, storage_offset, &runtime_type} {}
+
     explicit In(const TimeSeriesInputData &data, bool *activity = nullptr) noexcept
         : activity_control{activity}, data_{data} {}
 
@@ -139,6 +148,20 @@ class In<TS<T, TimeSeriesProperties...>, Properties...>
             static_cast<const TimeSeriesValueRuntimeType &>(data_.runtime_type()).scalar_runtime_type(), data_.data());
     }
 
+    void bind(details::DynamicValueBinding<T> binding) const
+        requires ParsedProperties::dynamic_binding
+    {
+        dynamic_.storage->bind(binding, *dynamic_.context, dynamic_.storage_offset);
+        data_ = dynamic_.storage->input_data(*dynamic_.runtime_type, dynamic_.context->evaluation_time());
+    }
+
+    void unbind() const
+        requires ParsedProperties::dynamic_binding
+    {
+        dynamic_.storage->unbind(dynamic_.context->runtime_graph(), dynamic_.storage_offset);
+        data_ = dynamic_.storage->input_data(*dynamic_.runtime_type, dynamic_.context->evaluation_time());
+    }
+
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
     const void *data() const noexcept { return data_.data(); }
 
@@ -157,7 +180,18 @@ class In<TS<T, TimeSeriesProperties...>, Properties...>
     static constexpr bool dynamic_activity = ParsedProperties::dynamic_activity;
 
   private:
-    details::TimeSeriesInputData data_;
+    struct EmptyDynamicBinding {};
+
+    struct DynamicBindingData {
+        details::DynamicValueInputStorage *storage{};
+        EvaluationContext *context{};
+        std::size_t storage_offset{};
+        const TimeSeriesRuntimeType *runtime_type{};
+    };
+
+    mutable details::TimeSeriesInputData data_;
+    [[no_unique_address]] std::conditional_t<ParsedProperties::dynamic_binding, DynamicBindingData,
+                                             EmptyDynamicBinding> dynamic_;
 };
 
 static_assert(sizeof(In<TS<int>>) == 3 * sizeof(void *));

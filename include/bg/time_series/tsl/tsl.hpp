@@ -36,10 +36,15 @@ class wp<TSL<Item, Size, TimeSeriesProperties...>, WiringProperties...> {
     }
 
     template <typename Source, auto... SourceProperties>
+        requires(wp<Source, SourceProperties...>::validity != optional || ParsedProperties::validity == optional) &&
+                (!wp<Source, SourceProperties...>::valid_items || ParsedProperties::valid_items)
     explicit wp(wp<Source, SourceProperties...> source) : wp(static_cast<WiringPoint>(source)) {
-        static_assert(wp<Source, SourceProperties...>::validity != optional || ParsedProperties::validity == optional,
-                      "an optional wiring point cannot be re-annotated as a required input");
     }
+
+    template <typename Source, auto... SourceProperties>
+        requires(wp<Source, SourceProperties...>::validity == optional && ParsedProperties::validity != optional) ||
+                (wp<Source, SourceProperties...>::valid_items && !ParsedProperties::valid_items)
+    explicit wp(wp<Source, SourceProperties...>) = delete;
 
     operator WiringPoint() const noexcept { return point_; }
 
@@ -50,11 +55,9 @@ class wp<TSL<Item, Size, TimeSeriesProperties...>, WiringProperties...> {
     const TimeSeriesType &type() const noexcept { return point_.type(); }
 
     template <typename Target> auto as() const {
-        if constexpr (ParsedProperties::validity == optional) {
-            return wp<Target, optional>{point_};
-        } else {
-            return point_.template as<Target>();
-        }
+        using Result = typename details::annotated_wiring_point<Target, ParsedProperties::validity == optional,
+                                                                ParsedProperties::valid_items>::type;
+        return Result{point_};
     }
 
     static wp from_validated(WiringPoint point) noexcept { return wp{point, unchecked_t{}}; }
@@ -64,6 +67,8 @@ class wp<TSL<Item, Size, TimeSeriesProperties...>, WiringProperties...> {
     static constexpr bool context = ParsedProperties::context;
     static constexpr auto variadic_mode = ParsedProperties::variadic_mode;
     static constexpr InputValidity validity = ParsedProperties::validity;
+    static constexpr bool valid_items = ParsedProperties::valid_items;
+    static constexpr details::WiringAnnotations annotations{validity == optional, valid_items};
 
   private:
     const details::VariadicWiringRecord &record() const noexcept { return *details::variadic_wiring_record(point_); }

@@ -31,8 +31,11 @@ void append_wiring_arguments(std::vector<WiringArgument> &result, WiringArgument
             field.clear_name();
             result.push_back(std::move(field));
         }
-        if (expansion.requires_optional && result.back().is_time_series()) {
+        if (expansion.annotations.optional && result.back().is_time_series()) {
             result.back().require_optional();
+        }
+        if (expansion.annotations.valid_items && result.back().is_time_series()) {
+            result.back().require_valid_items();
         }
     }
 }
@@ -118,6 +121,11 @@ struct VariadicCaptureArguments {
     std::vector<const WiringArgument *> arguments;
 };
 
+struct PreparedWiringArguments {
+    std::vector<WiringArgument> arguments;
+    std::vector<std::optional<std::size_t>> supplied_argument_indices;
+};
+
 const ScalarType *optional_scalar_type(const Type &type) {
     if (type.is_scalar() && type.is_resolved()) {
         return static_cast<const ScalarType *>(&type);
@@ -156,18 +164,20 @@ WiringArgument absent_scalar_argument(const Parameter &parameter) {
     return WiringArgument::absent_scalar(*type, resolve_scalar_runtime_type(*type, {}));
 }
 
-std::vector<WiringArgument> prepare_arguments(const Signature &signature, std::span<const WiringArgument> arguments,
-                                              bool import_contexts, const Signature *parameter_aliases) {
+PreparedWiringArguments prepare_arguments(const Signature &signature, std::span<const WiringArgument> arguments,
+                                          bool import_contexts, const Signature *parameter_aliases) {
     const auto fixed_count = signature.first_variadic_parameter().value_or(signature.parameter_count());
     auto fixed = std::vector<const WiringArgument *>(fixed_count);
-    auto variadic = std::vector<const WiringArgument *>{};
+    auto fixed_supplied_indices = std::vector<std::optional<std::size_t>>(fixed_count);
+    auto variadic = std::vector<std::pair<const WiringArgument *, std::size_t>>{};
     variadic.reserve(arguments.size());
 
     auto next_positional = std::size_t{};
-    for (const auto &argument : arguments) {
+    for (auto supplied_index = std::size_t{}; supplied_index < arguments.size(); ++supplied_index) {
+        const auto &argument = arguments[supplied_index];
         const auto capture_mode = argument.variadic_capture_mode();
         if (capture_mode != VariadicMode::none && fixed_count != signature.parameter_count()) {
-            variadic.push_back(&argument);
+            variadic.emplace_back(&argument, supplied_index);
             continue;
         }
 
@@ -198,13 +208,14 @@ std::vector<WiringArgument> prepare_arguments(const Signature &signature, std::s
                                       "' received more than one argument"};
                 }
                 fixed[*fixed_parameter] = &argument;
+                fixed_supplied_indices[*fixed_parameter] = supplied_index;
                 continue;
             }
 
             if (fixed_count == signature.parameter_count()) {
                 throw WiringError{"a call has an unknown named argument"};
             }
-            variadic.push_back(&argument);
+            variadic.emplace_back(&argument, supplied_index);
             continue;
         }
 
@@ -213,14 +224,17 @@ std::vector<WiringArgument> prepare_arguments(const Signature &signature, std::s
             ++next_positional;
         }
         if (next_positional < fixed_count) {
-            fixed[next_positional++] = &argument;
+            fixed[next_positional] = &argument;
+            fixed_supplied_indices[next_positional] = supplied_index;
+            ++next_positional;
         } else {
-            variadic.push_back(&argument);
+            variadic.emplace_back(&argument, supplied_index);
         }
     }
 
-    auto prepared = std::vector<WiringArgument>{};
-    prepared.reserve(fixed_count + variadic.size());
+    auto prepared = PreparedWiringArguments{};
+    prepared.arguments.reserve(fixed_count + variadic.size());
+    prepared.supplied_argument_indices.reserve(fixed_count + variadic.size());
     for (auto index = std::size_t{}; index < fixed_count; ++index) {
         const auto &parameter = signature.parameter(index);
         const auto *argument = fixed[index];
@@ -237,31 +251,39 @@ std::vector<WiringArgument> prepare_arguments(const Signature &signature, std::s
             if (!parameter.accepts_absent_scalar) {
                 throw WiringError{"a call is missing a fixed argument"};
             }
-            prepared.push_back(absent_scalar_argument(parameter));
+            prepared.arguments.push_back(absent_scalar_argument(parameter));
+            prepared.supplied_argument_indices.emplace_back(std::nullopt);
             continue;
         }
 
         auto value = WiringArgument::borrow(*argument);
         value.clear_name();
-        prepared.push_back(std::move(value));
+        prepared.arguments.push_back(std::move(value));
+        prepared.supplied_argument_indices.push_back(fixed_supplied_indices[index]);
     }
 
-    for (const auto *argument : variadic) {
-        prepared.push_back(WiringArgument::borrow(*argument));
+    for (const auto &[argument, supplied_index] : variadic) {
+        prepared.arguments.push_back(WiringArgument::borrow(*argument));
+        prepared.supplied_argument_indices.push_back(supplied_index);
     }
     return prepared;
 }
 
-NormalizedWiringArguments normalize_prepared(const Signature &signature, std::vector<WiringArgument> prepared_arguments,
+NormalizedWiringArguments normalize_prepared(const Signature &signature, PreparedWiringArguments prepared_arguments,
                                              allocator *memory, WiringRecordOverlay *temporary_records) {
-    const auto arguments = std::span<const WiringArgument>{prepared_arguments};
+    const auto arguments = std::span<const WiringArgument>{prepared_arguments.arguments};
+    const auto supplied_argument_indices =
+        std::span<const std::optional<std::size_t>>{prepared_arguments.supplied_argument_indices};
     const auto first_variadic = signature.first_variadic_parameter();
     if (!first_variadic) {
         auto normalized = std::vector<WiringArgument>{};
         auto descriptors = std::vector<WiringArgumentDescriptor>{};
+        auto normalized_supplied_indices = std::vector<std::optional<std::size_t>>{};
         normalized.reserve(arguments.size());
         descriptors.reserve(arguments.size());
-        for (const auto &argument : arguments) {
+        normalized_supplied_indices.reserve(arguments.size());
+        for (auto index = std::size_t{}; index < arguments.size(); ++index) {
+            const auto &argument = arguments[index];
             if (argument.name().has_value() &&
                 argument.variadic_capture_mode() == VariadicMode::none) {
                 throw WiringError{"a non-variadic parameter does not accept named arguments"};
@@ -270,8 +292,9 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
             value.clear_name();
             normalized.push_back(std::move(value));
             descriptors.emplace_back(normalized.back());
+            normalized_supplied_indices.push_back(supplied_argument_indices[index]);
         }
-        return {std::move(normalized), std::move(descriptors)};
+        return {std::move(normalized), std::move(descriptors), std::move(normalized_supplied_indices)};
     }
 
     if (arguments.size() < *first_variadic) {
@@ -280,17 +303,21 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
 
     auto normalized = std::vector<WiringArgument>{};
     auto descriptors = std::vector<WiringArgumentDescriptor>{};
+    auto normalized_supplied_indices = std::vector<std::optional<std::size_t>>{};
     normalized.reserve(signature.parameter_count());
     descriptors.reserve(arguments.size());
+    normalized_supplied_indices.reserve(signature.parameter_count());
 
     const auto add_record = [&](std::unique_ptr<WiringRecord> record) {
         return temporary_records != nullptr ? temporary_records->add(std::move(record))
                                             : add_wiring_record(std::move(record));
     };
 
-    for (const auto &argument : arguments.first(*first_variadic)) {
+    for (auto index = std::size_t{}; index < *first_variadic; ++index) {
+        const auto &argument = arguments[index];
         normalized.push_back(WiringArgument::borrow(argument));
         descriptors.emplace_back(normalized.back());
+        normalized_supplied_indices.push_back(supplied_argument_indices[index]);
     }
     if (std::ranges::any_of(normalized, [](const auto &argument) { return argument.name().has_value(); })) {
         throw WiringError{"a fixed parameter does not accept a named argument"};
@@ -362,7 +389,7 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
                 name_conflicts_with_fixed(*argument.name())) {
                 throw WiringError{"a variadic argument name conflicts with a fixed parameter"};
             }
-            contains_optional_argument |= argument.requires_optional();
+            contains_optional_argument |= argument.annotations().optional;
             descriptors.push_back(argument);
         }
         return contains_optional_argument;
@@ -394,6 +421,7 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
                 }
                 const auto contains_optional_argument = append_record_descriptors(*record);
                 normalized.push_back(WiringArgument::borrow(argument));
+                normalized_supplied_indices.emplace_back(std::nullopt);
                 if (argument.requires_optional() || contains_optional_argument) {
                     normalized.back().require_optional();
                 }
@@ -404,10 +432,11 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
                                 operations.accepts_direct(static_cast<const TimeSeriesType &>(argument.type()));
             if (direct) {
                 const auto collection = argument.time_series();
-                auto record = std::make_unique<VariadicWiringRecord>(collection, mode, operations);
-                append_record_descriptors(*record);
+                auto record = std::make_unique<VariadicWiringRecord>(collection, mode, operations, memory);
+                const auto contains_optional_argument = append_record_descriptors(*record);
                 normalized.emplace_back(add_record(std::move(record)));
-                if (argument.requires_optional()) {
+                normalized_supplied_indices.emplace_back(std::nullopt);
+                if (argument.requires_optional() || contains_optional_argument) {
                     normalized.back().require_optional();
                 }
                 return;
@@ -448,6 +477,7 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
                                                              operations, std::move(captured), memory);
         append_record_descriptors(*record);
         normalized.emplace_back(add_record(std::move(record)));
+        normalized_supplied_indices.emplace_back(std::nullopt);
         if (requires_optional) {
             normalized.back().require_optional();
         }
@@ -460,7 +490,7 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, std::ve
         append_capture(*named);
     }
 
-    return {std::move(normalized), std::move(descriptors)};
+    return {std::move(normalized), std::move(descriptors), std::move(normalized_supplied_indices)};
 }
 
 NormalizedWiringArguments normalize(const Signature &signature, std::span<const WiringArgument> arguments,

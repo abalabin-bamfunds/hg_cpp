@@ -204,11 +204,11 @@ void add_callable_parameter(std::vector<Parameter> &parameters, std::vector<Vari
         if constexpr (mode == VariadicMode::none) {
             parameters.push_back({name, &callable_input_type<Scope, Function, Index>(name), Field::activity,
                                   Field::validity, false, mode, nullptr, input_field<Field>::context,
-                                  input_field<Field>::dynamic_activity});
+                                  input_field<Field>::dynamic_activity, nullptr, input_field<Field>::valid_items});
         } else {
             parameters.push_back({name, &callable_input_type<Scope, Function, Index>(name), Field::activity,
                                   Field::validity, false, mode, variadic_wiring_operations<TimeSeries>(), false,
-                                  input_field<Field>::dynamic_activity});
+                                  input_field<Field>::dynamic_activity, nullptr, input_field<Field>::valid_items});
         }
     } else if constexpr (promoted_field<Field>::value) {
         const auto name = util::symbol{std::to_string(parameters.size())};

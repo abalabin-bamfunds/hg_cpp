@@ -9,6 +9,7 @@
 #include <bg/time_series/tsb/details/wiring.hpp>
 #include <bg/type/details/time_series_type.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
+#include <bg/type/time_series_value_type.hpp>
 #include <bg/type/variable_registry.hpp>
 #include <bg/util/static_storage.hpp>
 #include <bg/util/named_argument.hpp>
@@ -105,17 +106,23 @@ class TypedBundleConstruction<TSB<Schema, Properties...>> {
         });
 
         auto argument = WiringArgument{std::forward<Source>(source)};
-        if (argument.is_time_series()) {
-            fields_[index] = argument.time_series();
-        } else if (argument.is_scalar() && argument.present()) {
-            fields_[index] = static_cast<WiringPoint>(operators::const_(argument));
-        } else {
+        if (!argument.is_time_series() && (!argument.is_scalar() || !argument.present())) {
             throw WiringError{"a TSB field requires a time series or a present scalar value"};
         }
 
-        if (!input_type().item_type(index).accepts(fields_[index].type())) {
+        const auto *field_type = type_cast<TimeSeriesType>(&argument.type());
+        if (field_type == nullptr) {
+            const auto *scalar_type = type_cast<ScalarType>(&argument.type());
+            if (scalar_type == nullptr) {
+                throw WiringError{"a TSB field requires a time series or scalar"};
+            }
+            field_type = &time_series_value_type(*scalar_type, TimeSeriesGuarantee::const_);
+        }
+        if (!input_type().item_type(index).accepts(*field_type)) {
             throw WiringError{"a TSB field has an incompatible type"};
         }
+
+        fields_[index] = std::move(argument);
     }
 
     wp<TimeSeries> finish() {
@@ -138,7 +145,7 @@ class TypedBundleConstruction<TSB<Schema, Properties...>> {
 
     template <std::size_t... Index> wp<TimeSeries> finish(std::index_sequence<Index...>) {
         const auto fields = std::array<WiringArgument, sizeof...(Index)>{
-            WiringArgument{type().item_name(Index), fields_[Index]}...};
+            WiringArgument{type().item_name(Index), std::move(*fields_[Index])}...};
         return wp<TimeSeries>::from_validated(make_free_time_series_bundle(fields));
     }
 
@@ -147,7 +154,7 @@ class TypedBundleConstruction<TSB<Schema, Properties...>> {
     }
 
     SchemaArgumentAssignment<Reflection::field_count, WiringError> assignment_;
-    std::array<WiringPoint, Reflection::field_count> fields_{};
+    std::array<std::optional<WiringArgument>, Reflection::field_count> fields_{};
 };
 
 template <typename TimeSeries, typename... Arguments>
@@ -185,10 +192,15 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
     }
 
     template <typename Source, auto... SourceProperties>
+        requires(wp<Source, SourceProperties...>::validity != optional || ParsedProperties::validity == optional) &&
+                (!wp<Source, SourceProperties...>::valid_items || ParsedProperties::valid_items)
     explicit wp(wp<Source, SourceProperties...> source) : wp(static_cast<WiringPoint>(source)) {
-        static_assert(wp<Source, SourceProperties...>::validity != optional || ParsedProperties::validity == optional,
-                      "an optional wiring point cannot be re-annotated as a required input");
     }
+
+    template <typename Source, auto... SourceProperties>
+        requires(wp<Source, SourceProperties...>::validity == optional && ParsedProperties::validity != optional) ||
+                (wp<Source, SourceProperties...>::valid_items && !ParsedProperties::valid_items)
+    explicit wp(wp<Source, SourceProperties...>) = delete;
 
     operator WiringPoint() const noexcept { return point_; }
 
@@ -196,11 +208,9 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
     const TimeSeriesType &type() const noexcept { return point_.type(); }
 
     template <typename Target> auto as() const {
-        if constexpr (ParsedProperties::validity == optional) {
-            return wp<Target, optional>{point_};
-        } else {
-            return point_.template as<Target>();
-        }
+        using Result = typename details::annotated_wiring_point<Target, ParsedProperties::validity == optional,
+                                                                ParsedProperties::valid_items>::type;
+        return Result{point_};
     }
 
     template <typename Target, typename Builder>
@@ -225,6 +235,8 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
     static constexpr bool context = ParsedProperties::context;
     static constexpr auto variadic_mode = details::VariadicMode::none;
     static constexpr InputValidity validity = ParsedProperties::validity;
+    static constexpr bool valid_items = ParsedProperties::valid_items;
+    static constexpr details::WiringAnnotations annotations{validity == optional, valid_items};
 
   private:
     struct unchecked_t {};
@@ -255,10 +267,15 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
     }
 
     template <typename Source, auto... SourceProperties>
+        requires(wp<Source, SourceProperties...>::validity != optional || ParsedProperties::validity == optional) &&
+                (!wp<Source, SourceProperties...>::valid_items || ParsedProperties::valid_items)
     explicit wp(wp<Source, SourceProperties...> source) : wp(static_cast<WiringPoint>(source)) {
-        static_assert(wp<Source, SourceProperties...>::validity != optional || ParsedProperties::validity == optional,
-                      "an optional wiring point cannot be re-annotated as a required input");
     }
+
+    template <typename Source, auto... SourceProperties>
+        requires(wp<Source, SourceProperties...>::validity == optional && ParsedProperties::validity != optional) ||
+                (wp<Source, SourceProperties...>::valid_items && !ParsedProperties::valid_items)
+    explicit wp(wp<Source, SourceProperties...>) = delete;
 
     operator WiringPoint() const noexcept { return point_; }
 
@@ -287,11 +304,9 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
     const TimeSeriesType &type() const noexcept { return point_.type(); }
 
     template <typename Target> auto as() const {
-        if constexpr (ParsedProperties::validity == optional) {
-            return wp<Target, optional>{point_};
-        } else {
-            return point_.template as<Target>();
-        }
+        using Result = typename details::annotated_wiring_point<Target, ParsedProperties::validity == optional,
+                                                                ParsedProperties::valid_items>::type;
+        return Result{point_};
     }
 
     static wp from_validated(WiringPoint point) noexcept { return wp{point, unchecked_t{}}; }
@@ -301,6 +316,8 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
     static constexpr bool context = ParsedProperties::context;
     static constexpr auto variadic_mode = ParsedProperties::variadic_mode;
     static constexpr InputValidity validity = ParsedProperties::validity;
+    static constexpr bool valid_items = ParsedProperties::valid_items;
+    static constexpr details::WiringAnnotations annotations{validity == optional, valid_items};
 
   private:
     const details::VariadicWiringRecord &record() const noexcept { return *details::variadic_wiring_record(point_); }

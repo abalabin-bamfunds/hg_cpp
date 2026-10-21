@@ -103,6 +103,8 @@ allocated through the current outer cycle and is destroyed at the start of the
 next outer cycle. Starting an inner graph publishes its key input and schedules
 active consumers of that key.
 
-A mapped item update evaluates only the inner runtime graph for that key. A
-pass-through input update evaluates every current inner runtime graph. Immediate
-and timed scheduling follow the [nested graph rules](nested-graphs.md#evaluation).
+A mapped item update schedules only the inner runtime graph for that key.
+Pass-through inputs use normal input subscriptions. Their consumers determine
+which updates schedule an inner graph, including
+[selected-key membership subscriptions](time-series-references.md#collection-membership-subscriptions).
+Immediate and timed scheduling follow the [nested graph rules](nested-graphs.md#evaluation).

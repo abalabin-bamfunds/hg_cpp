@@ -107,7 +107,7 @@ template <typename Definition> const bg::details::AggregateNodeDescriptor &aggre
                 try {
                     auto gil = GilScope{};
                     if (!gil) {
-                        bg::details::unbind_dynamic_reference_inputs<Definition>(node, storage, *context);
+                        bg::details::unbind_dynamic_inputs<Definition>(node, storage, *context);
                         return;
                     }
                     bg::details::stop_aggregate_node<Definition>(node, storage, context);
@@ -134,7 +134,7 @@ template <typename Definition> const bg::details::AggregateNodeDescriptor &aggre
                                                    EvaluationContext *context) noexcept {
                 auto gil = GilScope{};
                 if (!gil) {
-                    bg::details::unbind_dynamic_reference_inputs<Definition>(node, storage, *context);
+                    bg::details::unbind_dynamic_inputs<Definition>(node, storage, *context);
                     bg::details::destroy_aggregate_state<Definition>(node, storage, context);
                     return;
                 }

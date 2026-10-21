@@ -109,7 +109,7 @@ TEST_CASE("retaining a time series set key preserves its non-live position",
     CHECK(storage.size() == 0);
     CHECK_FALSE(storage.changed());
 
-    storage.release_retention(retained, memory);
+    storage.release_retention(retained, key_runtime_type, key_layout, memory);
     storage.reset_change_tracking(first_time + bg::EvaluationTime::duration{1}, key_runtime_type, key_layout, memory,
                                   [&](std::uint32_t) noexcept { --constructed_items; });
     CHECK(storage.find_position(key, key_runtime_type, key_layout) == retained);
@@ -131,7 +131,7 @@ TEST_CASE("retaining a time series set key preserves its non-live position",
     CHECK(constructed_items == 0);
     CHECK(storage.find_position(key, key_runtime_type, key_layout) == retained);
 
-    storage.release_retention(retained, memory);
+    storage.release_retention(retained, key_runtime_type, key_layout, memory);
     storage.reset_change_tracking(first_time + bg::EvaluationTime::duration{4}, key_runtime_type, key_layout, memory,
                                   [&](std::uint32_t) noexcept { --constructed_items; });
     CHECK(storage.find_position(key, key_runtime_type, key_layout) == bg::util::occupancy_index::npos);

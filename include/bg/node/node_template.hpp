@@ -75,7 +75,7 @@ class NodeTemplate : public WiringTemplate {
     virtual void construct_initial_state(const NodeStateLayout &, void *) const noexcept {}
     virtual NodeFunction state_destruction_function(const ResolvedSignature &) const noexcept { return nullptr; }
 
-    [[nodiscard]] virtual std::vector<const TimeSeriesType *> dynamic_reference_input_types(const TypeMap &) const {
+    [[nodiscard]] virtual std::vector<const TimeSeriesType *> dynamic_input_types(const TypeMap &) const {
         return {};
     }
 
@@ -83,7 +83,7 @@ class NodeTemplate : public WiringTemplate {
 
     void resolve_additional_types(const TypeMap &type_map) const override {
         (void)resolve_state_types(type_map);
-        (void)dynamic_reference_input_types(type_map);
+        (void)dynamic_input_types(type_map);
     }
 
     virtual CompiledNodeDataLayout compiled_data_layout(const ResolvedSignature &) const noexcept { return {}; }

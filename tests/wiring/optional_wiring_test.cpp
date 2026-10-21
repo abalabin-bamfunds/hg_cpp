@@ -18,10 +18,60 @@ using namespace bg::literals;
 namespace {
 
 template <typename T> concept has_optional_wrapper = requires(T value) { opt(value); };
+template <typename Source, typename Target> concept can_reannotate = requires(Source value) { Target{value}; };
 
 static_assert(!has_optional_wrapper<i64>);
 
+static_assert(sizeof(wp<TSD<i64, TS<i64>>, valid_items>) == sizeof(WiringPoint));
+static_assert(wp<TSD<i64, TS<i64>>, valid_items>::annotations.valid_items);
+static_assert(wp<TSD<i64, TS<i64>>, optional, valid_items>::annotations.optional);
+static_assert(wp<TSD<i64, TS<i64>>, optional, valid_items>::annotations.valid_items);
+static_assert(can_reannotate<wp<TSD<i64, TS<i64>>, valid_items>, wp<TSD<i64, TS<i64>>, valid_items>>);
+static_assert(can_reannotate<wp<TSD<i64, TS<i64>>, valid_items>,
+                             wp<TSD<i64, TS<i64>>, optional, valid_items>>);
+static_assert(!can_reannotate<wp<TSD<i64, TS<i64>>, valid_items>, wp<TSD<i64, TS<i64>>>>);
+static_assert(!can_reannotate<wp<TSD<i64, TS<i64>>, optional, valid_items>,
+                              wp<TSD<i64, TS<i64>>, valid_items>>);
+
 } // namespace
+
+TEST_CASE("valid_items annotations compose with opt and typed views",
+          "[feature:wiring][feature:operator][validity:optional][series:tsd]") {
+    const auto source = node([](Out<TSD<i64, TS<i64>>>) {});
+    const auto optional_input = node([](In<TSD<i64, TS<i64>>, optional, valid_items>) {});
+
+    testing::test_wiring([&] {
+        const auto value = source();
+        const auto valid = bg::valid_items(value);
+        const auto optional_valid = opt(valid);
+        const auto valid_optional = bg::valid_items(opt(value));
+        const auto view = valid_optional.as<TSD<i64, TS<i64>>>();
+
+        static_assert(std::is_same_v<std::remove_cvref_t<decltype(optional_valid)>,
+                                     wp<TSD<i64, TS<i64>>, optional, valid_items>>);
+        static_assert(std::is_same_v<std::remove_cvref_t<decltype(valid_optional)>,
+                                     wp<TSD<i64, TS<i64>>, optional, valid_items>>);
+        static_assert(std::is_same_v<std::remove_cvref_t<decltype(view)>,
+                                     wp<TSD<i64, TS<i64>>, optional, valid_items>>);
+
+        optional_input(optional_valid);
+        optional_input(valid_optional);
+    });
+}
+
+TEST_CASE("valid_items annotations require a capable receiver and survive references",
+          "[feature:wiring][feature:operator][series:tsd][series:reference]") {
+    const auto source = node([](Out<TSD<i64, TS<i64>>>) {});
+    const auto reference_source = node([](Out<REF<TSD<i64, TS<i64>>>>) {});
+    const auto capable = node([](In<TSD<i64, TS<i64>>, valid_items>) {});
+    const auto ordinary = node([](In<TSD<i64, TS<i64>>>) {});
+
+    testing::test_wiring([&] {
+        capable(bg::valid_items(source()));
+        capable(bg::valid_items(reference_source()));
+        CHECK_THROWS_AS(ordinary(bg::valid_items(source())), TypeResolutionError);
+    });
+}
 
 TEST_CASE("opt keeps its qualifier across graph boundaries",
           "[feature:wiring][feature:operator][validity:optional][series:value][shape:nested]") {

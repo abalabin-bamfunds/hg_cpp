@@ -1,5 +1,7 @@
 #include <bg/graph.hpp>
+#include <bg/graph/dynamic_node_subscriber_storage.hpp>
 #include <bg/graph/dynamic_subscribers.hpp>
+#include <bg/literal/sentinel.hpp>
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
@@ -14,8 +16,11 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "../../utils/counting_memory_resource.hpp"
+
 #include <array>
 #include <chrono>
+#include <new>
 #include <optional>
 #include <vector>
 
@@ -446,6 +451,79 @@ TEST_CASE("a second root subscriber promotes inline storage",
     bg::details::ReferenceProvider::finalize_root(root, runtime.allocation());
 }
 
+TEST_CASE("dynamic node subscriber storage promotes transactionally",
+          "[evaluation][feature:reference][allocation][shape:multiple]") {
+    auto wiring = bg::GraphWiring{};
+    wiring.finalize();
+    const auto compiled = bg::CompiledGraph{wiring};
+    auto global_state = bg::GlobalState{};
+    auto graph = bg::RuntimeGraph{compiled, global_state};
+    auto other_global_state = bg::GlobalState{};
+    auto other_graph = bg::RuntimeGraph{compiled, other_global_state};
+    auto memory = counting_memory_resource{};
+    auto subscribers = bg::details::DynamicNodeSubscriberStorage<>{};
+
+    STATIC_CHECK(sizeof(bg::details::DynamicNodeSubscriberStorage<>) == 2 * sizeof(void *));
+    subscribers.add(bg::details::DynamicNodeSubscriber{graph, 0, 3, true, false, true}, bg::allocator{memory});
+    CHECK(subscribers.has_inline_subscriber());
+    CHECK(memory.allocations() == 0);
+
+    subscribers.add(bg::details::DynamicNodeSubscriber{graph, 0, 7, false, true, false}, bg::allocator{memory});
+    CHECK(subscribers.has_inline_subscriber());
+    CHECK(subscribers.inline_subscriber().node_index() == 3);
+    CHECK(subscribers.inline_subscriber().active());
+    CHECK(subscribers.inline_subscriber().controlled_activity());
+    subscribers.remove(other_graph, 0);
+    CHECK(subscribers.has_inline_subscriber());
+
+    subscribers.remove(graph, 0);
+    CHECK(subscribers.empty());
+    CHECK_FALSE(subscribers.destination);
+    subscribers.add(bg::details::DynamicNodeSubscriber{graph, 0, 3, true, false, true}, bg::allocator{memory});
+
+    auto promoted = false;
+    for (auto failure_point = std::size_t{}; failure_point < 8; ++failure_point) {
+        memory.fail_after(failure_point);
+        try {
+            subscribers.add(bg::details::DynamicNodeSubscriber{other_graph, 0, 5, true, false, false},
+                            bg::allocator{memory});
+            promoted = true;
+            memory.allow_allocations();
+            break;
+        } catch (const std::bad_alloc &) {
+            memory.allow_allocations();
+            CHECK(subscribers.has_inline_subscriber());
+            CHECK(subscribers.inline_subscriber().graph == &graph);
+            CHECK(subscribers.inline_subscriber().input_offset == 0);
+            CHECK(subscribers.inline_subscriber().node_index() == 3);
+            CHECK(memory.allocations() == 0);
+        }
+    }
+    CHECK(promoted);
+    CHECK(subscribers.has_dynamic_subscribers());
+
+    auto subscriber_count = std::size_t{};
+    subscribers.dynamic_subscribers()->for_each_node_subscriber([&](const auto &subscriber) {
+        ++subscriber_count;
+        if (subscriber.graph == &graph) {
+            CHECK(subscriber.node_index() == 3);
+            CHECK(subscriber.active());
+            CHECK(subscriber.controlled_activity());
+        }
+    });
+    CHECK(subscriber_count == 2);
+
+    subscribers.remove(graph, 0);
+    CHECK(subscribers.has_dynamic_subscribers());
+    CHECK_FALSE(subscribers.empty());
+    subscribers.remove(other_graph, 0);
+    CHECK(subscribers.has_dynamic_subscribers());
+    CHECK(subscribers.empty());
+    subscribers.release();
+    CHECK_FALSE(subscribers.destination);
+    CHECK(memory.allocations() == 0);
+}
+
 namespace {
 
 struct sampled_left_source {
@@ -519,6 +597,21 @@ struct dynamic_reference_value {
     }
 };
 
+struct dynamic_reference_unbinder {
+    bg::In<bg::REF<bg::TSL<bg::TS<bg::i64>, 1>>> collection;
+    bg::In<bg::REF<bg::TS<bg::i64>>, bg::dynamic_binding, bg::optional> input;
+    bg::In<bg::TS<bg::i64>> trigger;
+    bg::Out<bg::TS<bool>> output;
+
+    void evaluate() const {
+        if (*trigger == 0) {
+            input.bind(collection[0]);
+        }
+        input.unbind();
+        output.set(input.became_invalid());
+    }
+};
+
 } // namespace
 
 TEST_CASE("changing a reference samples its target",
@@ -571,6 +664,18 @@ TEST_CASE("a dynamic dereferenced input rebinds while passive",
     };
 
     CHECK(bg::testing::test_graph(graph).equals({10, 20}));
+}
+
+TEST_CASE("dynamic reference input unbinding reports one invalidation cycle",
+          "[evaluation][reference][validity][feature:reference][transition:invalidation]"
+          "[binding:reference-to-value][series:value][series:reference][guarantee:ordinary]") {
+    const auto unbind = bg::node<dynamic_reference_unbinder>();
+    const auto graph = [&](bg::wp<bg::TSL<bg::TS<bg::i64>, 1>> collection,
+                           bg::wp<bg::TS<bg::i64>> trigger) {
+        return unbind(collection, trigger);
+    };
+
+    CHECK(bg::testing::test_graph(graph, {{{0, 10}}, {{0, 20}}}, {0, 1}).equals({true, false}));
 }
 
 namespace {
@@ -839,4 +944,30 @@ TEST_CASE("reference invalidation unbinds and revalidation resamples consumers",
     const auto actual = bg::testing::test_graph(graph);
 
     CHECK(actual.equals({10, std::nullopt, 10}));
+}
+
+TEST_CASE("a sampled TSS output includes a same-cycle change to the previous target",
+          "[evaluation][reference][series:tss][feature:sampling][transition:update]") {
+    const auto select = bg::node([](bg::In<bg::TS<bool>> condition,
+                                    bg::In<bg::REF<bg::TSS<bg::i64>>, bg::passive> old_target,
+                                    bg::In<bg::REF<bg::TSS<bg::i64>>, bg::passive> new_target,
+                                    bg::Out<bg::REF<bg::TSS<bg::i64>>> output) {
+        output.copy(*condition ? old_target : new_target);
+    });
+    const auto graph = [&](bg::wp<bg::TS<bool>> condition, bg::wp<bg::TSS<bg::i64>> old_target,
+                           bg::wp<bg::TSS<bg::i64>> new_target) {
+        return select(condition, old_target, new_target).as<bg::TSS<bg::i64>>();
+    };
+
+    const auto same_cycle_change = bg::testing::test_graph(
+        graph, bg::testing::input<bg::TS<bool>>({true, false}),
+        bg::testing::input<bg::TSS<bg::i64>>({{2}, {3, literal::REMOVED(2)}}),
+        bg::testing::input<bg::TSS<bg::i64>>({{3}, literal::SKIP}));
+    CHECK(same_cycle_change.equals({{2}, {3, literal::REMOVED(2)}}));
+
+    const auto stale_change = bg::testing::test_graph(
+        graph, bg::testing::input<bg::TS<bool>>({true, true, false}),
+        bg::testing::input<bg::TSS<bg::i64>>({{2}, {3, literal::REMOVED(2)}, literal::SKIP}),
+        bg::testing::input<bg::TSS<bg::i64>>({{3}, literal::SKIP, literal::SKIP}));
+    CHECK(stale_change.equals({{2}, {3, literal::REMOVED(2)}, {}}));
 }

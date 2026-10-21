@@ -85,8 +85,6 @@ class time_series_set_storage {
             throw std::length_error{"time series set key retention count overflow"};
         }
         ++*count;
-        released_.reset(position);
-
         release_created.release();
         return position;
     }
@@ -98,7 +96,8 @@ class time_series_set_storage {
         return retain(details::scalar_data(key), key_runtime_type, key_layout, memory);
     }
 
-    void release_retention(Position position, allocator &memory) noexcept {
+    void release_retention(Position position, const ScalarRuntimeType &key_runtime_type,
+                           const util::runtime_item_layout &key_layout, allocator &memory) noexcept {
         assert(retention_counts_ != nullptr);
         auto *count = retention_counts_->find(position);
         assert(count != nullptr && *count != 0);
@@ -111,7 +110,8 @@ class time_series_set_storage {
             release_retention_counts(memory);
         }
         if (!live_.contains(position) && !removed_.contains(position)) {
-            released_.set(position, memory);
+            reclaim_position(position, key_runtime_type, key_layout, memory, [](Position) noexcept {});
+            positions_.trim(memory);
         }
     }
 
@@ -131,16 +131,10 @@ class time_series_set_storage {
                 reclaim_position(position, key_runtime_type, key_layout, memory, reclaim);
             }
         }
-        for (const auto position : released_) {
-            if (!live_.contains(position) && !retained(position)) {
-                reclaim_position(position, key_runtime_type, key_layout, memory, [](Position) noexcept {});
-            }
-        }
         positions_.trim(memory);
 
         added_.clear();
         removed_.clear();
-        released_.clear();
         change_time_ = evaluation_time;
     }
 
@@ -159,7 +153,6 @@ class time_series_set_storage {
                 auto release_item = util::scope_exit{[&]() noexcept { std::invoke(destroy_item, position); }};
                 live_.set(position, memory);
                 added_.set(position, memory);
-                released_.reset(position);
                 release_item.release();
                 return {position, time_series_set_change::added};
             }
@@ -282,7 +275,6 @@ class time_series_set_storage {
         live_.release(memory);
         added_.release(memory);
         removed_.release(memory);
-        released_.release(memory);
         if (retention_counts_ != nullptr) {
             release_retention_counts(memory);
         }
@@ -352,7 +344,6 @@ class time_series_set_storage {
         live_.grow(size, memory);
         added_.grow(size, memory);
         removed_.grow(size, memory);
-        released_.grow(size, memory);
     }
 
     template <typename Reclaim>
@@ -363,7 +354,6 @@ class time_series_set_storage {
         const auto hash = hashes_[position];
         lookup_.erase(hash, position, memory);
         hashes_.erase_at(position, memory.memory_resource());
-        released_.reset(position);
         std::invoke(reclaim, position);
         keys_.erase_at_with(position, key_layout, memory,
                             [&](void *value) noexcept { key_runtime_type.destroy(value, memory); });
@@ -377,7 +367,6 @@ class time_series_set_storage {
     util::index<> live_;
     util::index<> added_;
     util::index<> removed_;
-    util::index<> released_;
     RetentionCounts *retention_counts_{};
     EvaluationTime change_time_{MIN_DT};
 };

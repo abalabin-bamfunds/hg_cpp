@@ -49,7 +49,7 @@ class BG_PYTHON_API PythonNodeDefinition {
     };
     using state_type = void *;
 
-    enum class ParameterMode : std::uint8_t { scalar, input_view, time_series_value };
+    enum class ParameterMode : std::uint8_t { scalar, input_view, input_view_valid_items, time_series_value };
     enum class CallbackParameter : std::uint8_t { input, output, evaluation_clock, scheduler, state, queue };
 
     struct CallbackArgument {

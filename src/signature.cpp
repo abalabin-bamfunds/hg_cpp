@@ -9,6 +9,7 @@
 #include <bg/type/size_variable.hpp>
 #include <bg/type/details/resolver_type_resolution_error.hpp>
 #include <bg/type/schema.hpp>
+#include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_variable.hpp>
 #include <bg/type/type_variable.hpp>
@@ -122,7 +123,8 @@ bool same_resolved_signature(const ResolvedSignature &left, const ResolvedSignat
 
     return std::ranges::equal(left.parameters, right.parameters,
                               [](const auto &left_parameter, const auto &right_parameter) {
-                                  return left_parameter.type == right_parameter.type;
+                                  return left_parameter.type == right_parameter.type &&
+                                         left_parameter.valid_items == right_parameter.valid_items;
                               });
 }
 
@@ -392,6 +394,21 @@ Signature::match_wiring_arguments(std::span<const WiringArgument> arguments, con
         if (index == arguments.size()) {
             try {
                 auto candidate_mappings = match_arguments(offered_types, seed);
+                for (const auto &form : selected_forms) {
+                    const auto &argument = arguments[form.argument_index];
+                    if (!argument.annotations().valid_items) {
+                        continue;
+                    }
+                    const auto &resolved_type = form.offered_type->resolve(candidate_mappings);
+                    const auto *time_series = type_cast<TimeSeriesType>(&resolved_type);
+                    if (time_series == nullptr ||
+                        type_cast<TimeSeriesDictionaryType>(&time_series->target_type()) == nullptr) {
+                        const auto &parameter = parameters_[form.argument_index];
+                        throw TypeResolutionError{TypeResolutionErrorCode::mismatch, parameter.name,
+                                                  "a valid_items-qualified argument requires a TSD form",
+                                                  parameter.type, form.offered_type};
+                    }
+                }
                 matches.push_back({std::move(candidate_mappings), selected_forms, materialisation_cost()});
             } catch (const TypeResolutionError &error) {
                 if (error.code() != TypeResolutionErrorCode::mismatch &&
@@ -429,6 +446,11 @@ void Signature::validate_wiring_arguments(std::span<const WiringArgument> argume
         if (argument.requires_optional() && parameter.validity != optional) {
             throw TypeResolutionError{TypeResolutionErrorCode::mismatch, parameter.name,
                                       "an opt-qualified argument requires an optional input parameter",
+                                      parameter.type, &argument.type()};
+        }
+        if (argument.annotations().valid_items && !parameter.valid_items) {
+            throw TypeResolutionError{TypeResolutionErrorCode::mismatch, parameter.name,
+                                      "a valid_items-qualified argument requires a valid_items input parameter",
                                       parameter.type, &argument.type()};
         }
         if (argument.is_scalar() && !argument.present() && !parameter.accepts_absent_scalar) {
@@ -475,7 +497,7 @@ ResolvedSignature Signature::complete_resolution(
 
         parameters.push_back({parameter.name, &type, parameter.activity, parameter.validity,
                               parameter.accepts_absent_scalar, parameter.variadic_mode, parameter.context,
-                              parameter.dynamic_activity});
+                              parameter.dynamic_activity, parameter.valid_items});
     }
 
     const TimeSeriesType *output = nullptr;

@@ -2,9 +2,11 @@
 
 Variadic parameters collect wiring-time arguments into a wiring record. The
 record preserves argument order, names, and whether each argument was supplied
-as a scalar or time series. It also preserves `opt` qualifiers when arguments
-are selected or forwarded. An optional variadic parameter accepts qualified
-items; a required variadic parameter rejects them.
+as a scalar or time series. It preserves `opt` and `valid_items` annotations
+when arguments are selected or forwarded. An optional variadic parameter
+accepts `opt`-qualified items; a required variadic parameter rejects them.
+Each receiving parameter checks the argument's annotations, including when
+materialising the pack as a collection time series.
 
 Candidate resolution constructs each required record in a disposable wiring
 overlay. The selected call constructs its records in the active `GraphWiring`.
@@ -78,7 +80,8 @@ resolve the list type.
 
 A single TSL or TSB argument supplied with the variadic parameter's exact name
 binds as one collection. Its items remain available as individual arguments to
-resolvers and requirements. Item and field selection stays lazy. Otherwise the
+resolvers and requirements. A free TSB retains its original scalar arguments
+and per-field annotations. Item and field selection stays lazy. Otherwise the
 argument follows the parameter's ordinary capture rules.
 
 Passing a record to another parameter with the same capture mode preserves the
@@ -90,7 +93,7 @@ use their decimal positions as names in that TSB schema.
 `args(bundle)` expands a TSB into positional wiring arguments in schema order.
 `kwargs(bundle)` expands it into named wiring arguments. Expanding a free TSB
 or a captured variadic pack emits its original arguments, including scalars and
-per-argument optional qualifiers; it does not materialize the TSB. Expanding
+per-argument wiring annotations; it does not materialize the TSB. Expanding
 another TSB emits its time-series fields. Named fields satisfy fixed parameters
 by name before remaining fields enter `var_kwargs`. Expansion happens before
 signature resolution.
@@ -118,7 +121,8 @@ An empty variadic TSL also becomes valid when its materialization node starts.
 
 A nested graph preserves each pack across its boundary. Each captured time
 series crosses as a reference. Each captured scalar becomes immutable data in
-the inner compiled graph. A directly bound collection crosses as one reference.
+the inner compiled graph. Free TSB arguments use these same paths. A collection
+without retained original arguments crosses as one reference.
 
 A variadic graph or node can be an operator overload. A matching fixed-parameter
 overload is preferred over a variadic overload before type specificity is

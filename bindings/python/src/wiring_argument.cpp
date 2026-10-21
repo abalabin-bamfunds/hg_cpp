@@ -89,6 +89,9 @@ WiringArgument PythonWiringPoint::argument(const GraphWiring &wiring) const {
     if (requires_optional_) {
         result.require_optional();
     }
+    if (requires_valid_items_) {
+        result.require_valid_items();
+    }
     return result;
 }
 
@@ -98,7 +101,16 @@ PythonWiringPoint PythonWiringPoint::as_optional() const {
         throw std::invalid_argument{"opt requires a Python wiring point with an output"};
     }
 
-    return {point_, lifetime_, true};
+    return {point_, lifetime_, true, requires_valid_items_};
+}
+
+PythonWiringPoint PythonWiringPoint::as_valid_items() const {
+    lifetime_->check();
+    if (!point_.has_output()) {
+        throw std::invalid_argument{"valid_items requires a Python wiring point with an output"};
+    }
+
+    return {point_, lifetime_, requires_optional_, true};
 }
 
 } // namespace bg::python

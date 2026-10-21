@@ -295,6 +295,11 @@ class TimeSeriesListVariadicWiringOperations final : public VariadicWiringOperat
         return time_series_list_item(collection, index);
     }
 
+    std::optional<std::span<const WiringArgument>>
+    original_arguments(WiringPoint) const noexcept override {
+        return std::nullopt;
+    }
+
     WiringPoint materialize(std::span<const WiringArgument> arguments,
                             const TimeSeriesType &target_type) const override {
         auto items = std::vector<WiringPoint>{};

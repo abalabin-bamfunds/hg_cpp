@@ -112,8 +112,7 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
 
     template <typename InputItem, auto... InputTimeSeriesProperties, auto... InputProperties>
     void copy_tick(const In<TSD<K, InputItem, InputTimeSeriesProperties...>, InputProperties...> &input) const {
-        if (input.last_updated() != state_->evaluation_time() ||
-            (!input.modified() && !input.became_invalid())) {
+        if (input.last_updated() != state_->evaluation_time() || !input.modified()) {
             return;
         }
         if (!input.valid()) {

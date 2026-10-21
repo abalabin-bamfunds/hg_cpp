@@ -56,6 +56,14 @@ struct all_valid_input_node_index_sink {
     void evaluate() const {}
 };
 
+struct cycle_callback_node_definition {
+    static constexpr bool uses_cycle_callbacks = true;
+
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void evaluate() const {}
+};
+
 struct ordinary_two_input_sink {
     bg::In<bg::TS<float>> first;
     bg::In<bg::TS<float>> second;
@@ -149,6 +157,20 @@ struct runtime_signature_identity_definition {
     bg::Signature signature_;
 };
 
+struct runtime_valid_items_all_valid_definition {
+    runtime_valid_items_all_valid_definition()
+        : signature_{bg::util::symbol{"runtime_valid_items_all_valid"},
+                     {bg::Parameter{.name = bg::util::symbol{"input"},
+                                    .type = &bg::TSD<bg::i64, bg::TS<bg::i64>>::type(),
+                                    .validity = bg::InputValidity::all_valid,
+                                    .valid_items = true}}} {}
+
+    const bg::Signature &signature() const noexcept { return signature_; }
+    static void evaluate(bg::NodeInvocation<>) {}
+
+    bg::Signature signature_;
+};
+
 } // namespace
 
 TEST_CASE("typed callable nodes omit runtime-signature metadata",
@@ -182,6 +204,23 @@ TEST_CASE("typed callable nodes omit runtime-signature metadata",
     const auto runtime_sizes = compiled_sizes(runtime_identity);
     CHECK(typed_sizes.first < runtime_sizes.first);
     CHECK(typed_sizes.second == runtime_sizes.second);
+}
+
+TEST_CASE("aggregate node declarations reserve cycle callback storage",
+          "[compiled_graph][feature:graph-compilation][feature:lifecycle][definition:aggregate]") {
+    const auto has_cycle_callbacks = [](const auto &node) {
+        auto wiring = bg::GraphWiring{};
+        {
+            auto context = bg::WiringContext{wiring};
+            (void)node();
+        }
+        wiring.finalize();
+        const auto graph = bg::CompiledGraph{wiring};
+        return graph.has_cycle_callbacks();
+    };
+
+    CHECK(has_cycle_callbacks(bg::node<cycle_callback_node_definition>()));
+    CHECK_FALSE(has_cycle_callbacks(bg::node<integer_source_definition>()));
 }
 
 TEST_CASE("capturing callables keep compiled data without parameter descriptors",
@@ -432,6 +471,24 @@ TEST_CASE("compiled nodes retain all_valid metadata with input producer indices"
     REQUIRE(descriptors.size() == 1);
     CHECK(descriptors[0].parameter_index == 0);
     CHECK(descriptors[0].declared_type == &bg::TS<bg::i64>::type());
+}
+
+TEST_CASE("compiled all_valid descriptors omit valid_items dictionary checks",
+          "[compiled_graph][feature:validity][validity:all-valid][input-guarantee:valid-items][series:tsd]") {
+    const auto source = bg::node([](bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>>) {});
+    const auto sink = bg::node(runtime_valid_items_all_valid_definition{});
+    auto wiring = bg::GraphWiring{};
+    {
+        auto context = bg::WiringContext{wiring};
+        sink(source());
+    }
+
+    wiring.finalize();
+    const auto graph = bg::CompiledGraph{wiring};
+    REQUIRE(graph.node_count() == 2);
+    const auto &compiled_sink = graph.node(1);
+    CHECK_FALSE(compiled_sink.has_all_valid_input_metadata());
+    CHECK(compiled_sink.all_valid_input_descriptors().empty());
 }
 
 TEST_CASE("compiled node input producer indices omit lowered inputs and remap direct inputs",

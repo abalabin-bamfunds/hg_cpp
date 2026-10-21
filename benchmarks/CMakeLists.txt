@@ -19,6 +19,9 @@ target_link_libraries(bg_scalar_dict_benchmark PRIVATE bg::bg)
 add_executable(bg_tsd_selected_reference_benchmark tsd_selected_reference_benchmark.cpp)
 target_link_libraries(bg_tsd_selected_reference_benchmark PRIVATE bg::bg)
 
+add_executable(bg_tsd_membership_benchmark tsd_membership_benchmark.cpp)
+target_link_libraries(bg_tsd_membership_benchmark PRIVATE bg::library)
+
 add_executable(bg_high_count_map_benchmark high_count_map_benchmark.cpp)
 target_link_libraries(bg_high_count_map_benchmark PRIVATE bg::bg)
 

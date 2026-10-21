@@ -8,6 +8,7 @@
 #include <bg/testing/test_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
+#include <bg/time_series/tsd/tsd_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -819,6 +820,56 @@ TEST_CASE("a variadic operator cache distinguishes named pack schemas",
     CHECK(CachedNamedVariadicNode::resolver_calls == 2);
 }
 
+TEST_CASE("a variadic operator cache distinguishes direct free TSB field annotations",
+          "[feature:wiring][feature:variadic-wiring][feature:operator][series:tsb][schema:named]"
+          "[input-guarantee:valid-items][representation:free]") {
+    CachedNamedVariadicNode::requirement_calls = 0;
+    CachedNamedVariadicNode::resolver_calls = 0;
+
+    const auto dictionary = node([](Out<TSD<i64, TS<i64>>>) {});
+    auto operation = operator_<auto(TS_T) -> TS<i64>>{"named", {"values"}};
+    operation.overload(node<CachedNamedVariadicNode>());
+
+    testing::test_wiring([&] {
+        const auto filtered = bundle("dictionary"_n = valid_items(dictionary()));
+        const auto ordinary = bundle("dictionary"_n = dictionary());
+        CHECK(&filtered.type() == &ordinary.type());
+
+        (void)operation("values"_n = filtered);
+        (void)operation("values"_n = ordinary);
+    });
+
+    CHECK(CachedNamedVariadicNode::requirement_calls == 2);
+    CHECK(CachedNamedVariadicNode::resolver_calls == 2);
+}
+
+TEST_CASE("a variadic operator cache distinguishes direct free TSB original argument types",
+          "[feature:wiring][feature:variadic-wiring][feature:operator][series:tsb][schema:named]"
+          "[scalar:integer][representation:free]") {
+    auto selected = std::string{};
+    auto operation = operator_<auto(TS_T) -> void>{"bundle_category", {"values"}};
+    operation.overload(graph(
+        "name"_n = "scalar",
+        [&](wp<TSB<SCHEMA>, "values"_n, var_kwargs>) { selected = "scalar"; },
+        require = [](const WiringArguments &arguments) {
+            return arguments.original_type("field").is_scalar() ? accept : reject();
+        }));
+    operation.overload(graph(
+        "name"_n = "series",
+        [&](wp<TSB<SCHEMA>, "values"_n, var_kwargs>) { selected = "series"; },
+        require = [](const WiringArguments &arguments) {
+            return arguments.original_type("field").is_time_series() ? accept : reject();
+        }));
+
+    testing::test_wiring([&] {
+        operation("values"_n = bundle("field"_n = i64{42}));
+        CHECK(selected == "scalar");
+
+        operation("values"_n = bundle("field"_n = operators::const_(i64{42})));
+        CHECK(selected == "series");
+    });
+}
+
 TEST_CASE("an operator caches requirements over both variadic packs",
           "[feature:wiring][feature:variadic-wiring][feature:operator]"
           "[series:tsb][schema:generic][definition:function]") {
@@ -1158,4 +1209,26 @@ TEST_CASE("kwargs preserves optional qualifiers from a TSB wiring record",
 
     testing::test_wiring([&] { optional_receiver(kwargs(pack())); });
     CHECK_THROWS_AS(testing::test_wiring([&] { required_receiver(kwargs(pack())); }), TypeResolutionError);
+}
+
+TEST_CASE("a direct named free TSB pack preserves field annotations",
+          "[feature:wiring][feature:variadic-wiring][series:tsb][schema:named]"
+          "[input-guarantee:valid-items][validity:optional][representation:free]") {
+    const auto series = node([](Out<TS<i64>>) {});
+    const auto dictionary = node([](Out<TSD<i64, TS<i64>>>) {});
+    const auto receiver = graph("name"_n = "receiver", [](wp<TSB<SCHEMA>, "values"_n, var_kwargs, optional> values) {
+        const auto filtered = values.find("filtered");
+        const auto optional = values.find("optional");
+        REQUIRE(filtered);
+        REQUIRE(optional);
+        CHECK(filtered->annotations().valid_items);
+        CHECK_FALSE(filtered->annotations().optional);
+        CHECK(optional->annotations().optional);
+        CHECK_FALSE(optional->annotations().valid_items);
+    });
+
+    testing::test_wiring([&] {
+        const auto pack = bundle("filtered"_n = valid_items(dictionary()), "optional"_n = opt(series()));
+        receiver("values"_n = pack);
+    });
 }

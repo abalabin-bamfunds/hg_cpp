@@ -48,6 +48,10 @@ decltype(means) means{"means", {"value"}};
 
 decltype(len_) len_{"len_", {"value"}};
 decltype(contains_) contains_{"contains_", {"collection", "key"}};
+decltype(is_empty) is_empty{"is_empty", {"value"}};
+decltype(bit_or) bit_or{"bit_or", {"lhs", "rhs"}};
+decltype(bit_and) bit_and{"bit_and", {"lhs", "rhs"}};
+decltype(bit_xor) bit_xor{"bit_xor", {"lhs", "rhs"}};
 decltype(sum_) sum_{"sum_", {"values"}};
 decltype(min_) min_{"min_", {"values"}};
 decltype(max_) max_{"max_", {"values"}};
@@ -65,6 +69,7 @@ const auto registered = [] {
     details::register_timed_operators();
     details::register_collection_operators();
     details::register_collection_reduction_operators();
+    details::register_tss_operators();
     return true;
 }();
 

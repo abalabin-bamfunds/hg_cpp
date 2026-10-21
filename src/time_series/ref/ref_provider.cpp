@@ -70,21 +70,22 @@ ReferenceProvider &ReferenceProvider::require(RootReference &root) {
 }
 
 DynamicSubscribers &RootReference::promote_subscribers() {
-    if (auto *subscribers = dynamic_subscribers()) {
-        return *subscribers;
-    }
-
     auto &memory = owner_graph->allocation();
-    auto *subscribers = memory.new_object<DynamicSubscribers>(memory);
-    auto release = util::scope_exit{[&]() noexcept { DynamicSubscribers::release(subscribers); }};
-    if (has_inline_subscriber()) {
-        subscribers->add(inline_subscriber());
-    }
-
-    set_dynamic_subscribers(subscribers);
-    release.release();
+    notifications_.promote(memory);
+    auto *subscribers = dynamic_subscribers();
+    assert(subscribers != nullptr);
     return *subscribers;
 }
+
+void RootReference::add_subscriber(DynamicNodeSubscriber subscriber) {
+    notifications_.add(subscriber, owner_graph->allocation());
+}
+
+void RootReference::remove_subscriber(RuntimeGraph &graph, std::size_t input_offset) noexcept {
+    notifications_.remove(graph, input_offset);
+}
+
+void RootReference::release_subscribers() noexcept { notifications_.release(); }
 
 ReferenceProvider &ReferenceProvider::require(Reference reference) {
     return require(root(reference));
@@ -444,8 +445,8 @@ void ReferenceProvider::add_subscriber(Reference reference, RuntimeGraph &graph,
         if (!has_node_subscriber && notification == nullptr) {
             return;
         }
-        if (!root->has_inline_subscriber() && !root->has_dynamic_subscribers() && notification == nullptr) {
-            root->set_inline_subscriber(
+        if (notification == nullptr) {
+            root->add_subscriber(
                 DynamicNodeSubscriber{graph, input_offset, node_index, active, required, controlled_activity});
             return;
         }
@@ -471,13 +472,8 @@ void ReferenceProvider::remove_subscriber(Reference reference, RuntimeGraph &gra
     if (auto *root = reference.get<RootReference>()) {
         if (auto *provider = root->provider()) {
             provider->remove_root_subscriber(graph, input_offset);
-        } else if (auto *subscribers = root->dynamic_subscribers()) {
-            subscribers->remove(graph, input_offset);
-        } else if (root->has_inline_subscriber()) {
-            const auto identity = root->inline_subscriber().identity();
-            if (identity.graph == &graph && identity.input_offset == input_offset) {
-                root->clear_notifications();
-            }
+        } else {
+            root->remove_subscriber(graph, input_offset);
         }
         return;
     }
@@ -554,8 +550,8 @@ void ReferenceProvider::destroy_root(RootReference &root, allocator &memory) noe
 void ReferenceProvider::finalize_root(RootReference &root, allocator &memory) noexcept {
     if (auto *provider = root.provider()) {
         allocator{memory}.delete_object(provider);
-    } else if (auto *subscribers = root.dynamic_subscribers()) {
-        DynamicSubscribers::release(subscribers);
+    } else {
+        root.release_subscribers();
     }
     root.clear_notifications();
 }

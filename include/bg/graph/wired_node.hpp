@@ -18,10 +18,10 @@ class WiredNode {
   public:
     WiredNode(const NodeTemplate &node_template, ResolvedSignature signature, std::vector<WiredInput> inputs,
               std::vector<WiredScalar> scalar_values, std::vector<const ScalarType *> state_types,
-              std::vector<const TimeSeriesType *> dynamic_reference_input_types, const WiringPath &path)
+              std::vector<const TimeSeriesType *> dynamic_input_types, const WiringPath &path)
         : node_template_(&node_template), signature_(std::move(signature)), inputs_(std::move(inputs)),
           scalar_values_(std::move(scalar_values)), state_types_(std::move(state_types)),
-          dynamic_reference_input_types_(std::move(dynamic_reference_input_types)), path_(&path) {}
+          dynamic_input_types_(std::move(dynamic_input_types)), path_(&path) {}
 
     WiredNode(const WiredNode &) = delete;
     WiredNode &operator=(const WiredNode &) = delete;
@@ -38,8 +38,8 @@ class WiredNode {
 
     std::span<const ScalarType *const> state_types() const noexcept { return state_types_; }
 
-    std::span<const TimeSeriesType *const> dynamic_reference_input_types() const noexcept {
-        return dynamic_reference_input_types_;
+    std::span<const TimeSeriesType *const> dynamic_input_types() const noexcept {
+        return dynamic_input_types_;
     }
 
     const WiringPath &path() const noexcept { return *path_; }
@@ -50,7 +50,7 @@ class WiredNode {
     std::vector<WiredInput> inputs_;
     std::vector<WiredScalar> scalar_values_;
     std::vector<const ScalarType *> state_types_;
-    std::vector<const TimeSeriesType *> dynamic_reference_input_types_;
+    std::vector<const TimeSeriesType *> dynamic_input_types_;
     const WiringPath *path_;
 };
 

@@ -57,6 +57,45 @@ TEST_CASE("a time series set becomes valid on its first empty tick and remains v
 
 namespace {
 
+struct tss_membership_evaluation_count_definition {
+    static constexpr bool uses_cycle_callbacks = true;
+
+    bg::In<bg::REF<bg::TSS<bg::i64>>> collection;
+    bg::In<bg::TS<bool>, bg::optional, bg::dynamic_binding> membership;
+    bg::Out<bg::TS<bool>> output;
+
+    void evaluate() const {
+        ++evaluation_count;
+        const auto key = bg::i64{7};
+        membership.bind(collection.membership(bg::Scalar<bg::i64>::from(key)));
+        output.copy(membership);
+    }
+
+    void on_invalidation() const {
+        membership.unbind();
+        output.invalidate();
+    }
+
+    inline static std::size_t evaluation_count{};
+};
+
+} // namespace
+
+TEST_CASE("a TSS membership binding ignores changes to other keys",
+          "[evaluation][tss][series:tss][series:reference][feature:collection-change]"
+          "[scalar:integer][transition:addition][transition:removal][definition:aggregate]") {
+    const auto observe = bg::node<tss_membership_evaluation_count_definition>();
+    const auto graph = [&](bg::wp<bg::TSS<bg::i64>> input) { return observe(input); };
+    tss_membership_evaluation_count_definition::evaluation_count = 0;
+
+    const auto actual = bg::testing::test_graph(graph, {{7}, {8}, {literal::REMOVED(7)}, {7}});
+
+    CHECK(actual.equals<bool>({true, std::nullopt, false, true}));
+    CHECK(tss_membership_evaluation_count_definition::evaluation_count == 3);
+}
+
+namespace {
+
 struct composite_literal_set_source_definition {
     static constexpr bool uses_timed_scheduling = true;
 
@@ -211,6 +250,30 @@ TEST_CASE("a time series set accepts its exact non-canonical item type",
     const auto actual = testing::test_graph(graph, {{7}, {literal::REMOVED(7)}});
 
     CHECK(actual.equals({true, false}));
+}
+
+TEST_CASE("Out<TSS>::for_each supports erasing visited members across index words",
+          "[evaluation][feature:node-api][series:tss][transition:removal][transition:update]") {
+    const auto update = bg::node([](bg::In<bg::TS<bg::i64>> trigger, bg::Out<bg::TSS<bg::i64>> output) {
+        auto visited = std::size_t{};
+        output.for_each([&](const auto &key) {
+            ++visited;
+            output.erase(key);
+        });
+        CHECK(visited == (*trigger == 1 ? 130 : 0));
+
+        if (*trigger == 0) {
+            for (auto key = bg::i64{}; key < 130; ++key) {
+                output.insert(key);
+            }
+        }
+    });
+    const auto size = bg::node([](bg::In<bg::TSS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
+        output.set(static_cast<bg::i64>(input.size()));
+    });
+    const auto graph = [&](bg::wp<bg::TS<bg::i64>> trigger) { return size(update(trigger)); };
+
+    CHECK(bg::testing::test_graph(graph, {0, 1, 2}).equals<bg::i64>({130, 0, std::nullopt}));
 }
 
 namespace {
@@ -474,7 +537,7 @@ TEST_CASE("a TSS input does not report stale removals after an invalid target is
     CHECK(was_removed == std::vector{false, true, false});
 }
 
-TEST_CASE("a TSS reference transition uses the old target's current state after a same-cycle clear",
+TEST_CASE("a TSS reference transition reports removals when the old target clears in the retargeting cycle",
           "[series:tss][feature:reference][feature:collection-change]"
           "[validity:optional][transition:removal][binding:reference-to-value][scalar:integer]") {
     const auto valid = node<clearing_referenced_set_source_definition>();
@@ -510,8 +573,8 @@ TEST_CASE("a TSS reference transition uses the old target's current state after 
     CHECK(validity == std::vector{true, false});
     CHECK(sizes == std::vector<std::size_t>{2, 0});
     CHECK(added == std::vector<std::vector<i64>>{{11, 12}, {}});
-    CHECK(removed == std::vector<std::vector<i64>>{{}, {}});
-    CHECK(was_removed == std::vector{false, false});
+    CHECK(removed == std::vector<std::vector<i64>>{{}, {11, 12}});
+    CHECK(was_removed == std::vector{false, true});
 }
 
 TEST_CASE("a TSS input reports removed items when its reference becomes null",

@@ -338,12 +338,13 @@ scheduling from other inputs. A change that occurs while the input is passive
 does not schedule evaluation when the input becomes active later.
 
 All time series types provide `valid()`, `all_valid()`, `became_valid()`, `became_invalid()`,
-`modified()`, and `last_updated()`. `became_valid()` and `became_invalid()`
-describe the latest change. They do not imply that the change occurred in the
-current evaluation. `modified()` reports a valid update in the current
-evaluation. `last_updated()` returns the latest change time, including an
-invalidation. `TS<T>::value()` returns `const T&` and requires a valid time
-series. `all_valid()` tests the root and immediate item validity without changing
+`modified()`, and `last_updated()`. `modified()` reports a change in the current
+evaluation, including invalidation. `became_valid()` and `became_invalid()`
+report validity transitions in that evaluation. `last_updated()` returns the
+latest change time, including an invalidation. `TS<T>::value()` returns
+`const T&` and requires a valid time series. Check `valid()` before reading an
+optional input's value, even when `modified()` is true.
+`all_valid()` tests the root and immediate item validity without changing
 the input validity constraint. Collection time series provide their type-specific change queries.
 
 The erased `In<TS_T>` query checks the actual runtime type. Runtime-defined nodes
@@ -356,9 +357,17 @@ An `In` value is valid for one function call. Its last-updated time includes
 through a reference.
 
 An aggregate can declare an internal `In<REF<TS_T>, dynamic_binding>` field.
-The field is excluded from the node signature. Its type variables must resolve
-through the public signature. `bind()` replaces its addressable input and
+The field is excluded from the node signature. An omitted root reference
+guarantee defaults to `ordinary`. Explicit type and guarantee variables must
+resolve through the public signature. `bind()` replaces its addressable input and
 `unbind()` removes the binding. The engine manages subscriptions and cleanup.
+
+An internal `In<TS<T>, dynamic_binding, optional>` field binds a value supplied
+by runtime selection, such as membership of one collection key. It must be
+active and optional, with a concrete scalar type `T`. Its time series guarantee
+can use a variable resolved through the public signature. The binding retains
+the selected value's runtime type and validity. The node handles an invalid
+selection explicitly. The engine manages replacement and stop cleanup.
 
 Fully specified and generic inputs expose the same common interface to helper
 functions and visitors. A fully specified value input also provides `value()`
@@ -504,6 +513,10 @@ the behavior defined by the [validity design](time-series-validity.md).
 
 `Out<TSS<T>>::clear()` and `Out<TSD<K, TS_T>>::clear()` remove all entries and
 produce a valid empty collection.
+
+`Out<TSS<T>>::for_each(callback)` visits current members as `Scalar<T>` views.
+An invalid output has no members. The callback may erase the member it receives;
+it must not insert members during enumeration.
 
 `Out<TS<T>>::set_value()` accepts a compatible scalar view or an owning
 `ScalarValue` rvalue. The rvalue overload transfers compatible storage and

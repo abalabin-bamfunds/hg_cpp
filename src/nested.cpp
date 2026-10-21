@@ -89,10 +89,18 @@ class NestedNodeDefinition {
             const auto &parameter = graph_signature.parameters[parameter_index];
             if (parameter.type->is_time_series()) {
                 if (parameter_index >= inherited_parameter_start) {
-                    parameters.push_back({parameter.name, parameter.type, passive, optional});
+                    parameters.push_back({.name = parameter.name,
+                                          .type = parameter.type,
+                                          .activity = passive,
+                                          .validity = optional,
+                                          .valid_items = parameter.valid_items});
                     continue;
                 }
-                parameters.push_back({parameter.name, parameter.type, active, optional});
+                parameters.push_back({.name = parameter.name,
+                                      .type = parameter.type,
+                                      .activity = active,
+                                      .validity = optional,
+                                      .valid_items = parameter.valid_items});
             } else {
                 parameters.push_back({parameter.name, parameter.type, parameter.activity, parameter.validity,
                                       parameter.accepts_absent_scalar, details::VariadicMode::none, nullptr, false});

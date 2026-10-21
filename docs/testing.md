@@ -419,6 +419,8 @@ graph compilation or evaluation.
 - scheduling during evaluation, including nodes in the current bit block
 - active and passive inputs, including per-input runtime activity changes
 - required-input validity caching, invalidation, and revalidation
+- current-evaluation input modification and validity-transition queries, including
+  invalidation, unchanged inputs, passive inputs, and collection items
 - immediate `all_valid` queries and evaluation gating across native, free, and reference-bound collections;
   deferred item checks for passive and dynamically inactive inputs, including timer- and other-input-driven
   evaluation attempts; optional bundle fields and base-schema narrowing;
@@ -509,6 +511,12 @@ graph compilation or evaluation.
 - value-to-reference and reference-to-value bindings
 - reference changes and value observers
 - dynamic subscribers and static subscriber entries
+- allocation-free first node subscription, duplicate identities, promotion to
+  multiple subscribers, allocation-failure rollback, and removal to empty
+- internal dynamic input declaration defaults, explicit guarantees, and guarantee
+  variables resolved through public inputs
+- dynamic value inputs retaining the bound runtime type, replacing subscriptions,
+  and releasing subscriptions during stop and failure without enlarging ordinary inputs
 - references across inner graph boundaries
 - dynamic collection items and outer-cycle removal lifetime
 - representation creation and reuse
@@ -516,6 +524,8 @@ graph compilation or evaluation.
 - fixed-list item selection with scalar and time series indices
 - bundle field selection through value and reference fields, including nested graph boundaries
 - keyed subscriptions for present, missing, removed, and restored items
+- keyed membership subscriptions shared across consumers, suppression of unrelated-key
+  notifications, collection invalidation and retargeting, and nested-graph cleanup
 
 ### Collection time series
 
@@ -575,6 +585,13 @@ For each reusable node and graph, test:
   partial validity, empty results, item removal and replacement, integer limits,
   reference rebinding, free collections, output guarantees, and equal optional
   sums across invalid-to-valid transitions
+- TSS union, intersection, difference, symmetric difference, equality, and
+  emptiness, including simultaneous membership changes, empty sets, required
+  input gating, `opt` treating invalid inputs as empty, reference rebinding,
+  reconciliation after missed changes, output guarantees, and no-op updates
+- TSS and TSD membership with scalar and time series keys, repeated equal key ticks,
+  physical versus valid-item membership, immediate reference-item validity,
+  retained missing keys, reference samples, and output guarantees
 - delayed ticks and invalidation, collection delta replay, periodic tick limits,
   throttle publication times and latest-state reconciliation, simultaneous
   timers and input changes, duration bounds, and nested-graph stop cleanup

@@ -66,6 +66,10 @@ bool AggregateNodeTemplateBase::uses_timed_scheduling() const noexcept {
     return descriptor_->uses_timed_scheduling;
 }
 
+bool AggregateNodeTemplateBase::uses_cycle_callbacks() const noexcept {
+    return descriptor_->uses_cycle_callbacks;
+}
+
 NodeStateLayout
 AggregateNodeTemplateBase::state_layout(const ResolvedSignature &signature,
                                         std::span<const ScalarRuntimeType *const> parameter_runtime_types,
@@ -87,11 +91,11 @@ NodeFunction AggregateNodeTemplateBase::state_destruction_function(const Resolve
 }
 
 std::vector<const TimeSeriesType *>
-AggregateNodeTemplateBase::dynamic_reference_input_types(const TypeMap &type_map) const {
-    if (descriptor_->dynamic_reference_input_types == nullptr) {
+AggregateNodeTemplateBase::dynamic_input_types(const TypeMap &type_map) const {
+    if (descriptor_->dynamic_input_types == nullptr) {
         return {};
     }
-    return descriptor_->dynamic_reference_input_types(type_map);
+    return descriptor_->dynamic_input_types(type_map);
 }
 
 std::vector<const ScalarType *> AggregateNodeTemplateBase::resolve_state_types(const TypeMap &type_map) const {
