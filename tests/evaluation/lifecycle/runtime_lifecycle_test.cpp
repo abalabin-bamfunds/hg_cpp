@@ -69,7 +69,9 @@ struct run_graph_start_time_probe {
 TEST_CASE("run_graph starts, evaluates, and stops a graph",
           "[evaluation][lifecycle][feature:lifecycle][transition:start][transition:stop][series:value]"
           "[scalar:floating-point]") {
+
     const auto starting_source = node<starting_source_definition>();
+
     const auto add = node<add_definition>();
     starting_source_definition::start_count = 0;
     starting_source_definition::evaluation_count = 0;
@@ -88,6 +90,7 @@ TEST_CASE("run_graph starts, evaluates, and stops a graph",
 TEST_CASE("run_graph uses an explicit simulation start time",
           "[evaluation][lifecycle][feature:simulation][transition:start]") {
     run_graph_start_time_probe::observed_time = {};
+
     const auto source = node<run_graph_start_time_probe>();
     const auto start_time = EvaluationTime{std::chrono::microseconds{123}};
 
@@ -100,6 +103,7 @@ TEST_CASE("run_graph uses an explicit simulation start time",
 TEST_CASE("run_graph forwards stop tokens to the realtime engine",
           "[evaluation][lifecycle][feature:realtime][transition:stop]") {
     auto starts = 0;
+
     const auto source = node([&](Out<TS<i64>>) { ++starts; });
     auto stop_source = std::stop_source{};
     stop_source.request_stop();
@@ -115,6 +119,7 @@ TEST_CASE("run_graph ignores stop tokens in simulation", "[evaluation][lifecycle
     auto stop_source = std::stop_source{};
     stop_source.request_stop();
     run_graph_start_time_probe::observed_time = {};
+
     const auto source = node<run_graph_start_time_probe>();
 
     run_graph([&] { (void)source(); }, GraphRunOptions{.stop_token = stop_source.get_token()});
@@ -142,10 +147,12 @@ TEST_CASE("run_graph stops realtime evaluation after a complete downstream tick"
     run_graph_time_sink::calls = 0;
     run_graph_time_sink::observed_time = {};
     auto wired_at = EvaluationTime{};
+
     const auto source = node([&](Out<TS<i64>> output) {
         output.set(7);
         stop_source.request_stop();
     });
+
     const auto sink = node<run_graph_time_sink>();
 
     run_graph(
@@ -190,6 +197,7 @@ struct lifecycle_definition {
 TEST_CASE("start and stop follow topological order",
           "[evaluation][lifecycle][feature:lifecycle][shape:chain][transition:stop][series:value]"
           "[scalar:floating-point]") {
+
     const auto lifecycle = node<lifecycle_definition>();
     lifecycle_definition::events.clear();
     lifecycle_definition::events.reserve(6);
@@ -218,6 +226,7 @@ TEST_CASE("start and stop follow topological order",
 TEST_CASE("a start failure stops nodes whose start completed",
           "[evaluation][lifecycle][failure][feature:lifecycle][transition:start][transition:stop]"
           "[series:value][scalar:floating-point]") {
+
     const auto lifecycle = node<lifecycle_definition>();
     lifecycle_definition::events.clear();
     lifecycle_definition::events.reserve(4);
@@ -245,6 +254,7 @@ TEST_CASE("a start failure stops nodes whose start completed",
 TEST_CASE("an evaluation failure stops nodes in reverse topological order",
           "[evaluation][lifecycle][failure][feature:lifecycle][shape:chain][transition:stop]"
           "[series:value][scalar:floating-point]") {
+
     const auto lifecycle = node<lifecycle_definition>();
     lifecycle_definition::events.clear();
     lifecycle_definition::events.reserve(8);
@@ -273,6 +283,7 @@ TEST_CASE("an evaluation failure stops nodes in reverse topological order",
 TEST_CASE("a runtime graph has one lifecycle",
           "[evaluation][lifecycle][feature:lifecycle][transition:restart][series:value]"
           "[scalar:floating-point]") {
+
     const auto lifecycle = node<lifecycle_definition>();
     lifecycle_definition::events.clear();
     lifecycle_definition::start_failure = 0;
@@ -309,6 +320,7 @@ TEST_CASE("an aggregate node finalizes retained state when its runtime graph is 
     };
 
     auto finalization_count = 0;
+
     const auto finalizable = node<Finalizable>();
     auto wiring = GraphWiring{};
     {
@@ -345,6 +357,7 @@ struct immediate_definition {
 
 TEST_CASE("start can schedule evaluation in the first outer cycle",
           "[evaluation][lifecycle][scheduling][feature:lifecycle][series:value][scalar:floating-point]") {
+
     const auto immediate = node<immediate_definition>();
     immediate_definition::start_time = MIN_DT;
     immediate_definition::evaluation_time = MIN_DT;

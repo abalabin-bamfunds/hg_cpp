@@ -21,16 +21,15 @@ class RecordingVisitor {
     };
 
     template <typename ScalarType, typename Function> void add_type_handler(Function handler) {
-        const auto added = handlers_.add(cpp_scalar_type<ScalarType>(),
-                                         typed_handler<ScalarType>(std::move(handler)));
+        const auto added = handlers_.add(cpp_scalar_type<ScalarType>(), typed_handler<ScalarType>(std::move(handler)));
         if (!added) {
             throw std::logic_error{"duplicate test handler"};
         }
     }
 
     template <typename ScalarType, typename Function> void add_runtime_handler(Function handler) {
-        const auto added = handlers_.add(cpp_scalar_runtime_type<ScalarType>(),
-                                         typed_handler<ScalarType>(std::move(handler)));
+        const auto added =
+            handlers_.add(cpp_scalar_runtime_type<ScalarType>(), typed_handler<ScalarType>(std::move(handler)));
         if (!added) {
             throw std::logic_error{"duplicate test handler"};
         }
@@ -109,10 +108,8 @@ TEST_CASE("scalar dispatch prefers an exact runtime type handler",
     CHECK(visitor.values() == std::vector<int>{-2, 42});
 }
 
-TEST_CASE("an external scalar provider exports stable type identities",
-          "[feature:type-system][declaration:concrete]") {
-    CHECK(&cpp_scalar_type<test_scalar_provider::value>() ==
-          &test_scalar_provider::semantic_type_from_provider());
+TEST_CASE("an external scalar provider exports stable type identities", "[feature:type-system][declaration:concrete]") {
+    CHECK(&cpp_scalar_type<test_scalar_provider::value>() == &test_scalar_provider::semantic_type_from_provider());
     CHECK(&cpp_scalar_runtime_type<test_scalar_provider::value>() ==
           &test_scalar_provider::runtime_type_from_provider());
 }
@@ -136,8 +133,8 @@ TEST_CASE("a recursive scalar visitor dispatches extension values from a structu
     auto visitor = RecordingVisitor{};
     visitor.add_type_handler<test_scalar_provider::value>(visit_external_type);
     visitor.add_type_handler<List<test_scalar_provider::value>>(reject_structural_collection);
-    const auto value = ScalarValue<List<test_scalar_provider::value>>{
-        std::vector<test_scalar_provider::value>{{1}, {2}}};
+    const auto value =
+        ScalarValue<List<test_scalar_provider::value>>{std::vector<test_scalar_provider::value>{{1}, {2}}};
 
     const auto view = value.view();
     visitor.visit(Scalar<>::from(view));

@@ -49,8 +49,7 @@ TEST_CASE("a scalar visitor identifies each collection type",
           "[value][scalar][visitor][feature:visitor][scalar:list][scalar:set][scalar:dict]") {
     const auto list = ScalarValue<List<i64>>{std::vector<i64>{1}};
     const auto set = ScalarValue<Set<i64>>{std::vector<i64>{2}};
-    const auto dict = ScalarValue<Dict<i64, i64>>{
-        std::vector<std::pair<i64, i64>>{{3, 4}}};
+    const auto dict = ScalarValue<Dict<i64, i64>>{std::vector<std::pair<i64, i64>>{{3, 4}}};
     auto list_called = false;
     auto set_called = false;
     auto dict_called = false;
@@ -127,8 +126,7 @@ TEST_CASE("a scalar visitor reserves the erased view for extension types",
             typed_called = true;
             CHECK(&view->type() == &int64_type());
         },
-        [&](const Scalar<> *) { erased_called = true; },
-        ddv::noop);
+        [&](const Scalar<> *) { erased_called = true; }, ddv::noop);
 
     CHECK(typed_called);
     CHECK_FALSE(erased_called);
@@ -158,13 +156,12 @@ TEST_CASE("integer and floating-point aliases use the erased visitor",
         CHECK(type_cast<BuiltinScalarType>(&value.view().type()) == nullptr);
         auto erased_called = false;
         auto typed_called = false;
-        value.view().visit(
-            [&](const Scalar<i64> *) { typed_called = true; },
-            [&](const Scalar<> *view) {
-                erased_called = true;
-                CHECK(&view->type() == &value.view().type());
-            },
-            ddv::noop);
+        value.view().visit([&](const Scalar<i64> *) { typed_called = true; },
+                           [&](const Scalar<> *view) {
+                               erased_called = true;
+                               CHECK(&view->type() == &value.view().type());
+                           },
+                           ddv::noop);
         CHECK(erased_called);
         CHECK_FALSE(typed_called);
     };

@@ -19,6 +19,7 @@ using namespace bg;
 TEST_CASE("a constant value updates only in the first test graph cycle",
           "[feature:constant][feature:test-graph][series:value][scalar:integer][guarantee:const]"
           "[shape:single-node][transition:first-tick]") {
+
     const auto graph = [](wp<TS<i64>>) {
         return operators::const_(3).as<TS<i64, TimeSeriesGuarantee::const_>>();
     };
@@ -29,6 +30,7 @@ TEST_CASE("a constant value updates only in the first test graph cycle",
 TEST_CASE("a constant waits for another required input",
           "[feature:constant][feature:scheduling][feature:validity][transition:revalidation]") {
     auto evaluations = 0;
+
     const auto sum = node([&](i64 constant, i64 input) {
         ++evaluations;
         return constant + input;
@@ -69,6 +71,7 @@ TEST_CASE("a scalar constant binds directly to its active consumer",
           "[feature:constant][feature:graph-compilation][feature:scheduling][series:value][scalar:integer]"
           "[guarantee:const][activity:active][validity:required][transition:first-tick]") {
     constant_binding_sink::evaluations = 0;
+
     const auto sink = node<constant_binding_sink>();
 
     auto wiring = GraphWiring{};
@@ -111,6 +114,7 @@ TEST_CASE("one constant serves active and passive consumers",
           "[scalar:integer][guarantee:const][shape:fan-out][activity:active][activity:passive]") {
     auto active_evaluations = 0;
     auto passive_evaluations = 0;
+
     const auto active_sink = node([&](In<TS<i64, TimeSeriesGuarantee::const_>>) { ++active_evaluations; });
 
     const auto passive_sink = node([&](In<TS<i64, TimeSeriesGuarantee::const_>, passive>) {
@@ -142,6 +146,7 @@ TEST_CASE("a string constant uses compiled scalar storage",
           "[guarantee:const][shape:single-node][transition:first-tick]") {
     auto value = std::string{};
     auto last_updated = MIN_DT;
+
     const auto sink = node([&](In<TS<string, TimeSeriesGuarantee::const_>> input) {
         value = input.value();
         last_updated = input.last_updated();
@@ -169,6 +174,7 @@ TEST_CASE("a constant value-to-reference binding keeps the reference node in the
     auto evaluations = 0;
     auto valid = false;
     auto value = i64{};
+
     const auto pass = node([](In<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::const_>> input,
                               Out<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::const_>> output) {
         output.copy(input);

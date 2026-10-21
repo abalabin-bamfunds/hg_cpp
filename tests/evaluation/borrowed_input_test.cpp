@@ -297,6 +297,7 @@ bg::CompiledGraph make_borrowed_input_graph() {
     auto wiring = bg::GraphWiring{};
     const auto input = wiring.borrowed_input(bg::TS<bg::i64>::type());
     const auto set_input = wiring.borrowed_input(bg::TSS<bg::i64>::type());
+
     const auto sink = bg::node<BorrowedInputSink>();
     {
         auto context = bg::WiringContext{wiring};
@@ -308,6 +309,7 @@ bg::CompiledGraph make_borrowed_input_graph() {
 
 bg::CompiledGraph make_context_probe_graph() {
     auto wiring = bg::GraphWiring{};
+
     const auto probe = bg::node<ContextInputProbe>();
     {
         auto context = bg::WiringContext{wiring};
@@ -319,6 +321,7 @@ bg::CompiledGraph make_context_probe_graph() {
 
 bg::CompiledGraph make_cross_graph_callback_graph() {
     auto wiring = bg::GraphWiring{};
+
     const auto callback = bg::node(CrossGraphCallbackMarker{});
     {
         auto context = bg::WiringContext{wiring};
@@ -334,6 +337,7 @@ TEST_CASE("same-graph cycle callbacks receive and read explicit borrowed inputs"
           "[feature:borrowed-input][feature:lifecycle][transition:lifecycle][shape:single-node]") {
     auto wiring = bg::GraphWiring{};
     const auto input = wiring.borrowed_input(bg::TS<bg::i64>::type());
+
     const auto callback = bg::node(BorrowedInputCycleCallback{});
     {
         auto context = bg::WiringContext{wiring};
@@ -370,6 +374,7 @@ TEST_CASE("cycle callbacks owned by another graph do not inherit borrowed inputs
 
     auto wiring = bg::GraphWiring{};
     const auto input = wiring.borrowed_input(bg::TS<bg::i64>::type());
+
     const auto runner = bg::node(CrossGraphCallbackRunner{});
     {
         auto context = bg::WiringContext{wiring};
@@ -483,6 +488,7 @@ TEST_CASE("borrowed storage includes scheduling spill words and validates its la
     };
 
     auto wiring = bg::GraphWiring{};
+
     const auto consumer = bg::node<BorrowedInputNoop>();
     {
         auto context = bg::WiringContext{wiring};
@@ -524,6 +530,7 @@ TEST_CASE("borrowed storage includes scheduling spill words and validates its la
     CHECK(runtime.input_validity() == 0);
 
     auto pending_wiring = bg::GraphWiring{};
+
     const auto pending = bg::node<PendingBorrowedInputGraph>();
     {
         auto context = bg::WiringContext{pending_wiring};

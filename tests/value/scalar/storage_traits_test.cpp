@@ -137,16 +137,14 @@ class SemanticType final : public ScalarType {
     const Type &resolve(const TypeMap &) const override { return *this; }
 };
 
-class CanonicalRuntime final
-    : public details::CppScalarRuntimeTypeBase<ThrowingValue, ScalarRuntimeType> {
+class CanonicalRuntime final : public details::CppScalarRuntimeTypeBase<ThrowingValue, ScalarRuntimeType> {
     using Base = details::CppScalarRuntimeTypeBase<ThrowingValue, ScalarRuntimeType>;
 
   public:
     CanonicalRuntime() : Base{semantic_type()} {}
 };
 
-class AlternateRuntime final
-    : public details::CppScalarRuntimeTypeBase<ThrowingValue, ScalarRuntimeType> {
+class AlternateRuntime final : public details::CppScalarRuntimeTypeBase<ThrowingValue, ScalarRuntimeType> {
     using Base = details::CppScalarRuntimeTypeBase<ThrowingValue, ScalarRuntimeType>;
 
   public:
@@ -180,7 +178,9 @@ ThrowingValue::ThrowingValue(ThrowingValue &&other) {
 
 ThrowingValue::~ThrowingValue() { ++destructor_count; }
 
-const ScalarType &semantic_type() noexcept { return make_semantic_type(); }
+const ScalarType &semantic_type() noexcept {
+    return make_semantic_type();
+}
 
 const ScalarRuntimeType &alternate_runtime() {
     static const auto runtime = util::static_storage<AlternateRuntime>{};
@@ -298,8 +298,7 @@ class AlternateRuntime final : public ScalarRuntimeType {
     }
 
   private:
-    void do_construct_from_input(void *destination, const details::ScalarData &source,
-                                 allocator &) const override {
+    void do_construct_from_input(void *destination, const details::ScalarData &source, allocator &) const override {
         std::construct_at(static_cast<AlternateStorage *>(destination),
                           AlternateStorage{.object = scalar_storage_traits<Value>::read_value(source)});
     }
@@ -308,9 +307,7 @@ class AlternateRuntime final : public ScalarRuntimeType {
         static_cast<AlternateStorage *>(destination)->object = scalar_storage_traits<Value>::read_value(source);
     }
 
-    bool equals_same_type(const void *, const details::ScalarData &) const noexcept override {
-        std::terminate();
-    }
+    bool equals_same_type(const void *, const details::ScalarData &) const noexcept override { std::terminate(); }
 };
 
 const SemanticType &make_semantic_type() noexcept {
@@ -321,7 +318,9 @@ const SemanticType &make_semantic_type() noexcept {
 
 } // namespace
 
-const ScalarType &semantic_type() noexcept { return make_semantic_type(); }
+const ScalarType &semantic_type() noexcept {
+    return make_semantic_type();
+}
 
 const ScalarRuntimeType &alternate_runtime() {
     static const auto runtime = util::static_storage<AlternateRuntime>{};
@@ -408,9 +407,7 @@ class LegacyIntegerRuntimeType final : public ScalarRuntimeType {
         return std::hash<i64>{}(*static_cast<const i64 *>(value));
     }
 
-    void destroy(void *value, allocator &) const noexcept override {
-        std::destroy_at(static_cast<i64 *>(value));
-    }
+    void destroy(void *value, allocator &) const noexcept override { std::destroy_at(static_cast<i64 *>(value)); }
 
   private:
     void do_construct_from_input(void *destination, const ScalarData &source, allocator &) const override {
@@ -488,13 +485,11 @@ TEST_CASE("a scalar provider can own a value through its borrowed read view",
     }();
 
     CHECK(&owned.runtime_type() == &cpp_scalar_runtime_type<Value>());
-    CHECK(&resolve_scalar_runtime_type(cpp_scalar_type<Value>(), {}) ==
-          &cpp_scalar_runtime_type<Value>());
+    CHECK(&resolve_scalar_runtime_type(cpp_scalar_type<Value>(), {}) == &cpp_scalar_runtime_type<Value>());
     CHECK(owned.view().value().get() == 42);
 
     const auto empty_view = ReadValue{};
-    CHECK_THROWS_WITH(details::make_scalar_source<Value>(empty_view),
-                      "a provider value view must have a source");
+    CHECK_THROWS_WITH(details::make_scalar_source<Value>(empty_view), "a provider value view must have a source");
 }
 
 TEST_CASE("a scalar provider canonical runtime must match its storage layout",
@@ -536,8 +531,8 @@ TEST_CASE("a scalar provider read type controls collection aliases and reads",
 TEST_CASE("a scalar provider read type passes through a time series output",
           "[feature:test-graph][feature:scalar-api][feature:scalar-storage][series:value][storage:fixed]"
           "[declaration:concrete][shape:single-node][binding:direct][transition:first-tick]") {
-    const auto copy =
-        node([](In<TS<Value>> input, Out<TS<Value>> output) { output.set(input.value()); });
+
+    const auto copy = node([](In<TS<Value>> input, Out<TS<Value>> output) { output.set(input.value()); });
 
     const auto graph = [&](wp<TS<Value>> input) { return copy(input); };
     const auto source = std::vector<Value>{{2}, {5}};
@@ -650,14 +645,12 @@ TEST_CASE("callable promoted values and aggregate scalar views preserve provider
     auto first_storage = Storage{20};
     auto second_storage = Storage{22};
     const auto first_source = Scalar<Value>::from(test_scalar_provider::preserving_runtime_type(), &first_storage);
-    const auto second_source = Scalar<Value>::from(test_scalar_provider::canonicalizing_runtime_type(),
-                                                       &second_storage);
+    const auto second_source =
+        Scalar<Value>::from(test_scalar_provider::canonicalizing_runtime_type(), &second_storage);
     const auto first = ScalarValue<Value>{first_source};
     const auto second = ScalarValue<Value>{second_source};
 
-    const auto callable_reader = node([](Value value, Out<TS<i64>> output) {
-        output.set(value.number);
-    });
+    const auto callable_reader = node([](Value value, Out<TS<i64>> output) { output.set(value.number); });
 
     const auto callable_graph = [&] { return callable_reader(first); };
     auto reads_before = test_scalar_provider::alternative_runtime_read_count();
@@ -681,6 +674,7 @@ TEST_CASE("typed callable scalar inputs use the selected snapshot runtime for pr
     const auto source = Scalar<Value>::from(test_scalar_provider::preserving_runtime_type(), &storage);
     const auto scalar = ScalarValue<Value>{source};
     const ScalarRuntimeType *received_runtime{};
+
     const auto reader = node([&](Scalar<Value> value, Out<TS<i64>> output) {
         received_runtime = std::addressof(value.runtime_type());
         output.set(value.value().get());
@@ -702,6 +696,7 @@ TEST_CASE("aggregate promoted scalars select runtime metadata for scalar and tim
     auto storage = Storage{41};
     const auto source = Scalar<Value>::from(test_scalar_provider::preserving_runtime_type(), &storage);
     const auto scalar = ScalarValue<Value>{source};
+
     const auto reader = node<MixedProviderPromotedReader>();
 
     const auto scalar_graph = [&] { return reader(scalar, Value{1}); };
@@ -726,8 +721,8 @@ TEST_CASE("aggregate scalar views and promoted inputs preserve a copy-only provi
 
     auto storage = test_scalar_provider::copy_only_runtime_storage{
         .prefix = {0xBAD0, 0xBAD1, 0xBAD2, 0xBAD3}, .value = {.number = 20}};
-    const auto source = Scalar<CopyOnlyValue>::from(test_scalar_provider::preserving_copy_only_runtime_type(),
-                                                        &storage);
+    const auto source =
+        Scalar<CopyOnlyValue>::from(test_scalar_provider::preserving_copy_only_runtime_type(), &storage);
     const auto preserved = ScalarValue<CopyOnlyValue>{source};
 
     CHECK(&preserved.runtime_type() == &test_scalar_provider::preserving_copy_only_runtime_type());
@@ -744,8 +739,8 @@ TEST_CASE("aggregate scalar views and promoted inputs preserve a copy-only provi
 TEST_CASE("typed output writes through a prefixed scalar runtime layout",
           "[feature:node-api][feature:scalar-api][feature:scalar-storage][series:value][declaration:runtime]") {
     using Series = TS<CopyOnlyValue>;
-    const auto &runtime = time_series_value_runtime_type(
-        Series::type(), test_scalar_provider::preserving_copy_only_runtime_type());
+    const auto &runtime =
+        time_series_value_runtime_type(Series::type(), test_scalar_provider::preserving_copy_only_runtime_type());
     const auto update_time = MIN_DT + std::chrono::microseconds{1};
     const auto evaluation_time = update_time + std::chrono::microseconds{1};
     auto last_updated = TimeSeriesState{update_time};
@@ -765,6 +760,7 @@ TEST_CASE("typed output writes through a prefixed scalar runtime layout",
 TEST_CASE("aggregate optional provider scalars handle present and absent values",
           "[feature:node-api][feature:scalar-storage][definition:aggregate][declaration:concrete]"
           "[validity:optional]") {
+
     const auto reader = node<OptionalProviderPromotedReader>();
 
     const auto present_graph = [&] { return reader(std::optional<Value>{Value{17}}); };
@@ -786,8 +782,7 @@ TEST_CASE("erased scalar borrowing uses the composed bundle runtime",
 
     auto memory_resource = std::pmr::monotonic_buffer_resource{};
     auto memory = allocator{memory_resource};
-    const auto value = bundle<test_scalar_provider::bundle_provider_derived>(
-        memory, i64{73}, i64{91});
+    const auto value = bundle<test_scalar_provider::bundle_provider_derived>(memory, i64{73}, i64{91});
     const auto &source = details::scalar_data(value);
     const auto stored = *static_cast<const Stored *>(source.data());
 
@@ -812,19 +807,17 @@ TEST_CASE("a provider borrowed bundle view preserves derived identity and publis
     auto memory = allocator{memory_resource};
     const auto update_time = MIN_DT + std::chrono::microseconds{1};
     const auto evaluation_time = update_time + std::chrono::microseconds{1};
-    auto output_state = details::OutputState{
-        cpp_time_series_runtime_type<TS<test_scalar_provider::bundle_provider_value>>()};
+    auto output_state =
+        details::OutputState{cpp_time_series_runtime_type<TS<test_scalar_provider::bundle_provider_value>>()};
     auto output_time = TimeSeriesState{update_time};
     auto output_storage = details::scalar_bundle_storage{};
     output_state.bind(output_time, &output_storage, evaluation_time);
     const auto &runtime =
         static_cast<const TimeSeriesValueRuntimeType &>(output_state.runtime_type()).scalar_runtime_type();
     auto cleanup = util::scope_exit{[&]() noexcept { runtime.destroy(&output_storage, memory); }};
-    const auto output =
-        Out<TS<test_scalar_provider::bundle_provider_value>>{TimeSeriesOutputBinding{output_state}};
+    const auto output = Out<TS<test_scalar_provider::bundle_provider_value>>{TimeSeriesOutputBinding{output_state}};
     const auto [owner, actual_type, actual_runtime] = [&] {
-        const auto source = bundle<test_scalar_provider::bundle_provider_derived>(
-            memory, i64{73}, i64{91});
+        const auto source = bundle<test_scalar_provider::bundle_provider_derived>(memory, i64{73}, i64{91});
         const auto source_view = source.view();
         const auto view = test_scalar_provider::bundle_provider_view{
             .value = Scalar<Base>::from(source_view),
@@ -856,8 +849,7 @@ TEST_CASE("a generic provider uses its borrowed source copy policy",
     const auto generic_trait_selector_calls = test_scalar_provider::generic_trait_runtime_type_for_copy_call_count();
     const auto generic_runtime_calls = test_scalar_provider::generic_runtime_type_call_count();
     const auto [owner, actual_type, actual_runtime] = [&] {
-        const auto source = bundle<test_scalar_provider::bundle_provider_derived>(
-            memory, i64{73}, i64{91});
+        const auto source = bundle<test_scalar_provider::bundle_provider_derived>(memory, i64{73}, i64{91});
         const auto source_view = source.view();
         auto view = test_scalar_provider::generic_bundle_provider_view{
             .value = Scalar<Generic>::from(source_view),
@@ -888,8 +880,7 @@ TEST_CASE("a deduplicated time-series output suppresses equal values and publish
 
     const auto &scalar_runtime = test_scalar_provider::preserving_runtime_type();
     const auto &deduplicated_type = DeduplicatedSeries::type();
-    const auto &deduplicated_runtime =
-        time_series_value_runtime_type(deduplicated_type, scalar_runtime);
+    const auto &deduplicated_runtime = time_series_value_runtime_type(deduplicated_type, scalar_runtime);
     const auto update_time = MIN_DT + std::chrono::microseconds{1};
     const auto evaluation_time = update_time + std::chrono::microseconds{1};
     auto deduplicated_output_state = details::OutputState{deduplicated_runtime};
@@ -898,8 +889,7 @@ TEST_CASE("a deduplicated time-series output suppresses equal values and publish
     auto requested_storage = Storage{42};
     deduplicated_output_state.bind(deduplicated_output_time, &deduplicated_output_storage,
                                    evaluation_time);
-    const auto deduplicated_output =
-        Out<DeduplicatedSeries>{TimeSeriesOutputBinding{deduplicated_output_state}};
+    const auto deduplicated_output = Out<DeduplicatedSeries>{TimeSeriesOutputBinding{deduplicated_output_state}};
 
     deduplicated_output.set(ReadValue{std::addressof(requested_storage.number)});
 
@@ -961,7 +951,7 @@ TEST_CASE("an erased owner snapshots a borrowed value using its selected runtime
         CHECK(resource.allocation_alignment == alignof(SnapshotStorage));
         CHECK(resource.allocation_size ==
               details::allocation_value_offset(test_scalar_provider::immutable_snapshot_runtime_type(),
-                                                   ScalarDataMode::owned_explicit_allocator) +
+                                               ScalarDataMode::owned_explicit_allocator) +
                   sizeof(SnapshotStorage));
     }
 
@@ -1034,6 +1024,7 @@ TEST_CASE("a typed callable scalar view uses its declared storage without altern
     const auto source = Scalar<i64>::from(legacy_integer_runtime(), std::addressof(source_value));
     auto erased = ScalarValue<>{source};
     const ScalarRuntimeType *received_runtime{};
+
     const auto read = node([&](Scalar<i64> input, Out<TS<i64>> output) {
         received_runtime = std::addressof(input.runtime_type());
         output.set(input.value());

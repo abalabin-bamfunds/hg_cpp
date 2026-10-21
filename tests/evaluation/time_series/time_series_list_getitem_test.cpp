@@ -17,6 +17,7 @@ using namespace bg::literals;
 TEST_CASE("fixed TSL getitem changes selection with a time series index",
           "[evaluation][series:fixed-tsl][series:value][feature:getitem][feature:operator]"
           "[representation:native][binding:value-to-reference][binding:reference-to-value]") {
+
     const auto graph = [](wp<TSL<TS<i64>, 2>> input, wp<TS<i64>> index) -> wp<TS<i64>> {
         return input[index].as<TS<i64>>();
     };
@@ -30,6 +31,7 @@ TEST_CASE("fixed TSL getitem changes selection with a time series index",
 TEST_CASE("fixed TSL getitem observes only the selected item",
           "[evaluation][series:fixed-tsl][series:value][feature:getitem][feature:operator]"
           "[representation:free][binding:value-to-reference][binding:reference-to-value]") {
+
     const auto graph = [](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<i64>> index) -> wp<TS<i64>> {
         return tsl(first, second)[index].as<TS<i64>>();
     };
@@ -47,6 +49,7 @@ TEST_CASE("fixed TSL getitem invalidates for an invalid or out-of-range time ser
           "[evaluation][series:fixed-tsl][series:value][feature:getitem][feature:operator]"
           "[representation:native][binding:value-to-reference][binding:reference-to-value]"
           "[transition:invalidation][transition:revalidation]") {
+
     const auto graph = [](wp<TSL<TS<i64>, 2>> input, wp<TS<i64>> index) -> wp<TS<i64>> {
         return input[index].as<TS<i64>>();
     };
@@ -61,6 +64,7 @@ TEST_CASE("fixed TSL getitem invalidates for an invalid or out-of-range time ser
 TEST_CASE("fixed TSL getitem selects stored references with a time series index",
           "[evaluation][series:fixed-tsl][series:reference][feature:getitem][feature:operator]"
           "[representation:native][binding:reference-to-reference][binding:reference-to-value]") {
+
     const auto increment = node([](i64 input) { return input + 1; });
 
     const auto scale = node([](i64 input) { return input * 10; });
@@ -83,6 +87,7 @@ TEST_CASE("fixed TSL getitem forwards updates from a selected stored reference",
           "[evaluation][series:fixed-tsl][series:reference][feature:getitem][feature:reference]"
           "[representation:native][binding:reference-to-reference][binding:reference-to-value]"
           "[transition:update]") {
+
     const auto increment = node([](i64 input) { return input + 1; });
 
     const auto make_list = node([](In<REF<TS<i64>>> item, Out<TSL<REF<TS<i64>>, 2>> output) {
@@ -105,6 +110,7 @@ TEST_CASE("fixed TSL getitem follows selected item invalidation and revalidation
           "[evaluation][series:fixed-tsl][series:value][feature:getitem][feature:reference]"
           "[representation:native][binding:value-to-reference][binding:reference-to-value]"
           "[transition:invalidation][transition:revalidation]") {
+
     const auto graph = [](wp<TSL<TS<i64>, 2>> input, wp<TS<i64>> index) -> wp<TS<i64>> {
         return input[index].as<TS<i64>>();
     };
@@ -120,6 +126,7 @@ TEST_CASE("fixed TSL getitem follows a list across a nested graph boundary",
           "[evaluation][series:fixed-tsl][series:value][feature:getitem][feature:nested-graph]"
           "[representation:native][binding:value-to-reference][binding:reference-to-value][shape:nested]"
           "[transition:stop][transition:restart]") {
+
     const auto make_list = node([](In<TS<i64>> input, Out<TSL<TS<i64>, 2>> output) {
         output[0].set(*input);
         output[1].set(*input * 10);
@@ -139,6 +146,7 @@ TEST_CASE("fixed TSL getitem follows a list across a nested graph boundary",
 TEST_CASE("scalar getitem reads a reference-backed fixed list",
           "[evaluation][series:fixed-tsl][series:value][feature:getitem][feature:nested-graph]"
           "[representation:native][binding:value-to-reference][binding:reference-to-value][shape:nested]") {
+
     const auto make_list = node([](In<TS<i64>> input, Out<TSL<TS<i64>, 2>> output) {
         output[0].set(*input);
         output[1].set(*input * 10);
@@ -163,6 +171,7 @@ TEST_CASE("fixed TSL getitem follows a free list into a nested graph",
         graph("name"_n = "select_list_item", [](wp<TSL<TS<i64>, 2>> input, wp<TS<i64>> index) -> wp<TS<i64>> {
             return input[index].as<TS<i64>>();
         });
+
     const auto outer = [&](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<i64>> index, wp<TS<bool>> run) {
         return nested(inner, run, tsl(first, second), index);
     };

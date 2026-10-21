@@ -31,7 +31,9 @@ struct reference_wiring_pass {
 
 TEST_CASE("wiring inserts and reuses a reference-making node",
           "[wiring][reference][feature:wiring][binding:value-to-reference]") {
+
     const auto source = node<reference_wiring_source>();
+
     const auto pass = node<reference_wiring_pass>();
     auto wiring = GraphWiring{};
 
@@ -52,7 +54,9 @@ TEST_CASE("wiring inserts and reuses a reference-making node",
 
 TEST_CASE("wiring preserves an existing reference",
           "[wiring][reference][feature:wiring][binding:reference-to-reference]") {
+
     const auto source = node<reference_wiring_source>();
+
     const auto pass = node<reference_wiring_pass>();
     auto wiring = GraphWiring{};
 
@@ -70,6 +74,7 @@ TEST_CASE("wiring preserves an existing reference",
 
 TEST_CASE("wiring rejects materializing a borrowed input as a reference",
           "[wiring][reference][feature:borrowed-input]") {
+
     const auto pass = node<reference_wiring_pass>();
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
@@ -98,6 +103,7 @@ TEST_CASE("operator type-variable parameters use observed reference guarantees",
 
     const auto reference_source =
         node([](Out<REF<TS<i64, TimeSeriesGuarantee::deduplicated>, TimeSeriesGuarantee::deduplicated>>) {});
+
     const auto final_source = node([](Out<TS<i64, TimeSeriesGuarantee::final>>) {});
     const auto collection_source =
         node([](Out<REF<TSD<i64, TS<i64, TimeSeriesGuarantee::deduplicated>>, TimeSeriesGuarantee::deduplicated>>) {});
@@ -128,6 +134,7 @@ TEST_CASE("generic time-series guarantee parameters retain observed and referenc
           "[guarantee:ordinary][guarantee:deduplicated][guarantee:final][guarantee:const]") {
     using VALUE = TimeSeriesVariable<"OBSERVED_VALUE">;
     using OBSERVED = VALUE::with<guarantee_variable<"OBSERVED_GUARANTEE">>;
+
     const auto final_reference = node([](Out<REF<TS<i64, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::final>>) {});
     const auto ordinary_reference =
         node([](Out<REF<TS<i64, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::ordinary>>) {});
@@ -135,6 +142,7 @@ TEST_CASE("generic time-series guarantee parameters retain observed and referenc
         node([](Out<REF<TS<i64, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::deduplicated>>) {});
     const auto const_reference =
         node([](Out<REF<TS<i64, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::const_>>) {});
+
     const auto direct_final_source = node([](Out<TS<i64, TimeSeriesGuarantee::final>>) {});
 
     const auto direct_deduplicated_source = node([](Out<TS<i64, TimeSeriesGuarantee::deduplicated>>) {});

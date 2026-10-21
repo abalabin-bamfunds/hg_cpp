@@ -31,8 +31,7 @@ TEST_CASE("a scalar dictionary owns and exposes its entries",
 
 TEST_CASE("a scalar dictionary finds mapped values with one lookup",
           "[value][scalar][dict][scalar:dict][feature:scalar-collection]") {
-    const auto value = ScalarValue<Dict<i64, i64>>{
-        std::vector<std::pair<i64, i64>>{{1, 10}, {2, 20}}};
+    const auto value = ScalarValue<Dict<i64, i64>>{std::vector<std::pair<i64, i64>>{{1, 10}, {2, 20}}};
     const auto dict = value.view();
 
     const auto found = dict.find(2);
@@ -48,8 +47,8 @@ TEST_CASE("a scalar dictionary finds mapped values with one lookup",
 
 TEST_CASE("a scalar dictionary cursor fills caller-owned batches",
           "[value][scalar][dict][scalar:dict][feature:scalar-collection]") {
-    const auto value = ScalarValue<Dict<i64, i64>>{
-        std::vector<std::pair<i64, i64>>{{1, 1}, {2, 2}, {3, 3}, {4, 4}, {5, 5}}};
+    const auto value =
+        ScalarValue<Dict<i64, i64>>{std::vector<std::pair<i64, i64>>{{1, 1}, {2, 2}, {3, 3}, {4, 4}, {5, 5}}};
     const auto dict = value.view();
     auto cursor = dict.make_cursor();
     auto buffer = std::array<ScalarDictRuntimeType::BatchEntry, 2>{};
@@ -63,8 +62,7 @@ TEST_CASE("a scalar dictionary cursor fills caller-owned batches",
         entry_count += count;
         for (const auto &entry : std::span{buffer}.first(count)) {
             key_sum += Scalar<i64>::from(dict.runtime_type().key_runtime_type(), entry.key).value();
-            mapped_sum +=
-                Scalar<i64>::from(dict.runtime_type().mapped_runtime_type(), entry.mapped).value();
+            mapped_sum += Scalar<i64>::from(dict.runtime_type().mapped_runtime_type(), entry.mapped).value();
         }
     }
 
@@ -102,8 +100,8 @@ TEST_CASE("a scalar dictionary owns variable-size keys and values",
           "[value][scalar][dict][scalar:dict][feature:scalar-collection][storage:variable]") {
     auto key = std::string{"key"};
     auto item = std::string{"value"};
-    const auto value = ScalarValue<Dict<string, string>>{
-        std::vector<std::pair<std::string_view, std::string_view>>{{key, item}}};
+    const auto value =
+        ScalarValue<Dict<string, string>>{std::vector<std::pair<std::string_view, std::string_view>>{{key, item}}};
 
     key.assign("changed key");
     item.assign("changed value");
@@ -117,8 +115,8 @@ TEST_CASE("a scalar dictionary owns nested collection values",
           "[value][scalar][dict][scalar:dict][feature:scalar-collection]") {
     const auto first = ScalarValue<List<i64>>{std::vector<i64>{1, 2}};
     const auto second = ScalarValue<List<i64>>{std::vector<i64>{3}};
-    const auto items = std::vector<std::pair<std::string_view, Scalar<List<i64>>>>{
-        {"first", first.view()}, {"second", second.view()}};
+    const auto items =
+        std::vector<std::pair<std::string_view, Scalar<List<i64>>>>{{"first", first.view()}, {"second", second.view()}};
 
     const auto value = ScalarValue<Dict<string, List<i64>>>{items};
     const auto dict = value.view();

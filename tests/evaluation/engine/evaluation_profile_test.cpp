@@ -74,6 +74,7 @@ EvaluationTime time(i64 microseconds) {
 
 TEST_CASE("runtime graph profiling records node and cycle checkpoints",
           "[evaluation][profile][feature:profiling]") {
+
     const auto source = bg::node<profile_source>();
     auto wiring = GraphWiring{};
     {
@@ -151,6 +152,7 @@ TEST_CASE("runtime graph profiling records nested graph ownership",
           "[evaluation][profile][feature:profiling][feature:nested-graph]") {
     const auto inner =
         bg::graph("name"_n = "profile_inner", [](bg::wp<TS<i64>> input) { return profile_increment(input); });
+
     const auto outer = bg::graph("name"_n = "profile_outer", [&] {
         return bg::nested(inner, bg::operators::const_(true), bg::operators::const_(3));
     });
@@ -196,6 +198,7 @@ TEST_CASE("runtime graph profiling records nested graph ownership",
 TEST_CASE("runtime graph profiling balances graph entries while resuming pending mesh dependencies",
           "[evaluation][profile][feature:profiling][feature:mesh][feature:nested-graph]") {
     auto profile_mesh_events = std::vector<int>{};
+
     const auto values = bg::node([](In<TS<i64>>, Out<TSD<i64, TS<i64>>> output) {
         output[2].set(20);
         output[1].set(10);
@@ -298,6 +301,7 @@ TEST_CASE("runtime graph profiling balances graph entries while resuming pending
 
 TEST_CASE("map profiling stores a key label until the reader consumes it",
           "[evaluation][profile][feature:profiling][feature:map]") {
+
     const auto keys = bg::node([](In<TS<i64>> value, Out<TSD<i64, TS<i64>>> output) {
         if (*value == 1) {
             output[41].set(*value);
@@ -305,6 +309,7 @@ TEST_CASE("map profiling stores a key label until the reader consumes it",
             output.clear();
         }
     });
+
     const auto source = bg::node<profiling_counter_source>();
 
     auto wiring = GraphWiring{};
@@ -345,6 +350,7 @@ TEST_CASE("map profiling stores a key label until the reader consumes it",
 
 TEST_CASE("compact reduce profiles pair-slot reuse as stop then start of the same graph ID",
           "[evaluation][profile][feature:profiling][feature:reduce]") {
+
     const auto values = bg::node([](In<TS<i64>> input, Out<TSD<i64, TS<i64>>> output) {
         if (*input == 1) {
             output[1].set(10);
@@ -357,9 +363,12 @@ TEST_CASE("compact reduce profiles pair-slot reuse as stop then start of the sam
     });
     const auto add =
         bg::node([](In<TS<i64>> left, In<TS<i64>> right, Out<TS<i64>> output) { output.set(*left + *right); });
+
     const auto reducer = bg::graph("name"_n = "profile_reduce_pair",
                                    [&add](bg::wp<TS<i64>> left, bg::wp<TS<i64>> right) { return add(left, right); });
+
     const auto sink = bg::node([](In<TS<i64>>) {});
+
     const auto source = bg::node<profiling_counter_source>();
 
     auto wiring = GraphWiring{};
@@ -428,6 +437,7 @@ struct profile_start_only {
 
 TEST_CASE("runtime graph profiling records scheduled nodes without evaluation functions",
           "[evaluation][profile][feature:profiling]") {
+
     const auto scheduled = bg::node<profile_start_only>();
     auto wiring = GraphWiring{};
     {
@@ -459,6 +469,7 @@ TEST_CASE("runtime graph profiling records scheduled nodes without evaluation fu
 
 TEST_CASE("simulation evaluation engine records a profile",
           "[evaluation][profile][feature:profiling][feature:simulation]") {
+
     const auto source = bg::node<profile_source>();
     auto wiring = GraphWiring{};
     {
@@ -500,6 +511,7 @@ TEST_CASE("simulation evaluation engine records a profile",
 TEST_CASE("runtime graph profiling exposes committed cycles and releases consumed blocks",
           "[evaluation][profile][feature:profiling]") {
     auto memory = counting_memory_resource{};
+
     const auto source = bg::node<profile_source>();
     auto wiring = GraphWiring{};
     {
@@ -540,6 +552,7 @@ TEST_CASE("runtime graph profiling exposes committed cycles and releases consume
 
 TEST_CASE("profile transfer before the first cycle preserves pending label cleanup",
           "[evaluation][profile][feature:profiling]") {
+
     const auto throwing_node = bg::node<throwing_profile_node>();
     auto wiring = GraphWiring{};
     {
@@ -567,6 +580,7 @@ TEST_CASE("profile transfer before the first cycle preserves pending label clean
 
 TEST_CASE("profile transfer during an open cycle preserves pending label cleanup",
           "[evaluation][profile][feature:profiling]") {
+
     const auto source = bg::node<profile_source>();
     auto wiring = GraphWiring{};
     {
@@ -638,6 +652,7 @@ TEST_CASE("profile reader rejects node checkpoints outside an outer cycle",
 
 TEST_CASE("runtime graph profiling records each graph instance against its compiled graph",
           "[evaluation][profile][feature:profiling]") {
+
     const auto source = bg::node<profile_source>();
     auto wiring = GraphWiring{};
     {
@@ -691,6 +706,7 @@ TEST_CASE("runtime graph profiling records each graph instance against its compi
 TEST_CASE("runtime graph profiling falls back to plain evaluation after recording allocation failure",
           "[evaluation][profile][feature:profiling]") {
     auto memory = counting_memory_resource{};
+
     const auto source = bg::node<profile_source>();
     auto wiring = GraphWiring{};
     {
@@ -717,6 +733,7 @@ TEST_CASE("runtime graph profiling falls back to plain evaluation after recordin
 TEST_CASE("runtime graph profiling falls back to plain evaluation after cycle recording allocation failure",
           "[evaluation][profile][feature:profiling]") {
     auto memory = counting_memory_resource{};
+
     const auto source = bg::node<profile_source>();
     auto wiring = GraphWiring{};
     {
@@ -744,6 +761,7 @@ TEST_CASE("runtime graph profiling falls back to plain evaluation after cycle re
 
 TEST_CASE("runtime graph profiling rolls back a cycle after node evaluation throws",
           "[evaluation][profile][feature:profiling]") {
+
     const auto throwing_node = bg::node<throwing_profile_node>();
     auto wiring = GraphWiring{};
     {
@@ -770,6 +788,7 @@ TEST_CASE("runtime graph profiling rolls back a cycle after node evaluation thro
 
 TEST_CASE("runtime graph rejects a profile that was not used at start",
           "[evaluation][profile][feature:profiling]") {
+
     const auto source = bg::node<profile_source>();
     auto wiring = GraphWiring{};
     {
@@ -806,6 +825,7 @@ struct profile_stop_context_source {
 
 TEST_CASE("runtime graph keeps the profile selected at start",
           "[evaluation][profile][feature:profiling]") {
+
     const auto source = bg::node<profile_stop_context_source>();
     auto wiring = GraphWiring{};
     {

@@ -75,10 +75,8 @@ TEST_CASE("scalar collections propagate hash and equality exceptions",
     const auto set_copy = ScalarValue<Set<Value>>{std::array{Value{1}}};
     const auto list = ScalarValue<List<Value>>{std::array{Value{1}}};
     const auto list_copy = ScalarValue<List<Value>>{std::array{Value{1}}};
-    const auto dictionary = ScalarValue<Dict<Value, i64>>{
-        std::array{std::pair{Value{1}, i64{10}}}};
-    const auto dictionary_copy = ScalarValue<Dict<Value, i64>>{
-        std::array{std::pair{Value{1}, i64{10}}}};
+    const auto dictionary = ScalarValue<Dict<Value, i64>>{std::array{std::pair{Value{1}, i64{10}}}};
+    const auto dictionary_copy = ScalarValue<Dict<Value, i64>>{std::array{std::pair{Value{1}, i64{10}}}};
 
     const auto scalar = ScalarValue<Value>{Value{1}};
 
@@ -134,9 +132,8 @@ TEST_CASE("time series set reclamation does not hash stored keys",
     REQUIRE(inserted.change == details::time_series_set_change::added);
     storage.reset_change_tracking(time + EvaluationTime::duration{1}, key_runtime_type, key_layout, memory,
                                   [&](std::uint32_t) noexcept { --item_count; });
-    CHECK(storage.erase(key, key_runtime_type, key_layout, memory,
-                        [&](std::uint32_t) noexcept { --item_count; }).change ==
-          details::time_series_set_change::removed);
+    CHECK(storage.erase(key, key_runtime_type, key_layout, memory, [&](std::uint32_t) noexcept { --item_count; })
+              .change == details::time_series_set_change::removed);
 
     test_scalar::throw_on_hash = true;
     CHECK_NOTHROW((storage.reset_change_tracking(time + EvaluationTime::duration{2}, key_runtime_type, key_layout,

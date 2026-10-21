@@ -30,8 +30,7 @@ auto bundle_allocator = allocator{};
 
 } // namespace
 
-TEST_CASE("bundle constructs an empty hierarchical scalar",
-          "[feature:scalar-api][scalar:hierarchical][schema:named]") {
+TEST_CASE("bundle constructs an empty hierarchical scalar", "[feature:scalar-api][scalar:hierarchical][schema:named]") {
     const auto value = bundle<EmptyRecord>(bundle_allocator);
 
     CHECK(value.view().field_count() == 0);
@@ -129,9 +128,7 @@ class AlternateHierarchicalRuntimeType final : public HierarchicalScalarRuntimeT
         throw std::logic_error{"alternate hierarchical runtime does not support field construction"};
     }
 
-    details::ScalarData field(const details::ScalarData &, std::size_t) const override {
-        std::terminate();
-    }
+    details::ScalarData field(const details::ScalarData &, std::size_t) const override { std::terminate(); }
 
     bool field_present(const details::ScalarData &, std::size_t) const override { return false; }
 
@@ -140,9 +137,7 @@ class AlternateHierarchicalRuntimeType final : public HierarchicalScalarRuntimeT
         *static_cast<void **>(destination) = nullptr;
     }
 
-    void do_construct_from_input(void *, const details::ScalarData &, allocator &) const override {
-        std::terminate();
-    }
+    void do_construct_from_input(void *, const details::ScalarData &, allocator &) const override { std::terminate(); }
 
     void copy_construct(void *, const void *, allocator &) const override { std::terminate(); }
 
@@ -161,13 +156,10 @@ static_assert(sizeof(Scalar<Bundle<Instrument>>) == 2 * sizeof(void *));
 static_assert(sizeof(ScalarValue<Bundle<Instrument>>) == 2 * sizeof(void *));
 static_assert(sizeof(Bundle<Instrument>) == sizeof(void *));
 static_assert(std::constructible_from<ScalarValue<Bundle<Instrument>>, Scalar<Bundle<Equity>>>);
+static_assert(std::constructible_from<ScalarValue<Bundle<Instrument>>, const ScalarValue<Bundle<Equity>> &>);
+static_assert(!std::constructible_from<ScalarValue<Bundle<Instrument>>, const ScalarValue<Bundle<Instrument>> &>);
 static_assert(
-    std::constructible_from<ScalarValue<Bundle<Instrument>>, const ScalarValue<Bundle<Equity>> &>);
-static_assert(
-    !std::constructible_from<ScalarValue<Bundle<Instrument>>, const ScalarValue<Bundle<Instrument>> &>);
-static_assert(!std::constructible_from<
-              ScalarValue<Set<Bundle<Instrument>>>,
-              const std::array<Scalar<Bundle<Equity>>, 1> &>);
+    !std::constructible_from<ScalarValue<Set<Bundle<Instrument>>>, const std::array<Scalar<Bundle<Equity>>, 1> &>);
 static_assert(HashableScalar<Bundle<HashableRecord>>);
 static_assert(!HashableScalar<Bundle<UnhashableRecord>>);
 static_assert(!PositionalBundleConstructible<SCHEMA>);
@@ -226,12 +218,9 @@ TEST_CASE("bundle rejects invalid field assignments",
 
     CHECK_THROWS_AS(bundle<Instrument>(bundle_allocator), std::invalid_argument);
     CHECK_THROWS_AS(bundle<Instrument>(bundle_allocator, "missing"_n = symbol{"ABC"}), std::invalid_argument);
-    CHECK_THROWS_AS(
-        bundle<Instrument>(bundle_allocator, "symbol"_n = symbol{"ABC"}, "symbol"_n = symbol{"DEF"}),
-        std::invalid_argument);
-    CHECK_THROWS_AS(
-        bundle<Instrument>(bundle_allocator, "price"_n = 12.5, symbol{"ABC"}),
-        std::invalid_argument);
+    CHECK_THROWS_AS(bundle<Instrument>(bundle_allocator, "symbol"_n = symbol{"ABC"}, "symbol"_n = symbol{"DEF"}),
+                    std::invalid_argument);
+    CHECK_THROWS_AS(bundle<Instrument>(bundle_allocator, "price"_n = 12.5, symbol{"ABC"}), std::invalid_argument);
     CHECK_THROWS_AS(bundle<Instrument>(bundle_allocator, integer), std::invalid_argument);
 }
 
@@ -294,8 +283,7 @@ TEST_CASE("a hierarchical scalar visitor exposes its structural view",
             CHECK_FALSE(view->present(1));
             CHECK(scalar_cast<symbol>((*view)[0]).value().text() == "ABC");
         },
-        [&](const Scalar<> *) { erased_called = true; },
-        ddv::noop);
+        [&](const Scalar<> *) { erased_called = true; }, ddv::noop);
 
     CHECK(called);
     CHECK_FALSE(erased_called);
@@ -380,15 +368,12 @@ TEST_CASE("generic bundle declarations retain ownership through lists and dictio
         const auto equity = bundle<Equity>(bundle_allocator, symbol{"ABC"}, "lot_size"_n = i64{100});
         derived_type = &equity.type();
 
-        const auto list = ScalarValue<List<Bundle<Equity>>>{
-            std::array<Scalar<Bundle<Equity>>, 1>{equity.view()}};
-        const auto dictionary = ScalarValue<Dict<i64, Bundle<Equity>>>{
-            std::array{std::pair{i64{1}, equity.view()}}};
+        const auto list = ScalarValue<List<Bundle<Equity>>>{std::array<Scalar<Bundle<Equity>>, 1>{equity.view()}};
+        const auto dictionary = ScalarValue<Dict<i64, Bundle<Equity>>>{std::array{std::pair{i64{1}, equity.view()}}};
         const auto source_list_view = list.view();
         const auto source_dictionary_view = dictionary.view();
         const auto list_view = Scalar<List<Bundle<SCHEMA>>>::from(source_list_view);
-        const auto dictionary_view =
-            Scalar<Dict<i64, Bundle<SCHEMA>>>::from(source_dictionary_view);
+        const auto dictionary_view = Scalar<Dict<i64, Bundle<SCHEMA>>>::from(source_dictionary_view);
 
         generic_list.emplace(list_view);
         generic_dictionary.emplace(dictionary_view);
@@ -416,8 +401,7 @@ TEST_CASE("a runtime schema constructs a bundle with optional and nested fields"
 
     {
         const auto items = std::array{ScalarValue<i64>{17}};
-        const auto values = ScalarValue<List<i64>>{
-            std::array<Scalar<i64>, 1>{items[0].view()}, bundle_allocator};
+        const auto values = ScalarValue<List<i64>>{std::array<Scalar<i64>, 1>{items[0].view()}, bundle_allocator};
         const auto values_view = values.view();
         const auto inputs = std::array{
             std::optional<Scalar<>>{Scalar<>::from(values_view)},
@@ -486,8 +470,7 @@ TEST_CASE("an owning hierarchical scalar rejects an unrelated schema",
 TEST_CASE("a scalar dictionary stores hierarchical mapped values",
           "[value][feature:scalar-storage][scalar:dict][scalar:hierarchical][declaration:concrete]") {
     const auto instrument = bundle<Instrument>(bundle_allocator, symbol{"ABC"});
-    const auto items =
-        std::array<std::pair<i64, Scalar<Bundle<Instrument>>>, 1>{std::pair{i64{1}, instrument.view()}};
+    const auto items = std::array<std::pair<i64, Scalar<Bundle<Instrument>>>, 1>{std::pair{i64{1}, instrument.view()}};
 
     const auto dictionary = ScalarValue<Dict<i64, Bundle<Instrument>>>{items};
     const auto stored = dictionary.view().at(1);
@@ -630,8 +613,8 @@ TEST_CASE("hierarchical hashing includes the actual value type",
 
 TEST_CASE("composed hierarchical storage rejects another runtime layout",
           "[feature:scalar-storage][scalar:hierarchical][representation:covariant]") {
-    const auto &runtime_type = static_cast<const HierarchicalScalarRuntimeType &>(
-        cpp_scalar_runtime_type<Bundle<Instrument>>());
+    const auto &runtime_type =
+        static_cast<const HierarchicalScalarRuntimeType &>(cpp_scalar_runtime_type<Bundle<Instrument>>());
     const auto alternate = AlternateHierarchicalRuntimeType{runtime_type.type()};
 
     CHECK_FALSE(runtime_type.accepts_input(alternate));
@@ -639,8 +622,8 @@ TEST_CASE("composed hierarchical storage rejects another runtime layout",
 
 TEST_CASE("bundle construction uses composed storage when an extension runtime type is registered",
           "[feature:scalar-storage][scalar:hierarchical]") {
-    const auto &type = static_cast<const ResolvedHierarchicalScalarType &>(
-        cpp_scalar_type<Bundle<ExtensionBackedRecord>>());
+    const auto &type =
+        static_cast<const ResolvedHierarchicalScalarType &>(cpp_scalar_type<Bundle<ExtensionBackedRecord>>());
     static const auto alternate = AlternateHierarchicalRuntimeType{type};
     register_scalar_runtime_type(alternate);
 
@@ -666,13 +649,10 @@ TEST_CASE("hierarchical construction converts covariant collection representatio
     const auto equity = bundle<Equity>(bundle_allocator, symbol{"ABC"}, 12.5, i64{100});
     const auto list_items = std::array<Scalar<Bundle<Equity>>, 1>{equity.view()};
     const auto list = ScalarValue<List<Bundle<Equity>>>{list_items};
-    const auto dictionary_items =
-        std::array{std::pair{i64{1}, Scalar<Bundle<Equity>>::from(equity)}};
-    const auto dictionary =
-        ScalarValue<Dict<i64, Bundle<Equity>>>{dictionary_items};
+    const auto dictionary_items = std::array{std::pair{i64{1}, Scalar<Bundle<Equity>>::from(equity)}};
+    const auto dictionary = ScalarValue<Dict<i64, Bundle<Equity>>>{dictionary_items};
     const auto &list_runtime = cpp_scalar_runtime_type<List<Bundle<Instrument>>>();
-    const auto &dictionary_runtime =
-        cpp_scalar_runtime_type<Dict<i64, Bundle<Instrument>>>();
+    const auto &dictionary_runtime = cpp_scalar_runtime_type<Dict<i64, Bundle<Instrument>>>();
 
     CHECK(cpp_scalar_type<List<Bundle<Instrument>>>().accepts(list.type()));
     CHECK(cpp_scalar_type<Dict<i64, Bundle<Instrument>>>().accepts(dictionary.type()));
@@ -680,12 +660,9 @@ TEST_CASE("hierarchical construction converts covariant collection representatio
     CHECK(dictionary_runtime.accepts_input(dictionary.runtime_type()));
     CHECK(list_runtime.accepts_input(list_runtime));
     CHECK(dictionary_runtime.accepts_input(dictionary_runtime));
-    CHECK_FALSE(list_runtime.accepts_input(
-        cpp_scalar_runtime_type<List<Bundle<UnrelatedRecord>>>()));
-    CHECK_FALSE(dictionary_runtime.accepts_input(
-        cpp_scalar_runtime_type<Dict<symbol, Bundle<Equity>>>()));
-    CHECK_FALSE(dictionary_runtime.accepts_input(
-        cpp_scalar_runtime_type<Dict<i64, Bundle<UnrelatedRecord>>>()));
+    CHECK_FALSE(list_runtime.accepts_input(cpp_scalar_runtime_type<List<Bundle<UnrelatedRecord>>>()));
+    CHECK_FALSE(dictionary_runtime.accepts_input(cpp_scalar_runtime_type<Dict<symbol, Bundle<Equity>>>()));
+    CHECK_FALSE(dictionary_runtime.accepts_input(cpp_scalar_runtime_type<Dict<i64, Bundle<UnrelatedRecord>>>()));
 
     const auto list_container = bundle<InstrumentList>(bundle_allocator, list.view());
     const auto stored_list = scalar_cast<List<Bundle<Instrument>>>(list_container.view()[0]);
@@ -694,8 +671,7 @@ TEST_CASE("hierarchical construction converts covariant collection representatio
     CHECK(scalar_cast<symbol>(stored_list[0][0]).value().text() == "ABC");
 
     const auto dictionary_container = bundle<InstrumentDictionary>(bundle_allocator, dictionary.view());
-    const auto stored_dictionary =
-        scalar_cast<Dict<i64, Bundle<Instrument>>>(dictionary_container.view()[0]);
+    const auto stored_dictionary = scalar_cast<Dict<i64, Bundle<Instrument>>>(dictionary_container.view()[0]);
     REQUIRE(stored_dictionary.size() == 1);
     CHECK(&stored_dictionary.at(1).type() == &equity.type());
     const auto stored_equity = scalar_cast<Bundle<Equity>>(stored_dictionary.at(1));

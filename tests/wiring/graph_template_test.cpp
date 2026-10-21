@@ -72,6 +72,7 @@ TEST_CASE("a graph function can receive wiring arguments without adding a graph 
     auto observed_argument_count = std::size_t{};
     auto observed_scalar = i64{};
     auto observed_output_type = static_cast<const TimeSeriesType *>(nullptr);
+
     const auto inspect = graph(
         "name"_n = "inspect_wiring_arguments",
         [&](const WiringArguments &arguments, i64 value,
@@ -97,11 +98,13 @@ TEST_CASE("a graph function can receive wiring arguments without adding a graph 
 
 TEST_CASE("a graph can map its output type into a nested implementation",
           "[graph_template][feature:wiring][feature:type-system]") {
+
     const auto integer_source = node([](Out<TS<i64>>) {});
 
     const auto generic_output = graph<NESTED_OUTPUT>(
         "name"_n = "generic_output",
         [=]() -> wp<NESTED_OUTPUT> { return wp<NESTED_OUTPUT>{integer_source()}; });
+
     const auto run = node([](Out<TS<bool>>) {});
 
     const auto wrapper = graph<NESTED_OUTPUT>(
@@ -145,6 +148,7 @@ TEST_CASE("a graph template expands into the active graph", "[graph_template][fe
 }
 
 TEST_CASE("a graph template can omit its output", "[graph_template][feature:wiring]") {
+
     const auto scale_sink_graph = graph(
         "name"_n = "scale_sink_graph", [](wp<TS<float>> input, float factor) { (void)scale(input, factor); });
     GraphWiring wiring;
@@ -165,6 +169,7 @@ TEST_CASE("callable graph requirements reject before wiring the body",
           "[graph_template][feature:wiring][feature:operator]") {
     auto requirement_calls = 0;
     auto body_calls = 0;
+
     const auto positive_only = graph(
         "name"_n = "positive_only",
         require = [&](const WiringArguments &arguments) {
@@ -227,6 +232,7 @@ TEST_CASE("callable graph requirements reject before wiring the body",
 
 TEST_CASE("callable graph requirements return rejection diagnostics with graph labels",
           "[graph_template][feature:wiring]") {
+
     const auto guarded = graph(
         "name"_n = "guarded",
         "label"_n = [](i64 value) { return std::string{"value="} + std::to_string(value); },
@@ -260,10 +266,12 @@ TEST_CASE("callable graph requirements return rejection diagnostics with graph l
 
 TEST_CASE("callable output guarantee inference is local to its node signature",
           "[graph_template][feature:wiring][feature:node-api][definition:function][series:value]") {
+
     const auto increment = node([](double value) { return value + 1.0; });
 
     const auto inferred_output_graph = graph("name"_n = "inferred_callable_output",
                                                  [=](wp<TS<double>> input) { return increment(input); });
+
     const auto forwarding_graph = graph("name"_n = "forward_inferred_callable_output",
                                             [=](wp<TS<double>> input) { return inferred_output_graph(input); });
 
@@ -311,6 +319,7 @@ TEST_CASE("a graph signature resolves a time series variable declaration",
           "[graph_template][type_system][feature:wiring]") {
     using T = TimeSeriesVariable<"T">;
     constexpr auto G = guarantee_variable<"G">;
+
     const auto identity = graph("name"_n = "generic_time_series_identity",
                                     [](wp<T::with<G>> input) -> wp<T::with<G>> { return input; });
     const auto &list =
@@ -335,6 +344,7 @@ struct struct_scale_graph {
 } // namespace
 
 TEST_CASE("a struct graph definition supplies its signature", "[graph_template][feature:wiring]") {
+
     const auto reflected_scale_graph = graph<struct_scale_graph>();
     const auto &signature = reflected_scale_graph.signature();
     const auto &time_series = TS<float>::type();

@@ -83,6 +83,7 @@ TEST_CASE("free TSB materialization rejects borrowed input bindings",
 
 TEST_CASE("a typed TSB wiring point exposes typed fields",
           "[feature:getattr][feature:wiring][series:tsb][schema:named][representation:native]") {
+
     const auto source = node([](Out<TSB<TestBundle>>) {});
 
     const auto sink = node([](In<TS<i64>>) {});
@@ -124,6 +125,7 @@ TEST_CASE("a TSB field projects its properties to its input view",
 
 TEST_CASE("unused typed TSB fields remain unmaterialized",
           "[feature:getattr][feature:wiring][series:tsb][schema:named][representation:native]") {
+
     const auto source = node([](Out<TSB<TestBundle>>) {});
     auto wiring = GraphWiring{};
 
@@ -139,6 +141,7 @@ TEST_CASE("unused typed TSB fields remain unmaterialized",
 TEST_CASE("typed TSB field access reuses its wiring record",
           "[feature:getattr][feature:wiring][series:tsb][schema:named][representation:native]"
           "[shape:fan-out]") {
+
     const auto source = node([](Out<TSB<TestBundle>>) {});
     auto wiring = GraphWiring{};
 
@@ -178,6 +181,7 @@ TEST_CASE("typed field access preserves free TSB sources",
 TEST_CASE("typed TSB construction preserves field annotations",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:named]"
           "[input-guarantee:valid-items][representation:free]") {
+
     const auto dictionary = node([](Out<TSD<i64, TS<i64>>>) {});
 
     const auto receiver = graph("name"_n = "typed_bundle_receiver", [](wp<TSB<SCHEMA>, "values"_n, var_kwargs> values) {
@@ -229,6 +233,7 @@ TEST_CASE("getattr selects a field from an unnamed free TSB",
 
 TEST_CASE("a free TSB accepts a span of named wiring arguments",
           "[feature:wiring][series:tsb][schema:named][representation:free]") {
+
     const auto count_source = node([](Out<TS<i64>>) {});
 
     const auto value_source = node([](Out<TS<float>>) {});
@@ -254,6 +259,7 @@ TEST_CASE("a free TSB accepts a span of named wiring arguments",
 
 TEST_CASE("a free TSB span rejects duplicate field names",
           "[feature:wiring][series:tsb][schema:named][representation:free]") {
+
     const auto source = node([](Out<TS<i64>>) {});
 
     testing::test_wiring([&] {
@@ -266,6 +272,7 @@ TEST_CASE("a free TSB span rejects duplicate field names",
 
 TEST_CASE("a free TSB span requires named fields and projects scalars to const time series",
           "[feature:wiring][series:tsb][schema:named][representation:free]") {
+
     const auto source = node([](Out<TS<float>>) {});
 
     testing::test_wiring([&] {
@@ -296,6 +303,7 @@ TEST_CASE("a free TSB span requires named fields and projects scalars to const t
 
 TEST_CASE("field selection from an argument-backed TSB does not materialize the bundle",
           "[feature:wiring][feature:getattr][series:tsb][schema:named][representation:free]") {
+
     const auto source = node([](Out<TS<float>>) {});
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};

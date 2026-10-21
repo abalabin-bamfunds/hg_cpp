@@ -25,60 +25,63 @@
 #include <utility>
 #include <vector>
 
+using namespace bg;
+
 namespace {
 
 struct source_definition {
-    bg::Out<bg::TS<float>> output;
+    Out<TS<float>> output;
 
     void evaluate() const {}
 };
 
 struct integer_source_definition {
-    bg::Out<bg::TS<bg::i64>> output;
+    Out<TS<i64>> output;
 
     void evaluate() const {}
 };
 
-class scale_template final : public bg::NodeTemplate {
+class scale_template final : public NodeTemplate {
   public:
-    [[nodiscard]] const bg::Signature &default_signature() const override {
-        static const auto input_type = bg::util::static_storage<bg::GenericTimeSeriesValueType>{
-            bg::float_type(), bg::TimeSeriesGuarantee::ordinary};
-        [[maybe_unused]] static const auto &input_type_registration = bg::TypeRegistry::register_static(input_type.get());
-        static const bg::Signature value{
-            bg::util::symbol{"scale"},
-            {{bg::util::symbol{"input"}, &input_type.get()}, {bg::util::symbol{"factor"}, &bg::float_type()}},
-            bg::TS<float>::type()};
+    [[nodiscard]] const Signature &default_signature() const override {
+        static const auto input_type = util::static_storage<GenericTimeSeriesValueType>{
+            float_type(), TimeSeriesGuarantee::ordinary};
+        [[maybe_unused]] static const auto &input_type_registration = TypeRegistry::register_static(input_type.get());
+        static const Signature value{
+            util::symbol{"scale"},
+            {{util::symbol{"input"}, &input_type.get()}, {util::symbol{"factor"}, &float_type()}},
+            TS<float>::type()};
 
         return value;
     }
 
-    [[nodiscard]] bg::EvaluationFunction evaluation_function(const bg::ResolvedSignature &) const noexcept override {
+    [[nodiscard]] EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override {
         return &evaluate;
     }
 
   private:
-    static bool evaluate(const bg::CompiledNode &, void *, bg::EvaluationContext *) { return true; }
+    static bool evaluate(const CompiledNode &, void *, EvaluationContext *) { return true; }
 };
 
 } // namespace
 
 TEST_CASE("compiled nodes keep hot data in node-local sections", "[compiled_graph][feature:graph-compilation]") {
-    const auto source = bg::node<source_definition>();
+
+    const auto source = node<source_definition>();
     const auto scale = scale_template{};
-    bg::GraphWiring wiring;
+    GraphWiring wiring;
 
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         (void)scale(source(), 2.0F);
     }
 
     wiring.finalize();
-    bg::CompiledGraph graph{wiring};
+    CompiledGraph graph{wiring};
 
     REQUIRE(graph.node_count() == 2);
-    const bg::CompiledNode &source_node = graph.node(0);
-    const bg::CompiledNode &scale_node = graph.node(1);
+    const CompiledNode &source_node = graph.node(0);
+    const CompiledNode &scale_node = graph.node(1);
 
     REQUIRE(source_node.subscribers().size() == 1);
     CHECK(source_node.subscribers()[0].node_index() == 1);
@@ -88,18 +91,18 @@ TEST_CASE("compiled nodes keep hot data in node-local sections", "[compiled_grap
 
     const auto parameters = scale_node.parameters();
     REQUIRE(parameters.size() == 2);
-    CHECK(parameters[0].mode() == bg::ParameterBindingMode::time_series);
+    CHECK(parameters[0].mode() == ParameterBindingMode::time_series);
     CHECK(parameters[0].last_updated_offset() == source_node.output_last_updated_offset());
     CHECK(parameters[0].value_offset() == source_node.output_value_offset());
-    CHECK(parameters[1].mode() == bg::ParameterBindingMode::scalar);
+    CHECK(parameters[1].mode() == ParameterBindingMode::scalar);
     CHECK(*static_cast<const float *>(parameters[1].scalar_data()) == 2.0F);
 
     const auto *node_address = reinterpret_cast<const std::byte *>(&scale_node);
     const auto *parameter_address = reinterpret_cast<const std::byte *>(parameters.data());
     const auto *scalar_address = static_cast<const std::byte *>(parameters[1].scalar_data());
 
-    CHECK(parameter_address == node_address + sizeof(bg::CompiledNode));
-    CHECK(scalar_address == parameter_address + parameters.size() * sizeof(bg::ParameterBinding));
+    CHECK(parameter_address == node_address + sizeof(CompiledNode));
+    CHECK(scalar_address == parameter_address + parameters.size() * sizeof(ParameterBinding));
     // The direct borrowed-input metadata offset adds 4 bytes to the header and 4 bytes of alignment padding.
     CHECK(graph.fixed_storage_size() == 252);
 }
@@ -107,26 +110,28 @@ TEST_CASE("compiled nodes keep hot data in node-local sections", "[compiled_grap
 namespace {
 
 struct runtime_signature_identity_definition {
-    using output_declaration_type = bg::Out<bg::TS<bg::i64>>;
+    using output_declaration_type = Out<TS<i64>>;
 
     runtime_signature_identity_definition()
-        : signature_{bg::util::symbol{"runtime_identity"},
-                     {{bg::util::symbol{"input"}, &bg::TS<bg::i64>::type()}}, bg::TS<bg::i64>::type()} {}
+        : signature_{util::symbol{"runtime_identity"},
+                     {{util::symbol{"input"}, &TS<i64>::type()}}, TS<i64>::type()} {}
 
-    const bg::Signature &signature() const noexcept { return signature_; }
+    const Signature &signature() const noexcept { return signature_; }
 
-    static void evaluate(bg::NodeInvocation<>) {}
+    static void evaluate(NodeInvocation<>) {}
 
-    bg::Signature signature_;
+    Signature signature_;
 };
 
 } // namespace
 
 TEST_CASE("typed callable nodes omit runtime-signature metadata",
           "[compiled_graph][feature:graph-compilation][definition:runtime]") {
-    const auto typed_identity = bg::node([](bg::In<bg::TS<bg::i64>>, bg::Out<bg::TS<bg::i64>>) {});
-    const auto runtime_identity = bg::node(runtime_signature_identity_definition{});
-    const auto input_types = std::array<const bg::Type *, 1>{&bg::TS<bg::i64>::type()};
+
+    const auto typed_identity = node([](In<TS<i64>>, Out<TS<i64>>) {});
+
+    const auto runtime_identity = node(runtime_signature_identity_definition{});
+    const auto input_types = std::array<const bg::Type *, 1>{&TS<i64>::type()};
     const auto typed_signature = typed_identity.signature().resolve(input_types);
     const auto runtime_signature = runtime_identity.signature().resolve(input_types);
 
@@ -138,14 +143,15 @@ TEST_CASE("typed callable nodes omit runtime-signature metadata",
     CHECK(runtime_identity.uses_output_runtime_type());
 
     const auto compiled_sizes = [](const auto &transform) {
-        auto wiring = bg::GraphWiring{};
-        const auto source = bg::node<integer_source_definition>();
+        auto wiring = GraphWiring{};
+
+        const auto source = node<integer_source_definition>();
         {
-            auto context = bg::WiringContext{wiring};
+            auto context = WiringContext{wiring};
             (void)transform(source());
         }
         wiring.finalize();
-        const auto graph = bg::CompiledGraph{wiring};
+        const auto graph = CompiledGraph{wiring};
         return std::pair{graph.fixed_storage_size(), graph.runtime_storage_size()};
     };
 
@@ -160,7 +166,7 @@ namespace {
 struct cycle_callback_node_definition {
     static constexpr bool uses_cycle_callbacks = true;
 
-    bg::Out<bg::TS<bg::i64>> output;
+    Out<TS<i64>> output;
 
     void evaluate() const {}
 };
@@ -170,39 +176,41 @@ struct cycle_callback_node_definition {
 TEST_CASE("aggregate node declarations reserve cycle callback storage",
           "[compiled_graph][feature:graph-compilation][feature:lifecycle][definition:aggregate]") {
     const auto has_cycle_callbacks = [](const auto &node) {
-        auto wiring = bg::GraphWiring{};
+        auto wiring = GraphWiring{};
         {
-            auto context = bg::WiringContext{wiring};
+            auto context = WiringContext{wiring};
             (void)node();
         }
         wiring.finalize();
-        const auto graph = bg::CompiledGraph{wiring};
+        const auto graph = CompiledGraph{wiring};
         return graph.has_cycle_callbacks();
     };
 
-    CHECK(has_cycle_callbacks(bg::node<cycle_callback_node_definition>()));
-    CHECK_FALSE(has_cycle_callbacks(bg::node<integer_source_definition>()));
+    CHECK(has_cycle_callbacks(node<cycle_callback_node_definition>()));
+    CHECK_FALSE(has_cycle_callbacks(node<integer_source_definition>()));
 }
 
 TEST_CASE("capturing callables keep compiled data without parameter descriptors",
           "[compiled_graph][feature:graph-compilation][feature:lifecycle][definition:function][lifetime]") {
     const auto token = std::make_shared<int>(0);
-    const auto source = bg::node<integer_source_definition>();
-    const auto copy = bg::node([token](bg::In<bg::TS<bg::i64>, bg::dynamic_activity> input,
-                                       bg::Out<bg::TS<bg::i64>> output) {
+
+    const auto source = node<integer_source_definition>();
+
+    const auto copy = node([token](In<TS<i64>, dynamic_activity> input,
+                                       Out<TS<i64>> output) {
         static_cast<void>(token);
         output.copy(input);
     });
-    auto wiring = bg::GraphWiring{};
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         (void)copy(source());
     }
     wiring.finalize();
 
     const auto use_count_before_compilation = token.use_count();
     {
-        const auto graph = bg::CompiledGraph{wiring};
+        const auto graph = CompiledGraph{wiring};
         CHECK(token.use_count() == use_count_before_compilation + 1);
 
         const auto &compiled_copy = graph.node(1);
@@ -225,22 +233,22 @@ struct failing_compiled_data_definition {
                                      std::shared_ptr<bool> capture_was_constructed)
         : token_{std::move(token)}, baseline_{std::move(baseline)},
           capture_was_constructed_{std::move(capture_was_constructed)},
-          signature_{bg::util::symbol{"failing_compile"},
-                     {{bg::util::symbol{"input"}, &bg::TS<bg::i64>::type()}}, bg::TS<bg::i64>::type()} {}
+          signature_{util::symbol{"failing_compile"},
+                     {{util::symbol{"input"}, &TS<i64>::type()}}, TS<i64>::type()} {}
 
-    const bg::Signature &signature() const noexcept { return signature_; }
+    const Signature &signature() const noexcept { return signature_; }
 
-    compiled_data_type compile(const bg::ResolvedSignature &, bg::allocator &) const {
+    compiled_data_type compile(const ResolvedSignature &, allocator &) const {
         *capture_was_constructed_ = token_.use_count() > *baseline_;
         throw std::runtime_error{"requested compilation failure"};
     }
 
-    static void evaluate(bg::NodeInvocation<compiled_data_type>) {}
+    static void evaluate(NodeInvocation<compiled_data_type>) {}
 
     std::shared_ptr<int> token_;
     std::shared_ptr<long> baseline_;
     std::shared_ptr<bool> capture_was_constructed_;
-    bg::Signature signature_;
+    Signature signature_;
 };
 
 } // namespace
@@ -250,22 +258,25 @@ TEST_CASE("compiled callable captures are destroyed when a later node fails comp
     const auto token = std::make_shared<int>(0);
     const auto baseline = std::make_shared<long>();
     const auto capture_was_constructed = std::make_shared<bool>();
-    const auto source = bg::node<integer_source_definition>();
-    const auto copy = bg::node([token](bg::In<bg::TS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
+
+    const auto source = node<integer_source_definition>();
+
+    const auto copy = node([token](In<TS<i64>> input, Out<TS<i64>> output) {
         static_cast<void>(token);
         output.copy(input);
     });
-    const auto fail = bg::node(failing_compiled_data_definition{token, baseline, capture_was_constructed});
 
-    auto wiring = bg::GraphWiring{};
+    const auto fail = node(failing_compiled_data_definition{token, baseline, capture_was_constructed});
+
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         (void)fail(copy(source()));
     }
     wiring.finalize();
     *baseline = token.use_count();
 
-    CHECK_THROWS_WITH(bg::CompiledGraph{wiring}, "requested compilation failure");
+    CHECK_THROWS_WITH(CompiledGraph{wiring}, "requested compilation failure");
     CHECK(*capture_was_constructed);
     CHECK(token.use_count() == *baseline);
 }
@@ -273,44 +284,47 @@ TEST_CASE("compiled callable captures are destroyed when a later node fails comp
 TEST_CASE("sampled reference bindings keep their mode and aligned metadata",
           "[compiled_graph][feature:reference][feature:sampling][binding:reference-to-value]") {
     struct dictionary_source {
-        bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>> output;
+        Out<TSD<i64, TS<i64>>> output;
 
         void evaluate() const {}
     };
 
-    const auto source = bg::node<dictionary_source>();
-    const auto retain_reference = bg::node([](bg::In<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> input,
-                                              bg::Out<bg::REF<bg::TSD<bg::i64, bg::TS<bg::i64>>>> output) {
+    const auto source = node<dictionary_source>();
+
+    const auto retain_reference = node([](In<REF<TSD<i64, TS<i64>>>> input,
+                                              Out<REF<TSD<i64, TS<i64>>>> output) {
         output.copy(input);
     });
-    const auto inspect = bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>> input,
-                                     bg::Out<bg::TS<bg::i64>> output) {
-        if (input.valid()) {
-            output.set(1);
-        }
-    });
-    const auto inspect_dynamic = bg::node([](bg::In<bg::TSD<bg::i64, bg::TS<bg::i64>>,
-                                                     bg::dynamic_activity> input,
-                                             bg::Out<bg::TS<bg::i64>> output) {
+
+    const auto inspect = node([](In<TSD<i64, TS<i64>>> input,
+                                     Out<TS<i64>> output) {
         if (input.valid()) {
             output.set(1);
         }
     });
 
-    auto wiring = bg::GraphWiring{};
+    const auto inspect_dynamic = node([](In<TSD<i64, TS<i64>>,
+                                                     dynamic_activity> input,
+                                             Out<TS<i64>> output) {
+        if (input.valid()) {
+            output.set(1);
+        }
+    });
+
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         const auto reference = retain_reference(source());
         (void)inspect(reference);
         (void)inspect_dynamic(reference);
     }
     wiring.finalize();
 
-    const auto graph = bg::CompiledGraph{wiring};
-    auto sampled_bindings = std::vector<const bg::ParameterBinding *>{};
+    const auto graph = CompiledGraph{wiring};
+    auto sampled_bindings = std::vector<const ParameterBinding *>{};
     for (auto node_index = std::size_t{}; node_index < graph.node_count(); ++node_index) {
         for (const auto &binding : graph.node(node_index).parameters()) {
-            if (binding.mode() == bg::ParameterBindingMode::reference && binding.has_reference_sample()) {
+            if (binding.mode() == ParameterBindingMode::reference && binding.has_reference_sample()) {
                 sampled_bindings.push_back(&binding);
             }
         }
@@ -321,46 +335,49 @@ TEST_CASE("sampled reference bindings keep their mode and aligned metadata",
               return binding->reference_dynamic_activity();
           }) == 1);
     for (const auto *binding : sampled_bindings) {
-        CHECK(binding->value_offset() % alignof(bg::ReferenceInputStorage) == 0);
+        CHECK(binding->value_offset() % alignof(ReferenceInputStorage) == 0);
     }
 }
 
 TEST_CASE("all_valid metadata follows an empty runtime-type array at pointer alignment",
           "[compiled_graph][feature:validity][validity:all-valid][layout]") {
     struct source_definition {
-        bg::Out<bg::TS<bg::i64>> output;
+        Out<TS<i64>> output;
 
         void start() const { output.set(1); }
     };
     struct stateful_gate_definition {
-        bg::State<bg::i64> evaluations;
-        bg::In<bg::TS<bg::i64>, bg::all_valid> input;
-        bg::Out<bg::TS<bg::i64>> output;
+        State<i64> evaluations;
+        In<TS<i64>, all_valid> input;
+        Out<TS<i64>> output;
 
         void evaluate() const { output.set(++*evaluations); }
     };
 
-    const auto source = bg::node<source_definition>();
-    const auto gate = bg::node<stateful_gate_definition>();
-    const auto gate_signature = gate.signature().resolve(std::array<const bg::Type *, 1>{&bg::TS<bg::i64>::type()});
+    const auto source = node<source_definition>();
+
+    const auto gate = node<stateful_gate_definition>();
+    const auto gate_signature = gate.signature().resolve(std::array<const bg::Type *, 1>{&TS<i64>::type()});
     CHECK_FALSE(gate.uses_time_series_input_runtime_type(gate_signature, 0));
     CHECK_FALSE(gate.uses_output_runtime_type());
 
-    const auto increment = bg::node([](bg::i64 input) { return input + 1; });
-    const auto double_value = bg::node([](bg::i64 input) { return input * 2; });
-    const auto combine = bg::node([](bg::In<bg::TS<bg::i64>> left, bg::In<bg::TS<bg::i64>> right,
-                                     bg::Out<bg::TS<bg::i64>> output) { output.set(*left + *right); });
+    const auto increment = node([](i64 input) { return input + 1; });
 
-    auto wiring = bg::GraphWiring{};
+    const auto double_value = node([](i64 input) { return input * 2; });
+
+    const auto combine = node([](In<TS<i64>> left, In<TS<i64>> right,
+                                     Out<TS<i64>> output) { output.set(*left + *right); });
+
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         const auto value = gate(source());
         static_cast<void>(combine(increment(value), double_value(value)));
     }
 
     wiring.finalize();
-    const auto graph = bg::CompiledGraph{wiring};
-    const bg::CompiledNode *stateful_gate{};
+    const auto graph = CompiledGraph{wiring};
+    const CompiledNode *stateful_gate{};
     for (auto index = std::size_t{}; index < graph.node_count(); ++index) {
         const auto &node = graph.node(index);
         if (node.has_state() && node.has_all_valid_input_metadata()) {
@@ -374,7 +391,7 @@ TEST_CASE("all_valid metadata follows an empty runtime-type array at pointer ali
     const auto descriptors = stateful_gate->all_valid_input_descriptors();
     REQUIRE(descriptors.size() == 1);
     CHECK(descriptors[0].parameter_index == 0);
-    CHECK(descriptors[0].declared_type == &bg::TS<bg::i64>::type());
+    CHECK(descriptors[0].declared_type == &TS<i64>::type());
 }
 
 namespace {
@@ -382,8 +399,8 @@ namespace {
 struct input_node_index_sink {
     static constexpr bool uses_input_node_indices = true;
 
-    bg::In<bg::TS<float>> first;
-    bg::In<bg::TS<float>> second;
+    In<TS<float>> first;
+    In<TS<float>> second;
 
     void evaluate() const {}
 };
@@ -392,38 +409,40 @@ struct input_node_index_sink {
 
 TEST_CASE("compiled node input producer indices use compiled node order",
           "[feature:graph-compilation][series:value][shape:chain]") {
-    const auto source = bg::node<source_definition>();
-    const auto sink = bg::node<input_node_index_sink>();
-    auto wiring = bg::GraphWiring{};
+
+    const auto source = node<source_definition>();
+
+    const auto sink = node<input_node_index_sink>();
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         const auto input = source();
         sink(input, input);
     }
 
     wiring.finalize();
-    const auto graph = bg::CompiledGraph{wiring};
+    const auto graph = CompiledGraph{wiring};
     REQUIRE(graph.node_count() == 2);
     CHECK(graph.node(1).input_node_index(0) == 0);
     CHECK(graph.node(1).input_node_index(1) == 0);
     CHECK_FALSE(graph.node(0).input_node_index(0).has_value());
 
     struct ordinary_two_input_sink {
-        bg::In<bg::TS<float>> first;
-        bg::In<bg::TS<float>> second;
+        In<TS<float>> first;
+        In<TS<float>> second;
 
         void evaluate() const {}
     };
 
-    const auto ordinary_sink = bg::node<ordinary_two_input_sink>();
-    auto ordinary_wiring = bg::GraphWiring{};
+    const auto ordinary_sink = node<ordinary_two_input_sink>();
+    auto ordinary_wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{ordinary_wiring};
+        auto context = WiringContext{ordinary_wiring};
         const auto input = source();
         ordinary_sink(input, input);
     }
     ordinary_wiring.finalize();
-    const auto ordinary_graph = bg::CompiledGraph{ordinary_wiring};
+    const auto ordinary_graph = CompiledGraph{ordinary_wiring};
     CHECK(graph.fixed_storage_size() == ordinary_graph.fixed_storage_size() + 2 * sizeof(std::uint32_t));
 }
 
@@ -432,7 +451,7 @@ namespace {
 struct all_valid_input_node_index_sink {
     static constexpr bool uses_input_node_indices = true;
 
-    bg::In<bg::TS<bg::i64>, bg::all_valid> input;
+    In<TS<i64>, all_valid> input;
 
     void evaluate() const {}
 };
@@ -441,16 +460,18 @@ struct all_valid_input_node_index_sink {
 
 TEST_CASE("compiled nodes retain all_valid metadata with input producer indices",
           "[feature:graph-compilation][feature:validity][series:value][scalar:i64][shape:chain]") {
-    const auto source = bg::node<integer_source_definition>();
-    const auto sink = bg::node<all_valid_input_node_index_sink>();
-    auto wiring = bg::GraphWiring{};
+
+    const auto source = node<integer_source_definition>();
+
+    const auto sink = node<all_valid_input_node_index_sink>();
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         sink(source());
     }
 
     wiring.finalize();
-    const auto graph = bg::CompiledGraph{wiring};
+    const auto graph = CompiledGraph{wiring};
     REQUIRE(graph.node_count() == 2);
     const auto &compiled_sink = graph.node(1);
     CHECK(compiled_sink.input_node_index(0) == 0);
@@ -459,39 +480,41 @@ TEST_CASE("compiled nodes retain all_valid metadata with input producer indices"
     const auto descriptors = compiled_sink.all_valid_input_descriptors();
     REQUIRE(descriptors.size() == 1);
     CHECK(descriptors[0].parameter_index == 0);
-    CHECK(descriptors[0].declared_type == &bg::TS<bg::i64>::type());
+    CHECK(descriptors[0].declared_type == &TS<i64>::type());
 }
 
 namespace {
 
 struct runtime_valid_items_all_valid_definition {
     runtime_valid_items_all_valid_definition()
-        : signature_{bg::util::symbol{"runtime_valid_items_all_valid"},
-                     {bg::Parameter{.name = bg::util::symbol{"input"},
-                                    .type = &bg::TSD<bg::i64, bg::TS<bg::i64>>::type(),
-                                    .validity = bg::InputValidity::all_valid,
+        : signature_{util::symbol{"runtime_valid_items_all_valid"},
+                     {Parameter{.name = util::symbol{"input"},
+                                    .type = &TSD<i64, TS<i64>>::type(),
+                                    .validity = InputValidity::all_valid,
                                     .valid_items = true}}} {}
 
-    const bg::Signature &signature() const noexcept { return signature_; }
-    static void evaluate(bg::NodeInvocation<>) {}
+    const Signature &signature() const noexcept { return signature_; }
+    static void evaluate(NodeInvocation<>) {}
 
-    bg::Signature signature_;
+    Signature signature_;
 };
 
 } // namespace
 
 TEST_CASE("compiled all_valid descriptors omit valid_items dictionary checks",
           "[compiled_graph][feature:validity][validity:all-valid][input-guarantee:valid-items][series:tsd]") {
-    const auto source = bg::node([](bg::Out<bg::TSD<bg::i64, bg::TS<bg::i64>>>) {});
-    const auto sink = bg::node(runtime_valid_items_all_valid_definition{});
-    auto wiring = bg::GraphWiring{};
+
+    const auto source = node([](Out<TSD<i64, TS<i64>>>) {});
+
+    const auto sink = node(runtime_valid_items_all_valid_definition{});
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         sink(source());
     }
 
     wiring.finalize();
-    const auto graph = bg::CompiledGraph{wiring};
+    const auto graph = CompiledGraph{wiring};
     REQUIRE(graph.node_count() == 2);
     const auto &compiled_sink = graph.node(1);
     CHECK_FALSE(compiled_sink.has_all_valid_input_metadata());
@@ -500,19 +523,20 @@ TEST_CASE("compiled all_valid descriptors omit valid_items dictionary checks",
 
 TEST_CASE("compiled node input producer indices omit lowered inputs and remap direct inputs",
           "[feature:graph-compilation][feature:constant][series:value][shape:chain][guarantee:const]") {
-    using namespace bg::operators;
+    using namespace operators;
 
-    const auto source = bg::node<source_definition>();
-    const auto sink = bg::node<input_node_index_sink>();
-    auto wiring = bg::GraphWiring{};
+    const auto source = node<source_definition>();
+
+    const auto sink = node<input_node_index_sink>();
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
-        const auto constant = const_(1.0F).as<bg::TS<float, bg::TimeSeriesGuarantee::const_>>();
+        auto context = WiringContext{wiring};
+        const auto constant = const_(1.0F).as<TS<float, TimeSeriesGuarantee::const_>>();
         sink(constant, source());
     }
 
     wiring.finalize();
-    const auto graph = bg::CompiledGraph{wiring};
+    const auto graph = CompiledGraph{wiring};
     REQUIRE(graph.node_count() == 2);
     const auto &compiled_sink = graph.node(1);
     CHECK_FALSE(compiled_sink.input_node_index(0).has_value());
@@ -523,43 +547,44 @@ TEST_CASE("compiled nodes store one activity record for each controlled input",
           "[feature:input-activity][feature:graph-compilation][series:value][definition:aggregate]"
           "[shape:chain][activity:active]") {
     struct controlled_sink_definition {
-        bg::In<bg::TS<float>, bg::dynamic_activity> input;
+        In<TS<float>, dynamic_activity> input;
         void evaluate() const { input.make_passive(); }
     };
 
-    const auto source = bg::node<source_definition>();
-    const auto sink = bg::node<controlled_sink_definition>();
-    auto wiring = bg::GraphWiring{};
+    const auto source = node<source_definition>();
+
+    const auto sink = node<controlled_sink_definition>();
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         sink(source());
     }
 
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
+    const auto compiled = CompiledGraph{wiring};
     CHECK(compiled.node(0).subscribers().empty());
     CHECK(compiled.node(0).output_notification() != nullptr);
     CHECK(compiled.node(1).controlled_inputs().size() == 1);
-    CHECK(sizeof(bg::Subscriber) == sizeof(std::uint32_t));
-    CHECK(sizeof(bg::ControlledInput) == sizeof(std::uint32_t));
+    CHECK(sizeof(Subscriber) == sizeof(std::uint32_t));
+    CHECK(sizeof(ControlledInput) == sizeof(std::uint32_t));
 }
 
 namespace {
 
 struct reference_subscription_source {
-    bg::Out<bg::TS<bg::i64>> output;
+    Out<TS<i64>> output;
     void evaluate() const {}
 };
 
 struct reference_subscription_pass {
-    bg::In<bg::REF<bg::TS<bg::i64>>> input;
-    bg::Out<bg::REF<bg::TS<bg::i64>>> output;
+    In<REF<TS<i64>>> input;
+    Out<REF<TS<i64>>> output;
     void evaluate() const { output.copy(input); }
 };
 
 struct two_reference_input_sink {
-    bg::In<bg::TS<bg::i64>> left;
-    bg::In<bg::TS<bg::i64>> right;
+    In<TS<i64>> left;
+    In<TS<i64>> right;
     void evaluate() const {}
 };
 
@@ -567,27 +592,31 @@ struct two_reference_input_sink {
 
 TEST_CASE("compiled reference notifications identify each receiving input slot",
           "[compiled_graph][subscriptions][feature:graph-compilation]") {
-    const auto source = bg::node<reference_subscription_source>();
-    const auto pass = bg::node<reference_subscription_pass>();
-    const auto sink = bg::node<two_reference_input_sink>();
-    auto wiring = bg::GraphWiring{};
+
+    const auto source = node<reference_subscription_source>();
+
+    const auto pass = node<reference_subscription_pass>();
+
+    const auto sink = node<two_reference_input_sink>();
+    auto wiring = GraphWiring{};
 
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         const auto reference = pass(source());
         sink(reference, reference);
     }
 
     wiring.finalize();
-    const auto graph = bg::CompiledGraph{wiring};
+    const auto graph = CompiledGraph{wiring};
     const auto &reference_node = graph.node(2);
     const auto *notification = reference_node.output_notification();
     REQUIRE(notification != nullptr);
     const auto bytes = notification->records();
     const auto reference_subscribers = std::span{
-        reinterpret_cast<const bg::details::ReferenceInputSubscriber *>(bytes.data()),
-        bytes.size() / sizeof(bg::details::ReferenceInputSubscriber),
+        reinterpret_cast<const details::ReferenceInputSubscriber *>(bytes.data()),
+        bytes.size() / sizeof(details::ReferenceInputSubscriber),
     };
+
     const auto sink_parameters = graph.node(3).parameters();
 
     REQUIRE(reference_subscribers.size() == 2);
@@ -605,18 +634,19 @@ TEST_CASE("compiled reference notifications identify each receiving input slot",
 }
 
 TEST_CASE("graph wiring can compile more than once", "[compiled_graph][feature:graph-compilation]") {
-    const auto source = bg::node<source_definition>();
+
+    const auto source = node<source_definition>();
     const auto scale = scale_template{};
-    bg::GraphWiring wiring;
+    GraphWiring wiring;
 
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         (void)scale(source(), 2.0F);
     }
 
     wiring.finalize();
-    bg::CompiledGraph first{wiring};
-    bg::CompiledGraph second{wiring};
+    CompiledGraph first{wiring};
+    CompiledGraph second{wiring};
 
     const void *first_scalar = first.node(1).parameters()[1].scalar_data();
     const void *second_scalar = second.node(1).parameters()[1].scalar_data();
@@ -629,8 +659,8 @@ TEST_CASE("graph wiring can compile more than once", "[compiled_graph][feature:g
 namespace {
 
 struct passive_copy_definition {
-    bg::In<bg::TS<float>, bg::passive, bg::optional> input;
-    bg::Out<bg::TS<float>> output;
+    In<TS<float>, passive, optional> input;
+    Out<TS<float>> output;
 
     void evaluate() const { output.set(*input); }
 };
@@ -639,36 +669,39 @@ struct passive_copy_definition {
 
 TEST_CASE("compiled parameters retain validity without a passive subscription",
           "[compiled_graph][feature:graph-compilation]") {
-    const auto source = bg::node<source_definition>();
-    const auto passive_copy = bg::node<passive_copy_definition>();
-    bg::GraphWiring wiring;
+
+    const auto source = node<source_definition>();
+
+    const auto passive_copy = node<passive_copy_definition>();
+    GraphWiring wiring;
 
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         (void)passive_copy(source());
     }
 
     wiring.finalize();
-    bg::CompiledGraph graph{wiring};
+    CompiledGraph graph{wiring};
 
     CHECK(graph.node(0).subscribers().empty());
-    CHECK(graph.node(1).parameters()[0].validity() == bg::optional);
+    CHECK(graph.node(1).parameters()[0].validity() == optional);
 }
 
 TEST_CASE("a compiled graph owns its scalar copies", "[compiled_graph][feature:graph-compilation]") {
-    const auto source = bg::node<source_definition>();
+
+    const auto source = node<source_definition>();
     const auto scale = scale_template{};
-    std::unique_ptr<bg::CompiledGraph> graph;
+    std::unique_ptr<CompiledGraph> graph;
 
     {
-        bg::GraphWiring wiring;
-        bg::WiringContext context{wiring};
+        GraphWiring wiring;
+        WiringContext context{wiring};
         (void)scale(source(), 2.0F);
         wiring.finalize();
-        graph = std::make_unique<bg::CompiledGraph>(wiring);
+        graph = std::make_unique<CompiledGraph>(wiring);
     }
 
-    const bg::ParameterBinding &factor = graph->node(1).parameters()[1];
+    const ParameterBinding &factor = graph->node(1).parameters()[1];
     CHECK(*static_cast<const float *>(factor.scalar_data()) == 2.0F);
 }
 
@@ -699,12 +732,13 @@ class counting_memory_resource final : public std::pmr::memory_resource {
 } // namespace
 
 TEST_CASE("compiled fixed storage uses one allocation", "[compiled_graph][feature:graph-compilation][storage:fixed]") {
-    const auto source = bg::node<source_definition>();
+
+    const auto source = node<source_definition>();
     const auto scale = scale_template{};
-    bg::GraphWiring wiring;
+    GraphWiring wiring;
 
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         (void)scale(source(), 2.0F);
     }
 
@@ -712,7 +746,7 @@ TEST_CASE("compiled fixed storage uses one allocation", "[compiled_graph][featur
 
     {
         wiring.finalize();
-        bg::CompiledGraph graph{wiring, bg::allocator{memory}};
+        CompiledGraph graph{wiring, allocator{memory}};
 
         CHECK(graph.fixed_storage_size() > 0);
         CHECK(memory.allocation_count() == 1);
@@ -724,7 +758,7 @@ TEST_CASE("compiled fixed storage uses one allocation", "[compiled_graph][featur
 namespace {
 
 struct evaluation_time_source_definition {
-    bg::Out<bg::TS<bg::EvaluationTime>> output;
+    Out<TS<EvaluationTime>> output;
 
     void evaluate() const {}
 };
@@ -732,16 +766,17 @@ struct evaluation_time_source_definition {
 } // namespace
 
 TEST_CASE("a compiled graph stores an evaluation time output", "[compiled_graph][feature:graph-compilation]") {
-    const auto evaluation_time_source = bg::node<evaluation_time_source_definition>();
-    bg::GraphWiring wiring;
+
+    const auto evaluation_time_source = node<evaluation_time_source_definition>();
+    GraphWiring wiring;
 
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         (void)evaluation_time_source();
     }
 
     wiring.finalize();
-    const bg::CompiledGraph graph{wiring};
+    const CompiledGraph graph{wiring};
 
     REQUIRE(graph.node_count() == 1);
     CHECK(graph.node(0).has_output());
@@ -762,8 +797,8 @@ struct opaque_sink_definition {
     inline static private_data *observed{};
     inline static int observed_value{};
 
-    bg::Scalar<bg::Opaque<private_data *>> pointer;
-    bg::Scalar<bg::Opaque<private_data>> object;
+    Scalar<Opaque<private_data *>> pointer;
+    Scalar<Opaque<private_data>> object;
 
     void evaluate() const {
         observed = *pointer;
@@ -772,40 +807,41 @@ struct opaque_sink_definition {
 };
 
 struct unsupported_opaque_output {
-    bg::Out<bg::TS<bg::Opaque<private_data *>>> output;
+    Out<TS<Opaque<private_data *>>> output;
 
     void evaluate() const {}
 };
 
-static_assert(bg::AggregateNodeClass<opaque_sink_definition>);
-static_assert(!bg::AggregateNodeClass<unsupported_opaque_output>);
+static_assert(AggregateNodeClass<opaque_sink_definition>);
+static_assert(!AggregateNodeClass<unsupported_opaque_output>);
 
 } // namespace
 
 TEST_CASE("a compiled graph owns an opaque scalar copy", "[compiled_graph][feature:graph-compilation]") {
-    const auto opaque_sink = bg::node<opaque_sink_definition>();
+
+    const auto opaque_sink = node<opaque_sink_definition>();
     auto value = private_data{42};
-    const auto pointer = bg::ScalarValue<bg::Opaque<private_data *>>{&value};
-    const auto object = bg::ScalarValue<bg::Opaque<private_data>>{value};
-    bg::GraphWiring wiring;
+    const auto pointer = ScalarValue<Opaque<private_data *>>{&value};
+    const auto object = ScalarValue<Opaque<private_data>>{value};
+    GraphWiring wiring;
 
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         opaque_sink(pointer, object);
     }
 
     wiring.finalize();
-    const bg::CompiledGraph graph{wiring};
+    const CompiledGraph graph{wiring};
     const auto *stored_pointer = static_cast<private_data *const *>(graph.node(0).parameters()[0].scalar_data());
     const auto *stored_object = static_cast<const private_data *>(graph.node(0).parameters()[1].scalar_data());
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{graph, runtime_global_state};
+    auto runtime_global_state = GlobalState{};
+    RuntimeGraph runtime{graph, runtime_global_state};
 
     opaque_sink_definition::observed = nullptr;
     opaque_sink_definition::observed_value = 0;
-    runtime.start(bg::MIN_DT + std::chrono::microseconds{1});
+    runtime.start(MIN_DT + std::chrono::microseconds{1});
     runtime.schedule(0);
-    runtime.evaluate(bg::MIN_DT + std::chrono::microseconds{1});
+    runtime.evaluate(MIN_DT + std::chrono::microseconds{1});
 
     CHECK(*stored_pointer == &value);
     CHECK(stored_object->value == 42);

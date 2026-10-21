@@ -21,6 +21,7 @@ TEST_CASE("getitem leaves unsupported collection results generic", "[wiring][cov
 
 TEST_CASE("getitem selects a dictionary item through a reference",
           "[wiring][series:tsd][feature:getitem][feature:operator][binding:value-to-reference]") {
+
     const auto source = node([](Out<TSD<i64, TS<float>>>) {});
 
     const auto sink = node([](In<TS<float>>) {});
@@ -39,6 +40,7 @@ TEST_CASE("getitem selects a dictionary item through a reference",
 
 TEST_CASE("repeated dictionary item selection reuses its node",
           "[wiring][series:tsd][feature:getitem][feature:operator][shape:fan-out]") {
+
     const auto source = node([](Out<TSD<i64, TS<float>>>) {});
     auto wiring = GraphWiring{};
 
@@ -53,6 +55,7 @@ TEST_CASE("repeated dictionary item selection reuses its node",
 
 TEST_CASE("getitem accepts a time series dictionary key",
           "[wiring][series:tsd][series:value][feature:getitem][feature:operator]") {
+
     const auto dictionary_source = node([](Out<TSD<i64, TS<float>>>) {});
 
     const auto key_source = node([](Out<TS<i64>>) {});
@@ -67,6 +70,7 @@ TEST_CASE("getitem accepts a time series dictionary key",
 
 TEST_CASE("getitem preserves a dictionary reference item's target type",
           "[wiring][series:tsd][reference][feature:getitem][feature:operator]") {
+
     const auto source = node([](Out<TSD<i64, REF<TS<float>>>>) {});
     auto wiring = GraphWiring{};
 
@@ -79,6 +83,7 @@ TEST_CASE("getitem preserves a dictionary reference item's target type",
 
 TEST_CASE("getitem preserves value item guarantees",
           "[wiring][series:tsd][series:value][reference][feature:getitem][feature:operator][guarantee:final]") {
+
     const auto source = node([](Out<TSD<i64, TS<float, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::final>>) {});
 
     testing::test_wiring([&] {
@@ -88,6 +93,7 @@ TEST_CASE("getitem preserves value item guarantees",
 
 TEST_CASE("getitem preserves reference item guarantees",
           "[wiring][series:tsd][series:reference][feature:getitem][feature:operator][guarantee:final]") {
+
     const auto source = node([](Out<TSD<i64, REF<TS<float, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::final>,
                                         TimeSeriesGuarantee::final>>) {});
 
@@ -105,8 +111,10 @@ TEST_CASE("getitem preserves reference item guarantees",
 
 TEST_CASE("a time series key limits the getitem reference guarantee",
           "[wiring][series:tsd][series:reference][feature:getitem][feature:operator][guarantee:ordinary]") {
+
     const auto source = node([](Out<TSD<i64, REF<TS<float, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::final>,
                                         TimeSeriesGuarantee::final>>) {});
+
     const auto key = node([](Out<TS<i64>>) {});
 
     testing::test_wiring([&] {

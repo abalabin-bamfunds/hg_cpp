@@ -60,6 +60,7 @@ struct InnerNode {
 };
 
 CompiledGraph make_owner_graph() {
+
     const auto node = bg::node<OwnerNode>();
     auto wiring = GraphWiring{};
     {
@@ -71,6 +72,7 @@ CompiledGraph make_owner_graph() {
 }
 
 CompiledGraph make_inner_graph(int delay) {
+
     const auto node = bg::node<InnerNode>();
     auto wiring = GraphWiring{};
     {

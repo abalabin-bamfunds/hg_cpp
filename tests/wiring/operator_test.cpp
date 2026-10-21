@@ -91,6 +91,7 @@ TEST_CASE("operator scalar-result prototypes do not constrain overload arguments
     const auto implementation =
         graph("name"_n = "final_identity", [](wp<TS<double, TimeSeriesGuarantee::final>> value) { return value; });
     operation.overload(implementation);
+
     const auto source = node([](Out<TS<double, TimeSeriesGuarantee::final>>) {});
 
     testing::test_wiring([&] {
@@ -135,6 +136,7 @@ TEST_CASE("operator specificity is independent of overload registration order",
         do {
             auto selected = std::array<int, 4>{};
             auto operation = operator_<auto(TS_T)->TS<i64>>{"specificity_order", {"value"}};
+
             const auto exact_result = node([](Out<TS<i64>> output) { output.set(1); });
 
             const auto equality_result = node([](Out<TS<i64>> output) { output.set(3); });
@@ -233,11 +235,13 @@ TEST_CASE("literal guarantee overloads outrank variables with the same minimum i
           "[feature:operator][feature:wiring][declaration:generic][series:value]"
           "[guarantee:deduplicated]") {
     constexpr auto G = guarantee_variable<"OVERLOAD_GUARANTEE", TimeSeriesGuarantee::deduplicated>;
+
     const auto source = node([](Out<TS<i64, TimeSeriesGuarantee::deduplicated>>) {});
 
     const auto check_registration_order = [&](bool variable_first) {
         auto selected = std::string{};
         auto operation = operator_<auto(TS_T)->TS_T>{"minimum_guarantee_specificity", {"value"}};
+
         const auto literal_result = node([](Out<TS<i64>>) {});
 
         const auto variable_result = node([](Out<TS<i64>>) {});
@@ -277,6 +281,7 @@ TEST_CASE("registering an overload clears cached selections", "[feature:operator
         selected = "generic";
         return value;
     }));
+
     const auto source = node([](Out<TS<float>>) {});
 
     testing::test_wiring([&] { operation(source()); });
@@ -303,6 +308,7 @@ TEST_CASE("operator resolution caches are shared by nested wiring and isolated b
                 return true;
             },
         [](wp<TS<SCALAR>> value) { return value; }));
+
     const auto source = node([](Out<TS<float>>) {});
 
     auto root = GraphWiring{};
@@ -342,6 +348,7 @@ TEST_CASE("overload registration invalidates resolution caches in every live roo
             selected_overload = "generic";
             return value;
         }));
+
     const auto source = node([](Out<TS<float>>) {});
     auto first_root = GraphWiring{};
     auto second_root = GraphWiring{};
@@ -384,6 +391,7 @@ TEST_CASE("a cached operator identity is checked when an address is reused",
     alignas(Operator) auto storage = std::array<std::byte, sizeof(Operator)>{};
     auto generic_requirement_calls = 0;
     auto float_requirement_calls = 0;
+
     const auto source = node([](Out<TS<float>>) {});
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
@@ -447,6 +455,7 @@ TEST_CASE("operator cache references survive nested resolution adding cache entr
                 return true;
             },
         [](wp<TS<SCALAR>> value) { return value; }));
+
     const auto source = node([](Out<TS<float>>) {});
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
@@ -465,6 +474,7 @@ TEST_CASE("an overload can have a different parameter count from its prototype",
         selected = true;
         return value;
     }));
+
     const auto source = node([](Out<TS<float>>) {});
 
     testing::test_wiring([&] { (void)operation(source(), source()); });
@@ -480,6 +490,7 @@ TEST_CASE("operator prototype names provide keyword aliases for overload paramet
         selected = "first";
         return first;
     }));
+
     const auto source = node([](Out<TS<float>>) {});
 
     testing::test_wiring([&] { (void)operation("fallback"_n = source(), "value"_n = source()); });
@@ -565,6 +576,7 @@ TEST_CASE("valid_items selects capable overloads and prefers ordinary inputs oth
 
 TEST_CASE("scalar-only overloads prefer presence and keep absent calls distinct in the cache",
           "[feature:operator][feature:wiring][scalar:integer][definition:function]") {
+
     const auto required = graph("name"_n = "requires_presence", [](i64 value) {
         return operators::const_(value + 10).as<TS<i64, TimeSeriesGuarantee::const_>>();
     });
@@ -600,6 +612,7 @@ TEST_CASE("scalar-only overloads prefer presence and keep absent calls distinct 
 
 TEST_CASE("a graph can omit an optional scalar parameter",
           "[feature:wiring][scalar:integer][definition:function]") {
+
     const auto optional_graph = graph("name"_n = "optional_scalar", [](std::optional<i64> value) {
         return operators::const_(value.value_or(7)).as<TS<i64, TimeSeriesGuarantee::const_>>();
     });
@@ -610,6 +623,7 @@ TEST_CASE("a graph can omit an optional scalar parameter",
 
 TEST_CASE("promoted node overloads prefer presence for scalar arguments",
           "[feature:operator][feature:wiring][scalar:integer][definition:function]") {
+
     const auto required = node([](int value) { return value + 10; });
 
     const auto optional = node([](std::optional<int> value) { return value.value_or(0) + 20; });
@@ -652,6 +666,7 @@ TEST_CASE("named omission and scalar presence remain distinct in one root wiring
 
 TEST_CASE("type specificity precedes scalar presence preference",
           "[feature:operator][feature:wiring][scalar:integer][definition:function]") {
+
     const auto promoted = node([](int value) { return value + 100; });
 
     const auto explicit_scalar = bg::graph("name"_n = "optional_scalar", [](std::optional<i64> value) {
@@ -721,6 +736,7 @@ TEST_CASE("scalar presence and time-series validity preferences share one partia
 TEST_CASE("a required scalar graph rejects absence before running its body",
           "[feature:operator][feature:wiring][scalar:integer][definition:function]") {
     auto body_calls = 0;
+
     const auto graph = bg::graph("name"_n = "required_scalar", [&](i64 value) {
         ++body_calls;
         return operators::const_(value).as<TS<i64, TimeSeriesGuarantee::const_>>();
@@ -795,6 +811,7 @@ TEST_CASE("opt-qualified arguments do not match all_valid inputs",
           "[feature:operator][feature:wiring][feature:validity][validity:all-valid][validity:optional]") {
     auto operation = operator_<auto(TS_T)->TS_T>{"validity", {"value"}};
     operation.overload(node([](In<TS<i64>, all_valid>, Out<TS<i64>> output) { output.set(0); }));
+
     const auto graph = [&](wp<TS<i64>> value) -> wp<TS<i64>> { return operation(opt(value)).as<TS<i64>>(); };
 
     CHECK_THROWS_AS(testing::test_graph(graph, {1}), WiringError);
@@ -840,10 +857,12 @@ TEST_CASE("conflicting required-input preferences remain ambiguous",
 
 TEST_CASE("named validity preferences align with supplied arguments",
           "[feature:operator][feature:wiring][feature:validity][input-guarantee:valid-items][series:tsd]") {
+
     const auto source = node([](Out<TSD<i64, TS<i64>>>) {});
 
     const auto left_first = graph(
         "name"_n = "left_first", [](wp<TSD<i64, TS<i64>>, "left"_n, valid_items>, wp<TSD<i64, TS<i64>>, "right"_n>) {});
+
     const auto right_first = graph("name"_n = "right_first", [](wp<TSD<i64, TS<i64>>, "right"_n>,
                                                                 wp<TSD<i64, TS<i64>>, "left"_n, valid_items>) {});
 
@@ -870,6 +889,7 @@ TEST_CASE("named validity preferences align with supplied arguments",
 
 TEST_CASE("positional validity preferences follow supplied argument order",
           "[feature:operator][feature:wiring][feature:validity][input-guarantee:valid-items][series:tsd]") {
+
     const auto source = node([](Out<TSD<i64, TS<i64>>>) {});
 
     for (const auto reverse : {false, true}) {
@@ -900,6 +920,7 @@ TEST_CASE("an opt-qualified argument rejects a required-only overload",
           "[feature:operator][feature:wiring][feature:validity][validity:optional][series:value]") {
     auto operation = operator_<auto(TS_T)->TS_T>{"required", {"value"}};
     operation.overload(graph("name"_n = "required", [](wp<TS<i64>> value) { return value; }));
+
     const auto source = node([](Out<TS<i64>>) {});
 
     try {
@@ -943,6 +964,7 @@ TEST_CASE("operator diagnostics own signatures and retain prototype argument nam
 
         try {
             testing::test_wiring([&] {
+
                 const auto source = node([](Out<TS<double>>) {});
                 (void)operation(source());
             });
@@ -963,6 +985,7 @@ TEST_CASE("operator diagnostics own signatures and retain prototype argument nam
 
 TEST_CASE("operator matching treats a reference argument transparently",
           "[feature:operator][feature:wiring][feature:reference][binding:reference-to-value]") {
+
     const auto source = node([](Out<REF<TS<float>>>) {});
     auto operation = operator_<auto(TS<float>)->TS<float>>{"identity", {"value"}};
     operation.overload(graph("name"_n = "direct", [](wp<TS<float>> value) { return value; }));
@@ -985,6 +1008,7 @@ TEST_CASE("an operator prefers the overload with the argument's reference shape"
         selected = "reference";
         return value;
     }));
+
     const auto direct_source = node([](Out<TS<float>>) {});
 
     const auto reference_source = node([](Out<REF<TS<float>>>) {});
@@ -1012,6 +1036,7 @@ TEST_CASE("an operator prefers the overload with a contained reference shape",
         selected = "reference";
         return value;
     }));
+
     const auto value_source = node([](Out<TSD<i64, TS<float>>>) {});
 
     const auto reference_source = node([](Out<TSD<i64, REF<TS<float>>>>) {});
@@ -1040,6 +1065,7 @@ TEST_CASE("an operator prefers a generic overload with the argument's contained 
         selected = "reference";
         return value;
     }));
+
     const auto value_source = node([](Out<TSL<TS<float>, 2>>) {});
 
     const auto reference_source = node([](Out<TSL<REF<TS<float>>, 2>>) {});
@@ -1062,6 +1088,7 @@ TEST_CASE("conflicting contained reference preferences are ambiguous",
     operation.overload(graph("name"_n = "values", [](wp<TSL<TS_T, SIZE>> left, wp<TSL<TS_T, SIZE>>) { return left; }));
     operation.overload(
         graph("name"_n = "references", [](wp<TSL<REF<TS_T>, SIZE>> left, wp<TSL<REF<TS_T>, SIZE>>) { return left; }));
+
     const auto value_source = node([](Out<TSL<TS<float>, 2>>) {});
 
     const auto reference_source = node([](Out<TSL<REF<TS<float>>, 2>>) {});
@@ -1072,6 +1099,7 @@ TEST_CASE("conflicting contained reference preferences are ambiguous",
 TEST_CASE("an output operator returns an empty wiring point for a sink overload",
           "[feature:operator][feature:wiring]") {
     auto operation = operator_<auto(TS<float>)->TS<float>>{"identity", {"value"}};
+
     const auto sink = graph("name"_n = "sink", [](wp<TS<float>>) {});
 
     const auto source = node([](Out<TS<float>>) {});
@@ -1082,6 +1110,7 @@ TEST_CASE("an output operator returns an empty wiring point for a sink overload"
 
 TEST_CASE("an outputless operator rejects a value overload", "[feature:operator][feature:wiring]") {
     auto operation = operator_<void(TS<float>)>{"consume", {"value"}};
+
     const auto identity = graph("name"_n = "identity", [](wp<TS<float>> value) { return value; });
 
     CHECK_THROWS_AS(operation.overload(identity), std::invalid_argument);

@@ -284,9 +284,8 @@ TEST_CASE("compound scalar matching is nominal and STRUCT resolves inside a time
 TEST_CASE("a STRUCT node binds to and copies a concrete compound time series",
           "[feature:test-graph][feature:type-system][feature:scalar-storage][scalar:compound]"
           "[series:value][declaration:generic]") {
-    const auto copy = node([](In<TS<STRUCT>> input, Out<TS<STRUCT>> output) {
-        output.set_value(input.value_view());
-    });
+
+    const auto copy = node([](In<TS<STRUCT>> input, Out<TS<STRUCT>> output) { output.set_value(input.value_view()); });
 
     const auto graph = [&](wp<TS<Price>> input) { return copy(input); };
     const auto first = Price{.quantity = 1, .value = 2.5};
@@ -300,8 +299,8 @@ TEST_CASE("a STRUCT node binds to and copies a concrete compound time series",
 TEST_CASE("test_graph carries concrete compound scalar values and suppresses equal updates",
           "[feature:test-graph][feature:scalar-storage][scalar:compound][series:value]"
           "[guarantee:deduplicated][transition:update]") {
-    const auto copy = node([](In<TS<Price>> input,
-                                  Out<TS<Price, TimeSeriesGuarantee::deduplicated>> output) {
+
+    const auto copy = node([](In<TS<Price>> input, Out<TS<Price, TimeSeriesGuarantee::deduplicated>> output) {
         output.set(input.value());
     });
 

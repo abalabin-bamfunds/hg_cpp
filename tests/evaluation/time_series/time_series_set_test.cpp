@@ -20,6 +20,7 @@ using namespace literals;
 
 TEST_CASE("a time series set publishes only new items",
           "[feature:collection-change][series:tss][scalar:integer][transition:addition][shape:single-node]") {
+
     const auto collect = node([](i64 value, Out<TSS<i64>> output) { output.insert(value); });
     const auto actual = testing::test_graph(collect, {1, 2, 1});
 
@@ -84,7 +85,9 @@ struct tss_membership_evaluation_count_definition {
 TEST_CASE("a TSS membership binding ignores changes to other keys",
           "[evaluation][tss][series:tss][series:reference][feature:collection-change]"
           "[scalar:integer][transition:addition][transition:removal][definition:aggregate]") {
+
     const auto observe = node<tss_membership_evaluation_count_definition>();
+
     const auto graph = [&](wp<TSS<i64>> input) { return observe(input); };
     tss_membership_evaluation_count_definition::evaluation_count = 0;
 
@@ -113,6 +116,7 @@ struct composite_literal_set_source_definition {
 
 TEST_CASE("a TSS update removes a composite key with an rvalue REMOVED payload",
           "[evaluation][series:tss][feature:collection-change][transition:removal][scalar:list]") {
+
     const auto source = node<composite_literal_set_source_definition>();
 
     const auto size = node([](In<TSS<List<i64>>> input) { return static_cast<i64>(input.size()); });
@@ -126,6 +130,7 @@ TEST_CASE("a TSS update removes a composite key with an rvalue REMOVED payload",
 
 TEST_CASE("a TSS update applies scalar REMOVED entries in written order",
           "[evaluation][series:tss][feature:collection-change][transition:removal][scalar:integer]") {
+
     const auto update = node([](Out<TSS<i64>> output) {
         output.apply({1, 2, literal::REMOVED(2), 3});
     });
@@ -138,6 +143,7 @@ TEST_CASE("a TSS update applies scalar REMOVED entries in written order",
 TEST_CASE("a TSS update can reinsert an item after removing it in the same tick",
           "[evaluation][series:tss][feature:collection-change][transition:addition][transition:removal]"
           "[scalar:integer]") {
+
     const auto update = node([](Out<TSS<i64>> output) {
         output.apply({1, 2, literal::REMOVED(2), 2, 3});
     });
@@ -226,6 +232,7 @@ struct clearing_referenced_set_source_definition {
 TEST_CASE("a time series set preserves its value when a required input becomes invalid",
           "[evaluation][tss][series:tss][validity][feature:collection-change][validity:required]"
           "[scalar:integer][representation:native][declaration:concrete][binding:direct]") {
+
     const auto source = node<invalidating_value_source_definition>();
 
     const auto set_from_value = node([](i64 value, Out<TSS<i64>> output) { output.insert(value); });
@@ -242,6 +249,7 @@ TEST_CASE("a time series set preserves its value when a required input becomes i
 TEST_CASE("a time series set accepts its exact non-canonical item type",
           "[evaluation][series:tss][feature:time-series-view][feature:collection-change]"
           "[scalar:integer][transition:addition][transition:removal][binding:direct]") {
+
     const auto contains = node([](In<TSS<i64>> input) { return input.contains(7); });
 
     const auto graph = [&](wp<TSS<i64>> input) { return contains(input); };
@@ -253,6 +261,7 @@ TEST_CASE("a time series set accepts its exact non-canonical item type",
 
 TEST_CASE("Out<TSS>::for_each supports erasing visited members across index words",
           "[evaluation][feature:node-api][series:tss][transition:removal][transition:update]") {
+
     const auto update = node([](In<TS<i64>> trigger, Out<TSS<i64>> output) {
         auto visited = std::size_t{};
         output.for_each([&](const auto &key) {
@@ -267,9 +276,11 @@ TEST_CASE("Out<TSS>::for_each supports erasing visited members across index word
             }
         }
     });
+
     const auto size = node([](In<TSS<i64>> input, Out<TS<i64>> output) {
         output.set(static_cast<i64>(input.size()));
     });
+
     const auto graph = [&](wp<TS<i64>> trigger) { return size(update(trigger)); };
 
     CHECK(bg::testing::test_graph(graph, {0, 1, 2}).equals<i64>({130, 0, std::nullopt}));
@@ -328,6 +339,7 @@ struct invalidating_set_reference_definition {
 TEST_CASE("a TSS input reports removed items when its reference selects an invalid target",
           "[evaluation][reference][series:tss][feature:reference][feature:collection-change]"
           "[validity:optional][transition:removal][binding:reference-to-value][scalar:integer]") {
+
     const auto invalid = node([](Out<TSS<i64>>) {});
 
     const auto condition = node<set_reference_condition_definition>();
@@ -338,6 +350,7 @@ TEST_CASE("a TSS input reports removed items when its reference selects an inval
     auto removed = std::vector<std::vector<i64>>{};
     auto was_removed = std::vector<bool>{};
     auto removed_cursor = std::vector<std::vector<i64>>{};
+
     const auto observe = node([&](In<TSS<i64>, optional> input) {
         validity.push_back(input.valid());
         sizes.push_back(input.size());
@@ -378,12 +391,14 @@ TEST_CASE("a TSS input reports item changes when its reference selects another v
           "[evaluation][reference][series:tss][feature:reference][feature:collection-change]"
           "[validity:optional][transition:addition][transition:removal][binding:reference-to-value]"
           "[scalar:integer]") {
+
     const auto condition = node<set_reference_condition_definition>();
 
     auto validity = std::vector<bool>{};
     auto sizes = std::vector<std::size_t>{};
     auto added = std::vector<std::vector<i64>>{};
     auto removed = std::vector<std::vector<i64>>{};
+
     const auto observe = node([&](In<TSS<i64>, optional> input) {
         validity.push_back(input.valid());
         sizes.push_back(input.size());
@@ -413,11 +428,13 @@ TEST_CASE("a TSS input reports item changes when its reference selects another v
 TEST_CASE("a sampled TSS reports item ID exchanges across a reference rebind",
           "[evaluation][reference][series:tss][feature:sampling][feature:item-id-remapping]"
           "[binding:reference-to-value][transition:update]") {
+
     const auto condition = node<set_reference_condition_definition>();
 
     auto remappings_match_keys = std::vector<bool>{};
     auto remapping_found = std::vector<bool>{};
     auto remapping_counts = std::vector<std::size_t>{};
+
     const auto inspect = node([&](i64 phase, In<TSS<i64>> input, In<TSS<i64>> first) {
         auto actual = std::vector<std::pair<item_id_t, item_id_t>>{};
         input.for_each_item_id_remapping([&](item_id_t old_id, item_id_t new_id) {
@@ -460,10 +477,12 @@ TEST_CASE("a sampled TSS reports item ID exchanges across a reference rebind",
 TEST_CASE("a sampled TSS does not report remapping for additions and removals at unchanged IDs",
           "[evaluation][reference][series:tss][feature:sampling][feature:item-id-remapping]"
           "[binding:reference-to-value][transition:addition][transition:removal]") {
+
     const auto condition = node<set_reference_condition_definition>();
 
     auto remapping_found = std::vector<bool>{};
     auto remapping_counts = std::vector<std::size_t>{};
+
     const auto inspect = node([&](In<TSS<i64>> input) {
         auto count = std::size_t{};
         input.for_each_item_id_remapping([&](item_id_t, item_id_t) { ++count; });
@@ -487,6 +506,7 @@ TEST_CASE("a TSS reports no item ID remapping for ordinary additions and removal
           "[transition:addition][transition:removal]") {
     auto remapping_found = std::vector<bool>{};
     auto remapping_counts = std::vector<std::size_t>{};
+
     const auto inspect = node([&](In<TSS<i64>> input) {
         auto remapping_count = std::size_t{};
         input.for_each_item_id_remapping([&](item_id_t, item_id_t) { ++remapping_count; });
@@ -520,6 +540,7 @@ TEST_CASE("a TSS input does not report stale removals after an invalid target is
     const auto condition = node<delayed_set_reference_condition_definition>();
 
     auto removed_keys = std::vector<std::vector<i64>>{};
+
     const auto observe = node([&](In<TSS<i64>, optional> input) {
         auto removed = std::vector<i64>{};
         input.for_each_removed([&](const auto &item) { removed.push_back(item.value()); });
@@ -541,6 +562,7 @@ TEST_CASE("a TSS input does not report stale removals after an invalid target is
 TEST_CASE("a TSS reference transition reports removals when the old target clears in the retargeting cycle",
           "[series:tss][feature:reference][feature:collection-change]"
           "[validity:optional][transition:removal][binding:reference-to-value][scalar:integer]") {
+
     const auto valid = node<clearing_referenced_set_source_definition>();
 
     const auto invalid = node([](Out<TSS<i64>>) {});
@@ -552,6 +574,7 @@ TEST_CASE("a TSS reference transition reports removals when the old target clear
     auto added = std::vector<std::vector<i64>>{};
     auto removed = std::vector<std::vector<i64>>{};
     auto was_removed = std::vector<bool>{};
+
     const auto observe = node([&](In<TSS<i64>, optional> input) {
         validity.push_back(input.valid());
         sizes.push_back(input.size());
@@ -581,12 +604,14 @@ TEST_CASE("a TSS reference transition reports removals when the old target clear
 TEST_CASE("a TSS input reports removed items when its reference becomes null",
           "[evaluation][reference][series:tss][feature:reference][feature:collection-change]"
           "[validity:optional][transition:removal][binding:reference-to-value][scalar:integer]") {
+
     const auto reference = node<invalidating_set_reference_definition>();
     auto validity = std::vector<bool>{};
     auto sizes = std::vector<std::size_t>{};
     auto removed = std::vector<std::vector<i64>>{};
     auto was_removed = std::vector<bool>{};
     auto removed_cursor = std::vector<std::vector<i64>>{};
+
     const auto observe = node([&](In<TSS<i64>, optional> input) {
         validity.push_back(input.valid());
         sizes.push_back(input.size());
@@ -621,12 +646,14 @@ TEST_CASE("a passive TSS input does not retain a stale removal sample",
           "[evaluation][reference][series:tss][feature:reference][feature:collection-change]"
           "[validity:optional][activity:passive][transition:removal][binding:reference-to-value]"
           "[scalar:integer]") {
+
     const auto reference = node<invalidating_set_reference_definition>();
 
     const auto trigger = node<delayed_set_reference_condition_definition>();
     auto validity = std::vector<bool>{};
     auto sizes = std::vector<std::size_t>{};
     auto removed = std::vector<std::vector<i64>>{};
+
     const auto observe = node([&](In<TSS<i64>, passive, optional> input, i64) {
         validity.push_back(input.valid());
         sizes.push_back(input.size());
@@ -651,10 +678,12 @@ TEST_CASE("a generic input visitor sees TSS removals on reference invalidation",
           "[evaluation][reference][series:tss][feature:reference][feature:collection-change]"
           "[validity:optional][transition:removal][binding:reference-to-value][scalar:integer]"
           "[declaration:generic]") {
+
     const auto reference = node<invalidating_set_reference_definition>();
     auto validity = std::vector<bool>{};
     auto sizes = std::vector<std::size_t>{};
     auto removed_counts = std::vector<std::size_t>{};
+
     const auto observe = node([&](In<TS_T, optional> input) {
         input.visit(
             [&](const In<TSS<SCALAR>> *set) {
@@ -679,6 +708,7 @@ TEST_CASE("a generic input visitor sees TSS removals on reference invalidation",
 
 TEST_CASE("a TSS update rejects a root INVALID marker",
           "[evaluation][series:tss][feature:collection-change][validity]") {
+
     const auto source = node([](Out<TSS<i64>> output) { output.apply(literal::INVALID); });
 
     CHECK_THROWS_AS(run_graph([&] { source(); }), std::invalid_argument);

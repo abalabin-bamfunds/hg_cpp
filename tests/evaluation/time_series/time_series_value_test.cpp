@@ -12,6 +12,7 @@ using namespace bg;
 
 TEST_CASE("symbol time series can store default and interned values",
           "[feature:test-graph][series:value][scalar:symbol][shape:single-node]") {
+
     const auto pass_through = node([](symbol input) { return input; });
 
     const auto graph = [&](wp<TS<symbol>> input) { return pass_through(input); };
@@ -146,6 +147,7 @@ TEST_CASE("a deduplicated value output schedules subscribers only for changed va
         node([](In<TS<i64>> input, Out<TS<i64, TimeSeriesGuarantee::deduplicated>> output) {
             output.set(*input);
         });
+
     const auto graph = [&](wp<TS<i64>> input) { return deduplicate(input); };
 
     const auto actual = testing::test_graph(graph, std::array{1, 1, 2, 2, 1});
@@ -155,8 +157,11 @@ TEST_CASE("a deduplicated value output schedules subscribers only for changed va
 
 TEST_CASE("a direct output uses its resolved guarantee",
           "[evaluation][feature:type-system][series:value][guarantee:deduplicated]") {
+
     const auto deduplicate = node<deduplicating_value_source>();
+
     const auto preserve_guarantee = node<preserve_value_guarantee>();
+
     const auto graph = [&](wp<TS<i64>> input) {
         return preserve_guarantee(deduplicate(input), input);
     };
@@ -168,8 +173,11 @@ TEST_CASE("a direct output uses its resolved guarantee",
 
 TEST_CASE("a nested direct output uses its resolved item guarantee",
           "[evaluation][feature:type-system][series:tsd][guarantee:deduplicated]") {
+
     const auto deduplicate = node<deduplicating_value_source>();
+
     const auto make_dictionary = node<make_dictionary_with_guarantee>();
+
     const auto graph = [&](wp<TS<i64>> input) {
         return make_dictionary(deduplicate(input), input)[1].as<
             REF<TS<i64, TimeSeriesGuarantee::deduplicated>, TimeSeriesGuarantee::ordinary>>();
@@ -188,9 +196,11 @@ TEST_CASE("a collection guarantee deduplicates contained value outputs",
         [](In<TS<i64>> input,
            Out<TSL<TS<i64, TimeSeriesGuarantee::ordinary>, 1, TimeSeriesGuarantee::deduplicated>>
                output) { output[0].set(*input); });
+
     const auto first = node(
         [](In<TSL<TS<i64, TimeSeriesGuarantee::ordinary>, 1, TimeSeriesGuarantee::deduplicated>>
                input) { return *input[0]; });
+
     const auto graph = [&](wp<TS<i64>> input) { return first(collect(input)); };
 
     const auto actual = testing::test_graph(graph, std::array{1, 1, 2});

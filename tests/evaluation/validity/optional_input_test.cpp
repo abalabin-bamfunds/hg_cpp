@@ -18,6 +18,7 @@ static_assert(wp<TS<i64>, InputValidity::optional>::validity == optional);
 TEST_CASE("an optional input reports validity and reads its value",
           "[feature:validity][validity:optional][transition:invalidation][transition:revalidation]"
           "[series:value][scalar:i64][shape:single-node]") {
+
     const auto value_or_missing = node([](std::optional<i64> input) { return input.value_or(-1); });
 
     CHECK(testing::test_graph(value_or_missing, {3, literal::INVALID, 5}).equals({3, -1, 5}));
@@ -27,6 +28,7 @@ TEST_CASE("opt does not schedule an optional-input node at graph start",
           "[feature:validity][validity:optional][feature:scheduling][transition:start]"
           "[series:value][scalar:i64][shape:single-node]") {
     auto evaluations = 0;
+
     const auto copy = node([&](In<TS<i64>, optional> input) {
         ++evaluations;
         return input.valid() ? input.value() : i64{};
@@ -45,12 +47,14 @@ TEST_CASE("an optional input node can request evaluation at graph start",
           "[feature:validity][validity:optional][feature:scheduling][transition:start]"
           "[series:value][scalar:i64][shape:single-node]") {
     auto evaluations = 0;
+
     const auto copy = node(
         eval = [&](In<TS<i64>, optional> input) {
             ++evaluations;
             return input.valid() ? input.value() : i64{};
         },
         schedule_on_start = true);
+
     const auto tested = [&](wp<TS<i64>> input) { return copy(opt(input)); };
     const auto no_updates = std::array<std::optional<i64>, 1>{std::nullopt};
 
@@ -85,6 +89,7 @@ TEST_CASE("aggregate optional inputs accept opt-qualified wiring arguments",
 TEST_CASE("optional inputs remain evaluable through invalidation and revalidation",
           "[feature:validity][validity:optional][transition:invalidation][transition:revalidation]"
           "[feature:operator][series:value][scalar:i64][shape:chain]") {
+
     const auto copy = node([](i64 value) { return value; });
 
     auto add = operator_<auto(TS_T, TS_T)->TS_T>{"add", {"lhs", "rhs"}};
@@ -103,6 +108,7 @@ TEST_CASE("optional inputs remain evaluable through invalidation and revalidatio
 TEST_CASE("optional multiplication uses one for each invalid operand",
           "[feature:validity][validity:optional][transition:invalidation][transition:revalidation]"
           "[feature:operator][series:value][scalar:i64][shape:chain]") {
+
     const auto copy = node([](i64 value) { return value; });
 
     auto multiply = operator_<auto(TS_T, TS_T)->TS_T>{"multiply", {"lhs", "rhs"}};
@@ -125,6 +131,7 @@ TEST_CASE("optional multiplication uses one for each invalid operand",
 TEST_CASE("default uses its fallback while the optional input is invalid",
           "[feature:validity][validity:optional][transition:invalidation][transition:revalidation]"
           "[feature:operator][series:value][scalar:i64][shape:chain]") {
+
     const auto copy = node([](i64 value) { return value; });
 
     const auto graph = [&](wp<TS<i64>> input) {

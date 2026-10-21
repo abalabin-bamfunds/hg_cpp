@@ -446,6 +446,7 @@ TEST_CASE("a conflicting standard queue message waits through a dynamically resc
             writer.write(::literal::TimeSeriesLiteral(i64{1})) && writer.write(::literal::TimeSeriesLiteral(i64{2}));
         QueueState::set(std::move(writer));
     });
+
     const auto sink = bg::node<QueueChainSink>();
     auto wiring = GraphWiring{};
     {
@@ -770,6 +771,7 @@ TEST_CASE("realtime evaluation failure stops the graph and closes retained queue
     QueueState::reset();
     RealtimeProbe::throw_on_evaluation = true;
     const auto queue = bg::queue<TS<i64>>(bg::start = [](Queue writer) { QueueState::set(std::move(writer)); });
+
     const auto probe = bg::node<RealtimeProbe>();
     auto wiring = GraphWiring{};
     {

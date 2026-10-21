@@ -18,6 +18,7 @@ TEST_CASE("required-input invalidation invalidates a node output",
           "[evaluation][invalidation][feature:invalidation][shape:single-node][validity:required]"
           "[transition:invalidation][transition:revalidation][series:value][scalar:floating-point]"
           "[definition:function]") {
+
     const auto copy = node([](float input) { return input; });
 
     const auto actual = testing::test_graph(copy, {4.0F, literal::INVALID, 6.0F});
@@ -72,6 +73,7 @@ struct fallback_definition {
 TEST_CASE("required-input invalidation is applied once while the input remains invalid",
           "[evaluation][invalidation][feature:invalidation][validity:required][transition:invalidation]"
           "[series:value][scalar:floating-point]") {
+
     const auto fallback = node<fallback_definition>();
 
     fallback_definition::evaluation_count = 0;
@@ -111,6 +113,7 @@ struct hold_definition {
 TEST_CASE("a node can preserve its output when a required input becomes invalid",
           "[evaluation][invalidation][feature:invalidation][validity:required][series:value]"
           "[scalar:floating-point]") {
+
     const auto hold = node<hold_definition>();
 
     const auto observe = node([](std::optional<float> input,
@@ -124,6 +127,7 @@ TEST_CASE("a node can preserve its output when a required input becomes invalid"
     });
 
     auto downstream_evaluations = 0;
+
     const auto downstream = node([&](float) { ++downstream_evaluations; });
 
     const auto graph = [&](wp<TS<float>> input, wp<TS<i64>> tick) {
@@ -141,6 +145,7 @@ TEST_CASE("a node can preserve its output when a required input becomes invalid"
 TEST_CASE("a node can produce an output when a required input becomes invalid",
           "[evaluation][invalidation][feature:invalidation][validity:required][series:value]"
           "[scalar:floating-point]") {
+
     const auto fallback = node<fallback_definition>();
 
     const auto graph = [&](wp<TS<float>> input) { return fallback(input); };
@@ -188,6 +193,7 @@ struct throwing_invalidation_definition {
 TEST_CASE("an invalidation failure stops the runtime graph",
           "[evaluation][invalidation][lifecycle][feature:invalidation][transition:invalidation]"
           "[transition:stop][series:value][scalar:floating-point]") {
+
     const auto switchable = node<switchable_definition>();
 
     const auto throwing_invalidation = node<throwing_invalidation_definition>();

@@ -62,8 +62,7 @@ TEST_CASE("a time series state records validity transitions",
 
 TEST_CASE("a time series state represents supported timestamps", "[feature:validity][series:generic]") {
     const auto first_time = MIN_DT + std::chrono::microseconds{1};
-    const auto largest_time =
-        EvaluationTime{EvaluationTime::duration{(i64{1} << 62) - 1}};
+    const auto largest_time = EvaluationTime{EvaluationTime::duration{(i64{1} << 62) - 1}};
     const auto too_large = largest_time + std::chrono::microseconds{1};
 
     CHECK_FALSE(TimeSeriesState::can_represent(MIN_DT));
@@ -76,8 +75,7 @@ TEST_CASE("a time series state orders change times", "[feature:validity][series:
     const auto early_time = MIN_DT + std::chrono::microseconds{1};
     const auto time = early_time + std::chrono::microseconds{1};
     const auto later_time = time + std::chrono::microseconds{1};
-    const auto largest_time =
-        EvaluationTime{EvaluationTime::duration{(i64{1} << 62) - 1}};
+    const auto largest_time = EvaluationTime{EvaluationTime::duration{(i64{1} << 62) - 1}};
 
     const auto never_valid = TimeSeriesState{};
     const auto ordinary_early = TimeSeriesState{early_time};

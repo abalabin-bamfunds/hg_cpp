@@ -17,8 +17,7 @@ TEST_CASE("dictionary runtime items use stable sparse IDs",
     using Dictionary = TSD<i64, TS<i64>>;
 
     const auto &runtime_type = cpp_time_series_runtime_type<Dictionary>();
-    const auto &dictionary_runtime_type =
-        static_cast<const details::TimeSeriesDictionaryRuntimeType &>(runtime_type);
+    const auto &dictionary_runtime_type = static_cast<const details::TimeSeriesDictionaryRuntimeType &>(runtime_type);
     const auto &key_runtime_type = dictionary_runtime_type.key_runtime_type();
     const auto &item_runtime_type = dictionary_runtime_type.item_runtime_type();
     const auto key_layout = util::runtime_item_layout{key_runtime_type.size(), key_runtime_type.alignment()};
@@ -61,10 +60,9 @@ TEST_CASE("dictionary runtime items use stable sparse IDs",
     CHECK(key_set.value == &storage.key_storage().value);
 
     auto updated = std::vector<item_id_t>{};
-    runtime_type.for_each_updated_item(storage.key_storage().last_updated, value, &updated,
-                                       [](void *context, item_id_t id) {
-                                           static_cast<std::vector<item_id_t> *>(context)->push_back(id);
-                                       });
+    runtime_type.for_each_updated_item(
+        storage.key_storage().last_updated, value, &updated,
+        [](void *context, item_id_t id) { static_cast<std::vector<item_id_t> *>(context)->push_back(id); });
     CHECK(updated == std::vector<item_id_t>{key_set_item_id, inserted.position});
 
     runtime_type.destroy_value(value, allocator);

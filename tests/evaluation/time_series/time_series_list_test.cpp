@@ -24,6 +24,7 @@ using namespace literals;
 TEST_CASE("a node can select an item from a free fixed time series list",
           "[evaluation][tsl][feature:getitem][series:fixed-tsl][free][representation:free][scalar:integer]"
           "[declaration:concrete][binding:direct]") {
+
     const auto select = node([](In<TSL<TS<i64>, 2>> input) { return *input[1]; });
 
     const auto graph = [&](wp<TS<i64>> first, wp<TS<i64>> second) {
@@ -48,6 +49,7 @@ TEST_CASE("a fixed time series list publishes changed items",
     };
 
     auto evaluation_count = 0;
+
     const auto copy = node([](In<TSL<TS<SCALAR>, 3>> input, Out<TSL<TS<SCALAR>, 3>> output) {
         for (auto item = std::size_t{}; item < 3; ++item) {
             if (input[item].valid()) {
@@ -82,6 +84,7 @@ TEST_CASE("a free fixed time series list coalesces source changes",
     };
 
     auto evaluation_count = 0;
+
     const auto sum = node([&](In<TSL<TS<i64>, 2>> input) {
         ++evaluation_count;
         return observation{*input[0] + *input[1], input.item_updated(0), input.item_updated(1)};
@@ -100,6 +103,7 @@ TEST_CASE("a free fixed time series list coalesces source changes",
 TEST_CASE("a free fixed time series list follows the receiving item runtime_type",
           "[evaluation][tsl][series:fixed-tsl][free][representation:free][reference]"
           "[feature:collection-change][scalar:integer][declaration:concrete][binding:direct]") {
+
     const auto reference = node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) { output.copy(input); });
 
     const auto sum = node([](In<TSL<TS<i64>, 2>> input) { return *input[0] + *input[1]; });
@@ -115,7 +119,9 @@ TEST_CASE("a free fixed time series list follows the receiving item runtime_type
 TEST_CASE("a span-backed free TSL retains its items through materialisation and evaluation",
           "[evaluation][tsl][series:fixed-tsl][free][representation:free][feature:wiring-materialisation]"
           "[scalar:integer]") {
+
     const auto sum = node([](In<TSL<TS<i64>, 2>> input) { return *input[0] + *input[1]; });
+
     const auto graph = [&](wp<TS<i64>> first, wp<TS<i64>> second) {
         const auto collection = [&] {
             const auto items = std::vector<WiringPoint>{first, second};
@@ -132,6 +138,7 @@ TEST_CASE("a span-backed free TSL retains its items through materialisation and 
 TEST_CASE("an empty typed TSL publishes valid at graph start",
           "[evaluation][tsl][series:fixed-tsl][feature:wiring-materialisation][representation:free]"
           "[transition:start]") {
+
     const auto observe = node([](In<TSL<TS<i64>, 0>> input) { return input.valid() && input.size() == 0; });
 
     const auto graph = [&] { return observe(tsl<TS<i64>>()); };
@@ -145,6 +152,7 @@ TEST_CASE("a fixed time series list schedules subscribers of changed items",
           "[binding:direct]") {
     auto first_evaluations = 0;
     auto second_evaluations = 0;
+
     const auto first_sink = node([&](i64) { ++first_evaluations; });
 
     const auto second_sink = node([&](i64) { ++second_evaluations; });
@@ -178,6 +186,7 @@ TEST_CASE("nested time series lists schedule subscribers of changed items",
           "[binding:direct]") {
     auto first_evaluations = 0;
     auto second_evaluations = 0;
+
     const auto first_sink = node([&](i64) { ++first_evaluations; });
 
     const auto second_sink = node([&](i64) { ++second_evaluations; });
@@ -213,6 +222,7 @@ TEST_CASE("invalidating a list invalidates its items",
     auto item_validity = std::vector<bool>{};
     auto required_evaluations = 0;
     auto updated_item_counts = std::vector<std::size_t>{};
+
     const auto optional_sink = node([&](In<TS<i64>, optional> input) { item_validity.push_back(input.valid()); });
 
     const auto required_sink = node([&](i64) { ++required_evaluations; });
@@ -249,11 +259,13 @@ TEST_CASE("a list child input reports its invalidation as modified",
           "[evaluation][tsl][series:fixed-tsl][validity][transition:invalidation]"
           "[transition:revalidation][feature:collection-change]") {
     auto states = std::vector<std::array<bool, 4>>{};
+
     const auto observe = node([&](In<TSL<TS<i64>, 2>> input, In<TS<i64>>, Out<TS<bool>> output) {
         const auto item = input[0];
         states.push_back({item.valid(), item.became_valid(), item.became_invalid(), item.modified()});
         output.set(item.became_invalid() && item.modified());
     });
+
     const auto graph = [&](wp<TSL<TS<i64>, 2>> input, wp<TS<i64>> trigger) { return observe(input, trigger); };
 
     const auto actual = testing::test_graph(
@@ -272,6 +284,7 @@ TEST_CASE("a list remains valid while one item remains valid",
           "[representation:native][declaration:concrete][binding:direct]") {
     auto item_validity = std::vector<bool>{};
     auto updated_item_counts = std::vector<std::size_t>{};
+
     const auto item_sink = node([&](In<TS<i64>, optional> input) { item_validity.push_back(input.valid()); });
 
     const auto list_sink = node([&](In<TSL<TS<i64>, 3>, optional> input) {
@@ -303,6 +316,7 @@ TEST_CASE("a list becomes invalid when its last valid item is invalidated and re
           "[evaluation][tsl][series:fixed-tsl][feature:validity][validity:optional][feature:collection-change]"
           "[transition:invalidation][transition:revalidation][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct]") {
+
     const auto valid = node([](In<TSL<TS<i64>, 3>, optional> input) { return input.valid(); });
 
     const auto actual = testing::test_graph(valid, {{{0, 10}}, {{0, literal::INVALID}}, {{1, 20}}});
@@ -314,6 +328,7 @@ TEST_CASE("required-input invalidation invalidates list items",
           "[evaluation][tsl][series:fixed-tsl][validity][feature:collection-change][validity:required]"
           "[transition:invalidation][scalar:integer][representation:native][declaration:concrete]"
           "[binding:direct]") {
+
     const auto list = node([](i64 input, Out<TSL<TS<i64>, 3>> output) { output[0].set(input); });
 
     const auto first = node([](In<TSL<TS<i64>, 3>> input) { return *input[0]; });
@@ -370,6 +385,7 @@ struct sequential_item_access_definition {
 TEST_CASE("sequential item views reuse evaluation scratch storage",
           "[evaluation][tsl][series:fixed-tsl][storage][feature:collection-change][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct]") {
+
     const auto source = node<sequential_item_access_definition>();
     auto wiring = GraphWiring{};
     {
@@ -414,6 +430,7 @@ TEST_CASE("inverse nested dictionary mutations publish their containing list",
           "[evaluation][tsl][series:fixed-tsl][tsd][series:tsd][feature:collection-change]"
           "[transition:update][scalar:integer][representation:native][declaration:concrete]"
           "[binding:direct]") {
+
     const auto source = node<canceled_nested_dictionary_source_definition>();
 
     const auto marker = node([](In<TSL<TSD<i64, TS<i64>>, 2>>) { return true; });
@@ -446,6 +463,7 @@ struct retained_nested_item_source_definition {
 TEST_CASE("a nested item view retains its containing path",
           "[evaluation][tsl][series:fixed-tsl][storage][feature:collection-change][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct]") {
+
     const auto source = node<retained_nested_item_source_definition>();
 
     const auto item = node([](In<TSL<TSL<TS<i64>, 2>, 2>> input) { return *input[0][1]; });

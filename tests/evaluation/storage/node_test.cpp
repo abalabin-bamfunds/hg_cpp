@@ -42,7 +42,9 @@ TEST_CASE("a runtime node locates output and input data", "[evaluation][storage]
     };
 
     const auto source = bg::node<runtime_node_source>();
+
     const auto reference = bg::node<runtime_node_reference>();
+
     const auto sink = bg::node<runtime_node_sink>();
     auto wiring = GraphWiring{};
 

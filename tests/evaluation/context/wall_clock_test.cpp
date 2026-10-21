@@ -62,6 +62,7 @@ struct lifecycle_definition {
 
 TEST_CASE("the simulation engine shares one wall clock across node contexts",
           "[evaluation][simulation][context][feature:wall-clock][transition:start][transition:stop]") {
+
     const auto lifecycle = bg::node<lifecycle_definition>();
     auto wiring = GraphWiring{};
     {
@@ -85,6 +86,7 @@ TEST_CASE("the simulation engine shares one wall clock across node contexts",
 
 TEST_CASE("direct runtime graph lifecycle paths use the system wall clock",
           "[evaluation][context][feature:wall-clock][transition:start][transition:stop]") {
+
     const auto lifecycle = bg::node<lifecycle_definition>();
     auto wiring = GraphWiring{};
     {
@@ -144,6 +146,7 @@ struct scheduled_lifecycle_definition {
 
 TEST_CASE("one simulation wall clock follows each outer evaluation cycle",
           "[evaluation][simulation][context][feature:wall-clock][transition:lifecycle]") {
+
     const auto lifecycle = bg::node<scheduled_lifecycle_definition>();
     auto wiring = GraphWiring{};
     {
@@ -197,6 +200,7 @@ struct failing_lifecycle_definition {
 
 TEST_CASE("failure stop functions retain the active wall clock",
           "[evaluation][simulation][lifecycle][failure][feature:wall-clock][transition:stop]") {
+
     const auto failing = bg::node<failing_lifecycle_definition>();
     auto wiring = GraphWiring{};
     {
@@ -256,7 +260,9 @@ struct invalidation_observer_definition {
 
 TEST_CASE("invalidation functions retain the active wall clock",
           "[evaluation][simulation][invalidation][feature:wall-clock][transition:invalidation]") {
+
     const auto source = bg::node<invalidating_source_definition>();
+
     const auto observer = bg::node<invalidation_observer_definition>();
     auto wiring = GraphWiring{};
     {
@@ -319,9 +325,11 @@ TEST_CASE("nested graph contexts share the outer simulation wall clock",
     using namespace bg::literals;
 
     const auto lifecycle = bg::node<nested_lifecycle_definition>();
+
     const auto inner = bg::graph("name"_n = "inner_wall_clock", [&]() -> bg::wp<TS<i64>> { return lifecycle(); });
     const auto outer =
         bg::graph("name"_n = "outer_wall_clock", [&](bg::wp<TS<bool>> run) { return bg::nested(inner, run); });
+
     const auto run_source = bg::node<nested_run_source_definition>();
     auto wiring = GraphWiring{};
     {

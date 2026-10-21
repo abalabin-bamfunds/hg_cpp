@@ -176,6 +176,7 @@ template <typename Boundary = boundary_node>
 details::GraphWiringStructure identity_structure() {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
+
     const auto boundary = node<Boundary>();
     const auto value = boundary();
     const auto boundaries = std::array<WiringPoint, 1>{value};
@@ -188,9 +189,11 @@ template <typename Operation>
 details::GraphWiringStructure binary_structure() {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
+
     const auto boundary = node<boundary_node>();
     const auto left = boundary();
     const auto right = boundary();
+
     const auto operation = node<Operation>();
     const auto result = operation(left, right);
     const auto boundaries = std::array<WiringPoint, 2>{left, right};
@@ -203,6 +206,7 @@ details::GraphWiringStructure uncacheable_structure() {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
     const auto value = ScalarValue<Opaque<opaque_value>>{opaque_value{1}};
+
     const auto source = node<opaque_source_node>();
     const auto result = source(value);
 
@@ -214,6 +218,7 @@ details::GraphWiringStructure uncacheable_structure() {
 details::GraphWiringStructure captured_integer_structure(int captured_value) {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
+
     const auto source = node<captured_integer_node>();
     const auto result = source(ScalarValue<int>{captured_value});
 
@@ -225,6 +230,7 @@ details::GraphWiringStructure captured_integer_structure(int captured_value) {
 details::GraphWiringStructure captured_shared_pointer_structure(const std::shared_ptr<int> &captured_value) {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
+
     const auto source = node<captured_shared_pointer_node>();
     const auto result = source(ScalarValue<test_graph_argument::captured_pointer>{
         test_graph_argument::captured_pointer{captured_value}});
@@ -237,6 +243,7 @@ details::GraphWiringStructure captured_shared_pointer_structure(const std::share
 details::GraphWiringStructure source_structure() {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
+
     const auto source = node<graph_result_node>();
     const auto result = source();
 
@@ -248,9 +255,11 @@ details::GraphWiringStructure source_structure() {
 details::GraphWiringStructure sink_structure() {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
+
     const auto boundary = node<boundary_node>();
     const auto left = boundary();
     const auto right = boundary();
+
     const auto sink = node<graph_sink_node>();
     sink(left, right);
     const auto boundaries = std::array<WiringPoint, 2>{left, right};
@@ -262,8 +271,10 @@ details::GraphWiringStructure sink_structure() {
 details::GraphWiringStructure unary_add_structure() {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
+
     const auto boundary = node<boundary_node>();
     const auto input = boundary();
+
     const auto add = node<add_node>();
     const auto result = add(input, input);
     const auto boundaries = std::array<WiringPoint, 1>{input};
@@ -379,6 +390,7 @@ TEST_CASE("graph argument matching supports any, exact, and generic patterns",
     const auto other = GraphArgumentConstraint{multiply};
 
     const auto add_operation = node<add_node>();
+
     const auto add_graph = graph("name"_n = "add_pattern",
                                  [add_operation](wp<TS<SCALAR>> left, wp<TS<SCALAR>> right) {
         return add_operation(left.as<TS<i64>>(), right.as<TS<i64>>());
@@ -516,6 +528,7 @@ TEST_CASE("callable graph time series unions accept each form and preserve the s
 
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
+
     const auto source = node<boundary_node>();
     const auto value = source();
     auto deferred = wiring.create_wp<TS<i64>>(value);
@@ -544,9 +557,12 @@ TEST_CASE("callable graph time series unions accept each form and preserve the s
 
 TEST_CASE("callable graph union names share variables inside their alternatives",
           "[feature:wiring][feature:type-system][feature:graph-argument]") {
+
     const auto inspect = graph("name"_n = "inspect_union_variables",
                                [](wp<GRAPH_LEFT_FORM>, wp<GRAPH_RIGHT_FORM>) {});
+
     const auto integer_source = node<boundary_node>();
+
     const auto floating_source = node<float_boundary_node>();
 
     testing::test_wiring([&] {
@@ -566,12 +582,14 @@ TEST_CASE("callable graph labels validate time series union alternatives",
           "[feature:wiring][feature:type-system][feature:graph-argument]") {
     using LABEL_FORM = Union<"LABEL_FORM", TS<i64>, TS<double>>;
     auto label_calls = 0;
+
     const auto inspect = graph(
         "name"_n = "inspect_union_label", "label"_n = [&label_calls](wp<LABEL_FORM>) {
             ++label_calls;
             return "selected";
         },
         [](wp<TS<bool>>) {});
+
     const auto source = node([](Out<TS<bool>>) {});
 
     testing::test_wiring([&] { CHECK_THROWS_AS(inspect(source()), WiringError); });
@@ -591,7 +609,9 @@ TEST_CASE("aggregate graph time series unions accept each declared form",
     };
 
     using namespace bg::literals;
+
     const auto inspect = graph<union_graph>();
+
     const auto source = node<boundary_node>();
 
     testing::test_wiring([&] { inspect(source()); });
@@ -675,7 +695,9 @@ TEST_CASE("graph types with the same pattern retain signature specificity",
 
 TEST_CASE("a callable operator overload resolves variables nested in a graph type",
           "[feature:operator][feature:type-system][feature:graph-argument][definition:function]") {
+
     const auto result_source = node<graph_result_node>();
+
     const auto implementation = graph(
         "name"_n = "typed_graph_overload",
         [result_source](GRAPH<auto(TS<GRAPH_VALUE>, TS<GRAPH_VALUE>) -> TS<GRAPH_VALUE>> function) {
@@ -696,6 +718,7 @@ TEST_CASE("graph type variables constrain other overload parameters",
     using VALUE = ScalarVariable<"VALUE">;
 
     const auto result_source = node<graph_result_node>();
+
     const auto implementation = graph(
         "name"_n = "graph_and_value",
         [result_source](GRAPH<auto(TS<VALUE>) -> TS<VALUE>>, wp<TS<VALUE>>) {
@@ -705,7 +728,9 @@ TEST_CASE("graph type variables constrain other overload parameters",
     operation.overload(implementation);
 
     testing::test_wiring([&] {
+
         const auto integer_source = node<boundary_node>();
+
         const auto floating_point_source = node<float_boundary_node>();
         const auto integer = integer_source();
         const auto floating_point = floating_point_source();
@@ -718,6 +743,7 @@ TEST_CASE("graph type variables constrain other overload parameters",
 
 TEST_CASE("an aggregate graph resolves variables nested in a graph type",
           "[feature:wiring][feature:type-system][feature:graph-argument][definition:aggregate]") {
+
     const auto sink = graph<typed_aggregate_graph_argument_sink>();
 
     testing::test_wiring([&] {
@@ -734,6 +760,7 @@ TEST_CASE("graph structure rejects overlapping external boundaries",
           "[feature:wiring][feature:graph-argument]") {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
+
     const auto boundary = node<boundary_node>();
     const auto value = boundary();
     const auto boundaries = std::array<WiringPoint, 2>{value, value};
@@ -745,6 +772,7 @@ TEST_CASE("graph structure rejects overlapping external boundaries",
 
 TEST_CASE("a callable graph receives an owning graph argument",
           "[feature:wiring][feature:graph-argument][definition:function]") {
+
     const auto sink = graph("name"_n = "graph_argument_sink", [](const GraphArgument &function) {
         CHECK(function.structure().boundary_count() == 1);
     });
@@ -754,6 +782,7 @@ TEST_CASE("a callable graph receives an owning graph argument",
 
 TEST_CASE("an aggregate graph receives an owning graph argument",
           "[feature:wiring][feature:graph-argument][definition:aggregate]") {
+
     const auto sink = graph<aggregate_graph_argument_sink>();
 
     testing::test_wiring([&] { sink(argument(identity_structure())); });
@@ -761,7 +790,9 @@ TEST_CASE("an aggregate graph receives an owning graph argument",
 
 TEST_CASE("a typed operator prototype accepts a graph argument",
           "[feature:operator][feature:wiring][feature:graph-argument][definition:function]") {
+
     const auto result_source = node<graph_result_node>();
+
     const auto implementation = graph("name"_n = "apply_graph", [result_source](const GraphArgument &function) {
         CHECK(function.structure().boundary_count() == 1);
         return result_source();
@@ -777,11 +808,15 @@ TEST_CASE("a typed operator prototype accepts a graph argument",
 
 TEST_CASE("graph patterns are less generic than any graph and distinct patterns are unordered",
           "[feature:operator][feature:type-system][feature:graph-argument]") {
+
     const auto add_node_template = node<add_node>();
+
     const auto multiply_node_template = node<multiply_node>();
+
     const auto add_graph = graph("name"_n = "add_pattern", [add_node_template](wp<TS<i64>> left, wp<TS<i64>> right) {
         return add_node_template(left, right);
     });
+
     const auto multiply_graph = graph("name"_n = "multiply_pattern",
                                       [multiply_node_template](wp<TS<i64>> left, wp<TS<i64>> right) {
         return multiply_node_template(left, right);
@@ -952,6 +987,7 @@ TEST_CASE("operator diagnostics retain graph argument types",
 
 TEST_CASE("variadic parameters reject graph arguments",
           "[feature:wiring][feature:graph-argument][feature:variadic-wiring][series:tsb][schema:generic]") {
+
     const auto variadic = graph("name"_n = "variadic", [](wp<TSB<SCHEMA>, var_args>) {});
 
     CHECK_THROWS_WITH(testing::test_wiring([&] { variadic(argument(identity_structure())); }),

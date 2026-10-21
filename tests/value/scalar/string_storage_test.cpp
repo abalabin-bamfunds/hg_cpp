@@ -29,8 +29,8 @@ TEST_CASE("a stored string view retains its canonical storage",
     const auto &runtime_type = cpp_scalar_runtime_type<string>();
     const auto source = std::string_view{"stored string"};
     auto *stored = allocator.allocate_bytes(runtime_type.size(), runtime_type.alignment());
-    runtime_type.construct_from_input(
-        stored, details::ScalarData{runtime_type, &source, ScalarDataMode::source_view}, allocator);
+    runtime_type.construct_from_input(stored, details::ScalarData{runtime_type, &source, ScalarDataMode::source_view},
+                                      allocator);
 
     const auto *original = *static_cast<details::StringStorage **>(stored);
     const auto view = Scalar<string>::from(*static_cast<details::StringStorage **>(stored));

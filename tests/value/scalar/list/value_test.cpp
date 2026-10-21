@@ -59,15 +59,13 @@ TEST_CASE("a scalar list can contain scalar lists", "[value][scalar][list][scala
 
 TEST_CASE("scalar list construction rejects time-series markers",
           "[value][scalar][list][scalar:list][feature:scalar-collection]") {
-    CHECK_THROWS_AS((ScalarValue<List<i64>>::from_literal(
-                        literal::TimeSeriesLiteral{1, literal::INVALID})),
+    CHECK_THROWS_AS((ScalarValue<List<i64>>::from_literal(literal::TimeSeriesLiteral{1, literal::INVALID})),
                     std::invalid_argument);
 }
 
 TEST_CASE("a scalar list can contain evaluation times",
           "[value][scalar][list][scalar:list][feature:scalar-collection][scalar:evaluation-time]") {
-    const auto source =
-        std::vector{MIN_DT + std::chrono::microseconds{2}, MIN_DT + std::chrono::microseconds{5}};
+    const auto source = std::vector{MIN_DT + std::chrono::microseconds{2}, MIN_DT + std::chrono::microseconds{5}};
     const auto value = ScalarValue<List<EvaluationTime>>{source};
     const auto equal = ScalarValue<List<EvaluationTime>>{source};
 

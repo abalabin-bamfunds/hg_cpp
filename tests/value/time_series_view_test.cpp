@@ -37,8 +37,7 @@ TEST_CASE("a set input preserves its packed validity state when type erased",
     auto state = TimeSeriesState{};
     const auto &runtime_type = cpp_time_series_runtime_type<TSS<i64>>();
     const auto input = In<TSS<i64>>{state, nullptr, runtime_type};
-    const auto erased =
-        In<TS_T>{input.last_updated_state(), input.data(), input.runtime_type(), input.modified()};
+    const auto erased = In<TS_T>{input.last_updated_state(), input.data(), input.runtime_type(), input.modified()};
 
     CHECK_FALSE(erased.valid());
 
@@ -48,8 +47,8 @@ TEST_CASE("a set input preserves its packed validity state when type erased",
     CHECK_FALSE(erased.became_valid());
     const auto updated = In<TS_T>{state, nullptr, runtime_type, true};
 
-    const auto became_valid = updated.visit(
-        [](const In<TSS<SCALAR>> *value) { return value->became_valid(); }, ddv::noop);
+    const auto became_valid =
+        updated.visit([](const In<TSS<SCALAR>> *value) { return value->became_valid(); }, ddv::noop);
 
     REQUIRE(became_valid);
     CHECK(*became_valid);
@@ -60,8 +59,8 @@ TEST_CASE("a set input preserves its packed validity state when type erased",
     CHECK_FALSE(erased.valid());
     const auto invalidated = In<TS_T>{state, nullptr, runtime_type, true};
 
-    const auto became_invalid = invalidated.visit(
-        [](const In<TSS<SCALAR>> *value) { return value->became_invalid(); }, ddv::noop);
+    const auto became_invalid =
+        invalidated.visit([](const In<TSS<SCALAR>> *value) { return value->became_invalid(); }, ddv::noop);
 
     REQUIRE(became_invalid);
     CHECK(*became_invalid);
@@ -79,28 +78,13 @@ template <template <typename, auto...> typename Field> struct VisitorBundle {
 TEST_CASE("time series input visitors select every resolved interface",
           "[time_series][visitor][feature:time-series-view][feature:visitor][declaration:generic]"
           "[series:generic][series:value][series:reference][series:fixed-tsl][series:tss][series:tsd][series:tsb]") {
-    const auto value = In<TS_T>{initial_time_series_state,
-                                        nullptr,
-                                        cpp_time_series_runtime_type<TS<i64>>()};
-    const auto reference =
-        In<TS_T>{initial_time_series_state,
-                          nullptr,
-                          cpp_time_series_runtime_type<REF<TS<i64>>>()};
-    const auto list =
-        In<TS_T>{initial_time_series_state,
-                          nullptr,
-                          cpp_time_series_runtime_type<TSL<TS<i64>, 2>>()};
-    const auto set = In<TS_T>{initial_time_series_state,
-                                      nullptr,
-                                      cpp_time_series_runtime_type<TSS<i64>>()};
-    const auto dict =
-        In<TS_T>{initial_time_series_state,
-                          nullptr,
-                          cpp_time_series_runtime_type<TSD<i64, TS<i64>>>()};
+    const auto value = In<TS_T>{initial_time_series_state, nullptr, cpp_time_series_runtime_type<TS<i64>>()};
+    const auto reference = In<TS_T>{initial_time_series_state, nullptr, cpp_time_series_runtime_type<REF<TS<i64>>>()};
+    const auto list = In<TS_T>{initial_time_series_state, nullptr, cpp_time_series_runtime_type<TSL<TS<i64>, 2>>()};
+    const auto set = In<TS_T>{initial_time_series_state, nullptr, cpp_time_series_runtime_type<TSS<i64>>()};
+    const auto dict = In<TS_T>{initial_time_series_state, nullptr, cpp_time_series_runtime_type<TSD<i64, TS<i64>>>()};
     const auto bundle =
-        In<TS_T>{initial_time_series_state,
-                          nullptr,
-                          cpp_time_series_runtime_type<TSB<VisitorBundle>>()};
+        In<TS_T>{initial_time_series_state, nullptr, cpp_time_series_runtime_type<TSB<VisitorBundle>>()};
     auto value_visited = false;
     auto reference_visited = false;
     auto list_visited = false;
@@ -128,12 +112,9 @@ TEST_CASE("a time series visitor returns its result by value",
           "[series:generic][series:value]") {
     const auto updated = MIN_DT + std::chrono::microseconds{1};
     const auto updated_state = TimeSeriesState{updated};
-    const auto input = In<TS_T>{updated_state,
-                                        nullptr,
-                                        cpp_time_series_runtime_type<TS<i64>>()};
+    const auto input = In<TS_T>{updated_state, nullptr, cpp_time_series_runtime_type<TS<i64>>()};
 
-    const auto result =
-        input.visit([](const In<TS<SCALAR>> *value) { return value->last_updated(); }, ddv::noop);
+    const auto result = input.visit([](const In<TS<SCALAR>> *value) { return value->last_updated(); }, ddv::noop);
 
     REQUIRE(result);
     CHECK(*result == updated);

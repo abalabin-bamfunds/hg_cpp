@@ -40,6 +40,7 @@ static_assert(requires(const Out<TSB<SCHEMA>> &output, const In<TSB<COPY_SOURCE>
 
 TEST_CASE("copy copies the latest value when the node runs",
           "[feature:node-api][feature:test-graph][series:value][transition:update]") {
+
     const auto copy = node([](In<TS<i64>, passive> input, In<TS<i64>> trigger, Out<TS<i64>> output) {
         static_cast<void>(trigger);
         output.copy(input);
@@ -58,6 +59,7 @@ TEST_CASE("copy copies the latest value when the node runs",
 
 TEST_CASE("a generic output copies and copies a tick from a time series value",
           "[feature:node-api][feature:test-graph][series:generic][series:value][transition:update]") {
+
     const auto copy = node([](In<TS_T> input, Out<TS_T> output) { output.copy(input); });
 
     const auto copy_tick = node([](In<TS_T> input, Out<TS_T> output) { output.copy_tick(input); });
@@ -77,6 +79,7 @@ TEST_CASE("a generic output copies and copies a tick from a time series value",
 TEST_CASE("copy_tick applies a current invalidation but ignores its stale state",
           "[feature:node-api][feature:test-graph][series:value]"
           "[transition:update][transition:invalidation][transition:revalidation]") {
+
     const auto copy_tick = node([](In<TS<i64>, passive, optional> input, In<TS<i64>> trigger,
                                    Out<TS<i64>> output) {
         if (*trigger == 2) {
@@ -97,6 +100,7 @@ TEST_CASE("copy_tick applies a current invalidation but ignores its stale state"
 TEST_CASE("copy propagates value invalidation and revalidation",
           "[feature:node-api][feature:test-graph][series:value]"
           "[transition:invalidation][transition:revalidation]") {
+
     const auto copy = node([](In<TS<i64>, optional> input, Out<TS<i64>> output) { output.copy(input); });
 
     const auto graph = [&](wp<TS<i64>> input) { return copy(input); };
@@ -109,6 +113,7 @@ TEST_CASE("copy propagates value invalidation and revalidation",
 TEST_CASE("reference copy accepts independent declarations and propagates invalidation",
           "[feature:node-api][feature:test-graph][series:reference]"
           "[transition:invalidation][transition:revalidation]") {
+
     const auto value = node([](Out<TS<i64>> output) { output.set(10); });
 
     const auto reference = node([](In<TS<i64>> cycle, In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) {
@@ -121,8 +126,10 @@ TEST_CASE("reference copy accepts independent declarations and propagates invali
 
     const auto copy = node([](In<REF<TS_T>, optional> input,
                               Out<REF<TS<i64>>> output) { output.copy(input); });
+
     const auto copy_tick = node([](In<REF<TS_T>, optional> input,
                                    Out<REF<TS<i64>>> output) { output.copy_tick(input); });
+
     const auto read = node([](In<TS<i64>, optional> input, Out<TS<i64>> output) { output.copy(input); });
 
     const auto observe_validity = node([](In<TS<i64>, optional> input, Out<TS<bool>> output) {
@@ -185,6 +192,7 @@ TEST_CASE("copy of a string time series retains its storage",
 TEST_CASE("copy copies every field of a time series bundle",
           "[feature:node-api][feature:test-graph][series:tsb][schema:named]"
           "[representation:free][representation:native][transition:update]") {
+
     const auto copy = node([](In<TSB<copy_bundle>> input, Out<TSB<copy_bundle>> output) {
         output.copy(input);
     });
@@ -202,6 +210,7 @@ TEST_CASE("copy copies every field of a time series bundle",
 
 TEST_CASE("copy_tick modifies only updated fields of a time series bundle",
           "[feature:node-api][feature:test-graph][series:generic][series:tsb][transition:update]") {
+
     const auto copy_tick = node([](In<TS_T> input, Out<TS_T> output) { output.copy_tick(input); });
 
     const auto inspect = node([](In<TSB<copy_bundle>> input) {
@@ -219,6 +228,7 @@ TEST_CASE("copy_tick modifies only updated fields of a time series bundle",
 TEST_CASE("copy copies each item of a fixed time series list",
           "[feature:node-api][feature:test-graph][series:fixed-tsl][representation:free]"
           "[representation:native][transition:update]") {
+
     const auto copy = node([](In<TSL<TS<i64>, 2>> input, Out<TSL<TS<i64>, 2>> output) {
         output.copy(input);
     });
@@ -236,6 +246,7 @@ TEST_CASE("copy copies each item of a fixed time series list",
 
 TEST_CASE("a generic output copies and copies ticks from a fixed time series list",
           "[feature:node-api][feature:test-graph][series:generic][series:fixed-tsl][transition:update]") {
+
     const auto copy = node([](In<TS_T> input, Out<TS_T> output) { output.copy(input); });
 
     const auto copy_tick = node([](In<TS_T> input, Out<TS_T> output) { output.copy_tick(input); });
@@ -261,6 +272,7 @@ TEST_CASE("a generic output copies and copies ticks from a fixed time series lis
 TEST_CASE("a fixed list copy accepts a different child guarantee",
           "[feature:node-api][feature:test-graph][series:fixed-tsl]"
           "[guarantee:ordinary][guarantee:deduplicated][transition:update]") {
+
     const auto copy = node([](In<TSL<TS<i64>, 2>> input,
                               Out<TSL<TS<i64, TimeSeriesGuarantee::deduplicated>, 2>> output) {
         output.copy(input);
@@ -281,6 +293,7 @@ TEST_CASE("a fixed list copy accepts a different child guarantee",
 
 TEST_CASE("copy reconciles a time series dictionary snapshot",
           "[feature:node-api][feature:test-graph][series:tsd][transition:update][transition:removal]") {
+
     const auto copy = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
         output.copy(input);
     });
@@ -302,6 +315,7 @@ TEST_CASE("copy reconciles a time series dictionary snapshot",
 TEST_CASE("a dictionary copy accepts a different child guarantee",
           "[feature:node-api][feature:test-graph][series:tsd]"
           "[guarantee:ordinary][guarantee:deduplicated][transition:update]") {
+
     const auto copy = node([](In<TSD<i64, TS<i64>>> input,
                               Out<TSD<i64, TS<i64, TimeSeriesGuarantee::deduplicated>>> output) {
         output.copy(input);
@@ -319,6 +333,7 @@ TEST_CASE("a dictionary copy accepts a different child guarantee",
 TEST_CASE("copy_tick publishes an initially empty time series dictionary",
           "[feature:node-api][feature:test-graph][series:tsd][transition:first-tick]"
           "[transition:addition]") {
+
     const auto copy = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
         output.copy_tick(input);
     });
@@ -335,6 +350,7 @@ TEST_CASE("copy_tick publishes an initially empty time series dictionary",
 TEST_CASE("copy handles an invalid erased input without runtime type metadata",
           "[feature:node-api][feature:test-graph][series:generic][series:tsd][declaration:generic]"
           "[transition:invalidation]") {
+
     const auto copy_invalid = node([](In<TS_T> trigger, Out<TS_T> output) {
         output.copy(trigger);
         output.copy(In<TS_T>{TimeSeriesInputData{}});
@@ -351,6 +367,7 @@ TEST_CASE("copy handles an invalid erased input without runtime type metadata",
 
 TEST_CASE("copy reconciles a time series set snapshot",
           "[feature:node-api][feature:test-graph][series:tss][transition:addition][transition:removal]") {
+
     const auto copy = node([](In<TSS<i64>> input, Out<TSS<i64>> output) {
         output.copy(input);
     });
@@ -372,6 +389,7 @@ TEST_CASE("copy reconciles a time series set snapshot",
 TEST_CASE("a generic output copies time series set snapshots and changes",
           "[feature:node-api][feature:test-graph][series:generic][series:tss]"
           "[transition:addition][transition:removal]") {
+
     const auto copy = node([](In<TS_T> input, Out<TS_T> output) { output.copy(input); });
 
     const auto copy_tick = node([](In<TS_T> input, Out<TS_T> output) { output.copy_tick(input); });
@@ -398,6 +416,7 @@ TEST_CASE("a generic output copies time series set snapshots and changes",
 TEST_CASE("copy_tick copies a reference-bound time series set",
           "[feature:node-api][feature:sampling][series:tss][binding:reference-to-value]"
           "[transition:addition][transition:removal]") {
+
     const auto preserve_reference = node([](In<REF<TSS<i64>>> input, Out<REF<TSS<i64>>> output) {
         output.copy(input);
     });
@@ -423,6 +442,7 @@ TEST_CASE("collection copies remove items when a reference selects an invalid TS
           "[feature:node-api][feature:test-graph][feature:sampling][series:tss]"
           "[binding:reference-to-value][transition:invalidation][transition:revalidation]"
           "[transition:removal][transition:addition]") {
+
     const auto select = node([](In<TS<i64>> cycle, In<REF<TSS<i64>>, passive> populated,
                                 In<REF<TSS<i64>>, passive> invalid, Out<REF<TSS<i64>>> output) {
         output.copy(*cycle == 1 ? invalid : populated);
@@ -481,6 +501,7 @@ TEST_CASE("generic collection copy_tick removes nested items from an invalid TSD
           "[feature:node-api][feature:test-graph][feature:sampling][series:tsd][series:generic]"
           "[binding:reference-to-value][shape:nested][transition:invalidation]"
           "[transition:revalidation][transition:removal][transition:addition]") {
+
     const auto select = node([](In<TS<i64>> cycle, In<REF<TSD<i64, TSD<i64, TS<i64>>>>, passive> populated,
                                 In<REF<TSD<i64, TSD<i64, TS<i64>>>>, passive> invalid,
                                 Out<REF<TSD<i64, TSD<i64, TS<i64>>>>> output) {
@@ -491,6 +512,7 @@ TEST_CASE("generic collection copy_tick removes nested items from an invalid TSD
 
     const auto copy = node([](In<TSD<i64, TSD<i64, TS<i64>>>, optional> input,
                               Out<TSD<i64, TSD<i64, TS<i64>>>> output) { output.copy(input); });
+
     const auto inspect = node([](In<TSD<i64, TSD<i64, TS<i64>>>> tick_copy,
                                  In<TSD<i64, TSD<i64, TS<i64>>>> full_copy) {
         const auto value = [](const auto &input) {
@@ -529,6 +551,7 @@ TEST_CASE("generic collection copy_tick removes nested items from an invalid TSD
 TEST_CASE("copy_tick does not reconstruct TSS changes missed in an earlier cycle",
           "[feature:node-api][feature:test-graph][series:tss][activity:passive]"
           "[transition:addition][transition:update]") {
+
     const auto copy_tick = node([](In<TSS<i64>, passive, optional> input, In<TS<i64>> trigger,
                                    Out<TSS<i64>> output) {
         static_cast<void>(trigger);
@@ -554,6 +577,7 @@ TEST_CASE("copy_tick does not reconstruct TSS changes missed in an earlier cycle
 TEST_CASE("copy and copy_tick leave initially invalid collection outputs invalid",
           "[feature:node-api][feature:test-graph][series:tss][binding:reference-to-value]"
           "[transition:first-tick][validity:optional]") {
+
     const auto invalid_set = node([](Out<TSS<i64>>) {});
 
     const auto copy_tick = node([](In<TSS<i64>, passive, optional> input, In<TS<i64>> trigger,
@@ -587,8 +611,10 @@ TEST_CASE("copy and copy_tick leave initially invalid collection outputs invalid
 TEST_CASE("copy copies a reference-bound time series dictionary",
           "[feature:node-api][feature:sampling][series:tsd][binding:reference-to-value]"
           "[transition:update][transition:removal]") {
+
     const auto preserve_reference = node([](In<REF<TSD<i64, TS<i64>>>> input,
                                             Out<REF<TSD<i64, TS<i64>>>> output) { output.copy(input); });
+
     const auto copy = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
         output.copy(input);
     });
@@ -611,6 +637,7 @@ TEST_CASE("copy copies a reference-bound time series dictionary",
 TEST_CASE("copy uses the valid_items view of a dictionary input",
           "[feature:node-api][feature:test-graph][series:tsd][input-guarantee:valid-items]"
           "[transition:update]") {
+
     const auto source = node([](In<TS<i64>> value, Out<TSD<i64, TS<i64>>> output) {
         output[1].set(*value);
         output[2].invalidate();
@@ -618,6 +645,7 @@ TEST_CASE("copy uses the valid_items view of a dictionary input",
 
     const auto copy = node([](In<TSD<i64, TS<i64>>, valid_items> input,
                               Out<TSD<i64, TS<i64>>> output) { output.copy(input); });
+
     const auto summary = node([](In<TSD<i64, TS<i64>>> input) {
         return static_cast<i64>(input.size() * 10 + input.contains(2));
     });
@@ -632,6 +660,7 @@ TEST_CASE("copy uses the valid_items view of a dictionary input",
 TEST_CASE("copy_tick publishes an initially empty time series set",
           "[feature:node-api][feature:test-graph][series:tss][transition:first-tick]"
           "[transition:addition]") {
+
     const auto copy = node([](In<TSS<i64>> input, Out<TSS<i64>> output) { output.copy_tick(input); });
 
     const auto size = node([](In<TSS<i64>> input) { return static_cast<i64>(input.size()); });
@@ -646,6 +675,7 @@ TEST_CASE("copy_tick publishes an initially empty time series set",
 TEST_CASE("a nested dictionary copy reconciles nested item changes",
           "[feature:node-api][feature:test-graph][series:tsd][shape:nested]"
           "[transition:update][transition:removal]") {
+
     const auto copy = node([](In<TSD<i64, TSD<i64, TS<i64>>>> input,
                               Out<TSD<i64, TSD<i64, TS<i64>>>> output) {
         output.copy(input);
@@ -668,6 +698,7 @@ TEST_CASE("a nested dictionary copy reconciles nested item changes",
 TEST_CASE("copy_tick forwards a nested dictionary delta to its changed leaves",
           "[feature:node-api][feature:test-graph][series:tsd][shape:nested]"
           "[transition:update][transition:removal]") {
+
     const auto copy = node([](In<TSD<i64, TSD<i64, TS<i64>>>> input,
                               Out<TSD<i64, TSD<i64, TS<i64>>>> output) {
         output.copy_tick(input);
@@ -703,6 +734,7 @@ TEST_CASE("copy_tick forwards a reference to its target",
           "[feature:node-api][feature:test-graph][feature:reference][series:reference]"
           "[transition:first-tick][transition:update][binding:value-to-reference]"
           "[binding:reference-to-value]") {
+
     const auto copy_reference = node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) {
         output.copy_tick(input);
     });
@@ -719,6 +751,7 @@ TEST_CASE("copy_tick forwards a reference to its target",
 TEST_CASE("copy_tick forwards reference selection changes and invalidation",
           "[feature:node-api][feature:test-graph][feature:reference][series:reference]"
           "[transition:update][transition:invalidation][transition:revalidation]") {
+
     const auto first = node([](Out<TS<i64>> output) { output.set(10); });
 
     const auto second = node([](Out<TS<i64>> output) { output.set(20); });
@@ -754,8 +787,10 @@ TEST_CASE("copy_tick forwards reference selection changes and invalidation",
 TEST_CASE("copy preserves the destination guarantee",
           "[feature:node-api][feature:test-graph][series:value][guarantee:deduplicated]"
           "[transition:update]") {
+
     const auto copy = node([](In<TS<i64>> input,
                               Out<TS<i64, TimeSeriesGuarantee::deduplicated>> output) { output.copy(input); });
+
     const auto graph = [&](wp<TS<i64>> input) { return copy(input); };
 
     const auto actual = testing::test_graph(graph, std::array{1, 1, 2});

@@ -18,6 +18,7 @@ using namespace bg;
 TEST_CASE("all_valid on a valid_items dictionary input requires only a valid dictionary",
           "[evaluation][tsd][feature:validity][series:tsd][validity:all-valid]"
           "[input-guarantee:valid-items][transition:invalidation][binding:direct]") {
+
     const auto count = node([](In<TSD<i64, TS<i64>>, valid_items, all_valid> input) {
         return static_cast<i64>(input.size());
     });
@@ -40,6 +41,7 @@ TEST_CASE("a nested graph preserves a fixed valid_items input",
     const auto inner = graph(
         "name"_n = "valid_items_inner",
         [&](wp<TSD<i64, TS<i64>>, valid_items> input) { return count(input); });
+
     const auto outer = [&](wp<TSD<i64, TS<i64>>> input, wp<TS<bool>> run) { return nested(inner, run, input); };
 
     const auto actual = testing::test_graph(
@@ -60,6 +62,7 @@ TEST_CASE("a nested graph preserves valid_items and scalar fields in a captured 
     const auto inner = graph([&](wp<TSB<SCHEMA>, "values"_n, var_kwargs> values) {
         return count(values["dictionary"], values["offset"]);
     });
+
     const auto outer = [&](wp<TSD<i64, TS<i64>>> values, wp<TS<bool>> run) {
         const auto pack = bundle("dictionary"_n = valid_items(values), "offset"_n = i64{40});
         return nested(inner, run, "values"_n = pack);
@@ -78,6 +81,7 @@ TEST_CASE("a lexical context preserves valid_items on a TSD input",
     const auto count = node([](In<TSD<i64, TS<i64>>, "values"_n, context, valid_items> values) {
         return static_cast<i64>(values.size());
     });
+
     const auto contextual = [&](wp<TSD<i64, TS<i64>>> values) {
         return with_context("values"_n = valid_items(values), [&] { return count(); });
     };
@@ -90,9 +94,11 @@ TEST_CASE("a lexical context preserves valid_items on a TSD input",
 TEST_CASE("a materialisation option preserves valid_items on a TSD input",
           "[evaluation][feature:wiring][feature:validity][feature:wiring-materialisation][series:tsd]"
           "[input-guarantee:valid-items]") {
+
     const auto count = node([](In<TSD<i64, TS<i64>>, valid_items> values) {
         return static_cast<i64>(values.size());
     });
+
     const auto materialized = [&](wp<TSD<i64, TS<i64>>> values) {
         auto deferred = WiringContext::current().wiring().create_wp<TSD<i64, TS<i64>>>(valid_items(values));
         deferred.materialisation_option<TSD<i64, TS<i64>>>(
@@ -169,6 +175,7 @@ TEST_CASE("valid_items survives erased input conversion",
 TEST_CASE("a valid_items dictionary input filters items and classifies validity changes",
           "[evaluation][tsd][feature:validity][series:tsd][transition:addition][transition:update]"
           "[transition:invalidation][input-guarantee:valid-items][binding:direct]") {
+
     const auto sum = node([](In<TSD<i64, TS<i64>>, valid_items> input) {
         auto result = i64{};
         input.for_each_value([&](const auto &value) { result += *value; });
@@ -253,6 +260,7 @@ TEST_CASE("a valid_items dictionary input filters items and classifies validity 
 TEST_CASE("valid_items reports removal of valid keys but hides removed invalid keys",
           "[evaluation][tsd][feature:validity][series:tsd][transition:removal]"
           "[input-guarantee:valid-items][binding:direct]") {
+
     const auto inspect = node([](In<TSD<i64, TS<i64>>, valid_items> input) {
         auto removed = i64{};
         input.for_each_removed([&](const auto &key) { removed += *key; });
@@ -270,6 +278,7 @@ TEST_CASE("valid_items reports removal of valid keys but hides removed invalid k
 TEST_CASE("valid_items does not report a second removal when an invalid item is erased",
           "[evaluation][tsd][feature:validity][series:tsd][transition:invalidation][transition:removal]"
           "[input-guarantee:valid-items][binding:direct]") {
+
     const auto inspect = node([](In<TSD<i64, TS<i64>>, valid_items> input) {
         auto removed = i64{};
         input.for_each_removed([&](const auto &key) { removed += *key; });
@@ -287,6 +296,7 @@ TEST_CASE("valid_items does not report a second removal when an invalid item is 
 TEST_CASE("valid_items does not repeat sampled invalidation when an invalid item is later erased",
           "[evaluation][tsd][feature:validity][series:tsd][transition:invalidation][transition:removal]"
           "[input-guarantee:valid-items][binding:reference-to-value]") {
+
     const auto forward_reference = node([](In<REF<TSD<i64, TS<i64>>>> input,
                                                Out<REF<TSD<i64, TS<i64>>>> output) {
         output.copy(input);
@@ -311,6 +321,7 @@ TEST_CASE("valid_items does not repeat sampled invalidation when an invalid item
 TEST_CASE("valid_items exposes filtered change cursors and key lookups",
           "[evaluation][tsd][feature:validity][series:tsd][transition:addition][transition:update]"
           "[transition:invalidation][input-guarantee:valid-items][binding:direct]") {
+
     const auto sum_added = node([](In<TSD<i64, TS<i64>>, valid_items> input) {
         auto added = i64{};
         for (auto id = input.next_added_id(0); id != util::occupancy_index::npos;
@@ -359,6 +370,7 @@ TEST_CASE("valid_items exposes filtered change cursors and key lookups",
 TEST_CASE("valid_items key lookups classify revalidation, invalidation, and item updates",
           "[evaluation][tsd][feature:validity][series:tsd][transition:addition][transition:update]"
           "[transition:invalidation][input-guarantee:valid-items][binding:direct]") {
+
     const auto inspect = node([](In<TSD<i64, TS<i64>>, valid_items> input, In<TS<i64>> command) {
         const auto key_one_value = i64{1};
         const auto key_two_value = i64{2};
@@ -388,6 +400,7 @@ TEST_CASE("valid_items key lookups classify revalidation, invalidation, and item
 TEST_CASE("valid_items hides invalid items from keyed lookup",
           "[evaluation][tsd][feature:validity][series:tsd][transition:invalidation]"
           "[input-guarantee:valid-items][binding:direct]") {
+
     const auto inspect = node([](In<TSD<i64, TS<i64>>, valid_items> input) {
         auto keyed_lookup_is_hidden = false;
         try {
@@ -408,6 +421,7 @@ TEST_CASE("valid_items hides invalid items from keyed lookup",
 TEST_CASE("valid_items retains removed cursor IDs in a sampled dictionary",
           "[evaluation][tsd][feature:validity][series:tsd][transition:removal]"
           "[input-guarantee:valid-items][binding:reference-to-value]") {
+
     const auto select = node([](In<TS<bool>> choose_second,
                                     In<REF<TSD<i64, TS<i64>>>> first,
                                     In<REF<TSD<i64, TS<i64>>>> second,
@@ -439,6 +453,7 @@ TEST_CASE("valid_items retains removed cursor IDs in a sampled dictionary",
 TEST_CASE("valid_items cursors include a sampled removal and invalidation sharing an item ID",
           "[evaluation][tsd][feature:validity][series:tsd][transition:invalidation][transition:removal]"
           "[input-guarantee:valid-items][binding:reference-to-value][shape:multiple]") {
+
     const auto select = node([](In<TS<bool>> choose_second,
                                     In<REF<TSD<i64, TS<i64>>>> first,
                                     In<REF<TSD<i64, TS<i64>>>> second,

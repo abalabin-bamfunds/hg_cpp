@@ -159,8 +159,7 @@ TEST_CASE("a scalar value uses the current node memory resource", "[value][scala
     const auto graph = 1;
     auto *scalar_allocation_pool = details::ScalarAllocationPool::create(allocator{memory});
     {
-        const auto context =
-            details::ScalarAllocationContext{allocator{memory}, *scalar_allocation_pool, &graph, 2};
+        const auto context = details::ScalarAllocationContext{allocator{memory}, *scalar_allocation_pool, &graph, 2};
         const auto value = ScalarValue{"long enough to require separate character storage"};
 
         CHECK(value.view().value() == "long enough to require separate character storage");

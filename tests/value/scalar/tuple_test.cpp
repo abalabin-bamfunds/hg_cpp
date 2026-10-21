@@ -53,10 +53,9 @@ struct TupleShutdownProbe {
             std::abort();
         }
 
-        const auto &runtime = static_cast<const ScalarTupleRuntimeType &>(
-            cpp_scalar_runtime_type<ShutdownConcreteTuple>());
-        if (&runtime.type() != &concrete ||
-            &runtime.item_runtime_type(0) != &cpp_scalar_runtime_type<i64>() ||
+        const auto &runtime =
+            static_cast<const ScalarTupleRuntimeType &>(cpp_scalar_runtime_type<ShutdownConcreteTuple>());
+        if (&runtime.type() != &concrete || &runtime.item_runtime_type(0) != &cpp_scalar_runtime_type<i64>() ||
             &runtime.item_runtime_type(1) != &cpp_scalar_runtime_type<symbol>()) {
             std::abort();
         }
@@ -69,8 +68,7 @@ template <template <typename, auto...> typename Field> struct BaseRecord {
     Field<symbol> name;
 };
 
-template <template <typename, auto...> typename Field> struct DerivedRecord
-    : schema_extends<BaseRecord, Field> {
+template <template <typename, auto...> typename Field> struct DerivedRecord : schema_extends<BaseRecord, Field> {
     Field<i64> quantity;
 };
 
@@ -128,8 +126,7 @@ TEST_CASE("a positional scalar tuple matches and resolves each item in order",
 
 TEST_CASE("positional scalar literals construct nested tuple values",
           "[feature:scalar-api][scalar:tuple][scalar:string][scalar:symbol][storage:variable]") {
-    auto value = ScalarValue<Nested>::from_literal(
-        literal::ScalarLiteral{7, {"NASDAQ", symbol{"NQ"}}});
+    auto value = ScalarValue<Nested>::from_literal(literal::ScalarLiteral{7, {"NASDAQ", symbol{"NQ"}}});
     const auto view = value.view();
     const auto nested = view.get<1>();
 
@@ -147,12 +144,9 @@ TEST_CASE("positional scalar literals construct nested tuple values",
 
 TEST_CASE("positional scalar tuple equality and hashing use ordered items",
           "[feature:scalar-api][scalar:tuple][storage:variable]") {
-    const auto left = ScalarValue<Market>::from_literal(
-        literal::ScalarLiteral{"LSE", 3, symbol{"VOD"}});
-    const auto same = ScalarValue<Market>::from_literal(
-        literal::ScalarLiteral{"LSE", 3, symbol{"VOD"}});
-    const auto different = ScalarValue<Market>::from_literal(
-        literal::ScalarLiteral{"LSE", 3, symbol{"BARC"}});
+    const auto left = ScalarValue<Market>::from_literal(literal::ScalarLiteral{"LSE", 3, symbol{"VOD"}});
+    const auto same = ScalarValue<Market>::from_literal(literal::ScalarLiteral{"LSE", 3, symbol{"VOD"}});
+    const auto different = ScalarValue<Market>::from_literal(literal::ScalarLiteral{"LSE", 3, symbol{"BARC"}});
 
     CHECK(left.equals(same.view()));
     CHECK(left.hash() == same.hash());
@@ -174,8 +168,7 @@ TEST_CASE("positional scalar tuples support empty and single-item values and rej
 TEST_CASE("positional scalar tuple copies retain nested items after the source is destroyed",
           "[feature:scalar-api][scalar:tuple][storage:variable]") {
     const auto copy = [&] {
-        auto source = ScalarValue<Nested>::from_literal(
-            literal::ScalarLiteral{7, {"NASDAQ", symbol{"NQ"}}});
+        auto source = ScalarValue<Nested>::from_literal(literal::ScalarLiteral{7, {"NASDAQ", symbol{"NQ"}}});
         return ScalarValue<Nested>{source.view()};
     }();
 
@@ -197,10 +190,10 @@ TEST_CASE("compatible tuple runtime types reconstruct items through the destinat
     } context{std::addressof(details::scalar_data(source))};
     auto destination = ScalarValue<>::from_construction(
         destination_runtime,
-        {&context, [](void *opaque_context, const ScalarRuntimeType &runtime_type, void *storage,
-                      allocator &resource) {
-            runtime_type.construct_from_input(storage, *static_cast<Context *>(opaque_context)->source, resource);
-        }},
+        {&context,
+         [](void *opaque_context, const ScalarRuntimeType &runtime_type, void *storage, allocator &resource) {
+             runtime_type.construct_from_input(storage, *static_cast<Context *>(opaque_context)->source, resource);
+         }},
         memory);
 
     const auto &tuple_runtime = static_cast<const ScalarTupleRuntimeType &>(destination.runtime_type());
@@ -231,21 +224,21 @@ TEST_CASE("positional scalar tuple construction destroys completed items after a
     } context{std::addressof(details::scalar_data(source))};
 
     const auto construction = ScalarConstruction{
-        &context, [](void *opaque_context, const ScalarRuntimeType &runtime_type, void *destination,
-                     allocator &memory) {
+        &context,
+        [](void *opaque_context, const ScalarRuntimeType &runtime_type, void *destination, allocator &memory) {
             auto &context = *static_cast<Context *>(opaque_context);
             const auto &tuple_runtime = static_cast<const ScalarTupleRuntimeType &>(runtime_type);
             tuple_runtime.construct_fields_with(
                 destination, memory,
                 {&context, [](void *field_context, std::size_t index, const ScalarRuntimeType &item_runtime,
                               void *item_destination, allocator &item_memory) {
-                    if (index != 0) {
-                        throw std::runtime_error{"later tuple item construction failed"};
-                    }
-                    item_runtime.construct_from_input(item_destination,
-                                                      *static_cast<Context *>(field_context)->source, item_memory);
-                    return true;
-                }});
+                     if (index != 0) {
+                         throw std::runtime_error{"later tuple item construction failed"};
+                     }
+                     item_runtime.construct_from_input(item_destination, *static_cast<Context *>(field_context)->source,
+                                                       item_memory);
+                     return true;
+                 }});
         }};
 
     CHECK_THROWS_AS((ScalarValue<Value>::from_construction(construction)), std::runtime_error);
@@ -255,6 +248,7 @@ TEST_CASE("positional scalar tuple construction destroys completed items after a
 TEST_CASE("test_graph accepts a tuple-valued time series input and output",
           "[feature:test-graph][evaluation][series:value][scalar:tuple][shape:single-node]") {
     auto retained = std::optional<ScalarValue<Nested>>{};
+
     const auto identity = node([&](In<TS<Nested>> input, Out<TS<Nested>> output) {
         if (!retained) {
             retained.emplace(input.value());
@@ -264,8 +258,7 @@ TEST_CASE("test_graph accepts a tuple-valued time series input and output",
 
     const auto graph = [&](wp<TS<Nested>> input) { return identity(input); };
 
-    const auto actual = testing::test_graph(
-        graph, {{1, {"NASDAQ", symbol{"NQ"}}}, {2, {"NYSE", symbol{"IBM"}}}});
+    const auto actual = testing::test_graph(graph, {{1, {"NASDAQ", symbol{"NQ"}}}, {2, {"NYSE", symbol{"IBM"}}}});
 
     REQUIRE(actual.size() == 2);
     const auto first = actual[0]->view();
@@ -278,12 +271,11 @@ TEST_CASE("test_graph accepts a tuple-valued time series input and output",
     CHECK(second.get<1>().get<1>().value() == symbol{"IBM"});
 
     using bg::literals::operator""_n;
-    const auto erased_graph = bg::graph("name"_n = "erased_tuple_identity", [&](wp<> input) {
-        return wp<>{identity(input.as<TS<Nested>>())};
-    });
+
+    const auto erased_graph = bg::graph("name"_n = "erased_tuple_identity",
+                                        [&](wp<> input) { return wp<>{identity(input.as<TS<Nested>>())}; });
     const auto erased = testing::test_graph(
-        erased_graph, testing::input<TS<Nested>>({{1, {"NASDAQ", symbol{"NQ"}}},
-                                                          {2, {"NYSE", symbol{"IBM"}}}}));
+        erased_graph, testing::input<TS<Nested>>({{1, {"NASDAQ", symbol{"NQ"}}}, {2, {"NYSE", symbol{"IBM"}}}}));
     CHECK(erased.equals({{1, {"NASDAQ", symbol{"NQ"}}}, {2, {"NYSE", symbol{"IBM"}}}}));
     REQUIRE(retained.has_value());
     CHECK(retained->view().get<0>().value() == 1);

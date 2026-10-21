@@ -54,8 +54,7 @@ TEST_CASE("resolved dictionary storage owns nested collection values",
     const auto available = std::array<const ScalarRuntimeType *, 2>{&key_storage, &item_storage};
     const auto &list_type = list_scalar_type(item_storage.type());
     const auto &dict_type = dict_scalar_type(key_storage.type(), list_type);
-    const auto &dict =
-        static_cast<const ScalarDictRuntimeType &>(resolve_scalar_runtime_type(dict_type, available));
+    const auto &dict = static_cast<const ScalarDictRuntimeType &>(resolve_scalar_runtime_type(dict_type, available));
     auto memory = std::pmr::unsynchronized_pool_resource{};
     auto allocator = bg::allocator{memory};
     auto *storage = allocator.allocate_bytes(dict.size(), dict.alignment());
@@ -92,8 +91,7 @@ TEST_CASE("a scalar dictionary copies between composed and C++ storage",
     const auto &mapped = cpp_scalar_runtime_type<Value>();
     const auto &type = dict_scalar_type(key.type(), mapped.type());
     const auto available = std::array<const ScalarRuntimeType *, 2>{&key, &mapped};
-    const auto &composed =
-        static_cast<const ScalarDictRuntimeType &>(resolve_scalar_runtime_type(type, available));
+    const auto &composed = static_cast<const ScalarDictRuntimeType &>(resolve_scalar_runtime_type(type, available));
     const auto source =
         ScalarValue<Dict>{std::vector<std::pair<i64, RuntimeDictValue>>{{1, {.first = 2, .second = 3}}}};
     auto memory = std::pmr::unsynchronized_pool_resource{};
@@ -133,11 +131,9 @@ TEST_CASE("a scalar dictionary copies nested keys between composed and C++ stora
     const auto &integer = cpp_scalar_runtime_type<i64>();
     const auto available = std::array<const ScalarRuntimeType *, 2>{&time, &integer};
     const auto &inner_type = list_scalar_type(time.type());
-    const auto &inner =
-        static_cast<const ScalarListRuntimeType &>(resolve_scalar_runtime_type(inner_type, available));
+    const auto &inner = static_cast<const ScalarListRuntimeType &>(resolve_scalar_runtime_type(inner_type, available));
     const auto &key_type = list_scalar_type(inner_type);
-    const auto &key =
-        static_cast<const ScalarListRuntimeType &>(resolve_scalar_runtime_type(key_type, available));
+    const auto &key = static_cast<const ScalarListRuntimeType &>(resolve_scalar_runtime_type(key_type, available));
     const auto &dict_type = dict_scalar_type(key_type, integer.type());
     const auto &composed =
         static_cast<const ScalarDictRuntimeType &>(resolve_scalar_runtime_type(dict_type, available));

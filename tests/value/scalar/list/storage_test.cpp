@@ -134,8 +134,7 @@ TEST_CASE("a scalar list copies between composed and C++ storage",
     const auto &item = cpp_scalar_runtime_type<Item>();
     const auto &type = list_scalar_type(item.type());
     const auto available = std::array<const ScalarRuntimeType *, 1>{&item};
-    const auto &composed =
-        static_cast<const ScalarListRuntimeType &>(resolve_scalar_runtime_type(type, available));
+    const auto &composed = static_cast<const ScalarListRuntimeType &>(resolve_scalar_runtime_type(type, available));
     const auto source =
         ScalarValue<List>{std::vector<RuntimeListItem>{{.first = 1, .second = 2}, {.first = 3, .second = 4}}};
     auto memory = std::pmr::unsynchronized_pool_resource{};

@@ -25,8 +25,11 @@ template <template <typename, auto...> typename Field> struct switch_bundle {
 };
 
 const auto integer_source = node([](Out<TS<i64>>) {});
+
 const auto float_source = node([](Out<TS<float>>) {});
+
 const auto final_integer_source = node([](Out<TS<i64, TimeSeriesGuarantee::final>>) {});
+
 const auto integer_transform = node([](In<TS<i64>>, Out<TS<i64>>) {});
 
 class SwitchCacheOverload final : public WiringTemplate {
@@ -58,8 +61,11 @@ class SwitchCacheOverload final : public WiringTemplate {
 TEST_CASE("switch validates its case set",
           "[feature:switch][feature:wiring][feature:operator][series:value]"
           "[definition:function]") {
+
     const auto key = node([](Out<TS<i64>>) {});
+
     const auto value = node([](Out<TS<i64>>) {});
+
     const auto identity = graph("name"_n = "switch_identity",
                                 [](wp<TS<i64>> input) { return input; });
 
@@ -118,8 +124,11 @@ TEST_CASE("switch preserves named arguments around an omitted case default",
 
 TEST_CASE("switch runtime declarations preserve valid_items inputs",
           "[feature:switch][feature:wiring][feature:validity][series:tsd][input-guarantee:valid-items]") {
+
     const auto key = node([](Out<TS<i64>>) {});
+
     const auto source = node([](Out<TSD<i64, TS<i64>>>) {});
+
     const auto identity = graph(
         "name"_n = "valid_items_switch_identity",
         [](wp<TSD<i64, TS<i64>>, valid_items> input) { return input; });
@@ -143,13 +152,17 @@ TEST_CASE("switch runtime declarations preserve valid_items inputs",
 TEST_CASE("switch rejects incompatible case output shapes",
           "[feature:switch][feature:wiring][feature:operator][series:value]"
           "[definition:function]") {
+
     const auto key = node([](Out<TS<i64>>) {});
+
     const auto integers = graph(
         "name"_n = "integer_switch_source",
         []() -> wp<TS<i64>> { return integer_source(); });
+
     const auto floats = graph(
         "name"_n = "float_switch_source",
         []() -> wp<TS<float>> { return float_source(); });
+
     const auto sink = graph("name"_n = "switch_sink", [] {});
 
     testing::test_wiring([&] {
@@ -175,8 +188,11 @@ TEST_CASE("switch output is a deduplicated reference to the common case output",
           "[feature:switch][feature:wiring][feature:operator][feature:reference]"
           "[series:value][binding:value-to-reference][guarantee:deduplicated]"
           "[definition:function]") {
+
     const auto key = node([](Out<TS<i64>>) {});
+
     const auto value = node([](Out<TS<i64>>) {});
+
     const auto identity = graph("name"_n = "typed_switch_identity",
                                 [](wp<TS<i64>> input) { return input; });
 
@@ -191,10 +207,13 @@ TEST_CASE("switch output is a deduplicated reference to the common case output",
 TEST_CASE("switch uses the weakest compatible case output guarantee",
           "[feature:switch][feature:wiring][feature:operator][feature:type-system]"
           "[series:value][guarantee:ordinary][guarantee:final][definition:function]") {
+
     const auto key = node([](Out<TS<i64>>) {});
+
     const auto final_source = graph(
         "name"_n = "final_integer_switch_source",
         []() -> wp<TS<i64, TimeSeriesGuarantee::final>> { return final_integer_source(); });
+
     const auto ordinary_source = graph(
         "name"_n = "ordinary_integer_switch_source",
         []() -> wp<TS<i64>> { return integer_source(); });
@@ -211,12 +230,17 @@ TEST_CASE("switch uses the weakest compatible case output guarantee",
 TEST_CASE("switch resolves bundles whose matching fields have different guarantees",
           "[feature:switch][feature:wiring][feature:operator][feature:type-system]"
           "[series:tsb][schema:named][guarantee:ordinary][guarantee:final][definition:function]") {
+
     const auto key = node([](Out<TS<i64>>) {});
+
     const auto final_source = node([](Out<TSB<switch_bundle, TimeSeriesGuarantee::final>>) {});
+
     const auto ordinary_source = node([](Out<TSB<switch_bundle>>) {});
+
     const auto final_graph = graph(
         "name"_n = "final_bundle_switch_source",
         [&]() -> wp<TSB<switch_bundle, TimeSeriesGuarantee::final>> { return final_source(); });
+
     const auto ordinary_graph = graph(
         "name"_n = "ordinary_bundle_switch_source",
         [&]() -> wp<TSB<switch_bundle>> { return ordinary_source(); });
@@ -230,9 +254,12 @@ TEST_CASE("switch resolves bundles whose matching fields have different guarante
 TEST_CASE("switch resolution cache includes every case graph",
           "[feature:switch][feature:wiring][feature:operator][feature:graph-argument]"
           "[series:value][definition:function]") {
+
     const auto key = node([](Out<TS<i64>>) {});
+
     const auto first = graph("name"_n = "first_switch_source",
                              [] { return integer_source(); });
+
     const auto second = graph("name"_n = "second_switch_source",
                               [] { return integer_transform(integer_source()); });
 
