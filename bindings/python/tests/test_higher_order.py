@@ -44,6 +44,10 @@ def test_map_uses_the_union_of_mapped_dictionaries():
     def available(left: bg.TS[int], right: bg.TS[int]) -> bg.TS[int]:
         return right
 
+    @bg.compute_node
+    def count_branches(values: bg.TSD[int, bg.REF[bg.TS[int]]]) -> bg.TS[int]:
+        return len(values)
+
     @bg.graph
     def graph(trigger: bg.TS[int]) -> bg.TS[int]:
         mapped = bg.map(available, make_left(trigger), make_right(trigger))
@@ -52,7 +56,7 @@ def test_map_uses_the_union_of_mapped_dictionaries():
     @bg.graph
     def branch_count(trigger: bg.TS[int]) -> bg.TS[int]:
         mapped = bg.map(available, make_left(trigger), make_right(trigger))
-        return bg.operators.len_(mapped)
+        return count_branches(mapped)
 
     assert bg.test_graph(graph, [1, 3]) == [10, 30]
     assert bg.test_graph(branch_count, [1]) == [2]
