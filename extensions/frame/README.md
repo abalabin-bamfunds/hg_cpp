@@ -334,6 +334,14 @@ Each comparison returns nullable `TSC<bool>`. A result is null when either
 operand is null. Mixed integer and double operands fail during wiring; use an
 explicit conversion operator when conversion is required.
 
+Boolean expressions support `&&`, `||`, and `!` for bound columns and unbound
+`Expression` values. Binary expressions use nullable three-valued logic: a
+known false operand determines `&&`, a known true operand determines `||`, and
+otherwise any null operand produces null. Negating null produces null. An
+invalid captured `TS<bool>` invalidates the output through BG's normal dependency
+rules, even when the other operand determines the Boolean value. Boolean
+operators do not short-circuit graph dependencies.
+
 `frame::filter(frame, predicate)` accepts a `TSC<bool>` predicate. A scalar
 `TS<bool>` retains BG's tick-selection meaning. False and null predicate
 results exclude a row.

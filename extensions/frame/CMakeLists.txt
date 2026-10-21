@@ -12,7 +12,7 @@ if(NOT TARGET bg::bg)
 endif()
 
 add_library(bg_frame SHARED src/arithmetic.cpp src/column.cpp src/column_expression.cpp src/comparison.cpp
-                            src/expression.cpp src/frame.cpp src/literal.cpp src/tick_capture.cpp)
+                            src/expression.cpp src/frame.cpp src/literal.cpp src/logical.cpp src/tick_capture.cpp)
 add_library(bg::frame ALIAS bg_frame)
 
 target_compile_features(bg_frame PUBLIC cxx_std_23)

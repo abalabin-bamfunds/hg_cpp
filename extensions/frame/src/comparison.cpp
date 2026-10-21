@@ -1,9 +1,9 @@
 #include <bg/frame/expression.hpp>
 #include <bg/frame/tsc.hpp>
 #include <bg/library/operators.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
 #include <bg/util/symbol.hpp>
+
+#include "operand_type.hpp"
 
 #include <functional>
 #include <string_view>
@@ -29,49 +29,6 @@ void compare_operands(std::span<const row_id_t> ids, const ColumnOperandBatch<T>
     }
 }
 
-template <cell_type T> bool is_column_expression_of(const Type &type) {
-    const auto *time_series = type_cast<TimeSeriesType>(&type);
-    if (time_series == nullptr)
-        return false;
-
-    const auto &value_type = time_series->dereferenced_type();
-    const auto *bundle = dynamic_cast<const TimeSeriesBundleType *>(std::addressof(value_type));
-    if (bundle == nullptr || bundle->item_count() < 2 || bundle->item_count() > 3)
-        return false;
-
-    const auto &compute_type = bundle->item_type(bundle->item_count() - 1).dereferenced_type();
-    const auto *compute_value = dynamic_cast<const TimeSeriesValueType *>(std::addressof(compute_type));
-    if (compute_value == nullptr)
-        return false;
-
-    const auto *function = dynamic_cast<const ColumnBlockFunctionType *>(std::addressof(compute_value->value_type()));
-    return function != nullptr && function->operand_types().size() == bundle->item_count() - 1 &&
-           std::addressof(function->result_type()) == std::addressof(cpp_scalar_type<T>());
-}
-
-template <cell_type T> bool is_column_operand(const Type &type) {
-    const auto *time_series = type_cast<TimeSeriesType>(&type);
-    if (time_series == nullptr)
-        return false;
-
-    const auto &value_type = time_series->dereferenced_type();
-    const auto *column = dynamic_cast<const ColumnSeriesType *>(std::addressof(value_type));
-    return (column != nullptr && std::addressof(column->cell_type()) == std::addressof(cpp_scalar_type<T>())) ||
-           is_column_expression_of<T>(type);
-}
-
-template <cell_type T> bool is_operand_of(const Type &type) {
-    if (is_column_operand<T>(type))
-        return true;
-
-    const auto *time_series = type_cast<TimeSeriesType>(&type);
-    if (time_series == nullptr)
-        return false;
-
-    const auto *scalar = dynamic_cast<const TimeSeriesValueType *>(std::addressof(time_series->dereferenced_type()));
-    return scalar != nullptr && std::addressof(scalar->value_type()) == std::addressof(cpp_scalar_type<T>());
-}
-
 template <cell_type T, typename Comparator, typename Operator>
 void register_comparison(Operator &operation, std::string_view name) {
     using LhsOperand = Union<"FRAME_COMPARISON_LHS", TSC<T>, TS<T>, TSB<LEFT_EXPRESSION>>;
@@ -83,8 +40,10 @@ void register_comparison(Operator &operation, std::string_view name) {
         require = [](const WiringArguments &arguments) {
             const auto &lhs = arguments.original_type(0);
             const auto &rhs = arguments.original_type(1);
-            return is_operand_of<T>(lhs) && is_operand_of<T>(rhs) &&
-                   (is_column_operand<T>(lhs) || is_column_operand<T>(rhs));
+            return details::is_operand(lhs, cpp_scalar_type<T>()) &&
+                   details::is_operand(rhs, cpp_scalar_type<T>()) &&
+                   (details::is_column_operand(lhs, cpp_scalar_type<T>()) ||
+                    details::is_column_operand(rhs, cpp_scalar_type<T>()));
         },
         [](wp<LhsOperand> lhs, wp<RhsOperand> rhs) {
             return make_column_expression(ColumnBlockFunction<bool, T, T>{&compare_operands<T, Comparator>}, lhs,
@@ -95,7 +54,7 @@ void register_comparison(Operator &operation, std::string_view name) {
     const auto column_parameter_graph = graph(
         "name"_n = util::symbol{graph_name + "_column_parameter"},
         require = [](const WiringArguments &arguments) {
-            return is_column_operand<T>(arguments.original_type(0));
+            return details::is_column_operand(arguments.original_type(0), cpp_scalar_type<T>());
         },
         [operation_ptr = std::addressof(operation)](wp<LhsOperand> column, T value) -> wp<TSC<bool>> {
             return (*operation_ptr)(column, operators::const_(value).template as<TS<T>>()).template as<TSC<bool>>();
@@ -105,7 +64,7 @@ void register_comparison(Operator &operation, std::string_view name) {
     const auto parameter_column_graph = graph(
         "name"_n = util::symbol{graph_name + "_parameter_column"},
         require = [](const WiringArguments &arguments) {
-            return is_column_operand<T>(arguments.original_type(1));
+            return details::is_column_operand(arguments.original_type(1), cpp_scalar_type<T>());
         },
         [operation_ptr = std::addressof(operation)](T value, wp<RhsOperand> column) -> wp<TSC<bool>> {
             return (*operation_ptr)(operators::const_(value).template as<TS<T>>(), column).template as<TSC<bool>>();

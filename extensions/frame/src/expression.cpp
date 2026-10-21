@@ -281,6 +281,21 @@ Expression operator>=(const Expression &lhs, const Expression &rhs) {
     return bg::frame::apply(operators::ge, operands);
 }
 
+Expression operator&&(const Expression &lhs, const Expression &rhs) {
+    const auto operands = std::array{lhs, rhs};
+    return bg::frame::apply(operators::and_, operands);
+}
+
+Expression operator||(const Expression &lhs, const Expression &rhs) {
+    const auto operands = std::array{lhs, rhs};
+    return bg::frame::apply(operators::or_, operands);
+}
+
+Expression operator!(const Expression &value) {
+    const auto operands = std::array{value};
+    return bg::frame::apply(operators::not_, operands);
+}
+
 } // namespace bg::frame
 
 namespace {

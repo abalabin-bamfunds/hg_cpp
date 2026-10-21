@@ -406,6 +406,9 @@ Expression operator<(const Expression &lhs, const Expression &rhs);
 Expression operator<=(const Expression &lhs, const Expression &rhs);
 Expression operator>(const Expression &lhs, const Expression &rhs);
 Expression operator>=(const Expression &lhs, const Expression &rhs);
+Expression operator&&(const Expression &lhs, const Expression &rhs);
+Expression operator||(const Expression &lhs, const Expression &rhs);
+Expression operator!(const Expression &value);
 
 template <typename Argument>
     requires bg::details::graph_code_argument<Argument>
@@ -493,14 +496,38 @@ Expression operator>(Argument &&lhs, const Expression &rhs) {
 
 template <typename Argument>
     requires bg::details::graph_code_argument<Argument>
+Expression operator>=(Argument &&lhs, const Expression &rhs) {
+    return capture(std::forward<Argument>(lhs)) >= rhs;
+}
+
+template <typename Argument>
+    requires bg::details::graph_code_argument<Argument>
 Expression operator>=(const Expression &lhs, Argument &&rhs) {
     return lhs >= capture(std::forward<Argument>(rhs));
 }
 
 template <typename Argument>
     requires bg::details::graph_code_argument<Argument>
-Expression operator>=(Argument &&lhs, const Expression &rhs) {
-    return capture(std::forward<Argument>(lhs)) >= rhs;
+Expression operator&&(const Expression &lhs, Argument &&rhs) {
+    return lhs && capture(std::forward<Argument>(rhs));
+}
+
+template <typename Argument>
+    requires bg::details::graph_code_argument<Argument>
+Expression operator&&(Argument &&lhs, const Expression &rhs) {
+    return capture(std::forward<Argument>(lhs)) && rhs;
+}
+
+template <typename Argument>
+    requires bg::details::graph_code_argument<Argument>
+Expression operator||(const Expression &lhs, Argument &&rhs) {
+    return lhs || capture(std::forward<Argument>(rhs));
+}
+
+template <typename Argument>
+    requires bg::details::graph_code_argument<Argument>
+Expression operator||(Argument &&lhs, const Expression &rhs) {
+    return capture(std::forward<Argument>(lhs)) || rhs;
 }
 
 // Bind explicit column names and parameters. Every supplied name must be used by the expression.

@@ -189,6 +189,10 @@ static_assert(accepts_frame_set<Out<TSF<SCHEMA>>, RowPatch<MixedGenericQuote>>);
 template <template <typename, auto...> typename Field> struct EmptySchema {};
 template <template <typename, auto...> typename Field> struct BidOnly { Field<double> price; };
 template <template <typename, auto...> typename Field> struct BooleanFrameCell { Field<bool> value; };
+template <template <typename, auto...> typename Field> struct BooleanOperandsFrame {
+    Field<bool> lhs;
+    Field<bool> rhs;
+};
 
 static_assert(scalar_declaration_traits<Column<bool>>::supports_time_series);
 static_assert(time_series_type_traits<TSC<bool>>::supported);
@@ -4399,6 +4403,249 @@ void test_boolean_tsf_row_mutations() {
             "boolean TSF removal lost its row delta");
 }
 
+void test_boolean_expression_operators_and_filter() {
+    using namespace bg;
+    using namespace bg::frame;
+    using namespace bg::literals;
+
+    struct expected_row {
+        row_id_t id{};
+        std::optional<bool> lhs;
+        std::optional<bool> rhs;
+        bool live{true};
+    };
+    struct observed_cell {
+        row_id_t id{};
+        std::optional<bool> value;
+        bool operator==(const observed_cell &) const = default;
+    };
+    struct observation {
+        bool and_valid{};
+        bool or_valid{};
+        bool not_valid{};
+        std::vector<observed_cell> and_values;
+        std::vector<observed_cell> or_values;
+        std::vector<observed_cell> not_values;
+        std::vector<row_id_t> and_changed;
+        std::vector<row_id_t> and_removed;
+        std::vector<row_id_t> or_changed;
+        std::vector<row_id_t> or_removed;
+        std::vector<row_id_t> not_changed;
+        std::vector<row_id_t> not_removed;
+        std::vector<row_id_t> filtered_rows;
+        std::vector<row_id_t> filtered_changed;
+        std::vector<row_id_t> filtered_removed;
+        std::vector<observed_cell> scalar_broadcast_values;
+    };
+
+    using NullableBoolPair = std::pair<std::optional<bool>, std::optional<bool>>;
+    const auto rows = std::array<NullableBoolPair, 9>{
+        NullableBoolPair{false, false}, NullableBoolPair{false, true}, NullableBoolPair{false, std::nullopt},
+        NullableBoolPair{true, false}, NullableBoolPair{true, true}, NullableBoolPair{true, std::nullopt},
+        NullableBoolPair{std::nullopt, false}, NullableBoolPair{std::nullopt, true},
+        NullableBoolPair{std::nullopt, std::nullopt}};
+    const auto and_table = std::array<std::optional<bool>, 9>{
+        false, false, false, false, true, std::nullopt, false, std::nullopt, std::nullopt};
+    const auto or_table = std::array<std::optional<bool>, 9>{
+        false, true, std::nullopt, true, true, true, std::nullopt, true, std::nullopt};
+    auto expected = std::vector<expected_row>{};
+    expected.reserve(261);
+    auto expected_history = std::vector<std::vector<expected_row>>{};
+    auto observations = std::vector<observation>{};
+    auto row_ids = std::array<row_id_t, 261>{};
+
+    const auto write = node([&](In<TS<i64>> tick, Out<TSF<BooleanOperandsFrame>> output) {
+        if (*tick == 0) {
+            for (auto index = std::size_t{}; index != 260; ++index) {
+                const auto [lhs, rhs] = rows[index % rows.size()];
+                const auto id = output.add(Row<BooleanOperandsFrame>{.lhs = lhs, .rhs = rhs});
+                row_ids[index] = id;
+                expected.push_back({id, lhs, rhs});
+            }
+            expected_history.push_back(expected);
+            return;
+        }
+
+        auto &first = *std::ranges::find(expected, row_ids[0], &expected_row::id);
+        output.set(first.id, RowPatch<BooleanOperandsFrame>{.lhs = true});
+        first.lhs = true;
+
+        auto &second = *std::ranges::find(expected, row_ids[1], &expected_row::id);
+        output.set(second.id, RowPatch<BooleanOperandsFrame>{.rhs = std::nullopt});
+        second.rhs = std::nullopt;
+
+        require(output.erase(row_ids[8]), "Boolean expression source could not remove its ninth row");
+        std::ranges::find(expected, row_ids[8], &expected_row::id)->live = false;
+
+        const auto id = output.add(Row<BooleanOperandsFrame>{.lhs = true, .rhs = std::nullopt});
+        row_ids[260] = id;
+        expected.push_back({id, true, std::nullopt});
+        expected_history.push_back(expected);
+    });
+
+    const auto observe = node([&](In<TSC<bool>> and_result, In<TSC<bool>> or_result,
+                                  In<TSC<bool>> not_result, In<TSC<bool>> scalar_broadcast,
+                                  In<TSF<BooleanOperandsFrame>, optional> filtered, In<TS<i64>> tick,
+                                  Out<TS<i64>> output) {
+        const auto record_column = [](const auto &input, auto &values, auto &changed, auto &removed) {
+            input.for_each_row([&](row_id_t id, std::size_t) { values.push_back({id, input.cell(id)}); });
+            input.for_each_changed([&](row_id_t id) { changed.push_back(id); });
+            input.for_each_removed([&](row_id_t id) { removed.push_back(id); });
+            std::ranges::sort(values, {}, &observed_cell::id);
+            std::ranges::sort(changed);
+            std::ranges::sort(removed);
+        };
+
+        auto result = observation{.and_valid = and_result.valid(),
+                                  .or_valid = or_result.valid(),
+                                  .not_valid = not_result.valid()};
+        record_column(and_result, result.and_values, result.and_changed, result.and_removed);
+        record_column(or_result, result.or_values, result.or_changed, result.or_removed);
+        record_column(not_result, result.not_values, result.not_changed, result.not_removed);
+        scalar_broadcast.for_each_row([&](row_id_t id, std::size_t) {
+            result.scalar_broadcast_values.push_back({id, scalar_broadcast.cell(id)});
+        });
+        std::ranges::sort(result.scalar_broadcast_values, {}, &observed_cell::id);
+        filtered.for_each_row([&](row_id_t id, std::size_t) { result.filtered_rows.push_back(id); });
+        filtered.for_each_changed([&](row_id_t id) { result.filtered_changed.push_back(id); });
+        filtered.for_each_removed([&](row_id_t id) { result.filtered_removed.push_back(id); });
+        std::ranges::sort(result.filtered_rows);
+        std::ranges::sort(result.filtered_changed);
+        std::ranges::sort(result.filtered_removed);
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+
+    const auto graph = [&](wp<TS<i64>> tick) {
+        const auto source = write(tick);
+        const auto and_result = bind_expression(source, col("lhs") && col("rhs"));
+        const auto or_result = bind_expression(source, col("lhs") || col("rhs"));
+        const auto not_result = bind_expression(source, !col("lhs"));
+        const auto scalar_broadcast = bind_expression(source, col("lhs") || true);
+        const auto filtered = filter(source, col("lhs") || col("rhs"));
+        return observe(and_result, or_result, not_result, scalar_broadcast, filtered, tick);
+    };
+
+    const auto result = testing::test_graph(graph, std::array<i64, 2>{0, 1});
+    require(result.equals<i64>({0, 1}) && observations.size() == 2,
+            "Boolean expression graph did not evaluate both source cycles");
+
+    const auto table_index = [](std::optional<bool> value) {
+        return value ? (*value ? std::size_t{1} : std::size_t{0}) : std::size_t{2};
+    };
+    const auto expected_cells = [&](std::size_t tick, const auto &table) {
+        auto values = std::vector<observed_cell>{};
+        for (const auto &row : expected_history[tick]) {
+            if (!row.live)
+                continue;
+            const auto index = table_index(row.lhs) * 3 + table_index(row.rhs);
+            values.push_back({row.id, table[index]});
+        }
+        std::ranges::sort(values, {}, &observed_cell::id);
+        return values;
+    };
+    const auto expected_not = [&](std::size_t tick) {
+        auto values = std::vector<observed_cell>{};
+        for (const auto &row : expected_history[tick])
+            if (row.live)
+                values.push_back({row.id, row.lhs ? std::optional<bool>{!*row.lhs} : std::nullopt});
+        std::ranges::sort(values, {}, &observed_cell::id);
+        return values;
+    };
+    const auto expected_scalar_broadcast = [&](std::size_t tick) {
+        auto values = std::vector<observed_cell>{};
+        for (const auto &row : expected_history[tick])
+            if (row.live)
+                values.push_back({row.id, true});
+        std::ranges::sort(values, {}, &observed_cell::id);
+        return values;
+    };
+    const auto expected_filter_rows = [&](std::size_t tick) {
+        auto ids = std::vector<row_id_t>{};
+        for (const auto &row : expected_history[tick]) {
+            if (!row.live)
+                continue;
+            const auto index = table_index(row.lhs) * 3 + table_index(row.rhs);
+            if (or_table[index] == true)
+                ids.push_back(row.id);
+        }
+        std::ranges::sort(ids);
+        return ids;
+    };
+
+    require(observations[0].and_valid && observations[0].or_valid && observations[0].not_valid &&
+                observations[0].and_values == expected_cells(0, and_table) &&
+                observations[0].or_values == expected_cells(0, or_table) &&
+                observations[0].not_values == expected_not(0) &&
+                observations[0].scalar_broadcast_values == expected_scalar_broadcast(0),
+            "Boolean expression operators produced incorrect nullable truth-table values");
+    require(observations[0].filtered_rows == expected_filter_rows(0),
+            "unbound Boolean filter selected an incorrect number of rows");
+    require(observations[1].and_valid && observations[1].or_valid && observations[1].not_valid &&
+                observations[1].and_values == expected_cells(1, and_table) &&
+                observations[1].or_values == expected_cells(1, or_table) &&
+                observations[1].not_values == expected_not(1) &&
+                observations[1].scalar_broadcast_values == expected_scalar_broadcast(1),
+            "Boolean expressions did not preserve nulls across updates and row removal");
+    require(observations[1].and_changed == std::vector<row_id_t>{row_ids[0], row_ids[1], row_ids[260]} &&
+                observations[1].and_removed == std::vector<row_id_t>{row_ids[8]} &&
+                observations[1].or_changed == std::vector<row_id_t>{row_ids[0], row_ids[1], row_ids[260]} &&
+                observations[1].or_removed == std::vector<row_id_t>{row_ids[8]} &&
+                observations[1].not_changed == std::vector<row_id_t>{row_ids[0], row_ids[260]} &&
+                observations[1].not_removed == std::vector<row_id_t>{row_ids[8]},
+            "Boolean expressions did not propagate row additions, modifications, and removals");
+    require(observations[1].filtered_rows == expected_filter_rows(1) &&
+                std::ranges::binary_search(observations[1].filtered_rows, row_ids[0]) &&
+                !std::ranges::binary_search(observations[1].filtered_rows, row_ids[1]) &&
+                observations[1].filtered_changed == std::vector<row_id_t>{row_ids[0], row_ids[260]} &&
+                observations[1].filtered_removed == std::vector<row_id_t>{row_ids[1]},
+            "unbound Boolean filter did not apply predicate membership deltas");
+
+    const auto gate_source = node([](In<TS<i64>> tick, Out<TS<bool>> gate) {
+        switch (*tick) {
+        case 0:
+            gate.set(true);
+            break;
+        case 1:
+            gate.invalidate();
+            break;
+        case 2:
+            gate.set(false);
+            break;
+        default:
+            break;
+        }
+    });
+    struct gate_observation {
+        bool valid{};
+        std::vector<std::optional<bool>> cells;
+    };
+    const auto gate_frame = node([](In<TS<i64>> tick, Out<TSF<BooleanFrameCell>> output) {
+        if (*tick == 0)
+            output.add(Row<BooleanFrameCell>{.value = false});
+    });
+    auto gate_observations = std::vector<gate_observation>{};
+    const auto observe_gate = node([&](In<TSC<bool>, optional> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto result = gate_observation{.valid = input.valid()};
+        input.for_each_row([&](row_id_t id, std::size_t) { result.cells.push_back(input.cell(id)); });
+        gate_observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+    const auto gate_graph = [&](wp<TS<i64>> tick) {
+        const auto source = gate_frame(tick);
+        const auto gate = gate_source(tick);
+        return observe_gate(bind_expression(source, col("value") && param("gate"), "gate"_n = gate), tick);
+    };
+    const auto gate_result = testing::test_graph(gate_graph, std::array<i64, 4>{0, 1, 2, 3});
+    require(gate_result.equals<i64>({0, 1, 2, 3}) && gate_observations.size() == 4 &&
+                gate_observations[0].valid && !gate_observations[1].valid && gate_observations[2].valid &&
+                gate_observations[0].cells == std::vector<std::optional<bool>>(1, false) &&
+                gate_observations[2].cells == std::vector<std::optional<bool>>(1, false) &&
+                gate_observations[3].valid &&
+                gate_observations[3].cells == std::vector<std::optional<bool>>(1, false),
+            "captured Boolean time-series validity did not follow BG dependency invalidation");
+}
+
 void test_filter_tsf_tick_capture() {
     using namespace bg;
     using namespace bg::frame;
@@ -6810,6 +7057,7 @@ int main() {
         test_scalar_frame_time_series_graph();
         test_compiled_graph_runtime_storage_is_independent();
         test_boolean_tsf_row_mutations();
+        test_boolean_expression_operators_and_filter();
         test_tsf_graph_behavior();
         test_tsf_literal_updates();
         test_tsf_literal_uses_actual_derived_schema();
