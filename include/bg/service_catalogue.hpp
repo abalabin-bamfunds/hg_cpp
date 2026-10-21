@@ -78,6 +78,8 @@ class ServiceCatalogue {
             ServiceCatalogue::add_multiservice_impl(state, index_, service, TypeMap{}, lifted_scalar, values);
         }
 
+        void register_impl(const ServiceDefinition &service, std::span<const WiringArgument> filters);
+
       private:
         friend class ServiceCatalogue;
 
@@ -106,6 +108,9 @@ class ServiceCatalogue {
             std::forward<Implementation>(implementation));
         return MultiserviceRegistration{state_, add_multiservice(std::move(graph), values)};
     }
+
+    MultiserviceRegistration register_multiservice(std::shared_ptr<const WiringTemplate> implementation,
+                                                    std::span<const WiringArgument> arguments);
 
     template <typename Implementation, typename... Arguments>
         requires std::derived_from<std::remove_cvref_t<Implementation>, WiringTemplate> &&

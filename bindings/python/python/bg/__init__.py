@@ -47,7 +47,11 @@ from ._bg import (
     _test_graph,
     _make_service,
     _make_service_catalogue,
+    _register_multiservice,
+    _register_multiservice_impl,
     _register_service_impl,
+    _service_implementation_requests,
+    _service_implementation_replies,
     _wire_service,
     _time_series_dict_type,
     _time_series_bundle_type,
@@ -649,6 +653,25 @@ class _ServiceDefinition:
         arguments = tuple(bound.arguments[parameter] for parameter in self.signature.parameters)
         return _wire_service(self._native_definition, arguments)
 
+    def implementation_requests(self, *args: Any, **kwargs: Any) -> Any:
+        return _service_implementation_requests(self._native_definition, args, kwargs)
+
+    def implementation_replies(self, reply: Any, *args: Any, **kwargs: Any) -> None:
+        _service_implementation_replies(self._native_definition, reply, args, kwargs)
+
+
+class MultiserviceRegistration:
+    def __init__(self, catalogue: ServiceCatalogue, native_registration: Any):
+        self._catalogue = catalogue
+        self._native_registration = native_registration
+
+    def register_impl(self, service: _ServiceDefinition, **scalar_filters: Any) -> None:
+        if not isinstance(service, _ServiceDefinition):
+            raise TypeError("register_impl expects a Python service declaration")
+        _register_multiservice_impl(
+            self._catalogue._native_catalogue, self._native_registration, service, scalar_filters
+        )
+
 
 class ServiceCatalogue:
     """Register Python graph implementations for service declarations."""
@@ -664,6 +687,16 @@ class ServiceCatalogue:
         if not isinstance(implementation, GraphDefinition):
             raise TypeError("register_impl expects a decorated @graph implementation")
         _register_service_impl(self._native_catalogue, service, implementation, args, kwargs)
+
+    def register_multiservice(
+        self, implementation: GraphDefinition, *installation_args: Any, **installation_kwargs: Any
+    ) -> MultiserviceRegistration:
+        if not isinstance(implementation, GraphDefinition):
+            raise TypeError("register_multiservice expects a decorated @graph implementation")
+        native = _register_multiservice(
+            self._native_catalogue, implementation, installation_args, installation_kwargs
+        )
+        return MultiserviceRegistration(self, native)
 
 
 def _bind_definition_arguments(
@@ -1290,6 +1323,7 @@ __all__ = [
     "DEFAULT",
     "INVALID",
     "NodeDefinition",
+    "MultiserviceRegistration",
     "ordinary",
     "Output",
     "REF",

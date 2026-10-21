@@ -275,6 +275,240 @@ def test_service_catalogue_retains_declarations_and_graph_wrappers():
     assert implementation_reference() is None
 
 
+def test_multiservice_graph_implements_two_reference_services():
+    @bg.reference_service
+    def selected_reference(key: int) -> bg.TS[int]:
+        pass
+
+    @bg.reference_service
+    def plain_reference() -> bg.TS[int]:
+        pass
+
+    @bg.source_node
+    def selected_source() -> bg.TS[int]:
+        return 10
+
+    @bg.source_node
+    def plain_source() -> bg.TS[int]:
+        return 20
+
+    @bg.graph
+    def implementation() -> None:
+        selected_reference.implementation_replies(selected_source(), 7)
+        plain_reference.implementation_replies(plain_source())
+
+    @bg.graph
+    def client() -> bg.TS[int]:
+        return bg.operators.add(selected_reference(7), plain_reference())
+
+    catalogue = bg.ServiceCatalogue()
+    registration = catalogue.register_multiservice(implementation)
+    registration.register_impl(selected_reference, key=7)
+    registration.register_impl(plain_reference)
+
+    assert bg.test_graph(client, catalogue=catalogue) == [30]
+
+
+def test_multiservice_graph_combines_subscription_and_reference_services():
+    @bg.reference_service
+    def clock() -> bg.TS[int]:
+        pass
+
+    @bg.subscription_service
+    def lookup(key: bg.TS[int, bg.final]) -> bg.TS[int]:
+        pass
+
+    @bg.source_node
+    def clock_source() -> bg.TS[int]:
+        return 5
+
+    @bg.compute_node
+    def make_responses(keys: bg.TSS[int]) -> bg.TSD[int, bg.TS[int]]:
+        return {key: key * 10 for key in keys.value}
+
+    @bg.source_node
+    def final_key() -> bg.TS[int, bg.final]:
+        return 3
+
+    @bg.graph
+    def implementation() -> None:
+        lookup.implementation_replies(make_responses(lookup.implementation_requests()))
+        clock.implementation_replies(clock_source())
+
+    @bg.graph
+    def client() -> bg.TS[int]:
+        return bg.operators.add(clock(), lookup(final_key()))
+
+    catalogue = bg.ServiceCatalogue()
+    registration = catalogue.register_multiservice(implementation)
+    registration.register_impl(clock)
+    registration.register_impl(lookup)
+
+    assert bg.test_graph(client, catalogue=catalogue) == [35]
+
+
+def test_multiservice_request_reply_uses_scalar_filter_and_installation_argument():
+    @bg.service
+    def transform(value: bg.TS[int], mode: int) -> bg.TS[int]:
+        pass
+
+    @bg.compute_node
+    def transform_values(values: bg.TSD[int, bg.TS[int]], factor: int) -> bg.TSD[int, bg.TS[int]]:
+        return {key: values[key].value * factor for key in values.valid_keys()}
+
+    @bg.graph
+    def implementation(factor: int) -> None:
+        requests = transform.implementation_requests(2)
+        values = bg.operators.getattr(requests, bg.symbol("value"))
+        transform.implementation_replies(transform_values(values, factor), 2)
+
+    @bg.graph
+    def client(value: bg.TS[int]) -> bg.TS[int]:
+        return transform(value, mode=2)
+
+    catalogue = bg.ServiceCatalogue()
+    registration = catalogue.register_multiservice(implementation, factor=3)
+    registration.register_impl(transform, mode=2)
+
+    assert bg.test_graph(client, [2, 4], catalogue=catalogue) == [6, 12]
+
+
+def test_multiservice_outputless_service_uses_request_port_without_reply():
+    @bg.service
+    def observe(value: bg.TS[int]) -> None:
+        pass
+
+    seen = []
+
+    @bg.compute_node
+    def collect(values: bg.TSD[int, bg.TS[int]]) -> None:
+        for key in values.valid_keys():
+            seen.append(values[key].value)
+
+    @bg.graph
+    def implementation() -> None:
+        requests = observe.implementation_requests()
+        collect(bg.operators.getattr(requests, bg.symbol("value")))
+
+    @bg.graph
+    def client(value: bg.TS[int]) -> None:
+        observe(value)
+
+    catalogue = bg.ServiceCatalogue()
+    registration = catalogue.register_multiservice(implementation)
+    registration.register_impl(observe)
+
+    bg.test_graph(client, [4, 6], catalogue=catalogue)
+
+    assert seen == [4, 6]
+
+
+def test_multiservice_registration_rejects_unknown_and_duplicate_claims():
+    @bg.reference_service
+    def selected(key: int) -> bg.TS[int]:
+        pass
+
+    @bg.graph
+    def implementation() -> None:
+        pass
+
+    catalogue = bg.ServiceCatalogue()
+    registration = catalogue.register_multiservice(implementation)
+
+    with pytest.raises(TypeError):
+        registration.register_impl(selected, 1)
+
+    with pytest.raises(ValueError, match="must name a service scalar parameter"):
+        registration.register_impl(selected, missing=1)
+
+    with pytest.raises(ValueError, match="incompatible type"):
+        registration.register_impl(selected, key="seven")
+
+    registration.register_impl(selected, key=1)
+    with pytest.raises(ValueError, match="repeats a service claim"):
+        registration.register_impl(selected, key=1)
+
+    @bg.reference_service
+    def rejected_service() -> bg.TS[int]:
+        pass
+
+    rejected_reference = weakref.ref(rejected_service)
+    with pytest.raises(ValueError, match="must name a service scalar parameter"):
+        registration.register_impl(rejected_service, missing=1)
+
+    del rejected_service
+    gc.collect()
+    assert rejected_reference() is None
+
+
+def test_multiservice_graph_rejects_an_unregistered_request_port():
+    @bg.reference_service
+    def registered() -> bg.TS[int]:
+        pass
+
+    @bg.reference_service
+    def unregistered() -> bg.TS[int]:
+        pass
+
+    @bg.source_node
+    def source() -> bg.TS[int]:
+        return 1
+
+    @bg.graph
+    def implementation() -> None:
+        registered.implementation_replies(source())
+        unregistered.implementation_replies(source())
+
+    @bg.graph
+    def client() -> bg.TS[int]:
+        return registered()
+
+    catalogue = bg.ServiceCatalogue()
+    registration = catalogue.register_multiservice(implementation)
+    registration.register_impl(registered)
+
+    with pytest.raises(RuntimeError, match="unregistered service port"):
+        bg.test_graph(client, catalogue=catalogue)
+
+
+def test_multiservice_catalogue_retains_claim_and_graph_wrappers():
+    @bg.reference_service
+    def local_service() -> bg.TS[int]:
+        pass
+
+    @bg.source_node
+    def local_source() -> bg.TS[int]:
+        return 1
+
+    @bg.graph
+    def local_implementation() -> None:
+        local_service.implementation_replies(local_source())
+
+    service_reference = weakref.ref(local_service)
+    implementation_reference = weakref.ref(local_implementation)
+    catalogue = bg.ServiceCatalogue()
+    registration = catalogue.register_multiservice(local_implementation)
+    registration.register_impl(local_service)
+
+    del local_service, local_implementation
+    gc.collect()
+
+    assert service_reference() is not None
+    assert implementation_reference() is not None
+
+    del catalogue
+    gc.collect()
+
+    assert service_reference() is not None
+    assert implementation_reference() is not None
+
+    del registration
+    gc.collect()
+
+    assert service_reference() is None
+    assert implementation_reference() is None
+
+
 def test_service_declarations_require_annotations_and_explicit_ts_output():
     with pytest.raises(TypeError, match="requires a type annotation"):
 
