@@ -385,12 +385,8 @@ TEST_CASE("all_valid metadata follows an empty runtime-type array at pointer ali
     CHECK_FALSE(gate.uses_time_series_input_runtime_type(gate_signature, 0));
     CHECK_FALSE(gate.uses_output_runtime_type());
 
-    const auto increment = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
-        output.set(*input + 1);
-    });
-    const auto double_value = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
-        output.set(*input * 2);
-    });
+    const auto increment = bg::node([](bg::i64 input) { return input + 1; });
+    const auto double_value = bg::node([](bg::i64 input) { return input * 2; });
     const auto combine = bg::node([](bg::In<bg::TS<bg::i64>> left, bg::In<bg::TS<bg::i64>> right,
                                      bg::Out<bg::TS<bg::i64>> output) { output.set(*left + *right); });
 

@@ -31,6 +31,12 @@
 using namespace bg;
 using namespace bg::literals;
 
+TEST_CASE("len_ of a TSS follows key membership", "[feature:operator][series:tss][scalar:i64][shape:single-node]") {
+    const auto graph = [](wp<TSS<i64>> value) { return operators::len_("value"_n = value); };
+
+    CHECK(testing::test_graph(graph, {{1}, {2, literal::REMOVED(1)}}).equals<i64>({1, 1}));
+}
+
 namespace {
 
 template <template <typename, auto...> typename Field> struct length_bundle {
@@ -162,12 +168,6 @@ struct unused_membership_descriptor_definition {
 
 } // namespace
 
-TEST_CASE("len_ of a TSS follows key membership", "[feature:operator][series:tss][scalar:i64][shape:single-node]") {
-    const auto graph = [](wp<TSS<i64>> value) { return operators::len_("value"_n = value); };
-
-    CHECK(testing::test_graph(graph, {{1}, {2, literal::REMOVED(1)}}).equals<i64>({1, 1}));
-}
-
 TEST_CASE("len_ of a fixed TSL is a wiring-time constant",
           "[feature:operator][series:fixed-tsl][scalar:i64][shape:single-node][guarantee:const]") {
     const auto graph = [] {
@@ -251,12 +251,12 @@ TEST_CASE("contains_ on a TSD distinguishes key presence from valid item presenc
     const auto physical = [](wp<TSD<i64, TS<i64>>> collection) {
         return operators::contains_("collection"_n = collection, "key"_n = i64{7});
     };
-    const auto valid_items = [](wp<TSD<i64, TS<i64>>> collection) {
-        return operators::contains_("collection"_n = bg::valid_items(collection), "key"_n = i64{7});
+    const auto valid_item_contains = [](wp<TSD<i64, TS<i64>>> collection) {
+        return operators::contains_("collection"_n = valid_items(collection), "key"_n = i64{7});
     };
     CHECK(testing::test_graph(physical, {{{7, 70}}, {{7, literal::INVALID}}, {{7, 71}}})
               .equals<bool>({true, std::nullopt, std::nullopt}));
-    CHECK(testing::test_graph(valid_items, {{{7, 70}}, {{7, literal::INVALID}}, {{7, 71}}})
+    CHECK(testing::test_graph(valid_item_contains, {{{7, 70}}, {{7, literal::INVALID}}, {{7, 71}}})
               .equals<bool>({true, false, true}));
 }
 
@@ -397,10 +397,11 @@ TEST_CASE("absent TSD membership key churn releases unused descriptors while the
           "[shape:multiple][transition:update]") {
     absent_membership_churn_source::cycle = 0;
     const auto source = node<absent_membership_churn_source>();
+
     const auto inspect_unused = node<unused_membership_descriptor_definition>();
-    const auto sink = node([](In<TS<bool>> selected, In<TS<bool>> unused, Out<TS<bool>> output) {
-        output.set(*selected || *unused);
-    });
+
+    const auto sink = node([](bool selected, bool unused) { return selected || unused; });
+
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -945,7 +946,7 @@ TEST_CASE("contains_ follows a time-series key through invalidation and revalida
         return operators::contains_("collection"_n = collection, "key"_n = key);
     };
 
-    CHECK(testing::test_graph(graph, {{1, 2}, {1, 2}, {1, 2}}, testing::input<TS<i64>>({1, literal::INVALID, 2}))
+    CHECK(testing::test_graph(graph, {{1, 2}, {1, 2}, {1, 2}}, {1, literal::INVALID, 2})
               .equals({true, literal::INVALID, true}));
 }
 
@@ -957,15 +958,12 @@ TEST_CASE("contains_ follows a selected TSS reference through retargeting and in
         return operators::contains_("collection"_n = selected, "key"_n = i64{1});
     };
 
-    CHECK(testing::test_graph(query, testing::input<TS<bool>>({true, false, literal::INVALID, true, true, true}),
-                              testing::input<TSS<i64>>({{1}, {2}, {3}, {1}, {1}, {1}}),
-                              testing::input<TSS<i64>>({{2}, {2}, {3}, {3}, {3}, {3}}))
+    CHECK(testing::test_graph(query, {true, false, literal::INVALID, true, true, true},
+                              {{1}, {2}, {3}, {1}, {1}, {1}}, {{2}, {2}, {3}, {3}, {3}, {3}})
               .equals({true, false, literal::INVALID, true, literal::SKIP, literal::SKIP}));
 
     CHECK(testing::test_graph(
-              query, testing::input<TS<bool>>({true, true, true}),
-              testing::input<TSS<i64>>({literal::SKIP, literal::SKIP, literal::SKIP}),
-              testing::input<TSS<i64>>({{1}, {1}, {1}}))
+              query, {true, true, true}, {literal::SKIP, literal::SKIP, literal::SKIP}, {{1}, {1}, {1}})
               .equals({literal::SKIP, literal::SKIP, literal::SKIP}));
 
     const auto observe_validity = [](wp<TS<bool>> condition, wp<TSS<i64>> left, wp<TSS<i64>> right) {
@@ -973,9 +971,8 @@ TEST_CASE("contains_ follows a selected TSS reference through retargeting and in
         return operators::valid(operators::contains_("collection"_n = selected, "key"_n = i64{1}));
     };
     CHECK(testing::test_graph(observe_validity,
-                              testing::input<TS<bool>>({true, false, literal::INVALID, true, true, true}),
-                              testing::input<TSS<i64>>({{1}, {2}, {3}, {1}, {1}, {1}}),
-                              testing::input<TSS<i64>>({{2}, {2}, {3}, {3}, {3}, {3}}))
+                              {true, false, literal::INVALID, true, true, true},
+                              {{1}, {2}, {3}, {1}, {1}, {1}}, {{2}, {2}, {3}, {3}, {3}, {3}})
               .equals({true, literal::SKIP, false, true, literal::SKIP, literal::SKIP}));
 }
 
@@ -1011,9 +1008,10 @@ TEST_CASE("contains_ propagates TSD collection and key guarantees",
 
     const auto check_final_collection = [&](auto collection) {
         const auto physical = operators::contains_("collection"_n = collection, "key"_n = i64{1});
-        const auto valid_items = operators::contains_("collection"_n = bg::valid_items(collection), "key"_n = i64{1});
+        const auto valid_item_contains =
+            operators::contains_("collection"_n = valid_items(collection), "key"_n = i64{1});
         CHECK(&physical.type() == &TS<bool, TimeSeriesGuarantee::final>::type());
-        CHECK(&valid_items.type() == &TS<bool, TimeSeriesGuarantee::final>::type());
+        CHECK(&valid_item_contains.type() == &TS<bool, TimeSeriesGuarantee::final>::type());
     };
     testing::test_wiring([&] { check_final_collection(final_dictionary()); });
 

@@ -129,7 +129,7 @@ TEST_CASE("all_valid checks every item in a fixed list",
         return operators::all_valid(tsl(first, second));
     };
 
-    CHECK(testing::test_graph(query, std::array<i64, 2>{1, 2}, std::array<i64, 2>{3, 4})
+    CHECK(testing::test_graph(query, {1, 2}, {3, 4})
               .equals<bool>({true, std::nullopt}));
 }
 
@@ -139,7 +139,7 @@ TEST_CASE("all_valid tracks immediate item invalidation in a free list",
     const auto changing_item = node<changing_item_source>();
     const auto graph = [&](wp<TS<i64>> first) { return operators::all_valid(tsl(first, changing_item())); };
 
-    CHECK(testing::test_graph(graph, std::array<i64, 1>{10}).equals<bool>({true, false, true}));
+    CHECK(testing::test_graph(graph, {10}).equals<bool>({true, false, true}));
 }
 
 TEST_CASE("all_valid treats a valid empty dictionary as valid",
@@ -153,7 +153,7 @@ TEST_CASE("sample copies the current value on every signal tick",
           "[feature:operator][series:value][shape:chain]") {
     const auto sample = [](wp<TS<i64>> signal, wp<TS<i64>> value) { return operators::sample(signal, value); };
 
-    CHECK(testing::test_graph(sample, std::array<i64, 3>{0, 1, 2}, std::array<i64, 3>{10, 20, 30})
+    CHECK(testing::test_graph(sample, {0, 1, 2}, {10, 20, 30})
               .equals<i64>({10, 20, 30}));
 }
 
@@ -162,7 +162,7 @@ TEST_CASE("filter preserves the last value while closed and skips an unchanged v
     const auto source = node<stable_value_source>();
     const auto filter = [&](wp<TS<bool>> condition) { return operators::filter_(condition, source()); };
 
-    CHECK(testing::test_graph(filter, std::array{true, false, true, true})
+    CHECK(testing::test_graph(filter, {true, false, true, true})
               .equals<i64>({10, std::nullopt, std::nullopt, std::nullopt}));
 }
 
@@ -174,33 +174,31 @@ TEST_CASE("filter copies scalar input invalidation while open",
         return operators::filter_(condition, source());
     };
 
-    CHECK(testing::test_graph(filter, std::array{true}).equals<i64>({1, std::nullopt, 2}));
+    CHECK(testing::test_graph(filter, {true}).equals<i64>({1, std::nullopt, 2}));
 }
 
 TEST_CASE("filter invalidates its output when an open input becomes invalid",
           "[feature:operator][feature:validity][series:value][validity:optional]"
           "[transition:invalidation][transition:revalidation]") {
     const auto source = node<changing_item_source>();
-    const auto observe_validity = node([](In<TS<i64>, optional> value, Out<TS<bool>> output) {
-        output.set(value.valid());
-    });
+    const auto observe_validity = node([](In<TS<i64>, optional> value) { return value.valid(); });
+
     const auto filter = [&](wp<TS<bool>> condition) {
         return observe_validity(operators::filter_(condition, source()));
     };
 
-    CHECK(testing::test_graph(filter, std::array{true}).equals<bool>({true, false, true}));
+    CHECK(testing::test_graph(filter, {true}).equals<bool>({true, false, true}));
 }
 
 TEST_CASE("filter reconciles a fixed list when it reopens",
           "[feature:operator][series:fixed-tsl][validity:optional][transition:update]") {
-    const auto sum = node([](In<TSL<TS<i64>, 2>> input, Out<TS<i64>> output) {
-        output.set(*input[0] + *input[1]);
-    });
+    const auto sum = node([](In<TSL<TS<i64>, 2>> input) { return *input[0] + *input[1]; });
+
     const auto filter = [&](wp<TS<bool>> condition, wp<TS<i64>> value) {
         return sum(operators::filter_(condition, tsl(value, operators::const_(i64{1}))));
     };
 
-    CHECK(testing::test_graph(filter, std::array{true, false, true, true}, std::array<i64, 4>{10, 20, 30, 40})
+    CHECK(testing::test_graph(filter, {true, false, true, true}, {10, 20, 30, 40})
               .equals<i64>({11, std::nullopt, 31, 41}));
 }
 
@@ -208,10 +206,11 @@ TEST_CASE("filter limits contained guarantees by the input root guarantee",
           "[feature:operator][series:tsb][schema:named][guarantee:ordinary]"
           "[validity:optional][transition:update]") {
     auto constant_item_updates = std::vector<bool>{};
-    const auto observe = node([&](In<TSB<SCHEMA>> values, Out<TS<i64>> output) {
+    const auto observe = node([&](In<TSB<SCHEMA>> values) {
         constant_item_updates.push_back(values.item_updated(1));
-        output.set(*values[0].template as<TS<i64>>());
+        return *values[0].template as<TS<i64>>();
     });
+
     const auto filter = [&](wp<TS<bool>> condition, wp<TS<i64>> ordinary_value) {
         const auto values = bundle<stream_test::mixed_guarantee_bundle>(ordinary_value, operators::const_(i64{1}));
         const auto filtered = operators::filter_(condition, values);
@@ -223,8 +222,8 @@ TEST_CASE("filter limits contained guarantees by the input root guarantee",
         return observe(filtered);
     };
 
-    const auto actual = testing::test_graph(filter, std::array{true, false, true, true},
-                                            std::array<i64, 4>{10, 20, 30, 40});
+    const auto actual = testing::test_graph(filter, {true, false, true, true},
+                                            {10, 20, 30, 40});
     CHECK(actual.equals<i64>({10, std::nullopt, 30, 40}));
     CHECK(constant_item_updates == std::vector<bool>{true, true, false});
 }
@@ -233,10 +232,11 @@ TEST_CASE("filter caps a stronger child at a deduplicated root",
           "[feature:operator][series:tsb][schema:named][guarantee:deduplicated]"
           "[transition:update]") {
     auto constant_item_updates = std::vector<bool>{};
-    const auto observe = node([&](In<TSB<SCHEMA>> values, Out<TS<i64>> output) {
+    const auto observe = node([&](In<TSB<SCHEMA>> values) {
         constant_item_updates.push_back(values.item_updated(1));
-        output.set(*values[0].template as<TS<i64>>());
+        return *values[0].template as<TS<i64>>();
     });
+
     const auto filter = [&](wp<TS<bool>> condition,
                             wp<TSB<stream_test::mixed_guarantee_bundle, TimeSeriesGuarantee::deduplicated>> values) {
         const auto filtered = operators::filter_(condition, values);
@@ -256,27 +256,28 @@ TEST_CASE("filter caps a stronger child at a deduplicated root",
 
 TEST_CASE("filter reconciles a TSB when it reopens",
           "[feature:operator][series:tsb][schema:named][validity:optional][transition:update]") {
-    const auto sum = node([](In<TSB<stream_test::stream_operator_bundle>> input, Out<TS<i64>> output) {
-        output.set(*input->left + *input->right);
+    const auto sum = node([](In<TSB<stream_test::stream_operator_bundle>> input) {
+        return *input->left + *input->right;
     });
+
     const auto filter = [&](wp<TS<bool>> condition, wp<TS<i64>> value) {
         return sum(operators::filter_(
             condition, bundle<stream_test::stream_operator_bundle>(value, operators::const_(i64{1}))));
     };
 
-    CHECK(testing::test_graph(filter, std::array{true, false, true, true}, std::array<i64, 4>{10, 20, 30, 40})
+    CHECK(testing::test_graph(filter, {true, false, true, true}, {10, 20, 30, 40})
               .equals<i64>({11, std::nullopt, 31, 41}));
 }
 
 TEST_CASE("filter reflects TSS membership changes made while closed",
           "[feature:operator][series:tss][validity:optional][transition:removal][transition:addition]") {
     auto snapshots = std::vector<std::vector<i64>>{};
-    const auto inspect = node([&](In<TSS<i64>> input, Out<TS<i64>> output) {
+    const auto inspect = node([&](In<TSS<i64>> input) {
         auto snapshot = std::vector<i64>{};
         input.for_each([&](const auto &key) { snapshot.push_back(scalar_cast<i64>(key).value()); });
         std::ranges::sort(snapshot);
         snapshots.push_back(std::move(snapshot));
-        output.set(static_cast<i64>(snapshots.size()));
+        return static_cast<i64>(snapshots.size());
     });
     const auto filter = [&](wp<TS<bool>> condition, wp<TSS<i64>> input) {
         return inspect(operators::filter_(condition, input));
@@ -292,7 +293,7 @@ TEST_CASE("filter reflects TSD key changes made while closed and forwards open c
           "[feature:operator][series:tsd][validity:optional][transition:removal]"
           "[transition:addition][transition:update]") {
     auto snapshots = std::vector<std::map<i64, std::optional<i64>>>{};
-    const auto inspect = node([&](In<TSD<i64, TS<i64>>> input, Out<TS<i64>> output) {
+    const auto inspect = node([&](In<TSD<i64, TS<i64>>> input) {
         auto snapshot = std::map<i64, std::optional<i64>>{};
         input.for_each_key_value([&](const auto &key, const auto &value) {
             const auto integer_key = scalar_cast<i64>(key).value();
@@ -303,7 +304,7 @@ TEST_CASE("filter reflects TSD key changes made while closed and forwards open c
             }
         });
         snapshots.push_back(std::move(snapshot));
-        output.set(static_cast<i64>(snapshots.size()));
+        return static_cast<i64>(snapshots.size());
     });
     const auto filter = [&](wp<TS<bool>> condition, wp<TSD<i64, TS<i64>>> input) {
         return inspect(operators::filter_(condition, input));
@@ -314,11 +315,10 @@ TEST_CASE("filter reflects TSD key changes made while closed and forwards open c
               {{{1, 10}, {2, 20}}, {{1, literal::INVALID}, {2, literal::REMOVE}}, {{3, 30}}, literal::SKIP,
                {{1, 11}, {4, 40}}, {{2, 22}}})
               .equals<i64>({1, std::nullopt, std::nullopt, 2, 3, 4}));
-    CHECK(snapshots ==
-          std::vector<std::map<i64, std::optional<i64>>>{{{1, 10}, {2, 20}},
-                                                         {{1, std::nullopt}, {3, 30}},
-                                                         {{1, 11}, {3, 30}, {4, 40}},
-                                                         {{1, 11}, {2, 22}, {3, 30}, {4, 40}}});
+    CHECK(snapshots == std::vector<std::map<i64, std::optional<i64>>>{{{1, 10}, {2, 20}},
+                                                                      {{1, std::nullopt}, {3, 30}},
+                                                                      {{1, 11}, {3, 30}, {4, 40}},
+                                                                      {{1, 11}, {2, 22}, {3, 30}, {4, 40}}});
 }
 
 TEST_CASE("filter reopens with a recreated final TSD item",
@@ -348,9 +348,10 @@ TEST_CASE("filter restores TSS after a reference switches through an invalid tar
                                 In<REF<TSS<i64>>, passive> invalid, Out<REF<TSS<i64>>> output) {
         output.copy(*cycle == 1 ? invalid : populated);
     });
-    const auto inspect = node([](In<TSS<i64>, optional> input, Out<TS<i64>> output) {
-        output.set(input.valid() ? static_cast<i64>(input.size()) : -1);
+    const auto inspect = node([](In<TSS<i64>, optional> input) {
+        return input.valid() ? static_cast<i64>(input.size()) : -1;
     });
+
     const auto graph = [&](wp<TS<i64>> cycle, wp<TSS<i64>> populated, wp<TSS<i64>> invalid) {
         const auto selected = select(cycle, populated, invalid);
         return inspect(operators::filter_(operators::const_(true), selected));
@@ -368,9 +369,8 @@ TEST_CASE("filter restores TSD after a reference switches through an invalid tar
                                 Out<REF<TSD<i64, TS<i64>>>> output) {
         output.copy(*cycle == 1 ? invalid : populated);
     });
-    const auto inspect = node([](In<TSD<i64, TS<i64>>, optional> input, Out<TS<i64>> output) {
-        output.set(static_cast<i64>(input.size()));
-    });
+    const auto inspect = node([](In<TSD<i64, TS<i64>>, optional> input) { return static_cast<i64>(input.size()); });
+
     const auto graph = [&](wp<TS<i64>> cycle, wp<TSD<i64, TS<i64>>> populated,
                            wp<TSD<i64, TS<i64>>> invalid) {
         const auto selected = select(cycle, populated, invalid);
@@ -388,9 +388,10 @@ TEST_CASE("filter copies an invalid TSS target when it reopens",
                                 In<REF<TSS<i64>>, passive> invalid, Out<REF<TSS<i64>>> output) {
         output.copy(*cycle == 0 ? populated : invalid);
     });
-    const auto inspect = node([](In<TSS<i64>, optional> input, Out<TS<i64>> output) {
-        output.set(input.valid() ? static_cast<i64>(input.size()) : -1);
+    const auto inspect = node([](In<TSS<i64>, optional> input) {
+        return input.valid() ? static_cast<i64>(input.size()) : -1;
     });
+
     const auto graph = [&](wp<TS<bool>> condition, wp<TS<i64>> cycle, wp<TSS<i64>> populated,
                            wp<TSS<i64>> invalid) {
         const auto selected = select(cycle, populated, invalid);
@@ -409,9 +410,8 @@ TEST_CASE("filter copies an invalid TSD target when it reopens",
                                 Out<REF<TSD<i64, TS<i64>>>> output) {
         output.copy(*cycle == 0 ? populated : invalid);
     });
-    const auto inspect = node([](In<TSD<i64, TS<i64>>, optional> input, Out<TS<i64>> output) {
-        output.set(static_cast<i64>(input.size()));
-    });
+    const auto inspect = node([](In<TSD<i64, TS<i64>>, optional> input) { return static_cast<i64>(input.size()); });
+
     const auto graph = [&](wp<TS<bool>> condition, wp<TS<i64>> cycle,
                            wp<TSD<i64, TS<i64>>> populated, wp<TSD<i64, TS<i64>>> invalid) {
         const auto selected = select(cycle, populated, invalid);
@@ -424,9 +424,10 @@ TEST_CASE("filter copies an invalid TSD target when it reopens",
 
 TEST_CASE("filter caps const guarantees recursively at final",
           "[feature:operator][series:value][guarantee:const][guarantee:final]") {
-    const auto sum = node([](In<TSL<TS<i64, TimeSeriesGuarantee::final>, 2>> value, Out<TS<i64>> output) {
-        output.set(*value[0] + *value[1]);
+    const auto sum = node([](In<TSL<TS<i64, TimeSeriesGuarantee::final>, 2>> value) {
+        return *value[0] + *value[1];
     });
+
     const auto graph = [&](wp<TS<bool>> condition,
                            wp<TSL<TS<i64, TimeSeriesGuarantee::const_>, 2, TimeSeriesGuarantee::const_>> values) {
         const auto result = operators::filter_(condition, values);
@@ -455,7 +456,7 @@ TEST_CASE("if_then_else switches references and ignores repeated selections",
         return copy(operators::if_then_else(condition, operators::const_(i64{10}), operators::const_(i64{20})));
     };
 
-    CHECK(testing::test_graph(select, std::array{true, true, false, false, true})
+    CHECK(testing::test_graph(select, {true, true, false, false, true})
               .equals<i64>({10, std::nullopt, 20, std::nullopt, 10}));
 }
 
@@ -466,8 +467,8 @@ TEST_CASE("if_then_else follows the selected value and ignores unselected value 
         return copy(operators::if_then_else(condition, true_value, false_value));
     };
 
-    CHECK(testing::test_graph(select, std::array{true, true, true}, std::array<i64, 3>{10, 20, 30},
-                              std::array<i64, 3>{1, 2, 3})
+    CHECK(testing::test_graph(select, {true, true, true}, {10, 20, 30},
+                              {1, 2, 3})
               .equals<i64>({10, 20, 30}));
 }
 
@@ -479,7 +480,7 @@ TEST_CASE("if_then_else ignores unselected target updates while the selected tar
         return copy(operators::if_then_else(operators::const_(true), selected(), unselected_value));
     };
 
-    CHECK(testing::test_graph(select, std::array<i64, 3>{1, 2, 3}).equals<i64>({10, std::nullopt, std::nullopt}));
+    CHECK(testing::test_graph(select, {1, 2, 3}).equals<i64>({10, std::nullopt, std::nullopt}));
 }
 
 TEST_CASE("if_then_else ignores retargeting of the unselected reference",
@@ -494,7 +495,7 @@ TEST_CASE("if_then_else ignores retargeting of the unselected reference",
         return copy(operators::if_then_else(condition, operators::const_(i64{10}), unused));
     };
 
-    CHECK(testing::test_graph(select, std::array{true, true, true}, std::array{false, true, false})
+    CHECK(testing::test_graph(select, {true, true, true}, {false, true, false})
               .equals<i64>({10, std::nullopt, std::nullopt}));
 }
 
@@ -510,7 +511,7 @@ TEST_CASE("if_then_else follows retargeting of the selected reference",
         return copy(operators::if_then_else(operators::const_(true), selected, operators::const_(i64{30})));
     };
 
-    CHECK(testing::test_graph(select, std::array{true, false, true}).equals<i64>({10, 20, 10}));
+    CHECK(testing::test_graph(select, {true, false, true}).equals<i64>({10, 20, 10}));
 }
 
 TEST_CASE("if_then_else invalidates for an invalid condition and an invalid selected branch",
@@ -533,9 +534,9 @@ TEST_CASE("if_then_else invalidates for an invalid condition and an invalid sele
         return copy(operators::if_then_else(condition, operators::const_(i64{10}), invalid_source()));
     };
 
-    CHECK(testing::test_graph(invalid_condition, std::array<i64, 3>{0, 1, 2})
+    CHECK(testing::test_graph(invalid_condition, {0, 1, 2})
               .equals<i64>({10, std::nullopt, 10}));
-    CHECK(testing::test_graph(invalid_branch, std::array{true, false, true})
+    CHECK(testing::test_graph(invalid_branch, {true, false, true})
               .equals<i64>({10, std::nullopt, 10}));
 }
 
@@ -552,16 +553,17 @@ TEST_CASE("if_then_else observes selection changes between equal-valued targets"
         return observe_selection(operators::if_then_else(condition, first(), second()));
     };
 
-    CHECK(testing::test_graph(select, std::array{true, false, true}).equals<bool>({true, true, true}));
+    CHECK(testing::test_graph(select, {true, false, true}).equals<bool>({true, true, true}));
 }
 
 TEST_CASE("if_then_else selects TSS values",
           "[feature:operator][series:tss][series:reference][transition:update]") {
-    const auto sum = node([](In<TSS<i64>> input, Out<TS<i64>> output) {
+    const auto sum = node([](In<TSS<i64>> input) {
         auto result = i64{};
         input.for_each([&](const auto &key) { result += scalar_cast<i64>(key).value(); });
-        output.set(result);
+        return result;
     });
+
     const auto select = [&](wp<TS<bool>> condition, wp<TSS<i64>> left, wp<TSS<i64>> right) {
         return sum(operators::if_then_else(condition, left, right));
     };
@@ -574,7 +576,8 @@ TEST_CASE("if_then_else selects TSS values",
 
 TEST_CASE("if_then_else follows sparse TSD updates on the selected branch",
           "[feature:operator][series:tsd][series:reference][transition:update]") {
-    const auto read = node([](In<TSD<i64, TS<i64>>> input, Out<TS<i64>> output) { output.set(*input[1]); });
+    const auto read = node([](In<TSD<i64, TS<i64>>> input) { return *input[1]; });
+
     const auto select = [&](wp<TS<bool>> condition, wp<TSD<i64, TS<i64>>> left,
                             wp<TSD<i64, TS<i64>>> right) {
         return read(operators::if_then_else(condition, left, right));
@@ -588,32 +591,32 @@ TEST_CASE("if_then_else follows sparse TSD updates on the selected branch",
 
 TEST_CASE("if_then_else selects a whole fixed list",
           "[feature:operator][series:fixed-tsl][series:reference][transition:update]") {
-    const auto sum = node([](In<TSL<TS<i64>, 2>> input, Out<TS<i64>> output) {
-        output.set(*input[0] + *input[1]);
-    });
+    const auto sum = node([](In<TSL<TS<i64>, 2>> input) { return *input[0] + *input[1]; });
+
     const auto select = [&](wp<TS<bool>> condition, wp<TS<i64>> left, wp<TS<i64>> right) {
         return sum(operators::if_then_else(condition, tsl(left, operators::const_(i64{100})),
                                            tsl(operators::const_(i64{200}), right)));
     };
 
-    CHECK(testing::test_graph(select, std::array{true, false, true}, std::array<i64, 3>{1, 2, 3},
-                              std::array<i64, 3>{10, 20, 30})
+    CHECK(testing::test_graph(select, {true, false, true}, {1, 2, 3},
+                              {10, 20, 30})
               .equals<i64>({101, 220, 103}));
 }
 
 TEST_CASE("if_then_else selects a whole TSB",
           "[feature:operator][series:tsb][series:reference][schema:named][transition:update]") {
-    const auto sum = node([](In<TSB<stream_test::stream_operator_bundle>> input, Out<TS<i64>> output) {
-        output.set(*input->left + *input->right);
+    const auto sum = node([](In<TSB<stream_test::stream_operator_bundle>> input) {
+        return *input->left + *input->right;
     });
+
     const auto select = [&](wp<TS<bool>> condition, wp<TS<i64>> left, wp<TS<i64>> right) {
         return sum(operators::if_then_else(
             condition, bundle<stream_test::stream_operator_bundle>(left, operators::const_(i64{100})),
             bundle<stream_test::stream_operator_bundle>(operators::const_(i64{200}), right)));
     };
 
-    CHECK(testing::test_graph(select, std::array{true, false, true}, std::array<i64, 3>{1, 2, 3},
-                              std::array<i64, 3>{10, 20, 30})
+    CHECK(testing::test_graph(select, {true, false, true}, {1, 2, 3},
+                              {10, 20, 30})
               .equals<i64>({101, 220, 103}));
 }
 
@@ -631,7 +634,7 @@ TEST_CASE("sample uses the latest passive value and preserves output on invalida
         return operators::sample(signal, invalidate_on_negative(value));
     };
 
-    CHECK(testing::test_graph(sample, std::array<i64, 4>{0, 1, 2, 3}, std::array<i64, 4>{10, -1, 20, 30})
+    CHECK(testing::test_graph(sample, {0, 1, 2, 3}, {10, -1, 20, 30})
               .equals<i64>({10, std::nullopt, 20, 30}));
 
     const auto retain_passive_value = [](wp<TS<i64>> signal, wp<TS<i64>> value) {
@@ -652,7 +655,7 @@ TEST_CASE("sample observes a reference target only on signal ticks",
         return operators::sample(signal, reference(source()));
     };
 
-    CHECK(testing::test_graph(sample, std::array<i64, 3>{0, 1, 2}).equals<i64>({1, std::nullopt, 2}));
+    CHECK(testing::test_graph(sample, {0, 1, 2}).equals<i64>({1, std::nullopt, 2}));
 }
 
 TEST_CASE("sample limits stronger input guarantees to ordinary",
@@ -663,28 +666,30 @@ TEST_CASE("sample limits stronger input guarantees to ordinary",
         return result;
     };
 
-    CHECK(testing::test_graph(graph, std::array<i64, 2>{0, 1}).equals<i64>({42, 42}));
+    CHECK(testing::test_graph(graph, {0, 1}).equals<i64>({42, 42}));
 }
 
 TEST_CASE("sample republishes const list items on every signal tick",
           "[feature:operator][series:fixed-tsl][guarantee:const][transition:update]") {
-    const auto sum = node([](In<TSL<TS<i64>, 2>, all_valid> values, Out<TS<i64>> output) {
-        output.set(*values[0] + *values[1]);
+    const auto sum = node([](In<TSL<TS<i64>, 2>, all_valid> values) {
+        return *values[0] + *values[1];
     });
+
     const auto graph = [&](wp<TS<i64>> signal) {
         const auto values = tsl(operators::const_(i64{10}), operators::const_(i64{20}));
         return sum(operators::sample(signal, values));
     };
 
-    CHECK(testing::test_graph(graph, std::array<i64, 2>{0, 1}).equals<i64>({30, 30}));
+    CHECK(testing::test_graph(graph, {0, 1}).equals<i64>({30, 30}));
 }
 
 TEST_CASE("sample copies set removals and does not publish unchanged membership",
           "[feature:operator][feature:collection-change][series:tss][activity:passive]"
           "[transition:removal]") {
-    const auto inspect = node([](In<TSS<i64>> input, Out<TS<i64>> output) {
-        output.set(static_cast<i64>(input.size() * 10 + input.contains(2)));
+    const auto inspect = node([](In<TSS<i64>> input) {
+        return static_cast<i64>(input.size() * 10 + input.contains(2));
     });
+
     const auto graph = [&](wp<TS<i64>> signal, wp<TSS<i64>> set) {
         return inspect(operators::sample(signal, set));
     };
@@ -697,7 +702,7 @@ TEST_CASE("dedup suppresses consecutive equal values",
           "[feature:operator][feature:type-system][series:value][guarantee:deduplicated]") {
     const auto deduplicate = [](wp<TS<i64>> value) { return operators::dedup(value); };
 
-    CHECK(testing::test_graph(deduplicate, std::array<i64, 4>{1, 1, 2, 2})
+    CHECK(testing::test_graph(deduplicate, {1, 1, 2, 2})
               .equals<i64>({1, std::nullopt, 2, std::nullopt}));
 }
 
@@ -713,7 +718,7 @@ TEST_CASE("dedup publishes the same value after invalidation",
     });
     const auto graph = [&](wp<TS<i64>> value) { return operators::dedup(invalidate(value)); };
 
-    CHECK(testing::test_graph(graph, std::array<i64, 3>{1, -1, 1}).equals<i64>({1, std::nullopt, 1}));
+    CHECK(testing::test_graph(graph, {1, -1, 1}).equals<i64>({1, std::nullopt, 1}));
 }
 
 TEST_CASE("dedup leaves an already deduplicated input as the same graph node",
@@ -747,7 +752,7 @@ TEST_CASE("dedup on a reference observes retargeted values",
     const auto copy = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.copy(input); });
     const auto graph = [&](wp<TS<i64>> command) { return copy(operators::dedup(select(command, first(), second()))); };
 
-    CHECK(testing::test_graph(graph, std::array<i64, 4>{0, 0, 1, 1})
+    CHECK(testing::test_graph(graph, {0, 0, 1, 1})
               .equals<i64>({1, std::nullopt, 2, std::nullopt}));
 }
 

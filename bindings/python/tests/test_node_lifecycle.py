@@ -60,7 +60,6 @@ def test_lifecycle_callbacks_work_for_a_sink_node():
     ],
 )
 def test_node_start_return_is_ignored_before_later_evaluation(compute_node):
-    values = []
     starts = []
 
     if compute_node:
@@ -76,7 +75,7 @@ def test_node_start_return_is_ignored_before_later_evaluation(compute_node):
 
     @bg.generator
     def source(clock: bg.EvaluationClock = None) -> bg.TS[int]:
-        yield clock.evaluation_time + timedelta(seconds=1), 5
+        yield clock.evaluation_time + timedelta(microseconds=1), 5
 
     @node_decorator
     def identity(value: input_annotation) -> output_annotation:
@@ -87,17 +86,13 @@ def test_node_start_return_is_ignored_before_later_evaluation(compute_node):
         starts.append("start")
         return -1
 
-    @bg.compute_node
-    def collect(value: bg.TS[int]) -> None:
-        values.append(value.value)
-
     @bg.graph
-    def graph() -> None:
-        collect(identity(source()))
+    def graph() -> bg.TS[int]:
+        return identity(source())
 
-    bg.run_graph(graph)
+    actual = bg.test_graph(graph)
     assert starts == ["start"]
-    assert values == [5]
+    assert actual == [None, 5]
 
 
 def test_lifecycle_callback_registration_rejects_duplicates():
@@ -228,25 +223,19 @@ def test_generator_reads_evaluation_clock_after_each_resume():
         start = clock.evaluation_time
         yield start, 0
         observed.append(clock.evaluation_time)
-        yield start + timedelta(seconds=1), 1
+        yield start + timedelta(microseconds=1), 1
         observed.append(clock.evaluation_time)
-        yield start + timedelta(seconds=2), 2
-
-    values = []
-
-    @bg.compute_node
-    def collect(value: bg.TS[int]) -> None:
-        values.append(value.value)
+        yield start + timedelta(microseconds=2), 2
 
     @bg.graph
-    def graph() -> None:
-        collect(source())
+    def graph() -> bg.TS[int]:
+        return source()
 
-    bg.run_graph(graph)
+    actual = bg.test_graph(graph)
 
-    assert values == [0, 1, 2]
+    assert actual == [0, 1, 2]
     assert len(observed) == 2
-    assert observed[1] - observed[0] == timedelta(seconds=1)
+    assert observed[1] - observed[0] == timedelta(microseconds=1)
 
 
 def test_empty_generator_is_a_valid_source():
@@ -277,44 +266,30 @@ def test_generator_requires_strictly_increasing_output_times():
 
 
 def test_generator_accepts_timedelta_relative_to_each_resume():
-    values = []
-
     @bg.generator
     def source() -> bg.TS[int]:
         yield timedelta(), 1
-        yield timedelta(seconds=1), 2
-
-    @bg.compute_node
-    def collect(value: bg.TS[int]) -> None:
-        values.append(value.value)
+        yield timedelta(microseconds=1), 2
 
     @bg.graph
-    def graph() -> None:
-        collect(source())
+    def graph() -> bg.TS[int]:
+        return source()
 
-    bg.run_graph(graph)
-    assert values == [1, 2]
+    assert bg.test_graph(graph) == [1, 2]
 
 
 def test_generator_retains_scalar_dictionary_arguments_across_yields():
-    values = []
-
     @bg.generator
     def source(data: dict[str, int], clock: bg.EvaluationClock = None) -> bg.TS[int]:
         start = clock.evaluation_time
-        yield start + timedelta(seconds=1), 1
-        yield start + timedelta(seconds=2), data["value"]
-
-    @bg.compute_node
-    def collect(value: bg.TS[int]) -> None:
-        values.append(value.value)
+        yield start + timedelta(microseconds=1), 1
+        yield start + timedelta(microseconds=2), data["value"]
 
     @bg.graph
-    def graph() -> None:
-        collect(source({"value": 42}))
+    def graph() -> bg.TS[int]:
+        return source({"value": 42})
 
-    bg.run_graph(graph)
-    assert values == [1, 42]
+    assert bg.test_graph(graph) == [None, 1, 42]
 
 
 def test_identical_generator_calls_create_independent_sources():

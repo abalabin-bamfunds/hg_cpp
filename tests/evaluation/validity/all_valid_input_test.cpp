@@ -342,20 +342,24 @@ TEST_CASE("all_valid ignores a retained but missing dictionary key",
           "[evaluation][validity][feature:validity][validity:all-valid][feature:getitem][series:tsd]"
           "[series:reference]"
           "[transition:update]") {
-    auto missing_key_validity = std::vector<bool>{};
+    struct observation {
+        i64 size;
+        bool missing_valid;
 
-    const auto inspect = node([&](In<TSD<i64, TS<i64>>, all_valid> dictionary,
-                                  In<REF<TS<i64>>, optional> missing) {
-        missing_key_validity.push_back(missing.valid());
-        return static_cast<i64>(dictionary.size());
+        bool operator==(const observation &) const = default;
+    };
+
+    const auto inspect = node([](In<TSD<i64, TS<i64>>, all_valid> dictionary,
+                                 In<REF<TS<i64>>, optional> missing) {
+        return observation{static_cast<i64>(dictionary.size()), missing.valid()};
     });
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> dictionary) {
         return inspect(dictionary, dictionary[2]);
     };
 
-    CHECK(testing::test_graph(graph, {{{1, 10}}, {{1, 20}}}).equals({1, 1}));
-    CHECK(missing_key_validity == std::vector<bool>{false, false});
+    CHECK(testing::test_graph(graph, {{{1, 10}}, {{1, 20}}})
+              .equals<observation>({observation{1, false}, observation{1, false}}));
 }
 
 namespace {
@@ -409,19 +413,24 @@ TEST_CASE("all_valid checks sampled TSD item values as they invalidate and reval
 TEST_CASE("all_valid checks live items in sampled native dictionaries",
           "[evaluation][validity][feature:validity][validity:all-valid][series:tsd][series:reference]"
           "[feature:sampling][transition:invalidation][transition:revalidation]") {
+    struct observation {
+        bool all_valid;
+        i64 total;
+
+        bool operator==(const observation &) const = default;
+    };
+
     const auto select = node([](In<TS<i64>> choose_second, In<REF<TSD<i64, TS<i64>>>> first,
                                 In<REF<TSD<i64, TS<i64>>>> second, Out<TSD<i64, REF<TSD<i64, TS<i64>>>>> output) {
         output[0].copy(*choose_second == 0 ? first : second);
     });
-    auto observed_all_valid = std::vector<bool>{};
-    const auto inspect = node([&](In<TSD<i64, TSD<i64, TS<i64>>>> input) {
+    const auto inspect = node([](In<TSD<i64, TSD<i64, TS<i64>>>> input) {
         const auto inner = input[0];
         const auto inner_is_valid = inner.all_valid();
-        observed_all_valid.push_back(inner_is_valid);
         const auto first_is_valid = inner[1].valid();
         const auto second_is_valid = inner[2].valid();
         const auto total = (first_is_valid ? *inner[1] : i64{}) + (second_is_valid ? *inner[2] : i64{});
-        return total;
+        return observation{inner_is_valid, total};
     });
 
     const auto graph = bg::graph(
@@ -435,8 +444,8 @@ TEST_CASE("all_valid checks live items in sampled native dictionaries",
     CHECK(testing::test_graph(
               graph, {0, 0, 1, 1}, {{{1, 10}, {2, 20}}},
               {{{1, 30}, {2, 40}}, literal::SKIP, {{2, literal::INVALID}}, {{2, 42}}})
-              .equals({30, literal::SKIP, 30, 72}));
-    CHECK(observed_all_valid == std::vector<bool>{true, false, true});
+              .equals<observation>({observation{true, 30}, std::nullopt, observation{false, 30},
+                                    observation{true, 72}}));
 }
 
 TEST_CASE("an all_valid invalidation handler runs once per failed transition",

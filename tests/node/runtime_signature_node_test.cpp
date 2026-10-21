@@ -370,7 +370,7 @@ TEST_CASE("a callable's repeated identical invocation reuses its output record",
 TEST_CASE("a callable without an output runtime hook uses the declaration runtime type",
           "[feature:node-api][series:value][declaration:concrete][definition:function]") {
     const auto copy = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
-        output.set_value(input.value_view());
+        output.set(*input);
     });
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
     auto wiring = bg::GraphWiring{};

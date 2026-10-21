@@ -81,9 +81,7 @@ struct profiling_counter_source {
     }
 };
 
-const auto profile_increment = bg::node([](bg::In<bg::TS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
-    output.set(*input + 1);
-});
+const auto profile_increment = bg::node([](bg::i64 input) { return input + 1; });
 
 std::vector<int> profile_mesh_events;
 

@@ -17,13 +17,9 @@ namespace {
 using namespace bg;
 using namespace bg::literals;
 
-const auto add_values = node([](In<TS<i64>> left, In<TS<i64>> right, Out<TS<i64>> output) {
-    output.set(*left + *right);
-});
+const auto add_values = node([](i64 left, i64 right) { return left + right; });
 
-const auto multiply_values = node([](In<TS<i64>> left, In<TS<i64>> right, Out<TS<i64>> output) {
-    output.set(*left * *right);
-});
+const auto multiply_values = node([](i64 left, i64 right) { return left * right; });
 
 const auto add_graph = graph("name"_n = "add_values_for_reduce", [](wp<TS<i64>> left, wp<TS<i64>> right) {
     return add_values(left, right);
@@ -38,10 +34,8 @@ const auto representation_sensitive_graph = graph(
         return multiply_values(left, right);
     });
 
-const auto add_values_and_context = node([](In<TS<i64>> left, In<TS<i64>> right,
-                                            In<TS<i64>, "factor"_n, context> factor,
-                                            Out<TS<i64>> output) {
-    output.set(*left + *right + *factor);
+const auto add_values_and_context = node([](i64 left, i64 right, In<TS<i64>, "factor"_n, context> factor) {
+    return left + right + *factor;
 });
 
 const auto context_add_graph = graph("name"_n = "context_add_for_reduce", [](wp<TS<i64>> left,
@@ -215,7 +209,7 @@ TEST_CASE("compact reduce handles addition that reuses an expired physical item 
     });
     const auto tested = [=](wp<TS<i64>> phase) { return reduce(add_graph, make_dictionary(phase)); };
 
-    const auto actual = testing::test_graph(tested, std::array{0, 1, 2});
+    const auto actual = testing::test_graph(tested, {0, 1, 2});
 
     REQUIRE(actual.size() == 3);
     CHECK((actual[0] && scalar_cast<i64>(actual[0]->view()).value() == 5));
@@ -240,8 +234,7 @@ TEST_CASE("compact reduce updates a sparse path in a larger TSD",
         return reduce(add_graph, make_dictionary(initialize, changed_key, changed_value));
     };
 
-    const auto actual = testing::test_graph(tested, std::array{true, false}, std::array{32, 32},
-                                            std::array{100, 100});
+    const auto actual = testing::test_graph(tested, {true, false}, {32, 32}, {100, 100});
 
     CHECK(actual.equals<i64>({2080, 2148}));
 }
@@ -301,7 +294,7 @@ TEST_CASE("reduce retains untouched multi-node results and passive input state",
             }
         });
     const auto copy_reduce_intermediate =
-        node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
+        node([](i64 input) { return input; });
     const auto multi_node_passive_reducer = graph(
         "name"_n = "multi_node_passive_reducer", [=](wp<TS<i64>> left, wp<TS<i64>> right) {
             return copy_reduce_intermediate(sum_active_left_and_passive_right(left, opt(right)));
@@ -343,7 +336,7 @@ TEST_CASE("reduce carries inherited context references into its reducer graphs",
 TEST_CASE("reduce fallback reads values from reference TSD items with inherited context",
           "[feature:reduce][feature:context-time-series][feature:nested-graph][series:tsd]"
           "[series:reference][binding:reference-to-value][transition:update]") {
-    const auto make_target = node([](In<TS<i64>> value, Out<TS<i64>> output) { output.set(*value); });
+    const auto make_target = node([](i64 value) { return value; });
     const auto retain_references = node([](In<TS<bool>> install, In<REF<TS<i64>>, passive> first,
                                            In<REF<TS<i64>>, passive> second,
                                            Out<TSD<i64, REF<TS<i64>>>> output) {
@@ -360,8 +353,7 @@ TEST_CASE("reduce fallback reads values from reference TSD items with inherited 
         return reduce(context_add_graph, retain_references(install, first, second));
     };
 
-    const auto actual = testing::test_graph(tested, std::array{3, 4, 5}, std::array{8, 9, 10},
-                                            std::array{true, false, false}, std::array{2, 2, 2});
+    const auto actual = testing::test_graph(tested, {3, 4, 5}, {8, 9, 10}, {true, false, false}, {2, 2, 2});
 
     CHECK(actual.equals<i64>({13, 15, 17}));
 }
@@ -404,8 +396,7 @@ TEST_CASE("reduce fallback refreshes a singleton reference item after selection 
         return reduce(context_add_graph, retain_reference(install, target));
     };
 
-    const auto actual = testing::test_graph(tested, std::array{5, 0, 9}, std::array{true, false, false},
-                                            std::array{2, 2, 2});
+    const auto actual = testing::test_graph(tested, {5, 0, 9}, {true, false, false}, {2, 2, 2});
 
     CHECK(actual.equals<i64>({5, std::nullopt, 9}));
 }
@@ -491,7 +482,7 @@ TEST_CASE("reduce follows a stable reference to a single TSD item",
             return wp<TS<i64>>{reduce(add_graph, retain_reference(install, target))};
         });
 
-    const auto actual = testing::test_graph(tested, std::array{5, 0, 9}, std::array{true, false, false});
+    const auto actual = testing::test_graph(tested, {5, 0, 9}, {true, false, false});
 
     CHECK(actual.equals<i64>({5, std::nullopt, 9}));
 }
@@ -522,8 +513,7 @@ TEST_CASE("reduce follows stable TSD references as initially invalid items becom
             return wp<TS<i64>>{reduce(add_graph, retain_references(install, first, second))};
         });
 
-    const auto actual = testing::test_graph(tested, std::array{5, 6, 7, 8}, std::array{0, 9, 0, 11},
-                                            std::array{true, false, false, false});
+    const auto actual = testing::test_graph(tested, {5, 6, 7, 8}, {0, 9, 0, 11}, {true, false, false, false});
 
     REQUIRE(actual.size() == 4);
     CHECK((actual[0] && scalar_cast<i64>(actual[0]->view()).value() == 5));

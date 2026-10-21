@@ -1,4 +1,5 @@
 #include <bg/bg.hpp>
+#include <bg/testing/test_graph.hpp>
 
 #include "../../utils/counting_memory_resource.hpp"
 
@@ -10,39 +11,40 @@
 
 namespace {
 
-struct inspect_scalar_list {
-    bg::Scalar<bg::List<bg::i64>> values;
+using namespace bg;
 
-    void start(bg::EvaluationContext *context) const {
-        context->global_state().write([&](auto &state) {
-            state.set(bg::util::symbol{"result"}, bg::ScalarValue{values[0].value() + values[1].value()});
-        });
-    }
+struct scalar_list_source {
+    Scalar<List<i64>> value;
+    Out<TS<List<i64>>> output;
 
+    void start() const { output.set_value(value); }
     void evaluate() const {}
 };
 
-TEST_CASE("a scalar list is available from packed graph scalar storage",
-          "[node][scalar][list][scalar:list][feature:state]") {
-    const auto inspect = bg::node<inspect_scalar_list>();
-    const auto input = bg::ScalarValue<bg::List<bg::i64>>{std::array<bg::i64, 2>{1, 2}};
-    auto state = bg::GlobalState{};
+TEST_CASE("a scalar list propagates through a value time series",
+          "[node][time_series][scalar][list][scalar:list][feature:state]") {
+    const auto source = node<scalar_list_source>();
 
-    bg::run_graph([&] { inspect(input); }, bg::GraphRunOptions{.global_state = &state});
+    const auto sum = node([](In<TS<List<i64>>> input) {
+        const auto values = input.value_view();
+        return values[0].value() + values[1].value();
+    });
 
-    state.read([](const auto &values) { CHECK(bg::scalar_cast<bg::i64>(values.at("result")).value() == 3); });
+    const auto input = ScalarValue<List<i64>>{std::array<i64, 2>{1, 2}};
+
+    const auto graph = [&] { return sum(source(input)); };
+
+    CHECK(testing::test_graph(graph).equals<i64>({3}));
 }
 
 struct inspect_scalar_list_state {
-    bg::State<bg::List<bg::i64>> values;
+    State<List<i64>> values;
+    Out<TS<i64>> output;
 
-    void start(bg::EvaluationContext *context) const {
+    void start() const {
         values->append(1);
         values->append(2);
-
-        context->global_state().write([&](auto &state) {
-            state.set(bg::util::symbol{"result"}, bg::ScalarValue{(*values)[0] + (*values)[1]});
-        });
+        output.set((*values)[0] + (*values)[1]);
     }
 
     void evaluate() const {}
@@ -50,62 +52,51 @@ struct inspect_scalar_list_state {
 
 TEST_CASE("scalar list state is available during node start",
           "[node][state][scalar][list][scalar:list][feature:state][transition:start]") {
-    const auto inspect = bg::node<inspect_scalar_list_state>();
-    auto state = bg::GlobalState{};
+    const auto inspect = node<inspect_scalar_list_state>();
 
-    bg::run_graph([&] { inspect(); }, bg::GraphRunOptions{.global_state = &state});
+    const auto graph = [&] { return inspect(); };
 
-    state.read([](const auto &values) { CHECK(bg::scalar_cast<bg::i64>(values.at("result")).value() == 3); });
+    CHECK(testing::test_graph(graph).equals<i64>({3}));
 }
 
-struct scalar_list_source {
-    bg::Scalar<bg::List<bg::i64>> value;
-    bg::Out<bg::TS<bg::List<bg::i64>>> output;
+struct inspect_scalar_list {
+    Scalar<List<i64>> values;
+    Out<TS<i64>> output;
 
-    void start() const { output.set_value(value); }
+    void start() const { output.set(values[0].value() + values[1].value()); }
+
     void evaluate() const {}
 };
 
-struct scalar_list_sink {
-    bg::In<bg::TS<bg::List<bg::i64>>> input;
+TEST_CASE("a scalar list is available from packed graph scalar storage",
+          "[node][scalar][list][scalar:list][feature:state]") {
+    const auto inspect = node<inspect_scalar_list>();
 
-    void evaluate(bg::EvaluationContext *context) const {
-        const auto values = input.value_view();
-        context->global_state().write([&](auto &state) {
-            state.set(bg::util::symbol{"result"}, bg::ScalarValue{values[0].value() + values[1].value()});
-        });
-    }
-};
+    const auto input = ScalarValue<List<i64>>{std::array<i64, 2>{1, 2}};
 
-TEST_CASE("a scalar list propagates through a value time series",
-          "[node][time_series][scalar][list][scalar:list][feature:state]") {
-    const auto source = bg::node<scalar_list_source>();
-    const auto sink = bg::node<scalar_list_sink>();
-    const auto input = bg::ScalarValue<bg::List<bg::i64>>{std::array<bg::i64, 2>{1, 2}};
-    auto state = bg::GlobalState{};
+    const auto graph = [&] { return inspect(input); };
 
-    bg::run_graph([&] { sink(source(input)); }, bg::GraphRunOptions{.global_state = &state});
-
-    state.read([](const auto &values) { CHECK(bg::scalar_cast<bg::i64>(values.at("result")).value() == 3); });
+    CHECK(testing::test_graph(graph).equals<i64>({3}));
 }
 
 TEST_CASE("a runtime graph releases scalar list time-series storage",
           "[node][time_series][scalar][list][scalar:list][allocation][feature:state]") {
-    const auto source = bg::node<scalar_list_source>();
-    const auto input = bg::ScalarValue<bg::List<bg::i64>>{std::array<bg::i64, 2>{1, 2}};
-    auto wiring = bg::GraphWiring{};
+    const auto source = node<scalar_list_source>();
+
+    const auto input = ScalarValue<List<i64>>{std::array<i64, 2>{1, 2}};
+    auto wiring = GraphWiring{};
     {
-        const auto context = bg::WiringContext{wiring};
+        const auto context = WiringContext{wiring};
         (void)source(input);
     }
 
     wiring.finalize();
-    const auto graph = bg::CompiledGraph{wiring};
+    const auto graph = CompiledGraph{wiring};
     auto memory = counting_memory_resource{};
     {
-        auto runtime_global_state = bg::GlobalState{bg::allocator{memory}};
-        auto runtime = bg::RuntimeGraph{graph, bg::allocator{memory}, runtime_global_state};
-        bg::SimulationEvaluationEngine{}.run(runtime, bg::MIN_DT + std::chrono::microseconds{1});
+        auto runtime_global_state = GlobalState{allocator{memory}};
+        auto runtime = RuntimeGraph{graph, allocator{memory}, runtime_global_state};
+        SimulationEvaluationEngine{}.run(runtime, MIN_DT + std::chrono::microseconds{1});
     }
 
     CHECK(memory.allocations() == 0);

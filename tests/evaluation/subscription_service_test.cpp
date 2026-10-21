@@ -43,7 +43,7 @@ TEST_CASE("subscription services deduplicate requests and return values by key",
         (void)service(key);
         return service(key).as<TS<float>>();
     };
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 1>{0});
+    const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {0});
 
     CHECK(actual.equals<float>({7.0F}));
     CHECK(log.sizes == std::vector<std::size_t>{1});
@@ -59,6 +59,7 @@ TEST_CASE("feedback subscription wrapper delays requests into its nested impleme
         requests.for_each_removed([&](const auto &key) { output.erase(key); });
         requests.for_each_added([&](const auto &key) { output[key].set(*key * 10); });
     });
+
     const auto implementation = graph("name"_n = "delayed_lookup_impl",
                                       [&](wp<TSS<bg::i64>> requests) { return respond(requests); });
     auto catalogue = ServiceCatalogue{};
@@ -70,7 +71,7 @@ TEST_CASE("feedback subscription wrapper delays requests into its nested impleme
         return service(key_source(3)).as<TS<bg::i64>>();
     };
     const auto actual = testing::test_graph(
-        tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 1>{0});
+        tested, GraphRunOptions{.services = &catalogue}, {0});
     CHECK(actual.equals<bg::i64>({std::nullopt, 30}));
 }
 
@@ -82,6 +83,7 @@ TEST_CASE("subscription services reject a replaceable reference to a final key",
     const auto keys = node([](Out<TSD<bg::i64, TS<bg::i64, TimeSeriesGuarantee::final>>> output) {
         output[7].set(7);
     });
+
     const auto selector = node<FinalKeySource<bg::i64>>();
 
     testing::test_wiring([&] {
@@ -132,7 +134,7 @@ TEST_CASE("subscription service clients inside map branches update one root requ
         return mapped[bg::i64{1}].as<TS<bg::i64>>();
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, {{{1, 4}, {2, 9}}});
+    const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {{{1, 4}, {2, 9}}});
 
     CHECK(actual.equals<bg::i64>({4}));
     CHECK(log.sizes == std::vector<std::size_t>{2});
@@ -154,12 +156,14 @@ TEST_CASE("subscription service request bindings cross nested graph boundaries",
         requests.for_each_added([&](const auto &key) { responses[key].set(static_cast<float>(*key)); });
         requests.for_each_removed([&](const auto &key) { responses.erase(key); });
     });
+
     const auto collect = node([&](In<TSS<bg::i64>> requests) {
         log.sizes.push_back(requests.size());
         auto count = std::size_t{};
         requests.for_each_added([&](const auto &) { ++count; });
         log.added.push_back(count);
     });
+
     const auto implementation_with_log = graph("name"_n = "logged_lookup_impl", [&](wp<TSS<bg::i64>> requests) {
         collect(requests);
         return respond(requests);
@@ -171,13 +175,14 @@ TEST_CASE("subscription service request bindings cross nested graph boundaries",
         (void)service(key);
         return key;
     });
+
     const auto key_source = node<FinalKeySource<bg::i64>>();
     const auto tested = [&](wp<TS<bg::i64>> tick) {
         (void)tick;
         return inner(key_source(3));
     };
 
-    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &logged_catalogue}, std::array<bg::i64, 1>{0})
+    CHECK(testing::test_graph(tested, GraphRunOptions{.services = &logged_catalogue}, {0})
               .equals<bg::i64>({3}));
     CHECK(log.sizes == std::vector<std::size_t>{1});
     CHECK(log.added == std::vector<std::size_t>{1});
@@ -200,6 +205,7 @@ TEST_CASE("subscription service clients inside mesh branches update one root req
         log.added.push_back(count);
     });
     const auto responses = node([](Out<TSD<bg::i64, TS<float>>>) {});
+
     const auto implementation = graph("name"_n = "lookup_impl", [&](wp<TSS<bg::i64>> requests) {
         collect(requests);
         return responses();
@@ -216,7 +222,7 @@ TEST_CASE("subscription service clients inside mesh branches update one root req
         return mapped[bg::i64{1}].as<TS<bg::i64>>();
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, {{{1, 4}, {2, 9}}});
+    const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {{{1, 4}, {2, 9}}});
 
     CHECK(actual.equals<bg::i64>({4}));
     CHECK(log.sizes == std::vector<std::size_t>{2});
@@ -240,8 +246,8 @@ TEST_CASE("subscription service multiplicity includes scalar parameters",
     catalogue.register_impl(service, implementation, "path"_n = 1);
     catalogue.register_impl(service, implementation, "path"_n = 2);
 
-    const auto sum =
-        node([](In<TS<float>> left, In<TS<float>> right, Out<TS<float>> output) { output.set(*left + *right); });
+    const auto sum = node([](float left, float right) { return left + right; });
+
     const auto key_source = node<FinalKeySource<bg::i64>>();
     const auto tested = [&](wp<TS<bg::i64>> tick) {
         (void)tick;
@@ -251,7 +257,7 @@ TEST_CASE("subscription service multiplicity includes scalar parameters",
         return sum(first, second);
     };
 
-    CHECK(testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 1>{0}).equals<float>({9.0F}));
+    CHECK(testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {0}).equals<float>({9.0F}));
 }
 
 TEST_CASE("removing a map branch removes its subscription request",
@@ -275,6 +281,7 @@ TEST_CASE("removing a map branch removes its subscription request",
         log.removed.push_back(removed_count);
     });
     const auto responses = node([](Out<TSD<bg::i64, TS<float>>>) {});
+
     const auto implementation = graph("name"_n = "lookup_impl", [&](wp<TSS<bg::i64>> requests) {
         collect(requests);
         return responses();
@@ -293,7 +300,7 @@ TEST_CASE("removing a map branch removes its subscription request",
         return mapped[bg::i64{5}].as<TS<bg::i64>>();
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue},
+    const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue},
                                             {{{5, 7}}, {{5, literal::REMOVE}}});
 
     CHECK(actual.equals<bg::i64>({7, std::nullopt}));
@@ -323,7 +330,7 @@ TEST_CASE("response-producing subscription clients inside a map reject dependenc
 
     auto diagnostic = std::string{};
     try {
-        (void)testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, {{{1, 4}, {2, 9}}});
+        (void)testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {{{1, 4}, {2, 9}}});
     } catch (const std::exception &error) {
         diagnostic = error.what();
     }
@@ -355,6 +362,7 @@ TEST_CASE("subscription request keys compare complete hierarchical scalar values
         log.added.push_back(added_count);
     });
     const auto responses = node([](Out<TSD<Bundle<ServiceKey>, TS<bg::i64>>>) {});
+
     const auto implementation = graph("name"_n = "lookup_impl", [&](wp<TSS<Bundle<ServiceKey>>> requests) {
         collect(requests);
         return responses();
@@ -375,7 +383,7 @@ TEST_CASE("subscription request keys compare complete hierarchical scalar values
         return input;
     };
 
-    const auto actual = testing::test_graph(tested, bg::GraphRunOptions{.services = &catalogue}, std::array<bg::i64, 1>{1});
+    const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {1});
 
     CHECK(actual.equals<bg::i64>({1}));
     CHECK(log.sizes.back() == 1);

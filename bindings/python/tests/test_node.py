@@ -42,19 +42,15 @@ def test_node_accepts_multiple_time_series_values():
 
 
 def test_node_optional_time_series_input_receives_none_when_invalid():
-    calls = []
-
     @bg.node
     def add(trigger: int, value: int | None) -> int:
-        calls.append(value)
-        return trigger + (value or 0)
+        return -trigger if value is None else trigger + value
 
     @bg.graph
     def graph(trigger: bg.TS[int], value: bg.TS[int]) -> bg.TS[int]:
         return add(trigger, value)
 
-    assert bg.test_graph(graph, [1, 2], [None, 4]) == [1, 6]
-    assert calls == [None, 4]
+    assert bg.test_graph(graph, [1, 2], [None, 4]) == [-1, 6]
 
 
 def test_node_optional_scalar_input_receives_none():
@@ -70,11 +66,8 @@ def test_node_optional_scalar_input_receives_none():
 
 
 def test_node_does_not_run_at_start_for_an_invalid_optional_time_series_input():
-    calls = []
-
     @bg.node
     def echo(value: int | None) -> int:
-        calls.append(value)
         return -1 if value is None else value
 
     @bg.graph
@@ -82,7 +75,6 @@ def test_node_does_not_run_at_start_for_an_invalid_optional_time_series_input():
         return echo(value)
 
     assert bg.test_graph(graph, [None, 5]) == [None, 5]
-    assert calls == [5]
 
 
 def test_node_sink_receives_time_series_values():

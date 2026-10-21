@@ -152,8 +152,7 @@ TEST_CASE("inner graph finalization uses the outer cycle's global state",
     FinalizingInner::global_state = nullptr;
     FinalizingInner::finalization_count = 0;
 
-    const auto actual = bg::testing::test_graph(outer, std::array{1, 2, 3, 4},
-                                                 std::array{true, false, false, true});
+    const auto actual = bg::testing::test_graph(outer, {1, 2, 3, 4}, {true, false, false, true});
 
     CHECK(actual.equals({1, std::nullopt, std::nullopt, 4}));
     CHECK(FinalizingInner::finalization_count == 2);
@@ -201,7 +200,7 @@ TEST_CASE("a nested boundary retains a direct final target guarantee",
         return bg::nested(inner, run, publish_final(input));
     };
 
-    CHECK(bg::testing::test_graph(outer, std::array<bg::i64, 1>{17}, std::array{true}).equals({17}));
+    CHECK(bg::testing::test_graph(outer, {17}, {true}).equals({17}));
 }
 
 TEST_CASE("a dynamic input controls scheduling inside a nested graph",
@@ -218,7 +217,7 @@ TEST_CASE("a dynamic input controls scheduling inside a nested graph",
         return bg::nested(inner, run, input);
     };
 
-    CHECK(bg::testing::test_graph(outer, std::array<bg::i64, 2>{1, 2}, std::array{true, true})
+    CHECK(bg::testing::test_graph(outer, {1, 2}, {true, true})
               .equals({1, std::nullopt}));
 }
 
@@ -553,8 +552,7 @@ TEST_CASE("a reference to an outer free list works in a nested graph",
                            bg::wp<bg::TS<bool>> run) { return bg::nested(inner, run, bg::tsl(first, second)); };
 
     const auto actual =
-        bg::testing::test_graph(outer, std::array<bg::i64, 4>{1, 2, 3, 4},
-                                std::array<bg::i64, 4>{10, 20, 30, 40}, std::array{true, true, false, true});
+        bg::testing::test_graph(outer, {1, 2, 3, 4}, {10, 20, 30, 40}, {true, true, false, true});
 
     CHECK(actual.equals({11, 22, std::nullopt, 44}));
 }
@@ -578,8 +576,7 @@ TEST_CASE("a reference to an inner free list works in the outer graph",
                            bg::wp<bg::TS<bool>> run) { return sum(bg::nested(inner, run, first, second)); };
 
     const auto actual =
-        bg::testing::test_graph(outer, std::array<bg::i64, 4>{1, 2, 3, 4},
-                                std::array<bg::i64, 4>{10, 20, 30, 40}, std::array{true, true, false, true});
+        bg::testing::test_graph(outer, {1, 2, 3, 4}, {10, 20, 30, 40}, {true, true, false, true});
 
     CHECK(actual.equals({11, 22, std::nullopt, 44}));
 }
@@ -598,8 +595,7 @@ TEST_CASE("a free list reference passes through a nested graph",
                            bg::wp<bg::TS<bool>> run) { return sum(bg::nested(inner, run, bg::tsl(first, second))); };
 
     const auto actual =
-        bg::testing::test_graph(outer, std::array<bg::i64, 4>{1, 2, 3, 4},
-                                std::array<bg::i64, 4>{10, 20, 30, 40}, std::array{true, true, false, true});
+        bg::testing::test_graph(outer, {1, 2, 3, 4}, {10, 20, 30, 40}, {true, true, false, true});
 
     CHECK(actual.equals({11, 22, std::nullopt, 44}));
 }
@@ -612,8 +608,9 @@ TEST_CASE("an outer free list reference item rebinds across a nested graph bound
         bg::node([](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TS<bg::i64>>> first,
                     bg::In<bg::REF<bg::TS<bg::i64>>> second,
                     bg::Out<bg::REF<bg::TS<bg::i64>>> output) { output.copy(*use_second ? second : first); });
-    const auto add = bg::node([](bg::In<bg::TS<bg::i64>> left, bg::In<bg::TS<bg::i64>> right,
-                                 bg::Out<bg::TS<bg::i64>> output) { output.set(*left + *right); });
+
+    const auto add = bg::node([](bg::i64 left, bg::i64 right) { return left + right; });
+
     const auto inner =
         bg::graph("name"_n = "consume_outer_free_reference_list",
                   [&](bg::wp<bg::TSL<bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::ordinary>, 2>> input)
@@ -643,8 +640,9 @@ TEST_CASE("an inner free list reference item rebinds across a nested graph bound
         bg::node([](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TS<bg::i64>>> first,
                     bg::In<bg::REF<bg::TS<bg::i64>>> second,
                     bg::Out<bg::REF<bg::TS<bg::i64>>> output) { output.copy(*use_second ? second : first); });
-    const auto add = bg::node([](bg::In<bg::TS<bg::i64>> left, bg::In<bg::TS<bg::i64>> right,
-                                 bg::Out<bg::TS<bg::i64>> output) { output.set(*left + *right); });
+
+    const auto add = bg::node([](bg::i64 left, bg::i64 right) { return left + right; });
+
     const auto materialize = bg::graph(
         "name"_n = "materialize_free_reference_list",
         [](bg::wp<bg::TSL<bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::ordinary>, 2>> input)
@@ -685,8 +683,9 @@ TEST_CASE("a free list reference item survives two boundaries and repeated lifec
         bg::node([](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TS<bg::i64>>> first,
                     bg::In<bg::REF<bg::TS<bg::i64>>> second,
                     bg::Out<bg::REF<bg::TS<bg::i64>>> output) { output.copy(*use_second ? second : first); });
-    const auto add = bg::node([](bg::In<bg::TS<bg::i64>> left, bg::In<bg::TS<bg::i64>> right,
-                                 bg::Out<bg::TS<bg::i64>> output) { output.set(*left + *right); });
+
+    const auto add = bg::node([](bg::i64 left, bg::i64 right) { return left + right; });
+
     const auto pass_through = bg::graph(
         "name"_n = "pass_free_reference_list",
         [](bg::wp<bg::TSL<bg::REF<bg::TS<bg::i64>, bg::TimeSeriesGuarantee::ordinary>, 2>> input)
@@ -742,8 +741,7 @@ TEST_CASE("a reference to an outer free bundle works in a nested graph",
     };
 
     const auto actual =
-        bg::testing::test_graph(outer, std::array<bg::i64, 4>{1, 2, 3, 4},
-                                std::array<bg::i64, 4>{10, 20, 30, 40}, std::array{true, true, false, true});
+        bg::testing::test_graph(outer, {1, 2, 3, 4}, {10, 20, 30, 40}, {true, true, false, true});
 
     CHECK(actual.equals({11, 22, std::nullopt, 44}));
 }
@@ -765,8 +763,7 @@ TEST_CASE("a reference to an inner free bundle works in the outer graph",
                            bg::wp<bg::TS<bool>> run) { return sum(bg::nested(inner, run, first, second)); };
 
     const auto actual =
-        bg::testing::test_graph(outer, std::array<bg::i64, 4>{1, 2, 3, 4},
-                                std::array<bg::i64, 4>{10, 20, 30, 40}, std::array{true, true, false, true});
+        bg::testing::test_graph(outer, {1, 2, 3, 4}, {10, 20, 30, 40}, {true, true, false, true});
 
     CHECK(actual.equals({11, 22, std::nullopt, 44}));
 }
@@ -785,8 +782,8 @@ TEST_CASE("a free bundle reference passes through a nested graph",
     };
 
     const auto actual =
-        bg::testing::test_graph(outer, std::array<bg::i64, 4>{1, 2, 3, 4},
-                                std::array<bg::i64, 4>{10, 20, 30, 40}, std::array{true, true, false, true});
+        bg::testing::test_graph(outer, {1, 2, 3, 4},
+                                {10, 20, 30, 40}, {true, true, false, true});
 
     CHECK(actual.equals({11, 22, std::nullopt, 44}));
 }
@@ -804,8 +801,9 @@ TEST_CASE("an outer free bundle reference field rebinds across a nested graph bo
         bg::node([](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TS<bg::i64>>> first,
                     bg::In<bg::REF<bg::TS<bg::i64>>> second,
                     bg::Out<bg::REF<bg::TS<bg::i64>>> output) { output.copy(*use_second ? second : first); });
-    const auto add = bg::node([](bg::In<bg::TS<bg::i64>> left, bg::In<bg::TS<bg::i64>> right,
-                                 bg::Out<bg::TS<bg::i64>> output) { output.set(*left + *right); });
+
+    const auto add = bg::node([](bg::i64 left, bg::i64 right) { return left + right; });
+
     const auto inner = bg::graph("name"_n = "consume_outer_free_reference_bundle",
                                  [&](bg::wp<bg::TSB<NestedReferenceBundle>> input) -> bg::wp<bg::TS<bg::i64>> {
                                      return add(input->value, input->selected);
@@ -836,8 +834,9 @@ TEST_CASE("an inner free bundle reference field rebinds across a nested graph bo
         bg::node([](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TS<bg::i64>>> first,
                     bg::In<bg::REF<bg::TS<bg::i64>>> second,
                     bg::Out<bg::REF<bg::TS<bg::i64>>> output) { output.copy(*use_second ? second : first); });
-    const auto add = bg::node([](bg::In<bg::TS<bg::i64>> left, bg::In<bg::TS<bg::i64>> right,
-                                 bg::Out<bg::TS<bg::i64>> output) { output.set(*left + *right); });
+
+    const auto add = bg::node([](bg::i64 left, bg::i64 right) { return left + right; });
+
     const auto materialize = bg::graph(
         "name"_n = "materialize_free_reference_bundle",
         [](bg::wp<bg::TSB<NestedReferenceBundle>> input) -> bg::wp<bg::TSB<NestedReferenceBundle>> { return input; });
@@ -875,8 +874,9 @@ TEST_CASE("a free bundle reference field survives two boundaries and repeated li
         bg::node([](bg::In<bg::TS<bool>> use_second, bg::In<bg::REF<bg::TS<bg::i64>>> first,
                     bg::In<bg::REF<bg::TS<bg::i64>>> second,
                     bg::Out<bg::REF<bg::TS<bg::i64>>> output) { output.copy(*use_second ? second : first); });
-    const auto add = bg::node([](bg::In<bg::TS<bg::i64>> left, bg::In<bg::TS<bg::i64>> right,
-                                 bg::Out<bg::TS<bg::i64>> output) { output.set(*left + *right); });
+
+    const auto add = bg::node([](bg::i64 left, bg::i64 right) { return left + right; });
+
     const auto pass_through = bg::graph(
         "name"_n = "pass_free_reference_bundle",
         [](bg::wp<bg::TSB<NestedReferenceBundle>> input) -> bg::wp<bg::TSB<NestedReferenceBundle>> { return input; });

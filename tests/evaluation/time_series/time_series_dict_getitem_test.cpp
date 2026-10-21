@@ -80,7 +80,7 @@ TEST_CASE("dictionary getitem remains invalid when a value item is added and rem
 TEST_CASE("dictionary getitem does not evaluate when its selected value item ticks",
           "[evaluation][series:tsd][series:value][feature:getitem][feature:operator]"
           "[binding:value-to-reference][binding:reference-to-reference][transition:update]") {
-    const auto monitor = node([](In<REF<TS<i64>>>, Out<TS<i64>> output) { output.set(1); });
+    const auto monitor = node([](In<REF<TS<i64>>>) { return i64{1}; });
     const auto graph = [&](wp<TSD<i64, TS<i64>>> dictionary) {
         return monitor(dictionary[i64{1}]);
     };
@@ -106,7 +106,7 @@ TEST_CASE("dictionary getitem changes its subscription with a time series key",
 TEST_CASE("dictionary getitem fans out one selected value item without observing another item",
           "[evaluation][series:tsd][series:value][feature:getitem][feature:operator][shape:fan-out]"
           "[binding:value-to-reference][binding:reference-to-value][transition:update]") {
-    const auto sum = node([](In<TS<i64>> left, In<TS<i64>> right, Out<TS<i64>> output) { output.set(*left + *right); });
+    const auto sum = node([](i64 left, i64 right) { return left + right; });
     const auto graph = [&](wp<TSD<i64, TS<i64>>> dictionary) {
         return sum(dictionary[i64{1}], dictionary[i64{1}]);
     };
@@ -119,7 +119,7 @@ TEST_CASE("dictionary getitem fans out one selected value item without observing
 TEST_CASE("dictionary getitem independently selects distinct value items",
           "[evaluation][series:tsd][series:value][feature:getitem][feature:operator][shape:fan-out]"
           "[binding:value-to-reference][binding:reference-to-value][transition:update]") {
-    const auto sum = node([](In<TS<i64>> left, In<TS<i64>> right, Out<TS<i64>> output) { output.set(*left + *right); });
+    const auto sum = node([](i64 left, i64 right) { return left + right; });
     const auto graph = [&](wp<TSD<i64, TS<i64>>> dictionary) {
         return sum(dictionary[i64{1}], dictionary[i64{2}]);
     };
@@ -147,8 +147,10 @@ TEST_CASE("dictionary getitem releases its subscription while a time series key 
 TEST_CASE("dictionary getitem selects an item from a dictionary of references",
           "[evaluation][series:tsd][series:value][reference][feature:getitem][feature:operator]"
           "[binding:reference-to-reference][binding:reference-to-value]") {
-    const auto increment = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input + 1); });
-    const auto scale = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input * 10); });
+    const auto increment = node([](i64 input) { return input + 1; });
+
+    const auto scale = node([](i64 input) { return input * 10; });
+
     const auto make_dictionary =
         node([](In<REF<TS<i64>>> first, In<REF<TS<i64>>> second, Out<TSD<i64, REF<TS<i64>>>> output) {
             output[1].copy(first);
@@ -166,12 +168,14 @@ TEST_CASE("dictionary getitem selects an item from a dictionary of references",
 TEST_CASE("dictionary getitem follows a replaced reference without evaluating for target updates",
           "[evaluation][series:tsd][series:value][reference][feature:getitem][feature:operator]"
           "[binding:reference-to-reference][binding:reference-to-value][transition:update]") {
-    const auto increment = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input + 1); });
-    const auto scale = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input * 10); });
+    const auto increment = node([](i64 input) { return input + 1; });
+
+    const auto scale = node([](i64 input) { return input * 10; });
+
     const auto make_dictionary =
         node([](In<TS<bool>> select_second, In<REF<TS<i64>>> first, In<REF<TS<i64>>> second,
                 Out<TSD<i64, REF<TS<i64>>>> output) { output[1].copy(*select_second ? second : first); });
-    const auto monitor = node([](In<REF<TS<i64>>>, Out<TS<i64>> output) { output.set(1); });
+    const auto monitor = node([](In<REF<TS<i64>>>) { return i64{1}; });
     const auto graph = [&](wp<TS<i64>> input, wp<TS<bool>> select_second) {
         return monitor(make_dictionary(select_second, increment(input), scale(input))[i64{1}]);
     };
@@ -185,7 +189,7 @@ TEST_CASE("dictionary getitem restores a removed reference item after its only s
           "[evaluation][series:tsd][series:reference][reference][feature:getitem][feature:operator]"
           "[binding:reference-to-reference][binding:reference-to-value]"
           "[transition:removal][transition:resurrection]") {
-    const auto make_target = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
+    const auto make_target = node([](i64 input) { return input; });
     const auto make_dictionary =
         node([](In<TS<i64>> command, In<REF<TS<i64>>> target, Out<TSD<i64, REF<TS<i64>>>> output) {
             if (*command == 0) {
@@ -207,7 +211,7 @@ TEST_CASE("dictionary getitem restores a removed reference item while another it
           "[evaluation][series:tsd][series:reference][reference][feature:getitem][feature:operator]"
           "[binding:reference-to-reference][binding:reference-to-value]"
           "[transition:removal][transition:resurrection]") {
-    const auto make_target = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
+    const auto make_target = node([](i64 input) { return input; });
     const auto make_dictionary =
         node([](In<TS<i64>> command, In<REF<TS<i64>>> target, Out<TSD<i64, REF<TS<i64>>>> output) {
             output[2].copy(target);
@@ -229,14 +233,16 @@ TEST_CASE("dictionary getitem restores a removed reference item while another it
 TEST_CASE("dictionary reference getitem ignores another item",
           "[evaluation][series:tsd][series:reference][feature:getitem][feature:operator]"
           "[binding:reference-to-reference][shape:fan-out][transition:update]") {
-    const auto increment = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input + 1); });
-    const auto scale = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input * 10); });
+    const auto increment = node([](i64 input) { return input + 1; });
+
+    const auto scale = node([](i64 input) { return input * 10; });
+
     const auto make_dictionary = node([](In<TS<bool>> select_second, In<REF<TS<i64>>> first, In<REF<TS<i64>>> second,
                                          Out<TSD<i64, REF<TS<i64>>>> output) {
         output[1].copy(first);
         output[2].copy(*select_second ? second : first);
     });
-    const auto monitor = node([](In<REF<TS<i64>>>, Out<TS<i64>> output) { output.set(1); });
+    const auto monitor = node([](In<REF<TS<i64>>>) { return i64{1}; });
     const auto graph = [&](wp<TS<i64>> input, wp<TS<bool>> select_second) {
         return monitor(make_dictionary(select_second, increment(input), scale(input))[i64{1}]);
     };
@@ -418,14 +424,16 @@ TEST_CASE("a dereferenced dictionary reports later target changes after adding i
 TEST_CASE("a dereferenced dictionary reports one update when a stored reference changes",
           "[evaluation][series:tsd][series:value][reference][feature:reference][feature:collection-change]"
           "[transition:update]") {
-    const auto make_first = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
-    const auto make_second = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input + 100); });
+    const auto make_first = node([](i64 input) { return input; });
+
+    const auto make_second = node([](i64 input) { return input + 100; });
+
     const auto make_dictionary = node([](In<TS<bool>> select_second, In<REF<TS<i64>>> first,
                                          In<REF<TS<i64>>> second,
                                          Out<TSD<i64, REF<TS<i64>>>> output) {
         output[1].copy(*select_second ? second : first);
     });
-    const auto read_item = node([](In<TS<i64>> item, Out<TS<i64>> output) { output.set(*item); });
+    const auto read_item = node([](i64 item) { return item; });
     const auto observe_changes = node<dereferenced_dictionary_change_queries>();
     dereferenced_dictionary_change_queries::changes.clear();
     const auto graph = [&](wp<TS<i64>> input, wp<TS<bool>> select_second) {
@@ -612,7 +620,7 @@ TEST_CASE("an inner graph selects an outer dictionary reference across stop and 
           "[evaluation][nested][series:tsd][series:value][reference][feature:getitem][feature:operator]"
           "[feature:nested-graph][boundary][binding:value-to-reference][binding:reference-to-reference]"
           "[binding:reference-to-value][transition:stop][transition:restart]") {
-    const auto read = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
+    const auto read = node([](i64 input) { return input; });
     const auto inner = graph("name"_n = "select_outer_dictionary_item",
                              [&](wp<TSD<i64, REF<TS<i64>>>> input) -> wp<TS<i64>> {
                                  return input[i64{1}].as<TS<i64>>();
@@ -635,7 +643,7 @@ TEST_CASE("an inner dictionary reference representation crosses into its outer g
         node([](In<TS<i64>> input, Out<TSD<i64, TS<i64>>> output) { output[1].set(*input); });
     const auto select =
         node([](In<TSD<i64, REF<TS<i64>>>> input, Out<REF<TS<i64>>> output) { output.copy(input[1]); });
-    const auto read = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
+    const auto read = node([](i64 input) { return input; });
     const auto inner = graph("name"_n = "produce_dictionary", [&](wp<TS<i64>> input) -> wp<TSD<i64, TS<i64>>> {
         return make_dictionary(input);
     });
@@ -654,7 +662,7 @@ TEST_CASE("a dictionary reference representation connects two nested graphs",
         node([](In<TS<i64>> input, Out<TSD<i64, TS<i64>>> output) { output[1].set(*input); });
     const auto select =
         node([](In<TSD<i64, REF<TS<i64>>>> input, Out<REF<TS<i64>>> output) { output.copy(input[1]); });
-    const auto read = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
+    const auto read = node([](i64 input) { return input; });
     const auto producer =
         graph("name"_n = "produce_dictionary",
               [&](wp<TS<i64>> input) -> wp<TSD<i64, TS<i64>>> { return make_dictionary(input); });
@@ -680,7 +688,7 @@ TEST_CASE("an inner graph selects a dictionary reference from another inner grap
     const auto producer =
         graph("name"_n = "produce_selected_dictionary",
               [&](wp<TS<i64>> input) -> wp<TSD<i64, TS<i64>>> { return make_dictionary(input); });
-    const auto read = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
+    const auto read = node([](i64 input) { return input; });
     const auto consumer = graph("name"_n = "select_inner_dictionary_item",
                                 [&](wp<TSD<i64, REF<TS<i64>>>> input) -> wp<TS<i64>> {
                                     return input[i64{1}].as<TS<i64>>();
@@ -700,7 +708,7 @@ TEST_CASE("dictionary getitem ignores changes to another contained dictionary",
           "[evaluation][series:tsd][series:value][reference][feature:getitem][feature:operator]"
           "[binding:value-to-reference][binding:reference-to-value][shape:nested]"
           "[transition:update]") {
-    const auto read = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
+    const auto read = node([](i64 input) { return input; });
     const auto graph = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> dictionary) {
         return read(dictionary[i64{1}][i64{2}]);
     };
@@ -715,7 +723,7 @@ TEST_CASE("dictionary getitem follows removal and restoration of a contained dic
           "[evaluation][series:tsd][series:value][reference][feature:getitem][feature:operator]"
           "[binding:value-to-reference][binding:reference-to-value][shape:nested]"
           "[transition:removal][transition:resurrection]") {
-    const auto read = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
+    const auto read = node([](i64 input) { return input; });
     const auto graph = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> dictionary) {
         return read(dictionary[i64{1}][i64{2}]);
     };
@@ -739,7 +747,7 @@ TEST_CASE("a contained dictionary reference representation follows removal and r
         });
     const auto select =
         node([](In<TSD<i64, REF<TS<i64>>>> input, Out<REF<TS<i64>>> output) { output.copy(input[2]); });
-    const auto read = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
+    const auto read = node([](i64 input) { return input; });
     const auto graph = [&](wp<TS<i64>> command) { return read(select(make_dictionary(command)[i64{1}])); };
 
     const auto actual = testing::test_graph(graph, std::array{10, -1, 20});
@@ -808,7 +816,7 @@ TEST_CASE("dictionary getitem follows a sampled dictionary item",
                                 Out<TSD<i64, REF<TSD<i64, TS<i64>>>>> output) {
         output[0].copy(*use_second ? second : first);
     });
-    const auto read = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
+    const auto read = node([](i64 input) { return input; });
     const auto graph = [&](wp<TSD<i64, TS<i64>>> first, wp<TSD<i64, TS<i64>>> second,
                            wp<TS<bool>> use_second) {
         return read(select(use_second, first, second)[i64{0}][i64{2}]);
@@ -874,7 +882,7 @@ TEST_CASE("all consumers see the same dictionary target sample",
         input[0].for_each_removed([&](const auto &key) { result += static_cast<int>(*key) * 10; });
         output.set(result);
     });
-    const auto sum = node([](In<TS<i64>> left, In<TS<i64>> right, Out<TS<i64>> output) { output.set(*left + *right); });
+    const auto sum = node([](i64 left, i64 right) { return left + right; });
     const auto graph = [&](wp<TSD<i64, TS<i64>>> first, wp<TSD<i64, TS<i64>>> second,
                            wp<TS<bool>> use_second) {
         const auto dictionary = select(use_second, first, second);

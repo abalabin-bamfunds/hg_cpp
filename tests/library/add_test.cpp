@@ -24,7 +24,7 @@ using namespace bg::literals;
 TEST_CASE("scalar addition runs once at startup",
           "[feature:operator][shape:source][scalar:floating-point][guarantee:const]") {
     const auto scalar_addition = [](wp<TS<bool>>) { return operators::add(1.5, 2.5); };
-    CHECK(testing::test_graph(scalar_addition, std::array{true, false, true})
+    CHECK(testing::test_graph(scalar_addition, {true, false, true})
               .equals<double>({4.0, std::nullopt, std::nullopt}));
 
     auto wiring = GraphWiring{};
@@ -49,8 +49,8 @@ TEST_CASE("addition accepts scalar and time-series operands in either order",
     const auto scalar_left = [](wp<TS<double>> value) { return 2.0 + value; };
     const auto scalar_right = [](wp<TS<double>> value) { return value + 2.0; };
 
-    CHECK(testing::test_graph(scalar_left, std::array{1.0, 2.0}).equals<double>({3.0, 4.0}));
-    CHECK(testing::test_graph(scalar_right, std::array{1.0, 2.0}).equals<double>({3.0, 4.0}));
+    CHECK(testing::test_graph(scalar_left, {1.0, 2.0}).equals<double>({3.0, 4.0}));
+    CHECK(testing::test_graph(scalar_right, {1.0, 2.0}).equals<double>({3.0, 4.0}));
 }
 
 TEST_CASE("addition accepts typed and erased wiring points",
@@ -60,7 +60,7 @@ TEST_CASE("addition accepts typed and erased wiring points",
         return erased + lhs + 1.0;
     };
 
-    CHECK(testing::test_graph(graph, std::array{1.0, 2.0}, std::array{10.0, 20.0})
+    CHECK(testing::test_graph(graph, {1.0, 2.0}, {10.0, 20.0})
               .equals<double>({13.0, 25.0}));
 }
 
@@ -70,7 +70,7 @@ TEST_CASE("addition accepts named time-series arguments",
         return operators::add("rhs"_n = rhs, "lhs"_n = lhs);
     };
 
-    CHECK(testing::test_graph(graph, std::array{1.0, 2.0}, std::array{10.0, 20.0})
+    CHECK(testing::test_graph(graph, {1.0, 2.0}, {10.0, 20.0})
               .equals<double>({11.0, 22.0}));
 }
 
@@ -185,8 +185,8 @@ TEST_CASE("string addition propagates time-series guarantees",
     CHECK(testing::test_graph(final_pair).equals<string>({"leftright"}));
     CHECK(testing::test_graph(final_plus_deduplicated, input).equals<string>({"finalx", "finaly"}));
     CHECK(testing::test_graph(concatenated_deduplication,
-                              std::array<std::string_view, 2>{"ab", "a"},
-                              std::array<std::string_view, 2>{"c", "bc"})
+                              {"ab", "a"},
+                              {"c", "bc"})
               .equals<string>({"abc", std::nullopt}));
     CHECK(testing::test_graph(reference, input).equals<string>({"reference!x", "reference!y"}));
     CHECK(testing::test_graph(constant).equals<string>({"ab"}));
@@ -262,8 +262,8 @@ TEST_CASE("addition does not convert an integer scalar to double",
     const auto graph = [](wp<TS<double>> value) { return value + 1; };
     const auto direct = [](wp<TS<double>> value) { return operators::add(value, 1); };
 
-    CHECK_THROWS_AS(testing::test_graph(graph, std::array{2.0}), WiringError);
-    CHECK_THROWS_AS(testing::test_graph(direct, std::array{2.0}), WiringError);
+    CHECK_THROWS_AS(testing::test_graph(graph, {2.0}), WiringError);
+    CHECK_THROWS_AS(testing::test_graph(direct, {2.0}), WiringError);
 }
 
 TEST_CASE("opt selects addition that substitutes zero for either invalid operand",
@@ -452,17 +452,17 @@ TEST_CASE("addition preserves the shared guarantee for direct time-series inputs
         return result;
     };
 
-    CHECK(testing::test_graph(ordinary, std::array{1.0, 1.0}, std::array{2.0, 2.0})
+    CHECK(testing::test_graph(ordinary, {1.0, 1.0}, {2.0, 2.0})
               .equals<double>({3.0, 3.0}));
-    CHECK(testing::test_graph(deduplicated, std::array{1.0, 2.0, 3.0}, std::array{2.0, 1.0, 1.0})
+    CHECK(testing::test_graph(deduplicated, {1.0, 2.0, 3.0}, {2.0, 1.0, 1.0})
               .equals<double>({3.0, std::nullopt, 4.0}));
-    CHECK(testing::test_graph(scalar_left_deduplicated, std::array{1.0, 2.0})
+    CHECK(testing::test_graph(scalar_left_deduplicated, {1.0, 2.0})
               .equals<double>({3.0, 4.0}));
-    CHECK(testing::test_graph(scalar_right_deduplicated, std::array{1.0, 2.0})
+    CHECK(testing::test_graph(scalar_right_deduplicated, {1.0, 2.0})
               .equals<double>({3.0, 4.0}));
     CHECK(testing::test_graph(final).equals<double>({5.0}));
-    CHECK(testing::test_graph(final_plus_ordinary, std::array{1.0, 2.0}).equals<double>({3.0, 4.0}));
-    CHECK(testing::test_graph(final_plus_deduplicated, std::array{1.0, 2.0, 2.0, 3.0})
+    CHECK(testing::test_graph(final_plus_ordinary, {1.0, 2.0}).equals<double>({3.0, 4.0}));
+    CHECK(testing::test_graph(final_plus_deduplicated, {1.0, 2.0, 2.0, 3.0})
               .equals<double>({3.0, 4.0, std::nullopt, 5.0}));
     CHECK(testing::test_graph(constant).equals<double>({5.0}));
 }
@@ -474,7 +474,7 @@ TEST_CASE("timestamp addition requires strict inputs",
         return operators::add(opt(timestamp), opt(duration));
     };
 
-    CHECK_THROWS_AS(testing::test_graph(optional_inputs, std::array{MIN_DT}, std::array{timedelta_t{1}}),
+    CHECK_THROWS_AS(testing::test_graph(optional_inputs, {MIN_DT}, {timedelta_t{1}}),
                     WiringError);
 }
 
@@ -551,11 +551,11 @@ TEST_CASE("integer, duration, and timestamp arithmetic wraps at signed boundarie
     const auto optional_add_integer = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) {
         return opt(lhs) + opt(rhs);
     };
-    CHECK(testing::test_graph(add_integer, std::array{I64_MAX, I64_MIN}, std::array<i64, 2>{1, -1})
+    CHECK(testing::test_graph(add_integer, {I64_MAX, I64_MIN}, {1, -1})
               .equals<i64>({I64_MIN, I64_MAX}));
-    CHECK(testing::test_graph(subtract_integer, std::array{I64_MIN, I64_MAX}, std::array<i64, 2>{1, -1})
+    CHECK(testing::test_graph(subtract_integer, {I64_MIN, I64_MAX}, {1, -1})
               .equals<i64>({I64_MAX, I64_MIN}));
-    CHECK(testing::test_graph(optional_add_integer, std::array{I64_MAX}, std::array<i64, 1>{1})
+    CHECK(testing::test_graph(optional_add_integer, {I64_MAX}, {1})
               .equals<i64>({I64_MIN}));
 
     const auto add_duration = [](wp<TS<timedelta_t>> lhs, wp<TS<timedelta_t>> rhs) {
@@ -565,12 +565,12 @@ TEST_CASE("integer, duration, and timestamp arithmetic wraps at signed boundarie
         return operators::sub(lhs, rhs);
     };
     CHECK(testing::test_graph(add_duration,
-                              std::array{timedelta_t::max(), timedelta_t::min()},
-                              std::array{timedelta_t{1}, timedelta_t{-1}})
+                              {timedelta_t::max(), timedelta_t::min()},
+                              {timedelta_t{1}, timedelta_t{-1}})
               .equals<timedelta_t>({timedelta_t::min(), timedelta_t::max()}));
     CHECK(testing::test_graph(subtract_duration,
-                              std::array{timedelta_t::min(), timedelta_t::max()},
-                              std::array{timedelta_t{1}, timedelta_t{-1}})
+                              {timedelta_t::min(), timedelta_t::max()},
+                              {timedelta_t{1}, timedelta_t{-1}})
               .equals<timedelta_t>({timedelta_t::max(), timedelta_t::min()}));
 
     const auto add_timestamp = [](wp<TS<date_time_t>> timestamp, wp<TS<timedelta_t>> duration) {
@@ -623,7 +623,7 @@ TEST_CASE("required addition invalidates and revalidates with its inputs",
         return observe(operators::add(source(lhs), source(rhs)));
     };
 
-    const auto actual = testing::test_graph(graph, std::array{1.0, -1.0, 3.0}, std::array{10.0, 10.0, 10.0});
+    const auto actual = testing::test_graph(graph, {1.0, -1.0, 3.0}, {10.0, 10.0, 10.0});
 
     CHECK(actual.equals<bool>({true, false, true}));
 }
@@ -660,7 +660,7 @@ TEST_CASE("required addition follows reference target invalidation and revalidat
         return observe(operators::add(pass_reference(source(lhs)), pass_reference(source(rhs))));
     };
 
-    const auto actual = testing::test_graph(graph, std::array{1.0, -1.0, 3.0}, std::array{10.0, 10.0, 10.0});
+    const auto actual = testing::test_graph(graph, {1.0, -1.0, 3.0}, {10.0, 10.0, 10.0});
 
     CHECK(actual.equals<bool>({true, false, true}));
 }
@@ -685,7 +685,7 @@ TEST_CASE("addition retargets an ordinary reference between ordinary targets",
     };
 
     const auto actual = testing::test_graph(
-        graph, std::array{10.0, 11.0, 12.0}, std::array{20.0, 21.0, 22.0}, std::array{false, true, false});
+        graph, {10.0, 11.0, 12.0}, {20.0, 21.0, 22.0}, {false, true, false});
 
     CHECK(actual.equals<double>({11.0, 22.0, 13.0}));
 }
@@ -721,7 +721,7 @@ TEST_CASE("addition retargets an ordinary reference between final and const targ
         return result;
     };
 
-    const auto actual = testing::test_graph(graph, std::array{false, true, false, true});
+    const auto actual = testing::test_graph(graph, {false, true, false, true});
 
     CHECK(actual.equals<double>({2.0, 3.0, 2.0, 3.0}));
 }
@@ -755,7 +755,7 @@ TEST_CASE("addition observes equal values from distinct deduplicated reference t
         return result;
     };
 
-    const auto actual = testing::test_graph(graph, std::array{false, true, false, true});
+    const auto actual = testing::test_graph(graph, {false, true, false, true});
 
     CHECK(actual.equals<double>({5.0, 5.0, 5.0, 5.0}));
 }
@@ -770,7 +770,7 @@ TEST_CASE("addition runs inside a nested graph",
         return nested(inner, run, lhs, rhs);
     };
 
-    CHECK(testing::test_graph(outer, std::array{1.0, 2.0}, std::array{10.0, 20.0}, std::array{true, true})
+    CHECK(testing::test_graph(outer, {1.0, 2.0}, {10.0, 20.0}, {true, true})
               .equals<double>({11.0, 22.0}));
 }
 
@@ -789,7 +789,7 @@ TEST_CASE("addition consumes references across a nested graph boundary",
         return nested(inner, run, lhs, rhs);
     };
 
-    CHECK(testing::test_graph(outer, std::array{1.0, 2.0}, std::array{10.0, 20.0}, std::array{true, true})
+    CHECK(testing::test_graph(outer, {1.0, 2.0}, {10.0, 20.0}, {true, true})
               .equals<double>({11.0, 22.0}));
 }
 

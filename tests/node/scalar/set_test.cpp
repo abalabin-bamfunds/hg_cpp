@@ -1,4 +1,5 @@
 #include <bg/bg.hpp>
+#include <bg/testing/test_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -7,41 +8,41 @@
 
 namespace {
 
-struct inspect_scalar_set {
-    bg::Scalar<bg::Set<bg::i64>> values;
+using namespace bg;
 
-    void start(bg::EvaluationContext *context) const {
-        auto result = bg::i64{};
-        values.for_each([&](const auto value) { result += value.value(); });
+struct scalar_set_source {
+    Scalar<Set<i64>> value;
+    Out<TS<Set<i64>>> output;
 
-        context->global_state().write(
-            [&](auto &state) { state.set(bg::util::symbol{"result"}, bg::ScalarValue{result}); });
-    }
-
+    void start() const { output.set_value(value); }
     void evaluate() const {}
 };
 
-TEST_CASE("a scalar set is available from packed graph scalar storage",
-          "[node][scalar][set][scalar:set][feature:state]") {
-    const auto inspect = bg::node<inspect_scalar_set>();
-    const auto input = bg::ScalarValue<bg::Set<bg::i64>>{std::array<bg::i64, 2>{1, 2}};
-    auto state = bg::GlobalState{};
+TEST_CASE("a scalar set propagates through a value time series",
+          "[node][time_series][scalar][set][scalar:set][feature:state]") {
+    const auto source = node<scalar_set_source>();
 
-    bg::run_graph([&] { inspect(input); }, bg::GraphRunOptions{.global_state = &state});
+    const auto sum = node([](In<TS<Set<i64>>> input) {
+        auto result = i64{};
+        input.value_view().for_each([&](const auto value) { result += value.value(); });
+        return result;
+    });
 
-    state.read([](const auto &values) { CHECK(bg::scalar_cast<bg::i64>(values.at("result")).value() == 3); });
+    const auto input = ScalarValue<Set<i64>>{std::array<i64, 2>{1, 2}};
+
+    const auto graph = [&] { return sum(source(input)); };
+
+    CHECK(testing::test_graph(graph).equals<i64>({3}));
 }
 
 struct inspect_scalar_set_state {
-    bg::State<bg::Set<bg::i64>> values;
+    State<Set<i64>> values;
+    Out<TS<i64>> output;
 
-    void start(bg::EvaluationContext *context) const {
+    void start() const {
         (void)values->insert(1);
         (void)values->insert(2);
-
-        context->global_state().write([&](auto &state) {
-            state.set(bg::util::symbol{"result"}, bg::ScalarValue{static_cast<bg::i64>(values->size())});
-        });
+        output.set(static_cast<i64>(values->size()));
     }
 
     void evaluate() const {}
@@ -49,44 +50,35 @@ struct inspect_scalar_set_state {
 
 TEST_CASE("scalar set state is available during node start",
           "[node][state][scalar][set][scalar:set][feature:state][transition:start]") {
-    const auto inspect = bg::node<inspect_scalar_set_state>();
-    auto state = bg::GlobalState{};
+    const auto inspect = node<inspect_scalar_set_state>();
 
-    bg::run_graph([&] { inspect(); }, bg::GraphRunOptions{.global_state = &state});
+    const auto graph = [&] { return inspect(); };
 
-    state.read([](const auto &values) { CHECK(bg::scalar_cast<bg::i64>(values.at("result")).value() == 2); });
+    CHECK(testing::test_graph(graph).equals<i64>({2}));
 }
 
-struct scalar_set_source {
-    bg::Scalar<bg::Set<bg::i64>> value;
-    bg::Out<bg::TS<bg::Set<bg::i64>>> output;
+struct inspect_scalar_set {
+    Scalar<Set<i64>> values;
+    Out<TS<i64>> output;
 
-    void start() const { output.set_value(value); }
+    void start() const {
+        auto result = i64{};
+        values.for_each([&](const auto value) { result += value.value(); });
+        output.set(result);
+    }
+
     void evaluate() const {}
 };
 
-struct scalar_set_sink {
-    bg::In<bg::TS<bg::Set<bg::i64>>> input;
+TEST_CASE("a scalar set is available from packed graph scalar storage",
+          "[node][scalar][set][scalar:set][feature:state]") {
+    const auto inspect = node<inspect_scalar_set>();
 
-    void evaluate(bg::EvaluationContext *context) const {
-        auto result = bg::i64{};
-        input.value_view().for_each([&](const auto value) { result += value.value(); });
+    const auto input = ScalarValue<Set<i64>>{std::array<i64, 2>{1, 2}};
 
-        context->global_state().write(
-            [&](auto &state) { state.set(bg::util::symbol{"result"}, bg::ScalarValue{result}); });
-    }
-};
+    const auto graph = [&] { return inspect(input); };
 
-TEST_CASE("a scalar set propagates through a value time series",
-          "[node][time_series][scalar][set][scalar:set][feature:state]") {
-    const auto source = bg::node<scalar_set_source>();
-    const auto sink = bg::node<scalar_set_sink>();
-    const auto input = bg::ScalarValue<bg::Set<bg::i64>>{std::array<bg::i64, 2>{1, 2}};
-    auto state = bg::GlobalState{};
-
-    bg::run_graph([&] { sink(source(input)); }, bg::GraphRunOptions{.global_state = &state});
-
-    state.read([](const auto &values) { CHECK(bg::scalar_cast<bg::i64>(values.at("result")).value() == 3); });
+    CHECK(testing::test_graph(graph).equals<i64>({3}));
 }
 
 } // namespace

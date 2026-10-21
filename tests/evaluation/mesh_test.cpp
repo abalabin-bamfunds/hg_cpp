@@ -21,9 +21,25 @@ namespace {
 using namespace bg;
 using namespace bg::literals;
 
-const auto add_mesh_dependency = node([](In<TS<i64>> value, In<TS<i64>, optional> dependency, Out<TS<i64>> output) {
-    output.set(*value + (dependency.valid() ? *dependency : 0));
+const auto add_mesh_dependency = node([](i64 value, std::optional<i64> dependency) {
+    return value + dependency.value_or(0);
 });
+
+TEST_CASE("mesh evaluates a dependency branch before the branch that depends on it",
+          "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
+          "[binding:reference-to-value][transition:addition]") {
+    const auto tested = [](wp<TSD<i64, TS<i64>>> values,
+                           wp<TSD<i64, TS<i64>>> dependencies) {
+        const auto result =
+            mesh([](auto item, auto dependency_key) { return add_mesh_dependency(item, mesh()[dependency_key]); },
+                 values, dependencies);
+        return result[i64{2}].as<TS<i64>>();
+    };
+
+    const auto actual = testing::test_graph(tested, {{{2, 10}, {1, 1}}, {{2, 30}, {1, 3}}}, {{{2, 1}}, {{2, 1}}});
+
+    CHECK(actual.equals<bg::i64>({11, 33}));
+}
 
 const auto mesh_values = node([](In<TS<i64>> value, Out<TSD<i64, TS<i64>>> output) {
     output[2].set(*value * 10);
@@ -73,10 +89,13 @@ TEST_CASE("mesh forwards optional positional input only to an optional branch pa
           "[feature:mesh][feature:nested-graph][feature:operator][feature:wiring][series:tsd]"
           "[validity:optional][definition:function]") {
     const auto dictionaries = node([](Out<TSD<i64, TS<i64>>>) {});
+
     const auto values = node([](Out<TS<i64>>) {});
+
     const auto optional_branch = graph(
         "name"_n = "optional_mesh_branch",
         [](wp<TS<i64>> item, wp<TS<i64>, optional>) { return item; });
+
     const auto required_branch = graph(
         "name"_n = "required_mesh_branch",
         [](wp<TS<i64>> item, wp<TS<i64>>) { return item; });
@@ -90,7 +109,7 @@ TEST_CASE("mesh forwards optional positional input only to an optional branch pa
     });
 }
 
-const auto increment_mesh_value = node([](In<TS<i64>> value, Out<TS<i64>> output) { output.set(*value + 1); });
+const auto increment_mesh_value = node([](i64 value) { return value + 1; });
 
 const auto mesh_values_at_key_five = node([](In<TS<i64>> value, Out<TSD<i64, TS<i64>>> output) {
     output[5].set(*value);
@@ -149,22 +168,6 @@ struct MeshSink {
 };
 
 const auto mesh_sink = node<MeshSink>();
-
-TEST_CASE("mesh evaluates a dependency branch before the branch that depends on it",
-          "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
-          "[binding:reference-to-value][transition:addition]") {
-    const auto tested = [](wp<TSD<i64, TS<i64>>> values,
-                           wp<TSD<i64, TS<i64>>> dependencies) {
-        const auto result =
-            mesh([](auto item, auto dependency_key) { return add_mesh_dependency(item, mesh()[dependency_key]); },
-                 values, dependencies);
-        return result[i64{2}].as<TS<i64>>();
-    };
-
-    const auto actual = testing::test_graph(tested, {{{2, 10}, {1, 1}}, {{2, 30}, {1, 3}}}, {{{2, 1}}, {{2, 1}}});
-
-    CHECK(actual.equals<bg::i64>({11, 33}));
-}
 
 TEST_CASE("mesh resumes a dependency node after its dependency completes",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
@@ -464,9 +467,7 @@ TEST_CASE("a mesh dependency follows switch output replacement",
           "[feature:mesh][feature:switch][feature:nested-graph][feature:operator][feature:reference]"
           "[series:tsd][shape:deeply-nested][binding:reference-to-value][transition:update]"
           "[transition:lifecycle]") {
-    const auto add_amount = node([](In<TS<i64>> value, int amount, Out<TS<i64>> output) {
-        output.set(*value + amount);
-    });
+    const auto add_amount = node([](i64 value, int amount) { return value + amount; });
 
     const auto tested = [&](wp<TS<i64>> selected_case, wp<TSD<i64, TS<i64>>> values) {
         const auto result = mesh(
