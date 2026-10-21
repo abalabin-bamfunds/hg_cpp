@@ -78,7 +78,7 @@ using namespace nanobind::literals;
 namespace bg::python {
 namespace {
 
-PeriodicCallback python_signal_callback() {
+PeriodicCallback python_periodic_callback() {
     return PeriodicCallback{
         .callback = [] {
             auto acquire_gil = nb::gil_scoped_acquire{};
@@ -441,7 +441,7 @@ nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_
         .recorder = recorder != nullptr ? std::optional<EvaluationProfiler::Recorder>{*recorder} : std::nullopt,
         .engine = engine,
         .start_time = start_time,
-        .periodic_callback = python_signal_callback(),
+        .periodic_callback = python_periodic_callback(),
     };
     auto results = [&] {
         try {
@@ -479,7 +479,7 @@ void run_graph(const PythonGraphDefinition &definition, nb::sequence fixed_value
             .engine = engine,
             .start_time = start_time,
             .stop_token = stop_token.value_or(std::stop_token{}),
-            .periodic_callback = python_signal_callback(),
+            .periodic_callback = python_periodic_callback(),
         };
         {
             auto release_gil = nb::gil_scoped_release{};
