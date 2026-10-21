@@ -617,7 +617,8 @@ updates, not a Python-object scalar value.
 Python object scalars retain their Python object by reference. Copying and
 releasing an existing scalar handle does not acquire the Global Interpreter
 Lock (GIL). A final Python reference is released immediately when the GIL is
-held; otherwise, release is deferred and drained at `test_graph` boundaries.
+held; otherwise, release is deferred until the next periodic Python callback or
+graph-run boundary.
 Python `__hash__` and `__eq__` run with the GIL and their exceptions propagate.
 Python objects used as graph scalars must be immutable, including any state
 that affects equality or hashing.

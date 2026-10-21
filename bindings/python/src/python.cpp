@@ -85,6 +85,7 @@ PeriodicCallback python_signal_callback() {
             if (PyErr_CheckSignals() != 0) {
                 nb::raise_python_error();
             }
+            Object::drain_deferred_releases();
         },
     };
 }
