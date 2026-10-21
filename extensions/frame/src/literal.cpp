@@ -6,11 +6,9 @@
 #include <bg/scalar/data.hpp>
 #include <bg/scalar/details/value_access.hpp>
 #include <bg/time_series/details/scalar_literal.hpp>
-#include <bg/util/static_storage.hpp>
 #include "literal_helpers.hpp"
 
 #include <algorithm>
-#include <mutex>
 #include <stdexcept>
 #include <variant>
 #include <vector>
@@ -20,11 +18,6 @@ namespace bg::frame {
 const literal::Sentinel NULL_VALUE{symbol{"frame.null"}};
 
 namespace {
-
-std::mutex &literal_registration_mutex() {
-    static bg::util::static_storage<std::mutex> mutex;
-    return mutex.get();
-}
 
 template <cell_type T>
 void construct_column_literal(const literal::ScalarLiteral &literal, const ScalarRuntimeType &runtime,
@@ -289,19 +282,16 @@ void apply_native_frame_series_literal(const literal::TimeSeriesLiteral &literal
 namespace details {
 
 void register_column_literal_type(const ScalarType &type) {
-    const auto lock = std::lock_guard{literal_registration_mutex()};
     static_cast<void>(ScalarDispatch<ScalarLiteralOperations>::instance().add(
         type, ScalarLiteralOperations{&construct_column_literal}));
 }
 
 void register_frame_literal_type(const ScalarType &type) {
-    const auto lock = std::lock_guard{literal_registration_mutex()};
     static_cast<void>(ScalarDispatch<ScalarLiteralOperations>::instance().add(
         type, ScalarLiteralOperations{&construct_frame_literal}));
 }
 
 void register_literal_runtime(const ScalarRuntimeType &runtime, ScalarLiteralOperations operations) {
-    const auto lock = std::lock_guard{literal_registration_mutex()};
     static_cast<void>(ScalarDispatch<ScalarLiteralOperations>::instance().add(runtime, operations));
 }
 
@@ -313,13 +303,11 @@ void apply_series_literal(const literal::TimeSeriesLiteral &literal, OutputState
 }
 
 void register_frame_series_literal_runtime(const TimeSeriesRuntimeType &runtime) {
-    const auto lock = std::lock_guard{literal_registration_mutex()};
     static_cast<void>(TimeSeriesDispatch<TimeSeriesLiteralOperations>::instance().add(
         runtime, TimeSeriesLiteralOperations{&apply_native_frame_series_literal}));
 }
 
 void register_column_series_literal_runtime(const TimeSeriesRuntimeType &runtime) {
-    const auto lock = std::lock_guard{literal_registration_mutex()};
     static_cast<void>(TimeSeriesDispatch<TimeSeriesLiteralOperations>::instance().add(
         runtime, TimeSeriesLiteralOperations{&apply_native_column_series_literal}));
 }
