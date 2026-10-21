@@ -108,8 +108,8 @@ TEST_CASE("all_valid reports invalid and revalidated collection roots",
           "[transition:invalidation][transition:revalidation]") {
     const auto query = [](wp<TSL<TS<i64>, 2>> value) { return operators::all_valid(value); };
 
-    CHECK(testing::test_graph(query, {literal::INVALID, {{0, 1}, {1, 2}}})
-              .equals<bool>({false, true}));
+    CHECK(testing::test_graph(query, {literal::INVALID, {{0, 1}, {1, 2}}, literal::INVALID, {{0, 3}, {1, 4}}})
+              .equals<bool>({false, true, false, true}));
 }
 
 TEST_CASE("all_valid tracks immediate item invalidation in a free list",

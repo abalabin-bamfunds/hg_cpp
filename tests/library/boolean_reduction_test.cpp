@@ -15,6 +15,7 @@ TEST_CASE("Boolean TSL reductions read current item values",
     const auto all = [](wp<TS<bool>> first, wp<TS<bool>> second) {
         return operators::all_("values"_n = tsl(first, second));
     };
+
     const auto any = [](wp<TS<bool>> first, wp<TS<bool>> second) {
         return operators::any_("values"_n = tsl(first, second));
     };
@@ -31,6 +32,7 @@ TEST_CASE("optional Boolean TSL reductions skip invalid items and use empty iden
     const auto all = [](wp<TS<bool>> first, wp<TS<bool>> second) {
         return operators::all_("values"_n = opt(tsl(first, second)));
     };
+
     const auto any = [](wp<TS<bool>> first, wp<TS<bool>> second) {
         return operators::any_("values"_n = opt(tsl(first, second)));
     };
@@ -51,6 +53,7 @@ TEST_CASE("required Boolean TSL reductions wait for every immediate item",
     const auto all = [](wp<TS<bool>> first, wp<TS<bool>> second) {
         return operators::all_("values"_n = tsl(first, second));
     };
+
     const auto any = [](wp<TS<bool>> first, wp<TS<bool>> second) {
         return operators::any_("values"_n = tsl(first, second));
     };
@@ -65,9 +68,13 @@ TEST_CASE("Boolean reductions read direct TSL inputs and report required output 
           "[feature:operator][series:fixed-tsl][scalar:boolean][shape:single-node]"
           "[validity:all-valid][validity:optional][transition:invalidation][transition:revalidation]") {
     const auto all = [](wp<TSL<TS<bool>, 2>> values) { return operators::all_(values); };
+
     const auto any = [](wp<TSL<TS<bool>, 2>> values) { return operators::any_(values); };
+
     const auto optional_all = [](wp<TSL<TS<bool>, 2>> values) { return operators::all_(opt(values)); };
+
     const auto optional_any = [](wp<TSL<TS<bool>, 2>> values) { return operators::any_(opt(values)); };
+
     const auto all_valid = [](wp<TSL<TS<bool>, 2>> values) {
         return operators::valid(operators::all_(values));
     };
@@ -93,6 +100,7 @@ TEST_CASE("optional Boolean TSL reductions treat an invalid root as empty",
           "[feature:operator][series:fixed-tsl][scalar:boolean][validity:optional]"
           "[transition:invalidation][transition:revalidation]") {
     const auto all = [](wp<TSL<TS<bool>, 2>> values) { return operators::all_(opt(values)); };
+
     const auto any = [](wp<TSL<TS<bool>, 2>> values) { return operators::any_(opt(values)); };
 
     CHECK(testing::test_graph(all, {literal::SKIP, {{0, false}}, {{0, literal::INVALID}}, {{1, true}}})
@@ -107,6 +115,7 @@ TEST_CASE("Boolean TSD reductions track updates, invalid items, removals, and em
     const auto optional_all = [](wp<TSD<i64, TS<bool>>> values) {
         return operators::all_("values"_n = opt(values));
     };
+
     const auto optional_any = [](wp<TSD<i64, TS<bool>>> values) {
         return operators::any_("values"_n = opt(values));
     };
@@ -154,6 +163,7 @@ TEST_CASE("optional Boolean TSS reductions treat an invalid selected target as e
         const auto values = operators::if_then_else(select_invalid, invalid, populated);
         return operators::all_(opt(values));
     };
+
     const auto any = [](wp<TS<bool>> select_invalid, wp<TSS<bool>> populated, wp<TSS<bool>> invalid) {
         const auto values = operators::if_then_else(select_invalid, invalid, populated);
         return operators::any_(opt(values));
@@ -178,6 +188,7 @@ TEST_CASE("Boolean reductions preserve const, final, and deduplicated guarantees
         CHECK(&optional.type() == &TS<bool>::type());
         return required;
     };
+
     const auto check_final_tsl = [](wp<TSL<TS<bool, TimeSeriesGuarantee::final>, 2,
                                              TimeSeriesGuarantee::final>> values) {
         const auto required = operators::any_("values"_n = values);
@@ -186,6 +197,7 @@ TEST_CASE("Boolean reductions preserve const, final, and deduplicated guarantees
         CHECK(&optional.type() == &TS<bool>::type());
         return required;
     };
+
     const auto check_deduplicated_tsl = [](wp<TSL<TS<bool, TimeSeriesGuarantee::deduplicated>, 2,
                                                      TimeSeriesGuarantee::deduplicated>> values) {
         const auto required = operators::all_("values"_n = values);
@@ -194,28 +206,33 @@ TEST_CASE("Boolean reductions preserve const, final, and deduplicated guarantees
         CHECK(&optional.type() == &TS<bool>::type());
         return required;
     };
+
     const auto check_final_tsd = [](wp<TSD<i64, TS<bool, TimeSeriesGuarantee::final>,
                                                   TimeSeriesGuarantee::final>> values) {
         const auto required = operators::all_("values"_n = values);
         CHECK(&required.type() == &TS<bool, TimeSeriesGuarantee::final>::type());
         return required;
     };
+
     const auto check_deduplicated_tsd = [](wp<TSD<i64, TS<bool, TimeSeriesGuarantee::deduplicated>,
                                                            TimeSeriesGuarantee::deduplicated>> values) {
         const auto required = operators::any_("values"_n = values);
         CHECK(&required.type() == &TS<bool, TimeSeriesGuarantee::deduplicated>::type());
         return required;
     };
+
     const auto check_const_tss = [](wp<TSS<bool, TimeSeriesGuarantee::const_>> values) {
         const auto required = operators::all_("values"_n = values);
         CHECK(&required.type() == &TS<bool, TimeSeriesGuarantee::const_>::type());
         return required;
     };
+
     const auto check_final_tss = [](wp<TSS<bool, TimeSeriesGuarantee::final>> values) {
         const auto required = operators::any_("values"_n = values);
         CHECK(&required.type() == &TS<bool, TimeSeriesGuarantee::final>::type());
         return required;
     };
+
     const auto check_deduplicated_tss = [](wp<TSS<bool, TimeSeriesGuarantee::deduplicated>> values) {
         const auto required = operators::all_("values"_n = values);
         CHECK(&required.type() == &TS<bool, TimeSeriesGuarantee::deduplicated>::type());
@@ -248,6 +265,7 @@ TEST_CASE("Boolean reductions accept free TSL inputs and nested operator results
         const auto items = std::vector<WiringPoint>{first, second};
         return operators::all_("values"_n = tsl(std::span<const WiringPoint>{items}));
     };
+
     const auto not_any = [](wp<TS<bool>> first, wp<TS<bool>> second) {
         return operators::not_(operators::any_("values"_n = tsl(first, second)));
     };
@@ -263,12 +281,15 @@ TEST_CASE("Boolean reductions support valid-items views of TSD inputs",
     const auto all_filtered = [](wp<TSD<i64, TS<bool>>> values) {
         return operators::all_("values"_n = valid_items(values));
     };
+
     const auto any_filtered = [](wp<TSD<i64, TS<bool>>> values) {
         return operators::any_("values"_n = valid_items(values));
     };
+
     const auto optional_all_filtered = [](wp<TSD<i64, TS<bool>>> values) {
         return operators::all_("values"_n = opt(valid_items(values)));
     };
+
     const auto optional_any_filtered = [](wp<TSD<i64, TS<bool>>> values) {
         return operators::any_("values"_n = opt(valid_items(values)));
     };
@@ -297,6 +318,7 @@ TEST_CASE("Boolean TSD reductions follow reference target updates and retargetin
                         wp<TSD<i64, TS<bool>>> second) {
         return operators::all_(operators::if_then_else(select_first, first, second));
     };
+
     const auto any = [](wp<TS<bool>> select_first, wp<TSD<i64, TS<bool>>> first,
                         wp<TSD<i64, TS<bool>>> second) {
         return operators::any_(operators::if_then_else(select_first, first, second));
@@ -320,6 +342,7 @@ TEST_CASE("optional Boolean TSD reductions use empty identities for invalid refe
         const auto values = operators::if_then_else(choose_invalid, invalid, populated);
         return operators::all_("values"_n = opt(values));
     };
+
     const auto any = [](wp<TS<bool>> choose_invalid, wp<TSD<i64, TS<bool>>> populated,
                         wp<TSD<i64, TS<bool>>> invalid) {
         const auto values = operators::if_then_else(choose_invalid, invalid, populated);
@@ -339,6 +362,7 @@ TEST_CASE("Boolean reductions return identities for empty collections",
     const auto empty_tsl = [&] {
         return operators::all_("values"_n = tsl<TS<bool>>());
     };
+
     const auto empty_tsl_any = [&] {
         return operators::any_("values"_n = tsl<TS<bool>>());
     };

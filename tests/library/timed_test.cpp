@@ -21,6 +21,7 @@ using namespace bg::literals;
 TEST_CASE("delay publishes each retained input event after its duration",
           "[feature:operator][feature:timed-scheduling][transition:invalidation][transition:revalidation]") {
     const auto delayed = [](wp<TS<i64>> value) { return operators::delay(value, timedelta_t{2}); };
+
     const auto delayed_valid = [](wp<TS<i64>> value) {
         return operators::valid(operators::delay(value, timedelta_t{2}));
     };
@@ -34,6 +35,7 @@ TEST_CASE("delay publishes each retained input event after its duration",
 TEST_CASE("delay starts with an unbound reference input",
           "[feature:operator][feature:timed-scheduling][series:reference][binding:reference-to-value]") {
     const auto source = node([](Out<REF<TS<i64>>>) {});
+
     const auto delayed = [&] { return operators::delay(source(), timedelta_t{1}); };
 
     CHECK(testing::test_graph(delayed).equals<i64>({std::nullopt}));
