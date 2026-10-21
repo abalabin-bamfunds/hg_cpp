@@ -4684,6 +4684,21 @@ void test_keyed_tsf_capture_treats_omitted_added_cells_as_null() {
             "keyed TSF capture did not treat omitted addition cells as null");
 }
 
+void test_tsf_capture_reference_base_output_with_derived_runtime() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto forward = node([](In<REF<TSF<KeyedQuotesBase>>> input,
+                                 Out<REF<TSF<KeyedQuotesBase>>> output) { output.copy(input); });
+    const auto graph = [&](wp<TSF<KeyedQuotesBase>> input) { return forward(input); };
+    const auto &runtime = frame_time_series_runtime_type<KeyedQuotesDerived>(TSF<KeyedQuotesDerived>::type());
+    const auto result = testing::test_graph(
+        graph, testing::input(runtime, {literal::TimeSeriesLiteral{},
+                                        {{{"id", i64{7}}, {"price", 10.0}, {"bid", 20.0}}}}));
+    require(result.equals({{}, {{{"id", i64{7}}, {"price", 10.0}, {"bid", 20.0}}}}),
+            "reference-to-value capture lost Derived TSF fields under a Base reference declaration");
+}
+
 void test_keyed_tsf_capture_uses_actual_derived_schema() {
     using namespace bg;
     using namespace bg::frame;
@@ -6592,6 +6607,7 @@ int main() {
         test_tsc_capture_disambiguates_complete_row_histories();
         test_tsc_double_capture_matches_named_row_histories();
         test_keyed_tsf_capture_treats_omitted_added_cells_as_null();
+        test_tsf_capture_reference_base_output_with_derived_runtime();
         test_keyed_tsf_capture_uses_actual_derived_schema();
         test_keyed_tsf_capture_uses_keyed_runtime_schema_for_unkeyed_base_output();
         test_keyed_tsf_capture_uses_runtime_schema();

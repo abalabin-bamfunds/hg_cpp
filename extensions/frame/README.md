@@ -183,8 +183,9 @@ auto matches = actual.equals({
 Captured deltas own copied cell and key values and remain usable after graph
 destruction. A removal record contains the internal row ID only. Keyed
 comparison state remembers each added row's key by row ID and uses that key to
-match a later removal. Comparisons use the actual schema, including Derived
-fields observed through a Base annotation.
+match a later removal. Each captured TSF tick stores a pointer to its actual
+registered schema. Comparison and discard preserve Derived fields through Base
+annotations and references.
 
 ### TSC literal updates
 

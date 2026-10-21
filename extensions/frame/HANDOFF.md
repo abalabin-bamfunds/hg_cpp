@@ -481,15 +481,16 @@ invalidation and skipped ticks before calling a comparison handler; successful
 comparison consumes one valid payload without changing its encoded values. See
 [BG testing](../../docs/testing.md).
 
-Frame writers visit delta row sets and copy values through extension descriptors
-and borrowed column views. Payloads record the actual schema, row IDs, and
-copied cells; they contain no borrowed cell pointers. Keyed removals record
-only the internal row ID. The comparison state remembers keys from additions
-and uses that mapping to match later removals. This preserves Derived fields
-and permits comparison and discard after graph destruction, including capture
-under an unkeyed Base annotation. Expected keyed deltas match by key,
-independent of row order, with exact patch field sets and omitted addition
-fields interpreted as null. See
+Frame writers visit delta row sets through extension descriptors and borrowed
+column views. Each TSF tick stores a pointer to its actual registered schema so
+comparison and discard can decode Derived fields through Base annotations and
+references. Payload cells are copied and contain no borrowed cell pointers.
+Keyed removals record only the internal row ID. The comparison state remembers
+keys from additions and uses that mapping to match later removals. This permits
+comparison and discard after graph destruction, including capture under an
+unkeyed Base annotation. Expected keyed deltas match by key, independent of row
+order, with exact patch field sets and omitted addition fields interpreted as
+null. See
 [keyed capture](README.md#keyed-tsf-result-capture).
 
 Scalar `TS<Frame<...>>` and `TS<Column<...>>` use scalar capture and comparison.
