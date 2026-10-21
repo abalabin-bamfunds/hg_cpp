@@ -30,7 +30,7 @@ print(test_graph(temperature))
 Output:
 
 ```text
-[None, 20]
+[20]
 ```
 :::::
 
@@ -46,21 +46,23 @@ Output:
 #include <bg/node.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <iostream>
-#include <bg/queue.hpp>
+#include <bg/queue_node.hpp>
 
 using namespace bg;
+using namespace bg::literals;
 using namespace bg::testing;
 using namespace bg::operators;
 using namespace literal;
 
 const auto readings = queue<TS<i64>>(start = [](Queue q) {
-    q.write(TimeSeriesLiteral{18});
+    q.write(TimeSeriesLiteral(18));
 });
 
 auto temperature() { return readings() + 2; }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(temperature).equals({SKIP, 20})) << '\n';
+    const auto result = test_graph(temperature);
+    std::cout << std::boolalpha << result.equals({20}) << '\n';
 }
 ```
 
@@ -79,6 +81,9 @@ builds this example as `first_graph.cpp`, linked to `bg::library`.
 ::::
 :::::
 ::::::
+
+C++ `TimeSeriesLiteral(value)` constructs a scalar message. Braces construct a
+collection literal. See [literal forms](../reference/literals.md).
 
 The queued message is delivered after start. The queue callback's return does
 not publish a value. `write` reports whether a message committed. A closed

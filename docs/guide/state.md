@@ -48,6 +48,7 @@ Output:
 
 ```cpp
 #include <bg/library.hpp>
+#include <bg/graph.hpp>
 #include <bg/node.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <iostream>
@@ -62,17 +63,28 @@ struct Readings {
     i64 peak{};
 };
 
-const auto peak_above_zero = node([](i64 reading, State<Readings> state) {
-    state->peak = std::max(state->peak, reading);
-    return state->peak;
-});
+struct PeakAboveZero {
+    In<TS<i64>> reading;
+    State<Readings> state;
+    Out<TS<i64>> output;
+
+    static constexpr bool deduplicate_wiring = false;
+
+    void evaluate() const {
+        state->peak = std::max(state->peak, *reading);
+        output.set(state->peak);
+    }
+};
+
+const auto peak_above_zero = node<PeakAboveZero>();
 
 auto peak(wp<TS<i64>> reading) {
     return peak_above_zero(reading);
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(peak, {18, 17, 21, SKIP, 19}).equals({18, 18, 21, SKIP, 21})) << '\n';
+    const auto result = test_graph(graph(peak), {18, 17, 21, SKIP, 19});
+    std::cout << std::boolalpha << result.equals({18, 18, 21, SKIP, 21}) << '\n';
 }
 ```
 
@@ -95,11 +107,16 @@ builds this example as `first_graph.cpp`, linked to `bg::library`.
 Python `State[Readings]` calls `Readings()` once for each runtime node and passes
 the resulting object to callbacks. Its `= None` default marks an injected
 parameter: graph code does not supply it. C++ `State<Readings>` gives access to
-that node's retained `Readings` value.
+that node's retained `Readings` value. The aggregate declares input, state, and
+output fields; its `const evaluate()` mutates state and publishes through the
+field views.
 
-Two uses of `peak_above_zero` have separate peaks, even when wired to the same
-reading. A new graph run starts with new state. A skipped step does not evaluate
-the node. This callback publishes on each valid reading, including when the
+A new graph run starts with new state. Python stateful nodes have separate
+state on each call. C++ normally reuses equal node calls;
+`deduplicate_wiring = false` requests separate runtime nodes when independent
+state is required, as in this example. See [state reference](../reference/state.md#state).
+
+A skipped step does not evaluate the node. This callback publishes on each valid reading, including when the
 peak remains equal.
 
 Required-input invalidation invalidates the output; it does not automatically

@@ -13,7 +13,8 @@ Prerequisites: [Fixed lists](fixed-lists.md).
 :sync: python
 
 ```python
-from bg import TSB, graph, schema, test_graph
+from bg import TSB, graph, schema, symbol, test_graph
+from bg.operators import getattr
 
 @schema
 class Sensor:
@@ -22,7 +23,7 @@ class Sensor:
 
 @graph
 def temperature(sensor: TSB[Sensor]) -> int:
-    return sensor["reading"] + 2
+    return getattr(sensor, symbol("reading")) + 2
 
 print(test_graph(temperature, [{"reading": 18, "enabled": True}, {"enabled": False}, {"reading": 19}]))
 ```
@@ -60,11 +61,13 @@ struct Sensor {
 };
 
 auto temperature(wp<TSB<Sensor>> sensor) {
-    return sensor["reading"] + 2;
+    return getattr(sensor, symbol("reading")) + 2;
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(temperature, {{{"reading", 18}, {"enabled", true}}, {{"enabled", false}}, {{"reading", 19}}}).equals({20, SKIP, 21})) << '\n';
+    const auto result = test_graph(temperature,
+        {{{"reading", 18}, {"enabled", true}}, {{"enabled", false}}, {{"reading", 19}}});
+    std::cout << std::boolalpha << result.equals({20, SKIP, 21}) << '\n';
 }
 ```
 
@@ -90,8 +93,9 @@ update `reading`.
 
 Python scalar fields such as `int` project to time series fields in `TSB`.
 Explicit time series fields are also supported. C++ declares a schema template
-whose `Field` members carry the field types. Graph code selects a field by name;
-node code accesses fields through its bundle input view.
+whose `Field` members carry the field types. Python graph code selects a field
+with `getattr` and a symbol name; C++ also supports `["reading"]`. In Python node
+code, a bundle input view supports `input.reading` and `input["reading"]`.
 
 A scalar bundle groups fields into one scalar value. `Bundle[Schema]` in Python
 or `Bundle<Schema>` in C++ updates all of that value together inside `TS`.

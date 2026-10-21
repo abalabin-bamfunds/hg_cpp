@@ -54,7 +54,8 @@ auto delayed(wp<TS<i64>> reading) {
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(delayed, {18, 19, 19}).equals({SKIP, SKIP, 18, 19, 19})) << '\n';
+    const auto result = test_graph(delayed, {18, 19, 19});
+    std::cout << std::boolalpha << result.equals({SKIP, SKIP, 18, 19, 19}) << '\n';
 }
 ```
 

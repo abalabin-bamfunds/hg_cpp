@@ -51,7 +51,8 @@ using namespace literal;
 auto temperature(wp<TS<i64>> reading) { return reading + 2; }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(temperature, {18, SKIP, 18, 19}).equals({20, SKIP, 20, 21})) << '\n';
+    const auto result = test_graph(temperature, {18, SKIP, 18, 19});
+    std::cout << std::boolalpha << result.equals({20, SKIP, 20, 21}) << '\n';
 }
 ```
 

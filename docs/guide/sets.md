@@ -54,7 +54,8 @@ auto sensor_one_active(wp<TSS<i64>> sensors) {
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(sensor_one_active, {{1, 2}, {3}, {REMOVED(1)}, {1}}).equals({true, SKIP, false, true})) << '\n';
+    const auto result = test_graph(sensor_one_active, {{1, 2}, {3}, {REMOVED(1)}, {1}});
+    std::cout << std::boolalpha << result.equals({true, SKIP, false, true}) << '\n';
 }
 ```
 
@@ -84,7 +85,7 @@ A time series key can select the queried member dynamically.
 
 Two sets of the same key type support union, intersection, difference, and
 symmetric difference with `|`, `&`, `-`, and `^`. Results publish actual membership
-changes. Use [`opt`](../reference/library-collections.md#optional-set-operations)
+changes. Use [`opt`](../reference/library-collections.md#time-series-set-operations)
 when unavailable operands should act as empty sets.
 
 [Collection reference](../reference/library-collections.md) specifies membership

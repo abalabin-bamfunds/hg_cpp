@@ -51,7 +51,8 @@ auto scaled(wp<TS<i64>> reading) {
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(scaled, {18, SKIP, 19}).equals({9.0, SKIP, 9.5})) << '\n';
+    const auto result = test_graph(scaled, {18, SKIP, 19});
+    std::cout << std::boolalpha << result.equals({9.0, SKIP, 9.5}) << '\n';
 }
 ```
 

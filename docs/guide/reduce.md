@@ -53,18 +53,22 @@ Output:
 #include <bg/time_series/tsd/tsd_type.hpp>
 
 using namespace bg;
+using namespace bg::literals;
 using namespace bg::testing;
 using namespace bg::operators;
 using namespace literal;
 
-auto multiply(wp<TS<i64>> left, wp<TS<i64>> right) { return left * right; }
+auto multiply(wp<TS<i64>> left, wp<TS<i64>> right) {
+    return (left * right).as<TS<i64>>();
+}
 
 auto combined(wp<TSD<i64, TS<i64>>> values) {
     return reduce(multiply, values, "default"_n = i64{1});
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(combined, {{{1, 2}, {2, 3}}, {{1, 4}}, {{2, REMOVE}}}).equals({6, 12, 4})) << '\n';
+    const auto result = test_graph(combined, {{{1, 2}, {2, 3}}, {{1, 4}}, {{2, REMOVE}}});
+    std::cout << std::boolalpha << result.equals({6, 12, 4}) << '\n';
 }
 ```
 

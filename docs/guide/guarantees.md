@@ -54,7 +54,8 @@ auto configured(wp<TS<i64, TimeSeriesGuarantee::final>> offset) {
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(configured, {2, SKIP, SKIP}).equals({20, SKIP, SKIP})) << '\n';
+    const auto result = test_graph(configured, {2, SKIP, SKIP});
+    std::cout << std::boolalpha << result.equals({20, SKIP, SKIP}) << '\n';
 }
 ```
 

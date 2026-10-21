@@ -56,5 +56,3 @@ Python is not required for this build.
 to find this installation and link to `bg::library`.
 :::
 ::::
-
-For a complete runnable example, see [A first BG program](getting-started.md).

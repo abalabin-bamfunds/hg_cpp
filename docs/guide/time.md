@@ -43,6 +43,7 @@ Output:
 
 ```cpp
 #include <bg/library.hpp>
+#include <bg/graph.hpp>
 #include <bg/node.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <iostream>
@@ -53,16 +54,24 @@ using namespace bg::testing;
 using namespace bg::operators;
 using namespace literal;
 
-const auto microsecond = node([](i64 reading, EvaluationContext* context) {
-    return i64{context->evaluation_time().time_since_epoch().count()};
-});
+struct Microsecond {
+    In<TS<i64>> reading;
+    Out<TS<i64>> output;
+
+    void evaluate(EvaluationContext* context) const {
+        output.set(context->evaluation_time().time_since_epoch().count());
+    }
+};
+
+const auto microsecond = node<Microsecond>();
 
 auto timestamps(wp<TS<i64>> reading) {
     return microsecond(reading);
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(timestamps, {18, SKIP, 19}).equals({1, SKIP, 3})) << '\n';
+    const auto result = test_graph(graph(timestamps), {18, SKIP, 19});
+    std::cout << std::boolalpha << result.equals({1, SKIP, 3}) << '\n';
 }
 ```
 
@@ -90,6 +99,9 @@ Python injects `EvaluationClock` into a node parameter with `= None`. Its
 `evaluation_time` is a timezone-naive local `datetime`. `now` equals evaluation
 time in simulation and wall-clock time in realtime. C++ obtains evaluation time
 from `EvaluationContext`; `EvaluationTime` uses microsecond resolution.
+The C++ aggregate declares input and output fields and receives the context
+in `evaluate`. `node<Microsecond>()` makes that definition callable in graph code;
+`output.set` publishes its result.
 
 Durations use `datetime.timedelta` in Python and `timedelta_t` in C++. They are
 fixed scalar arguments to the timed library operators.

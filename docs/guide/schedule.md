@@ -45,6 +45,7 @@ Output:
 #include <iostream>
 
 using namespace bg;
+using namespace bg::literals;
 using namespace bg::testing;
 using namespace bg::operators;
 using namespace literal;
@@ -54,7 +55,8 @@ auto requests() {
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(requests).equals({SKIP, 1, 2, 3})) << '\n';
+    const auto result = test_graph(requests);
+    std::cout << std::boolalpha << result.equals({SKIP, 1, 2, 3}) << '\n';
 }
 ```
 
@@ -73,6 +75,9 @@ builds this example as `first_graph.cpp`, linked to `bg::library`.
 ::::
 :::::
 ::::::
+
+C++ `"max_ticks"_n = 3` supplies a named graph argument. The `_n` suffix
+comes from `bg::literals`. Python uses ordinary keyword arguments.
 
 The default first signal occurs one period after graph start. `initial_delay=False`
 in Python or `"initial_delay"_n = false` in C++ includes a signal at graph start.

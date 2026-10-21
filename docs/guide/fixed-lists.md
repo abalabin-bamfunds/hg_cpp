@@ -53,7 +53,8 @@ auto first_sensor(wp<TSL<TS<i64>, 2>> readings) {
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(first_sensor, {{{0, 18}, {1, 30}}, {{1, 31}}, {{0, 19}}}).equals({20, SKIP, 21})) << '\n';
+    const auto result = test_graph(first_sensor, {{{0, 18}, {1, 30}}, {{1, 31}}, {{0, 19}}});
+    std::cout << std::boolalpha << result.equals({20, SKIP, 21}) << '\n';
 }
 ```
 

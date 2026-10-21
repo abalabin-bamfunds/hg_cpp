@@ -53,7 +53,8 @@ auto sensor_one(wp<TSD<i64, TS<i64>>> readings) {
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(sensor_one, {{{1, 18}, {2, 30}}, {{2, 31}}, {{1, REMOVE}}, {{1, 19}}}).equals({20, SKIP, INVALID, 21})) << '\n';
+    const auto result = test_graph(sensor_one, {{{1, 18}, {2, 30}}, {{2, 31}}, {{1, REMOVE}}, {{1, 19}}});
+    std::cout << std::boolalpha << result.equals({20, SKIP, INVALID, 21}) << '\n';
 }
 ```
 

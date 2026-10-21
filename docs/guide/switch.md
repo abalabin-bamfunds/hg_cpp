@@ -58,7 +58,7 @@ using namespace bg::testing;
 using namespace bg::operators;
 using namespace literal;
 
-auto accumulated(wp<TS<i64>> reading) { return sums(reading); }
+auto accumulated(wp<TS<i64>> reading) { return sums(reading).as<TS<i64>>(); }
 auto current(wp<TS<i64>> reading) { return reading; }
 
 auto temperature(wp<TS<i64>> mode, wp<TS<i64>> reading) {
@@ -67,7 +67,8 @@ auto temperature(wp<TS<i64>> mode, wp<TS<i64>> reading) {
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(temperature, {1, SKIP, 2, 1}, {18, 19, 20, 21}).equals({18, 37, 20, 21})) << '\n';
+    const auto result = test_graph(temperature, {1, SKIP, 2, 1}, {18, 19, 20, 21});
+    std::cout << std::boolalpha << result.equals({18, 37, 20, 21}) << '\n';
 }
 ```
 

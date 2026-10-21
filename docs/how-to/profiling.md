@@ -52,8 +52,8 @@ auto temperature(wp<TS<i64>> reading) { return reading + 2; }
 
 bool measured() {
     auto profiler = EvaluationProfiler{};
-    test_graph(temperature, GraphRunOptions{.recorder = profiler.recorder()}, {18});
-    return profiler.root_graph_id().has_value();
+    const auto result = test_graph(temperature, GraphRunOptions{.recorder = profiler.recorder()}, {18});
+    return result.equals({20}) && profiler.outer_totals().cycles == 1;
 }
 
 int main() {

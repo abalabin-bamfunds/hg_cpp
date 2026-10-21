@@ -55,11 +55,12 @@ using VALUE = ScalarVariable<"VALUE">;
 const auto identity = graph([](wp<TS<VALUE>> value) { return value; });
 
 auto integer_identity(wp<TS<i64>> value) {
-    return identity(value);
+    return identity(value).as<TS<i64>>();
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(integer_identity, {18, SKIP, 19}).equals({18, SKIP, 19})) << '\n';
+    const auto result = test_graph(graph(integer_identity), {18, SKIP, 19});
+    std::cout << std::boolalpha << result.equals({18, SKIP, 19}) << '\n';
 }
 ```
 

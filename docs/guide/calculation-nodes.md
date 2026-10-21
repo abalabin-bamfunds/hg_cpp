@@ -45,6 +45,7 @@ Output:
 
 ```cpp
 #include <bg/library.hpp>
+#include <bg/graph.hpp>
 #include <bg/node.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <iostream>
@@ -66,7 +67,8 @@ auto temperature(wp<TS<i64>> reading) {
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(temperature, {18, -3, SKIP, 19}).equals({20, 0, SKIP, 21})) << '\n';
+    const auto result = test_graph(graph(temperature), {18, -3, SKIP, 19});
+    std::cout << std::boolalpha << result.equals({20, 0, SKIP, 21}) << '\n';
 }
 ```
 
@@ -75,6 +77,9 @@ Output:
 ```text
 true
 ```
+
+C++ `graph(temperature)` gives the test a graph template, enabling literal
+result comparisons with `SKIP`.
 :::
 
 :::{tab-item} Build and run

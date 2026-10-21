@@ -84,7 +84,8 @@ auto temperature(wp<TS<i64>> reading) {
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(temperature, {18, 19}).equals({20, 21})) << '\n';
+    const auto result = test_graph(temperature, {18, 19});
+    std::cout << std::boolalpha << result.equals({20, 21}) << '\n';
 }
 ```
 

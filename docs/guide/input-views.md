@@ -61,7 +61,8 @@ auto changes(wp<TS<i64>> reading, wp<TS<i64>> offset) {
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(changes, {18, SKIP, 18, 19}, {2, 3, SKIP, 4}).equals({true, false, true, true})) << '\n';
+    const auto result = test_graph(changes, {18, SKIP, 18, 19}, {2, 3, SKIP, 4});
+    std::cout << std::boolalpha << result.equals({true, false, true, true}) << '\n';
 }
 ```
 

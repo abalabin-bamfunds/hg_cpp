@@ -49,6 +49,7 @@ Output:
 #include <bg/graph.hpp>
 
 using namespace bg;
+using namespace bg::literals;
 using namespace bg::testing;
 using namespace bg::operators;
 using namespace literal;
@@ -62,7 +63,8 @@ auto temperature(wp<TS<i64>> reading, wp<TS<i64>> offset) {
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(temperature, {18, 19}, {2, 3}).equals({20, 22})) << '\n';
+    const auto result = test_graph(temperature, {18, 19}, {2, 3});
+    std::cout << std::boolalpha << result.equals({20, 22}) << '\n';
 }
 ```
 

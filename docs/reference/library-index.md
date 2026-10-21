@@ -1,16 +1,18 @@
 # Library alphabetical index
 
-Named functions are available in `bg.operators` in Python and `bg::operators`
-in C++, unless their linked entry states otherwise. Graph composition helpers
-are also included here for lookup.
+Named functions are available in `bg.operators` in Python and `bg::operators` in C++,
+unless their linked entry states otherwise. Graph composition helpers are also included
+here for lookup.
 
 | Name | Contract |
 | --- | --- |
 | `abs` | [Reference](library-numeric.md#arithmetic) |
 | `add` | [Reference](library-numeric.md#arithmetic) |
+| `all_` | [Reference](library-collections.md#boolean-reductions) |
 | `all_valid` | [Reference](library-selection.md#all_valid) |
 | `and_` | [Reference](library-numeric.md#arithmetic) |
-| `args` | [Reference](graph-code.md#variadic-parameters) |
+| `any_` | [Reference](library-collections.md#boolean-reductions) |
+| `args` (C++) | [Reference](graph-code.md#variadic-parameters) |
 | `bit_and` | [Reference](library-collections.md#time-series-set-operations) |
 | `bit_or` | [Reference](library-collections.md#time-series-set-operations) |
 | `bit_xor` | [Reference](library-collections.md#time-series-set-operations) |
@@ -31,7 +33,7 @@ are also included here for lookup.
 | `gt` | [Reference](library-numeric.md#arithmetic) |
 | `if_then_else` | [Reference](library-selection.md#if_then_else) |
 | `is_empty` | [Reference](library-collections.md#time-series-set-operations) |
-| `kwargs` | [Reference](graph-code.md#variadic-parameters) |
+| `kwargs` (C++) | [Reference](graph-code.md#variadic-parameters) |
 | `lag` | [Reference](library-stateful.md#lag) |
 | `le` | [Reference](library-numeric.md#arithmetic) |
 | `len_` | [Reference](library-collections.md#collection-queries) |
@@ -52,8 +54,9 @@ are also included here for lookup.
 | `opt` | [Reference](graph-code.md#optional-arguments) |
 | `or_` | [Reference](library-numeric.md#arithmetic) |
 | `pos` | [Reference](library-numeric.md#arithmetic) |
+| `pass_through` | [Reference](higher-order.md#map) |
 | `pow` | [Reference](library-numeric.md#arithmetic) |
-| `reduce` | [Reference](higher-order.md#reduce) |
+| `reduce` (C++) | [Reference](higher-order.md#reduce) |
 | `round` | [Reference](library-numeric.md#arithmetic) |
 | `sample` | [Reference](library-selection.md#sample) |
 | `schedule` | [Reference](library-time.md#schedule) |

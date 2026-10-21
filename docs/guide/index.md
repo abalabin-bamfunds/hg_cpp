@@ -59,11 +59,11 @@ in either language and introduces graph concepts from the beginning.
 
 ### Writing nodes
 
-[Calculation nodes](calculation-nodes.md) add value computations. [Optional outputs](skip-output.md)
+[Calculation nodes](calculation-nodes.md) add value computations. [Skipped output updates](skip-output.md)
 and [optional inputs](optional-inputs.md) address missing updates and values.
 [Validity](validity.md) distinguishes absence from a retained current value.
 [Input views](input-views.md) then expose update information and
-[optional view access](view-validity.md).
+[input availability](view-validity.md).
 
 ### Running graphs
 
@@ -92,6 +92,3 @@ and [variadic inputs](variadic.md) reuse declarations across types and argument 
 For a specific task, use the [operation chooser](../how-to/choose-operation.md),
 [testing guide](../how-to/testing.md), or [error guide](../how-to/errors.md).
 The [API and library reference](../reference/index.md) provides complete contracts.
-
-The examples begin with plain types such as `int`. Each chapter introduces
-additional syntax when its examples need it.

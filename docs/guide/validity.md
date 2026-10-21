@@ -53,7 +53,8 @@ auto has_temperature(wp<TS<i64>> reading) {
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(has_temperature, {SKIP, 18, SKIP, INVALID, 19}).equals({false, true, SKIP, false, true})) << '\n';
+    const auto result = test_graph(has_temperature, {SKIP, 18, SKIP, INVALID, 19});
+    std::cout << std::boolalpha << result.equals({false, true, SKIP, false, true}) << '\n';
 }
 ```
 
@@ -101,5 +102,4 @@ comparisons can distinguish `INVALID` from `SKIP`.
 follows it when available. It does not make the source valid. See
 [selection and validity reference](../reference/library-selection.md).
 
-For node code that must inspect validity before reading, use an
-[optional input view](view-validity.md).
+For node code that handles absence, see [checking input availability](view-validity.md).

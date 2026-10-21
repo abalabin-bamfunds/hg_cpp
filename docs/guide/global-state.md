@@ -59,11 +59,17 @@ using namespace bg::testing;
 using namespace bg::operators;
 using namespace literal;
 
-const auto retain = node([](i64 value, EvaluationContext* context) {
-    context->global_state().write([&](auto& values) {
-        values.set(util::symbol{"temperature"}, ScalarValue<i64>{value});
-    });
-});
+struct Retain {
+    In<TS<i64>> value;
+
+    void evaluate(EvaluationContext* context) const {
+        context->global_state().write([&](auto& values) {
+            values.set(util::symbol{"temperature"}, ScalarValue<i64>{*value});
+        });
+    }
+};
+
+const auto retain = node<Retain>();
 
 bool retained_result() {
     auto state = GlobalState{};

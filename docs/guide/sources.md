@@ -75,7 +75,8 @@ const auto readings = node<Readings>();
 auto temperature() { return readings() + 2; }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(temperature).equals({SKIP, 20, 21})) << '\n';
+    const auto result = test_graph(temperature);
+    std::cout << std::boolalpha << result.equals({SKIP, 20, 21}) << '\n';
 }
 ```
 

@@ -44,6 +44,7 @@ Output:
 
 ```cpp
 #include <bg/library.hpp>
+#include <bg/graph.hpp>
 #include <bg/node.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <iostream>
@@ -66,7 +67,8 @@ auto temperature(wp<TS<i64>> reading) {
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(temperature, {18, -3, 0, -1, 19}).equals({20, SKIP, 2, SKIP, 21})) << '\n';
+    const auto result = test_graph(graph(temperature), {18, -3, 0, -1, 19});
+    std::cout << std::boolalpha << result.equals({20, SKIP, 2, SKIP, 21}) << '\n';
 }
 ```
 
@@ -90,7 +92,8 @@ At step 2, the output remains `20`. At step 4, it remains `2`. The recorded
 `None` or `SKIP` means no output update, not that the retained value was removed.
 Before the first accepted reading, the output has no current value.
 
-An optional return controls publication. An [optional parameter](optional-inputs.md)
+Returning no update controls publication. Python keeps the `-> int` declaration;
+C++ declares `std::optional<i64>`. An [optional parameter](optional-inputs.md)
 controls whether evaluation may proceed without an input value. These are
 separate decisions. To remove an existing current value, use
 [invalidation](validity.md).

@@ -42,6 +42,7 @@ Output:
 
 ```cpp
 #include <bg/library.hpp>
+#include <bg/graph.hpp>
 #include <bg/node.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <iostream>
@@ -53,14 +54,15 @@ using namespace bg::testing;
 using namespace bg::operators;
 using namespace literal;
 
-auto calibrate(wp<TS<i64>> reading) { return reading + 2; }
+auto calibrate(wp<TS<i64>> reading) { return (reading + 2).as<TS<i64>>(); }
 
 auto sensor_one(wp<TSD<i64, TS<i64>>> readings) {
     return map(calibrate, readings)[i64{1}].as<TS<i64>>();
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(sensor_one, {{{1, 18}, {2, 30}}, {{2, 31}}, {{1, REMOVE}}, {{1, 19}}}).equals({20, SKIP, INVALID, 21})) << '\n';
+    const auto result = test_graph(graph(sensor_one), {{{1, 18}, {2, 30}}, {{2, 31}}, {{1, REMOVE}}, {{1, 19}}});
+    std::cout << std::boolalpha << result.equals({20, SKIP, INVALID, 21}) << '\n';
 }
 ```
 
@@ -84,8 +86,9 @@ builds this example as `first_graph.cpp`, linked to `bg::library`.
 removing it stops the branch and removes its output. Re-adding the key creates
 a fresh instance. A value update preserves that key's instance and state.
 
-C++ `.as<TS<i64>>()` supplies the known selected result type when higher-order
-wiring returns an untyped connection. It does not convert a scalar value.
+A C++ graph passed to `map` needs a concrete output type. `.as<TS<i64>>()`
+supplies that type for the branch calculation and for the selected result.
+It checks the connection type; it does not convert a scalar value.
 
 ## Share an argument across branches
 

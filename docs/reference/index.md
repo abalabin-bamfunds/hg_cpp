@@ -1,7 +1,7 @@
 # API and library reference
 
-Use the guide for complete task examples. These pages specify accepted
-declarations, input behavior, retained output and state, and errors.
+Use the guide for complete task examples. These pages specify accepted declarations,
+input behavior, retained output and state, and errors.
 
 ## Graph-author API
 

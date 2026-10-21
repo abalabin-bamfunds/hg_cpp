@@ -64,7 +64,8 @@ const auto total = node([](In<TSL<TS<i64>, SIZE>, var_args> values) {
 auto combined(wp<TS<i64>> left, wp<TS<i64>> right) { return total(left, right); }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(combined, {18, 19}, {2, 3}).equals({20, 22})) << '\n';
+    const auto result = test_graph(combined, {18, 19}, {2, 3});
+    std::cout << std::boolalpha << result.equals({20, 22}) << '\n';
 }
 ```
 

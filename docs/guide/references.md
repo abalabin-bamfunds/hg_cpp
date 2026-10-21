@@ -54,7 +54,9 @@ auto selected(wp<TSD<i64, TS<i64>>> readings, wp<TS<i64>> sensor) {
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(selected, {{{1, 18}, {2, 30}}, {{1, 19}}, {{2, 31}}, {{2, REMOVE}}}, {1, 2, SKIP, SKIP}).equals({20, 32, 33, INVALID})) << '\n';
+    const auto result = test_graph(selected,
+        {{{1, 18}, {2, 30}}, {{1, 19}}, {{2, 31}}, {{2, REMOVE}}}, {1, 2, SKIP, SKIP});
+    std::cout << std::boolalpha << result.equals({20, 32, 33, INVALID}) << '\n';
 }
 ```
 

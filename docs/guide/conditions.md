@@ -425,9 +425,8 @@ construction, including any graph function calls. Their calculations remain
 connected and can run when their inputs update, including while unselected.
 
 For example, selecting between two calculations does not protect an unselected
-calculation from division by zero. A node can use ordinary language `if` on its
-current input values when an operation must run only in one case. Node definitions
-are introduced later. Starting and stopping a selected graph is the separate
-purpose of `switch_`, covered after stateful graphs.
+calculation from division by zero. A [calculation node](calculation-nodes.md) can use ordinary language `if` on its
+current input values when an operation must run only in one case.
+Use [`switch_`](switch.md) to start and stop the selected graph instance.
 
 [Selection reference](../reference/library-selection.md) specifies the full contract.

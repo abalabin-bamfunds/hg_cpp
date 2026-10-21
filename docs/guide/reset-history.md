@@ -45,6 +45,7 @@ Output:
 #include <iostream>
 
 using namespace bg;
+using namespace bg::literals;
 using namespace bg::testing;
 using namespace bg::operators;
 using namespace literal;
@@ -54,7 +55,8 @@ auto session_total(wp<TS<i64>> reading, wp<TS<bool>> reset) {
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(session_total, {18, 19, SKIP, 20, 21}, {SKIP, SKIP, false, SKIP, true}).equals({18, 37, INVALID, 20, 21})) << '\n';
+    const auto result = test_graph(session_total, {18, 19, SKIP, 20, 21}, {SKIP, SKIP, false, SKIP, true});
+    std::cout << std::boolalpha << result.equals({18, 37, INVALID, 20, 21}) << '\n';
 }
 ```
 

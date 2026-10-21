@@ -42,6 +42,7 @@ Output:
 
 ```cpp
 #include <bg/library.hpp>
+#include <bg/graph.hpp>
 #include <bg/node.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <iostream>
@@ -61,7 +62,8 @@ auto temperature(wp<TS<i64>> reading, wp<TS<i64>> offset) {
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(temperature, {18, SKIP, 19, 20}, {SKIP, 0, SKIP, 3}).equals({20, 18, 19, 23})) << '\n';
+    const auto result = test_graph(graph(temperature), {18, SKIP, 19, 20}, {SKIP, 0, SKIP, 3});
+    std::cout << std::boolalpha << result.equals({20, 18, 19, 23}) << '\n';
 }
 ```
 

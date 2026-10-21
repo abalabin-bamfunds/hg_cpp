@@ -55,7 +55,8 @@ auto reported(wp<TS<i64>> reading) {
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(reported, {18, 19, 20, 21}).equals({18, SKIP, 20, SKIP, 21})) << '\n';
+    const auto result = test_graph(reported, {18, 19, 20, 21});
+    std::cout << std::boolalpha << result.equals({18, SKIP, 20, SKIP, 21}) << '\n';
 }
 ```
 

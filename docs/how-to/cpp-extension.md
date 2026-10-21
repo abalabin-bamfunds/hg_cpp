@@ -45,6 +45,7 @@ The extension source is `sensor_native.cpp`:
 #include <nanobind/nanobind.h>
 
 using namespace bg;
+using namespace bg::literals;
 
 NB_MODULE(sensor_native, module) {
     python::export_operator(module, "constant", operators::const_);
@@ -64,8 +65,18 @@ target_link_libraries(sensor_native PRIVATE bg::python bg::library)
 ```
 
 Use the BG installation and the selected environment's nanobind CMake directory
-in `CMAKE_PREFIX_PATH`. Build the module with the same Python interpreter, then
-put its output directory on `PYTHONPATH` before running the Python example.
+in `CMAKE_PREFIX_PATH`. With `sensor_native.cpp` and `CMakeLists.txt` in the
+current directory, configure and build:
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install -DPython_EXECUTABLE=/path/to/python
+cmake --build build --config Release
+```
+
+The BG Python component finds nanobind in the selected Python environment.
+Put the module's output directory on `PYTHONPATH` before running the Python
+example; multi-configuration generators place it under `build/Release`.
+Use the same Python interpreter and compatible compiler as the BG installation.
 :::
 ::::
 :::::

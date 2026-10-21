@@ -70,7 +70,8 @@ auto sensor_two(wp<TSD<i64, TS<i64>>> readings, wp<TSD<i64, TS<i64>>> dependenci
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(sensor_two, {{{1, 1}, {2, 10}}, {{1, 3}, {2, 30}}}, {{{2, 1}}, SKIP}).equals({11, 33})) << '\n';
+    const auto result = test_graph(sensor_two, {{{1, 1}, {2, 10}}, {{1, 3}, {2, 30}}}, {{{2, 1}}, SKIP});
+    std::cout << std::boolalpha << result.equals({11, 33}) << '\n';
 }
 ```
 

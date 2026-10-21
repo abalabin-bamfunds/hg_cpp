@@ -64,7 +64,7 @@ using namespace bg::operators;
 using namespace literal;
 
 const auto offset = reference_service<auto()->TS<i64>>{"offset"};
-const auto offset_implementation = graph([] { return const_(2); });
+const auto offset_implementation = graph([] { return const_(i64{2}).as<TS<i64>>(); });
 
 auto temperature(wp<TS<i64>> reading) { return reading + offset(); }
 

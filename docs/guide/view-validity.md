@@ -1,8 +1,8 @@
 # Check validity in node code
 
-To inspect an input that may not have a value, request an optional input view.
-Check validity before reading the value. This supports decisions based on both
-availability and update information.
+To make a calculation depend on input availability, accept an optional input.
+Python plain nodes receive `None` for an absent value. C++ nodes can request an
+optional input view and inspect its validity before reading it.
 
 Prerequisites: [Input views](input-views.md).
 
@@ -14,24 +14,23 @@ Prerequisites: [Input views](input-views.md).
 :sync: python
 
 ```python
-from typing import Optional
-from bg import TS, compute_node, graph, test_graph
+from bg import INVALID, graph, node, test_graph
 
-@compute_node
-def corrected(reading: TS[int], offset: Optional[TS[int]]) -> TS[int]:
-    return reading.value + (offset.value if offset.valid else 2)
+@node
+def uses_offset(reading: int, offset: int | None) -> bool:
+    return offset is not None
 
 @graph
-def temperature(reading: int, offset: int) -> int:
-    return corrected(reading, offset)
+def offset_available(reading: int, offset: int) -> bool:
+    return uses_offset(reading, offset)
 
-print(test_graph(temperature, [18, None, 19], [None, 0, None]))
+print(test_graph(offset_available, [18, None, None, None], [None, 0, INVALID, 3]))
 ```
 
 Output:
 
 ```text
-[20, 18, 19]
+[False, True, False, True]
 ```
 :::::
 
@@ -53,16 +52,17 @@ using namespace bg::testing;
 using namespace bg::operators;
 using namespace literal;
 
-const auto corrected = node([](In<TS<i64>> reading, In<TS<i64>, optional> offset) {
-    return *reading + (offset.valid() ? *offset : 2);
+const auto uses_offset = node([](In<TS<i64>> reading, In<TS<i64>, optional> offset) {
+    return offset.valid();
 });
 
-auto temperature(wp<TS<i64>> reading, wp<TS<i64>> offset) {
-    return corrected(reading, offset);
+auto offset_available(wp<TS<i64>> reading, wp<TS<i64>> offset) {
+    return uses_offset(reading, offset);
 }
 
 int main() {
-    std::cout << std::boolalpha << (test_graph(temperature, {18, SKIP, 19}, {SKIP, 0, SKIP}).equals({20, 18, 19})) << '\n';
+    std::cout << std::boolalpha << (test_graph(offset_available, {18, SKIP, SKIP, SKIP}, {SKIP, 0, INVALID, 3})
+        .equals({false, true, false, true})) << '\n';
 }
 ```
 
@@ -82,10 +82,13 @@ builds this example as `first_graph.cpp`, linked to `bg::library`.
 :::::
 ::::::
 
-The optional Python annotation still provides a view when its input is invalid;
-the callback does not receive `None`. This differs from an
-[optional plain parameter](optional-inputs.md), which receives an absent value.
-C++ adds `optional` to `In<>` and uses `valid()`.
+The reading remains valid after its first update. Offset updates and invalidation
+then trigger the callback. A zero offset is available; absence is a separate state.
+
+C++ adds `optional` to `In<>` and uses `valid()`. Python currently supports
+optionality only on [plain node inputs](optional-inputs.md); optional `TS` views
+are not exposed. Use the graph operator [`valid`](../reference/library-selection.md#valid)
+when only an availability signal is needed.
 
 Required inputs still gate evaluation. Optional inputs may schedule evaluation
 when they change, but the callback must check whether their current value exists.

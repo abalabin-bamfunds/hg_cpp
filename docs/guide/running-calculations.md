@@ -172,7 +172,7 @@ on each signal update. [Deduplication](dedup.md) changes the history by removing
 successive equal updates, so use it before an aggregate when only value changes
 should contribute.
 
-Each call to `sums` or `means` keeps its own history. A new `test_graph` run starts
-with a fresh history.
+Each runtime calculation node owns its history. Repeated identical calls can
+reuse that node. A new `test_graph` run starts with fresh history.
 
 [Running calculation reference](../reference/library-stateful.md) specifies the full contract.

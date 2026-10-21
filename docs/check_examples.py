@@ -10,6 +10,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--cmake-prefix', type=Path)
 parser.add_argument('--cmake', default='cmake')
 parser.add_argument('--jobs', type=int, default=2)
+parser.add_argument('--cpp-compiler', help='C++23 compiler passed to CMake')
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
 project = root / 'build/doc-examples'
@@ -72,14 +73,16 @@ for page, expected_outputs in (
 cpp_expected = ['true'] * len(cpp_examples)
 for path in sorted((root / 'docs').rglob('*.md')):
     source = path.read_text()
-    if '<!-- runnable-example -->' not in source:
+    if '<!-- runnable-example -->' not in source.splitlines():
         continue
     python_blocks = re.findall(r'```python\n(.*?)\n```\n\nOutput:\n\n```text\n(.*?)\n```', source, re.S)
     native_blocks = re.findall(r'```cpp\n(.*?)\n```\n\nOutput:\n\n```text\n(.*?)\n```', source, re.S)
-    assert len(python_blocks) == len(native_blocks) == 1, path
-    python_examples.append((str(path.relative_to(root)), *python_blocks[0]))
-    cpp_examples.append((str(path.relative_to(root)), native_blocks[0][0]))
-    cpp_expected.append(native_blocks[0][1])
+    assert len(python_blocks) == len(native_blocks) > 0, path
+    for index, (python_block, native_block) in enumerate(zip(python_blocks, native_blocks)):
+        name = f'{path.relative_to(root)}:{index + 1}'
+        python_examples.append((name, *python_block))
+        cpp_examples.append((name, native_block[0]))
+        cpp_expected.append(native_block[1])
 
 for index, (name, code, expected) in enumerate(python_examples):
     path = project / f'example_{index}.py'
@@ -114,7 +117,9 @@ for start in range(0, len(cpp_examples), 8):
     target = f'examples_{start // 8}'
     source = '\n'.join(sorted(includes)) + '\n\n' + '\n'.join(bodies)
     source += '\nint main() {\n' + '\n'.join(calls) + '\n}\n'
-    (project / f'{target}.cpp').write_text(source)
+    path = project / f'{target}.cpp'
+    if not path.exists() or path.read_text() != source:
+        path.write_text(source)
     cmake.extend([f'add_executable({target} {target}.cpp)', f'target_link_libraries({target} PRIVATE bg::library)'])
     batches.append((target, cpp_expected[start:start + 8]))
 (project / 'CMakeLists.txt').write_text('\n'.join(cmake) + '\n')
@@ -122,11 +127,19 @@ print(f'Validated {len(python_examples)} Python examples; extracted {len(cpp_exa
 
 if args.cmake_prefix:
     build = project / 'build'
-    subprocess.run([args.cmake, '-S', str(project), '-B', str(build),
-                    '-DCMAKE_BUILD_TYPE=Debug', '-DCMAKE_CXX_FLAGS_DEBUG=-O0 -g0',
-                    f'-DCMAKE_PREFIX_PATH={args.cmake_prefix.resolve()}'], check=True)
+    configure = [args.cmake, '-S', str(project), '-B', str(build),
+                 '-DCMAKE_BUILD_TYPE=Debug', '-DCMAKE_CXX_FLAGS_DEBUG=-O0 -g0',
+                 f'-DCMAKE_PREFIX_PATH={args.cmake_prefix.resolve()}']
+    if args.cpp_compiler:
+        configure.append(f'-DCMAKE_CXX_COMPILER={args.cpp_compiler}')
+    subprocess.run(configure, check=True)
     subprocess.run([args.cmake, '--build', str(build), '-j', str(args.jobs)], check=True)
+    failures = []
     for target, expected in batches:
-        result = subprocess.run([str(build / target)], text=True, capture_output=True, check=True)
-        assert result.stdout.strip().splitlines() == expected, (target, result.stdout, result.stderr, expected)
+        result = subprocess.run([str(build / target)], text=True, capture_output=True)
+        if result.returncode or result.stdout.strip().splitlines() != expected:
+            failures.append(f'{target}: exit {result.returncode}; expected {expected!r}\n'
+                            f'{result.stdout}{result.stderr}')
+    if failures:
+        raise RuntimeError('\n\n'.join(failures))
     print(f'All {len(cpp_examples)} C++ examples passed.', flush=True)
