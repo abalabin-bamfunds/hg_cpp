@@ -71,16 +71,6 @@ struct reference_pass {
     inline static int evaluation_count{};
 };
 
-struct optional_reference_consumer {
-    In<TS<i64>, optional> input;
-
-    void evaluate() const {}
-};
-
-template <template <typename, auto...> typename Field> struct DictionaryBundle {
-    Field<TSD<i64, TS<i64>>> dictionary;
-};
-
 } // namespace
 
 TEST_CASE("a dereferenced input subscribes directly to a fixed target",
@@ -254,6 +244,14 @@ TEST_CASE("an ordinary list reference samples the selected list with final items
     CHECK(actual.equals<i64>({10, 20, 10, 20}));
 }
 
+namespace {
+
+template <template <typename, auto...> typename Field> struct DictionaryBundle {
+    Field<TSD<i64, TS<i64>>> dictionary;
+};
+
+} // namespace
+
 TEST_CASE("plain and notifying inputs share one sampled dictionary",
           "[evaluation][reference][series:tsd][series:tsb][feature:sampling][transition:update]"
           "[binding:reference-to-value]") {
@@ -351,6 +349,12 @@ TEST_CASE("a default reference output does not schedule subscribers for the same
 TEST_CASE("reference provider access preserves lazy allocation",
           "[evaluation][reference][feature:reference][series:value][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value]") {
+    struct optional_reference_consumer {
+        In<TS<i64>, optional> input;
+
+        void evaluate() const {}
+    };
+
     const auto source = node<changing_reference_target>();
     const auto pass = node<reference_pass>();
     const auto sink = node<optional_reference_consumer>();

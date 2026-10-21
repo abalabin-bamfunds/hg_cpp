@@ -179,16 +179,6 @@ struct BorrowedInputRunner {
     inline static bg::RuntimeGraph *child{};
 };
 
-struct BorrowedInputNoop {
-    bg::In<bg::TS<bg::i64>> input;
-
-    void evaluate() const {}
-};
-
-struct PendingBorrowedInputGraph {
-    bool evaluate() const { return true; }
-};
-
 struct ContextInputProbe {
     void start(bg::EvaluationContext *context) const {
         different_graph_inputs_cleared = context->runtime_graph_inputs() == nullptr;
@@ -482,6 +472,16 @@ TEST_CASE("borrowed inputs sample values and deliver update, invalidation, and r
 
 TEST_CASE("borrowed storage includes scheduling spill words and validates its layout",
           "[evaluation][feature:borrowed-input][feature:graph-compilation][storage:fixed]") {
+    struct BorrowedInputNoop {
+        bg::In<bg::TS<bg::i64>> input;
+
+        void evaluate() const {}
+    };
+
+    struct PendingBorrowedInputGraph {
+        bool evaluate() const { return true; }
+    };
+
     auto wiring = bg::GraphWiring{};
     const auto consumer = bg::node<BorrowedInputNoop>();
     {

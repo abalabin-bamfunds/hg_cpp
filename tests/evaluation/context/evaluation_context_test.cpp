@@ -8,32 +8,34 @@
 #include <cstddef>
 #include <cstdint>
 
+using namespace bg;
+
 namespace {
-
-struct global_state_source_definition {
-    bg::Out<bg::TS<bg::i64>> output;
-
-    void start(bg::EvaluationContext *context) const {
-        const auto value = bg::ScalarValue{42};
-        context->global_state().write([&](auto &state) { state.set(bg::util::symbol{"result"}, value); });
-        output.set(1);
-    }
-
-    void evaluate() const {}
-};
 
 TEST_CASE("an evaluation context exposes the outer global state",
           "[evaluation][context][global_state][feature:evaluation-context]") {
+    struct global_state_source_definition {
+        Out<TS<i64>> output;
+
+        void start(EvaluationContext *context) const {
+            const auto value = ScalarValue{42};
+            context->global_state().write([&](auto &state) { state.set(bg::util::symbol{"result"}, value); });
+            output.set(1);
+        }
+
+        void evaluate() const {}
+    };
+
     const auto global_state_source = bg::node<global_state_source_definition>();
-    auto state = bg::GlobalState{};
+    auto state = GlobalState{};
 
-    bg::run_graph([&] { (void)global_state_source(); }, bg::GraphRunOptions{.global_state = &state});
+    bg::run_graph([&] { (void)global_state_source(); }, GraphRunOptions{.global_state = &state});
 
-    state.read([](const auto &values) { CHECK(*bg::scalar_cast<bg::i64>(values.at("result")) == 42); });
+    state.read([](const auto &values) { CHECK(*bg::scalar_cast<i64>(values.at("result")) == 42); });
 }
 
 struct scratch_pad_source_definition {
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         alignas(std::max_align_t) auto local = std::array<std::byte, 64>{};
         auto local_storage = context->scratch().use_local_storage(local);
 
@@ -56,12 +58,12 @@ TEST_CASE("an evaluation context scratch pad uses caller-owned storage first",
 }
 
 struct scratch_reuse_source_definition {
-    bg::Out<bg::TS<bg::i64>> output;
+    Out<TS<i64>> output;
 
-    void start(bg::EvaluationContext *context) const { context->schedule_now(); }
+    void start(EvaluationContext *context) const { context->schedule_now(); }
 
-    void evaluate(bg::EvaluationContext *context) const {
-        allocation = context->scratch().allocate(sizeof(bg::i64), alignof(bg::i64));
+    void evaluate(EvaluationContext *context) const {
+        allocation = context->scratch().allocate(sizeof(i64), alignof(i64));
         node_index = context->node_index();
         output.set(42);
     }
@@ -71,17 +73,17 @@ struct scratch_reuse_source_definition {
 };
 
 struct scratch_reuse_sink_definition {
-    bg::In<bg::TS<bg::i64>> input;
+    In<TS<i64>> input;
 
-    void evaluate(bg::EvaluationContext *context) const {
-        allocation = context->scratch().allocate(sizeof(bg::i64), alignof(bg::i64));
+    void evaluate(EvaluationContext *context) const {
+        allocation = context->scratch().allocate(sizeof(i64), alignof(i64));
         node_index = context->node_index();
         value = input.value();
     }
 
     inline static void *allocation{};
     inline static std::size_t node_index{};
-    inline static bg::i64 value{};
+    inline static i64 value{};
 };
 
 TEST_CASE("evaluation contexts reset node scratch before publishing output",

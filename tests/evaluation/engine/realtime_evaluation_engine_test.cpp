@@ -25,17 +25,19 @@
 #include <utility>
 #include <vector>
 
+using namespace bg;
+
 namespace {
 
 struct QueueState {
-    static void set(bg::Queue value) {
+    static void set(Queue value) {
         std::scoped_lock lock{mutex};
         queue = std::move(value);
         ready = true;
         changed.notify_all();
     }
 
-    static bg::Queue copy() {
+    static Queue copy() {
         std::scoped_lock lock{mutex};
         return queue;
     }
@@ -54,7 +56,7 @@ struct QueueState {
 
     inline static std::mutex mutex;
     inline static std::condition_variable changed;
-    inline static bg::Queue queue;
+    inline static Queue queue;
     inline static bool ready{};
 };
 
@@ -65,9 +67,9 @@ struct QueueStateScope {
 struct RealtimeProbe {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::Out<bg::TS<bg::i64>> output;
+    Out<TS<i64>> output;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         const auto wall_base = context->wall_clock().now();
         std::scoped_lock lock{mutex};
         ++start_count;
@@ -83,8 +85,8 @@ struct RealtimeProbe {
         changed.notify_all();
     }
 
-    void evaluate(bg::EvaluationContext *context) const {
-        auto value = bg::i64{};
+    void evaluate(EvaluationContext *context) const {
+        auto value = i64{};
         auto write_queue = false;
         auto schedule_exact = false;
         auto delay = std::chrono::milliseconds{};
@@ -92,7 +94,7 @@ struct RealtimeProbe {
             std::unique_lock lock{mutex};
             delay = evaluation_delay;
             evaluation_times.push_back(context->evaluation_time());
-            value = static_cast<bg::i64>(evaluation_times.size());
+            value = static_cast<i64>(evaluation_times.size());
             if (queue_on_first_evaluation && !queue_written) {
                 queue_written = true;
                 write_queue = true;
@@ -123,7 +125,7 @@ struct RealtimeProbe {
         std::this_thread::sleep_for(delay);
         output.set(value);
         if (write_queue) {
-            (void)QueueState::copy().write(::literal::TimeSeriesLiteral(bg::i64{42}));
+            (void)QueueState::copy().write(::literal::TimeSeriesLiteral(i64{42}));
         }
         if (schedule_exact) {
             context->schedule_at(context->evaluation_time() + reschedule_interval);
@@ -166,7 +168,7 @@ struct RealtimeProbe {
     }
 
     struct WallObservation {
-        bg::EvaluationTime now;
+        EvaluationTime now;
         std::vector<bool> fired;
     };
 
@@ -176,9 +178,9 @@ struct RealtimeProbe {
     inline static std::chrono::microseconds reschedule_interval{};
     inline static std::chrono::milliseconds evaluation_delay{};
     inline static std::vector<std::chrono::microseconds> wall_offsets;
-    inline static std::vector<bg::EvaluationTime> evaluation_times;
-    inline static std::vector<bg::EvaluationTime> wall_deadlines;
-    inline static std::vector<bg::ScheduleHandle> wall_handles;
+    inline static std::vector<EvaluationTime> evaluation_times;
+    inline static std::vector<EvaluationTime> wall_deadlines;
+    inline static std::vector<ScheduleHandle> wall_handles;
     inline static std::vector<WallObservation> wall_observations;
     inline static std::size_t start_count{};
     inline static std::size_t stop_count{};
@@ -192,9 +194,9 @@ struct RealtimeProbe {
 };
 
 struct QueueSink {
-    bg::In<bg::TS<bg::i64>> input;
+    In<TS<i64>> input;
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(EvaluationContext *context) const {
         std::scoped_lock lock{mutex};
         values.emplace_back(context->evaluation_time(), *input);
         changed.notify_all();
@@ -202,15 +204,15 @@ struct QueueSink {
 
     inline static std::mutex mutex;
     inline static std::condition_variable changed;
-    inline static std::vector<std::pair<bg::EvaluationTime, bg::i64>> values;
+    inline static std::vector<std::pair<EvaluationTime, i64>> values;
 };
 
 struct QueueChainSink {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::In<bg::TS<bg::i64>> input;
+    In<TS<i64>> input;
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(EvaluationContext *context) const {
         auto schedule_next = false;
         {
             std::scoped_lock lock{mutex};
@@ -240,12 +242,12 @@ struct QueueChainSink {
     inline static std::mutex mutex;
     inline static std::condition_variable changed;
     inline static std::vector<int> events;
-    inline static bg::ScheduleHandle timer;
+    inline static ScheduleHandle timer;
     inline static std::size_t timer_count{};
 };
 
 struct DownstreamSink {
-    bg::In<bg::TS<bg::i64>> input;
+    In<TS<i64>> input;
 
     void evaluate() const {
         std::scoped_lock lock{mutex};
@@ -310,26 +312,26 @@ bool wait_for(std::condition_variable &changed, std::mutex &mutex, Predicate pre
 struct ProbeGraph {
     decltype(bg::node<RealtimeProbe>()) probe = bg::node<RealtimeProbe>();
     decltype(bg::node<DownstreamSink>()) sink = bg::node<DownstreamSink>();
-    bg::GraphWiring wiring;
+    GraphWiring wiring;
 
     ProbeGraph() {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         sink(probe());
         wiring.finalize();
     }
 };
 
 struct QueueGraph {
-    inline static constexpr auto start_queue = [](bg::Queue writer) { QueueState::set(std::move(writer)); };
-    using QueueNode = decltype(bg::queue<bg::TS<bg::i64>>(bg::start = start_queue));
+    inline static constexpr auto start_queue = [](Queue writer) { QueueState::set(std::move(writer)); };
+    using QueueNode = decltype(bg::queue<TS<i64>>(bg::start = start_queue));
 
-    QueueNode queue = bg::queue<bg::TS<bg::i64>>(bg::start = start_queue);
+    QueueNode queue = bg::queue<TS<i64>>(bg::start = start_queue);
     decltype(bg::node<QueueSink>()) queue_sink = bg::node<QueueSink>();
     decltype(bg::node<RealtimeProbe>()) probe = bg::node<RealtimeProbe>();
-    bg::GraphWiring wiring;
+    GraphWiring wiring;
 
     QueueGraph() {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         queue_sink(queue());
         (void)probe();
         wiring.finalize();
@@ -344,14 +346,12 @@ void verify_queue_wakes_idle_engine(std::optional<std::chrono::microseconds> exa
         RealtimeProbe::exact_offsets = {*exact_timer_offset};
     }
     QueueGraph graph;
-    const auto compiled = bg::CompiledGraph{graph.wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{graph.wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     auto queue_state_scope = QueueStateScope{};
-    const auto start = bg::SystemWallClock::instance().now();
-    EngineWorker worker{[&](std::stop_token token) {
-        bg::RealtimeEvaluationEngine{}.run(runtime, start, token);
-    }};
+    const auto start = SystemWallClock::instance().now();
+    EngineWorker worker{[&](std::stop_token token) { RealtimeEvaluationEngine{}.run(runtime, start, token); }};
 
     const auto initial_cycle = wait_for(RealtimeProbe::changed, RealtimeProbe::mutex, [] {
         return RealtimeProbe::evaluation_times.size() == 1;
@@ -363,7 +363,7 @@ void verify_queue_wakes_idle_engine(std::optional<std::chrono::microseconds> exa
     REQUIRE_FALSE(timer_fired_early);
 
     auto queue = QueueState::copy();
-    const auto accepted = queue.write(::literal::TimeSeriesLiteral(bg::i64{73}));
+    const auto accepted = queue.write(::literal::TimeSeriesLiteral(i64{73}));
     const auto received = wait_for(QueueSink::changed, QueueSink::mutex, [] { return !QueueSink::values.empty(); });
     worker.request_stop();
     worker.join();
@@ -377,7 +377,7 @@ void verify_queue_wakes_idle_engine(std::optional<std::chrono::microseconds> exa
         CHECK(QueueSink::values.front().first < start + *exact_timer_offset);
     }
     CHECK(RealtimeProbe::evaluation_times.size() == 1);
-    CHECK_FALSE(queue.write(::literal::TimeSeriesLiteral(bg::i64{74})));
+    CHECK_FALSE(queue.write(::literal::TimeSeriesLiteral(i64{74})));
 }
 
 } // namespace
@@ -392,15 +392,13 @@ TEST_CASE("realtime exact cycles preserve deadlines before pending queue input",
     RealtimeProbe::reschedules_remaining = 2;
     RealtimeProbe::queue_on_first_evaluation = true;
     QueueGraph graph;
-    const auto compiled = bg::CompiledGraph{graph.wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{graph.wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     auto queue_state_scope = QueueStateScope{};
-    auto profile = bg::EvaluationProfile{};
-    const auto start = bg::SystemWallClock::instance().now() - std::chrono::hours{1};
-    EngineWorker worker{[&](std::stop_token token) {
-        bg::RealtimeEvaluationEngine{}.run(runtime, start, profile, token);
-    }};
+    auto profile = EvaluationProfile{};
+    const auto start = SystemWallClock::instance().now() - std::chrono::hours{1};
+    EngineWorker worker{[&](std::stop_token token) { RealtimeEvaluationEngine{}.run(runtime, start, profile, token); }};
 
     const auto received = wait_for(QueueSink::changed, QueueSink::mutex, [] { return !QueueSink::values.empty(); });
     worker.request_stop();
@@ -415,11 +413,11 @@ TEST_CASE("realtime exact cycles preserve deadlines before pending queue input",
     CHECK(QueueSink::values.front().first > start + std::chrono::minutes{40});
     CHECK(QueueSink::values.front().second == 42);
 
-    auto reader = bg::EvaluationProfileReader{profile.take_recording()};
-    auto cycle_times = std::vector<bg::EvaluationTime>{};
+    auto reader = EvaluationProfileReader{profile.take_recording()};
+    auto cycle_times = std::vector<EvaluationTime>{};
     while (const auto record = reader.read()) {
-        if (const auto *cycle = std::get_if<bg::EvaluationProfileCycle>(&*record);
-            cycle != nullptr && cycle->boundary == bg::EvaluationProfileCycle::Boundary::start) {
+        if (const auto *cycle = std::get_if<EvaluationProfileCycle>(&*record);
+            cycle != nullptr && cycle->boundary == EvaluationProfileCycle::Boundary::start) {
             cycle_times.push_back(cycle->evaluation_time);
         }
     }
@@ -443,24 +441,24 @@ TEST_CASE("a conflicting standard queue message waits through a dynamically resc
     QueueState::reset();
     QueueChainSink::reset();
     auto writes_accepted = false;
-    const auto queue = bg::queue<bg::TS<bg::i64>>(bg::start = [&](bg::Queue writer) {
-        writes_accepted = writer.write(::literal::TimeSeriesLiteral(bg::i64{1})) &&
-                          writer.write(::literal::TimeSeriesLiteral(bg::i64{2}));
+    const auto queue = bg::queue<TS<i64>>(bg::start = [&](Queue writer) {
+        writes_accepted =
+            writer.write(::literal::TimeSeriesLiteral(i64{1})) && writer.write(::literal::TimeSeriesLiteral(i64{2}));
         QueueState::set(std::move(writer));
     });
     const auto sink = bg::node<QueueChainSink>();
-    auto wiring = bg::GraphWiring{};
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         sink(queue());
     }
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     auto queue_state_scope = QueueStateScope{};
     EngineWorker worker{[&](std::stop_token token) {
-        bg::RealtimeEvaluationEngine{}.run(runtime, bg::SystemWallClock::instance().now(), token);
+        RealtimeEvaluationEngine{}.run(runtime, SystemWallClock::instance().now(), token);
     }};
 
     const auto complete = wait_for(QueueChainSink::changed, QueueChainSink::mutex, [] {
@@ -473,7 +471,7 @@ TEST_CASE("a conflicting standard queue message waits through a dynamically resc
     REQUIRE(complete);
     CHECK(writes_accepted);
     CHECK(QueueChainSink::events == std::vector{1, 0, 0, 0, 2});
-    CHECK_FALSE(QueueState::copy().write(::literal::TimeSeriesLiteral(bg::i64{3})));
+    CHECK_FALSE(QueueState::copy().write(::literal::TimeSeriesLiteral(i64{3})));
 }
 
 TEST_CASE("realtime wall-clock timers run after their wall deadline",
@@ -481,11 +479,11 @@ TEST_CASE("realtime wall-clock timers run after their wall deadline",
     RealtimeProbe::reset();
     RealtimeProbe::wall_offsets = {-std::chrono::microseconds{2}, -std::chrono::microseconds{1}};
     ProbeGraph graph;
-    const auto compiled = bg::CompiledGraph{graph.wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{graph.wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     EngineWorker worker{[&](std::stop_token token) {
-        bg::RealtimeEvaluationEngine{}.run(runtime, bg::MIN_DT + std::chrono::microseconds{10}, token);
+        RealtimeEvaluationEngine{}.run(runtime, MIN_DT + std::chrono::microseconds{10}, token);
     }};
 
     const auto fired = wait_for(RealtimeProbe::changed, RealtimeProbe::mutex, [] {
@@ -513,11 +511,11 @@ TEST_CASE("realtime evaluation waits until a future wall-clock deadline",
     RealtimeProbe::reset();
     RealtimeProbe::wall_offsets = {std::chrono::milliseconds{20}};
     ProbeGraph graph;
-    const auto compiled = bg::CompiledGraph{graph.wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{graph.wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     EngineWorker worker{[&](std::stop_token token) {
-        bg::RealtimeEvaluationEngine{}.run(runtime, bg::MIN_DT + std::chrono::microseconds{10}, token);
+        RealtimeEvaluationEngine{}.run(runtime, MIN_DT + std::chrono::microseconds{10}, token);
     }};
 
     const auto fired = wait_for(RealtimeProbe::changed, RealtimeProbe::mutex, [] {
@@ -543,11 +541,11 @@ TEST_CASE("realtime stop interrupts a wait for a future wall-clock timer",
     RealtimeProbe::reset();
     RealtimeProbe::wall_offsets = {std::chrono::hours{1}};
     ProbeGraph graph;
-    const auto compiled = bg::CompiledGraph{graph.wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{graph.wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     EngineWorker worker{[&](std::stop_token token) {
-        bg::RealtimeEvaluationEngine{}.run(runtime, bg::MIN_DT + std::chrono::microseconds{10}, token);
+        RealtimeEvaluationEngine{}.run(runtime, MIN_DT + std::chrono::microseconds{10}, token);
     }};
 
     const auto initial_cycle = wait_for(RealtimeProbe::changed, RealtimeProbe::mutex, [] {
@@ -570,17 +568,16 @@ TEST_CASE("realtime engines stop while idle and reject pre-cancelled starts",
           "[evaluation][realtime][feature:realtime][feature:lifecycle]") {
     RealtimeProbe::reset();
     ProbeGraph graph;
-    const auto compiled = bg::CompiledGraph{graph.wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{graph.wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     std::stop_source already_stopped;
     already_stopped.request_stop();
-    bg::RealtimeEvaluationEngine{}.run(runtime, bg::MIN_DT + std::chrono::microseconds{10},
-                                       already_stopped.get_token());
+    RealtimeEvaluationEngine{}.run(runtime, MIN_DT + std::chrono::microseconds{10}, already_stopped.get_token());
     CHECK(RealtimeProbe::start_count == 0);
 
     EngineWorker worker{[&](std::stop_token token) {
-        bg::RealtimeEvaluationEngine{}.run(runtime, bg::MIN_DT + std::chrono::microseconds{10}, token);
+        RealtimeEvaluationEngine{}.run(runtime, MIN_DT + std::chrono::microseconds{10}, token);
     }};
     const auto initial_cycle = wait_for(RealtimeProbe::changed, RealtimeProbe::mutex, [] {
         return RealtimeProbe::evaluation_times.size() == 1;
@@ -598,21 +595,22 @@ TEST_CASE("realtime periodic callback polls idle waits and stops after the compl
           "[evaluation][realtime][feature:realtime][feature:lifecycle][failure]") {
     RealtimeProbe::reset();
     ProbeGraph graph;
-    const auto compiled = bg::CompiledGraph{graph.wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{graph.wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     auto callback_calls = std::size_t{};
-    const auto periodic_callback = bg::PeriodicCallback{
-        .callback = [&] {
-            if (++callback_calls == 2) {
-                throw std::runtime_error{"periodic callback failed"};
-            }
-        },
+    const auto periodic_callback = PeriodicCallback{
+        .callback =
+            [&] {
+                if (++callback_calls == 2) {
+                    throw std::runtime_error{"periodic callback failed"};
+                }
+            },
         .interval = std::chrono::milliseconds{1},
     };
-    const auto start = bg::SystemWallClock::instance().now();
+    const auto start = SystemWallClock::instance().now();
 
-    CHECK_THROWS_AS(bg::RealtimeEvaluationEngine{}.run(runtime, start, std::stop_token{}, periodic_callback),
+    CHECK_THROWS_AS(RealtimeEvaluationEngine{}.run(runtime, start, std::stop_token{}, periodic_callback),
                     std::runtime_error);
     CHECK(callback_calls == 2);
     CHECK(RealtimeProbe::start_count == 1);
@@ -628,22 +626,23 @@ TEST_CASE("realtime periodic callback queue writes are scheduled before waiting"
     QueueSink::values.clear();
     RealtimeProbe::evaluation_delay = std::chrono::milliseconds{5};
     QueueGraph graph;
-    const auto compiled = bg::CompiledGraph{graph.wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{graph.wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     auto queue_state_scope = QueueStateScope{};
     auto callback_calls = std::size_t{};
     auto accepted = false;
-    const auto periodic_callback = bg::PeriodicCallback{
-        .callback = [&] {
-            if (++callback_calls == 2) {
-                accepted = QueueState::copy().write(::literal::TimeSeriesLiteral(bg::i64{73}));
-            }
-        },
+    const auto periodic_callback = PeriodicCallback{
+        .callback =
+            [&] {
+                if (++callback_calls == 2) {
+                    accepted = QueueState::copy().write(::literal::TimeSeriesLiteral(i64{73}));
+                }
+            },
         .interval = std::chrono::milliseconds{1},
     };
     EngineWorker worker{[&](std::stop_token token) {
-        bg::RealtimeEvaluationEngine{}.run(runtime, bg::SystemWallClock::instance().now(), token, periodic_callback);
+        RealtimeEvaluationEngine{}.run(runtime, SystemWallClock::instance().now(), token, periodic_callback);
     }};
 
     const auto received = wait_for(QueueSink::changed, QueueSink::mutex, [] { return !QueueSink::values.empty(); });
@@ -663,21 +662,22 @@ TEST_CASE("realtime periodic callbacks run during future startup without startin
     SECTION("polling the future-start wait") {
         RealtimeProbe::reset();
         ProbeGraph graph;
-        const auto compiled = bg::CompiledGraph{graph.wiring};
-        auto global_state = bg::GlobalState{};
-        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        const auto compiled = CompiledGraph{graph.wiring};
+        auto global_state = GlobalState{};
+        auto runtime = RuntimeGraph{compiled, global_state};
         auto callback_calls = std::size_t{};
-        const auto periodic_callback = bg::PeriodicCallback{
-            .callback = [&] {
-                if (++callback_calls == 2) {
-                    throw std::runtime_error{"periodic callback failed during future startup"};
-                }
-            },
+        const auto periodic_callback = PeriodicCallback{
+            .callback =
+                [&] {
+                    if (++callback_calls == 2) {
+                        throw std::runtime_error{"periodic callback failed during future startup"};
+                    }
+                },
             .interval = std::chrono::milliseconds{1},
         };
-        const auto future_start = bg::SystemWallClock::instance().now() + std::chrono::hours{1};
+        const auto future_start = SystemWallClock::instance().now() + std::chrono::hours{1};
 
-        CHECK_THROWS_AS(bg::RealtimeEvaluationEngine{}.run(runtime, future_start, std::stop_token{}, periodic_callback),
+        CHECK_THROWS_AS(RealtimeEvaluationEngine{}.run(runtime, future_start, std::stop_token{}, periodic_callback),
                         std::runtime_error);
         CHECK(callback_calls == 2);
         CHECK(RealtimeProbe::start_count == 0);
@@ -688,19 +688,20 @@ TEST_CASE("realtime periodic callbacks run during future startup without startin
     SECTION("an initial periodic callback") {
         RealtimeProbe::reset();
         ProbeGraph graph;
-        const auto compiled = bg::CompiledGraph{graph.wiring};
-        auto global_state = bg::GlobalState{};
-        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        const auto compiled = CompiledGraph{graph.wiring};
+        auto global_state = GlobalState{};
+        auto runtime = RuntimeGraph{compiled, global_state};
         auto callback_calls = std::size_t{};
-        const auto periodic_callback = bg::PeriodicCallback{
-            .callback = [&] {
-                ++callback_calls;
-                throw std::runtime_error{"periodic callback failed during startup"};
-            },
+        const auto periodic_callback = PeriodicCallback{
+            .callback =
+                [&] {
+                    ++callback_calls;
+                    throw std::runtime_error{"periodic callback failed during startup"};
+                },
         };
 
-        CHECK_THROWS_AS(bg::RealtimeEvaluationEngine{}.run(
-                            runtime, bg::SystemWallClock::instance().now(), std::stop_token{}, periodic_callback),
+        CHECK_THROWS_AS(RealtimeEvaluationEngine{}.run(runtime, SystemWallClock::instance().now(), std::stop_token{},
+                                                       periodic_callback),
                         std::runtime_error);
         CHECK(callback_calls == 1);
         CHECK(RealtimeProbe::start_count == 0);
@@ -713,16 +714,16 @@ TEST_CASE("realtime stop cancels future startup and waits for the active cycle",
     SECTION("cancellation during future startup") {
         RealtimeProbe::reset();
         ProbeGraph graph;
-        const auto compiled = bg::CompiledGraph{graph.wiring};
-        auto global_state = bg::GlobalState{};
-        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        const auto compiled = CompiledGraph{graph.wiring};
+        auto global_state = GlobalState{};
+        auto runtime = RuntimeGraph{compiled, global_state};
         std::binary_semaphore entered{0};
         std::binary_semaphore continue_to_run{0};
         EngineWorker worker{[&](std::stop_token token) {
             entered.release();
             continue_to_run.acquire();
-            const auto future_start = bg::SystemWallClock::instance().now() + std::chrono::hours{24LL * 365 * 300};
-            bg::RealtimeEvaluationEngine{}.run(runtime, future_start, token);
+            const auto future_start = SystemWallClock::instance().now() + std::chrono::hours{24LL * 365 * 300};
+            RealtimeEvaluationEngine{}.run(runtime, future_start, token);
         }};
         entered.acquire();
         continue_to_run.release();
@@ -743,11 +744,11 @@ TEST_CASE("realtime stop cancels future startup and waits for the active cycle",
         DownstreamSink::count = 0;
         RealtimeProbe::block_evaluation = true;
         ProbeGraph graph;
-        const auto compiled = bg::CompiledGraph{graph.wiring};
-        auto global_state = bg::GlobalState{};
-        auto runtime = bg::RuntimeGraph{compiled, global_state};
+        const auto compiled = CompiledGraph{graph.wiring};
+        auto global_state = GlobalState{};
+        auto runtime = RuntimeGraph{compiled, global_state};
         EngineWorker worker{[&](std::stop_token token) {
-            bg::RealtimeEvaluationEngine{}.run(runtime, bg::MIN_DT + std::chrono::microseconds{10}, token);
+            RealtimeEvaluationEngine{}.run(runtime, MIN_DT + std::chrono::microseconds{10}, token);
         }};
         const auto entered = wait_for(RealtimeProbe::changed, RealtimeProbe::mutex, [] {
             return RealtimeProbe::entered;
@@ -768,26 +769,24 @@ TEST_CASE("realtime evaluation failure stops the graph and closes retained queue
     RealtimeProbe::reset();
     QueueState::reset();
     RealtimeProbe::throw_on_evaluation = true;
-    const auto queue = bg::queue<bg::TS<bg::i64>>(bg::start = [](bg::Queue writer) {
-        QueueState::set(std::move(writer));
-    });
+    const auto queue = bg::queue<TS<i64>>(bg::start = [](Queue writer) { QueueState::set(std::move(writer)); });
     const auto probe = bg::node<RealtimeProbe>();
-    auto wiring = bg::GraphWiring{};
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         (void)queue();
         (void)probe();
     }
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     auto queue_state_scope = QueueStateScope{};
 
-    CHECK_THROWS_AS(bg::RealtimeEvaluationEngine{}.run(runtime, bg::MIN_DT + std::chrono::microseconds{10}),
+    CHECK_THROWS_AS(RealtimeEvaluationEngine{}.run(runtime, MIN_DT + std::chrono::microseconds{10}),
                     std::runtime_error);
     CHECK(RealtimeProbe::stop_count == 1);
-    CHECK_FALSE(QueueState::copy().write(::literal::TimeSeriesLiteral(bg::i64{7})));
+    CHECK_FALSE(QueueState::copy().write(::literal::TimeSeriesLiteral(i64{7})));
     QueueState::reset();
 }
 
@@ -806,10 +805,10 @@ TEST_CASE("engine wakeup handles native clock range boundaries",
     };
 
     wakeup.notify();
-    const auto distant_future = bg::SystemWallClock::instance().now() + std::chrono::hours{24LL * 365 * 300};
+    const auto distant_future = SystemWallClock::instance().now() + std::chrono::hours{24LL * 365 * 300};
     CHECK(wait_for_wakeup(distant_future));
 
-    const auto distant_past = bg::SystemWallClock::instance().now() - std::chrono::hours{24LL * 365 * 1000};
+    const auto distant_past = SystemWallClock::instance().now() - std::chrono::hours{24LL * 365 * 1000};
     CHECK_FALSE(wakeup.wait_until(distant_past));
     wakeup.notify();
     CHECK(wait_for_wakeup(distant_past));
@@ -819,24 +818,24 @@ TEST_CASE("engine wakeup handles native clock range boundaries",
 TEST_CASE("realtime startup failure closes queue admission",
           "[evaluation][realtime][feature:realtime][feature:lifecycle][failure][queue][feature:time-series-storage]") {
     QueueState::reset();
-    const auto queue = bg::queue<bg::TS<bg::i64>>(bg::start = [](bg::Queue writer) {
+    const auto queue = bg::queue<TS<i64>>(bg::start = [](Queue writer) {
         QueueState::set(std::move(writer));
         throw std::runtime_error{"realtime queue startup failure"};
     });
-    auto wiring = bg::GraphWiring{};
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         (void)queue();
     }
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
     auto queue_state_scope = QueueStateScope{};
 
-    CHECK_THROWS_AS(bg::RealtimeEvaluationEngine{}.run(runtime, bg::MIN_DT + std::chrono::microseconds{10}),
+    CHECK_THROWS_AS(RealtimeEvaluationEngine{}.run(runtime, MIN_DT + std::chrono::microseconds{10}),
                     std::runtime_error);
     CHECK(QueueState::is_ready());
-    CHECK_FALSE(QueueState::copy().write(::literal::TimeSeriesLiteral(bg::i64{8})));
+    CHECK_FALSE(QueueState::copy().write(::literal::TimeSeriesLiteral(i64{8})));
     QueueState::reset();
 }

@@ -11,19 +11,12 @@
 #include <chrono>
 #include <vector>
 
+using namespace bg;
+
 namespace {
 
-struct list_source_definition {
-    bg::Scalar<bg::List<float>> values;
-    bg::Out<bg::TS<float>> output;
-
-    void start() const { output.set(values[0].value()); }
-
-    void evaluate() const {}
-};
-
 struct float_sink_definition {
-    bg::In<bg::TS<float>> input;
+    In<TS<float>> input;
 
     void evaluate() const {
         ++evaluation_count;
@@ -34,30 +27,39 @@ struct float_sink_definition {
     inline static float last_value{};
 };
 
-[[nodiscard]] bg::EvaluationTime time(bg::i64 microseconds) {
-    return bg::MIN_DT + std::chrono::microseconds{microseconds};
+[[nodiscard]] EvaluationTime time(i64 microseconds) {
+    return MIN_DT + std::chrono::microseconds{microseconds};
 }
 
 } // namespace
 
 TEST_CASE("a scalar list passes values through compiled wiring", "[evaluation][views][feature:time-series-view]") {
+    struct list_source_definition {
+        Scalar<List<float>> values;
+        Out<TS<float>> output;
+
+        void start() const { output.set(values[0].value()); }
+
+        void evaluate() const {}
+    };
+
     const auto list_source = bg::node<list_source_definition>();
     const auto float_sink = bg::node<float_sink_definition>();
     float_sink_definition::evaluation_count = 0;
     auto values = std::vector{2.5F};
-    const auto list = bg::ScalarValue<bg::List<float>>{values};
+    const auto list = ScalarValue<List<float>>{values};
 
-    bg::GraphWiring wiring;
+    GraphWiring wiring;
     {
-        bg::WiringContext context{wiring};
+        WiringContext context{wiring};
         float_sink(list_source(list));
     }
     values[0] = 4.0F;
 
     wiring.finalize();
-    const bg::CompiledGraph compiled{wiring};
-    auto runtime_global_state = bg::GlobalState{};
-    bg::RuntimeGraph runtime{compiled, runtime_global_state};
+    const CompiledGraph compiled{wiring};
+    auto runtime_global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, runtime_global_state};
     runtime.start(time(1));
     runtime.evaluate(time(1));
 
@@ -68,8 +70,8 @@ TEST_CASE("a scalar list passes values through compiled wiring", "[evaluation][v
 namespace {
 
 struct generic_list_source_definition {
-    bg::Scalar<bg::List<bg::SCALAR>> values;
-    bg::Out<bg::TS<bg::SCALAR>> output;
+    Scalar<List<SCALAR>> values;
+    Out<TS<SCALAR>> output;
 
     void start() const { output.set_value(values[0]); }
 
@@ -82,7 +84,7 @@ TEST_CASE("a generic scalar list resolves its item view",
           "[evaluation][views][feature:time-series-view][declaration:generic]") {
     const auto generic_list_source = bg::node<generic_list_source_definition>();
     const auto values = std::vector{2.5F};
-    const auto list = bg::ScalarValue<bg::List<float>>{values};
+    const auto list = ScalarValue<List<float>>{values};
     const auto graph = [&] { return generic_list_source(list); };
 
     const auto actual = bg::testing::test_graph(graph);
@@ -94,7 +96,7 @@ namespace {
 
 struct starting_source_definition {
     float value;
-    bg::Out<bg::TS<float>> output;
+    Out<TS<float>> output;
 
     void start() const { output.set(value); }
 
@@ -102,8 +104,8 @@ struct starting_source_definition {
 };
 
 struct generic_value_copy_definition {
-    bg::In<bg::TS<bg::SCALAR>> input;
-    bg::Out<bg::TS<bg::SCALAR>> output;
+    In<TS<SCALAR>> input;
+    Out<TS<SCALAR>> output;
 
     void evaluate() const { output.set_value(input.value_view()); }
 };
@@ -124,19 +126,19 @@ TEST_CASE("a generic scalar time-series view preserves its resolved scalar type"
 namespace {
 
 struct generic_copy_definition {
-    bg::In<bg::TS_T> input;
-    bg::Out<bg::TS<double>> output;
+    In<TS_T> input;
+    Out<TS<double>> output;
 
     void evaluate() const {
-        input->visit([&](const bg::In<bg::TS<bg::SCALAR>> *value) { output.set_value(value->value_view()); },
-                     [](const bg::In<bg::TSL<bg::TS_T, bg::SIZE>> *) {}, ddv::noop);
+        input->visit([&](const In<TS<SCALAR>> *value) { output.set_value(value->value_view()); },
+                     [](const In<TSL<TS_T, bg::SIZE>> *) {}, ddv::noop);
     }
 };
 
 struct double_source_definition {
-    bg::Out<bg::TS<double>> output;
+    Out<TS<double>> output;
 
-    void start(bg::EvaluationContext *context) const { context->schedule_now(); }
+    void start(EvaluationContext *context) const { context->schedule_now(); }
     void evaluate() const { output.set(1.5); }
 };
 
@@ -156,19 +158,17 @@ TEST_CASE("a generic time-series view preserves its resolved time-series type",
 namespace {
 
 struct generic_list_view_copy_definition {
-    bg::In<bg::TSL<bg::TS_T, bg::SIZE>> input;
-    bg::Out<bg::TSL<bg::TS_T, bg::SIZE>> output;
+    In<TSL<TS_T, bg::SIZE>> input;
+    Out<TSL<TS_T, bg::SIZE>> output;
 
     void evaluate() const {
         input_size = input.size();
         output_size = output.size();
 
         input[1].visit(
-            [&](const bg::In<bg::TS<bg::SCALAR>> *source) {
+            [&](const In<TS<SCALAR>> *source) {
                 output[0].visit(
-                    [&](const bg::Out<bg::TS<bg::SCALAR>> *destination) {
-                        destination->set_value(source->value_view());
-                    },
+                    [&](const Out<TS<SCALAR>> *destination) { destination->set_value(source->value_view()); },
                     ddv::noop);
             },
             ddv::noop);
@@ -179,8 +179,8 @@ struct generic_list_view_copy_definition {
 };
 
 struct generic_list_view_value_definition {
-    bg::In<bg::TSL<bg::TS<bg::i64>, 2>> input;
-    bg::Out<bg::TS<bg::i64>> output;
+    In<TSL<TS<i64>, 2>> input;
+    Out<TS<i64>> output;
 
     void evaluate() const { output.set(*input[0]); }
 };
@@ -193,25 +193,25 @@ TEST_CASE("generic time-series list views expose their resolved size and items",
     const auto value = bg::node<generic_list_view_value_definition>();
     generic_list_view_copy_definition::input_size = 0;
     generic_list_view_copy_definition::output_size = 0;
-    const auto graph = [&](bg::wp<bg::TSL<bg::TS<bg::i64>, 2>> input) { return value(copy(input)); };
+    const auto graph = [&](bg::wp<TSL<TS<i64>, 2>> input) { return value(copy(input)); };
 
     const auto actual = bg::testing::test_graph(graph, {{{0, 3}, {1, 7}}});
 
     CHECK(generic_list_view_copy_definition::input_size == 2);
     CHECK(generic_list_view_copy_definition::output_size == 2);
-    CHECK(actual.equals<bg::i64>({7}));
+    CHECK(actual.equals<i64>({7}));
 }
 
 namespace {
 
 template <template <typename, auto...> typename Field> struct RuntimeViewBundle {
-    Field<bg::TS<bg::i64>> count;
-    Field<bg::TS<float>> value;
+    Field<TS<i64>> count;
+    Field<TS<float>> value;
 };
 
 struct generic_bundle_view_copy_definition {
-    bg::In<bg::TSB<bg::SCHEMA>> input;
-    bg::Out<bg::TSB<bg::SCHEMA>> output;
+    In<TSB<bg::SCHEMA>> input;
+    Out<TSB<bg::SCHEMA>> output;
 
     void evaluate() const {
         input_size = input.size();
@@ -220,11 +220,9 @@ struct generic_bundle_view_copy_definition {
         second_name = output.item_name(1);
 
         input[0].visit(
-            [&](const bg::In<bg::TS<bg::SCALAR>> *source) {
+            [&](const In<TS<SCALAR>> *source) {
                 output[0].visit(
-                    [&](const bg::Out<bg::TS<bg::SCALAR>> *destination) {
-                        destination->set_value(source->value_view());
-                    },
+                    [&](const Out<TS<SCALAR>> *destination) { destination->set_value(source->value_view()); },
                     ddv::noop);
             },
             ddv::noop);
@@ -237,8 +235,8 @@ struct generic_bundle_view_copy_definition {
 };
 
 struct generic_bundle_view_value_definition {
-    bg::In<bg::TSB<RuntimeViewBundle>> input;
-    bg::Out<bg::TS<bg::i64>> output;
+    In<TSB<RuntimeViewBundle>> input;
+    Out<TS<i64>> output;
 
     void evaluate() const { output.set(*input->count); }
 };
@@ -254,7 +252,7 @@ TEST_CASE("generic bundle views expose their resolved schema and items",
     generic_bundle_view_copy_definition::output_size = 0;
     generic_bundle_view_copy_definition::first_name = bg::util::symbol{""};
     generic_bundle_view_copy_definition::second_name = bg::util::symbol{""};
-    const auto graph = [&](bg::wp<bg::TSB<RuntimeViewBundle>> input) { return value(copy(input)); };
+    const auto graph = [&](bg::wp<TSB<RuntimeViewBundle>> input) { return value(copy(input)); };
 
     const auto actual = bg::testing::test_graph(graph, {{{"count", 4}, {"value", 2.5F}}});
 
@@ -262,5 +260,5 @@ TEST_CASE("generic bundle views expose their resolved schema and items",
     CHECK(generic_bundle_view_copy_definition::output_size == 2);
     CHECK(generic_bundle_view_copy_definition::first_name.text() == "count");
     CHECK(generic_bundle_view_copy_definition::second_name.text() == "value");
-    CHECK(actual.equals<bg::i64>({4}));
+    CHECK(actual.equals<i64>({4}));
 }
