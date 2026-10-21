@@ -28,6 +28,7 @@ add_executable(
     evaluation/reduce_test.cpp
     evaluation/mesh_test.cpp
     evaluation/switch_test.cpp
+    evaluation/dispatch_cast_test.cpp
     evaluation/nested_graph_test.cpp
     evaluation/nested_graph_owner_test.cpp
     evaluation/scheduling/timed_scheduling_test.cpp

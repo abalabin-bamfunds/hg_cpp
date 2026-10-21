@@ -46,6 +46,7 @@ add_library(
     src/graph_instance_id.cpp
     src/graph_argument.cpp
     src/graph_wiring.cpp
+    src/dispatch_cast.cpp
     src/graph_wiring_structure.cpp
     src/nested_graph.cpp
     src/nested.cpp
