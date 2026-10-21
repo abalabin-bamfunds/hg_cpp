@@ -1,7 +1,11 @@
 import pytest
 
 import bg
-from bg._bg_test_extension import can_convert_python_type, copy_release_python_scalar_without_gil
+from bg._bg_test_extension import (
+    can_convert_python_type,
+    copy_release_python_scalar_without_gil,
+    python_type_supports_value_covariance,
+)
 
 
 def test_python_objects_keep_identity_through_base_typed_time_series():
@@ -24,6 +28,18 @@ def test_python_objects_keep_identity_through_base_typed_time_series():
 
     assert bg.test_graph(derived_to_base, [value])[0] is value
     assert bg.test_graph(base_to_base, [value])[0] is value
+
+
+def test_python_object_scalar_types_report_value_covariance():
+    class Base:
+        pass
+
+    class Derived(Base):
+        pass
+
+    assert python_type_supports_value_covariance(Base)
+    assert python_type_supports_value_covariance(Derived)
+    assert not python_type_supports_value_covariance(int)
 
 
 def test_python_object_scalars_support_multiple_inheritance():

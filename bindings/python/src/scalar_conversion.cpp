@@ -72,6 +72,7 @@ class PythonObjectScalarType final : public ScalarType {
 
     bool is_resolved() const noexcept override { return true; }
     const Type &resolve(const TypeMap &) const override { return *this; }
+    bool supports_value_covariance() const noexcept override { return true; }
     bool supports_equality() const noexcept override { return true; }
     bool supports_hash() const noexcept override { return hashable_; }
 

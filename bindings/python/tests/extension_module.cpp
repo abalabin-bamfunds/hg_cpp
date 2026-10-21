@@ -372,6 +372,9 @@ NB_MODULE(_bg_test_extension, module) {
         auto &conversions = bg::python::scalar_conversions();
         return conversions.can_from_python(conversions.type_from_python(python_type));
     });
+    module.def("python_type_supports_value_covariance", [](nanobind::handle python_type) {
+        return bg::python::scalar_conversions().type_from_python(python_type).supports_value_covariance();
+    });
     module.def("copy_release_python_scalar_without_gil", [](nanobind::handle value) {
         auto memory = bg::allocator{};
         auto original = std::optional<bg::ScalarValue<>>{};

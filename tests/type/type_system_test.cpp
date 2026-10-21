@@ -102,6 +102,14 @@ TEST_CASE("scalar graph types report equality and hashing", "[type_system][featu
     CHECK_FALSE(opaque.supports_hash());
 }
 
+TEST_CASE("built-in scalar types do not report value covariance", "[feature:type-system][scalar:i64]") {
+    CHECK_FALSE(bg::int64_type().supports_value_covariance());
+}
+
+TEST_CASE("collection scalar types do not report value covariance", "[feature:type-system][scalar:list]") {
+    CHECK_FALSE(bg::cpp_scalar_type<bg::List<bg::i64>>().supports_value_covariance());
+}
+
 TEST_CASE("a generic time-series type retains its guarantee variable",
           "[type_system][feature:type-system][declaration:generic]") {
     const ScalarType &float_type = bg::float_type();

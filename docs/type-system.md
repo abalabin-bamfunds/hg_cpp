@@ -30,6 +30,13 @@ are resolved.
 variable over `Type` reports none until resolution. Every parameter in a
 resolved signature reports one supported category.
 
+`supports_value_covariance()` reports whether the type implementation can
+inspect every supported value representation and recover its concrete semantic
+type as an accepted subtype of the declared type. The identity may come from
+the runtime descriptor or from the value representation. The method defaults
+to false. Dispatch uses this capability to select inputs for default runtime
+type dispatch; an explicit input selection can choose other types.
+
 Every `Type` must be registered. Committed objects have process lifetime; failed
 registration transactions discard their pending objects. Static declaration
 helpers cache references to registered objects. Dynamic composition can register
