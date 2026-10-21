@@ -32,8 +32,9 @@ using Less = ColumnBlockFunction<bool, double, double>;
 using Negate = ColumnBlockFunction<double, double>;
 ```
 
-The first implementation supports unary and binary callbacks. The comparison
-declaration becomes usable when boolean column storage is implemented.
+The implementation supports unary and binary callbacks. Double addition and
+subtraction and all six comparisons for matching `i64` and `double` operands
+use this contract. Comparison callbacks produce nullable Boolean columns.
 Operand types must match the selected BG overload. Conversion requires an
 explicit BG conversion operator.
 
@@ -144,16 +145,11 @@ publishes one bundle update when any captured time series changes.
 The accepted node signature and compiled input bindings are defined in the
 [node and input-binding proposal](expression_node_proposal.md).
 
-## First implementation review
+## Operator registration
 
-Review the shared callback metadata, expression builder, compiler, and
-computation node before adding operators. Keep the existing addition behaviour
-and regression coverage. No BG core changes are proposed by this contract.
-Any missing BG extension capability must be discussed before implementation.
-
-Each arithmetic operator supplies its callback and BG operator registration.
-Comparison and boolean storage must support `ask - bid < tolerance`, where
-`tolerance` is `TS<double>`, through the same compiler and computation path.
+Each operator supplies its callback and BG operator registration. The
+`ask - bid < tolerance` expression, where `tolerance` is `TS<double>`, uses the
+same compiler and computation path as arithmetic.
 
 Boolean physical layout and expression-based filtering receive separate
 design reviews before implementation.

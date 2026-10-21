@@ -7,9 +7,12 @@
 #include <bg/testing/test_graph.hpp>
 #include <bg/util/named_argument.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <iostream>
+#include <map>
 #include <optional>
 #include <stdexcept>
 #include <vector>
@@ -21,6 +24,12 @@ using namespace bg::frame;
 using namespace bg::literals;
 
 template <template <typename, auto...> typename Field> struct QuoteFrame {
+    Field<double> bid;
+    Field<double> ask;
+};
+
+template <template <typename, auto...> typename Field> struct ComparisonFrame {
+    Field<i64> size;
     Field<double> bid;
     Field<double> ask;
 };
@@ -75,6 +84,33 @@ void require(bool condition, const char *message) {
     if (!condition)
         throw std::runtime_error{message};
 }
+
+template <cell_type T> struct ComparisonRowsState {
+    std::array<row_id_t, 260> ids{};
+};
+
+template <cell_type T> struct comparison_rows_writer {
+    In<TS<i64>> tick;
+    State<ComparisonRowsState<T>> state;
+    Out<TSC<T>> output;
+
+    void evaluate() const {
+        if (*tick == 0) {
+            for (auto row = std::size_t{}; row != state->ids.size(); ++row) {
+                const auto null_row = row == 7 || row == 8 || row == 127 || row == 128 || row == 255 || row == 256;
+                const auto value = null_row ? std::optional<T>{}
+                                            : std::optional<T>{static_cast<T>(static_cast<i64>(row) - 130)};
+                state->ids[row] = output.add(value);
+            }
+            return;
+        }
+
+        output.set(state->ids[128], T{0});
+        output.set(state->ids[129], std::optional<T>{});
+        require(output.erase(state->ids[254]), "comparison source could not remove a row");
+        output.add(T{1});
+    }
+};
 
 void test_packed_boolean_expression_result() {
     register_column_block_function<bool, i64, i64>();
@@ -325,6 +361,174 @@ void test_static_frame_expression_binding() {
     require(missing_column_error, "missing frame column did not report its name and resolver context");
 }
 
+void test_numeric_comparison_expression_wiring() {
+    auto wiring = GraphWiring{};
+    auto context = WiringContext{wiring};
+    const auto source = wp<TSF<ComparisonFrame>>{wiring.borrowed_input(TSF<ComparisonFrame>::type())};
+
+    const auto integer_expressions = std::array{
+        col("size") == col("size"), col("size") != col("size"), col("size") < col("size"),
+        col("size") <= col("size"), col("size") > col("size"), col("size") >= col("size"),
+        col("size") == i64{10}, col("size") != i64{10}, col("size") < i64{10},
+        col("size") <= i64{10}, col("size") > i64{10}, col("size") >= i64{10},
+        i64{10} == col("size"), i64{10} != col("size"), i64{10} < col("size"),
+        i64{10} <= col("size"), i64{10} > col("size"), i64{10} >= col("size"),
+    };
+    for (const auto &expression : integer_expressions) {
+        const auto result = bind_expression(source, expression);
+        require(std::addressof(result.type()) == std::addressof(TSC<bool>::type()),
+                "integer comparison expression did not produce TSC<bool>");
+    }
+
+    const auto double_expressions = std::array{
+        col("ask") == col("bid"), col("ask") != col("bid"), col("ask") < col("bid"),
+        col("ask") <= col("bid"), col("ask") > col("bid"), col("ask") >= col("bid"),
+        col("ask") == 10.0, col("ask") != 10.0, col("ask") < 10.0,
+        col("ask") <= 10.0, col("ask") > 10.0, col("ask") >= 10.0,
+        10.0 == col("ask"), 10.0 != col("ask"), 10.0 < col("ask"),
+        10.0 <= col("ask"), 10.0 > col("ask"), 10.0 >= col("ask"),
+    };
+    for (const auto &expression : double_expressions) {
+        const auto result = bind_expression(source, expression);
+        require(std::addressof(result.type()) == std::addressof(TSC<bool>::type()),
+                "double comparison expression did not produce TSC<bool>");
+    }
+
+    const auto tolerance = wp<TS<double>>{wiring.borrowed_input(TS<double>::type())};
+    const auto captured_predicate = col("ask") - col("bid") < tolerance;
+    const auto captured_result = bind_expression(source, captured_predicate);
+    const auto named_predicate = col("ask") - col("bid") < param("tolerance");
+    const auto named_result = bind_expression(source, named_predicate, "tolerance"_n = tolerance);
+    require(std::addressof(captured_result.type()) == std::addressof(TSC<bool>::type()) &&
+                std::addressof(named_result.type()) == std::addressof(TSC<bool>::type()),
+            "comparison expression did not capture its TS operand or bind its named parameter");
+
+    auto rejected_mixed_types = false;
+    try {
+        static_cast<void>(bind_expression(source, col("size") < col("ask")));
+    } catch (const WiringError &) {
+        rejected_mixed_types = true;
+    }
+    require(rejected_mixed_types, "comparison expression accepted implicit numeric promotion");
+}
+
+template <cell_type T, typename Comparator, typename Operation>
+void test_comparison_runtime(Operation &operation) {
+    struct observation {
+        std::map<row_id_t, std::optional<bool>> cells;
+        std::vector<row_id_t> changed;
+        std::vector<row_id_t> removed;
+    };
+
+    auto observations = std::vector<observation>{};
+    const auto observe = node([&](In<TSC<bool>> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto result = observation{};
+        input.for_each_row([&](row_id_t id, std::size_t) { result.cells.emplace(id, input.cell(id)); });
+        input.for_each_changed([&](row_id_t id) { result.changed.push_back(id); });
+        input.for_each_removed([&](row_id_t id) { result.removed.push_back(id); });
+        std::ranges::sort(result.changed);
+        std::ranges::sort(result.removed);
+        observations.push_back(std::move(result));
+        output.set(*tick);
+    });
+
+    const auto write = node<comparison_rows_writer<T>>();
+    const auto graph = [&](wp<TS<i64>> tick) {
+        return observe(operation(write(tick), T{0}), tick);
+    };
+    const auto ticks = std::array<i64, 2>{0, 1};
+    const auto result = testing::test_graph(graph, ticks);
+    require(result.equals({0, 1}) && observations.size() == ticks.size(),
+            "numeric comparison did not evaluate both source ticks");
+
+    auto expected_cells = std::map<row_id_t, std::optional<T>>{};
+    for (auto row = row_id_t{}; row != 260; ++row) {
+        const auto null_row = row == 7 || row == 8 || row == 127 || row == 128 || row == 255 || row == 256;
+        expected_cells.emplace(row, null_row ? std::optional<T>{}
+                                             : std::optional<T>{static_cast<T>(static_cast<i64>(row) - 130)});
+    }
+
+    const auto expected_snapshot = [&](const auto &cells) {
+        auto result = std::map<row_id_t, std::optional<bool>>{};
+        for (const auto &[id, value] : cells) {
+            result.emplace(id, value ? std::optional<bool>{std::invoke(Comparator{}, *value, T{0})}
+                                     : std::nullopt);
+        }
+        return result;
+    };
+    const auto initial = expected_snapshot(expected_cells);
+    require(observations[0].cells == initial && observations[0].changed.size() == expected_cells.size() &&
+                observations[0].removed.empty(),
+            "numeric comparison lost initial rows, nulls, or additions");
+
+    expected_cells[128] = T{0};
+    expected_cells[129] = std::nullopt;
+    expected_cells.erase(254);
+    expected_cells.emplace(260, T{1});
+    require(observations[1].cells == expected_snapshot(expected_cells) &&
+                observations[1].changed == std::vector<row_id_t>{128, 129, 260} &&
+                observations[1].removed == std::vector<row_id_t>{254},
+            "numeric comparison lost sparse updates, removal, or the new row");
+}
+
+void test_comparison_expression_with_tick_parameter() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto graph = [](wp<TSF<ComparisonFrame>> frame, wp<TS<double>> tolerance) {
+        const auto predicate = col("ask") - col("bid") < tolerance;
+        return bind_expression(frame, predicate);
+    };
+    const auto result = testing::test_graph(
+        graph,
+        testing::input(TSF<ComparisonFrame>::type(),
+                       {literal::TimeSeriesLiteral{}, {{{"size", i64{1}}, {"bid", 10.0}, {"ask", 13.0}}},
+                        {{{"size", i64{2}}, {"bid", 20.0}, {"ask", 23.0}}}}),
+        testing::input(cpp_time_series_runtime_type<TS<double>>(), {2.0, 2.5, 4.0}));
+    require(result.equals({literal::TimeSeriesLiteral{}, {{"first", false}}, {{"first", true}, {"second", true}}}),
+            "comparison expression lost arithmetic fusion, parameter ticks, or row values");
+}
+
+void test_comparison_uses_forced_concrete_intermediate() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto differences = std::vector<std::vector<std::optional<double>>>{};
+    const auto observe_difference = node([&](In<TSC<double>> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto cells = std::vector<std::optional<double>>{};
+        input.for_each_row([&](row_id_t id, std::size_t) { cells.push_back(input.cell(id)); });
+        differences.push_back(std::move(cells));
+        output.set(*tick);
+    });
+
+    auto predicates = std::vector<std::vector<std::optional<bool>>>{};
+    const auto observe_predicate = node([&](In<TSC<bool>> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto cells = std::vector<std::optional<bool>>{};
+        input.for_each_row([&](row_id_t id, std::size_t) { cells.push_back(input.cell(id)); });
+        predicates.push_back(std::move(cells));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TSF<ComparisonFrame>> frame, wp<TS<double>> tolerance, wp<TS<i64>> tick) {
+        const auto ask = select_column<double>(frame, util::symbol{"ask"});
+        const auto bid = select_column<double>(frame, util::symbol{"bid"});
+        const auto difference = operators::sub(ask, bid).as<TSC<double>>();
+        static_cast<void>(observe_difference(difference, tick));
+        return observe_predicate(operators::lt(difference, tolerance).as<TSC<bool>>(), tick);
+    };
+
+    const auto result = testing::test_graph(
+        graph,
+        testing::input(TSF<ComparisonFrame>::type(),
+                       {literal::TimeSeriesLiteral{}, {{{"size", i64{1}}, {"bid", 10.0}, {"ask", 13.0}}},
+                        {{{"size", i64{2}}, {"bid", 20.0}, {"ask", 23.0}}}}),
+        testing::input(cpp_time_series_runtime_type<TS<double>>(), {2.0, 2.5, 4.0}),
+        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1, 2}));
+    require(result.equals({0, 1, 2}) &&
+                differences == std::vector<std::vector<std::optional<double>>>{{}, {3.0}, {3.0, 3.0}} &&
+                predicates == std::vector<std::vector<std::optional<bool>>>{{}, {false}, {true, true}},
+            "comparison did not reuse a forced concrete arithmetic intermediate");
+}
+
 void test_runtime_schema_expression_binding() {
     const auto fields = std::array{SchemaField{util::symbol{"price"}, &cpp_scalar_type<double>()}};
     const auto &schema = anonymous_schema(fields);
@@ -440,6 +644,21 @@ int main() {
         test_column_expression_requires_a_column_operand();
         test_binary_expression_bundle_schema();
         test_static_frame_expression_binding();
+        test_numeric_comparison_expression_wiring();
+        test_comparison_runtime<i64, std::equal_to<>>(operators::eq);
+        test_comparison_runtime<i64, std::not_equal_to<>>(operators::ne);
+        test_comparison_runtime<i64, std::less<>>(operators::lt);
+        test_comparison_runtime<i64, std::less_equal<>>(operators::le);
+        test_comparison_runtime<i64, std::greater<>>(operators::gt);
+        test_comparison_runtime<i64, std::greater_equal<>>(operators::ge);
+        test_comparison_runtime<double, std::equal_to<>>(operators::eq);
+        test_comparison_runtime<double, std::not_equal_to<>>(operators::ne);
+        test_comparison_runtime<double, std::less<>>(operators::lt);
+        test_comparison_runtime<double, std::less_equal<>>(operators::le);
+        test_comparison_runtime<double, std::greater<>>(operators::gt);
+        test_comparison_runtime<double, std::greater_equal<>>(operators::ge);
+        test_comparison_expression_with_tick_parameter();
+        test_comparison_uses_forced_concrete_intermediate();
         test_runtime_schema_expression_binding();
         test_expression_bindings_are_per_call_and_owned();
         test_expression_binding_errors_name_the_binding();

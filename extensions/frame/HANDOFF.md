@@ -421,8 +421,9 @@ bindings remain unsupported here. Deduplication topology tests use ordinary
 source nodes.
 
 Boolean storage is implemented across columns, TSC/TSF, literals, tick capture,
-computed outputs, and Arrow import/export. Comparisons, explicit column
-conversion, and expression-based filtering remain later work.
+computed outputs, and Arrow import/export. Matching `i64` and `double` column
+comparisons use the shared expression compiler and block evaluation path.
+Explicit column conversion and expression-based filtering remain later work.
 
 The [shared block-operation contract](block_operation_proposal.md) and
 [computation nodes and input bindings](expression_node_proposal.md) are
@@ -434,7 +435,9 @@ Scalar-only column expressions fail during wiring because they have no row
 domain. Subtraction uses the shared factory and the same callback adapter as
 addition; it adds no compiler or evaluator behavior. Boolean values use packed
 storage with separate validity. The expression callback test covers a Boolean
-result; comparison operators and expression-based filtering remain later work.
+result. All six comparison operators are registered for `i64` and `double`;
+they return nullable `TSC<bool>` and propagate null operands. Expression-based
+filtering remains later work.
 Subtraction tests cover column, constant, and captured-time-series operand
 order, nulls around block boundaries, sparse row updates, and parameter ticks.
 Mixed addition/subtraction tests verify callback values, fusion, and forced
@@ -569,8 +572,8 @@ Unkeyed TSF and TSC input literals append rows. Nodes can also modify and remove
 rows through their internal IDs, so output deltas can contain all three
 operations.
 
-Boolean storage and Arrow support are implemented. Comparisons and
-expression-based filtering remain later work.
+Boolean storage, Arrow support, and numeric comparisons are implemented.
+Expression-based filtering remains later work.
 
 The Boolean foundation uses packed value bits with separate nullable validity.
 It covers `Column<bool>`, frame fields, TSC/TSF storage and deltas, literals,
@@ -609,9 +612,9 @@ and wiring-time output runtime selection. The frame extension uses scalar copy
 selection for owning frame copies and the output hook to select frame layouts.
 Frame output layout options remain extension-owned.
 
-The shared numeric function extraction remains held. The arithmetic implementation is
-described above. Other numeric operators, explicit column conversion, and
-expression-based filtering remain later work.
+The shared numeric function extraction remains held. The arithmetic and
+comparison implementations are described above. Other numeric operators,
+explicit column conversion, and expression-based filtering remain later work.
 
 ## Key metadata and native keyed storage
 

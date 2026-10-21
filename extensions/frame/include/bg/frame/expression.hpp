@@ -170,7 +170,6 @@ struct ColumnBlockFunctionAdapter {
     ColumnBlockFunctionEntryPoint call{};
     std::size_t result_size{};
     std::size_t result_alignment{};
-    std::array<std::size_t, 2> operand_sizes{};
     bool packed_result{};
 };
 
@@ -239,12 +238,9 @@ template <cell_type RESULT, cell_type... ARGS> void register_column_block_functi
     using Factory = ColumnBlockFunctionAdapterFactory<RESULT, ARGS...>;
     const auto type = std::array<const ScalarType *, sizeof...(ARGS)>{&cpp_scalar_type<ARGS>()...};
     const auto &semantic_type = column_block_function_type(cpp_scalar_type<RESULT>(), type);
-    auto operand_sizes = std::array<std::size_t, 2>{};
-    auto index = std::size_t{};
-    ((operand_sizes[index] = sizeof(ARGS), ++index), ...);
     static_cast<void>(ScalarDispatch<ColumnBlockFunctionAdapter>::instance().add(
-        semantic_type, ColumnBlockFunctionAdapter{&Factory::call, sizeof(RESULT), alignof(RESULT), operand_sizes,
-                                                   packed_column_value<RESULT>}));
+        semantic_type,
+        ColumnBlockFunctionAdapter{&Factory::call, sizeof(RESULT), alignof(RESULT), packed_column_value<RESULT>}));
 }
 
 // Compiles an expression bundle selected by BG and returns the expression node's concrete output.
@@ -404,6 +400,12 @@ Expression capture(Argument &&argument) {
 
 Expression operator+(const Expression &lhs, const Expression &rhs);
 Expression operator-(const Expression &lhs, const Expression &rhs);
+Expression operator==(const Expression &lhs, const Expression &rhs);
+Expression operator!=(const Expression &lhs, const Expression &rhs);
+Expression operator<(const Expression &lhs, const Expression &rhs);
+Expression operator<=(const Expression &lhs, const Expression &rhs);
+Expression operator>(const Expression &lhs, const Expression &rhs);
+Expression operator>=(const Expression &lhs, const Expression &rhs);
 
 template <typename Argument>
     requires bg::details::graph_code_argument<Argument>
@@ -427,6 +429,78 @@ template <typename Argument>
     requires bg::details::graph_code_argument<Argument>
 Expression operator-(Argument &&lhs, const Expression &rhs) {
     return capture(std::forward<Argument>(lhs)) - rhs;
+}
+
+template <typename Argument>
+    requires bg::details::graph_code_argument<Argument>
+Expression operator==(const Expression &lhs, Argument &&rhs) {
+    return lhs == capture(std::forward<Argument>(rhs));
+}
+
+template <typename Argument>
+    requires bg::details::graph_code_argument<Argument>
+Expression operator==(Argument &&lhs, const Expression &rhs) {
+    return capture(std::forward<Argument>(lhs)) == rhs;
+}
+
+template <typename Argument>
+    requires bg::details::graph_code_argument<Argument>
+Expression operator!=(const Expression &lhs, Argument &&rhs) {
+    return lhs != capture(std::forward<Argument>(rhs));
+}
+
+template <typename Argument>
+    requires bg::details::graph_code_argument<Argument>
+Expression operator!=(Argument &&lhs, const Expression &rhs) {
+    return capture(std::forward<Argument>(lhs)) != rhs;
+}
+
+template <typename Argument>
+    requires bg::details::graph_code_argument<Argument>
+Expression operator<(const Expression &lhs, Argument &&rhs) {
+    return lhs < capture(std::forward<Argument>(rhs));
+}
+
+template <typename Argument>
+    requires bg::details::graph_code_argument<Argument>
+Expression operator<(Argument &&lhs, const Expression &rhs) {
+    return capture(std::forward<Argument>(lhs)) < rhs;
+}
+
+template <typename Argument>
+    requires bg::details::graph_code_argument<Argument>
+Expression operator<=(const Expression &lhs, Argument &&rhs) {
+    return lhs <= capture(std::forward<Argument>(rhs));
+}
+
+template <typename Argument>
+    requires bg::details::graph_code_argument<Argument>
+Expression operator<=(Argument &&lhs, const Expression &rhs) {
+    return capture(std::forward<Argument>(lhs)) <= rhs;
+}
+
+template <typename Argument>
+    requires bg::details::graph_code_argument<Argument>
+Expression operator>(const Expression &lhs, Argument &&rhs) {
+    return lhs > capture(std::forward<Argument>(rhs));
+}
+
+template <typename Argument>
+    requires bg::details::graph_code_argument<Argument>
+Expression operator>(Argument &&lhs, const Expression &rhs) {
+    return capture(std::forward<Argument>(lhs)) > rhs;
+}
+
+template <typename Argument>
+    requires bg::details::graph_code_argument<Argument>
+Expression operator>=(const Expression &lhs, Argument &&rhs) {
+    return lhs >= capture(std::forward<Argument>(rhs));
+}
+
+template <typename Argument>
+    requires bg::details::graph_code_argument<Argument>
+Expression operator>=(Argument &&lhs, const Expression &rhs) {
+    return capture(std::forward<Argument>(lhs)) >= rhs;
 }
 
 // Bind explicit column names and parameters. Every supplied name must be used by the expression.

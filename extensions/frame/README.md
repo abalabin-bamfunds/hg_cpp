@@ -19,7 +19,8 @@ optional Arrow adapter supports scalar and frame imports and exports for these
 cell types. Boolean values use packed bits in native storage and Arrow Boolean
 arrays; validity remains separate. Gather-copy export produces one dense chunk.
 Double-column addition and subtraction support deferred expressions and block
-evaluation.
+evaluation. Matching `i64` and `double` operands support `==`, `!=`, `<`, `<=`,
+`>`, and `>=`; comparisons return nullable `TSC<bool>` and propagate nulls.
 Previous-cell subscriptions and expression-based filtering are later work.
 
 `frame::view` is an output option owned by this extension. Use it with
@@ -314,9 +315,25 @@ membership. Lost delta continuity, source replacement, parameter changes, and
 revalidation cause a full recomputation. A null operand produces a null result.
 
 Operand types must match exactly. Mixed integer/double arithmetic fails during
-wiring. This checkpoint implements addition and subtraction with double operands; column
-conversion and the remaining arithmetic operators are not implemented.
+wiring. This checkpoint implements addition and subtraction with double operands;
+column conversion and the remaining arithmetic operators are not implemented.
 Conversion will use BG's explicit `operators::convert` API.
+
+## Column comparisons
+
+The extension registers all six comparison operators for matching `i64` and
+`double` operands. Operands can be columns, constants, or `TS<T>` values
+broadcast across rows. Comparison expressions use the same deferred expression
+compiler and block evaluation path as arithmetic.
+
+```cpp
+const auto predicate = bind_expression(q, col("ask") - col("bid") < tolerance);
+```
+
+Each comparison returns nullable `TSC<bool>`. A result is null when either
+operand is null. Mixed integer and double operands fail during wiring; use an
+explicit conversion operator when conversion is required. Expression-based
+filtering remains future work.
 
 ### Expression construction and binding
 
