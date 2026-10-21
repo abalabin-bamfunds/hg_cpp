@@ -564,6 +564,10 @@ For each reusable node and graph, test:
 
 ### Standard library
 
+- UTF-8 string and symbol length, indexing, slicing, repetition, and Unicode
+  case conversion, including multibyte code points, combining marks, embedded
+  NUL bytes, malformed input, negative and extreme indices, output limits,
+  validity transitions, references, and output guarantees
 - validity queries at startup and on validity changes; immediate collection
   validity, empty collections, references, and free collections
 - signal-driven complete-value sampling, passive value inputs, preserved

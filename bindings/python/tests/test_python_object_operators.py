@@ -94,9 +94,9 @@ def test_python_object_getitem_result_supports_covariant_output_type():
     assert result is derived
 
 
-def test_python_object_operators_do_not_match_builtin_scalars():
+def test_python_object_operators_do_not_match_unsupported_builtin_scalars():
     @bg.graph
-    def getitem_graph(value: bg.TS[str]) -> bg.TS[str]:
+    def getitem_graph(value: bg.TS[int]) -> bg.TS[int]:
         return value[0]
 
     @bg.graph
@@ -108,7 +108,7 @@ def test_python_object_operators_do_not_match_builtin_scalars():
         return bg.operators.getattr[int](value, "real")
 
     with pytest.raises(ValueError, match="Cannot resolve operator getitem"):
-        bg.test_graph(getitem_graph, ["text"])
+        bg.test_graph(getitem_graph, [1])
 
     with pytest.raises(ValueError, match="Cannot resolve operator getattr"):
         bg.test_graph(getattr_graph, [1])

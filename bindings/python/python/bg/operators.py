@@ -5,6 +5,10 @@ from ._bg import operators as _native
 add = _native.add
 sub = _native.sub
 mul = _native.mul
+substr = _native.substr
+lower = _native.lower
+upper = _native.upper
+casefold = _native.casefold
 div = _native.div
 floordiv = _native.floordiv
 mod = _native.mod
@@ -81,6 +85,7 @@ __all__ = [
     "if_then_else",
     "gt",
     "le",
+    "lower",
     "lag",
     "len_",
     "lt",
@@ -105,10 +110,13 @@ __all__ = [
     "round",
     "sample",
     "schedule",
+    "casefold",
     "sub",
+    "substr",
     "sum_",
     "switch_",
     "sums",
     "throttle",
+    "upper",
     "valid",
 ]

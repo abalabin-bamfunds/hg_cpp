@@ -18,6 +18,12 @@ decltype(abs) abs{"abs", {"value"}};
 
 decltype(convert) convert{"convert", {"value"}};
 
+// Text.
+decltype(substr) substr{"substr", {"value", "start", "end"}};
+decltype(lower) lower{"lower", {"value"}};
+decltype(upper) upper{"upper", {"value"}};
+decltype(casefold) casefold{"casefold", {"value"}};
+
 decltype(eq) eq{"eq", {"lhs", "rhs"}};
 decltype(ne) ne{"ne", {"lhs", "rhs"}};
 decltype(lt) lt{"lt", {"lhs", "rhs"}};

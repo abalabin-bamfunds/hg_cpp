@@ -14,6 +14,7 @@ include(GNUInstallDirs)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 find_package(Threads REQUIRED)
+find_package(ICU REQUIRED COMPONENTS uc i18n)
 
 option(BG_BUILD_PYTHON "Build the Python extension module" OFF)
 option(BG_BUILD_BENCHMARKS "Build performance benchmarks" OFF)
@@ -189,7 +190,7 @@ add_library(bg::library ALIAS bg_library)
 
 target_compile_features(bg_library PUBLIC cxx_std_23)
 target_compile_definitions(bg_library PRIVATE BG_BUILDING_LIBRARY)
-target_link_libraries(bg_library PUBLIC bg::bg)
+target_link_libraries(bg_library PUBLIC bg::bg PRIVATE ICU::uc ICU::i18n)
 target_include_directories(
     bg_library
     PUBLIC

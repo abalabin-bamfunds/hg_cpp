@@ -18,6 +18,7 @@ using EQUALITY_SCALAR = ScalarVariable<"EQUALITY_SCALAR", EqualityComparable>;
 using ORDERED_SCALAR = ScalarVariable<"ORDERED_SCALAR", i64, double, string, date_time_t, timedelta_t>;
 using BOOL = ScalarVariable<"BOOL", bool>;
 using NUMERIC = ScalarVariable<"NUMERIC", i64, double>;
+using TEXT = ScalarVariable<"TEXT", string, symbol>;
 
 using CONVERT_RESULT = TimeSeriesVariable<"CONVERT_RESULT">;
 using SIGNAL = TimeSeriesVariable<"SIGNAL">;
@@ -39,6 +40,12 @@ extern BG_LIBRARY_EXPORT operator_<auto(SCALAR) -> SCALAR> abs;
 
 // Conversion.
 extern BG_LIBRARY_EXPORT operator_<CONVERT_RESULT, auto(TS_T) -> CONVERT_RESULT> convert;
+
+// Text.
+extern BG_LIBRARY_EXPORT operator_<auto(TEXT, i64, i64) -> string> substr;
+extern BG_LIBRARY_EXPORT operator_<auto(TEXT) -> string> lower;
+extern BG_LIBRARY_EXPORT operator_<auto(TEXT) -> string> upper;
+extern BG_LIBRARY_EXPORT operator_<auto(TEXT) -> string> casefold;
 
 // Comparisons.
 extern BG_LIBRARY_EXPORT operator_<EQUALITY_SCALAR, auto(EQUALITY_SCALAR, EQUALITY_SCALAR) -> bool> eq;

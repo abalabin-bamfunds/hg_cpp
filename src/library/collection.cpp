@@ -1,4 +1,5 @@
 #include "registration.hpp"
+#include "utf8.hpp"
 
 #include <bg/graph.hpp>
 #include <bg/library/operators.hpp>
@@ -49,8 +50,8 @@ struct collection_overloads {
         [](In<TS<Dict<K, SCALAR>, G>> value, Out<TS<i64, G>> output) {
             output.set(static_cast<i64>(value.value_view().size()));
         }};
-    overload<len_> len_string{[](std::string_view value) { return static_cast<i64>(value.size()); }};
-    overload<len_> len_symbol{[](symbol value) { return static_cast<i64>(value.text().size()); }};
+    overload<len_> len_string{[](std::string_view value) { return static_cast<i64>(Utf8View{value}.length()); }};
+    overload<len_> len_symbol{[](symbol value) { return static_cast<i64>(Utf8View{value}.length()); }};
 
     // Membership.
     struct contains_tss_scalar_definition {

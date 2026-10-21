@@ -166,6 +166,10 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "add", operators::add);
     export_operator(operators_module, "sub", operators::sub);
     export_operator(operators_module, "mul", operators::mul);
+    export_operator(operators_module, "substr", operators::substr);
+    export_operator(operators_module, "lower", operators::lower);
+    export_operator(operators_module, "upper", operators::upper);
+    export_operator(operators_module, "casefold", operators::casefold);
     export_operator(operators_module, "div", operators::div);
     export_operator(operators_module, "floordiv", operators::floordiv);
     export_operator(operators_module, "mod", operators::mod);

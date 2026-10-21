@@ -34,7 +34,7 @@ types; an integer operand does not convert to double to match an overload.
 | --- | --- |
 | `add` | `i64`, `double`, `timedelta_t`, `string`; timestamp plus duration in either order |
 | `sub` | `i64`, `double`, `timedelta_t`; timestamp minus duration or timestamp |
-| `mul` | `i64`, `double` |
+| `mul` | `i64`, `double`; string or symbol repeated by an `i64` in either order |
 | `div` | `i64`, `double`; result is `double` |
 | `floordiv` | `i64` to `i64`, `double` to `double` |
 | `mod` | `i64` to `i64`, `double` to `double` |
@@ -53,8 +53,10 @@ Timestamp subtraction produces a duration. Timestamp minus duration produces a
 timestamp. Integer and temporal arithmetic wraps at the underlying integer
 width. Negation and absolute value of the minimum integer or duration return
 that same minimum value. Floating-point arithmetic uses normal C++ operations.
-String operations process bytes, including embedded NUL bytes. Temporal
-operators are native C++ overloads. Python `datetime.timedelta` maps to
+String concatenation, text repetition, string comparison, and substring search process
+UTF-8 bytes, including embedded NUL bytes. Character operations follow the
+[text rules](#text-operations). Temporal operators are native C++ overloads.
+Python `datetime.timedelta` maps to
 `timedelta_t`; Python timestamp scalar conversion is not yet supplied.
 
 Integer division converts both operands to `double` and uses native floating-point
@@ -354,9 +356,10 @@ A valid collection with no matching key produces `false`; an invalid collection
 has no membership result. A time series key tick recomputes membership,
 including an equal-valued ordinary tick.
 
-String and symbol overloads count bytes with `len_` and test substrings with
-`contains_`, including embedded NUL bytes. Both substring operands have the
-same scalar type. These overloads accept scalars and time series.
+String and symbol overloads count Unicode code points with `len_` and test
+substrings with `contains_`, including embedded NUL bytes. Both substring
+operands have the same scalar type. These overloads accept scalars and time
+series.
 
 Runtime queries require valid time series inputs and propagate their weakest
 observed guarantee. An initially invalid collection does not produce a result.
@@ -365,6 +368,33 @@ deduplicated outputs suppress equal results.
 
 Use named calls in Python. Its `len()` and `in` syntax cannot return wiring
 points. Python annotations for scalar lists and sets are not yet supplied.
+
+## Text operations
+
+Character operations interpret strings and symbols as UTF-8. `len_`, indexing,
+and `substr` count Unicode code points, not bytes or grapheme clusters.
+Combining marks count separately. These operations and case conversion reject
+malformed UTF-8; string storage itself does not validate or normalize text.
+
+`substr(text, start, end)` selects the half-open range `[start, end)`.
+Omitting `end` selects through the end of the text. Negative positions count
+from the end; slice bounds clamp to the available code points. Reversed bounds
+produce an empty string. `text[index]` returns one code point as a string and
+raises an error for an out-of-range index.
+
+`lower(text)`, `upper(text)`, and `casefold(text)` use Unicode case mappings
+independent of the process locale. Case conversion can change the number of
+code points. `casefold` provides caseless comparison text; it does not perform
+Unicode normalization. ICU limits case-conversion input to 2,147,483,647 bytes.
+
+Multiplying text by an integer repeats it. Zero and negative counts produce
+an empty string. Oversized results fail before allocating the result. Text-producing
+operations on symbols return strings rather than interned symbols.
+
+These operations accept scalar or time-series arguments, require valid time
+series inputs, and propagate the weakest observed input guarantee. Invalidating
+a required input invalidates the result. Ordinary inputs can publish equal
+results on separate ticks. Unicode operations use ICU, linked by `bg::library`.
 
 ## Time series set operations
 

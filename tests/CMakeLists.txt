@@ -207,9 +207,10 @@ add_executable(
     library/running_test.cpp
     library/stateful_test.cpp
     library/stream_test.cpp
+    library/string_test.cpp
     library/timed_test.cpp)
 target_link_libraries(bg_library_tests PRIVATE bg::library Catch2::Catch2WithMain)
-target_compile_options(bg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj>)
+target_compile_options(bg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj> $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 target_compile_definitions(bg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:CATCH_CONFIG_NO_CPP17_STRING_VIEW>)
 
 if(WIN32)
