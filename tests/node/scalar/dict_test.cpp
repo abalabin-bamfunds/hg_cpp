@@ -11,17 +11,9 @@ namespace {
 
 using namespace bg;
 
-struct scalar_dict_source {
-    Scalar<Dict<i64, i64>> value;
-    Out<TS<Dict<i64, i64>>> output;
-
-    void start() const { output.set_value(value); }
-    void evaluate() const {}
-};
-
 TEST_CASE("a scalar dictionary propagates through a value time series",
           "[node][time_series][scalar][dict][scalar:dict][feature:state]") {
-    const auto source = node<scalar_dict_source>();
+    const auto source = node([](Dict<i64, i64> value) { return value; });
 
     const auto sum = node([](In<TS<Dict<i64, i64>>> input) {
         auto result = i64{};

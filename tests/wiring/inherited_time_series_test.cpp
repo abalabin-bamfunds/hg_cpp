@@ -48,7 +48,7 @@ TEST_CASE("a late inherited provider resolves a root requirement during compilat
         return output;
     };
 
-    CHECK(testing::test_graph(tested, std::array<i64, 1>{7}).equals({7}));
+    CHECK(testing::test_graph(tested, {7}).equals({7}));
 }
 
 TEST_CASE("a late inherited provider crosses a nested graph boundary",
@@ -71,7 +71,7 @@ TEST_CASE("a late inherited provider crosses a nested graph boundary",
         return output;
     };
 
-    CHECK(testing::test_graph(tested, std::array<i64, 2>{7, 11}, std::array{true, true}).equals({7, 11}));
+    CHECK(testing::test_graph(tested, {7, 11}, {true, true}).equals({7, 11}));
 }
 
 TEST_CASE("a named context requirement cannot be provided after wiring",

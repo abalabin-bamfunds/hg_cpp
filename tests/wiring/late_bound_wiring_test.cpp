@@ -11,7 +11,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
-#include <array>
 #include <memory>
 
 namespace {
@@ -155,7 +154,7 @@ TEST_CASE("a nested graph can consume a late-bound wiring point",
         return output;
     };
 
-    CHECK(testing::test_graph(tested, std::array<i64, 2>{7, 11}, std::array{true, true}).equals({7, 11}));
+    CHECK(testing::test_graph(tested, {7, 11}, {true, true}).equals({7, 11}));
 }
 
 TEST_CASE("late-bound readiness propagates through TSB fields and kwargs",

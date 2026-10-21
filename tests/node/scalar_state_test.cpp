@@ -227,8 +227,7 @@ TEST_CASE("generic scalar state resolves constrained types and owns its value",
 
     const auto retain = [&](wp<TS<string>> value) { return state_node(value); };
 
-    CHECK(testing::test_graph(retain, std::array<std::string, 3>{"first", "second", "third"})
-              .equals<string>({"first", "second", "third"}));
+    CHECK(testing::test_graph(retain, {"first", "second", "third"}).equals<string>({"first", "second", "third"}));
 }
 
 TEST_CASE("runtime-resolved scalar state reset releases its owned storage",

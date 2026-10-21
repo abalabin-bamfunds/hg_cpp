@@ -130,7 +130,7 @@ TEST_CASE("an aggregate definition selects its output runtime type during wiring
         return wp<TS<i64>>{aggregate(input)};
     };
 
-    CHECK(testing::test_graph(graph, std::array<i64, 3>{1, 2, 3}).equals<i64>({1, 2, 3}));
+    CHECK(testing::test_graph(graph, {1, 2, 3}).equals<i64>({1, 2, 3}));
     CHECK(selected_runtime_output::selector_calls == 1);
 }
 
@@ -160,5 +160,5 @@ TEST_CASE("a concrete aggregate evaluates using its selected output descriptor",
         return wp<TS<i64>>{aggregate(input)};
     };
 
-    CHECK(testing::test_graph(graph, std::array<i64, 3>{1, 2, 3}).equals<i64>({1, 2, 3}));
+    CHECK(testing::test_graph(graph, {1, 2, 3}).equals<i64>({1, 2, 3}));
 }

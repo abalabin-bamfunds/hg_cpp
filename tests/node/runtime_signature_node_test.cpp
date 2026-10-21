@@ -254,7 +254,7 @@ TEST_CASE("a callable selects its output runtime type from wiring arguments",
         const auto graph = [&](wp<TS<i64>> input) -> wp<TS<i64>> {
             return wp<TS<i64>>{compute(input, layout)};
         };
-        return testing::test_graph(graph, std::array<i64, 2>{4, 5});
+        return testing::test_graph(graph, {4, 5});
     };
 
     CHECK(run(1).equals<i64>({4, 5}));
@@ -286,7 +286,7 @@ TEST_CASE("a concrete callable evaluates using its selected output runtime type"
         const auto graph = [&](wp<TS<i64>> input) -> wp<TS<i64>> {
             return wp<TS<i64>>{compute(input, layout)};
         };
-        return testing::test_graph(graph, std::array<i64, 2>{4, 5});
+        return testing::test_graph(graph, {4, 5});
     };
 
     CHECK(run(1).equals<i64>({4, 5}));
@@ -398,7 +398,7 @@ TEST_CASE("a runtime-signature definition can select an output runtime type from
         return wp<TS<i64>>{*node(input)};
     };
 
-    CHECK(testing::test_graph(graph, std::array<i64, 3>{1, 2, 3}).equals<i64>({1, 2, 3}));
+    CHECK(testing::test_graph(graph, {1, 2, 3}).equals<i64>({1, 2, 3}));
     CHECK(InstanceOutputRuntimeDefinition::selector_calls == 1);
 }
 

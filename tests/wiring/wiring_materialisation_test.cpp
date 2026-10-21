@@ -2087,7 +2087,7 @@ TEST_CASE("normal materialization completes and caches a lazy callback result",
         return sink(deferred, deferred).as<bg::TS<bg::i64>>();
     };
 
-    const auto actual = bg::testing::test_graph(tested, std::array<bg::i64, 1>{7});
+    const auto actual = bg::testing::test_graph(tested, {7});
 
     CHECK(actual.equals({14}));
     CHECK(callback_calls == 1);

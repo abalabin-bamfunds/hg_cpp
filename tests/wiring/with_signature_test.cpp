@@ -6,7 +6,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <array>
 #include <type_traits>
 #include <utility>
 
@@ -41,7 +40,7 @@ TEST_CASE("with_signature gives a positional variadic graph a fixed call signatu
     CHECK(callable.signature().parameter(0).name.text() == "left");
     CHECK(callable.signature().parameter(1).name.text() == "right");
 
-    const auto actual = testing::test_graph(callable, std::array<i64, 2>{1, 2}, std::array<i64, 2>{10, 20});
+    const auto actual = testing::test_graph(callable, {1, 2}, {10, 20});
     CHECK(actual.equals<i64>({11, 22}));
 }
 
@@ -60,7 +59,7 @@ TEST_CASE("with_signature forwards fixed parameter names to a named variadic gra
                                      TS<i64>::type()};
     const auto callable = with_signature(variadic, signature);
 
-    const auto actual = testing::test_graph(callable, std::array<i64, 2>{1, 2}, std::array<i64, 2>{10, 20});
+    const auto actual = testing::test_graph(callable, {1, 2}, {10, 20});
     CHECK(actual.equals<i64>({11, 22}));
 }
 
@@ -75,7 +74,7 @@ TEST_CASE("with_signature gives a variadic node a fixed call signature",
                                      TS<i64>::type()};
     const auto callable = with_signature(count, signature);
 
-    const auto actual = testing::test_graph(callable, std::array<i64, 2>{1, 2}, std::array<i64, 2>{10, 20});
+    const auto actual = testing::test_graph(callable, {1, 2}, {10, 20});
     CHECK(actual.equals<i64>({2, 2}));
 }
 

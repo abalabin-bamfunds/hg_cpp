@@ -1020,7 +1020,7 @@ TEST_CASE("a materialized pack keeps scalar and time series fields",
         });
     const auto tested = [&](wp<TS<bg::i64>> input) { return packed(7, input); };
 
-    const auto actual = testing::test_graph(tested, std::array<bg::i64, 3>{1, 2, 3});
+    const auto actual = testing::test_graph(tested, {1, 2, 3});
     CHECK(actual.equals({8, 9, 10}));
 }
 
@@ -1070,7 +1070,7 @@ TEST_CASE("a nested graph preserves an empty variadic parameter",
     });
     const auto tested = [&](wp<TS<bool>> run) { return nested(inner, run); };
 
-    const auto actual = testing::test_graph(tested, std::array{true});
+    const auto actual = testing::test_graph(tested, {true});
 
     CHECK(actual.equals({true}));
 }
@@ -1087,8 +1087,7 @@ TEST_CASE("a nested graph keeps scalar pack entries inside and crosses time seri
         return nested(inner, run, 7, input);
     };
 
-    const auto actual = testing::test_graph(tested, std::array<bg::i64, 3>{1, 2, 3},
-                                            std::array{true, true, true});
+    const auto actual = testing::test_graph(tested, {1, 2, 3}, {true, true, true});
 
     CHECK(actual.equals({8, 9, 10}));
 

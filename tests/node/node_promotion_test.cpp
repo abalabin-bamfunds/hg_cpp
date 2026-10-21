@@ -219,10 +219,7 @@ TEST_CASE("callable dynamic activity controls inputs around promoted scalars",
     });
 
     const auto graph = [=](wp<TS<i64>> left, wp<TS<i64>> right) { return combine(left, 5, right); };
-    const auto left_values = std::array<std::optional<i64>, 3>{1, 2, std::nullopt};
-    const auto right_values = std::array<std::optional<i64>, 3>{10, std::nullopt, 11};
-
-    CHECK(testing::test_graph(graph, left_values, right_values).equals({16, std::nullopt, 18}));
+    CHECK(testing::test_graph(graph, {1, 2, literal::SKIP}, {10, literal::SKIP, 11}).equals({16, std::nullopt, 18}));
     CHECK(evaluations == 2);
 }
 
@@ -254,8 +251,7 @@ TEST_CASE("callable output deduplication suppresses equal results from changing 
         return add(deduplicate(lhs), deduplicate(rhs));
     };
 
-    CHECK(testing::test_graph(graph, std::array<i64, 3>{1, 2, 3}, std::array<i64, 3>{3, 2, 1})
-              .equals({4, std::nullopt, std::nullopt}));
+    CHECK(testing::test_graph(graph, {1, 2, 3}, {3, 2, 1}).equals({4, std::nullopt, std::nullopt}));
 }
 
 TEST_CASE("callable final output waits for both final inputs when they tick in separate cycles",
@@ -274,10 +270,8 @@ TEST_CASE("callable ordinary inputs schedule independently",
     const auto add = node([](int lhs, int rhs) { return lhs + rhs; });
 
     const auto graph = [=](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return add(lhs, rhs); };
-    const auto lhs = std::array<std::optional<i64>, 4>{1, 2, std::nullopt, std::nullopt};
-    const auto rhs = std::array<std::optional<i64>, 4>{10, std::nullopt, 20, std::nullopt};
-
-    CHECK(testing::test_graph(graph, lhs, rhs).equals({11, 12, 22, std::nullopt}));
+    CHECK(testing::test_graph(graph, {1, 2, literal::SKIP, literal::SKIP}, {10, literal::SKIP, 20, literal::SKIP})
+              .equals({11, 12, 22, std::nullopt}));
 }
 
 TEST_CASE("callable return infers const from const time-series inputs",
@@ -324,7 +318,7 @@ TEST_CASE("passive callable inputs lower the active input guarantee",
         return output;
     };
 
-    CHECK(testing::test_graph(graph, std::array<i64, 3>{1, 2, 3}).equals({std::nullopt, std::nullopt, 8}));
+    CHECK(testing::test_graph(graph, {1, 2, 3}).equals({std::nullopt, std::nullopt, 8}));
 }
 
 TEST_CASE("callable explicit output guarantee takes precedence over input inference",
@@ -535,10 +529,8 @@ TEST_CASE("compiled runtime metadata locates interleaved parameters, output, and
         return read(combine(5, input, 3, select_second, tsl(first, second)));
     };
 
-    const auto input = std::array<std::optional<int>, 5>{1, 2, std::nullopt, std::nullopt, std::nullopt};
-    const auto select_second = std::array<std::optional<bool>, 5>{false, false, std::nullopt, true, std::nullopt};
-    const auto first = std::array<std::optional<int>, 5>{10, 20, 30, 40, std::nullopt};
-    const auto second = std::array<std::optional<int>, 5>{100, 200, 300, std::nullopt, 400};
-
-    CHECK(testing::test_graph(graph, input, select_second, first, second).equals({100, 20, 30, 300, 400}));
+    CHECK(testing::test_graph(graph, {1, 2, literal::SKIP, literal::SKIP, literal::SKIP},
+                              {false, false, literal::SKIP, true, literal::SKIP}, {10, 20, 30, 40, literal::SKIP},
+                              {100, 200, 300, literal::SKIP, 400})
+              .equals({100, 20, 30, 300, 400}));
 }

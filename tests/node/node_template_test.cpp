@@ -562,7 +562,7 @@ TEST_CASE("collection inputs retain their resolved runtime layout", "[node_templ
     });
 
     const auto graph = [&](wp<TS<i64>> input) { return check_guarantee(input); };
-    CHECK(testing::test_graph(graph, std::array<i64, 1>{42}).equals<i64>({42}));
+    CHECK(testing::test_graph(graph, {42}).equals<i64>({42}));
 }
 
 TEST_CASE("direct TSS inputs keep concrete and resolved key runtime types",

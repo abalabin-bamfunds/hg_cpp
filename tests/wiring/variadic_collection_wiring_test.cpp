@@ -113,8 +113,7 @@ TEST_CASE("an aggregate variadic TSL materializes as one runtime-sized list",
         return first(left, right).as<TS<bg::i64>>();
     };
 
-    const auto actual =
-        testing::test_graph(tested, std::array<bg::i64, 3>{1, 2, 3}, std::array<bg::i64, 3>{4, 5, 6});
+    const auto actual = testing::test_graph(tested, {1, 2, 3}, {4, 5, 6});
 
     CHECK(actual.equals({1, 2, 3}));
 }
@@ -413,8 +412,7 @@ TEST_CASE("a direct variadic TSL crosses a nested boundary as one reference",
         return nested(inner, run, "values"_n = tsl(left, right));
     };
 
-    const auto actual = testing::test_graph(tested, std::array<bg::i64, 2>{1, 2},
-                                            std::array<bg::i64, 2>{3, 4}, std::array{true, true});
+    const auto actual = testing::test_graph(tested, {1, 2}, {3, 4}, {true, true});
     CHECK(actual.equals({1, 2}));
 
     auto wiring = GraphWiring{};
@@ -471,8 +469,7 @@ TEST_CASE("a direct variadic TSB crosses a nested boundary as one reference",
         return nested(inner, run, "values"_n = make_bundle(count, value));
     };
 
-    const auto actual = testing::test_graph(tested, std::array<bg::i64, 2>{1, 2}, std::array<float, 2>{3.0F, 4.0F},
-                                            std::array{true, true});
+    const auto actual = testing::test_graph(tested, {1, 2}, {3.0F, 4.0F}, {true, true});
     CHECK(actual.equals({1, 2}));
 
     auto wiring = GraphWiring{};
