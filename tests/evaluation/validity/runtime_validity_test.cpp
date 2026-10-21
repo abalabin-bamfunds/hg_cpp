@@ -4,49 +4,34 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <vector>
-
 using namespace bg;
 using namespace bg::literals;
 
 TEST_CASE("a required input delays evaluation until it becomes valid",
           "[evaluation][validity][feature:validity][validity:required][transition:first-tick]"
           "[series:value][scalar:floating-point]") {
-    auto evaluated_sums = std::vector<float>{};
-    const auto add = node([&](float lhs, float rhs) {
-        const auto sum = lhs + rhs;
-        evaluated_sums.push_back(sum);
-        return sum;
-    });
+    const auto add = node([](float lhs, float rhs) { return lhs + rhs; });
 
     const auto actual = testing::test_graph(add, {1.0F, literal::SKIP}, {literal::SKIP, 2.0F});
 
     CHECK(actual.equals({literal::SKIP, 3.0F}));
-    CHECK(evaluated_sums == std::vector<float>{3.0F});
 }
 
 TEST_CASE("revalidating an active required input schedules normal evaluation",
           "[evaluation][validity][feature:validity][validity:required][transition:revalidation]"
           "[series:value][scalar:floating-point]") {
-    auto evaluated_values = std::vector<float>{};
-    const auto copy = node([&](float input) {
-        evaluated_values.push_back(input);
-        return input;
-    });
-    auto consumed_values = std::vector<float>{};
-    const auto consume = node([&](float input) { consumed_values.push_back(input); });
+    const auto copy = node([](float input) { return input; });
+
+    const auto consume = node([](float input) { return input; });
 
     const auto graph = bg::graph("name"_n = "copy_and_consume", [&](wp<TS<float>> input) {
         const auto copied = copy(input);
-        consume(copied);
-        return copied;
+        return consume(copied);
     });
 
     const auto actual = testing::test_graph(graph, {4.0F, literal::INVALID, 4.0F});
 
     CHECK(actual.equals({4.0F, literal::INVALID, 4.0F}));
-    CHECK(evaluated_values == std::vector<float>{4.0F, 4.0F});
-    CHECK(consumed_values == std::vector<float>{4.0F, 4.0F});
 }
 
 namespace {

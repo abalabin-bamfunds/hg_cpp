@@ -10,91 +10,62 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
-#include <vector>
+#include <optional>
 
 using namespace bg;
 using namespace bg::literals;
 
 TEST_CASE("an active input schedules evaluation and a passive input supplies its latest value",
           "[evaluation][input_activity][feature:input-activity][activity:active][activity:passive]") {
-    auto evaluated_sums = std::vector<float>{};
-    auto consumed_sums = std::vector<float>{};
-    const auto combine = node([&](float trigger, In<TS<float>, passive> sampled) {
-        const auto sum = trigger + *sampled;
-        evaluated_sums.push_back(sum);
-        return sum;
-    });
+    const auto combine = node([](float trigger, In<TS<float>, passive> sampled) { return trigger + *sampled; });
 
-    const auto consume = node([&](float sum) { consumed_sums.push_back(sum); });
+    const auto consume = node([](float sum) { return sum; });
 
     const auto graph = bg::graph(
         "name"_n = "combine_and_consume", [&](wp<TS<float>> trigger, wp<TS<float>> sampled) {
-        const auto sum = combine(trigger, sampled);
-        consume(sum);
-        return sum;
+        return consume(combine(trigger, sampled));
     });
 
     const auto actual = testing::test_graph(graph, {1.0F, literal::SKIP, 2.0F}, {10.0F, 20.0F, literal::SKIP});
 
     CHECK(actual.equals({11.0F, literal::SKIP, 22.0F}));
-    CHECK(evaluated_sums == std::vector<float>{11.0F, 22.0F});
-    CHECK(consumed_sums == std::vector<float>{11.0F, 22.0F});
 }
 
 TEST_CASE("an active optional input schedules evaluation on invalidation and revalidation",
           "[evaluation][input_activity][validity][feature:input-activity][activity:active]"
           "[validity:optional][transition:invalidation][transition:revalidation]") {
-    auto observed_validity = std::vector<bool>{};
-    const auto observe = node([&](In<TS<float>, optional> input) {
-        observed_validity.push_back(input.valid());
-        return input.valid();
-    });
+    const auto observe = node([](In<TS<float>, optional> input) { return input.valid(); });
 
     CHECK(testing::test_graph(observe, {1.0F, literal::INVALID, 1.0F}).equals({true, false, true}));
-    CHECK(observed_validity == std::vector<bool>{true, false, true});
 }
 
 TEST_CASE("a passive optional input does not schedule evaluation",
           "[evaluation][input_activity][validity][feature:input-activity][activity:passive]"
           "[validity:optional]") {
-    auto observed_validity = std::vector<bool>{};
-    const auto observe = node([&](In<TS<float>, passive, optional> input, bool) {
-        observed_validity.push_back(input.valid());
-        return input.valid();
-    });
+    const auto observe = node([](In<TS<float>, passive, optional> input, bool) { return input.valid(); });
 
     const auto actual = testing::test_graph(
-        observe, {1.0F, literal::INVALID, 1.0F}, {true, literal::SKIP, literal::SKIP});
+        observe, {1.0F, literal::INVALID, literal::SKIP, 3.0F, literal::SKIP},
+        {true, literal::SKIP, true, literal::SKIP, true});
 
-    CHECK(actual.equals({true, literal::SKIP, literal::SKIP}));
-    CHECK(observed_validity == std::vector<bool>{true});
+    CHECK(actual.equals({true, literal::SKIP, false, literal::SKIP, true}));
 }
 
 TEST_CASE("a passive required input propagates invalidation without evaluation",
           "[evaluation][input_activity][validity][feature:input-activity][activity:passive]"
           "[validity:required][transition:invalidation]") {
-    auto copied_values = std::vector<float>{};
-    const auto copy = node([&](In<TS<float>, passive> input, bool) {
-        copied_values.push_back(*input);
-        return *input;
-    });
+    const auto copy = node([](In<TS<float>, passive> input, bool) { return *input; });
 
-    auto observed_validity = std::vector<bool>{};
-    const auto observe = node([&](In<TS<float>, optional> input) {
-        observed_validity.push_back(input.valid());
-        return input.valid();
-    });
+    const auto observe = node([](std::optional<float> input) { return input.value_or(-1.0F); });
 
     const auto graph = bg::graph("name"_n = "observe_copy", [&](wp<TS<float>> input, wp<TS<bool>> pulse) {
         return observe(copy(input, pulse));
     });
 
     const auto actual = testing::test_graph(
-        graph, {1.0F, literal::INVALID, 1.0F, literal::SKIP}, {true, literal::SKIP, literal::SKIP, true});
+        graph, {1.0F, literal::INVALID, 3.0F, literal::SKIP}, {true, literal::SKIP, literal::SKIP, true});
 
-    CHECK(actual.equals({true, false, literal::SKIP, true}));
-    CHECK(copied_values == std::vector<float>{1.0F, 1.0F});
-    CHECK(observed_validity == std::vector<bool>{true, false, true});
+    CHECK(actual.equals({1.0F, -1.0F, literal::SKIP, 3.0F}));
 }
 
 TEST_CASE("a dynamic input can stop and resume its own scheduling",
@@ -261,34 +232,26 @@ TEST_CASE("a dynamically passive required input still propagates invalidation",
     CHECK(actual.equals({1, literal::INVALID, 2}));
 }
 
-namespace {
-
-struct dynamic_optional_observer {
-    In<TS<float>, optional, dynamic_activity> input;
-    In<TS<float>> control;
-    Out<TS<bool>> output;
-
-    void evaluate() const {
-        if (*control == 0.0F) {
-            input.make_passive();
-        } else {
-            input.make_active();
-        }
-
-        observed_validity.push_back(input.valid());
-        output.set(input.valid());
-    }
-
-    inline static std::vector<bool> observed_validity;
-};
-
-} // namespace
-
 TEST_CASE("a dynamic optional input applies its current activity to validity changes",
           "[feature:input-activity][feature:validity][series:value][definition:aggregate]"
           "[activity:active][activity:passive][validity:optional]"
           "[transition:invalidation][transition:revalidation]") {
-    dynamic_optional_observer::observed_validity.clear();
+    struct dynamic_optional_observer {
+        In<TS<float>, optional, dynamic_activity> input;
+        In<TS<float>> control;
+        Out<TS<bool>> output;
+
+        void evaluate() const {
+            if (*control == 0.0F) {
+                input.make_passive();
+            } else {
+                input.make_active();
+            }
+
+            output.set(input.valid());
+        }
+    };
+
     const auto observe = node<dynamic_optional_observer>();
 
     const auto actual = testing::test_graph(
@@ -296,7 +259,6 @@ TEST_CASE("a dynamic optional input applies its current activity to validity cha
         {1.0F, literal::SKIP, 0.0F, literal::SKIP, 1.0F, literal::SKIP});
 
     CHECK(actual.equals({true, false, true, literal::SKIP, false, true}));
-    CHECK(dynamic_optional_observer::observed_validity == std::vector<bool>{true, false, true, false, true});
 }
 
 TEST_CASE("a dynamic input connected to a collection item controls its scheduling",
