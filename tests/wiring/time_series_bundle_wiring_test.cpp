@@ -84,6 +84,7 @@ TEST_CASE("free TSB materialization rejects borrowed input bindings",
 TEST_CASE("a typed TSB wiring point exposes typed fields",
           "[feature:getattr][feature:wiring][series:tsb][schema:named][representation:native]") {
     const auto source = node([](Out<TSB<TestBundle>>) {});
+
     const auto sink = node([](In<TS<i64>>) {});
     auto wiring = GraphWiring{};
 
@@ -156,7 +157,9 @@ TEST_CASE("typed field access preserves free TSB sources",
     using namespace bg::literals;
 
     const auto count_source = node([](Out<TS<i64>>) {});
+
     const auto value_source = node([](Out<TS<float>>) {});
+
     const auto sink = node([](In<TS<i64>>) {});
     auto wiring = GraphWiring{};
 
@@ -176,6 +179,7 @@ TEST_CASE("typed TSB construction preserves field annotations",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:named]"
           "[input-guarantee:valid-items][representation:free]") {
     const auto dictionary = node([](Out<TSD<i64, TS<i64>>>) {});
+
     const auto receiver = graph("name"_n = "typed_bundle_receiver", [](wp<TSB<SCHEMA>, "values"_n, var_kwargs> values) {
         const auto field = values.find("dictionary");
         REQUIRE(field);
@@ -209,6 +213,7 @@ TEST_CASE("getattr selects a field from an unnamed free TSB",
     using namespace bg::util::literals;
 
     const auto count_source = node([](Out<TS<i64>>) {});
+
     const auto value_source = node([](Out<TS<float>>) {});
     auto wiring = GraphWiring{};
 
@@ -225,7 +230,9 @@ TEST_CASE("getattr selects a field from an unnamed free TSB",
 TEST_CASE("a free TSB accepts a span of named wiring arguments",
           "[feature:wiring][series:tsb][schema:named][representation:free]") {
     const auto count_source = node([](Out<TS<i64>>) {});
+
     const auto value_source = node([](Out<TS<float>>) {});
+
     const auto sink = node([](In<TSB<TestBundle>>) {});
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};

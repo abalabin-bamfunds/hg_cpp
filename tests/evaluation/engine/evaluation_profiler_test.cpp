@@ -46,6 +46,7 @@ struct profiler_source {
 TEST_CASE("evaluation profiler retains compact node periods and releases stopped node totals",
           "[evaluation][profile][feature:profiling]") {
     const auto source = bg::node([](Out<TS<i64>> output) { output.set(1); });
+
     const auto sink = bg::node([](In<TS<i64>>) {});
     auto wiring = GraphWiring{};
     {

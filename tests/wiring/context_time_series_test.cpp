@@ -219,6 +219,7 @@ TEST_CASE("a missing context time series reports its name", "[feature:context-ti
 TEST_CASE("the nearest incompatible context time series is an error",
           "[feature:context-time-series][feature:wiring][feature:type-system]") {
     const auto incompatible = node([](Out<TS<double>>) {});
+
     const auto compatible = node([](Out<TS<i64>>) {});
 
     testing::test_wiring([&] {
@@ -363,6 +364,7 @@ TEST_CASE("operator cache entries include implicit context types",
         graph("name"_n = "floating_context", [](wp<TS<double>, "value"_n, context> value) { return value; }));
 
     const auto integer_source = node([](Out<TS<i64>>) {});
+
     const auto floating_source = node([](Out<TS<double>>) {});
 
     testing::test_wiring([&] {
@@ -408,6 +410,7 @@ TEST_CASE("rejected operator overloads do not import context requirements",
     choose.overload(graph("name"_n = "floating_choice",
                           [](wp<TS<double>> value, wp<TS<double>, "floating_context"_n, context>) { return value; }));
     const auto integer_source = node([](Out<TS<i64>>) {});
+
     const auto floating_source = node([](Out<TS<double>>) {});
 
     testing::test_wiring([&] {

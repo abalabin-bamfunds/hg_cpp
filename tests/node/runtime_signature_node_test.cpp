@@ -350,6 +350,7 @@ TEST_CASE("a callable's repeated identical invocation reuses its output record",
             const auto layout = scalar_cast<i64>(*arguments.scalar(1)).value();
             return selected_output_runtime_type(*arguments.resolved_output_type(), layout);
         });
+
     const auto source = node([](Out<TS<i64>>) {});
     auto wiring = GraphWiring{};
     auto first = WiringPoint{};
@@ -374,6 +375,7 @@ TEST_CASE("a callable without an output runtime hook uses the declaration runtim
     const auto copy = node([](In<TS<i64>> input, Out<TS<i64>> output) {
         output.set(*input);
     });
+
     const auto source = node([](Out<TS<i64>>) {});
     auto wiring = GraphWiring{};
     auto output = WiringPoint{};

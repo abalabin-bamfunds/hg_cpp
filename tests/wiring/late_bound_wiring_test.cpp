@@ -27,6 +27,7 @@ template <template <typename, auto...> typename Field> struct LateBoundBundle {
 TEST_CASE("a late-bound wiring point resolves directly to its provider",
           "[feature:wiring][feature:late-bound-wiring]") {
     const auto source = node([](Out<TS<i64>> output) { output.set(7); });
+
     const auto copy = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
@@ -44,6 +45,7 @@ TEST_CASE("a late-bound wiring point resolves directly to its provider",
 TEST_CASE("late-bound readiness propagates through pending node outputs",
           "[feature:wiring][feature:late-bound-wiring]") {
     const auto source = node([](Out<TS<i64>> output) { output.set(7); });
+
     const auto copy = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
@@ -62,6 +64,7 @@ TEST_CASE("late-bound readiness propagates through pending node outputs",
 TEST_CASE("late-bound points can alias through an acyclic chain",
           "[feature:wiring][feature:late-bound-wiring]") {
     const auto source = node([](Out<TS<i64>>) {});
+
     const auto copy = node([](In<TS<i64>>, Out<TS<i64>>) {});
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
@@ -98,6 +101,7 @@ TEST_CASE("an indirect late-bound provider cycle fails materialization",
 TEST_CASE("pending wiring can continue after an unresolved late-bound point",
           "[feature:wiring][feature:late-bound-wiring]") {
     const auto source = node([](Out<TS<i64>> output) { output.set(7); });
+
     const auto copy = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
@@ -115,6 +119,7 @@ TEST_CASE("pending wiring can continue after an unresolved late-bound point",
 TEST_CASE("service building can provide a late-bound point on a later fixed-point pass",
           "[feature:wiring][feature:late-bound-wiring][feature:service]") {
     const auto source = node([](Out<TS<i64>> output) { output.set(7); });
+
     const auto copy = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
@@ -145,6 +150,7 @@ TEST_CASE("service building can provide a late-bound point on a later fixed-poin
 TEST_CASE("a nested graph can consume a late-bound wiring point",
           "[feature:wiring][feature:late-bound-wiring][feature:nested-graph]") {
     const auto copy = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.set(*input); });
+
     const auto inner = graph("name"_n = "late_bound_inner", [&](wp<TS<i64>> input) { return copy(input); });
     const auto tested = [&](wp<TS<i64>> provider, wp<TS<bool>> run) {
         auto &wiring = WiringContext::current().wiring();
@@ -162,7 +168,9 @@ TEST_CASE("late-bound readiness propagates through TSB fields and kwargs",
     using BUNDLE = TSB<LateBoundBundle>;
 
     const auto source = node([](Out<BUNDLE>) {});
+
     const auto copy = node([](In<TS<i64>>, Out<TS<i64>>) {});
+
     const auto consume_kwargs = node(eval = [](In<TSB<SCHEMA>, var_kwargs>) {});
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
@@ -186,6 +194,7 @@ TEST_CASE("late-bound readiness propagates through a TSL item",
     using LIST = TSL<TS<i64>, 1>;
 
     const auto source = node([](Out<LIST>) {});
+
     const auto copy = node([](In<TS<i64>>, Out<TS<i64>>) {});
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
@@ -214,6 +223,7 @@ TEST_CASE("an unprovided late-bound wiring point fails finalization",
 TEST_CASE("a late-bound provider must be compatible and supplied once",
           "[feature:wiring][feature:late-bound-wiring]") {
     const auto integer_source = node([](Out<TS<i64>> output) { output.set(1); });
+
     const auto boolean_source = node([](Out<TS<bool>> output) { output.set(true); });
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};

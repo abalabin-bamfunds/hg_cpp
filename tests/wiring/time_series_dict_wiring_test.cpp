@@ -22,6 +22,7 @@ TEST_CASE("getitem leaves unsupported collection results generic", "[wiring][cov
 TEST_CASE("getitem selects a dictionary item through a reference",
           "[wiring][series:tsd][feature:getitem][feature:operator][binding:value-to-reference]") {
     const auto source = node([](Out<TSD<i64, TS<float>>>) {});
+
     const auto sink = node([](In<TS<float>>) {});
     auto wiring = GraphWiring{};
 
@@ -53,6 +54,7 @@ TEST_CASE("repeated dictionary item selection reuses its node",
 TEST_CASE("getitem accepts a time series dictionary key",
           "[wiring][series:tsd][series:value][feature:getitem][feature:operator]") {
     const auto dictionary_source = node([](Out<TSD<i64, TS<float>>>) {});
+
     const auto key_source = node([](Out<TS<i64>>) {});
     auto wiring = GraphWiring{};
 

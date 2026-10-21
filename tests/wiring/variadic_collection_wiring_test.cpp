@@ -49,6 +49,7 @@ TEST_CASE("a callable variadic TSL captures homogeneous time series and resolves
           "[feature:wiring][feature:variadic-wiring][series:fixed-tsl][declaration:generic]"
           "[definition:function]") {
     const auto source = node([](Out<TS<bg::i64>>) {});
+
     const auto tested = graph("name"_n = "capture", [](wp<TSL<TS_T, SIZE>, var_args> values) {
         REQUIRE(values.size() == 2);
 
@@ -70,10 +71,12 @@ TEST_CASE("a variadic TSL infers the guarantee observable through references",
             const auto &type = static_cast<const TimeSeriesListType &>(values.type());
             observed_guarantees.push_back(*type.item_type().guarantee().value());
         });
+
     const auto ordinary = node([](Out<REF<TS<i64, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::ordinary>>) {});
     const auto deduplicated =
         node([](Out<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::deduplicated>>) {});
     const auto final = node([](Out<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::final>>) {});
+
     const auto constant = node([](Out<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::const_>>) {});
 
     testing::test_wiring([&] {
@@ -91,6 +94,7 @@ TEST_CASE("each variadic pack uses its declared collection operations",
           "[feature:wiring][feature:variadic-wiring][series:fixed-tsl][series:tsb]"
           "[schema:generic][declaration:generic][definition:function]") {
     const auto source = node([](Out<TS<bg::i64>>) {});
+
     const auto tested = graph("name"_n = "mixed_collections",
                               [](wp<TSL<TS_T, SIZE>, var_args> positional, wp<TSB<KWARGS>, var_kwargs> named) {
                                   CHECK(positional.size() == 2);
@@ -142,6 +146,7 @@ TEST_CASE("a variadic TSL rejects scalars and incompatible item types",
           "[feature:wiring][feature:variadic-wiring][series:fixed-tsl][declaration:generic]"
           "[definition:aggregate]") {
     const auto integer = node([](Out<TS<bg::i64>>) {});
+
     const auto floating = node([](Out<TS<float>>) {});
     const auto sink = node<AggregateListSink>();
 
@@ -208,6 +213,7 @@ TEST_CASE("a concrete variadic TSL rejects a different capture size",
           "[feature:wiring][feature:variadic-wiring][series:fixed-tsl][declaration:concrete]"
           "[definition:function]") {
     const auto source = node([](Out<TS<bg::i64>>) {});
+
     const auto tested = graph("name"_n = "fixed", [](wp<TSL<TS<bg::i64>, 2>, var_args>) {});
 
     testing::test_wiring([&] {
@@ -289,6 +295,7 @@ TEST_CASE("an exact named TSB binds as one collection and supports lazy field se
 TEST_CASE("args expands a TSB into positional wiring arguments",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:named]") {
     const auto source = node([](Out<TSB<TestBundle>>) {});
+
     const auto receive = graph("name"_n = "receive",
                                [](wp<TS<bg::i64>> count, wp<TS<float>> value) {
                                    CHECK(&count.type() == &TS<bg::i64>::type());
@@ -301,6 +308,7 @@ TEST_CASE("args expands a TSB into positional wiring arguments",
 TEST_CASE("kwargs expands a TSB into named wiring arguments",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:named]") {
     const auto source = node([](Out<TSB<TestBundle>>) {});
+
     const auto receive = graph(
         "name"_n = "receive", [](wp<TS<float>, "value"_n> value, wp<TS<bg::i64>, "count"_n> count) {
             CHECK(&value.type() == &TS<float>::type());
@@ -313,6 +321,7 @@ TEST_CASE("kwargs expands a TSB into named wiring arguments",
 TEST_CASE("kwargs binds fixed parameters before capturing remaining fields",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:named]") {
     const auto source = node([](Out<TSB<TestBundle>>) {});
+
     const auto receive = graph(
         "name"_n = "receive",
         [](wp<TS<bg::i64>, "count"_n> count, wp<TSB<SCHEMA>, var_kwargs> remaining) {
@@ -344,6 +353,7 @@ TEST_CASE("a nonmatching TSB name remains a captured bundle field",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:generic]"
           "[definition:function][representation:free]") {
     const auto source = node([](Out<TSB<TestBundle>>) {});
+
     const auto tested = graph("name"_n = "capture", [](wp<TSB<SCHEMA>, var_kwargs> values) {
         REQUIRE(values.size() == 1);
         CHECK(values[0].name()->text() == "other");
@@ -382,6 +392,7 @@ TEST_CASE("direct collection items are flat resolver and requirement arguments",
 
     testing::test_wiring([&] {
         const auto first_source = node([](Out<TSL<TS<bg::i64>, 2>>) {});
+
         const auto second_source = node([](Out<TSL<TS<bg::i64>, 2>>) {});
         (void)operation("values"_n = first_source());
         (void)operation("values"_n = second_source());
@@ -417,6 +428,7 @@ TEST_CASE("a direct variadic TSL crosses a nested boundary as one reference",
 
     auto wiring = GraphWiring{};
     const auto value = node([](Out<TS<bg::i64>>) {});
+
     const auto run = node([](Out<TS<bool>>) {});
     {
         const auto context = WiringContext{wiring};
@@ -474,7 +486,9 @@ TEST_CASE("a direct variadic TSB crosses a nested boundary as one reference",
 
     auto wiring = GraphWiring{};
     const auto count = node([](Out<TS<bg::i64>>) {});
+
     const auto value = node([](Out<TS<float>>) {});
+
     const auto run = node([](Out<TS<bool>>) {});
     {
         const auto context = WiringContext{wiring};

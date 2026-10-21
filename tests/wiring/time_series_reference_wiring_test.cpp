@@ -136,6 +136,7 @@ TEST_CASE("generic time-series guarantee parameters retain observed and referenc
     const auto const_reference =
         node([](Out<REF<TS<i64, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::const_>>) {});
     const auto direct_final_source = node([](Out<TS<i64, TimeSeriesGuarantee::final>>) {});
+
     const auto direct_deduplicated_source = node([](Out<TS<i64, TimeSeriesGuarantee::deduplicated>>) {});
 
     const auto check_observed = [](const auto &source, const TimeSeriesType &expected) {

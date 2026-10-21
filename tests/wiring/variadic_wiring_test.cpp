@@ -204,6 +204,7 @@ struct RejectingVariadicNode {
 TEST_CASE("a positional variadic graph preserves its arguments",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:generic][definition:function]") {
     const auto sink = node([](In<TSB<SCHEMA>, var_args>) {});
+
     const auto tested = graph("name"_n = "variadic", [&](wp<TSB<SCHEMA>, var_args> values) {
         REQUIRE(values.size() == 2);
         CHECK(values[0].is_scalar());
@@ -219,6 +220,7 @@ TEST_CASE("a positional variadic graph preserves its arguments",
 TEST_CASE("a resolution overlay owns variadic wiring records used by probing",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:generic]") {
     const auto source = node([](Out<TS<bg::i64>>) {});
+
     const auto candidate = graph("name"_n = "candidate", [](wp<TSB<SCHEMA>, var_args>) {});
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
@@ -257,17 +259,23 @@ TEST_CASE("a variadic graph forwards a complete pack only",
         REQUIRE(values.size() == 1);
         CHECK(&values[0].scalar().type() == &cpp_scalar_type<bg::i64>());
     });
+
     const auto sender = graph("name"_n = "sender", [&](wp<TSB<SCHEMA>, var_args> values) { receiver(values); });
+
     const auto selected = graph("name"_n = "selected", [&](wp<TSB<SCHEMA>, var_args> values) {
         receiver(values[0]);
     });
+
     const auto combined = graph("name"_n = "combined", [&](wp<TSB<SCHEMA>, var_args> values) {
         receiver(values, 2);
     });
+
     const auto named = graph("name"_n = "named", [&](wp<TSB<SCHEMA>, var_args> values) {
         receiver("values"_n = values);
     });
+
     const auto fixed = graph("name"_n = "fixed", [](int) {});
+
     const auto renamed = graph("name"_n = "renamed", [&](wp<TSB<SCHEMA>, var_args> values) {
         fixed("value"_n = values[0]);
     });
@@ -302,7 +310,9 @@ template <template <typename, auto...> typename Field> struct forwarded_named_bu
 TEST_CASE("forwarded named variadic arguments cannot conflict with a fixed parameter",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:generic][definition:function]") {
     const auto bundle_source = node([](Out<TSB<forwarded_named_bundle>>) {});
+
     const auto leaf_source = node([](Out<TS<i64>>) {});
+
     const auto receiver = graph("name"_n = "receiver", [](wp<TS<i64>, "fixed"_n> fixed,
                                                                wp<TSB<SCHEMA>, var_kwargs>) { return fixed; });
     const auto sender = graph("name"_n = "sender", [&](wp<TSB<SCHEMA>, "values"_n, var_kwargs> values) {
@@ -317,6 +327,7 @@ TEST_CASE("forwarded named variadic arguments cannot conflict with a fixed param
 TEST_CASE("a forwarded variadic pack retains its capture mode",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:generic][definition:function]") {
     const auto receiver = graph("name"_n = "receiver", [](wp<TSB<SCHEMA>, var_kwargs>) {});
+
     const auto sender = graph("name"_n = "sender", [&](wp<TSB<SCHEMA>, var_args> values) {
         receiver(values);
     });
@@ -435,16 +446,19 @@ TEST_CASE("two variadic packs forward independently",
             CHECK(positional.size() == 2);
             CHECK(named.size() == 2);
         });
+
     const auto forward_both = graph(
         "name"_n = "forward_both",
         [&](wp<TSB<ARGS>, var_args> positional, wp<TSB<KWARGS>, var_kwargs> named) {
             receiver(positional, named);
         });
+
     const auto forward_positional = graph(
         "name"_n = "forward_positional",
         [&](wp<TSB<SCHEMA>, var_args> positional) {
             receiver(positional, "left"_n = 3, "right"_n = 4);
         });
+
     const auto forward_named = graph(
         "name"_n = "forward_named",
         [&](wp<TSB<SCHEMA>, var_kwargs> named) { receiver(1, 2, named); });
@@ -491,6 +505,7 @@ TEST_CASE("a positional argument cannot follow a named argument",
 TEST_CASE("a service wrapper cannot append positional implementation arguments after generated requests",
           "[feature:service][feature:wiring][feature:variadic-wiring][series:tsb][schema:generic]") {
     const auto source = node([](Out<TS<i64>>) {});
+
     const auto implementation = graph(
         "name"_n = "implementation",
         [](wp<TSB<ARGS>, var_args>, wp<TSB<KWARGS>, var_kwargs>) {});
@@ -628,8 +643,11 @@ TEST_CASE("a nested graph reconstructs a positional variadic parameter",
           "[feature:wiring][feature:variadic-wiring][feature:nested-graph][series:tsb][schema:generic]"
           "[definition:function][representation:free][shape:nested]") {
     const auto source = node([](Out<TS<i64>>) {});
+
     const auto run_source = node([](Out<TS<bool>>) {});
+
     const auto sink = node([](In<TSB<SCHEMA>, var_args>) {});
+
     const auto inner = graph(
         "name"_n = "inner", [&](wp<TS<i64>> input, wp<TSB<SCHEMA>, var_args> values) {
             REQUIRE(values.size() == 2);
@@ -638,6 +656,7 @@ TEST_CASE("a nested graph reconstructs a positional variadic parameter",
             sink(values);
             return input;
         });
+
     const auto outer = graph("name"_n = "outer",
                              [&](wp<TS<i64>> input, wp<TS<bool>> run, wp<TSB<SCHEMA>, var_args> values) {
         return nested(inner, run, input, values);
@@ -650,7 +669,9 @@ TEST_CASE("a nested graph reconstructs a forwarded named variadic parameter",
           "[feature:wiring][feature:variadic-wiring][feature:nested-graph][series:tsb][schema:generic]"
           "[definition:function][shape:nested]") {
     const auto source = node([](Out<TS<i64>>) {});
+
     const auto run_source = node([](Out<TS<bool>>) {});
+
     const auto inner = graph(
         "name"_n = "inner", [&](wp<TS<i64>> input, wp<TSB<SCHEMA>, var_kwargs> values) {
             REQUIRE(values.size() == 2);
@@ -658,6 +679,7 @@ TEST_CASE("a nested graph reconstructs a forwarded named variadic parameter",
             CHECK(values["second"].is_scalar());
             return input;
         });
+
     const auto outer = graph("name"_n = "outer",
                              [&](wp<TS<i64>> input, wp<TS<bool>> run, wp<TSB<SCHEMA>, var_kwargs> values) {
         return nested(inner, run, input, values);
@@ -672,7 +694,9 @@ TEST_CASE("a nested graph preserves positional and named packs together",
           "[feature:wiring][feature:variadic-wiring][feature:nested-graph][series:tsb][schema:generic]"
           "[definition:function][representation:free][shape:nested]") {
     const auto source = node([](Out<TS<i64>>) {});
+
     const auto run_source = node([](Out<TS<bool>>) {});
+
     const auto inner = graph(
         "name"_n = "inner",
         [](wp<TS<i64>> input, wp<TSB<ARGS>, var_args> positional,
@@ -685,6 +709,7 @@ TEST_CASE("a nested graph preserves positional and named packs together",
             CHECK(named["series"].is_time_series());
             return input;
         });
+
     const auto outer = graph(
         "name"_n = "outer",
         [&](wp<TS<i64>> input, wp<TS<bool>> run, wp<TSB<ARGS>, var_args> positional,
@@ -767,6 +792,7 @@ TEST_CASE("a variadic operator includes reference adaptation cost for fixed para
             return first;
         }));
     const auto reference = node([](Out<REF<TS<i64>>>) {});
+
     const auto value = node([](Out<TS<i64>>) {});
 
     testing::test_wiring([&] { (void)operation(reference(), value()); });
@@ -1093,6 +1119,7 @@ TEST_CASE("a nested graph keeps scalar pack entries inside and crosses time seri
 
     auto wiring = GraphWiring{};
     const auto value_source = node([](Out<TS<bg::i64>>) {});
+
     const auto run_source = node([](Out<TS<bool>>) {});
     {
         auto context = WiringContext{wiring};
@@ -1118,6 +1145,7 @@ TEST_CASE("a nested variadic scalar is owned only by the inner graph",
     {
         auto context = WiringContext{wiring};
         const auto source = node([](Out<TS<i64>>) {});
+
         const auto run = node([](Out<TS<bool>>) {});
         (void)nested(inner, run(), source(), value);
     }
@@ -1128,6 +1156,7 @@ TEST_CASE("a nested variadic scalar is owned only by the inner graph",
 TEST_CASE("a variadic graph preserves fixed parameters and time series entries",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:generic][definition:function]") {
     const auto source = node([](Out<TS<bg::i64>>) {});
+
     const auto tested = graph("name"_n = "fixed_then_variadic",
                               [&](int fixed, wp<TSB<SCHEMA>, var_args> values) {
                                   CHECK(fixed == 3);
@@ -1156,7 +1185,9 @@ TEST_CASE("nested expands scalar and time-series arguments from TSB wiring recor
             CHECK(&extras[1].type() == &TS<i64>::type());
             return value;
         });
+
     const auto run_source = node([](Out<TS<bool>>) {});
+
     const auto series_source = node([](Out<TS<i64>>) {});
 
     testing::test_wiring([&] {
@@ -1177,6 +1208,7 @@ TEST_CASE("nested expands scalar and time-series arguments from TSB wiring recor
 TEST_CASE("free TSB bundle syntax binds identically to a named variadic parameter",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:named][definition:function]") {
     const auto source = node([](Out<TS<i64>>) {});
+
     const auto receiver = graph("name"_n = "receiver", [](wp<TSB<SCHEMA>, "values"_n, var_kwargs> values) {
         REQUIRE(values.size() == 1);
         REQUIRE(values[0].name());
@@ -1214,7 +1246,9 @@ TEST_CASE("a direct named free TSB pack preserves field annotations",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:named]"
           "[input-guarantee:valid-items][validity:optional][representation:free]") {
     const auto series = node([](Out<TS<i64>>) {});
+
     const auto dictionary = node([](Out<TSD<i64, TS<i64>>>) {});
+
     const auto receiver = graph("name"_n = "receiver", [](wp<TSB<SCHEMA>, "values"_n, var_kwargs, optional> values) {
         const auto filtered = values.find("filtered");
         const auto optional = values.find("optional");

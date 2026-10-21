@@ -570,12 +570,14 @@ TEST_CASE("direct TSS inputs keep concrete and resolved key runtime types",
     const auto read_concrete = node([](In<TSS<i64>> input, Out<TS<i64>> output) {
         output.set(input.item_at(0).value());
     });
+
     const auto read_generic = node([](In<TSS<SCALAR>> input, Out<TS<i64>> output) {
         if (!input.runtime_type().type().is_resolved()) {
             throw std::logic_error{"a generic TSS input must keep its resolved runtime type"};
         }
         output.set(scalar_cast<i64>(input.item_at(0)).value());
     });
+
     const auto read_guarantee = node([](In<TSS<i64, guarantee_variable<"G">>> input,
                                             Out<TS<i64>> output) {
         if (!input.runtime_type().type().is_resolved()) {

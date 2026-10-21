@@ -19,7 +19,9 @@ TEST_CASE("a free fixed time series list is materialized when consumed",
           "[wiring][tsl][series:fixed-tsl][free][representation:free][feature:wiring]"
           "[binding:representation]") {
     const auto first_source = node([](Out<TS<float>>) {});
+
     const auto second_source = node([](Out<TS<float>>) {});
+
     const auto sink = node([](In<TSL<TS<float>, 2>>) {});
     auto wiring = GraphWiring{};
 
@@ -39,6 +41,7 @@ TEST_CASE("a free fixed time series list is materialized when consumed",
 TEST_CASE("a free fixed time series list reports incompatible item types as a wiring error",
           "[wiring][tsl][series:fixed-tsl][representation:free][feature:wiring]") {
     const auto integer = node([](Out<TS<i64>>) {});
+
     const auto floating = node([](Out<TS<float>>) {});
     auto wiring = GraphWiring{};
 
@@ -50,7 +53,9 @@ TEST_CASE("a free fixed TSL accepts vectors and spans of wiring points",
           "[wiring][tsl][series:fixed-tsl][representation:free][feature:wiring]"
           "[feature:wiring-materialisation][binding:representation]") {
     const auto first_source = node([](Out<TS<i64>>) {});
+
     const auto second_source = node([](Out<TS<i64>>) {});
+
     const auto sink = node([](In<TSL<TS<i64>, 2>>) {});
     auto wiring = GraphWiring{};
 
@@ -83,6 +88,7 @@ TEST_CASE("a free fixed TSL accepts vectors and spans of wiring points",
 TEST_CASE("a free fixed TSL rejects incompatible vector item types",
           "[wiring][tsl][series:fixed-tsl][representation:free][feature:wiring]") {
     const auto integer = node([](Out<TS<i64>>) {});
+
     const auto floating = node([](Out<TS<float>>) {});
 
     testing::test_wiring([&] {
@@ -166,7 +172,9 @@ TEST_CASE("a free fixed time series list reuses materialization for the same inp
           "[wiring][tsl][series:fixed-tsl][representation:free][feature:wiring]"
           "[binding:representation][shape:fan-out]") {
     const auto first_source = node([](Out<TS<float>>) {});
+
     const auto second_source = node([](Out<TS<float>>) {});
+
     const auto sink = node([](In<TSL<TS<float>, 2>>) {});
     auto wiring = GraphWiring{};
 
@@ -186,7 +194,9 @@ TEST_CASE("a free fixed time series list can satisfy a reference input",
           "[wiring][tsl][reference][series:fixed-tsl][representation:free][feature:wiring]"
           "[binding:value-to-reference]") {
     const auto first_source = node([](Out<TS<float>>) {});
+
     const auto second_source = node([](Out<TS<float>>) {});
+
     const auto sink = node([](In<REF<TSL<TS<float>, 2>>>) {});
     auto wiring = GraphWiring{};
 
@@ -221,6 +231,7 @@ TEST_CASE("getitem selects an item from a free fixed time series list without ma
 TEST_CASE("getitem creates a contained wired output when a stored list item is consumed",
           "[wiring][series:fixed-tsl][representation:native][feature:getitem][feature:operator]") {
     const auto source = node([](Out<TSL<TS<float>, 3>>) {});
+
     const auto sink = node([](In<TS<float>>) {});
     auto wiring = GraphWiring{};
 
@@ -244,6 +255,7 @@ TEST_CASE("getitem reuses a contained wired output",
           "[wiring][series:fixed-tsl][representation:native][feature:getitem][feature:operator]"
           "[shape:fan-out]") {
     const auto source = node([](Out<TSL<TS<float>, 3>>) {});
+
     const auto sink = node([](In<TS<float>>) {});
     auto wiring = GraphWiring{};
 
@@ -259,7 +271,9 @@ TEST_CASE("getitem reuses a contained wired output",
 TEST_CASE("getitem distinguishes items belonging to different wired outputs",
           "[wiring][series:fixed-tsl][representation:native][feature:getitem][feature:operator]") {
     const auto first_source = node([](Out<TSL<TS<float>, 3>>) {});
+
     const auto second_source = node([](Out<TSL<TS<float>, 3>>) {});
+
     const auto sink = node([](In<TS<float>>) {});
     auto wiring = GraphWiring{};
 
@@ -277,6 +291,7 @@ TEST_CASE("getitem selects an item through a reference-backed fixed list",
           "[feature:wiring][feature:getitem][feature:operator][feature:reference][series:fixed-tsl]"
           "[binding:reference-to-value]") {
     const auto source = node([](Out<REF<TSL<TS<float>, 3>>>) {});
+
     const auto sink = node([](In<TS<float>>) {});
     auto wiring = GraphWiring{};
 

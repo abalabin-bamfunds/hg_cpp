@@ -25,6 +25,7 @@ using POSITIONAL = BundleSchemaVariableDeclaration<"WITH_SIGNATURE_POSITIONAL", 
 TEST_CASE("with_signature gives a positional variadic graph a fixed call signature",
           "[feature:wiring][feature:variadic-wiring][definition:function][series:value]") {
     const auto add = node([](i64 left, i64 right) { return left + right; });
+
     const auto variadic = graph("name"_n = "variadic_add", [=](wp<TSB<VALUES>, var_args> values) -> wp<TS<i64>> {
         return add(values[0].time_series(), values[1].time_series());
     });
@@ -47,6 +48,7 @@ TEST_CASE("with_signature gives a positional variadic graph a fixed call signatu
 TEST_CASE("with_signature forwards fixed parameter names to a named variadic graph",
           "[feature:wiring][feature:variadic-wiring][definition:function][schema:named]") {
     const auto add = node([](i64 left, i64 right) { return left + right; });
+
     const auto variadic = graph("name"_n = "named_add",
                                 [=](wp<TSB<POSITIONAL>, var_args> positional,
                                     wp<TSB<VALUES>, var_kwargs> values) -> wp<TS<i64>> {
@@ -81,6 +83,7 @@ TEST_CASE("with_signature gives a variadic node a fixed call signature",
 TEST_CASE("with_signature checks its declared output type",
           "[feature:wiring][feature:variadic-wiring][definition:function][series:value]") {
     const auto source = node([](Out<TS<i64>> output) { output.set(1); });
+
     const auto variadic = graph("name"_n = "wrong_output", [=](wp<TSB<VALUES>, var_args>) { return source(); });
     const auto signature = Signature{util::symbol{"wrong_output"},
                                      {{util::symbol{"input"}, &TS<i64>::type()}}, TS<float>::type()};
