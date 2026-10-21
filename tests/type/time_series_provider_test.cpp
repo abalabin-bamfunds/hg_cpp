@@ -1496,7 +1496,7 @@ TEST_CASE("queue collection inspection stops at its first conflict",
     const auto previous_time = MIN_DT + std::chrono::microseconds{1};
     const auto evaluation_time = previous_time + std::chrono::microseconds{1};
     auto memory_resource = std::pmr::monotonic_buffer_resource{};
-    auto allocator = allocator{memory_resource};
+    auto allocator = bg::allocator{memory_resource};
     const auto &runtime_type = cpp_time_series_runtime_type<Series>();
 
     auto *input_storage = allocator.allocate_bytes(runtime_type.value_size(), runtime_type.value_alignment());
