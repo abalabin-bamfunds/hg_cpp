@@ -257,8 +257,7 @@ TEST_CASE("optional TSS sum publishes zero before a final REF target becomes val
         },
         schedule_on_start = true);
     const auto graph = [=](wp<TSS<i64, TimeSeriesGuarantee::final>> values) {
-        const auto reference = values.as<REF<TSS<i64, TimeSeriesGuarantee::final>>>();
-        const auto bound = retain_reference(reference);
+        const auto bound = retain_reference(values);
         const auto result = operators::sum_("values"_n = opt(bound));
         CHECK(&result.type() == &TS<i64>::type());
         return result;

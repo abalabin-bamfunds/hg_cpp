@@ -261,8 +261,8 @@ TEST_CASE("convert maps a full target type and permits collection overloads",
         [](wp<TSL<TS<i64>, 2>> value) -> wp<operators::CONVERT_RESULT> {
             ++floating_body_calls;
             return wp<operators::CONVERT_RESULT>{tsl(
-                operators::convert[type<TS<double>>](value[0].as<TS<i64>>()),
-                operators::convert[type<TS<double>>](value[1].as<TS<i64>>()))};
+                operators::convert[type<TS<double>>](value[0]),
+                operators::convert[type<TS<double>>](value[1]))};
         }));
     testing::test_wiring([&] {
         const auto source = node([](Out<TS<i64>>) {});

@@ -135,7 +135,7 @@ TEST_CASE("delay follows reference retargets and target ticks",
         output.copy(*use_constant ? constant : changing);
     });
     const auto delayed = [&](wp<TS<bool>> use_constant) {
-        const auto constant_target = operators::const_(i64{100}).as<TS<i64>>();
+        const auto constant_target = operators::const_(i64{100});
         return operators::delay(select(use_constant, changing_target(), constant_target), timedelta_t{1});
     };
 
@@ -212,7 +212,7 @@ TEST_CASE("throttle follows reference retargets and target ticks",
         output.copy(*use_constant ? constant : changing);
     });
     const auto throttled = [&](wp<TS<bool>> use_constant) {
-        const auto constant_target = operators::const_(i64{100}).as<TS<i64>>();
+        const auto constant_target = operators::const_(i64{100});
         const auto selected = select(use_constant, changing_target(), constant_target);
         return operators::throttle(selected, timedelta_t{1});
     };
@@ -346,8 +346,7 @@ TEST_CASE("a nested timed source stops with its selected graph",
                        cases{case_(i64{1}, [] {
                                    return operators::schedule(timedelta_t{2}, true, i64{5}).as<TS<bool>>();
                                }),
-                              case_(DEFAULT, [] { return operators::const_(false).as<TS<bool>>(); })})
-            .as<TS<bool>>();
+                             case_(DEFAULT, [] { return operators::const_(false).as<TS<bool>>(); })});
     };
 
     CHECK(testing::test_graph(selected_schedule, {1, 0, 0})

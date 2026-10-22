@@ -573,8 +573,7 @@ TEST_CASE("TSD membership resubscribes when its switch branch is recreated",
         return switch_(selector,
                        cases{case_(i64{1}, selected_branch),
                              case_(i64{2}, [](wp<TS<i64>>) { return operators::const_(false).as<TS<bool>>(); })},
-                       value)
-            .as<TS<bool>>();
+                       value);
     };
 
     Definition::evaluation_count = 0;
@@ -936,7 +935,7 @@ TEST_CASE("mapped contains_ branches share an outer TSS and release removed subs
 
     const auto tested = [&](wp<TSS<i64>> branch_keys, wp<TSS<i64>> collection) {
         const auto result = map(branch, branch_keys, pass_through(collection), "__key_arg__"_n = 0);
-        return result[i64{7}].as<TS<bool>>();
+        return result[i64{7}];
     };
 
     (void)testing::test_graph(tested, {{7, 8}, {}, {}, {literal::REMOVED(7)}, {}, {7}},

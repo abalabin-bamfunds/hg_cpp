@@ -714,7 +714,7 @@ TEST_CASE("addition retargets an ordinary reference between final and const targ
     const auto final_source = node<final_value_source>();
     const auto graph = [&](wp<TS<bool>> select_right) {
         const auto lhs = final_source(1.0);
-        const auto rhs = operators::const_(2.0).as<TS<double, TimeSeriesGuarantee::const_>>();
+        const auto rhs = operators::const_(2.0);
         const auto reference = select(select_right, lhs, rhs);
         const auto result = operators::add(reference, 1.0);
         CHECK(&result.type() == &TS<double, TimeSeriesGuarantee::ordinary>::type());
@@ -748,7 +748,7 @@ TEST_CASE("addition observes equal values from distinct deduplicated reference t
     const auto select = node<changing_reference>();
     const auto graph = [&](wp<TS<bool>> select_const) {
         const auto final_value = final_source();
-        const auto const_value = operators::const_(4.0).as<TS<double, TimeSeriesGuarantee::const_>>();
+        const auto const_value = operators::const_(4.0);
         const auto reference = select(select_const, final_value, const_value);
         const auto result = operators::add(reference, 1.0);
         CHECK(&result.type() == &TS<double, TimeSeriesGuarantee::ordinary>::type());
