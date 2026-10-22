@@ -20,10 +20,10 @@ TEST_CASE("a constant value updates only in the first test graph cycle",
           "[feature:constant][feature:test-graph][series:value][scalar:integer][guarantee:const]"
           "[shape:single-node][transition:first-tick]") {
     const auto graph = [](wp<TS<i64>>) {
-        return operators::const_(3).as<TS<i64, TimeSeriesGuarantee::const_>>();
+        return operators::const_(3);
     };
 
-    CHECK(testing::test_graph(graph, {1, 2}).equals({3, std::nullopt}));
+    CHECK(testing::test_graph(graph, {1, 2}).equals<i64>({3, std::nullopt}));
 }
 
 TEST_CASE("a constant waits for another required input",

@@ -176,13 +176,12 @@ TEST_CASE("a nested direct output uses its resolved item guarantee",
     const auto make_dictionary = node<make_dictionary_with_guarantee>();
 
     const auto graph = [&](wp<TS<i64>> input) {
-        return make_dictionary(deduplicate(input), input)[1].as<
-            REF<TS<i64, TimeSeriesGuarantee::deduplicated>, TimeSeriesGuarantee::ordinary>>();
+        return make_dictionary(deduplicate(input), input)[1];
     };
 
     const auto actual = testing::test_graph(graph, std::array{1, 1, 2});
 
-    CHECK(actual.equals({1, std::nullopt, 2}));
+    CHECK(actual.equals<i64>({1, std::nullopt, 2}));
 }
 
 TEST_CASE("a collection guarantee deduplicates contained value outputs",

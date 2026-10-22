@@ -17,21 +17,21 @@ using namespace bg::literals;
 TEST_CASE("fixed TSL getitem changes selection with a time series index",
           "[evaluation][series:fixed-tsl][series:value][feature:getitem][feature:operator]"
           "[representation:native][binding:value-to-reference][binding:reference-to-value]") {
-    const auto graph = [](wp<TSL<TS<i64>, 2>> input, wp<TS<i64>> index) -> wp<TS<i64>> {
-        return input[index].as<TS<i64>>();
+    const auto graph = [](wp<TSL<TS<i64>, 2>> input, wp<TS<i64>> index) {
+        return input[index];
     };
 
     const auto actual = testing::test_graph(graph, {{{0, 1}, {1, 10}}, {{0, 2}, {1, 20}}, {{0, 3}, {1, 30}}},
                                             {0, 1, 0});
 
-    CHECK(actual.equals({1, 20, 3}));
+    CHECK(actual.equals<i64>({1, 20, 3}));
 }
 
 TEST_CASE("fixed TSL getitem observes only the selected item",
           "[evaluation][series:fixed-tsl][series:value][feature:getitem][feature:operator]"
           "[representation:free][binding:value-to-reference][binding:reference-to-value]") {
-    const auto graph = [](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<i64>> index) -> wp<TS<i64>> {
-        return tsl(first, second)[index].as<TS<i64>>();
+    const auto graph = [](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<i64>> index) {
+        return tsl(first, second)[index];
     };
     const auto first = std::array{1, 2, 3};
     const auto second = std::array{std::optional{10}, std::optional<int>{}, std::optional{30}};
@@ -47,8 +47,8 @@ TEST_CASE("fixed TSL getitem invalidates for an invalid or out-of-range time ser
           "[evaluation][series:fixed-tsl][series:value][feature:getitem][feature:operator]"
           "[representation:native][binding:value-to-reference][binding:reference-to-value]"
           "[transition:invalidation][transition:revalidation]") {
-    const auto graph = [](wp<TSL<TS<i64>, 2>> input, wp<TS<i64>> index) -> wp<TS<i64>> {
-        return input[index].as<TS<i64>>();
+    const auto graph = [](wp<TSL<TS<i64>, 2>> input, wp<TS<i64>> index) {
+        return input[index];
     };
 
     const auto actual = testing::test_graph(
@@ -70,13 +70,13 @@ TEST_CASE("fixed TSL getitem selects stored references with a time series index"
         output[1].copy(second);
     });
 
-    const auto graph = [&](wp<TS<i64>> input, wp<TS<i64>> index) -> wp<TS<i64>> {
-        return make_list(increment(input), scale(input))[index].as<TS<i64>>();
+    const auto graph = [&](wp<TS<i64>> input, wp<TS<i64>> index) {
+        return make_list(increment(input), scale(input))[index];
     };
 
     const auto actual = testing::test_graph(graph, std::array{1, 2, 3}, std::array<i64, 3>{0, 1, 0});
 
-    CHECK(actual.equals({2, 20, 4}));
+    CHECK(actual.equals<i64>({2, 20, 4}));
 }
 
 TEST_CASE("fixed TSL getitem forwards updates from a selected stored reference",
@@ -90,23 +90,23 @@ TEST_CASE("fixed TSL getitem forwards updates from a selected stored reference",
         output[1].copy(item);
     });
 
-    const auto graph = [&](wp<TS<i64>> input, wp<TS<i64>> index) -> wp<TS<i64>> {
-        return make_list(increment(input))[index].as<TS<i64>>();
+    const auto graph = [&](wp<TS<i64>> input, wp<TS<i64>> index) {
+        return make_list(increment(input))[index];
     };
     const auto index =
         std::array{std::optional<i64>{0}, std::optional<i64>{}, std::optional<i64>{}};
 
     const auto actual = testing::test_graph(graph, std::array{1, 2, 3}, index);
 
-    CHECK(actual.equals({2, 3, 4}));
+    CHECK(actual.equals<i64>({2, 3, 4}));
 }
 
 TEST_CASE("fixed TSL getitem follows selected item invalidation and revalidation",
           "[evaluation][series:fixed-tsl][series:value][feature:getitem][feature:reference]"
           "[representation:native][binding:value-to-reference][binding:reference-to-value]"
           "[transition:invalidation][transition:revalidation]") {
-    const auto graph = [](wp<TSL<TS<i64>, 2>> input, wp<TS<i64>> index) -> wp<TS<i64>> {
-        return input[index].as<TS<i64>>();
+    const auto graph = [](wp<TSL<TS<i64>, 2>> input, wp<TS<i64>> index) {
+        return input[index];
     };
 
     const auto actual = testing::test_graph(
@@ -127,8 +127,8 @@ TEST_CASE("fixed TSL getitem follows a list across a nested graph boundary",
 
     const auto inner = graph("name"_n = "make_list", [&](wp<TS<i64>> input) { return make_list(input); });
 
-    const auto outer = [&](wp<TS<i64>> input, wp<TS<i64>> index, wp<TS<bool>> run) -> wp<TS<i64>> {
-        return nested(inner, run, input)[index].as<TS<i64>>();
+    const auto outer = [&](wp<TS<i64>> input, wp<TS<i64>> index, wp<TS<bool>> run) {
+        return nested(inner, run, input)[index];
     };
 
     const auto actual = testing::test_graph(outer, {1, 2, 3, 4}, {0, 1, 0, 1}, {true, false, true, true});
@@ -146,13 +146,13 @@ TEST_CASE("scalar getitem reads a reference-backed fixed list",
 
     const auto inner = graph("name"_n = "make_list", [&](wp<TS<i64>> input) { return make_list(input); });
 
-    const auto outer = [&](wp<TS<i64>> input, wp<TS<bool>> run) -> wp<TS<i64>> {
-        return nested(inner, run, input)[i64{1}].as<TS<i64>>();
+    const auto outer = [&](wp<TS<i64>> input, wp<TS<bool>> run) {
+        return nested(inner, run, input)[i64{1}];
     };
 
     const auto actual = testing::test_graph(outer, {1, 2, 3}, {true, true, true});
 
-    CHECK(actual.equals({10, 20, 30}));
+    CHECK(actual.equals<i64>({10, 20, 30}));
 }
 
 TEST_CASE("fixed TSL getitem follows a free list into a nested graph",

@@ -165,8 +165,7 @@ TEST_CASE("nested reduce tracks keys when a sampled TSD reassigns physical item 
 
     const auto tested = [=](wp<TSD<i64, TS<i64>>> first, wp<TSD<i64, TS<i64>>> second,
                             wp<TS<bool>> use_second) {
-        const auto selected = select_dictionary(use_second, first.as<REF<TSD<i64, TS<i64>>>>(),
-                                                second.as<REF<TSD<i64, TS<i64>>>>());
+        const auto selected = select_dictionary(use_second, first, second);
         return reduce(add_graph, selected);
     };
 

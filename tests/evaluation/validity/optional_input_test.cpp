@@ -95,8 +95,8 @@ TEST_CASE("optional inputs remain evaluable through invalidation and revalidatio
         return (lhs.valid() ? lhs.value() : i64{}) + rhs.value();
     }));
 
-    const auto add_graph = [&](wp<TS<i64>> lhs, wp<TS<i64>> rhs) -> wp<TS<i64>> {
-        return add(opt(copy(lhs)), rhs).as<TS<i64>>();
+    const auto add_graph = [&](wp<TS<i64>> lhs, wp<TS<i64>> rhs) {
+        return add(opt(copy(lhs)), rhs);
     };
 
     CHECK(testing::test_graph(add_graph, {literal::INVALID, 3, literal::INVALID, 3}, {5, 5, 5, 5})
@@ -114,7 +114,7 @@ TEST_CASE("optional multiplication uses one for each invalid operand",
     }));
 
     const auto graph = [&](wp<TS<i64>> lhs, wp<TS<i64>> rhs) {
-        return multiply(opt(copy(lhs)), opt(copy(rhs))).as<TS<i64>>();
+        return multiply(opt(copy(lhs)), opt(copy(rhs)));
     };
 
     const auto actual = testing::test_graph(
@@ -131,7 +131,7 @@ TEST_CASE("default uses its fallback while the optional input is invalid",
     const auto copy = node([](i64 value) { return value; });
 
     const auto graph = [&](wp<TS<i64>> input) {
-        return operators::default_(opt(copy(input)), i64{}).as<TS<i64>>();
+        return operators::default_(opt(copy(input)), i64{});
     };
 
     CHECK(testing::test_graph(graph, {literal::INVALID, 3, literal::INVALID, 3}).equals({0, 3, 0, 3}));

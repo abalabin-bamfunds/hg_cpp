@@ -37,8 +37,7 @@ TEST_CASE("switch selects a case graph from its key",
                        case_(i64{1}, [](auto input) { return add(input, 10); }),
                        case_(i64{2}, [](auto input) { return add(input, 20); }),
                    },
-                   value)
-            .as<TS<i64>>();
+                   value);
     };
 
     const auto actual = testing::test_graph(tested, {1, 2, 2, 1}, {3, 3, 4, 5});
@@ -133,7 +132,7 @@ TEST_CASE("switch releases cached string graph arguments with its root wiring",
     });
 
     const auto tested = [&](wp<TS<i64>> key, wp<TS<string>> value) {
-        return switch_(key, cases{case_(i64{1}, identity), case_(DEFAULT, fallback)}, value).as<TS<string>>();
+        return switch_(key, cases{case_(i64{1}, identity), case_(DEFAULT, fallback)}, value);
     };
 
     const auto actual = testing::test_graph(
@@ -146,8 +145,7 @@ TEST_CASE("switch accepts an optional wiring argument as its key",
           "[feature:switch][feature:nested-graph][feature:operator][shape:nested]"
           "[series:value][validity:optional][definition:function]") {
     const auto tested = [](wp<TS<i64>> key, wp<TS<i64>> value) {
-        return switch_(opt(key), cases{case_(1, [](auto input) { return add(input, 10); })}, value)
-            .as<TS<i64>>();
+        return switch_(opt(key), cases{case_(1, [](auto input) { return add(input, 10); })}, value);
     };
 
     const auto actual = testing::test_graph(tested, {1, 1}, {3, 4});
@@ -169,8 +167,7 @@ TEST_CASE("switch uses DEFAULT for invalid and unmatched keys",
     const auto tested = [&](wp<TS<i64>> key, wp<TS<i64>> value) {
         return switch_(key,
                        cases{case_(i64{1}, selected), case_(DEFAULT, fallback)},
-                       value)
-            .as<TS<i64>>();
+                       value);
     };
 
     const auto actual = testing::test_graph(tested, {1, 9}, {2, 3});
@@ -184,8 +181,7 @@ TEST_CASE("switch reports an unmatched or invalid key without DEFAULT",
     const auto tested = [](wp<TS<i64>> key, wp<TS<i64>> value) {
         return switch_(key,
                        cases{case_(i64{1}, [](auto input) { return add(input, 1); })},
-                       value)
-            .as<TS<i64>>();
+                       value);
     };
 
     CHECK_THROWS_WITH(
@@ -195,8 +191,7 @@ TEST_CASE("switch reports an unmatched or invalid key without DEFAULT",
     const auto invalid_tested = [](wp<TS<i64>> key, wp<TS<i64>> value) {
         return switch_(optional_key(key),
                        cases{case_(i64{1}, [](auto input) { return add(input, 1); })},
-                       value)
-            .as<TS<i64>>();
+                       value);
     };
     CHECK_THROWS_WITH(
         (void)testing::test_graph(invalid_tested, {-1}, {5}),
@@ -217,8 +212,7 @@ TEST_CASE("an outputless DEFAULT explicitly invalidates a switch output",
                        case_(DEFAULT, [&](auto input) { recording_sink(input); }),
                        case_(1, [](auto input) { return add(input, 10); }),
                    },
-                   value)
-            .as<TS<i64>>();
+                   value);
     };
 
     const auto actual = testing::test_graph(tested, {1, 9}, {2, 3});
@@ -241,8 +235,7 @@ TEST_CASE("switch matches named graph arguments and omits unused named arguments
     const auto tested = [&](wp<TS<i64>> key, wp<TS<i64>> value,
                             wp<TS<i64>> unused) {
         return switch_(key, cases{case_(i64{1}, selected)},
-                       "selected"_n = value, "unused"_n = unused)
-            .as<TS<i64>>();
+                       "selected"_n = value, "unused"_n = unused);
     };
 
     const auto actual = testing::test_graph(
@@ -262,7 +255,7 @@ TEST_CASE("switch forwards positional arguments to a variadic case graph",
 
     const auto tested = [&](wp<TS<i64>> key, wp<TS<i64>> first,
                             wp<TS<i64>> second) {
-        return switch_(key, cases{case_(1, select_second)}, first, second).as<TS<i64>>();
+        return switch_(key, cases{case_(1, select_second)}, first, second);
     };
 
     const auto actual = testing::test_graph(
@@ -281,7 +274,7 @@ TEST_CASE("switch forwards named arguments to a variadic case graph",
         });
 
     const auto tested = [&](wp<TS<i64>> key, wp<TS<i64>> value) {
-        return switch_(key, cases{case_(1, select_item)}, "item"_n = value).as<TS<i64>>();
+        return switch_(key, cases{case_(1, select_item)}, "item"_n = value);
     };
 
     const auto actual = testing::test_graph(
@@ -297,8 +290,7 @@ TEST_CASE("switch captures scalar case arguments at wiring time",
         return switch_(
                    key,
                    cases{case_(1, [](auto input, int amount) { return add(input, amount); })},
-                   value, 10)
-            .as<TS<i64>>();
+                   value, 10);
     };
 
     const auto actual = testing::test_graph(
@@ -319,8 +311,7 @@ TEST_CASE("equal switch key ticks retain inner graph state and returning recreat
                        case_(i64{1}, [](auto input) { return stateful_case(input); }),
                        case_(i64{2}, [](auto input) { return stateful_case(input); }),
                    },
-                   value)
-            .as<TS<i64>>();
+                   value);
     };
 
     const auto actual = testing::test_graph(tested, {1, 1, 2, 1}, {1, 2, 3, 4});
@@ -341,8 +332,7 @@ TEST_CASE("switching between tuple keys recreates the case graph",
                        case_(std::tuple{1, 2},
                              [](auto input) { return stateful_case(input); }),
                    },
-                   value)
-            .as<TS<i64>>();
+                   value);
     };
 
     const auto actual = testing::test_graph(tested, {1, 1, 2, 2}, {1, 2, 3, 4});
@@ -360,8 +350,7 @@ TEST_CASE("switch supports source and sink case graphs",
                                                                   TimeSeriesGuarantee::const_>> {
                            return operators::const_(42).as<TS<i64,
                                                                TimeSeriesGuarantee::const_>>();
-                       })})
-            .as<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::deduplicated>>();
+                       })});
     };
     CHECK(testing::test_graph(source_tested, {1})
               .equals<i64>({42}));
@@ -397,8 +386,7 @@ TEST_CASE("switch accepts fully runtime cases and arguments",
         const auto runtime_arguments = std::array{WiringArgument{value}};
         return switch_(static_cast<WiringPoint>(key),
                        std::span<const SwitchCaseArgument>{runtime_cases},
-                       std::span<const WiringArgument>{runtime_arguments})
-            .as<TS<i64>>();
+                       std::span<const WiringArgument>{runtime_arguments});
     };
 
     CHECK(testing::test_graph(tested, {1, 2}, {2, 5})
@@ -432,12 +420,10 @@ TEST_CASE("runtime switch preserves an optional key qualifier",
         const auto runtime_arguments = std::array{WiringArgument{value}};
         const auto key_point = static_cast<WiringPoint>(key);
         const auto required = operation(key_point, std::span<const SwitchCaseArgument>{runtime_cases},
-                                         std::span<const WiringArgument>{runtime_arguments})
-                                  .as<TS<i64>>();
+                                         std::span<const WiringArgument>{runtime_arguments});
         const auto optional = operation(WiringArgument{opt(key)},
                                         std::span<const SwitchCaseArgument>{runtime_cases},
-                                        std::span<const WiringArgument>{runtime_arguments})
-                                  .as<TS<i64>>();
+                                        std::span<const WiringArgument>{runtime_arguments});
         return combine(required, optional);
     };
 
@@ -489,8 +475,7 @@ TEST_CASE("switch DEFAULT handles an invalid key",
                            case_(i64{1}, [](auto input) { return add(input, 10); }),
                            case_(DEFAULT, [](auto input) { return add(input, 100); }),
                        },
-                       value)
-            .as<TS<i64>>();
+                       value);
     };
 
     CHECK(testing::test_graph(tested, {1, -1}, {2, 3})
@@ -506,8 +491,7 @@ TEST_CASE("switch starts a DEFAULT source when its key is initially invalid",
                    cases{case_(DEFAULT, [] {
                        return operators::const_(7).as<TS<i64,
                                                           TimeSeriesGuarantee::const_>>();
-                   })})
-            .as<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::deduplicated>>();
+                   })});
     };
 
     CHECK(testing::test_graph(tested, {-1})
@@ -523,8 +507,7 @@ TEST_CASE("a switch inner graph reports timed work through its owner",
                               []() -> wp<TS<i64>> { return delayed_case(); });
 
     run_graph([&] {
-        const auto key = operators::const_(i64{1})
-                             .as<TS<i64, TimeSeriesGuarantee::const_>>();
+        const auto key = operators::const_(i64{1});
         (void)switch_(key, cases{case_(i64{1}, branch)});
     });
 
@@ -538,8 +521,7 @@ TEST_CASE("switches inside a map retain and replace state independently",
     const auto tested = [](wp<TSD<i64, TS<i64>>> values,
                            wp<TSD<i64, TS<i64>>> selectors) {
         const auto result = map(mapped_switch, values, selectors);
-        return add_mapped_results(result[i64{1}].as<TS<i64>>(),
-                                  result[i64{2}].as<TS<i64>>());
+        return add_mapped_results(result[i64{1}], result[i64{2}]);
     };
 
     const auto actual = testing::test_graph(
@@ -556,7 +538,7 @@ TEST_CASE("removing and recreating a map entry recreates its switch graph",
     const auto tested = [](wp<TSD<i64, TS<i64>>> values,
                            wp<TSD<i64, TS<i64>>> selectors) {
         const auto result = map(mapped_switch, values, selectors);
-        return result[i64{1}].as<TS<i64>>();
+        return result[i64{1}];
     };
 
     const auto actual = testing::test_graph(
@@ -573,7 +555,7 @@ TEST_CASE("an unmatched switch key inside a map fails the outer graph",
     const auto tested = [](wp<TSD<i64, TS<i64>>> values,
                            wp<TSD<i64, TS<i64>>> selectors) {
         const auto result = map(mapped_switch, values, selectors);
-        return result[i64{1}].as<TS<i64>>();
+        return result[i64{1}];
     };
 
     CHECK_THROWS_WITH(

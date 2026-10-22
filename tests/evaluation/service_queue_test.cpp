@@ -41,7 +41,7 @@ TEST_CASE("service requests dispatch to a worker and queued replies reach the cl
 
     run_graph(
         [&] {
-            const auto output = service_definition(operators::const_(i64{3})).as<TS<i64>>();
+            const auto output = service_definition(operators::const_(i64{3}));
             (void)node([&](i64 value) {
                 actual = value;
                 stop_source.request_stop();

@@ -20,7 +20,7 @@ TEST_CASE("one multiservice graph wires several reference service replies once",
     registration.register_impl(right);
 
     const auto add = node([](i64 left, i64 right, i64 tick) { return left + right + tick; });
-    const auto tested = [&](wp<TS<i64>> tick) { return add(left(1).as<TS<i64>>(), right().as<TS<i64>>(), tick); };
+    const auto tested = [&](wp<TS<i64>> tick) { return add(left(1), right(), tick); };
 
     const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {1, 2});
 
@@ -51,7 +51,7 @@ TEST_CASE("a multiservice graph receives subscription requests beside a referenc
 
     const auto add_tick = node([](i64 value, i64 tick) { return value + tick; });
     const auto tested = [&](wp<TS<i64>> tick) {
-        return add_tick(lookup(clock().as<TS<i64, TimeSeriesGuarantee::final>>()).as<TS<i64>>(), tick);
+        return add_tick(lookup(clock()), tick);
     };
 
     const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {2, 3});
@@ -88,7 +88,7 @@ TEST_CASE("multiservice service requests are addressable by declared parameter n
     registration.register_impl(combine);
 
     const auto tested = [&](wp<TS<i64>> integer, wp<TS<float>> fraction) {
-        return combine(integer, fraction).as<TS<float>>();
+        return combine(integer, fraction);
     };
 
     const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {2, 5}, {1.5F, 3.5F});
@@ -131,7 +131,7 @@ TEST_CASE("one multiservice graph handles subscription and service requests",
 
     const auto key_source = node<FinalKeySource<i64>>();
     const auto tested = [&](wp<TS<i64>> value) {
-        return add(lookup(key_source(1)).as<TS<i64>>(), transform(value).as<TS<i64>>());
+        return add(lookup(key_source(1)), transform(value));
     };
 
     CHECK(testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {1, 2, 3}).equals<i64>({111, 112, 113}));
@@ -187,7 +187,7 @@ TEST_CASE("an unused multiservice service request port can be wired",
     registration.register_impl(audit);
 
     const auto add = node([](i64 value, i64 tick) { return value + tick; });
-    const auto tested = [&](wp<TS<i64>> tick) { return add(clock().as<TS<i64>>(), tick); };
+    const auto tested = [&](wp<TS<i64>> tick) { return add(clock(), tick); };
 
     CHECK(testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {0}).equals<i64>({42}));
     CHECK(implementation_wirings == 1);
@@ -219,7 +219,7 @@ TEST_CASE("multiservice request bindings cross map graph boundaries",
                 return item;
             },
             values);
-        return mapped[i64{1}].as<TS<i64>>();
+        return mapped[i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {{{1, 3}}, {{1, 8}}});
@@ -256,7 +256,7 @@ TEST_CASE("multiservice claims select generic service signatures",
         output.set(static_cast<float>(*integer) + *fraction + static_cast<float>(*tick));
     });
     const auto tested = [&](wp<TS<i64>> tick) {
-        return add(identity[type<TS<i64>>]().as<TS<i64>>(), identity[type<TS<float>>]().as<TS<float>>(), tick);
+        return add(identity[type<TS<i64>>](), identity[type<TS<float>>](), tick);
     };
 
     CHECK(testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {0}).equals<float>({42.5F}));
@@ -293,7 +293,7 @@ TEST_CASE("multiservice claims separate service scalar values",
 
     const auto add = node([](i64 first, i64 second, i64 tick) { return first + second + tick; });
     const auto tested = [&](wp<TS<i64>> tick) {
-        return add(selected(1).as<TS<i64>>(), selected(2).as<TS<i64>>(), tick);
+        return add(selected(1), selected(2), tick);
     };
 
     CHECK(testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {1}).equals<i64>({31}));
@@ -346,7 +346,7 @@ TEST_CASE("multiservice catch-all forwards requests and replies while exact clai
         output.set(*first + *second + *third);
     });
     const auto tested = [&](wp<TS<i64>> value) {
-        return sum(routed(value, 1).as<TS<i64>>(), routed(value, 2).as<TS<i64>>(), routed(value, 3).as<TS<i64>>());
+        return sum(routed(value, 1), routed(value, 2), routed(value, 3));
     };
 
     const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {4, 6});
@@ -399,8 +399,7 @@ TEST_CASE("multiservice catch-all claims filter unlifted scalar arguments",
         output.set(*first + *second + *third);
     });
     const auto tested = [&](wp<TS<i64>> value) {
-        return sum(routed(value, 1, 3).as<TS<i64>>(), routed(value, 1, 4).as<TS<i64>>(),
-                   routed(value, 2, 8).as<TS<i64>>());
+        return sum(routed(value, 1, 3), routed(value, 1, 4), routed(value, 2, 8));
     };
 
     CHECK(testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {5}).equals<i64>({124}));
@@ -420,7 +419,7 @@ TEST_CASE("overlapping multiservice catch-all claims are ambiguous",
     registration.register_catch_all(routed, "instance"_sym);
     registration.register_catch_all(routed, "instance"_sym, "group"_n = 1);
 
-    const auto tested = [&](wp<TS<i64>> value) { return routed(value, 1, 7).as<TS<i64>>(); };
+    const auto tested = [&](wp<TS<i64>> value) { return routed(value, 1, 7); };
     CHECK_THROWS_WITH(testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {5}),
                       Catch::Matchers::ContainsSubstring("ambiguous implementations"));
 }
@@ -454,7 +453,7 @@ TEST_CASE("an exact multiservice claim ignores overlapping unused catch-all clai
     registration.register_catch_all(routed, "instance"_sym);
     registration.register_catch_all(routed, "instance"_sym, "group"_n = 1);
 
-    const auto tested = [&](wp<TS<i64>> value) { return routed(value, 2, 8).as<TS<i64>>(); };
+    const auto tested = [&](wp<TS<i64>> value) { return routed(value, 2, 8); };
     CHECK(testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {5}).equals<i64>({105}));
 }
 
@@ -502,7 +501,7 @@ TEST_CASE("regular exact implementations take precedence over multiservice catch
         output.set(*exact + *second + *third);
     });
     const auto tested = [&](wp<TS<i64>> value) {
-        return sum(routed(value, 1).as<TS<i64>>(), routed(value, 2).as<TS<i64>>(), routed(value, 3).as<TS<i64>>());
+        return sum(routed(value, 1), routed(value, 2), routed(value, 3));
     };
 
     const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {4, 6});
@@ -560,8 +559,8 @@ TEST_CASE("multiservice catch-all ports select a resolved generic service signat
         output.set(static_cast<float>(*integer) + *fraction);
     });
     const auto tested = [&](wp<TS<i64>> integer, wp<TS<float>> fraction) {
-        return add(routed[type<VALUE> = type<i64>](integer, 1).as<TS<i64>>(),
-                   routed[type<VALUE> = type<float>](fraction, 2).as<TS<float>>());
+        return add(routed[type<VALUE> = type<i64>](integer, 1),
+                   routed[type<VALUE> = type<float>](fraction, 2));
     };
 
     const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {3, 7}, {0.5F, 1.5F});

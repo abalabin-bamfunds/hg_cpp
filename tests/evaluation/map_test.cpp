@@ -51,7 +51,7 @@ TEST_CASE("map applies an inner graph's omitted scalar default",
         {"item"_n, "amount"_n = i64{2}},
         [=](wp<TS<i64>> item, i64 amount) { return add(item, amount); });
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
-        return map(add_default, values)[i64{1}].as<TS<i64>>();
+        return map(add_default, values)[i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 2}}, {{1, 5}}});
@@ -64,8 +64,7 @@ TEST_CASE("map invokes a generic graph function",
           "[definition:function]") {
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
         return map([](auto item) { return increment(item); }, values)
-            [i64{1}]
-                .as<TS<i64>>();
+            [i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 2}}, {{1, 5}}});
@@ -78,7 +77,7 @@ TEST_CASE("map invokes a graph function with a const wiring-point reference para
           "[definition:function]") {
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
         const auto result = map([](const wp<TS<i64>> &item) { return increment(item); }, values);
-        return result[i64{1}].as<TS<i64>>();
+        return result[i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 2}}, {{1, 5}}});
@@ -99,7 +98,7 @@ TEST_CASE("map generic graph functions preserve optional reference arguments",
                 return increment(item);
             },
             values, pass_through(context));
-        return result[i64{1}].as<TS<i64>>();
+        return result[i64{1}];
     };
 
     const auto actual = testing::test_graph(
@@ -135,7 +134,7 @@ TEST_CASE("map preserves a final item target through a nested dictionary referen
                 return read_value(item);
             },
             nested_dictionary);
-        return mapped[i64{1}].as<TS<i64>>();
+        return mapped[i64{1}];
     };
 
     CHECK(testing::test_graph(tested, std::array{17}, std::array{true}).equals<i64>({17}));
@@ -163,8 +162,7 @@ TEST_CASE("map invokes a graph through runtime arguments",
         const WiringTemplate &runtime_graph = mapped;
         const auto runtime_arguments = std::span<const MapArgument>{arguments};
         return map(runtime_graph, runtime_arguments)
-            [i64{1}]
-                .as<TS<i64>>();
+            [i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 3}}, {{1, 7}}});
@@ -177,8 +175,7 @@ TEST_CASE("map passes a named argument positionally to a graph function",
           "[series:tsd][shape:nested][definition:function]") {
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
         return map([](auto item) { return increment(item); },
-                   "item"_n = values)[i64{1}]
-            .as<TS<i64>>();
+                   "item"_n = values)[i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 2}}, {{1, 5}}});
@@ -197,8 +194,7 @@ TEST_CASE("map retains a named argument for a graph template",
 
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
         return map(named_identity,
-                   "item"_n = values)[i64{1}]
-            .as<TS<i64>>();
+                   "item"_n = values)[i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 2}}, {{1, 5}}});
@@ -234,7 +230,7 @@ TEST_CASE("map retains a named reference collection as a variadic graph argument
         const auto reference_context = nested(build_context, run, context);
         const auto result = map(named_identity, "item"_n = values,
                                 "context"_n = pass_through(reference_context));
-        return result[i64{1}].as<TS<i64>>();
+        return result[i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 2}}, {{1, 5}}}, {10, 20}, {true, true});
@@ -251,8 +247,7 @@ TEST_CASE("map infers a leading key for a graph function with an output",
 
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
         return map([&](auto key, auto item) { return add_key(item, key); },
-                   values)[i64{1}]
-            .as<TS<i64>>();
+                   values)[i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 3}}, {{1, 7}}});
@@ -270,8 +265,7 @@ TEST_CASE("map passes a const key to an indexed graph parameter",
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
         return map([&](auto item, auto key) { return add_key(item, key); },
                    values, "__key_arg__"_n = 1)
-            [i64{1}]
-                .as<TS<i64>>();
+            [i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 3}}, {{1, 7}}});
@@ -293,7 +287,7 @@ TEST_CASE("map uses the union of mapped TSD key sets",
 
     const auto tested = [&](wp<TSD<i64, TS<i64>>> left, wp<TSD<i64, TS<i64>>> right) {
         const auto result = map(sum, left, right);
-        return result[i64{2}].as<TS<i64>>();
+        return result[i64{2}];
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 1}}, {{1, 3}}}, {{{2, 10}}, {{2, 30}}});
@@ -313,8 +307,7 @@ TEST_CASE("map runs a source graph for keys selected by a TSS",
     const auto source = graph<KeySourceGraph>();
 
     const auto tested = [&](wp<TSS<i64>> keys) {
-        return map(source, keys)[i64{7}]
-            .as<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::ordinary>>();
+        return map(source, keys)[i64{7}];
     };
 
     const auto actual = testing::test_graph(tested, {{7}, {literal::REMOVED(7)}, {7}});
@@ -326,8 +319,7 @@ TEST_CASE("map infers a leading key for a source graph function",
           "[feature:map][feature:nested-graph][feature:operator][series:tss][series:tsd]"
           "[shape:nested][guarantee:const][definition:function]") {
     const auto tested = [&](wp<TSS<i64>> keys) {
-        return map([](auto key) { return key; }, keys)[i64{3}]
-            .as<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::ordinary>>();
+        return map([](auto key) { return key; }, keys)[i64{3}];
     };
 
     const auto actual = testing::test_graph(tested, {{3}, {literal::REMOVED(3)}, {3}});
@@ -341,7 +333,7 @@ TEST_CASE("a map key schedules its consumer when a branch starts",
     const auto copy_key = node([](In<TS<i64, TimeSeriesGuarantee::const_>> key) { return *key; });
 
     const auto tested = [&](wp<TSS<i64>> keys) {
-        return map([&](auto key) { return copy_key(key); }, keys)[i64{5}].as<TS<i64>>();
+        return map([&](auto key) { return copy_key(key); }, keys)[i64{5}];
     };
 
     const auto actual = testing::test_graph(tested, {{5}, {literal::REMOVED(5)}, {5}});
@@ -356,9 +348,9 @@ TEST_CASE("map supports sink graph functions",
 
     const auto sink = node([&](i64 value) { recorded_values.push_back(value); });
 
-    const auto tested = [&](wp<TSD<i64, TS<i64>>> input) -> wp<TS<i64>> {
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> input) {
         map([&](auto item) { sink(item); }, input);
-        return input[i64{1}].as<TS<i64>>();
+        return input[i64{1}];
     };
     const auto actual = testing::test_graph(tested, {{{1, 1}}, {{1, 2}}, {{1, 3}}});
 
@@ -377,7 +369,7 @@ TEST_CASE("map uses an explicitly selected TSD key set",
                             wp<TSD<i64, TS<i64>>> key_set) {
         const auto result = map(select_value, values, key_set,
                                 "__key_set_arg__"_n = 1);
-        return result[i64{1}].as<TS<i64>>();
+        return result[i64{1}];
     };
 
     const auto actual = testing::test_graph(
@@ -394,8 +386,7 @@ TEST_CASE("map uses an explicitly selected TSS key set for a source graph",
         const auto result = map(
             [](auto, auto key) { return key; }, other_keys, selected_keys,
             "__key_arg__"_n = 1, "__key_set_arg__"_n = 1);
-        return result[i64{1}]
-            .as<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::ordinary>>();
+        return result[i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, {{2}}, {{1}});
@@ -409,13 +400,13 @@ TEST_CASE("a pass-through TSD remains one input to every mapped graph",
     const auto add_factor = graph(
         "name"_n = "add_factor",
         [](wp<TS<i64>> value, wp<TSD<i64, TS<i64>>> factor_by_key) {
-            return add_values(value, factor_by_key[i64{9}].as<TS<i64>>());
+            return add_values(value, factor_by_key[i64{9}]);
         });
 
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values,
                             wp<TSD<i64, TS<i64>>> factors) {
         const auto result = map(add_factor, values, pass_through(factors));
-        return result[i64{1}].as<TS<i64>>();
+        return result[i64{1}];
     };
 
     const auto actual = testing::test_graph(
@@ -431,8 +422,8 @@ TEST_CASE("map passes direct and reference TSD inputs through to every mapped gr
         "name"_n = "add_direct_and_reference_factors",
         [](wp<TS<i64>> value, wp<TSD<i64, TS<i64>>> direct_factors,
            wp<TSD<i64, TS<i64>>> reference_factors) {
-            const auto direct = direct_factors[i64{9}].as<TS<i64>>();
-            const auto reference = reference_factors[i64{9}].as<TS<i64>>();
+            const auto direct = direct_factors[i64{9}];
+            const auto reference = reference_factors[i64{9}];
             return add_values(add_values(value, direct), reference);
         });
 
@@ -450,7 +441,7 @@ TEST_CASE("map passes direct and reference TSD inputs through to every mapped gr
         const auto reference = nested(make_factors, run, reference_factor);
         const auto result = map(add_factor, values, pass_through(direct_factors),
                                 pass_through(reference));
-        return result[i64{1}].as<TS<i64>>();
+        return result[i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 2}}, {{1, 3}}, {{1, 4}}},
@@ -489,7 +480,7 @@ TEST_CASE("a mapped inner graph survives one TSD item removal while another TSD 
 
     const auto tested = [&](wp<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> first,
                             wp<TSD<i64, TS<i64>>> second) {
-        return map(branch, first, second)[i64{7}].as<TS<i64>>();
+        return map(branch, first, second)[i64{7}];
     };
     RetainedMappedSum::starts = 0;
     RetainedMappedSum::stops = 0;
@@ -551,8 +542,7 @@ TEST_CASE("map selects a key parameter by name",
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
         const auto result = map(graph<NamedMapKey>(), "value"_n = values,
                                 "__key_arg__"_n = "selected_key");
-        return result[i64{1}]
-            .as<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::ordinary>>();
+        return result[i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 3}}, {{1, 8}}});
@@ -571,7 +561,7 @@ TEST_CASE("map reads a TSD through a nested graph reference",
         const auto nested_values = nested(build_values, run, value);
         const auto result = map(
             [](auto item) { return increment(item); }, nested_values);
-        return result[i64{1}].as<TS<i64>>();
+        return result[i64{1}];
     };
 
     const auto actual = testing::test_graph(
@@ -599,8 +589,7 @@ TEST_CASE("map reads a TSS through a nested graph reference",
         const auto nested_keys = nested(build_keys, run, present);
         const auto result = map(
             [](auto key) { return key; }, nested_keys, "__key_arg__"_n = 0);
-        return result[i64{1}]
-            .as<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::ordinary>>();
+        return result[i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, {true, false, true}, {true, true, true});
@@ -627,7 +616,7 @@ TEST_CASE("map reads values using a nested TSS reference as its key set",
         const auto reference_keys = nested(build_keys, run, present);
         const auto result = map([](auto, auto item) { return item; }, values, reference_keys,
                                 "__key_arg__"_n = 0, "__key_set_arg__"_n = 1);
-        return result[i64{1}].as<TS<i64>>();
+        return result[i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 10}}, {{1, 20}}, {{1, 30}}},

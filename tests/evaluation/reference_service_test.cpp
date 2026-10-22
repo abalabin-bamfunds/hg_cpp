@@ -35,10 +35,9 @@ TEST_CASE("reference service output crosses switch boundaries",
 
     const auto tested = [&](wp<TS<i64>> selector, wp<TS<i64>> value) {
         return switch_(selector,
-                       cases{case_(1, [&](auto input) { return add(service().as<TS<i64>>(), input); }),
-                             case_(2, [&](auto input) { return add(service().as<TS<i64>>(), input); })},
-                       value)
-            .as<TS<i64>>();
+                       cases{case_(1, [&](auto input) { return add(service(), input); }),
+                             case_(2, [&](auto input) { return add(service(), input); })},
+                       value);
     };
     const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue},
                                             {1, 2, 1}, {4, 8, 3});
@@ -107,7 +106,7 @@ TEST_CASE("a changing service reference reaches clients through two nested bound
 
     const auto middle =
         graph("name"_n = "service_middle", [&] { return nested(leaf, operators::const_(true)).as<TS<i64>>(); });
-    const auto outer = [&] { return nested(middle, operators::const_(true)).as<TS<i64>>(); };
+    const auto outer = [&] { return nested(middle, operators::const_(true)); };
     const auto actual = testing::test_graph(outer, GraphRunOptions{.services = &catalogue});
 
     CHECK(actual.equals<i64>({42, 84}));
@@ -125,7 +124,7 @@ TEST_CASE("run_graph builds registered services before compilation",
     auto values = std::vector<i64>{};
     const auto observe = node([&](i64 value) { values.push_back(value); });
 
-    const auto wire = [&] { observe(service().as<TS<i64>>()); };
+    const auto wire = [&] { observe(service()); };
 
     run_graph(wire, GraphRunOptions{.services = &catalogue});
 

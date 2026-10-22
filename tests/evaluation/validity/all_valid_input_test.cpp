@@ -273,8 +273,7 @@ TEST_CASE("all_valid follows a selected reference using the declared base schema
                            wp<TS<i64>> changing) {
         const auto second = bundle<TSB<ValidityDerivedBundle>>(
             "value"_n = changing_value(changing), "extra"_n = operators::const_(i64{2}));
-        return inspect(select(choose_second, first.as<REF<TSB<ValidityDerivedBundle>>>(),
-                              second.as<REF<TSB<ValidityDerivedBundle>>>()));
+        return inspect(select(choose_second, first, second));
     };
 
     CHECK(testing::test_graph(graph, {0, 1, 1}, {{{"value", 1}}},
@@ -403,7 +402,7 @@ TEST_CASE("all_valid checks sampled TSD item values as they invalidate and reval
     const auto report = node([](In<TS<i64>, optional> input) { return input.valid(); });
 
     const auto graph = [&] {
-        const auto dictionary = make_dictionary(target().as<REF<TS<i64>>>());
+        const auto dictionary = make_dictionary(target());
         return report(sum(dictionary));
     };
 
@@ -437,8 +436,7 @@ TEST_CASE("all_valid checks live items in sampled native dictionaries",
     const auto graph = bg::graph(
         "name"_n = "sampled_native_dictionary",
         [&](wp<TS<i64>> selection, wp<TSD<i64, TS<i64>>> first, wp<TSD<i64, TS<i64>>> second) {
-        const auto selected = select(selection, first.as<REF<TSD<i64, TS<i64>>>>(),
-                                     second.as<REF<TSD<i64, TS<i64>>>>());
+        const auto selected = select(selection, first, second);
         return inspect(selected);
     });
 
@@ -496,7 +494,7 @@ TEST_CASE("all_valid on a reference checks the reference rather than its target 
     const auto inspect = node([](In<REF<TSL<TS<i64>, 2>>, all_valid> input) { return input.valid(); });
 
     const auto graph = [&](wp<TSL<TS<i64>, 2>> input) {
-        return inspect(input.as<REF<TSL<TS<i64>, 2>>>());
+        return inspect(input);
     };
 
     CHECK(testing::test_graph(graph, {{{0, 10}}}).equals({true}));

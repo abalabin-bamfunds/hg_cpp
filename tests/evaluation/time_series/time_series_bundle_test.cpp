@@ -95,7 +95,7 @@ TEST_CASE("a span-backed free TSB retains its fields through materialisation and
             auto fields = std::vector<WiringArgument>{};
             fields.emplace_back(util::symbol{"count"}, count);
             fields.emplace_back(util::symbol{"value"}, value);
-            return bundle(std::span<const WiringArgument>{fields}).as<TSB<DerivedBundle>>();
+            return bundle(std::span<const WiringArgument>{fields});
         }();
         return sum(collection);
     };
@@ -123,7 +123,7 @@ TEST_CASE("an empty free TSB publishes valid at graph start",
 
     const auto graph = [&] {
         const auto fields = std::vector<WiringArgument>{};
-        return observe(bundle(fields).as<TSB<EmptyBundle>>());
+        return observe(bundle(fields));
     };
 
     CHECK(testing::test_graph(graph).equals({1}));

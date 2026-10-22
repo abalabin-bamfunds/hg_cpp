@@ -31,7 +31,7 @@ TEST_CASE("map applies a graph to a TSD item",
     const auto increment = node([](i64 value) { return value + 1; });
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> values) {
-        return map([&](auto value) { return increment(value); }, values)[i64{1}].as<TS<i64>>();
+        return map([&](auto value) { return increment(value); }, values)[i64{1}];
     };
 
     const auto actual = testing::test_graph(graph, {{{1, 2}}});
@@ -464,12 +464,12 @@ TEST_CASE("map starts and stops one inner graph repeatedly",
     const auto graph = [&](wp<TS<i64>> command) {
         const auto values = make_values(command, target(command));
         const auto mapped = map([&](auto key, auto value) { return add_key(value, key); }, values);
-        return mapped[i64{1}].as<TS<i64>>();
+        return mapped[i64{1}];
     };
 
     const auto actual = testing::test_graph(graph, {1, 2, -1, 3, -1, 4});
 
-    CHECK(actual.equals({2, 3, std::nullopt, 4, std::nullopt, 5}));
+    CHECK(actual.equals<i64>({2, 3, std::nullopt, 4, std::nullopt, 5}));
 }
 
 TEST_CASE("mapped target ticks evaluate only the selected inner graph",
@@ -502,7 +502,7 @@ TEST_CASE("map evaluates more inner graphs than the ready bitmap inline capacity
     });
 
     const auto graph = [&](wp<TS<i64>> value) {
-        wire_sink_map(make_values(value.as<REF<TS<i64>>>()));
+        wire_sink_map(make_values(value));
         return value;
     };
     MapSink::values.clear();
@@ -688,7 +688,7 @@ TEST_CASE("a map consumes and produces TSD references across two nested graph bo
         node([](In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) { output[1].copy(value); });
     const auto build_dictionary =
         graph("name"_n = "build_dictionary", [&](wp<TS<i64>> value) -> wp<TSD<i64, REF<TS<i64>>>> {
-            return make_values(value.as<REF<TS<i64>>>());
+            return make_values(value);
         });
 
     const auto apply_map = graph("name"_n = "apply_map",

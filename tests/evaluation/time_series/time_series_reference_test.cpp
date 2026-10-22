@@ -159,7 +159,7 @@ TEST_CASE("an ordinary reference can retarget a value input between stronger tar
         });
 
     const auto graph = [&](wp<TS<bool>> use_constant) {
-        const auto constant_value = operators::const_(2.0).as<TS<double, TimeSeriesGuarantee::const_>>();
+        const auto constant_value = operators::const_(2.0);
         const auto selected = select(use_constant, final_value(), constant_value);
         const auto output = copy(selected);
 
@@ -253,10 +253,8 @@ TEST_CASE("a materialized free TSL samples retargeted ordinary references",
                output) { output.copy(*use_second ? second : first); });
 
     const auto graph = [&](wp<TS<bool>> use_second) {
-        const auto first = operators::const_(i64{4}).as<
-            TS<i64, TimeSeriesGuarantee::const_>>();
-        const auto second = operators::const_(i64{7}).as<
-            TS<i64, TimeSeriesGuarantee::const_>>();
+        const auto first = operators::const_(i64{4});
+        const auto second = operators::const_(i64{7});
         const auto values = tsl(select(use_second, first, second));
         const auto &type = dynamic_cast<const TimeSeriesListType &>(values.type());
         CHECK(type.item_type().guarantee().value() == TimeSeriesGuarantee::ordinary);
@@ -1385,7 +1383,7 @@ TEST_CASE("a sampled TSS output includes a same-cycle change to the previous tar
 
     const auto graph = [&](wp<TS<bool>> condition, wp<TSS<i64>> old_target,
                            wp<TSS<i64>> new_target) {
-        return select(condition, old_target, new_target).as<TSS<i64>>();
+        return select(condition, old_target, new_target);
     };
 
     const auto same_cycle_change = testing::test_graph(

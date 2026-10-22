@@ -37,7 +37,7 @@ TEST_CASE("service publishes each valid client input and selects its response",
             output.set(*input);
         }
     });
-    const auto tested = [&](wp<TS<i64>> input) { return service(invalidate_zero(input)).as<TS<i64>>(); };
+    const auto tested = [&](wp<TS<i64>> input) { return service(invalidate_zero(input)); };
 
     const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {2, 3, 0, 4, 0});
 
@@ -106,7 +106,7 @@ TEST_CASE("service keeps a client active while any input is valid",
         }
     });
     const auto tested = [&](wp<TS<i64>> integer, wp<TS<float>> fraction) {
-        return service(invalidate_zero(integer), invalidate_negative(fraction)).as<TS<float>>();
+        return service(invalidate_zero(integer), invalidate_negative(fraction));
     };
 
     const auto actual = testing::test_graph(
@@ -137,7 +137,7 @@ TEST_CASE("service arguments bind by implementation signature before wiring",
               [&](wp<TSD<service_client_id_t, TS<i64>>, "second"_n> second, i64 offset,
                   wp<TSD<service_client_id_t, TS<i64>>, "first"_n> first) { return add(second, offset, first); });
 
-    const auto tested = [&](wp<TS<i64>> first, wp<TS<i64>> second) { return service(first, second).as<TS<i64>>(); };
+    const auto tested = [&](wp<TS<i64>> first, wp<TS<i64>> second) { return service(first, second); };
 
     auto direct_catalogue = ServiceCatalogue{};
     direct_catalogue.register_impl(service, implementation, 10);
@@ -179,7 +179,7 @@ TEST_CASE("feedback service wrapper delays requests into its nested implementati
 
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, feedback_service_implementation(service, implementation));
-    const auto tested = [&](wp<TS<i64>> value) { return service(value).as<TS<i64>>(); };
+    const auto tested = [&](wp<TS<i64>> value) { return service(value); };
 
     const auto actual = testing::test_graph(
         tested, GraphRunOptions{.services = &catalogue}, {2, 4, 6});
@@ -221,8 +221,8 @@ TEST_CASE("feedback service wrapper maps generic types and forwards scalar argum
                             "route"_n = 22, 9);
     const auto add = node([](i64 first, i64 second) { return first + second; });
     const auto tested = [&](wp<TS<i64>> value) {
-        const auto first = service[type<VALUE> = type<i64>](value, 11).as<TS<i64>>();
-        const auto second = service[type<VALUE> = type<i64>](value, 22).as<TS<i64>>();
+        const auto first = service[type<VALUE> = type<i64>](value, 11);
+        const auto second = service[type<VALUE> = type<i64>](value, 22);
         return add(first, second);
     };
 
@@ -252,7 +252,7 @@ TEST_CASE("feedback service wrapper caps a final client request to ordinary",
 
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, feedback_service_implementation(service, implementation));
-    const auto tested = [&] { return service(bg::operators::const_(i64{7})).as<TS<i64>>(); };
+    const auto tested = [&] { return service(bg::operators::const_(i64{7})); };
 
     const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue});
     CHECK(actual.equals<i64>({std::nullopt, 7}));
@@ -293,8 +293,8 @@ TEST_CASE("service keeps an unbound reference request as an invalid item",
         }
     });
     const auto tested = [&](wp<TS<i64>> stable, wp<TS<i64>> target, wp<TS<bool>> select) {
-        const auto selected = select_reference(select, target.as<REF<TS<i64>>>());
-        return service(stable, selected).as<TS<i64>>();
+        const auto selected = select_reference(select, target);
+        return service(stable, selected);
     };
 
     const auto actual = testing::test_graph(
@@ -378,8 +378,8 @@ TEST_CASE("service scalar arguments select separate implementations", "[feature:
     const auto sum = node([](i64 first, i64 second) { return first + second; });
 
     const auto tested = [&](wp<TS<i64>> input) {
-        const auto first = service(input, 10).as<TS<i64>>();
-        const auto second = service(input, 20).as<TS<i64>>();
+        const auto first = service(input, 10);
+        const auto second = service(input, 20);
         return sum(first, second);
     };
 
@@ -425,7 +425,7 @@ TEST_CASE("catch-all service combines unmatched scalar instances and yields to a
     catalogue.register_impl(service, catch_all);
     catalogue.register_impl(service, exact, "instance"_n = 2);
     const auto tested = [&](wp<TS<i64>> value) {
-        return sum(service(value, 1).as<TS<i64>>(), service(value, 2).as<TS<i64>>(), service(value, 3).as<TS<i64>>());
+        return sum(service(value, 1), service(value, 2), service(value, 3));
     };
 
     const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {4, 6});
@@ -464,7 +464,7 @@ TEST_CASE("catch-all services lift multiple scalar parameters",
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
     const auto tested = [&](wp<TS<i64>> value) {
-        return sum(service(value, 10, 100).as<TS<i64>>(), service(value, 20, 200).as<TS<i64>>());
+        return sum(service(value, 10, 100), service(value, 20, 200));
     };
 
     CHECK(testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {1, 2}).equals<i64>({332, 334}));
@@ -555,7 +555,7 @@ TEST_CASE("catch-all service clients inside map and switch branches forward thei
                     .template as<TS<i64>>();
             },
             values, selectors);
-        return mapped[i64{5}].as<TS<i64>>();
+        return mapped[i64{5}];
     };
 
     const auto actual =
@@ -589,7 +589,7 @@ TEST_CASE("feedback delays catch-all service replies while forwarding scalar val
     const auto sum =
         node([](In<TS<i64>> first, In<TS<i64>> second, Out<TS<i64>> output) { output.set(*first + *second); });
     const auto tested = [&](wp<TS<i64>> value) {
-        return sum(service(value, 10).as<TS<i64>>(), service(value, 20).as<TS<i64>>());
+        return sum(service(value, 10), service(value, 20));
     };
 
     const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {1, 2, 3});
@@ -616,7 +616,7 @@ TEST_CASE("subscription implementation receives named installation inputs after 
     const auto key_source = node<FinalKeySource<i64>>();
     const auto tested = [&](wp<TS<i64>> factor) {
         catalogue.register_impl(service, implementation, "route"_n = 10, factor, 100);
-        return service(key_source(1), 10).as<TS<i64>>();
+        return service(key_source(1), 10);
     };
 
     const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {2, 3, 4});
@@ -653,7 +653,7 @@ TEST_CASE("service clients in map branches withdraw requests when branches stop"
                 return value;
             },
             values);
-        return mapped[i64{5}].as<TS<i64>>();
+        return mapped[i64{5}];
     };
 
     const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue},
@@ -712,7 +712,7 @@ TEST_CASE("service clients follow repeated switch changes after a map branch ret
                     .template as<TS<i64>>();
             },
             values, selected_case);
-        return mapped[i64{5}].as<TS<i64>>();
+        return mapped[i64{5}];
     };
 
     const auto actual = testing::test_graph(
@@ -744,8 +744,8 @@ TEST_CASE("service rejects a response cycle through a client input",
     catalogue.register_impl(service, implementation);
 
     const auto tested = [&](wp<TS<i64>> input) {
-        const auto first = service(input).as<TS<i64>>();
-        return service(first).as<TS<i64>>();
+        const auto first = service(input);
+        return service(first);
     };
 
     auto diagnostic = std::string{};

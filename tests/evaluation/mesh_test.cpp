@@ -33,7 +33,7 @@ TEST_CASE("mesh evaluates a dependency branch before the branch that depends on 
         const auto result =
             mesh([](auto item, auto dependency_key) { return add_mesh_dependency(item, mesh()[dependency_key]); },
                  values, dependencies);
-        return result[i64{2}].as<TS<i64>>();
+        return result[i64{2}];
     };
 
     const auto actual = testing::test_graph(tested, {{{2, 10}, {1, 1}}, {{2, 30}, {1, 3}}}, {{{2, 1}}, {{2, 1}}});
@@ -114,7 +114,7 @@ TEST_CASE("mesh resumes a dependency node after its dependency completes",
                 return record_mesh_completion(key, value, mesh()[recorded_key]);
             },
             values, dependencies, "__key_arg__"_n = 0);
-        return result[i64{2}].as<TS<i64>>();
+        return result[i64{2}];
     };
 
     const auto actual = testing::test_graph(tested, {{{2, 20}, {1, 10}}}, {{{2, 1}}});
@@ -133,8 +133,7 @@ TEST_CASE("mesh creates a branch for a requested missing key",
                 return key;
             },
             dependencies, "__key_arg__"_n = 0);
-        return result[i64{1}].as<REF<TS<i64, TimeSeriesGuarantee::const_>,
-                                              TimeSeriesGuarantee::ordinary>>();
+        return result[i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, {{{2, 1}}});
@@ -150,7 +149,7 @@ TEST_CASE("mesh follows a time-series dependency key",
         const auto result =
             mesh([](auto item, auto dependency_key) { return add_mesh_dependency(item, mesh()[dependency_key]); },
                  values, dependencies);
-        return result[i64{2}].as<TS<i64>>();
+        return result[i64{2}];
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 1}, {2, 10}, {3, 100}}, {{1, 2}, {2, 20}, {3, 200}}},
@@ -167,7 +166,7 @@ TEST_CASE("mesh invalidates a dependency when the dependency branch output becom
         const auto result =
             mesh([](auto item, auto dependency_key) { return add_mesh_dependency(item, mesh()[dependency_key]); },
                  values, dependencies);
-        return result[i64{2}].as<TS<i64>>();
+        return result[i64{2}];
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 1}, {2, 10}}, {{1, literal::REMOVE}, {2, 20}}},
@@ -187,8 +186,7 @@ TEST_CASE("mesh retains a dependency-only branch until its last dependent is rem
                 return key;
             },
             values, dependencies, "__key_arg__"_n = 0);
-        return result[i64{1}].as<REF<TS<i64, TimeSeriesGuarantee::const_>,
-                                              TimeSeriesGuarantee::ordinary>>();
+        return result[i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, {{{2, 7}}, {{2, literal::REMOVE}}, {{2, 9}}},
@@ -208,8 +206,7 @@ TEST_CASE("mesh destroys removed dependent branches and their dependency branche
                 return key;
             },
             values, dependencies, "__key_arg__"_n = 0);
-        return result[i64{1}].as<REF<TS<i64, TimeSeriesGuarantee::const_>,
-                                              TimeSeriesGuarantee::ordinary>>();
+        return result[i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, {{{2, 7}}, {{2, literal::REMOVE}}, {{2, literal::REMOVE}}},
@@ -229,8 +226,7 @@ TEST_CASE("mesh destroys a removed dependency while its dependent remains",
                 return key;
             },
             values, dependencies, "__key_arg__"_n = 0);
-        return result[i64{2}].as<REF<TS<i64, TimeSeriesGuarantee::const_>,
-                                              TimeSeriesGuarantee::ordinary>>();
+        return result[i64{2}];
     };
 
     const auto actual = testing::test_graph(tested, {{{2, 7}}, {{2, 8}}, {{2, 9}}},
@@ -250,8 +246,7 @@ TEST_CASE("mesh transfers a dependency after its previous dependent releases it"
                 return key;
             },
             values, dependencies, "__key_arg__"_n = 0);
-        return result[i64{3}].as<REF<TS<i64, TimeSeriesGuarantee::const_>,
-                                              TimeSeriesGuarantee::ordinary>>();
+        return result[i64{3}];
     };
 
     const auto actual = testing::test_graph(tested,
@@ -268,7 +263,7 @@ TEST_CASE("mesh rejects self and multi-branch dependency cycles",
         const auto result =
             mesh([](auto item, auto dependency_key) { return add_mesh_dependency(item, mesh()[dependency_key]); },
                  values, dependencies);
-        return result[i64{1}].as<TS<i64>>();
+        return result[i64{1}];
     };
 
     CHECK_THROWS_AS(testing::test_graph(tested, {{{2, 1}}}, {{{1, 1}}}), std::runtime_error);
@@ -298,7 +293,7 @@ TEST_CASE("mesh evaluates a shared dependency once",
             },
             values, first_dependencies, second_dependencies,
             "__key_arg__"_n = 0);
-        return result[i64{1}].as<TS<i64>>();
+        return result[i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 0}, {2, 0}, {3, 0}, {4, 0}}},
@@ -326,7 +321,7 @@ TEST_CASE("mesh does not reevaluate a clean dependency branch",
             mesh([&](auto key, auto item,
                      auto dependency_key) { return count_mesh_dependency(key, item, mesh()[dependency_key]); },
                  values, dependencies, "__key_arg__"_n = 0);
-        return result[i64{2}].as<TS<i64>>();
+        return result[i64{2}];
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 1}, {2, 10}}, {{2, 20}}}, {{{2, 1}}, {{2, 1}}});
@@ -355,7 +350,7 @@ TEST_CASE("mesh runs inside map", "[feature:mesh][feature:map][feature:nested-gr
                 return result[i64{2}].template as<TS<i64>>();
             },
             values);
-        return outer[i64{5}].as<TS<i64>>();
+        return outer[i64{5}];
     };
 
     const auto actual = testing::test_graph(tested, {{{5, 1}}, {{5, 3}}});
@@ -375,7 +370,7 @@ TEST_CASE("map runs inside mesh", "[feature:mesh][feature:map][feature:nested-gr
                 return result[i64{5}].template as<TS<i64>>();
             },
             values);
-        return outer[i64{5}].as<TS<i64>>();
+        return outer[i64{5}];
     };
 
     const auto actual = testing::test_graph(tested, {{{5, 1}}, {{5, 3}}});
@@ -511,7 +506,7 @@ TEST_CASE("runtime map instances keep independent outer mesh dependencies",
                     .template as<TS<i64>>();
             },
             values, "__key_arg__"_n = 0);
-        return outer[i64{3}].as<TS<i64>>();
+        return outer[i64{3}];
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 1}, {2, 10}, {3, 100}},
@@ -556,7 +551,7 @@ TEST_CASE("a map removes and recreates branches after pending mesh dependencies"
                     .template as<TS<i64>>();
             },
             values, pass_through(present), "__key_arg__"_n = 0);
-        return outer[i64{3}].as<TS<i64>>();
+        return outer[i64{3}];
     };
 
     const auto actual = testing::test_graph(
@@ -596,8 +591,7 @@ TEST_CASE("mesh supports source and sink graphs",
     const auto sink = node([&recorded_values](i64 value) { recorded_values.push_back(value); });
 
     const auto source_test = [](wp<TSS<i64>> keys) {
-        return mesh([](auto key) { return key; }, keys)[i64{7}]
-            .as<REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::ordinary>>();
+        return mesh([](auto key) { return key; }, keys)[i64{7}];
     };
     const auto source_result = testing::test_graph(source_test, {{7}, {literal::REMOVED(7)}, {7}});
 
@@ -605,7 +599,7 @@ TEST_CASE("mesh supports source and sink graphs",
 
     const auto sink_test = [&](wp<TSD<i64, TS<i64>>> values) {
         mesh([&](auto item) { sink(item); }, values);
-        return values[i64{5}].as<TS<i64>>();
+        return values[i64{5}];
     };
     const auto sink_result = testing::test_graph(sink_test, {{{5, 1}}, {{5, 2}}});
 

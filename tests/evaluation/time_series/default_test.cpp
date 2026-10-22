@@ -20,11 +20,11 @@ using namespace bg;
 TEST_CASE("a default value supplies an initially invalid source input",
           "[feature:operator][feature:validity][series:value][scalar:integer]"
           "[shape:single-node][activity:active][validity:required][transition:first-tick]") {
-    const auto graph = [](wp<TS<i64>> input) { return operators::default_(input, 7).as<TS<i64>>(); };
+    const auto graph = [](wp<TS<i64>> input) { return operators::default_(input, 7); };
 
     const auto actual = testing::test_graph(graph, {std::nullopt, 3, std::nullopt, 4});
 
-    CHECK(actual.equals({7, 3, std::nullopt, 4}));
+    CHECK(actual.equals<i64>({7, 3, std::nullopt, 4}));
 }
 
 namespace {
@@ -109,7 +109,7 @@ TEST_CASE("a default binding dereferences a reference source",
 
     const auto pass = node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) { output.copy(input); });
 
-    const auto graph = [&] { return operators::default_(pass(source()), 7).as<TS<i64>>(); };
+    const auto graph = [&] { return operators::default_(pass(source()), 7); };
 
     const auto actual = testing::test_graph(graph);
 
@@ -121,7 +121,7 @@ TEST_CASE("a default binding switches on source invalidation and revalidation",
           "[scalar:integer][transition:invalidation][transition:revalidation]") {
     const auto source = node<changing_source>();
 
-    const auto graph = [&] { return operators::default_(source(), 7).as<TS<i64>>(); };
+    const auto graph = [&] { return operators::default_(source(), 7); };
 
     const auto actual = testing::test_graph(graph);
 
@@ -242,7 +242,7 @@ TEST_CASE("a nested graph returns a reference over a default binding",
         return operators::default_(input, 7).as<TS<i64>>();
     });
 
-    const auto outer = [&] { return nested(inner, operators::const_(true), source()).as<TS<i64>>(); };
+    const auto outer = [&] { return nested(inner, operators::const_(true), source()); };
 
     const auto actual = testing::test_graph(outer);
 
@@ -371,7 +371,7 @@ TEST_CASE("a default binding adds one timestamp to runtime storage",
         auto wiring = GraphWiring{};
         {
             auto context = WiringContext{wiring};
-            const auto source = operators::const_(i64{3}).as<TS<i64>>();
+            const auto source = operators::const_(i64{3});
             if (with_default) {
                 static_cast<void>(sink(operators::default_(source, 7)));
             } else {

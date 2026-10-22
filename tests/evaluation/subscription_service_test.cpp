@@ -42,7 +42,7 @@ TEST_CASE("subscription services deduplicate requests and return values by key",
         (void)tick;
         const auto key = key_source(7);
         (void)service(key);
-        return service(key).as<TS<float>>();
+        return service(key);
     };
     const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {0});
 
@@ -69,7 +69,7 @@ TEST_CASE("feedback subscription wrapper delays requests into its nested impleme
     const auto key_source = node<FinalKeySource<i64>>();
     const auto tested = [&](wp<TS<i64>> tick) {
         (void)tick;
-        return service(key_source(3)).as<TS<i64>>();
+        return service(key_source(3));
     };
     const auto actual = testing::test_graph(
         tested, GraphRunOptions{.services = &catalogue}, {0});
@@ -130,7 +130,7 @@ TEST_CASE("subscription service clients inside map branches update one root requ
                 return item;
             },
             values, "__key_arg__"_n = 0);
-        return mapped[i64{1}].as<TS<i64>>();
+        return mapped[i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {{{1, 4}, {2, 9}}});
@@ -216,7 +216,7 @@ TEST_CASE("subscription service clients inside mesh branches update one root req
                 return item;
             },
             values, "__key_arg__"_n = 0);
-        return mapped[i64{1}].as<TS<i64>>();
+        return mapped[i64{1}];
     };
 
     const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {{{1, 4}, {2, 9}}});
@@ -246,8 +246,8 @@ TEST_CASE("subscription service multiplicity includes scalar parameters",
     const auto tested = [&](wp<TS<i64>> tick) {
         (void)tick;
         const auto key = key_source(3);
-        const auto first = service(key, 1).as<TS<float>>();
-        const auto second = service(key, 2).as<TS<float>>();
+        const auto first = service(key, 1);
+        const auto second = service(key, 2);
         return sum(first, second);
     };
 
@@ -291,7 +291,7 @@ TEST_CASE("removing a map branch removes its subscription request",
                 return item;
             },
             values, "__key_arg__"_n = 0);
-        return mapped[i64{5}].as<TS<i64>>();
+        return mapped[i64{5}];
     };
 
     const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue},
@@ -317,7 +317,7 @@ TEST_CASE("response-producing subscription clients inside a map reject dependenc
     const auto tested = [&](wp<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> values) {
         const auto mapped =
             map([&](auto key, auto) { return service(key).template as<TS<i64>>(); }, values, "__key_arg__"_n = 0);
-        return mapped[i64{1}].as<TS<i64>>();
+        return mapped[i64{1}];
     };
 
     auto diagnostic = std::string{};

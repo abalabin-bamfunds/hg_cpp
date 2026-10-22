@@ -1381,8 +1381,8 @@ TEST_CASE("dictionary getitem releases and restores its subscription across a ne
         return make_dictionary(input);
     });
 
-    const auto outer = [&](wp<TS<i64>> input, wp<TS<bool>> run) -> wp<TS<i64>> {
-        return nested(inner, run, input)[i64{1}].as<TS<i64>>();
+    const auto outer = [&](wp<TS<i64>> input, wp<TS<bool>> run) {
+        return nested(inner, run, input)[i64{1}];
     };
 
     const auto actual =

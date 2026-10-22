@@ -207,10 +207,10 @@ TEST_CASE("feedback captures a service-shaped dictionary of reference requests",
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
 
-    const auto echo = [&](wp<TS<i64>> input) { return service(input).as<TS<i64>>(); };
+    const auto echo = [&](wp<TS<i64>> input) { return service(input); };
 
     const auto actual = testing::test_graph(echo, GraphRunOptions{.services = &catalogue}, {2, 4, 6});
-    CHECK(actual.equals({std::nullopt, 2, 4, 6}));
+    CHECK(actual.equals<i64>({std::nullopt, 2, 4, 6}));
 }
 
 TEST_CASE("feedback samples switched dictionary references before retaining their deltas",
