@@ -79,6 +79,7 @@ class State<List<T>> {
 
     std::size_t size() const noexcept { return runtime_type_->item_count(value_); }
     bool empty() const noexcept { return size() == 0; }
+    Scalar<List<T>> value() const noexcept { return Scalar<List<T>>::from(*runtime_type_, value_); }
 
     auto operator[](std::size_t index) const {
         auto *data = runtime_type_->item(value_, index);
@@ -122,6 +123,7 @@ class State<Set<T>> {
     const State *operator->() const noexcept { return this; }
     std::size_t size() const noexcept { return runtime_type_->item_count(value_); }
     bool empty() const noexcept { return size() == 0; }
+    Scalar<Set<T>> value() const noexcept { return Scalar<Set<T>>::from(*runtime_type_, value_); }
     bool contains(const Scalar<T> &value) const { return runtime_type_->contains(value_, value); }
     [[nodiscard]] bool insert(const Scalar<T> &value) const {
         auto memory = details::current_scalar_allocator();
@@ -154,6 +156,7 @@ class State<Dict<K, V>> {
     const State *operator->() const noexcept { return this; }
     std::size_t size() const noexcept { return runtime_type_->item_count(value_); }
     bool empty() const noexcept { return size() == 0; }
+    Scalar<Dict<K, V>> value() const noexcept { return Scalar<Dict<K, V>>::from(*runtime_type_, value_); }
     bool contains(const Scalar<K> &key) const { return runtime_type_->contains(value_, key); }
 
     auto at(const Scalar<K> &key) const {

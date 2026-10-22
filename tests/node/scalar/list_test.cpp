@@ -29,6 +29,42 @@ TEST_CASE("a scalar list propagates through a value time series",
     CHECK(testing::test_graph(graph).equals<i64>({3}));
 }
 
+TEST_CASE("a scalar list output accepts a C++ range",
+          "[node][time_series][scalar][list][scalar:list][feature:state]") {
+    const auto source = node([](Out<TS<List<i64>>> output) { output.set(std::array<i64, 3>{1, 2, 3}); });
+    const auto sum = node([](In<TS<List<i64>>> input) {
+        const auto values = input.value_view();
+        return values[0].value() + values[1].value() + values[2].value();
+    });
+    const auto graph = [&] { return sum(source()); };
+
+    CHECK(testing::test_graph(graph).equals<i64>({6}));
+}
+
+struct deduplicated_empty_list_output {
+    In<TS<bool>> reset;
+    Out<TS<List<i64>, TimeSeriesGuarantee::deduplicated>> output;
+
+    void start() const { output.set(std::array<i64, 0>{}); }
+    void evaluate() const {
+        if (reset.valid() && *reset) {
+            output.invalidate();
+            output.set(std::array<i64, 0>{});
+        }
+    }
+};
+
+TEST_CASE("a deduplicated list output publishes empty ranges and revalidation",
+          "[node][time_series][scalar][list][scalar:list][transition:revalidation]") {
+    const auto source = node<deduplicated_empty_list_output>();
+    const auto inspect = node([](In<TS<List<i64>, TimeSeriesGuarantee::optional>> input) {
+        return static_cast<i64>(input.valid() && input.value_view().empty());
+    });
+    const auto graph = [&](wp<TS<bool>> reset) { return inspect(source(reset)); };
+
+    CHECK(testing::test_graph(graph, testing::input<TS<bool>>({true})).equals<i64>({1}));
+}
+
 struct inspect_scalar_list_state {
     State<List<i64>> values;
     Out<TS<i64>> output;

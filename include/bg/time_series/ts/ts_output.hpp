@@ -12,8 +12,10 @@
 #include <bg/time_series/details/output_state.hpp>
 #include <bg/time_series/time_series_output.hpp>
 #include <bg/time_series/time_series_type.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <concepts>
+#include <ranges>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -216,6 +218,52 @@ class Out<TS<T, Properties...>> {
         output.set_value(std::move(value));
     }
 
+    template <std::ranges::input_range Range>
+        requires(is_list_v<T> || is_set_v<T> || is_dict_v<T>)
+    void set(Range &&values) const {
+        auto *range = std::addressof(values);
+        using RangePointer = decltype(range);
+        const auto construct = [](void *context, const ScalarRuntimeType &runtime_type, void *destination,
+                                  allocator &memory) {
+            auto &values = **static_cast<RangePointer *>(context);
+            runtime_type.construct_initial_value(destination);
+            auto rollback = util::scope_exit{[&]() noexcept { runtime_type.destroy(destination, memory); }};
+
+            if constexpr (is_list_v<T>) {
+                const auto &list = static_cast<const ScalarListRuntimeType &>(runtime_type);
+                for (auto &&item : values) {
+                    auto source = literal::ScalarLiteralItem{item};
+                    list.emplace_back_with(destination, memory, {&source, construct_scalar_item});
+                }
+            } else if constexpr (is_set_v<T>) {
+                const auto &set = static_cast<const ScalarSetRuntimeType &>(runtime_type);
+                for (auto &&item : values) {
+                    auto source = literal::ScalarLiteralItem{item};
+                    (void)set.insert_with(destination, memory, {&source, construct_scalar_item});
+                }
+            } else {
+                const auto &dict = static_cast<const ScalarDictRuntimeType &>(runtime_type);
+                for (auto &&entry : values) {
+                    auto key = literal::ScalarLiteralItem{entry.first};
+                    auto value = literal::ScalarLiteralItem{entry.second};
+                    if (!dict.try_emplace_with(destination, memory, {&key, construct_scalar_item},
+                                               {&value, construct_scalar_item})) {
+                        throw std::invalid_argument{"scalar dictionary range contains a duplicate key"};
+                    }
+                }
+            }
+
+            rollback.release();
+        };
+
+        const auto &runtime_type =
+            static_cast<const TimeSeriesValueRuntimeType &>(state_->runtime_type()).scalar_runtime_type();
+        if (runtime_type.assign_with(state_->mutable_data(), {&range, construct},
+                                     valid() && state_->suppresses_equal_updates())) {
+            state_->publish();
+        }
+    }
+
     template <typename Leaf = literal::ScalarLiteralItem>
         requires std::same_as<Leaf, literal::ScalarLiteralItem>
     void apply(const literal::Literal<Leaf> &literal) const {
@@ -263,6 +311,14 @@ class Out<TS<T, Properties...>> {
 
   private:
     TimeSeriesOutputBinding state_;
+
+    static void construct_scalar_item(void *context, const ScalarRuntimeType &runtime_type, void *destination,
+                                      allocator &memory) {
+        const auto &source = *static_cast<const literal::ScalarLiteralItem *>(context);
+        source.visit_scalar([&](auto *value) {
+            runtime_type.construct_from_input(destination, details::scalar_data(*value), memory);
+        });
+    }
 
     void set_scalar_data(const details::ScalarData &source) const {
         const auto &runtime_type =

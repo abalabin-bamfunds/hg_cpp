@@ -30,6 +30,21 @@ TEST_CASE("a scalar dictionary propagates through a value time series",
     CHECK(testing::test_graph(graph).equals<i64>({6}));
 }
 
+TEST_CASE("a scalar dictionary output accepts a C++ range",
+          "[node][time_series][scalar][dict][scalar:dict][feature:state]") {
+    const auto source = node([](Out<TS<Dict<i64, i64>>> output) {
+        output.set(std::array{std::pair<i64, i64>{1, 2}, std::pair<i64, i64>{3, 4}});
+    });
+    const auto sum = node([](In<TS<Dict<i64, i64>>> input) {
+        auto result = i64{};
+        input.value_view().for_each([&](const auto, const auto value) { result += value.value(); });
+        return result;
+    });
+    const auto graph = [&] { return sum(source()); };
+
+    CHECK(testing::test_graph(graph).equals<i64>({6}));
+}
+
 struct inspect_scalar_dict_state {
     State<Dict<i64, i64>> values;
     Out<TS<i64>> output;

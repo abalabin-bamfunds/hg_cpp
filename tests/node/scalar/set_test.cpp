@@ -27,6 +27,15 @@ TEST_CASE("a scalar set propagates through a value time series",
     CHECK(testing::test_graph(graph).equals<i64>({3}));
 }
 
+TEST_CASE("a scalar set output accepts a C++ range",
+          "[node][time_series][scalar][set][scalar:set][feature:state]") {
+    const auto source = node([](Out<TS<Set<i64>>> output) { output.set(std::array<i64, 3>{1, 1, 2}); });
+    const auto size = node([](In<TS<Set<i64>>> input) { return static_cast<i64>(input.value_view().size()); });
+    const auto graph = [&] { return size(source()); };
+
+    CHECK(testing::test_graph(graph).equals<i64>({2}));
+}
+
 struct inspect_scalar_set_state {
     State<Set<i64>> values;
     Out<TS<i64>> output;

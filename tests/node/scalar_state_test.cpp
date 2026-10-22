@@ -172,6 +172,7 @@ struct generic_list_state_node {
         state->erase(1);
 
         CHECK(state->size() == 1);
+        CHECK(state.value().size() == 1);
         output.set_value(state[0]);
     }
 
@@ -200,6 +201,36 @@ struct generic_scalar_state_node {
     }
 };
 
+struct generic_set_state_value_node {
+    Scalar<Set<SCALAR>> values;
+    State<Set<SCALAR>> state;
+    Out<TS<SCALAR>> output;
+
+    void start() const {
+        (void)state->insert(values[0]);
+        CHECK(state.value().size() == 1);
+        output.set_value(values[0]);
+    }
+
+    void evaluate() const {}
+};
+
+struct generic_dict_state_value_node {
+    Scalar<Dict<SCALAR, SCALAR>> values;
+    State<Dict<SCALAR, SCALAR>> state;
+    Out<TS<SCALAR>> output;
+
+    void start() const {
+        values.for_each([&](auto key, auto mapped) {
+            state.insert_or_assign(key, mapped);
+            output.set_value(mapped);
+        });
+        CHECK(state.value().size() == values.size());
+    }
+
+    void evaluate() const {}
+};
+
 struct unsupported_scalar_state_node {
     Scalar<OPAQUE> input;
     State<OPAQUE> state;
@@ -219,6 +250,24 @@ TEST_CASE("generic collection state uses its resolved storage",
     const auto graph = [&] { return generic_list_state(input); };
 
     CHECK(testing::test_graph(graph).equals<i64>({4}));
+}
+
+TEST_CASE("generic set state exposes a borrowed scalar value",
+          "[node][state][scalar][generic][collection][feature:state]") {
+    const auto state_node = node<generic_set_state_value_node>();
+    const auto input = ScalarValue<Set<i64>>{std::array<i64, 1>{7}};
+    const auto graph = [&] { return state_node(input); };
+
+    CHECK(testing::test_graph(graph).equals<i64>({7}));
+}
+
+TEST_CASE("generic dictionary state exposes a borrowed scalar value",
+          "[node][state][scalar][generic][collection][feature:state]") {
+    const auto state_node = node<generic_dict_state_value_node>();
+    const auto input = ScalarValue<Dict<i64, i64>>{std::array{std::pair<i64, i64>{1, 7}}};
+    const auto graph = [&] { return state_node(input); };
+
+    CHECK(testing::test_graph(graph).equals<i64>({7}));
 }
 
 TEST_CASE("generic scalar state resolves constrained types and owns its value",
