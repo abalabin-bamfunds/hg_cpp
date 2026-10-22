@@ -12,7 +12,6 @@
 #include <fmt/chrono.h>
 
 #include <chrono>
-#include <cmath>
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -31,6 +30,14 @@ void format_byte(Scalar<byte> value, fmt::format_context &context) {
     write(context, "{}", std::to_integer<unsigned int>(value.value()));
 }
 
+void format_bytes(Scalar<bytes> value, fmt::format_context &context) {
+    write(context, "bytes(\"");
+    for (const auto item : value.value()) {
+        write(context, "{:02x}", std::to_integer<unsigned int>(item));
+    }
+    write(context, "\")");
+}
+
 void format_date_time(Scalar<date_time_t> value, fmt::format_context &context) {
     write(context, "{:%Y-%m-%dT%H:%M:%S}Z", value.value());
 }
@@ -40,6 +47,7 @@ void format_string(std::string_view value, fmt::format_context &context) { write
 void format_value(Scalar<SCALAR> value, fmt::format_context &context) {
     value.visit(
         [&](const Scalar<byte> *item) { format_byte(*item, context); },
+        [&](const Scalar<bytes> *item) { format_bytes(*item, context); },
         [&](const Scalar<bool> *item) { write(context, "{}", item->value()); },
         [&](const Scalar<i64> *item) { write(context, "{}", item->value()); },
         [&](const Scalar<double> *item) { write(context, "{}", item->value()); },

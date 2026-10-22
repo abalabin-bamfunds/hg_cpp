@@ -152,8 +152,11 @@ discards unread records on destruction, releasing their scalar payloads.
 retained records. `fmt::format("{}", tick(input, now))` formats the root input
 only when it changed at `now`; otherwise it writes `SKIP`. Formatting a retained
 record with `tick(type, reader)` reads one complete record from a fork and leaves
-the supplied reader unchanged. `tick(type, valid, reader)` formats a payload
-whose root header was already consumed, as in `TestGraphResult::visit_tick`.
+the supplied reader and encoded scalar payloads unchanged. The overload
+`tick(type, valid, reader)` formats a payload whose root header was already
+consumed, as in `TestGraphResult::visit_tick`.
+The fmt wrappers borrow live inputs or retained readers and accept no format
+specifiers.
 
 Scalar values use the scalar formatter in `<bg/scalar/format.hpp>`. Collection
 ticks show changed entries only; invalid children print `INVALID`, dictionary
@@ -164,11 +167,18 @@ fmt's format context.
 Provider-defined time-series types register `TimeSeriesTickFormatOperations`
 with `TimeSeriesDispatch<TimeSeriesTickFormatOperations>::instance()`. A live
 callback receives a borrowed input. A retained callback receives a reader at
-the start of that type's payload and must consume the payload. Scalar extensions
-register `ScalarFormatOperations` with `ScalarDispatch<ScalarFormatOperations>`.
-Register both operation records before concurrent formatting begins. Callback
-arguments are borrowed for the call duration; do not retain them. A provider
-module must remain loaded while its registered callbacks can run.
+the start of that type's payload and must advance past exactly one payload
+without destroying its encoded values. Keep a `TimeSeriesTickReader` alive for
+each buffer that contains owned tick payloads. Its destructor discards unread
+records.
+
+Live dispatch checks an exact runtime registration first and then the semantic
+type registration. Retained dispatch uses the semantic type. Complete
+time-series operation registration before concurrent formatting begins.
+Callback arguments are borrowed for the call duration; do not retain them. A
+provider module must remain loaded while its registered callbacks can run.
+Scalar registrations and representations are documented in the [scalar
+API](scalar-api.md#scalar-formatting).
 
 ## Queue messages
 
