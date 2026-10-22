@@ -1,0 +1,8 @@
+.mermaid-container > pre > svg,
+pre.mermaid > svg {
+    max-height: 28rem;
+}
+
+.mermaid-container-fullscreen pre.mermaid > svg {
+    max-height: none;
+}
