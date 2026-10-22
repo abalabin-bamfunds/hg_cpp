@@ -245,6 +245,79 @@ TEST_CASE("reference conversion selects advertised forms lazily and expands each
     CHECK(reference_builder_calls == 1);
 }
 
+TEST_CASE("reference conversion selects the cheapest compatible value form",
+          "[feature:wiring-materialisation][feature:wiring][feature:reference][series:reference]"
+          "[binding:value-to-reference]") {
+    using namespace bg;
+
+    const auto source = node([](Out<TS<i64>>) {});
+
+    const auto deduplicated_source = node([](Out<TS<float, TimeSeriesGuarantee::deduplicated>>) {});
+
+    const auto final_source = node([](Out<TS<float, TimeSeriesGuarantee::final>>) {});
+
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    auto deferred = wiring.create_wp<TS<i64>>(source());
+    auto deduplicated_builder_calls = 0;
+    auto final_builder_calls = 0;
+    deferred.materialisation_option<TS<float, TimeSeriesGuarantee::deduplicated>>(
+        [&](wp<TS<i64>>) {
+            ++deduplicated_builder_calls;
+            return deduplicated_source();
+        },
+        1.0);
+    deferred.materialisation_option<TS<float, TimeSeriesGuarantee::final>>(
+        [&](wp<TS<i64>>) {
+            ++final_builder_calls;
+            return final_source();
+        },
+        2.0);
+
+    const auto reference = deferred.as<REF<TS<float>>>();
+
+    CHECK(&reference.type() ==
+          &REF<TS<float, TimeSeriesGuarantee::deduplicated>, TimeSeriesGuarantee::const_>::type());
+    CHECK(deduplicated_builder_calls == 0);
+    CHECK(final_builder_calls == 0);
+    CHECK(wiring.nodes().empty());
+}
+
+TEST_CASE("reference conversion rejects equal-cost distinct value forms",
+          "[feature:wiring-materialisation][feature:wiring][feature:reference][series:reference]"
+          "[binding:value-to-reference]") {
+    using namespace bg;
+
+    const auto source = node([](Out<TS<i64>>) {});
+
+    const auto deduplicated_source = node([](Out<TS<float, TimeSeriesGuarantee::deduplicated>>) {});
+
+    const auto final_source = node([](Out<TS<float, TimeSeriesGuarantee::final>>) {});
+
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    auto deferred = wiring.create_wp<TS<i64>>(source());
+    auto deduplicated_builder_calls = 0;
+    auto final_builder_calls = 0;
+    deferred.materialisation_option<TS<float, TimeSeriesGuarantee::deduplicated>>(
+        [&](wp<TS<i64>>) {
+            ++deduplicated_builder_calls;
+            return deduplicated_source();
+        },
+        1.0);
+    deferred.materialisation_option<TS<float, TimeSeriesGuarantee::final>>(
+        [&](wp<TS<i64>>) {
+            ++final_builder_calls;
+            return final_source();
+        },
+        1.0);
+
+    CHECK_THROWS_AS(deferred.as<REF<TS<float>>>(), WiringError);
+    CHECK(deduplicated_builder_calls == 0);
+    CHECK(final_builder_calls == 0);
+    CHECK(wiring.nodes().empty());
+}
+
 TEST_CASE("reference conversion ignores incompatible advertised reference forms",
           "[feature:wiring-materialisation][feature:wiring][feature:reference][series:reference]"
           "[guarantee:deduplicated]") {
