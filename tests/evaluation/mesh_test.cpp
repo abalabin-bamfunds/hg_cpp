@@ -404,16 +404,12 @@ TEST_CASE("a named outer mesh is selected through an inner mesh and switch",
                     .template as<TS<i64>>();
             },
             values, "__key_arg__"_n = 0);
-        return outer[i64{2}].as<TS<i64>>();
+        return outer[i64{2}];
     };
 
     const auto actual = testing::test_graph(tested, {{{2, 20}, {1, 2}}, {{2, 30}, {1, 3}}});
 
-    REQUIRE(actual.size() == 2);
-    REQUIRE(actual[0]);
-    REQUIRE(actual[1]);
-    CHECK(actual[0]->view().value() == 22);
-    CHECK(actual[1]->view().value() == 33);
+    CHECK(actual.equals<i64>({22, 33}));
 }
 
 TEST_CASE("a mesh dependency follows switch output replacement",
@@ -454,22 +450,14 @@ TEST_CASE("a mesh dependency follows switch output replacement",
                     .template as<TS<i64>>();
             },
             values, pass_through(selected_case), "__key_arg__"_n = 0);
-        return result[i64{2}].as<TS<i64>>();
+        return result[i64{2}];
     };
 
     const auto actual = testing::test_graph(tested, {1, 2, 2, 1},
                                             {{{2, 10}, {1, 1}}, {{2, 20}, {1, 2}},
                                              {{2, 30}, {1, 3}}, {{2, 40}, {1, 4}}});
 
-    REQUIRE(actual.size() == 4);
-    REQUIRE(actual[0]);
-    REQUIRE(actual[1]);
-    REQUIRE(actual[2]);
-    REQUIRE(actual[3]);
-    CHECK(actual[0]->view().value() == 111);
-    CHECK(actual[1]->view().value() == 222);
-    CHECK(actual[2]->view().value() == 233);
-    CHECK(actual[3]->view().value() == 144);
+    CHECK(actual.equals<i64>({111, 222, 233, 144}));
 }
 
 TEST_CASE("runtime map instances keep independent outer mesh dependencies",
@@ -571,16 +559,12 @@ TEST_CASE("a mesh dependency branch reports timed work through its owner",
                 return add_mesh_dependency(delayed_mesh_value(item), mesh()[dependency_key]);
             },
             values, dependencies);
-        return result[i64{2}].as<TS<i64>>();
+        return result[i64{2}];
     };
 
     const auto actual = testing::test_graph(tested, {{{2, 10}, {1, 1}}}, {{{2, 1}}});
 
-    REQUIRE(actual.size() == 3);
-    CHECK_FALSE(actual[0]);
-    CHECK_FALSE(actual[1]);
-    REQUIRE(actual[2]);
-    CHECK(actual[2]->view().value() == 11);
+    CHECK(actual.equals<i64>({std::nullopt, std::nullopt, 11}));
 }
 
 TEST_CASE("mesh supports source and sink graphs",
