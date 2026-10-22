@@ -31,6 +31,29 @@
 #include <string_view>
 #include <vector>
 
+TEST_CASE("reference and value consumers observe converted inputs on each tick",
+          "[feature:wiring][feature:reference][feature:test-graph][series:reference]"
+          "[binding:value-to-reference][transition:update]") {
+    using namespace bg;
+
+    const auto copy_reference = node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) {
+        output.copy(input);
+    });
+
+    const auto copy_value = node([](i64 value) { return value; });
+
+    const auto through_reference = graph([&](wp<TS<i64>> value) {
+        return copy_reference(value.as<REF<TS<i64>>>());
+    });
+
+    const auto through_value = graph([&](wp<TS<i64>> value) {
+        return copy_value(value.as<REF<TS<i64>>>());
+    });
+
+    CHECK(testing::test_graph(through_reference, {3, 7, 11}).equals({3, 7, 11}));
+    CHECK(testing::test_graph(through_value, {5, 9, 13}).equals({5, 9, 13}));
+}
+
 namespace {
 
 template <template <typename, auto...> typename Field> struct OneValue {
@@ -85,29 +108,6 @@ class CountingMaterialisationRecord final : public bg::details::WiringRecord {
 bool is_double_series(const bg::TimeSeriesType &type) noexcept { return &type == &bg::TS<double>::type(); }
 
 } // namespace
-
-TEST_CASE("reference and value consumers observe converted inputs on each tick",
-          "[feature:wiring][feature:reference][feature:test-graph][series:reference]"
-          "[binding:value-to-reference][transition:update]") {
-    using namespace bg;
-
-    const auto copy_reference = node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) {
-        output.copy(input);
-    });
-
-    const auto copy_value = node([](i64 value) { return value; });
-
-    const auto through_reference = graph([&](wp<TS<i64>> value) {
-        return copy_reference(value.as<REF<TS<i64>>>());
-    });
-
-    const auto through_value = graph([&](wp<TS<i64>> value) {
-        return copy_value(value.as<REF<TS<i64>>>());
-    });
-
-    CHECK(testing::test_graph(through_reference, {3, 7, 11}).equals({3, 7, 11}));
-    CHECK(testing::test_graph(through_value, {5, 9, 13}).equals({5, 9, 13}));
-}
 
 TEST_CASE("deferred wiring points retain arguments and expand lazily once",
           "[feature:wiring-materialisation][feature:wiring][series:tsb][schema:named]"
