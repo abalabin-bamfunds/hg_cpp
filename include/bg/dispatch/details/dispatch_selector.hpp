@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <memory_resource>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <vector>
 

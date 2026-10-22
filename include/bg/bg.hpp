@@ -27,6 +27,7 @@
 #include <bg/graph/wiring_error.hpp>
 #include <bg/graph/wiring_point.hpp>
 #include <bg/graph/wiring_template.hpp>
+#include <bg/dispatch.hpp>
 #include <bg/map.hpp>
 #include <bg/mesh.hpp>
 #include <bg/switch.hpp>

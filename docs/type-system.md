@@ -34,8 +34,10 @@ resolved signature reports one supported category.
 inspect every supported value representation and recover its concrete semantic
 type as an accepted subtype of the declared type. The identity may come from
 the runtime descriptor or from the value representation. The method defaults
-to false. Dispatch uses this capability to select inputs for default runtime
-type dispatch; an explicit input selection can choose other types.
+to false. Dispatch uses this capability to select inputs for runtime type
+dispatch. Inputs without this capability are not selected.
+See [runtime dispatch](operators.md#runtime-dispatch) for input selection and
+output adaptation rules.
 
 Every `Type` must be registered. Committed objects have process lifetime; failed
 registration transactions discard their pending objects. Static declaration

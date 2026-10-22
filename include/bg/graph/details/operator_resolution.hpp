@@ -12,6 +12,7 @@ struct OperatorResolutionMatch {
     const WiringTemplate *implementation;
     SignatureResolution resolution;
     std::vector<const TimeSeriesType *> argument_forms;
+    std::vector<std::optional<std::size_t>> supplied_argument_indices;
 };
 
 struct OperatorResolutionResult {

@@ -392,6 +392,7 @@ graph compilation or evaluation.
 - mesh argument selection, dependency selection, output inference, overload selection, and diagnostics
 - reducer graph adaptation, input and output compatibility, TSD item type resolution, and diagnostics
 - switch case preparation, argument selection, overload selection, compatibility, and diagnostics
+- dispatch type-tuple selection, branch output adaptation, explicit type mappings, and runtime type transitions
 - dispatch cast compatibility, value and reference binding, and nested-graph composition
 - service declarations, signature validation, type mapping, scalar multiplicity, installation arguments,
   implementation selection, multiservice claims and request/reply ports, and path-aware diagnostics

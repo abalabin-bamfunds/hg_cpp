@@ -781,7 +781,7 @@ auto Operator::analyze_overloads(
             result.selected.emplace(details::OperatorResolutionMatch{
                 selected->implementation,
                 {std::move(selected->resolution.signature), std::move(selected->resolution.type_map)},
-                std::move(selected_forms)});
+                std::move(selected_forms), std::move(selected->supplied_argument_indices)});
             result.failures = std::move(failures);
         }
     }
