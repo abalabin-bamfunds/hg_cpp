@@ -10,7 +10,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <array>
+#include <stdexcept>
 #include <vector>
 
 namespace {
@@ -264,7 +264,7 @@ TEST_CASE("dispatch resolves selected-input candidates from other implementation
     CHECK(saw_derived_input);
 }
 
-TEST_CASE("dispatch rejects incomparable applicable selected-input constraints",
+TEST_CASE("dispatch preserves runtime ambiguity across partial specializations",
           "[feature:dispatch][feature:operator][binding:covariant]") {
     const auto derived_base = graph("name"_n = "dispatch_incomparable_derived_base",
                                     [](wp<TS<Bundle<DispatchDerived>>>,
@@ -292,7 +292,7 @@ TEST_CASE("dispatch rejects incomparable applicable selected-input constraints",
         return dispatch(first, second).as<TS<i64>>();
     };
 
-    CHECK_THROWS_AS(testing::test_graph(graph, {1}), WiringError);
+    CHECK_THROWS_AS(testing::test_graph(graph, {1}), std::logic_error);
 }
 
 TEST_CASE("dispatch preserves the source time-series guarantee while narrowing its value type",
@@ -488,6 +488,33 @@ TEST_CASE("dispatch only adds runtime tuples whose declared implementation is se
     const auto actual = testing::test_graph(graph, {1});
 
     CHECK(actual.equals<i64>({10}));
+}
+
+TEST_CASE("dispatch skips an implementation with a mismatched independent scalar constraint",
+          "[feature:dispatch][feature:operator][binding:covariant]") {
+    const auto constrained = graph(
+        "name"_n = "dispatch_constrained_scalar",
+        [](wp<TS<Bundle<DispatchBase>>>, float) {
+            return operators::const_(i64{20}).as<TS<i64, TimeSeriesGuarantee::const_>>();
+        });
+    const auto fallback = graph(
+        "name"_n = "dispatch_scalar_fallback",
+        [](wp<TS<Bundle<DispatchBase>>>, i64) {
+            return operators::const_(i64{10}).as<TS<i64, TimeSeriesGuarantee::const_>>();
+        });
+    using DispatchSignature = auto(TS<Bundle<DispatchBase>>, i64) -> TS<i64>;
+    const auto dispatch = dispatch_<DispatchSignature>{constrained, fallback};
+    const auto publish = node([](In<TS<i64>>, Scalar<Bundle<DispatchBase>> value,
+                                 Out<TS<Bundle<DispatchBase>>> output) { output.set(value); });
+
+    auto memory = allocator{};
+    const auto value = bundle<DispatchBase>(memory, symbol{"item"});
+    const auto graph = [&](wp<TS<i64>> trigger) {
+        const auto input = publish(trigger, value).as<TS<Bundle<DispatchBase>>>();
+        return dispatch(input, i64{1}).as<TS<i64>>();
+    };
+
+    CHECK(testing::test_graph(graph, {1}).equals<i64>({10}));
 }
 
 TEST_CASE("dispatch supports outputless implementation graphs",
