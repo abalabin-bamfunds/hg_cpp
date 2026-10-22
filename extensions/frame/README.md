@@ -63,11 +63,17 @@ Every column allows null cells. `SchemaField::optional` describes an absent
 column; frame schemas require all columns and reject that flag.
 Native positional cell lookup scans live slots. A filter maintains its selected
 row sequence in source order; downstream traversal reads that sequence.
-Selected batches combine consecutive physical slots within cell and row-ID
-buffer boundaries.
-Cells, validity, and batch IDs remain borrowed from source storage. Kernels should
-use batches or iterate row IDs and read cells by ID to avoid repeated positional
-scans. View nodes use source deltas to identify changed cells.
+The sequence reuses an initialized prefix of row-ID storage across rebuilds.
+Each row-ID storage block records a physical mapping only when all its active
+IDs occupy consecutive slots in that mapping. Columns with the same mapping
+can read those slots directly; other columns resolve IDs through their own
+mapping. Selected batches split at cell and row-ID buffer boundaries.
+
+`RowSet::each_span` supplies ordered ID spans. IDs and batch buffers are valid
+only during their callback; callers must not retain them. Cells and validity
+borrow column storage. Kernels should use batches or iterate row IDs and read
+cells by ID to avoid repeated positional scans. View nodes use source deltas
+to identify changed cells.
 
 Frame column lengths must match. A zero-column frame can carry an explicit row
 count. `TSF` rows use one internal row domain across columns; schema names do
@@ -76,8 +82,9 @@ not define row identity.
 Rebinding to a different row domain publishes even when both values are empty.
 The row delta remains empty because no rows were added or removed.
 
-Borrowed values and batches are valid during a node invocation, before a
-mutation replaces their storage. Requesting an owning `ScalarValue` from
+Borrowed scalar values are valid during a node invocation, before a mutation
+replaces their storage. Batch callbacks have the shorter lifetime stated above.
+Requesting an owning `ScalarValue` from
 mutable native storage copies current cells. Ordinary mutations do not take a
 snapshot. The snapshot retains values, nulls, row count, and the actual schema;
 row IDs and change information remain time-series state. A Base annotation

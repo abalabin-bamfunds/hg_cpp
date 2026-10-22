@@ -115,12 +115,21 @@ template <typename T> class ColumnReadSource;
 class NativeRows;
 class NativeRowSlots;
 template <typename T> struct ColumnStorage;
+// ids is valid only during the each_span callback. A non-null physical_rows proves that ids[i]
+// maps to slot first_slot + i in that row store.
+struct RowSetSpan {
+    std::span<const row_id_t> ids{};
+    const NativeRowSlots *physical_rows{};
+    row_id_t first_slot{};
+};
 struct RowSet {
     using size_function = std::size_t (*)(const void *) noexcept;
     using contains_function = bool (*)(const void *, row_id_t) noexcept;
     using id_at_function = row_id_t (*)(const void *, std::size_t);
     using visit_function = void (*)(void *, row_id_t);
     using for_each_function = void (*)(const void *, void *, visit_function);
+    using span_visit_function = void (*)(void *, const RowSetSpan &);
+    using for_each_span_function = void (*)(const void *, void *, span_visit_function);
 
     const void *context{};
     const NativeRows *native_rows{};
@@ -129,6 +138,7 @@ struct RowSet {
     contains_function contains{};
     id_at_function id_at{};
     for_each_function for_each{};
+    for_each_span_function for_each_span{};
 
     // Compares descriptor fields; distinct descriptors can enumerate the same rows.
     friend bool operator==(const RowSet &, const RowSet &) = default;
@@ -144,6 +154,22 @@ struct RowSet {
         auto invoke = [&](row_id_t id) { std::invoke(function, id); };
         for_each(context, std::addressof(invoke), [](void *target, row_id_t id) {
             std::invoke(*static_cast<decltype(invoke) *>(target), id);
+        });
+    }
+
+    template <typename Function> void each_span(Function &&function) const {
+        if (context == nullptr)
+            return;
+        if (for_each_span == nullptr) {
+            each([&](row_id_t id) {
+                const auto span = RowSetSpan{std::span<const row_id_t>{std::addressof(id), 1}};
+                std::invoke(function, span);
+            });
+            return;
+        }
+        auto invoke = [&](const RowSetSpan &span) { std::invoke(function, span); };
+        for_each_span(context, std::addressof(invoke), [](void *target, const RowSetSpan &span) {
+            std::invoke(*static_cast<decltype(invoke) *>(target), span);
         });
     }
 };
@@ -823,19 +849,37 @@ ColumnStorage<T>::ColumnStorage(const NativeColumnData<T> &value, const NativeRo
       coverage{visible}, added{added}, modified{modified}, removed{removed}, change_time{time} {}
 
 inline RowSet RowSet::native(const NativeRows &rows) noexcept {
-    return RowSet{std::addressof(rows), std::addressof(rows), rows.identity(),
-                  [](const void *context) noexcept { return static_cast<const NativeRows *>(context)->size(); },
-                  [](const void *context, row_id_t id) noexcept {
-                      return static_cast<const NativeRows *>(context)->contains(id);
-                  },
-                  [](const void *context, std::size_t position) {
-                      return static_cast<const NativeRows *>(context)->id_at(position);
-                  },
-                  [](const void *context, void *target, visit_function visit) {
-                      const auto &source = *static_cast<const NativeRows *>(context);
-                      for (auto slot : source.live_slots())
-                          visit(target, source.id_at_slot(slot));
-                  }};
+    return RowSet{
+        .context = std::addressof(rows),
+        .native_rows = std::addressof(rows),
+        .identity = rows.identity(),
+        .size = [](const void *context) noexcept { return static_cast<const NativeRows *>(context)->size(); },
+        .contains = [](const void *context, row_id_t id) noexcept {
+            return static_cast<const NativeRows *>(context)->contains(id);
+        },
+        .id_at = [](const void *context, std::size_t position) {
+            return static_cast<const NativeRows *>(context)->id_at(position);
+        },
+        .for_each = [](const void *context, void *target, visit_function visit) {
+            const auto &source = *static_cast<const NativeRows *>(context);
+            for (auto slot : source.live_slots())
+                visit(target, source.id_at_slot(slot));
+        },
+        .for_each_span = [](const void *context, void *target, span_visit_function visit) {
+            const auto &source = *static_cast<const NativeRows *>(context);
+            const auto &physical_rows = source.slots();
+            source.live_slots().for_each_run([&](row_id_t first, row_id_t end) {
+                while (first != end) {
+                    const auto ids_block = physical_rows.ids_block_containing(first);
+                    const auto batch_end = static_cast<row_id_t>(std::min<std::uint64_t>(end, ids_block.end));
+                    const auto *ids = static_cast<const row_id_t *>(ids_block.data) + first - ids_block.first;
+                    const auto span = RowSetSpan{std::span<const row_id_t>{ids, batch_end - first},
+                                                 std::addressof(physical_rows), first};
+                    visit(target, span);
+                    first = batch_end;
+                }
+            });
+        }};
 }
 
 template <cell_type T> class ColumnValueStorage {
@@ -936,6 +980,7 @@ template <typename T> class NativeColumnData {
     util::storage_block block_containing(const NativeRowSlots &rows, row_id_t id) const noexcept {
         return rows.contains(id) ? cells_.block_containing(rows.slot_of(id)) : util::storage_block{};
     }
+    util::storage_block block_containing_slot(row_id_t slot) const noexcept { return cells_.block_containing(slot); }
     void reset_changes() noexcept { modified_.clear(); }
     void add(NativeRows &rows, row_id_t id, cell_type value, allocator memory) {
         add(rows.slots(), id, value, memory);
@@ -1056,7 +1101,7 @@ template <typename T> class NativeColumnData {
             has_batch = false;
         };
 
-        visible_rows.each([&](row_id_t id) {
+        const auto append_id = [&](row_id_t id) {
             const auto slot = rows.slot_of(id);
             if (has_batch && static_cast<std::uint64_t>(slot) == end_slot && end_slot < cells_block.end &&
                 end_slot < ids_block.end) {
@@ -1070,6 +1115,26 @@ template <typename T> class NativeColumnData {
             has_batch = true;
             first_slot = slot;
             end_slot = static_cast<std::uint64_t>(slot) + 1;
+        };
+        visible_rows.each_span([&](const RowSetSpan &span) {
+            if (span.physical_rows != std::addressof(rows)) {
+                for (auto id : span.ids)
+                    append_id(id);
+                return;
+            }
+
+            flush();
+            auto offset = std::size_t{};
+            while (offset != span.ids.size()) {
+                const auto first = static_cast<row_id_t>(static_cast<std::uint64_t>(span.first_slot) + offset);
+                const auto block = cells_.block_containing(first);
+                const auto count = static_cast<std::size_t>(
+                    std::min<std::uint64_t>(span.ids.size() - offset, block.end - first));
+                auto cells = this->cells_.batch(first, count);
+                cells.valid = ColumnBatch<T>::Validity::from_index(valid_cells_);
+                std::invoke(function, Batch{span.ids.subspan(offset, count), cells});
+                offset += count;
+            }
         });
         flush();
     }
@@ -1179,6 +1244,10 @@ class ErasedColumnSeriesView {
               return static_cast<const NativeColumnData<T> *>(self.native_data_)->block_containing(
                   *self.physical_rows_, id);
           }},
+          block_at_slot_{[](const void *context, row_id_t slot) {
+              const auto &self = *static_cast<const ErasedColumnSeriesView *>(context);
+              return static_cast<const NativeColumnData<T> *>(self.native_data_)->block_containing_slot(slot);
+          }},
           gather_{[](const void *context, std::span<const row_id_t> ids, void *destination,
                      std::span<std::uint8_t> validity) {
               const auto &self = *static_cast<const ErasedColumnSeriesView *>(context);
@@ -1227,6 +1296,7 @@ class ErasedColumnSeriesView {
     const util::index<> &removed() const noexcept { return *removed_; }
     EvaluationTime change_time() const noexcept { return change_time_; }
     util::storage_block block(row_id_t id) const { return block_(this, id); }
+    util::storage_block block_at_slot(row_id_t slot) const { return block_at_slot_(this, slot); }
     void gather(std::span<const row_id_t> ids, void *values, std::span<std::uint8_t> validity) const {
         gather_(this, ids, values, validity);
     }
@@ -1243,6 +1313,7 @@ class ErasedColumnSeriesView {
     RowSet coverage_{};
     std::size_t value_bits_per_cell_{};
     util::storage_block (*block_)(const void *, row_id_t){};
+    util::storage_block (*block_at_slot_)(const void *, row_id_t){};
     void (*gather_)(const void *, std::span<const row_id_t>, void *, std::span<std::uint8_t>){};
     const util::index<> *valid_cells_{};
     const util::index<> *added_{};
@@ -1288,10 +1359,8 @@ void for_each_aligned_column_batch(std::span<const ErasedColumnSeriesView> colum
 
     auto batches = std::pmr::vector<ColumnBatch<>>{columns.size(), &memory};
     auto value_blocks = std::pmr::vector<util::storage_block>{columns.size(), &memory};
-    const auto invoke_direct = [&](row_id_t first, row_id_t end, util::storage_block ids_block,
+    const auto invoke_direct = [&](row_id_t first, std::size_t size, std::span<const row_id_t> ids,
                                    std::span<const util::storage_block> blocks) {
-        const auto size = static_cast<std::size_t>(end - first);
-        const auto *ids = static_cast<const row_id_t *>(ids_block.data) + first - ids_block.first;
         for (auto index = std::size_t{}; index != columns.size(); ++index) {
             const auto &block = blocks[index];
             const auto bit_offset = (first - block.first) * columns[index].value_bits_per_cell();
@@ -1301,7 +1370,7 @@ void for_each_aligned_column_batch(std::span<const ErasedColumnSeriesView> colum
             batches[index] = {first, size, values, bit_offset % 8, columns[index].value_bits_per_cell(),
                               ColumnBatchValidity::from_index(columns[index].valid_cells())};
         }
-        std::invoke(function, std::span<const row_id_t>{ids, size}, std::span<const ColumnBatch<>>{batches});
+        std::invoke(function, ids, std::span<const ColumnBatch<>>{batches});
     };
 
     if (shared_map) {
@@ -1316,7 +1385,9 @@ void for_each_aligned_column_batch(std::span<const ErasedColumnSeriesView> colum
                         batch_end = std::min(batch_end, value_blocks[index].end);
                     }
                     batch_end = static_cast<row_id_t>(std::min<std::uint64_t>(end, batch_end));
-                    invoke_direct(first, batch_end, id_block, value_blocks);
+                    const auto size = static_cast<std::size_t>(batch_end - first);
+                    const auto *ids = static_cast<const row_id_t *>(id_block.data) + first - id_block.first;
+                    invoke_direct(first, size, std::span<const row_id_t>{ids, size}, value_blocks);
                     first = batch_end;
                 }
             });
@@ -1331,10 +1402,12 @@ void for_each_aligned_column_batch(std::span<const ErasedColumnSeriesView> colum
         const auto flush = [&] {
             if (!has_batch)
                 return;
-            invoke_direct(first_slot, static_cast<row_id_t>(end_slot), id_block, value_blocks);
+            const auto size = static_cast<std::size_t>(end_slot - first_slot);
+            const auto *ids = static_cast<const row_id_t *>(id_block.data) + first_slot - id_block.first;
+            invoke_direct(first_slot, size, std::span<const row_id_t>{ids, size}, value_blocks);
             has_batch = false;
         };
-        requested_rows.each([&](row_id_t id) {
+        const auto append_id = [&](row_id_t id) {
             const auto slot = physical_rows->slot_of(id);
             const auto next_id_block = physical_rows->ids_block_containing(slot);
             for (auto index = std::size_t{}; index != columns.size(); ++index)
@@ -1359,6 +1432,28 @@ void for_each_aligned_column_batch(std::span<const ErasedColumnSeriesView> colum
             first_slot = slot;
             end_slot = static_cast<std::uint64_t>(slot) + 1;
             has_batch = true;
+        };
+        requested_rows.each_span([&](const RowSetSpan &span) {
+            if (span.physical_rows != physical_rows) {
+                for (auto id : span.ids)
+                    append_id(id);
+                return;
+            }
+
+            flush();
+            auto offset = std::size_t{};
+            while (offset != span.ids.size()) {
+                const auto first = static_cast<row_id_t>(static_cast<std::uint64_t>(span.first_slot) + offset);
+                auto batch_end = static_cast<std::uint64_t>(first) + span.ids.size() - offset;
+                for (auto index = std::size_t{}; index != columns.size(); ++index) {
+                    value_blocks[index] = columns[index].block_at_slot(first);
+                    batch_end = std::min(batch_end, value_blocks[index].end);
+                }
+                const auto count = static_cast<std::size_t>(
+                    std::min<std::uint64_t>(span.ids.size() - offset, batch_end - first));
+                invoke_direct(first, count, span.ids.subspan(offset, count), value_blocks);
+                offset += count;
+            }
         });
         flush();
         return;

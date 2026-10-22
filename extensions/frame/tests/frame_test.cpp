@@ -17,6 +17,7 @@
 #include <bg/type/type_registry.hpp>
 #include <bg/time_series/tick_serializer.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <functional>
@@ -600,6 +601,40 @@ struct RowTraversalCounter {
                           for (auto slot : counter.rows->live_slots())
                               visit(target, counter.rows->id_at_slot(slot));
                       }};
+    }
+};
+
+struct TwoMapRowSet {
+    const NativeRows *rows{};
+    std::array<row_id_t, 4> ids{};
+    const NativeRowSlots *first_map{};
+    const NativeRowSlots *second_map{};
+
+    RowSet row_set() const noexcept {
+        return RowSet{
+            .context = this,
+            .native_rows = nullptr,
+            .identity = rows->identity(),
+            .size = [](const void *) noexcept { return std::size_t{4}; },
+            .contains = [](const void *context, row_id_t id) noexcept {
+                return static_cast<const TwoMapRowSet *>(context)->rows->contains(id);
+            },
+            .id_at = [](const void *context, std::size_t position) {
+                return static_cast<const TwoMapRowSet *>(context)->ids.at(position);
+            },
+            .for_each = [](const void *context, void *target, RowSet::visit_function visit) {
+                for (const auto id : static_cast<const TwoMapRowSet *>(context)->ids)
+                    visit(target, id);
+            },
+            .for_each_span = [](const void *context, void *target, RowSet::span_visit_function visit) {
+                const auto &source = *static_cast<const TwoMapRowSet *>(context);
+                const auto first = RowSetSpan{std::span<const row_id_t>{source.ids}.first(2), source.first_map,
+                                              source.first_map->slot_of(source.ids[0])};
+                const auto second = RowSetSpan{std::span<const row_id_t>{source.ids}.subspan(2), source.second_map,
+                                               source.second_map->slot_of(source.ids[2])};
+                visit(target, first);
+                visit(target, second);
+            }};
     }
 };
 
@@ -6214,6 +6249,16 @@ void test_filter_row_set_reads_cached_source_order() {
         require(observed == std::vector<row_id_t>{reused_slot, second} && filtered.rows.at(0) == reused_slot &&
                     filtered.rows.at(1) == second,
                 "filter output did not preserve source order after membership changes");
+        auto observed_spans = std::size_t{};
+        auto observed_span_rows = std::vector<row_id_t>{};
+        auto unproven_span = false;
+        filtered.rows.each_span([&](const RowSetSpan &span) {
+            ++observed_spans;
+            unproven_span = span.physical_rows == nullptr;
+            observed_span_rows.assign(span.ids.begin(), span.ids.end());
+        });
+        require(observed_spans == 1 && unproven_span && observed_span_rows == observed,
+                "filtered row set claimed a physical mapping for a generic source row set");
         for (auto iteration = std::size_t{}; iteration != 3; ++iteration) {
             filtered.rows.each([](row_id_t) {});
             static_cast<void>(filtered.rows.at(0));
@@ -6221,6 +6266,224 @@ void test_filter_row_set_reads_cached_source_order() {
         }
         require(row_counter.traversals == traversals_after_bind,
                 "filter row reads enumerated the source after bind rebuilt its ordered selection");
+    });
+}
+
+void test_filtered_row_set_reuses_order_prefix() {
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto source = NativeFrame<Quotes>{};
+    auto release_source = util::scope_exit{[&]() noexcept { source.release(memory); }};
+    const auto first_time = MIN_DT + EvaluationTime::duration{1};
+    auto ids = std::array<row_id_t, 32>{};
+    for (auto index = std::size_t{}; index != ids.size(); ++index)
+        ids[index] = source.add(Quotes<Cell>{.size = Cell<i64>{index < 24 ? static_cast<i64>(index + 1) : 0},
+                                             .bid = Cell<double>{static_cast<double>(index + 10)},
+                                             .ask = Cell<double>{static_cast<double>(index + 11)}},
+                                first_time, memory);
+
+    const auto all_fields = std::array<std::size_t, 3>{0, 1, 2};
+    const auto predicate_index = std::size_t{};
+    auto predicate = [&](row_id_t id) { return source.cell<0>(id).value_or(0) > 0; };
+    with_runtime_view_storage<Quotes>(memory, [&](auto &filter, const auto &runtime) {
+        auto input = native_frame_input(source);
+        static_cast<void>(bind_filter(filter, input, all_fields, predicate_index, predicate, first_time, memory));
+        auto filtered = runtime.input_storage(std::addressof(filter));
+        const auto initial_first_slots = std::array<row_id_t, 2>{0, 8};
+        auto initial_ids = std::array<const row_id_t *, 2>{};
+        auto initial_span_count = std::size_t{};
+        filtered.rows.each_span([&](const RowSetSpan &span) {
+            require(initial_span_count < initial_ids.size() &&
+                        span.physical_rows == std::addressof(source.rows().slots()) &&
+                        span.first_slot == initial_first_slots[initial_span_count],
+                    "native filtered row set did not retain its slot proof");
+            initial_ids[initial_span_count++] = span.ids.data();
+        });
+        require(initial_span_count == 2, "native filtered row set did not split at its storage blocks");
+
+        auto column_batches = std::size_t{};
+        auto column_rows = std::size_t{};
+        filtered.generic_column(0).template batches<i64>([&](const ColumnBatch<i64> &batch) {
+            ++column_batches;
+            for (auto offset = std::size_t{}; offset != batch.size; ++offset) {
+                require(batch.is_valid(offset) &&
+                            batch.value_at(offset) == static_cast<i64>(column_rows + offset + 1),
+                        "native column batches did not read the proven filtered row span");
+            }
+            column_rows += batch.size;
+        });
+        require(column_batches == 2 && column_rows == 24,
+                "native column batches did not consume the filtered span storage blocks");
+
+        auto size_series = std::optional<ColumnSeriesView<i64>>{};
+        auto bid_series = std::optional<ColumnSeriesView<double>>{};
+        filtered.bind_column_series_view(util::symbol{"size"}, size_series);
+        filtered.bind_column_series_view(util::symbol{"bid"}, bid_series);
+        auto aligned_batches = std::size_t{};
+        auto aligned_rows = std::size_t{};
+        size_series->for_each_aligned_batch(*bid_series, filtered.rows, [&](const auto &batch) {
+            ++aligned_batches;
+            for (auto offset = std::size_t{}; offset != batch.ids.size(); ++offset) {
+                const auto row = static_cast<std::size_t>(batch.ids[offset]);
+                require(batch.left.is_valid(offset) && batch.left.value_at(offset) == static_cast<i64>(row + 1) &&
+                            batch.right.value_at(offset) == static_cast<double>(row + 10),
+                        "shared-map aligned batches did not consume the proven filtered row spans");
+            }
+            aligned_rows += batch.ids.size();
+        });
+        require(aligned_batches == 2 && aligned_rows == 24,
+                "shared-map aligned batches did not traverse the selected rows in block order");
+
+        const auto second_time = first_time + EvaluationTime::duration{1};
+        for (auto index = std::size_t{3}; index != 24; ++index)
+            require(source.set(ids[index], Quotes<PatchCell>{.size = i64{0}}, second_time, memory),
+                    "filtered row reuse test could not shrink its selection");
+        input = native_frame_input(source);
+        static_cast<void>(bind_filter(filter, input, all_fields, predicate_index, predicate, second_time, memory));
+        filtered = runtime.input_storage(std::addressof(filter));
+        auto shrunk_ids = std::vector<row_id_t>{};
+        auto shrunk_span_count = std::size_t{};
+        filtered.rows.each_span([&](const RowSetSpan &span) {
+            ++shrunk_span_count;
+            require(span.ids.data() == initial_ids[0] && span.ids.size() == 3 &&
+                        span.physical_rows == std::addressof(source.rows().slots()) && span.first_slot == 0,
+                    "filtered row set did not reuse and rewrite its selected-order prefix after shrinking");
+            shrunk_ids.assign(span.ids.begin(), span.ids.end());
+        });
+        require(shrunk_span_count == 1 && shrunk_ids == std::vector<row_id_t>{ids[0], ids[1], ids[2]},
+                "filtered row set exposed stale IDs after shrinking its active prefix");
+
+        const auto third_time = second_time + EvaluationTime::duration{1};
+        for (auto index = std::size_t{3}; index != 24; ++index)
+            require(source.set(ids[index], Quotes<PatchCell>{.size = i64{5}}, third_time, memory),
+                    "filtered row reuse test could not grow its selection");
+        input = native_frame_input(source);
+        static_cast<void>(bind_filter(filter, input, all_fields, predicate_index, predicate, third_time, memory));
+        filtered = runtime.input_storage(std::addressof(filter));
+        auto regrown_ids = std::vector<row_id_t>{};
+        auto regrown_span_count = std::size_t{};
+        filtered.rows.each_span([&](const RowSetSpan &span) {
+            require(regrown_span_count < 2 && span.ids.data() == initial_ids[regrown_span_count] &&
+                        span.physical_rows == std::addressof(source.rows().slots()),
+                    "filtered row set did not reuse its selected-order blocks after growing");
+            ++regrown_span_count;
+            regrown_ids.insert(regrown_ids.end(), span.ids.begin(), span.ids.end());
+        });
+        require(regrown_span_count == 2 && regrown_ids == std::vector<row_id_t>(ids.begin(), ids.begin() + 24),
+                "filtered row set did not restore order or retained metadata after growing to its prior high-water");
+
+        const auto fourth_time = third_time + EvaluationTime::duration{1};
+        for (auto index = std::size_t{24}; index != ids.size(); ++index)
+            require(source.set(ids[index], Quotes<PatchCell>{.size = static_cast<i64>(index + 1)}, fourth_time, memory),
+                    "filtered row reuse test could not grow beyond its prior high-water");
+        input = native_frame_input(source);
+        static_cast<void>(bind_filter(filter, input, all_fields, predicate_index, predicate, fourth_time, memory));
+        filtered = runtime.input_storage(std::addressof(filter));
+        auto grown_ids = std::vector<row_id_t>{};
+        auto grown_span_count = std::size_t{};
+        const auto grown_first_slots = std::array<row_id_t, 3>{0, 8, 24};
+        filtered.rows.each_span([&](const RowSetSpan &span) {
+            require(grown_span_count < 3 && span.physical_rows == std::addressof(source.rows().slots()),
+                    "filtered row set lost its slot proof after allocating another ID block");
+            require(span.first_slot == grown_first_slots[grown_span_count],
+                    "filtered row set produced an incorrect slot offset after extending its ID blocks");
+            if (grown_span_count < 2)
+                require(span.ids.data() == initial_ids[grown_span_count],
+                        "filtered row set did not retain an initialized ID block after extending");
+            ++grown_span_count;
+            grown_ids.insert(grown_ids.end(), span.ids.begin(), span.ids.end());
+        });
+        require(grown_span_count == 3 && grown_ids == std::vector<row_id_t>(ids.begin(), ids.end()),
+                "filtered row set did not extend initialized order storage beyond its prior high-water");
+    });
+}
+
+void test_nested_and_fragmented_row_set_span_proofs() {
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto source = NativeFrame<Quotes>{};
+    auto release_source = util::scope_exit{[&]() noexcept { source.release(memory); }};
+    auto alternate_map = NativeRowSlots{};
+    auto release_alternate_map = util::scope_exit{[&]() noexcept { alternate_map.release(memory); }};
+    const auto time = MIN_DT + EvaluationTime::duration{1};
+    auto ids = std::array<row_id_t, 4>{};
+    for (auto index = std::size_t{}; index != ids.size(); ++index)
+        ids[index] = source.add(Quotes<Cell>{.size = Cell<i64>{5}, .bid = Cell<double>{10.0},
+                                             .ask = Cell<double>{11.0}},
+                                time, memory);
+    alternate_map.insert(ids[2], memory);
+    alternate_map.insert(ids[3], memory);
+    const auto all_fields = std::array<std::size_t, 3>{0, 1, 2};
+    auto all_rows = [](row_id_t) { return true; };
+
+    with_runtime_view_storage<Quotes>(memory, [&](auto &outer_filter, const auto &outer_runtime) {
+        with_runtime_view_storage<Quotes>(memory, [&](auto &inner_filter, const auto &inner_runtime) {
+            auto input = native_frame_input(source);
+            static_cast<void>(bind_filter(outer_filter, input, all_fields, 0, all_rows, time, memory));
+            auto nested_input = outer_runtime.input_storage(std::addressof(outer_filter));
+            auto first_two = [&](row_id_t id) { return id < ids[2]; };
+            static_cast<void>(bind_filter(inner_filter, nested_input, all_fields, 0, first_two, time, memory));
+            const auto nested_output = inner_runtime.input_storage(std::addressof(inner_filter));
+            auto nested_span_count = std::size_t{};
+            nested_output.rows.each_span([&](const RowSetSpan &span) {
+                ++nested_span_count;
+                require(span.physical_rows == std::addressof(source.rows().slots()) && span.first_slot == 0 &&
+                            std::ranges::equal(span.ids, std::span<const row_id_t>{ids}.first(2)),
+                        "nested filtering lost a valid incoming slot proof");
+            });
+            require(nested_span_count == 1, "nested filter did not produce one contiguous row span");
+        });
+    });
+
+    TwoMapRowSet split_rows{std::addressof(source.rows()), ids, std::addressof(source.rows().slots()),
+                            std::addressof(alternate_map)};
+    auto split_input = native_frame_input(source);
+    split_input.rows = split_rows.row_set();
+    with_runtime_view_storage<Quotes>(memory, [&](auto &filter, const auto &runtime) {
+        static_cast<void>(bind_filter(filter, split_input, all_fields, 0, all_rows, time, memory));
+        const auto output = runtime.input_storage(std::addressof(filter));
+        auto output_ids = std::vector<row_id_t>{};
+        auto output_spans = std::size_t{};
+        output.rows.each_span([&](const RowSetSpan &span) {
+            ++output_spans;
+            require(span.physical_rows == nullptr,
+                    "filtered row set claimed a single physical map across different source maps");
+            output_ids.assign(span.ids.begin(), span.ids.end());
+        });
+        require(output_spans == 1 && output_ids == std::vector<row_id_t>(ids.begin(), ids.end()),
+                "filtered row set changed order across source spans with different physical maps");
+    });
+}
+
+void test_filter_validates_input_before_evaluation() {
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto source = NativeFrame<Quotes>{};
+    auto release_source = util::scope_exit{[&]() noexcept { source.release(memory); }};
+    auto foreign = NativeFrame<Quotes>{};
+    auto release_foreign = util::scope_exit{[&]() noexcept { foreign.release(memory); }};
+    const auto time = MIN_DT + EvaluationTime::duration{1};
+    static_cast<void>(source.add(Quotes<Cell>{.size = Cell<i64>{5}, .bid = Cell<double>{10.0},
+                                              .ask = Cell<double>{11.0}},
+                                time, memory));
+    static_cast<void>(foreign.add(Quotes<Cell>{.size = Cell<i64>{5}, .bid = Cell<double>{10.0},
+                                               .ask = Cell<double>{11.0}},
+                                 time, memory));
+    auto input = native_frame_input(source);
+    input.rows = RowSet::native(foreign.rows());
+    auto evaluated = false;
+    const auto evaluator = [&](const RowSet &, auto &&) { evaluated = true; };
+    const auto all_fields = std::array<std::size_t, 3>{0, 1, 2};
+
+    with_runtime_view_storage<Quotes>(memory, [&](auto &filter, const auto &) {
+        auto rejected = false;
+        try {
+            static_cast<void>(filter.bind_filter(input, all_fields, true, {}, evaluator, time, memory));
+        } catch (const std::invalid_argument &) {
+            rejected = true;
+        }
+        require(rejected && !evaluated,
+                "filter evaluated its predicate before rejecting an incompatible row domain");
     });
 }
 
@@ -6284,7 +6547,8 @@ void test_empty_full_filter_request_skips_evaluator() {
     const auto id = source.add(Quotes<Cell>{.size = Cell<i64>{5}, .bid = Cell<double>{10.0},
                                             .ask = Cell<double>{11.0}},
                                time, memory);
-    require(source.erase(id, time + EvaluationTime::duration{1}, memory),
+    const auto removal_time = time + EvaluationTime::duration{1};
+    require(source.erase(id, removal_time, memory),
             "empty filter test could not remove its initialized source row");
     const auto input = native_frame_input(source);
     const auto all_fields = std::array<std::size_t, 3>{0, 1, 2};
@@ -6292,7 +6556,7 @@ void test_empty_full_filter_request_skips_evaluator() {
     const auto evaluator = [&](const RowSet &, auto &&) { evaluated = true; };
 
     with_runtime_view_storage<Quotes>(memory, [&](auto &filter, const auto &) {
-        static_cast<void>(filter.bind_filter(input, all_fields, true, {}, evaluator, time, memory));
+        static_cast<void>(filter.bind_filter(input, all_fields, true, {}, evaluator, removal_time, memory));
         require(!evaluated, "a full filter request evaluated an empty source row set");
     });
 }
@@ -7503,6 +7767,9 @@ int main() {
         test_tsf_projection_rejects_native_columns_from_another_logical_domain();
         test_view_updates_do_not_traverse_source_rows();
         test_filter_row_set_reads_cached_source_order();
+        test_filtered_row_set_reuses_order_prefix();
+        test_nested_and_fragmented_row_set_span_proofs();
+        test_filter_validates_input_before_evaluation();
         test_full_filter_request_skips_selected_order_rebuild();
         test_empty_full_filter_request_skips_evaluator();
         test_tsf_view_uses_local_physical_rows_incrementally();

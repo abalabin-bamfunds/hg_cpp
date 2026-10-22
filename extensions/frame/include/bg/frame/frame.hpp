@@ -1986,10 +1986,18 @@ class RuntimeFrameViewOutputStorage {
         util::index<> modified_rows;
     };
 
+    struct SelectedOrderMapping {
+        const NativeRowSlots *physical_rows{};
+        row_id_t first_slot{};
+    };
+
     const RuntimeFrameViewLayout *layout{};
     SelectedRows previous_rows;
     SelectedRows selected_rows;
-    util::contiguous_bunch<row_id_t> selected_order;
+    util::sparse_bunch<row_id_t> selected_order;
+    util::contiguous_bunch<SelectedOrderMapping> selected_order_mappings;
+    util::sparse_bunch<row_id_t>::size_type selected_order_size{};
+    util::sparse_bunch<row_id_t>::size_type selected_order_initialized{};
     RowSet source_rows{};
     util::index<> changed_columns;
     util::index<> added_rows;
@@ -2049,8 +2057,8 @@ class RuntimeFrameViewOutputStorage {
             .native_rows = nullptr,
             .identity = source_rows.identity,
             .size = [](const void *context) noexcept {
-                return static_cast<std::size_t>(
-                    static_cast<const RuntimeFrameViewOutputStorage *>(context)->selected_order.size());
+                return static_cast<std::size_t>(static_cast<const RuntimeFrameViewOutputStorage *>(context)
+                                                    ->selected_order_size);
             },
             .contains = [](const void *context, row_id_t id) noexcept {
                 const auto &storage = *static_cast<const RuntimeFrameViewOutputStorage *>(context);
@@ -2058,15 +2066,32 @@ class RuntimeFrameViewOutputStorage {
             },
             .id_at = [](const void *context, std::size_t position) {
                 const auto &storage = *static_cast<const RuntimeFrameViewOutputStorage *>(context);
-                if (position >= storage.selected_order.size())
+                if (position >= storage.selected_order_size)
                     throw std::out_of_range{"filtered row position"};
-                return storage.selected_order[static_cast<util::contiguous_bunch<row_id_t>::size_type>(position)];
+                return storage.selected_order[static_cast<util::sparse_bunch<row_id_t>::size_type>(position)];
             },
             .for_each = [](const void *context, void *target, RowSet::visit_function visit) {
                 const auto &storage = *static_cast<const RuntimeFrameViewOutputStorage *>(context);
-                for (auto position = util::contiguous_bunch<row_id_t>::size_type{};
-                     position != storage.selected_order.size(); ++position)
+                for (auto position = util::sparse_bunch<row_id_t>::size_type{};
+                     position != storage.selected_order_size; ++position)
                     visit(target, storage.selected_order[position]);
+            },
+            .for_each_span = [](const void *context, void *target, RowSet::span_visit_function visit) {
+                const auto &storage = *static_cast<const RuntimeFrameViewOutputStorage *>(context);
+                auto position = util::sparse_bunch<row_id_t>::size_type{};
+                auto mapping_index = util::contiguous_bunch<SelectedOrderMapping>::size_type{};
+                while (position != storage.selected_order_size) {
+                    const auto block = storage.selected_order.block_containing(position);
+                    const auto end = static_cast<util::sparse_bunch<row_id_t>::size_type>(
+                        std::min<std::uint64_t>(block.end, storage.selected_order_size));
+                    const auto count = static_cast<std::size_t>(end - position);
+                    const auto *ids = static_cast<const row_id_t *>(block.data) + position - block.first;
+                    const auto &mapping = storage.selected_order_mappings[mapping_index++];
+                    const auto span = RowSetSpan{std::span<const row_id_t>{ids, count},
+                                                 mapping.physical_rows, mapping.first_slot};
+                    visit(target, span);
+                    position = end;
+                }
             }};
     }
 
@@ -2098,16 +2123,58 @@ class RuntimeFrameViewOutputStorage {
     }
 
     void rebuild_selected_order(RowSet rows, allocator memory) {
-        clear_selected_order(memory);
-        rows.each([&](row_id_t id) {
-            if (selected_rows.contains(id))
-                selected_order.emplace_back(memory.memory_resource(), id);
+        selected_order_size = 0;
+        auto mapping_size = util::contiguous_bunch<SelectedOrderMapping>::size_type{};
+        rows.each_span([&](const RowSetSpan &span) {
+            for (auto offset = std::size_t{}; offset != span.ids.size(); ++offset) {
+                const auto id = span.ids[offset];
+                if (!selected_rows.contains(id))
+                    continue;
+
+                const auto position = selected_order_size;
+                const auto block = selected_order.block_containing(position);
+                if (position == selected_order_initialized) {
+                    selected_order.emplace_at(position, memory.memory_resource(), id);
+                    ++selected_order_initialized;
+                } else {
+                    selected_order[position] = id;
+                }
+
+                if (position == block.first) {
+                    const auto mapping = SelectedOrderMapping{
+                        span.physical_rows,
+                        span.physical_rows == nullptr
+                            ? row_id_t{}
+                            : static_cast<row_id_t>(static_cast<std::uint64_t>(span.first_slot) + offset)};
+                    if (mapping_size == selected_order_mappings.size())
+                        selected_order_mappings.emplace_back(memory.memory_resource(), mapping);
+                    else
+                        selected_order_mappings[mapping_size] = mapping;
+                    ++mapping_size;
+                } else {
+                    auto &block_mapping = selected_order_mappings[mapping_size - 1];
+                    const auto expected_slot = static_cast<std::uint64_t>(block_mapping.first_slot) +
+                                               position - block.first;
+                    const auto slot = span.physical_rows == nullptr
+                                          ? std::uint64_t{}
+                                          : static_cast<std::uint64_t>(span.first_slot) + offset;
+                    if (block_mapping.physical_rows == nullptr || span.physical_rows != block_mapping.physical_rows ||
+                        slot != expected_slot)
+                        block_mapping.physical_rows = nullptr;
+                }
+                ++selected_order_size;
+            }
         });
     }
 
-    void clear_selected_order(allocator memory) noexcept {
-        while (!selected_order.empty())
-            selected_order.pop_back(memory.memory_resource());
+    void clear_selected_order() noexcept {
+        selected_order_size = 0;
+    }
+
+    void release_selected_order(allocator memory) noexcept {
+        selected_order.release_prefix(selected_order_initialized, memory.memory_resource());
+        selected_order_initialized = 0;
+        selected_order_mappings.release(memory.memory_resource());
     }
     TimeSeriesState &child_state(void *base, std::size_t index) const noexcept {
         auto *bytes = static_cast<std::byte *>(base);
@@ -2454,7 +2521,7 @@ class RuntimeFrameViewOutputStorage {
         previous_rows.bind({});
         selected_rows.clear();
         selected_rows.bind({});
-        clear_selected_order(memory);
+        clear_selected_order();
         source_rows = {};
         added_rows.clear();
         removed_rows.clear();
@@ -2474,7 +2541,8 @@ class RuntimeFrameViewOutputStorage {
     void release(allocator memory) noexcept {
         previous_rows.release(memory);
         selected_rows.release(memory);
-        selected_order.release(memory.memory_resource());
+        clear_selected_order();
+        release_selected_order(memory);
         added_rows.release(memory.memory_resource());
         removed_rows.release(memory.memory_resource());
         changed_rows.release(memory.memory_resource());
