@@ -676,6 +676,9 @@ For each reusable node and graph, test:
 - Python multiservice implementation graphs with reference, subscription, and
   request/reply ports, outputless services, scalar filters, error cases, and
   catalogue, registration, service, and graph wrapper lifetime
+- Python runtime dispatch on Python classes and derived schemas, explicit
+  implementation lists, node and graph branches, fallback, type transitions,
+  scalar arguments, sinks, and invalid declarations
 
 ### Performance and portability
 

@@ -83,6 +83,7 @@ __all__ = [
     "default_",
     "delay",
     "dedup",
+    "dispatch",
     "div",
     "eq",
     "floordiv",

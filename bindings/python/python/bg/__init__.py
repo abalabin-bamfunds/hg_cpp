@@ -7,7 +7,7 @@ import inspect
 import types
 from datetime import datetime, timedelta
 from functools import update_wrapper
-from typing import Annotated, Any, Generic, Tuple, TypeVar, get_args, get_origin, get_type_hints
+from typing import Annotated, Any, Generic, Iterable, Tuple, TypeVar, get_args, get_origin, get_type_hints
 from weakref import WeakKeyDictionary
 
 from . import operators
@@ -31,6 +31,7 @@ from ._bg import (
     _make_schema,
     _register_python_schema,
     _dict_scalar_type,
+    _dispatch,
     _list_scalar_type,
     _tuple_scalar_type,
     _map,
@@ -645,6 +646,42 @@ class GraphDefinition:
             input_types = (input_types,)
         native = _specialize_graph(self._native_definition, input_types)
         return GraphDefinition(self.function, native, self._fixed_parameters, self._callback)
+
+
+class DispatchDefinition:
+    """A typed runtime dispatch over Python graph and node definitions."""
+
+    def __init__(self, function: Any, implementations: Iterable[GraphDefinition | NodeDefinition] = ()):
+        self.function = function
+        self._contract = graph(function)
+        self._implementations: list[GraphDefinition | NodeDefinition] = []
+        update_wrapper(self, function)
+        self.signature = self._contract.signature
+        for implementation in implementations:
+            self.overload(implementation)
+
+    def overload(self, implementation: GraphDefinition | NodeDefinition) -> GraphDefinition | NodeDefinition:
+        if not isinstance(implementation, (GraphDefinition, NodeDefinition)):
+            raise TypeError("dispatch implementations must be decorated @graph or Python node definitions")
+        self._implementations.append(implementation)
+        return implementation
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        fixed, positional, named = _bind_definition_arguments(
+            self.signature, self._contract._fixed_parameters, args, kwargs
+        )
+        return _dispatch(
+            self._contract._native_definition, tuple(self._implementations), fixed, positional, named
+        )
+
+    def __getitem__(self, input_types: Any) -> DispatchDefinition:
+        result = object.__new__(DispatchDefinition)
+        result.function = self.function
+        result._contract = self._contract[input_types]
+        result._implementations = self._implementations
+        update_wrapper(result, self.function)
+        result.signature = self.signature
+        return result
 
 
 class _FeedbackServiceImplementation:
@@ -1356,6 +1393,14 @@ def graph(function: Any) -> GraphDefinition:
     return GraphDefinition(function, native, fixed_parameters, callback)
 
 
+def dispatch(signature: Any,
+             implementations: Iterable[GraphDefinition | NodeDefinition] = ()) -> DispatchDefinition:
+    """Declare runtime dispatch with an input/output contract and optional implementations."""
+    if isinstance(signature, (GraphDefinition, NodeDefinition)) or not callable(signature):
+        raise TypeError("dispatch expects an annotated Python function as its signature")
+    return DispatchDefinition(signature, implementations)
+
+
 def run_graph(
     definition: GraphDefinition,
     *args: Any,
@@ -1412,6 +1457,7 @@ def test_graph(definition: GraphDefinition, *inputs: Any,
 operators.map = map
 operators.mesh = mesh
 operators.switch_ = switch_
+operators.dispatch = dispatch
 
 
 __all__ = [
@@ -1427,6 +1473,8 @@ __all__ = [
     "ScheduleHandle",
     "const_",
     "deduplicated",
+    "dispatch",
+    "DispatchDefinition",
     "final",
     "feedback_service_implementation",
     "GraphDefinition",

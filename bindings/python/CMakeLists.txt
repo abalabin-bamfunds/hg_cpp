@@ -31,6 +31,7 @@ add_library(
     src/operator.cpp
     src/python_object_operators.cpp
     src/wiring_argument.cpp
+    src/python_wiring_error.cpp
     src/test_graph_input.cpp
     src/test_graph_output.cpp
     src/python.cpp

@@ -48,6 +48,7 @@
 #include "higher_order.hpp"
 #include "operator_binding.hpp"
 #include "python_queue.hpp"
+#include "python_wiring_error.hpp"
 #include "wiring_argument.hpp"
 
 #include <nanobind/stl/optional.h>
@@ -91,48 +92,6 @@ PeriodicCallback python_periodic_callback() {
             Object::drain_deferred_releases();
         },
     };
-}
-
-std::exception_ptr python_error_cause(std::exception_ptr cause) {
-    if (cause == nullptr) {
-        return {};
-    }
-
-    try {
-        std::rethrow_exception(cause);
-    } catch (const WiringError &error) {
-        return python_error_cause(error.cause());
-    } catch (const nb::python_error &) {
-        return cause;
-    } catch (...) {
-        return {};
-    }
-}
-
-[[noreturn]] void rethrow_python_error(const WiringError &error) {
-    const auto cause = python_error_cause(error.cause());
-    if (cause == nullptr) {
-        throw error;
-    }
-
-    try {
-        std::rethrow_exception(cause);
-    } catch (nb::python_error &python_exception) {
-        auto preserved = nb::python_error{python_exception};
-        if (!error.contexts().empty()) {
-            const auto context = WiringError::from_exception("BG wiring context", error.contexts(), {});
-            try {
-                const auto add_note = nb::getattr(nb::borrow<nb::object>(PyExc_BaseException), "add_note");
-                add_note(preserved.value(), nb::str{context.what()});
-            } catch (const nb::python_error &) {
-                PyErr_Clear();
-            }
-        }
-        preserved.restore();
-        nb::raise_python_error();
-    }
-
-    std::terminate();
 }
 
 class TypeDescriptor {
@@ -540,47 +499,6 @@ PythonServiceDefinition make_service(std::string name, std::string kind,
     return {std::move(service), std::move(signature)};
 }
 
-std::vector<WiringArgument> wiring_arguments(const Signature &signature, nb::sequence fixed_values,
-                                             nb::sequence positional_values, nb::dict named_values, allocator &memory,
-                                             GraphWiring &wiring, std::span<const Type *const> parameter_types = {}) {
-    const auto fixed_count = signature.first_variadic_parameter().value_or(signature.parameter_count());
-    if (nb::len(fixed_values) != fixed_count) {
-        throw std::invalid_argument{"the Python definition received the wrong number of fixed arguments"};
-    }
-
-    auto arguments = std::vector<WiringArgument>{};
-    arguments.reserve(fixed_count + nb::len(positional_values) + nb::len(named_values));
-    for (auto index = std::size_t{}; index < fixed_count; ++index) {
-        const auto &expected = parameter_types.empty() ? *signature.parameter(index).type : *parameter_types[index];
-        arguments.push_back(details::wiring_argument(expected, fixed_values[index], memory, wiring));
-    }
-
-    for (auto index = std::size_t{}; index < nb::len(positional_values); ++index) {
-        auto argument = details::wiring_argument(positional_values[index], memory, wiring);
-        argument.set_variadic_name(util::symbol{std::to_string(index)}, bg::details::VariadicMode::positional);
-        arguments.push_back(std::move(argument));
-    }
-
-    const auto positional_parameter = signature.variadic_parameter(bg::details::VariadicMode::positional);
-    const auto named_parameter = signature.variadic_parameter(bg::details::VariadicMode::named);
-    for (const auto [name, value] : named_values) {
-        auto argument = details::wiring_argument(value, memory, wiring);
-        const auto argument_name = util::symbol{nb::cast<std::string>(name)};
-        const auto exact_parameter =
-            (positional_parameter && signature.parameter(*positional_parameter).name == argument_name) ||
-            (named_parameter && signature.parameter(*named_parameter).name == argument_name);
-        if (exact_parameter && argument.is_time_series() &&
-            bg::details::variadic_wiring_record(argument.time_series()) != nullptr) {
-            argument.clear_name();
-        } else {
-            argument.set_variadic_name(argument_name, exact_parameter ? bg::details::VariadicMode::none
-                                                                      : bg::details::VariadicMode::named);
-        }
-        arguments.push_back(std::move(argument));
-    }
-    return arguments;
-}
-
 nb::object wire_graph(const PythonGraphDefinition &definition, nb::sequence fixed_values,
                       nb::sequence positional_values, nb::dict named_values);
 
@@ -613,7 +531,7 @@ nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_
             return testing::test_graph(static_cast<const WiringTemplate &>(definition), options,
                                        inputs.inputs());
         } catch (const WiringError &error) {
-            rethrow_python_error(error);
+            details::rethrow_python_error(error);
         }
     }();
     return details::TestGraphOutputs{results}.to_python();
@@ -654,7 +572,7 @@ void run_graph(const PythonGraphDefinition &definition, nb::sequence fixed_value
             bg::run_graph(run, options);
         }
     } catch (const WiringError &error) {
-        rethrow_python_error(error);
+        details::rethrow_python_error(error);
     }
 }
 
@@ -716,8 +634,8 @@ nb::object wire_node(const PythonNodeDefinition &definition, nb::sequence fixed_
     auto &wiring = WiringContext::current().wiring();
     auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
     auto memory = allocator{temporary_memory};
-    auto arguments = wiring_arguments(definition.signature(), fixed_values, positional_values, named_values, memory,
-                                      wiring, definition.wiring_parameter_types());
+    auto arguments = details::wiring_arguments(definition.signature(), fixed_values, positional_values, named_values,
+                                               memory, wiring, definition.wiring_parameter_types());
 
     const auto scope = PythonWiringScope::current();
     auto *node_template = scope->node_template(definition.identity());
@@ -755,8 +673,8 @@ nb::object wire_graph(const PythonGraphDefinition &definition, nb::sequence fixe
     auto &wiring = WiringContext::current().wiring();
     auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
     auto memory = allocator{temporary_memory};
-    auto arguments = wiring_arguments(definition.signature(), fixed_values, positional_values, named_values, memory,
-                                      wiring, definition.wiring_parameter_types());
+    auto arguments = details::wiring_arguments(definition.signature(), fixed_values, positional_values, named_values,
+                                               memory, wiring, definition.wiring_parameter_types());
 
     try {
         const auto result = static_cast<const WiringTemplate &>(definition)(std::span<const WiringArgument>{arguments});
@@ -775,8 +693,8 @@ nb::object wire_graph(const PythonGraphDefinition &definition, nb::sequence fixe
         }
         throw std::invalid_argument{std::move(message)};
     } catch (const WiringError &error) {
-        if (python_error_cause(error.cause()) != nullptr) {
-            rethrow_python_error(error);
+        if (details::has_python_error(error)) {
+            details::rethrow_python_error(error);
         }
         throw std::invalid_argument{std::string{"cannot wire Python graph: "} + error.what()};
     } catch (const std::exception &error) {
