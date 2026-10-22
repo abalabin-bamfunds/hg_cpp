@@ -59,7 +59,9 @@ for start in range(0, len(examples), 8):
     target = f"examples_{start // 8}"
     source = "\n".join(sorted(includes)) + "\n\n" + "\n".join(bodies)
     source += "\nint main() {\n" + "\n".join(calls) + "\n}\n"
-    (project / f"{target}.cpp").write_text(source)
+    source_path = project / f"{target}.cpp"
+    if not source_path.exists() or source_path.read_text() != source:
+        source_path.write_text(source)
     cmake.extend([f"add_executable({target} {target}.cpp)",
                   f"target_link_libraries({target} PRIVATE bg::library)"])
     batches.append((target, batch, start))
