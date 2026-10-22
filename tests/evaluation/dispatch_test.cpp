@@ -12,6 +12,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
+#include <memory>
 #include <stdexcept>
 #include <vector>
 
@@ -36,6 +38,12 @@ template <template <typename, auto...> typename Field> struct DispatchOtherBase 
 template <template <typename, auto...> typename Field>
 struct DispatchOtherDerived : schema_extends<DispatchOtherBase, Field> {
     Field<i64> value;
+};
+
+struct DispatchGraphBoundary {
+    static constexpr bool deduplicate_wiring = false;
+    Out<TS<i64>> output;
+    void evaluate() const {}
 };
 
 TEST_CASE("dispatch selects the most specific implementation for a runtime scalar type",
@@ -88,6 +96,40 @@ TEST_CASE("dispatch selects the most specific implementation for a runtime scala
     REQUIRE(base_result[0].has_value());
     CHECK(scalar_cast<i64>(base_result[0]->view()).value() == 10);
     CHECK_FALSE(base_result[1].has_value());
+}
+
+TEST_CASE("dispatch passes graph arguments to the selected implementation",
+          "[feature:dispatch][feature:switch][feature:graph-argument][feature:wiring]") {
+    auto graph_wiring = GraphWiring{};
+    const auto graph_context = WiringContext{graph_wiring};
+    const auto graph_boundary = node<DispatchGraphBoundary>();
+    const auto graph_input = graph_boundary();
+    const auto graph_boundaries = std::array<WiringPoint, 1>{graph_input};
+    (void)graph_wiring.complete_pending_wiring();
+    const auto graph_argument = GraphArgument{
+        details::graph_wiring_structure(graph_wiring, graph_boundaries, static_cast<WiringPoint>(graph_input)),
+        std::make_shared<const int>(1)};
+    auto received_graph_argument = false;
+    const auto implementation = graph(
+        "name"_n = "dispatch_graph_argument_implementation",
+        [&](wp<TS<Bundle<DispatchBase>>> input, GraphArgument function) {
+            const auto payload = function.payload<int>();
+            received_graph_argument = function.structure().boundary_count() == 1 && payload && *payload == 1;
+            (void)input;
+            return operators::const_(i64{17}).as<TS<i64, TimeSeriesGuarantee::const_>>();
+        });
+    const auto dispatch = dispatch_<auto(TS<Bundle<DispatchBase>>, GRAPH_T) -> TS<i64>>{
+        implementation};
+    auto memory = allocator{};
+    const auto value = bundle<DispatchBase>(memory, symbol{"item"});
+    const auto publish = node([](In<TS<i64>>, Scalar<Bundle<DispatchBase>> value,
+                                 Out<TS<Bundle<DispatchBase>>> output) { output.set(value); });
+    const auto tested = [&](wp<TS<i64>> trigger) {
+        return dispatch(publish(trigger, value), graph_argument).as<TS<i64>>();
+    };
+
+    CHECK(testing::test_graph(tested, {1}).equals<i64>({17}));
+    CHECK(received_graph_argument);
 }
 
 TEST_CASE("dispatch selects a registered input-type tuple",

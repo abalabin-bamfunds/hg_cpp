@@ -97,6 +97,22 @@ std::vector<WiringArgument> switch_supplied_arguments(Tuple &arguments) {
         arguments, std::make_index_sequence<std::tuple_size_v<Tuple>>{});
 }
 
+template <typename SelectOverload>
+auto select_switch_overload(SelectOverload &&select_overload, WiringArgument key,
+                            GraphArgument prepared, std::span<const WiringArgument> arguments) {
+    auto overload_arguments = std::vector<WiringArgument>{};
+    overload_arguments.reserve(arguments.size() + 2);
+    overload_arguments.push_back(std::move(key));
+    overload_arguments.emplace_back(std::move(prepared));
+    for (const auto &argument : arguments) {
+        if (argument.is_time_series()) {
+            overload_arguments.push_back(WiringArgument::borrow(argument));
+        }
+    }
+    return std::invoke(std::forward<SelectOverload>(select_overload),
+                       std::span<const WiringArgument>{overload_arguments});
+}
+
 template <typename Function, typename Arguments, std::size_t... Index>
 auto bound_switch_graph_for_arguments(const Function &function, std::index_sequence<Index...>) {
     return bound_switch_graph<Function, std::tuple_element_t<Index, Arguments>...>(function);
@@ -167,12 +183,8 @@ auto invoke_switch(SelectOverload &&select_overload, Key key, const Cases &case_
     auto prepared = build_switch_graph_argument(
         static_cast<WiringPoint>(key), supplied, prepared_cases);
 
-    return std::apply(
-        [&](auto &...argument) {
-            return std::invoke(std::forward<SelectOverload>(select_overload), key,
-                               prepared, argument...);
-        },
-        supplied_tuple);
+    return select_switch_overload(std::forward<SelectOverload>(select_overload), WiringArgument{key},
+                                  std::move(prepared), supplied);
 }
 
 struct switch_operator_implementation {
@@ -194,15 +206,8 @@ struct switch_operator_implementation {
         }
 
         auto prepared = build_switch_graph_argument(key_point, arguments, prepared_cases);
-        auto overload_arguments = std::vector<WiringArgument>{};
-        overload_arguments.reserve(arguments.size() + 2);
-        overload_arguments.push_back(WiringArgument::borrow(key_argument));
-        overload_arguments.emplace_back(std::move(prepared));
-        for (const auto &argument : arguments) {
-            overload_arguments.push_back(WiringArgument::borrow(argument));
-        }
-        return std::invoke(std::forward<SelectOverload>(select_overload),
-                           std::span<const WiringArgument>{overload_arguments});
+        return select_switch_overload(std::forward<SelectOverload>(select_overload),
+                                      WiringArgument::borrow(key_argument), std::move(prepared), arguments);
     }
 
     template <typename SelectOverload, typename Key, typename Cases, typename... Arguments>
