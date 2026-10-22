@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/graph/details/operator_resolution.hpp>
 #include <bg/graph/wiring_template.hpp>
 
 #include <concepts>
@@ -27,6 +28,11 @@ class Operator : public WiringTemplate {
         return result;
     }
 
+    // Resolve borrowed candidates without caching or wiring. The selected implementation pointer remains borrowed.
+    details::OperatorResolutionResult resolve_overloads(
+        GraphWiring &wiring, std::span<const WiringArgument> arguments, const TypeMap *seed_type_map,
+        std::span<const WiringTemplate *const> candidates) const;
+
   private:
     void add_overload(std::unique_ptr<WiringTemplate> implementation);
 
@@ -35,6 +41,11 @@ class Operator : public WiringTemplate {
                                                     const TypeMap *seed_type_map) const final;
     [[nodiscard]] std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const WiringArguments &,
                                                   std::span<const WiringArgument>) const final;
+
+    template <typename CandidateRange>
+    auto analyze_overloads(
+        GraphWiring &wiring, std::span<const WiringArgument> arguments, const TypeMap *seed_type_map,
+        const CandidateRange &candidates, bool record_scalar_reads) const;
 
     Signature prototype_;
     std::vector<const Variable *> type_parameters_;

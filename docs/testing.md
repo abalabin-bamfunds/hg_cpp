@@ -21,7 +21,7 @@ Use `[dimension:value]` for each applicable dimension:
   `evaluation-scratch`, `borrowed-input`,
   `lifecycle`, `finalization`, `scheduling`, `timed-scheduling`, `simulation`, `realtime`, `wall-clock`, `profiling`,
   `input-activity`, `validity`,
-  `invalidation`, `operator`, `constant`, `graph-argument`, `map`, `switch`,
+  `invalidation`, `operator`, `constant`, `graph-argument`, `map`, `switch`, `dispatch`,
   `wiring-defaults`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `feedback`,
   `item-id-remapping`, `service`, `getitem`, `getattr`, `nested-graph`, `mesh`,
@@ -392,6 +392,8 @@ graph compilation or evaluation.
 - mesh argument selection, dependency selection, output inference, overload selection, and diagnostics
 - reducer graph adaptation, input and output compatibility, TSD item type resolution, and diagnostics
 - switch case preparation, argument selection, overload selection, compatibility, and diagnostics
+- dispatch type-tuple selection, branch output adaptation, explicit type mappings, and runtime type transitions
+- dispatch cast compatibility, value and reference binding, and nested-graph composition
 - service declarations, signature validation, type mapping, scalar multiplicity, installation arguments,
   implementation selection, multiservice claims and request/reply ports, and path-aware diagnostics
 
@@ -610,6 +612,7 @@ For each reusable node and graph, test:
   selections, and unselected-input updates
 - arithmetic across scalar and time series arguments, exact type matching,
   integer and temporal wraparound, and borrowed string construction
+- `type_` publication of concrete scalar types, repeated-type deduplication, and validity transitions
 - conversion between scalar time series, full target type matching including
   guarantees and collection results, reference-observed guarantees, and
   rejection of unsupported targets
@@ -673,6 +676,9 @@ For each reusable node and graph, test:
 - Python multiservice implementation graphs with reference, subscription, and
   request/reply ports, outputless services, scalar filters, error cases, and
   catalogue, registration, service, and graph wrapper lifetime
+- Python runtime dispatch on Python classes and derived schemas, explicit
+  implementation lists, node and graph branches, fallback, type transitions,
+  scalar arguments, sinks, and invalid declarations
 
 ### Performance and portability
 

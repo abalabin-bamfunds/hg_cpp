@@ -176,6 +176,51 @@ struct native_python_object_property_node {
     }
 };
 
+struct native_concrete_type_name_node {
+    bg::In<bg::TS<bg::SCALAR>> input;
+    bg::Out<bg::TS<bg::string>> output;
+
+    void evaluate() const {
+        auto gil = nanobind::gil_scoped_acquire{};
+        const auto value = input.value_view();
+        const auto &type = value.concrete_type();
+        auto &conversions = bg::python::scalar_conversions();
+        auto python_class = nanobind::object{};
+        if (const auto *hierarchical_type = bg::type_cast<bg::HierarchicalScalarType>(&type)) {
+            python_class = conversions.python_schema_class(
+                static_cast<const bg::Schema &>(hierarchical_type->schema_type()));
+        } else {
+            python_class = conversions.python_object_class(type);
+        }
+
+        if (!python_class) {
+            output.set(std::string_view{"Python class missing"});
+            return;
+        }
+
+        auto class_name = nanobind::steal<nanobind::object>(PyObject_GetAttrString(python_class.ptr(), "__name__"));
+        if (!class_name) {
+            nanobind::raise_python_error();
+        }
+
+        auto name_size = Py_ssize_t{};
+        const auto *name = PyUnicode_AsUTF8AndSize(class_name.ptr(), &name_size);
+        if (name == nullptr) {
+            nanobind::raise_python_error();
+        }
+
+        output.set(std::string_view{name, static_cast<std::size_t>(name_size)});
+    }
+};
+
+const bg::Operator &native_concrete_type_name_operator() {
+    static auto operation =
+        bg::operator_<auto(bg::TS<bg::SCALAR>) -> bg::string>{"native_concrete_type_name", {"value"}};
+    static const auto &implementation = operation.overload(bg::python::node<native_concrete_type_name_node>());
+    (void)implementation;
+    return operation;
+}
+
 const bg::Operator &native_gil_operator() {
     static auto operation = bg::operator_<auto(bg::TS<bg::i64>) -> bg::TS<bg::i64>>{"native_gil", {"value"}};
     static const auto &implementation = operation.overload(bg::python::node<native_gil_node>());
@@ -337,6 +382,7 @@ NB_MODULE(_bg_test_extension, module) {
     bg::python::export_operator(module, "native_start_only_source", native_start_only_source_operator());
     bg::python::export_operator(module, "native_continuous_timer", native_continuous_timer_operator());
     bg::python::export_operator(module, "native_python_object_property", native_python_object_property_operator());
+    bg::python::export_operator(module, "native_concrete_type_name", native_concrete_type_name_operator());
     module.def("native_node_lifecycle", [] {
         return nanobind::make_tuple(native_node_lifecycle[0].load(), native_node_lifecycle[1].load(),
                                     native_node_lifecycle[2].load(), native_node_lifecycle[3].load());
@@ -371,6 +417,9 @@ NB_MODULE(_bg_test_extension, module) {
     module.def("can_convert_python_type", [](nanobind::handle python_type) {
         auto &conversions = bg::python::scalar_conversions();
         return conversions.can_from_python(conversions.type_from_python(python_type));
+    });
+    module.def("python_type_supports_value_covariance", [](nanobind::handle python_type) {
+        return bg::python::scalar_conversions().type_from_python(python_type).supports_value_covariance();
     });
     module.def("copy_release_python_scalar_without_gil", [](nanobind::handle value) {
         auto memory = bg::allocator{};

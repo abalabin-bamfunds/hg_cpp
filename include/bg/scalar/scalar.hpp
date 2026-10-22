@@ -97,6 +97,7 @@ template <typename T> class Scalar {
     }
 
     const ScalarType &type() const noexcept { return value_.runtime_type().type(); }
+    const ScalarType &concrete_type() const { return value_.concrete_type(); }
     const ScalarRuntimeType &runtime_type() const noexcept { return value_.runtime_type(); }
     const void *data() const noexcept { return value_.data(); }
 

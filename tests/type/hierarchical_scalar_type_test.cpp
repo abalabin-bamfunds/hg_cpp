@@ -82,6 +82,7 @@ TEST_CASE("a hierarchical scalar has canonical ordered schema metadata",
     CHECK(hierarchical.find(util::symbol{"missing"}) == nullptr);
     CHECK(hierarchical.supports_equality());
     CHECK(hierarchical.supports_hash());
+    CHECK(hierarchical.supports_value_covariance());
     CHECK(text == "Equity");
 }
 
@@ -299,6 +300,7 @@ TEST_CASE("a generic bundle declaration captures a named schema variable",
     const auto &schema_variable = details::schema_variable_instance<ENTITY>();
     auto type_map = TypeMap{};
 
+    CHECK_FALSE(generic.supports_value_covariance());
     REQUIRE(generic.match(concrete, type_map));
     CHECK(schema_variable.name().text() == "ENTITY");
     CHECK(std::get<const bg::Type *>(*type_map.find(schema_variable)) ==
@@ -386,6 +388,9 @@ TEST_CASE("a derived hierarchical scalar can narrow inherited fields",
     const auto derived_value = bundle<EquityPortfolio>(memory, instruments.view());
     const auto derived_view = Scalar<Bundle<EquityPortfolio>>::from(derived_value);
     const auto base_view = Scalar<Bundle<Portfolio>>::from(derived_view);
+    CHECK(&base_view.type() == &derived_view.type());
+    const auto base_value = ScalarValue<Bundle<Portfolio>>{derived_view, memory};
+    CHECK(&base_value.type() == &derived_view.type());
     CHECK(&base_view.field_type(0) == &cpp_scalar_type<List<Bundle<Equity>>>());
     REQUIRE(required_price.field_count() == 2);
     CHECK(required_price.field(1).name.text() == "price");

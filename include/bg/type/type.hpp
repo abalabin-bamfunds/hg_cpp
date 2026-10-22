@@ -61,6 +61,8 @@ class Type : public ddv::visitable<Type, TypeVisitor> {
     virtual bool is_graph() const noexcept { return false; }
     virtual bool is_scalar() const noexcept { return false; }
     virtual bool is_time_series() const noexcept { return false; }
+    // True when a type-specific value inspection can recover an accepted more-specific semantic type.
+    virtual bool supports_value_covariance() const noexcept { return false; }
     virtual void format_name(std::string &result) const { result += "type"; }
     // Engine registration hook. Static registration requires this Type to have process-static storage.
     details::StaticRegistryEntry<Type> &registry_entry() const noexcept { return registry_entry_; }

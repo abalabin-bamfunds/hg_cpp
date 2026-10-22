@@ -854,6 +854,35 @@ Switch cases use a dictionary. A tuple groups keys that use the same graph, and
 selected = bg.switch_(key, {(1, 2): first, 3: second, bg.DEFAULT: fallback}, value)
 ```
 
+`@bg.dispatch` declares an input/output contract for runtime type selection.
+Its function body is not called. Register decorated graph or node definitions
+with `overload`; the declared input type is the fallback when an implementation
+accepts it:
+
+```python
+@bg.dispatch
+def choose(value: bg.TS[Base]) -> bg.TS[str]: ...
+
+@choose.overload
+@bg.compute_node
+def base(value: bg.TS[Base]) -> bg.TS[str]:
+    return "base"
+
+@choose.overload
+@bg.compute_node
+def derived(value: bg.TS[Derived]) -> bg.TS[str]:
+    return "derived"
+
+result = choose(value)
+```
+
+Construct an explicit implementation list with
+`choose = bg.dispatch(signature_function, [base, derived])`. Dispatch accepts
+positional and named arguments and selects on covariance-capable time-series
+inputs. An unmatched runtime type raises `IndexError` if no fallback
+implementation applies. Other matching and output rules follow
+[runtime dispatch](operators.md#runtime-dispatch).
+
 Source and sink branch graphs are supported. A sink higher-order call returns
 `None`.
 

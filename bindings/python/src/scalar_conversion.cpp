@@ -72,6 +72,7 @@ class PythonObjectScalarType final : public ScalarType {
 
     bool is_resolved() const noexcept override { return true; }
     const Type &resolve(const TypeMap &) const override { return *this; }
+    bool supports_value_covariance() const noexcept override { return true; }
     bool supports_equality() const noexcept override { return true; }
     bool supports_hash() const noexcept override { return hashable_; }
 
@@ -141,6 +142,17 @@ class PythonObjectScalarRuntimeType final : public ScalarRuntimeType {
 
     bool accepts_input(const ScalarRuntimeType &source) const noexcept override {
         return object_type_.accepts_type(source.type());
+    }
+
+    const ScalarType &concrete_type(const details::ScalarData &value) const override {
+        auto *object = python_object(value);
+        if (object == nullptr) {
+            return type();
+        }
+
+        auto gil = nanobind::gil_scoped_acquire{};
+        return scalar_conversions().type_from_python(
+            nanobind::handle{reinterpret_cast<PyObject *>(Py_TYPE(object))});
     }
 
     void construct_initial_value(void *destination) const noexcept override {

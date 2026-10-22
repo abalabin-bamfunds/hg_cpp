@@ -516,6 +516,97 @@ TEST_CASE("an operator reports equally specific overloads as ambiguous", "[featu
     }
 }
 
+TEST_CASE("operator candidate resolution returns the selected implementation and concrete forms",
+          "[feature:operator][feature:wiring]") {
+    auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS_T>{"resolve_candidates", {"value"}};
+    const auto &generic = operation.overload(
+        bg::graph("name"_n = "generic", [](bg::wp<bg::TS<bg::SCALAR>> value) { return value; }));
+    const auto &exact = operation.overload(
+        bg::graph("name"_n = "exact", [](bg::wp<bg::TS<float>> value) { return value; }));
+    const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
+    const auto all = std::array<const bg::WiringTemplate *, 2>{&generic, &exact};
+    const auto generic_only = std::array<const bg::WiringTemplate *, 1>{&generic};
+    const auto exact_only = std::array<const bg::WiringTemplate *, 1>{&exact};
+
+    bg::testing::test_wiring([&] {
+        const auto value = source();
+        const auto arguments = std::array{bg::WiringArgument{static_cast<bg::WiringPoint>(value)}};
+        const auto resolution = operation.resolve_overloads(bg::WiringContext::current().wiring(), arguments,
+                                                            nullptr, all);
+
+        REQUIRE(resolution.selected);
+        CHECK(resolution.selected->implementation == &exact);
+        CHECK(resolution.selected->resolution.signature.output == &bg::TS<float>::type());
+        REQUIRE(resolution.selected->argument_forms.size() == 1);
+        CHECK(resolution.selected->argument_forms.front() == nullptr);
+    });
+
+    bg::testing::test_wiring([&] {
+        const auto value = source();
+        const auto arguments = std::array{bg::WiringArgument{static_cast<bg::WiringPoint>(value)}};
+        const auto resolution = operation.resolve_overloads(bg::WiringContext::current().wiring(), arguments,
+                                                            nullptr, generic_only);
+
+        REQUIRE(resolution.selected);
+        CHECK(resolution.selected->implementation == &generic);
+    });
+
+    const auto integer_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    bg::testing::test_wiring([&] {
+        const auto value = integer_source();
+        const auto arguments = std::array{bg::WiringArgument{static_cast<bg::WiringPoint>(value)}};
+        const auto resolution = operation.resolve_overloads(bg::WiringContext::current().wiring(), arguments,
+                                                            nullptr, exact_only);
+
+        CHECK_FALSE(resolution.selected);
+        CHECK_FALSE(resolution.ambiguous);
+        CHECK_FALSE(resolution.failures.empty());
+    });
+}
+
+TEST_CASE("operator candidate resolution reports ambiguity and callback failures",
+          "[feature:operator][feature:wiring]") {
+    auto ambiguous = bg::operator_<auto(bg::TS<float>) -> bg::TS<float>>{"ambiguous_candidates", {"value"}};
+    const auto &first = ambiguous.overload(
+        bg::graph("name"_n = "first", [](bg::wp<bg::TS<float>> value) { return value; }));
+    const auto &second = ambiguous.overload(
+        bg::graph("name"_n = "second", [](bg::wp<bg::TS<float>> value) { return value; }));
+    const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
+    const auto candidates = std::array<const bg::WiringTemplate *, 2>{&first, &second};
+
+    bg::testing::test_wiring([&] {
+        const auto value = source();
+        const auto arguments = std::array{bg::WiringArgument{static_cast<bg::WiringPoint>(value)}};
+        const auto resolution = ambiguous.resolve_overloads(bg::WiringContext::current().wiring(), arguments,
+                                                            nullptr, candidates);
+
+        CHECK_FALSE(resolution.selected);
+        CHECK(resolution.ambiguous);
+        CHECK(resolution.failures.size() == 2);
+    });
+
+    auto callback_failure = bg::operator_<auto(bg::TS<float>) -> bg::TS<float>>{"callback_failure", {"value"}};
+    const auto &throws = callback_failure.overload(bg::graph(
+        "name"_n = "throws",
+        bg::require = [](const bg::WiringArguments &) -> bool { throw std::runtime_error{"requirement failed"}; },
+        [](bg::wp<bg::TS<float>> value) { return value; }));
+    const auto throwing_candidate = std::array<const bg::WiringTemplate *, 1>{&throws};
+
+    bg::testing::test_wiring([&] {
+        const auto value = source();
+        const auto arguments = std::array{bg::WiringArgument{static_cast<bg::WiringPoint>(value)}};
+        try {
+            (void)callback_failure.resolve_overloads(bg::WiringContext::current().wiring(), arguments, nullptr,
+                                                     throwing_candidate);
+            FAIL("expected a callback failure");
+        } catch (const bg::WiringError &error) {
+            REQUIRE(error.diagnostic());
+            REQUIRE_FALSE(error.diagnostic()->candidates.empty());
+            CHECK(error.diagnostic()->candidates.back().stage == bg::WiringFailureStage::callback);
+        }
+    });
+}
+
 TEST_CASE("opt selects optional inputs and keeps that choice distinct in the cache",
           "[feature:operator][feature:wiring][feature:validity][validity:optional][series:value]") {
     auto selected = std::string{};

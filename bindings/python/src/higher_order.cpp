@@ -1,11 +1,15 @@
 #include "higher_order.hpp"
 
+#include "python_wiring_error.hpp"
 #include "wiring_argument.hpp"
 
+#include <bg/dispatch.hpp>
+#include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/map.hpp>
 #include <bg/mesh.hpp>
 #include <bg/mesh/details/default_mesh_wiring.hpp>
+#include <bg/node/runtime_signature_node_template.hpp>
 #include <bg/python/graph_definition.hpp>
 #include <bg/python/wiring_point.hpp>
 #include <bg/switch.hpp>
@@ -77,6 +81,25 @@ class PythonArguments {
 
     GraphWiring *wiring_;
     allocator *memory_;
+};
+
+class PythonDispatchTemplate final : public WiringTemplate {
+  public:
+    PythonDispatchTemplate(const Signature &signature, std::span<const WiringTemplate *const> implementations)
+        : signature_{&signature}, implementations_{implementations}, resolver_{signature} {}
+
+    const Signature &default_signature() const override { return *signature_; }
+
+    std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature, const WiringArguments &arguments,
+                                    std::span<const WiringArgument> supplied) const override {
+        return bg::details::wire_dispatch(wiring, *signature_, signature_->has_output(), signature.output,
+                                          *signature_, supplied, implementations_, resolver_, arguments.type_map(), {});
+    }
+
+  private:
+    const Signature *signature_;
+    std::span<const WiringTemplate *const> implementations_;
+    Operator resolver_;
 };
 
 nb::object wiring_result(WiringPoint result) {
@@ -154,6 +177,55 @@ nb::object wire_switch(const PythonWiringPoint &key, nb::sequence case_values, n
                     std::span<const WiringArgument>{arguments})));
 }
 
+nb::object wire_dispatch(const PythonGraphDefinition &contract, nb::sequence implementations,
+                         nb::sequence fixed, nb::sequence positional, nb::dict named) {
+    auto &wiring = WiringContext::current().wiring();
+    auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
+    auto memory = allocator{temporary_memory};
+    auto arguments = wiring_arguments(contract.signature(), fixed, positional, named, memory, wiring,
+                                      contract.wiring_parameter_types());
+
+    auto implementation_templates = std::vector<const WiringTemplate *>{};
+    implementation_templates.reserve(nb::len(implementations));
+    const auto scope = PythonWiringScope::current();
+    for (const auto implementation : implementations) {
+        const auto native = nb::getattr(implementation, "_native_definition");
+        if (nb::isinstance<PythonGraphDefinition>(native)) {
+            implementation_templates.push_back(&nb::cast<const PythonGraphDefinition &>(native));
+            continue;
+        }
+        if (!nb::isinstance<PythonNodeDefinition>(native)) {
+            throw std::invalid_argument{"dispatch implementations must be Python graph or node definitions"};
+        }
+
+        const auto &definition = nb::cast<const PythonNodeDefinition &>(native);
+        auto *node_template = scope->node_template(definition.identity());
+        if (node_template == nullptr) {
+            auto retained = std::make_unique<RuntimeSignatureNodeTemplate<PythonNodeDefinition>>(
+                definition.retain_function());
+            node_template = &wiring.own_node_template(std::move(retained));
+            scope->add_node_template(definition.identity(), *node_template);
+        }
+        implementation_templates.push_back(node_template);
+    }
+
+    auto dispatch = PythonDispatchTemplate{contract.signature(), implementation_templates};
+    try {
+        const auto result = static_cast<const WiringTemplate &>(dispatch)(
+            std::span<const WiringArgument>{arguments});
+        return result ? wiring_result(*result) : nb::none();
+    } catch (const nb::python_error &) {
+        throw;
+    } catch (const WiringError &error) {
+        if (has_python_error(error)) {
+            rethrow_python_error(error);
+        }
+        throw std::invalid_argument{std::string{"cannot wire dispatch: "} + error.what()};
+    } catch (const std::exception &error) {
+        throw std::invalid_argument{std::string{"cannot wire dispatch: "} + error.what()};
+    }
+}
+
 } // namespace
 
 void bind_higher_order(nb::module_ &module) {
@@ -161,6 +233,7 @@ void bind_higher_order(nb::module_ &module) {
     module.def("_mesh", &wire_mesh);
     module.def("_mesh_dependency", &wire_mesh_dependency);
     module.def("_switch", &wire_switch);
+    module.def("_dispatch", &wire_dispatch);
 }
 
 } // namespace bg::python::details

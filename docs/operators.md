@@ -103,6 +103,36 @@ retains every registered implementation.
 Node templates and graph templates can both be overloads. Their normal wiring
 behavior runs only after overload selection.
 
+## Runtime dispatch
+
+`dispatch_<Signature>` wires a declared input/output contract to a list of node
+or graph implementations:
+
+```cpp
+auto choose = dispatch_<auto(TS<Bundle<Base>>) -> TS<i64>>{
+    base_implementation, derived_implementation
+};
+auto result = choose(value);
+```
+
+At wiring, dispatch builds the supplied static input tuple and the type tuples
+offered by each implementation. It expands input unions within that
+implementation. For each tuple, the most-specific applicable declared input
+constraint wins before binding cost; a type variable remains generic for this
+comparison even when type resolution maps it to a concrete type. Ordinary
+overload resolution ranks implementations with equivalent constraints. At
+evaluation, a selector reads each selected input's concrete semantic type and
+chooses the most-specific applicable tuple. The static input tuple provides a
+fallback when it applies. Requirements can reject an implementation for a
+tuple; they do not add types to the runtime selection set. Incomparable
+applicable tuples are ambiguous.
+
+Dispatch selects time-series inputs whose scalar type supports value
+covariance. The selected implementation receives the original arguments,
+with dispatch inputs adapted to its declared input types. Scalar-value time
+series outputs can be adapted to the declared output type. Collection outputs
+currently require identical dereferenced types.
+
 ## Overload implementation declarations
 
 `<bg/overload.hpp>` provides declarations for library initialization:

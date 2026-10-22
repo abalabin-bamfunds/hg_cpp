@@ -45,6 +45,7 @@ decltype(not_) not_{"not_", {"value"}};
 
 decltype(valid) valid{"valid", {"value"}};
 decltype(all_valid) all_valid{"all_valid", {"value"}};
+decltype(type_) type_{"type_", {"value"}};
 decltype(count) count{"count", {"value"}};
 
 decltype(sample) sample{"sample", {"signal", "value"}};

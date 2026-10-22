@@ -154,4 +154,8 @@ const ScalarType &scalar_type_traits<symbol>::type() noexcept {
     return symbol_type();
 }
 
+const ScalarType &scalar_type_traits<const Type *>::type() noexcept {
+    return registered_cpp_scalar_type<const Type *>();
+}
+
 } // namespace bg

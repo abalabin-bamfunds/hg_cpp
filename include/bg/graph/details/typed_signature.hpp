@@ -78,6 +78,7 @@ template <typename Prototype> struct typed_prototype;
 
 template <typename Result, typename... Arguments> struct typed_prototype<Result(Arguments...)> {
     static constexpr bool has_output = !std::same_as<Result, void>;
+    static constexpr std::size_t argument_count = sizeof...(Arguments);
 
     static Signature signature(util::symbol name, std::span<const std::string_view> parameter_names) {
         return make_typed_signature(name, parameter_names, static_cast<Result (*)(Arguments...)>(nullptr));

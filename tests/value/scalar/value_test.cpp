@@ -1,6 +1,8 @@
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/details/allocation_pool.hpp>
 #include <bg/scalar/value.hpp>
+#include <bg/time_series/cpp_runtime_type.hpp>
+#include <bg/time_series/time_series_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -75,6 +77,32 @@ TEST_CASE("pointer-sized scalar values compare and hash from inline storage",
     CHECK_FALSE(left == different);
     CHECK(left.equals(equal));
     CHECK(left.hash() == equal.hash());
+}
+
+TEST_CASE("Type pointers use pointer-sized scalar storage with identity equality and hashing",
+          "[feature:scalar-api][feature:scalar-storage][scalar:opaque][storage:inline]") {
+    const auto *type = static_cast<const bg::Type *>(&bg::int64_type());
+    const auto *equal_type = type;
+    const auto *other_type = static_cast<const bg::Type *>(&bg::float_type());
+    auto memory = bg::allocator{*std::pmr::null_memory_resource()};
+    const auto value = bg::ScalarValue<const bg::Type *>{type, memory};
+    const auto equal = bg::ScalarValue<const bg::Type *>{equal_type, memory};
+    const auto different = bg::ScalarValue<const bg::Type *>{other_type, memory};
+
+    STATIC_CHECK(sizeof(bg::scalar_storage_traits<const bg::Type *>::stored_type) == sizeof(void *));
+    CHECK(&value.view().type() == &bg::cpp_scalar_type<const bg::Type *>());
+    CHECK(value.view().value() == type);
+    CHECK(value == equal);
+    CHECK_FALSE(value == different);
+    CHECK(value.hash() == equal.hash());
+    CHECK(value.runtime_type().size() == sizeof(const bg::Type *));
+    CHECK(value.runtime_type().alignment() == alignof(const bg::Type *));
+    CHECK(value.runtime_type().supports_byte_copy_initialization());
+
+    const auto &time_series = bg::cpp_time_series_runtime_type<
+        bg::TS<const bg::Type *, bg::TimeSeriesGuarantee::deduplicated>>();
+    CHECK(&static_cast<const bg::TimeSeriesValueRuntimeType &>(time_series).scalar_runtime_type() ==
+          &value.runtime_type());
 }
 
 TEST_CASE("scalar hash and equality support heterogeneous scalar handles",

@@ -33,6 +33,9 @@ class ScalarRuntimeType : public RuntimeType {
     ~ScalarRuntimeType() override;
 
     const ScalarType &type() const noexcept { return static_cast<const ScalarType &>(RuntimeType::type()); }
+    // Reports the concrete semantic type represented by a scalar value. Runtime representations that retain only
+    // their declared type can use the default implementation.
+    virtual const ScalarType &concrete_type(const ScalarData &value) const;
     // Selects the owning-copy destination while preserving the source's actual semantic type.
     virtual const ScalarRuntimeType &runtime_type_for_copy(const ScalarData &) const {
         return *this;
