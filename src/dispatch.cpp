@@ -14,9 +14,11 @@
 #include <bg/switch/details/switch_invoke.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
+#include <bg/type/type_variable.hpp>
 #include <bg/type/type_resolution_error.hpp>
 
 #include <algorithm>
+#include <array>
 #include <ranges>
 #include <string>
 #include <utility>
@@ -69,7 +71,16 @@ struct DispatchBranch {
 
 struct DispatchTypeCombination {
     std::vector<const ScalarType *> types;
-    std::vector<const WiringTemplate *> declarations;
+};
+
+struct DispatchInputAlternative {
+    const ScalarType *declared_type;
+    const ScalarType *resolved_type;
+};
+
+struct DispatchImplementationConstraint {
+    const WiringTemplate *implementation;
+    std::vector<const ScalarType *> declared_types;
 };
 
 class DispatchBranchTemplate final : public WiringTemplate {
@@ -254,28 +265,89 @@ std::vector<WiringArgument> probe_arguments(std::span<const WiringArgument> supp
     return arguments;
 }
 
-std::vector<DispatchTypeCombination> dispatch_type_combinations(
-    GraphWiring &wiring, const Signature &prototype, std::span<const std::size_t> dispatch_inputs,
-    std::span<const WiringArgument> supplied, std::span<const WiringTemplate *const> implementations,
-    const TypeMap &seed_type_map) {
-    auto static_types = std::vector<const ScalarType *>{};
-    static_types.reserve(dispatch_inputs.size());
-
-    for (const auto dispatch_input : dispatch_inputs) {
-        if (dispatch_input >= supplied.size() || !supplied[dispatch_input].is_time_series()) {
-            throw WiringError{"dispatch inputs must be time series"};
+std::vector<DispatchInputAlternative> dispatch_input_alternatives(
+    const Type &declared_type, const WiringArgument &supplied, const TypeMap &seed_type_map) {
+    auto alternatives = std::vector<const Type *>{};
+    if (const auto *union_type = dynamic_cast<const TypeVariableType<Type> *>(&declared_type)) {
+        for (const auto *alternative : union_type->alternatives()) {
+            alternatives.push_back(alternative);
         }
-        const auto *input = dispatch_value_type(supplied[dispatch_input].type());
-        if (input == nullptr || !input->value_type().supports_value_covariance()) {
-            throw WiringError{"dispatch inputs must support value covariance"};
-        }
-
-        static_types.push_back(&input->value_type());
+    } else {
+        alternatives.push_back(&declared_type);
     }
 
-    // Runtime dispatch needs the declared input tuple and the tuples named by implementations. Expanding each
-    // input's hierarchy independently would create combinations that no implementation can select.
-    auto combinations = std::vector<DispatchTypeCombination>{{static_types, {}}};
+    auto result = std::vector<DispatchInputAlternative>{};
+    for (const auto *alternative : alternatives) {
+        const auto *value_type = dispatch_value_type(*alternative);
+        if (value_type == nullptr) {
+            continue;
+        }
+
+        auto scalar_alternatives = std::vector<const ScalarType *>{};
+        if (const auto *union_type = dynamic_cast<const TypeVariableType<ScalarType> *>(&value_type->value_type());
+            union_type != nullptr && !union_type->alternatives().empty()) {
+            for (const auto *scalar_alternative : union_type->alternatives()) {
+                scalar_alternatives.push_back(scalar_alternative);
+            }
+        } else {
+            scalar_alternatives.push_back(&value_type->value_type());
+        }
+
+        const auto *source_type = dispatch_value_type(supplied.type());
+        if (source_type == nullptr) {
+            continue;
+        }
+        for (const auto *declared_scalar : scalar_alternatives) {
+            auto type_map = seed_type_map.copy();
+            auto *resolved_scalar = declared_scalar;
+            if (!resolved_scalar->is_resolved()) {
+                try {
+                    resolved_scalar = type_cast<ScalarType>(&resolved_scalar->resolve(type_map));
+                } catch (const TypeResolutionError &) {
+                    if (!declared_scalar->match(source_type->value_type(), type_map)) {
+                        continue;
+                    }
+                    try {
+                        resolved_scalar = type_cast<ScalarType>(&declared_scalar->resolve(type_map));
+                    } catch (const TypeResolutionError &) {
+                        continue;
+                    }
+                }
+            }
+            if (resolved_scalar == nullptr || !resolved_scalar->is_resolved() ||
+                !resolved_scalar->supports_value_covariance()) {
+                continue;
+            }
+            if (!source_type->value_type().accepts(*resolved_scalar) &&
+                !resolved_scalar->accepts(source_type->value_type())) {
+                continue;
+            }
+
+            result.push_back({declared_scalar, resolved_scalar});
+        }
+    }
+    return result;
+}
+
+std::vector<DispatchImplementationConstraint> dispatch_implementation_constraints(
+    GraphWiring &wiring, const Signature &prototype, std::span<const std::size_t> dispatch_inputs,
+    std::span<const WiringArgument> supplied, std::span<const WiringTemplate *const> implementations,
+    const TypeMap &seed_type_map, std::vector<std::vector<const ScalarType *>> &candidate_types) {
+    auto constraints = std::vector<DispatchImplementationConstraint>{};
+    candidate_types.resize(dispatch_inputs.size());
+
+    for (auto input = std::size_t{}; input < dispatch_inputs.size(); ++input) {
+        const auto supplied_index = dispatch_inputs[input];
+        if (supplied_index >= supplied.size() || !supplied[supplied_index].is_time_series()) {
+            throw WiringError{"dispatch inputs must be time series"};
+        }
+        const auto *source_type = dispatch_value_type(supplied[supplied_index].type());
+        if (source_type == nullptr || !source_type->value_type().supports_value_covariance()) {
+            throw WiringError{"dispatch inputs must support value covariance"};
+        }
+        candidate_types[input].push_back(&source_type->value_type());
+    }
+
     auto records = WiringRecordOverlay{wiring};
     for (const auto *implementation : implementations) {
         records.clear();
@@ -287,51 +359,187 @@ std::vector<DispatchTypeCombination> dispatch_type_combinations(
             continue;
         }
 
-        auto types = static_types;
-        for (auto input = std::size_t{}; input < dispatch_inputs.size(); ++input) {
-            const auto supplied_index = dispatch_inputs[input];
-            const auto parameter = std::ranges::find(normalized.supplied_argument_indices,
-                                                     std::optional<std::size_t>{supplied_index});
-            if (parameter == normalized.supplied_argument_indices.end()) {
+        auto independent_parameters = std::vector<Parameter>{};
+        auto independent_arguments = std::vector<WiringArgument>{};
+        for (auto parameter_index = std::size_t{}; parameter_index < normalized.arguments.size();
+             ++parameter_index) {
+            const auto supplied_index = normalized.supplied_argument_indices[parameter_index];
+            if (supplied_index && std::ranges::find(dispatch_inputs, *supplied_index) != dispatch_inputs.end()) {
                 continue;
             }
-
-            const auto parameter_index = static_cast<std::size_t>(
-                parameter - normalized.supplied_argument_indices.begin());
-            const auto &declared_type = *implementation->signature().parameter(parameter_index).type;
-            auto *implementation_input = dispatch_value_type(declared_type);
-            if (implementation_input == nullptr) {
-                continue;
-            }
-
-            auto *candidate_type = &implementation_input->value_type();
-            if (!candidate_type->is_resolved()) {
-                try {
-                    candidate_type = type_cast<ScalarType>(&candidate_type->resolve(seed_type_map));
-                } catch (const TypeResolutionError &) {
-                    continue;
-                }
-            }
-            if (candidate_type == nullptr || !candidate_type->is_resolved()) {
-                continue;
-            }
-
-            if (!candidate_type->supports_value_covariance() ||
-                (!candidate_type->accepts(*static_types[input]) && !static_types[input]->accepts(*candidate_type))) {
-                continue;
-            }
-            types[input] = candidate_type;
+            independent_parameters.push_back(implementation->signature().parameter(parameter_index));
+            independent_arguments.push_back(WiringArgument::borrow(normalized.arguments[parameter_index]));
         }
 
-        const auto existing = std::ranges::find(combinations, types, &DispatchTypeCombination::types);
-        if (existing == combinations.end()) {
-            combinations.push_back({std::move(types), {implementation}});
-        } else if (!existing->declarations.empty() &&
-                   std::ranges::find(existing->declarations, implementation) == existing->declarations.end()) {
-            existing->declarations.push_back(implementation);
+        auto type_maps = std::vector<TypeMap>{};
+        if (independent_parameters.empty()) {
+            type_maps.push_back(seed_type_map.copy());
+        } else {
+            const auto independent_signature =
+                Signature{implementation->signature().name(), std::move(independent_parameters)};
+            auto matches = independent_signature.match_wiring_arguments(independent_arguments, &seed_type_map);
+            for (auto &match : matches) {
+                type_maps.push_back(std::move(match.type_map));
+            }
+        }
+        if (type_maps.empty()) {
+            continue;
+        }
+
+        for (const auto &implementation_type_map : type_maps) {
+            auto input_alternatives = std::vector<std::vector<DispatchInputAlternative>>{};
+            input_alternatives.reserve(dispatch_inputs.size());
+            auto complete = true;
+            for (const auto supplied_index : dispatch_inputs) {
+                const auto parameter = std::ranges::find(normalized.supplied_argument_indices,
+                                                         std::optional<std::size_t>{supplied_index});
+                if (parameter == normalized.supplied_argument_indices.end()) {
+                    complete = false;
+                    break;
+                }
+
+                const auto parameter_index = static_cast<std::size_t>(
+                    parameter - normalized.supplied_argument_indices.begin());
+                auto alternatives = dispatch_input_alternatives(
+                    *implementation->signature().parameter(parameter_index).type, supplied[supplied_index],
+                    implementation_type_map);
+                if (alternatives.empty()) {
+                    complete = false;
+                    break;
+                }
+                const auto input_index = input_alternatives.size();
+                for (const auto &alternative : alternatives) {
+                    auto &types = candidate_types[input_index];
+                    if (std::ranges::find(types, alternative.resolved_type) == types.end()) {
+                        types.push_back(alternative.resolved_type);
+                    }
+                }
+                input_alternatives.push_back(std::move(alternatives));
+            }
+            if (!complete) {
+                continue;
+            }
+
+            auto cases = std::vector<DispatchImplementationConstraint>{
+                {.implementation = implementation, .declared_types = {}}};
+            for (const auto &alternatives : input_alternatives) {
+                auto expanded = std::vector<DispatchImplementationConstraint>{};
+                expanded.reserve(cases.size() * alternatives.size());
+                for (const auto &dispatch_case : cases) {
+                    for (const auto &alternative : alternatives) {
+                        auto next = dispatch_case;
+                        next.declared_types.push_back(alternative.declared_type);
+                        expanded.push_back(std::move(next));
+                    }
+                }
+                cases = std::move(expanded);
+            }
+            constraints.insert(constraints.end(), std::make_move_iterator(cases.begin()),
+                               std::make_move_iterator(cases.end()));
         }
     }
-    return combinations;
+
+    return constraints;
+}
+
+std::vector<DispatchTypeCombination> dispatch_type_combinations(
+    std::span<const std::vector<const ScalarType *>> candidate_types) {
+    auto combinations = std::vector<DispatchTypeCombination>{{}};
+    for (const auto &input_types : candidate_types) {
+        auto expanded = std::vector<DispatchTypeCombination>{};
+        expanded.reserve(combinations.size() * input_types.size());
+        for (const auto &combination : combinations) {
+            for (const auto *type : input_types) {
+                auto next = combination;
+                next.types.push_back(type);
+                expanded.push_back(std::move(next));
+            }
+        }
+        combinations = std::move(expanded);
+    }
+
+    auto unique = std::vector<DispatchTypeCombination>{};
+    unique.reserve(combinations.size());
+    for (auto &combination : combinations) {
+        const auto existing = std::ranges::find(unique, combination.types, &DispatchTypeCombination::types);
+        if (existing == unique.end()) {
+            unique.push_back(std::move(combination));
+        }
+    }
+    return unique;
+}
+
+bool dispatch_constraint_applies(const DispatchImplementationConstraint &constraint,
+                                 std::span<const ScalarType *const> dispatch_types) {
+    if (constraint.declared_types.size() != dispatch_types.size()) {
+        return false;
+    }
+    for (auto index = std::size_t{}; index < dispatch_types.size(); ++index) {
+        if (!constraint.declared_types[index]->accepts(*dispatch_types[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+Signature dispatch_constraint_signature(const DispatchImplementationConstraint &constraint) {
+    auto parameters = std::vector<Parameter>{};
+    parameters.reserve(constraint.declared_types.size());
+    for (const auto *type : constraint.declared_types) {
+        parameters.push_back({.type = type});
+    }
+    return Signature{constraint.implementation->signature().name(), std::move(parameters)};
+}
+
+std::partial_ordering compare_dispatch_constraints(const Signature &left, const Signature &right) {
+    return compare_parameter_specificity(left, right, left.parameter_count());
+}
+
+std::vector<const WiringTemplate *> most_specific_dispatch_implementations(
+    std::span<const DispatchImplementationConstraint *const> applicable) {
+    auto signatures = std::vector<Signature>{};
+    signatures.reserve(applicable.size());
+    for (const auto *constraint : applicable) {
+        signatures.push_back(dispatch_constraint_signature(*constraint));
+    }
+
+    const auto compare = [&](std::size_t left, std::size_t right) {
+        return compare_dispatch_constraints(signatures[left], signatures[right]);
+    };
+    auto most_specific_indices = std::vector<std::size_t>{};
+    for (auto candidate = std::size_t{}; candidate < applicable.size(); ++candidate) {
+        auto dominated = false;
+        for (auto other = std::size_t{}; other < applicable.size(); ++other) {
+            if (candidate == other) {
+                continue;
+            }
+            if (compare(candidate, other) == std::partial_ordering::greater) {
+                dominated = true;
+                break;
+            }
+        }
+        if (!dominated) {
+            most_specific_indices.push_back(candidate);
+        }
+    }
+
+    for (auto left = std::size_t{}; left < most_specific_indices.size(); ++left) {
+        for (auto right = left + 1; right < most_specific_indices.size(); ++right) {
+            if (compare(most_specific_indices[left], most_specific_indices[right]) ==
+                std::partial_ordering::unordered) {
+                throw WiringError{"dispatch input types match incomparable implementation graphs"};
+            }
+        }
+    }
+
+    auto implementations = std::vector<const WiringTemplate *>{};
+    for (const auto constraint_index : most_specific_indices) {
+        const auto *implementation = applicable[constraint_index]->implementation;
+        if (std::ranges::find(implementations, implementation) == implementations.end()) {
+            implementations.push_back(implementation);
+        }
+    }
+    return implementations;
 }
 
 } // namespace
@@ -365,8 +573,10 @@ std::optional<WiringPoint> wire_dispatch(GraphWiring &wiring, const Signature &d
     if (selected_inputs.empty()) {
         throw WiringError{"dispatch requires at least one covariance-capable time-series input"};
     }
-    const auto combinations = dispatch_type_combinations(wiring, prototype, selected_inputs, supplied,
-                                                         implementations, seed_type_map);
+    auto candidate_types = std::vector<std::vector<const ScalarType *>>{};
+    const auto implementation_constraints = dispatch_implementation_constraints(
+        wiring, prototype, selected_inputs, supplied, implementations, seed_type_map, candidate_types);
+    const auto combinations = dispatch_type_combinations(candidate_types);
 
     auto selector_candidates = std::vector<DispatchSelectorCandidate>{};
     auto branches = std::vector<std::unique_ptr<DispatchBranchTemplate>>{};
@@ -376,12 +586,39 @@ std::optional<WiringPoint> wire_dispatch(GraphWiring &wiring, const Signature &d
     branches.reserve(combinations.size());
     switch_cases.reserve(combinations.size());
 
-    auto candidate_implementations = std::vector<const WiringTemplate *>{implementations.begin(), implementations.end()};
     for (const auto &combination : combinations) {
         const auto &dispatch_types = combination.types;
         auto probe = GraphWiring{wiring};
         auto probe_context = WiringContext{probe};
         auto arguments = probe_arguments(supplied, selected_inputs, dispatch_types);
+
+        auto applicable_constraints = std::vector<const DispatchImplementationConstraint *>{};
+        auto applicable_implementations = std::vector<const WiringTemplate *>{};
+        for (const auto &constraint : implementation_constraints) {
+            if (!dispatch_constraint_applies(constraint, dispatch_types)) {
+                continue;
+            }
+            if (std::ranges::find(applicable_implementations, constraint.implementation) ==
+                applicable_implementations.end()) {
+                const auto single_implementation =
+                    std::array<const WiringTemplate *, 1>{constraint.implementation};
+                const auto applicability = resolver.resolve_overloads(probe, arguments, &seed_type_map,
+                                                                      single_implementation);
+                if (!applicability.selected) {
+                    for (auto &failure : applicability.failures) {
+                        failed_probes.push_back(std::move(failure));
+                    }
+                    continue;
+                }
+                applicable_implementations.push_back(constraint.implementation);
+            }
+            applicable_constraints.push_back(&constraint);
+        }
+        if (applicable_constraints.empty()) {
+            continue;
+        }
+
+        const auto candidate_implementations = most_specific_dispatch_implementations(applicable_constraints);
         auto resolution = resolver.resolve_overloads(probe, arguments, &seed_type_map,
                                                      candidate_implementations);
         if (resolution.ambiguous) {
@@ -403,10 +640,6 @@ std::optional<WiringPoint> wire_dispatch(GraphWiring &wiring, const Signature &d
         }
 
         auto selected = std::move(*resolution.selected);
-        if (!combination.declarations.empty() &&
-            std::ranges::find(combination.declarations, selected.implementation) == combination.declarations.end()) {
-            continue;
-        }
         const auto *implementation_output = selected.resolution.signature.output;
         if (has_output != (implementation_output != nullptr)) {
             throw WiringError{"dispatch implementations must match the declared output presence"};

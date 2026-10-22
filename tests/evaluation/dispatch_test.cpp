@@ -142,6 +142,159 @@ TEST_CASE("dispatch selects a registered input-type tuple",
     CHECK_FALSE(result[1].has_value());
 }
 
+TEST_CASE("dispatch expands union input forms across selected inputs",
+          "[feature:dispatch][feature:type-system][binding:covariant]") {
+    using FirstForm = Union<"FIRST_FORM", TS<Bundle<DispatchBase>>, TS<Bundle<DispatchDerived>>>;
+    using SecondForm =
+        Union<"SECOND_FORM", TS<Bundle<DispatchOtherBase>>, TS<Bundle<DispatchOtherDerived>>>;
+
+    auto saw_derived_pair = false;
+    const auto implementation = graph(
+        "name"_n = "dispatch_union_forms",
+        [&](wp<FirstForm> first, wp<SecondForm> second) {
+            saw_derived_pair |= &first.type().dereferenced_type() == &TS<Bundle<DispatchDerived>>::type() &&
+                                &second.type().dereferenced_type() == &TS<Bundle<DispatchOtherDerived>>::type();
+            return operators::const_(i64{30}).as<TS<i64, TimeSeriesGuarantee::const_>>();
+        });
+    using DispatchSignature = auto(TS<Bundle<DispatchBase>>, TS<Bundle<DispatchOtherBase>>) -> TS<i64>;
+    const auto dispatch = dispatch_<DispatchSignature>{implementation};
+    const auto publish_first = node([](In<TS<i64>>, Scalar<Bundle<DispatchDerived>> value,
+                                       Out<TS<Bundle<DispatchBase>>> output) { output.set(value); });
+    const auto publish_second = node([](In<TS<i64>>, Scalar<Bundle<DispatchOtherDerived>> value,
+                                        Out<TS<Bundle<DispatchOtherBase>>> output) { output.set(value); });
+
+    auto memory = allocator{};
+    const auto first_value = bundle<DispatchDerived>(memory, symbol{"first"}, i64{1});
+    const auto second_value = bundle<DispatchOtherDerived>(memory, symbol{"second"}, i64{2});
+    const auto graph = [&](wp<TS<i64>> trigger) {
+        const auto first = publish_first(trigger, first_value).as<TS<Bundle<DispatchBase>>>();
+        const auto second = publish_second(trigger, second_value).as<TS<Bundle<DispatchOtherBase>>>();
+        return dispatch(first, second).as<TS<i64>>();
+    };
+    const auto actual = testing::test_graph(graph, {1});
+
+    CHECK(actual.equals<i64>({30}));
+    CHECK(saw_derived_pair);
+}
+
+TEST_CASE("dispatch expands scalar-variable alternatives",
+          "[feature:dispatch][feature:type-system][binding:covariant]") {
+    using VALUE = ScalarVariable<"DISPATCH_VALUE", Bundle<DispatchBase>, Bundle<DispatchDerived>>;
+
+    auto saw_derived = false;
+    const auto implementation = graph(
+        "name"_n = "dispatch_scalar_variable_alternatives",
+        [&](wp<TS<VALUE>> input) {
+            saw_derived |= &input.type().dereferenced_type() == &TS<Bundle<DispatchDerived>>::type();
+            return operators::const_(i64{30}).as<TS<i64, TimeSeriesGuarantee::const_>>();
+        });
+    using DispatchSignature = auto(TS<Bundle<DispatchBase>>) -> TS<i64>;
+    const auto dispatch = dispatch_<DispatchSignature>{implementation};
+    const auto publish = node([](In<TS<i64>>, Scalar<Bundle<DispatchDerived>> value,
+                                 Out<TS<Bundle<DispatchBase>>> output) { output.set(value); });
+
+    auto memory = allocator{};
+    const auto value = bundle<DispatchDerived>(memory, symbol{"item"}, i64{42});
+    const auto tested = [&](wp<TS<i64>> trigger) {
+        const auto source = publish(trigger, value).as<TS<Bundle<DispatchBase>>>();
+        return dispatch(source).as<TS<i64>>();
+    };
+    const auto actual = testing::test_graph(tested, {1});
+
+    CHECK(actual.equals<i64>({30}));
+    CHECK(saw_derived);
+}
+
+TEST_CASE("dispatch input specificity precedes reference-to-value binding cost",
+          "[feature:dispatch][feature:reference][binding:reference-to-value]") {
+    const auto generic = graph("name"_n = "dispatch_generic_reference_input",
+                               [](wp<REF<TS<SCALAR>>>) {
+        return operators::const_(i64{10}).as<TS<i64, TimeSeriesGuarantee::const_>>();
+    });
+    const auto specific = graph("name"_n = "dispatch_specific_value_input",
+                                [](wp<TS<Bundle<DispatchDerived>>>) {
+        return operators::const_(i64{20}).as<TS<i64, TimeSeriesGuarantee::const_>>();
+    });
+    using DispatchSignature = auto(REF<TS<Bundle<DispatchBase>>>) -> TS<i64>;
+    const auto dispatch = dispatch_<DispatchSignature>{generic, specific};
+    const auto publish = node([](i64 selection, Scalar<Bundle<DispatchDerived>> derived,
+                                 Scalar<Bundle<DispatchBase>> base, Out<TS<Bundle<DispatchBase>>> output) {
+        if (selection == 1) {
+            output.set(derived);
+        } else {
+            output.set(base);
+        }
+    });
+
+    auto memory = allocator{};
+    const auto derived = bundle<DispatchDerived>(memory, symbol{"derived"}, i64{42});
+    const auto base = bundle<DispatchBase>(memory, symbol{"base"});
+    const auto graph = [&](wp<TS<i64>> selection) {
+        const auto source = publish(selection, derived, base).as<REF<TS<Bundle<DispatchBase>>>>();
+        return dispatch(source).as<TS<i64>>();
+    };
+    const auto actual = testing::test_graph(graph, {1, 2});
+
+    CHECK(actual.equals<i64>({20, 10}));
+}
+
+TEST_CASE("dispatch resolves selected-input candidates from other implementation inputs",
+          "[feature:dispatch][feature:type-system][binding:covariant]") {
+    auto saw_derived_input = false;
+    const auto implementation = graph(
+        "name"_n = "dispatch_type_fixed_by_other_input",
+        [&](wp<TS<SCALAR>> selected, Scalar<SCALAR>) {
+            saw_derived_input |= &selected.type().dereferenced_type() == &TS<Bundle<DispatchDerived>>::type();
+            return operators::const_(i64{20}).as<TS<i64, TimeSeriesGuarantee::const_>>();
+        });
+    using DispatchSignature = auto(TS<Bundle<DispatchBase>>, Bundle<DispatchDerived>) -> TS<i64>;
+    const auto dispatch = dispatch_<DispatchSignature>{implementation};
+    const auto publish = node([](In<TS<i64>>, Scalar<Bundle<DispatchDerived>> value,
+                                 Out<TS<Bundle<DispatchBase>>> output) { output.set(value); });
+
+    auto memory = allocator{};
+    const auto value = bundle<DispatchDerived>(memory, symbol{"item"}, i64{42});
+    const auto graph = [&](wp<TS<i64>> trigger) {
+        const auto source = publish(trigger, value).as<TS<Bundle<DispatchBase>>>();
+        return dispatch(source, value).as<TS<i64>>();
+    };
+    const auto actual = testing::test_graph(graph, {1});
+
+    CHECK(actual.equals<i64>({20}));
+    CHECK(saw_derived_input);
+}
+
+TEST_CASE("dispatch rejects incomparable applicable selected-input constraints",
+          "[feature:dispatch][feature:operator][binding:covariant]") {
+    const auto derived_base = graph("name"_n = "dispatch_incomparable_derived_base",
+                                    [](wp<TS<Bundle<DispatchDerived>>>,
+                                       wp<TS<Bundle<DispatchOtherBase>>>) {
+        return operators::const_(i64{10}).as<TS<i64, TimeSeriesGuarantee::const_>>();
+    });
+    const auto base_derived = graph("name"_n = "dispatch_incomparable_base_derived",
+                                    [](wp<TS<Bundle<DispatchBase>>>,
+                                       wp<TS<Bundle<DispatchOtherDerived>>>) {
+        return operators::const_(i64{20}).as<TS<i64, TimeSeriesGuarantee::const_>>();
+    });
+    using DispatchSignature = auto(TS<Bundle<DispatchBase>>, TS<Bundle<DispatchOtherBase>>) -> TS<i64>;
+    const auto dispatch = dispatch_<DispatchSignature>{derived_base, base_derived};
+    const auto publish_first = node([](In<TS<i64>>, Scalar<Bundle<DispatchDerived>> value,
+                                       Out<TS<Bundle<DispatchBase>>> output) { output.set(value); });
+    const auto publish_second = node([](In<TS<i64>>, Scalar<Bundle<DispatchOtherDerived>> value,
+                                        Out<TS<Bundle<DispatchOtherBase>>> output) { output.set(value); });
+
+    auto memory = allocator{};
+    const auto first_value = bundle<DispatchDerived>(memory, symbol{"first"}, i64{1});
+    const auto second_value = bundle<DispatchOtherDerived>(memory, symbol{"second"}, i64{2});
+    const auto graph = [&](wp<TS<i64>> trigger) {
+        const auto first = publish_first(trigger, first_value).as<TS<Bundle<DispatchBase>>>();
+        const auto second = publish_second(trigger, second_value).as<TS<Bundle<DispatchOtherBase>>>();
+        return dispatch(first, second).as<TS<i64>>();
+    };
+
+    CHECK_THROWS_AS(testing::test_graph(graph, {1}), WiringError);
+}
+
 TEST_CASE("dispatch preserves the source time-series guarantee while narrowing its value type",
           "[feature:dispatch][feature:type-system][binding:covariant]") {
     const auto implementation =

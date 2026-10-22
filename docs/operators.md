@@ -117,11 +117,15 @@ auto result = choose(value);
 
 At wiring, dispatch resolves implementation input types against the supplied
 arguments and builds a runtime input tuple for each declared type combination.
-At evaluation, a selector reads each selected input's concrete semantic type
-and chooses the most-specific applicable tuple. The static input tuple is also
-tested as a candidate and provides a fallback when it applies. Requirements can
-reject an implementation for a tuple; they do not add types to the runtime
-selection set. Incomparable applicable tuples are ambiguous.
+For each tuple, the most-specific applicable declared input constraint wins
+before binding cost; a type variable remains generic for this comparison even
+when type resolution maps it to a concrete type. Ordinary overload resolution
+ranks implementations with equivalent constraints. At evaluation, a selector
+reads each selected input's concrete semantic type and chooses the
+most-specific applicable tuple. The static input tuple is also tested as a
+candidate and provides a fallback when it applies. Requirements can reject an
+implementation for a tuple; they do not add types to the runtime selection
+set. Incomparable applicable tuples are ambiguous.
 
 Dispatch selects time-series inputs whose scalar type supports value
 covariance. The selected implementation receives the original arguments,
