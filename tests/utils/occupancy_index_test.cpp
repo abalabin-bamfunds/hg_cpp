@@ -11,9 +11,11 @@
 #include <utility>
 #include <vector>
 
+using namespace bg;
+
 TEST_CASE("an occupancy index allocates and reuses positions", "[occupancy_index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto index = bg::util::occupancy_index{};
+    auto index = util::occupancy_index{};
 
     for (auto expected = std::uint32_t{}; expected < 70; ++expected) {
         CHECK(index.acquire(memory) == expected);
@@ -29,7 +31,7 @@ TEST_CASE("an occupancy index allocates and reuses positions", "[occupancy_index
 
 TEST_CASE("an occupancy index stores its first 56 positions without allocation", "[occupancy_index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto index = bg::util::occupancy_index{};
+    auto index = util::occupancy_index{};
 
     for (auto expected = std::uint32_t{}; expected < 56; ++expected) {
         CHECK(index.acquire(memory) == expected);
@@ -44,7 +46,7 @@ TEST_CASE("an occupancy index stores its first 56 positions without allocation",
 
 TEST_CASE("an occupancy index supports explicit sparse positions", "[occupancy_index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto index = bg::util::occupancy_index{};
+    auto index = util::occupancy_index{};
 
     CHECK(index.set(130, memory));
     CHECK(index.set(2, memory));
@@ -63,7 +65,7 @@ TEST_CASE("an occupancy index supports explicit sparse positions", "[occupancy_i
 
 TEST_CASE("an occupancy index handles distant positions and word boundaries", "[occupancy_index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto index = bg::util::occupancy_index{};
+    auto index = util::occupancy_index{};
 
     for (const auto position : std::array{std::uint32_t{0}, std::uint32_t{63}, std::uint32_t{64}, std::uint32_t{65},
                                           std::uint32_t{1'000'000}}) {
@@ -86,7 +88,7 @@ TEST_CASE("an occupancy index handles distant positions and word boundaries", "[
 
 TEST_CASE("an occupancy index retains its state when allocation fails", "[occupancy_index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto index = bg::util::occupancy_index{};
+    auto index = util::occupancy_index{};
 
     CHECK(index.set(1, memory));
     memory.fail_after(0);
@@ -103,7 +105,7 @@ TEST_CASE("an occupancy index retains its state when allocation fails", "[occupa
 
 TEST_CASE("an occupancy index enumerates live position runs", "[occupancy_index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto index = bg::util::occupancy_index{};
+    auto index = util::occupancy_index{};
     auto run_count = std::size_t{};
 
     index.for_each_run([&](std::uint32_t, std::uint32_t) { ++run_count; });

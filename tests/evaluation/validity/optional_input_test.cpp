@@ -27,6 +27,7 @@ TEST_CASE("opt does not schedule an optional-input node at graph start",
           "[feature:validity][validity:optional][feature:scheduling][transition:start]"
           "[series:value][scalar:i64][shape:single-node]") {
     auto evaluations = 0;
+
     const auto copy = node([&](In<TS<i64>, optional> input) {
         ++evaluations;
         return input.valid() ? input.value() : i64{};
@@ -45,12 +46,14 @@ TEST_CASE("an optional input node can request evaluation at graph start",
           "[feature:validity][validity:optional][feature:scheduling][transition:start]"
           "[series:value][scalar:i64][shape:single-node]") {
     auto evaluations = 0;
+
     const auto copy = node(
         eval = [&](In<TS<i64>, optional> input) {
             ++evaluations;
             return input.valid() ? input.value() : i64{};
         },
         schedule_on_start = true);
+
     const auto tested = [&](wp<TS<i64>> input) { return copy(opt(input)); };
     const auto no_updates = std::array<std::optional<i64>, 1>{std::nullopt};
 

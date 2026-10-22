@@ -480,6 +480,7 @@ TEST_CASE("mapped target ticks evaluate only the selected inner graph",
             output[1].copy(first);
             output[2].copy(second);
         });
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> values) {
         const auto mapped = wire_map(rekey(values[i64{1}], values[i64{2}]));
         return mapped[i64{2}];
@@ -499,6 +500,7 @@ TEST_CASE("map evaluates more inner graphs than the ready bitmap inline capacity
             output[key].copy(value);
         }
     });
+
     const auto graph = [&](wp<TS<i64>> value) {
         wire_sink_map(make_values(value.as<REF<TS<i64>>>()));
         return value;
@@ -557,6 +559,7 @@ TEST_CASE("map uses the union of mapped dictionary key sets and binds missing va
                 output[1].copy(value);
             }
         });
+
     const auto graph = [&](wp<TS<i64>> left, wp<TS<i64>> right) {
         const auto left_values = make_values(left, target(left));
         const auto right_values = make_values(right, target(right));
@@ -619,10 +622,12 @@ TEST_CASE("a pass-through reference replacement updates each running map inner g
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
           "[binding:reference-to-reference][transition:update]") {
     const auto target = node([](i64 value, int scale) { return value * scale; });
+
     const auto choose = node([](bool condition, In<REF<TS<i64>>> left, In<REF<TS<i64>>> right,
                                 Out<REF<TS<i64>>> output) { output.copy(condition ? left : right); });
     const auto make_values =
         node([](In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) { output[1].copy(value); });
+
     const auto graph = [&](wp<TS<i64>> value, wp<TS<bool>> use_left) {
         const auto mapped = make_values(target(value, 1));
         const auto factor = choose(use_left, target(value, 10), target(value, 100));
@@ -640,6 +645,7 @@ TEST_CASE("a map inner graph reports timed work through the map owner",
     const auto target = node([](i64 value) { return value; });
     const auto make_values =
         node([](In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) { output[1].copy(value); });
+
     const auto graph = [&](wp<TS<i64>> value) {
         return wire_delayed_map(make_values(target(value)))[i64{1}].as<TS<i64>>();
     };
@@ -661,6 +667,7 @@ TEST_CASE("map schedules the next scheduled time after one inner graph becomes d
             output[1].copy(first);
             output[2].copy(second);
         });
+
     const auto graph = [&](wp<TSD<i64, TS<i64>>> values) {
         const auto mapped = wire_variable_delayed_map(rekey(values[i64{1}], values[i64{2}]));
         return mapped[i64{2}].as<TS<i64>>();
@@ -683,10 +690,12 @@ TEST_CASE("a map consumes and produces TSD references across two nested graph bo
         graph("name"_n = "build_dictionary", [&](wp<TS<i64>> value) -> wp<TSD<i64, REF<TS<i64>>>> {
             return make_values(value.as<REF<TS<i64>>>());
         });
+
     const auto apply_map = graph("name"_n = "apply_map",
                                  [](wp<TSD<i64, REF<TS<i64>>>> values) -> wp<TSD<i64, REF<TS<i64>>>> {
                                      return wire_map(values);
                                  });
+
     const auto outer = [&](wp<TS<i64>> value, wp<TS<bool>> run) {
         const auto first = nested(build_dictionary, run, value);
         const auto second = nested(apply_map, run, first);

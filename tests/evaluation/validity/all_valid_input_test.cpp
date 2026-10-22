@@ -424,6 +424,7 @@ TEST_CASE("all_valid checks live items in sampled native dictionaries",
                                 In<REF<TSD<i64, TS<i64>>>> second, Out<TSD<i64, REF<TSD<i64, TS<i64>>>>> output) {
         output[0].copy(*choose_second == 0 ? first : second);
     });
+
     const auto inspect = node([](In<TSD<i64, TSD<i64, TS<i64>>>> input) {
         const auto inner = input[0];
         const auto inner_is_valid = inner.all_valid();

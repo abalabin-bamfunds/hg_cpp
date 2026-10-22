@@ -208,6 +208,7 @@ TEST_CASE("deferred wiring validates options, freezes their set, and rejects imp
           "[feature:wiring-materialisation][feature:wiring][series:value][schema:generic]"
           "[declaration:concrete]") {
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
     const auto float_source = bg::node([](bg::Out<bg::TS<double>>) {});
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
@@ -224,6 +225,7 @@ TEST_CASE("deferred wiring validates options, freezes their set, and rejects imp
             [](bg::wp<bg::TS<bg::i64>>) { return bg::WiringPoint{}; },
             std::numeric_limits<double>::infinity()),
         bg::WiringError);
+
     const auto empty_builder = [](bg::wp<bg::TS<bg::i64>>) { return bg::WiringPoint{}; };
     auto input_signature = bg::details::make_graph_input_signature<decltype(empty_builder)>(
         bg::util::symbol{"materialisation"});
@@ -450,6 +452,7 @@ TEST_CASE("typed points accept advertised forms without selecting them",
     using FORM = bg::Union<"TYPED_POINT_FORM", bg::TSB<OneValue>, bg::TS<float>>;
 
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
     const auto float_source = bg::node([](bg::Out<bg::TS<float>>) {});
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
@@ -494,6 +497,7 @@ TEST_CASE("typed points accept advertised forms without selecting them",
     CHECK(float_builder_calls == 0);
 
     const auto field = bundle_point->value;
+
     const auto consume = bg::node([](bg::In<bg::TS<bg::i64>>) {});
     consume(field);
     wiring.finalize();
@@ -509,7 +513,9 @@ TEST_CASE("direct graph calls select lazy forms without adding graph-boundary de
 
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
+
     const auto integer_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
     const auto float_source = bg::node([](bg::Out<bg::TS<float>>) {});
     auto deferred = wiring.create_wp<bg::TS<bg::i64>>(integer_source());
     auto builder_calls = 0;
@@ -519,6 +525,7 @@ TEST_CASE("direct graph calls select lazy forms without adding graph-boundary de
             return float_source();
         },
         0.0);
+
     const auto identity = bg::graph("name"_n = "identity", [](bg::wp<bg::TS<float>> value) { return value; });
 
     const auto result = identity(deferred);
@@ -544,9 +551,13 @@ TEST_CASE("direct graph Union inputs keep the original point and its other forms
 
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
+
     const auto integer_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
     const auto float_source = bg::node([](bg::Out<bg::TS<float>>) {});
+
     const auto double_source = bg::node([](bg::Out<bg::TS<double>>) {});
+
     const auto bool_source = bg::node([](bg::Out<bg::TS<bool>>) {});
     auto deferred = wiring.create_wp<bg::TS<bg::i64>>(integer_source());
     auto float_builder_calls = 0;
@@ -562,6 +573,7 @@ TEST_CASE("direct graph Union inputs keep the original point and its other forms
     const auto original_record = static_cast<bg::WiringPoint>(deferred).record();
     auto observed_record = static_cast<const bg::details::WiringRecord *>(nullptr);
     auto observed_options = std::size_t{};
+
     const auto identity = bg::graph("name"_n = "identity",
         [&](bg::wp<FORM> value) {
             observed_record = static_cast<bg::WiringPoint>(value).record();
@@ -593,9 +605,13 @@ TEST_CASE("a graph callback that receives WiringArguments retains distinct equal
 
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
+
     const auto integer_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
     const auto float_source = bg::node([](bg::Out<bg::TS<float>>) {});
+
     const auto double_source = bg::node([](bg::Out<bg::TS<double>>) {});
+
     const auto bool_source = bg::node([](bg::Out<bg::TS<bool>>) {});
     auto deferred = wiring.create_wp<bg::TS<bg::i64>>(integer_source());
     deferred.materialisation_option<bg::TS<float>>(
@@ -604,6 +620,7 @@ TEST_CASE("a graph callback that receives WiringArguments retains distinct equal
         [double_source](bg::wp<bg::TS<bg::i64>>) { return double_source(); }, 0.0);
 
     auto observed_calls = 0;
+
     const auto observing = bg::graph("name"_n = "observing_union",
                                      [&](const bg::WiringArguments &, bg::wp<FORM>) {
                                          ++observed_calls;
@@ -624,7 +641,9 @@ TEST_CASE("graph Union binding ignores mappings for unused alternatives",
 
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
+
     const auto integer_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
     const auto bool_source = bg::node([](bg::Out<bg::TS<bool>>) {});
     auto deferred = wiring.create_wp<bg::TS<bg::i64>>(integer_source());
     deferred.materialisation_option<bg::TSB<OneValue>>([](bg::wp<bg::TS<bg::i64>> value) {
@@ -632,6 +651,7 @@ TEST_CASE("graph Union binding ignores mappings for unused alternatives",
     }, 0.0);
 
     auto observed_record = static_cast<const bg::details::WiringRecord *>(nullptr);
+
     const auto identity = bg::graph("name"_n = "generic_union_identity", [&](bg::wp<FORM> value) {
         observed_record = static_cast<bg::WiringPoint>(value).record();
         return bool_source();
@@ -651,12 +671,15 @@ TEST_CASE("a direct graph Union input preserves its actual reference point",
 
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
+
     const auto reference_source = bg::node([](bg::Out<bg::REF<bg::TS<bg::i64>>>) {});
+
     const auto bool_source = bg::node([](bg::Out<bg::TS<bool>>) {});
     const auto reference = reference_source();
     const auto original_point = static_cast<bg::WiringPoint>(reference);
     auto observed_record = static_cast<const bg::details::WiringRecord *>(nullptr);
     auto observed_type = static_cast<const bg::Type *>(nullptr);
+
     const auto identity = bg::graph("name"_n = "reference_identity", [&](bg::wp<FORM> input) {
         const auto point = static_cast<bg::WiringPoint>(input);
         observed_record = point.record();
@@ -677,8 +700,11 @@ TEST_CASE("direct graph calls defer selected reference forms until required",
     using REFERENCE = bg::REF<bg::TS<bg::i64>>;
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
+
     const auto integer_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
     const auto reference_source = bg::node([](bg::Out<bg::REF<bg::TS<bg::i64>>>) {});
+
     const auto bool_source = bg::node([](bg::Out<bg::TS<bool>>) {});
     auto deferred = wiring.create_wp<bg::TS<bg::i64>>(integer_source());
     auto value_builder_calls = 0;
@@ -698,10 +724,12 @@ TEST_CASE("direct graph calls defer selected reference forms until required",
 
     auto value_argument_type = static_cast<const bg::Type *>(nullptr);
     auto reference_argument_type = static_cast<const bg::Type *>(nullptr);
+
     const auto value_graph = bg::graph("name"_n = "value_form", [&](bg::wp<bg::TS<bg::i64>> value) {
         value_argument_type = &value.type();
         return bool_source();
     });
+
     const auto reference_graph = bg::graph("name"_n = "reference_form",
                                            [&](bg::wp<bg::REF<bg::TS<bg::i64>>> value) {
         reference_argument_type = &value.type();
@@ -815,6 +843,7 @@ TEST_CASE("materialisation Union inputs retain the original point and its option
     using FORM = bg::Union<"MATERIALISATION_FORM", bg::TS<bg::i64>, bg::TSB<OneValue>>;
 
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
     const auto bool_source = bg::node([](bg::Out<bg::TS<bool>>) {});
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
@@ -855,6 +884,7 @@ TEST_CASE("materialisation Union inputs keep their original semantic type withou
     using FORM = bg::Union<"MATERIALISATION_FORM", bg::TS<bg::i64>, bg::TSB<OneValue>>;
 
     const auto source = bg::node([](bg::Out<bg::TS<double>>) {});
+
     const auto bool_source = bg::node([](bg::Out<bg::TS<bool>>) {});
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
@@ -980,6 +1010,7 @@ TEST_CASE("signature materialisation cost counts each point and target once",
 TEST_CASE("binding cost charges one contained and one top-level reference adaptation per input",
           "[feature:wiring-materialisation][feature:wiring][feature:reference][series:fixed-tsl]") {
     const auto source = bg::node([](bg::Out<bg::TSL<bg::TS<bg::i64>, 2>>) {});
+
     const auto scalar_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
@@ -1013,8 +1044,11 @@ TEST_CASE("operator materialisation selects the cheapest concrete form and adapt
 
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
+
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
     const auto float_source = bg::node([](bg::Out<bg::TS<float>>) {});
+
     const auto bool_source = bg::node([](bg::Out<bg::TS<bool>>) {});
     auto deferred = wiring.create_wp<bg::TS<bg::i64>>(source());
     auto float_builder_calls = 0;
@@ -1091,7 +1125,9 @@ TEST_CASE("operator cache hits rebind concrete demands to the current source",
     auto requirement_calls = 0;
     auto operation = bg::operator_<auto(bg::TS_T)->bg::TS_T>{"cached_form", {"value"}};
     operation.overload(PassFloat{requirement_calls});
+
     const auto integer_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
     const auto float_source = bg::node([](bg::Out<bg::TS<float>>) {});
     const auto wire = [&](bg::GraphWiring &wiring) {
         const auto context = bg::WiringContext{wiring};
@@ -1147,7 +1183,9 @@ TEST_CASE("rejected overload diagnostics distinguish offered forms from the join
     auto requirement_calls = 0;
     auto operation = bg::operator_<auto(bg::TS_T)->bg::TS_T>{"form_diagnostic", {"value"}};
     operation.overload(RejectFloat{requirement_calls});
+
     const auto integer_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
     const auto float_source = bg::node([](bg::Out<bg::TS<float>>) {});
 
     auto wiring = bg::GraphWiring{};
@@ -1183,6 +1221,7 @@ TEST_CASE("an item demand collects its selected parent form before expansion",
     using LIST = bg::TSL<bg::TS<bg::i64>, 1>;
 
     const auto source = bg::node([](bg::Out<LIST>) {});
+
     const auto consume = bg::node([](bg::In<bg::TS<bg::i64>>) {});
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
@@ -1206,8 +1245,11 @@ TEST_CASE("an operator reports distinct output types from one overload as ambigu
 
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
+
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
     const auto float_source = bg::node([](bg::Out<bg::TS<float>>) {});
+
     const auto bool_source = bg::node([](bg::Out<bg::TS<bool>>) {});
     auto deferred = wiring.create_wp<bg::TS<bg::i64>>(source());
     deferred.materialisation_option<bg::TS<float>>(
@@ -1216,6 +1258,7 @@ TEST_CASE("an operator reports distinct output types from one overload as ambigu
         [bool_source](bg::wp<bg::TS<bg::i64>>) { return bool_source(); }, 0.25);
 
     auto operation = bg::operator_<auto(FORM)->RESULT>{"ambiguous_form", {"value"}};
+
     auto identity_function = [](bg::wp<FORM> value) -> bg::wp<RESULT> {
         return bg::wp<RESULT>::from_validated(static_cast<bg::WiringPoint>(value));
     };
@@ -1407,6 +1450,7 @@ TEST_CASE("a failed direct-form match does not reject an offered bundle form",
 TEST_CASE("independent form matches resolve a shared variable from offered forms",
           "[feature:wiring-materialisation][feature:wiring][series:value][schema:generic]") {
     const auto int_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
     const auto double_source = bg::node([](bg::Out<bg::TS<double>>) {});
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
@@ -1657,6 +1701,7 @@ TEST_CASE("signature matching accepts the normalized argument of a variadic capt
     using namespace bg::literals;
     const auto capture =
         bg::graph("name"_n = "capture", [](bg::wp<bg::TSB<CapturedSchema>, bg::var_args>) {});
+
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
@@ -1678,7 +1723,9 @@ TEST_CASE("materialisation collection retains context bindings for later expansi
     using namespace bg::literals;
 
     const auto first_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
     const auto second_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
     const auto consume = bg::node([](bg::In<bg::TSB<OneValue>>) {});
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
@@ -1719,6 +1766,7 @@ TEST_CASE("failed transitive materialisation collection preserves committed requ
     using namespace bg::literals;
 
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
     const auto bool_source = bg::node([](bg::Out<bg::TS<bool>>) {});
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
@@ -1759,6 +1807,7 @@ TEST_CASE("failed transitive materialisation collection preserves committed requ
 TEST_CASE("materialisation builder failures include callback and wiring path context",
           "[feature:wiring-materialisation][feature:wiring]") {
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
     const auto consume = bg::node([](bg::In<bg::TS<float>>) {});
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
@@ -1790,7 +1839,9 @@ TEST_CASE("materialisation builder failures preserve operator diagnostics",
     using namespace bg::literals;
 
     const auto integer_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
     const auto float_source = bg::node([](bg::Out<bg::TS<float>>) {});
+
     const auto consume = bg::node([](bg::In<bg::TS<float>>) {});
     auto operation = bg::operator_<auto(bg::TS<bool>)->bg::TS<float>>{"builder_operator", {"value"}};
     operation.overload(bg::graph("name"_n = "boolean", [&](bg::wp<bg::TS<bool>>) { return float_source(); }));
@@ -1822,6 +1873,7 @@ TEST_CASE("materialisation errors retain causes and owned contexts after graph d
     auto saved_error = std::optional<bg::WiringError>{};
     {
         const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
         const auto consume = bg::node([](bg::In<bg::TS<float>>) {});
         auto wiring = bg::GraphWiring{};
         const auto context = bg::WiringContext{wiring};
@@ -1860,6 +1912,7 @@ TEST_CASE("generated wiring result failures retain the selected call path",
     auto foreign_wiring = bg::GraphWiring{};
     const auto foreign_context = bg::WiringContext{foreign_wiring};
     const auto foreign_output = float_source();
+
     const auto invalid_graph = bg::graph("name"_n = "invalid_result", [foreign_output] { return foreign_output; });
 
     auto wiring = bg::GraphWiring{};
@@ -1887,6 +1940,7 @@ TEST_CASE("shared materialisation preparation retains each consumer context once
     auto left_expansions = 0;
     auto right_expansions = 0;
     auto shared_expansions = 0;
+
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
@@ -1945,6 +1999,7 @@ TEST_CASE("shared materialisation preparation retains each consumer context once
 TEST_CASE("materialisation return type failures report expected and actual types",
           "[feature:wiring-materialisation][feature:wiring]") {
     const auto integer_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
     const auto boolean_source = bg::node([](bg::Out<bg::TS<bool>>) {});
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};
@@ -1985,6 +2040,7 @@ TEST_CASE("materialisation collection shares concrete demands with Union consume
 
     const auto run = [&](bool concrete_first) {
         const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
         const auto bool_source = bg::node([](bg::Out<bg::TS<bool>>) {});
         auto wiring = bg::GraphWiring{};
         const auto context = bg::WiringContext{wiring};
@@ -2075,7 +2131,9 @@ TEST_CASE("normal materialization completes and caches a lazy callback result",
     using namespace bg::literals;
 
     auto callback_calls = 0;
+
     const auto sink = bg::node<MaterialisationBundleSink>();
+
     const auto tested = [&](bg::wp<bg::TS<bg::i64>> input) {
         auto deferred = bg::WiringContext::current().wiring().create_wp<bg::TSB<OneValue>>(input);
         deferred.materialisation_option<bg::TSB<OneValue>>(
@@ -2087,7 +2145,7 @@ TEST_CASE("normal materialization completes and caches a lazy callback result",
         return sink(deferred, deferred).as<bg::TS<bg::i64>>();
     };
 
-    const auto actual = bg::testing::test_graph(tested, std::array<bg::i64, 1>{7});
+    const auto actual = bg::testing::test_graph(tested, {7});
 
     CHECK(actual.equals({14}));
     CHECK(callback_calls == 1);
@@ -2183,6 +2241,7 @@ TEST_CASE("materialisation preparation follows concrete callback inputs through 
     using namespace bg::literals;
 
     const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+
     const auto bool_source = bg::node([](bg::Out<bg::TS<bool>>) {});
     auto wiring = bg::GraphWiring{};
     const auto context = bg::WiringContext{wiring};

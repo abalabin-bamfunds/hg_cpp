@@ -9,8 +9,10 @@
 #include <stdexcept>
 #include <vector>
 
+using namespace bg;
+
 TEST_CASE("an empty fixed-size index has no set positions", "[index][coverage-exempt]") {
-    const auto index = bg::util::index<0>{};
+    const auto index = util::index<0>{};
 
     CHECK(index.empty());
     CHECK(index.all());
@@ -19,9 +21,9 @@ TEST_CASE("an empty fixed-size index has no set positions", "[index][coverage-ex
 
 TEST_CASE("a runtime-sized index stores up to 56 positions without allocation", "[index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto index = bg::util::index<>{};
+    auto index = util::index<>{};
 
-    for (auto position = std::uint32_t{}; position < bg::util::index<>::inline_capacity; ++position) {
+    for (auto position = std::uint32_t{}; position < util::index<>::inline_capacity; ++position) {
         CHECK(index.set(position, memory));
     }
 
@@ -36,7 +38,7 @@ TEST_CASE("a runtime-sized index stores up to 56 positions without allocation", 
 TEST_CASE("a runtime-sized index preserves bits when it starts using allocated storage",
           "[index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto index = bg::util::index<>{};
+    auto index = util::index<>{};
 
     CHECK(index.set(0, memory));
     CHECK(index.set(55, memory));
@@ -56,7 +58,7 @@ TEST_CASE("a runtime-sized index preserves bits when it starts using allocated s
 TEST_CASE("a runtime-sized index grows, resets, clears, and iterates set positions",
           "[index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto index = bg::util::index<>{};
+    auto index = util::index<>{};
 
     for (const auto position : {std::uint32_t{0}, std::uint32_t{63}, std::uint32_t{64}, std::uint32_t{511}}) {
         CHECK(index.set(position, memory));
@@ -79,7 +81,7 @@ TEST_CASE("a runtime-sized index grows, resets, clears, and iterates set positio
 
 TEST_CASE("an index finds the next set position", "[index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto dynamic = bg::util::index<>{};
+    auto dynamic = util::index<>{};
     CHECK(dynamic.set(3, memory));
     CHECK(dynamic.set(64, memory));
     CHECK(dynamic.set(130, memory));
@@ -90,7 +92,7 @@ TEST_CASE("an index finds the next set position", "[index][coverage-exempt]") {
     CHECK(dynamic.first_set(131) == dynamic.size());
     dynamic.release(memory);
 
-    auto fixed = bg::util::index<129>{};
+    auto fixed = util::index<129>{};
     CHECK(fixed.set(3));
     CHECK(fixed.set(64));
     CHECK(fixed.set(128));
@@ -101,7 +103,7 @@ TEST_CASE("an index finds the next set position", "[index][coverage-exempt]") {
 
 TEST_CASE("a runtime-sized index retains its state when growth fails", "[index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto index = bg::util::index<>{};
+    auto index = util::index<>{};
 
     CHECK(index.set(4, memory));
     memory.fail_after(0);
@@ -119,7 +121,7 @@ TEST_CASE("a runtime-sized index retains its state when growth fails", "[index][
 TEST_CASE("a runtime-sized index returns to inline storage after trimming",
           "[index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto index = bg::util::index<>{};
+    auto index = util::index<>{};
 
     CHECK(index.set(100, memory));
     CHECK(index.set(12, memory));
@@ -135,7 +137,7 @@ TEST_CASE("a runtime-sized index returns to inline storage after trimming",
 }
 
 TEST_CASE("a fixed-size index crosses word boundaries without allocation", "[index][coverage-exempt]") {
-    auto index = bg::util::index<129>{};
+    auto index = util::index<129>{};
 
     CHECK(index.set(0));
     CHECK(index.set(63));

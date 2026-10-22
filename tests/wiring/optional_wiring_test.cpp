@@ -113,8 +113,11 @@ TEST_CASE("valid_items annotations compose with opt and typed views",
 TEST_CASE("valid_items annotations require a capable receiver and survive references",
           "[feature:wiring][feature:operator][series:tsd][series:reference]") {
     const auto source = node([](Out<TSD<i64, TS<i64>>>) {});
+
     const auto reference_source = node([](Out<REF<TSD<i64, TS<i64>>>>) {});
+
     const auto capable = node([](In<TSD<i64, TS<i64>>, valid_items>) {});
+
     const auto ordinary = node([](In<TSD<i64, TS<i64>>>) {});
 
     testing::test_wiring([&] {
@@ -133,6 +136,7 @@ TEST_CASE("aggregate graph inputs preserve optionality",
     };
 
     const auto identity = graph<optional_identity>();
+
     const auto source = node([](Out<TS<i64>>) {});
 
     testing::test_wiring([&] {
@@ -151,6 +155,7 @@ TEST_CASE("opt works with erased and named wiring arguments",
     }));
 
     const auto source = node([](Out<TS<i64>>) {});
+
     const auto required_input = node([](In<TS<i64>>) {});
     testing::test_wiring([&] {
         const auto value = source();
@@ -180,7 +185,9 @@ TEST_CASE("args and kwargs preserve opt on every expanded bundle field",
     const auto source = node([](Out<TSB<optional_expansion_bundle>>) {});
     const auto optional_positional =
         graph("name"_n = "optional_positional", [](wp<TS<i64>, optional>, wp<TS<float>, optional>) {});
+
     const auto required_positional = graph("name"_n = "required_positional", [](wp<TS<i64>>, wp<TS<float>>) {});
+
     const auto optional_named = graph("name"_n = "optional_named",
                                       [](wp<TS<float>, "second"_n, optional>, wp<TS<i64>, "first"_n, optional>) {});
     const auto required_named =
@@ -256,6 +263,7 @@ TEST_CASE("variadic graph forwarding retains item optionality",
     const auto forward = graph("name"_n = "forward", [&](wp<TSB<SCHEMA>, var_kwargs, optional> values) {
         return operation(values).as<TS<i64>>();
     });
+
     const auto source = node([](Out<TS<i64>>) {});
 
     testing::test_wiring([&] {
@@ -309,6 +317,7 @@ TEST_CASE("variadic cache keys retain each member's optionality across a graph b
     const auto forward = graph("name"_n = "forward", [&](wp<TSB<SCHEMA>, var_kwargs, optional> values) {
         operation(values);
     });
+
     const auto source = node([](Out<TS<i64>>) {});
 
     testing::test_wiring([&] {

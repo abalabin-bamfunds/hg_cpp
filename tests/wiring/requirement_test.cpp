@@ -97,6 +97,7 @@ TEST_CASE("requirements see one flat positional argument sequence",
 
     auto operation = operator_<void(int, TS_T)>{"consume", {"fixed", "values"}};
     operation.overload(node<flat_positional_requirement_definition>());
+
     const auto sender = graph(
         "name"_n = "sender", [&](std::optional<int> fixed, wp<TSB<SCHEMA>, var_args> values) {
             operation(fixed, values);
@@ -126,6 +127,7 @@ TEST_CASE("requirements find direct and forwarded named captures",
 
             return accept;
         }));
+
     const auto sender = graph(
         "name"_n = "sender",
         [&](wp<TSB<SCHEMA>, var_kwargs> values) { operation(values); });
@@ -290,6 +292,7 @@ TEST_CASE("an unread scalar does not participate in the operator cache key",
                 ++requirement_calls;
                 return scalar_cast<i64>(*arguments.scalar(2)).value() == 0;
             }));
+
     const auto source = node([](Out<TS<float>>) {});
 
     testing::test_wiring([&] {
@@ -306,6 +309,7 @@ TEST_CASE("a requirement exception reports its callback failure",
     operation.overload(node(
         eval = [](In<TS<float>>, Out<TS<float>>) {},
         require = [](const WiringArguments &) -> bool { throw std::runtime_error{"requirement failed"}; }));
+
     const auto source = node([](Out<TS<float>>) {});
 
     try {

@@ -265,6 +265,7 @@ TEST_CASE("a failed state-only resolver rejects its candidate before fallback se
         fallback_selected = true;
         return input;
     }));
+
     const auto source = node([](Out<TS<i64>>) {});
 
     testing::test_wiring([&] {
@@ -295,6 +296,7 @@ TEST_CASE("requirements demand auxiliary resolvers and their scalar reads partic
             REQUIRE(type != nullptr);
             return *type == &int64_type() ? accept : reject("resolved value is not int64");
         }));
+
     const auto source = node([](Out<TS<i64>>) {});
 
     testing::test_wiring([&] {
@@ -371,6 +373,7 @@ TEST_CASE("an invalid resolver demanded by a requirement rejects its candidate",
         fallback_selected = true;
         return input;
     }));
+
     const auto source = node([](Out<TS<i64>>) {});
 
     testing::test_wiring([&] {
@@ -405,6 +408,7 @@ TEST_CASE("resolvers see one flat positional argument sequence",
 
     auto operation = operator_<auto(int, TS_T) -> TS<i64>>{"resolve", {"fixed", "values"}};
     operation.overload(node<flat_positional_resolver_definition>());
+
     const auto sender = graph(
         "name"_n = "sender",
         [&](std::optional<int> fixed,
@@ -435,6 +439,7 @@ TEST_CASE("resolvers find direct and forwarded named captures",
             return scalar_cast<i64>(*arguments.scalar("kind")).value() == 0 ? int64_type()
                                                                                           : float_type();
         }));
+
     const auto sender = graph(
         "name"_n = "sender",
         [&](wp<TSB<SCHEMA>, var_kwargs> values) -> wp<TS<i64>> {
@@ -519,6 +524,7 @@ TEST_CASE("a resolver-produced time-series type can apply a guarantee",
     const auto check_registration_order = [&](bool unsupported_first) {
         auto operation = operator_<auto() -> TS_T>{"deduplicated_output"};
         auto fallback_selected = false;
+
         const auto concrete = node(
             eval = [](Out<OPAQUE_SERIES>) {},
             require = [&](const WiringArguments &) {
@@ -567,12 +573,14 @@ TEST_CASE("a generic deduplicated output rejects an unsupported scalar before fa
     using OPAQUE_SERIES = TimeSeriesVariable<"OPAQUE_SERIES">;
     using VALUE = ScalarVariable<"DEDUPLICATED_OUTPUT_VALUE">;
     (void)cpp_scalar_runtime_type<Opaque<int>>();
+
     const auto source = node(
         eval = [](Out<OPAQUE_SERIES>) {},
         resolve<OPAQUE_SERIES> = []() -> const TimeSeriesType & {
             return time_series_value_type(cpp_scalar_type<Opaque<int>>(),
                                               TimeSeriesGuarantee::ordinary);
         });
+
     const auto generic = node(eval = [](In<TS<VALUE>>,
                                                 Out<TS<VALUE, TimeSeriesGuarantee::deduplicated>>) {});
     const auto &opaque_type = time_series_value_type(cpp_scalar_type<Opaque<int>>(),
@@ -581,6 +589,7 @@ TEST_CASE("a generic deduplicated output rejects an unsupported scalar before fa
     const auto check_registration_order = [&](bool generic_first) {
         auto operation = operator_<auto(TS_T) -> TS_T>{"generic_deduplicated_output", {"input"}};
         auto fallback_selected = false;
+
         const auto fallback = graph(
             "name"_n = "concrete_fallback",
             [&](wp<OPAQUE_SERIES> input) {
@@ -609,6 +618,7 @@ TEST_CASE("a generic deduplicated output rejects an unsupported scalar before fa
 TEST_CASE("a resolver callback invalid_argument remains a fatal wiring error",
           "[feature:operator][feature:wiring][definition:function][declaration:generic]") {
     auto operation = operator_<auto() -> TS<float>>{"resolver_callback_error"};
+
     const auto concrete = node([](Out<TS<float>>) {});
     operation.overload(graph("name"_n = "concrete_fallback", [concrete] { return concrete(); }));
     operation.overload(node(
@@ -782,6 +792,7 @@ TEST_CASE("nested graph resolution provides wiring arguments to resolvers",
                                    TS<NESTED_RESULT>::type(), std::move(resolvers)};
     auto inner = GraphTemplate{std::move(signature),
                                    [](int, wp<TS<i64>> input) { return input; }};
+
     const auto source = node([](Out<TS<i64>>) {});
 
     const auto run = node([](Out<TS<bool>>) {});

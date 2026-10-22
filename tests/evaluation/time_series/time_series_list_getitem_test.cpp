@@ -163,6 +163,7 @@ TEST_CASE("fixed TSL getitem follows a free list into a nested graph",
         graph("name"_n = "select_list_item", [](wp<TSL<TS<i64>, 2>> input, wp<TS<i64>> index) -> wp<TS<i64>> {
             return input[index].as<TS<i64>>();
         });
+
     const auto outer = [&](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<i64>> index, wp<TS<bool>> run) {
         return nested(inner, run, tsl(first, second), index);
     };

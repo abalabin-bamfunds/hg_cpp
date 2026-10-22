@@ -209,6 +209,7 @@ TEST_CASE("callable return guarantee inference requires required input-driven ev
 TEST_CASE("callable dynamic activity controls inputs around promoted scalars",
           "[feature:node-api][feature:input-activity][definition:function][series:value][transition:update]") {
     auto evaluations = 0;
+
     const auto combine = node([&evaluations](In<TS<i64>, dynamic_activity> left, int offset,
                                               In<TS<i64>, dynamic_activity> right) {
         ++evaluations;
@@ -219,10 +220,7 @@ TEST_CASE("callable dynamic activity controls inputs around promoted scalars",
     });
 
     const auto graph = [=](wp<TS<i64>> left, wp<TS<i64>> right) { return combine(left, 5, right); };
-    const auto left_values = std::array<std::optional<i64>, 3>{1, 2, std::nullopt};
-    const auto right_values = std::array<std::optional<i64>, 3>{10, std::nullopt, 11};
-
-    CHECK(testing::test_graph(graph, left_values, right_values).equals({16, std::nullopt, 18}));
+    CHECK(testing::test_graph(graph, {1, 2, literal::SKIP}, {10, literal::SKIP, 11}).equals({16, std::nullopt, 18}));
     CHECK(evaluations == 2);
 }
 
@@ -254,8 +252,7 @@ TEST_CASE("callable output deduplication suppresses equal results from changing 
         return add(deduplicate(lhs), deduplicate(rhs));
     };
 
-    CHECK(testing::test_graph(graph, std::array<i64, 3>{1, 2, 3}, std::array<i64, 3>{3, 2, 1})
-              .equals({4, std::nullopt, std::nullopt}));
+    CHECK(testing::test_graph(graph, {1, 2, 3}, {3, 2, 1}).equals({4, std::nullopt, std::nullopt}));
 }
 
 TEST_CASE("callable final output waits for both final inputs when they tick in separate cycles",
@@ -274,10 +271,8 @@ TEST_CASE("callable ordinary inputs schedule independently",
     const auto add = node([](int lhs, int rhs) { return lhs + rhs; });
 
     const auto graph = [=](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return add(lhs, rhs); };
-    const auto lhs = std::array<std::optional<i64>, 4>{1, 2, std::nullopt, std::nullopt};
-    const auto rhs = std::array<std::optional<i64>, 4>{10, std::nullopt, 20, std::nullopt};
-
-    CHECK(testing::test_graph(graph, lhs, rhs).equals({11, 12, 22, std::nullopt}));
+    CHECK(testing::test_graph(graph, {1, 2, literal::SKIP, literal::SKIP}, {10, literal::SKIP, 20, literal::SKIP})
+              .equals({11, 12, 22, std::nullopt}));
 }
 
 TEST_CASE("callable return infers const from const time-series inputs",
@@ -324,7 +319,7 @@ TEST_CASE("passive callable inputs lower the active input guarantee",
         return output;
     };
 
-    CHECK(testing::test_graph(graph, std::array<i64, 3>{1, 2, 3}).equals({std::nullopt, std::nullopt, 8}));
+    CHECK(testing::test_graph(graph, {1, 2, 3}).equals({std::nullopt, std::nullopt, 8}));
 }
 
 TEST_CASE("callable explicit output guarantee takes precedence over input inference",
@@ -356,12 +351,14 @@ TEST_CASE("callable optional arguments and return values preserve absence",
     CHECK(select.signature().resolve(final_input).output == &TS<i64>::type());
 
     static const std::optional<int> result{7};
+
     const auto reference_result = node([]() -> const std::optional<int> & { return result; });
     const auto constant_graph = [=] { return reference_result(); };
     CHECK(testing::test_graph(constant_graph).equals({7}));
 
     const auto optional_input = node(
         eval = [](std::optional<int> value) { return value.value_or(-1); }, schedule_on_start = true);
+
     const auto optional_graph = [=](wp<TS<i64>> input) { return optional_input(input); };
     CHECK(testing::test_graph(optional_graph, {std::nullopt, 1, 2}).equals({-1, 1, 2}));
 }
@@ -471,6 +468,7 @@ TEST_CASE("aggregate plain fields accept scalar or time-series bindings beside e
 TEST_CASE("aggregate lifecycle functions reject promoted time-series fields",
           "[feature:node-api][definition:aggregate][series:value][scalar:integer][feature:lifecycle]") {
     const auto node_template = node<lifecycle_aggregate>();
+
     const auto valid_graph = [=](wp<TS<i64>> input) { return node_template(3, input); };
     lifecycle_aggregate::started_with = 0;
     lifecycle_aggregate::stopped = 0;
@@ -511,10 +509,12 @@ TEST_CASE("aggregate invalidation receives promoted scalar and empty optional fi
 TEST_CASE("promoted fields coexist with aggregate dynamic reference inputs",
           "[feature:node-api][definition:aggregate][series:value][feature:reference]") {
     const auto node_template = node<promoted_dynamic_reference_aggregate>();
+
     const auto scalar_graph = [=](wp<TS<i64>> input) {
         const auto collection = tsl(input);
         return node_template(5, input, collection);
     };
+
     const auto time_series_graph = [=](wp<TS<i64>> input) {
         const auto collection = tsl(input);
         return node_template(input, input, collection);
@@ -535,10 +535,8 @@ TEST_CASE("compiled runtime metadata locates interleaved parameters, output, and
         return read(combine(5, input, 3, select_second, tsl(first, second)));
     };
 
-    const auto input = std::array<std::optional<int>, 5>{1, 2, std::nullopt, std::nullopt, std::nullopt};
-    const auto select_second = std::array<std::optional<bool>, 5>{false, false, std::nullopt, true, std::nullopt};
-    const auto first = std::array<std::optional<int>, 5>{10, 20, 30, 40, std::nullopt};
-    const auto second = std::array<std::optional<int>, 5>{100, 200, 300, std::nullopt, 400};
-
-    CHECK(testing::test_graph(graph, input, select_second, first, second).equals({100, 20, 30, 300, 400}));
+    CHECK(testing::test_graph(graph, {1, 2, literal::SKIP, literal::SKIP, literal::SKIP},
+                              {false, false, literal::SKIP, true, literal::SKIP}, {10, 20, 30, 40, literal::SKIP},
+                              {100, 200, 300, literal::SKIP, 400})
+              .equals({100, 20, 30, 300, 400}));
 }

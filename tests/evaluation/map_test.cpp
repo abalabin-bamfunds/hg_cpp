@@ -224,6 +224,7 @@ TEST_CASE("map retains a named reference collection as a variadic graph argument
             }
             return wp<TS<i64>>{arguments["item"].time_series()};
         });
+
     const auto build_context = graph("name"_n = "build_context", [&](wp<TS<i64>> value) {
         return values_at_key_one(value);
     });
@@ -352,6 +353,7 @@ TEST_CASE("map supports sink graph functions",
           "[feature:map][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[definition:function]") {
     auto recorded_values = std::vector<i64>{};
+
     const auto sink = node([&](i64 value) { recorded_values.push_back(value); });
 
     const auto tested = [&](wp<TSD<i64, TS<i64>>> input) -> wp<TS<i64>> {
@@ -433,9 +435,11 @@ TEST_CASE("map passes direct and reference TSD inputs through to every mapped gr
             const auto reference = reference_factors[i64{9}].as<TS<i64>>();
             return add_values(add_values(value, direct), reference);
         });
+
     const auto factors = node([](i64 factor, Out<TSD<i64, TS<i64>>> output) {
         output[9].set(factor);
     });
+
     const auto make_factors = graph("name"_n = "make_factors", [&](wp<TS<i64>> factor) {
         return factors(factor);
     });
@@ -476,6 +480,7 @@ TEST_CASE("a mapped inner graph survives one TSD item removal while another TSD 
           "[feature:map][feature:nested-graph][feature:lifecycle][feature:reference][series:tsd]"
           "[transition:removal][transition:resurrection]") {
     const auto sum = node<RetainedMappedSum>();
+
     const auto branch = graph(
         "name"_n = "sum_retained_tsd_items",
         [&](wp<TS<i64, G>, optional> first, wp<TS<i64, G>> second) {
@@ -502,16 +507,21 @@ TEST_CASE("map forwards optional positional and named inputs only to optional br
           "[feature:map][feature:nested-graph][feature:operator][feature:wiring][series:tsd]"
           "[validity:optional][definition:function]") {
     const auto dictionaries = node([](Out<TSD<i64, TS<i64>>>) {});
+
     const auto values = node([](Out<TS<i64>>) {});
+
     const auto optional_positional = graph(
         "name"_n = "optional_positional_map_branch",
         [](wp<TS<i64>> item, wp<TS<i64>, optional>) { return item; });
+
     const auto required_positional = graph(
         "name"_n = "required_positional_map_branch",
         [](wp<TS<i64>> item, wp<TS<i64>>) { return item; });
+
     const auto optional_named = graph(
         "name"_n = "optional_named_map_branch",
         [](wp<TS<i64>, "item"_n> item, wp<TS<i64>, "context"_n, optional>) { return item; });
+
     const auto required_named = graph(
         "name"_n = "required_named_map_branch",
         [](wp<TS<i64>, "item"_n> item, wp<TS<i64>, "context"_n>) { return item; });
@@ -580,6 +590,7 @@ TEST_CASE("map reads a TSS through a nested graph reference",
             output.erase(1);
         }
     });
+
     const auto build_keys = graph("name"_n = "build_keys", [&](wp<TS<bool>> present) {
         return keys(present);
     });
@@ -607,6 +618,7 @@ TEST_CASE("map reads values using a nested TSS reference as its key set",
             output.erase(1);
         }
     });
+
     const auto build_keys = graph("name"_n = "build_generic_keys", [&](wp<TS<bool>> present) {
         return keys(present);
     });

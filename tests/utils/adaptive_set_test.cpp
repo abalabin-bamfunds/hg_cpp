@@ -10,6 +10,8 @@
 #include <string_view>
 #include <vector>
 
+using namespace bg;
+
 namespace {
 
 struct test_key {
@@ -34,7 +36,7 @@ struct test_key_equal {
 
 TEST_CASE("an adaptive set inserts, finds, and removes keys", "[adaptive_set][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto set = bg::util::adaptive_set<test_key, 4, test_key_hash, test_key_equal>{};
+    auto set = util::adaptive_set<test_key, 4, test_key_hash, test_key_equal>{};
 
     const auto [first, first_inserted] = set.insert(test_key{"one"}, memory);
     const auto [same, second_inserted] = set.insert(test_key{"one"}, memory);
@@ -54,7 +56,7 @@ TEST_CASE("an adaptive set inserts, finds, and removes keys", "[adaptive_set][co
 
 TEST_CASE("an adaptive set retains key storage when it creates its index", "[adaptive_set][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto set = bg::util::adaptive_set<std::uint32_t, 4>{};
+    auto set = util::adaptive_set<std::uint32_t, 4>{};
     const auto *first = set.insert(std::uint32_t{1}, memory).first;
 
     set.insert(std::uint32_t{2}, memory);
@@ -75,7 +77,7 @@ TEST_CASE("an adaptive set retains key storage when it creates its index", "[ada
 
 TEST_CASE("an adaptive set rolls back an insertion when index creation fails", "[adaptive_set][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto set = bg::util::adaptive_set<std::uint32_t, 2>{};
+    auto set = util::adaptive_set<std::uint32_t, 2>{};
 
     set.insert(std::uint32_t{1}, memory);
     set.insert(std::uint32_t{2}, memory);
@@ -104,7 +106,7 @@ struct equal_hash {
 
 TEST_CASE("an adaptive set resolves collisions before and after indexing", "[adaptive_set][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto set = bg::util::adaptive_set<std::uint32_t, 4, equal_hash>{};
+    auto set = util::adaptive_set<std::uint32_t, 4, equal_hash>{};
 
     for (auto value = std::uint32_t{}; value < 40; ++value) {
         set.insert(value, memory);

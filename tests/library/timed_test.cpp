@@ -18,6 +18,29 @@
 using namespace bg;
 using namespace bg::literals;
 
+TEST_CASE("delay publishes each retained input event after its duration",
+          "[feature:operator][feature:timed-scheduling][transition:invalidation][transition:revalidation]") {
+    const auto delayed = [](wp<TS<i64>> value) { return operators::delay(value, timedelta_t{2}); };
+
+    const auto delayed_valid = [](wp<TS<i64>> value) {
+        return operators::valid(operators::delay(value, timedelta_t{2}));
+    };
+
+    CHECK(testing::test_graph(delayed, {1, 2, literal::INVALID, 4})
+              .equals<i64>({std::nullopt, std::nullopt, 1, 2, std::nullopt, 4}));
+    CHECK(testing::test_graph(delayed_valid, {1, literal::INVALID, literal::SKIP, 4})
+              .equals<bool>({false, std::nullopt, true, false, std::nullopt, true}));
+}
+
+TEST_CASE("delay starts with an unbound reference input",
+          "[feature:operator][feature:timed-scheduling][series:reference][binding:reference-to-value]") {
+    const auto source = node([](Out<REF<TS<i64>>>) {});
+
+    const auto delayed = [&] { return operators::delay(source(), timedelta_t{1}); };
+
+    CHECK(testing::test_graph(delayed).equals<i64>({std::nullopt}));
+}
+
 struct changing_timed_target {
     static constexpr bool uses_timed_scheduling = true;
 
@@ -32,27 +55,6 @@ struct changing_timed_target {
         output.set(20);
     }
 };
-
-TEST_CASE("delay starts with an unbound reference input",
-          "[feature:operator][feature:timed-scheduling][series:reference][binding:reference-to-value]") {
-    const auto source = node([](Out<REF<TS<i64>>>) {});
-    const auto delayed = [&] { return operators::delay(source(), timedelta_t{1}); };
-
-    CHECK(testing::test_graph(delayed).equals<i64>({std::nullopt}));
-}
-
-TEST_CASE("delay publishes each retained input event after its duration",
-          "[feature:operator][feature:timed-scheduling][transition:invalidation][transition:revalidation]") {
-    const auto delayed = [](wp<TS<i64>> value) { return operators::delay(value, timedelta_t{2}); };
-    const auto delayed_valid = [](wp<TS<i64>> value) {
-        return operators::valid(operators::delay(value, timedelta_t{2}));
-    };
-
-    CHECK(testing::test_graph(delayed, {1, 2, literal::INVALID, 4})
-              .equals<i64>({std::nullopt, std::nullopt, 1, 2, std::nullopt, 4}));
-    CHECK(testing::test_graph(delayed_valid, {1, literal::INVALID, literal::SKIP, 4})
-              .equals<bool>({false, std::nullopt, true, false, std::nullopt, true}));
-}
 
 TEST_CASE("delay preserves separate equal ticks",
           "[feature:operator][feature:timed-scheduling][series:value][transition:update]") {
@@ -143,7 +145,7 @@ TEST_CASE("delay follows reference retargets and target ticks",
 
 TEST_CASE("delay fails when a reference retargets from valid TSS to an invalid target",
           "[feature:operator][feature:timed-scheduling][series:tss][series:reference]"
-          "[transition:invalidation][transition:rebind]") {
+          "[transition:invalidation][rebind]") {
     const auto select = node([](In<TS<i64>> cycle, In<REF<TSS<i64>>, passive> populated,
                                 In<REF<TSS<i64>>, passive> invalid, Out<REF<TSS<i64>>> output) {
         output.copy(*cycle == 0 ? populated : invalid);
@@ -157,7 +159,7 @@ TEST_CASE("delay fails when a reference retargets from valid TSS to an invalid t
 
 TEST_CASE("delay fails when a reference retargets from valid TSD to an invalid target",
           "[feature:operator][feature:timed-scheduling][series:tsd][series:reference]"
-          "[transition:invalidation][transition:rebind]") {
+          "[transition:invalidation][rebind]") {
     const auto select = node([](In<TS<i64>> cycle, In<REF<TSD<i64, TS<i64>>>, passive> populated,
                                 In<REF<TSD<i64, TS<i64>>>, passive> invalid,
                                 Out<REF<TSD<i64, TS<i64>>>> output) {
@@ -173,7 +175,7 @@ TEST_CASE("delay fails when a reference retargets from valid TSD to an invalid t
 
 TEST_CASE("delay replays TSS membership changes when a reference selects another valid set",
           "[feature:operator][feature:timed-scheduling][series:tss][series:reference]"
-          "[transition:addition][transition:removal][transition:rebind]") {
+          "[transition:addition][transition:removal][rebind]") {
     const auto select = node([](In<TS<bool>> use_second, In<REF<TSS<i64>>> first, In<REF<TSS<i64>>> second,
                                 Out<REF<TSS<i64>>> output) { output.copy(*use_second ? second : first); });
     const auto delayed_sum = [&](wp<TS<bool>> use_second, wp<TSS<i64>> first, wp<TSS<i64>> second) {
@@ -186,7 +188,7 @@ TEST_CASE("delay replays TSS membership changes when a reference selects another
 
 TEST_CASE("delay replays TSD key changes when a reference selects another valid dictionary",
           "[feature:operator][feature:timed-scheduling][series:tsd][series:reference]"
-          "[transition:addition][transition:removal][transition:rebind]") {
+          "[transition:addition][transition:removal][rebind]") {
     const auto select = node([](In<TS<bool>> use_second, In<REF<TSD<i64, TS<i64>>>> first,
                                 In<REF<TSD<i64, TS<i64>>>> second, Out<REF<TSD<i64, TS<i64>>>> output) {
         output.copy(*use_second ? second : first);

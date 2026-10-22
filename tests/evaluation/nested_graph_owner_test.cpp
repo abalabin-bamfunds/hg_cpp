@@ -13,10 +13,12 @@
 #include <utility>
 #include <vector>
 
+using namespace bg;
+
 namespace {
 
-[[nodiscard]] bg::EvaluationTime time(bg::i64 microseconds) {
-    return bg::MIN_DT + std::chrono::microseconds{microseconds};
+[[nodiscard]] EvaluationTime time(i64 microseconds) {
+    return MIN_DT + std::chrono::microseconds{microseconds};
 }
 
 class InnerGraphOwner {
@@ -48,7 +50,7 @@ struct InnerNode {
 
     int delay;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(EvaluationContext *context) const {
         if (delay != 0) {
             context->schedule_at(context->evaluation_time() + std::chrono::microseconds{delay});
         }
@@ -57,26 +59,26 @@ struct InnerNode {
     void evaluate() const {}
 };
 
-bg::CompiledGraph make_owner_graph() {
+CompiledGraph make_owner_graph() {
     const auto node = bg::node<OwnerNode>();
-    auto wiring = bg::GraphWiring{};
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         node();
     }
     wiring.finalize();
-    return bg::CompiledGraph{wiring};
+    return CompiledGraph{wiring};
 }
 
-bg::CompiledGraph make_inner_graph(int delay) {
+CompiledGraph make_inner_graph(int delay) {
     const auto node = bg::node<InnerNode>();
-    auto wiring = bg::GraphWiring{};
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         node(delay);
     }
     wiring.finalize();
-    return bg::CompiledGraph{wiring};
+    return CompiledGraph{wiring};
 }
 
 } // namespace
@@ -85,13 +87,13 @@ TEST_CASE("multiple inner graphs identify immediate scheduling to their owner",
           "[evaluation][nested][scheduling][feature:nested-graph][shape:nested]") {
     const auto outer_compiled = make_owner_graph();
     const auto inner_compiled = make_inner_graph(0);
-    auto outer_global_state = bg::GlobalState{};
-    auto outer = bg::RuntimeGraph{outer_compiled, outer_global_state};
+    auto outer_global_state = GlobalState{};
+    auto outer = RuntimeGraph{outer_compiled, outer_global_state};
     auto owner = InnerGraphOwner{};
-    auto evaluator = bg::RuntimeGraphEvaluator{};
+    auto evaluator = RuntimeGraphEvaluator{};
     evaluator.bind_owner(outer, 0, {.receiver = &owner, .inner_scheduled = InnerGraphOwner::inner_graph_scheduled});
-    auto first = bg::RuntimeGraph{inner_compiled, outer.allocation(), evaluator, 7};
-    auto second = bg::RuntimeGraph{inner_compiled, outer.allocation(), evaluator, 11};
+    auto first = RuntimeGraph{inner_compiled, outer.allocation(), evaluator, 7};
+    auto second = RuntimeGraph{inner_compiled, outer.allocation(), evaluator, 11};
     OwnerNode::owner = &owner;
 
     outer.start(time(1));
@@ -115,13 +117,13 @@ TEST_CASE("multiple inner graphs register timers with the outer scheduler",
     const auto outer_compiled = make_owner_graph();
     const auto first_compiled = make_inner_graph(2);
     const auto second_compiled = make_inner_graph(4);
-    auto outer_global_state = bg::GlobalState{};
-    auto outer = bg::RuntimeGraph{outer_compiled, outer_global_state};
+    auto outer_global_state = GlobalState{};
+    auto outer = RuntimeGraph{outer_compiled, outer_global_state};
     auto owner = InnerGraphOwner{};
-    auto evaluator = bg::RuntimeGraphEvaluator{};
+    auto evaluator = RuntimeGraphEvaluator{};
     evaluator.bind_owner(outer, 0, {.receiver = &owner, .inner_scheduled = InnerGraphOwner::inner_graph_scheduled});
-    auto first = bg::RuntimeGraph{first_compiled, outer.allocation(), evaluator, 7};
-    auto second = bg::RuntimeGraph{second_compiled, outer.allocation(), evaluator, 11};
+    auto first = RuntimeGraph{first_compiled, outer.allocation(), evaluator, 7};
+    auto second = RuntimeGraph{second_compiled, outer.allocation(), evaluator, 11};
     OwnerNode::owner = &owner;
 
     outer.start(time(1));
@@ -150,13 +152,13 @@ TEST_CASE("stopping one inner graph removes only its scheduled time",
     const auto outer_compiled = make_owner_graph();
     const auto first_compiled = make_inner_graph(2);
     const auto second_compiled = make_inner_graph(4);
-    auto outer_global_state = bg::GlobalState{};
-    auto outer = bg::RuntimeGraph{outer_compiled, outer_global_state};
+    auto outer_global_state = GlobalState{};
+    auto outer = RuntimeGraph{outer_compiled, outer_global_state};
     auto owner = InnerGraphOwner{};
-    auto evaluator = bg::RuntimeGraphEvaluator{};
+    auto evaluator = RuntimeGraphEvaluator{};
     evaluator.bind_owner(outer, 0, {.receiver = &owner, .inner_scheduled = InnerGraphOwner::inner_graph_scheduled});
-    auto first = bg::RuntimeGraph{first_compiled, outer.allocation(), evaluator, 7};
-    auto second = bg::RuntimeGraph{second_compiled, outer.allocation(), evaluator, 11};
+    auto first = RuntimeGraph{first_compiled, outer.allocation(), evaluator, 7};
+    auto second = RuntimeGraph{second_compiled, outer.allocation(), evaluator, 11};
     OwnerNode::owner = &owner;
 
     outer.start(time(1));

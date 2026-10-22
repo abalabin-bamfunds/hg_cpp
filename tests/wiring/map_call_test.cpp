@@ -20,8 +20,11 @@ TEST_CASE("map validates collection key types for every graph form",
           "[feature:map][feature:wiring][feature:type-system][series:tsd]"
           "[definition:function][definition:runtime]") {
     const auto integers = node([](Out<TSD<i64, TS<float>>>) {});
+
     const auto booleans = node([](Out<TSD<bool, TS<float>>>) {});
+
     const auto function = [](wp<TS<float>> left, wp<TS<float>>) { return left; };
+
     const auto graph_template = graph("name"_n = "map_key_types", function);
 
     testing::test_wiring([&] {
@@ -43,6 +46,7 @@ TEST_CASE("map validates collection key types for every graph form",
 TEST_CASE("map rejects a graph template with an unmatched argument count",
           "[feature:map][feature:wiring][series:tsd][definition:runtime]") {
     const auto values = node([](Out<TSD<i64, TS<float>>>) {});
+
     const auto two_parameters = graph(
         "name"_n = "two_map_parameters",
         [](wp<TS<float>> value, wp<TS<float>>) { return value; });
@@ -53,8 +57,11 @@ TEST_CASE("map rejects a graph template with an unmatched argument count",
 TEST_CASE("map requires one selected TSS for every graph form",
           "[feature:map][feature:wiring][series:tss][definition:function][definition:runtime]") {
     const auto first = node([](Out<TSS<i64>>) {});
+
     const auto second = node([](Out<TSS<i64>>) {});
+
     const auto function = [](wp<TSS<i64>>) {};
+
     const auto graph_template = graph("name"_n = "map_key_sets", function);
 
     testing::test_wiring([&] {
@@ -81,8 +88,11 @@ TEST_CASE("map passes reference items and pass-through collections consistently"
           "[definition:function][definition:runtime][guarantee:final]") {
     const auto values =
         node([](Out<TSD<i64, REF<TS<float>, TimeSeriesGuarantee::final>>>) {});
+
     const auto factors = node([](Out<TSD<bool, TS<i64>>>) {});
+
     const auto function = [](wp<TS<float>> value, wp<TSD<bool, TS<i64>>>) { return value; };
+
     const auto graph_template = graph("name"_n = "map_reference_items", function);
     const auto &expected = TSD<
         i64,
@@ -109,8 +119,10 @@ TEST_CASE("map resolves explicit and inferred key arguments for every graph form
           "[feature:map][feature:wiring][series:tsd][definition:function]"
           "[definition:runtime][guarantee:const]") {
     const auto values = node([](Out<TSD<i64, TS<float>>>) {});
+
     const auto function = [](wp<TS<i64, TimeSeriesGuarantee::const_>> key,
                              wp<TS<float>>) { return key; };
+
     const auto graph_template = graph("name"_n = "map_keys", function);
     const auto &expected = TSD<
         i64,
@@ -133,7 +145,9 @@ TEST_CASE("map resolves explicit and inferred key arguments for every graph form
 TEST_CASE("map reports option errors through its public call forms",
           "[feature:map][feature:wiring][series:tsd][definition:function][definition:runtime]") {
     const auto values = node([](Out<TSD<i64, TS<float>>>) {});
+
     const auto function = [](wp<TS<float>> value) { return value; };
+
     const auto graph_template = graph("name"_n = "map_options", function);
 
     testing::test_wiring([&] {

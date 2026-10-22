@@ -10,17 +10,9 @@ namespace {
 
 using namespace bg;
 
-struct scalar_set_source {
-    Scalar<Set<i64>> value;
-    Out<TS<Set<i64>>> output;
-
-    void start() const { output.set_value(value); }
-    void evaluate() const {}
-};
-
 TEST_CASE("a scalar set propagates through a value time series",
           "[node][time_series][scalar][set][scalar:set][feature:state]") {
-    const auto source = node<scalar_set_source>();
+    const auto source = node([](Scalar<Set<i64>> value, Out<TS<Set<i64>>> output) { output.set_value(value); });
 
     const auto sum = node([](In<TS<Set<i64>>> input) {
         auto result = i64{};

@@ -21,25 +21,16 @@
 #include <array>
 #include <string>
 
+using namespace bg;
+
 namespace {
 
-class ExtensionScalarType final : public bg::ScalarType {
+class FallbackScalarType final : public ScalarType {
   public:
     VISITOR_SUPPORT()
 
     bool is_resolved() const noexcept override { return true; }
-    const bg::Type &resolve(const bg::TypeMap &) const override { return *this; }
-    void format_name(std::string &result) const override { result += "extension_scalar"; }
-    bool supports_equality() const noexcept override { return true; }
-    bool supports_hash() const noexcept override { return true; }
-};
-
-class FallbackScalarType final : public bg::ScalarType {
-  public:
-    VISITOR_SUPPORT()
-
-    bool is_resolved() const noexcept override { return true; }
-    const bg::Type &resolve(const bg::TypeMap &) const override { return *this; }
+    const bg::Type &resolve(const TypeMap &) const override { return *this; }
 };
 
 class FallbackType final : public bg::Type {
@@ -47,53 +38,44 @@ class FallbackType final : public bg::Type {
     VISITOR_SUPPORT()
 
     bool is_resolved() const noexcept override { return true; }
-    const bg::Type &resolve(const bg::TypeMap &) const override { return *this; }
+    const bg::Type &resolve(const TypeMap &) const override { return *this; }
 };
-
-const ExtensionScalarType &extension_scalar_type() {
-    static const auto type = bg::util::static_storage<ExtensionScalarType>{};
-    [[maybe_unused]] static const auto &registration = bg::TypeRegistry::register_static(type.get());
-    return type.get();
-}
 
 } // namespace
 
 TEST_CASE("semantic types append their formal names", "[feature:type-system]") {
     auto text = std::string{"prefix:"};
-    const bg::Type &scalar = bg::float_type();
+    const bg::Type &scalar = float_type();
     scalar.format_name(text);
     CHECK(text == "prefix:float");
 
     auto generic_scalar_text = std::string{};
-    static const auto generic_scalar = bg::util::static_storage<FallbackScalarType>{};
+    static const auto generic_scalar = util::static_storage<FallbackScalarType>{};
     [[maybe_unused]] static const auto &generic_scalar_registration =
-        bg::TypeRegistry::register_static(generic_scalar.get());
+        TypeRegistry::register_static(generic_scalar.get());
     generic_scalar.get().format_name(generic_scalar_text);
     CHECK(generic_scalar_text == "scalar");
 
     auto generic_type_text = std::string{};
-    static const auto generic_type = bg::util::static_storage<FallbackType>{};
-    [[maybe_unused]] static const auto &generic_type_registration =
-        bg::TypeRegistry::register_static(generic_type.get());
+    static const auto generic_type = util::static_storage<FallbackType>{};
+    [[maybe_unused]] static const auto &generic_type_registration = TypeRegistry::register_static(generic_type.get());
     generic_type.get().format_name(generic_type_text);
     CHECK(generic_type_text == "type");
 
     auto variable_text = std::string{};
-    static const auto variable = bg::util::static_storage<bg::TypeVariableType<bg::Type>>{
-        bg::util::symbol{"VALUE"}};
-    [[maybe_unused]] static const auto &variable_registration = bg::TypeRegistry::register_static(variable.get());
+    static const auto variable = util::static_storage<TypeVariableType<bg::Type>>{util::symbol{"VALUE"}};
+    [[maybe_unused]] static const auto &variable_registration = TypeRegistry::register_static(variable.get());
     const bg::Type &variable_type = variable.get();
     variable_type.format_name(variable_text);
     CHECK(variable_text == "VALUE");
 }
 
 TEST_CASE("built-in composite types format their arguments and guarantees", "[feature:type-system]") {
-    const auto &value = bg::TS<float>::type();
-    const auto &reference = bg::generic_time_series_reference_type(value, bg::TimeSeriesGuarantee::deduplicated);
-    const auto &list = bg::time_series_list_type(value, 3, bg::TimeSeriesGuarantee::final);
-    const auto &set = bg::time_series_set_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
-    const auto &dictionary =
-        bg::time_series_dictionary_type(bg::string_type(), value, bg::TimeSeriesGuarantee::const_);
+    const auto &value = TS<float>::type();
+    const auto &reference = generic_time_series_reference_type(value, TimeSeriesGuarantee::deduplicated);
+    const auto &list = time_series_list_type(value, 3, TimeSeriesGuarantee::final);
+    const auto &set = time_series_set_type(float_type(), TimeSeriesGuarantee::ordinary);
+    const auto &dictionary = time_series_dictionary_type(string_type(), value, TimeSeriesGuarantee::const_);
 
     auto reference_text = std::string{};
     reference.format_name(reference_text);
@@ -111,29 +93,49 @@ TEST_CASE("built-in composite types format their arguments and guarantees", "[fe
     dictionary.format_name(dictionary_text);
     CHECK(dictionary_text == "TSD<string, TS<float, const>, const>");
 
-    const auto fields = std::array{bg::SchemaField{bg::util::symbol{"value"}, &value, false}};
-    const auto &schema = bg::schema(bg::util::symbol{"Quote"}, std::monostate{}, nullptr, fields);
-    const auto &bundle = bg::time_series_bundle_type(schema, bg::TimeSeriesGuarantee::ordinary);
+    const auto fields = std::array{SchemaField{util::symbol{"value"}, &value, false}};
+    const auto &schema = bg::schema(util::symbol{"Quote"}, std::monostate{}, nullptr, fields);
+    const auto &bundle = time_series_bundle_type(schema, TimeSeriesGuarantee::ordinary);
     auto bundle_text = std::string{};
     bundle.format_name(bundle_text);
     CHECK(bundle_text == "TSB<Quote>");
 
     auto type_value_text = std::string{};
-    bg::type_of(value).format_name(type_value_text);
+    type_of(value).format_name(type_value_text);
     CHECK(type_value_text == "Type<TS<float>>");
 
-    static const auto series_variable = bg::util::static_storage<bg::TypeVariableType<bg::TimeSeriesType>>{
-        bg::util::symbol{"SERIES"}};
+    static const auto series_variable = util::static_storage<TypeVariableType<TimeSeriesType>>{util::symbol{"SERIES"}};
     [[maybe_unused]] static const auto &series_variable_registration =
-        bg::TypeRegistry::register_static(series_variable.get());
-    static const auto generic_time_series = bg::util::static_storage<bg::GenericTimeSeriesVariableType>{
-        series_variable.get(), bg::TimeSeriesGuarantee::final};
+        TypeRegistry::register_static(series_variable.get());
+    static const auto generic_time_series =
+        util::static_storage<GenericTimeSeriesVariableType>{series_variable.get(), TimeSeriesGuarantee::final};
     [[maybe_unused]] static const auto &generic_time_series_registration =
-        bg::TypeRegistry::register_static(generic_time_series.get());
+        TypeRegistry::register_static(generic_time_series.get());
     auto generic_time_series_text = std::string{};
     generic_time_series.get().format_name(generic_time_series_text);
     CHECK(generic_time_series_text == "SERIES, final");
 }
+
+namespace {
+
+class ExtensionScalarType final : public ScalarType {
+  public:
+    VISITOR_SUPPORT()
+
+    bool is_resolved() const noexcept override { return true; }
+    const bg::Type &resolve(const TypeMap &) const override { return *this; }
+    void format_name(std::string &result) const override { result += "extension_scalar"; }
+    bool supports_equality() const noexcept override { return true; }
+    bool supports_hash() const noexcept override { return true; }
+};
+
+const ExtensionScalarType &extension_scalar_type() {
+    static const auto type = util::static_storage<ExtensionScalarType>{};
+    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+    return type.get();
+}
+
+} // namespace
 
 TEST_CASE("extension types format through Type inside built-in composites",
           "[feature:type-system][declaration:runtime][scalar:generic][series:value]") {
@@ -143,13 +145,13 @@ TEST_CASE("extension types format through Type inside built-in composites",
     extension_type.format_name(extension_text);
     CHECK(extension_text == "extension_scalar");
 
-    const auto &list = bg::list_scalar_type(extension);
+    const auto &list = list_scalar_type(extension);
     const bg::Type &list_type = list;
     auto list_text = std::string{};
     list_type.format_name(list_text);
     CHECK(list_text == "List<extension_scalar>");
 
-    const auto &time_series = bg::time_series_value_type(list, bg::TimeSeriesGuarantee::ordinary);
+    const auto &time_series = time_series_value_type(list, TimeSeriesGuarantee::ordinary);
     const bg::Type &time_series_type = time_series;
     auto time_series_text = std::string{};
     time_series_type.format_name(time_series_text);

@@ -16,15 +16,17 @@
 #include <stdexcept>
 #include <vector>
 
+using namespace bg;
+
 namespace test_scalar {
 
 inline bool throw_on_hash{};
 inline bool throw_on_equality{};
 
 struct fallible_value {
-    explicit fallible_value(bg::i64 value) : value{value} {}
+    explicit fallible_value(i64 value) : value{value} {}
 
-    bg::i64 value;
+    i64 value;
 
     friend bool operator==(fallible_value left, fallible_value right) {
         if (throw_on_equality) {
@@ -41,7 +43,7 @@ template <> struct std::hash<test_scalar::fallible_value> {
         if (test_scalar::throw_on_hash) {
             throw std::runtime_error{"hash failed"};
         }
-        return std::hash<bg::i64>{}(value.value);
+        return std::hash<i64>{}(value.value);
     }
 };
 
@@ -69,16 +71,14 @@ TEST_CASE("scalar collections propagate hash and equality exceptions",
           "[value][scalar][collection][feature:scalar-collection]") {
     using Value = test_scalar::fallible_value;
 
-    const auto set = bg::ScalarValue<bg::Set<Value>>{std::array{Value{1}}};
-    const auto set_copy = bg::ScalarValue<bg::Set<Value>>{std::array{Value{1}}};
-    const auto list = bg::ScalarValue<bg::List<Value>>{std::array{Value{1}}};
-    const auto list_copy = bg::ScalarValue<bg::List<Value>>{std::array{Value{1}}};
-    const auto dictionary = bg::ScalarValue<bg::Dict<Value, bg::i64>>{
-        std::array{std::pair{Value{1}, bg::i64{10}}}};
-    const auto dictionary_copy = bg::ScalarValue<bg::Dict<Value, bg::i64>>{
-        std::array{std::pair{Value{1}, bg::i64{10}}}};
+    const auto set = ScalarValue<Set<Value>>{std::array{Value{1}}};
+    const auto set_copy = ScalarValue<Set<Value>>{std::array{Value{1}}};
+    const auto list = ScalarValue<List<Value>>{std::array{Value{1}}};
+    const auto list_copy = ScalarValue<List<Value>>{std::array{Value{1}}};
+    const auto dictionary = ScalarValue<Dict<Value, i64>>{std::array{std::pair{Value{1}, i64{10}}}};
+    const auto dictionary_copy = ScalarValue<Dict<Value, i64>>{std::array{std::pair{Value{1}, i64{10}}}};
 
-    const auto scalar = bg::ScalarValue<Value>{Value{1}};
+    const auto scalar = ScalarValue<Value>{Value{1}};
 
     test_scalar::throw_on_hash = true;
     CHECK_THROWS_AS(scalar.hash(), std::runtime_error);
@@ -107,13 +107,13 @@ TEST_CASE("time series set reclamation does not hash stored keys",
     using Value = test_scalar::fallible_value;
 
     auto resource = std::pmr::unsynchronized_pool_resource{};
-    auto memory = bg::allocator{resource};
-    auto storage = bg::details::time_series_set_storage{};
-    const auto &key_runtime_type = bg::cpp_scalar_runtime_type<Value>();
-    const auto key_layout = bg::util::runtime_item_layout{key_runtime_type.size(), key_runtime_type.alignment()};
-    const auto key = bg::ScalarValue<Value>{Value{1}};
+    auto memory = allocator{resource};
+    auto storage = details::time_series_set_storage{};
+    const auto &key_runtime_type = cpp_scalar_runtime_type<Value>();
+    const auto key_layout = util::runtime_item_layout{key_runtime_type.size(), key_runtime_type.alignment()};
+    const auto key = ScalarValue<Value>{Value{1}};
     auto item_count = 0;
-    const auto time = bg::MIN_DT + bg::EvaluationTime::duration{1};
+    const auto time = MIN_DT + EvaluationTime::duration{1};
 
     storage.reset_change_tracking(time, key_runtime_type, key_layout, memory,
                                   [&](std::uint32_t) noexcept { --item_count; });
@@ -129,15 +129,14 @@ TEST_CASE("time series set reclamation does not hash stored keys",
     const auto inserted = storage.insert(key, key_runtime_type, key_layout, memory,
                                          [&](std::uint32_t) { ++item_count; },
                                          [&](std::uint32_t) noexcept { --item_count; });
-    REQUIRE(inserted.change == bg::details::time_series_set_change::added);
-    storage.reset_change_tracking(time + bg::EvaluationTime::duration{1}, key_runtime_type, key_layout, memory,
+    REQUIRE(inserted.change == details::time_series_set_change::added);
+    storage.reset_change_tracking(time + EvaluationTime::duration{1}, key_runtime_type, key_layout, memory,
                                   [&](std::uint32_t) noexcept { --item_count; });
-    CHECK(storage.erase(key, key_runtime_type, key_layout, memory,
-                        [&](std::uint32_t) noexcept { --item_count; }).change ==
-          bg::details::time_series_set_change::removed);
+    CHECK(storage.erase(key, key_runtime_type, key_layout, memory, [&](std::uint32_t) noexcept { --item_count; })
+              .change == details::time_series_set_change::removed);
 
     test_scalar::throw_on_hash = true;
-    CHECK_NOTHROW((storage.reset_change_tracking(time + bg::EvaluationTime::duration{2}, key_runtime_type, key_layout,
+    CHECK_NOTHROW((storage.reset_change_tracking(time + EvaluationTime::duration{2}, key_runtime_type, key_layout,
                                                  memory, [&](std::uint32_t) noexcept { --item_count; })));
     test_scalar::throw_on_hash = false;
 

@@ -221,9 +221,9 @@ TEST_CASE("running extrema keep an initial NaN until input invalidation",
         const auto result = testing::test_graph(
             operation, {nan, 1.0, nan, 0.0, literal::INVALID,
                         literal::SKIP, 3.0});
+        REQUIRE(result.size() == 7);
         const auto first_value = result[0];
         const auto last_value = result[6];
-        CHECK(result.size() == 7);
         REQUIRE(first_value.has_value());
         CHECK(std::isnan(scalar_cast<double>(*first_value).value()));
         for (const auto index : {1, 2, 3, 4, 5}) {
@@ -290,12 +290,12 @@ TEST_CASE("running extrema clear NaN history on reset-only and simultaneous tick
                         nan, 5.0, 2.0, 3.0},
             {literal::SKIP, literal::SKIP, true, literal::SKIP,
              false, literal::SKIP, true, literal::SKIP});
+        REQUIRE(result.size() == 8);
         const auto first_value = result[0];
         const auto value_after_first_reset = result[3];
         const auto value_after_second_nan = result[4];
         const auto value_after_second_reset = result[6];
         const auto last_value = result[7];
-        CHECK(result.size() == 8);
         REQUIRE(first_value.has_value());
         CHECK(std::isnan(scalar_cast<double>(*first_value).value()));
         CHECK_FALSE(result[1].has_value());

@@ -40,6 +40,7 @@ TEST_CASE("a nested graph preserves a fixed valid_items input",
     const auto inner = graph(
         "name"_n = "valid_items_inner",
         [&](wp<TSD<i64, TS<i64>>, valid_items> input) { return count(input); });
+
     const auto outer = [&](wp<TSD<i64, TS<i64>>> input, wp<TS<bool>> run) { return nested(inner, run, input); };
 
     const auto actual = testing::test_graph(
@@ -60,6 +61,7 @@ TEST_CASE("a nested graph preserves valid_items and scalar fields in a captured 
     const auto inner = graph([&](wp<TSB<SCHEMA>, "values"_n, var_kwargs> values) {
         return count(values["dictionary"], values["offset"]);
     });
+
     const auto outer = [&](wp<TSD<i64, TS<i64>>> values, wp<TS<bool>> run) {
         const auto pack = bundle("dictionary"_n = valid_items(values), "offset"_n = i64{40});
         return nested(inner, run, "values"_n = pack);
@@ -78,6 +80,7 @@ TEST_CASE("a lexical context preserves valid_items on a TSD input",
     const auto count = node([](In<TSD<i64, TS<i64>>, "values"_n, context, valid_items> values) {
         return static_cast<i64>(values.size());
     });
+
     const auto contextual = [&](wp<TSD<i64, TS<i64>>> values) {
         return with_context("values"_n = valid_items(values), [&] { return count(); });
     };
@@ -93,6 +96,7 @@ TEST_CASE("a materialisation option preserves valid_items on a TSD input",
     const auto count = node([](In<TSD<i64, TS<i64>>, valid_items> values) {
         return static_cast<i64>(values.size());
     });
+
     const auto materialized = [&](wp<TSD<i64, TS<i64>>> values) {
         auto deferred = WiringContext::current().wiring().create_wp<TSD<i64, TS<i64>>>(valid_items(values));
         deferred.materialisation_option<TSD<i64, TS<i64>>>(

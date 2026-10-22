@@ -66,7 +66,9 @@ TEST_CASE("mesh runtime declarations preserve valid_items inputs",
     const auto identity = graph(
         "name"_n = "valid_items_mesh_identity",
         [](wp<TS<i64>> value, wp<TSD<i64, TS<i64>>, valid_items>) { return value; });
+
     const auto values = node([](Out<TSD<i64, TS<i64>>>) {});
+
     const auto dictionary = node([](Out<TSD<i64, TS<i64>>>) {});
     auto wiring = GraphWiring{};
 
@@ -88,6 +90,7 @@ TEST_CASE("mesh runtime declarations preserve valid_items inputs",
 TEST_CASE("mesh dependencies accept a scalar key",
           "[feature:mesh][feature:wiring][feature:operator][shape:nested][scalar:integer]") {
     const auto values = node([](Out<TSD<i64, TS<i64>>>) {});
+
     const auto consume = node([](In<TS<i64>, optional>) {});
 
     testing::test_wiring([&] {
@@ -147,6 +150,7 @@ TEST_CASE("mesh resolves and checks its branch graph once",
 TEST_CASE("mesh selects named enclosing scopes",
           "[feature:mesh][feature:wiring][feature:operator][shape:deeply-nested]") {
     const auto values = node([](Out<TSD<i64, TS<i64>>>) {});
+
     const auto consume = node([](In<TS<i64>, optional>) {});
 
     testing::test_wiring([&] {
@@ -197,7 +201,9 @@ TEST_CASE("mesh accepts fully runtime graph and argument values",
           "[feature:mesh][feature:operator][feature:graph-argument][feature:wiring]"
           "[series:tsd][definition:runtime]") {
     const auto values = node([](Out<TSD<i64, TS<i64>>>) {});
+
     const auto identity = graph("name"_n = "runtime_mesh_identity", [](wp<TS<i64>> value) { return value; });
+
     const auto sink = graph("name"_n = "runtime_mesh_sink", [](wp<TS<i64>>) {});
 
     testing::test_wiring([&] {
@@ -217,6 +223,7 @@ TEST_CASE("mesh selects a custom operator overload",
           "[feature:mesh][feature:operator][feature:graph-argument][feature:wiring]"
           "[series:tsd]") {
     const auto values = node([](Out<TSD<i64, TS<i64>>>) {});
+
     const auto identity = graph("name"_n = "custom_mesh_identity", [](wp<TS<i64>> value) { return value; });
 
     auto selected = false;
@@ -236,7 +243,9 @@ TEST_CASE("mesh resolves untyped arguments and selected outputs",
           "[feature:mesh][feature:operator][feature:wiring][series:tsd]"
           "[declaration:runtime]") {
     const auto values = node([](Out<TSD<i64, TS<i64>>>) {});
+
     const auto consume = node([](In<TS<i64>>) {});
+
     const auto identity = graph("name"_n = "untyped_mesh_identity", [consume](wp<TS<i64>> value) {
         consume(mesh()[i64{1}]);
         return value;
@@ -272,7 +281,9 @@ TEST_CASE("an explicit mesh output type resolves a raw branch lambda before sele
 TEST_CASE("mesh selection has the branch output item type before it is consumed",
           "[feature:mesh][feature:operator][feature:wiring][series:tsd]") {
     const auto values = node([](Out<TSD<i64, TS<i64>>>) {});
+
     const auto consume = node([](In<TS<i64>>) {});
+
     const auto branch = graph("name"_n = "exact_mesh_selection", [consume](wp<TS<i64>> value) {
         const auto selected = mesh()[i64{1}];
         CHECK(&selected.type() == &REF<TS<i64>, TimeSeriesGuarantee::deduplicated>::type());
@@ -286,6 +297,7 @@ TEST_CASE("mesh selection has the branch output item type before it is consumed"
 
 TEST_CASE("mesh diagnostics identify mesh arguments", "[feature:mesh][feature:operator][feature:wiring][series:tsd]") {
     const auto integers = node([](Out<TSD<i64, TS<i64>>>) {});
+
     const auto floating_point_keys = node([](Out<TSD<float, TS<i64>>>) {});
 
     CHECK_THROWS_WITH(testing::test_wiring(

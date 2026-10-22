@@ -76,6 +76,7 @@ TEST_CASE("service implementation registration rejects graph and absent scalar a
           "[feature:service][feature:wiring]") {
     const auto service = reference_service<auto()->TS<i64>>{"lookup"};
     const auto source = node([](Out<TS<i64>>) {});
+
     const auto implementation = graph("name"_n = "lookup_impl", [&] { return source(); });
     const auto graph_argument =
         GraphArgument{details::GraphWiringStructure{}, std::make_shared<const int>(1)};
@@ -90,6 +91,7 @@ TEST_CASE("multiservice registration remains attached when its catalogue is move
           "[feature:service][feature:multiservice]") {
     const auto clock = reference_service<auto()->TS<i64>>{"clock"};
     const auto source = node([](Out<TS<i64>>) {});
+
     const auto implementation = graph("name"_n = "clock_impl", [&] {
         clock.implementation_replies(source());
     });
@@ -162,6 +164,7 @@ TEST_CASE("a catalogue builds the reference service implementation selected by s
         selected = -path;
         return source();
     });
+
     const auto second = graph("name"_n = "second_service", [&](i64 path) -> wp<TS<i64>> {
         selected = path;
         return source();
@@ -186,7 +189,9 @@ TEST_CASE("finalize with a catalogue drains materialisation added by a late serv
           "[feature:service][feature:wiring][feature:wiring-materialisation]") {
     const auto service = reference_service<auto()->TS<float>>{"late_materialisation"};
     const auto integer_source = node([](Out<TS<i64>>) {});
+
     const auto float_source = node([](Out<TS<float>>) {});
+
     const auto consume = node([](In<TS<float>>, Out<TS<float>>) {});
     auto materialisation_builds = 0;
     const auto implementation = graph("name"_n = "late_materialisation_impl", [&] {
@@ -225,7 +230,9 @@ TEST_CASE("a committed materialisation keeps its result when a late service adds
           "[feature:service][feature:wiring][feature:wiring-materialisation]") {
     const auto service = reference_service<auto()->TS<bool>>{"materialisation_service"};
     const auto integer_source = node([](Out<TS<i64>>) {});
+
     const auto consume = node([](In<TS<i64>>, Out<TS<bool>>) {});
+
     const auto sink = node([](In<TSB<MaterialisationServiceBundle>>) {});
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
@@ -290,8 +297,11 @@ TEST_CASE("catalogue type mappings select a generic reference service implementa
           "[feature:service][feature:wiring][declaration:generic]") {
     const auto service = reference_service<RESULT, auto()->RESULT>{"generic_lookup"};
     const auto integer_source = node([](Out<TS<i64>>) {});
+
     const auto floating_source = node([](Out<TS<float>>) {});
+
     const auto integer = graph("name"_n = "integer_service", [&] { return integer_source(); });
+
     const auto floating = graph("name"_n = "floating_service", [&] { return floating_source(); });
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service[type<TS<i64>>], integer);
@@ -313,9 +323,11 @@ TEST_CASE("service building includes requirements introduced by implementation g
     const auto outer = reference_service<auto()->TS<i64>>{"outer"};
     const auto inner = reference_service<auto()->TS<i64>>{"inner"};
     const auto source = node([](Out<TS<i64>>) {});
+
     const auto outer_impl = graph("name"_n = "outer_impl", [&]() -> wp<TS<i64>> {
         return inner().as<TS<i64>>();
     });
+
     const auto inner_impl = graph("name"_n = "inner_impl", [&] { return source(); });
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(outer, outer_impl);
@@ -337,7 +349,9 @@ TEST_CASE("a graph discovers service clients before its late-bound input is prov
           "[feature:service][feature:wiring][feature:late-bound-wiring]") {
     const auto downstream = reference_service<auto(i64)->TS<i64>>{"downstream", {"key"}};
     const auto consume = node([](In<TS<i64>>) {});
+
     const auto source = node([](Out<TS<i64>>) {});
+
     const auto catch_all_implementation = graph("name"_n = "catch_all_impl", [&](wp<TS<i64>> values) {
         consume(values);
         (void)downstream(1);
@@ -364,6 +378,7 @@ TEST_CASE("a graph discovers service clients before its late-bound input is prov
 TEST_CASE("service building reports missing and ambiguous implementations", "[feature:service][feature:wiring]") {
     const auto service = reference_service<auto()->TS<i64>>{"lookup"};
     const auto source = node([](Out<TS<i64>>) {});
+
     const auto implementation = graph("name"_n = "lookup_impl", [&] { return source(); });
 
     SECTION("missing") {
@@ -393,6 +408,7 @@ TEST_CASE("service building reports missing and ambiguous implementations", "[fe
 TEST_CASE("service output mismatch identifies the service and call path", "[feature:service][feature:wiring]") {
     const auto service = reference_service<auto()->TS<i64>>{"lookup"};
     const auto source = node([](Out<TS<float>>) {});
+
     const auto implementation = graph("name"_n = "lookup_impl", [&] { return source(); });
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
@@ -418,6 +434,7 @@ TEST_CASE("service output mismatch identifies the service and call path", "[feat
 TEST_CASE("late service failures retain the materialisation consumer", "[feature:service][feature:wiring]") {
     const auto lookup = reference_service<auto()->TS<float>>{"lookup"};
     const auto source = node([](Out<TS<i64>>) {});
+
     const auto consumer = node<FloatConsumer>();
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
@@ -452,9 +469,11 @@ TEST_CASE("nested service failures retain caller and child graph contexts",
           "[feature:service][feature:wiring][feature:nested-graph]") {
     const auto service = reference_service<auto(i64)->TS<i64>>{"nested_lookup", {"value"}};
     const auto running_source = node([](Out<TS<bool>>) {});
+
     const auto inner = graph("name"_n = "service_child", [&](i64 value) -> wp<TS<i64>> {
         return service(value).as<TS<i64>>();
     });
+
     const auto outer = graph("name"_n = "service_outer", [&](i64 value) -> wp<REF<TS<i64>>> {
         const auto run = running_source();
         return nested(inner, run, value);
@@ -526,6 +545,7 @@ TEST_CASE("multiservice wiring rejects an unregistered reply port", "[feature:mu
     const auto claimed = reference_service<auto()->TS<i64>>{"claimed"};
     const auto unclaimed = reference_service<auto()->TS<i64>>{"unclaimed"};
     const auto source = node([](Out<TS<i64>>) {});
+
     const auto implementation = graph("name"_n = "unregistered_reply", [&] {
         unclaimed.implementation_replies(source());
     });
@@ -547,6 +567,7 @@ TEST_CASE("multiservice wiring reports a missing subscription request port",
     const auto lookup = subscription_service<auto(TS<i64, TimeSeriesGuarantee::final>)->TS<i64>>{
         "lookup", {"key"}};
     const auto source = node([](Out<TSD<i64, TS<i64>>>) {});
+
     const auto implementation = graph("name"_n = "missing_requests", [&] {
         lookup.implementation_replies(source());
     });
@@ -570,6 +591,7 @@ TEST_CASE("multiservice wiring rejects an unregistered request port", "[feature:
     const auto claimed = reference_service<auto()->TS<i64>>{"claimed"};
     const auto unclaimed = service<auto(TS<i64>)->void>{"unclaimed", {"value"}};
     const auto source = node([](Out<TS<i64>>) {});
+
     const auto implementation = graph("name"_n = "unregistered_request", [&] {
         (void)unclaimed.implementation_requests();
         claimed.implementation_replies(source());
@@ -593,10 +615,12 @@ TEST_CASE("multiservice replies do not hide another matching implementation",
     const auto second = reference_service<auto()->TS<i64>>{"second"};
     const auto dependency = reference_service<auto()->TS<i64>>{"dependency"};
     const auto source = node([](Out<TS<i64>>) {});
+
     const auto multiservice = graph("name"_n = "first_and_dependency", [&] {
         first.implementation_replies(source());
         dependency.implementation_replies(source());
     });
+
     const auto second_implementation = graph("name"_n = "second_impl", [&] {
         return dependency().as<TS<i64>>();
     });
@@ -649,6 +673,7 @@ TEST_CASE("a multiservice reply does not create a service requirement",
     const auto used = reference_service<auto()->TS<i64>>{"used"};
     const auto unused = reference_service<auto()->TS<i64>>{"unused"};
     const auto source = node([](Out<TS<i64>>) {});
+
     const auto implementation = graph("name"_n = "used_and_unused", [&] {
         used.implementation_replies(source());
         unused.implementation_replies(source());

@@ -184,8 +184,10 @@ TEST_CASE("wiring point reference annotations check guarantee compatibility",
 
     const auto ordinary_source = node(
         [](Out<REF<TS<float>, TimeSeriesGuarantee::ordinary>>) {});
+
     const auto deduplicated_source = node(
         [](Out<REF<TS<float>, TimeSeriesGuarantee::deduplicated>>) {});
+
     const auto final_source = node([](Out<REF<TS<float>, TimeSeriesGuarantee::final>>) {});
 
     testing::test_wiring([&] {
@@ -334,6 +336,7 @@ TEST_CASE("constant and scalar arguments wire through the erased template interf
     const auto context = WiringContext{wiring};
     const auto point = static_cast<const WiringTemplate &>(operators::const_)(
         std::span<const WiringArgument>{constant_arguments});
+
     const auto sink = node([](In<TS<i64>>, Scalar<i64>, Out<TS<i64>>) {});
 
     REQUIRE(point);

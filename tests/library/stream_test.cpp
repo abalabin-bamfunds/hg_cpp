@@ -25,7 +25,8 @@
 
 using namespace bg;
 
-TEST_CASE("valid publishes the input validity", "[feature:operator][feature:validity][validity:optional][series:value]") {
+TEST_CASE("valid publishes the input validity",
+          "[feature:operator][feature:validity][validity:optional][series:value]") {
     const auto query = [](wp<TS<i64>> value) { return operators::valid(value); };
 
     CHECK(testing::test_graph(query, {literal::INVALID, 1}).equals<bool>({false, true}));
@@ -100,6 +101,15 @@ TEST_CASE("all_valid checks every item in a fixed list",
 
     CHECK(testing::test_graph(query, {1, 2}, {3, 4})
               .equals<bool>({true, std::nullopt}));
+}
+
+TEST_CASE("all_valid reports invalid and revalidated collection roots",
+          "[feature:operator][feature:validity][validity:all-valid][series:fixed-tsl]"
+          "[transition:invalidation][transition:revalidation]") {
+    const auto query = [](wp<TSL<TS<i64>, 2>> value) { return operators::all_valid(value); };
+
+    CHECK(testing::test_graph(query, {literal::INVALID, {{0, 1}, {1, 2}}, literal::INVALID, {{0, 3}, {1, 4}}})
+              .equals<bool>({false, true, false, true}));
 }
 
 TEST_CASE("all_valid tracks immediate item invalidation in a free list",
@@ -319,7 +329,7 @@ TEST_CASE("filter reopens with a recreated final TSD item",
 
 TEST_CASE("filter restores TSS after a reference switches through an invalid target",
           "[feature:operator][series:tss][series:reference][validity:optional]"
-          "[transition:invalidation][transition:rebind]") {
+          "[transition:invalidation][rebind]") {
     const auto select = node([](In<TS<i64>> cycle, In<REF<TSS<i64>>, passive> populated,
                                 In<REF<TSS<i64>>, passive> invalid, Out<REF<TSS<i64>>> output) {
         output.copy(*cycle == 1 ? invalid : populated);
@@ -339,7 +349,7 @@ TEST_CASE("filter restores TSS after a reference switches through an invalid tar
 
 TEST_CASE("filter restores TSD after a reference switches through an invalid target",
           "[feature:operator][series:tsd][series:reference][validity:optional]"
-          "[transition:invalidation][transition:rebind]") {
+          "[transition:invalidation][rebind]") {
     const auto select = node([](In<TS<i64>> cycle, In<REF<TSD<i64, TS<i64>>>, passive> populated,
                                 In<REF<TSD<i64, TS<i64>>>, passive> invalid,
                                 Out<REF<TSD<i64, TS<i64>>>> output) {
@@ -359,7 +369,7 @@ TEST_CASE("filter restores TSD after a reference switches through an invalid tar
 
 TEST_CASE("filter copies an invalid TSS target when it reopens",
           "[feature:operator][series:tss][series:reference][validity:optional]"
-          "[transition:invalidation][transition:rebind]") {
+          "[transition:invalidation][rebind]") {
     const auto select = node([](In<TS<i64>> cycle, In<REF<TSS<i64>>, passive> populated,
                                 In<REF<TSS<i64>>, passive> invalid, Out<REF<TSS<i64>>> output) {
         output.copy(*cycle == 0 ? populated : invalid);
@@ -380,7 +390,7 @@ TEST_CASE("filter copies an invalid TSS target when it reopens",
 
 TEST_CASE("filter copies an invalid TSD target when it reopens",
           "[feature:operator][series:tsd][series:reference][validity:optional]"
-          "[transition:invalidation][transition:rebind]") {
+          "[transition:invalidation][rebind]") {
     const auto select = node([](In<TS<i64>> cycle, In<REF<TSD<i64, TS<i64>>>, passive> populated,
                                 In<REF<TSD<i64, TS<i64>>>, passive> invalid,
                                 Out<REF<TSD<i64, TS<i64>>>> output) {

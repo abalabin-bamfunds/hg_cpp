@@ -1,12 +1,8 @@
 import inspect
 
-import bg
 import pytest
 
-
-@bg.compute_node
-def add(left: bg.TS[int], right: bg.TS[int]) -> bg.TS[int]:
-    return left.value + right.value
+import bg
 
 
 def test_graph_var_kwargs_are_packed_as_a_generic_tsb():
@@ -161,7 +157,7 @@ def test_empty_variadic_collections_tick_at_graph_start():
 
     @bg.graph
     def graph() -> bg.TS[int]:
-        return add(count_list(), count_bundle())
+        return count_list() + count_bundle()
 
     assert bg.test_graph(graph) == [0]
 

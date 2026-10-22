@@ -253,6 +253,7 @@ TEST_CASE("a default binding directly reaches a callable value consumer",
           "[feature:operator][feature:graph-compilation][series:value][scalar:integer][shape:single-node]"
           "[definition:function]") {
     auto observed = i64{};
+
     const auto sink = node([&](i64 input) { observed = input; });
     auto wiring = GraphWiring{};
     {
@@ -275,6 +276,7 @@ TEST_CASE("a default binding directly reaches a callable value consumer",
 TEST_CASE("a default binding has no default node for a value consumer",
           "[feature:operator][feature:graph-compilation][series:value][scalar:integer][shape:single-node]") {
     direct_default_observer_definition::observations.clear();
+
     const auto sink = node<direct_default_observer_definition>();
 
     auto wiring = GraphWiring{};
@@ -316,6 +318,7 @@ TEST_CASE("a default binding materializes only for a reference consumer",
           "[binding:value-to-reference][scalar:integer][shape:chain]") {
     auto evaluations = 0;
     auto valid = false;
+
     const auto sink = node([&](In<REF<TS<i64>>> input) {
         ++evaluations;
         valid = input.valid();
@@ -387,6 +390,7 @@ TEST_CASE("graph structure distinguishes default fallbacks",
     const auto structure = [](i64 fallback) {
         auto wiring = GraphWiring{};
         auto context = WiringContext{wiring};
+
         const auto source = node(eval = [](Out<TS<i64>>) {}, deduplicate_wiring = false);
 
         const auto sink = node([](In<TS<i64>>, Out<TS<i64>>) {});

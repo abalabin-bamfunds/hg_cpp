@@ -25,6 +25,113 @@ def test_imports_the_expected_package():
     assert Path(extension.origin).resolve().parent == package_dir
 
 
+def test_graph_wires_python_nodes_and_runs_each_input_tick():
+    @bg.node
+    def increment(value: int) -> int:
+        return value + 1
+
+    @bg.graph
+    def graph(value: int) -> int:
+        return increment(value)
+
+    assert bg.test_graph(graph, [1, 2, None, 4]) == [2, 3, None, 5]
+
+
+def test_node_decorator_preserves_function_metadata():
+    @bg.compute_node
+    def identity(value: bg.TS[int]) -> bg.TS[int]:
+        """Return the supplied value."""
+        return value.value
+
+    assert identity.__name__ == "identity"
+    assert identity.__doc__ == "Return the supplied value."
+    assert identity.__wrapped__ is identity.function
+
+
+def test_graph_composes_nested_graphs_and_scalar_arguments():
+    @bg.node
+    def add(value: int, offset: int) -> int:
+        return value + offset
+
+    @bg.graph
+    def add_default(value: int, offset: int = 3) -> int:
+        return add(value, offset=offset)
+
+    @bg.graph
+    def graph(value: int) -> int:
+        return add_default(value)
+
+    assert bg.test_graph(graph, [1, 2]) == [4, 5]
+
+
+def test_graph_wiring_retains_a_locally_declared_node_until_execution():
+    @bg.graph
+    def graph(value: int) -> int:
+        @bg.node
+        def increment(inner: int) -> int:
+            return inner + 1
+
+        return increment(value)
+
+    assert bg.test_graph(graph, [2, 4]) == [3, 5]
+
+
+def test_python_source_node_runs_at_graph_start():
+    @bg.source_node
+    def source() -> bg.TS[int]:
+        return 7
+
+    @bg.graph
+    def graph() -> bg.TS[int]:
+        return source()
+
+    assert bg.test_graph(graph) == [7]
+
+
+def test_python_time_series_input_accepts_a_constant():
+    @bg.compute_node
+    def identity(value: bg.TS[int]) -> bg.TS[int]:
+        return value.value
+
+    @bg.graph
+    def graph() -> bg.TS[int]:
+        return identity(7)
+
+    assert bg.test_graph(graph) == [7]
+
+
+def test_python_node_receives_optional_scalar_as_none():
+    @bg.compute_node
+    def add_optional(value: bg.TS[int], offset: int | None = None) -> bg.TS[int]:
+        return value.value + (offset or 0)
+
+    @bg.graph
+    def graph(value: bg.TS[int]) -> bg.TS[int]:
+        return add_optional(value, offset=None)
+
+    assert bg.test_graph(graph, [7]) == [7]
+
+
+@pytest.mark.parametrize(
+    ("annotation", "value"),
+    [
+        (bool, True),
+        (float, 2.5),
+        (bg.Symbol, bg.symbol("market")),
+    ],
+)
+def test_source_node_scalar_outputs(annotation, value):
+    @bg.source_node
+    def source() -> bg.TS[annotation]:
+        return value
+
+    @bg.graph
+    def graph() -> bg.TS[annotation]:
+        return source()
+
+    assert bg.test_graph(graph) == [value]
+
+
 def test_extension_modules_share_python_conversion_registry():
     extension = pytest.importorskip("bg._bg_test_extension")
 
@@ -316,113 +423,6 @@ def test_symbol_cannot_be_subclassed():
         symbol._is_null = True
     with pytest.raises(AttributeError, match="immutable"):
         del symbol._is_null
-
-
-def test_graph_wires_python_nodes_and_runs_each_input_tick():
-    @bg.compute_node
-    def increment(value: bg.TS[int]) -> bg.TS[int]:
-        return value.value + 1
-
-    @bg.graph
-    def graph(value: bg.TS[int]) -> bg.TS[int]:
-        return increment(value)
-
-    assert bg.test_graph(graph, [1, 2, None, 4]) == [2, 3, None, 5]
-
-
-def test_node_decorator_preserves_function_metadata():
-    @bg.compute_node
-    def identity(value: bg.TS[int]) -> bg.TS[int]:
-        """Return the supplied value."""
-        return value.value
-
-    assert identity.__name__ == "identity"
-    assert identity.__doc__ == "Return the supplied value."
-    assert identity.__wrapped__ is identity.function
-
-
-def test_graph_composes_nested_graphs_and_scalar_arguments():
-    @bg.compute_node
-    def add(value: bg.TS[int], offset: int) -> bg.TS[int]:
-        return value.value + offset
-
-    @bg.graph
-    def add_default(value: bg.TS[int], offset: int = 3) -> bg.TS[int]:
-        return add(value, offset=offset)
-
-    @bg.graph
-    def graph(value: bg.TS[int]) -> bg.TS[int]:
-        return add_default(value)
-
-    assert bg.test_graph(graph, [1, 2]) == [4, 5]
-
-
-def test_graph_wiring_retains_a_locally_declared_node_until_execution():
-    @bg.graph
-    def graph(value: bg.TS[int]) -> bg.TS[int]:
-        @bg.compute_node
-        def increment(inner: bg.TS[int]) -> bg.TS[int]:
-            return inner.value + 1
-
-        return increment(value)
-
-    assert bg.test_graph(graph, [2, 4]) == [3, 5]
-
-
-def test_python_source_node_runs_at_graph_start():
-    @bg.source_node
-    def source() -> bg.TS[int]:
-        return 7
-
-    @bg.graph
-    def graph() -> bg.TS[int]:
-        return source()
-
-    assert bg.test_graph(graph) == [7]
-
-
-def test_python_time_series_input_accepts_a_constant():
-    @bg.compute_node
-    def identity(value: bg.TS[int]) -> bg.TS[int]:
-        return value.value
-
-    @bg.graph
-    def graph() -> bg.TS[int]:
-        return identity(7)
-
-    assert bg.test_graph(graph) == [7]
-
-
-def test_python_node_receives_optional_scalar_as_none():
-    @bg.compute_node
-    def add_optional(value: bg.TS[int], offset: int | None = None) -> bg.TS[int]:
-        return value.value + (offset or 0)
-
-    @bg.graph
-    def graph(value: bg.TS[int]) -> bg.TS[int]:
-        return add_optional(value, offset=None)
-
-    assert bg.test_graph(graph, [7]) == [7]
-
-
-@pytest.mark.parametrize(
-    ("annotation", "value"),
-    [
-        (bool, True),
-        (float, 2.5),
-        (bg.Symbol, bg.symbol("market")),
-    ],
-)
-def test_source_node_scalar_outputs(annotation, value):
-    @bg.source_node
-    def source() -> bg.TS[annotation]:
-        return value
-
-    @bg.graph
-    def graph() -> bg.TS[annotation]:
-        return source()
-
-    assert bg.test_graph(graph) == [value]
 
 
 def test_python_string_and_symbol_scalar_arguments():

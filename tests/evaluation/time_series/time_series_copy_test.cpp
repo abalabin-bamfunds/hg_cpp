@@ -121,8 +121,10 @@ TEST_CASE("reference copy accepts independent declarations and propagates invali
 
     const auto copy = node([](In<REF<TS_T>, optional> input,
                               Out<REF<TS<i64>>> output) { output.copy(input); });
+
     const auto copy_tick = node([](In<REF<TS_T>, optional> input,
                                    Out<REF<TS<i64>>> output) { output.copy_tick(input); });
+
     const auto read = node([](In<TS<i64>, optional> input, Out<TS<i64>> output) { output.copy(input); });
 
     const auto observe_validity = node([](In<TS<i64>, optional> input, Out<TS<bool>> output) {
@@ -491,6 +493,7 @@ TEST_CASE("generic collection copy_tick removes nested items from an invalid TSD
 
     const auto copy = node([](In<TSD<i64, TSD<i64, TS<i64>>>, optional> input,
                               Out<TSD<i64, TSD<i64, TS<i64>>>> output) { output.copy(input); });
+
     const auto inspect = node([](In<TSD<i64, TSD<i64, TS<i64>>>> tick_copy,
                                  In<TSD<i64, TSD<i64, TS<i64>>>> full_copy) {
         const auto value = [](const auto &input) {
@@ -589,6 +592,7 @@ TEST_CASE("copy copies a reference-bound time series dictionary",
           "[transition:update][transition:removal]") {
     const auto preserve_reference = node([](In<REF<TSD<i64, TS<i64>>>> input,
                                             Out<REF<TSD<i64, TS<i64>>>> output) { output.copy(input); });
+
     const auto copy = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
         output.copy(input);
     });
@@ -618,6 +622,7 @@ TEST_CASE("copy uses the valid_items view of a dictionary input",
 
     const auto copy = node([](In<TSD<i64, TS<i64>>, valid_items> input,
                               Out<TSD<i64, TS<i64>>> output) { output.copy(input); });
+
     const auto summary = node([](In<TSD<i64, TS<i64>>> input) {
         return static_cast<i64>(input.size() * 10 + input.contains(2));
     });
@@ -756,6 +761,7 @@ TEST_CASE("copy preserves the destination guarantee",
           "[transition:update]") {
     const auto copy = node([](In<TS<i64>> input,
                               Out<TS<i64, TimeSeriesGuarantee::deduplicated>> output) { output.copy(input); });
+
     const auto graph = [&](wp<TS<i64>> input) { return copy(input); };
 
     const auto actual = testing::test_graph(graph, std::array{1, 1, 2});

@@ -14,6 +14,8 @@
 #include <type_traits>
 #include <vector>
 
+using namespace bg;
+
 namespace {
 
 struct alignas(32) item {
@@ -21,14 +23,14 @@ struct alignas(32) item {
     std::byte padding[24];
 };
 
-constexpr auto item_layout = bg::util::runtime_item_layout{sizeof(item), alignof(item)};
-constexpr auto byte_layout = bg::util::runtime_item_layout{sizeof(std::byte), alignof(std::byte)};
+constexpr auto item_layout = util::runtime_item_layout{sizeof(item), alignof(item)};
+constexpr auto byte_layout = util::runtime_item_layout{sizeof(std::byte), alignof(std::byte)};
 
 } // namespace
 
 TEST_CASE("a runtime contiguous bunch stores a resolved item layout", "[util][bunch][coverage-exempt]") {
     auto memory = std::pmr::unsynchronized_pool_resource{};
-    auto bunch = bg::util::runtime_contiguous_bunch{};
+    auto bunch = util::runtime_contiguous_bunch{};
     auto addresses = std::vector<const void *>{};
 
     for (auto value = std::uint64_t{}; value < 100; ++value) {
@@ -48,8 +50,8 @@ TEST_CASE("a runtime contiguous bunch stores a resolved item layout", "[util][bu
 
 TEST_CASE("a runtime sparse bunch shares external positions", "[util][bunch][coverage-exempt]") {
     auto memory = std::pmr::unsynchronized_pool_resource{};
-    auto positions = bg::util::occupancy_index{};
-    auto bunch = bg::util::runtime_sparse_bunch{};
+    auto positions = util::occupancy_index{};
+    auto bunch = util::runtime_sparse_bunch{};
 
     for (const auto position : {std::uint32_t{2}, std::uint32_t{70}}) {
         REQUIRE(positions.set(position, memory));
@@ -67,7 +69,7 @@ TEST_CASE("a runtime sparse bunch shares external positions", "[util][bunch][cov
 
 TEST_CASE("a runtime bunch releases storage after construction fails", "[util][bunch][coverage-exempt]") {
     auto memory = std::pmr::unsynchronized_pool_resource{};
-    auto bunch = bg::util::runtime_contiguous_bunch{};
+    auto bunch = util::runtime_contiguous_bunch{};
 
     CHECK_THROWS_AS(bunch.emplace_back_with(item_layout, memory, [](void *) { throw std::runtime_error{"failed"}; }),
                     std::runtime_error);
@@ -77,7 +79,7 @@ TEST_CASE("a runtime bunch releases storage after construction fails", "[util][b
 
 TEST_CASE("a runtime sparse bunch exposes raw storage block bounds", "[util][bunch][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto bunch = bg::util::runtime_sparse_bunch{};
+    auto bunch = util::runtime_sparse_bunch{};
 
     const auto first = bunch.block_containing(8, item_layout);
     const auto capped = bunch.block_containing(8'184, item_layout);

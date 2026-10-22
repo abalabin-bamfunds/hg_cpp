@@ -24,12 +24,14 @@
 #include <thread>
 #include <vector>
 
-static_assert(noexcept(bg::int_type()));
-static_assert(noexcept(bg::TypeRegistry::register_static(bg::int_type())));
+using namespace bg;
+
+static_assert(noexcept(int_type()));
+static_assert(noexcept(TypeRegistry::register_static(int_type())));
 
 namespace {
 
-class RegistryTestType final : public bg::ScalarType {
+class RegistryTestType final : public ScalarType {
   public:
     explicit RegistryTestType(std::atomic_size_t *destructions = nullptr) : destructions_{destructions} {}
     ~RegistryTestType() override {
@@ -39,35 +41,15 @@ class RegistryTestType final : public bg::ScalarType {
     }
 
     bool is_resolved() const noexcept override { return true; }
-    const bg::Type &resolve(const bg::TypeMap &) const override { return *this; }
+    const bg::Type &resolve(const TypeMap &) const override { return *this; }
 
   private:
     std::atomic_size_t *destructions_;
 };
 
-class NestedRegistryTestType final : public bg::ScalarType {
-  public:
-    explicit NestedRegistryTestType(const bg::Type *dependency = nullptr) : dependency_{dependency} {}
-
-    bool is_resolved() const noexcept override { return true; }
-    const bg::Type &resolve(const bg::TypeMap &) const override { return *this; }
-    const bg::Type *dependency() const noexcept { return dependency_; }
-
-  private:
-    const bg::Type *dependency_;
-};
-
-std::atomic_size_t cached_candidate_destructions{};
-
 const RegistryTestType &concurrent_registration_type() {
-    static const auto type = bg::util::static_storage<RegistryTestType>{};
+    static const auto type = util::static_storage<RegistryTestType>{};
     return type.get();
-}
-
-const bg::GuaranteeVariable &registered_static_variable() {
-    static const auto variable = bg::util::static_storage<bg::GuaranteeVariable>{bg::util::symbol{"static guarantee"}};
-    [[maybe_unused]] static const auto &registration = bg::VariableRegistry::register_static(variable.get());
-    return variable.get();
 }
 
 } // namespace
@@ -83,8 +65,8 @@ TEST_CASE("static type registration publishes before returning", "[type_system][
     for (auto index = std::size_t{}; index < thread_count; ++index) {
         threads.emplace_back([&] {
             start.wait(false, std::memory_order_acquire);
-            const auto &registered = bg::TypeRegistry::register_static(type);
-            if (&registered != &type || !bg::TypeRegistry::instance().contains(type)) {
+            const auto &registered = TypeRegistry::register_static(type);
+            if (&registered != &type || !TypeRegistry::instance().contains(type)) {
                 all_registered.store(false, std::memory_order_release);
             }
         });
@@ -103,20 +85,20 @@ TEST_CASE("registries own dynamic declarations and roll them back", "[type_syste
     auto destructions = std::atomic_size_t{};
     auto type = std::make_unique<RegistryTestType>(&destructions);
     const auto *type_address = type.get();
-    const auto &registered_type = bg::TypeRegistry::instance().register_owned(std::move(type));
+    const auto &registered_type = TypeRegistry::instance().register_owned(std::move(type));
 
     CHECK(&registered_type == type_address);
-    CHECK(bg::TypeRegistry::instance().contains(registered_type));
-    bg::TypeRegistry::instance().rollback(registered_type);
+    CHECK(TypeRegistry::instance().contains(registered_type));
+    TypeRegistry::instance().rollback(registered_type);
     CHECK(destructions.load(std::memory_order_relaxed) == 1);
 
-    auto variable = std::make_unique<bg::GuaranteeVariable>(bg::util::symbol{"registered"});
+    auto variable = std::make_unique<GuaranteeVariable>(util::symbol{"registered"});
     const auto *variable_address = variable.get();
-    const auto &registered_variable = bg::VariableRegistry::instance().register_owned(std::move(variable));
+    const auto &registered_variable = VariableRegistry::instance().register_owned(std::move(variable));
 
     CHECK(&registered_variable == variable_address);
-    CHECK(bg::VariableRegistry::instance().contains(registered_variable));
-    bg::VariableRegistry::instance().rollback(registered_variable);
+    CHECK(VariableRegistry::instance().contains(registered_variable));
+    VariableRegistry::instance().rollback(registered_variable);
 }
 
 TEST_CASE("type registry caches factory descriptors by family and key", "[type_system][feature:type-system]") {
@@ -125,7 +107,7 @@ TEST_CASE("type registry caches factory descriptors by family and key", "[type_s
         ++factory_calls;
         return std::make_unique<RegistryTestType>();
     };
-    auto &registry = bg::TypeRegistry::instance();
+    auto &registry = TypeRegistry::instance();
 
     const auto &first = registry.get_or_create<RegistryTestType, std::hash<int>>(7101, factory);
     const auto &same_key = registry.get_or_create<RegistryTestType, std::hash<int>>(7101, factory);
@@ -140,7 +122,7 @@ TEST_CASE("type registry caches factory descriptors by family and key", "[type_s
 
 TEST_CASE("type registry retries a failed factory without retaining its key", "[type_system][feature:type-system]") {
     auto factory_calls = std::size_t{};
-    auto &registry = bg::TypeRegistry::instance();
+    auto &registry = TypeRegistry::instance();
     const auto failing_factory = [&]() -> std::unique_ptr<RegistryTestType> {
         ++factory_calls;
         throw std::runtime_error{"factory failed"};
@@ -160,8 +142,24 @@ TEST_CASE("type registry retries a failed factory without retaining its key", "[
     CHECK(registry.contains(created));
 }
 
+namespace {
+
+class NestedRegistryTestType final : public ScalarType {
+  public:
+    explicit NestedRegistryTestType(const bg::Type *dependency = nullptr) : dependency_{dependency} {}
+
+    bool is_resolved() const noexcept override { return true; }
+    const bg::Type &resolve(const TypeMap &) const override { return *this; }
+    const bg::Type *dependency() const noexcept { return dependency_; }
+
+  private:
+    const bg::Type *dependency_;
+};
+
+} // namespace
+
 TEST_CASE("type registry factories can request nested descriptors", "[type_system][feature:type-system]") {
-    auto &registry = bg::TypeRegistry::instance();
+    auto &registry = TypeRegistry::instance();
     const auto &outer = registry.get_or_create<NestedRegistryTestType, std::hash<int>>(7104, [&] {
         const auto &inner = registry.get_or_create<NestedRegistryTestType, std::hash<int>>(7105, [] {
             return std::make_unique<NestedRegistryTestType>();
@@ -181,6 +179,12 @@ TEST_CASE("type registry factories can request nested descriptors", "[type_syste
     CHECK(registry.contains(inner));
 }
 
+namespace {
+
+std::atomic_size_t cached_candidate_destructions{};
+
+} // namespace
+
 TEST_CASE("type registry concurrent misses publish one owned descriptor", "[type_system][feature:type-system]") {
     constexpr auto thread_count = std::size_t{8};
     auto factory_gate = std::barrier{static_cast<std::ptrdiff_t>(thread_count)};
@@ -189,7 +193,7 @@ TEST_CASE("type registry concurrent misses publish one owned descriptor", "[type
     auto threads = std::vector<std::thread>{};
     threads.reserve(thread_count);
     cached_candidate_destructions.store(0, std::memory_order_relaxed);
-    auto &registry = bg::TypeRegistry::instance();
+    auto &registry = TypeRegistry::instance();
 
     for (auto index = std::size_t{}; index < thread_count; ++index) {
         threads.emplace_back([&, index] {
@@ -212,66 +216,76 @@ TEST_CASE("type registry concurrent misses publish one owned descriptor", "[type
 }
 
 TEST_CASE("type variable declarations participate in the type registry", "[type_system][feature:type-system]") {
-    using Declaration = bg::TypeVariable<"registered", bg::i64>;
+    using Declaration = TypeVariable<"registered", i64>;
     const auto &type = Declaration::type();
 
-    CHECK(bg::TypeRegistry::instance().contains(type));
-    CHECK_FALSE(bg::VariableRegistry::instance().contains(type));
+    CHECK(TypeRegistry::instance().contains(type));
+    CHECK_FALSE(VariableRegistry::instance().contains(type));
 }
 
+namespace {
+
+const GuaranteeVariable &registered_static_variable() {
+    static const auto variable = util::static_storage<GuaranteeVariable>{util::symbol{"static guarantee"}};
+    [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(variable.get());
+    return variable.get();
+}
+
+} // namespace
+
 TEST_CASE("static variable registration exposes process-static metadata", "[type_system][feature:type-system]") {
-    CHECK(bg::VariableRegistry::instance().contains(registered_static_variable()));
+    CHECK(VariableRegistry::instance().contains(registered_static_variable()));
 }
 
 TEST_CASE("registry membership covers primitive, generic, composed, graph, and schema types",
           "[type_system][feature:type-system]") {
     struct OpaqueValue {};
-    using GENERIC_TIME_SERIES = bg::TS<bg::SCALAR>;
+    using GENERIC_TIME_SERIES = TS<SCALAR>;
 
-    CHECK(bg::TypeRegistry::instance().contains(bg::int_type()));
-    CHECK(bg::TypeRegistry::instance().contains(bg::cpp_scalar_type<bg::Opaque<OpaqueValue>>()));
-    CHECK(bg::TypeRegistry::instance().contains(GENERIC_TIME_SERIES::type()));
+    CHECK(TypeRegistry::instance().contains(int_type()));
+    CHECK(TypeRegistry::instance().contains(cpp_scalar_type<Opaque<OpaqueValue>>()));
+    CHECK(TypeRegistry::instance().contains(GENERIC_TIME_SERIES::type()));
 
-    const auto &list = bg::list_scalar_type(bg::int_type());
-    const auto &time_series = bg::time_series_value_type(bg::float_type(), bg::TimeSeriesGuarantee::ordinary);
-    CHECK(bg::TypeRegistry::instance().contains(list));
-    CHECK(bg::TypeRegistry::instance().contains(time_series));
+    const auto &list = list_scalar_type(int_type());
+    const auto &time_series = time_series_value_type(float_type(), TimeSeriesGuarantee::ordinary);
+    CHECK(TypeRegistry::instance().contains(list));
+    CHECK(TypeRegistry::instance().contains(time_series));
 
-    const auto parameters = std::array<const bg::Type *, 1>{&bg::int_type()};
-    const auto &graph = bg::graph_argument_type(parameters, nullptr);
-    CHECK(bg::TypeRegistry::instance().contains(graph));
-    CHECK(bg::TypeRegistry::instance().contains(bg::GraphArgument::type()));
+    const auto parameters = std::array<const bg::Type *, 1>{&int_type()};
+    const auto &graph = graph_argument_type(parameters, nullptr);
+    CHECK(TypeRegistry::instance().contains(graph));
+    CHECK(TypeRegistry::instance().contains(GraphArgument::type()));
 
-    const auto &schema = bg::schema(bg::util::symbol{"RegistrySchema"}, std::monostate{}, nullptr,
-                                    std::span<const bg::SchemaField>{});
-    CHECK(bg::TypeRegistry::instance().contains(schema));
+    const auto &schema =
+        bg::schema(util::symbol{"RegistrySchema"}, std::monostate{}, nullptr, std::span<const SchemaField>{});
+    CHECK(TypeRegistry::instance().contains(schema));
 }
 
 TEST_CASE("same-name metadata variables retain separate identity", "[type_system][feature:type-system]") {
-    auto left_owner = std::make_unique<bg::GuaranteeVariable>(bg::util::symbol{"same"});
-    auto right_owner = std::make_unique<bg::GuaranteeVariable>(bg::util::symbol{"same"});
-    const auto &left = bg::VariableRegistry::instance().register_owned(std::move(left_owner));
-    const auto &right = bg::VariableRegistry::instance().register_owned(std::move(right_owner));
-    auto type_map = bg::TypeMap{};
-    type_map.set(left, bg::TimeSeriesGuarantee::final);
-    type_map.set(right, bg::TimeSeriesGuarantee::ordinary);
+    auto left_owner = std::make_unique<GuaranteeVariable>(util::symbol{"same"});
+    auto right_owner = std::make_unique<GuaranteeVariable>(util::symbol{"same"});
+    const auto &left = VariableRegistry::instance().register_owned(std::move(left_owner));
+    const auto &right = VariableRegistry::instance().register_owned(std::move(right_owner));
+    auto type_map = TypeMap{};
+    type_map.set(left, TimeSeriesGuarantee::final);
+    type_map.set(right, TimeSeriesGuarantee::ordinary);
 
-    CHECK(left.resolve(type_map) == bg::TimeSeriesGuarantee::final);
-    CHECK(right.resolve(type_map) == bg::TimeSeriesGuarantee::ordinary);
+    CHECK(left.resolve(type_map) == TimeSeriesGuarantee::final);
+    CHECK(right.resolve(type_map) == TimeSeriesGuarantee::ordinary);
 }
 
 TEST_CASE("same-name type variables retain separate identity", "[type_system][feature:type-system]") {
-    auto left_owner = std::make_unique<bg::TypeVariableType<bg::ScalarType>>(
-        bg::util::symbol{"same"}, std::vector<const bg::ScalarType *>{&bg::int64_type(), &bg::float_type()});
-    auto right_owner = std::make_unique<bg::TypeVariableType<bg::ScalarType>>(
-        bg::util::symbol{"same"}, std::vector<const bg::ScalarType *>{&bg::int64_type(), &bg::float_type()});
-    const auto &left = bg::TypeRegistry::instance().register_owned(std::move(left_owner));
-    const auto &right = bg::TypeRegistry::instance().register_owned(std::move(right_owner));
-    auto type_map = bg::TypeMap{};
-    type_map.set(left, &bg::int64_type());
-    type_map.set(right, &bg::float_type());
+    auto left_owner = std::make_unique<TypeVariableType<ScalarType>>(
+        util::symbol{"same"}, std::vector<const ScalarType *>{&int64_type(), &float_type()});
+    auto right_owner = std::make_unique<TypeVariableType<ScalarType>>(
+        util::symbol{"same"}, std::vector<const ScalarType *>{&int64_type(), &float_type()});
+    const auto &left = TypeRegistry::instance().register_owned(std::move(left_owner));
+    const auto &right = TypeRegistry::instance().register_owned(std::move(right_owner));
+    auto type_map = TypeMap{};
+    type_map.set(left, &int64_type());
+    type_map.set(right, &float_type());
 
     CHECK(&left != &right);
-    CHECK(&left.resolve(type_map) == &bg::int64_type());
-    CHECK(&right.resolve(type_map) == &bg::float_type());
+    CHECK(&left.resolve(type_map) == &int64_type());
+    CHECK(&right.resolve(type_map) == &float_type());
 }

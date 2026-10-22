@@ -9,6 +9,54 @@ import pytest
 import bg
 
 
+@pytest.mark.parametrize(
+    ("mode_name", "item_type", "expected"),
+    [
+        ("standard", int, [1, 2]),
+        ("elide", int, [2]),
+        ("batch", tuple[int, ...], [(1, 2)]),
+    ],
+)
+def test_queue_modes_apply_standard_elided_and_batch_deltas(mode_name, item_type, expected):
+    mode = getattr(bg.QueueMode, mode_name)
+    output_type = bg.TS[item_type]
+
+    @bg.queue(mode=mode)
+    def source(writer: bg.Queue = None) -> output_type:
+        assert writer.write(1)
+        assert writer.write(2)
+
+    @bg.graph
+    def graph() -> output_type:
+        return source()
+
+    assert bg.test_graph(graph) == expected
+
+
+def test_queue_ignores_start_return_when_no_message_is_written():
+    @bg.queue
+    def source(writer: bg.Queue = None) -> bg.TS[int]:
+        return 7
+
+    @bg.graph
+    def graph() -> bg.TS[int]:
+        return source()
+
+    assert bg.test_graph(graph) == [None]
+
+
+def test_queue_scalar_inputs_apply_default_arguments():
+    @bg.queue
+    def source(topic: str = "default", writer: bg.Queue = None) -> bg.TS[int]:
+        assert writer.write(len(topic))
+
+    @bg.graph
+    def graph() -> bg.TS[int]:
+        return source()
+
+    assert bg.test_graph(graph) == [7]
+
+
 def test_queue_realtime_writer_accepts_delta_keyword_and_closes_on_stop():
     ready = threading.Event()
     received = threading.Event()
@@ -112,42 +160,6 @@ def test_tuple_scalar_annotation_converts_nested_values():
         return source()
 
     assert bg.test_graph(graph) == [({1: "one"},)]
-
-
-@pytest.mark.parametrize(
-    ("mode_name", "item_type", "expected"),
-    [
-        ("standard", int, [1, 2]),
-        ("elide", int, [2]),
-        ("batch", tuple[int, ...], [(1, 2)]),
-    ],
-)
-def test_queue_modes_apply_standard_elided_and_batch_deltas(mode_name, item_type, expected):
-    mode = getattr(bg.QueueMode, mode_name)
-    output_type = bg.TS[item_type]
-
-    @bg.queue(mode=mode)
-    def source(writer: bg.Queue = None) -> output_type:
-        assert writer.write(1)
-        assert writer.write(2)
-
-    @bg.graph
-    def graph() -> output_type:
-        return source()
-
-    assert bg.test_graph(graph) == expected
-
-
-def test_queue_ignores_start_return_when_no_message_is_written():
-    @bg.queue
-    def source(writer: bg.Queue = None) -> bg.TS[int]:
-        return 7
-
-    @bg.graph
-    def graph() -> bg.TS[int]:
-        return source()
-
-    assert bg.test_graph(graph) == [None]
 
 
 def test_queue_missing_dictionary_key_removal_is_a_no_op():
@@ -334,18 +346,6 @@ def test_queue_start_and_stop_callbacks_select_scalar_state_and_queue_parameters
     assert events == [("start", "orders"), ("stop", "orders", False)]
     assert states == [[("start", "orders"), ("stop", "orders")]]
     assert retained[0].write(delta=object()) is False
-
-
-def test_queue_scalar_inputs_apply_default_arguments():
-    @bg.queue
-    def source(topic: str = "default", writer: bg.Queue = None) -> bg.TS[int]:
-        assert writer.write(len(topic))
-
-    @bg.graph
-    def graph() -> bg.TS[int]:
-        return source()
-
-    assert bg.test_graph(graph) == [7]
 
 
 def test_queue_requires_its_writer_and_time_series_return_annotation():

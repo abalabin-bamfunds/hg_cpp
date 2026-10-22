@@ -13,17 +13,9 @@ namespace {
 
 using namespace bg;
 
-struct scalar_list_source {
-    Scalar<List<i64>> value;
-    Out<TS<List<i64>>> output;
-
-    void start() const { output.set_value(value); }
-    void evaluate() const {}
-};
-
 TEST_CASE("a scalar list propagates through a value time series",
           "[node][time_series][scalar][list][scalar:list][feature:state]") {
-    const auto source = node<scalar_list_source>();
+    const auto source = node([](Scalar<List<i64>> value, Out<TS<List<i64>>> output) { output.set_value(value); });
 
     const auto sum = node([](In<TS<List<i64>>> input) {
         const auto values = input.value_view();
@@ -81,7 +73,7 @@ TEST_CASE("a scalar list is available from packed graph scalar storage",
 
 TEST_CASE("a runtime graph releases scalar list time-series storage",
           "[node][time_series][scalar][list][scalar:list][allocation][feature:state]") {
-    const auto source = node<scalar_list_source>();
+    const auto source = node([](Scalar<List<i64>> value, Out<TS<List<i64>>> output) { output.set_value(value); });
 
     const auto input = ScalarValue<List<i64>>{std::array<i64, 2>{1, 2}};
     auto wiring = GraphWiring{};
@@ -97,6 +89,7 @@ TEST_CASE("a runtime graph releases scalar list time-series storage",
         auto runtime_global_state = GlobalState{allocator{memory}};
         auto runtime = RuntimeGraph{graph, allocator{memory}, runtime_global_state};
         SimulationEvaluationEngine{}.run(runtime, MIN_DT + std::chrono::microseconds{1});
+        CHECK(runtime.node(0).output_last_updated().valid());
     }
 
     CHECK(memory.allocations() == 0);

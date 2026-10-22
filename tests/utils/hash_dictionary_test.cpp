@@ -12,6 +12,8 @@
 #include <string_view>
 #include <unordered_map>
 
+using namespace bg;
+
 namespace {
 
 struct string_hash {
@@ -27,7 +29,7 @@ struct string_hash {
 TEST_CASE("a hash dictionary inserts, replaces, and finds values",
           "[hash_dictionary][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto dictionary = bg::util::hash_dictionary<std::string, int, string_hash>{};
+    auto dictionary = util::hash_dictionary<std::string, int, string_hash>{};
 
     const auto [first, first_inserted] = dictionary.try_emplace(std::string{"one"}, memory, 1);
     const auto [same, second_inserted] = dictionary.try_emplace(std::string{"one"}, memory, 2);
@@ -46,7 +48,7 @@ TEST_CASE("a hash dictionary inserts, replaces, and finds values",
 
 TEST_CASE("a hash dictionary retains separate key and value addresses", "[hash_dictionary][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto dictionary = bg::util::hash_dictionary<int, std::string>{};
+    auto dictionary = util::hash_dictionary<int, std::string>{};
     auto *first_value = dictionary.try_emplace(1, memory, "one").first;
     const auto *first_key = &(*dictionary.begin()).key;
 
@@ -82,7 +84,7 @@ struct throwing_value {
 
 TEST_CASE("a hash dictionary rolls back a failed value construction", "[hash_dictionary][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto dictionary = bg::util::hash_dictionary<int, throwing_value>{};
+    auto dictionary = util::hash_dictionary<int, throwing_value>{};
 
     CHECK_THROWS_AS(dictionary.try_emplace(1, memory, true), std::runtime_error);
     CHECK(dictionary.empty());
@@ -121,7 +123,7 @@ struct throwing_key_equal {
 
 TEST_CASE("a hash dictionary rolls back a failed key construction", "[hash_dictionary][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto dictionary = bg::util::hash_dictionary<throwing_key, int, throwing_key_hash, throwing_key_equal>{};
+    auto dictionary = util::hash_dictionary<throwing_key, int, throwing_key_hash, throwing_key_equal>{};
 
     CHECK_THROWS_AS(dictionary.try_emplace(-1, memory, 1), std::runtime_error);
     CHECK(dictionary.empty());
@@ -148,7 +150,7 @@ TEST_CASE("a hash dictionary retains committed values after each allocation fail
 
     for (auto failure = std::size_t{};; ++failure) {
         auto memory = counting_memory_resource{};
-        auto dictionary = bg::util::hash_dictionary<int, int, equal_hash>{};
+        auto dictionary = util::hash_dictionary<int, int, equal_hash>{};
         auto inserted = 0;
         auto failed = false;
 
@@ -182,7 +184,7 @@ TEST_CASE("a hash dictionary retains committed values after each allocation fail
 
 TEST_CASE("a hash dictionary reuses one position for its key and value", "[hash_dictionary][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto dictionary = bg::util::hash_dictionary<int, int>{};
+    auto dictionary = util::hash_dictionary<int, int>{};
 
     dictionary.try_emplace(1, memory, 10);
     dictionary.try_emplace(2, memory, 20);
@@ -209,7 +211,7 @@ TEST_CASE("a hash dictionary reuses one position for its key and value", "[hash_
 
 TEST_CASE("a hash dictionary supports move-only values and collisions", "[hash_dictionary][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto dictionary = bg::util::hash_dictionary<int, std::unique_ptr<int>, equal_hash>{};
+    auto dictionary = util::hash_dictionary<int, std::unique_ptr<int>, equal_hash>{};
 
     for (auto key = 0; key < 40; ++key) {
         dictionary.try_emplace(key, memory, std::make_unique<int>(key));
@@ -236,7 +238,7 @@ TEST_CASE("a hash dictionary supports move-only values and collisions", "[hash_d
 TEST_CASE("a hash dictionary remains consistent across incremental growth and reduction",
           "[hash_dictionary][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto dictionary = bg::util::hash_dictionary<int, int>{};
+    auto dictionary = util::hash_dictionary<int, int>{};
     auto expected = std::unordered_map<int, int>{};
     auto random = std::mt19937{12345};
 
