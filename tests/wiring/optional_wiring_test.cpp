@@ -261,7 +261,7 @@ TEST_CASE("variadic graph forwarding retains item optionality",
     }));
 
     const auto forward = graph("name"_n = "forward", [&](wp<TSB<SCHEMA>, var_kwargs, optional> values) {
-        return operation(values);
+        return operation(values).as<TS<i64>>();
     });
 
     const auto source = node([](Out<TS<i64>>) {});
