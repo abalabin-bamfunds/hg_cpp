@@ -5,6 +5,7 @@
 #include <bg/python/object.hpp>
 
 #include <bg/scalar/builtins.hpp>
+#include <bg/scalar/bytes.hpp>
 #include <bg/scalar/bundle/scalar_type.hpp>
 #include <bg/scalar/bundle/value.hpp>
 #include <bg/scalar/details/string_storage.hpp>
@@ -27,6 +28,7 @@
 #include <cstdint>
 #include <limits>
 #include <mutex>
+#include <span>
 #include <stdexcept>
 #include <string_view>
 #include <typeinfo>
@@ -39,6 +41,27 @@ namespace {
 
 using details::StringStorage;
 using details::StringStorageFinalReleaseHook;
+
+struct BytesExporter {
+    ScalarValue<bytes> value;
+};
+
+int bytes_exporter_getbuffer(PyObject *self, Py_buffer *view, int flags) noexcept {
+    auto *exporter = nanobind::inst_ptr<BytesExporter>(nanobind::handle{self});
+    const auto value = exporter->value.view().value();
+    if (value.size() > static_cast<std::size_t>(PY_SSIZE_T_MAX)) {
+        PyErr_SetString(PyExc_OverflowError, "BG bytes are too large for Python");
+        return -1;
+    }
+
+    return PyBuffer_FillInfo(view, self, const_cast<std::byte *>(value.data()),
+                             static_cast<Py_ssize_t>(value.size()), 1, flags);
+}
+
+PyType_Slot bytes_exporter_slots[] = {
+    {Py_bf_getbuffer, reinterpret_cast<void *>(bytes_exporter_getbuffer)},
+    {0, nullptr},
+};
 
 class PythonObjectScalarType final : public ScalarType {
   public:
@@ -387,6 +410,45 @@ ScalarValue<> scalar_from_string_storage(StringStorage *storage) {
     auto *handle = storage;
     const auto value = Scalar<string>::from(cpp_scalar_runtime_type<string>(), &handle);
     return ScalarValue<>{ScalarValue<string>{value}};
+}
+
+ScalarValue<> from_python_bytes(nanobind::handle value, allocator &, const PythonScalarConversions &) {
+    if (PyBytes_Check(value.ptr())) {
+        char *data{};
+        Py_ssize_t size{};
+        if (PyBytes_AsStringAndSize(value.ptr(), &data, &size) < 0) {
+            nanobind::raise_python_error();
+        }
+        const auto bytes = std::span{reinterpret_cast<const std::byte *>(data), static_cast<std::size_t>(size)};
+        return ScalarValue<>{ScalarValue<bg::bytes>{bytes}};
+    }
+
+    if (!PyMemoryView_Check(value.ptr())) {
+        PyErr_SetString(PyExc_TypeError, "expected bytes or a contiguous memoryview for bg.bytes");
+        nanobind::raise_python_error();
+    }
+
+    Py_buffer buffer{};
+    if (PyObject_GetBuffer(value.ptr(), &buffer, PyBUF_CONTIG_RO) < 0) {
+        if (PyErr_ExceptionMatches(PyExc_BufferError)) {
+            PyErr_Clear();
+            PyErr_SetString(PyExc_TypeError, "bg.bytes requires a contiguous memoryview");
+        }
+        nanobind::raise_python_error();
+    }
+    auto release_buffer = util::scope_exit{[&]() noexcept { PyBuffer_Release(&buffer); }};
+
+    auto *base = PyMemoryView_GET_BASE(value.ptr());
+    if (base != nullptr && nanobind::isinstance<BytesExporter>(nanobind::handle{base})) {
+        auto *exporter = nanobind::inst_ptr<BytesExporter>(nanobind::handle{base});
+        const auto owned = exporter->value.view().value();
+        if (buffer.buf == owned.data() && static_cast<std::size_t>(buffer.len) == owned.size()) {
+            return ScalarValue<>{ScalarValue<bg::bytes>{exporter->value.view()}};
+        }
+    }
+
+    const auto bytes = std::span{static_cast<const std::byte *>(buffer.buf), static_cast<std::size_t>(buffer.len)};
+    return ScalarValue<>{ScalarValue<bg::bytes>{bytes}};
 }
 
 nanobind::object decode_string(std::string_view text) {
@@ -873,7 +935,20 @@ nanobind::object to_python_view_default(Scalar<> value, const PythonScalarConver
     return std::move(*result);
 }
 
+nanobind::object to_python_bytes(Scalar<> value, const PythonScalarConversions &) {
+    auto exporter = nanobind::cast(BytesExporter{ScalarValue<bg::bytes>{unchecked_scalar_cast<bg::bytes>(value)}});
+    auto *result = PyMemoryView_FromObject(exporter.ptr());
+    if (result == nullptr) {
+        nanobind::raise_python_error();
+    }
+    return nanobind::steal<nanobind::object>(result);
+}
+
 } // namespace
+
+void bind_bytes_exporter(nanobind::module_ &module) {
+    nanobind::class_<BytesExporter>(module, "_BytesExporter", nanobind::type_slots{bytes_exporter_slots});
+}
 
 struct NB_HIDDEN PythonScalarConversions::Impl {
     struct PythonType {
@@ -912,6 +987,7 @@ PythonScalarConversions::PythonScalarConversions() : impl_{std::make_unique<Impl
     add_from_python(double_type(), &from_python_double);
     add_from_python(timedelta_type(), &from_python_timedelta);
     add_from_python(string_type(), &from_python_string);
+    add_from_python(bytes_type(), &from_python_bytes);
     add_from_python(symbol_type(), &from_python_symbol);
 
     const auto add_to_python = [this](const ScalarType &type, ScalarToPython conversion) {
@@ -926,6 +1002,7 @@ PythonScalarConversions::PythonScalarConversions() : impl_{std::make_unique<Impl
     add_to_python(double_type(), &to_python_double);
     add_to_python(timedelta_type(), &to_python_timedelta);
     add_to_python(string_type(), &to_python_string);
+    add_to_python(bytes_type(), &to_python_bytes);
     add_to_python(symbol_type(), &to_python_symbol);
 
     const auto add_python_builtin = [this](PyTypeObject &python_type, const ScalarType &scalar_type) {
@@ -937,6 +1014,8 @@ PythonScalarConversions::PythonScalarConversions() : impl_{std::make_unique<Impl
     add_python_builtin(PyLong_Type, int64_type());
     add_python_builtin(PyFloat_Type, double_type());
     add_python_builtin(PyUnicode_Type, string_type());
+    add_python_builtin(PyBytes_Type, bytes_type());
+    add_python_builtin(PyMemoryView_Type, bytes_type());
     add_python_builtin(*PyDateTimeAPI->DeltaType, timedelta_type());
 }
 

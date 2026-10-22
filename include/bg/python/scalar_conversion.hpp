@@ -19,6 +19,9 @@ namespace bg::python {
 class CallbackLifetime;
 class PythonScalarConversions;
 
+// Module initialization binds the internal read-only memoryview exporter before conversions run.
+BG_PYTHON_API void bind_bytes_exporter(nanobind::module_ &module);
+
 // Scalar declaration used as a bound for Python-object scalar variables.
 struct PythonObject {};
 

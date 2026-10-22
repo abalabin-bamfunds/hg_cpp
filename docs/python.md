@@ -169,6 +169,12 @@ graph may return a scalar value, which is wired through `const_`, or a
 compatible time-series wiring point. An explicit `TS[T]` return annotation
 requires a wiring point.
 
+`TS[bytes]` outputs are read-only `memoryview` objects backed by native byte
+storage and remain valid after graph execution. Python `bytes` and contiguous
+memoryview inputs are copied into BG storage, except that a full memoryview
+previously exported by BG reuses its native storage. Views that cover only part
+of a buffer are copied, and non-contiguous memoryviews are rejected.
+
 Variadic parameters use a collection annotation. The function body receives
 one collection rather than expanded Python arguments:
 

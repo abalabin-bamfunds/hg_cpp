@@ -19,6 +19,7 @@
 #include <bg/time_series/tsl/tsl.hpp>
 #include <bg/type/schema.hpp>
 #include <bg/type/scalar_type.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <nanobind/nanobind.h>
 
@@ -421,6 +422,42 @@ NB_MODULE(_bg_test_extension, module) {
         const auto converted = conversions.from_python(bg::timedelta_type(), value, memory);
         const auto view = converted.view();
         return conversions.to_python(bg::Scalar<>::from(view));
+    });
+    module.def("bytes_conversion_addresses", [](nanobind::handle value) {
+        auto memory = bg::allocator{};
+        auto &conversions = bg::python::scalar_conversions();
+
+        Py_buffer input_buffer{};
+        if (PyObject_GetBuffer(value.ptr(), &input_buffer, PyBUF_CONTIG_RO) < 0) {
+            nanobind::raise_python_error();
+        }
+        auto release_input = bg::util::scope_exit{[&]() noexcept { PyBuffer_Release(&input_buffer); }};
+
+        const auto converted = conversions.from_python(bg::bytes_type(), value, memory);
+        const auto native = bg::unchecked_scalar_cast<bg::bytes>(converted).value();
+        const auto input_shares = input_buffer.buf == native.data() &&
+                                  static_cast<std::size_t>(input_buffer.len) == native.size();
+
+        auto exported = conversions.to_python(converted.view());
+        Py_buffer output_buffer{};
+        if (PyObject_GetBuffer(exported.ptr(), &output_buffer, PyBUF_CONTIG_RO) < 0) {
+            nanobind::raise_python_error();
+        }
+        auto release_output = bg::util::scope_exit{[&]() noexcept { PyBuffer_Release(&output_buffer); }};
+        const auto export_shares = output_buffer.buf == native.data() &&
+                                   static_cast<std::size_t>(output_buffer.len) == native.size();
+
+        const auto round_trip = conversions.from_python(bg::bytes_type(), exported, memory);
+        const auto round_trip_native = bg::unchecked_scalar_cast<bg::bytes>(round_trip).value();
+        const auto import_shares = round_trip_native.data() == native.data() &&
+                                   round_trip_native.size() == native.size();
+        return nanobind::make_tuple(input_shares, export_shares, import_shares);
+    });
+    module.def("round_trip_bytes", [](nanobind::handle value) {
+        auto memory = bg::allocator{};
+        auto &conversions = bg::python::scalar_conversions();
+        const auto converted = conversions.from_python(bg::bytes_type(), value, memory);
+        return conversions.to_python(converted.view());
     });
     module.def("scalar_conversions_address",
                [] { return reinterpret_cast<std::uintptr_t>(&bg::python::scalar_conversions()); });

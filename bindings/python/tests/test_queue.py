@@ -105,6 +105,34 @@ def test_queue_realtime_writer_accepts_delta_keyword_and_closes_on_stop():
     assert writers[0].write(delta=object()) is False
 
 
+def test_queue_copies_bytes_from_a_producer_thread():
+    @bg.queue
+    def source(writer: bg.Queue = None) -> bg.TS[bytes]:
+        written = []
+        failures = []
+
+        def produce():
+            payload = bytearray(b"\x00\x80\xffpayload")
+            try:
+                written.append(writer.write(memoryview(payload)))
+                payload[0] = 1
+            except BaseException as error:
+                failures.append(error)
+
+        producer = threading.Thread(target=produce)
+        producer.start()
+        producer.join(5)
+        assert not producer.is_alive()
+        assert failures == []
+        assert written == [True]
+
+    @bg.graph
+    def graph() -> bg.TS[bytes]:
+        return source()
+
+    assert bytes(bg.test_graph(graph)[0]) == b"\x00\x80\xffpayload"
+
+
 def test_failed_queue_conversion_commits_no_partial_dictionary_and_writer_recovers():
     ready = threading.Event()
     received = threading.Event()
