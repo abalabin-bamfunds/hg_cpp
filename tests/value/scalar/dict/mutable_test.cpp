@@ -6,16 +6,18 @@
 #include <cstdint>
 #include <utility>
 
+using namespace bg;
+
 TEST_CASE("a mutable scalar dictionary inserts and replaces entries",
           "[value][scalar][dict][scalar:dict][mutable][feature:scalar-collection][transition:addition]") {
-    using Entry = std::pair<bg::i64, bg::i64>;
+    using Entry = std::pair<i64, i64>;
 
-    auto state = bg::GlobalState{};
-    const auto initial = bg::ScalarValue<bg::Dict<bg::i64, bg::i64>>{std::array{Entry{1, 2}}};
-    state.write([&](bg::GlobalState::WriteAccess &values) {
-        values.set(bg::util::symbol{"items"}, initial);
+    auto state = GlobalState{};
+    const auto initial = ScalarValue<Dict<i64, i64>>{std::array{Entry{1, 2}}};
+    state.write([&](GlobalState::WriteAccess &values) {
+        values.set(util::symbol{"items"}, initial);
 
-        const auto items = values.mutable_at<bg::Dict<bg::i64, bg::i64>>("items");
+        const auto items = values.mutable_at<Dict<i64, i64>>("items");
         items.insert_or_assign(1, 3);
         items.insert_or_assign(2, 4);
 
@@ -27,14 +29,14 @@ TEST_CASE("a mutable scalar dictionary inserts and replaces entries",
 
 TEST_CASE("a mutable scalar dictionary erases and clears entries",
           "[value][scalar][dict][scalar:dict][mutable][feature:scalar-collection][transition:removal]") {
-    using Entry = std::pair<bg::i64, bg::i64>;
+    using Entry = std::pair<i64, i64>;
 
-    auto state = bg::GlobalState{};
-    const auto initial = bg::ScalarValue<bg::Dict<bg::i64, bg::i64>>{std::array{Entry{1, 2}, Entry{3, 4}}};
-    state.write([&](bg::GlobalState::WriteAccess &values) {
-        values.set(bg::util::symbol{"items"}, initial);
+    auto state = GlobalState{};
+    const auto initial = ScalarValue<Dict<i64, i64>>{std::array{Entry{1, 2}, Entry{3, 4}}};
+    state.write([&](GlobalState::WriteAccess &values) {
+        values.set(util::symbol{"items"}, initial);
 
-        const auto items = values.mutable_at<bg::Dict<bg::i64, bg::i64>>("items");
+        const auto items = values.mutable_at<Dict<i64, i64>>("items");
         CHECK(items.erase(1));
         CHECK_FALSE(items.erase(1));
         CHECK_FALSE(items.contains(1));

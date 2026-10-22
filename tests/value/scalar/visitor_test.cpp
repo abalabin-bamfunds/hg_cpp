@@ -10,14 +10,16 @@
 #include <utility>
 #include <vector>
 
+using namespace bg;
+
 TEST_CASE("a scalar visitor identifies a scalar value", "[value][scalar][visitor][feature:visitor][scalar:i64]") {
-    const auto value = bg::ScalarValue{42};
+    const auto value = ScalarValue{42};
     auto called = false;
 
     value.view().visit(
-        [&](const bg::Scalar<bg::i64> *view) {
+        [&](const Scalar<i64> *view) {
             called = true;
-            CHECK(&view->type() == &bg::int64_type());
+            CHECK(&view->type() == &int64_type());
         },
         ddv::noop);
 
@@ -26,13 +28,13 @@ TEST_CASE("a scalar visitor identifies a scalar value", "[value][scalar][visitor
 
 TEST_CASE("one scalar visitor handles multiple built-in scalar types",
           "[value][scalar][visitor][feature:visitor][scalar:i64][scalar:symbol]") {
-    const auto integer = bg::ScalarValue{42};
-    const auto name = bg::ScalarValue{bg::symbol{"name"}};
+    const auto integer = ScalarValue{42};
+    const auto name = ScalarValue{symbol{"name"}};
     auto integer_called = false;
     auto symbol_called = false;
     auto visitor = ddv::serial{
-        [&](const bg::Scalar<bg::i64> *) { integer_called = true; },
-        [&](const bg::Scalar<bg::symbol> *) { symbol_called = true; },
+        [&](const Scalar<i64> *) { integer_called = true; },
+        [&](const Scalar<symbol> *) { symbol_called = true; },
         ddv::noop,
     };
 
@@ -45,28 +47,27 @@ TEST_CASE("one scalar visitor handles multiple built-in scalar types",
 
 TEST_CASE("a scalar visitor identifies each collection type",
           "[value][scalar][visitor][feature:visitor][scalar:list][scalar:set][scalar:dict]") {
-    const auto list = bg::ScalarValue<bg::List<bg::i64>>{std::vector<bg::i64>{1}};
-    const auto set = bg::ScalarValue<bg::Set<bg::i64>>{std::vector<bg::i64>{2}};
-    const auto dict = bg::ScalarValue<bg::Dict<bg::i64, bg::i64>>{
-        std::vector<std::pair<bg::i64, bg::i64>>{{3, 4}}};
+    const auto list = ScalarValue<List<i64>>{std::vector<i64>{1}};
+    const auto set = ScalarValue<Set<i64>>{std::vector<i64>{2}};
+    const auto dict = ScalarValue<Dict<i64, i64>>{std::vector<std::pair<i64, i64>>{{3, 4}}};
     auto list_called = false;
     auto set_called = false;
     auto dict_called = false;
 
     list.view().visit(
-        [&](const bg::Scalar<bg::List<bg::SCALAR>> *view) {
+        [&](const Scalar<List<SCALAR>> *view) {
             list_called = true;
             CHECK(view->size() == 1);
         },
         ddv::noop);
     set.view().visit(
-        [&](const bg::Scalar<bg::Set<bg::SCALAR>> *view) {
+        [&](const Scalar<Set<SCALAR>> *view) {
             set_called = true;
             CHECK(view->size() == 1);
         },
         ddv::noop);
     dict.view().visit(
-        [&](const bg::Scalar<bg::Dict<bg::SCALAR, bg::SCALAR>> *view) {
+        [&](const Scalar<Dict<SCALAR, SCALAR>> *view) {
             dict_called = true;
             CHECK(view->size() == 1);
         },
@@ -80,17 +81,17 @@ TEST_CASE("a scalar visitor identifies each collection type",
 TEST_CASE("a scalar visitor selects every built-in type by its type index",
           "[feature:visitor][scalar:byte][scalar:boolean][scalar:i64][scalar:floating-point]"
           "[scalar:evaluation-time][scalar:timedelta][scalar:string][scalar:symbol]") {
-    const auto byte = bg::ScalarValue{bg::byte{0x2a}};
-    const auto boolean = bg::ScalarValue{true};
-    const auto integer = bg::ScalarValue{bg::i64{42}};
-    const auto floating_point = bg::ScalarValue{42.0};
-    const auto evaluation_time = bg::ScalarValue{bg::MIN_DT + std::chrono::microseconds{42}};
-    const auto timedelta = bg::ScalarValue{bg::timedelta_t{42}};
-    const auto text = bg::ScalarValue{"value"};
-    const auto name = bg::ScalarValue{bg::symbol{"name"}};
+    const auto byte = ScalarValue{bg::byte{0x2a}};
+    const auto boolean = ScalarValue{true};
+    const auto integer = ScalarValue{i64{42}};
+    const auto floating_point = ScalarValue{42.0};
+    const auto evaluation_time = ScalarValue{MIN_DT + std::chrono::microseconds{42}};
+    const auto timedelta = ScalarValue{timedelta_t{42}};
+    const auto text = ScalarValue{"value"};
+    const auto name = ScalarValue{symbol{"name"}};
 
-    const auto check_builtin = []<typename T>(const bg::ScalarValue<T> &value) {
-        const auto *builtin = bg::type_cast<bg::BuiltinScalarType>(&value.view().type());
+    const auto check_builtin = []<typename T>(const ScalarValue<T> &value) {
+        const auto *builtin = type_cast<BuiltinScalarType>(&value.view().type());
         REQUIRE(builtin != nullptr);
 
         auto selected = false;
@@ -100,7 +101,7 @@ TEST_CASE("a scalar visitor selects every built-in type by its type index",
         CHECK(selected);
 
         auto visited = false;
-        value.view().visit([&](const bg::Scalar<T> *) { visited = true; }, ddv::noop);
+        value.view().visit([&](const Scalar<T> *) { visited = true; }, ddv::noop);
         CHECK(visited);
     };
 
@@ -116,17 +117,16 @@ TEST_CASE("a scalar visitor selects every built-in type by its type index",
 
 TEST_CASE("a scalar visitor reserves the erased view for extension types",
           "[value][scalar][visitor][feature:visitor][scalar:i64]") {
-    const auto value = bg::ScalarValue{42};
+    const auto value = ScalarValue{42};
     auto typed_called = false;
     auto erased_called = false;
 
     value.view().visit(
-        [&](const bg::Scalar<bg::i64> *view) {
+        [&](const Scalar<i64> *view) {
             typed_called = true;
-            CHECK(&view->type() == &bg::int64_type());
+            CHECK(&view->type() == &int64_type());
         },
-        [&](const bg::Scalar<> *) { erased_called = true; },
-        ddv::noop);
+        [&](const Scalar<> *) { erased_called = true; }, ddv::noop);
 
     CHECK(typed_called);
     CHECK_FALSE(erased_called);
@@ -134,13 +134,13 @@ TEST_CASE("a scalar visitor reserves the erased view for extension types",
 
 TEST_CASE("an opaque scalar visitor uses the base-view interface",
           "[value][scalar][visitor][feature:visitor][scalar:opaque]") {
-    const auto value = bg::ScalarValue<bg::Opaque<int>>{42};
+    const auto value = ScalarValue<Opaque<int>>{42};
     auto called = false;
 
     value.view().visit(
-        [&](const bg::Scalar<> *view) {
+        [&](const Scalar<> *view) {
             called = true;
-            CHECK(&view->type() == &bg::cpp_scalar_type<bg::Opaque<int>>());
+            CHECK(&view->type() == &cpp_scalar_type<Opaque<int>>());
         },
         ddv::noop);
 
@@ -149,20 +149,19 @@ TEST_CASE("an opaque scalar visitor uses the base-view interface",
 
 TEST_CASE("integer and floating-point aliases use the erased visitor",
           "[feature:visitor][scalar:integer][scalar:floating-point][declaration:concrete]") {
-    const auto integer = bg::ScalarValue<int>{42};
-    const auto floating_point = bg::ScalarValue<float>{42.0F};
+    const auto integer = ScalarValue<int>{42};
+    const auto floating_point = ScalarValue<float>{42.0F};
 
     const auto check_erased = [](const auto &value) {
-        CHECK(bg::type_cast<bg::BuiltinScalarType>(&value.view().type()) == nullptr);
+        CHECK(type_cast<BuiltinScalarType>(&value.view().type()) == nullptr);
         auto erased_called = false;
         auto typed_called = false;
-        value.view().visit(
-            [&](const bg::Scalar<bg::i64> *) { typed_called = true; },
-            [&](const bg::Scalar<> *view) {
-                erased_called = true;
-                CHECK(&view->type() == &value.view().type());
-            },
-            ddv::noop);
+        value.view().visit([&](const Scalar<i64> *) { typed_called = true; },
+                           [&](const Scalar<> *view) {
+                               erased_called = true;
+                               CHECK(&view->type() == &value.view().type());
+                           },
+                           ddv::noop);
         CHECK(erased_called);
         CHECK_FALSE(typed_called);
     };
@@ -173,12 +172,12 @@ TEST_CASE("integer and floating-point aliases use the erased visitor",
 
 TEST_CASE("an external scalar provider uses the erased visitor",
           "[feature:visitor][scalar:generic][declaration:runtime]") {
-    const auto extension = bg::ScalarValue<test_scalar_provider::value>{test_scalar_provider::value{42}};
+    const auto extension = ScalarValue<test_scalar_provider::value>{test_scalar_provider::value{42}};
 
-    CHECK(bg::type_cast<bg::BuiltinScalarType>(&extension.view().type()) == nullptr);
+    CHECK(type_cast<BuiltinScalarType>(&extension.view().type()) == nullptr);
     auto erased_called = false;
     extension.view().visit(
-        [&](const bg::Scalar<> *view) {
+        [&](const Scalar<> *view) {
             erased_called = true;
             CHECK(&view->type() == &extension.view().type());
         },
@@ -188,10 +187,10 @@ TEST_CASE("an external scalar provider uses the erased visitor",
 
 TEST_CASE("a scalar visitor can ignore an unmatched view",
           "[value][scalar][visitor][feature:visitor][scalar:integer]") {
-    const auto value = bg::ScalarValue{42};
+    const auto value = ScalarValue{42};
     auto called = false;
 
-    value.view().visit([&](const bg::Scalar<bg::List<bg::SCALAR>> *) { called = true; }, ddv::noop);
+    value.view().visit([&](const Scalar<List<SCALAR>> *) { called = true; }, ddv::noop);
 
     CHECK_FALSE(called);
 }

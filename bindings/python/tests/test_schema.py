@@ -1,7 +1,8 @@
 from typing import Optional
 
-import bg
 import pytest
+
+import bg
 
 
 def test_bundle_construction_and_python_class_round_trip():

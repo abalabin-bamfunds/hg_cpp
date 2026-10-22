@@ -91,6 +91,7 @@ TEST_CASE("mesh resumes a dependency node after its dependency completes",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[transition:addition]") {
     auto events = std::vector<int>{};
+
     const auto record_mesh_dependency_key = node(
         [&events](In<TS<i64, TimeSeriesGuarantee::const_>> key,
                   In<TS<i64>> dependency_key, Out<TS<i64>> output) {
@@ -278,6 +279,7 @@ TEST_CASE("mesh evaluates a shared dependency once",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[shape:diamond]") {
     auto evaluation_counts = std::array<int, 5>{};
+
     const auto count_mesh_branch = node(
         [&evaluation_counts](In<TS<i64, TimeSeriesGuarantee::const_>> key, In<TS<i64>> value,
                              In<TS<i64>, optional> first, In<TS<i64>, optional> second,
@@ -310,6 +312,7 @@ TEST_CASE("mesh does not reevaluate a clean dependency branch",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[transition:update]") {
     auto evaluation_counts = std::array<int, 3>{};
+
     const auto count_mesh_dependency = node(
         [&evaluation_counts](In<TS<i64, TimeSeriesGuarantee::const_>> key, In<TS<i64>> value,
                              In<TS<i64>, optional> dependency, Out<TS<i64>> output) {
@@ -481,6 +484,7 @@ TEST_CASE("runtime map instances keep independent outer mesh dependencies",
         output[10].set(*value);
         output[20].set(*value * 2);
     });
+
     const auto inner_dependencies = node([](In<TS<i64>>, Out<TSD<i64, TS<i64>>> output) {
         output[10].set(1);
         output[20].set(2);
@@ -588,6 +592,7 @@ TEST_CASE("mesh supports source and sink graphs",
           "[feature:mesh][feature:nested-graph][feature:operator][series:tss][series:tsd]"
           "[shape:source][shape:sink]") {
     auto recorded_values = std::vector<i64>{};
+
     const auto sink = node([&recorded_values](i64 value) { recorded_values.push_back(value); });
 
     const auto source_test = [](wp<TSS<i64>> keys) {

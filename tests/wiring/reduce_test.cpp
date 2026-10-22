@@ -22,13 +22,18 @@ using namespace bg;
 using namespace bg::literals;
 
 const auto dictionary_source = node([](Out<TSD<i64, TS<i64>>>) {});
+
 const auto reference_dictionary_source = node([](Out<REF<TSD<i64, TS<i64>>>>) {});
 const auto final_item_dictionary_source =
     node([](Out<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>>) {});
+
 const auto add_values = node([](In<TS<i64>>, In<TS<i64>>, Out<TS<i64>>) {});
+
 const auto add_with_context = node([](In<TS<i64>>, In<TS<i64>>,
                                       In<TS<i64>, "factor"_n, context>, Out<TS<i64>>) {});
+
 const auto float_source = node([](Out<TS<float>>) {});
+
 const auto reference_source = node([](Out<REF<TS<i64>>>) {});
 
 TEST_CASE("reduce wiring records a binary graph over TSD item values",
@@ -169,6 +174,7 @@ TEST_CASE("reduce wiring preserves inherited context requirements",
 
     testing::test_wiring([&] {
         const auto dictionary = dictionary_source();
+
         const auto context_source = node([](Out<TS<i64>>) {});
         auto scope = with_context("factor"_n = context_source());
         const auto &dictionary_type = type_cast<TimeSeriesDictionaryType>(dictionary.type());
@@ -193,6 +199,7 @@ TEST_CASE("an isolated compact reducer rejects context requirements without chan
 
     testing::test_wiring([&] {
         const auto dictionary = dictionary_source();
+
         const auto context_source = node([](Out<TS<i64>>) {});
         auto context = with_context("factor"_n = context_source());
         auto &outer = WiringContext::current().wiring();
@@ -210,6 +217,7 @@ TEST_CASE("an isolated compact reducer rejects context requirements without chan
 TEST_CASE("an isolated compact reducer rejects service requirements without changing outer wiring",
           "[feature:reduce][feature:wiring][feature:service][series:tsd]") {
     const auto lookup = reference_service<auto()->TS<i64>>{"reduce_lookup"};
+
     const auto representation_sensitive = graph(
         "name"_n = "representation_sensitive_service_reducer",
         [&](wp<TS<i64>> left, wp<TS<i64>> right) {
@@ -237,6 +245,7 @@ TEST_CASE("reduce wires its TSD input and output type through the default overlo
           "[feature:reduce][feature:operator][feature:graph-argument][feature:wiring][series:tsd]") {
     const auto add = node([](In<TS<i64>> left, In<TS<i64>> right,
                              Out<TS<i64>> output) {});
+
     const auto reducer = graph("name"_n = "add_for_reduce", [add](wp<TS<i64>> left,
                                                                      wp<TS<i64>> right) {
         return add(left, right);

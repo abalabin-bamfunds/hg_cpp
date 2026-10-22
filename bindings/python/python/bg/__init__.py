@@ -965,6 +965,8 @@ def _callback_arguments(function: Any, base_function: Any) -> tuple[Any, tuple[t
 def _define_node(
     function: Any, *, schedule_on_start: bool = False, scalar_or_time_series_inputs: bool = False,
     source: bool = False, generator: bool = False, queue_mode: QueueMode | None = None,
+    active: tuple[str, ...] | None = None, valid: tuple[str, ...] | None = None,
+    all_valid: tuple[str, ...] | None = None,
 ) -> NodeDefinition:
     signature = inspect.signature(function)
     annotations = get_type_hints(function, include_extras=True)
@@ -978,6 +980,12 @@ def _define_node(
         function, scalar_or_time_series_inputs=scalar_or_time_series_inputs, allow_injectables=True,
         allow_queue=queue_mode is not None,
     )
+    active_indices = _node_property_indices(function, "active", active, parameters)
+    valid_indices = _node_property_indices(function, "valid", valid, parameters)
+    all_valid_indices = _node_property_indices(function, "all_valid", all_valid, parameters) or ()
+    if valid is not None and set(valid) & set(all_valid or ()):
+        overlap = sorted(set(valid) & set(all_valid or ()))
+        raise TypeError(f"Python node inputs cannot be both valid and all_valid: {', '.join(overlap)}")
 
     output = annotations.get("return", signature.return_annotation)
     if output is inspect.Signature.empty or output is None or output is type(None):
@@ -1029,6 +1037,7 @@ def _define_node(
             schedule_on_start, scalar_or_time_series_inputs,
             *(list(callback_definitions[name][1]) for name in ("evaluation", "start", "stop", "invalidation")),
             state_factory, generator, queue_mode if queue_mode is not None else QueueMode.standard,
+            active_indices, valid_indices, all_valid_indices,
         )
         return native_definition, retained_callbacks
 
@@ -1055,6 +1064,38 @@ def _define_node(
         callback_references,
     )
     return definition
+
+
+def _node_property_indices(
+    function: Any, property_name: str, selected_names: tuple[str, ...] | None,
+    parameters: list[tuple[str, Any, str]],
+) -> tuple[int, ...] | None:
+    if selected_names is None:
+        return None
+    if not isinstance(selected_names, tuple):
+        raise TypeError(f"Python node {property_name} must be a tuple of input names or None")
+    if any(not isinstance(name, str) for name in selected_names):
+        raise TypeError(f"Python node {property_name} entries must be input names")
+    if len(set(selected_names)) != len(selected_names):
+        raise TypeError(f"Python node {property_name} cannot contain duplicate input names")
+
+    signature = inspect.signature(function)
+    annotations = get_type_hints(function, include_extras=True)
+    parameter_indices = {name: index for index, (name, _, _) in enumerate(parameters)}
+    indices = []
+    for name in selected_names:
+        if name not in signature.parameters:
+            raise TypeError(f"Python node {property_name} names unknown input {name!r}")
+        annotation = annotations.get(name, signature.parameters[name].annotation)
+        if _is_injectable_annotation(annotation):
+            raise TypeError(f"Python node {property_name} cannot select injectable parameter {name!r}")
+        if name not in parameter_indices:
+            raise TypeError(f"Python node {property_name} names unknown input {name!r}")
+        _, input_type, _ = parameters[parameter_indices[name]]
+        if not input_type.is_time_series and not input_type.accepts_time_series_value:
+            raise TypeError(f"Python node {property_name} requires a time-series-capable input: {name!r}")
+        indices.append(parameter_indices[name])
+    return tuple(indices)
 
 
 def _define_service(function: Any, kind: str) -> _ServiceDefinition:
@@ -1174,9 +1215,15 @@ def _native_type(annotation: Any) -> Any:
     raise TypeError(f"unsupported Python node annotation: {annotation!r}")
 
 
-def compute_node(function: Any) -> NodeDefinition:
-    """Declare a Python node that runs when one of its inputs changes."""
-    return _define_node(function)
+def compute_node(
+    function: Any = None, *, active: tuple[str, ...] | None = None,
+    valid: tuple[str, ...] | None = None, all_valid: tuple[str, ...] | None = None,
+) -> Any:
+    """Declare an input-driven node with optional input activity and validity selection."""
+    def decorate(callback: Any) -> NodeDefinition:
+        return _define_node(callback, active=active, valid=valid, all_valid=all_valid)
+
+    return decorate if function is None else decorate(function)
 
 
 def reference_service(function: Any) -> _ServiceDefinition:
@@ -1207,9 +1254,18 @@ def feedback_service_implementation(
     return _FeedbackServiceImplementation(service, implementation, native)
 
 
-def node(function: Any) -> NodeDefinition:
-    """Declare a Python node whose scalar annotations accept scalar or TS[T] inputs."""
-    return _define_node(function, schedule_on_start=True, scalar_or_time_series_inputs=True)
+def node(
+    function: Any = None, *, active: tuple[str, ...] | None = None,
+    valid: tuple[str, ...] | None = None, all_valid: tuple[str, ...] | None = None,
+) -> Any:
+    """Declare a scalar-or-time-series node with optional input activity and validity selection."""
+    def decorate(callback: Any) -> NodeDefinition:
+        return _define_node(
+            callback, schedule_on_start=True, scalar_or_time_series_inputs=True,
+            active=active, valid=valid, all_valid=all_valid,
+        )
+
+    return decorate if function is None else decorate(function)
 
 
 def source_node(function: Any) -> NodeDefinition:

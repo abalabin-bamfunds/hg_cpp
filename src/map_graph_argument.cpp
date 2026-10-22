@@ -214,10 +214,16 @@ class MapGraphArgumentBuilder {
                 continue;
             }
             if (!fixed[index]) {
+                if (signature.default_argument(index) != nullptr) {
+                    continue;
+                }
                 throw WiringError{"a " + std::string{name_.text()} +
                                   " call does not provide a fixed graph parameter"};
             }
-            result.push_back(std::move(*fixed[index]));
+            auto argument = std::move(*fixed[index]);
+            argument.set_name(signature.parameter(index).name);
+            argument.match_fixed_parameter_by_name();
+            result.push_back(std::move(argument));
         }
         for (auto &argument : variadic) {
             result.push_back(std::move(argument));

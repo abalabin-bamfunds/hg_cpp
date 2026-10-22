@@ -2,12 +2,16 @@
 
 #include <bg/scalar/canonical.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
+#include <bg/graph/wiring_parameter.hpp>
 #include <bg/type/details/scalar_type.hpp>
 #include <bg/type/signature.hpp>
 
+#include <array>
 #include <cstddef>
+#include <initializer_list>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <vector>
@@ -26,7 +30,7 @@ template <typename Declaration> const Type &signature_declaration_type() {
 
 template <typename Result, typename... Arguments>
 Signature make_typed_signature(util::symbol name, std::span<const std::string_view> parameter_names,
-                               Result (*)(Arguments...)) {
+                               Result (*)(Arguments...), bool names_are_explicit = true) {
     if (parameter_names.size() != sizeof...(Arguments)) {
         throw std::invalid_argument{"a typed signature requires one name for every parameter"};
     }
@@ -35,12 +39,13 @@ Signature make_typed_signature(util::symbol name, std::span<const std::string_vi
     parameters.reserve(sizeof...(Arguments));
     if constexpr (sizeof...(Arguments) != 0) {
         auto index = std::size_t{};
-        (
-            [&] {
-                parameters.push_back({util::symbol{parameter_names[index]}, &signature_declaration_type<Arguments>()});
-                ++index;
-            }(),
-            ...);
+        ([&] {
+            auto parameter = Parameter{util::symbol{parameter_names[index]},
+                                       &signature_declaration_type<Arguments>()};
+            parameter.name_is_explicit = names_are_explicit;
+            parameters.push_back(std::move(parameter));
+            ++index;
+        }(), ...);
     }
 
     if constexpr (std::same_as<Result, void>) {
@@ -55,6 +60,20 @@ Signature make_typed_signature(util::symbol name, std::span<const std::string_vi
     }
 }
 
+template <typename Result, typename... Arguments>
+Signature make_typed_signature(util::symbol name, Result (*)(Arguments...)) {
+    auto names = std::array<std::string, sizeof...(Arguments)>{};
+    for (auto index = std::size_t{}; index < names.size(); ++index) {
+        names[index] = std::to_string(index);
+    }
+    auto views = std::array<std::string_view, sizeof...(Arguments)>{};
+    for (auto index = std::size_t{}; index < names.size(); ++index) {
+        views[index] = names[index];
+    }
+    return make_typed_signature(name, std::span<const std::string_view>{views},
+                                static_cast<Result (*)(Arguments...)>(nullptr), false);
+}
+
 template <typename Prototype> struct typed_prototype;
 
 template <typename Result, typename... Arguments> struct typed_prototype<Result(Arguments...)> {
@@ -62,6 +81,11 @@ template <typename Result, typename... Arguments> struct typed_prototype<Result(
 
     static Signature signature(util::symbol name, std::span<const std::string_view> parameter_names) {
         return make_typed_signature(name, parameter_names, static_cast<Result (*)(Arguments...)>(nullptr));
+    }
+
+    static Signature signature(util::symbol name, std::initializer_list<WiringParameter> parameters) {
+        auto result = make_typed_signature(name, static_cast<Result (*)(Arguments...)>(nullptr));
+        return result.with_parameters(std::span<const WiringParameter>{parameters});
     }
 };
 

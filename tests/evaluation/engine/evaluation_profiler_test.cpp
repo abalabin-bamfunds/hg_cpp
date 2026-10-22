@@ -21,22 +21,23 @@
 #include <string>
 #include <vector>
 
+using namespace bg;
+
 namespace {
 
-bg::EvaluationTime minute(bg::i64 index) {
-    return bg::EvaluationTime{std::chrono::minutes{index}};
+EvaluationTime minute(i64 index) {
+    return EvaluationTime{std::chrono::minutes{index}};
 }
 
-bg::EvaluationProfileCycle cycle(bg::GraphInstanceId graph_id, bg::EvaluationProfileCycle::Boundary boundary,
-                                 bg::EvaluationTime wall_time, std::uint64_t checkpoint,
-                                 bg::i64 steady_nanoseconds = 0) {
+EvaluationProfileCycle cycle(GraphInstanceId graph_id, EvaluationProfileCycle::Boundary boundary,
+                             EvaluationTime wall_time, std::uint64_t checkpoint, i64 steady_nanoseconds = 0) {
     return {graph_id, boundary, wall_time, wall_time, checkpoint, steady_nanoseconds};
 }
 
 struct profiler_source {
-    bg::Out<bg::TS<bg::i64>> output;
+    Out<TS<i64>> output;
 
-    void start(bg::EvaluationContext *context) const { context->schedule_now(); }
+    void start(EvaluationContext *context) const { context->schedule_now(); }
     void evaluate() const { output.set(1); }
 };
 
@@ -44,34 +45,33 @@ struct profiler_source {
 
 TEST_CASE("evaluation profiler retains compact node periods and releases stopped node totals",
           "[evaluation][profile][feature:profiling]") {
-    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>> output) { output.set(1); });
-    const auto sink = bg::node([](bg::In<bg::TS<bg::i64>>) {});
-    auto wiring = bg::GraphWiring{};
+    const auto source = bg::node([](Out<TS<i64>> output) { output.set(1); });
+
+    const auto sink = bg::node([](In<TS<i64>>) {});
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         sink(source());
     }
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
+    const auto compiled = CompiledGraph{wiring};
     REQUIRE(compiled.node_count() == 2);
 
-    auto profiler = bg::EvaluationProfiler{};
-    const auto graph_id = bg::GraphInstanceId{9};
-    profiler.consume(bg::EvaluationProfileGraph{graph_id, &compiled, {}, UINT32_MAX, std::nullopt});
+    auto profiler = EvaluationProfiler{};
+    const auto graph_id = GraphInstanceId{9};
+    profiler.consume(EvaluationProfileGraph{graph_id, &compiled, {}, UINT32_MAX, std::nullopt});
 
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::start,
-                           minute(0) + std::chrono::seconds{10}, 100));
-    profiler.consume(bg::EvaluationProfileNode{graph_id, 0, 110});
-    profiler.consume(bg::EvaluationProfileNode{graph_id, 1, 120});
-    profiler.consume(bg::EvaluationProfileNode{graph_id, 0, 125});
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::end,
-                           minute(0) + std::chrono::seconds{11}, 130));
+    profiler.consume(
+        cycle(graph_id, EvaluationProfileCycle::Boundary::start, minute(0) + std::chrono::seconds{10}, 100));
+    profiler.consume(EvaluationProfileNode{graph_id, 0, 110});
+    profiler.consume(EvaluationProfileNode{graph_id, 1, 120});
+    profiler.consume(EvaluationProfileNode{graph_id, 0, 125});
+    profiler.consume(cycle(graph_id, EvaluationProfileCycle::Boundary::end, minute(0) + std::chrono::seconds{11}, 130));
 
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::start,
-                           minute(0) + std::chrono::seconds{20}, 200));
-    profiler.consume(bg::EvaluationProfileNode{graph_id, 1, 220});
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::end,
-                           minute(0) + std::chrono::seconds{21}, 230));
+    profiler.consume(
+        cycle(graph_id, EvaluationProfileCycle::Boundary::start, minute(0) + std::chrono::seconds{20}, 200));
+    profiler.consume(EvaluationProfileNode{graph_id, 1, 220});
+    profiler.consume(cycle(graph_id, EvaluationProfileCycle::Boundary::end, minute(0) + std::chrono::seconds{21}, 230));
 
     REQUIRE(profiler.node_totals(graph_id, 0));
     CHECK(profiler.node_totals(graph_id, 0)->evaluations == 2);
@@ -89,27 +89,25 @@ TEST_CASE("evaluation profiler retains compact node periods and releases stopped
     CHECK(profiler.graph_period(graph_id, minute(0))->evaluations == 2);
     CHECK(profiler.graph_period(graph_id, minute(0))->checkpoint_ticks == 60);
 
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::start,
-                           minute(1) + std::chrono::seconds{2}, 300));
-    profiler.consume(bg::EvaluationProfileNode{graph_id, 1, 310});
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::end,
-                           minute(1) + std::chrono::seconds{3}, 320));
-    profiler.consume(bg::EvaluationProfileGraphStop{graph_id});
+    profiler.consume(
+        cycle(graph_id, EvaluationProfileCycle::Boundary::start, minute(1) + std::chrono::seconds{2}, 300));
+    profiler.consume(EvaluationProfileNode{graph_id, 1, 310});
+    profiler.consume(cycle(graph_id, EvaluationProfileCycle::Boundary::end, minute(1) + std::chrono::seconds{3}, 320));
+    profiler.consume(EvaluationProfileGraphStop{graph_id});
     CHECK_FALSE(profiler.node_totals(graph_id, 1));
     REQUIRE(profiler.graph(graph_id));
     CHECK_FALSE(profiler.graph(graph_id)->active);
 
-    profiler.consume(bg::EvaluationProfileGraph{graph_id, &compiled, {}, UINT32_MAX, std::nullopt});
+    profiler.consume(EvaluationProfileGraph{graph_id, &compiled, {}, UINT32_MAX, std::nullopt});
     REQUIRE(profiler.graph(graph_id));
     CHECK(profiler.graph(graph_id)->active);
     CHECK(profiler.graph(graph_id)->totals.evaluations == 3);
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::start,
-                           minute(1) + std::chrono::seconds{4}, 400));
-    profiler.consume(bg::EvaluationProfileNode{graph_id, 1, 410});
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::end,
-                           minute(1) + std::chrono::seconds{5}, 420));
+    profiler.consume(
+        cycle(graph_id, EvaluationProfileCycle::Boundary::start, minute(1) + std::chrono::seconds{4}, 400));
+    profiler.consume(EvaluationProfileNode{graph_id, 1, 410});
+    profiler.consume(cycle(graph_id, EvaluationProfileCycle::Boundary::end, minute(1) + std::chrono::seconds{5}, 420));
     CHECK(profiler.node_totals(graph_id, 1)->evaluations == 1);
-    profiler.consume(bg::EvaluationProfileGraphStop{graph_id});
+    profiler.consume(EvaluationProfileGraphStop{graph_id});
     profiler.advance_to(minute(2));
     REQUIRE(profiler.node_period(graph_id, 1, minute(1)));
     CHECK(profiler.node_period(graph_id, 1, minute(1))->evaluations == 2);
@@ -133,29 +131,29 @@ TEST_CASE("evaluation profiler retains compact node periods and releases stopped
 
 TEST_CASE("evaluation profiler excludes nested graph work from parent node checkpoints",
           "[evaluation][profile][feature:profiling][shape:nested]") {
-    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>> output) { output.set(1); });
-    auto wiring = bg::GraphWiring{};
+    const auto source = bg::node([](Out<TS<i64>> output) { output.set(1); });
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         (void)source();
     }
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
+    const auto compiled = CompiledGraph{wiring};
 
-    auto profiler = bg::EvaluationProfiler{};
-    const auto parent = bg::GraphInstanceId{1};
-    const auto child = bg::GraphInstanceId{2};
-    profiler.consume(bg::EvaluationProfileGraph{parent, &compiled, {}, UINT32_MAX, std::nullopt});
-    profiler.consume(bg::EvaluationProfileGraph{child, &compiled, parent, 0, std::nullopt});
+    auto profiler = EvaluationProfiler{};
+    const auto parent = GraphInstanceId{1};
+    const auto child = GraphInstanceId{2};
+    profiler.consume(EvaluationProfileGraph{parent, &compiled, {}, UINT32_MAX, std::nullopt});
+    profiler.consume(EvaluationProfileGraph{child, &compiled, parent, 0, std::nullopt});
     REQUIRE(profiler.graph(child));
     CHECK(profiler.graph(child)->parent_graph_id == parent);
 
-    profiler.consume(cycle(parent, bg::EvaluationProfileCycle::Boundary::start, minute(0), 100));
-    profiler.consume(bg::EvaluationProfileGraphEntry{child, 110});
-    profiler.consume(bg::EvaluationProfileNode{child, 0, 115});
-    profiler.consume(bg::EvaluationProfileGraphExit{child, 120});
-    profiler.consume(bg::EvaluationProfileNode{parent, 0, 125});
-    profiler.consume(cycle(parent, bg::EvaluationProfileCycle::Boundary::end, minute(0), 130));
+    profiler.consume(cycle(parent, EvaluationProfileCycle::Boundary::start, minute(0), 100));
+    profiler.consume(EvaluationProfileGraphEntry{child, 110});
+    profiler.consume(EvaluationProfileNode{child, 0, 115});
+    profiler.consume(EvaluationProfileGraphExit{child, 120});
+    profiler.consume(EvaluationProfileNode{parent, 0, 125});
+    profiler.consume(cycle(parent, EvaluationProfileCycle::Boundary::end, minute(0), 130));
 
     REQUIRE(profiler.node_totals(parent, 0));
     CHECK(profiler.node_totals(parent, 0)->checkpoint_ticks == 15);
@@ -167,169 +165,167 @@ TEST_CASE("evaluation profiler excludes nested graph work from parent node check
 
 TEST_CASE("evaluation profiler closes and retains configurable periods",
           "[evaluation][profile][feature:profiling]") {
-    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>> output) { output.set(1); });
-    auto wiring = bg::GraphWiring{};
+    const auto source = bg::node([](Out<TS<i64>> output) { output.set(1); });
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         (void)source();
     }
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
+    const auto compiled = CompiledGraph{wiring};
 
-    auto profiler = bg::EvaluationProfiler{{.node_period = std::chrono::seconds{10},
-                                            .retained_node_periods = 2}};
-    const auto graph_id = bg::GraphInstanceId{17};
-    profiler.consume(bg::EvaluationProfileGraph{graph_id, &compiled, {}, UINT32_MAX, std::nullopt});
+    auto profiler = EvaluationProfiler{{.node_period = std::chrono::seconds{10}, .retained_node_periods = 2}};
+    const auto graph_id = GraphInstanceId{17};
+    profiler.consume(EvaluationProfileGraph{graph_id, &compiled, {}, UINT32_MAX, std::nullopt});
 
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::start,
-                           bg::EvaluationTime{std::chrono::seconds{9}}, 100));
-    profiler.consume(bg::EvaluationProfileNode{graph_id, 0, 105});
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::end,
-                           bg::EvaluationTime{std::chrono::seconds{11}}, 110));
-    CHECK_FALSE(profiler.node_period(graph_id, 0, bg::EvaluationTime{}));
+    profiler.consume(
+        cycle(graph_id, EvaluationProfileCycle::Boundary::start, EvaluationTime{std::chrono::seconds{9}}, 100));
+    profiler.consume(EvaluationProfileNode{graph_id, 0, 105});
+    profiler.consume(
+        cycle(graph_id, EvaluationProfileCycle::Boundary::end, EvaluationTime{std::chrono::seconds{11}}, 110));
+    CHECK_FALSE(profiler.node_period(graph_id, 0, EvaluationTime{}));
 
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::start,
-                           bg::EvaluationTime{std::chrono::seconds{20}}, 200));
-    REQUIRE(profiler.node_period(graph_id, 0, bg::EvaluationTime{}));
-    CHECK(profiler.node_period(graph_id, 0, bg::EvaluationTime{})->evaluations == 1);
-    CHECK(profiler.node_period(graph_id, 0, bg::EvaluationTime{})->checkpoint_ticks == 5);
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::end,
-                           bg::EvaluationTime{std::chrono::seconds{21}}, 210));
-    profiler.consume(bg::EvaluationProfileGraphStop{graph_id});
+    profiler.consume(
+        cycle(graph_id, EvaluationProfileCycle::Boundary::start, EvaluationTime{std::chrono::seconds{20}}, 200));
+    REQUIRE(profiler.node_period(graph_id, 0, EvaluationTime{}));
+    CHECK(profiler.node_period(graph_id, 0, EvaluationTime{})->evaluations == 1);
+    CHECK(profiler.node_period(graph_id, 0, EvaluationTime{})->checkpoint_ticks == 5);
+    profiler.consume(
+        cycle(graph_id, EvaluationProfileCycle::Boundary::end, EvaluationTime{std::chrono::seconds{21}}, 210));
+    profiler.consume(EvaluationProfileGraphStop{graph_id});
 
-    CHECK(profiler.node_period(graph_id, 0, bg::EvaluationTime{}));
-    profiler.advance_to(bg::EvaluationTime{std::chrono::seconds{30}});
-    CHECK_FALSE(profiler.node_period(graph_id, 0, bg::EvaluationTime{}));
+    CHECK(profiler.node_period(graph_id, 0, EvaluationTime{}));
+    profiler.advance_to(EvaluationTime{std::chrono::seconds{30}});
+    CHECK_FALSE(profiler.node_period(graph_id, 0, EvaluationTime{}));
 
-    profiler.consume(bg::EvaluationProfileGraph{graph_id, &compiled, {}, UINT32_MAX, std::nullopt});
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::start,
-                           bg::EvaluationTime{std::chrono::seconds{31}}, 300));
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::end,
-                           bg::EvaluationTime{std::chrono::seconds{32}}, 310));
-    profiler.consume(bg::EvaluationProfileGraphStop{graph_id});
+    profiler.consume(EvaluationProfileGraph{graph_id, &compiled, {}, UINT32_MAX, std::nullopt});
+    profiler.consume(
+        cycle(graph_id, EvaluationProfileCycle::Boundary::start, EvaluationTime{std::chrono::seconds{31}}, 300));
+    profiler.consume(
+        cycle(graph_id, EvaluationProfileCycle::Boundary::end, EvaluationTime{std::chrono::seconds{32}}, 310));
+    profiler.consume(EvaluationProfileGraphStop{graph_id});
 
-    profiler.advance_to(bg::EvaluationTime{std::chrono::seconds{40}});
+    profiler.advance_to(EvaluationTime{std::chrono::seconds{40}});
     CHECK(profiler.graph(graph_id) != nullptr);
-    profiler.advance_to(bg::EvaluationTime{std::chrono::seconds{50}});
+    profiler.advance_to(EvaluationTime{std::chrono::seconds{50}});
     CHECK(profiler.graph(graph_id) != nullptr);
-    profiler.advance_to(bg::EvaluationTime{std::chrono::seconds{60}});
+    profiler.advance_to(EvaluationTime{std::chrono::seconds{60}});
     CHECK(profiler.graph(graph_id) == nullptr);
 }
 
 TEST_CASE("evaluation profiler retains fine outer-cycle timing independently of node periods",
           "[evaluation][profile][feature:profiling]") {
-    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>> output) { output.set(1); });
-    auto wiring = bg::GraphWiring{};
+    const auto source = bg::node([](Out<TS<i64>> output) { output.set(1); });
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         (void)source();
     }
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
+    const auto compiled = CompiledGraph{wiring};
 
-    auto profiler = bg::EvaluationProfiler{{.node_period = std::chrono::minutes{1},
-                                            .retained_node_periods = 2,
-                                            .outer_period = std::chrono::seconds{1},
-                                            .retained_outer_periods = 3}};
-    const auto graph_id = bg::GraphInstanceId{23};
-    profiler.consume(bg::EvaluationProfileGraph{graph_id, &compiled, {}, UINT32_MAX, std::nullopt});
+    auto profiler = EvaluationProfiler{{.node_period = std::chrono::minutes{1},
+                                        .retained_node_periods = 2,
+                                        .outer_period = std::chrono::seconds{1},
+                                        .retained_outer_periods = 3}};
+    const auto graph_id = GraphInstanceId{23};
+    profiler.consume(EvaluationProfileGraph{graph_id, &compiled, {}, UINT32_MAX, std::nullopt});
 
-    const auto first = bg::EvaluationTime{std::chrono::milliseconds{200}};
-    const auto second = bg::EvaluationTime{std::chrono::milliseconds{700}};
-    const auto third = bg::EvaluationTime{std::chrono::milliseconds{1200}};
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::start, first, 100, 1000));
-    profiler.consume(bg::EvaluationProfileNode{graph_id, 0, 110});
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::end, first, 120, 1130));
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::start, second, 200, 2000));
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::end, second, 220, 2040));
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::start, third, 300, 3000));
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::end, third, 320, 3090));
+    const auto first = EvaluationTime{std::chrono::milliseconds{200}};
+    const auto second = EvaluationTime{std::chrono::milliseconds{700}};
+    const auto third = EvaluationTime{std::chrono::milliseconds{1200}};
+    profiler.consume(cycle(graph_id, EvaluationProfileCycle::Boundary::start, first, 100, 1000));
+    profiler.consume(EvaluationProfileNode{graph_id, 0, 110});
+    profiler.consume(cycle(graph_id, EvaluationProfileCycle::Boundary::end, first, 120, 1130));
+    profiler.consume(cycle(graph_id, EvaluationProfileCycle::Boundary::start, second, 200, 2000));
+    profiler.consume(cycle(graph_id, EvaluationProfileCycle::Boundary::end, second, 220, 2040));
+    profiler.consume(cycle(graph_id, EvaluationProfileCycle::Boundary::start, third, 300, 3000));
+    profiler.consume(cycle(graph_id, EvaluationProfileCycle::Boundary::end, third, 320, 3090));
 
     const auto totals = profiler.outer_totals();
     CHECK(totals.cycles == 3);
     CHECK(totals.total_nanoseconds == 260);
     CHECK(totals.min_nanoseconds == 40);
     CHECK(totals.max_nanoseconds == 130);
-    REQUIRE(profiler.outer_period(bg::EvaluationTime{}));
-    CHECK(profiler.outer_period(bg::EvaluationTime{})->cycles == 2);
-    CHECK(profiler.outer_period(bg::EvaluationTime{})->total_nanoseconds == 170);
-    CHECK_FALSE(profiler.outer_period(bg::EvaluationTime{std::chrono::seconds{1}}));
+    REQUIRE(profiler.outer_period(EvaluationTime{}));
+    CHECK(profiler.outer_period(EvaluationTime{})->cycles == 2);
+    CHECK(profiler.outer_period(EvaluationTime{})->total_nanoseconds == 170);
+    CHECK_FALSE(profiler.outer_period(EvaluationTime{std::chrono::seconds{1}}));
 
-    profiler.advance_to(bg::EvaluationTime{std::chrono::seconds{2}});
+    profiler.advance_to(EvaluationTime{std::chrono::seconds{2}});
     const auto periods = profiler.outer_periods();
     REQUIRE(periods.size() == 2);
-    CHECK(periods[0].start == bg::EvaluationTime{});
-    CHECK(periods[1].start == bg::EvaluationTime{std::chrono::seconds{1}});
+    CHECK(periods[0].start == EvaluationTime{});
+    CHECK(periods[1].start == EvaluationTime{std::chrono::seconds{1}});
     CHECK(periods[1].timing.max_nanoseconds == 90);
     CHECK(profiler.node_period_starts().empty());
-    CHECK(profiler.graph_ids() == std::vector<bg::GraphInstanceId>{graph_id});
+    CHECK(profiler.graph_ids() == std::vector<GraphInstanceId>{graph_id});
     CHECK(profiler.report(1).find("Outer graph: 3 cycles") != std::string::npos);
     CHECK(profiler.report(1).find("1970-01-01T00:00:01Z:") != std::string::npos);
 
-    profiler.advance_to(bg::EvaluationTime{std::chrono::seconds{4}});
-    CHECK_FALSE(profiler.outer_period(bg::EvaluationTime{}));
+    profiler.advance_to(EvaluationTime{std::chrono::seconds{4}});
+    CHECK_FALSE(profiler.outer_period(EvaluationTime{}));
     CHECK(profiler.outer_totals().cycles == 3);
 
-    auto fractional = bg::EvaluationProfiler{{.outer_period = std::chrono::milliseconds{500}}};
-    fractional.consume(bg::EvaluationProfileGraph{graph_id, &compiled, {}, UINT32_MAX, std::nullopt});
-    fractional.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::start, second, 100, 1000));
-    fractional.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::end, second, 110, 1040));
-    fractional.advance_to(bg::EvaluationTime{std::chrono::seconds{1}});
+    auto fractional = EvaluationProfiler{{.outer_period = std::chrono::milliseconds{500}}};
+    fractional.consume(EvaluationProfileGraph{graph_id, &compiled, {}, UINT32_MAX, std::nullopt});
+    fractional.consume(cycle(graph_id, EvaluationProfileCycle::Boundary::start, second, 100, 1000));
+    fractional.consume(cycle(graph_id, EvaluationProfileCycle::Boundary::end, second, 110, 1040));
+    fractional.advance_to(EvaluationTime{std::chrono::seconds{1}});
     CHECK(fractional.report().find("1970-01-01T00:00:00.500000Z:") != std::string::npos);
 }
 
 TEST_CASE("evaluation profiler aligns negative times and validates its configuration",
           "[evaluation][profile][feature:profiling]") {
-    CHECK_THROWS_AS(bg::EvaluationProfiler({.node_period = std::chrono::microseconds{0}}), std::invalid_argument);
-    CHECK_THROWS_AS(bg::EvaluationProfiler({.retained_node_periods = 0}), std::invalid_argument);
-    CHECK_THROWS_AS(bg::EvaluationProfiler({.outer_period = std::chrono::microseconds{0}}), std::invalid_argument);
-    CHECK_THROWS_AS(bg::EvaluationProfiler({.retained_outer_periods = 0}), std::invalid_argument);
+    CHECK_THROWS_AS(EvaluationProfiler({.node_period = std::chrono::microseconds{0}}), std::invalid_argument);
+    CHECK_THROWS_AS(EvaluationProfiler({.retained_node_periods = 0}), std::invalid_argument);
+    CHECK_THROWS_AS(EvaluationProfiler({.outer_period = std::chrono::microseconds{0}}), std::invalid_argument);
+    CHECK_THROWS_AS(EvaluationProfiler({.retained_outer_periods = 0}), std::invalid_argument);
 
-    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>> output) { output.set(1); });
-    auto wiring = bg::GraphWiring{};
+    const auto source = bg::node([](Out<TS<i64>> output) { output.set(1); });
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         (void)source();
     }
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
+    const auto compiled = CompiledGraph{wiring};
 
-    auto profiler = bg::EvaluationProfiler{{.node_period = std::chrono::seconds{10},
-                                            .retained_node_periods = 1}};
-    const auto graph_id = bg::GraphInstanceId{18};
-    profiler.consume(bg::EvaluationProfileGraph{graph_id, &compiled, {}, UINT32_MAX, std::nullopt});
+    auto profiler = EvaluationProfiler{{.node_period = std::chrono::seconds{10}, .retained_node_periods = 1}};
+    const auto graph_id = GraphInstanceId{18};
+    profiler.consume(EvaluationProfileGraph{graph_id, &compiled, {}, UINT32_MAX, std::nullopt});
 
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::start,
-                           bg::EvaluationTime{std::chrono::seconds{-1}}, 100));
-    profiler.consume(bg::EvaluationProfileNode{graph_id, 0, 105});
-    profiler.consume(cycle(graph_id, bg::EvaluationProfileCycle::Boundary::end,
-                           bg::EvaluationTime{std::chrono::seconds{-1}}, 110));
-    profiler.advance_to(bg::EvaluationTime{});
-    REQUIRE(profiler.node_period(graph_id, 0, bg::EvaluationTime{std::chrono::seconds{-10}}));
-    CHECK(profiler.node_period(graph_id, 0, bg::EvaluationTime{std::chrono::seconds{-10}})->evaluations == 1);
+    profiler.consume(
+        cycle(graph_id, EvaluationProfileCycle::Boundary::start, EvaluationTime{std::chrono::seconds{-1}}, 100));
+    profiler.consume(EvaluationProfileNode{graph_id, 0, 105});
+    profiler.consume(
+        cycle(graph_id, EvaluationProfileCycle::Boundary::end, EvaluationTime{std::chrono::seconds{-1}}, 110));
+    profiler.advance_to(EvaluationTime{});
+    REQUIRE(profiler.node_period(graph_id, 0, EvaluationTime{std::chrono::seconds{-10}}));
+    CHECK(profiler.node_period(graph_id, 0, EvaluationTime{std::chrono::seconds{-10}})->evaluations == 1);
 }
 
 TEST_CASE("evaluation profiler consumes committed runtime records",
           "[evaluation][profile][feature:profiling][shape:single-node]") {
     const auto source = bg::node<profiler_source>();
-    auto wiring = bg::GraphWiring{};
+    auto wiring = GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = WiringContext{wiring};
         (void)source();
     }
     wiring.finalize();
 
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
-    auto profile = bg::EvaluationProfile{};
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
+    auto profile = EvaluationProfile{};
     runtime.start(minute(0) + std::chrono::microseconds{1}, profile);
     runtime.evaluate(minute(0) + std::chrono::microseconds{2}, profile);
     runtime.stop(profile);
     profile.finish();
 
-    auto reader = bg::EvaluationProfileReader{profile.take_recording()};
-    auto profiler = bg::EvaluationProfiler{};
+    auto reader = EvaluationProfileReader{profile.take_recording()};
+    auto profiler = EvaluationProfiler{};
     CHECK(profiler.poll(reader) > 0);
     CHECK(profiler.poll(reader) == 0);
     REQUIRE(profiler.graph(runtime.instance_id()));
@@ -344,13 +340,13 @@ TEST_CASE("evaluation profiler consumes committed runtime records",
 
 TEST_CASE("run_graph records a completed profile", "[evaluation][profile][feature:profiling]") {
     const auto source = bg::node<profiler_source>();
-    auto profiler = bg::EvaluationProfiler{};
-    auto global_state = bg::GlobalState{};
-    auto services = bg::ServiceCatalogue{};
+    auto profiler = EvaluationProfiler{};
+    auto global_state = GlobalState{};
+    auto services = ServiceCatalogue{};
 
-    bg::run_graph([&] { (void)source(); },
-                  bg::GraphRunOptions{.global_state = &global_state, .services = &services,
-                                      .recorder = profiler.recorder()});
+    bg::run_graph(
+        [&] { (void)source(); },
+        GraphRunOptions{.global_state = &global_state, .services = &services, .recorder = profiler.recorder()});
 
     const auto root = profiler.root_graph_id();
     REQUIRE(root);
@@ -367,7 +363,7 @@ TEST_CASE("run_graph records a completed profile", "[evaluation][profile][featur
     CHECK(profiler.outer_totals().cycles == 1);
     REQUIRE(profiler.outer_periods().size() == 1);
     CHECK(profiler.outer_periods().front().timing.cycles == 1);
-    CHECK(profiler.graph_ids() == std::vector<bg::GraphInstanceId>{*root});
+    CHECK(profiler.graph_ids() == std::vector<GraphInstanceId>{*root});
     REQUIRE(profiler.node_period_starts().size() == 1);
     const auto nodes = profiler.node_periods(*root, period);
     REQUIRE(nodes.size() == 1);
@@ -380,11 +376,11 @@ namespace {
 struct profiled_realtime_source {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::Out<bg::TS<bg::i64>> output;
+    Out<TS<i64>> output;
 
-    void start(bg::EvaluationContext *context) const { context->schedule_now(); }
+    void start(EvaluationContext *context) const { context->schedule_now(); }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(EvaluationContext *context) const {
         ++calls;
         observed_time = context->evaluation_time();
         used_global_state = &context->global_state() == global_state;
@@ -396,33 +392,33 @@ struct profiled_realtime_source {
     }
 
     inline static int calls{};
-    inline static bg::EvaluationTime observed_time{};
+    inline static EvaluationTime observed_time{};
     inline static bool used_global_state{};
-    inline static bg::GlobalState *global_state{};
+    inline static GlobalState *global_state{};
     inline static std::stop_source *stop_source{};
 };
 } // namespace
 
 TEST_CASE("run_graph records realtime evaluation", "[evaluation][feature:profiling][feature:realtime]") {
     auto stop_source = std::stop_source{};
-    auto global_state = bg::GlobalState{};
-    auto services = bg::ServiceCatalogue{};
+    auto global_state = GlobalState{};
+    auto services = ServiceCatalogue{};
     profiled_realtime_source::calls = 0;
     profiled_realtime_source::observed_time = {};
     profiled_realtime_source::used_global_state = false;
     profiled_realtime_source::global_state = &global_state;
     profiled_realtime_source::stop_source = &stop_source;
-    const auto source = bg::node<profiled_realtime_source>();
-    auto profiler = bg::EvaluationProfiler{};
-    const auto start_time = bg::SystemWallClock::instance().now() - std::chrono::seconds{1};
 
-    bg::run_graph([&] { (void)source(); },
-                  bg::GraphRunOptions{.global_state = &global_state,
-                                      .services = &services,
-                                      .recorder = profiler.recorder(),
-                                      .engine = bg::EvaluationEngine::realtime,
-                                      .start_time = start_time,
-                                      .stop_token = stop_source.get_token()});
+    const auto source = bg::node<profiled_realtime_source>();
+    auto profiler = EvaluationProfiler{};
+    const auto start_time = SystemWallClock::instance().now() - std::chrono::seconds{1};
+
+    bg::run_graph([&] { (void)source(); }, GraphRunOptions{.global_state = &global_state,
+                                                           .services = &services,
+                                                           .recorder = profiler.recorder(),
+                                                           .engine = EvaluationEngine::realtime,
+                                                           .start_time = start_time,
+                                                           .stop_token = stop_source.get_token()});
 
     const auto root = profiler.root_graph_id();
     REQUIRE(root);
@@ -436,10 +432,10 @@ TEST_CASE("run_graph records realtime evaluation", "[evaluation][feature:profili
 }
 
 TEST_CASE("run_graph joins the profile reader after graph failure", "[evaluation][profile][feature:profiling]") {
-    const auto failing = bg::node([](bg::Out<bg::TS<bg::i64>>) { throw std::runtime_error{"graph failure"}; });
-    auto profiler = bg::EvaluationProfiler{};
+    const auto failing = bg::node([](Out<TS<i64>>) { throw std::runtime_error{"graph failure"}; });
+    auto profiler = EvaluationProfiler{};
 
-    const auto options = bg::GraphRunOptions{.recorder = profiler.recorder()};
+    const auto options = GraphRunOptions{.recorder = profiler.recorder()};
     CHECK_THROWS_AS(bg::run_graph([&] { (void)failing(); }, options), std::runtime_error);
     CHECK_THROWS_AS(bg::run_graph([&] { (void)failing(); }, options), std::logic_error);
 }
@@ -447,12 +443,12 @@ TEST_CASE("run_graph joins the profile reader after graph failure", "[evaluation
 struct profiler_failing_after_tick {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::State<std::size_t> calls;
-    bg::Out<bg::TS<bg::i64>> output;
+    State<std::size_t> calls;
+    Out<TS<i64>> output;
 
-    void start(bg::EvaluationContext *context) const { context->schedule_now(); }
+    void start(EvaluationContext *context) const { context->schedule_now(); }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(EvaluationContext *context) const {
         if ((*calls)++ == 0) {
             output.set(1);
             context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
@@ -465,9 +461,9 @@ struct profiler_failing_after_tick {
 TEST_CASE("run_graph releases compiled metadata after a later-cycle failure",
           "[evaluation][profile][feature:profiling]") {
     const auto failing = bg::node<profiler_failing_after_tick>();
-    auto profiler = bg::EvaluationProfiler{};
+    auto profiler = EvaluationProfiler{};
 
-    CHECK_THROWS_AS(bg::run_graph([&] { (void)failing(); }, bg::GraphRunOptions{.recorder = profiler.recorder()}),
+    CHECK_THROWS_AS(bg::run_graph([&] { (void)failing(); }, GraphRunOptions{.recorder = profiler.recorder()}),
                     std::runtime_error);
 
     const auto root = profiler.root_graph_id();

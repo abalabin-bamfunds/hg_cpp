@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/graph/details/graph_signature.hpp>
+#include <bg/graph/wiring_parameter.hpp>
 #include <bg/node/details/aggregate_resolver.hpp>
 #include <bg/util/reflection.hpp>
 
@@ -89,9 +90,15 @@ template <typename Definition> [[nodiscard]] Signature aggregate_graph_signature
     constexpr auto &member_names = util::aggregate_member_names<Definition>;
     using Index = std::make_index_sequence<util::aggregate_member_count<Definition>>;
 
-    return make_graph_signature<Function>(util::symbol{util::unqualified_type_name<Definition>()},
-                                          std::span<const std::string_view>{member_names},
-                                          aggregate_graph_resolvers<Definition>(Index{}));
+    auto result = make_graph_signature<Function>(util::symbol{util::unqualified_type_name<Definition>()},
+                                                 std::span<const std::string_view>{member_names},
+                                                 aggregate_graph_resolvers<Definition>(Index{}));
+    if constexpr (requires { typename Definition::defaults; }) {
+        const auto defaults = typename Definition::defaults{};
+        const auto parameters = aggregate_wiring_parameters(defaults);
+        return result.with_defaults(parameters);
+    }
+    return result;
 }
 
 } // namespace bg::details

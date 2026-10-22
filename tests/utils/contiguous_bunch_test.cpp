@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <stdexcept>
 
+using namespace bg;
+
 namespace {
 
 struct counted_value {
@@ -25,7 +27,7 @@ struct counted_value {
 
 TEST_CASE("a contiguous bunch grows without moving its values", "[contiguous_bunch][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto values = bg::util::contiguous_bunch<counted_value>{};
+    auto values = util::contiguous_bunch<counted_value>{};
 
     auto *first = &values.emplace_back(memory, 0);
     for (auto value = std::uint32_t{1}; value < 40; ++value) {
@@ -58,7 +60,7 @@ struct throwing_value {
 
 TEST_CASE("a contiguous bunch releases storage after construction fails", "[contiguous_bunch][coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto values = bg::util::contiguous_bunch<throwing_value>{};
+    auto values = util::contiguous_bunch<throwing_value>{};
 
     CHECK_THROWS_AS(values.emplace_back(memory), std::runtime_error);
     CHECK(values.empty());

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/graph/wiring_arguments.hpp>
+#include <bg/graph/wiring_parameter.hpp>
 #include <bg/node/aggregate_node_template.hpp>
 #include <bg/node/details/callable_node.hpp>
 #include <bg/node/details/callable_node_options.hpp>
@@ -9,6 +10,7 @@
 #include <bg/node/state.hpp>
 #include <bg/type/type_parameter.hpp>
 
+#include <initializer_list>
 #include <utility>
 
 namespace bg::details {
@@ -73,6 +75,14 @@ template <typename... TypeParameters, details::callable_node Function>
         details::CallableNodeDefinition<Function>{std::move(function)}};
 }
 
+template <typename... TypeParameters, details::callable_node Function>
+    requires(details::type_parameter_declaration<TypeParameters> && ...)
+[[nodiscard]] auto node(std::initializer_list<WiringParameter> parameters, Function function) {
+    using Definition = details::CallableNodeDefinition<Function>;
+    return RuntimeSignatureNodeTemplate<Definition, TypeParameters...>{
+        Definition{std::move(function), parameters}};
+}
+
 template <typename... TypeParameters, details::callable_node Function, typename... Options>
     requires((details::type_parameter_declaration<TypeParameters> && ...) &&
              details::callable_node_options<Options...>)
@@ -80,6 +90,16 @@ template <typename... TypeParameters, details::callable_node Function, typename.
     using Definition = details::CallableNodeDefinition<Function, Options...>;
     return RuntimeSignatureNodeTemplate<Definition, TypeParameters...>{
         Definition{std::move(evaluation.function), std::move(options)...}};
+}
+
+template <typename... TypeParameters, details::callable_node Function, typename... Options>
+    requires((details::type_parameter_declaration<TypeParameters> && ...) &&
+             details::callable_node_options<Options...>)
+[[nodiscard]] auto node(std::initializer_list<WiringParameter> parameters,
+                        details::CallableEvaluation<Function> evaluation, Options... options) {
+    using Definition = details::CallableNodeDefinition<Function, Options...>;
+    return RuntimeSignatureNodeTemplate<Definition, TypeParameters...>{
+        Definition{std::move(evaluation.function), parameters, std::move(options)...}};
 }
 
 } // namespace bg

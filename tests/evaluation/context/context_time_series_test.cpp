@@ -30,24 +30,19 @@ const auto optional_value = node([](i64 value, bool valid, Out<TS<i64>> output) 
     }
 });
 
-const auto copy_context_item = node([](In<TSD<i64, TS<i64>>, "values"_n, context> values) { return *values[1]; });
-
 const auto add_contexts = node([](In<TS<i64>, "left"_n, context> left, In<TS<i64>, "right"_n, context> right) {
     return *left + *right;
 });
 
 const auto context_reference_is_valid = node([](In<REF<TS<i64>>, "value"_n, context> value) { return value.valid(); });
 
-template <template <typename, auto...> typename Field> struct ContextBundle {
-    Field<TS<i64>> value;
-};
-
 } // namespace
 
 TEST_CASE("a context time series crosses a nested graph boundary",
           "[feature:context-time-series][feature:nested-graph][shape:nested]") {
-    const auto inner = graph("name"_n = "nested_context", []() -> wp<TS<bg::i64>> { return copy_context(); });
-    const auto tested = [&](wp<TS<bg::i64>> value, wp<TS<bool>> run) {
+    const auto inner = graph("name"_n = "nested_context", []() -> wp<TS<i64>> { return copy_context(); });
+
+    const auto tested = [&](wp<TS<i64>> value, wp<TS<bool>> run) {
         return with_context("value"_n = value, [&] { return nested(inner, run); });
     };
 
@@ -59,10 +54,9 @@ TEST_CASE("a context time series crosses a nested graph boundary",
 TEST_CASE("a nested graph can return a context time series directly",
           "[feature:context-time-series][feature:nested-graph][shape:nested]") {
     const auto inner = graph("name"_n = "returned_context",
-                             [](wp<TS<bg::i64>, "value"_n, context> value) -> wp<TS<bg::i64>> {
-                                 return value.as<TS<bg::i64>>();
-                             });
-    const auto tested = [&](wp<TS<bg::i64>> value, wp<TS<bool>> run) {
+                             [](wp<TS<i64>, "value"_n, context> value) -> wp<TS<i64>> { return value.as<TS<i64>>(); });
+
+    const auto tested = [&](wp<TS<i64>> value, wp<TS<bool>> run) {
         return with_context("value"_n = value, [&] { return nested(inner, run); });
     };
 
@@ -74,15 +68,13 @@ TEST_CASE("a nested graph can return a context time series directly",
 TEST_CASE("a nested graph can return a changing reference context directly",
           "[feature:context-time-series][feature:nested-graph][feature:switch][series:reference]") {
     const auto inner = graph("name"_n = "returned_reference_context",
-                             [](wp<TS<bg::i64>, "value"_n, context> value) -> wp<TS<bg::i64>> {
-                                 return value.as<TS<bg::i64>>();
-                             });
-    const auto tested = [&](wp<TS<bg::i64>> selector, wp<TS<bg::i64>> first,
-                            wp<TS<bg::i64>> second, wp<TS<bool>> run) {
+                             [](wp<TS<i64>, "value"_n, context> value) -> wp<TS<i64>> { return value.as<TS<i64>>(); });
+
+    const auto tested = [&](wp<TS<i64>> selector, wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<bool>> run) {
         const auto selected = switch_(selector,
                                       cases{
-                                          case_(bg::i64{1}, [](auto value, auto) { return value; }),
-                                          case_(bg::i64{2}, [](auto, auto value) { return value; }),
+                                          case_(i64{1}, [](auto value, auto) { return value; }),
+                                          case_(i64{2}, [](auto, auto value) { return value; }),
                                       },
                                       first, second);
         return with_context("value"_n = selected, [&] { return nested(inner, run); });
@@ -96,11 +88,11 @@ TEST_CASE("a nested graph can return a changing reference context directly",
 
 TEST_CASE("a nested graph can select an item from a context TSL during wiring",
           "[feature:context-time-series][feature:nested-graph][feature:getitem][series:fixed-tsl]") {
-    const auto inner = graph(
-        "name"_n = "nested_context_list_item",
-        [](wp<TSL<TS<bg::i64>, 2>, "values"_n, context> values)
-            -> wp<TS<bg::i64>> { return values[0].as<TS<bg::i64>>(); });
-    const auto tested = [&](wp<TS<bg::i64>> first, wp<TS<bg::i64>> second, wp<TS<bool>> run) {
+    const auto inner =
+        graph("name"_n = "nested_context_list_item",
+              [](wp<TSL<TS<i64>, 2>, "values"_n, context> values) -> wp<TS<i64>> { return values[0].as<TS<i64>>(); });
+
+    const auto tested = [&](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<bool>> run) {
         return with_context("values"_n = tsl(first, second), [&] { return nested(inner, run); });
     };
 
@@ -109,12 +101,17 @@ TEST_CASE("a nested graph can select an item from a context TSL during wiring",
     CHECK(actual.equals({1, 2}));
 }
 
+template <template <typename, auto...> typename Field> struct ContextBundle {
+    Field<TS<i64>> value;
+};
+
 TEST_CASE("a nested graph can select a field from a context TSB during wiring",
           "[feature:context-time-series][feature:nested-graph][feature:getattr][series:tsb][schema:named]") {
     const auto inner =
         graph("name"_n = "nested_context_bundle_field",
-              [](wp<TSB<ContextBundle>, "values"_n, context> values) -> wp<TS<bg::i64>> { return values->value; });
-    const auto tested = [&](wp<TS<bg::i64>> value, wp<TS<bool>> run) {
+              [](wp<TSB<ContextBundle>, "values"_n, context> values) -> wp<TS<i64>> { return values->value; });
+
+    const auto tested = [&](wp<TS<i64>> value, wp<TS<bool>> run) {
         const auto values = bundle("value"_n = value).as<TSB<ContextBundle>>();
         return with_context("values"_n = values, [&] { return nested(inner, run); });
     };
@@ -126,9 +123,10 @@ TEST_CASE("a nested graph can select a field from a context TSB during wiring",
 
 TEST_CASE("a nested graph context parameter inherits lexical context",
           "[feature:context-time-series][feature:nested-graph][definition:function]") {
-    const auto inner = graph("name"_n = "declared_nested_context",
-                             [](wp<TS<bg::i64>, "value"_n, context>) { return copy_context(); });
-    const auto tested = [&](wp<TS<bg::i64>> value, wp<TS<bool>> run) {
+    const auto inner =
+        graph("name"_n = "declared_nested_context", [](wp<TS<i64>, "value"_n, context>) { return copy_context(); });
+
+    const auto tested = [&](wp<TS<i64>> value, wp<TS<bool>> run) {
         return with_context("value"_n = value, [&] { return nested(inner, run); });
     };
 
@@ -139,9 +137,10 @@ TEST_CASE("a nested graph context parameter inherits lexical context",
 
 TEST_CASE("an explicit nested graph context parameter overrides lexical context",
           "[feature:context-time-series][feature:nested-graph][definition:function]") {
-    const auto inner = graph("name"_n = "overridden_nested_context",
-                             [](wp<TS<bg::i64>, "value"_n, context>) { return copy_context(); });
-    const auto tested = [&](wp<TS<bg::i64>> outer, wp<TS<bg::i64>> inner_value, wp<TS<bool>> run) {
+    const auto inner =
+        graph("name"_n = "overridden_nested_context", [](wp<TS<i64>, "value"_n, context>) { return copy_context(); });
+
+    const auto tested = [&](wp<TS<i64>> outer, wp<TS<i64>> inner_value, wp<TS<bool>> run) {
         return with_context("value"_n = outer, [&] { return nested(inner, run, "value"_n = inner_value); });
     };
 
@@ -152,12 +151,12 @@ TEST_CASE("an explicit nested graph context parameter overrides lexical context"
 
 TEST_CASE("a context time series crosses two nested graph boundaries",
           "[feature:context-time-series][feature:nested-graph][shape:doubly-nested]") {
-    const auto leaf = graph("name"_n = "leaf_context", []() -> wp<TS<bg::i64>> { return copy_context(); });
+    const auto leaf = graph("name"_n = "leaf_context", []() -> wp<TS<i64>> { return copy_context(); });
 
-    const auto middle = graph("name"_n = "middle_context", [&](wp<TS<bool>> run) -> wp<TS<bg::i64>> {
-        return wp<TS<bg::i64>>{nested(leaf, run)};
-    });
-    const auto tested = [&](wp<TS<bg::i64>> value, wp<TS<bool>> run) {
+    const auto middle = graph("name"_n = "middle_context",
+                              [&](wp<TS<bool>> run) -> wp<TS<i64>> { return wp<TS<i64>>{nested(leaf, run)}; });
+
+    const auto tested = [&](wp<TS<i64>> value, wp<TS<bool>> run) {
         return with_context("value"_n = value, [&] { return nested(middle, run, run); });
     };
 
@@ -169,14 +168,14 @@ TEST_CASE("a context time series crosses two nested graph boundaries",
 TEST_CASE("a collection context retains its semantic type across two nested graph boundaries",
           "[feature:context-time-series][feature:nested-graph][feature:getitem][series:fixed-tsl]"
           "[shape:doubly-nested]") {
-    const auto leaf = graph(
-        "name"_n = "leaf_context_list_item",
-        [](wp<TSL<TS<bg::i64>, 2>, "values"_n, context> values)
-            -> wp<TS<bg::i64>> { return values[0].as<TS<bg::i64>>(); });
+    const auto leaf =
+        graph("name"_n = "leaf_context_list_item",
+              [](wp<TSL<TS<i64>, 2>, "values"_n, context> values) -> wp<TS<i64>> { return values[0].as<TS<i64>>(); });
 
-    const auto middle = graph("name"_n = "middle_context_list_item",
-                              [&](wp<TS<bool>> run) { return nested(leaf, run).as<TS<bg::i64>>(); });
-    const auto tested = [&](wp<TS<bg::i64>> first, wp<TS<bg::i64>> second, wp<TS<bool>> run) {
+    const auto middle =
+        graph("name"_n = "middle_context_list_item", [&](wp<TS<bool>> run) { return nested(leaf, run).as<TS<i64>>(); });
+
+    const auto tested = [&](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<bool>> run) {
         return with_context("values"_n = tsl(first, second), [&] { return nested(middle, run, run); });
     };
 
@@ -188,10 +187,10 @@ TEST_CASE("a collection context retains its semantic type across two nested grap
 
 TEST_CASE("a context time series follows scalar nested graph arguments",
           "[feature:context-time-series][feature:nested-graph]") {
-    const auto inner =
-        graph("name"_n = "scalar_and_context", [](bg::i64) -> wp<TS<bg::i64>> { return copy_context(); });
-    const auto tested = [&](wp<TS<bg::i64>> value, wp<TS<bool>> run) {
-        return with_context("value"_n = value, [&] { return nested(inner, run, bg::i64{1}); });
+    const auto inner = graph("name"_n = "scalar_and_context", [](i64) -> wp<TS<i64>> { return copy_context(); });
+
+    const auto tested = [&](wp<TS<i64>> value, wp<TS<bool>> run) {
+        return with_context("value"_n = value, [&] { return nested(inner, run, i64{1}); });
     };
 
     const auto actual = testing::test_graph(tested, {3, 6, 9}, {true, true, true});
@@ -201,9 +200,9 @@ TEST_CASE("a context time series follows scalar nested graph arguments",
 
 TEST_CASE("multiple context time series retain distinct nested graph bindings",
           "[feature:context-time-series][feature:nested-graph]") {
-    const auto inner =
-        graph("name"_n = "multiple_nested_contexts", []() -> wp<TS<bg::i64>> { return add_contexts(); });
-    const auto tested = [&](wp<TS<bg::i64>> left, wp<TS<bg::i64>> right, wp<TS<bool>> run) {
+    const auto inner = graph("name"_n = "multiple_nested_contexts", []() -> wp<TS<i64>> { return add_contexts(); });
+
+    const auto tested = [&](wp<TS<i64>> left, wp<TS<i64>> right, wp<TS<bool>> run) {
         auto left_scope = with_context("left"_n = left);
         auto right_scope = with_context("right"_n = right);
         return nested(inner, run);
@@ -218,7 +217,8 @@ TEST_CASE("a reference context input retains its reference across a nested graph
           "[feature:context-time-series][feature:nested-graph][series:reference]") {
     const auto inner =
         graph("name"_n = "reference_context", []() -> wp<TS<bool>> { return context_reference_is_valid(); });
-    const auto tested = [&](wp<TS<bg::i64>> value, wp<TS<bool>> run) {
+
+    const auto tested = [&](wp<TS<i64>> value, wp<TS<bool>> run) {
         return with_context("value"_n = value, [&] { return nested(inner, run); });
     };
 
@@ -229,10 +229,10 @@ TEST_CASE("a reference context input retains its reference across a nested graph
 
 TEST_CASE("an explicitly supplied context reference propagates target ticks",
           "[feature:context-time-series][feature:nested-graph][series:reference]") {
-    const auto inner =
-        graph("name"_n = "ticking_reference_context", []() -> wp<TS<bg::i64>> { return copy_context(); });
-    const auto tested = [&](wp<TS<bg::i64>> value, wp<TS<bool>> run) {
-        const auto reference = value.as<REF<TS<bg::i64>>>();
+    const auto inner = graph("name"_n = "ticking_reference_context", []() -> wp<TS<i64>> { return copy_context(); });
+
+    const auto tested = [&](wp<TS<i64>> value, wp<TS<bool>> run) {
+        const auto reference = value.as<REF<TS<i64>>>();
         return with_context("value"_n = reference, [&] { return nested(inner, run); });
     };
 
@@ -243,11 +243,9 @@ TEST_CASE("an explicitly supplied context reference propagates target ticks",
 
 TEST_CASE("a context time series is available to map branches",
           "[feature:context-time-series][feature:map][feature:nested-graph]") {
-    const auto tested = [&](wp<TSD<bg::i64, TS<bg::i64>>> mapped, wp<TS<bg::i64>> value) {
-        return with_context("value"_n = value, [&] {
-            return map([](auto) { return copy_context(); }, mapped)[bg::i64{1}]
-                .as<TS<bg::i64>>();
-        });
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> mapped, wp<TS<i64>> value) {
+        return with_context("value"_n = value,
+                            [&] { return map([](auto) { return copy_context(); }, mapped)[i64{1}].as<TS<i64>>(); });
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 1}}, {{1, 2}}, {{1, 3}}}, {10, 20, 30});
@@ -260,53 +258,54 @@ TEST_CASE("a changing reference context evaluates only consuming map switch bran
           "[series:tss][series:reference][shape:doubly-nested][transition:update]") {
     constexpr auto branch_count = std::size_t{100};
     auto evaluations = std::array<std::size_t, branch_count>{};
-    const auto keys = node([](In<TS<bool>> initialize, Out<TSS<bg::i64>> output) {
+
+    const auto keys = node([](In<TS<bool>> initialize, Out<TSS<i64>> output) {
         if (!*initialize) {
             return;
         }
-        for (auto key = bg::i64{}; key < static_cast<bg::i64>(branch_count); ++key) {
+        for (auto key = i64{}; key < static_cast<i64>(branch_count); ++key) {
             output.insert(key);
         }
     });
-    const auto consuming = node([&](In<TS<bg::i64>, "value"_n, context> value,
-                                    In<TS<bg::i64, TimeSeriesGuarantee::const_>> key,
-                                    Out<TS<bg::i64>> output) {
-        ++evaluations[static_cast<std::size_t>(*key)];
-        output.set(*value);
-    });
-    const auto non_consuming = node([&](In<TS<bg::i64, TimeSeriesGuarantee::const_>> key,
-                                        Out<TS<bg::i64>> output) {
+
+    const auto consuming = node(
+        [&](In<TS<i64>, "value"_n, context> value, In<TS<i64, TimeSeriesGuarantee::const_>> key, Out<TS<i64>> output) {
+            ++evaluations[static_cast<std::size_t>(*key)];
+            output.set(*value);
+        });
+
+    const auto non_consuming = node([&](In<TS<i64, TimeSeriesGuarantee::const_>> key, Out<TS<i64>> output) {
         ++evaluations[static_cast<std::size_t>(*key)];
         output.set(-1);
     });
-    const auto tested = [&](wp<TS<bg::i64>> selector, wp<TS<bg::i64>> first,
-                            wp<TS<bg::i64>> second, wp<TS<bool>> initialize) {
+
+    const auto tested = [&](wp<TS<i64>> selector, wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<bool>> initialize) {
         const auto selected = switch_(selector,
                                       cases{
-                                          case_(bg::i64{1}, [](auto value, auto) { return value; }),
-                                          case_(bg::i64{2}, [](auto, auto value) { return value; }),
+                                          case_(i64{1}, [](auto value, auto) { return value; }),
+                                          case_(i64{2}, [](auto, auto value) { return value; }),
                                       },
                                       first, second);
         return with_context("value"_n = selected, [&] {
-            return map([&](auto key) -> wp<TS<bg::i64>> {
-                       return switch_(key,
+            return map(
+                       [&](auto key) -> wp<TS<i64>> {
+                           return switch_(
+                                      key,
                                       cases{
-                                          case_(bg::i64{0}, [&](auto branch_key) { return consuming(branch_key); }),
+                                          case_(i64{0}, [&](auto branch_key) { return consuming(branch_key); }),
                                           case_(DEFAULT, [&](auto branch_key) { return non_consuming(branch_key); }),
                                       },
                                       key)
-                           .template as<TS<bg::i64>>();
-                   },
-                   keys(initialize))[bg::i64{0}]
-                .as<TS<bg::i64>>();
+                               .template as<TS<i64>>();
+                       },
+                       keys(initialize))[i64{0}]
+                .as<TS<i64>>();
         });
     };
 
-    const auto actual = testing::test_graph(
-        tested, std::array<bg::i64, 3>{1, 2, 1},
-        std::array<std::optional<bg::i64>, 3>{10, std::nullopt, std::nullopt},
-        std::array<std::optional<bg::i64>, 3>{20, std::nullopt, std::nullopt},
-        std::array<std::optional<bool>, 3>{true, std::nullopt, std::nullopt});
+    const auto actual = testing::test_graph(tested, {1, 2, 1}, {10, literal::SKIP, literal::SKIP},
+                                            {20, literal::SKIP, literal::SKIP},
+                                            {true, literal::SKIP, literal::SKIP});
 
     CHECK(actual.equals({10, 20, 10}));
     auto expected = std::array<std::size_t, branch_count>{};
@@ -317,14 +316,14 @@ TEST_CASE("a changing reference context evaluates only consuming map switch bran
 
 TEST_CASE("a context time series is available to switch branches",
           "[feature:context-time-series][feature:switch][feature:nested-graph]") {
-    const auto tested = [&](wp<TS<bg::i64>> key, wp<TS<bg::i64>> value) {
+    const auto tested = [&](wp<TS<i64>> key, wp<TS<i64>> value) {
         return with_context("value"_n = value, [&] {
             return switch_(key,
                            cases{
-                               case_(bg::i64{1}, [] { return copy_context(); }),
-                               case_(bg::i64{2}, [] { return copy_context(); }),
+                               case_(i64{1}, [] { return copy_context(); }),
+                               case_(i64{2}, [] { return copy_context(); }),
                            })
-                .as<TS<bg::i64>>();
+                .as<TS<i64>>();
         });
     };
 
@@ -335,11 +334,9 @@ TEST_CASE("a context time series is available to switch branches",
 
 TEST_CASE("a context time series is available to mesh branches",
           "[feature:context-time-series][feature:mesh][feature:nested-graph]") {
-    const auto tested = [&](wp<TSD<bg::i64, TS<bg::i64>>> mapped, wp<TS<bg::i64>> value) {
-        return with_context("value"_n = value, [&] {
-            return mesh([](auto) { return copy_context(); }, mapped)[bg::i64{1}]
-                .as<TS<bg::i64>>();
-        });
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> mapped, wp<TS<i64>> value) {
+        return with_context("value"_n = value,
+                            [&] { return mesh([](auto) { return copy_context(); }, mapped)[i64{1}].as<TS<i64>>(); });
     };
 
     const auto actual = testing::test_graph(tested, {{{1, 1}}, {{1, 2}}, {{1, 3}}}, {10, 20, 30});
@@ -349,14 +346,13 @@ TEST_CASE("a context time series is available to mesh branches",
 
 TEST_CASE("a context time series follows a reference that changes target",
           "[feature:context-time-series][feature:switch][feature:nested-graph][series:reference]") {
-    const auto inner =
-        graph("name"_n = "reference_context_consumer", []() -> wp<TS<bg::i64>> { return copy_context(); });
-    const auto tested = [&](wp<TS<bg::i64>> selector, wp<TS<bg::i64>> first, wp<TS<bg::i64>> second,
-                            wp<TS<bool>> run) {
+    const auto inner = graph("name"_n = "reference_context_consumer", []() -> wp<TS<i64>> { return copy_context(); });
+
+    const auto tested = [&](wp<TS<i64>> selector, wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<bool>> run) {
         const auto selected = switch_(selector,
                                       cases{
-                                          case_(bg::i64{1}, [](auto value, auto) { return value; }),
-                                          case_(bg::i64{2}, [](auto, auto value) { return value; }),
+                                          case_(i64{1}, [](auto value, auto) { return value; }),
+                                          case_(i64{2}, [](auto, auto value) { return value; }),
                                       },
                                       first, second);
         return with_context("value"_n = selected, [&] { return nested(inner, run); });
@@ -369,37 +365,33 @@ TEST_CASE("a context time series follows a reference that changes target",
 
 TEST_CASE("a changing reference context updates through two nested boundaries in the same cycle",
           "[feature:context-time-series][feature:nested-graph][series:reference][shape:doubly-nested]") {
-    const auto leaf =
-        graph("name"_n = "reference_context_leaf", []() -> wp<TS<bg::i64>> { return copy_context(); });
+    const auto leaf = graph("name"_n = "reference_context_leaf", []() -> wp<TS<i64>> { return copy_context(); });
 
-    const auto middle = graph("name"_n = "reference_context_middle", [&](wp<TS<bool>> run) {
-        return nested(leaf, run).as<TS<bg::i64>>();
-    });
-    const auto tested = [&](wp<TS<bg::i64>> selector, wp<TS<bg::i64>> first,
-                            wp<TS<bg::i64>> second, wp<TS<bool>> run) {
+    const auto middle =
+        graph("name"_n = "reference_context_middle", [&](wp<TS<bool>> run) { return nested(leaf, run).as<TS<i64>>(); });
+
+    const auto tested = [&](wp<TS<i64>> selector, wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<bool>> run) {
         const auto selected = switch_(selector,
                                       cases{
-                                          case_(bg::i64{1}, [](auto value, auto) { return value; }),
-                                          case_(bg::i64{2}, [](auto, auto value) { return value; }),
+                                          case_(i64{1}, [](auto value, auto) { return value; }),
+                                          case_(i64{2}, [](auto, auto value) { return value; }),
                                       },
                                       first, second);
         return with_context("value"_n = selected, [&] { return nested(middle, run, run); });
     };
 
-    const auto actual = testing::test_graph(
-        tested, std::array<bg::i64, 4>{1, 2, 1, 2},
-        std::array<std::optional<bg::i64>, 4>{10, std::nullopt, std::nullopt, std::nullopt},
-        std::array<std::optional<bg::i64>, 4>{20, std::nullopt, std::nullopt, std::nullopt},
-        std::array{true, true, true, true});
+    const auto actual = testing::test_graph(tested, {1, 2, 1, 2}, {10, literal::SKIP, literal::SKIP, literal::SKIP},
+                                            {20, literal::SKIP, literal::SKIP, literal::SKIP},
+                                            {true, true, true, true});
 
     CHECK(actual.equals({10, 20, 10, 20}));
 }
 
 TEST_CASE("a context time series preserves invalidation and revalidation",
           "[feature:context-time-series][feature:nested-graph][feature:validity]") {
-    const auto inner =
-        graph("name"_n = "validity_context_consumer", []() -> wp<TS<bg::i64>> { return copy_context(); });
-    const auto tested = [&](wp<TS<bg::i64>> value, wp<TS<bool>> valid, wp<TS<bool>> run) {
+    const auto inner = graph("name"_n = "validity_context_consumer", []() -> wp<TS<i64>> { return copy_context(); });
+
+    const auto tested = [&](wp<TS<i64>> value, wp<TS<bool>> valid, wp<TS<bool>> run) {
         return with_context("value"_n = optional_value(value, valid), [&] { return nested(inner, run); });
     };
 
@@ -410,9 +402,9 @@ TEST_CASE("a context time series preserves invalidation and revalidation",
 
 TEST_CASE("a context time series can become valid after an inner graph starts",
           "[feature:context-time-series][feature:nested-graph][feature:validity][transition:revalidation]") {
-    const auto inner =
-        graph("name"_n = "initially_invalid_context", []() -> wp<TS<bg::i64>> { return copy_context(); });
-    const auto tested = [&](wp<TS<bg::i64>> value, wp<TS<bool>> valid, wp<TS<bool>> run) {
+    const auto inner = graph("name"_n = "initially_invalid_context", []() -> wp<TS<i64>> { return copy_context(); });
+
+    const auto tested = [&](wp<TS<i64>> value, wp<TS<bool>> valid, wp<TS<bool>> run) {
         return with_context("value"_n = optional_value(value, valid), [&] { return nested(inner, run); });
     };
 
@@ -425,9 +417,9 @@ TEST_CASE("a context time series can become valid after an inner graph starts",
 TEST_CASE("a restarted nested graph samples the current context value",
           "[feature:context-time-series][feature:nested-graph][feature:lifecycle][feature:sampling]"
           "[transition:restart]") {
-    const auto inner =
-        graph("name"_n = "restarted_context_consumer", []() -> wp<TS<bg::i64>> { return copy_context(); });
-    const auto tested = [&](wp<TS<bg::i64>> value, wp<TS<bool>> run) {
+    const auto inner = graph("name"_n = "restarted_context_consumer", []() -> wp<TS<i64>> { return copy_context(); });
+
+    const auto tested = [&](wp<TS<i64>> value, wp<TS<bool>> run) {
         return with_context("value"_n = value, [&] { return nested(inner, run); });
     };
 
@@ -439,11 +431,9 @@ TEST_CASE("a restarted nested graph samples the current context value",
 
 TEST_CASE("a new map branch samples an existing context value",
           "[feature:context-time-series][feature:map][feature:nested-graph][feature:sampling]") {
-    const auto tested = [](wp<TSD<bg::i64, TS<bg::i64>>> values) {
-        return with_context("value"_n = bg::i64{42}, [&] {
-            return map([](auto) { return copy_context(); }, values)[bg::i64{1}]
-                .as<TS<bg::i64>>();
-        });
+    const auto tested = [](wp<TSD<i64, TS<i64>>> values) {
+        return with_context("value"_n = i64{42},
+                            [&] { return map([](auto) { return copy_context(); }, values)[i64{1}].as<TS<i64>>(); });
     };
 
     const auto actual = testing::test_graph(tested, {literal::SKIP, {{1, 1}}});
@@ -453,9 +443,12 @@ TEST_CASE("a new map branch samples an existing context value",
 
 TEST_CASE("a collection context preserves item change notifications",
           "[feature:context-time-series][feature:nested-graph][series:tsd]") {
+    const auto copy_context_item = node([](In<TSD<i64, TS<i64>>, "values"_n, context> values) { return *values[1]; });
+
     const auto inner =
-        graph("name"_n = "dictionary_context_consumer", []() -> wp<TS<bg::i64>> { return copy_context_item(); });
-    const auto tested = [&](wp<TSD<bg::i64, TS<bg::i64>>> values, wp<TS<bool>> run) {
+        graph("name"_n = "dictionary_context_consumer", [&]() -> wp<TS<i64>> { return copy_context_item(); });
+
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> values, wp<TS<bool>> run) {
         return with_context("values"_n = values, [&] { return nested(inner, run); });
     };
 

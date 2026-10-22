@@ -124,6 +124,7 @@ TEST_CASE("a node can preserve its output when a required input becomes invalid"
     });
 
     auto downstream_evaluations = 0;
+
     const auto downstream = node([&](float) { ++downstream_evaluations; });
 
     const auto graph = [&](wp<TS<float>> input, wp<TS<i64>> tick) {

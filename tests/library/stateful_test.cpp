@@ -137,6 +137,7 @@ TEST_CASE("lag retains owned collection scalar snapshots",
     const auto lag = [](wp<TS<Dict<i64, string>>> value) { return operators::lag(value); };
     const auto actual = testing::test_graph(lag, {{{1, "old"}}, {{1, "new"}}, {{2, "last"}}});
 
+    REQUIRE(actual.size() == 3);
     CHECK_FALSE(actual[0]);
     REQUIRE(actual[1]);
     CHECK(scalar_cast<Dict<i64, string>>(actual[1]->view()).at(1).value() == "old");

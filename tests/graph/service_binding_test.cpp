@@ -26,12 +26,16 @@ TEST_CASE("compiled root graph contains its service binding provider",
         "lookup", {"key"}};
 
     const auto clock_source = node([](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(1); });
+
     const auto clock_implementation = graph("name"_n = "clock_impl", [&] { return clock_source(); });
+
     const auto lookup_response = node([](In<TSS<i64>> requests,
                                          Out<TSD<i64, TS<float>>> output) {
         requests.for_each_added([&](const auto &key) { output[key].set(static_cast<float>(*key)); });
     });
+
     const auto consume = node([](In<TS<float>>) {});
+
     const auto lookup_implementation = graph("name"_n = "lookup_impl", [&](wp<TSS<i64>> requests) {
         return lookup_response(requests);
     });
@@ -58,6 +62,7 @@ TEST_CASE("service request ordering points at the service client after input mat
           "[feature:service][feature:graph-compilation]") {
     const auto audit = service<auto(TS<i64>)->void>{"audit", {"value"}};
     const auto receive = node([](In<TSD<service_client_id_t, TS<i64>>>) {});
+
     const auto implementation = graph(
         "name"_n = "audit_impl",
         [&](wp<TSD<service_client_id_t, TS<i64>>, "value"_n> requests) { receive(requests); });

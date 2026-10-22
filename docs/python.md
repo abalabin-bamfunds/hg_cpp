@@ -576,6 +576,21 @@ restricts a parameter to a scalar. `Optional[T]` marks a scalar argument as
 optional and makes a time-series input optional if that parameter is wired to
 a time series.
 
+`@compute_node` and `@node` accept `active`, `valid`, and `all_valid` tuples of
+input names, either as configured decorators or with bare decorator syntax.
+Omitting an option preserves the existing policy. An explicit `active` tuple,
+including `()`, selects the inputs that schedule evaluation; other inputs are
+passive. An explicit `valid` tuple, including `()`, selects required inputs;
+other inputs are optional. An `all_valid` name requires the input root and each
+immediate contained time series to be valid. It can be combined with `valid`
+for disjoint input names. Each tuple must contain unique names of declared
+time-series-capable parameters. Unknown names, non-string entries, scalar-only
+parameters, and injected parameters raise `TypeError`. A plain scalar
+annotation on `@node` is time-series-capable; `Scalar[T]` and scalar-only
+`@compute_node` parameters are not. When `valid` is omitted, `@node` preserves
+the automatic optional validity from `Optional[T]`; an explicit `valid` tuple
+determines validity for every input.
+
 `dict[K, V]` declares a scalar dictionary. A plain `@node` callback receives a
 read-only `bg.Dict` mapping view for a dictionary parameter, whether graph code
 supplies a scalar or a `TS[dict[K, V]]`. The view expires when the callback returns.

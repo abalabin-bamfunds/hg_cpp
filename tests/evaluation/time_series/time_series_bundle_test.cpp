@@ -191,6 +191,7 @@ TEST_CASE("a free bundle follows the receiving named schema",
           "[evaluation][tsb][series:tsb][free][representation:free][feature:collection-change]"
           "[scalar:integer][scalar:floating-point][declaration:concrete][binding:direct]") {
     const auto sum = node(derived_bundle_sum);
+
     const auto graph = [&](wp<TS<i64>> count, wp<TS<float>> value) {
         return sum(bundle("value"_n = value, "count"_n = count));
     };
@@ -204,6 +205,7 @@ TEST_CASE("a named bundle input accepts extra free bundle fields",
           "[evaluation][tsb][series:tsb][wiring][schema:named][scalar:integer][scalar:floating-point]"
           "[representation:native][declaration:concrete][binding:direct][feature:wiring]") {
     const auto sum = node(derived_bundle_sum);
+
     const auto graph = [&](wp<TS<i64>> count, wp<TS<float>> value) {
         return sum(bundle("extra"_n = count, "value"_n = value, "count"_n = count));
     };
@@ -218,6 +220,7 @@ TEST_CASE("a base bundle input accepts a derived bundle",
           "[scalar:floating-point][representation:native][declaration:concrete][binding:covariant]"
           "[schema:named]") {
     const auto value = node(base_bundle_count);
+
     const auto graph = [&](wp<TSB<DerivedBundle>> input) { return value(input); };
 
     const auto actual = testing::test_graph(graph, {{{"count", 2}, {"value", 3.5F}}});
@@ -239,6 +242,7 @@ TEST_CASE("a redefined bundle field shares its inherited storage",
           "[scalar:integer][scalar:floating-point][representation:native][declaration:concrete]"
           "[binding:direct]") {
     const auto value = node(base_bundle_count);
+
     const auto graph = [&](wp<TSB<RedefinedBundle>> input) { return value(input); };
 
     const auto actual = testing::test_graph(graph, {{{"count", 4}, {"value", 2.5F}}});
@@ -401,6 +405,7 @@ TEST_CASE("a generic bundle node constructs a runtime schema inside its allocati
     };
     auto memory = allocator{};
     const auto initial = bundle(memory, runtime_schema, initial_inputs);
+
     const auto rebuild = node(
         eval =
             [](Scalar<Bundle<SCHEMA>> input, Out<TS<Bundle<SCHEMA>>> output) {
@@ -460,6 +465,7 @@ TEST_CASE("a time series output copies a covariant scalar collection representat
           "[feature:scalar-api][series:value][scalar:hierarchical][scalar:list][scalar:dict]"
           "[binding:covariant][transition:update]") {
     auto memory = allocator{};
+
     const auto list_source = node(
         [](i64, Scalar<List<Bundle<Equity>>> value, Out<TS<List<Bundle<Equity>>>> output) { output.set_value(value); });
 

@@ -95,6 +95,7 @@ struct opaque_source_node {
 details::GraphWiringStructure add_structure() {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
+
     const auto boundary = node<boundary_node>();
 
     const auto add = node<add_node>();
@@ -116,6 +117,7 @@ details::GraphWiringStructure add_structure() {
 details::GraphWiringStructure renamed_add_structure() {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
+
     const auto input = node<boundary_node>();
 
     const auto operation = node<add_node>();
@@ -137,6 +139,7 @@ details::GraphWiringStructure renamed_add_structure() {
 details::GraphWiringStructure multiply_structure() {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
+
     const auto boundary = node<boundary_node>();
 
     const auto multiply = node<multiply_node>();
@@ -152,6 +155,7 @@ details::GraphWiringStructure multiply_structure() {
 details::GraphWiringStructure branch_structure(bool shared) {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
+
     const auto boundary = node<boundary_node>();
 
     const auto branch = node<branch_node>();
@@ -175,6 +179,7 @@ details::GraphWiringStructure nested_structure() {
     const auto inner = graph("name"_n = "inner", [&](wp<TS<i64>> value) { return add(value, value); });
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
+
     const auto value_boundary = node<boundary_node>();
 
     const auto run_boundary = node<bool_boundary_node>();
@@ -239,6 +244,7 @@ bool nested_reference_and_borrowed_bodies_equivalent(bool swapped_inputs) {
     const auto &reference_type = type_cast<TimeSeriesReferenceType>(REF<TS<i64>>::type());
     const auto nested_left = details::wire_nested_input(reference_type);
     const auto nested_right = details::wire_nested_input(reference_type);
+
     const auto nested_add = node<add_node>();
     const auto nested_result = nested_add(nested_left, nested_right);
     const auto nested_concrete_result = nested_wiring.complete_pending_wiring(nested_result);
@@ -248,6 +254,7 @@ bool nested_reference_and_borrowed_bodies_equivalent(bool swapped_inputs) {
     const auto compact_context = WiringContext{compact_wiring};
     const auto compact_left = compact_wiring.borrowed_input(TS<i64>::type());
     const auto compact_right = compact_wiring.borrowed_input(TS<i64>::type());
+
     const auto compact_add = node<add_node>();
     const auto compact_result = swapped_inputs ? compact_add(compact_right, compact_left)
                                                : compact_add(compact_left, compact_right);
@@ -267,6 +274,7 @@ details::GraphWiringStructure ordinary_borrowed_structure(bool swapped_inputs, b
     if (unrelated_input) {
         (void)wiring.borrowed_input(TS<bool>::type());
     }
+
     const auto add = node<add_node>();
     const auto result = swapped_inputs ? add(right, left) : add(left, right);
     const auto concrete_result = wiring.complete_pending_wiring(result);
@@ -332,6 +340,7 @@ TEST_CASE("service clients have equivalent structure across root wirings",
     const auto structure = [&] {
         auto wiring = GraphWiring{};
         const auto context = WiringContext{wiring};
+
         const auto boundary = node<boundary_node>();
         const auto input = boundary();
         audit(input);
@@ -353,6 +362,7 @@ TEST_CASE("service clients have equivalent structure across root wirings",
 TEST_CASE("an unhashable wired scalar disables graph structure caching", "[graph_wiring][feature:wiring]") {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
+
     const auto source = node<opaque_source_node>();
     const auto value = ScalarValue<Opaque<opaque_value>>{opaque_value{1}};
     const auto result = source(value);

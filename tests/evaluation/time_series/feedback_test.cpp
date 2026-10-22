@@ -194,6 +194,7 @@ TEST_CASE("feedback captures a service-shaped dictionary of reference requests",
     using namespace literals;
 
     const auto service = bg::service<auto(TS<i64>) -> TS<i64>>{"echo", {"value"}};
+
     const auto implementation = graph(
         "name"_n = "echo_feedback",
         [](wp<TSB<SCHEMA>, var_kwargs> requests) {
@@ -205,6 +206,7 @@ TEST_CASE("feedback captures a service-shaped dictionary of reference requests",
         });
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
+
     const auto echo = [&](wp<TS<i64>> input) { return service(input).as<TS<i64>>(); };
 
     const auto actual = testing::test_graph(echo, GraphRunOptions{.services = &catalogue}, {2, 4, 6});
@@ -252,6 +254,7 @@ TEST_CASE("a feedback sink can be assigned only once",
           "[feature:feedback][series:value][scalar:i64]") {
     auto wiring = GraphWiring{};
     auto context = WiringContext{wiring};
+
     const auto source = node([](Out<TS<i64>>) {});
     auto loop = feedback<TS<i64>>();
     loop = source();
@@ -267,6 +270,7 @@ TEST_CASE("feedback source and sink must be in the same graph",
     auto loop = feedback<TS<i64>>();
     {
         auto second_context = WiringContext{second};
+
         const auto source = node([](Out<TS<i64>>) {});
         CHECK_THROWS_AS(loop = source(), WiringError);
     }

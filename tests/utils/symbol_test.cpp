@@ -5,21 +5,23 @@
 
 #include <string_view>
 
+using namespace bg;
+
 namespace {
 
-template <bg::util::compile_time_string Text> inline constexpr auto text = Text.view();
+template <util::compile_time_string Text> inline constexpr auto text = Text.view();
 
 static_assert(text<"value"> == std::string_view{"value"});
-static_assert(sizeof(bg::util::symbol) == sizeof(void *));
+static_assert(sizeof(util::symbol) == sizeof(void *));
 
 } // namespace
 
 TEST_CASE("symbols with the same text compare equal", "[symbol][coverage-exempt]") {
-    using namespace bg::util::literals;
+    using namespace util::literals;
 
     const auto literal = "value"_sym;
-    const bg::util::symbol constructed{"value"};
-    const bg::util::symbol different{"other"};
+    const util::symbol constructed{"value"};
+    const util::symbol different{"other"};
 
     CHECK(literal == constructed);
     CHECK(literal != different);

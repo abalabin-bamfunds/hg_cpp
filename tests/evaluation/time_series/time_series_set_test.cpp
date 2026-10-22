@@ -60,14 +60,14 @@ namespace {
 struct tss_membership_evaluation_count_definition {
     static constexpr bool uses_cycle_callbacks = true;
 
-    bg::In<bg::REF<bg::TSS<bg::i64>>> collection;
-    bg::In<bg::TS<bool>, bg::optional, bg::dynamic_binding> membership;
-    bg::Out<bg::TS<bool>> output;
+    In<REF<TSS<i64>>> collection;
+    In<TS<bool>, optional, dynamic_binding> membership;
+    Out<TS<bool>> output;
 
     void evaluate() const {
         ++evaluation_count;
-        const auto key = bg::i64{7};
-        membership.bind(collection.membership(bg::Scalar<bg::i64>::from(key)));
+        const auto key = i64{7};
+        membership.bind(collection.membership(Scalar<i64>::from(key)));
         output.copy(membership);
     }
 
@@ -84,11 +84,12 @@ struct tss_membership_evaluation_count_definition {
 TEST_CASE("a TSS membership binding ignores changes to other keys",
           "[evaluation][tss][series:tss][series:reference][feature:collection-change]"
           "[scalar:integer][transition:addition][transition:removal][definition:aggregate]") {
-    const auto observe = bg::node<tss_membership_evaluation_count_definition>();
-    const auto graph = [&](bg::wp<bg::TSS<bg::i64>> input) { return observe(input); };
+    const auto observe = node<tss_membership_evaluation_count_definition>();
+
+    const auto graph = [&](wp<TSS<i64>> input) { return observe(input); };
     tss_membership_evaluation_count_definition::evaluation_count = 0;
 
-    const auto actual = bg::testing::test_graph(graph, {{7}, {8}, {literal::REMOVED(7)}, {7}});
+    const auto actual = testing::test_graph(graph, {{7}, {8}, {literal::REMOVED(7)}, {7}});
 
     CHECK(actual.equals<bool>({true, std::nullopt, false, true}));
     CHECK(tss_membership_evaluation_count_definition::evaluation_count == 3);
@@ -253,7 +254,7 @@ TEST_CASE("a time series set accepts its exact non-canonical item type",
 
 TEST_CASE("Out<TSS>::for_each supports erasing visited members across index words",
           "[evaluation][feature:node-api][series:tss][transition:removal][transition:update]") {
-    const auto update = bg::node([](bg::In<bg::TS<bg::i64>> trigger, bg::Out<bg::TSS<bg::i64>> output) {
+    const auto update = node([](In<TS<i64>> trigger, Out<TSS<i64>> output) {
         auto visited = std::size_t{};
         output.for_each([&](const auto &key) {
             ++visited;
@@ -262,17 +263,19 @@ TEST_CASE("Out<TSS>::for_each supports erasing visited members across index word
         CHECK(visited == (*trigger == 1 ? 130 : 0));
 
         if (*trigger == 0) {
-            for (auto key = bg::i64{}; key < 130; ++key) {
+            for (auto key = i64{}; key < 130; ++key) {
                 output.insert(key);
             }
         }
     });
-    const auto size = bg::node([](bg::In<bg::TSS<bg::i64>> input, bg::Out<bg::TS<bg::i64>> output) {
-        output.set(static_cast<bg::i64>(input.size()));
-    });
-    const auto graph = [&](bg::wp<bg::TS<bg::i64>> trigger) { return size(update(trigger)); };
 
-    CHECK(bg::testing::test_graph(graph, {0, 1, 2}).equals<bg::i64>({130, 0, std::nullopt}));
+    const auto size = node([](In<TSS<i64>> input, Out<TS<i64>> output) {
+        output.set(static_cast<i64>(input.size()));
+    });
+
+    const auto graph = [&](wp<TS<i64>> trigger) { return size(update(trigger)); };
+
+    CHECK(bg::testing::test_graph(graph, {0, 1, 2}).equals<i64>({130, 0, std::nullopt}));
 }
 
 namespace {
@@ -338,6 +341,7 @@ TEST_CASE("a TSS input reports removed items when its reference selects an inval
     auto removed = std::vector<std::vector<i64>>{};
     auto was_removed = std::vector<bool>{};
     auto removed_cursor = std::vector<std::vector<i64>>{};
+
     const auto observe = node([&](In<TSS<i64>, optional> input) {
         validity.push_back(input.valid());
         sizes.push_back(input.size());
@@ -384,6 +388,7 @@ TEST_CASE("a TSS input reports item changes when its reference selects another v
     auto sizes = std::vector<std::size_t>{};
     auto added = std::vector<std::vector<i64>>{};
     auto removed = std::vector<std::vector<i64>>{};
+
     const auto observe = node([&](In<TSS<i64>, optional> input) {
         validity.push_back(input.valid());
         sizes.push_back(input.size());
@@ -418,6 +423,7 @@ TEST_CASE("a sampled TSS reports item ID exchanges across a reference rebind",
     auto remappings_match_keys = std::vector<bool>{};
     auto remapping_found = std::vector<bool>{};
     auto remapping_counts = std::vector<std::size_t>{};
+
     const auto inspect = node([&](i64 phase, In<TSS<i64>> input, In<TSS<i64>> first) {
         auto actual = std::vector<std::pair<item_id_t, item_id_t>>{};
         input.for_each_item_id_remapping([&](item_id_t old_id, item_id_t new_id) {
@@ -464,6 +470,7 @@ TEST_CASE("a sampled TSS does not report remapping for additions and removals at
 
     auto remapping_found = std::vector<bool>{};
     auto remapping_counts = std::vector<std::size_t>{};
+
     const auto inspect = node([&](In<TSS<i64>> input) {
         auto count = std::size_t{};
         input.for_each_item_id_remapping([&](item_id_t, item_id_t) { ++count; });
@@ -487,6 +494,7 @@ TEST_CASE("a TSS reports no item ID remapping for ordinary additions and removal
           "[transition:addition][transition:removal]") {
     auto remapping_found = std::vector<bool>{};
     auto remapping_counts = std::vector<std::size_t>{};
+
     const auto inspect = node([&](In<TSS<i64>> input) {
         auto remapping_count = std::size_t{};
         input.for_each_item_id_remapping([&](item_id_t, item_id_t) { ++remapping_count; });
@@ -520,6 +528,7 @@ TEST_CASE("a TSS input does not report stale removals after an invalid target is
     const auto condition = node<delayed_set_reference_condition_definition>();
 
     auto removed_keys = std::vector<std::vector<i64>>{};
+
     const auto observe = node([&](In<TSS<i64>, optional> input) {
         auto removed = std::vector<i64>{};
         input.for_each_removed([&](const auto &item) { removed.push_back(item.value()); });
@@ -552,6 +561,7 @@ TEST_CASE("a TSS reference transition reports removals when the old target clear
     auto added = std::vector<std::vector<i64>>{};
     auto removed = std::vector<std::vector<i64>>{};
     auto was_removed = std::vector<bool>{};
+
     const auto observe = node([&](In<TSS<i64>, optional> input) {
         validity.push_back(input.valid());
         sizes.push_back(input.size());
@@ -587,6 +597,7 @@ TEST_CASE("a TSS input reports removed items when its reference becomes null",
     auto removed = std::vector<std::vector<i64>>{};
     auto was_removed = std::vector<bool>{};
     auto removed_cursor = std::vector<std::vector<i64>>{};
+
     const auto observe = node([&](In<TSS<i64>, optional> input) {
         validity.push_back(input.valid());
         sizes.push_back(input.size());
@@ -627,6 +638,7 @@ TEST_CASE("a passive TSS input does not retain a stale removal sample",
     auto validity = std::vector<bool>{};
     auto sizes = std::vector<std::size_t>{};
     auto removed = std::vector<std::vector<i64>>{};
+
     const auto observe = node([&](In<TSS<i64>, passive, optional> input, i64) {
         validity.push_back(input.valid());
         sizes.push_back(input.size());
@@ -655,6 +667,7 @@ TEST_CASE("a generic input visitor sees TSS removals on reference invalidation",
     auto validity = std::vector<bool>{};
     auto sizes = std::vector<std::size_t>{};
     auto removed_counts = std::vector<std::size_t>{};
+
     const auto observe = node([&](In<TS_T, optional> input) {
         input.visit(
             [&](const In<TSS<SCALAR>> *set) {

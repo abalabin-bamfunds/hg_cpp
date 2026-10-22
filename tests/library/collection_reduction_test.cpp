@@ -497,6 +497,9 @@ TEST_CASE("fixed TSL extrema and means use ordinary floating-point comparisons",
     const auto minimum_result = testing::test_graph(minimum, first, second);
     const auto maximum_result = testing::test_graph(maximum, first, second);
     const auto mean_result = testing::test_graph(mean, first, second);
+    REQUIRE(minimum_result.size() == first.size());
+    REQUIRE(maximum_result.size() == first.size());
+    REQUIRE(mean_result.size() == first.size());
     const auto minimum_at_zero = minimum_result[0];
     const auto maximum_at_zero = maximum_result[0];
     const auto mean_at_zero = mean_result[0];

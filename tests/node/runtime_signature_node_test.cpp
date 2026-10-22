@@ -233,6 +233,7 @@ TEST_CASE("runtime-signature node timed scheduling can depend on the definition 
 TEST_CASE("a callable selects its output runtime type from wiring arguments",
           "[feature:node-api][series:value][declaration:generic][definition:function]") {
     auto selector_calls = 0;
+
     const auto compute = node(
         eval = [](In<TS<CALLABLE_SCALAR>> input, i64 layout,
                       Out<TS<CALLABLE_SCALAR>> output) {
@@ -254,7 +255,7 @@ TEST_CASE("a callable selects its output runtime type from wiring arguments",
         const auto graph = [&](wp<TS<i64>> input) -> wp<TS<i64>> {
             return wp<TS<i64>>{compute(input, layout)};
         };
-        return testing::test_graph(graph, std::array<i64, 2>{4, 5});
+        return testing::test_graph(graph, {4, 5});
     };
 
     CHECK(run(1).equals<i64>({4, 5}));
@@ -266,6 +267,7 @@ TEST_CASE("a callable selects its output runtime type from wiring arguments",
 TEST_CASE("a concrete callable evaluates using its selected output runtime type",
           "[feature:node-api][series:value][declaration:concrete][definition:function]") {
     auto selector_calls = 0;
+
     const auto compute = node(
         eval = [](In<TS<i64>> input, i64 layout, Out<TS<i64>> output) {
             CHECK(&output.runtime_type() == &selected_output_runtime_type(output.runtime_type().type(), layout));
@@ -286,7 +288,7 @@ TEST_CASE("a concrete callable evaluates using its selected output runtime type"
         const auto graph = [&](wp<TS<i64>> input) -> wp<TS<i64>> {
             return wp<TS<i64>>{compute(input, layout)};
         };
-        return testing::test_graph(graph, std::array<i64, 2>{4, 5});
+        return testing::test_graph(graph, {4, 5});
     };
 
     CHECK(run(1).equals<i64>({4, 5}));
@@ -341,6 +343,7 @@ TEST_CASE("operator cache hits pass current scalar arguments to output runtime h
 TEST_CASE("a callable's repeated identical invocation reuses its output record",
           "[feature:node-api][feature:wiring][series:value][definition:function]") {
     auto selector_calls = 0;
+
     const auto compute = node(
         eval = [](In<TS<CALLABLE_SCALAR>> input, i64,
                       Out<TS<CALLABLE_SCALAR>> output) { output.set_value(input.value_view()); },
@@ -350,6 +353,7 @@ TEST_CASE("a callable's repeated identical invocation reuses its output record",
             const auto layout = scalar_cast<i64>(*arguments.scalar(1)).value();
             return selected_output_runtime_type(*arguments.resolved_output_type(), layout);
         });
+
     const auto source = node([](Out<TS<i64>>) {});
     auto wiring = GraphWiring{};
     auto first = WiringPoint{};
@@ -374,6 +378,7 @@ TEST_CASE("a callable without an output runtime hook uses the declaration runtim
     const auto copy = node([](In<TS<i64>> input, Out<TS<i64>> output) {
         output.set(*input);
     });
+
     const auto source = node([](Out<TS<i64>>) {});
     auto wiring = GraphWiring{};
     auto output = WiringPoint{};
@@ -392,13 +397,14 @@ TEST_CASE("a callable without an output runtime hook uses the declaration runtim
 TEST_CASE("a runtime-signature definition can select an output runtime type from its instance",
           "[feature:node-api][series:value][declaration:runtime][definition:runtime]") {
     InstanceOutputRuntimeDefinition::selector_calls = 0;
+
     const auto node = bg::node(InstanceOutputRuntimeDefinition{InstanceOutputRuntimeDefinition::expected_layout});
 
     const auto graph = [&](wp<TS<i64>> input) -> wp<TS<i64>> {
         return wp<TS<i64>>{*node(input)};
     };
 
-    CHECK(testing::test_graph(graph, std::array<i64, 3>{1, 2, 3}).equals<i64>({1, 2, 3}));
+    CHECK(testing::test_graph(graph, {1, 2, 3}).equals<i64>({1, 2, 3}));
     CHECK(InstanceOutputRuntimeDefinition::selector_calls == 1);
 }
 

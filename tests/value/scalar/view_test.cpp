@@ -6,23 +6,25 @@
 #include <string_view>
 #include <type_traits>
 
+using namespace bg;
+
 namespace {
 
 template <typename T>
 concept HasArrowOperator = requires(const T &value) { value.operator->(); };
 
-static_assert(sizeof(bg::Scalar<float>) == sizeof(bg::details::ScalarData));
-static_assert(std::is_trivially_copyable_v<bg::details::ScalarData>);
-static_assert(!std::convertible_to<const bg::Scalar<float> &, const bg::details::ScalarData &>);
-static_assert(!std::convertible_to<const bg::ScalarValue<float> &, const bg::details::ScalarData &>);
-static_assert(!HasArrowOperator<bg::Scalar<float>>);
-static_assert(HasArrowOperator<bg::Scalar<bg::string>>);
+static_assert(sizeof(Scalar<float>) == sizeof(details::ScalarData));
+static_assert(std::is_trivially_copyable_v<details::ScalarData>);
+static_assert(!std::convertible_to<const Scalar<float> &, const details::ScalarData &>);
+static_assert(!std::convertible_to<const ScalarValue<float> &, const details::ScalarData &>);
+static_assert(!HasArrowOperator<Scalar<float>>);
+static_assert(HasArrowOperator<Scalar<string>>);
 
 } // namespace
 
 TEST_CASE("a scalar input view reads a typed value", "[scalar][feature:scalar-api]") {
     const float value = 1.25F;
-    const auto view = bg::Scalar<float>::from(bg::cpp_scalar_runtime_type<float>(), &value);
+    const auto view = Scalar<float>::from(cpp_scalar_runtime_type<float>(), &value);
 
     CHECK(view.data() == &value);
     CHECK(view.value() == value);
@@ -30,7 +32,7 @@ TEST_CASE("a scalar input view reads a typed value", "[scalar][feature:scalar-ap
 }
 
 TEST_CASE("a scalar string view provides value member access", "[scalar][feature:scalar-api][scalar:string]") {
-    const auto value = bg::ScalarValue{std::string_view{"value"}};
+    const auto value = ScalarValue{std::string_view{"value"}};
     const auto view = value.view();
 
     CHECK(view->size() == 5);
@@ -39,10 +41,10 @@ TEST_CASE("a scalar string view provides value member access", "[scalar][feature
 
 TEST_CASE("a scalar input view supports constant-size polymorphism", "[scalar][feature:scalar-api]") {
     const float value = 1.25F;
-    const auto view = bg::Scalar<>::from(bg::cpp_scalar_runtime_type<float>(), &value);
+    const auto view = Scalar<>::from(cpp_scalar_runtime_type<float>(), &value);
 
     CHECK(view.data() == &value);
-    const auto visited = view.visit([](const bg::Scalar<> *input) { return input->data(); }, ddv::noop);
+    const auto visited = view.visit([](const Scalar<> *input) { return input->data(); }, ddv::noop);
 
     REQUIRE(visited);
     CHECK(*visited == &value);

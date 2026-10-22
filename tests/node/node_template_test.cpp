@@ -88,7 +88,9 @@ TEST_CASE("a dynamic reference input is internal to an aggregate node",
     const auto check_dynamic_reference = [&](const Type &argument, TimeSeriesGuarantee guarantee,
                                              const Type &target) {
         const std::array<const Type *, 1> arguments{&argument};
+
         const auto resolution = node.signature().resolve_with_type_map(arguments);
+
         const auto dynamic_inputs = node.dynamic_input_types(resolution.type_map);
 
         REQUIRE(resolution.signature.parameters.size() == 1);
@@ -123,7 +125,9 @@ TEST_CASE("an internal dynamic reference input defaults its root guarantee to or
           "[node_template][feature:node-api][feature:reference][definition:aggregate]"
           "[series:reference][guarantee:ordinary]") {
     const auto node = bg::node<dynamic_input_test::dynamic_reference_input_default_guarantee_node>();
+
     const auto resolution = node.signature().resolve_with_type_map(std::array<const Type *, 0>{});
+
     const auto dynamic_inputs = node.dynamic_input_types(resolution.type_map);
 
     REQUIRE(dynamic_inputs.size() == 1);
@@ -135,6 +139,7 @@ TEST_CASE("an internal dynamic reference input defaults its root guarantee to or
 TEST_CASE("a callable node receives typed inputs, scalars, and output",
           "[node_template][feature:node-api][definition:function]") {
     const auto factor = 2;
+
     const auto add = node([factor](In<TS<i64>, "input"_n> input, int offset, Out<TS<i64>> output) {
         output.set(*input * factor + offset);
     });
@@ -146,6 +151,7 @@ TEST_CASE("a callable node receives typed inputs, scalars, and output",
 
 TEST_CASE("a callable node can omit its output", "[node_template][feature:node-api][definition:function]") {
     auto sum = 0;
+
     const auto sink = node([&](In<TS<i64>> input) { sum += *input; });
 
     const auto graph = [&](wp<TS<i64>> input) {
@@ -562,7 +568,7 @@ TEST_CASE("collection inputs retain their resolved runtime layout", "[node_templ
     });
 
     const auto graph = [&](wp<TS<i64>> input) { return check_guarantee(input); };
-    CHECK(testing::test_graph(graph, std::array<i64, 1>{42}).equals<i64>({42}));
+    CHECK(testing::test_graph(graph, {42}).equals<i64>({42}));
 }
 
 TEST_CASE("direct TSS inputs keep concrete and resolved key runtime types",
@@ -570,12 +576,14 @@ TEST_CASE("direct TSS inputs keep concrete and resolved key runtime types",
     const auto read_concrete = node([](In<TSS<i64>> input, Out<TS<i64>> output) {
         output.set(input.item_at(0).value());
     });
+
     const auto read_generic = node([](In<TSS<SCALAR>> input, Out<TS<i64>> output) {
         if (!input.runtime_type().type().is_resolved()) {
             throw std::logic_error{"a generic TSS input must keep its resolved runtime type"};
         }
         output.set(scalar_cast<i64>(input.item_at(0)).value());
     });
+
     const auto read_guarantee = node([](In<TSS<i64, guarantee_variable<"G">>> input,
                                             Out<TS<i64>> output) {
         if (!input.runtime_type().type().is_resolved()) {
@@ -585,7 +593,9 @@ TEST_CASE("direct TSS inputs keep concrete and resolved key runtime types",
     });
 
     const auto concrete_graph = [&](wp<TSS<i64>> input) { return read_concrete(input); };
+
     const auto generic_graph = [&](wp<TSS<i64>> input) { return read_generic(input); };
+
     const auto guarantee_graph = [&](wp<TSS<i64>> input) { return read_guarantee(input); };
 
     CHECK(testing::test_graph(concrete_graph, {{42}}).equals<i64>({42}));
@@ -630,7 +640,9 @@ TEST_CASE("runtime type use follows resolved input types",
     const auto node = bg::node(scalar_or_time_series_input_definition{});
     const auto scalar_arguments = std::array<const Type *, 1>{&int64_type()};
     const auto time_series_arguments = std::array<const Type *, 1>{&TS<i64>::type()};
+
     const auto scalar_signature = node.signature().resolve(scalar_arguments);
+
     const auto time_series_signature = node.signature().resolve(time_series_arguments);
 
     CHECK(node.uses_scalar_input_runtime_type(scalar_signature, 0));

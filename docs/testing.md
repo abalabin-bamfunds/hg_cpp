@@ -22,6 +22,7 @@ Use `[dimension:value]` for each applicable dimension:
   `lifecycle`, `finalization`, `scheduling`, `timed-scheduling`, `simulation`, `realtime`, `wall-clock`, `profiling`,
   `input-activity`, `validity`,
   `invalidation`, `operator`, `constant`, `graph-argument`, `map`, `switch`,
+  `wiring-defaults`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `feedback`,
   `item-id-remapping`, `service`, `getitem`, `getattr`, `nested-graph`, `mesh`,
   `multiservice`, `reduce`, `late-bound-wiring`,
@@ -164,6 +165,10 @@ CHECK(actual.equals<i64>({30, 10, std::nullopt, 11}));
 ```
 
 `{}` supplies no ticks; `{{}}` supplies one empty collection tick.
+
+For a wiring template, input sequences bind positionally. Positional graph
+calls can omit trailing parameters; named calls can omit any parameter with a
+[wiring default](graph-wiring.md#default-arguments).
 
 Literal inputs require a non-variadic parameter list. Concrete time series parameters and plain node
 parameters supply input types. A plain node parameter supplies its time series alternative; its value
@@ -340,6 +345,9 @@ graph compilation or evaluation.
 - compile-time and runtime wiring-template invocation
 - scalar and time series argument resolution
 - optional scalar arguments and scalar ownership
+- omitted wiring arguments with owned defaults, explicit overrides and absence,
+  named omission, generic type resolution, constant promotion, declaration forms,
+  variadic and context boundaries, and operator requirements and caching
 - node-template and graph-template interchangeability
 - explicit positional type arguments, named type mappings, and mapping conflicts
 - graph-template boundaries and inner graph isolation
@@ -646,6 +654,9 @@ For each reusable node and graph, test:
   and generic items, positional conversion, arity errors, and immutable results
 - declaration metadata lifetime after definition destruction and callback ownership
 - scalar-or-time-series node input resolution and concrete binding
+- Python node decorator activity and validity selection, passive sampling,
+  empty and omitted policy defaults, lifecycle callback registration,
+  optional and all-valid gating, and invalid declarations
 - wiring failures preserving Python exception identity, type, traceback, and context notes
 - runner engine selection, default and explicit start times, simulation-only test capture,
   profiling, explicit cancellation, stop-state lifetime, and GIL release while waiting
