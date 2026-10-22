@@ -80,6 +80,7 @@ elapsed: ... ns
             self.assertIn(f"{example.slug}.zip", catalog)
             self.assertTrue(catalog.startswith("| Example | Python (.py) | C++ project (.zip) |"))
             self.assertIn(f"../{example.page}", catalog)
+            self.assertIn(f"{{download}}`Download <../_generated/publish/downloads/{example.slug}.py>`", catalog)
             with ZipFile(archive_path) as archive:
                 self.assertEqual(set(archive.namelist()), {"main.cpp", "CMakeLists.txt", "README.md"})
                 self.assertEqual(archive.read("main.cpp").decode(), example.cpp + "\n")

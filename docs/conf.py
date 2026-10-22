@@ -4,8 +4,6 @@ import tomllib
 
 DOCS = Path(__file__).resolve().parent
 sys.path.insert(0, str(DOCS))
-GENERATED_PUBLISH = DOCS / "_generated" / "publish"
-GENERATED_PUBLISH.mkdir(parents=True, exist_ok=True)
 
 from example_sources import collect_examples, write_downloads
 
@@ -40,4 +38,3 @@ html_theme = "furo"
 html_title = "BG documentation"
 html_show_copyright = False
 html_theme_options = {"navigation_with_keys": True}
-html_extra_path = ["_generated/publish"]

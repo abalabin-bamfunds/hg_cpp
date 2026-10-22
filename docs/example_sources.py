@@ -289,7 +289,7 @@ def write_downloads(examples: list[Example], docs: Path) -> None:
         label = label.replace("|", "\\|")
         rows.append(
             f"| [{label}](../{example.page}) "
-            f"| [Download](../downloads/{example.slug}.py) "
-            f"| [Project](../downloads/{example.slug}.zip) |"
+            f"| {{download}}`Download <../_generated/publish/downloads/{example.slug}.py>` "
+            f"| {{download}}`Project <../_generated/publish/downloads/{example.slug}.zip>` |"
         )
     (generated / "examples.md").write_text("\n".join(rows) + "\n")
