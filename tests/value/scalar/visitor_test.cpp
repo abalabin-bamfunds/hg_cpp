@@ -7,6 +7,7 @@
 #include <chrono>
 #include <concepts>
 #include <cstdint>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -79,7 +80,7 @@ TEST_CASE("a scalar visitor identifies each collection type",
 }
 
 TEST_CASE("a scalar visitor selects every built-in type by its type index",
-          "[feature:visitor][scalar:byte][scalar:boolean][scalar:i64][scalar:floating-point]"
+          "[feature:visitor][scalar:byte][scalar:bytes][scalar:boolean][scalar:i64][scalar:floating-point]"
           "[scalar:evaluation-time][scalar:timedelta][scalar:string][scalar:symbol]") {
     const auto byte = ScalarValue{bg::byte{0x2a}};
     const auto boolean = ScalarValue{true};
@@ -88,6 +89,7 @@ TEST_CASE("a scalar visitor selects every built-in type by its type index",
     const auto evaluation_time = ScalarValue{MIN_DT + std::chrono::microseconds{42}};
     const auto timedelta = ScalarValue{timedelta_t{42}};
     const auto text = ScalarValue{"value"};
+    const auto payload = ScalarValue{std::span<const std::byte>{}};
     const auto name = ScalarValue{symbol{"name"}};
 
     const auto check_builtin = []<typename T>(const ScalarValue<T> &value) {
@@ -112,6 +114,7 @@ TEST_CASE("a scalar visitor selects every built-in type by its type index",
     check_builtin(evaluation_time);
     check_builtin(timedelta);
     check_builtin(text);
+    check_builtin(payload);
     check_builtin(name);
 }
 

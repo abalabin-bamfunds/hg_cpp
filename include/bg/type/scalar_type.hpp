@@ -29,7 +29,7 @@ class BuiltinScalarType : public ScalarType {
     VISITOR_SUPPORT()
 
     template <typename Visitor> decltype(auto) visit_builtin_type(Visitor &&visitor) const {
-        static_assert(tp::size(details::builtin_scalar_declarations) == 8,
+        static_assert(tp::size(details::builtin_scalar_declarations) == 9,
                       "Update BuiltinScalarType dispatch when adding a built-in scalar");
 
         switch (index_) {
@@ -49,6 +49,8 @@ class BuiltinScalarType : public ScalarType {
             return std::forward<Visitor>(visitor).template operator()<tp::get_t<6, details::BuiltinScalarTypes>>();
         case 7:
             return std::forward<Visitor>(visitor).template operator()<tp::get_t<7, details::BuiltinScalarTypes>>();
+        case 8:
+            return std::forward<Visitor>(visitor).template operator()<tp::get_t<8, details::BuiltinScalarTypes>>();
         default:
             std::unreachable();
         }
@@ -80,6 +82,7 @@ const ScalarType &double_type() noexcept;
 const ScalarType &evaluation_time_type() noexcept;
 const ScalarType &timedelta_type() noexcept;
 const ScalarType &string_type() noexcept;
+const ScalarType &bytes_type() noexcept;
 const ScalarType &symbol_type() noexcept;
 
 // Maps a C++ scalar declaration to its stable semantic type object. Scalar providers specialize this trait and
@@ -119,6 +122,10 @@ template <> struct scalar_type_traits<timedelta_t> {
 };
 
 template <> struct scalar_type_traits<string> {
+    static const ScalarType &type() noexcept;
+};
+
+template <> struct scalar_type_traits<bytes> {
     static const ScalarType &type() noexcept;
 };
 

@@ -2,12 +2,14 @@
 
 #include <bg/allocator.hpp>
 #include <bg/scalar/builtins.hpp>
+#include <bg/scalar/details/bytes_storage.hpp>
 #include <bg/scalar/details/string_storage.hpp>
 #include <bg/scalar/opaque.hpp>
 #include <bg/scalar/string.hpp>
 #include <bg/scalar/struct/declaration.hpp>
 
 #include <concepts>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -170,6 +172,60 @@ template <> struct scalar_storage_traits<string> {
 
     static void assign(stored_type &destination, value_type value, allocator &memory) {
         auto *replacement = details::StringStorage::copy(value, memory);
+        auto *previous = std::exchange(destination, replacement);
+        if (previous != nullptr) {
+            previous->release();
+        }
+    }
+
+    static void destroy(stored_type *value, allocator &) noexcept {
+        if (*value != nullptr) {
+            (*value)->release();
+            *value = nullptr;
+        }
+    }
+};
+
+template <> struct scalar_storage_traits<bytes> {
+    using stored_type = details::BytesStorage *;
+    using value_type = std::span<const std::byte>;
+
+    static constexpr bool supports_equality = true;
+    static constexpr bool supports_hash = true;
+    static constexpr bool supports_alternative_layouts = false;
+    static constexpr bool uses_shared_handle = true;
+    static constexpr bool uses_variable_memory = true;
+    static constexpr bool requires_finalization = true;
+    static constexpr bool assign_uses_memory_resource = true;
+
+    static value_type read(const stored_type &value) noexcept {
+        return value == nullptr ? value_type{} : value->value();
+    }
+
+    static std::size_t hash(value_type value) {
+        const auto text = value.empty()
+                              ? std::string_view{}
+                              : std::string_view{reinterpret_cast<const char *>(value.data()), value.size()};
+        return std::hash<std::string_view>{}(text);
+    }
+
+    static bool equals(value_type left, value_type right) {
+        return left.size() == right.size() && std::equal(left.begin(), left.end(), right.begin());
+    }
+
+    static void construct(stored_type *destination, value_type value, allocator &memory) {
+        std::construct_at(destination, details::BytesStorage::copy(value, memory));
+    }
+
+    static void copy_construct(stored_type *destination, const stored_type &source, allocator &) noexcept {
+        if (source != nullptr) {
+            source->retain();
+        }
+        std::construct_at(destination, source);
+    }
+
+    static void assign(stored_type &destination, value_type value, allocator &memory) {
+        auto *replacement = details::BytesStorage::copy(value, memory);
         auto *previous = std::exchange(destination, replacement);
         if (previous != nullptr) {
             previous->release();

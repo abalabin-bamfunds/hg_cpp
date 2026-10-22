@@ -30,7 +30,7 @@ Use `[dimension:value]` for each applicable dimension:
 - `series`: `value`, `fixed-tsl`, `tss`, `tsd`, `tsb`, `reference`, or `generic`
 - `schema`: `named`, `unnamed`, or `generic`
 - `representation`: `native`, `free`, or `covariant`
-- `scalar`: `byte`, `i64`, `integer`, `floating-point`, `boolean`, `string`, `symbol`, `evaluation-time`, `timedelta`,
+- `scalar`: `byte`, `bytes`, `i64`, `integer`, `floating-point`, `boolean`, `string`, `symbol`, `evaluation-time`, `timedelta`,
   `opaque`, `compound`, `hierarchical`, `list`, `tuple`, `set`, `dict`, or `generic`
 - `storage`: `inline`, `fixed`, or `variable`
 - `declaration`: `concrete`, `partially-generic`, `generic`, or `runtime`

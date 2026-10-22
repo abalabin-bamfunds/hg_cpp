@@ -185,6 +185,21 @@ template <> class CppScalarRuntimeType<string> final : public CppScalarRuntimeTy
     void do_assign_from_input(void *destination, const ScalarData &value) const override;
 };
 
+template <> class CppScalarRuntimeType<bytes> final : public CppScalarRuntimeTypeBase<bytes, ScalarRuntimeType> {
+    using Base = CppScalarRuntimeTypeBase<bytes, ScalarRuntimeType>;
+
+  public:
+    CppScalarRuntimeType();
+
+  private:
+    ScalarData borrow_shared(const void *storage) const noexcept override;
+    const ScalarRuntimeType *retain_shared(const ScalarData &value, std::uintptr_t &data) const noexcept override;
+    void release_shared(std::uintptr_t data) const noexcept override;
+    void read_value(ScalarDataMode mode, std::uintptr_t data, void *destination) const override;
+    void do_construct_from_input(void *destination, const ScalarData &value, allocator &memory) const override;
+    void do_assign_from_input(void *destination, const ScalarData &value) const override;
+};
+
 template <native_struct T>
 class CppScalarRuntimeType<T> final : public CppScalarRuntimeTypeBase<T, StructScalarRuntimeType> {
     using Base = CppScalarRuntimeTypeBase<T, StructScalarRuntimeType>;
@@ -355,6 +370,7 @@ extern template const ScalarRuntimeType &cpp_scalar_runtime_type<double>();
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<date_time_t>();
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<timedelta_t>();
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<string>();
+extern template const ScalarRuntimeType &cpp_scalar_runtime_type<bytes>();
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<symbol>();
 
 } // namespace bg

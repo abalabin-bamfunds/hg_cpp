@@ -6,6 +6,7 @@
 #include <concepts>
 #include <cstdint>
 #include <limits>
+#include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -26,13 +27,21 @@ concept canonical_boolean_source = std::same_as<std::remove_cvref_t<T>, bool>;
 
 template <typename T>
 concept canonical_exact_source =
-    std::same_as<std::remove_cvref_t<T>, byte> || std::same_as<std::remove_cvref_t<T>, timedelta_t> ||
+    std::same_as<std::remove_cvref_t<T>, byte> ||
+    std::same_as<std::remove_cvref_t<T>, timedelta_t> ||
     std::same_as<std::remove_cvref_t<T>, symbol>;
 
 template <typename T> struct is_character_string : std::false_type {};
 
 template <typename Traits, typename Allocator>
 struct is_character_string<std::basic_string<char, Traits, Allocator>> : std::true_type {};
+
+template <typename T> struct is_byte_span : std::false_type {};
+
+template <typename Element, std::size_t Extent>
+struct is_byte_span<std::span<Element, Extent>> : std::bool_constant<std::same_as<std::remove_cv_t<Element>, byte>> {};
+
+template <typename T> concept canonical_bytes_source = is_byte_span<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept canonical_string_source =
@@ -52,6 +61,10 @@ template <canonical_boolean_source T> struct canonical_scalar<T> {
 
 template <canonical_exact_source T> struct canonical_scalar<T> {
     using type = std::remove_cvref_t<T>;
+};
+
+template <canonical_bytes_source T> struct canonical_scalar<T> {
+    using type = bytes;
 };
 
 template <canonical_string_source T> struct canonical_scalar<T> {
@@ -118,6 +131,11 @@ template <details::canonical_boolean_source T> constexpr bool canonical_scalar(T
 
 template <details::canonical_exact_source T>
 constexpr std::remove_cvref_t<T> canonical_scalar(T value) noexcept {
+    return value;
+}
+
+template <details::canonical_bytes_source T>
+constexpr std::span<const byte> canonical_scalar(const T &value) noexcept {
     return value;
 }
 

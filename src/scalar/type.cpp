@@ -44,6 +44,8 @@ template <typename T> class CppScalarType final : public CppScalarTypeBase<T> {
             result += "timedelta_t";
         } else if constexpr (std::same_as<T, string>) {
             result += "string";
+        } else if constexpr (std::same_as<T, bytes>) {
+            result += "bytes";
         } else if constexpr (std::same_as<T, symbol>) {
             result += "symbol";
         } else {
@@ -100,6 +102,10 @@ const ScalarType &string_type() noexcept {
     return registered_cpp_scalar_type<string>();
 }
 
+const ScalarType &bytes_type() noexcept {
+    return registered_cpp_scalar_type<bytes>();
+}
+
 const ScalarType &symbol_type() noexcept {
     return registered_cpp_scalar_type<symbol>();
 }
@@ -138,6 +144,10 @@ const ScalarType &scalar_type_traits<timedelta_t>::type() noexcept {
 
 const ScalarType &scalar_type_traits<string>::type() noexcept {
     return string_type();
+}
+
+const ScalarType &scalar_type_traits<bytes>::type() noexcept {
+    return bytes_type();
 }
 
 const ScalarType &scalar_type_traits<symbol>::type() noexcept {

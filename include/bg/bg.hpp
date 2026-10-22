@@ -73,6 +73,7 @@
 #include <bg/scalar/tuple/type.hpp>
 #include <bg/scalar/string.hpp>
 #include <bg/scalar/string_builder.hpp>
+#include <bg/scalar/bytes_builder.hpp>
 #include <bg/scalar/storage_traits.hpp>
 #include <bg/scalar/type.hpp>
 #include <bg/scalar/value.hpp>

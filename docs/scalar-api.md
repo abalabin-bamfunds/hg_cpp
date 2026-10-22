@@ -51,21 +51,34 @@ view retains no owner; referenced storage must remain valid while it is used.
 ## Built-in declarations
 
 The built-in atomic declarations are `byte`, `bool`, `i64`, `double`,
-`date_time_t`, `timedelta_t`, `string`, and `symbol`. They have these C++
+`date_time_t`, `timedelta_t`, `string`, `bytes`, and `symbol`. They have these C++
 representations:
 
 - `byte` is `std::byte`.
 - `i64` is `std::int64_t`.
 - `date_time_t` is the existing `EvaluationTime` representation.
 - `timedelta_t` is `std::chrono::microseconds`.
+- `bytes` is `std::span<const std::byte>`.
 - `symbol` is the existing `util::symbol` representation.
 
 `string` stores immutable UTF-8 bytes in a reference-counted `StringStorage`.
 Its scalar and time-series read value is `std::string_view`. Construction from
 a `std::string_view` copies the bytes; copying a view of canonical string
 storage retains the same storage. A string is limited to 4,294,967,295 bytes
-(4 GiB minus one). Construction and builder growth reject larger values. The engine does not validate or
-transcode UTF-8.
+(4 GiB minus one). Construction and builder growth reject larger values. The
+engine does not validate or transcode UTF-8.
+
+`bytes` stores immutable contiguous binary data in reference-counted storage.
+Its scalar and time-series read value is `std::span<const std::byte>`. Construction
+from a span copies its bytes; copying a view of canonical byte storage retains
+the same storage. `BytesBuilder` provides writable tail storage and commits the
+number of bytes written. Its writable span remains valid until the builder
+reserves more storage, appends, is moved, or is finished. `finish()` transfers
+the completed value into a `ScalarValue<bytes>`.
+
+`bytes` is distinct from `List<byte>`. A byte span canonicalizes to `bytes`.
+The list stores byte scalar items; the byte value stores one contiguous binary
+payload.
 
 `std::byte` is the only source type that canonicalizes to `byte`. Character and
 eight-bit integer types do not canonicalize to it. The supported `int` and

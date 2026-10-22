@@ -13,6 +13,7 @@ template const ScalarRuntimeType &cpp_scalar_runtime_type<double>();
 template const ScalarRuntimeType &cpp_scalar_runtime_type<date_time_t>();
 template const ScalarRuntimeType &cpp_scalar_runtime_type<timedelta_t>();
 template const ScalarRuntimeType &cpp_scalar_runtime_type<string>();
+template const ScalarRuntimeType &cpp_scalar_runtime_type<bytes>();
 template const ScalarRuntimeType &cpp_scalar_runtime_type<symbol>();
 template BG_EXPORT const ScalarRuntimeType &cpp_scalar_runtime_type<literal::Sentinel>();
 template BG_EXPORT const ScalarRuntimeType &cpp_scalar_runtime_type<literal::TaggedLiteral>();
