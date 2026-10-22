@@ -37,13 +37,14 @@ across 15 chunks, borrowed Arrow plus sum measured 0.976 ms, compared with
 0.020 ms for summing a prebuilt plain Arrow array and 0.056 ms for building an
 Arrow array from the existing vector, summing, and destroying the array. The
 dense consumer path still has substantial cost with only 15 chunks. These
-measurements do not isolate traversal or export work or identify which phase
-accounts for the cost. Do not subtract medians to infer phase timings.
+timings do not isolate traversal or export work. Do not subtract medians to
+infer phase timings. Subsequent [Callgrind profiles](profiling.md) identify
+instruction costs in traversal, validity construction, and Arrow chunk handling.
 
 The filter implementation rebuilds its selected-order sequence by scanning the
-source row set when membership changes, preserving source order. This is a
-source-code observation only; the benchmark does not measure that phase
-separately.
+source row set when membership changes, preserving source order. The profiles
+confirm that this scan dominates small membership-changing updates and also
+runs unnecessarily on full predicate reevaluation with unchanged membership.
 
 ## Build and run commands
 

@@ -637,6 +637,14 @@ The dated notes record the source revision, BG baseline, compiler and host,
 commands, measured ranges, and limits. The older archived sample below used a
 Release extension with Debug BG and is not directly comparable.
 
+Subsequent [Callgrind profiles](benchmarks/results/2026-10-22/profiling.md) cover
+all 30 cases using the same binaries. Raw dumps and parsed analyses remain in
+`build/frame-profile-2026-10-22`; the dated results contain compact instruction
+counts. Profiles identify row-by-row batch construction, redundant full predicate
+traversal, selected-order rebuilds, and fragmented Arrow allocation as the main
+costs. The profiling report lists proposed changes in order. No optimization,
+rebase, or merge was performed during profiling; changes await design review.
+
 The preserved active-lane sample is archived at:
 
 ```text
