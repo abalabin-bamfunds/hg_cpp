@@ -3,6 +3,7 @@
 namespace bg::operators::details {
 
 void register_numeric_operators();
+void register_conversion_operators();
 void register_string_operators();
 void register_string_regex_operators();
 void register_string_collection_operators();

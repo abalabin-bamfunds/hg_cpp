@@ -185,6 +185,7 @@ add_library(
     bg_library SHARED
     src/library/logical.cpp
     src/library/numeric.cpp
+    src/library/conversion.cpp
     src/library/operators.cpp
     src/library/collection.cpp
     src/library/tss.cpp

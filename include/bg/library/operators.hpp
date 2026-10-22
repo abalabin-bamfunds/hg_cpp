@@ -48,6 +48,9 @@ extern BG_LIBRARY_EXPORT operator_<auto(SCALAR) -> SCALAR> abs;
 
 // Conversion.
 extern BG_LIBRARY_EXPORT operator_<CONVERT_RESULT, auto(TS_T) -> CONVERT_RESULT> convert;
+extern BG_LIBRARY_EXPORT operator_<OUT, auto(TS_T) -> OUT> combine;
+extern BG_LIBRARY_EXPORT operator_<OUT, auto(TS_T, Union<"reset", SIGNAL>) -> OUT> collect;
+extern BG_LIBRARY_EXPORT operator_<OUT, auto(TS_T) -> OUT> emit;
 
 // Text.
 extern BG_LIBRARY_EXPORT operator_<auto(TEXT, i64, i64) -> string> substr;

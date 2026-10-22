@@ -185,6 +185,9 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "pow", operators::pow);
     export_operator(operators_module, "round", operators::round);
     export_operator(operators_module, "convert", operators::convert);
+    export_operator(operators_module, "combine", operators::combine);
+    export_operator(operators_module, "collect", operators::collect);
+    export_operator(operators_module, "emit", operators::emit);
     export_operator(operators_module, "pos", operators::pos);
     export_operator(operators_module, "neg", operators::neg);
     export_operator(operators_module, "abs", operators::abs);

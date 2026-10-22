@@ -23,6 +23,9 @@ mod = _native.mod
 pow = _native.pow
 round = _native.round
 convert = _native.convert
+combine = _native.combine
+collect = _native.collect
+emit = _native.emit
 pos = _native.pos
 neg = _native.neg
 abs = _native.abs
@@ -79,6 +82,8 @@ __all__ = [
     "bit_and",
     "bit_xor",
     "convert",
+    "combine",
+    "collect",
     "count",
     "default_",
     "delay",
@@ -88,6 +93,7 @@ __all__ = [
     "eq",
     "floordiv",
     "filter_",
+    "emit",
     "format_",
     "ge",
     "getattr",

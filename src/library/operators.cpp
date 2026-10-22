@@ -17,6 +17,9 @@ decltype(neg) neg{"neg", {"value"}};
 decltype(abs) abs{"abs", {"value"}};
 
 decltype(convert) convert{"convert", {"value"}};
+decltype(combine) combine{"combine", {"values"}};
+decltype(collect) collect{"collect", {"value", "reset"}};
+decltype(emit) emit{"emit", {"value"}};
 
 // Text.
 decltype(substr) substr{"substr", {"value", "start", "end"}};
@@ -79,6 +82,7 @@ namespace {
 // Register implementations only after every operator object above has been constructed.
 const auto registered = [] {
     details::register_numeric_operators();
+    details::register_conversion_operators();
     details::register_string_operators();
     details::register_string_regex_operators();
     details::register_string_collection_operators();
