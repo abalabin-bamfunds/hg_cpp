@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/graph/runtime_graph.hpp>
 #include <bg/scalar/scalar.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
 
@@ -15,7 +16,6 @@ namespace bg {
 
 class CompiledGraph;
 class EvaluationContext;
-class RuntimeGraph;
 class RuntimeGraphEvaluator;
 
 struct CompiledNestedGraph {
@@ -34,7 +34,8 @@ struct NestedGraphConstantInput {
     Scalar<> value;
 };
 
-// Owns one active inner runtime graph and keeps a stopped instance alive until the next outer cycle.
+// Owns the current inner graph and retains stopped instances through their outer cycle. Contexts belong to the parent
+// runtime graph that allocates the instances.
 class NestedGraph {
   public:
     void start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator, EvaluationContext &context,
@@ -51,16 +52,16 @@ class NestedGraph {
     void stop(EvaluationContext &context);
     void stop_and_destroy(EvaluationContext &context) noexcept;
 
-    bool running() const noexcept { return active_ != nullptr; }
+    bool running() const noexcept { return graph_ != nullptr && graph_->running(); }
     bool evaluation_pending() const noexcept;
     Reference output(const CompiledNestedGraph &compiled) const noexcept;
 
   private:
-    static void destroy_retired_callback(void *receiver, EvaluationContext &context) noexcept;
+    static void destroy_stopped_callback(void *receiver, EvaluationContext &context) noexcept;
     static void destroy(RuntimeGraph *graph, EvaluationContext &context) noexcept;
-    void destroy_retired(EvaluationContext &context) noexcept;
+    void destroy_stopped(EvaluationContext &context) noexcept;
 
-    RuntimeGraph *active_{};
+    RuntimeGraph *graph_{};
     RuntimeGraph *retired_{};
 };
 

@@ -2,6 +2,7 @@
 #include <bg/time_series/tsb/tsb_input.hpp>
 #include <bg/time_series/tsb/tsb_output.hpp>
 #include <bg/time_series/tsb/tsb_runtime_type.hpp>
+#include "../fixed/fixed_reference_representation.hpp"
 #include <bg/util/static_storage.hpp>
 
 #include <memory>
@@ -10,6 +11,16 @@
 #include <vector>
 
 namespace bg::details {
+
+const ReferenceRepresentationFactory *FreeTimeSeriesBundleRuntimeType::reference_representation_factory()
+    const noexcept {
+    return fixed_collection_reference_representation_factory();
+}
+
+const ReferenceRepresentationFactory *TimeSeriesBundleRuntimeTypeBase::reference_representation_factory()
+    const noexcept {
+    return fixed_collection_reference_representation_factory();
+}
 
 void TimeSeriesBundleRuntimeTypeBase::copy_tick(const TimeSeriesInputData &input,
                                                 OutputState &output) const {

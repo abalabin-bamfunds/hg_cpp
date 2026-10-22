@@ -23,6 +23,14 @@ decltype(substr) substr{"substr", {"value", "start", "end"}};
 decltype(lower) lower{"lower", {"value"}};
 decltype(upper) upper{"upper", {"value"}};
 decltype(casefold) casefold{"casefold", {"value"}};
+decltype(str_) str_{"str_", {"value"}};
+decltype(format_) format_{"format_", {"pattern"}};
+decltype(print_) print_{"print_", {"pattern"}};
+decltype(matches) matches{"matches", {"pattern", "text"}};
+decltype(replace) replace{"replace", {"pattern", "replacement", "text"}};
+decltype(match_) match_{"match_", {"pattern", "text"}};
+decltype(split) split{"split", {"text", "separator", "maxsplit"}};
+decltype(join) join{"join", {"values", "separator"}};
 
 decltype(eq) eq{"eq", {"lhs", "rhs"}};
 decltype(ne) ne{"ne", {"lhs", "rhs"}};
@@ -71,6 +79,9 @@ namespace {
 const auto registered = [] {
     details::register_numeric_operators();
     details::register_string_operators();
+    details::register_string_regex_operators();
+    details::register_string_collection_operators();
+    details::register_string_format_operators();
     details::register_logical_operators();
     details::register_stream_operators();
     details::register_running_operators();

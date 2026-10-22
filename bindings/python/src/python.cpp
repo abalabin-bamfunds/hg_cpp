@@ -10,6 +10,7 @@
 #include <bg/python/module.hpp>
 #include <bg/python/node_definition.hpp>
 #include <bg/python/object.hpp>
+#include <bg/python/schema.hpp>
 #include <bg/python/scalar_conversion.hpp>
 #include <bg/python/wiring_point.hpp>
 #include <bg/service.hpp>
@@ -142,8 +143,7 @@ class TypeDescriptor {
           valid_items_{valid_items} {}
     explicit TypeDescriptor(const Schema &schema) noexcept : type_{&schema}, schema_{&schema} {}
     TypeDescriptor(const TypeDescriptor &value, bool accepts_time_series_value) noexcept
-        : type_{value.type_}, schema_{value.schema_},
-          accepts_absent_scalar_{value.accepts_absent_scalar_},
+        : type_{value.type_}, schema_{value.schema_}, accepts_absent_scalar_{value.accepts_absent_scalar_},
           accepts_time_series_value_{accepts_time_series_value}, minimum_guarantee_{value.minimum_guarantee_},
           valid_items_{value.valid_items_} {}
 
@@ -768,6 +768,76 @@ nb::object wire_graph(const PythonGraphDefinition &definition, nb::sequence fixe
 }
 
 } // namespace
+
+void export_schema(nb::handle python_type, const Schema &time_series_schema, const Schema *scalar_schema) {
+    if (!PyType_Check(python_type.ptr())) {
+        throw std::invalid_argument{"a native schema registration requires a Python type"};
+    }
+
+    const auto bg_package = nb::module_::import_("bg");
+    const auto class_dict = nb::getattr(python_type, "__dict__");
+    const auto get_class_attribute = nb::getattr(class_dict, "get");
+    const auto time_series_binding = get_class_attribute("_native_time_series_schema", nb::none());
+    const auto scalar_binding = get_class_attribute("_native_schema", nb::none());
+    const auto check_binding = [](nb::handle binding, const Schema &schema) {
+        if (binding.is_none()) {
+            return;
+        }
+        if (!nb::isinstance<TypeDescriptor>(binding) ||
+            nb::cast<const TypeDescriptor &>(binding).schema() != &schema) {
+            throw std::invalid_argument{"a Python class already has a different native schema binding"};
+        }
+    };
+    check_binding(time_series_binding, time_series_schema);
+    if (scalar_schema != nullptr) {
+        check_binding(scalar_binding, *scalar_schema);
+    }
+    const auto *effective_scalar_schema = scalar_schema;
+    const ScalarType *native_bundle_type = nullptr;
+    if (effective_scalar_schema == nullptr && !scalar_binding.is_none() &&
+        nb::isinstance<TypeDescriptor>(scalar_binding)) {
+        effective_scalar_schema = nb::cast<const TypeDescriptor &>(scalar_binding).schema();
+    }
+
+    if (scalar_schema != nullptr) {
+        native_bundle_type = &scalar_conversions().add_python_schema(python_type, *scalar_schema);
+        if (scalar_binding.is_none()) {
+            nb::setattr(python_type, "_native_schema", nb::cast(TypeDescriptor{*scalar_schema}));
+        }
+    }
+    if (time_series_binding.is_none()) {
+        nb::setattr(python_type, "_native_time_series_schema", nb::cast(TypeDescriptor{time_series_schema}));
+    }
+
+    const auto &metadata_schema = effective_scalar_schema != nullptr ? *effective_scalar_schema : time_series_schema;
+    auto field_names = nb::list{};
+    auto optional_fields = nb::dict{};
+    auto bundle_compatible = effective_scalar_schema != nullptr;
+    for (const auto &field : metadata_schema.fields()) {
+        const auto field_name = field.name.text();
+        const auto name = nb::str{field_name.data(), field_name.size()};
+        field_names.append(name);
+        optional_fields[name] = nb::bool_{field.optional};
+        bundle_compatible = bundle_compatible && field.type->is_scalar();
+    }
+    const auto field_name_tuple = nb::tuple{field_names};
+    nb::setattr(python_type, "_schema_field_names", field_name_tuple);
+    nb::setattr(python_type, "_schema_optional_fields", optional_fields);
+    nb::setattr(python_type, "_bundle_compatible", nb::bool_{bundle_compatible});
+
+    if (bundle_compatible && effective_scalar_schema != nullptr &&
+        PyMapping_HasKeyString(class_dict.ptr(), "_native_bundle_type") == 0) {
+        if (native_bundle_type == nullptr) {
+            native_bundle_type = &scalar_conversions().add_python_schema(python_type, *effective_scalar_schema);
+        }
+        nb::setattr(python_type, "_native_bundle_type", nb::cast(TypeDescriptor{*native_bundle_type}));
+    }
+
+    if (effective_scalar_schema != nullptr && PyMapping_HasKeyString(class_dict.ptr(), "__init__") == 0) {
+        const auto schema_constructor = bg_package.attr("_schema_constructor");
+        nb::setattr(python_type, "__init__", schema_constructor(field_name_tuple, optional_fields));
+    }
+}
 
 const Type &details::python_type_argument(nb::handle value) {
     if (nb::isinstance<TypeDescriptor>(value)) {

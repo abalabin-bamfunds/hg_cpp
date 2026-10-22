@@ -218,3 +218,153 @@ def test_schema_value_converts_inside_scalar_dictionary():
         return read(source())
 
     assert bg.test_graph(graph) == [2.5]
+
+
+def test_native_schema_export_supports_tsb_and_scalar_projections():
+    from bg._bg_test_extension import export_native_pair_schema, native_pair_consumer
+
+    class NativePair:
+        def __init__(self, value):
+            self.value = value
+
+    export_native_pair_schema(NativePair)
+
+    @bg.source_node
+    def scalar_source() -> bg.TS[NativePair]:
+        return NativePair(4)
+
+    @bg.compute_node
+    def scalar_read(value: bg.TS[bg.Bundle[NativePair]]) -> bg.TS[int]:
+        return value.value.value
+
+    @bg.graph
+    def scalar_graph() -> bg.TS[int]:
+        return scalar_read(scalar_source())
+
+    assert bg.test_graph(scalar_graph) == [4]
+
+    @bg.compute_node
+    def make(value: bg.TS[int]) -> bg.TSB[NativePair]:
+        return {"value": value.value}
+
+    @bg.compute_node
+    def read(value: bg.TSB[NativePair]) -> bg.TS[int]:
+        return value.value.value
+
+    @bg.graph
+    def time_series_graph(value: bg.TS[int]) -> bg.TS[int]:
+        return read(make(value))
+
+    assert bg.test_graph(time_series_graph, [7]) == [7]
+
+    @bg.graph
+    def native_consumer_graph(value: bg.TS[int]) -> bg.TS[int]:
+        return native_pair_consumer(make(value))
+
+    assert bg.test_graph(native_consumer_graph, [9]) == [9]
+
+
+def test_native_tsb_only_schema_export_does_not_require_scalar_projection():
+    from bg._bg_test_extension import export_native_tsb_schema, native_pair_consumer
+
+    class NativeBase:
+        pass
+
+    export_native_tsb_schema(NativeBase)
+
+    @bg.schema
+    class NativeChild(NativeBase):
+        text: bg.TS[str]
+
+    @bg.compute_node
+    def make(value: bg.TS[int], text: bg.TS[str]) -> bg.TSB[NativeChild]:
+        return {"value": value.value, "text": text.value}
+
+    @bg.compute_node
+    def read(value: bg.TSB[NativeChild]) -> bg.TS[str]:
+        return f"{value.value.value}:{value.text.value}"
+
+    @bg.graph
+    def graph(value: bg.TS[int], text: bg.TS[str]) -> bg.TS[str]:
+        return read(make(value, text))
+
+    assert bg.test_graph(graph, [3], ["native"]) == ["3:native"]
+
+    @bg.graph
+    def native_consumer_graph(value: bg.TS[int], text: bg.TS[str]) -> bg.TS[int]:
+        return native_pair_consumer(make(value, text))
+
+    assert bg.test_graph(native_consumer_graph, [3], ["native"]) == [3]
+    with pytest.raises(TypeError, match="scalar Bundle schema"):
+        bg._native_type(NativeChild)
+    with pytest.raises(TypeError, match=r"Bundle\[\.\.\.\]"):
+        bg.Bundle[NativeBase]
+    with pytest.raises(TypeError, match="scalar Bundle schema"):
+        bg.Bundle[NativeChild]
+
+
+def test_native_schema_export_is_idempotent_and_can_add_scalar_projection():
+    from bg._bg_test_extension import export_native_pair_schema, export_native_tsb_schema
+
+    class NativePair:
+        pass
+
+    export_native_tsb_schema(NativePair)
+    export_native_tsb_schema(NativePair)
+    export_native_pair_schema(NativePair)
+    export_native_pair_schema(NativePair)
+    export_native_tsb_schema(NativePair)
+
+    @bg.source_node
+    def source() -> bg.TS[bg.Bundle[NativePair]]:
+        return NativePair(value=12)
+
+    @bg.compute_node
+    def read(value: bg.TS[bg.Bundle[NativePair]]) -> bg.TS[int]:
+        return value.value.value
+
+    @bg.graph
+    def graph() -> bg.TS[int]:
+        return read(source())
+
+    assert bg.test_graph(graph) == [12]
+
+
+def test_native_scalar_export_installs_constructor_with_scalar_optional_fields():
+    from bg._bg_test_extension import export_native_optional_schema, export_native_optional_tsb_schema
+
+    class NativeOptional:
+        pass
+
+    export_native_optional_tsb_schema(NativeOptional)
+    assert "__init__" not in NativeOptional.__dict__
+    export_native_optional_schema(NativeOptional)
+
+    assert NativeOptional._schema_field_names == ("value",)
+    assert NativeOptional._schema_optional_fields == {"value": True}
+    assert NativeOptional().value is None
+
+    @bg.source_node
+    def source() -> bg.TS[bg.Bundle[NativeOptional]]:
+        return NativeOptional()
+
+    @bg.compute_node
+    def read(value: bg.TS[bg.Bundle[NativeOptional]]) -> bg.TS[bool]:
+        return value.value.value is None
+
+    @bg.graph
+    def graph() -> bg.TS[bool]:
+        return read(source())
+
+    assert bg.test_graph(graph) == [True]
+
+
+def test_native_schema_export_rejects_conflicting_rebinding():
+    from bg._bg_test_extension import export_conflicting_tsb_schema, export_native_pair_schema
+
+    class NativePair:
+        pass
+
+    export_native_pair_schema(NativePair)
+    with pytest.raises(ValueError, match="different native schema binding"):
+        export_conflicting_tsb_schema(NativePair)

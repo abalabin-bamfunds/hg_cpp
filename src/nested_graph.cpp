@@ -19,7 +19,7 @@ void NestedGraph::start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluat
                         EvaluationContext &context,
                         std::span<const NestedGraphInput> inputs, std::span<const NestedGraphConstantInput> constants,
                         std::size_t child_token, std::optional<Scalar<>> label) {
-    if (active_ != nullptr) {
+    if (graph_ != nullptr && graph_->running()) {
         throw std::logic_error{"the nested graph is already running"};
     }
     if (inputs.size() != compiled.input_nodes.size()) {
@@ -29,22 +29,27 @@ void NestedGraph::start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluat
         throw std::invalid_argument{"the nested graph received the wrong number of constant inputs"};
     }
 
+    if (graph_ != nullptr) {
+        retired_ = graph_;
+        graph_ = nullptr;
+    }
+
     auto &parent = context.runtime_graph();
-    active_ = parent.allocation().new_object<RuntimeGraph>(*compiled.graph, parent.allocation(), evaluator,
-                                                            child_token);
+    graph_ = parent.allocation().new_object<RuntimeGraph>(*compiled.graph, parent.allocation(), evaluator,
+                                                          child_token);
     auto rollback = util::scope_exit{[&]() noexcept {
-        destroy(active_, context);
-        active_ = nullptr;
+        destroy(graph_, context);
+        graph_ = nullptr;
     }};
-    active_->set_owner_scheduling_suppressed(true);
+    graph_->set_owner_scheduling_suppressed(true);
 
     update_inputs(compiled, inputs, context);
     for (auto i = std::size_t{}; i < constants.size(); ++i) {
-        active_->initialize_constant_output(compiled.constant_input_nodes[i], constants[i].value,
-                                            context.evaluation_time());
+        graph_->initialize_constant_output(compiled.constant_input_nodes[i], constants[i].value,
+                                           context.evaluation_time());
     }
-    active_->start(context, nullptr, std::move(label));
-    active_->set_owner_scheduling_suppressed(false);
+    graph_->start(context, nullptr, std::move(label));
+    graph_->set_owner_scheduling_suppressed(false);
     rollback.release();
 }
 
@@ -54,10 +59,10 @@ void NestedGraph::update_input(const CompiledNestedGraph &compiled, std::size_t 
         throw std::out_of_range{"the nested graph input index is out of range"};
     }
 
-    const auto previous_suppression = active_->set_owner_scheduling_suppressed(true);
+    const auto previous_suppression = graph_->set_owner_scheduling_suppressed(true);
     auto restore = util::scope_exit{
-        [&]() noexcept { active_->set_owner_scheduling_suppressed(previous_suppression); }};
-    active_->update_reference_output(compiled.input_nodes[input_index], input.reference, context.evaluation_time());
+        [&]() noexcept { graph_->set_owner_scheduling_suppressed(previous_suppression); }};
+    graph_->update_reference_output(compiled.input_nodes[input_index], input.reference, context.evaluation_time());
 }
 
 void NestedGraph::update_inputs(const CompiledNestedGraph &compiled, std::span<const NestedGraphInput> inputs,
@@ -66,19 +71,19 @@ void NestedGraph::update_inputs(const CompiledNestedGraph &compiled, std::span<c
         throw std::invalid_argument{"the nested graph received the wrong number of inputs"};
     }
 
-    const auto previous_suppression = active_->set_owner_scheduling_suppressed(true);
+    const auto previous_suppression = graph_->set_owner_scheduling_suppressed(true);
     auto restore = util::scope_exit{
-        [&]() noexcept { active_->set_owner_scheduling_suppressed(previous_suppression); }};
+        [&]() noexcept { graph_->set_owner_scheduling_suppressed(previous_suppression); }};
 
     for (auto i = std::size_t{}; i < inputs.size(); ++i) {
-        active_->update_reference_output(compiled.input_nodes[i], inputs[i].reference, context.evaluation_time());
+        graph_->update_reference_output(compiled.input_nodes[i], inputs[i].reference, context.evaluation_time());
     }
 }
 
 bool NestedGraph::evaluate(EvaluationContext &context) {
-    active_->set_owner_scheduling_suppressed(true);
-    auto restore = util::scope_exit{[&]() noexcept { active_->set_owner_scheduling_suppressed(false); }};
-    const auto complete = active_->evaluate(context);
+    graph_->set_owner_scheduling_suppressed(true);
+    auto restore = util::scope_exit{[&]() noexcept { graph_->set_owner_scheduling_suppressed(false); }};
+    const auto complete = graph_->evaluate(context);
     if (!complete) {
         restore.release();
     }
@@ -86,29 +91,27 @@ bool NestedGraph::evaluate(EvaluationContext &context) {
 }
 
 bool NestedGraph::evaluation_pending() const noexcept {
-    return active_ != nullptr && active_->evaluation_pending();
+    return running() && graph_->evaluation_pending();
 }
 
 void NestedGraph::stop(EvaluationContext &context) {
-    if (active_ == nullptr) {
+    if (!running()) {
         return;
     }
 
-    context.add_cycle_callback(this, destroy_retired_callback);
+    context.add_cycle_callback(this, destroy_stopped_callback);
 
-    active_->set_owner_scheduling_suppressed(true);
-    active_->stop(context);
-    active_->set_owner_scheduling_suppressed(false);
-    retired_ = active_;
-    active_ = nullptr;
+    graph_->set_owner_scheduling_suppressed(true);
+    graph_->stop(context);
+    graph_->set_owner_scheduling_suppressed(false);
 }
 
 Reference NestedGraph::output(const CompiledNestedGraph &compiled) const noexcept {
-    if (active_ == nullptr || !compiled.output_node) {
+    if (!running() || !compiled.output_node) {
         return nullptr;
     }
 
-    const auto node = active_->node(*compiled.output_node);
+    const auto node = graph_->node(*compiled.output_node);
     if (!node.output_last_updated().valid()) {
         return nullptr;
     }
@@ -116,8 +119,8 @@ Reference NestedGraph::output(const CompiledNestedGraph &compiled) const noexcep
     return *static_cast<Reference *>(node.output_value());
 }
 
-void NestedGraph::destroy_retired_callback(void *receiver, EvaluationContext &context) noexcept {
-    static_cast<NestedGraph *>(receiver)->destroy_retired(context);
+void NestedGraph::destroy_stopped_callback(void *receiver, EvaluationContext &context) noexcept {
+    static_cast<NestedGraph *>(receiver)->destroy_stopped(context);
 }
 
 void NestedGraph::destroy(RuntimeGraph *graph, EvaluationContext &context) noexcept {
@@ -126,23 +129,30 @@ void NestedGraph::destroy(RuntimeGraph *graph, EvaluationContext &context) noexc
     }
 
     graph->finalize(context);
-    graph->allocation().delete_object(graph);
+    context.runtime_graph().allocation().delete_object(graph);
 }
 
-void NestedGraph::destroy_retired(EvaluationContext &context) noexcept {
+void NestedGraph::destroy_stopped(EvaluationContext &context) noexcept {
+    if (graph_ != nullptr && !graph_->running()) {
+        destroy(graph_, context);
+        graph_ = nullptr;
+    }
+
     destroy(retired_, context);
     retired_ = nullptr;
 }
 
 void NestedGraph::stop_and_destroy(EvaluationContext &context) noexcept {
-    if (active_ != nullptr) {
-        active_->set_owner_scheduling_suppressed(true);
-        active_->stop(context);
-        destroy(active_, context);
-        active_ = nullptr;
+    if (graph_ != nullptr) {
+        if (graph_->running()) {
+            graph_->set_owner_scheduling_suppressed(true);
+            graph_->stop(context);
+        }
+        destroy(graph_, context);
+        graph_ = nullptr;
     }
 
-    destroy_retired(context);
+    destroy_stopped(context);
 }
 
 } // namespace bg

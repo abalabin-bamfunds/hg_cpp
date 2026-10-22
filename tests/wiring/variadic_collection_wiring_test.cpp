@@ -60,6 +60,18 @@ TEST_CASE("a callable variadic TSL captures homogeneous time series and resolves
     testing::test_wiring([&] { tested(source(), source()); });
 }
 
+TEST_CASE("an unnamed single time-series argument forms a one-item variadic TSL",
+          "[feature:wiring][feature:variadic-wiring][series:fixed-tsl][scalar:i64]"
+          "[declaration:generic][definition:function]") {
+    const auto source = node([](Out<TS<bg::i64>>) {});
+    const auto tested = graph("name"_n = "capture", [](wp<TSL<TS_T, SIZE>, var_args> values) {
+        REQUIRE(values.size() == 1);
+        CHECK(&values[0].type() == &TS<bg::i64>::type());
+    });
+
+    testing::test_wiring([&] { tested(source()); });
+}
+
 TEST_CASE("a variadic TSL infers the guarantee observable through references",
           "[feature:wiring][feature:variadic-wiring][reference][series:fixed-tsl]"
           "[guarantee:ordinary][guarantee:deduplicated][guarantee:final][guarantee:const]") {

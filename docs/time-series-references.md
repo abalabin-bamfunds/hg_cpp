@@ -84,6 +84,14 @@ key and exposes the current reference target as its item. An empty reference
 produces an invalid item. Target changes and target updates modify the
 corresponding item without evaluating an intermediate node.
 
+Fixed TSL and TSB representations apply the same reference binding rules to
+their contained time series. A value parameter observes each reference item's
+target, including target updates, changes of target, and invalidation. A
+reference parameter receives a stable reference to each value item without
+copying its value. Value-item updates notify target subscribers without changing
+those reference values. Both use the collection's stable item IDs. A direct
+binding that requires no item adaptation creates no representation.
+
 When `REF<TS_T>` is bound to its exact target type, compiled-node data records
 the reference output's last updated location. Each runtime graph stores the
 current reference used by the receiving input.

@@ -122,6 +122,7 @@ class ReferenceProvider {
                                InputNotificationFunction notification = nullptr, bool controlled_activity = false);
     static void remove_subscriber(Reference reference, RuntimeGraph &graph, std::size_t input_offset) noexcept;
     static void notify(Reference reference, OutputChangeContext &context, OutputChange change);
+    static void notify_item_bindings(Reference collection, item_id_t id, OutputChangeContext &context);
     static void notify_item_bindings(Reference collection, item_id_t id, EvaluationContext &context);
 
     static void add_item_notification(Reference reference, RuntimeGraph &graph, void *destination_representation,

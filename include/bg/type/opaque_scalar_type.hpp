@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/scalar/opaque.hpp>
+#include <bg/scalar/storage_traits.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_registry.hpp>
@@ -12,6 +13,8 @@ template <typename T> class OpaqueScalarType final : public ScalarType {
   public:
     bool is_resolved() const noexcept override { return true; }
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
+    bool supports_equality() const noexcept override { return scalar_storage_traits<Opaque<T>>::supports_equality; }
+    bool supports_hash() const noexcept override { return scalar_storage_traits<Opaque<T>>::supports_hash; }
 };
 
 template <typename T> const ScalarType &opaque_scalar_type() noexcept {

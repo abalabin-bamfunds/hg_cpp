@@ -428,7 +428,8 @@ NormalizedWiringArguments normalize_prepared(const Signature &signature, Prepare
                 return;
             }
 
-            const auto direct = argument.name() == std::optional{parameter.name} &&
+            const auto argument_name = argument.name();
+            const auto direct = argument_name && *argument_name == parameter.name &&
                                 operations.accepts_direct(static_cast<const TimeSeriesType &>(argument.type()));
             if (direct) {
                 const auto collection = argument.time_series();

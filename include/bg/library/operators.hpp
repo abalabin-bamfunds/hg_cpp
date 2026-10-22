@@ -19,6 +19,14 @@ using ORDERED_SCALAR = ScalarVariable<"ORDERED_SCALAR", i64, double, string, dat
 using BOOL = ScalarVariable<"BOOL", bool>;
 using NUMERIC = ScalarVariable<"NUMERIC", i64, double>;
 using TEXT = ScalarVariable<"TEXT", string, symbol>;
+using REGEX_PATTERN = ScalarVariable<"REGEX_PATTERN", string, symbol>;
+using REGEX_REPLACEMENT = ScalarVariable<"REGEX_REPLACEMENT", string, symbol>;
+using REGEX_TEXT = ScalarVariable<"REGEX_TEXT", string, symbol>;
+using STRING_SEPARATOR = ScalarVariable<"STRING_SEPARATOR", string, symbol>;
+template <template <typename, auto...> typename Field>
+using FORMAT_POSITIONAL = BundleSchemaVariableDeclaration<"FORMAT_POSITIONAL", Field>;
+template <template <typename, auto...> typename Field>
+using FORMAT_NAMED = BundleSchemaVariableDeclaration<"FORMAT_NAMED", Field>;
 
 using CONVERT_RESULT = TimeSeriesVariable<"CONVERT_RESULT">;
 using SIGNAL = TimeSeriesVariable<"SIGNAL">;
@@ -46,6 +54,14 @@ extern BG_LIBRARY_EXPORT operator_<auto(TEXT, i64, i64) -> string> substr;
 extern BG_LIBRARY_EXPORT operator_<auto(TEXT) -> string> lower;
 extern BG_LIBRARY_EXPORT operator_<auto(TEXT) -> string> upper;
 extern BG_LIBRARY_EXPORT operator_<auto(TEXT) -> string> casefold;
+extern BG_LIBRARY_EXPORT operator_<auto(SCALAR) -> string> str_;
+extern BG_LIBRARY_EXPORT operator_<auto(string) -> string> format_;
+extern BG_LIBRARY_EXPORT operator_<auto(string) -> void> print_;
+extern BG_LIBRARY_EXPORT operator_<auto(REGEX_PATTERN, REGEX_TEXT) -> bool> matches;
+extern BG_LIBRARY_EXPORT operator_<auto(REGEX_PATTERN, REGEX_REPLACEMENT, REGEX_TEXT) -> string> replace;
+extern BG_LIBRARY_EXPORT operator_<auto(REGEX_PATTERN, REGEX_TEXT) -> OUT> match_;
+extern BG_LIBRARY_EXPORT operator_<OUT, auto(TEXT, STRING_SEPARATOR, i64) -> OUT> split;
+extern BG_LIBRARY_EXPORT operator_<auto(COLLECTION, STRING_SEPARATOR) -> string> join;
 
 // Comparisons.
 extern BG_LIBRARY_EXPORT operator_<EQUALITY_SCALAR, auto(EQUALITY_SCALAR, EQUALITY_SCALAR) -> bool> eq;

@@ -761,6 +761,22 @@ The wrapper observes overloads registered on that operator later. It uses the
 same resolution cache, requirements, resolvers, adaptations, and diagnostics
 as a C++ call.
 
+Expose a native schema on a Python class with `<bg/python/schema.hpp>`:
+
+```cpp
+bg::python::export_schema(python_class, time_series_schema, &scalar_schema);
+```
+
+Call this while holding the GIL with process-lifetime schema descriptors.
+Pass the existing TSB and scalar schema descriptors. Python then uses
+`TSB[NativeClass]` and `Bundle[NativeClass]` with the native declaration identity.
+With a scalar descriptor, `TS[NativeClass]` also selects the native scalar type.
+Omit the scalar descriptor for a time-series-only schema. Do not apply `@schema`
+to the exported class; that decorator declares a separate schema.
+An exported class can be the base of a Python `@schema` subclass. With a scalar
+descriptor, export supplies a field constructor unless the class declares
+`__init__`. Conflicting schema registration raises an error.
+
 `PythonScalarConversions::add_python_type` associates a Python class with a
 scalar type. Lookup follows the Python method resolution order. Register the
 corresponding Python-to-scalar conversion before values of a new scalar type

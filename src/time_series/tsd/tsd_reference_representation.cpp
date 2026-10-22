@@ -204,16 +204,6 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
     }
 };
 
-class RoutedTsdItemReferenceRuntimeType final : public TimeSeriesReferenceRuntimeType {
-  public:
-    explicit RoutedTsdItemReferenceRuntimeType(const TimeSeriesReferenceType &type) noexcept
-        : TimeSeriesReferenceRuntimeType{type, sizeof(ItemReference), alignof(ItemReference)} {}
-
-    Reference reference(const void *value) const override {
-        return Reference{const_cast<ItemReference *>(static_cast<const ItemReference *>(value))};
-    }
-};
-
 bool representation_required(const TimeSeriesRuntimeType &provided, const TimeSeriesRuntimeType &requested) noexcept {
     const auto &provided_tsd = static_cast<const TimeSeriesDictionaryRuntimeType &>(provided);
     const auto &requested_tsd = static_cast<const TimeSeriesDictionaryRuntimeType &>(requested);
@@ -236,7 +226,7 @@ const TimeSeriesRuntimeType &representation_runtime_type(const TimeSeriesRuntime
                                                                item_guarantee);
         const auto &representation_type = time_series_dictionary_type(
             provided_type.key_type(), reference_type, *provided_type.guarantee().value());
-        const auto &routed_item_type = routed_tsd_item_reference_runtime_type(reference_type);
+        const auto &routed_item_type = routed_time_series_reference_runtime_type(reference_type);
         return time_series_dictionary_representation_runtime_type(representation_type, provided_tsd.key_runtime_type(),
                                                                   routed_item_type);
     }
@@ -258,7 +248,7 @@ ReferenceRepresentation *create_representation(ReferenceProvider &provider, Refe
     if (!provided_tsd.item_runtime_type().is_reference() && requested_tsd.item_runtime_type().is_reference()) {
         const auto &reference_type = static_cast<const TimeSeriesReferenceType &>(
             requested_tsd.item_runtime_type().type());
-        const auto &routed_item_type = routed_tsd_item_reference_runtime_type(reference_type);
+        const auto &routed_item_type = routed_time_series_reference_runtime_type(reference_type);
         return make_tsd_item_reference_representation(provider, base_reference, requested_type, provided_tsd,
                                                       routed_item_type, memory);
     }
@@ -321,28 +311,6 @@ const TimeSeriesDictionaryRuntimeType &time_series_dictionary_representation_run
     auto runtime_type = std::make_unique<TimeSeriesDictionaryRepresentationRuntimeType>(type, key, item);
     auto &result = *runtime_type;
     cache.push_back({&type, &key, &item, std::move(runtime_type)});
-    return result;
-}
-
-const TimeSeriesRuntimeType &routed_tsd_item_reference_runtime_type(const TimeSeriesReferenceType &type) {
-    struct Entry {
-        const TimeSeriesReferenceType *type;
-        std::unique_ptr<TimeSeriesRuntimeType> runtime_type;
-    };
-
-    static auto mutex = util::static_storage<std::mutex>{};
-    static auto entries = util::static_storage<std::vector<Entry>>{};
-
-    const auto lock = std::lock_guard{mutex.get()};
-    auto &cache = entries.get();
-    const auto found = std::ranges::find(cache, &type, &Entry::type);
-    if (found != cache.end()) {
-        return *found->runtime_type;
-    }
-
-    auto runtime_type = std::make_unique<RoutedTsdItemReferenceRuntimeType>(type);
-    auto &result = *runtime_type;
-    cache.push_back({&type, std::move(runtime_type)});
     return result;
 }
 

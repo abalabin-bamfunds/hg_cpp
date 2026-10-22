@@ -170,6 +170,15 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "lower", operators::lower);
     export_operator(operators_module, "upper", operators::upper);
     export_operator(operators_module, "casefold", operators::casefold);
+    export_operator(operators_module, "str_", operators::str_);
+    export_operator(operators_module, "format_", operators::format_);
+    export_operator(operators_module, "print_", operators::print_);
+    export_operator(operators_module, "matches", operators::matches);
+    export_operator(operators_module, "replace", operators::replace);
+    export_operator(operators_module, "match_", operators::match_);
+    const auto split_type_parameters = operators::split.explicit_type_parameters();
+    export_operator(operators_module, "split", operators::split, split_type_parameters);
+    export_operator(operators_module, "join", operators::join);
     export_operator(operators_module, "div", operators::div);
     export_operator(operators_module, "floordiv", operators::floordiv);
     export_operator(operators_module, "mod", operators::mod);

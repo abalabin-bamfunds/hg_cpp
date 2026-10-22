@@ -367,7 +367,8 @@ Ordinary inputs can publish equal query results on successive changes;
 deduplicated outputs suppress equal results.
 
 Use named calls in Python. Its `len()` and `in` syntax cannot return wiring
-points. Python annotations for scalar lists and sets are not yet supplied.
+points. Annotate an engine scalar list as `tuple[T, ...]`; scalar set
+annotations are not yet supplied.
 
 ## Text operations
 
@@ -395,6 +396,81 @@ These operations accept scalar or time-series arguments, require valid time
 series inputs, and propagate the weakest observed input guarantee. Invalidating
 a required input invalidates the result. Ordinary inputs can publish equal
 results on separate ticks. Unicode operations use ICU, linked by `bg::library`.
+
+`str_(value)` returns Python-style text for built-in scalar values and nested
+scalar collections. It rejects unsupported scalar extension types.
+`format_(pattern, *values, **named)` uses `{fmt}` format strings and preserves
+argument types for format specifications. It evaluates scalar-only calls at
+graph start. The pattern and every formatting argument must be valid.
+`print_(pattern, *values, **named)` writes the formatted text and a
+newline to standard output. Set `__std_out__=False` to write to standard error;
+`__std_out__` must be a scalar Boolean. Print nodes are not deduplicated during
+wiring.
+
+### Regular expressions
+
+`matches(pattern, text)` returns whether the pattern occurs anywhere in the
+text. Use anchors to constrain the match position. It returns a Boolean without
+extracting or storing capture strings.
+
+`match_(pattern, text)` returns a fixed TSL of string captures. Group 1 is at
+index 0; the complete match is not included. The scalar pattern determines the
+TSL size during wiring. A pattern without capture groups is a wiring error;
+use `matches` instead. Unmatched groups are invalid, while a matched empty
+group contains a valid empty string. Losing the match invalidates every item.
+If all groups are absent, the TSL is invalid under the normal
+[TSL validity rule](time-series-validity.md#collections), even when the search
+succeeds. Capture output guarantees limit const to final.
+
+```python
+found = bg.operators.matches(r"(\w+)-(\d+)", text)
+captures = bg.operators.match_(r"(\w+)-(\d+)", text)
+word, number = captures[0], captures[1]
+```
+
+`replace(pattern, replacement, text)` replaces every non-overlapping match.
+Patterns use ICU syntax, including `(?<name>...)` for named groups.
+Replacement templates use Python-style references:
+`\1`, `\g<name>`, and `\g<0>` for the complete match. An unmatched group
+contributes an empty string. `$` is literal. Invalid patterns and replacement
+templates raise errors during wiring.
+
+Pattern and replacement arguments are scalars. Text accepts a string or symbol,
+supplied as a scalar or time series. Wiring prepares the immutable compiled
+pattern and replacement template. The compiled graph owns them and shares them
+across its runtime instances. Each runtime node creates a separate mutable
+matcher at startup and reuses it across ticks. All three operators reject
+malformed UTF-8 and use required inputs. `matches` and `replace` propagate the
+observed text guarantee.
+
+### Split and join
+
+`split(text, separator)` returns `TS<List<string>>`. A supplied `maxsplit`
+limits the number of separators consumed; a negative limit means unlimited.
+An empty separator raises an error. Leading, trailing, and adjacent separators
+produce empty pieces. Split and join preserve bytes without normalization.
+
+An explicit `TSL<TS<string>, N>` result requires `N > 0`. Split consumes at
+most `N - 1` separators and retains the remaining text in the final item.
+A smaller explicit `maxsplit` still limits consumption. Producing fewer than
+`N` pieces raises an error.
+
+Select the result type through the operator's explicit type argument:
+
+```cpp
+auto pieces = operators::split[type<TSL<TS<string>, 3>>](text, ",");
+```
+
+```python
+pieces = split[TSL[TS[str], 3]](text, ",")
+```
+
+`join(values, separator)` joins a scalar list or fixed time series list in item
+order. The default TSL overload requires the root and all immediate items
+to be valid. `join(opt(values), separator)` skips invalid items and treats
+an invalid root as empty. Optional join publishes an ordinary output on
+input changes; it does not schedule an initial evaluation. Empty input
+produces an empty string. Both strings and symbols produce string output.
 
 ## Time series set operations
 

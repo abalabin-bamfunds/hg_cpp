@@ -81,6 +81,16 @@ template <template <typename, auto...> typename Field> struct DictionaryBundle {
     Field<TSD<i64, TS<i64>>> dictionary;
 };
 
+template <template <typename, auto...> typename Field> struct NativeReferenceBundle {
+    Field<TS<i64>> value;
+    Field<REF<TS<i64>>> selected;
+};
+
+template <template <typename, auto...> typename Field> struct AdaptedReferenceBundle {
+    Field<REF<TS<i64>>> value;
+    Field<TS<i64>> selected;
+};
+
 } // namespace
 
 TEST_CASE("a dereferenced input subscribes directly to a fixed target",
@@ -95,6 +105,34 @@ TEST_CASE("a dereferenced input subscribes directly to a fixed target",
 
     CHECK(reference_pass::evaluation_count == 1);
     CHECK(actual.equals({10, 20, std::nullopt, 30}));
+}
+
+TEST_CASE("a generated reference value stays stable while its target changes",
+          "[evaluation][reference][tsl][series:fixed-tsl][feature:reference][transition:update]"
+          "[transition:invalidation][transition:revalidation][binding:value-to-reference]"
+          "[binding:reference-to-value][guarantee:ordinary][representation:native]") {
+    const auto source = node<changing_reference_target>();
+    auto reference_evaluations = 0;
+    auto target_evaluations = 0;
+    const auto forward = node([&](In<TSL<REF<TS<i64>>, 1>> input, Out<REF<TS<i64>>> output) {
+        ++reference_evaluations;
+        output.copy(input[0]);
+    });
+    const auto read = node([&](In<TS<i64>, optional> input, Out<TS<i64>> output) {
+        ++target_evaluations;
+        if (input.valid()) {
+            output.set(*input);
+        } else {
+            output.invalidate();
+        }
+    });
+    const auto graph = [&] {
+        return read(forward(tsl(source())));
+    };
+
+    CHECK(testing::test_graph(graph).equals({10, 20, std::nullopt, 30}));
+    CHECK(reference_evaluations == 1);
+    CHECK(target_evaluations == 4);
 }
 
 TEST_CASE("an ordinary reference can retarget a value input between stronger targets",
@@ -774,6 +812,110 @@ struct repeated_value_target {
     void evaluate() const { output.set(20); }
 };
 
+struct delayed_reference_target {
+    static constexpr bool uses_timed_scheduling = true;
+
+    State<int> step;
+    Out<TS<i64>> output;
+
+    void start(EvaluationContext *context) const {
+        output.set(10);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate(EvaluationContext *context) const {
+        if (*step == 3) {
+            output.set(20);
+            return;
+        }
+
+        ++*step;
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+};
+
+struct revalidating_reference_list {
+    static constexpr bool uses_timed_scheduling = true;
+
+    In<REF<TS<i64>>, passive, optional> first;
+    In<REF<TS<i64>>, passive, optional> second;
+    State<int> step;
+    Out<TSL<REF<TS<i64>>, 2>> output;
+
+    void start(EvaluationContext *context) const {
+        output[0].copy(first);
+        output[1].copy(second);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate(EvaluationContext *context) const {
+        if (*step == 0) {
+            output.invalidate();
+        } else if (*step == 1) {
+            output[1].copy(second);
+        } else {
+            output[0].copy(first);
+        }
+
+        ++*step;
+        if (*step < 3) {
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        }
+    }
+};
+
+struct stable_set_target {
+    Out<TSS<i64>> output;
+
+    void start() const {
+        output.insert(1);
+        output.insert(2);
+    }
+
+    void evaluate() const {}
+};
+
+struct revalidating_set_reference_list {
+    static constexpr bool uses_timed_scheduling = true;
+
+    In<REF<TSS<i64>>, passive, optional> first;
+    In<REF<TSS<i64>>, passive, optional> second;
+    State<int> step;
+    Out<TSL<REF<TSS<i64>>, 2>> output;
+
+    void start(EvaluationContext *context) const {
+        output[0].copy(first);
+        output[1].copy(second);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate(EvaluationContext *context) const {
+        if (*step == 0) {
+            output.invalidate();
+        } else if (*step == 1) {
+            output[1].copy(second);
+        } else {
+            output[0].copy(first);
+        }
+
+        ++*step;
+        if (*step < 3) {
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        }
+    }
+};
+
+struct native_reference_bundle_source {
+    In<TS<i64>> value;
+    In<REF<TS<i64>>> selected;
+    Out<TSB<NativeReferenceBundle>> output;
+
+    void evaluate() const {
+        output->value.copy(value);
+        output->selected.copy(selected);
+    }
+};
+
 struct reference_list_copy {
     In<TS<i64>> trigger;
     In<REF<TS<i64>>> input;
@@ -794,6 +936,75 @@ struct reference_list_observer {
 };
 
 } // namespace
+
+TEST_CASE("a native bundle adapts direct and referenced fields through its reference-free schema",
+          "[evaluation][reference][tsb][feature:reference][series:tsb][transition:update]"
+          "[transition:invalidation][transition:revalidation][representation:native]"
+          "[binding:value-to-reference][binding:reference-to-value]") {
+    const auto target = node<changing_reference_target>();
+    const auto make_bundle = node<native_reference_bundle_source>();
+    auto evaluations = 0;
+    const auto observe = node([&](In<TS_T> series, Out<TS<i64>> output) {
+        ++evaluations;
+        const auto input = series.as<TSB<SCHEMA>>();
+        const auto value = input[0].as<TS<i64>>();
+        const auto selected = input[1].as<TS<i64>>();
+        if (!selected.valid()) {
+            output.invalidate();
+            return;
+        }
+        output.set(*value * 100 + *selected);
+    });
+    const auto graph = [&](wp<TS<i64>> value) {
+        const auto bundle = make_bundle(value, target());
+        return observe(bundle.as<REF<TSB<SCHEMA>>>());
+    };
+
+    CHECK(testing::test_graph(graph, {1, 2, 3, 4}).equals({110, 220, std::nullopt, 430}));
+    CHECK(evaluations == 4);
+}
+
+TEST_CASE("a revalidated fixed-list reference resubscribes to the same target",
+          "[evaluation][reference][feature:reference][tsl][series:fixed-tsl]"
+          "[transition:invalidation]"
+          "[transition:revalidation][transition:update][binding:reference-to-value]"
+          "[representation:native]") {
+    const auto target = node<delayed_reference_target>();
+    const auto other = node([](Out<TS<i64>> output) { output.set(99); });
+    const auto change = node<revalidating_reference_list>();
+    const auto observe = node([](In<TSL<TS<i64>, 2>, optional> input, Out<TS<i64>> output) {
+        const auto first = input[0];
+        output.set(input.valid() && first.valid() ? *first : -1);
+    });
+    const auto graph = [&] {
+        const auto collection = change(target(), other());
+        return observe(collection.as<REF<TSL<TS<i64>, 2>>>());
+    };
+
+    CHECK(testing::test_graph(graph).equals({10, -1, -1, 10, 20}));
+}
+
+TEST_CASE("a revalidated fixed-list reference samples an unchanged TSS target as a first update",
+          "[evaluation][reference][tsl][series:fixed-tsl][series:tss][feature:sampling]"
+          "[transition:invalidation][transition:revalidation][binding:reference-to-value]"
+          "[representation:native]") {
+    const auto target = node<stable_set_target>();
+    const auto change = node<revalidating_set_reference_list>();
+    const auto observe = node([](In<TSL<TSS<i64>, 2>, optional> input, Out<TS<i64>> output) {
+        if (!input.valid() || !input[0].valid()) {
+            output.set(-1);
+            return;
+        }
+        const auto key = i64{1};
+        output.set(input[0].was_added(Scalar<i64>::from(key)) ? 1 : 0);
+    });
+    const auto graph = [&] {
+        const auto collection = change(target(), target());
+        return observe(collection.as<REF<TSL<TSS<i64>, 2>>>());
+    };
+
+    CHECK(testing::test_graph(graph).equals({1, -1, -1, 1}));
+}
 
 TEST_CASE("a dereferenced input subscribes directly to a fixed collection item",
           "[evaluation][reference][tsl][feature:reference][series:fixed-tsl][scalar:integer]"
@@ -863,6 +1074,51 @@ struct pair_sum_definition {
     void evaluate() const { output.set(*input[0] + *input[1]); }
 };
 
+struct nested_reference_list_selector {
+    In<TS<i64>> condition;
+    In<REF<TS<i64>>, passive, optional> left;
+    In<REF<TS<i64>>, passive, optional> right;
+    Out<TSL<TSL<REF<TS<i64>>, 1>, 1>> output;
+
+    void evaluate() const { output[0][0].copy(*condition == 0 ? left : right); }
+};
+
+struct invalidating_nested_reference_list {
+    static constexpr bool uses_timed_scheduling = true;
+
+    In<REF<TS<i64>>, passive, optional> first;
+    In<REF<TS<i64>>, passive, optional> second;
+    State<int> step;
+    Out<TSL<TSL<REF<TS<i64>>, 2>, 1>> output;
+
+    void start(EvaluationContext *context) const {
+        output[0][0].copy(first);
+        output[0][1].copy(second);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate(EvaluationContext *context) const {
+        if (*step == 0) {
+            output[0][0].invalidate();
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        } else {
+            output[0][0].copy(first);
+        }
+        ++*step;
+    }
+};
+
+struct reference_pair {
+    In<REF<TS<i64>>> first;
+    In<REF<TS<i64>>> second;
+    Out<TSL<REF<TS<i64>>, 2>> output;
+
+    void evaluate() const {
+        output[0].copy(first);
+        output[1].copy(second);
+    }
+};
+
 } // namespace
 
 TEST_CASE("a dereferenced list reference selects the current target runtime_type",
@@ -902,6 +1158,102 @@ TEST_CASE("a reference stored in a fixed collection item updates its consumer",
     const auto actual = testing::test_graph(graph);
 
     CHECK(actual.equals({10, 20, std::nullopt, 30}));
+}
+
+TEST_CASE("nested fixed collection adaptation propagates reference updates and validity",
+          "[evaluation][reference][tsl][series:fixed-tsl][feature:reference][transition:update]"
+          "[transition:invalidation][transition:revalidation][scalar:integer]"
+          "[binding:value-to-reference][binding:reference-to-value][representation:free]") {
+    const auto first = node<changing_reference_target>();
+    const auto second = node<changing_reference_target>();
+    const auto make_inner = node([](In<REF<TS<i64>>> first, In<REF<TS<i64>>> second,
+                                    Out<TSL<REF<TS<i64>>, 2>> output) {
+        output[0].copy(first);
+        output[1].copy(second);
+    });
+    const auto sum = node([](In<TSL<TSL<TS<i64>, 2>, 1>> input, Out<TS<i64>> output) {
+        if (!input[0].valid() || !input[0][0].valid() || !input[0][1].valid()) {
+            output.invalidate();
+            return;
+        }
+        output.set(*input[0][0] + *input[0][1]);
+    });
+    const auto graph = [&] {
+        const auto inner = make_inner(first(), second());
+        const auto outer = tsl(inner).as<REF<TSL<TSL<REF<TS<i64>>, 2>, 1>>>();
+        return sum(outer);
+    };
+
+    CHECK(testing::test_graph(graph).equals({20, 40, std::nullopt, 60}));
+}
+
+TEST_CASE("nested fixed collection adaptation propagates a reference item retarget",
+          "[evaluation][reference][tsl][series:fixed-tsl][feature:reference][transition:update]"
+          "[binding:value-to-reference][binding:reference-to-value][representation:native]") {
+    const auto left = node<sampled_left_source>();
+    const auto right = node<sampled_right_source>();
+    const auto condition = node<sampled_condition_source>();
+    const auto select = node<nested_reference_list_selector>();
+    auto evaluations = 0;
+    const auto observe = node([&](In<TSL<TSL<TS<i64>, 1>, 1>> input, Out<TS<i64>> output) {
+        ++evaluations;
+        output.set(*input[0][0]);
+    });
+    const auto graph = [&] {
+        const auto collection = select(condition(), left(), right());
+        const auto reference = collection.as<REF<TSL<TSL<REF<TS<i64>>, 1>, 1>>>();
+        return observe(reference);
+    };
+
+    CHECK(testing::test_graph(graph).equals({10, 20}));
+    CHECK(evaluations == 2);
+}
+
+TEST_CASE("nested fixed collection adaptation propagates reference item validity",
+          "[evaluation][reference][tsl][series:fixed-tsl][feature:reference]"
+          "[transition:invalidation][transition:revalidation][binding:value-to-reference]"
+          "[binding:reference-to-value][representation:native]") {
+    const auto first = node<sampled_left_source>();
+    const auto second = node<sampled_right_source>();
+    const auto change_validity = node<invalidating_nested_reference_list>();
+    auto evaluations = 0;
+    const auto observe = node([&](In<TSL<TSL<TS<i64>, 2>, 1>> input, Out<TS<i64>> output) {
+        ++evaluations;
+        const auto &pair = input[0];
+        output.set(pair.all_valid() ? *pair[0] + *pair[1] : -1);
+    });
+    const auto graph = [&] {
+        const auto collection = change_validity(first(), second());
+        const auto reference = collection.as<REF<TSL<TSL<REF<TS<i64>>, 2>, 1>>>();
+        return observe(reference);
+    };
+
+    CHECK(testing::test_graph(graph).equals({30, -1, 30}));
+    CHECK(evaluations == 3);
+}
+
+TEST_CASE("same-cycle target changes reach a selected native fixed-list item",
+          "[evaluation][reference][tsl][series:fixed-tsl][feature:reference][transition:update]"
+          "[feature:getitem][binding:value-to-reference][binding:reference-to-value]"
+          "[guarantee:deduplicated][representation:native]") {
+    const auto first = node<repeated_value_target>();
+    const auto second = node<repeated_value_target>();
+    const auto references = node<reference_pair>();
+    auto evaluations = 0;
+    const auto read = node([&](In<TS<i64>> input, Out<TS<i64>> output) {
+        ++evaluations;
+        output.set(*input);
+    });
+    const auto graph = [&] {
+        const auto collection = references(first(), second());
+        const auto value_reference = collection.as<REF<TSL<TS<i64>, 2>>>();
+        return read(value_reference[i64{1}]);
+    };
+
+    const auto actual = testing::test_graph(graph);
+
+    CHECK(actual.equals({10, 20}));
+    CHECK(evaluations == 2);
 }
 
 TEST_CASE("a fixed collection output suppresses an equal nested reference update",

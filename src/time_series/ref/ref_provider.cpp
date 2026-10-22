@@ -509,12 +509,16 @@ void ReferenceProvider::notify(Reference reference, OutputChangeContext &context
 
 void ReferenceProvider::notify_item_bindings(Reference collection, item_id_t id,
                                              EvaluationContext &evaluation_context) {
+    auto context = OutputChangeContext{evaluation_context};
+    notify_item_bindings(collection, id, context);
+}
+
+void ReferenceProvider::notify_item_bindings(Reference collection, item_id_t id, OutputChangeContext &context) {
     auto *provider = get(collection);
     if (provider == nullptr) {
         return;
     }
 
-    auto context = OutputChangeContext{evaluation_context};
     for (auto *component = provider->components_; component != nullptr; component = component->next_component) {
         component->notify_item_bindings(collection, id, context);
     }

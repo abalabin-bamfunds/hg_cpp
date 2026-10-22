@@ -124,6 +124,8 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
         });
     }
 
+    const ReferenceRepresentationFactory *reference_representation_factory() const noexcept final;
+
     void for_each_modified_item(const TimeSeriesState &last_updated, const void *value, EvaluationTime evaluation_time,
                                 void *context, ModifiedItemFunction function) const final {
         const auto *bytes = static_cast<const std::byte *>(value);

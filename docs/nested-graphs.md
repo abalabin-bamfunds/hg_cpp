@@ -128,8 +128,13 @@ the boundary inputs when it starts.
 The stopped graph remains allocated through the current outer cycle. It is
 destroyed before work begins in the next outer cycle. This is required to keep
 references to its time series valid through the cycle in which it stops. Stopping
-the outer graph stops its remaining inner runtime graphs. Their storage is
-destroyed with the outer runtime graph.
+the outer graph stops its remaining inner runtime graphs. The owning node retains
+both its current instance and any previous stopped instance until finalization
+if no further outer cycle runs.
+
+`NestedGraph` operations receive the owning parent's evaluation context. The
+parent's allocator allocates and deletes the `RuntimeGraph` instances. An
+instance's allocator manages its internal storage.
 
 An exception from an inner graph propagates through its owning node and stops
 the outer graph, as defined by [Exceptions](evaluation.md#exceptions).

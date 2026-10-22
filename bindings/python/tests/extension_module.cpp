@@ -5,14 +5,19 @@
 #include <bg/python/node.hpp>
 #include <bg/python/operator.hpp>
 #include <bg/python/object.hpp>
+#include <bg/python/schema.hpp>
 #include <bg/python/scalar_conversion.hpp>
 #include <bg/python/wiring_point.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/scalar/builtins.hpp>
+#include <bg/scalar/bundle/scalar_type.hpp>
 #include <bg/scalar/declaration.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
+#include <bg/time_series/time_series_type.hpp>
+#include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
+#include <bg/type/schema.hpp>
 #include <bg/type/scalar_type.hpp>
 
 #include <nanobind/nanobind.h>
@@ -27,6 +32,39 @@
 #include <string_view>
 
 namespace {
+
+struct ConflictingNativeSchemaIdentity {};
+
+template <template <typename, auto...> typename Field> struct NativePairSchema {
+    Field<bg::i64> value;
+};
+
+template <template <typename, auto...> typename Field> struct NativeOptionalSchema {
+    Field<bg::i64, bg::optional> value;
+};
+
+const bg::Schema &native_pair_scalar_schema() {
+    return bg::details::hierarchical_scalar_type<NativePairSchema>().schema();
+}
+
+const bg::Schema &native_pair_time_series_schema() {
+    return static_cast<const bg::TimeSeriesBundleType &>(bg::TSB<NativePairSchema>::type()).schema();
+}
+
+const bg::Schema &native_optional_scalar_schema() {
+    return bg::details::hierarchical_scalar_type<NativeOptionalSchema>().schema();
+}
+
+const bg::Schema &native_optional_time_series_schema() {
+    return static_cast<const bg::TimeSeriesBundleType &>(bg::TSB<NativeOptionalSchema>::type()).schema();
+}
+
+const bg::Schema &conflicting_native_time_series_schema() {
+    static const auto fields = std::array{bg::SchemaField{
+        bg::util::symbol{"other"}, &bg::TS<bg::string>::type(), false}};
+    return bg::schema(bg::util::symbol{"native.Other"},
+                      bg::SchemaIdentity{std::type_index{typeid(ConflictingNativeSchemaIdentity)}}, nullptr, fields);
+}
 
 std::array<std::atomic<int>, 4> native_node_lifecycle{};
 std::array<std::atomic<std::uint64_t>, 2> native_interruption_lifecycle{};
@@ -170,6 +208,16 @@ const bg::Operator &native_stop_exception_operator() {
     return operation;
 }
 
+const bg::Operator &native_pair_consumer_operator() {
+    static auto operation = bg::operator_<auto(bg::TSB<NativePairSchema>) -> bg::TS<bg::i64>>{
+        "native_pair_consumer", {"value"}};
+    static const auto &implementation = operation.overload(bg::node([](bg::In<bg::TSB<NativePairSchema>> input) {
+        return *input->value;
+    }));
+    (void)implementation;
+    return operation;
+}
+
 const bg::Operator &native_start_only_source_operator() {
     static auto operation = bg::operator_<auto() -> bg::TS<bg::i64>>{"native_start_only_source"};
     static const auto &implementation = operation.overload(
@@ -261,6 +309,21 @@ nanobind::object extension_scalar_to_python(bg::Scalar<>, const bg::python::Pyth
 } // namespace
 
 NB_MODULE(_bg_test_extension, module) {
+    module.def("export_native_pair_schema", [](nanobind::handle python_type) {
+        bg::python::export_schema(python_type, native_pair_time_series_schema(), &native_pair_scalar_schema());
+    });
+    module.def("export_native_tsb_schema", [](nanobind::handle python_type) {
+        bg::python::export_schema(python_type, native_pair_time_series_schema());
+    });
+    module.def("export_native_optional_schema", [](nanobind::handle python_type) {
+        bg::python::export_schema(python_type, native_optional_time_series_schema(), &native_optional_scalar_schema());
+    });
+    module.def("export_native_optional_tsb_schema", [](nanobind::handle python_type) {
+        bg::python::export_schema(python_type, native_optional_time_series_schema());
+    });
+    module.def("export_conflicting_tsb_schema", [](nanobind::handle python_type) {
+        bg::python::export_schema(python_type, conflicting_native_time_series_schema());
+    });
     bg::python::export_operator(module, "const_", bg::operators::const_);
     bg::python::export_operator(module, "discard", discard_operator());
     bg::python::export_operator(module, "invalidate_on_zero", invalidate_on_zero_operator());
@@ -269,6 +332,7 @@ NB_MODULE(_bg_test_extension, module) {
     bg::python::export_operator(module, "native_callable_gil", native_callable_gil_operator());
     bg::python::export_operator(module, "native_python_exception", native_python_exception_operator());
     bg::python::export_operator(module, "native_stop_exception", native_stop_exception_operator());
+    bg::python::export_operator(module, "native_pair_consumer", native_pair_consumer_operator());
     bg::python::export_operator(module, "native_start_only_source", native_start_only_source_operator());
     bg::python::export_operator(module, "native_continuous_timer", native_continuous_timer_operator());
     bg::python::export_operator(module, "native_python_object_property", native_python_object_property_operator());

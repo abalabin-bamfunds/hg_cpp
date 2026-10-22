@@ -4,6 +4,8 @@
 #include <bg/time_series/tsl/tsl_free_storage.hpp>
 #include <bg/time_series/tsl/tsl_runtime_type.hpp>
 
+#include <stdexcept>
+
 namespace bg::details {
 
 Node free_list_node(const free_fixed_time_series_list_storage &storage) noexcept;
@@ -14,7 +16,14 @@ class FreeFixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
     explicit FreeFixedTimeSeriesListRuntimeType(const TimeSeriesListType &type);
 
     bool collection_valid(const void *value) const noexcept override;
+    const ReferenceRepresentationFactory *reference_representation_factory() const noexcept override;
     std::size_t item_count(const void *value) const override;
+    const TimeSeriesRuntimeType &item_runtime_type(item_id_t id) const override {
+        if (id >= static_cast<const TimeSeriesListType &>(type()).item_count()) {
+            throw std::out_of_range{"time series list item index is out of range"};
+        }
+        return *item_runtime_type_;
+    }
     ConstItem item(const void *value, item_id_t id) const override;
     void for_each_item_id(const void *value, void *context, ItemIdFunction function) const override;
     bool item_updated(const TimeSeriesState &last_updated, const void *value,
@@ -26,6 +35,9 @@ class FreeFixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
                                 ModifiedItemFunction function) const override;
     void construct_initial_value(void *destination) const noexcept override;
     void destroy_value(void *value, allocator &memory) const noexcept override;
+
+  private:
+    const TimeSeriesRuntimeType *item_runtime_type_;
 };
 
 const TimeSeriesRuntimeType &free_fixed_time_series_list_runtime_type(const TimeSeriesListType &type);

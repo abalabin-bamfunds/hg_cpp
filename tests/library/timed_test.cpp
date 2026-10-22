@@ -143,7 +143,7 @@ TEST_CASE("delay follows reference retargets and target ticks",
 
 TEST_CASE("delay fails when a reference retargets from valid TSS to an invalid target",
           "[feature:operator][feature:timed-scheduling][series:tss][series:reference]"
-          "[transition:invalidation][transition:rebind]") {
+          "[transition:invalidation][transition:update]") {
     const auto select = node([](In<TS<i64>> cycle, In<REF<TSS<i64>>, passive> populated,
                                 In<REF<TSS<i64>>, passive> invalid, Out<REF<TSS<i64>>> output) {
         output.copy(*cycle == 0 ? populated : invalid);
@@ -157,7 +157,7 @@ TEST_CASE("delay fails when a reference retargets from valid TSS to an invalid t
 
 TEST_CASE("delay fails when a reference retargets from valid TSD to an invalid target",
           "[feature:operator][feature:timed-scheduling][series:tsd][series:reference]"
-          "[transition:invalidation][transition:rebind]") {
+          "[transition:invalidation][transition:update]") {
     const auto select = node([](In<TS<i64>> cycle, In<REF<TSD<i64, TS<i64>>>, passive> populated,
                                 In<REF<TSD<i64, TS<i64>>>, passive> invalid,
                                 Out<REF<TSD<i64, TS<i64>>>> output) {
@@ -173,7 +173,7 @@ TEST_CASE("delay fails when a reference retargets from valid TSD to an invalid t
 
 TEST_CASE("delay replays TSS membership changes when a reference selects another valid set",
           "[feature:operator][feature:timed-scheduling][series:tss][series:reference]"
-          "[transition:addition][transition:removal][transition:rebind]") {
+          "[transition:addition][transition:removal][transition:update]") {
     const auto select = node([](In<TS<bool>> use_second, In<REF<TSS<i64>>> first, In<REF<TSS<i64>>> second,
                                 Out<REF<TSS<i64>>> output) { output.copy(*use_second ? second : first); });
     const auto delayed_sum = [&](wp<TS<bool>> use_second, wp<TSS<i64>> first, wp<TSS<i64>> second) {
@@ -186,7 +186,7 @@ TEST_CASE("delay replays TSS membership changes when a reference selects another
 
 TEST_CASE("delay replays TSD key changes when a reference selects another valid dictionary",
           "[feature:operator][feature:timed-scheduling][series:tsd][series:reference]"
-          "[transition:addition][transition:removal][transition:rebind]") {
+          "[transition:addition][transition:removal][transition:update]") {
     const auto select = node([](In<TS<bool>> use_second, In<REF<TSD<i64, TS<i64>>>> first,
                                 In<REF<TSD<i64, TS<i64>>>> second, Out<REF<TSD<i64, TS<i64>>>> output) {
         output.copy(*use_second ? second : first);

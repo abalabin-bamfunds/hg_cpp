@@ -1,20 +1,31 @@
 #include <bg/graph.hpp>
+#include <bg/details/evaluation_scratch.hpp>
+#include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/details/nested.hpp>
 #include <bg/graph/graph_wiring.hpp>
+#include <bg/graph/nested_graph.hpp>
+#include <bg/graph/runtime_graph.hpp>
+#include <bg/graph/runtime_graph_evaluator.hpp>
+#include <bg/graph/wiring_context.hpp>
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/node/node_template.hpp>
+#include <bg/switch.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 #include <bg/type/time_series_reference_type.hpp>
+#include "../utils/counting_memory_resource.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
 #include <chrono>
+#include <cstddef>
+#include <memory>
 #include <optional>
+#include <stdexcept>
 
 namespace {
 
@@ -52,6 +63,153 @@ TEST_CASE("a nested graph can be stopped and started repeatedly",
     CHECK(actual.equals({2, std::nullopt, 4, std::nullopt, 6}));
     CHECK(LifecycleIncrement::starts == 3);
     CHECK(LifecycleIncrement::stops == 3);
+}
+
+struct SwitchBranchLifetime {
+    bg::In<bg::TS<bg::i64>> input;
+    bg::State<int> marker;
+    bg::Out<bg::TS<bg::i64>> output;
+    int id;
+
+    void start() const noexcept { *marker = id + 1; }
+    void evaluate() const { output.set(*input); }
+
+    void finalize() const noexcept {
+        if (*marker != id + 1) {
+            return;
+        }
+        if (finalization_count == finalizations.size()) {
+            overflow = true;
+            return;
+        }
+        finalizations[finalization_count++] = id;
+    }
+
+    inline static std::array<int, 2> finalizations{};
+    inline static std::size_t finalization_count{};
+    inline static bool overflow{};
+};
+
+TEST_CASE("switch finalization destroys the current branch before a retired branch",
+          "[evaluation][feature:switch][feature:nested-graph][feature:lifecycle][feature:finalization]"
+          "[transition:update][transition:stop][transition:restart]") {
+    const auto lifetime = bg::node<SwitchBranchLifetime>();
+    const auto first = bg::graph("name"_n = "switch_lifetime_first", [&](bg::wp<bg::TS<bg::i64>> input) {
+        return lifetime(input, 0);
+    });
+    const auto second = bg::graph("name"_n = "switch_lifetime_second", [&](bg::wp<bg::TS<bg::i64>> input) {
+        return lifetime(input, 1);
+    });
+    const auto tested = [&](bg::wp<bg::TS<bg::i64>> key, bg::wp<bg::TS<bg::i64>> value) {
+        return bg::switch_(key, bg::cases{bg::case_(bg::i64{0}, first), bg::case_(bg::i64{1}, second)}, value)
+            .as<bg::TS<bg::i64>>();
+    };
+    SwitchBranchLifetime::finalizations = {};
+    SwitchBranchLifetime::finalization_count = 0;
+    SwitchBranchLifetime::overflow = false;
+
+    const auto actual = bg::testing::test_graph(tested, {0, 1}, {10, 20});
+
+    CHECK(actual.equals<bg::i64>({10, 20}));
+    CHECK_FALSE(SwitchBranchLifetime::overflow);
+    CHECK(SwitchBranchLifetime::finalization_count == 2);
+    CHECK(SwitchBranchLifetime::finalizations == std::array{1, 0});
+}
+
+struct CycleCallbackOwner {
+    static constexpr bool uses_cycle_callbacks = true;
+
+    void evaluate() const noexcept {}
+};
+
+struct NestedGraphLifetime {
+    bg::State<int> marker;
+    int id;
+
+    void start() const noexcept { *marker = id + 1; }
+
+    void finalize() const noexcept {
+        if (*marker == id + 1) {
+            ++finalizations;
+        }
+    }
+
+    inline static int finalizations{};
+};
+
+struct NestedGraphStartFailure {
+    bg::State<int> marker;
+
+    void start() const {
+        *marker = 1;
+        throw std::runtime_error{"nested graph startup failed"};
+    }
+
+    void finalize() const noexcept {
+        if (*marker == 1) {
+            ++finalizations;
+        }
+    }
+
+    inline static int finalizations{};
+};
+
+TEST_CASE("nested graph replacement defers destruction and rolls back a failed start",
+          "[evaluation][feature:nested-graph][feature:lifecycle][feature:finalization]"
+          "[transition:start][transition:stop][transition:restart]") {
+    CHECK(sizeof(bg::RuntimeGraph) == 96);
+    CHECK(sizeof(bg::NestedGraph) == 16);
+
+    auto memory = counting_memory_resource{};
+    {
+        const auto owner = bg::node<CycleCallbackOwner>();
+        const auto lifetime = bg::node<NestedGraphLifetime>();
+        const auto failure = bg::node<NestedGraphStartFailure>();
+        const auto compile_graph = [](auto define) {
+            auto wiring = bg::GraphWiring{};
+            {
+                auto context = bg::WiringContext{wiring};
+                define();
+            }
+            wiring.finalize();
+            return std::make_shared<const bg::CompiledGraph>(wiring);
+        };
+        const auto root_graph = compile_graph([&] { owner(); });
+        auto global_state = bg::GlobalState{bg::allocator{memory}};
+        auto root = bg::RuntimeGraph{*root_graph, bg::allocator{memory}, global_state};
+        root.start(bg::MIN_DT + std::chrono::microseconds{1});
+
+        auto scratch = bg::details::EvaluationScratch{memory};
+        auto global_context = root.make_global_evaluation_context(global_state, scratch,
+                                                                  bg::SystemWallClock::instance());
+        auto context = bg::EvaluationContext{global_context, bg::MIN_DT + std::chrono::microseconds{1}, root};
+        auto evaluator = bg::RuntimeGraphEvaluator{};
+        evaluator.bind_owner(root, 0);
+
+        auto nested = bg::NestedGraph{};
+        const auto first = bg::CompiledNestedGraph{.graph = compile_graph([&] { lifetime(0); })};
+        const auto failed = bg::CompiledNestedGraph{.graph = compile_graph([&] { failure(); })};
+        NestedGraphLifetime::finalizations = 0;
+        NestedGraphStartFailure::finalizations = 0;
+
+        nested.start(first, evaluator, context, {});
+        CHECK(nested.running());
+        nested.stop(context);
+        CHECK_FALSE(nested.running());
+        CHECK(NestedGraphLifetime::finalizations == 0);
+
+        CHECK_THROWS_AS(nested.start(failed, evaluator, context, {}), std::runtime_error);
+        CHECK_FALSE(nested.running());
+        CHECK(NestedGraphStartFailure::finalizations == 1);
+        CHECK(NestedGraphLifetime::finalizations == 0);
+
+        root.evaluate(bg::MIN_DT + std::chrono::microseconds{2});
+        CHECK(NestedGraphLifetime::finalizations == 1);
+        nested.stop_and_destroy(context);
+    }
+
+    CHECK(memory.allocated_bytes() == 0);
+    CHECK(memory.allocations() == 0);
 }
 
 TEST_CASE("nested graph supports inferred callable output guarantees",

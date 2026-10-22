@@ -847,7 +847,7 @@ TEST_CASE("a reference target preserves only its immediate variable's reference 
 }
 
 TEST_CASE("reference-free types remove references recursively through collections",
-          "[type][reference][feature:type-system][series:tsd][series:tsl]") {
+          "[type][reference][feature:type-system][series:tsd][series:fixed-tsl]") {
     using SOURCE = bg::TSD<bg::i64, bg::TSL<bg::REF<bg::TS<bg::i64>>, 2>>;
     using EXPECTED = bg::TSD<bg::i64, bg::TSL<bg::TS<bg::i64>, 2>>;
 

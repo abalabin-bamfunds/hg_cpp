@@ -319,7 +319,7 @@ TEST_CASE("filter reopens with a recreated final TSD item",
 
 TEST_CASE("filter restores TSS after a reference switches through an invalid target",
           "[feature:operator][series:tss][series:reference][validity:optional]"
-          "[transition:invalidation][transition:rebind]") {
+          "[transition:invalidation][transition:update]") {
     const auto select = node([](In<TS<i64>> cycle, In<REF<TSS<i64>>, passive> populated,
                                 In<REF<TSS<i64>>, passive> invalid, Out<REF<TSS<i64>>> output) {
         output.copy(*cycle == 1 ? invalid : populated);
@@ -339,7 +339,7 @@ TEST_CASE("filter restores TSS after a reference switches through an invalid tar
 
 TEST_CASE("filter restores TSD after a reference switches through an invalid target",
           "[feature:operator][series:tsd][series:reference][validity:optional]"
-          "[transition:invalidation][transition:rebind]") {
+          "[transition:invalidation][transition:update]") {
     const auto select = node([](In<TS<i64>> cycle, In<REF<TSD<i64, TS<i64>>>, passive> populated,
                                 In<REF<TSD<i64, TS<i64>>>, passive> invalid,
                                 Out<REF<TSD<i64, TS<i64>>>> output) {
@@ -359,7 +359,7 @@ TEST_CASE("filter restores TSD after a reference switches through an invalid tar
 
 TEST_CASE("filter copies an invalid TSS target when it reopens",
           "[feature:operator][series:tss][series:reference][validity:optional]"
-          "[transition:invalidation][transition:rebind]") {
+          "[transition:invalidation][transition:update]") {
     const auto select = node([](In<TS<i64>> cycle, In<REF<TSS<i64>>, passive> populated,
                                 In<REF<TSS<i64>>, passive> invalid, Out<REF<TSS<i64>>> output) {
         output.copy(*cycle == 0 ? populated : invalid);
@@ -380,7 +380,7 @@ TEST_CASE("filter copies an invalid TSS target when it reopens",
 
 TEST_CASE("filter copies an invalid TSD target when it reopens",
           "[feature:operator][series:tsd][series:reference][validity:optional]"
-          "[transition:invalidation][transition:rebind]") {
+          "[transition:invalidation][transition:update]") {
     const auto select = node([](In<TS<i64>> cycle, In<REF<TSD<i64, TS<i64>>>, passive> populated,
                                 In<REF<TSD<i64, TS<i64>>>, passive> invalid,
                                 Out<REF<TSD<i64, TS<i64>>>> output) {

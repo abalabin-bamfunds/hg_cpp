@@ -57,7 +57,7 @@ TEST_CASE("reduce combines final TSD items with a nested reducer",
 }
 
 TEST_CASE("compact reduce does not propagate a dirty path when a child reducer does not publish",
-          "[feature:reduce][series:tsd][shape:single-node][transition:update][notification:suppressed]") {
+          "[feature:reduce][series:tsd][shape:single-node][transition:update]") {
     const auto suppress_selected_value = graph(
         "name"_n = "suppress_selected_reduce_value", [](wp<TS<i64>> left, wp<TS<i64>> right) -> wp<TS<i64>> {
             const auto selected = node([](In<TS<i64>> left_value, In<TS<i64>> right_value, Out<TS<i64>> output) {
@@ -78,7 +78,7 @@ TEST_CASE("compact reduce does not propagate a dirty path when a child reducer d
 }
 
 TEST_CASE("compact reduce does not republish an unchanged root when membership changes",
-          "[feature:reduce][series:tsd][shape:single-node][transition:removal][notification:suppressed]") {
+          "[feature:reduce][series:tsd][shape:single-node][transition:removal]") {
     const auto make_dictionary = node([](In<TS<bool>> initialize, Out<TSD<i64, TS<i64>>> output) {
         if (*initialize) {
             output[10].set(1);
@@ -149,7 +149,7 @@ TEST_CASE("nested reduce preserves the reducer selected for reference-backed inp
 }
 
 TEST_CASE("nested reduce tracks keys when a sampled TSD reassigns physical item IDs",
-          "[feature:reduce][series:tsd][series:reference][feature:item-id-remapping][transition:rebind]"
+          "[feature:reduce][series:tsd][series:reference][feature:item-id-remapping][transition:update]"
           "[shape:nested]") {
     const auto select_dictionary = node(
         [](In<TS<bool>> use_second, In<REF<TSD<i64, TS<i64>>>> first,
@@ -175,7 +175,7 @@ TEST_CASE("nested reduce tracks keys when a sampled TSD reassigns physical item 
 }
 
 TEST_CASE("compact reduce handles addition that reuses an expired physical item ID",
-          "[feature:reduce][series:tsd][transition:removal][transition:addition][storage:item-id-reuse]") {
+          "[feature:reduce][series:tsd][transition:removal][transition:addition]") {
     const auto make_dictionary = node([](In<TS<i64>> phase, Out<TSD<i64, TS<i64>>> output) {
         if (*phase == 0) {
             output[10].set(2);
@@ -206,7 +206,7 @@ TEST_CASE("compact reduce handles addition that reuses an expired physical item 
 }
 
 TEST_CASE("compact reduce updates a sparse path in a larger TSD",
-          "[feature:reduce][series:tsd][shape:single-node][transition:update][activity:sparse]") {
+          "[feature:reduce][series:tsd][shape:single-node][transition:update]") {
     const auto make_dictionary = node([](In<TS<bool>> initialize, In<TS<i64>> changed_key,
                                          In<TS<i64>> changed_value, Out<TSD<i64, TS<i64>>> output) {
         if (*initialize) {

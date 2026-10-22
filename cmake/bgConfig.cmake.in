@@ -3,6 +3,7 @@
 include(CMakeFindDependencyMacro)
 find_dependency(ddvisitor CONFIG REQUIRED)
 find_dependency(Threads REQUIRED)
+find_dependency(fmt CONFIG REQUIRED)
 
 set(bg_python_FOUND FALSE)
 if("python" IN_LIST bg_FIND_COMPONENTS AND @BG_BUILD_PYTHON@)

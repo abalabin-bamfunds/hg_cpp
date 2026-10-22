@@ -192,11 +192,16 @@ void ItemNotifications::publish_batch(OutputChangeContext &context) {
         return;
     }
 
-    for (const auto index : pending_destinations_) {
+    auto next = std::size_t{};
+    while (next < pending_destinations_.size()) {
+        const auto index = pending_destinations_[next++];
         auto &destination = destinations_[index];
         destination.publication_pending = false;
-        auto destination_context = context.for_graph(*destination.graph);
-        destination.publish_item_changes(destination_context, destination.destination_representation);
+        auto *graph = destination.graph;
+        auto *representation = destination.destination_representation;
+        const auto publish_item_changes = destination.publish_item_changes;
+        auto destination_context = context.for_graph(*graph);
+        publish_item_changes(destination_context, representation);
     }
     pending_destinations_.clear();
     batch_depth_ = 0;
@@ -265,17 +270,22 @@ void ItemNotifications::release_destination_item_group(ItemNotificationDescripto
 }
 
 void ItemNotifications::notify(DestinationItem item, OutputChangeContext &context, OutputChange change) {
-    auto &destination = destinations_[item.destination_index];
-    auto destination_context = context.for_graph(*destination.graph);
-    destination.notify_item_change(destination_context, destination.destination_representation,
-                                   item.item_id, change);
+    const auto destination_index = item.destination_index;
+    const auto &destination = destinations_[destination_index];
+    auto *graph = destination.graph;
+    auto *representation = destination.destination_representation;
+    const auto notify_item_change = destination.notify_item_change;
+    const auto publish_item_changes = destination.publish_item_changes;
+    auto destination_context = context.for_graph(*graph);
+    notify_item_change(destination_context, representation, item.item_id, change);
     if (batch_depth_ == 0) {
-        destination.publish_item_changes(destination_context, destination.destination_representation);
+        publish_item_changes(destination_context, representation);
         return;
     }
-    if (!destination.publication_pending) {
-        pending_destinations_.push_back(item.destination_index);
-        destination.publication_pending = true;
+    auto &current_destination = destinations_[destination_index];
+    if (!current_destination.publication_pending) {
+        pending_destinations_.push_back(destination_index);
+        current_destination.publication_pending = true;
     }
 }
 

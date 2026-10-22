@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <stdexcept>
+#include <vector>
 
 namespace bg::details {
 
@@ -20,10 +21,25 @@ class FreeTimeSeriesBundleRuntimeType final : public TimeSeriesRuntimeType {
                                 alignof(free_time_series_bundle_storage),
                                 type.item_count() > util::index<>::inline_capacity,
                                 false,
-                                true} {}
+                                true} {
+        item_runtime_types_.reserve(type.item_count());
+        for (auto index = std::size_t{}; index < type.item_count(); ++index) {
+            item_runtime_types_.push_back(&resolve_time_series_runtime_type(type.item_type(index)));
+        }
+    }
 
     bool collection_valid(const void *value) const noexcept override {
         return free_bundle_valid(*static_cast<const free_time_series_bundle_storage *>(value));
+    }
+
+    const ReferenceRepresentationFactory *reference_representation_factory() const noexcept override;
+
+    const TimeSeriesRuntimeType &item_runtime_type(item_id_t id) const override {
+        const auto &bundle = static_cast<const TimeSeriesBundleType &>(type());
+        if (id >= bundle.item_count()) {
+            throw std::out_of_range{"time series bundle item index is out of range"};
+        }
+        return *item_runtime_types_[id];
     }
 
     std::size_t item_count(const void *value) const override {
@@ -101,6 +117,9 @@ class FreeTimeSeriesBundleRuntimeType final : public TimeSeriesRuntimeType {
         storage->modified.release(memory);
         std::destroy_at(storage);
     }
+
+  private:
+    std::vector<const TimeSeriesRuntimeType *> item_runtime_types_;
 };
 
 const TimeSeriesRuntimeType &free_time_series_bundle_runtime_type(const TimeSeriesBundleType &type);

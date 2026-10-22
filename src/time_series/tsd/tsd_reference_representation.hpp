@@ -36,8 +36,6 @@ class TimeSeriesDictionaryRepresentation : public ReferenceRepresentation {
 const TimeSeriesDictionaryRuntimeType &time_series_dictionary_representation_runtime_type(
     const TimeSeriesDictionaryType &type, const ScalarRuntimeType &key, const TimeSeriesRuntimeType &item);
 
-const TimeSeriesRuntimeType &routed_tsd_item_reference_runtime_type(const TimeSeriesReferenceType &type);
-
 ReferenceRepresentation *make_tsd_item_reference_representation(
     ReferenceProvider &provider, Reference base_reference, const TimeSeriesDictionaryType &type,
     const TimeSeriesDictionaryRuntimeType &base_runtime_type, const TimeSeriesRuntimeType &item_runtime_type,

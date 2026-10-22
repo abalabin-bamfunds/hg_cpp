@@ -9,6 +9,14 @@ substr = _native.substr
 lower = _native.lower
 upper = _native.upper
 casefold = _native.casefold
+str_ = _native.str_
+format_ = _native.format_
+print_ = _native.print_
+matches = _native.matches
+replace = _native.replace
+match_ = _native.match_
+split = _native.split
+join = _native.join
 div = _native.div
 floordiv = _native.floordiv
 mod = _native.mod
@@ -79,6 +87,7 @@ __all__ = [
     "eq",
     "floordiv",
     "filter_",
+    "format_",
     "ge",
     "getattr",
     "getitem",
@@ -90,6 +99,8 @@ __all__ = [
     "len_",
     "lt",
     "map",
+    "match_",
+    "matches",
     "max_",
     "mesh",
     "maxs",
@@ -106,6 +117,8 @@ __all__ = [
     "not_",
     "or_",
     "pow",
+    "print_",
+    "replace",
     "pos",
     "round",
     "sample",
@@ -113,8 +126,11 @@ __all__ = [
     "casefold",
     "sub",
     "substr",
+    "str_",
     "sum_",
     "switch_",
+    "split",
+    "join",
     "sums",
     "throttle",
     "upper",

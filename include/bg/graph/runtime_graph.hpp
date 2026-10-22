@@ -127,6 +127,7 @@ class RuntimeGraph {
     // Suppresses propagation to the owning node and returns the previous state.
     bool set_owner_scheduling_suppressed(bool suppressed) noexcept;
     bool evaluation_pending() const noexcept;
+    bool running() const noexcept { return started_ && !stopped_; }
 
     void update_reference_output(std::size_t node_index, Reference reference, EvaluationTime evaluation_time);
     void initialize_constant_output(std::size_t node_index, Scalar<> value, EvaluationTime evaluation_time);

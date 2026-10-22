@@ -32,4 +32,10 @@ class TimeSeriesReferenceRuntimeType : public TimeSeriesRuntimeType {
 
 const TimeSeriesRuntimeType &time_series_reference_runtime_type(const TimeSeriesReferenceType &type);
 
+namespace details {
+
+const TimeSeriesRuntimeType &routed_time_series_reference_runtime_type(const TimeSeriesReferenceType &type);
+
+} // namespace details
+
 } // namespace bg

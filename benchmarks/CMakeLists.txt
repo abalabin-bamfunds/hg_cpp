@@ -28,6 +28,9 @@ target_link_libraries(bg_high_count_map_benchmark PRIVATE bg::bg)
 add_executable(bg_reduce_benchmark reduce_benchmark.cpp)
 target_link_libraries(bg_reduce_benchmark PRIVATE bg::bg)
 
+add_executable(bg_string_regex_benchmark string_regex_benchmark.cpp)
+target_link_libraries(bg_string_regex_benchmark PRIVATE bg::library)
+
 if(WIN32)
     target_link_libraries(bg_high_count_map_benchmark PRIVATE psapi)
     target_link_libraries(bg_reduce_benchmark PRIVATE psapi)

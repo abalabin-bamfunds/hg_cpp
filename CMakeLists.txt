@@ -15,6 +15,7 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 find_package(Threads REQUIRED)
 find_package(ICU REQUIRED COMPONENTS uc i18n)
+find_package(fmt CONFIG REQUIRED)
 
 option(BG_BUILD_PYTHON "Build the Python extension module" OFF)
 option(BG_BUILD_BENCHMARKS "Build performance benchmarks" OFF)
@@ -100,6 +101,7 @@ add_library(
     src/time_series/tsl/tsl_runtime_type.cpp
     src/time_series/tsl/wiring.cpp
     src/time_series/tsl/operators.cpp
+    src/time_series/fixed/fixed_reference_representation.cpp
     src/time_series/tsb/tsb_type.cpp
     src/time_series/tsb/tsb_runtime_type.cpp
     src/time_series/tsb/wiring.cpp
@@ -181,6 +183,9 @@ add_library(
     src/library/collection.cpp
     src/library/tss.cpp
     src/library/string.cpp
+    src/library/string_regex.cpp
+    src/library/string_collection.cpp
+    src/library/string_format.cpp
     src/library/stream.cpp
     src/library/timed.cpp
     src/library/running.cpp
@@ -190,7 +195,7 @@ add_library(bg::library ALIAS bg_library)
 
 target_compile_features(bg_library PUBLIC cxx_std_23)
 target_compile_definitions(bg_library PRIVATE BG_BUILDING_LIBRARY)
-target_link_libraries(bg_library PUBLIC bg::bg PRIVATE ICU::uc ICU::i18n)
+target_link_libraries(bg_library PUBLIC bg::bg PRIVATE ICU::uc ICU::i18n fmt::fmt)
 target_include_directories(
     bg_library
     PUBLIC

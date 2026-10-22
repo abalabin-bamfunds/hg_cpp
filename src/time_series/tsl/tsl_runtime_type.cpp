@@ -1,4 +1,6 @@
 #include <bg/time_series/tsl/tsl_runtime_type.hpp>
+
+#include "../fixed/fixed_reference_representation.hpp"
 #include <bg/util/static_storage.hpp>
 #include <bg/time_series/tsl/tsl_free_runtime_type.hpp>
 #include <bg/time_series/tsl/tsl_input.hpp>
@@ -10,6 +12,16 @@
 #include <vector>
 
 namespace bg::details {
+
+const ReferenceRepresentationFactory *FreeFixedTimeSeriesListRuntimeType::reference_representation_factory()
+    const noexcept {
+    return fixed_collection_reference_representation_factory();
+}
+
+const ReferenceRepresentationFactory *FixedTimeSeriesListRuntimeType::reference_representation_factory()
+    const noexcept {
+    return fixed_collection_reference_representation_factory();
+}
 
 void FixedTimeSeriesListRuntimeType::copy_tick(const TimeSeriesInputData &input,
                                               OutputState &output) const {
@@ -66,7 +78,8 @@ FreeFixedTimeSeriesListRuntimeType::FreeFixedTimeSeriesListRuntimeType(const Tim
                             alignof(free_fixed_time_series_list_storage),
                             type.item_count() > util::index<>::inline_capacity,
                             false,
-                            true} {}
+                            true},
+      item_runtime_type_{&resolve_time_series_runtime_type(type.item_type())} {}
 
 bool FreeFixedTimeSeriesListRuntimeType::collection_valid(const void *value) const noexcept {
     return free_list_valid(*static_cast<const free_fixed_time_series_list_storage *>(value));

@@ -78,6 +78,7 @@ class TimeSeriesRuntimeType : public RuntimeType {
     }
     bool is_reference() const noexcept { return has_runtime_type_flag(reference_flag); }
     virtual ItemLayout item_layout(item_id_t) const;
+    virtual const TimeSeriesRuntimeType &item_runtime_type(item_id_t id) const { return item_layout(id).runtime_type; }
     virtual std::size_t item_count(const void *) const;
     virtual ConstItem item(const void *, item_id_t) const;
     virtual MutableItem item(void *, item_id_t) const;

@@ -498,6 +498,8 @@ graph compilation or evaluation.
   post-run enumeration and reporting, graph-ID reuse, and final-period closure
 - outer and inner graph failure behavior
 - cycle callbacks and deferred storage reclamation
+- nested instance replacement in the final cycle, stopped-instance finalization,
+  and instance deletion through the owning parent's allocator
 - global state shared by outer and inner graphs
 - context time series startup sampling, changes, validity, and use across nested graph boundaries
 - mapped TSD unions, selected key sets, per-key inner graph evaluation, scheduling, and lifecycle
@@ -526,6 +528,9 @@ graph compilation or evaluation.
 - references across inner graph boundaries
 - dynamic collection items and outer-cycle removal lifetime
 - representation creation and reuse
+- fixed TSL and TSB item-reference adaptation, target-only updates, sampling on
+  retargeting, reference and target validity, stable value-item references, and
+  nested graph cleanup
 - dictionary item selection with scalar and time series keys
 - fixed-list item selection with scalar and time series indices
 - bundle field selection through value and reference fields, including nested graph boundaries
@@ -568,6 +573,19 @@ For each reusable node and graph, test:
   case conversion, including multibyte code points, combining marks, embedded
   NUL bytes, malformed input, negative and extreme indices, output limits,
   validity transitions, references, and output guarantees
+- text splitting into scalar lists and fixed TSLs, separator and split limits,
+  exact fixed width, trailing empty pieces, Unicode separators, and embedded NUL;
+  joining scalar lists and TSLs, all-valid and optional behavior, empty values,
+  reference items, free collections, and output guarantees
+- built-in and nested scalar text rendering, non-finite numbers, normalized
+  durations and timestamps; positional and named formatting, argument validity,
+  output guarantees, and native output-stream selection with embedded NUL
+- regular-expression search with Boolean results and fixed TSL captures, empty
+  and absent captures, match loss, Unicode text, backreferences, invalid patterns,
+  guarantees, references, wiring-time errors, shared compiled patterns, independent
+  runtime matchers, node deduplication, and resource cleanup; replacement templates with
+  numbered and named groups, whole-match references, literal escapes, unmatched
+  groups, zero-length matches, and invalid templates
 - validity queries at startup and on validity changes; immediate collection
   validity, empty collections, references, and free collections
 - signal-driven complete-value sampling, passive value inputs, preserved
@@ -619,6 +637,8 @@ For each reusable node and graph, test:
 
 ### Python integration
 
+- native schema export preserving declaration identity for TSB annotations and
+  scalar Bundle conversion, including time-series-only schemas
 - homogeneous scalar tuple annotations, nested and generic items, immutable
   Python materialization, expected-type sequence conversion and ownership,
   and rejection of mutable sequence annotations
