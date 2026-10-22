@@ -2260,7 +2260,9 @@ class RuntimeFrameViewOutputStorage {
         const auto rebuild_predicate = filtering &&
                                        (rebuild_requested_predicate || !valid || row_set_rebound ||
                                         row_domain_changed || (input.modified && !input_delta_current));
-        auto selected_order_dirty = filtering && rebuild_predicate;
+        auto selected_order_dirty = filtering &&
+                                    (!valid || row_set_rebound || row_domain_changed ||
+                                     (input.modified && !input_delta_current));
         if (new_cycle) {
             added_rows.clear();
             removed_rows.clear();
@@ -2322,9 +2324,7 @@ class RuntimeFrameViewOutputStorage {
             previous_rows.clear();
             input.rows.each([&](row_id_t id) {
                 previous_rows.include(id, memory);
-                if (filtering)
-                    predicate_rows.set(id, memory.memory_resource());
-                else
+                if (!filtering)
                     add_projection_row(id, true);
             });
         } else if (row_set_rebound || (input.modified && !input_delta_current)) {
@@ -2341,12 +2341,8 @@ class RuntimeFrameViewOutputStorage {
             }
             predicate_rows.clear();
             input.rows.each([&](row_id_t id) {
-                if (!previous_rows.contains(id)) {
-                    if (filtering)
-                        predicate_rows.set(id, memory.memory_resource());
-                    else
-                        add_projection_row(id, false);
-                }
+                if (!previous_rows.contains(id) && !filtering)
+                    add_projection_row(id, false);
                 previous_rows.include(id, memory);
             });
         } else if (input_delta_current) {
@@ -2362,18 +2358,16 @@ class RuntimeFrameViewOutputStorage {
             if (input.added != nullptr)
                 for (auto id : *input.added)
                     if (input.rows.has(id) && !previous_rows.contains(id)) {
-                        if (filtering)
+                        if (filtering && !rebuild_predicate)
                             predicate_rows.set(id, memory.memory_resource());
-                        else
+                        else if (!filtering)
                             add_projection_row(id, false);
                         previous_rows.include(id, memory);
                     }
         }
 
         if constexpr (filtering) {
-            if (rebuild_predicate)
-                input.rows.each([&](row_id_t id) { predicate_rows.set(id, memory.memory_resource()); });
-            else
+            if (!rebuild_predicate)
                 for (const auto id : changed_predicate_rows)
                     if (input.rows.has(id))
                         predicate_rows.set(id, memory.memory_resource());
@@ -2387,7 +2381,9 @@ class RuntimeFrameViewOutputStorage {
                         remove_filter_row(ids[position], false);
                 }
             };
-            if (!predicate_rows.empty())
+            if (rebuild_predicate && input.rows.count() != 0)
+                std::invoke(evaluator, input.rows, consume_batch);
+            else if (!predicate_rows.empty())
                 std::invoke(evaluator, requested_predicate_rows(input.rows), consume_batch);
             if (selected_order_dirty)
                 rebuild_selected_order(input.rows, memory);

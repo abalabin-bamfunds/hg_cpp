@@ -6224,6 +6224,79 @@ void test_filter_row_set_reads_cached_source_order() {
     });
 }
 
+void test_full_filter_request_skips_selected_order_rebuild() {
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto source = NativeFrame<Quotes>{};
+    auto release_source = util::scope_exit{[&]() noexcept { source.release(memory); }};
+    const auto first_time = MIN_DT + EvaluationTime::duration{1};
+    const auto first = source.add(Quotes<Cell>{.size = Cell<i64>{5}, .bid = Cell<double>{10.0},
+                                               .ask = Cell<double>{11.0}},
+                                  first_time, memory);
+    const auto second = source.add(Quotes<Cell>{.size = Cell<i64>{6}, .bid = Cell<double>{20.0},
+                                                .ask = Cell<double>{21.0}},
+                                   first_time, memory);
+    const auto row_counter = RowTraversalCounter{std::addressof(source.rows())};
+    auto bindings = FrameReadBindings{};
+    const auto make_input = [&] {
+        auto input = native_frame_input(source);
+        const auto rows = row_counter.row_set();
+        input.rows = rows;
+        bindings.visible_rows = rows;
+        bindings.override_visible_rows = true;
+        bindings.apply(input);
+        return input;
+    };
+    auto input = make_input();
+    const auto all_fields = std::array<std::size_t, 3>{0, 1, 2};
+    const auto predicate_index = input.field_index(util::symbol{"size"});
+    auto predicate = [&](row_id_t id) { return source.cell<0>(id).value_or(0) > 4; };
+
+    with_runtime_view_storage<Quotes>(memory, [&](auto &filter, const auto &) {
+        static_cast<void>(bind_filter(filter, input, all_fields, predicate_index, predicate, first_time, memory));
+
+        const auto second_time = first_time + EvaluationTime::duration{1};
+        input = make_input();
+        row_counter.traversals = 0;
+        auto requested_input_rows = false;
+        const auto ids = std::array{first, second};
+        const auto values = std::array<std::uint8_t, 1>{0b11};
+        const auto evaluator = [&](const RowSet &requested_rows, auto &&consume) {
+            requested_input_rows = requested_rows == input.rows;
+            const auto batch = ColumnBatch<bool>{0, ids.size(), values.data(), 0,
+                                                 ColumnBatchValidity::all_valid()};
+            std::invoke(std::forward<decltype(consume)>(consume), std::span<const row_id_t>{ids}, batch);
+        };
+        static_cast<void>(filter.bind_filter(input, all_fields, true, {}, evaluator, second_time, memory));
+
+        require(requested_input_rows, "a full filter request did not receive the input row set");
+        require(row_counter.traversals == 0,
+                "a full predicate request rebuilt selected order despite unchanged membership");
+    });
+}
+
+void test_empty_full_filter_request_skips_evaluator() {
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto source = NativeFrame<Quotes>{};
+    auto release_source = util::scope_exit{[&]() noexcept { source.release(memory); }};
+    const auto time = MIN_DT + EvaluationTime::duration{1};
+    const auto id = source.add(Quotes<Cell>{.size = Cell<i64>{5}, .bid = Cell<double>{10.0},
+                                            .ask = Cell<double>{11.0}},
+                               time, memory);
+    require(source.erase(id, time + EvaluationTime::duration{1}, memory),
+            "empty filter test could not remove its initialized source row");
+    const auto input = native_frame_input(source);
+    const auto all_fields = std::array<std::size_t, 3>{0, 1, 2};
+    auto evaluated = false;
+    const auto evaluator = [&](const RowSet &, auto &&) { evaluated = true; };
+
+    with_runtime_view_storage<Quotes>(memory, [&](auto &filter, const auto &) {
+        static_cast<void>(filter.bind_filter(input, all_fields, true, {}, evaluator, time, memory));
+        require(!evaluated, "a full filter request evaluated an empty source row set");
+    });
+}
+
 void test_tsf_view_uses_local_physical_rows_incrementally() {
     using namespace bg;
     using namespace bg::frame;
@@ -7430,6 +7503,8 @@ int main() {
         test_tsf_projection_rejects_native_columns_from_another_logical_domain();
         test_view_updates_do_not_traverse_source_rows();
         test_filter_row_set_reads_cached_source_order();
+        test_full_filter_request_skips_selected_order_rebuild();
+        test_empty_full_filter_request_skips_evaluator();
         test_tsf_view_uses_local_physical_rows_incrementally();
         test_tsf_view_preserves_ordered_key_mappings();
         test_filtered_column_coverage_rejects_a_different_row_set();
