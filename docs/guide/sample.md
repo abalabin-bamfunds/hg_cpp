@@ -120,3 +120,6 @@ Another signal can sample it once it is available.
 Skipped signals preserve the last sampled value, as at step 4.
 
 [Sampling reference](../reference/library-selection.md#sample) specifies the full contract.
+
+[Requested summaries](../how-to/requested-summary.md) combines sampling with a
+continuously maintained running mean.

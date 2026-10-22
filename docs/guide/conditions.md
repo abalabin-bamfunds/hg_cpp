@@ -430,3 +430,6 @@ current input values when an operation must run only in one case.
 Use [`switch_`](switch.md) to start and stop the selected graph instance.
 
 [Selection reference](../reference/library-selection.md) specifies the full contract.
+
+For publication rules across selection, filtering, and sampling, see
+[Choose an update operation](../how-to/choose-operation.md).

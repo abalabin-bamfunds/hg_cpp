@@ -2,8 +2,10 @@
 
 Scope: the user guide, task guides, API reference, and library reference on
 `agent/user-documentation`. Engine design documents remain outside the site.
-The lane starts from local `main` at `7e88a8a8` and includes the agreed opening
-chapters. Review cycles are recorded below after their corrections are applied.
+The initial four review cycles used local `main` at `7e88a8a8`. The lane is now
+rebased onto `21a0f87c`. The current pass adds application recipes, concrete
+diagnostics, interpreted profiling, and generated downloads. Revision-specific
+validation is recorded below.
 
 ## Coverage
 
@@ -113,7 +115,7 @@ Corrections applied:
 The site remains separate from engine design documentation and uses the existing
 Read the Docs configuration. Hosting activation is an external project setting.
 
-## Final validation
+## Initial validation
 
 Validated against local `main` at `7e88a8a8` on Linux with Python 3.13.15 and
 GCC 14.3.0 (C++23):
@@ -132,3 +134,53 @@ GCC 14.3.0 (C++23):
 Generated sources, binaries, HTML, browser checks, and screenshots remain in the
 lane's ignored `build/` directory. The documentation is committed in its lane;
 integration and hosting remain separate owner actions.
+
+## Current pass — worked applications and observability
+
+Rebased onto `main` at `21a0f87c` before editing. The four review cycles below
+cover the additions and the APIs changed by that rebase.
+
+1. Structure and prerequisites: added three finite application recipes after
+   the guide, linked their prerequisites, and linked them from the relevant
+   operation chapters. Kept the plain-type opening sequence unchanged. Added
+   a construction/evaluation/runner table after the first custom node.
+2. API and behavior: checked actual numeric-overload diagnostics, callback
+   exceptions, corrected graphs, profile fields, and retained-period behavior.
+   Updated optional Python input views and the `active`, `valid`, and `all_valid`
+   decorator options against the rebased implementation and its tests.
+3. Readability and consistency: added input/result tables to the recipes,
+   explained operation placement through observable behavior, and linked the
+   authoritative operation chooser. Removed a redundant selection diagram.
+   Distinguished cycle durations, node evaluation counts, and checkpoint ticks.
+4. Publication and retrieval: generated Python files and C++ projects from the
+   shared checked sources. Replaced catalogue asset links with Sphinx download
+   roles after full-site validation found unresolved references. Removed a
+   duplicate generated page heading. Checked navigation, language tabs, hidden
+   C++ setup, search, diagrams, and desktop/mobile layout. Changed recipe
+   diagrams to vertical flow after visual review found small mobile labels.
+   Capped inline diagram height while preserving the fullscreen viewer.
+
+Validation against `21a0f87c`, Python 3.13.15, and GCC 14.3.0:
+
+- Refreshed and installed the native engine and Python component.
+- All 60 Python examples and 60 C++ examples produce their documented output.
+- The shared collector packages those sources as 60 Python files and 60 C++
+  project archives. All 60 downloaded C++ sources compile independently. All
+  120 published files match their checked sources. Timing/path ellipses require
+  an explicit output label.
+- All five stdlib tooling tests pass, including adjacent output parsing,
+  independent batch output matching, and archive contents.
+- Input-property and runner/profiler tests: 38 pass. Six signal tests require
+  the optional native test extension, which this documentation build omits;
+  they were excluded from the focused run.
+- Rebuilt and imported the documented native extension; its graph returns `[20]`.
+- Extracted, configured, built, and ran the per-sensor C++ download independently;
+  its result check returns `true`.
+- Strict Sphinx HTML build passes. Checked 78 HTML pages and 7,447 local links
+  and anchors. Browser checks confirm all 120 download links return files.
+- All published pages pass desktop/mobile layout and language-tab checks;
+  six diagram pages render SVG successfully. Representative searches pass.
+
+Generated downloads, compiled examples, site output, browser checks, and
+screenshots remain ignored. The root worktree and its uncommitted changes are
+untouched. Integration into the root worktree remains an owner action.

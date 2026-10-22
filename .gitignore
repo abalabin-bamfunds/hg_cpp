@@ -5,6 +5,9 @@
 /.lanes/
 /.codex/
 
+# Generated documentation downloads
+/docs/_generated/
+
 # CMake build trees
 /build/
 /cmake-build-*/

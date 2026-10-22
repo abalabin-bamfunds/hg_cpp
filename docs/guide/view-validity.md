@@ -1,8 +1,8 @@
 # Check validity in node code
 
 To make a calculation depend on input availability, accept an optional input.
-Python plain nodes receive `None` for an absent value. C++ nodes can request an
-optional input view and inspect its validity before reading it.
+Optional input views expose validity even when no value is available. Plain
+optional inputs remain sufficient when only an absent value needs a fallback.
 
 Prerequisites: [Input views](input-views.md).
 
@@ -14,11 +14,11 @@ Prerequisites: [Input views](input-views.md).
 :sync: python
 
 ```python
-from bg import INVALID, graph, node, test_graph
+from bg import INVALID, TS, compute_node, graph, test_graph
 
-@node
-def uses_offset(reading: int, offset: int | None) -> bool:
-    return offset is not None
+@compute_node(valid=("reading",))
+def uses_offset(reading: TS[int], offset: TS[int]) -> TS[bool]:
+    return offset.valid
 
 @graph
 def offset_available(reading: int, offset: int) -> bool:
@@ -85,10 +85,15 @@ builds this example as `first_graph.cpp`, linked to `bg::library`.
 The reading remains valid after its first update. Offset updates and invalidation
 then trigger the callback. A zero offset is available; absence is a separate state.
 
-C++ adds `optional` to `In<>` and uses `valid()`. Python currently supports
-optionality only on [plain node inputs](optional-inputs.md); optional `TS` views
-are not exposed. Use the graph operator [`valid`](../reference/library-selection.md#valid)
-when only an availability signal is needed.
+Python's `valid=("reading",)` requires only the reading to have a value;
+`offset` is optional. Both inputs remain active. C++ adds `optional` to `In<>`
+and uses `valid()`. Use `.value` in Python or `*offset` in C++ only after that
+check succeeds. [Plain optional inputs](optional-inputs.md) receive `None` or
+`std::nullopt` instead of a view.
+
+Use the graph operator [`valid`](../reference/library-selection.md#valid)
+when only an availability signal is needed. [Node declarations](../reference/nodes.md#input-activity-and-validity)
+specify Python's `active`, `valid`, and `all_valid` options.
 
 Required inputs still gate evaluation. Optional inputs may schedule evaluation
 when they change, but the callback must check whether their current value exists.

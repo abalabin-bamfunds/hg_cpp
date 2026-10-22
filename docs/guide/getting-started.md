@@ -5,6 +5,9 @@ To run a small BG calculation, define a graph function and pass it to
 
 BG must be [installed](installation.md) to run the examples.
 
+Complete [Python files and C++ projects](../how-to/examples.md) are available
+for this program and the other checked examples.
+
 ## Write and run the example
 
 ::::::{tab-set}

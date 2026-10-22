@@ -140,3 +140,6 @@ calculations that follow. When every reading contributes to a count or total,
 use the original input so repeated readings still contribute.
 
 [Deduplication reference](../reference/library-selection.md#dedup) specifies the full contract.
+
+[Temperature alarm changes](../how-to/temperature-monitor.md) applies deduplication
+after a comparison to publish alarm transitions.

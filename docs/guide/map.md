@@ -105,3 +105,7 @@ The key argument and key-set argument use the same options in Python; C++ uses
 named arguments such as `"__key_arg__"_n = 0`. See
 [higher-order reference](../reference/higher-order.md#map) for selection and
 source/sink forms. Use [mesh](mesh.md) when one key depends on another key's result.
+
+[Per-sensor totals](../how-to/per-sensor-totals.md) combines branch history with
+key removal and re-addition. [Choose an update operation](../how-to/choose-operation.md)
+compares `map` with aggregation and dependent branches.

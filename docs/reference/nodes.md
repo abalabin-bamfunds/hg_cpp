@@ -18,15 +18,42 @@ A plain `int` parameter on `@compute_node` is scalar-only. Use `TS[int]` to rece
 changing input view. `@node` parameters cannot use time series annotations. `Scalar[T]`
 restricts a plain parameter to a scalar.
 
-`int | None` on a plain node input permits an absent value. Python does not currently
-expose optional compute input views. A plain node declares its output as `-> int` and
-may return `None` to leave that output unchanged; an optional return annotation is not
+`int | None` on a plain node input permits an absent value. A plain node declares
+its output as `-> int` and may return `None` to leave that output unchanged; an optional return annotation is not
 supported.
 
 A callback returning a valid scalar publishes an update even if equal to the previous
 value, unless the output's guarantee suppresses it. Returning `INVALID` removes a
 supported output's current value. Collection results are deltas; see
 [literals](literals.md).
+
+### Input activity and validity
+
+`@node` and `@compute_node` accept tuples of input names:
+
+| Option | Selected inputs | Other time series inputs |
+| --- | --- | --- |
+| `active=("request",)` | Schedule evaluation on updates | Passive |
+| `valid=("reading",)` | Require a current value | Optional, unless selected by `all_valid` |
+| `all_valid=("items",)` | Require the root and every immediate item to be valid | Follow `valid` or the default |
+
+Omitting `active` makes every time series input active. Omitting `valid` keeps
+annotation-derived validity: ordinary views are required, plain optional inputs
+permit absence. An explicit `valid` tuple replaces that selection. `all_valid`
+adds the stricter constraint to its selected collection inputs. A name cannot
+appear in both `valid` and `all_valid`. An empty tuple selects no inputs for
+that option.
+
+These options apply to parameters resolved as time series inputs. Fixed scalars
+are unchanged. Names must identify time-series-capable parameters; fixed scalar
+and injected parameters cannot be selected. Optional compute views still use
+`TS[...]` annotations; check `.valid` before `.value`. Plain optional inputs
+receive `None` when absent. See [validity checks](../guide/view-validity.md).
+
+Activity and validity are independent. A passive required input still gates
+evaluation; an active optional input can schedule evaluation while absent.
+Use [`sample`](library-selection.md#sample) when a library operation already
+provides the required request-driven read.
 
 ## C++ declarations
 
@@ -46,8 +73,7 @@ parameters do not currently expose it.
 input; it does not relax its validity requirement. `all_valid` requires the root and all
 immediate contained inputs to be valid. `make_active()` and `make_passive()` adjust a
 dynamic input's subscriptions during evaluation where supported by its declaration.
-Python declarations do not currently expose custom active/passive properties; use
-`sample` for request-driven reads.
+Python selects these constraints with the decorator options above.
 
 ## Scheduling and validity
 

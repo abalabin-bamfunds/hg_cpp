@@ -8,7 +8,8 @@ and [A first BG program](guide/getting-started.md) provide a runnable starting p
 
 The guide progresses from expressions and functions to updates, custom nodes,
 execution, collections, and advanced graph composition. [Task guides](how-to/choose-operation.md)
-answer specific questions. The [API reference](reference/index.md) and
+answer specific questions. [Application recipes](how-to/examples.md) combine
+operations into complete examples with downloadable source files. The [API reference](reference/index.md) and
 [library index](reference/library-index.md) specify contracts and supported types.
 
 ```{toctree}
@@ -107,6 +108,16 @@ how-to/conversion
 how-to/errors
 how-to/profiling
 how-to/cpp-extension
+how-to/examples
+```
+
+```{toctree}
+:caption: Application recipes
+:maxdepth: 1
+
+how-to/temperature-monitor
+how-to/requested-summary
+how-to/per-sensor-totals
 ```
 
 ```{toctree}

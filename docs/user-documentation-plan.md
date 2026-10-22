@@ -11,6 +11,7 @@ shows supported syntax, and links to its API contract.
 | Getting started | Explain BG, install it, and run a fixed-value program. |
 | Guide | Introduce concepts with progressively more syntax and behavior. |
 | Task guides | Answer specific testing, conversion, diagnostic, profiling, and integration questions. |
+| Application recipes | Combine operations for alarm transitions, requested summaries, and independent per-key history. |
 | API reference | Specify graph-author declarations, runtime access, types, execution, and services. |
 | Library reference | Group supplied operations by behavior and provide an alphabetical index. |
 
@@ -33,6 +34,10 @@ reference pages own the complete contracts.
 - Use temperature readings in the core sequence, then multiple sensors for
   collections. Keep example names and diagrams consistent.
 - Label fragments with their dependencies. Supply complete examples for new tasks.
+- Generate downloadable Python sources and C++ projects from the checked examples.
+  Keep the site build independent of the BG runtime and compiler.
+- Show actual diagnostic excerpts with the failing operation, supplied types, and
+  correction. Distinguish cycle durations, node counts, and checkpoint ticks in profiles.
 
 ## Concept sequence
 
@@ -76,7 +81,8 @@ inputs demonstrate why absence checks cannot use truthiness.
 
 Input views follow a task requiring update information: identify which of two
 inputs changed. Explain `.value`, `.modified`, validity, and callback lifetime.
-Python uses plain optional inputs; C++ also provides optional input views.
+Both languages provide optional input views. Python decorator options select
+input activity and validity; C++ expresses these in input declarations.
 
 ### 4. Running graphs
 
@@ -120,10 +126,10 @@ supporting sources; examples must not invent syntax from a proposed interface.
 | --- | --- | --- |
 | Plain optional node inputs | `int \| None` | `std::optional<i64>` |
 | Skip publication | Return `None` with a plain output annotation | Return a disengaged optional or leave `Out` unchanged |
-| Optional input views | Not exposed | `In<TS<i64>, optional>` |
+| Optional input views | `@compute_node(valid=(...))` and `.valid` | `In<TS<i64>, optional>` |
 | Retained node state | `State[Factory]` injectable | Aggregate `State<T>` field |
 | Evaluation clock | `EvaluationClock` injectable | Aggregate callback context |
-| Custom active/passive inputs | Use library sampling | Input declaration properties |
+| Custom active/passive inputs | `active=(...)` decorator option | Input declaration properties |
 | Explicit output mutation | Return a delta; `Output` is read-only | `Out<>` operations |
 | Custom collection aggregate | Collection node | Reducer graph or collection node |
 | Context inputs | Explicit arguments | `with_context` and context parameters |

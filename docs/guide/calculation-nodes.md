@@ -91,6 +91,17 @@ builds this example as `first_graph.cpp`, linked to `bg::library`.
 :::::
 ::::::
 
+## Construction, evaluation, and execution
+
+| Code | Runs when | Receives | Purpose |
+| --- | --- | --- | --- |
+| Graph function | During graph construction | Connections and fixed scalar arguments | Connect calculations |
+| Node callback | When BG evaluates the node | Current values or input views | Calculate a result or perform an effect |
+| `test_graph` | For a finite test run | Input update sequences | Record output updates |
+| `run_graph` | For an application run | Graph construction arguments and run options | Execute sources, calculations, and sinks |
+
+The node callback processes values. The graph function defines its dependencies. See [running graphs](run-graphs.md) for application execution.
+
 ## Values inside a node
 
 The graph function connects `reading` to `correct`. The node callback receives

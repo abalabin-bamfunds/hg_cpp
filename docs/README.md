@@ -25,7 +25,7 @@ Use relative Markdown links between pages and fenced code blocks with language
 names for examples.
 
 Group chapters by the sections in the [documentation plan](user-documentation-plan.md#documentation-structure).
-The sidebar includes the complete guide, task guides, API reference, and library
+The sidebar includes the complete guide, task guides, application recipes, API reference, and library
 reference. Keep its captions consistent with the plan and introduction.
 Changing a navigation group does not require moving its chapter files.
 
@@ -116,9 +116,28 @@ Python and extracts C++ sources without compiling them. Generated files belong
 to `build/doc-examples/`. The native extension task has a separate CMake project
 shown on its page and must also be built and run when changed.
 
+## Download generation
+
+Sphinx generates a download catalogue and source archives from the same assembled
+examples used by the checker. The shared collector uses only the Python standard
+library, so Read the Docs needs neither BG nor a C++ compiler. Generated files
+belong to the ignored `docs/_generated/` directory. The published downloads are
+under Sphinx’s `_downloads/` directory in the HTML output. Do not edit generated sources.
+
+The catalogue is included by `docs/how-to/examples.md`. Python downloads contain
+the complete assembled source. C++ archives contain source and CMake setup for
+an independently buildable project. Verify changed download generation with its
+stdlib tooling tests as well as the example checker:
+
+```sh
+python -m unittest discover -s docs/tests -v
+```
+
 Mark new pages containing complete examples with `<!-- runnable-example -->`.
 For each pair, place `Output:` and a fenced `text` block after each Python/C++
-code block. The checker executes every pair on a marked page. The opening
+code block. The checker executes every pair on a marked page. Use `Output (ellipsis):` only
+for variable fields such as timing values or generated paths; `...` then matches
+those fields. Plain `Output:` requires an exact match. The opening
 chapters also contain fragments; the checker supplies their documented context.
 
 The build treats warnings as errors and checks unresolved references. Keep

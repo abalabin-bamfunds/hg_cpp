@@ -88,6 +88,14 @@ builds this example as `first_graph.cpp`, linked to `bg::library`.
 :::::
 ::::::
 
+```mermaid
+flowchart LR
+    mode --> selection["switch_: one active instance"]
+    reading --> selection
+    selection --> case["mode 1: sums OR mode 2: current"]
+    case --> result
+```
+
 Mode 1 starts an accumulator. The next reading extends its history. Mode 2
 stops that accumulator and follows the current reading. Returning to mode 1
 creates a new accumulator, so its result is `21` rather than `58`.
@@ -100,3 +108,6 @@ or invalid key is an error.
 The selected graph receives current argument values when it starts. Timers and
 resources belong to that instance and stop with it. Graphs can be sources or
 sinks as well as calculations. See [switch reference](../reference/higher-order.md#switch_).
+
+[Choose an update operation](../how-to/choose-operation.md) compares graph-instance
+selection with value selection and conditional forwarding.

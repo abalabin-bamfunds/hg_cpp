@@ -101,6 +101,13 @@ code saved as `first_graph.cpp`. The build and run commands are the same.
 Inside the function, `const_(reading)` provides the reading as a fixed graph
 value. The returned addition's output becomes the multiplication's input.
 
+```mermaid
+flowchart LR
+    reading["fixed reading: 18"] --> addition["+ offset: 2"]
+    addition --> multiplication["× 10"]
+    multiplication --> result["200"]
+```
+
 These are **scalar arguments**: fixed values supplied during graph construction.
 Another call can supply different values without changing the function definition.
 

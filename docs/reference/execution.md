@@ -56,4 +56,12 @@ execution. `report()` formats outer timing. `outer_totals`, `outer_periods`,
 `graph_ids`, `graph`, `node_period_starts`, and `node_periods` expose structured data.
 Python uses methods with these names; C++ uses the corresponding profiler API. A
 recorder records one graph run. Period lengths and retention counts are configured on
-the profiler. See [profiling](../how-to/profiling.md).
+the profiler.
+
+`outer_totals()` reports cycle count and total/minimum/maximum duration in
+nanoseconds. Node period rows identify a local node index and its evaluation
+count and checkpoint ticks. Node ticks include work between checkpoints and
+exclude nested graph execution; they are not isolated callback durations.
+Period queries return closed periods. After stop, retained node periods remain
+available; active-node cumulative counters have been released. See
+[profiling](../how-to/profiling.md) for a complete report and interpretation.

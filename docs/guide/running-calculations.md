@@ -176,3 +176,7 @@ Each runtime calculation node owns its history. Repeated identical calls can
 reuse that node. A new `test_graph` run starts with fresh history.
 
 [Running calculation reference](../reference/library-stateful.md) specifies the full contract.
+
+[Requested summaries](../how-to/requested-summary.md) combines a running mean
+with request-driven publication. [Choose an update operation](../how-to/choose-operation.md)
+compares event history with current-item aggregation.
