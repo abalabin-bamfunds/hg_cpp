@@ -26,12 +26,6 @@ namespace {
 using namespace bg;
 using namespace bg::literals;
 
-struct switch_graph_boundary {
-    static constexpr bool deduplicate_wiring = false;
-    Out<TS<i64>> output;
-    void evaluate() const {}
-};
-
 const auto add = node([](i64 value, int amount) { return value + amount; });
 
 TEST_CASE("switch selects a case graph from its key",
@@ -306,6 +300,12 @@ TEST_CASE("switch captures scalar case arguments at wiring time",
     CHECK(actual.equals<i64>({13, 15}));
 }
 
+struct switch_graph_boundary {
+    static constexpr bool deduplicate_wiring = false;
+    Out<TS<i64>> output;
+    void evaluate() const {}
+};
+
 TEST_CASE("switch binds graph arguments to cases without forwarding them to overload selection",
           "[feature:switch][feature:nested-graph][feature:graph-argument][feature:wiring]") {
     auto graph_wiring = GraphWiring{};
@@ -317,13 +317,12 @@ TEST_CASE("switch binds graph arguments to cases without forwarding them to over
     const auto graph_argument = GraphArgument{
         details::graph_wiring_structure(graph_wiring, graph_boundaries, static_cast<WiringPoint>(graph_input)),
         std::make_shared<const int>(1)};
+    auto received_graph_argument = false;
     const auto branch = graph(
         "name"_n = "switch_graph_argument_branch",
-        [](wp<TS<i64>> value, GraphArgument function) {
+        [&](wp<TS<i64>> value, GraphArgument function) {
             const auto payload = function.payload<int>();
-            CHECK(function.structure().boundary_count() == 1);
-            REQUIRE(payload);
-            CHECK(*payload == 1);
+            received_graph_argument = function.structure().boundary_count() == 1 && payload && *payload == 1;
             return add(value, 3);
         });
 
@@ -331,6 +330,8 @@ TEST_CASE("switch binds graph arguments to cases without forwarding them to over
         return switch_(key, cases{case_(1, branch)}, value, graph_argument).as<TS<i64>>();
     };
     CHECK(testing::test_graph(typed, {1, 1}, {2, 5}).equals<i64>({5, 8}));
+    CHECK(received_graph_argument);
+    received_graph_argument = false;
 
     const auto runtime = [&](wp<TS<i64>> key, wp<TS<i64>> value) {
         const auto keys = std::array{WiringArgument{i64{1}}};
@@ -344,6 +345,7 @@ TEST_CASE("switch binds graph arguments to cases without forwarding them to over
             .as<TS<i64>>();
     };
     CHECK(testing::test_graph(runtime, {1, 1}, {2, 5}).equals<i64>({5, 8}));
+    CHECK(received_graph_argument);
 }
 
 TEST_CASE("equal switch key ticks retain inner graph state and returning recreates it",

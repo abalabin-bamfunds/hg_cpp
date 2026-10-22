@@ -40,12 +40,6 @@ struct DispatchOtherDerived : schema_extends<DispatchOtherBase, Field> {
     Field<i64> value;
 };
 
-struct DispatchGraphBoundary {
-    static constexpr bool deduplicate_wiring = false;
-    Out<TS<i64>> output;
-    void evaluate() const {}
-};
-
 TEST_CASE("dispatch selects the most specific implementation for a runtime scalar type",
           "[feature:dispatch][feature:nested-graph][series:value]") {
     const auto base_implementation = graph("name"_n = "dispatch_generic", [](wp<TS<SCALAR>> input) {
@@ -76,11 +70,7 @@ TEST_CASE("dispatch selects the most specific implementation for a runtime scala
     const auto derived_result = testing::test_graph(derived_graph, {1, 1});
 
     CHECK(output_is_reference_to_i64);
-    REQUIRE(derived_result.size() == 2);
-    REQUIRE(derived_result[0].has_value());
-    CHECK(scalar_cast<i64>(derived_result[0]->view()).value() == 20);
-    REQUIRE(derived_result[1].has_value());
-    CHECK(scalar_cast<i64>(derived_result[1]->view()).value() == 20);
+    CHECK(derived_result.equals<i64>({20, 20}));
 
     const auto base_value = bundle<DispatchBase>(memory, symbol{"item"});
     const auto publish_base = node([](In<TS<i64>>, Scalar<Bundle<DispatchBase>> value,
@@ -92,11 +82,14 @@ TEST_CASE("dispatch selects the most specific implementation for a runtime scala
         };
     const auto base_result = testing::test_graph(base_graph, {1, 1});
 
-    REQUIRE(base_result.size() == 2);
-    REQUIRE(base_result[0].has_value());
-    CHECK(scalar_cast<i64>(base_result[0]->view()).value() == 10);
-    CHECK_FALSE(base_result[1].has_value());
+    CHECK(base_result.equals<i64>({10, std::nullopt}));
 }
+
+struct DispatchGraphBoundary {
+    static constexpr bool deduplicate_wiring = false;
+    Out<TS<i64>> output;
+    void evaluate() const {}
+};
 
 TEST_CASE("dispatch passes graph arguments to the selected implementation",
           "[feature:dispatch][feature:switch][feature:graph-argument][feature:wiring]") {
@@ -180,10 +173,7 @@ TEST_CASE("dispatch selects a registered input-type tuple",
     };
     const auto result = testing::test_graph(graph, {1, 1});
 
-    REQUIRE(result.size() == 2);
-    REQUIRE(result[0].has_value());
-    CHECK(scalar_cast<i64>(result[0]->view()).value() == 40);
-    CHECK_FALSE(result[1].has_value());
+    CHECK(result.equals<i64>({40, std::nullopt}));
 }
 
 TEST_CASE("dispatch expands union input forms across selected inputs",
@@ -361,9 +351,7 @@ TEST_CASE("dispatch preserves the source time-series guarantee while narrowing i
     };
     const auto result = testing::test_graph(graph, {1});
 
-    REQUIRE(result.size() == 1);
-    REQUIRE(result[0].has_value());
-    CHECK(scalar_cast<i64>(result[0]->view()).value() == 20);
+    CHECK(result.equals<i64>({20}));
 }
 
 TEST_CASE("dispatch adapts a covariant scalar-value output to its declared type",
@@ -647,12 +635,14 @@ TEST_CASE("dispatch commits a selected implementation with a default scalar argu
                                               .as<TS<i64, TimeSeriesGuarantee::const_>>();
                                       });
     const auto dispatch = dispatch_<auto(TS<Bundle<DispatchBase>>) -> TS<i64>>{implementation};
-    const auto publish = node([](In<TS<i64>>, Out<TS<Bundle<DispatchBase>>> output) {
-        auto memory = allocator{};
-        output.set(bundle<DispatchBase>(memory, symbol{"item"}));
+    auto memory = allocator{};
+    const auto value = bundle<DispatchBase>(memory, symbol{"item"});
+    const auto publish = node([](In<TS<i64>>, Scalar<Bundle<DispatchBase>> value,
+                                 Out<TS<Bundle<DispatchBase>>> output) {
+        output.set(value);
     });
     const auto tested = [&](wp<TS<i64>> trigger) {
-        return dispatch(publish(trigger)).as<TS<i64>>();
+        return dispatch(publish(trigger, value)).as<TS<i64>>();
     };
 
     CHECK(testing::test_graph(tested, {1}).equals<i64>({9}));
@@ -665,12 +655,14 @@ TEST_CASE("dispatch preserves named argument binding when invoking the selected 
         return operators::const_(result).as<TS<i64, TimeSeriesGuarantee::const_>>();
     });
     const auto dispatch = dispatch_<auto(TS<Bundle<DispatchBase>>, i64) -> TS<i64>>{implementation};
-    const auto publish = node([](In<TS<i64>>, Out<TS<Bundle<DispatchBase>>> output) {
-        auto memory = allocator{};
-        output.set(bundle<DispatchBase>(memory, symbol{"item"}));
+    auto memory = allocator{};
+    const auto value = bundle<DispatchBase>(memory, symbol{"item"});
+    const auto publish = node([](In<TS<i64>>, Scalar<Bundle<DispatchBase>> value,
+                                 Out<TS<Bundle<DispatchBase>>> output) {
+        output.set(value);
     });
     const auto tested = [&](wp<TS<i64>> trigger) {
-        return dispatch("1"_n = i64{7}, "0"_n = publish(trigger)).as<TS<i64>>();
+        return dispatch("1"_n = i64{7}, "0"_n = publish(trigger, value)).as<TS<i64>>();
     };
 
     CHECK(testing::test_graph(tested, {1}).equals<i64>({7}));
@@ -684,12 +676,14 @@ TEST_CASE("dispatch commits a selected implementation with variadic time-series 
         return wp<TS<i64>>{values[0].time_series()};
     });
     const auto dispatch = dispatch_<auto(TS<Bundle<DispatchBase>>, TS<i64>) -> TS<i64>>{implementation};
-    const auto publish = node([](In<TS<i64>>, Out<TS<Bundle<DispatchBase>>> output) {
-        auto memory = allocator{};
-        output.set(bundle<DispatchBase>(memory, symbol{"item"}));
+    auto memory = allocator{};
+    const auto source_value = bundle<DispatchBase>(memory, symbol{"item"});
+    const auto publish = node([](In<TS<i64>>, Scalar<Bundle<DispatchBase>> value,
+                                 Out<TS<Bundle<DispatchBase>>> output) {
+        output.set(value);
     });
-    const auto tested = [&](wp<TS<i64>> trigger, wp<TS<i64>> value) {
-        return dispatch(publish(trigger), value).as<TS<i64>>();
+    const auto tested = [&](wp<TS<i64>> trigger, wp<TS<i64>> extra_value) {
+        return dispatch(publish(trigger, source_value), extra_value).as<TS<i64>>();
     };
 
     CHECK(testing::test_graph(tested, {1, 1}, {3, 5}).equals<i64>({3, 5}));

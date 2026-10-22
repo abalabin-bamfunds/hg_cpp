@@ -80,7 +80,7 @@ TEST_CASE("pointer-sized scalar values compare and hash from inline storage",
 }
 
 TEST_CASE("Type pointers use pointer-sized scalar storage with identity equality and hashing",
-          "[value][scalar][feature:scalar-api][storage:inline]") {
+          "[feature:scalar-api][feature:scalar-storage][scalar:opaque][storage:inline]") {
     const auto *type = static_cast<const bg::Type *>(&bg::int64_type());
     const auto *equal_type = type;
     const auto *other_type = static_cast<const bg::Type *>(&bg::float_type());
