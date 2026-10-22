@@ -160,12 +160,12 @@ TEST_CASE("a catalogue builds the reference service implementation selected by s
     const auto service = reference_service<auto(i64)->TS<i64>>{"lookup", {"path"}};
     const auto source = node([](Out<TS<i64>>) {});
     auto selected = i64{};
-    const auto first = graph("name"_n = "first_service", [&](i64 path) -> wp<TS<i64>> {
+    const auto first = graph("name"_n = "first_service", [&](i64 path) {
         selected = -path;
         return source();
     });
 
-    const auto second = graph("name"_n = "second_service", [&](i64 path) -> wp<TS<i64>> {
+    const auto second = graph("name"_n = "second_service", [&](i64 path) {
         selected = path;
         return source();
     });
@@ -324,7 +324,7 @@ TEST_CASE("service building includes requirements introduced by implementation g
     const auto inner = reference_service<auto()->TS<i64>>{"inner"};
     const auto source = node([](Out<TS<i64>>) {});
 
-    const auto outer_impl = graph("name"_n = "outer_impl", [&]() -> wp<TS<i64>> {
+    const auto outer_impl = graph("name"_n = "outer_impl", [&]() {
         return inner().as<TS<i64>>();
     });
 
@@ -470,11 +470,11 @@ TEST_CASE("nested service failures retain caller and child graph contexts",
     const auto service = reference_service<auto(i64)->TS<i64>>{"nested_lookup", {"value"}};
     const auto running_source = node([](Out<TS<bool>>) {});
 
-    const auto inner = graph("name"_n = "service_child", [&](i64 value) -> wp<TS<i64>> {
+    const auto inner = graph("name"_n = "service_child", [&](i64 value) {
         return service(value).as<TS<i64>>();
     });
 
-    const auto outer = graph("name"_n = "service_outer", [&](i64 value) -> wp<REF<TS<i64>>> {
+    const auto outer = graph("name"_n = "service_outer", [&](i64 value) {
         const auto run = running_source();
         return nested(inner, run, value);
     });

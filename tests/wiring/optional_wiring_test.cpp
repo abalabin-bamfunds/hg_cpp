@@ -253,15 +253,15 @@ TEST_CASE("variadic graph forwarding retains item optionality",
     auto operation = operator_<auto(TS_T)->TS_T>{"variadic_optional", {"values"}};
     operation.overload(graph("name"_n = "required", [&](wp<TSB<SCHEMA>, var_kwargs> values) {
         selected = "required";
-        return values[0].time_series().as<TS<i64>>();
+        return wp<>{values[0].time_series()};
     }));
     operation.overload(graph("name"_n = "optional", [&](wp<TSB<SCHEMA>, var_kwargs, optional> values) {
         selected = "optional";
-        return values[0].time_series().as<TS<i64>>();
+        return wp<>{values[0].time_series()};
     }));
 
     const auto forward = graph("name"_n = "forward", [&](wp<TSB<SCHEMA>, var_kwargs, optional> values) {
-        return operation(values).as<TS<i64>>();
+        return operation(values);
     });
 
     const auto source = node([](Out<TS<i64>>) {});
@@ -282,11 +282,11 @@ TEST_CASE("an opt-qualified direct named TSL selects an optional variadic overlo
     auto operation = operator_<auto(TS_T)->TS_T>{"optional_tsl", {"values"}};
     operation.overload(graph("name"_n = "required", [&](wp<TSL<TS_T, SIZE>, "values"_n, var_args> values) {
         selected = "required";
-        return values[0].time_series().as<TS<i64>>();
+        return wp<>{values[0].time_series()};
     }));
     operation.overload(graph("name"_n = "optional", [&](wp<TSL<TS_T, SIZE>, "values"_n, var_args, optional> values) {
         selected = "optional";
-        return values[0].time_series().as<TS<i64>>();
+        return wp<>{values[0].time_series()};
     }));
 
     const auto source = node([](Out<TS<i64>>) {});

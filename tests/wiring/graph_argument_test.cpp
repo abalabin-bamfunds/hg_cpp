@@ -393,7 +393,7 @@ TEST_CASE("graph argument matching supports any, exact, and generic patterns",
 
     const auto add_graph = graph("name"_n = "add_pattern",
                                  [add_operation](wp<TS<SCALAR>> left, wp<TS<SCALAR>> right) {
-        return add_operation(left.as<TS<i64>>(), right.as<TS<i64>>());
+        return add_operation(left, right);
     });
     const auto pattern = GraphArgumentConstraint{std::make_shared<const decltype(add_graph)>(add_graph)};
 

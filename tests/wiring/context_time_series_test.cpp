@@ -89,7 +89,7 @@ TEST_CASE("a TSL graph parameter can request lexical context",
 
     const auto actual = testing::test_graph(tested, {6, 12}, {7, 14});
 
-    CHECK(actual.equals({6, 12}));
+    CHECK(actual.equals<i64>({6, 12}));
 }
 
 TEST_CASE("a TSB graph parameter can request lexical context",
@@ -98,7 +98,7 @@ TEST_CASE("a TSB graph parameter can request lexical context",
                                    [](wp<TSB<ContextBundle>, "values"_n, context> values) { return values->value; });
 
     const auto tested = [&](wp<TS<i64>> value) {
-        const auto values = bundle("value"_n = value).as<TSB<ContextBundle>>();
+        const auto values = bundle("value"_n = value);
         return with_context("values"_n = values, [&] { return value_field(); });
     };
 
@@ -130,7 +130,7 @@ TEST_CASE("a callable graph context parameter can be supplied explicitly by name
 
 TEST_CASE("a callable node context parameter can be supplied explicitly by name",
           "[feature:context-time-series][feature:wiring][definition:function]") {
-    const auto tested = [](wp<TS<i64>> value) { return copy_context("value"_n = value).as<TS<i64>>(); };
+    const auto tested = [](wp<TS<i64>> value) { return copy_context("value"_n = value); };
 
     const auto actual = testing::test_graph(tested, {7, 11});
 
@@ -139,7 +139,7 @@ TEST_CASE("a callable node context parameter can be supplied explicitly by name"
 
 TEST_CASE("an aggregate node context parameter can be supplied explicitly by name",
           "[feature:context-time-series][feature:wiring][definition:aggregate]") {
-    const auto tested = [](wp<TS<i64>> value) { return copy_aggregate_context("value"_n = value).as<TS<i64>>(); };
+    const auto tested = [](wp<TS<i64>> value) { return copy_aggregate_context("value"_n = value); };
 
     const auto actual = testing::test_graph(tested, {9, 13});
 
@@ -148,7 +148,7 @@ TEST_CASE("an aggregate node context parameter can be supplied explicitly by nam
 
 TEST_CASE("an aggregate graph context parameter can be supplied explicitly by name",
           "[feature:context-time-series][feature:wiring][definition:aggregate]") {
-    const auto tested = [](wp<TS<i64>> value) { return copy_aggregate_graph_context("value"_n = value).as<TS<i64>>(); };
+    const auto tested = [](wp<TS<i64>> value) { return copy_aggregate_graph_context("value"_n = value); };
 
     const auto actual = testing::test_graph(tested, {10, 14});
 
@@ -210,12 +210,12 @@ TEST_CASE("context input resolves a graph type variable and output",
         });
 
     const auto tested = [&](wp<TS<i64>> value) {
-        return with_context("value"_n = value, [&] { return identity(); }).as<TS<i64>>();
+        return with_context("value"_n = value, [&] { return identity(); });
     };
 
     const auto actual = testing::test_graph(tested, {6, 12});
 
-    CHECK(actual.equals({6, 12}));
+    CHECK(actual.equals<i64>({6, 12}));
 }
 
 TEST_CASE("a missing context time series reports its name", "[feature:context-time-series][feature:wiring]") {
@@ -374,9 +374,9 @@ TEST_CASE("operator cache entries include implicit context types",
     const auto floating_source = node([](Out<TS<double>>) {});
 
     testing::test_wiring([&] {
-        const auto integer = with_context("value"_n = integer_source(), [&] { return choose_context().as<TS<i64>>(); });
+        const auto integer = with_context("value"_n = integer_source(), [&] { return choose_context(); });
         const auto floating =
-            with_context("value"_n = floating_source(), [&] { return choose_context().as<TS<double>>(); });
+            with_context("value"_n = floating_source(), [&] { return choose_context(); });
 
         CHECK(&static_cast<WiringPoint>(integer).type() == &TS<i64>::type());
         CHECK(&static_cast<WiringPoint>(floating).type() == &TS<double>::type());
@@ -399,8 +399,7 @@ TEST_CASE("operator cache entries include contexts used by rejected overloads",
 
     const auto tested = [&] {
         with_context("value"_n = 1.5, [&] { (void)choose_context(); });
-        return with_context("value"_n = i64{1},
-                            [&] { return choose_context().as<TS<i64, TimeSeriesGuarantee::const_>>(); });
+        return with_context("value"_n = i64{1}, [&] { return choose_context(); });
     };
 
     const auto actual = testing::test_graph(tested);

@@ -47,7 +47,7 @@ TEST_CASE("compiled root graph contains its service binding provider",
     auto wiring = GraphWiring{};
     {
         const auto context = WiringContext{wiring};
-        consume(lookup(clock().as<TS<i64, TimeSeriesGuarantee::final>>()));
+        consume(lookup(clock()));
         catalogue.build(wiring);
         wiring.finalize();
     }

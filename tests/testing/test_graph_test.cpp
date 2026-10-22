@@ -255,14 +255,14 @@ TEST_CASE("test_graph literal annotations support generic and multiple inputs",
         testing::test_graph(add_graph, GraphRunOptions{.recorder = configured_profiler.recorder()}, {1, 2}, {10, 20});
 
     const auto generic_rhs = [&](wp<TS<i64>> lhs, wp<> rhs) {
-        return add_i64(lhs, rhs.as<TS<i64>>());
+        return add_i64(lhs, rhs);
     };
 
     const auto annotated_second_result =
         testing::test_graph(generic_rhs, {1, 2}, testing::input<TS<i64>>({10, 20}));
 
     const auto generic_lhs = [&](wp<> lhs, wp<TS<i64>> rhs) {
-        return add_i64(lhs.as<TS<i64>>(), rhs);
+        return add_i64(lhs, rhs);
     };
 
     const auto annotated_first_result =
@@ -279,7 +279,7 @@ TEST_CASE("test_graph literal annotations support generic and multiple inputs",
     });
 
     const auto generic_dictionary = graph("name"_n = "generic_dictionary", [&](wp<> input) {
-        return observe_dictionary(input.as<TSD<i64, TS<i64>>>());
+        return observe_dictionary(input);
     });
     const auto generic_dictionary_result = testing::test_graph(
         generic_dictionary, testing::input<TSD<i64, TS<i64>>>({{{7, 40}}}));

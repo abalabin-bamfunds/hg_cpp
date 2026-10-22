@@ -246,7 +246,7 @@ TEST_CASE("a free TSB accepts a span of named wiring arguments",
         return bundle(fields);
     }();
 
-    sink(free_bundle.as<TSB<TestBundle>>());
+    sink(free_bundle);
     (void)wiring.complete_pending_wiring();
 
     CHECK(wiring.outputs().size() == 3);
@@ -284,13 +284,13 @@ TEST_CASE("a free TSB span requires named fields and projects scalars to const t
         fixed(kwargs(fields));
 
         const auto sink = node([](In<TSB<TestBundle>>) {});
-        sink(fields.as<TSB<TestBundle>>());
+        sink(fields);
 
         const auto named_fields = bundle("count"_n = i64{7}, "value"_n = source());
         const auto &named_type = static_cast<const TimeSeriesBundleType &>(named_fields.type());
         CHECK(&named_type.item_type(0) == &TS<i64, TimeSeriesGuarantee::const_>::type());
         fixed(kwargs(named_fields));
-        sink(named_fields.as<TSB<TestBundle>>());
+        sink(named_fields);
     });
 }
 

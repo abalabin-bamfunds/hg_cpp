@@ -412,8 +412,8 @@ TEST_CASE("resolvers see one flat positional argument sequence",
     const auto sender = graph(
         "name"_n = "sender",
         [&](std::optional<int> fixed,
-            wp<TSB<SCHEMA>, var_args> values) -> wp<TS<i64>> {
-            return operation(fixed, values).as<TS<i64>>();
+            wp<TSB<SCHEMA>, var_args> values) {
+            return operation(fixed, values);
         });
 
     testing::test_wiring([&] {
@@ -442,8 +442,8 @@ TEST_CASE("resolvers find direct and forwarded named captures",
 
     const auto sender = graph(
         "name"_n = "sender",
-        [&](wp<TSB<SCHEMA>, var_kwargs> values) -> wp<TS<i64>> {
-            return operation(values).as<TS<i64>>();
+        [&](wp<TSB<SCHEMA>, var_kwargs> values) {
+            return operation(values);
         });
 
     testing::test_wiring([&] {

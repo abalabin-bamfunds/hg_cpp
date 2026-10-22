@@ -129,7 +129,7 @@ TEST_CASE("an aggregate variadic TSL materializes as one runtime-sized list",
     const auto first = node<FirstCapturedListItem>();
 
     const auto tested = [&](wp<TS<bg::i64>> left, wp<TS<bg::i64>> right) {
-        return first(left, right).as<TS<bg::i64>>();
+        return first(left, right);
     };
 
     const auto actual = testing::test_graph(tested, {1, 2, 3}, {4, 5, 6});
@@ -430,7 +430,7 @@ struct NestedDirectListGraph {
 
     inline static const auto first = node<FirstCapturedListItem>();
 
-    wp<TS<bg::i64>> wire() const { return first(values).as<TS<bg::i64>>(); }
+    auto wire() const { return first(values).as<TS<bg::i64>>(); }
 };
 
 } // namespace
@@ -489,7 +489,7 @@ struct NestedDirectBundleGraph {
 
     inline static const auto count = node<ReadBundleCount>();
 
-    wp<TS<bg::i64>> wire() const { return count(values).as<TS<bg::i64>>(); }
+    auto wire() const { return count(values).as<TS<bg::i64>>(); }
 };
 
 } // namespace

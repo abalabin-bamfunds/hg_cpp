@@ -2142,7 +2142,7 @@ TEST_CASE("normal materialization completes and caches a lazy callback result",
                 return bg::bundle<bg::TSB<OneValue>>("value"_n = value);
             },
             0.0);
-        return sink(deferred, deferred).as<bg::TS<bg::i64>>();
+        return sink(deferred, deferred);
     };
 
     const auto actual = bg::testing::test_graph(tested, {7});

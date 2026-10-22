@@ -526,7 +526,7 @@ TEST_CASE("compiled node input producer indices omit lowered inputs and remap di
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
-        const auto constant = const_(1.0F).as<TS<float, TimeSeriesGuarantee::const_>>();
+        const auto constant = const_(1.0F);
         sink(constant, source());
     }
 

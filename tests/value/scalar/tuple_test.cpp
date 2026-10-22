@@ -273,7 +273,7 @@ TEST_CASE("test_graph accepts a tuple-valued time series input and output",
     using bg::literals::operator""_n;
 
     const auto erased_graph = bg::graph("name"_n = "erased_tuple_identity",
-                                        [&](wp<> input) { return wp<>{identity(input.as<TS<Nested>>())}; });
+                                        [&](wp<> input) { return wp<>{identity(input)}; });
     const auto erased = testing::test_graph(
         erased_graph, testing::input<TS<Nested>>({{1, {"NASDAQ", symbol{"NQ"}}}, {2, {"NYSE", symbol{"IBM"}}}}));
     CHECK(erased.equals({{1, {"NASDAQ", symbol{"NQ"}}}, {2, {"NYSE", symbol{"IBM"}}}}));

@@ -282,8 +282,8 @@ TEST_CASE("callable return infers const from const time-series inputs",
                                                    &TS<i64, TimeSeriesGuarantee::const_>::type()};
 
     const auto graph = [=] {
-        const auto lhs = operators::const_(2).as<TS<i64, TimeSeriesGuarantee::const_>>();
-        const auto rhs = operators::const_(3).as<TS<i64, TimeSeriesGuarantee::const_>>();
+        const auto lhs = operators::const_(2);
+        const auto rhs = operators::const_(3);
         return add(lhs, rhs);
     };
 
@@ -329,7 +329,7 @@ TEST_CASE("callable explicit output guarantee takes precedence over input infere
     });
 
     const auto graph = [=] {
-        return copy(operators::const_(7).as<TS<i64, TimeSeriesGuarantee::const_>>());
+        return copy(operators::const_(7));
     };
 
     CHECK(copy.signature().output() == &TS<i64, TimeSeriesGuarantee::final>::type());
@@ -376,7 +376,7 @@ TEST_CASE("required promoted callable inputs invalidate and recover their output
     });
 
     const auto graph = [=](wp<TS<i64>> input) {
-        return operators::default_(twice(gate(input)), -1).as<TS<i64>>();
+        return operators::default_(twice(gate(input)), -1);
     };
 
     CHECK(testing::test_graph(graph, {1, -1, 3}).equals({2, -1, 6}));
@@ -420,7 +420,13 @@ TEST_CASE("callable scalar-or-time-series inputs read references to values",
           "[feature:node-api][feature:reference][definition:function][series:value]") {
     const auto identity = node([](int value) { return value; });
 
-    const auto graph = [=](wp<TS<i64>> input) { return identity(input.as<REF<TS<i64>>>()); };
+    const auto reference = node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) { output.copy(input); });
+
+    const auto graph = [=](wp<TS<i64>> input) {
+        const auto target = reference(input);
+        CHECK(&target.type() == &REF<TS<i64>>::type());
+        return identity(target);
+    };
 
     CHECK(testing::test_graph(graph, {1, 2, 3}).equals({1, 2, 3}));
 }

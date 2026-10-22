@@ -76,8 +76,8 @@ TEST_CASE("an aggregate requirement can explain why it rejected an overload",
     auto operation = operator_<auto(TS<float>) -> TS<float>>{"identity", {"value"}};
     operation.overload(node<rejecting_copy_definition>());
 
-    const auto graph = [&](wp<TS<float>> value) -> wp<TS<float>> {
-        return operation(value).as<TS<float>>();
+    const auto graph = [&](wp<TS<float>> value) {
+        return operation(value);
     };
 
     try {
@@ -188,25 +188,25 @@ TEST_CASE("an operator cache keys scalar values read by aggregate requirements",
     operation.overload(node<nonzero_mode_copy_definition>());
 
     const auto run = [&](int mode) {
-        const auto graph = [&](wp<TS<float>> input) -> wp<TS<float>> {
+        const auto graph = [&](wp<TS<float>> input) {
             const auto result = operation(input, mode);
             (void)operation(input, 1 - mode);
             (void)operation(input, 1 - mode);
             (void)operation(input, mode);
-            return result.as<TS<float>>();
+            return result;
         };
 
         return testing::test_graph(graph, {1.0F});
     };
 
-    CHECK(run(0).equals({1.0F}));
+    CHECK(run(0).equals<float>({1.0F}));
     CHECK(zero_mode_copy_definition::requirement_calls == 2);
     CHECK(nonzero_mode_copy_definition::requirement_calls == 2);
-    CHECK(run(0).equals({1.0F}));
+    CHECK(run(0).equals<float>({1.0F}));
     CHECK(zero_mode_copy_definition::requirement_calls == 4);
     CHECK(nonzero_mode_copy_definition::requirement_calls == 4);
 
-    CHECK(run(1).equals({-1.0F}));
+    CHECK(run(1).equals<float>({-1.0F}));
     CHECK(zero_mode_copy_definition::requirement_calls == 6);
     CHECK(nonzero_mode_copy_definition::requirement_calls == 6);
 }
@@ -235,12 +235,12 @@ TEST_CASE("callable requirements control overload applicability",
             }));
 
     const auto run = [&](int mode) {
-        const auto graph = [&](wp<TS<float>> input) -> wp<TS<float>> {
+        const auto graph = [&](wp<TS<float>> input) {
             const auto result = operation(input, mode);
             (void)operation(input, 1 - mode);
             (void)operation(input, 1 - mode);
             (void)operation(input, mode);
-            return result.as<TS<float>>();
+            return result;
         };
 
         return testing::test_graph(graph, {2.0F});

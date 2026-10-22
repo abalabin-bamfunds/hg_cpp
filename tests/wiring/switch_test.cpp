@@ -114,8 +114,7 @@ TEST_CASE("switch preserves named arguments around an omitted case default",
         [&](wp<TS<i64>> x, wp<TS<i64>> y, wp<TS<i64>> z) { return combine(x, y, z); });
     const auto run = [&] {
         return switch_(operators::const_(i64{1}), cases{case_(i64{1}, selected)},
-                       "x"_n = operators::const_(i64{3}), "z"_n = operators::const_(i64{4}))
-            .as<TS<i64>>();
+                       "x"_n = operators::const_(i64{3}), "z"_n = operators::const_(i64{4}));
     };
 
     CHECK(testing::test_graph(run).equals({423}));

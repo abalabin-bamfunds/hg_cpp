@@ -53,12 +53,12 @@ struct unknown_default_aggregate_graph {
 TEST_CASE("callable graph defaults promote scalar values to constant time series",
           "[feature:wiring][feature:wiring-defaults][series:value][definition:function]") {
     const auto with_default = graph({"value"_n = i64{7}}, [](wp<TS<i64>> value) { return value; });
-    const auto defaulted = [&] { return with_default().as<TS<i64>>(); };
+    const auto defaulted = [&] { return with_default(); };
     const auto supplied = [&] {
-        return with_default(operators::const_(i64{11})).as<TS<i64>>();
+        return with_default(operators::const_(i64{11}));
     };
 
-    CHECK(testing::test_graph(defaulted).equals({7}));
+    CHECK(testing::test_graph(defaulted).equals<i64>({7}));
     CHECK(testing::test_graph(supplied).equals({11}));
 }
 
@@ -67,7 +67,7 @@ TEST_CASE("callable node defaults promote scalar values to constant time series"
     const auto copy = node({"value"_n = i64{8}}, [](In<TS<i64>> value, Out<TS<i64>> output) {
         output.set(*value);
     });
-    const auto graph = [&] { return copy().as<TS<i64>>(); };
+    const auto graph = [&] { return copy(); };
 
     CHECK(testing::test_graph(graph).equals({8}));
 }
@@ -77,7 +77,7 @@ TEST_CASE("callable eval declarations support scalar defaults",
     const auto source = node(
         {"value"_n = i64{12}},
         eval = [](i64 value, Out<TS<i64>> output) { output.set(value); });
-    const auto graph = [&] { return source().as<TS<i64>>(); };
+    const auto graph = [&] { return source(); };
 
     CHECK(testing::test_graph(graph).equals({12}));
 }
@@ -95,8 +95,8 @@ TEST_CASE("aggregate node and graph defaults use reflected field names",
           "[feature:wiring][feature:wiring-defaults][series:value][definition:aggregate]") {
     const auto copy = node<defaulted_aggregate_node>();
     const auto graph = bg::graph<defaulted_aggregate_graph>();
-    const auto defaulted_node = [&] { return copy().as<TS<i64>>(); };
-    const auto defaulted_graph = [&] { return graph().as<TS<i64>>(); };
+    const auto defaulted_node = [&] { return copy(); };
+    const auto defaulted_graph = [&] { return graph(); };
 
     CHECK(testing::test_graph(defaulted_node).equals({8}));
     CHECK(testing::test_graph(defaulted_graph).equals({6}));
@@ -107,7 +107,7 @@ TEST_CASE("an explicitly absent optional scalar overrides a wiring default",
     const auto with_default = graph({"value"_n = i64{9}}, [](std::optional<i64> value) {
         return operators::const_(value.value_or(2)).as<TS<i64, TimeSeriesGuarantee::const_>>();
     });
-    const auto explicit_absence = [&] { return with_default(std::optional<i64>{}).as<TS<i64>>(); };
+    const auto explicit_absence = [&] { return with_default(std::optional<i64>{}); };
 
     CHECK(testing::test_graph(explicit_absence).equals({2}));
 }
@@ -149,7 +149,7 @@ TEST_CASE("operator defaults precede implementation defaults and remain cacheabl
     const auto graph = [&](wp<TS<i64>> input) {
         const auto first = operation(input);
         (void)operation(input);
-        return first.as<TS<i64>>();
+        return first;
     };
 
     CHECK(testing::test_graph(graph, {3}).equals({5}));
@@ -161,9 +161,9 @@ TEST_CASE("generic graph defaults resolve their scalar type",
     using VALUE = ScalarVariable<"VALUE">;
     const auto identity = graph<VALUE>(
         {"value"_n = i64{7}}, [](wp<TS<VALUE>> value) { return value; });
-    const auto defaulted = [&] { return identity().as<TS<i64>>(); };
+    const auto defaulted = [&] { return identity(); };
 
-    CHECK(testing::test_graph(defaulted).equals({7}));
+    CHECK(testing::test_graph(defaulted).equals<i64>({7}));
 }
 
 TEST_CASE("callable node defaults own their values and participate in deduplication",
@@ -184,7 +184,7 @@ TEST_CASE("callable node defaults own their values and participate in deduplicat
     const auto graph = [&] {
         const auto first = source();
         const auto same_value = source(i64{17});
-        return combine(first, same_value).as<TS<i64>>();
+        return combine(first, same_value);
     };
 
     CHECK(testing::test_graph(graph).equals({34}));
@@ -209,5 +209,5 @@ TEST_CASE("incompatible wiring defaults fail when the call uses them",
           "[feature:wiring][feature:wiring-defaults][series:value][definition:function]") {
     const auto invalid = graph({"value"_n = std::string{"bad"}}, [](wp<TS<i64>> value) { return value; });
 
-    CHECK_THROWS_AS(testing::test_graph([&] { return invalid().as<TS<i64>>(); }), TypeResolutionError);
+    CHECK_THROWS_AS(testing::test_graph([&] { return invalid(); }), TypeResolutionError);
 }
