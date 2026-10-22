@@ -38,13 +38,17 @@ if(BG_FRAME_BUILD_ARROW)
     target_include_directories(bg_frame_arrow PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
     set_target_properties(bg_frame_arrow PROPERTIES CXX_EXTENSIONS OFF WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
-    if(BG_FRAME_BUILD_BENCHMARKS)
+endif()
+
+if(BG_FRAME_BUILD_BENCHMARKS)
+    add_executable(bg_frame_expression_benchmark benchmarks/expression_benchmark.cpp)
+    target_link_libraries(bg_frame_expression_benchmark PRIVATE bg::frame)
+
+    if(BG_FRAME_BUILD_ARROW)
         find_package(ArrowCompute CONFIG REQUIRED)
         add_executable(bg_frame_arrow_benchmark benchmarks/arrow_benchmark.cpp)
         target_link_libraries(bg_frame_arrow_benchmark PRIVATE bg::frame_arrow ArrowCompute::arrow_compute_shared)
     endif()
-elseif(BG_FRAME_BUILD_BENCHMARKS)
-    message(FATAL_ERROR "BG_FRAME_BUILD_BENCHMARKS requires BG_FRAME_BUILD_ARROW")
 endif()
 
 if(BUILD_TESTING)

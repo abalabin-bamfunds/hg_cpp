@@ -5,6 +5,7 @@
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <arrow/api.h>
 #include <arrow/compute/api.h>
@@ -245,6 +246,7 @@ struct RunResult {
     Timing graph_cycle;
     Timing sum_method;
     Timing plain_arrow_sum;
+    Timing plain_arrow_build_sum_destroy;
 };
 
 template <SumMethod Method, std::size_t SelectionPercent, bool ScatteredSelection,
@@ -274,6 +276,7 @@ RunResult run_case(const BenchmarkCase &benchmark_case) {
     auto runtime = RuntimeGraph{compiled, global_state};
     const auto start_time = MIN_DT + EvaluationTime::duration{1};
     runtime.start(start_time);
+    auto stop_on_exit = util::scope_exit{[&]() noexcept { runtime.stop(); }};
 
     auto graph_times = std::array<double, total_cycles>{};
     auto alive = std::vector<bool>(row_count, true);
@@ -294,12 +297,14 @@ RunResult run_case(const BenchmarkCase &benchmark_case) {
             final_values = std::move(expected);
     }
     runtime.stop();
+    stop_on_exit.release();
 
     const auto plain = plain_arrow(final_values);
     const auto expected_sum = sum_values(final_values);
     if (arrow_sum(plain) != expected_sum)
         throw std::runtime_error{"plain Arrow sum differs from the deterministic source values"};
     auto plain_sum_times = std::array<double, measured_cycles>{};
+    auto plain_arrow_build_sum_destroy_times = std::array<double, measured_cycles>{};
     for (auto cycle = std::size_t{}; cycle != warmup_cycles; ++cycle)
         static_cast<void>(arrow_sum(plain));
     for (auto &sample : plain_sum_times) {
@@ -310,6 +315,20 @@ RunResult run_case(const BenchmarkCase &benchmark_case) {
             throw std::runtime_error{"plain Arrow sum changed during timing"};
         sample = std::chrono::duration<double, std::milli>(end - begin).count();
     }
+    const auto measure_plain_arrow_build_sum_destroy = [&] {
+        const auto begin = std::chrono::steady_clock::now();
+        auto values = plain_arrow(final_values);
+        const auto value = arrow_sum(values);
+        values.reset();
+        const auto end = std::chrono::steady_clock::now();
+        if (value != expected_sum)
+            throw std::runtime_error{"plain Arrow build and sum changed the deterministic values"};
+        return std::chrono::duration<double, std::milli>(end - begin).count();
+    };
+    for (auto cycle = std::size_t{}; cycle != warmup_cycles; ++cycle)
+        static_cast<void>(measure_plain_arrow_build_sum_destroy());
+    for (auto &sample : plain_arrow_build_sum_destroy_times)
+        sample = measure_plain_arrow_build_sum_destroy();
 
     const auto measured = std::span{graph_times}.subspan(warmup_cycles);
     const auto source_times = std::span{Source::mutation_time_ms}.subspan(warmup_cycles);
@@ -326,7 +345,8 @@ RunResult run_case(const BenchmarkCase &benchmark_case) {
             summarize(source_times),
             summarize(measured),
             summarize(sum_times),
-            summarize(plain_sum_times)};
+            summarize(plain_sum_times),
+            summarize(plain_arrow_build_sum_destroy_times)};
 }
 
 template <std::size_t SelectionPercent, bool ScatteredSelection, std::size_t DeletionsPerCycle,
@@ -356,6 +376,8 @@ void run_case(const BenchmarkCase &benchmark_case, std::ostream &report, std::os
             print_timing(result.sum_method);
             output << " | ";
             print_timing(result.plain_arrow_sum);
+            output << " | ";
+            print_timing(result.plain_arrow_build_sum_destroy);
             output << " |\n";
         };
         write_row(report);
@@ -368,7 +390,9 @@ void run_case(const BenchmarkCase &benchmark_case, std::ostream &report, std::os
             << result.graph_cycle.maximum_ms << ',' << result.sum_method.median_ms << ','
             << result.sum_method.minimum_ms << ',' << result.sum_method.maximum_ms << ','
             << result.plain_arrow_sum.median_ms << ',' << result.plain_arrow_sum.minimum_ms << ','
-            << result.plain_arrow_sum.maximum_ms << '\n';
+            << result.plain_arrow_sum.maximum_ms << ',' << result.plain_arrow_build_sum_destroy.median_ms << ','
+            << result.plain_arrow_build_sum_destroy.minimum_ms << ','
+            << result.plain_arrow_build_sum_destroy.maximum_ms << '\n';
     }
 }
 
@@ -419,24 +443,33 @@ int main(int argc, char **argv) {
                   "eleven steady cycles are measured.\n"
                   "Source mutation time covers frame set/erase calls. Graph-cycle time covers the complete "
                   "RuntimeGraph evaluation, including source mutation and the consumer. Consumer time covers "
-                  "the selected sum path. The plain Arrow baseline uses a prebuilt one-chunk array of the final "
-                  "selected values and runs outside graph timing. Selected-row and chunk counts are from the final "
+                  "the selected sum path. Plain Arrow sum uses a prebuilt one-chunk array of final selected "
+                  "values. Plain Arrow build + sum + destroy starts from the pre-existing final_values vector, "
+                  "builds an owning one-chunk array, computes the sum, and destroys the array. Both baselines "
+                  "run outside graph timing. Selected-row and chunk counts are from the final "
                   "measured cycle. Consumer timing includes Arrow export or dense-gather allocation and destruction.\n"
                   "Native sum and Arrow sum each rescan all selected values; there is no incremental aggregate yet. "
-                  "Extension and "
-                  "benchmark code use Release (-O3); installed libbg is Debug. All times are median [min, max] "
+                  "When filter membership changes, the implementation rebuilds selected order by scanning the source "
+                  "row set to preserve source order; this is a source-code observation, not phase attribution. "
+                  "All times are median [min, max] "
                   "milliseconds.\n\n"
-                  "| Selection and deletion | Method | Final-cycle selected rows | Final-cycle chunks visited/exported | "
-                  "Source mutation ms | "
-                  "Graph cycle ms | Consumer sum ms | Plain Arrow sum ms |\n"
-                  "|:---|:---|---:|---:|---:|---:|---:|---:|\n";
+                  "| Selection and deletion | Method | Final-cycle selected rows | "
+                  "Final-cycle chunks visited/exported | "
+                  "Source mutation ms | Graph cycle ms | Consumer sum ms | "
+                  "Plain Arrow sum (prebuilt array) ms | "
+                  "Plain Arrow build + sum + destroy (pre-existing vector) ms |\n"
+                  "|:---|:---|---:|---:|---:|---:|---:|---:|---:|\n";
     };
     write_report_header(std::cout);
     write_report_header(report_file);
     csv_file << "case,method,selected_rows,chunks,source_mutation_median_ms,source_mutation_min_ms,"
                 "source_mutation_max_ms,graph_cycle_median_ms,graph_cycle_min_ms,graph_cycle_max_ms,"
-                "consumer_sum_median_ms,consumer_sum_min_ms,consumer_sum_max_ms,plain_arrow_sum_median_ms,"
-                "plain_arrow_sum_min_ms,plain_arrow_sum_max_ms\n";
+                "consumer_sum_median_ms,consumer_sum_min_ms,consumer_sum_max_ms,"
+                "plain_arrow_sum_prebuilt_array_median_ms,plain_arrow_sum_prebuilt_array_min_ms,"
+                "plain_arrow_sum_prebuilt_array_max_ms,"
+                "plain_arrow_build_sum_destroy_preexisting_vector_median_ms,"
+                "plain_arrow_build_sum_destroy_preexisting_vector_min_ms,"
+                "plain_arrow_build_sum_destroy_preexisting_vector_max_ms\n";
 
     for (const auto &benchmark_case : benchmark_cases) {
         if (benchmark_case.selection_percent == 100) {

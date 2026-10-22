@@ -180,7 +180,10 @@ BG installs, and these lane-root build directories:
 | `build/tsf-row-release-arrow-off` | Release, Arrow disabled | Build passed; CTest 5/5 |
 | `build/tsf-row-debug-asan-arrow-on` | Debug, Arrow 24.0.0, ASan/UBSan | Build passed; CTest 6/6 with leak detection; no sanitizer diagnostics |
 
-The sanitizer CTest used `ASAN_OPTIONS=detect_leaks=1` and
+The sanitizer configuration instruments the frame extension and test targets
+with AddressSanitizer and UndefinedBehaviorSanitizer, then links the matching
+Debug BG install; BG itself was built without sanitizer compile flags. CTest used
+`ASAN_OPTIONS=detect_leaks=1` and
 `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1`. It ran outside the sandbox
 because LeakSanitizer cannot operate under sandbox ptrace.
 
@@ -226,9 +229,9 @@ Prior rebase verification against main `a17a8ffd` rebuilt the Release BG depende
 and Release Arrow-on consumer with `-j12`; the complete consumer suite passed
 6/6. Extension files were unchanged by the rebase.
 
-Historical filtering verification used lane-local BG installs matching each
-consumer configuration below. Root independently reran the complete suite in
-all three configurations after the final filter source edits.
+At the current production checkpoint, frame `ad4ad92c` on BG main baseline
+`21a0f87c`, root verified the final filter code with lane-local BG installs
+matching each consumer configuration below.
 
 | Consumer | Build | Test |
 | --- | --- | --- |
@@ -236,10 +239,16 @@ all three configurations after the final filter source edits.
 | `build/tsf-row-release-arrow-on`, Release, Arrow 24.0.0 enabled | Passed | 6/6 suites passed after runtime-stop guards |
 | `build/tsf-row-debug-asan-arrow-on`, Debug, Arrow 24.0.0, ASan/UBSan | Passed | 6/6 suites passed with leak detection enabled; no sanitizer diagnostics |
 
+The benchmark commit adds benchmark code and reports without changing frame
+runtime code. Current benchmark builds and measurements are recorded in
+[the 2026-10-22 notes](benchmarks/results/2026-10-22/README.md).
+
 The Debug test target was rebuilt after adding scope-bound `stop()` calls to
 both runtime graphs in `test_compiled_graph_runtime_storage_is_independent`.
-The sanitizer build used `-fsanitize=address,undefined -fno-omit-frame-pointer`;
-CTest ran with `ASAN_OPTIONS=detect_leaks=1` and
+The sanitizer configuration instruments the extension and test targets with
+`-fsanitize=address,undefined -fno-omit-frame-pointer` and links the matching
+Debug BG install, which was built without sanitizer compile flags. CTest ran
+with `ASAN_OPTIONS=detect_leaks=1` and
 `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1`. LeakSanitizer ran outside
 the sandbox because it cannot operate under sandbox ptrace.
 
@@ -321,23 +330,37 @@ the same lifetime error. All three configurations were rebuilt and their
 complete consumer suites passed after the correction.
 
 The sanitizer test used ASAN_OPTIONS=detect_leaks=0 and
-UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1. Leak detection remains disabled because of
-environment ptrace restrictions. The sanitizer frame build links the Debug BG
-dependency. Clang and MSVC have not been tested.
+UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 at an earlier sandbox-limited
+checkpoint. The current Debug Arrow-on verification enables leak detection and
+runs outside the sandbox, as recorded below. The sanitizer configuration
+instruments the frame extension and test targets and links the matching Debug
+BG install, which was built without sanitizer compile flags. Clang and MSVC
+have not been tested.
 
 Current CTest results are in each consumer's `Testing/Temporary/LastTest.log`.
 Earlier verification logs remain preserved. The Arrow-on Release shared-library
 RPATH uses the installed prefix and Conda libraries.
 
-Run builds and tests from the active lane:
+Current consumer builds and tests use the lane-root `tsf-row` directories:
 
 ```sh
-conda run --no-capture-output -n bg-build cmake --build extensions/frame/build/field-access-on --parallel 12
-conda run --no-capture-output -n bg-build ctest --test-dir extensions/frame/build/field-access-on --output-on-failure
+conda run --no-capture-output -n hg-build cmake --build \
+  build/tsf-row-release-arrow-on --parallel 12
+conda run --no-capture-output -n hg-build ctest \
+  --test-dir build/tsf-row-release-arrow-on --output-on-failure
+conda run --no-capture-output -n hg-build cmake --build \
+  build/tsf-row-release-arrow-off --parallel 12
+conda run --no-capture-output -n hg-build ctest \
+  --test-dir build/tsf-row-release-arrow-off --output-on-failure
+conda run --no-capture-output -n hg-build cmake --build \
+  build/tsf-row-debug-asan-arrow-on --parallel 12
+ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+  conda run --no-capture-output -n hg-build ctest \
+  --test-dir build/tsf-row-debug-asan-arrow-on --output-on-failure
 ```
 
-Use `cc4-checkpoint-off` for Arrow-off Release. For `cc4-lifetime`, prefix the
-CTest command with `ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1`.
+Run the sanitizer test command outside the sandbox because LeakSanitizer cannot
+operate under sandbox ptrace restrictions.
 
 ## Shared column expression implementation
 
@@ -606,6 +629,14 @@ frame implementation is recorded on the active frame lane.
 
 ## Performance artifacts
 
+Current matching Release consumer measurements are recorded in
+[the 2026-10-22 benchmark notes](benchmarks/results/2026-10-22/README.md), with
+separate [expression](benchmarks/results/2026-10-22/expression-release-arrow-off.md)
+and [Arrow](benchmarks/results/2026-10-22/arrow-release-arrow-on.md) reports.
+The dated notes record the source revision, BG baseline, compiler and host,
+commands, measured ranges, and limits. The older archived sample below used a
+Release extension with Debug BG and is not directly comparable.
+
 The preserved active-lane sample is archived at:
 
 ```text
@@ -643,7 +674,11 @@ computed outputs, and the expression callback result path. Arrow import handles
 sliced Boolean arrays by adjusting the byte pointer and retaining the residual
 bit offset. Borrowed export retains the packed buffer; gather-copy export packs
 one dense chunk. Release Arrow-on build and all six frame CTest suites passed
-on this lane. Arrow-off and Debug/ASan verification remain for the root review.
+on this lane. The Release Arrow-off consumer passed all five suites. The Debug
+ASan/UBSan consumer passed all six suites with leak detection enabled. The
+sanitizer configuration instruments the extension and test targets and links
+the matching Debug BG install; BG itself was built without sanitizer compile
+flags.
 
 Fixed-name `Out<TSF<Schema>, frame::computed<"mid">>` and runtime-selected
 `Out<TSF<Schema>, frame::computed<>>` outputs use the shared runtime-schema

@@ -874,37 +874,27 @@ cmake -S extensions/frame -B extensions/frame/build-sanitizers \
   -DCMAKE_SHARED_LINKER_FLAGS='-fsanitize=address,undefined' \
   -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined'
 cmake --build extensions/frame/build-sanitizers -j12
-ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
   ctest --test-dir extensions/frame/build-sanitizers --output-on-failure
 ```
 
 [HANDOFF.md](HANDOFF.md#verification) records the verified configurations and
-results. Lifetime checks use AddressSanitizer and UndefinedBehaviorSanitizer.
-LeakSanitizer is disabled because of this environment's ptrace restriction;
-allocation-failure tests still verify allocator cleanup.
+results. These sanitizer flags instrument the frame extension and test targets;
+the linked BG package uses the matching Debug configuration and is not
+instrumented by this build. Run LeakSanitizer outside the sandbox because it
+cannot operate under sandbox ptrace restrictions. Allocation-failure tests
+also verify allocator cleanup.
 
-## Performance sample
+## Performance samples
 
-The [results](benchmarks/arrow_benchmark_results.md) and
-[CSV](benchmarks/arrow_benchmark_results.csv) measure a real graph:
-source mutation, incremental filtering, column selection, and a full column
-sum. They compare native batches, borrowed Arrow export plus sum, and dense
-gather-copy plus sum. Export timing includes allocation and destruction.
+Current Release consumer results are in
+[the 2026-10-22 benchmark notes](benchmarks/results/2026-10-22/README.md), with
+the [expression report](benchmarks/results/2026-10-22/expression-release-arrow-off.md)
+and [Arrow report](benchmarks/results/2026-10-22/arrow-release-arrow-on.md).
+The notes record configurations, commands, workload scope, and measurement
+limits.
 
-Build the optional benchmark with Arrow and ArrowCompute installed:
-
-```sh
-cmake -S extensions/frame -B extensions/frame/build-benchmark-release \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH="$BG_INSTALL_PREFIX;$ARROW_INSTALL_PREFIX" \
-  -DBG_FRAME_BUILD_ARROW=ON -DBG_FRAME_BUILD_BENCHMARKS=ON \
-  -DBUILD_TESTING=OFF
-cmake --build extensions/frame/build-benchmark-release -j12
-extensions/frame/build-benchmark-release/bg_frame_arrow_benchmark \
-  --report extensions/frame/benchmarks/arrow_benchmark_results.md \
-  --csv extensions/frame/benchmarks/arrow_benchmark_results.csv
-```
-
-This sample uses an optimized extension and benchmark with a Debug BG library.
-It supports comparisons between the consumer paths. Measure with a Release BG
-library before drawing conclusions about optimized whole-graph throughput.
+The older [Arrow report](benchmarks/arrow_benchmark_results.md) and
+[CSV](benchmarks/arrow_benchmark_results.csv) remain preserved. They used a
+Release extension with a Debug BG library and are historical results; do not
+compare their timings directly with the matching Release measurements.
