@@ -68,6 +68,11 @@ template <template <typename, auto...> typename Field> struct TickFormatBundle {
     Field<TS<string>> name;
 };
 
+template <template <typename, auto...> typename Field> struct TickFormatDurationAndSymbol {
+    Field<TS<timedelta_t>> elapsed;
+    Field<TS<symbol>> key;
+};
+
 template <template <typename, auto...> typename Field> struct NestedTickFormatBundle {
     Field<TSD<i64, TS<i64>>> values;
 };
@@ -177,6 +182,17 @@ TEST_CASE("live and retained bundle ticks format named fields",
 
     CHECK(result.equals<string>({"[{\"count\": 3, \"name\": \"last\"}]|"
                                  "[{\"count\": 3, \"name\": \"last\"}]"}));
+}
+
+TEST_CASE("live and retained ticks format durations and symbols consistently",
+          "[feature:test-graph][series:tsb][scalar:timedelta][scalar:symbol]") {
+    const auto formatter = node<live_and_retained_tick_formatter<TSB<TickFormatDurationAndSymbol>>>();
+    const auto graph = [&](wp<TSB<TickFormatDurationAndSymbol>> input) { return formatter(input); };
+    const auto result = testing::test_graph(
+        graph, {{{"elapsed", timedelta_t{std::chrono::hours{26}}}, {"key", symbol{"price"}}}});
+
+    CHECK(result.equals<string>({"[{\"elapsed\": 1d 02:00:00.000000, \"key\": \"price\"}]|"
+                                 "[{\"elapsed\": 1d 02:00:00.000000, \"key\": \"price\"}]"}));
 }
 
 TEST_CASE("nested dictionary bundle ticks format child collections recursively",

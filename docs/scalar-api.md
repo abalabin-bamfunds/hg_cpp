@@ -89,11 +89,12 @@ erased visitor fallback.
 
 `<bg/scalar/format.hpp>` formats scalar views directly into fmt's format
 context. For example, `fmt::format("{}", value.view())` formats an owning
-scalar value. Strings use quoted debug formatting. Symbols use `symbol("...")`;
-empty symbols use `symbol()`. Bytes use `bytes("...")` with two lowercase
-hexadecimal digits per byte. Date-time values use UTC
-`YYYY-MM-DDTHH:MM:SS.ffffffZ`, and durations use integer microseconds with a
-`us` suffix. Other atomic values use fmt's default representation.
+scalar value. Strings and symbols use quoted debug formatting; an empty symbol
+formats as `""`. Bytes use `bytes("...")` with two lowercase hexadecimal
+digits per byte. Date-time values use UTC `YYYY-MM-DDTHH:MM:SS.ffffffZ`.
+Durations use `HH:MM:SS.ffffff`, with a leading `-` for negative values and a
+`<days>d ` prefix when the whole-day component is nonzero; the sign precedes
+the day prefix. Other atomic values use fmt's default representation.
 
 Lists use `[...]`, sets use `{...}` or `set()` when empty, and dictionaries,
 structs, and hierarchical scalars use `{key: value, ...}`. Positional tuples

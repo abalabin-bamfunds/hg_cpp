@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 namespace bg {
 namespace {
@@ -42,6 +43,28 @@ void format_date_time(Scalar<date_time_t> value, fmt::format_context &context) {
     write(context, "{:%Y-%m-%dT%H:%M:%S}Z", value.value());
 }
 
+void format_duration(timedelta_t value, fmt::format_context &context) {
+    using Rep = timedelta_t::rep;
+    using UnsignedRep = std::make_unsigned_t<Rep>;
+
+    const auto count = value.count();
+    const auto negative = count < 0;
+    const auto magnitude = negative ? UnsignedRep{0} - static_cast<UnsignedRep>(count)
+                                    : static_cast<UnsignedRep>(count);
+    constexpr auto microseconds_per_day = UnsignedRep{24} * 60 * 60 * 1'000'000;
+
+    const auto days = magnitude / microseconds_per_day;
+    const auto remainder = magnitude % microseconds_per_day;
+    if (negative) {
+        write(context, "-");
+    }
+    if (days != 0) {
+        write(context, "{}d ", days);
+    }
+
+    write(context, "{:%H:%M:%S}", timedelta_t{static_cast<Rep>(remainder)});
+}
+
 void format_string(std::string_view value, fmt::format_context &context) { write(context, "{:?}", value); }
 
 void format_value(Scalar<SCALAR> value, fmt::format_context &context) {
@@ -52,15 +75,9 @@ void format_value(Scalar<SCALAR> value, fmt::format_context &context) {
         [&](const Scalar<i64> *item) { write(context, "{}", item->value()); },
         [&](const Scalar<double> *item) { write(context, "{}", item->value()); },
         [&](const Scalar<date_time_t> *item) { format_date_time(*item, context); },
-        [&](const Scalar<timedelta_t> *item) { write(context, "{}us", item->value().count()); },
+        [&](const Scalar<timedelta_t> *item) { format_duration(item->value(), context); },
         [&](const Scalar<string> *item) { format_string(item->value(), context); },
-        [&](const Scalar<symbol> *item) {
-            if (item->value().has_value()) {
-                write(context, "symbol({:?})", item->value().text());
-            } else {
-                write(context, "symbol()");
-            }
-        },
+        [&](const Scalar<symbol> *item) { format_string(item->value().text(), context); },
         [&](const Scalar<List<SCALAR>> *items) {
             write(context, "[");
             for (auto index = std::size_t{}; index < items->size(); ++index) {

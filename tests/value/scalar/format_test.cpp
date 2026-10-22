@@ -57,11 +57,20 @@ TEST_CASE("scalar formatting handles built-ins and native aliases",
     const auto key = ScalarValue<symbol>{symbol{"price"}};
     const auto byte_value = ScalarValue<byte>{byte{3}};
     const auto empty_key = ScalarValue<symbol>{symbol{}};
+    const auto escaped_key = ScalarValue<symbol>{symbol{"a\n\""}};
     const auto escaped_text = ScalarValue<string>{"a\n\""};
     const auto date_time = ScalarValue<date_time_t>{
         date_time_t{std::chrono::sys_days{std::chrono::year{2024} / 1 / 2}.time_since_epoch() +
                     std::chrono::hours{3} + std::chrono::minutes{4} + std::chrono::seconds{5}}};
     const auto duration = ScalarValue<timedelta_t>{timedelta_t{42}};
+    const auto zero_duration = ScalarValue<timedelta_t>{timedelta_t::zero()};
+    const auto negative_duration = ScalarValue<timedelta_t>{timedelta_t{-42}};
+    const auto multiday_duration = ScalarValue<timedelta_t>{timedelta_t{std::chrono::hours{26}}};
+    const auto negative_multiday_duration = ScalarValue<timedelta_t>{timedelta_t{std::chrono::hours{-26}}};
+    const auto minimum_duration = ScalarValue<timedelta_t>{timedelta_t::min()};
+    const auto maximum_duration = ScalarValue<timedelta_t>{timedelta_t::max()};
+    const auto fractional_date_time = ScalarValue<date_time_t>{
+        date_time.view().value() + std::chrono::microseconds{123456}};
     const auto bytes = ScalarValue<bg::bytes>{std::array{byte{0x00}, byte{0x7f}, byte{0xff}}};
 
     CHECK(fmt::format("{}", integer.view()) == "42");
@@ -69,12 +78,20 @@ TEST_CASE("scalar formatting handles built-ins and native aliases",
     CHECK(fmt::format("{}", floating_point.view()) == "3.5");
     CHECK(fmt::format("{}", native_floating_point.view()) == "1.25");
     CHECK(fmt::format("{}", text.view()) == "\"hello\"");
-    CHECK(fmt::format("{}", key.view()) == "symbol(\"price\")");
-    CHECK(fmt::format("{}", empty_key.view()) == "symbol()");
+    CHECK(fmt::format("{}", key.view()) == "\"price\"");
+    CHECK(fmt::format("{}", empty_key.view()) == "\"\"");
+    CHECK(fmt::format("{}", escaped_key.view()) == "\"a\\n\\\"\"");
     CHECK(fmt::format("{}", byte_value.view()) == "3");
     CHECK(fmt::format("{}", escaped_text.view()) == "\"a\\n\\\"\"");
     CHECK(fmt::format("{}", date_time.view()) == "2024-01-02T03:04:05.000000Z");
-    CHECK(fmt::format("{}", duration.view()) == "42us");
+    CHECK(fmt::format("{}", fractional_date_time.view()) == "2024-01-02T03:04:05.123456Z");
+    CHECK(fmt::format("{}", duration.view()) == "00:00:00.000042");
+    CHECK(fmt::format("{}", zero_duration.view()) == "00:00:00.000000");
+    CHECK(fmt::format("{}", negative_duration.view()) == "-00:00:00.000042");
+    CHECK(fmt::format("{}", multiday_duration.view()) == "1d 02:00:00.000000");
+    CHECK(fmt::format("{}", negative_multiday_duration.view()) == "-1d 02:00:00.000000");
+    CHECK(fmt::format("{}", minimum_duration.view()) == "-106751991d 04:00:54.775808");
+    CHECK(fmt::format("{}", maximum_duration.view()) == "106751991d 04:00:54.775807");
     CHECK(fmt::format("{}", bytes.view()) == "bytes(\"007fff\")");
 
     auto formatted = std::string{};
