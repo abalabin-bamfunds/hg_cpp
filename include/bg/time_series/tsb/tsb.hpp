@@ -177,19 +177,7 @@ class wp<TSB<Schema, TimeSeriesProperties...>, WiringProperties...> {
     static_assert(ParsedProperties::variadic_mode == details::VariadicMode::none);
 
   public:
-    wp(WiringPoint point) : point_{point} {
-        if (TimeSeries::type().accepts(point.type())) {
-            return;
-        }
-
-        const auto accepts_advertised_form = std::ranges::any_of(
-            point.materialisation_options(), [](const auto &option) {
-                return TimeSeries::type().accepts(*option.target_type);
-            });
-        if (!accepts_advertised_form) {
-            throw WiringError{"a WiringPoint is incompatible with the requested type"};
-        }
-    }
+    wp(WiringPoint point) : point_{point.as(TimeSeries::type())} {}
 
     template <typename Source, auto... SourceProperties>
         requires(wp<Source, SourceProperties...>::validity != optional || ParsedProperties::validity == optional) &&

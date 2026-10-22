@@ -34,22 +34,6 @@ concept callable_node =
     (callable_output_count<Function>(std::make_index_sequence<callable<Function>::argument_count>{}) == 0 ||
      std::same_as<typename callable<Function>::result_type, void>);
 
-template <typename Option>
-void append_callable_resolver(std::vector<VariableResolver> &resolvers, const Option &option) {
-    if constexpr (is_callable_resolver_v<Option>) {
-        resolvers.push_back(variable_resolver<typename Option::declaration_type>(option.function));
-    }
-}
-
-template <typename... Options> std::vector<VariableResolver> callable_resolvers(const std::tuple<Options...> &options) {
-    auto result = std::vector<VariableResolver>{};
-    result.reserve((std::size_t{} + ... + static_cast<std::size_t>(is_callable_resolver_v<Options>)));
-
-    std::apply([&](const auto &...option) { (append_callable_resolver(result, option), ...); }, options);
-
-    return result;
-}
-
 template <typename Option> bool callable_wiring_deduplication(const Option &option) noexcept {
     if constexpr (is_callable_wiring_deduplication_v<Option>) {
         return option.enabled;

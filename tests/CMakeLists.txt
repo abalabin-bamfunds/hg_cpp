@@ -209,7 +209,9 @@ add_executable(
     library/boolean_reduction_test.cpp
     library/collection_test.cpp
     library/collection_reduction_test.cpp
+    library/collect_test.cpp
     library/conversion_test.cpp
+    library/emit_test.cpp
     library/operators_test.cpp
     library/overload_registration_test.cpp
     library/running_test.cpp

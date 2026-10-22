@@ -43,6 +43,48 @@ TEST_CASE("a node can read one dictionary item",
     CHECK(actual.equals({10, 11, std::nullopt}));
 }
 
+namespace {
+
+struct erase_output_keys_definition {
+    Out<TSD<i64, TS<i64>>> output;
+
+    void start() const {
+        output[1].set(10);
+        output[2].set(20);
+        output[3].set(30);
+        output[4].set(40);
+
+        const auto first_id = output.item_id(1);
+        const auto third_id = output.item_id(3);
+        auto visited = std::vector<i64>{};
+        output.for_each_key([&](const auto &key) {
+            visited.push_back(key.value());
+            if (key.value() % 2 == 0) {
+                CHECK(output.erase(key));
+            }
+        });
+        std::ranges::sort(visited);
+
+        CHECK(visited == std::vector<i64>{1, 2, 3, 4});
+        CHECK(output.item_id(1) == first_id);
+        CHECK(output.item_id(3) == third_id);
+        CHECK(output.item_id(2) == util::occupancy_index::npos);
+        CHECK(output.item_id(4) == util::occupancy_index::npos);
+    }
+
+    void evaluate() const {}
+};
+
+} // namespace
+
+TEST_CASE("a dictionary output can erase visited keys without changing retained item IDs",
+          "[evaluation][tsd][feature:collection-change][series:tsd][scalar:integer]"
+          "[transition:addition][transition:removal]") {
+    const auto source = node<erase_output_keys_definition>();
+
+    CHECK(testing::test_graph([&] { return source(); }).equals({{{1, 10}, {3, 30}}}));
+}
+
 TEST_CASE("a node can select a dictionary item using a time series key",
           "[evaluation][tsd][feature:getitem][series:tsd][series:value][scalar:integer]"
           "[binding:direct][transition:update]") {

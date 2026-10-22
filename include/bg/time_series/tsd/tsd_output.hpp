@@ -14,6 +14,7 @@
 #include <bg/time_series/tsd/tsd_storage.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 
+#include <functional>
 #include <stdexcept>
 
 namespace bg {
@@ -43,6 +44,18 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
     void invalidate() const { state_->invalidate(); }
+
+    // Visits borrowed keys of current entries. The callback may erase the key it receives, but must not insert.
+    template <typename Function> void for_each_key(Function &&function) const {
+        const In<TSD<K, Item, Properties...>> input{state_->mutable_last_updated(), state_->data(),
+                                                    state_->runtime_type()};
+        for (auto id = input.next_item_id(0); id != util::occupancy_index::npos;) {
+            const auto next_id = input.next_item_id(id + 1);
+            const auto key = input.key_at(id);
+            std::invoke(function, key);
+            id = next_id;
+        }
+    }
 
     void apply(const literal::TimeSeriesLiteral &literal) const {
         if (const auto sentinel = literal::Sentinel::from(literal); sentinel && *sentinel == literal::SKIP) {
@@ -143,19 +156,11 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
             clear();
         }
 
-        const auto &runtime = dictionary_runtime_type();
-        auto id = runtime.next_item_id(state_->mutable_last_updated(), state_->data(),
-                                       details::TimeSeriesDictionaryRuntimeType::ItemRange::current, 0);
-        while (id != util::occupancy_index::npos) {
-            const auto next_id = runtime.next_item_id(state_->mutable_last_updated(), state_->data(),
-                                                     details::TimeSeriesDictionaryRuntimeType::ItemRange::current,
-                                                     id + 1);
-            const auto key = this->key(id);
+        for_each_key([&](const auto &key) {
             if (!input.contains(key)) {
                 erase(key);
             }
-            id = next_id;
-        }
+        });
 
         input.for_each_key_value([&](const auto &key, const auto &item) { (*this)[key].copy(item); });
     }

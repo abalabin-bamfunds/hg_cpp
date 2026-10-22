@@ -207,9 +207,11 @@ struct generic_set_state_value_node {
     Out<TS<SCALAR>> output;
 
     void start() const {
-        (void)state->insert(values[0]);
-        CHECK(state.value().size() == 1);
-        output.set_value(values[0]);
+        values.for_each([&](const auto &value) {
+            (void)state->insert(value);
+            output.set_value(value);
+        });
+        CHECK(state.value().size() == values.size());
     }
 
     void evaluate() const {}

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/graph/wiring_arguments.hpp>
+#include <bg/node/details/callable_node_options.hpp>
 #include <bg/time_series/guarantee_variable.hpp>
 #include <bg/time_series/schema_variable.hpp>
 #include <bg/time_series/size_variable.hpp>
@@ -13,9 +14,12 @@
 #include <bg/type/time_series_variable.hpp>
 
 #include <concepts>
+#include <cstddef>
 #include <functional>
+#include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace bg::details {
 
@@ -87,6 +91,21 @@ template <typename Declaration, typename Function> VariableResolver variable_res
                                     return resolver_mapping(std::invoke(function), *variable);
                                 }};
     }
+}
+
+template <typename Option>
+void append_callable_resolver(std::vector<VariableResolver> &resolvers, const Option &option) {
+    if constexpr (is_callable_resolver_v<Option>) {
+        resolvers.push_back(variable_resolver<typename Option::declaration_type>(option.function));
+    }
+}
+
+template <typename... Options> std::vector<VariableResolver> callable_resolvers(const std::tuple<Options...> &options) {
+    auto result = std::vector<VariableResolver>{};
+    result.reserve((std::size_t{} + ... + static_cast<std::size_t>(is_callable_resolver_v<Options>)));
+
+    std::apply([&](const auto &...option) { (append_callable_resolver(result, option), ...); }, options);
+    return result;
 }
 
 } // namespace bg::details

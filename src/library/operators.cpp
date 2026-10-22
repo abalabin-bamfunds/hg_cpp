@@ -83,6 +83,8 @@ namespace {
 const auto registered = [] {
     details::register_numeric_operators();
     details::register_conversion_operators();
+    details::register_collect_operators();
+    details::register_emit_operators();
     details::register_string_operators();
     details::register_string_regex_operators();
     details::register_string_collection_operators();

@@ -81,6 +81,12 @@ class WiringRecord {
     std::size_t wired_output_index() const noexcept { return output_; }
     // A record can bind an input directly to storage that has no wired output, such as an inherited slot.
     virtual std::optional<WiredInput> input_binding(const TimeSeriesType &) const noexcept { return std::nullopt; }
+    // Returns a selected collection argument when the record retains or can select one.
+    virtual std::optional<WiringArgument> collection_argument(std::size_t) const { return std::nullopt; }
+    // Returned spans borrow from graph-owned records. Nullopt means the record has no original arguments.
+    virtual std::optional<std::span<const WiringArgument>> collection_original_arguments() const noexcept {
+        return std::nullopt;
+    }
 
     // Returns a compatible point in this graph; it may still be lazy. GraphWiring completes lazy results to a wired
     // output or direct input binding and validates their graph and type before returning them to a consumer.

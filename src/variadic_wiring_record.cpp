@@ -65,6 +65,17 @@ WiringArgument VariadicWiringRecord::argument(std::size_t index) const {
     return result;
 }
 
+std::optional<WiringArgument> VariadicWiringRecord::collection_argument(std::size_t index) const {
+    return argument(index);
+}
+
+std::optional<std::span<const WiringArgument>> VariadicWiringRecord::collection_original_arguments() const noexcept {
+    if (!direct_) {
+        return std::span<const WiringArgument>{arguments_};
+    }
+    return direct_->record()->collection_original_arguments();
+}
+
 bool VariadicWiringRecord::materialisation_ready_impl() const noexcept {
     if (direct_) {
         return direct_->record()->materialisation_ready();

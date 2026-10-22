@@ -331,6 +331,54 @@ TEST_CASE("operator resolution caches are shared by nested wiring and isolated b
     CHECK(requirement_calls == 2);
 }
 
+TEST_CASE("operator graph resolvers cache scalar-dependent outputs separately",
+          "[feature:operator][feature:wiring][feature:type-system]") {
+    using RESULT = TimeSeriesVariable<"OPERATOR_GRAPH_RESOLVED_RESULT">;
+
+    auto resolver_calls = std::size_t{};
+    auto requirement_calls = std::size_t{};
+    auto body_calls = std::size_t{};
+    auto operation = operator_<auto(i64) -> TS_T>{"scalar_dependent_result", {"value"}};
+    const auto integer_source = node([](Out<TS<i64>>) {});
+    const auto floating_source = node([](Out<TS<double>>) {});
+    operation.overload(graph<RESULT>(
+        "name"_n = "scalar_dependent_impl",
+        resolve<RESULT> = [&](const WiringArguments &arguments) -> const TimeSeriesType & {
+            ++resolver_calls;
+            return scalar_cast<i64>(*arguments.scalar(0)).value() % 2 == 0 ? TS<i64>::type() : TS<double>::type();
+        },
+        require = [&](const WiringArguments &arguments) {
+            ++requirement_calls;
+            const auto value = scalar_cast<i64>(*arguments.scalar(0)).value();
+            const auto *output = arguments.resolved_output_type();
+            return output == (value % 2 == 0 ? &TS<i64>::type() : &TS<double>::type());
+        },
+        [&](const WiringArguments &, i64 value) -> wp<RESULT> {
+            ++body_calls;
+            if (value % 2 == 0) {
+                return wp<RESULT>{integer_source()};
+            }
+            return wp<RESULT>{floating_source()};
+        }));
+
+    auto wiring = GraphWiring{};
+    {
+        const auto context = WiringContext{wiring};
+        const auto first = operation(1);
+        const auto repeated = operation(1);
+        const auto second = operation(2);
+        const auto repeated_again = operation(1);
+        CHECK(&first.type() == &TS<double>::type());
+        CHECK(&repeated.type() == &TS<double>::type());
+        CHECK(&second.type() == &TS<i64>::type());
+        CHECK(&repeated_again.type() == &TS<double>::type());
+    }
+
+    CHECK(resolver_calls == 2);
+    CHECK(requirement_calls == 2);
+    CHECK(body_calls == 4);
+}
+
 TEST_CASE("overload registration invalidates resolution caches in every live root",
           "[feature:operator][feature:wiring]") {
     auto generic_requirement_calls = 0;

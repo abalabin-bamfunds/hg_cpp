@@ -1,5 +1,6 @@
 #include <bg/graph/details/variadic_wiring_operations.hpp>
 #include <bg/graph/details/variadic_wiring_record.hpp>
+#include <bg/library/key_value.hpp>
 #include <bg/library/operators.hpp>
 #include <bg/node/runtime_signature_node_template.hpp>
 #include <bg/operators.hpp>
@@ -24,6 +25,7 @@
 #include <bg/scalar/tuple/scalar_type.hpp>
 #include <bg/testing/test_graph.hpp>
 #include <bg/time_series/tsb/details/wiring.hpp>
+#include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsl/details/wiring.hpp>
 #include <bg/type/size_variable.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
@@ -1061,6 +1063,10 @@ void bind_core(nb::module_ &module) {
             throw std::invalid_argument{"Bundle[...] requires a schema declaration"};
         }
         return TypeDescriptor{scalar_conversions().add_python_schema(python_type, *schema)};
+    });
+    module.def("_register_key_value_schema", [](nb::handle python_type) {
+        const auto &bundle = static_cast<const TimeSeriesBundleType &>(TSB<operators::key_value>::type());
+        export_schema(python_type, bundle.schema());
     });
     module.def("_bundle_scalar_type", [](const TypeDescriptor &schema_type) {
         const auto *schema = schema_type.schema();

@@ -52,6 +52,7 @@ const auto scale_graph = graph(
 static_assert(std::same_as<decltype(scale_graph(std::declval<WiringPoint>(), 2.0F)), wp<TS<float>>>);
 
 using NESTED_OUTPUT = TimeSeriesVariable<"NESTED_OUTPUT">;
+using GRAPH_RESOLVED = ScalarVariable<"GRAPH_RESOLVED">;
 
 } // namespace
 
@@ -309,6 +310,54 @@ TEST_CASE("a graph signature resolves a scalar variable declaration", "[graph_te
 
     CHECK(signature.parameters[0].type == &time_series);
     CHECK(signature.output == &time_series);
+}
+
+TEST_CASE("callable graph requirements can demand scalar-dependent resolvers",
+          "[graph_template][feature:wiring][feature:type-system]") {
+    auto resolver_calls = std::make_shared<std::size_t>();
+    const std::weak_ptr<std::size_t> resolver_lifetime = resolver_calls;
+    auto requirement_calls = std::size_t{};
+    auto body_calls = std::size_t{};
+
+    const auto resolved_sink = graph(
+        "name"_n = "resolved_sink",
+        resolve<GRAPH_RESOLVED> = [resolver_calls](const WiringArguments &arguments) -> const ScalarType & {
+            ++*resolver_calls;
+            const auto value = scalar_cast<i64>(*arguments.scalar(0)).value();
+            return value % 2 == 0 ? int64_type() : double_type();
+        },
+        require = [&](const WiringArguments &arguments) {
+            ++requirement_calls;
+            const auto *mapping = arguments.type_map().find(GRAPH_RESOLVED::type());
+            const auto *resolved = mapping == nullptr ? nullptr : std::get_if<const Type *>(mapping);
+            return resolved != nullptr && *resolved != nullptr && scalar_cast<i64>(*arguments.scalar(0)).value() != 3;
+        },
+        [&](const WiringArguments &arguments, i64) {
+            ++body_calls;
+            static const auto output = node([](Out<TS<GRAPH_RESOLVED>>) {});
+            (void)output(arguments.type_map());
+        });
+    resolver_calls.reset();
+
+    CHECK_FALSE(resolver_lifetime.expired());
+    auto wiring = GraphWiring{};
+    {
+        const auto context = WiringContext{wiring};
+        resolved_sink(1);
+        resolved_sink(2);
+        CHECK_THROWS_AS(resolved_sink(3), WiringError);
+    }
+
+    (void)wiring.complete_pending_wiring();
+    const auto nodes = wiring.nodes();
+    const auto retained_resolver_calls = resolver_lifetime.lock();
+    REQUIRE(nodes.size() == 2);
+    REQUIRE(retained_resolver_calls != nullptr);
+    CHECK(nodes[0].signature().output == &TS<double>::type());
+    CHECK(nodes[1].signature().output == &TS<i64>::type());
+    CHECK(*retained_resolver_calls == 3);
+    CHECK(requirement_calls == 3);
+    CHECK(body_calls == 2);
 }
 
 TEST_CASE("a graph signature resolves a time series variable declaration",

@@ -136,7 +136,9 @@ class FreeFixedTimeSeriesListWiringRecord final : public WiringRecord {
         return std::ranges::all_of(items_, [](WiringPoint item) { return item.record()->materialisation_ready(); });
     }
 
-    WiringPoint item(std::size_t index) const { return items_.at(index); }
+    std::optional<WiringArgument> collection_argument(std::size_t index) const override {
+        return WiringArgument{items_.at(index)};
+    }
 
   private:
     MaterialisationPreparation prepare_materialisation(const TimeSeriesType &target_type) const override {
@@ -361,15 +363,14 @@ WiringPoint time_series_list_item(WiringPoint list, std::size_t index) {
         throw WiringError{"time series list index is out of range"};
     }
 
+    if (auto argument = list.record()->collection_argument(index)) {
+        return argument->time_series();
+    }
+
     if (list.record()->input_binding(*semantic_type)) {
         const auto &reference_type = time_series_reference_type(*semantic_type, TimeSeriesGuarantee::const_);
         const auto reference = list.record()->wiring().materialize(list, reference_type);
         return static_cast<WiringPoint>(operators::getitem(reference, static_cast<std::int64_t>(index)));
-    }
-
-    const auto &list_record = *list.record();
-    if (const auto *free = dynamic_cast<const FreeFixedTimeSeriesListWiringRecord *>(&list_record)) {
-        return free->item(index);
     }
 
     const auto item = semantic_type->item_id(index);

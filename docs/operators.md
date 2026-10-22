@@ -329,7 +329,7 @@ captured variadic arguments follow. Forwarding a variadic wiring record produces
 the same sequence as supplying its arguments directly. An absent fixed scalar
 keeps its position. An absent captured scalar is omitted with its pack entry.
 
-Callable node declarations use a resolver named for its variable:
+Callable node and graph declarations use a resolver named for its variable:
 
 ```cpp
 using RESULT = bg::ScalarVariable<"RESULT">;

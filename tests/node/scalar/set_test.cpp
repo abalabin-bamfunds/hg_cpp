@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstdint>
+#include <stdexcept>
 
 namespace {
 
@@ -34,6 +35,29 @@ TEST_CASE("a scalar set output accepts a C++ range",
     const auto graph = [&] { return size(source()); };
 
     CHECK(testing::test_graph(graph).equals<i64>({2}));
+}
+
+TEST_CASE("a scalar set output rejects an incompatible scalar range",
+          "[node][time_series][scalar][set][scalar:set][feature:state][transition:update]") {
+    struct invalid_range_output {
+        In<TS<i64>> action;
+        Out<TS<Set<i64>>> output;
+
+        void evaluate() const {
+            if (*action == 0) {
+                output.set(std::array<i64, 2>{1, 2});
+                return;
+            }
+
+            CHECK_THROWS_AS(output.set(std::array{1.0, 2.0}), std::invalid_argument);
+        }
+    };
+
+    const auto source = node<invalid_range_output>();
+    const auto size = node([](In<TS<Set<i64>>> input) { return static_cast<i64>(input.value_view().size()); });
+    const auto graph = [&](wp<TS<i64>> action) { return size(source(action)); };
+
+    CHECK(testing::test_graph(graph, {0, 1}).equals<i64>({2, std::nullopt}));
 }
 
 struct inspect_scalar_set_state {

@@ -85,7 +85,8 @@ values outside the `i64` range raise `overflow_error`. The public operator
 accepts overloads for other source time-series types, including collections;
 each overload's output must be compatible with the requested result type. The
 requested type checks compatibility and does not replace the overload's
-inferred output guarantee.
+inferred output guarantee. See [collection conversion](#collection-conversion-and-construction)
+for the collection overloads.
 
 Required operands gate evaluation. Their invalidation invalidates the result,
 and revalidation permits another calculation. Equal results from ordinary
@@ -115,6 +116,116 @@ Time series calls do not schedule on start. An input change can calculate a
 result while either operand is invalid. No input change means no calculation.
 `default_()` supplies a caller-selected fallback; it does not select optional
 arithmetic. Other arithmetic operators reject `opt()` arguments.
+
+## Collection conversion and construction
+
+`convert[OUT](value)` copies the current value into the requested time series
+shape. C++ uses `convert[type<OUT>](value)`; Python uses `convert[OUT](value)`.
+The collection overloads support these conversions:
+
+| Source | Result |
+| --- | --- |
+| `TS<List<V>>` | Fixed `TSL<TS<V>, N>` or `TSS<V>` |
+| `TS<Set<K>>` | `TSS<K>` |
+| `TSS<K>` | `TS<Set<K>>` |
+| Fixed `TSL<TS<V>, N>` | `TS<List<V>>` |
+| `TS<Dict<K, V>>` | `TSD<K, TS<V>>` |
+| `TSD<K, TS<V>>` | `TS<Dict<K, V>>` |
+| `TS<Bundle<SCHEMA>>` | Named TSB with matching scalar-valued fields |
+| Named TSB with scalar-valued fields | `TS<Bundle<SCHEMA>>` |
+
+Python uses `tuple[T, ...]` for scalar List annotations. Scalar Set annotations
+are not yet exposed; `bg.TSS[T]` is available. See the
+[Python type mappings](python.md).
+
+Set items and dictionary keys must support hashing. List-to-TSL conversion
+requires exactly `N` items and reports a size mismatch during evaluation.
+Bundle fields match by name and use directional scalar compatibility. An
+absent optional scalar field invalidates its destination TSB item.
+Bundle-to-TSB conversion resolves field indices during wiring.
+
+Conversions to scalar collections or a scalar Bundle require a valid root and
+valid immediate time series items. Other conversions require a valid source
+value. Each conversion propagates the weakest observed input guarantee. The
+requested result must accept that guarantee. Publication and invalidation use
+the destination's normal mutation rules.
+
+`combine[OUT](...)` constructs a free fixed TSL from positional time series
+arguments or a free TSB from named time series arguments during wiring.
+It requires an explicit result type with compatible items:
+
+```cpp
+auto pair = operators::combine[type<TSL<TS<i64>, 2>>](x, y);
+```
+
+For an empty TSL, pass a typed empty pack as `"values"_n = tsl<TS<i64>>()`.
+
+Items alias the supplied time series and retain their normal validity and
+change information. `combine` adds no copying node or owned item values.
+The requested guarantees must be compatible with the free collection.
+Validity requirements are opt-in: a consuming node declares `all_valid` when
+it needs every immediate item to be valid. Collection materialization follows
+the normal [free-collection wiring rules](graph-wiring.md).
+
+## Collection accumulation and emission
+
+`collect[OUT](value, reset=...)` accumulates valid value ticks into a scalar
+List, scalar Set, or TSS. Dictionary results use
+`collect[OUT](key=key, value=value, reset=...)` and support scalar Dict and TSD
+outputs. The key input is passive: only a value tick inserts or replaces an
+entry, and an invalid key ignores that value tick.
+
+Collect requires an explicit result type. It supports ordinary and
+deduplicated guarantees, including TSD item guarantees. It does not schedule
+on start. Source invalidation preserves history. Any valid reset tick clears
+history, regardless of its payload; a simultaneous valid value contributes
+after the reset. Reset alone produces a valid empty collection.
+
+Scalar collection results publish complete snapshots. Ordinary scalar Set and
+Dict results publish even when insertion leaves the value unchanged;
+deduplicated results suppress equal snapshots. TSS and TSD results publish
+their normal membership and item changes.
+
+`emit(value)` publishes collection items as successive ordinary ticks:
+
+| Source | Events |
+| --- | --- |
+| `TS<List<V>>`, `TS<Set<V>>` | Every item in each new scalar value |
+| `TS<Dict<K, V>>` | Every key-value entry in each new scalar value |
+| `TSS<V>` | Added items |
+| Fixed `TSL<TS<V>, N>` | Modified valid items |
+| `TSD<K, TS<V>>` | Added or modified valid entries |
+
+Dictionary events use the public `operators::key_value` schema, exposed as
+`bg.KeyValue` in Python. Its `key` and `value` field types resolve from the
+source dictionary. A downstream node can name the schema directly:
+
+```cpp
+const auto read_value = node(
+    [](In<TSB<operators::key_value>> entry, Out<TS<operators::KEY_VALUE_VALUE>> output) {
+        output.copy(entry->value);
+    });
+```
+
+```python
+@bg.compute_node
+def read_value(entry: bg.TSB[bg.KeyValue]) -> bg.TS[int]:
+    return entry.value.value
+```
+
+Both declarations use the native schema's identity. A separately declared
+schema with the same field names is a different named type.
+
+Other events are `TS<V>`. Emit publishes the first pending event immediately
+and schedules remaining events one microsecond apart. New events append behind
+pending events. Lists use index order; set and dictionary enumeration order is
+unspecified.
+
+Emit retains owning scalar snapshots until publication. Empty inputs,
+removals, and invalidations contribute no events; input invalidation preserves
+the output and pending events. Stopping the owning graph releases the queue
+and its retained values. Emit infers its result type; an explicit result, when
+supplied, must be compatible and have ordinary guarantees.
 
 ## Validity and tick selection
 

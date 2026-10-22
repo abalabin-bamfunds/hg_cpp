@@ -39,6 +39,7 @@ from ._bg import (
     _mesh_dependency,
     _node_input_type,
     _optional_type,
+    _register_key_value_schema,
     _reference_type,
     _register_delta_types,
     _register_symbol_type,
@@ -133,6 +134,17 @@ class Symbol(str):
 
 _register_symbol_type(Symbol)
 symbol = Symbol
+
+
+class KeyValue:
+    """Native key/value time-series schema used by dictionary ``emit``."""
+
+
+_register_key_value_schema(KeyValue)
+
+
+# Release the module-owned wrapper before nanobind checks for leaked instances.
+atexit.register(delattr, KeyValue, "_native_time_series_schema")
 
 
 class _Invalid:
@@ -1469,6 +1481,7 @@ __all__ = [
     "StopSource",
     "StopToken",
     "Bundle",
+    "KeyValue",
     "Scheduler",
     "ScheduleHandle",
     "const_",

@@ -133,8 +133,12 @@ class FreeTimeSeriesBundleWiringRecord final : public WiringRecord {
     FreeTimeSeriesBundleWiringRecord(const TimeSeriesBundleType &type, std::vector<WiringArgument> fields)
         : WiringRecord{type}, fields_{std::move(fields)} {}
 
-    WiringArgument argument(std::size_t index) const { return WiringArgument::borrow(fields_.at(index)); }
-    std::span<const WiringArgument> arguments() const noexcept { return fields_; }
+    std::optional<WiringArgument> collection_argument(std::size_t index) const override {
+        return WiringArgument::borrow(fields_.at(index));
+    }
+    std::optional<std::span<const WiringArgument>> collection_original_arguments() const noexcept override {
+        return std::span<const WiringArgument>{fields_};
+    }
 
     bool materialisation_ready_impl() const noexcept override {
         return std::ranges::all_of(fields_, [](const auto &field) {
@@ -265,10 +269,7 @@ class TimeSeriesBundleVariadicWiringOperations final : public VariadicWiringOper
 
     std::optional<std::span<const WiringArgument>>
     original_arguments(WiringPoint collection) const noexcept override {
-        if (const auto *free = dynamic_cast<const FreeTimeSeriesBundleWiringRecord *>(collection.record())) {
-            return free->arguments();
-        }
-        return std::nullopt;
+        return collection.record()->collection_original_arguments();
     }
 
     std::vector<MaterialisationDependency>
@@ -415,11 +416,8 @@ WiringArgument time_series_bundle_argument(WiringPoint bundle, std::size_t index
     }
 
     const auto &record = *bundle.record();
-    if (const auto *free = dynamic_cast<const FreeTimeSeriesBundleWiringRecord *>(&record)) {
-        return free->argument(index);
-    }
-    if (const auto *variadic = variadic_wiring_record(bundle)) {
-        return variadic->argument(index);
+    if (auto argument = record.collection_argument(index)) {
+        return std::move(*argument);
     }
 
     if (const auto input = record.input_binding(*type)) {

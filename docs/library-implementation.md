@@ -36,6 +36,11 @@ behavior even when their values are equal.
 
 ## Choose the definition form
 
+Perform work during wiring when its inputs are known then. Construct collections
+from existing wiring points as free collections; leave validity requirements to
+their consumers. Add runtime computation only for behavior that depends on
+runtime values or changes.
+
 Use a graph overload when the operation composes existing operators or returns
 an existing wiring point:
 

@@ -538,7 +538,9 @@ parameter type and its constraint before invoking the graph function.
 
 A lambda graph infers its name from the callable type unless `"name"_n`
 supplies a name. Its optional label uses `"label"_n`; its optional requirement
-uses `bg::require`. The graph function is the only positional argument:
+uses `bg::require`. Use `bg::resolve<VARIABLE> = callback` for variables that
+input matching cannot determine, following the [resolver contract](operators.md#resolvers).
+The graph function is the only positional argument:
 
 ```cpp
 using namespace bg::literals;

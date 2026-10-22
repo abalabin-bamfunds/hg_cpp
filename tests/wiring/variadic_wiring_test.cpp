@@ -9,6 +9,7 @@
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
+#include <bg/time_series/tsl/tsl.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -34,6 +35,10 @@ using ARGS = BundleSchemaVariableDeclaration<"ARGS", Field>;
 
 template <template <typename, auto...> typename Field>
 using KWARGS = BundleSchemaVariableDeclaration<"KWARGS", Field>;
+template <template <typename, auto...> typename Field>
+using COLLECTION_SCHEMA = BundleSchemaVariableDeclaration<"COLLECTION_SCHEMA", Field>;
+template <template <typename, auto...> typename Field>
+using REMAINING_SCHEMA = BundleSchemaVariableDeclaration<"REMAINING_SCHEMA", Field>;
 
 struct AggregateVariadicGraph {
     wp<TSB<SCHEMA>, var_args> values;
@@ -262,6 +267,16 @@ TEST_CASE("a variadic graph forwards a complete pack only",
 
     const auto sender = graph("name"_n = "sender", [&](wp<TSB<SCHEMA>, var_args> values) { receiver(values); });
 
+    const auto adapted_then_forwarded = graph("name"_n = "adapted_then_forwarded",
+                                              [&](wp<TSB<SCHEMA>, var_args> values) {
+                                                  const auto adapted = values.as<TSB<SCHEMA>>();
+                                                  const auto point = static_cast<WiringPoint>(adapted);
+                                                  CHECK(details::variadic_wiring_record(point) == nullptr);
+                                                  CHECK(type_cast<TimeSeriesBundleType>(point.type().target_type())
+                                                            .item_count() == 1);
+                                                  receiver(values);
+                                              });
+
     const auto selected = graph("name"_n = "selected", [&](wp<TSB<SCHEMA>, var_args> values) {
         receiver(values[0]);
     });
@@ -281,11 +296,53 @@ TEST_CASE("a variadic graph forwards a complete pack only",
     });
 
     testing::test_wiring([&] { sender(1); });
+    testing::test_wiring([&] { adapted_then_forwarded(1); });
     testing::test_wiring([&] { selected(1); });
     CHECK_THROWS_AS(testing::test_wiring([&] { combined(1); }), WiringError);
     CHECK_THROWS_WITH(testing::test_wiring([&] { named(1); }),
                       Catch::Matchers::ContainsSubstring("a forwarded variadic wiring record cannot be named"));
     CHECK_THROWS_AS(testing::test_wiring([&] { renamed(1); }), WiringError);
+}
+
+TEST_CASE("an adapted pack is one collection argument in a mixed named call",
+          "[feature:wiring][feature:variadic-wiring][series:tsb][schema:named][definition:function]") {
+    const auto series = node([](Out<TS<i64>>) {});
+
+    const auto receiver = graph(
+        "name"_n = "receiver",
+        [](wp<TSB<COLLECTION_SCHEMA>, "collection"_n> collection,
+           wp<TSB<REMAINING_SCHEMA>, var_kwargs> remaining) {
+            const auto &fields = type_cast<TimeSeriesBundleType>(collection.type().target_type());
+            REQUIRE(fields.item_count() == 2);
+            CHECK(fields.item_name(0).text() == "count");
+            CHECK(fields.item_name(1).text() == "ratio");
+            REQUIRE(remaining.size() == 1);
+            CHECK(remaining[0].name()->text() == "tail");
+            CHECK(remaining[0].is_scalar());
+        });
+
+    const auto sender = graph("name"_n = "sender", [&](wp<TSB<SCHEMA>, var_kwargs> values) {
+        receiver("collection"_n = values.as<TSB<SCHEMA>>(), "tail"_n = 9);
+    });
+
+    testing::test_wiring([&] { sender("count"_n = series(), "ratio"_n = series()); });
+}
+
+TEST_CASE("an adapted TSL is one argument in a downstream variadic TSB",
+          "[feature:wiring][feature:variadic-wiring][series:fixed-tsl][series:tsb][definition:function]") {
+    const auto series = node([](Out<TS<i64>>) {});
+
+    const auto receiver = graph("name"_n = "receiver", [](wp<TSB<SCHEMA>, var_args> values) {
+        REQUIRE(values.size() == 2);
+        CHECK(type_cast<TimeSeriesListType>(&values[0].type()));
+        CHECK(&values[1].type() == &TS<i64>::type());
+    });
+
+    const auto sender = graph("name"_n = "sender", [&](wp<TSL<TS<i64>, 2>, var_args> values) {
+        receiver(values.as<TSL<TS<i64>, 2>>(), series());
+    });
+
+    testing::test_wiring([&] { sender(series(), series()); });
 }
 
 TEST_CASE("named variadic arguments are validated before absent values are removed",
@@ -1296,5 +1353,42 @@ TEST_CASE("a direct named free TSB pack preserves field annotations",
     testing::test_wiring([&] {
         const auto pack = bundle("filtered"_n = valid_items(dictionary()), "optional"_n = opt(series()));
         receiver("values"_n = pack);
+    });
+}
+
+TEST_CASE("explicit expansion of an adapted TSB preserves scalars and annotations",
+          "[feature:wiring][feature:variadic-wiring][series:tsb][schema:named]"
+          "[input-guarantee:valid-items][validity:optional][representation:free]") {
+    const auto series = node([](Out<TS<i64>>) {});
+    const auto dictionary = node([](Out<TSD<i64, TS<i64>>>) {});
+
+    const auto named_receiver = graph("name"_n = "named_receiver", [](wp<TSB<SCHEMA>, var_kwargs, optional> values) {
+        REQUIRE(values.size() == 3);
+        REQUIRE(values.find("count"));
+        CHECK(values["count"].is_scalar());
+        CHECK(scalar_cast<i64>(values["count"].scalar()).value() == 7);
+        REQUIRE(values.find("filtered"));
+        CHECK(values["filtered"].annotations().valid_items);
+        REQUIRE(values.find("optional"));
+        CHECK(values["optional"].annotations().optional);
+    });
+
+    const auto positional_receiver = graph("name"_n = "positional_receiver",
+                                           [](wp<TSB<SCHEMA>, var_args, optional> values) {
+                                               REQUIRE(values.size() == 3);
+                                               CHECK(values[0].is_scalar());
+                                               CHECK(scalar_cast<i64>(values[0].scalar()).value() == 7);
+                                               CHECK(values[1].annotations().valid_items);
+                                               CHECK(values[2].annotations().optional);
+                                           });
+
+    const auto sender = graph("name"_n = "sender", [&](wp<TSB<SCHEMA>, var_kwargs, optional> values) {
+        const auto adapted = values.as<TSB<SCHEMA>>();
+        named_receiver(kwargs(adapted));
+        positional_receiver(args(adapted));
+    });
+
+    testing::test_wiring([&] {
+        sender("count"_n = 7, "filtered"_n = valid_items(dictionary()), "optional"_n = opt(series()));
     });
 }

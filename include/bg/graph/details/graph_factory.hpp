@@ -3,11 +3,14 @@
 #include <bg/graph/details/aggregate_graph.hpp>
 #include <bg/graph/graph_template.hpp>
 #include <bg/graph/wiring_parameter.hpp>
+#include <bg/node/details/resolver.hpp>
 #include <bg/util/named_argument.hpp>
 
 #include <cstddef>
 #include <initializer_list>
 #include <span>
+#include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -16,10 +19,12 @@ namespace bg::details {
 template <typename... Arguments>
 inline constexpr std::size_t unnamed_argument_count =
     (std::size_t{} + ... + static_cast<std::size_t>(!is_named_argument_v<Arguments> &&
-                                                     !is_callable_requirement_v<Arguments>));
+                                                     !is_callable_requirement_v<Arguments> &&
+                                                     !is_callable_resolver_v<Arguments>));
 
 template <typename First, typename... Rest> decltype(auto) unnamed_argument(First &&first, Rest &&...rest) {
-    if constexpr (!is_named_argument_v<First> && !is_callable_requirement_v<First>) {
+    if constexpr (!is_named_argument_v<First> && !is_callable_requirement_v<First> &&
+                  !is_callable_resolver_v<First>) {
         return std::forward<First>(first);
     } else {
         return unnamed_argument(std::forward<Rest>(rest)...);
@@ -59,7 +64,9 @@ template <typename... TypeParameters, typename Function, typename... Arguments>
             return util::symbol{util::unqualified_type_name<StoredFunction>()};
         }
     }();
-    auto signature = make_graph_signature<StoredFunction>(name);
+    auto resolvers = callable_resolvers(std::forward_as_tuple(std::forward<Arguments>(arguments)...));
+    auto signature = make_graph_signature<StoredFunction>(name, std::span<const std::string_view>{},
+                                                          std::move(resolvers));
     if (declares_parameters) {
         signature = signature.with_parameters(declarations);
     }

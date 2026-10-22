@@ -90,6 +90,13 @@ arguments in its own pack. The other pack remains independent. Passing a record
 to an ordinary TSB parameter materializes the normalized TSB. Positional fields
 use their decimal positions as names in that TSB schema.
 
+`pack.as<TSL<...>>()` or `pack.as<TSB<...>>()` exposes the pack as a collection
+wiring point. It preserves lazy item selection, references, names,
+guarantees, and wiring annotations without copying item values. The result no
+longer forwards implicitly as a variadic pack; downstream calls use ordinary
+collection argument rules. The original pack remains unchanged and can still
+forward its arguments.
+
 `args(bundle)` expands a TSB into positional wiring arguments in schema order.
 `kwargs(bundle)` expands it into named wiring arguments. Expanding a free TSB
 or a captured variadic pack emits its original arguments, including scalars and

@@ -362,6 +362,8 @@ graph compilation or evaluation.
 - unsupported output guarantees rejecting candidates without blocking applicable
   overloads in either registration order; resolver callback exceptions remaining fatal
 - graph requirements, including resolved scalar inspection, rejection before body wiring, overload fallback, and diagnostics
+- callable graph resolvers, including scalar-dependent resolution, schema resolution,
+  requirement ordering, callback ownership, and resolution-cache separation
 - `opt` argument matching, required-input preference, cache separation, named arguments, and variadic forwarding
 - required scalar preference over absence-accepting parameters, including
   promoted forms, absent arguments, type specificity, conflicting preferences,
@@ -380,6 +382,9 @@ graph compilation or evaluation.
   guarantees, explicit empty TSL item types, named fields, and argument-storage lifetime
 - variadic capture by TSB and homogeneous TSL, forwarding, materialization, exact-name direct collection binding,
   nested boundaries, and operator selection
+- `as` conversion of captured packs to collection arguments without implicit forwarding;
+  retained annotations, scalar arguments, references, guarantees, lazy item selection,
+  explicit TSB expansion, and continued forwarding of the original pack
 - signature wrappers for positional and named variadic graphs and nodes, type mapping, and output validation
 - deferred wiring points, retained arguments, advertised materialisation options, signature form matching and completion,
   deduplicated materialisation cost, callback non-execution during matching and root collection, shared concrete demands
@@ -618,6 +623,19 @@ For each reusable node and graph, test:
 - conversion between scalar time series, full target type matching including
   guarantees and collection results, reference-observed guarantees, and
   rejection of unsupported targets
+- collection accumulation from value events into scalar lists, scalar sets,
+  TSS, scalar dictionaries, and TSD, including equal ticks, invalidation,
+  optional reset, passive keys, output guarantees, and incompatible output types
+- conversion between scalar lists and fixed TSL, scalar lists and TSS, scalar
+  sets and TSS, scalar dictionaries and TSD, and named scalar Bundle/TSB
+  schemas; test field-name mapping, free TSL/TSB construction, partial validity,
+  item invalidation and revalidation, opt-in all-valid consumption, and absence
+  of extra copying nodes
+- emit FIFO order and one-item-per-tick scheduling for scalar collections,
+  TSS additions, fixed TSL updates, TSD additions and modifications; test
+  invalidation and removal filtering, value ownership, reference rebinding,
+  nested stop cleanup, output-guarantee rejection, and public key-value schema
+  inputs with distinct key and value types and nominal schema compatibility
 - optional addition and multiplication, initial invalidity, invalidation,
   revalidation, startup scheduling, and distinctions from explicit defaults
 - stateful count and one-event lag, including repeated ticks, validity changes,
@@ -658,6 +676,10 @@ For each reusable node and graph, test:
 - homogeneous scalar tuple annotations, nested and generic items, immutable
   Python materialization, expected-type sequence conversion and ownership,
   and rejection of mutable sequence annotations
+- conversion between scalar tuple lists and TSL/TSS, scalar dictionaries and
+  TSD, named scalar Bundle/TSB schemas, partially valid free combine results,
+  and collect reset and emit behavior for supported collection types;
+  native key-value schema annotations on dictionary emit consumers
 - fixed-length scalar tuple annotations, empty and single-item tuples, nested
   and generic items, positional conversion, arity errors, and immutable results
 - declaration metadata lifetime after definition destruction and callback ownership

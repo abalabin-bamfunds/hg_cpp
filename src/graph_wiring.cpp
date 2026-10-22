@@ -3,6 +3,7 @@
 
 #include <bg/graph/details/service_instance_registry.hpp>
 #include <bg/graph/details/wiring_record.hpp>
+#include <bg/graph/details/variadic_wiring_record.hpp>
 #include <bg/graph/context.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_arguments.hpp>
@@ -71,6 +72,36 @@ const TimeSeriesType &GraphWiring::InheritedTimeSeriesRequirement::boundary_inpu
 }
 
 namespace details {
+
+class CollectionWiringViewRecord final : public WiringRecord {
+  public:
+    explicit CollectionWiringViewRecord(WiringPoint source) : WiringRecord{source.type()}, source_{source} {}
+
+    const WiringRecord *source_identity() const noexcept override {
+        return source_.record()->source_identity();
+    }
+    std::optional<WiringArgument> collection_argument(std::size_t index) const override {
+        return source_.record()->collection_argument(index);
+    }
+    std::optional<std::span<const WiringArgument>> collection_original_arguments() const noexcept override {
+        return source_.record()->collection_original_arguments();
+    }
+
+  private:
+    bool materialisation_ready_impl() const noexcept override {
+        return source_.record()->materialisation_ready();
+    }
+
+    MaterialisationPreparation prepare_materialisation(const TimeSeriesType &requested_type) const override {
+        return source_.record()->prepare_materialisation(requested_type);
+    }
+
+    WiringPoint materialize(const TimeSeriesType &requested_type) const override {
+        return wiring().materialize(source_, requested_type);
+    }
+
+    WiringPoint source_;
+};
 
 class InheritedTimeSeriesWiringRecord final : public WiringRecord {
   public:
@@ -297,6 +328,11 @@ WiringPoint WiringPoint::as(const Type &type) const {
         return record_->wiring().materialisation_form(*this, *reference);
     }
     if (type.accepts(this->type())) {
+        const auto *target_type = type_cast<TimeSeriesType>(&type);
+        if (target_type != nullptr && details::variadic_wiring_record(*this) != nullptr) {
+            return record_->wiring().register_record(
+                std::make_unique<details::CollectionWiringViewRecord>(*this));
+        }
         return *this;
     }
 

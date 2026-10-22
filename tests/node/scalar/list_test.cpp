@@ -8,6 +8,8 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <stdexcept>
+#include <string_view>
 
 namespace {
 
@@ -41,28 +43,75 @@ TEST_CASE("a scalar list output accepts a C++ range",
     CHECK(testing::test_graph(graph).equals<i64>({6}));
 }
 
+TEST_CASE("a scalar list output rejects an incompatible scalar range",
+          "[node][time_series][scalar][list][scalar:list][feature:state][transition:update]") {
+    struct invalid_range_output {
+        In<TS<i64>> action;
+        Out<TS<List<i64>>> output;
+
+        void evaluate() const {
+            if (*action == 0) {
+                output.set(std::array<i64, 2>{1, 2});
+                return;
+            }
+
+            CHECK_THROWS_AS(output.set(std::array{1.0, 2.0}), std::invalid_argument);
+        }
+    };
+
+    const auto source = node<invalid_range_output>();
+    const auto size = node([](In<TS<List<i64>>> input) { return static_cast<i64>(input.value_view().size()); });
+    const auto graph = [&](wp<TS<i64>> action) { return size(source(action)); };
+
+    CHECK(testing::test_graph(graph, {0, 1}).equals<i64>({2, std::nullopt}));
+}
+
+TEST_CASE("a scalar list output owns nested borrowed values on replacement",
+          "[node][time_series][scalar][list][scalar:list][scalar:string][feature:state]") {
+    const auto source = node([](Out<TS<List<List<string>>>> output) {
+        auto previous = ScalarValue<List<string>>{std::array<std::string_view, 1>{"previous"}};
+        output.set(std::array{previous.view()});
+        const auto previous_output = output.value();
+        output.set(std::array{previous_output[0]});
+        CHECK(output.value()[0][0].value() == "previous");
+
+        {
+            auto replacement = ScalarValue<List<string>>{std::array<std::string_view, 1>{"replacement"}};
+            output.set(std::array{replacement.view()});
+        }
+
+        CHECK(output.value().size() == 1);
+        CHECK(output.value()[0][0].value() == "replacement");
+    });
+
+    const auto inspect = node([](In<TS<List<List<string>>>> input) { return input.value_view()[0][0].value(); });
+    CHECK(testing::test_graph([&] { return inspect(source()); }).equals<string>({"replacement"}));
+}
+
 struct deduplicated_empty_list_output {
-    In<TS<bool>> reset;
+    In<TS<i64>> action;
     Out<TS<List<i64>, TimeSeriesGuarantee::deduplicated>> output;
 
     void start() const { output.set(std::array<i64, 0>{}); }
     void evaluate() const {
-        if (reset.valid() && *reset) {
+        if (*action == 2) {
             output.invalidate();
-            output.set(std::array<i64, 0>{});
+            return;
         }
+
+        output.set(std::array<i64, 0>{});
     }
 };
 
-TEST_CASE("a deduplicated list output publishes empty ranges and revalidation",
-          "[node][time_series][scalar][list][scalar:list][transition:revalidation]") {
+TEST_CASE("a deduplicated empty list output suppresses equal ranges and revalidates",
+          "[node][time_series][scalar][list][feature:scalar-collection][series:value][scalar:list]"
+          "[guarantee:deduplicated]"
+          "[transition:start][transition:update][transition:invalidation][transition:revalidation]") {
     const auto source = node<deduplicated_empty_list_output>();
-    const auto inspect = node([](In<TS<List<i64>, TimeSeriesGuarantee::optional>> input) {
-        return static_cast<i64>(input.valid() && input.value_view().empty());
-    });
-    const auto graph = [&](wp<TS<bool>> reset) { return inspect(source(reset)); };
+    const auto inspect = node([](In<TS<List<i64>>, optional> input) { return input.valid(); });
+    const auto graph = [&](wp<TS<i64>> action) { return inspect(source(action)); };
 
-    CHECK(testing::test_graph(graph, testing::input<TS<bool>>({true})).equals<i64>({1}));
+    CHECK(testing::test_graph(graph, {0, 1, 2, 0}).equals<bool>({true, std::nullopt, false, true}));
 }
 
 struct inspect_scalar_list_state {

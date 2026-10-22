@@ -271,6 +271,11 @@ true` to assert that its default state supports it. Scalar collection state does
 not retain an allocator. It uses the node allocation context and exposes a
 mutable scalar view.
 
+Scalar collection state also provides `value()`, which returns a borrowed
+read-only scalar view. Use it to pass the complete collection to a scalar
+operation during the invocation. The view does not retain ownership; follow
+the [scalar ownership rules](scalar-api.md#ownership).
+
 A state declaration can contain scalar type variables. Wiring resolves these
 variables from the node signature. Graph compilation selects a registered
 runtime type when one matches the resolved type. Otherwise, it composes a
@@ -521,6 +526,23 @@ produce a valid empty collection.
 `Out<TSS<T>>::for_each(callback)` visits current members as `Scalar<T>` views.
 An invalid output has no members. The callback may erase the member it receives;
 it must not insert members during enumeration.
+
+`Out<TSD<K, TS_T>>::for_each_key(callback)` visits borrowed keys of current
+entries. The callback may erase the key it receives; it must not insert entries
+during enumeration. Existing entries retain their item identities.
+
+`Out<TS<List<T>>>::set(range)`, `Out<TS<Set<T>>>::set(range)`, and
+`Out<TS<Dict<K, V>>>::set(range)` replace the complete scalar collection from a
+C++ input range. Dictionary ranges supply pairs. Items must be compatible with
+the destination types. An empty range produces a valid empty collection; sets
+deduplicate items, and duplicate dictionary keys raise `std::invalid_argument`.
+
+Range assignment constructs a replacement using the destination runtime type
+and allocator before replacing the old value. The range may borrow items from
+the old output. Construction or comparison failure preserves the old output
+and publishes no tick. Equal replacements are suppressed only while a
+deduplicated output is valid, so an equal replacement after invalidation
+revalidates it.
 
 `Out<TS<T>>::set_value()` accepts a compatible scalar view or an owning
 `ScalarValue` rvalue. The rvalue overload transfers compatible storage and

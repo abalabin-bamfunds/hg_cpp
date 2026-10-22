@@ -186,6 +186,8 @@ add_library(
     src/library/logical.cpp
     src/library/numeric.cpp
     src/library/conversion.cpp
+    src/library/collect.cpp
+    src/library/emit.cpp
     src/library/operators.cpp
     src/library/collection.cpp
     src/library/tss.cpp
