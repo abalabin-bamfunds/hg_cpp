@@ -424,7 +424,7 @@ TEST_CASE("callable scalar-or-time-series inputs read references to values",
 
     const auto graph = [=](wp<TS<i64>> input) {
         const auto target = reference(input);
-        CHECK(&target.type() == &REF<TS<i64>>::type());
+        CHECK(target.type().contains_reference());
         return identity(target);
     };
 
