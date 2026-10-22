@@ -206,6 +206,7 @@ catch_discover_tests(bg_tests DISCOVERY_MODE PRE_TEST)
 add_executable(
     bg_library_tests
     library/add_test.cpp
+    library/analytical_test.cpp
     library/boolean_reduction_test.cpp
     library/collection_test.cpp
     library/collection_reduction_test.cpp

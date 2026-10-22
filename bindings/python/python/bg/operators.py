@@ -46,6 +46,9 @@ dedup = _native.dedup
 filter_ = _native.filter_
 if_then_else = _native.if_then_else
 lag = _native.lag
+diff = _native.diff
+clip = _native.clip
+ewma = _native.ewma
 delay = _native.delay
 schedule = _native.schedule
 throttle = _native.throttle
@@ -75,6 +78,7 @@ __all__ = [
     "all_valid",
     "add",
     "and_",
+    "clip",
     "const_",
     "contains_",
     "is_empty",
@@ -89,8 +93,10 @@ __all__ = [
     "delay",
     "dedup",
     "dispatch",
+    "diff",
     "div",
     "eq",
+    "ewma",
     "floordiv",
     "filter_",
     "emit",

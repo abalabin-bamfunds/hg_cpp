@@ -640,6 +640,9 @@ For each reusable node and graph, test:
   revalidation, startup scheduling, and distinctions from explicit defaults
 - stateful count and one-event lag, including repeated ticks, validity changes,
   owned scalar snapshots, guarantees, references, and nested graph instances
+- analytical `diff`, `clip`, and `ewma`, including numeric types, changing
+  bounds, warmup, invalidation, configuration errors, guarantees, and nested
+  graph state
 - running sums, extrema, and means, including skipped cycles, repeated values,
   invalidation, reset-only and simultaneous reset/value ticks, reset invalidation,
   numeric limits, NaN comparisons, guarantees, references, and independent nested graph state

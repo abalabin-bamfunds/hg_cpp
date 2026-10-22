@@ -1,8 +1,10 @@
 #include "registration.hpp"
 
+#include <bg/graph.hpp>
 #include <bg/library/operators.hpp>
 
 namespace bg::operators {
+using namespace bg::literals;
 
 decltype(add) add{"add", {"lhs", "rhs"}};
 decltype(sub) sub{"sub", {"lhs", "rhs"}};
@@ -56,6 +58,9 @@ decltype(dedup) dedup{"dedup", {"value"}};
 decltype(filter_) filter_{"filter_", {"condition", "value"}};
 decltype(if_then_else) if_then_else{"if_then_else", {"condition", "true_value", "false_value"}};
 decltype(lag) lag{"lag", {"value"}};
+decltype(diff) diff{"diff", {"value"}};
+decltype(clip) clip{"clip", {"value", "min_", "max_"}};
+decltype(ewma) ewma{"ewma", {"value", "alpha", "min_periods"_n = i64{0}}};
 decltype(delay) delay{"delay", {"value", "duration"}};
 decltype(schedule) schedule{"schedule", {"period", "initial_delay", "max_ticks"}};
 decltype(throttle) throttle{"throttle", {"value", "period", "delay_first_tick"}};
@@ -91,6 +96,7 @@ const auto registered = [] {
     details::register_string_format_operators();
     details::register_logical_operators();
     details::register_stream_operators();
+    details::register_analytical_operators();
     details::register_running_operators();
     details::register_timed_operators();
     details::register_collection_operators();

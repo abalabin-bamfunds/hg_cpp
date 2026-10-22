@@ -295,6 +295,34 @@ operation. Ordinary equal-valued ticks remain separate events. `lag` produces
 an ordinary output; its first event produces no output, and its final retained
 event remains unpublished unless another input event arrives.
 
+## Analytical operators
+
+`diff(value)` accepts `TS<i64>` and `TS<double>`. It subtracts the previous
+valid input value from each current value. The first value after graph start or
+input invalidation has no difference. Skipped cycles do not advance the
+calculation; equal-valued input ticks remain separate events. The output has
+the ordinary guarantee.
+
+`clip(value, min_, max_)` accepts `i64` or `double` values. Each argument can
+be a scalar or a time series of the matching type. It clamps each result to
+the inclusive bounds. Required time series arguments gate evaluation;
+invalidating any required input invalidates the output. When all
+inputs are valid, `min_ > max_` raises an evaluation error. Time series
+arguments propagate their weakest observed guarantee.
+Floating-point bounds and values use ordinary comparisons.
+
+`ewma(value, alpha, min_periods=0)` accepts `TS<double>` and scalar
+configuration. `alpha` must be finite and in `[0, 1]`; `min_periods` must be
+nonnegative. The first valid value seeds the average. Each later valid value
+updates it as `average += alpha * (value - average)`. The operator suppresses
+the first `min_periods` valid ticks and publishes on the next valid tick.
+Invalidation invalidates the output and clears the average and warmup state;
+revalidation starts a new average and repeats the warmup threshold. Skipped
+cycles do not advance the state.
+With zero warmup, EWMA retains the input guarantee. Positive warmup limits the
+output guarantee for a `const` input to `final` because its only tick may be
+suppressed. Other input guarantees are retained.
+
 ## Timed operators
 
 `delay(value, duration)` publishes each input event at its original evaluation

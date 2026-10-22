@@ -94,6 +94,11 @@ extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TRUE_TS, FALSE_TS) -> OUT> if_
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> i64> count;
 extern BG_LIBRARY_EXPORT operator_<auto(TS<SCALAR>) -> TS<SCALAR>> lag;
 
+// Analytical operators.
+extern BG_LIBRARY_EXPORT operator_<auto(TS<NUMERIC>) -> OUT> diff;
+extern BG_LIBRARY_EXPORT operator_<auto(NUMERIC, NUMERIC, NUMERIC) -> NUMERIC> clip;
+extern BG_LIBRARY_EXPORT operator_<auto(TS<double>, double, i64) -> OUT> ewma;
+
 // Timed operators.
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T, timedelta_t) -> OUT> delay;
 extern BG_LIBRARY_EXPORT operator_<auto(timedelta_t, bool, i64) -> TS<bool>> schedule;
