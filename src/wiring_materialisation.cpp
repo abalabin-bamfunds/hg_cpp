@@ -135,6 +135,24 @@ void bind_materialisation_forms(GraphWiring &wiring, const WiringTemplate &imple
     }
 }
 
+void require_concrete_materialisation_forms(GraphWiring &wiring, const WiringTemplate &implementation,
+                                            std::span<const WiringArgument> arguments,
+                                            std::span<const TimeSeriesType *const> selected_forms) {
+    const auto &signature = implementation.signature();
+    const auto *path = WiringContext::current().path();
+    for (auto index = std::size_t{}; index < arguments.size(); ++index) {
+        if (!arguments[index].is_time_series() || implementation.preserves_input_point(index) ||
+            selected_forms[index] == nullptr) {
+            continue;
+        }
+        wiring.require_materialisation(
+            arguments[index].time_series(), *selected_forms[index],
+            {.path = path == nullptr ? std::string{} : path->text(),
+             .consumer = signature.name(),
+             .parameter = signature.parameter(index).name});
+    }
+}
+
 } // namespace details
 namespace {
 

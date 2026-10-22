@@ -31,11 +31,6 @@ std::optional<DispatchCastForm> dispatch_cast_form(const TimeSeriesType &type) {
     return DispatchCastForm{&reference->target_type(), value, reference->guarantee().value()};
 }
 
-bool same_reference_form(const TimeSeriesType &left, const TimeSeriesType &right) noexcept {
-    return (type_cast<TimeSeriesReferenceType>(&left) == nullptr) ==
-           (type_cast<TimeSeriesReferenceType>(&right) == nullptr);
-}
-
 void validate_dispatch_cast(WiringPoint source, const TimeSeriesType &target_type) {
     if (!source.has_output() || !source.record()->graph_owned()) {
         throw WiringError{"a dispatch cast requires a graph-owned wiring point"};

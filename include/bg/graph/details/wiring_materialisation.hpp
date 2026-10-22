@@ -50,6 +50,9 @@ class WiringCallPreparation {
 void bind_materialisation_forms(GraphWiring &wiring, const WiringTemplate &implementation,
                                 std::span<WiringArgument> arguments,
                                 std::span<const TimeSeriesType *const> selected_forms);
+void require_concrete_materialisation_forms(GraphWiring &wiring, const WiringTemplate &implementation,
+                                            std::span<const WiringArgument> arguments,
+                                            std::span<const TimeSeriesType *const> selected_forms);
 
 } // namespace details
 } // namespace bg

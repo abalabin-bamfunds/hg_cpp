@@ -1,9 +1,11 @@
 #include <bg/dispatch.hpp>
 #include <bg/graph.hpp>
+#include <bg/graph/wiring_error.hpp>
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
 #include <bg/scalar/bundle/value.hpp>
 #include <bg/testing/test_graph.hpp>
+#include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/time_series_variable.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
@@ -592,6 +594,89 @@ TEST_CASE("dispatch enumerates implementation input types resolved by an explici
     const auto actual = testing::test_graph(graph, {1});
 
     CHECK(actual.equals<i64>({20}));
+}
+
+TEST_CASE("dispatch commits a selected implementation with a default scalar argument",
+          "[feature:dispatch][feature:wiring-defaults][series:value]") {
+    const auto implementation = graph({"input"_n, "offset"_n = i64{9}},
+                                      [](wp<TS<Bundle<DispatchBase>>> input, i64 offset) {
+                                          (void)input;
+                                          return operators::const_(offset)
+                                              .as<TS<i64, TimeSeriesGuarantee::const_>>();
+                                      });
+    const auto dispatch = dispatch_<auto(TS<Bundle<DispatchBase>>) -> TS<i64>>{implementation};
+    const auto publish = node([](In<TS<i64>>, Out<TS<Bundle<DispatchBase>>> output) {
+        auto memory = allocator{};
+        output.set(bundle<DispatchBase>(memory, symbol{"item"}));
+    });
+    const auto tested = [&](wp<TS<i64>> trigger) {
+        return dispatch(publish(trigger)).as<TS<i64>>();
+    };
+
+    CHECK(testing::test_graph(tested, {1}).equals<i64>({9}));
+}
+
+TEST_CASE("dispatch preserves named argument binding when invoking the selected implementation",
+          "[feature:dispatch][feature:wiring][series:value]") {
+    const auto implementation = graph([](wp<TS<Bundle<DispatchBase>>> input, i64 result) {
+        (void)input;
+        return operators::const_(result).as<TS<i64, TimeSeriesGuarantee::const_>>();
+    });
+    const auto dispatch = dispatch_<auto(TS<Bundle<DispatchBase>>, i64) -> TS<i64>>{implementation};
+    const auto publish = node([](In<TS<i64>>, Out<TS<Bundle<DispatchBase>>> output) {
+        auto memory = allocator{};
+        output.set(bundle<DispatchBase>(memory, symbol{"item"}));
+    });
+    const auto tested = [&](wp<TS<i64>> trigger) {
+        return dispatch("1"_n = i64{7}, "0"_n = publish(trigger)).as<TS<i64>>();
+    };
+
+    CHECK(testing::test_graph(tested, {1}).equals<i64>({7}));
+}
+
+TEST_CASE("dispatch commits a selected implementation with variadic time-series arguments",
+          "[feature:dispatch][feature:variadic-wiring][series:tsb][schema:generic]") {
+    const auto implementation = graph([](wp<TS<Bundle<DispatchBase>>> input,
+                                         wp<TSB<SCHEMA>, var_args> values) {
+        (void)input;
+        return wp<TS<i64>>{values[0].time_series()};
+    });
+    const auto dispatch = dispatch_<auto(TS<Bundle<DispatchBase>>, TS<i64>) -> TS<i64>>{implementation};
+    const auto publish = node([](In<TS<i64>>, Out<TS<Bundle<DispatchBase>>> output) {
+        auto memory = allocator{};
+        output.set(bundle<DispatchBase>(memory, symbol{"item"}));
+    });
+    const auto tested = [&](wp<TS<i64>> trigger, wp<TS<i64>> value) {
+        return dispatch(publish(trigger), value).as<TS<i64>>();
+    };
+
+    CHECK(testing::test_graph(tested, {1, 1}, {3, 5}).equals<i64>({3, 5}));
+}
+
+TEST_CASE("dispatch reports implementation argument normalization failures",
+          "[feature:dispatch][feature:operator][feature:wiring]") {
+    const auto implementation = graph("name"_n = "dispatch_missing_argument",
+                                      [](wp<TS<Bundle<DispatchBase>>> input, i64 required_value) {
+                                          (void)input;
+                                          return operators::const_(required_value)
+                                              .as<TS<i64, TimeSeriesGuarantee::const_>>();
+                                      });
+    const auto dispatch = dispatch_<auto(TS<Bundle<DispatchBase>>) -> TS<i64>>{implementation};
+    const auto tested = [&](wp<TS<Bundle<DispatchBase>>> input) {
+        return dispatch(input).as<TS<i64>>();
+    };
+
+    try {
+        (void)testing::test_graph(tested, testing::input<TS<Bundle<DispatchBase>>>({}));
+        FAIL("dispatch should reject the missing implementation argument");
+    } catch (const WiringError &error) {
+        REQUIRE(error.diagnostic());
+        REQUIRE(error.diagnostic()->candidates.size() == 1);
+        const auto &candidate = error.diagnostic()->candidates.front();
+        CHECK(candidate.signature.name.text() == "dispatch_missing_argument");
+        CHECK(candidate.stage == WiringFailureStage::argument_count);
+        CHECK(candidate.message.find("missing a fixed argument") != std::string::npos);
+    }
 }
 
 } // namespace

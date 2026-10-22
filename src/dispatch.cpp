@@ -4,6 +4,7 @@
 #include <bg/graph/details/dispatch_cast.hpp>
 #include <bg/graph/details/nested.hpp>
 #include <bg/graph/details/normalized_wiring_arguments.hpp>
+#include <bg/graph/details/wiring_materialisation.hpp>
 #include <bg/graph/details/wiring_record_overlay.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
@@ -66,7 +67,6 @@ struct DispatchBranch {
     const WiringTemplate *implementation;
     SignatureResolution resolution;
     std::vector<const TimeSeriesType *> argument_forms;
-    std::vector<std::optional<std::size_t>> supplied_argument_indices;
     std::vector<std::pair<std::size_t, std::size_t>> dispatch_parameters;
 };
 
@@ -91,7 +91,7 @@ class DispatchBranchTemplate final : public WiringTemplate {
   public:
     DispatchBranchTemplate(const Signature &dispatch_signature, const TimeSeriesType *output_type,
                            DispatchBranch branch)
-        : branch_{std::move(branch)}, signature_{[&] {
+        : branch_{std::move(branch)}, dispatch_signature_{&dispatch_signature}, signature_{[&] {
               auto parameters = std::vector<Parameter>{};
               parameters.reserve(dispatch_signature.parameter_count());
               for (auto index = std::size_t{}; index < dispatch_signature.parameter_count(); ++index) {
@@ -106,7 +106,7 @@ class DispatchBranchTemplate final : public WiringTemplate {
   private:
     const Signature &default_signature() const final { return signature_; }
 
-    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature signature, const WiringArguments &,
+    std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature, const WiringArguments &,
                                     std::span<const WiringArgument> arguments) const final {
         auto adapted = std::vector<WiringArgument>{};
         adapted.reserve(arguments.size());
@@ -137,48 +137,14 @@ class DispatchBranchTemplate final : public WiringTemplate {
         }
 
         const auto &implementation_signature = branch_.implementation->signature();
-        auto implementation_arguments = std::vector<WiringArgument>{};
-        implementation_arguments.reserve(adapted.size());
-        auto used_arguments = std::vector<bool>(adapted.size());
-        const auto first_variadic = implementation_signature.first_variadic_parameter().value_or(
-            implementation_signature.parameter_count());
-        for (auto parameter_index = std::size_t{};
-             parameter_index < std::min(first_variadic, branch_.supplied_argument_indices.size()); ++parameter_index) {
-            const auto supplied_index = branch_.supplied_argument_indices[parameter_index];
-            if (!supplied_index) {
-                continue;
-            }
-            if (*supplied_index >= adapted.size()) {
-                throw WiringError{"dispatch implementation argument index is out of range"};
-            }
-
-            auto argument = WiringArgument::borrow(adapted[*supplied_index]);
-            argument.set_name(implementation_signature.parameter(parameter_index).name);
-            argument.clear_variadic_capture_mode();
-            argument.match_fixed_parameter_by_name();
-            implementation_arguments.push_back(std::move(argument));
-            used_arguments[*supplied_index] = true;
-        }
-
-        for (auto supplied_index = std::size_t{}; supplied_index < adapted.size(); ++supplied_index) {
-            if (used_arguments[supplied_index]) {
-                continue;
-            }
-
-            const auto mode = adapted[supplied_index].name() ? VariadicMode::named : VariadicMode::positional;
-            const auto parameter_index = implementation_signature.variadic_parameter(mode);
-            if (!parameter_index) {
-                throw WiringError{"dispatch implementation does not accept an unmatched argument"};
-            }
-
-            auto argument = WiringArgument::borrow(adapted[supplied_index]);
-            const auto &parameter = implementation_signature.parameter(*parameter_index);
-            argument.set_variadic_name(parameter.name, mode);
-            implementation_arguments.push_back(std::move(argument));
-        }
-
-        const auto result = (*branch_.implementation)(branch_.resolution.type_map,
-                                                       std::span<const WiringArgument>{implementation_arguments});
+        auto committed = normalize_wiring_arguments(implementation_signature, adapted, wiring.allocation(),
+                                                     dispatch_signature_);
+        bind_materialisation_forms(wiring, *branch_.implementation, committed.arguments, branch_.argument_forms);
+        require_concrete_materialisation_forms(wiring, *branch_.implementation, committed.arguments,
+                                               branch_.argument_forms);
+        auto resolution = SignatureResolution{branch_.resolution.signature, branch_.resolution.type_map.copy()};
+        const auto result = invoke_resolved(wiring, *branch_.implementation, std::move(resolution),
+                                            committed.arguments, committed.descriptors, dispatch_signature_->name());
         if (!result) {
             return std::nullopt;
         }
@@ -197,6 +163,7 @@ class DispatchBranchTemplate final : public WiringTemplate {
     }
 
     DispatchBranch branch_;
+    const Signature *dispatch_signature_;
     Signature signature_;
 };
 
@@ -336,7 +303,8 @@ std::vector<DispatchInputAlternative> dispatch_input_alternatives(
 std::vector<DispatchImplementationConstraint> dispatch_implementation_constraints(
     GraphWiring &wiring, const Signature &prototype, std::span<const std::size_t> dispatch_inputs,
     std::span<const WiringArgument> supplied, std::span<const WiringTemplate *const> implementations,
-    const TypeMap &seed_type_map, std::vector<DispatchTypeCombination> &combinations) {
+    const TypeMap &seed_type_map, std::vector<DispatchTypeCombination> &combinations,
+    std::vector<WiringCandidateDiagnostic> &failed_probes) {
     auto constraints = std::vector<DispatchImplementationConstraint>{};
     auto static_input_types = std::vector<const ScalarType *>{};
     static_input_types.reserve(dispatch_inputs.size());
@@ -361,7 +329,17 @@ std::vector<DispatchImplementationConstraint> dispatch_implementation_constraint
         try {
             normalized = details::probe_wiring_arguments(implementation->signature(), supplied, records,
                                                          &prototype);
-        } catch (const std::exception &) {
+        } catch (const std::exception &error) {
+            auto parameters = std::vector<WiringParameterDiagnostic>{};
+            const auto &signature = implementation->signature();
+            parameters.reserve(signature.parameter_count());
+            for (auto index = std::size_t{}; index < signature.parameter_count(); ++index) {
+                const auto &parameter = signature.parameter(index);
+                parameters.push_back({parameter.name, parameter.type, parameter.validity, parameter.valid_items});
+            }
+            failed_probes.push_back({.signature = {signature.name(), std::move(parameters)},
+                                     .stage = WiringFailureStage::argument_count,
+                                     .message = error.what()});
             continue;
         }
 
@@ -560,13 +538,13 @@ std::optional<WiringPoint> wire_dispatch(GraphWiring &wiring, const Signature &d
         throw WiringError{"dispatch requires at least one covariance-capable time-series input"};
     }
     auto combinations = std::vector<DispatchTypeCombination>{};
+    auto failed_probes = std::vector<WiringCandidateDiagnostic>{};
     const auto implementation_constraints = dispatch_implementation_constraints(
-        wiring, prototype, selected_inputs, supplied, implementations, seed_type_map, combinations);
+        wiring, prototype, selected_inputs, supplied, implementations, seed_type_map, combinations, failed_probes);
 
     auto selector_candidates = std::vector<DispatchSelectorCandidate>{};
     auto branches = std::vector<std::unique_ptr<DispatchBranchTemplate>>{};
     auto switch_cases = std::vector<SwitchCaseArgument>{};
-    auto failed_probes = std::vector<WiringCandidateDiagnostic>{};
     selector_candidates.reserve(combinations.size());
     branches.reserve(combinations.size());
     switch_cases.reserve(combinations.size());
@@ -648,9 +626,7 @@ std::optional<WiringPoint> wire_dispatch(GraphWiring &wiring, const Signature &d
             }
         }
         auto branch = DispatchBranch{selected.implementation, std::move(selected.resolution),
-                                     std::move(selected.argument_forms),
-                                     std::move(selected.supplied_argument_indices),
-                                     std::move(dispatch_parameters)};
+                                     std::move(selected.argument_forms), std::move(dispatch_parameters)};
         const auto *branch_output = output_contract == nullptr ? implementation_output : output_contract;
 
         const auto selector_index = selector_candidates.size();

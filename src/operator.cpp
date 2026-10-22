@@ -245,25 +245,6 @@ WiringCandidateDiagnostic matched_failure(const WiringTemplate &implementation, 
     return result;
 }
 
-void require_concrete_materialisation_forms(GraphWiring &wiring, const WiringTemplate &implementation,
-                                             std::span<const WiringArgument> arguments,
-                                             std::span<const TimeSeriesType *const> selected_forms) {
-    const auto &signature = implementation.signature();
-    const auto *path = WiringContext::current().path();
-    for (auto index = std::size_t{}; index < arguments.size(); ++index) {
-        if (!arguments[index].is_time_series() ||
-            implementation.preserves_input_point(index) ||
-            selected_forms[index] == nullptr) {
-            continue;
-        }
-        wiring.require_materialisation(
-            arguments[index].time_series(), *selected_forms[index],
-            {.path = path == nullptr ? std::string{} : path->text(),
-             .consumer = signature.name(),
-             .parameter = signature.parameter(index).name});
-    }
-}
-
 WiringDiagnostic diagnostic(const Signature &prototype, std::vector<util::symbol> path,
                             std::span<const WiringArgument> supplied, std::vector<WiringCandidateDiagnostic> candidates,
                             bool ambiguous = false) {
@@ -914,8 +895,8 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
             const auto &signature = entry.implementation->signature();
             details::bind_materialisation_forms(wiring, *entry.implementation, committed.arguments,
                                                 entry.argument_forms);
-            require_concrete_materialisation_forms(wiring, *entry.implementation, committed.arguments,
-                                                   entry.argument_forms);
+            details::require_concrete_materialisation_forms(wiring, *entry.implementation, committed.arguments,
+                                                            entry.argument_forms);
             return invoke_resolved(wiring, *entry.implementation, std::move(resolution), committed.arguments,
                                    committed.descriptors, prototype.name());
         }
@@ -947,8 +928,8 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                                                          wiring.allocation(), &prototype);
     details::bind_materialisation_forms(wiring, *selected.implementation, committed.arguments,
                                         selected.argument_forms);
-    require_concrete_materialisation_forms(wiring, *selected.implementation, committed.arguments,
-                                           selected.argument_forms);
+    details::require_concrete_materialisation_forms(wiring, *selected.implementation, committed.arguments,
+                                                    selected.argument_forms);
     return invoke_resolved(wiring, *selected.implementation, std::move(selected.resolution), committed.arguments,
                            committed.descriptors, prototype.name());
 }

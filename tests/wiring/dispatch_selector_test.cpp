@@ -23,15 +23,22 @@ struct DispatchDerived : schema_extends<DispatchBase, Field> {
 struct SelectorTestInput {
     struct View {
         const ScalarType *type;
+        int *concrete_type_reads;
 
-        const ScalarType &concrete_type() const { return *type; }
+        const ScalarType &concrete_type() const {
+            if (concrete_type_reads != nullptr) {
+                ++*concrete_type_reads;
+            }
+            return *type;
+        }
     };
 
     bool is_valid;
     const ScalarType *type;
+    int *concrete_type_reads{};
 
     bool valid() const { return is_valid; }
-    View value_view() const { return {type}; }
+    View value_view() const { return {type, concrete_type_reads}; }
 };
 
 struct SelectorTestOutput {
@@ -66,13 +73,18 @@ TEST_CASE("dispatch selects the most specific applicable scalar type",
         2, 1,
         [&](std::size_t candidate, std::size_t) -> const ScalarType & { return candidate == 0 ? base : derived; },
         [&](std::size_t) -> const ScalarType & { return base; });
+    auto applicability_checks = 0;
     const auto selected_derived = details::select_dispatch_candidate(
         2, 1,
         [&](std::size_t candidate, std::size_t) -> const ScalarType & { return candidate == 0 ? base : derived; },
-        [&](std::size_t) -> const ScalarType & { return derived; });
+        [&](std::size_t) -> const ScalarType & {
+            ++applicability_checks;
+            return derived;
+        });
 
     CHECK(selected_base == 0);
     CHECK(selected_derived == 1);
+    CHECK(applicability_checks == 2);
 }
 
 TEST_CASE("dispatch rejects incomparable applicable scalar type tuples",
@@ -135,6 +147,29 @@ TEST_CASE("dispatch leaves output invalid when a selected input is invalid",
     details::DispatchSelectorDefinition::evaluate(invocation);
 
     CHECK_FALSE(result.is_valid);
+}
+
+TEST_CASE("dispatch reads each concrete input type once per evaluation",
+          "[feature:dispatch][feature:type-system][binding:covariant]") {
+    const auto &base = cpp_scalar_type<Bundle<DispatchBase>>();
+    const auto &derived = cpp_scalar_type<Bundle<DispatchDerived>>();
+    auto compiled = details::DispatchSelectorData{};
+    compiled.input_count = 1;
+    compiled.input_types.push_back(&base);
+    compiled.input_types.push_back(&derived);
+    auto reads = 0;
+    auto result = SelectorTestOutput{};
+    auto invocation = SelectorTestInvocation{
+        .compiled = &compiled,
+        .inputs = {{.is_valid = true, .type = &derived, .concrete_type_reads = &reads}},
+        .result = &result,
+    };
+
+    details::DispatchSelectorDefinition::evaluate(invocation);
+
+    CHECK(reads == 1);
+    CHECK(result.is_valid);
+    CHECK(result.value == 1);
 }
 
 } // namespace
