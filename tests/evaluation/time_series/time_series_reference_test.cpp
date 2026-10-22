@@ -307,14 +307,6 @@ TEST_CASE("an ordinary list reference samples the selected list with final items
     CHECK(actual.equals<i64>({10, 20, 10, 20}));
 }
 
-namespace {
-
-template <template <typename, auto...> typename Field> struct DictionaryBundle {
-    Field<TSD<i64, TS<i64>>> dictionary;
-};
-
-} // namespace
-
 TEST_CASE("plain and notifying inputs share one sampled dictionary",
           "[evaluation][reference][series:tsd][series:tsb][feature:sampling][transition:update]"
           "[binding:reference-to-value]") {
