@@ -32,7 +32,8 @@ output.
 
 The inserted node belongs to the graph that owns the output. Wiring reuses one
 such node for each output and records each representation requested by the
-complete wired graph.
+complete wired graph. [Explicit wiring-point conversion](graph-wiring.md#wiring-points)
+retains a deferred reference point until a consumer requires it.
 
 `Reference` is one word that identifies a root time series, a contained item,
 or a representation. Passing a reference copies that word. Resolving a

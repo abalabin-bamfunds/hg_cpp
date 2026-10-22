@@ -183,7 +183,7 @@ class GraphWiring {
     void add_materialisation_option(WiringPoint point, const TimeSeriesType &target_type, double cost,
                                    Signature input_signature, WiringMaterialisationBuilder builder);
     std::vector<WiringMaterialisationOption> materialisation_options(WiringPoint point);
-    // Preserves a selected advertised form as a lazy point for concrete consumers.
+    // Selects an advertised form or creates a lazy reference form from a compatible value source.
     [[nodiscard]] WiringPoint materialisation_form(WiringPoint point, const TimeSeriesType &target_type);
     // Registers a root demand and prepares every concrete callback input before any builder runs.
     void require_materialisation(WiringPoint point, const TimeSeriesType &target_type);

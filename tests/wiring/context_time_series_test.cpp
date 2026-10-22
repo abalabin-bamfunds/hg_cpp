@@ -54,6 +54,22 @@ TEST_CASE("a callable node receives a context time series",
     CHECK(actual.equals({3, 7}));
 }
 
+TEST_CASE("a context provider retains ticks when converted to a reference",
+          "[feature:context-time-series][feature:wiring][feature:reference][series:reference]"
+          "[binding:value-to-reference]") {
+    const auto copy_reference_context = node([](In<REF<TS<i64>>, "value"_n, context> value,
+                                                Out<REF<TS<i64>>> output) { output.copy(value); });
+
+    const auto tested = [&](wp<TS<i64>> value) {
+        const auto reference = value.as<REF<TS<i64>>>();
+        return with_context("value"_n = reference, [&] { return copy_reference_context(); });
+    };
+
+    const auto actual = testing::test_graph(tested, {3, 7});
+
+    CHECK(actual.equals({3, 7}));
+}
+
 TEST_CASE("an aggregate node receives a context time series",
           "[feature:context-time-series][feature:wiring][definition:aggregate]") {
     const auto tested = [](wp<TS<i64>> value) {

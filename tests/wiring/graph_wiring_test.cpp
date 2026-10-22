@@ -212,6 +212,61 @@ TEST_CASE("wiring point reference annotations check guarantee compatibility",
     });
 }
 
+TEST_CASE("wiring point conversion materializes values as const references",
+          "[graph_wiring][feature:wiring][feature:reference][guarantee:const]") {
+    const auto source = node([](Out<TS<float>>) {});
+
+    const auto sink = node([](In<REF<TS<float>, TimeSeriesGuarantee::const_>>) {});
+    auto wiring = GraphWiring{};
+    auto value = WiringPoint{};
+    {
+        const auto context = WiringContext{wiring};
+        value = source();
+    }
+
+    const auto point = value.as<REF<TS<float>>>();
+    const auto repeated = value.as<REF<TS<float>>>();
+
+    CHECK(&point.type() == &REF<TS<float>, TimeSeriesGuarantee::const_>::type());
+    CHECK(static_cast<WiringPoint>(point).has_default_materialisation());
+    CHECK(point.materialisation_options().empty());
+    CHECK(static_cast<WiringPoint>(point).record() == static_cast<WiringPoint>(repeated).record());
+    CHECK(wiring.nodes().empty());
+
+    {
+        const auto context = WiringContext{wiring};
+        (void)sink(point);
+    }
+    CHECK(wiring.nodes().empty());
+
+    wiring.finalize();
+    CHECK(wiring.nodes().size() == 3);
+}
+
+TEST_CASE("wiring point conversion preserves an existing reference",
+          "[graph_wiring][feature:wiring][feature:reference][binding:reference-to-reference]") {
+    const auto source = node([](Out<REF<TS<float>>>) {});
+    auto wiring = GraphWiring{};
+
+    const auto context = WiringContext{wiring};
+    const auto reference = static_cast<WiringPoint>(source());
+    const auto converted = reference.as<REF<TS<float>>>();
+
+    CHECK(static_cast<WiringPoint>(converted).record() == reference.record());
+    CHECK(&converted.type() == &reference.type());
+}
+
+TEST_CASE("wiring point conversion rejects incompatible and borrowed values",
+          "[graph_wiring][feature:wiring][feature:reference][feature:borrowed-input]") {
+    const auto source = node([](Out<TS<float>>) {});
+
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+
+    CHECK_THROWS_AS(source().as<REF<TS<double>>>(), WiringError);
+    CHECK_THROWS_AS(wiring.borrowed_input(TS<float>::type()).as<REF<TS<float>>>(), WiringError);
+}
+
 TEST_CASE("wiring reuses a node called with the same arguments", "[graph_wiring][feature:wiring]") {
     const auto source = node([](Out<TS<float>>) {});
 

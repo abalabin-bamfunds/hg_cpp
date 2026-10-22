@@ -116,6 +116,7 @@ class WiringPoint {
 
     const GraphWiring &graph() const;
     const TimeSeriesType &type() const;
+    WiringPoint as(const Type &type) const;
     const details::WiringRecord *record() const noexcept { return record_; }
 
     // Extension API for registering an alternative representation with a declared input signature.
@@ -168,22 +169,9 @@ template <typename TimeSeries, auto... Properties> class wp {
         requires(std::same_as<TimeSeries, TS_T> && sizeof...(Properties) == 0)
     = default;
 
-    wp(WiringPoint point) : point_(point) {
-        if (TimeSeries::type().accepts(point.type())) {
-            return;
-        }
+    wp(WiringPoint point) : point_(point.as(TimeSeries::type())) {}
 
-        const auto accepts_advertised_form = std::ranges::any_of(
-            point.materialisation_options(), [](const auto &option) {
-                return TimeSeries::type().accepts(*option.target_type);
-            });
-        if (accepts_advertised_form) {
-            return;
-        }
-        throw WiringError{"a WiringPoint is incompatible with the requested type"};
-    }
-
-    // Re-annotation retains the actual wiring type. Signature resolution validates it at the next wiring boundary.
+    // Re-annotation retains the actual wiring type; value-to-reference conversion creates a lazy reference point.
     template <typename Source, auto... SourceProperties>
         requires(wp<Source, SourceProperties...>::validity != optional || ParsedProperties::validity == optional) &&
                 (!wp<Source, SourceProperties...>::valid_items || ParsedProperties::valid_items)

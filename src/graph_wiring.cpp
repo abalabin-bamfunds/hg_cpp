@@ -285,6 +285,29 @@ const TimeSeriesType &WiringPoint::type() const {
     return record_->type();
 }
 
+WiringPoint WiringPoint::as(const Type &type) const {
+    if (!has_output()) {
+        throw WiringError{"a wiring point has no output"};
+    }
+    const auto *reference = type_cast<TimeSeriesReferenceType>(&type);
+    if (reference != nullptr && type_cast<TimeSeriesReferenceType>(&this->type()) == nullptr) {
+        if (const auto input = record_->input_binding(this->type()); input && input->is_borrowed()) {
+            throw WiringError{"a borrowed input cannot be materialized as a reference"};
+        }
+        return record_->wiring().materialisation_form(*this, *reference);
+    }
+    if (type.accepts(this->type())) {
+        return *this;
+    }
+
+    const auto options = materialisation_options();
+    if (std::ranges::any_of(options, [&](const auto &option) { return type.accepts(*option.target_type); })) {
+        return *this;
+    }
+
+    throw WiringError{"a WiringPoint is incompatible with the requested type"};
+}
+
 GraphWiring::GraphWiring() : GraphWiring(allocator{}) {}
 
 GraphWiring::GraphWiring(allocator memory)

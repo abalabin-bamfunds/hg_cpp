@@ -54,11 +54,19 @@ retains the time series type and identity and adds no node or wiring-point
 storage. Both annotations survive graph forwarding, context arguments, and
 materialisation.
 
-`point.as<TS_T>()` returns a typed wiring point when the requested type accepts
-the point's declared type or an advertised materialisation target. Constructing
-`wp<TS_T>` from another wiring point performs the same check using
-[input guarantee rules](type-system.md#time-series-guarantees). Both operations
-retain the original point and actual type without selecting a materialisation.
+`point.as<TS_T>()` and construction of `wp<TS_T>` check compatibility using
+[input guarantee rules](type-system.md#time-series-guarantees). A typed view
+accepts the point's declared type or an advertised materialisation target.
+
+Converting a value point to `REF<TS_T>` returns a deferred point with a resolved
+reference type. It selects an exact advertised reference form, otherwise the
+unique lowest-cost compatible reference form, otherwise a compatible value
+form. It retains that selection until consumed. Value forms then create or
+reuse the [reference-making node](time-series-references.md#wiring). The
+reference to a fixed output has a `const` root guarantee. Conversion runs no
+materialisation callback and adds no node. Compatible reference points and
+other typed views retain their original identity and actual type.
+
 `as<TS_T>()` preserves the point's `optional` and `valid_items` annotations.
 Typed wiring-point conversions reject discarding either annotation.
 

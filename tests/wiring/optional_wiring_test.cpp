@@ -127,6 +127,30 @@ TEST_CASE("valid_items annotations require a capable receiver and survive refere
     });
 }
 
+TEST_CASE("reference conversion preserves optional and valid_items annotations",
+          "[feature:wiring][feature:reference][validity:optional][input-guarantee:valid-items]") {
+    const auto value_source = node([](Out<TS<i64>>) {});
+
+    const auto optional_sink = node([](In<REF<TS<i64>>, optional>) {});
+
+    const auto dictionary_source = node([](Out<TSD<i64, TS<i64>>>) {});
+
+    const auto valid_items_sink = node([](In<TSD<i64, TS<i64>>, valid_items>) {});
+
+    testing::test_wiring([&] {
+        const auto optional_reference = opt(value_source()).as<REF<TS<i64>>>();
+        const auto valid_items_reference = valid_items(dictionary_source()).as<REF<TSD<i64, TS<i64>>>>();
+
+        STATIC_CHECK(std::same_as<std::remove_cvref_t<decltype(optional_reference)>,
+                                  wp<REF<TS<i64>>, optional>>);
+        STATIC_CHECK(std::same_as<std::remove_cvref_t<decltype(valid_items_reference)>,
+                                  wp<REF<TSD<i64, TS<i64>>>, valid_items>>);
+
+        optional_sink(optional_reference);
+        valid_items_sink(valid_items_reference);
+    });
+}
+
 TEST_CASE("aggregate graph inputs preserve optionality",
           "[feature:wiring][validity:optional][series:value][shape:nested][definition:aggregate]") {
     struct optional_identity {

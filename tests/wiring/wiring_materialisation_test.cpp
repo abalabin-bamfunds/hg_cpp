@@ -86,6 +86,29 @@ bool is_double_series(const bg::TimeSeriesType &type) noexcept { return &type ==
 
 } // namespace
 
+TEST_CASE("reference and value consumers observe converted inputs on each tick",
+          "[feature:wiring][feature:reference][feature:test-graph][series:reference]"
+          "[binding:value-to-reference][transition:update]") {
+    using namespace bg;
+
+    const auto copy_reference = node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) {
+        output.copy(input);
+    });
+
+    const auto copy_value = node([](i64 value) { return value; });
+
+    const auto through_reference = graph([&](wp<TS<i64>> value) {
+        return copy_reference(value.as<REF<TS<i64>>>());
+    });
+
+    const auto through_value = graph([&](wp<TS<i64>> value) {
+        return copy_value(value.as<REF<TS<i64>>>());
+    });
+
+    CHECK(testing::test_graph(through_reference, {3, 7, 11}).equals({3, 7, 11}));
+    CHECK(testing::test_graph(through_value, {5, 9, 13}).equals({5, 9, 13}));
+}
+
 TEST_CASE("deferred wiring points retain arguments and expand lazily once",
           "[feature:wiring-materialisation][feature:wiring][series:tsb][schema:named]"
           "[representation:free][shape:source]") {
@@ -154,6 +177,155 @@ TEST_CASE("default materialisation availability distinguishes lazy bundles from 
     CHECK_FALSE(static_cast<bg::WiringPoint>(bundle).record()->has_wired_output());
     CHECK_FALSE(static_cast<bg::WiringPoint>(deferred).has_default_materialisation());
     CHECK(wiring.materialisation_options(deferred).empty());
+}
+
+TEST_CASE("reference conversion selects advertised forms lazily and expands each callback once",
+          "[feature:wiring-materialisation][feature:wiring][feature:reference][series:reference]"
+          "[binding:value-to-reference]") {
+    using namespace bg;
+
+    const auto integer_source = node([](Out<TS<i64>>) {});
+
+    const auto float_source = node([](Out<TS<float>>) {});
+
+    const auto consume = node([](In<REF<TS<float>>>) {});
+
+    const auto consume_value = node([](In<TS<float>>) {});
+
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto input = integer_source();
+
+    auto value_form = wiring.create_wp<TS<i64>>(input);
+    auto value_builder_calls = 0;
+    value_form.materialisation_option<TS<float>>(
+        [&](wp<TS<i64>>) {
+            ++value_builder_calls;
+            return float_source();
+        },
+        0.0);
+    const auto value_reference = value_form.as<REF<TS<float>>>();
+    const auto repeated_value_reference = value_form.as<REF<TS<float>>>();
+
+    auto reference_form = wiring.create_wp<TS<i64>>(input);
+    auto reference_value_builder_calls = 0;
+    auto reference_builder_calls = 0;
+    reference_form.materialisation_option<TS<float>>(
+        [&](wp<TS<i64>>) {
+            ++reference_value_builder_calls;
+            return float_source();
+        },
+        0.0);
+    reference_form.materialisation_option<REF<TS<float>>>(
+        [&](wp<TS<i64>>) {
+            ++reference_builder_calls;
+            return float_source();
+        },
+        1.0);
+    const auto advertised_reference = reference_form.as<REF<TS<float>>>();
+    const auto repeated_advertised_reference = reference_form.as<REF<TS<float>>>();
+
+    CHECK(static_cast<WiringPoint>(value_reference).record() ==
+          static_cast<WiringPoint>(repeated_value_reference).record());
+    CHECK(static_cast<WiringPoint>(advertised_reference).record() ==
+          static_cast<WiringPoint>(repeated_advertised_reference).record());
+    CHECK(&advertised_reference.type() == &REF<TS<float>>::type());
+    CHECK(value_builder_calls == 0);
+    CHECK(reference_value_builder_calls == 0);
+    CHECK(reference_builder_calls == 0);
+    CHECK(wiring.nodes().empty());
+
+    consume(value_reference);
+    consume(advertised_reference);
+    consume_value(advertised_reference);
+    wiring.finalize();
+
+    CHECK(value_builder_calls == 1);
+    CHECK(reference_value_builder_calls == 0);
+    CHECK(reference_builder_calls == 1);
+}
+
+TEST_CASE("reference conversion ignores incompatible advertised reference forms",
+          "[feature:wiring-materialisation][feature:wiring][feature:reference][series:reference]"
+          "[guarantee:deduplicated]") {
+    using namespace bg;
+
+    using REFERENCE = REF<TS<float>, TimeSeriesGuarantee::ordinary>;
+    using REQUESTED = REF<TS<float>, TimeSeriesGuarantee::deduplicated>;
+
+    const auto source = node([](Out<TS<i64>>) {});
+
+    const auto reference_source = node([](Out<REF<TS<float>, TimeSeriesGuarantee::ordinary>>) {});
+
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    auto deferred = wiring.create_wp<TS<i64>>(source());
+    deferred.materialisation_option<REFERENCE>(
+        [reference_source](wp<TS<i64>>) { return reference_source(); }, 0.0);
+
+    CHECK_THROWS_AS(deferred.as<REQUESTED>(), WiringError);
+}
+
+TEST_CASE("reference conversion resolves a generic target from the source type",
+          "[feature:wiring][feature:reference][series:reference][declaration:generic]") {
+    using namespace bg;
+
+    const auto source = node([](Out<TS<i64>>) {});
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+
+    const auto reference = static_cast<WiringPoint>(source()).as<REF<TS_T>>();
+
+    CHECK(&reference.type() == &REF<TS<i64>, TimeSeriesGuarantee::const_>::type());
+    CHECK(wiring.nodes().empty());
+}
+
+TEST_CASE("reference conversion selects a lowest-cost reference form before checking ties",
+          "[feature:wiring][feature:reference][series:reference][declaration:generic]") {
+    using namespace bg;
+
+    const auto source = node([](Out<TS<i64>>) {});
+
+    const auto float_source = node([](Out<REF<TS<float>>>) {});
+
+    const auto double_source = node([](Out<REF<TS<double>>>) {});
+
+    const auto boolean_source = node([](Out<REF<TS<bool>>>) {});
+
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    auto deferred = wiring.create_wp<TS<i64>>(source());
+    deferred.materialisation_option<REF<TS<float>>>(
+        [float_source](wp<TS<i64>>) { return float_source(); }, 2.0);
+    deferred.materialisation_option<REF<TS<double>>>(
+        [double_source](wp<TS<i64>>) { return double_source(); }, 2.0);
+    deferred.materialisation_option<REF<TS<bool>>>(
+        [boolean_source](wp<TS<i64>>) { return boolean_source(); }, 1.0);
+
+    const auto reference = deferred.as<REF<TS_T>>();
+
+    CHECK(&reference.type() == &REF<TS<bool>>::type());
+}
+
+TEST_CASE("reference conversion rejects equal-cost distinct advertised forms",
+          "[feature:wiring][feature:reference][series:reference][declaration:generic]") {
+    using namespace bg;
+
+    const auto source = node([](Out<TS<i64>>) {});
+
+    const auto float_source = node([](Out<REF<TS<float>>>) {});
+
+    const auto double_source = node([](Out<REF<TS<double>>>) {});
+
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    auto deferred = wiring.create_wp<TS<i64>>(source());
+    deferred.materialisation_option<REF<TS<float>>>(
+        [float_source](wp<TS<i64>>) { return float_source(); }, 1.0);
+    deferred.materialisation_option<REF<TS<double>>>(
+        [double_source](wp<TS<i64>>) { return double_source(); }, 1.0);
+
+    CHECK_THROWS_AS(deferred.as<REF<TS_T>>(), WiringError);
 }
 
 TEST_CASE("deferred wiring points cache each advertised target independently",
