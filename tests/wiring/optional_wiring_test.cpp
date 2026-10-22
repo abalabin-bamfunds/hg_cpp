@@ -253,11 +253,11 @@ TEST_CASE("variadic graph forwarding retains item optionality",
     auto operation = operator_<auto(TS_T)->TS_T>{"variadic_optional", {"values"}};
     operation.overload(graph("name"_n = "required", [&](wp<TSB<SCHEMA>, var_kwargs> values) {
         selected = "required";
-        return wp<>{values[0].time_series()};
+        return values[0].time_series().as<TS<i64>>();
     }));
     operation.overload(graph("name"_n = "optional", [&](wp<TSB<SCHEMA>, var_kwargs, optional> values) {
         selected = "optional";
-        return wp<>{values[0].time_series()};
+        return values[0].time_series().as<TS<i64>>();
     }));
 
     const auto forward = graph("name"_n = "forward", [&](wp<TSB<SCHEMA>, var_kwargs, optional> values) {
