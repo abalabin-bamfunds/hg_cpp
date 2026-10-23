@@ -206,6 +206,265 @@ TEST_CASE("bounded unset search scans full words and handles maximum bounds", "[
     CHECK(empty.first_unset(maximum, maximum - 1) == maximum - 1);
 }
 
+TEST_CASE("a runtime-sized index relocates overlapping bit ranges in both directions", "[index][coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    auto right = util::index<>{};
+    right.grow(200, memory);
+    auto expected = std::vector<bool>(200);
+    for (auto position = std::uint32_t{5}; position != 105; ++position) {
+        expected[position] = position % 5 != 0;
+        if (expected[position]) {
+            CHECK(right.set(position, memory));
+        }
+    }
+    expected[180] = true;
+    CHECK(right.set(180, memory));
+
+    auto source = std::vector<bool>{expected.begin() + 5, expected.begin() + 105};
+    for (auto offset = std::uint32_t{}; offset != source.size(); ++offset) {
+        expected[13 + offset] = source[offset];
+    }
+    for (auto position = std::uint32_t{5}; position != 13; ++position) {
+        expected[position] = false;
+    }
+
+    const auto count_before_right = right.count();
+    right.relocate(5, 13, 100);
+    CHECK(right.size() == 200);
+    CHECK(right.count() == count_before_right);
+    for (auto position = std::uint32_t{}; position != right.size(); ++position) {
+        CHECK(right.contains(position) == expected[position]);
+    }
+
+    auto left = util::index<>{};
+    left.grow(200, memory);
+    expected.assign(200, false);
+    for (auto position = std::uint32_t{81}; position != 177; ++position) {
+        expected[position] = position % 7 != 0;
+        if (expected[position]) {
+            CHECK(left.set(position, memory));
+        }
+    }
+    expected[3] = true;
+    CHECK(left.set(3, memory));
+
+    source.assign(expected.begin() + 81, expected.begin() + 177);
+    for (auto offset = std::uint32_t{}; offset != source.size(); ++offset) {
+        expected[17 + offset] = source[offset];
+    }
+    for (auto position = std::uint32_t{113}; position != 177; ++position) {
+        expected[position] = false;
+    }
+
+    const auto count_before_left = left.count();
+    left.relocate(81, 17, 96);
+    CHECK(left.size() == 200);
+    CHECK(left.count() == count_before_left);
+    for (auto position = std::uint32_t{}; position != left.size(); ++position) {
+        CHECK(left.contains(position) == expected[position]);
+    }
+
+    right.release(memory);
+    left.release(memory);
+    CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("a runtime-sized index relocates across inline and allocated word boundaries", "[index][coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    auto inline_index = util::index<>{};
+    inline_index.grow(util::index<>::inline_capacity, memory);
+    auto expected_inline = std::vector<bool>(util::index<>::inline_capacity);
+    for (auto position = std::uint32_t{3}; position != 35; ++position) {
+        expected_inline[position] = position % 4 != 1;
+        if (expected_inline[position]) {
+            CHECK(inline_index.set(position, memory));
+        }
+    }
+    auto source_inline = std::vector<bool>{expected_inline.begin() + 3, expected_inline.begin() + 35};
+    for (auto offset = std::uint32_t{}; offset != source_inline.size(); ++offset) {
+        expected_inline[11 + offset] = source_inline[offset];
+    }
+    for (auto position = std::uint32_t{3}; position != 11; ++position) {
+        expected_inline[position] = false;
+    }
+
+    inline_index.relocate(3, 11, 32);
+    CHECK(inline_index.size() == util::index<>::inline_capacity);
+    CHECK(inline_index.capacity() == util::index<>::inline_capacity);
+    CHECK(memory.allocations() == 0);
+    for (auto position = std::uint32_t{}; position != inline_index.size(); ++position) {
+        CHECK(inline_index.contains(position) == expected_inline[position]);
+    }
+
+    auto allocated = util::index<>{};
+    allocated.grow(129, memory);
+    auto expected_allocated = std::vector<bool>(129);
+    for (auto position = std::uint32_t{48}; position != 118; ++position) {
+        expected_allocated[position] = position % 6 != 2;
+        if (expected_allocated[position]) {
+            CHECK(allocated.set(position, memory));
+        }
+    }
+    expected_allocated[5] = true;
+    expected_allocated[128] = true;
+    CHECK(allocated.set(5, memory));
+    CHECK(allocated.set(128, memory));
+    auto source_allocated = std::vector<bool>{expected_allocated.begin() + 48, expected_allocated.begin() + 118};
+    for (auto offset = std::uint32_t{}; offset != source_allocated.size(); ++offset) {
+        expected_allocated[55 + offset] = source_allocated[offset];
+    }
+    for (auto position = std::uint32_t{48}; position != 55; ++position) {
+        expected_allocated[position] = false;
+    }
+    allocated.relocate(48, 55, 70);
+    CHECK(allocated.size() == 129);
+    for (auto position = std::uint32_t{}; position != allocated.size(); ++position) {
+        CHECK(allocated.contains(position) == expected_allocated[position]);
+    }
+
+    const auto count_before_noops = allocated.count();
+    allocated.relocate(0, 129, 0);
+    allocated.relocate(128, 128, 1);
+    CHECK(allocated.size() == 129);
+    CHECK(allocated.count() == count_before_noops);
+    CHECK(allocated.contains(128));
+    inline_index.release(memory);
+    allocated.release(memory);
+    CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("a fixed-size index relocates an overlapping bit range", "[index][coverage-exempt]") {
+    auto bits = util::index<160>{};
+    auto expected = std::vector<bool>(160);
+    for (auto position = std::uint32_t{65}; position != 130; ++position) {
+        expected[position] = position % 3 != 0;
+        if (expected[position]) {
+            CHECK(bits.set(position));
+        }
+    }
+
+    const auto source = std::vector<bool>{expected.begin() + 65, expected.begin() + 130};
+    for (auto offset = std::uint32_t{}; offset != source.size(); ++offset) {
+        expected[73 + offset] = source[offset];
+    }
+    for (auto position = std::uint32_t{65}; position != 73; ++position) {
+        expected[position] = false;
+    }
+
+    bits.relocate(65, 73, 65);
+    for (auto position = std::uint32_t{}; position != bits.size(); ++position) {
+        CHECK(bits.contains(position) == expected[position]);
+    }
+}
+
+TEST_CASE("bit relocation handles every word offset and range width", "[index][coverage-exempt]") {
+    constexpr auto extent = std::uint32_t{384};
+    constexpr auto lengths = std::array{std::uint32_t{63}, std::uint32_t{64}, std::uint32_t{65},
+                                        std::uint32_t{127}};
+    auto bits = util::index<extent>{};
+    auto expected = std::vector<bool>(extent);
+
+    for (const auto direction : {false, true}) {
+        for (auto source_offset = std::uint32_t{}; source_offset != 64; ++source_offset) {
+            for (auto destination_offset = std::uint32_t{}; destination_offset != 64; ++destination_offset) {
+                for (const auto count : lengths) {
+                    bits.clear();
+                    expected.assign(extent, false);
+                    const auto source = (direction ? 0 : 128) + source_offset;
+                    const auto destination = (direction ? 128 : 0) + destination_offset;
+                    for (auto offset = std::uint32_t{}; offset != count; ++offset) {
+                        expected[source + offset] = offset % 3 != 1;
+                        if (expected[source + offset]) {
+                            REQUIRE(bits.set(source + offset));
+                        }
+                    }
+
+                    const auto source_values = std::vector<bool>{expected.begin() + source,
+                                                                 expected.begin() + source + count};
+                    for (auto offset = std::uint32_t{}; offset != count; ++offset) {
+                        expected[destination + offset] = source_values[offset];
+                    }
+
+                    const auto source_end = source + count;
+                    const auto destination_end = destination + count;
+                    auto clear_start = std::uint32_t{};
+                    auto clear_end = std::uint32_t{};
+                    if (destination < source) {
+                        clear_start = std::max(source, destination_end);
+                        clear_end = source_end;
+                    } else {
+                        clear_start = source;
+                        clear_end = std::min(source_end, destination);
+                    }
+                    for (auto position = clear_start; position != clear_end; ++position) {
+                        expected[position] = false;
+                    }
+
+                    const auto count_before = bits.count();
+                    bits.relocate(source, destination, count);
+                    CHECK(bits.count() == count_before);
+                    const auto first = std::min(source, destination);
+                    const auto end = std::max(source_end, destination_end);
+                    for (auto position = first; position != end; ++position) {
+                        CHECK(bits.contains(position) == expected[position]);
+                    }
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("inline bit relocation handles every valid starting offset", "[index][coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    auto bits = util::index<>{};
+    bits.grow(util::index<>::inline_capacity, memory);
+    auto expected = std::vector<bool>(util::index<>::inline_capacity);
+
+    for (auto source = std::uint32_t{}; source != bits.size(); ++source) {
+        for (auto destination = std::uint32_t{}; destination != bits.size(); ++destination) {
+            bits.clear();
+            expected.assign(bits.size(), false);
+            const auto available = bits.size() - std::max(source, destination);
+            const auto count = std::min(available, 1 + (source + destination) % 32);
+            for (auto offset = std::uint32_t{}; offset != count; ++offset) {
+                expected[source + offset] = offset % 3 != 1;
+                if (expected[source + offset]) {
+                    REQUIRE(bits.set(source + offset, memory));
+                }
+            }
+
+            const auto source_values = std::vector<bool>{expected.begin() + source,
+                                                         expected.begin() + source + count};
+            for (auto offset = std::uint32_t{}; offset != count; ++offset) {
+                expected[destination + offset] = source_values[offset];
+            }
+
+            const auto source_end = source + count;
+            const auto destination_end = destination + count;
+            auto clear_start = std::uint32_t{};
+            auto clear_end = std::uint32_t{};
+            if (destination < source) {
+                clear_start = std::max(source, destination_end);
+                clear_end = source_end;
+            } else {
+                clear_start = source;
+                clear_end = std::min(source_end, destination);
+            }
+            for (auto position = clear_start; position != clear_end; ++position) {
+                expected[position] = false;
+            }
+
+            bits.relocate(source, destination, count);
+            for (auto position = std::uint32_t{}; position != bits.size(); ++position) {
+                CHECK(bits.contains(position) == expected[position]);
+            }
+        }
+    }
+
+    CHECK(memory.allocations() == 0);
+    bits.release(memory);
+}
+
 TEST_CASE("a runtime-sized index retains its state when growth fails", "[index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto index = util::index<>{};

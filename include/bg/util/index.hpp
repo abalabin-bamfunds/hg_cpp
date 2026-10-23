@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
@@ -88,6 +89,64 @@ constexpr std::uint64_t low_bits(std::uint32_t count) noexcept {
     }
 
     return (std::uint64_t{1} << count) - 1;
+}
+
+template <typename ReadWord, typename WriteBits>
+void relocate_bits(std::uint32_t source, std::uint32_t destination, std::uint32_t count,
+                   ReadWord &&read_word, WriteBits &&write_bits) noexcept {
+    constexpr auto bits_per_word = std::uint64_t{64};
+    const auto source_end = std::uint64_t{source} + count;
+    const auto destination_end = std::uint64_t{destination} + count;
+
+    if (destination < source) {
+        auto copied = std::uint64_t{};
+        while (copied < count) {
+            const auto source_position = std::uint64_t{source} + copied;
+            const auto destination_position = std::uint64_t{destination} + copied;
+            const auto source_offset = source_position % bits_per_word;
+            const auto destination_offset = destination_position % bits_per_word;
+            const auto chunk_size =
+                std::min(std::uint64_t{count} - copied,
+                         std::min(bits_per_word - source_offset, bits_per_word - destination_offset));
+            const auto bits = read_word(static_cast<std::uint32_t>(source_position / bits_per_word)) >>
+                              source_offset;
+            write_bits(static_cast<std::uint32_t>(destination_position), bits,
+                       static_cast<std::uint32_t>(chunk_size));
+            copied += chunk_size;
+        }
+    } else {
+        auto remaining = std::uint64_t{count};
+        while (remaining != 0) {
+            const auto source_chunk_end = std::uint64_t{source} + remaining;
+            const auto destination_chunk_end = std::uint64_t{destination} + remaining;
+            const auto source_offset = (source_chunk_end - 1) % bits_per_word;
+            const auto destination_offset = (destination_chunk_end - 1) % bits_per_word;
+            const auto chunk_size = std::min(remaining, std::min(source_offset + 1, destination_offset + 1));
+            const auto source_position = source_chunk_end - chunk_size;
+            const auto destination_position = destination_chunk_end - chunk_size;
+            const auto bits = read_word(static_cast<std::uint32_t>(source_position / bits_per_word)) >>
+                              (source_position % bits_per_word);
+            write_bits(static_cast<std::uint32_t>(destination_position), bits,
+                       static_cast<std::uint32_t>(chunk_size));
+            remaining -= chunk_size;
+        }
+    }
+
+    auto clear_start = std::uint64_t{};
+    auto clear_end = std::uint64_t{};
+    if (destination < source) {
+        clear_start = std::max(std::uint64_t{source}, destination_end);
+        clear_end = source_end;
+    } else {
+        clear_start = source;
+        clear_end = std::min(source_end, std::uint64_t{destination});
+    }
+
+    while (clear_start < clear_end) {
+        const auto chunk_size = std::min(clear_end - clear_start, bits_per_word - clear_start % bits_per_word);
+        write_bits(static_cast<std::uint32_t>(clear_start), 0, static_cast<std::uint32_t>(chunk_size));
+        clear_start += chunk_size;
+    }
 }
 
 } // namespace details
@@ -204,6 +263,32 @@ template <> class index<dynamic_index_extent> {
         }
 
         std::fill_n(allocated_words(), word_count(), std::uint64_t{});
+    }
+
+    // Moves [source, source + count) to destination without allocation and clears source-only bits. Size is
+    // unchanged. Both ranges must fit in size(), and destination bits outside the source range must be clear.
+    void relocate(size_type source, size_type destination, size_type count) noexcept {
+        if (count == 0 || source == destination) {
+            return;
+        }
+
+        assert(source <= size() && count <= size() - source);
+        assert(destination <= size() && count <= size() - destination);
+
+        details::relocate_bits(source, destination, count, [this](size_type word_index) { return word(word_index); },
+                               [this](size_type position, std::uint64_t bits, size_type count) {
+                                   const auto offset = position % bits_per_word;
+                                   const auto mask = details::low_bits(count) << offset;
+                                   const auto moved_bits = (bits << offset) & mask;
+                                   if (allocated()) {
+                                       auto &target = allocated_words()[position / bits_per_word];
+                                       target = (target & ~mask) | moved_bits;
+                                       return;
+                                   }
+
+                                   const auto shifted_mask = mask << inline_bits_shift;
+                                   raw_ = (raw_ & ~shifted_mask) | (moved_bits << inline_bits_shift);
+                               });
     }
 
     void release(std::pmr::memory_resource &memory) noexcept {
@@ -467,6 +552,26 @@ template <std::uint32_t Extent> class index {
     }
 
     void clear() noexcept { words_.fill(0); }
+
+    // Moves [source, source + count) to destination without allocation and clears source-only bits. Size is
+    // unchanged. Both ranges must fit in size(), and destination bits outside the source range must be clear.
+    void relocate(size_type source, size_type destination, size_type count) noexcept {
+        if (count == 0 || source == destination) {
+            return;
+        }
+
+        assert(source <= Extent && count <= Extent - source);
+        assert(destination <= Extent && count <= Extent - destination);
+
+        details::relocate_bits(
+            source, destination, count, [this](size_type word_index) { return words_[word_index]; },
+            [this](size_type position, std::uint64_t bits, size_type count) {
+                const auto offset = position % bits_per_word;
+                const auto mask = details::low_bits(count) << offset;
+                auto &target = words_[position / bits_per_word];
+                target = (target & ~mask) | ((bits << offset) & mask);
+            });
+    }
 
     std::size_t count() const noexcept {
         auto result = std::size_t{};
