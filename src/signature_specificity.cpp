@@ -151,11 +151,7 @@ Projection projection_for(const Type &type) {
         if (alternatives.size() > 1 && !std::ranges::all_of(alternatives, [&](const auto *alternative) {
                 return alternative == alternatives.front();
             })) {
-            auto projected_alternatives = std::vector<const Type *>{};
-            projected_alternatives.reserve(alternatives.size());
-            for (const auto *alternative : alternatives) {
-                projected_alternatives.push_back(alternative);
-            }
+            auto projected_alternatives = std::vector<const Type *>{alternatives.begin(), alternatives.end()};
             return Projection{std::addressof(variable), {}, std::move(projected_alternatives)};
         }
         return Projection{};

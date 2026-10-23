@@ -24,13 +24,6 @@ template <typename T> void combine_pointer(std::size_t &result, const T *value) 
     combine_hash(result, std::hash<const void *>{}(value));
 }
 
-std::optional<Scalar<>> scalar_value(const WiringArgument &argument) {
-    if (!argument.present()) {
-        return std::nullopt;
-    }
-    return argument.scalar();
-}
-
 std::optional<std::size_t> node_hash(const NodeTemplate &node_template, const ResolvedSignature &signature,
                                      std::span<const WiredInput> inputs, std::span<const ScalarType *const> state_types,
                                      std::span<const WiringArgument> arguments) {
@@ -64,7 +57,7 @@ std::optional<std::size_t> node_hash(const NodeTemplate &node_template, const Re
             return std::nullopt;
         }
 
-        combine_hash(result, scalar_value(argument)->hash());
+        combine_hash(result, argument.scalar().hash());
     }
 
     return result;
@@ -130,15 +123,9 @@ std::optional<WiringPoint> NodeTemplate::bind(GraphWiring &wiring, ResolvedSigna
                                               const TypeMap &type_map,
                                               std::span<const WiringArgument> arguments,
                                               const TimeSeriesRuntimeType *selected_output_runtime_type) const {
-    auto materialized_arguments = std::vector<WiringArgument>{};
-    materialized_arguments.reserve(arguments.size());
-    for (const auto &argument : arguments) {
-        materialized_arguments.push_back(WiringArgument::borrow(argument));
-    }
-
     auto inputs = std::vector<WiredInput>{};
-    for (auto index = std::size_t{}; index < materialized_arguments.size(); ++index) {
-        const auto &argument = materialized_arguments[index];
+    for (auto index = std::size_t{}; index < arguments.size(); ++index) {
+        const auto &argument = arguments[index];
         if (argument.is_time_series()) {
             const auto &parameter = static_cast<const TimeSeriesType &>(*signature.parameters[index].type);
             inputs.push_back(wiring.wire_input(argument.time_series(), parameter));
@@ -149,21 +136,19 @@ std::optional<WiringPoint> NodeTemplate::bind(GraphWiring &wiring, ResolvedSigna
     auto dynamic_inputs = dynamic_input_types(type_map);
     const auto has_output = signature.output != nullptr;
     const auto hash = deduplicate_wiring() && has_output
-                          ? node_hash(*this, signature, inputs, state_types, materialized_arguments)
+                          ? node_hash(*this, signature, inputs, state_types, arguments)
                           : std::nullopt;
     if (hash) {
-        if (const auto existing =
-                wiring.find_wired_node(*hash, *this, signature, inputs, state_types, materialized_arguments)) {
+        if (const auto existing = wiring.find_wired_node(*hash, *this, signature, inputs, state_types, arguments)) {
             return existing;
         }
     }
 
     auto scalar_values = std::vector<WiredScalar>{};
-    scalar_values.reserve(materialized_arguments.size() - inputs.size());
+    scalar_values.reserve(arguments.size() - inputs.size());
     auto release_scalars = util::scope_exit{[&]() noexcept { wiring.destroy_scalars(scalar_values); }};
 
-    for (auto index = std::size_t{}; index < materialized_arguments.size(); ++index) {
-        const auto &argument = materialized_arguments[index];
+    for (const auto &argument : arguments) {
         if (argument.is_time_series()) {
             continue;
         }
