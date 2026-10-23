@@ -71,7 +71,7 @@ class MapGraphArgumentBuilder {
         auto output_boundary = std::optional<WiringPoint>{};
         if (result) {
             output_boundary = call_.valid_items
-                                  ? wire_filtered_nested_output(*structure_result, structure_result->type())
+                                  ? wire_validity_filtered_nested_output(*structure_result, structure_result->type())
                                   : wire_nested_output(*structure_result, structure_result->type());
         } else if (call_.valid_items) {
             throw WiringError{"__valid_items__ requires a mapped graph that produces an output"};

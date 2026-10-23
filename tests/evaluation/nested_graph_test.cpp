@@ -369,14 +369,14 @@ TEST_CASE("a nested boundary retains a direct final target guarantee",
     CHECK(bg::run_graph(outer, {17}, {true}).equals({17}));
 }
 
-TEST_CASE("a filtered nested output suspends its target after publishing a reference",
+TEST_CASE("a validity-filtered nested output suspends its target after publishing a reference",
           "[evaluation][nested][reference][feature:validity][feature:input-activity][transition:update]") {
     const auto observe_reference = node([](In<TS<i64>> trigger, In<REF<TS<i64>>, passive, optional> reference) {
         return reference.modified();
     });
 
     const auto graph = [&](wp<TS<i64>> value, wp<TS<i64>> trigger) {
-        const auto filtered = details::wire_filtered_nested_output(value, TS<i64>::type());
+        const auto filtered = details::wire_validity_filtered_nested_output(value, TS<i64>::type());
         return observe_reference(trigger, filtered);
     };
 
@@ -385,7 +385,7 @@ TEST_CASE("a filtered nested output suspends its target after publishing a refer
     CHECK(actual.equals<bool>({true, false, false}));
 }
 
-TEST_CASE("a filtered nested output invalidates and restores its reference with its target",
+TEST_CASE("a validity-filtered nested output invalidates and restores its reference with its target",
           "[evaluation][nested][reference][feature:validity][transition:invalidation]"
           "[transition:revalidation]") {
     const auto observe_reference = node([](In<TS<i64>> trigger, In<REF<TS<i64>>, passive, optional> reference) {
@@ -393,7 +393,7 @@ TEST_CASE("a filtered nested output invalidates and restores its reference with 
     });
 
     const auto graph = [&](wp<TS<i64>> value, wp<TS<i64>> trigger) {
-        const auto filtered = details::wire_filtered_nested_output(value, TS<i64>::type());
+        const auto filtered = details::wire_validity_filtered_nested_output(value, TS<i64>::type());
         return observe_reference(trigger, filtered);
     };
 
@@ -402,7 +402,7 @@ TEST_CASE("a filtered nested output invalidates and restores its reference with 
     CHECK(actual.equals<bool>({false, true, true, true}));
 }
 
-TEST_CASE("a filtered nested output unbinds and restores its source reference",
+TEST_CASE("a validity-filtered nested output unbinds and restores its source reference",
           "[evaluation][nested][reference][feature:validity][transition:invalidation]"
           "[transition:revalidation][binding:reference-to-reference]") {
     const auto select = node([](In<TS<bool>> bound, In<REF<TS<i64>>> target, Out<REF<TS<i64>>> output) {
@@ -419,7 +419,7 @@ TEST_CASE("a filtered nested output unbinds and restores its source reference",
 
     const auto graph = [&](wp<TS<bool>> bound, wp<TS<i64>> value, wp<TS<i64>> trigger) {
         const auto selected = select(bound, value);
-        const auto filtered = details::wire_filtered_nested_output(selected, TS<i64>::type());
+        const auto filtered = details::wire_validity_filtered_nested_output(selected, TS<i64>::type());
         return observe_reference(trigger, filtered);
     };
 
@@ -441,7 +441,7 @@ template <int Delay, i64 Value> struct DelayedInvalidTarget {
     void evaluate() const { output.set(Value); }
 };
 
-TEST_CASE("a filtered nested output tracks a reference replacement while both targets are invalid",
+TEST_CASE("a validity-filtered nested output tracks a reference replacement while both targets are invalid",
           "[evaluation][nested][reference][feature:validity][transition:update]"
           "[binding:reference-to-reference]") {
     const auto first_target = node<DelayedInvalidTarget<2, 10>>();
@@ -453,7 +453,7 @@ TEST_CASE("a filtered nested output tracks a reference replacement while both ta
         const auto first = first_target();
         const auto second = second_target();
         const auto selected = select(condition, first, second);
-        const auto filtered = details::wire_filtered_nested_output(selected, TS<i64>::type());
+        const auto filtered = details::wire_validity_filtered_nested_output(selected, TS<i64>::type());
         return wp<TS<i64>>{filtered};
     };
 
