@@ -30,6 +30,18 @@
 namespace bg {
 namespace {
 
+struct OverloadCandidate {
+    const WiringTemplate *implementation;
+    SignatureResolution resolution;
+    std::vector<const Type *> argument_types;
+    std::vector<std::optional<std::size_t>> supplied_argument_indices;
+    std::vector<InputValidity> argument_validity;
+    std::vector<unsigned char> argument_valid_items;
+    std::vector<WiringArgumentFormMatch> argument_forms;
+    double materialisation_cost;
+    double binding_cost;
+};
+
 WiringFailureStage failure_stage(TypeResolutionErrorCode code) noexcept {
     switch (code) {
     case TypeResolutionErrorCode::argument_count:
@@ -44,41 +56,36 @@ WiringFailureStage failure_stage(TypeResolutionErrorCode code) noexcept {
     return WiringFailureStage::resolver;
 }
 
-std::partial_ordering compare_input_requirement_preference(const ResolvedSignature &left,
-                                                           const ResolvedSignature &right,
-                                                           std::span<const std::optional<std::size_t>>
-                                                               left_supplied_indices,
-                                                           std::span<const std::optional<std::size_t>>
-                                                               right_supplied_indices,
-                                                           std::span<const InputValidity> left_arguments,
-                                                           std::span<const InputValidity> right_arguments,
-                                                           std::span<const unsigned char> left_valid_items,
+std::partial_ordering compare_input_requirement_preference(const OverloadCandidate &left,
+                                                           const OverloadCandidate &right,
                                                            std::size_t parameter_count) noexcept {
     auto left_better = false;
     auto right_better = false;
     for (auto index = std::size_t{}; index < parameter_count; ++index) {
-        const auto &left_parameter = left.parameters[index];
+        const auto &left_parameter = left.resolution.signature.parameters[index];
         const auto right_index = [&]() -> std::optional<std::size_t> {
-            if (left_supplied_indices[index] && !left_parameter.context) {
-                for (auto right_index = std::size_t{}; right_index < right_supplied_indices.size(); ++right_index) {
-                    if (right_supplied_indices[right_index] == left_supplied_indices[index]) {
+            if (left.supplied_argument_indices[index] && !left_parameter.context) {
+                for (auto right_index = std::size_t{}; right_index < right.supplied_argument_indices.size();
+                     ++right_index) {
+                    if (right.supplied_argument_indices[right_index] == left.supplied_argument_indices[index]) {
                         return right_index;
                     }
                 }
                 return std::nullopt;
             }
 
-            const auto named_parameter = std::ranges::find(right.parameters, left_parameter.name,
-                                                            &ResolvedParameter::name);
-            if (named_parameter != right.parameters.end()) {
-                return static_cast<std::size_t>(named_parameter - right.parameters.begin());
+            const auto &right_parameters = right.resolution.signature.parameters;
+            const auto named_parameter =
+                std::ranges::find(right_parameters, left_parameter.name, &ResolvedParameter::name);
+            if (named_parameter != right_parameters.end()) {
+                return static_cast<std::size_t>(named_parameter - right_parameters.begin());
             }
             return index;
         }();
         if (!right_index) {
             continue;
         }
-        const auto &right_parameter = right.parameters[*right_index];
+        const auto &right_parameter = right.resolution.signature.parameters[*right_index];
         if (left_parameter.type->is_scalar() && right_parameter.type->is_scalar()) {
             const auto left_requires_presence = !left_parameter.accepts_absent_scalar;
             const auto right_requires_presence = !right_parameter.accepts_absent_scalar;
@@ -91,14 +98,14 @@ std::partial_ordering compare_input_requirement_preference(const ResolvedSignatu
         }
         const auto left_supports_valid_items = left_parameter.valid_items;
         const auto right_supports_valid_items = right_parameter.valid_items;
-        if (left_valid_items[index]) {
+        if (left.argument_valid_items[index]) {
             left_better |= left_supports_valid_items && !right_supports_valid_items;
             right_better |= right_supports_valid_items && !left_supports_valid_items;
         } else {
             left_better |= !left_supports_valid_items && right_supports_valid_items;
             right_better |= !right_supports_valid_items && left_supports_valid_items;
         }
-        if (left_arguments[index] == optional || right_arguments[*right_index] == optional) {
+        if (left.argument_validity[index] == optional || right.argument_validity[*right_index] == optional) {
             continue;
         }
 
@@ -114,64 +121,54 @@ std::partial_ordering compare_input_requirement_preference(const ResolvedSignatu
     return left_better ? std::partial_ordering::less : std::partial_ordering::greater;
 }
 
-bool preferred(const WiringTemplate &candidate, const ResolvedSignature &candidate_signature,
-               const WiringTemplate &other, const ResolvedSignature &other_signature,
-               std::span<const Type *const> candidate_arguments, std::span<const Type *const> other_arguments,
-               std::span<const std::optional<std::size_t>> candidate_supplied_indices,
-               std::span<const std::optional<std::size_t>> other_supplied_indices,
-               std::span<const InputValidity> candidate_argument_validity,
-               std::span<const InputValidity> other_argument_validity,
-               std::span<const unsigned char> candidate_argument_valid_items) {
-    const auto candidate_variadic = candidate.signature().has_variadic_parameters();
-    const auto other_variadic = other.signature().has_variadic_parameters();
+bool preferred(const OverloadCandidate &candidate, const OverloadCandidate &other) {
+    const auto &candidate_signature = candidate.implementation->signature();
+    const auto &other_signature = other.implementation->signature();
+    const auto candidate_variadic = candidate_signature.has_variadic_parameters();
+    const auto other_variadic = other_signature.has_variadic_parameters();
     if (candidate_variadic != other_variadic) {
         return !candidate_variadic;
     }
     if (candidate_variadic) {
-        const auto candidate_fixed = *candidate.signature().first_variadic_parameter();
-        const auto other_fixed = *other.signature().first_variadic_parameter();
+        const auto candidate_fixed = *candidate_signature.first_variadic_parameter();
+        const auto other_fixed = *other_signature.first_variadic_parameter();
         const auto shared_fixed = std::min(candidate_fixed, other_fixed);
         if (candidate_fixed == other_fixed) {
-            const auto parameter_count = candidate.signature().parameter_count();
-            const auto specificity = parameter_count == other.signature().parameter_count()
-                                        ? details::compare_parameter_specificity(
-                                              candidate.signature(), other.signature(), candidate_arguments,
-                                              other_arguments, parameter_count)
-                                        : std::partial_ordering::unordered;
+            const auto parameter_count = candidate_signature.parameter_count();
+            const auto specificity = parameter_count == other_signature.parameter_count()
+                                         ? details::compare_parameter_specificity(candidate_signature, other_signature,
+                                                                                  candidate.argument_types,
+                                                                                  other.argument_types, parameter_count)
+                                         : std::partial_ordering::unordered;
             if (specificity != std::partial_ordering::equivalent) {
                 return specificity == std::partial_ordering::less;
             }
-            const auto shared_parameters =
-                std::min(candidate_signature.parameters.size(), other_signature.parameters.size());
-            return compare_input_requirement_preference(candidate_signature, other_signature,
-                                                        candidate_supplied_indices, other_supplied_indices,
-                                                        candidate_argument_validity, other_argument_validity,
-                                                        candidate_argument_valid_items, shared_parameters) ==
+            const auto shared_parameters = std::min(candidate.resolution.signature.parameters.size(),
+                                                    other.resolution.signature.parameters.size());
+            return compare_input_requirement_preference(candidate, other, shared_parameters) ==
                    std::partial_ordering::less;
         }
 
         const auto shared_specificity = details::compare_parameter_specificity(
-            candidate.signature(), other.signature(), candidate_arguments, other_arguments, shared_fixed);
+            candidate_signature, other_signature, candidate.argument_types, other.argument_types, shared_fixed);
         const auto prefix_length =
             candidate_fixed > other_fixed ? std::partial_ordering::less : std::partial_ordering::greater;
         const auto preferences_agree =
             shared_specificity == std::partial_ordering::equivalent || shared_specificity == prefix_length;
         return preferences_agree && prefix_length == std::partial_ordering::less;
     }
-    const auto shared_parameters = std::min(candidate_signature.parameters.size(), other_signature.parameters.size());
-    const auto parameter_count = candidate.signature().parameter_count();
-    const auto specificity = parameter_count == other.signature().parameter_count()
-                                 ? details::compare_parameter_specificity(candidate.signature(), other.signature(),
-                                                                         candidate_arguments, other_arguments,
-                                                                         parameter_count)
+    const auto shared_parameters = std::min(candidate.resolution.signature.parameters.size(),
+                                            other.resolution.signature.parameters.size());
+    const auto parameter_count = candidate_signature.parameter_count();
+    const auto specificity = parameter_count == other_signature.parameter_count()
+                                 ? details::compare_parameter_specificity(candidate_signature, other_signature,
+                                                                         candidate.argument_types,
+                                                                         other.argument_types, parameter_count)
                                  : std::partial_ordering::unordered;
     if (specificity != std::partial_ordering::equivalent) {
         return specificity == std::partial_ordering::less;
     }
-    return compare_input_requirement_preference(candidate_signature, other_signature,
-                                                candidate_supplied_indices, other_supplied_indices,
-                                                candidate_argument_validity, other_argument_validity,
-                                                candidate_argument_valid_items, shared_parameters) ==
+    return compare_input_requirement_preference(candidate, other, shared_parameters) ==
            std::partial_ordering::less;
 }
 
@@ -447,20 +444,7 @@ template <typename CandidateRange>
 auto Operator::analyze_overloads(
     GraphWiring &wiring, std::span<const WiringArgument> arguments, const TypeMap *seed_type_map,
     const CandidateRange &candidates, bool record_reads) const {
-    struct Candidate {
-        const WiringTemplate *implementation;
-        SignatureResolution resolution;
-        std::vector<const Type *> argument_types;
-        std::vector<std::optional<std::size_t>> supplied_argument_indices;
-        std::vector<InputValidity> argument_validity;
-        std::vector<unsigned char> argument_valid_items;
-        std::vector<WiringArgumentFormMatch> argument_forms;
-        double materialisation_cost;
-        double binding_cost;
-    };
-
     auto analysis = OperatorResolutionAnalysis{};
-    auto &result = analysis.resolution;
     auto &scalar_reads = analysis.scalar_reads;
     const auto &prototype = signature();
     auto explicit_type_parameters = std::vector<const Variable *>{};
@@ -492,12 +476,7 @@ auto Operator::analyze_overloads(
         return used;
     };
 
-    const auto applicable_failure = [](const Candidate &candidate, std::string message) {
-        return matched_failure(*candidate.implementation, candidate.resolution.signature, candidate.argument_forms,
-                               candidate.materialisation_cost, WiringFailureStage::applicable, std::move(message));
-    };
-
-    auto applicable = std::vector<Candidate>{};
+    auto applicable = std::vector<OverloadCandidate>{};
     auto failures = std::vector<WiringCandidateDiagnostic>{};
     applicable.reserve(std::ranges::size(candidates));
     failures.reserve(std::ranges::size(candidates));
@@ -669,7 +648,11 @@ auto Operator::analyze_overloads(
         }
     }
 
-    const auto output_ambiguous = [&](const Candidate &candidate) {
+    const auto applicable_failure = [](const OverloadCandidate &candidate, std::string message) {
+        return matched_failure(*candidate.implementation, candidate.resolution.signature, candidate.argument_forms,
+                               candidate.materialisation_cost, WiringFailureStage::applicable, std::move(message));
+    };
+    const auto output_ambiguous = [&](const OverloadCandidate &candidate) {
         return std::ranges::any_of(applicable, [&](const auto &other) {
             return candidate.implementation == other.implementation &&
                    candidate.resolution.signature.output != other.resolution.signature.output;
@@ -683,10 +666,10 @@ auto Operator::analyze_overloads(
                     applicable_failure(candidate, "viable forms resolve to different semantic output types"));
             }
         }
-        result.ambiguous = true;
-        result.failures = std::move(failures);
+        analysis.resolution.ambiguous = true;
+        analysis.resolution.failures = std::move(failures);
     } else {
-        const auto same_concrete_binding = [&](const Candidate &left, const Candidate &right) {
+        const auto same_concrete_binding = [&](const OverloadCandidate &left, const OverloadCandidate &right) {
             if (left.implementation != right.implementation ||
                 left.resolution.signature.output != right.resolution.signature.output ||
                 !left.implementation->same_binding_type_map(left.resolution.type_map, right.resolution.type_map)) {
@@ -706,7 +689,7 @@ auto Operator::analyze_overloads(
             }
             return true;
         };
-        auto unique_applicable = std::vector<Candidate>{};
+        auto unique_applicable = std::vector<OverloadCandidate>{};
         unique_applicable.reserve(applicable.size());
         for (auto &candidate : applicable) {
             const auto existing = std::ranges::find_if(unique_applicable, [&](const auto &other) {
@@ -722,21 +705,17 @@ auto Operator::analyze_overloads(
 
         if (!applicable.empty()) {
             const auto lowest_cost =
-                std::ranges::min_element(applicable, {}, &Candidate::binding_cost)->binding_cost;
+                std::ranges::min_element(applicable, {}, &OverloadCandidate::binding_cost)->binding_cost;
             std::erase_if(applicable, [&](const auto &candidate) {
                 return candidate.binding_cost != lowest_cost;
             });
         }
 
-        Candidate *selected = nullptr;
+        OverloadCandidate *selected = nullptr;
         for (auto &candidate : applicable) {
             const auto least_generic = std::ranges::all_of(applicable, [&](const auto &other) {
                 return &candidate == &other ||
-                       preferred(*candidate.implementation, candidate.resolution.signature, *other.implementation,
-                                 other.resolution.signature, candidate.argument_types, other.argument_types,
-                                 candidate.supplied_argument_indices, other.supplied_argument_indices,
-                                 candidate.argument_validity, other.argument_validity,
-                                 candidate.argument_valid_items);
+                       preferred(candidate, other);
             });
             if (least_generic) {
                 selected = &candidate;
@@ -745,25 +724,23 @@ auto Operator::analyze_overloads(
         }
 
         if (selected == nullptr) {
-            result.ambiguous = !applicable.empty();
-            if (result.ambiguous) {
+            analysis.resolution.ambiguous = !applicable.empty();
+            if (analysis.resolution.ambiguous) {
                 failures.clear();
                 for (const auto &candidate : applicable) {
                     failures.push_back(applicable_failure(candidate, "applicable"));
                 }
             }
-            result.failures = std::move(failures);
+            analysis.resolution.failures = std::move(failures);
         } else {
-            auto selected_forms = std::vector<const TimeSeriesType *>{};
-            selected_forms.reserve(selected->argument_forms.size());
-            for (const auto &form : selected->argument_forms) {
-                selected_forms.push_back(form.materialisation_target);
-            }
-            result.selected.emplace(details::OperatorResolutionMatch{
+            auto selected_forms = selected->argument_forms |
+                                  std::views::transform(&WiringArgumentFormMatch::materialisation_target) |
+                                  std::ranges::to<std::vector>();
+            analysis.resolution.selected.emplace(details::OperatorResolutionMatch{
                 selected->implementation,
                 {std::move(selected->resolution.signature), std::move(selected->resolution.type_map)},
                 std::move(selected_forms), std::move(selected->supplied_argument_indices)});
-            result.failures = std::move(failures);
+            analysis.resolution.failures = std::move(failures);
         }
     }
 
