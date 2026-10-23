@@ -72,6 +72,17 @@ recovery archive and retirement manifest are under
 [schema_foundation_proposal.md](schema_foundation_proposal.md) defines the
 schema migration and extension boundary.
 
+[compaction_proposal.md](compaction_proposal.md) records the current maintenance
+discussion. Mutations collect cheap statistics; storage plans and allocates
+after final occupancy is known at invocation end, before downstream consumers
+run. Packing can proceed in both directions while preserving current row order.
+Algorithms retain previous
+contributions; removed IDs and copied keys do not pin column slots. Compaction
+implementation has not started. Explicit invocation-end callback registration
+is the selected timing mechanism. The proposal records scratch lifetime and
+pending-evaluation rules. The callback API and measured maintenance policy still
+require review.
+
 - `Frame<Schema>` and `Column<T>` are scalar declarations. `TSF<Schema>` and
   `TSC<T>` add row identity and current-cycle changes.
 - Concrete and runtime schemas use one native layout and mutation implementation,
