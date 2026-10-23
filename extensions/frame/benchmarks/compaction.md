@@ -43,3 +43,17 @@ The recorded run in `compaction_benchmark_results.csv` used revision
 Release flags `-O3 -DNDEBUG`. It ran on Linux 6.12.68 on an AMD EPYC 7R13
 virtual machine. Timings are environment-specific measurements, not performance
 guarantees.
+
+## Constructed-cell bitmap comparison
+
+`compaction_constructed_cells_before.csv` records revision `a52607e2`;
+`compaction_constructed_cells_after.csv` records revision `f43b7859`. Both use
+the same Release benchmark setup described above, with Arrow and benchmarks
+enabled. They produced checksum `345655889045100`. Allocation counts and bytes,
+planned and moved rows and bytes, plan checksums, physical runs, aligned consumer
+batches, and native, Arrow, and gather chunk counts match row by row. Timing
+variation does not isolate the bitmap removal. `compact_ms` includes relocation
+and clearing work that uses the bitmap, and the observed compact timings were
+lower after the change. Other traversal timings also shifted between runs, so the
+paired runs do not establish the bitmap's causal contribution. Row construction
+and final storage release are not timed; their costs remain unmeasured.
