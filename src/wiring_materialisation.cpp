@@ -18,6 +18,7 @@
 #include <exception>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <utility>
 
@@ -227,12 +228,10 @@ class DeferredWiringRecord final : public details::WiringRecord {
 
     std::vector<WiringMaterialisationOption> materialisation_options() const override {
         options_frozen_ = true;
-        auto descriptors = std::vector<WiringMaterialisationOption>{};
-        descriptors.reserve(options_.size());
-        for (const auto &option : options_) {
-            descriptors.push_back({option.target_type, option.cost, &option.input_signature});
-        }
-        return descriptors;
+        return options_ | std::views::transform([](const auto &option) {
+                   return WiringMaterialisationOption{option.target_type, option.cost, &option.input_signature};
+               }) |
+               std::ranges::to<std::vector>();
     }
 
     std::optional<WiringErrorContext> materialisation_context(const TimeSeriesType &target_type) const override {
