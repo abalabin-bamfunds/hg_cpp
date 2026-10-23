@@ -48,21 +48,19 @@ class FixedTupleRuntimeType final : public ScalarTupleRuntimeType {
     const ScalarRuntimeType *retain_shared(const details::ScalarData &, std::uintptr_t &) const noexcept override;
     void release_shared(std::uintptr_t data) const noexcept override;
     void construct_initial_value(void *destination) const noexcept override;
-    void do_construct_from_input(void *destination, const details::ScalarData &value,
-                                 allocator &memory) const override;
+    void do_construct_from_input(void *destination, const details::ScalarData &value, allocator &memory) const override;
     void copy_construct(void *destination, const void *source, allocator &memory) const override;
     void do_assign_from_input(void *destination, const details::ScalarData &value) const override;
     std::size_t hash(details::ScalarDataMode mode, std::uintptr_t data) const override;
-    bool equals(details::ScalarDataMode mode, std::uintptr_t data,
-                const details::ScalarData &other) const override;
+    bool equals(details::ScalarDataMode mode, std::uintptr_t data, const details::ScalarData &other) const override;
     std::size_t hash(const void *value) const override;
     bool equals(const void *value, const details::ScalarData &other) const override;
     bool equals_same_type(const void *value, const details::ScalarData &other) const override;
     void destroy(void *value, allocator &memory) const noexcept override;
 
     static std::size_t align_up(std::size_t offset, std::size_t alignment);
-    static bool copy_field(void *context, std::size_t index, const ScalarRuntimeType &runtime_type,
-                           void *destination, allocator &memory);
+    static bool copy_field(void *context, std::size_t index, const ScalarRuntimeType &runtime_type, void *destination,
+                           allocator &memory);
     std::uintptr_t construct_shared(ScalarFieldConstruction construction, details::ScalarAllocationPool &pool,
                                     allocator &memory) const;
     Storage *storage(const details::ScalarData &value) const noexcept;
@@ -79,8 +77,7 @@ class FixedTupleRuntimeType final : public ScalarTupleRuntimeType {
 };
 
 struct FixedTupleRuntimeType::Storage {
-    explicit Storage(details::ScalarAllocationPool &allocation_pool) noexcept
-        : references{1}, pool{&allocation_pool} {}
+    explicit Storage(details::ScalarAllocationPool &allocation_pool) noexcept : references{1}, pool{&allocation_pool} {}
 
     std::atomic_size_t references;
     details::ScalarAllocationPool *pool;
@@ -124,7 +121,7 @@ std::size_t FixedTupleRuntimeType::align_up(std::size_t offset, std::size_t alig
 }
 
 void FixedTupleRuntimeType::construct_fields_with(void *destination, allocator &memory,
-                                                      ScalarFieldConstruction construction) const {
+                                                  ScalarFieldConstruction construction) const {
     auto *pool = static_cast<details::ScalarAllocationPool *>(nullptr);
     auto owns_pool = false;
     if (const auto *current = details::current_scalar_allocation_owner()) {
@@ -151,8 +148,7 @@ void FixedTupleRuntimeType::construct_fields_with(void *destination, allocator &
 }
 
 std::uintptr_t FixedTupleRuntimeType::construct_shared(ScalarFieldConstruction construction,
-                                                          details::ScalarAllocationPool &pool,
-                                                          allocator &memory) const {
+                                                       details::ScalarAllocationPool &pool, allocator &memory) const {
     const auto *previous = details::current_scalar_allocation_owner();
     const auto graph = previous == nullptr ? nullptr : previous->graph;
     const auto node_index = previous == nullptr ? std::size_t{} : previous->node_index;
@@ -183,9 +179,8 @@ std::uintptr_t FixedTupleRuntimeType::construct_shared(ScalarFieldConstruction c
     return reinterpret_cast<std::uintptr_t>(stored);
 }
 
-bool FixedTupleRuntimeType::copy_field(void *context, std::size_t index,
-                                          const ScalarRuntimeType &runtime_type, void *destination,
-                                          allocator &memory) {
+bool FixedTupleRuntimeType::copy_field(void *context, std::size_t index, const ScalarRuntimeType &runtime_type,
+                                       void *destination, allocator &memory) {
     const auto &source = *static_cast<const CopyContext *>(context)->source;
     const auto &source_runtime = static_cast<const ScalarTupleRuntimeType &>(source.runtime_type());
     const auto source_item = source_runtime.item(source, index);
@@ -227,8 +222,7 @@ bool FixedTupleRuntimeType::accepts_input(const ScalarRuntimeType &source) const
     return true;
 }
 
-bool FixedTupleRuntimeType::assign_with(void *destination, ScalarConstruction construction,
-                                           bool suppress_equal) const {
+bool FixedTupleRuntimeType::assign_with(void *destination, ScalarConstruction construction, bool suppress_equal) const {
     auto memory = details::current_scalar_allocator();
     alignas(Storage *) std::byte replacement_bytes[sizeof(Storage *)];
     construction.construct(construction.context, *this, replacement_bytes, memory);
@@ -247,7 +241,7 @@ bool FixedTupleRuntimeType::assign_with(void *destination, ScalarConstruction co
 }
 
 bool FixedTupleRuntimeType::try_assign_from_owned(void *destination, void *source, allocator &,
-                                                     allocator &) const noexcept {
+                                                  allocator &) const noexcept {
     auto *previous = stored_handle(destination);
     store_handle(destination, stored_handle(source));
     store_handle(source, previous);
@@ -263,7 +257,7 @@ details::ScalarData FixedTupleRuntimeType::borrow_shared(const void *value) cons
 }
 
 const ScalarRuntimeType *FixedTupleRuntimeType::retain_shared(const details::ScalarData &value,
-                                                                std::uintptr_t &data) const noexcept {
+                                                              std::uintptr_t &data) const noexcept {
     auto *stored = storage(value);
     if (stored == nullptr) {
         return nullptr;
@@ -281,10 +275,12 @@ void FixedTupleRuntimeType::release_shared(std::uintptr_t data) const noexcept {
     destroy_storage(*stored);
 }
 
-void FixedTupleRuntimeType::construct_initial_value(void *destination) const noexcept { store_handle(destination, nullptr); }
+void FixedTupleRuntimeType::construct_initial_value(void *destination) const noexcept {
+    store_handle(destination, nullptr);
+}
 
 void FixedTupleRuntimeType::do_construct_from_input(void *destination, const details::ScalarData &value,
-                                                       allocator &memory) const {
+                                                    allocator &memory) const {
     if (&value.runtime_type() == this) {
         auto *stored = storage(value);
         if (stored != nullptr) {
@@ -320,7 +316,7 @@ std::size_t FixedTupleRuntimeType::hash(details::ScalarDataMode mode, std::uintp
 }
 
 bool FixedTupleRuntimeType::equals(details::ScalarDataMode mode, std::uintptr_t data,
-                                     const details::ScalarData &other) const {
+                                   const details::ScalarData &other) const {
     if (&type() != &other.type()) {
         return false;
     }
@@ -345,8 +341,8 @@ std::size_t FixedTupleRuntimeType::hash(const void *value) const {
 
 bool FixedTupleRuntimeType::equals(const void *value, const details::ScalarData &other) const {
     auto *stored = stored_handle(value);
-    return stored != nullptr && equals(details::ScalarDataMode::shared_view,
-                                       reinterpret_cast<std::uintptr_t>(stored), other);
+    return stored != nullptr &&
+           equals(details::ScalarDataMode::shared_view, reinterpret_cast<std::uintptr_t>(stored), other);
 }
 
 bool FixedTupleRuntimeType::equals_same_type(const void *value, const details::ScalarData &other) const {
@@ -417,7 +413,7 @@ std::unique_ptr<ScalarTupleRuntimeType> make_fixed_tuple_runtime_type(const Tupl
 }
 
 void initialize_fixed_tuple_runtime_type(ScalarTupleRuntimeType &runtime_type,
-                                            std::span<const ScalarRuntimeType *const> items) {
+                                         std::span<const ScalarRuntimeType *const> items) {
     static_cast<FixedTupleRuntimeType &>(runtime_type).initialize(items);
 }
 
