@@ -7,6 +7,8 @@ the separate borrowed and gather-copy Arrow contracts are unchanged.
 
 See [all workload comparisons](tables.md), [comparison data](comparison.csv),
 and the [runtime library manifest](runtime-manifest.txt).
+The later [bounded native validity search comparison](bounded-search/README.md)
+measures its additional Arrow export improvement separately.
 
 ## Source and build
 

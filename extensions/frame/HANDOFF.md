@@ -1,7 +1,8 @@
 # Frame foundation handoff
 
 Updated: 2026-10-23. The frame lane and current consumer dependencies use main
-baseline `5d48e914`. The mixed-overload refactor used main `21a0f87c`.
+baseline `5d48e914` plus bounded bitmap search `73622fb7`. The mixed-overload
+refactor used main `21a0f87c`.
 Earlier frame foundation work was rebased onto main `146ee478`, which included
 shared schema metadata (`6419e073`), process-lifetime ownership
 of registered type metadata (`160f128b`), compatible generic input-view casts
@@ -27,7 +28,8 @@ completed lane retirement, and consumer verification.
 
 | Work | Location / branch | State |
 | --- | --- | --- |
-| BG baseline for current consumer builds | Lane-local Release and Debug installs | `5d48e914`; held fixed during optimization comparisons |
+| BG baseline for current consumer builds | Lane-local Release and Debug installs | `5d48e914` plus bounded bitmap search `73622fb7`; original optimization comparisons held `5d48e914` fixed |
+| Bounded bitmap search | `.lanes/index-bounded-search`, `agent/index-bounded-search` | Utility-only commit `de53c9e7`; applied to the frame lane as `73622fb7`; not merged into main |
 | Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Frame foundation, expressions, scalar literals, native keyed storage, TSF/TSC input literals, and native/view/computed capture |
 | Generic input-view casts | Main | `a17a8ffd`; tested build preserved in `.lanes/generic-input-cast` |
 | Shared schema metadata and BG lifetime fix | Main | `6419e073`, `160f128b`; consumer builds use matching lane-local installs |
@@ -38,10 +40,11 @@ completed lane retirement, and consumer verification.
 
 The current frame verification uses these consumer directories:
 `build/tsf-row-release-arrow-off` and `build/tsf-row-release-arrow-on` use the
-lane-local Release BG install at `dependencies/bg-frame-core-release-install`;
+lane-local Release BG install at `dependencies/bg-frame-core-bounded-release-install`;
 `build/tsf-row-debug-asan-arrow-on` uses the matching Debug install at
-`dependencies/bg-frame-core-debug-install`. Preserve these generated dependency
-installs and the existing build caches.
+`dependencies/bg-frame-core-bounded-debug-install`. Preserve these generated
+dependency installs, the earlier `bg-frame-core-{release,debug}-install` prefixes,
+and the existing build caches.
 
 Preserve the existing recovery stashes:
 
@@ -172,8 +175,8 @@ erased Arrow copies preserve Arrow representation.
 
 ## Verification
 
-The 2026-10-23 optimization verification uses BG baseline `5d48e914` and the
-current lane-local Release and Debug installs:
+The 2026-10-23 optimization verification uses BG baseline `5d48e914` plus bounded
+bitmap search `73622fb7` and the current lane-local Release and Debug installs:
 
 | Build | Configuration | Result |
 | --- | --- | --- |
@@ -655,6 +658,12 @@ The report preserves three runs per version for all 30 cases, process-median
 ranges, runtime library hashes and loading commands, and complete timing data.
 Both versions use the same fixed BG dependency. Preserve the baseline runtime
 copies under `build/frame-optimisation-2026-10-22/before-runtime`.
+The [bounded validity follow-up](benchmarks/results/2026-10-23/bounded-search/README.md)
+compares `2f180034` with `3b59d9d7` using three further paired Arrow runs per
+version. Dense borrowed export plus sum improves from 0.220 to 0.032 ms;
+scattered selection still pays for 49,168 chunks. The measured earlier
+optimized runtimes are preserved under
+`build/frame-optimisation-2026-10-22/pre-bounded-runtime`.
 
 Earlier matching Release consumer measurements are recorded in
 [the 2026-10-22 benchmark notes](benchmarks/results/2026-10-22/README.md), with
@@ -707,7 +716,8 @@ reevaluation. Selected IDs reuse initialized storage and supply callback-scoped
 spans with optional consecutive-slot mappings. Native and aligned consumers use
 matching mappings directly and retain existing lookup or gather behavior for
 other mappings. Arrow borrowed export allocates validity only when a batch has
-nulls. Node APIs and borrowed versus owning export contracts are unchanged.
+nulls. Native validity searches inspect bitmap words within the batch bounds.
+Node APIs and borrowed versus owning export contracts are unchanged.
 See the [row traversal contract](README.md#values-and-rows) and
 [selection metadata decision](docs/decisions/selected-row-span-metadata.md).
 Compaction, capacity trimming, and reducing fragmented Arrow object overhead
