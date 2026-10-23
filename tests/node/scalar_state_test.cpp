@@ -182,7 +182,7 @@ struct generic_list_state_node {
 using K = ScalarVariable<"K", Hashable>;
 using V = ScalarVariable<"V">;
 using TEXT = ScalarVariable<"TEXT", string, EqualityComparable>;
-using OPAQUE = ScalarVariable<"OPAQUE", Opaque<int>>;
+using OPAQUE = ScalarVariable<"OPAQUE", Opaque<std::string>>;
 
 struct generic_scalar_state_node {
     In<TS<TEXT>, optional> input;
@@ -324,7 +324,7 @@ TEST_CASE("runtime-resolved scalar state reset releases its owned storage",
 TEST_CASE("runtime-resolved scalar state rejects types without initial-state support",
           "[node][state][scalar][generic][feature:state][scalar:generic]") {
     const auto state_node = node<unsupported_scalar_state_node>();
-    const auto input = ScalarValue<Opaque<int>>{42};
+    const auto input = ScalarValue<Opaque<std::string>>{std::string{"unsupported"}};
     auto wiring = GraphWiring{};
     {
         const auto context = WiringContext{wiring};
