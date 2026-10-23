@@ -1,6 +1,6 @@
 # HTTP handler authentication composition
 
-Status: accepted
+Status: superseded by [0089](0089-http-handler-authentication-projection.md)
 
 ## Context
 

@@ -163,16 +163,25 @@ WiringPoint details::wire_http_server(ServerOptions options, WiringPoint routes,
 
 WiringPoint details::http_authenticate_requests(WiringPoint requests, WiringPoint decisions) {
     const auto request_dictionary = wp<TSD<i64, TS<Bundle<HttpServerRequest>>>>{requests};
-    const auto identities = map(operators::getattr, decisions, util::symbol{"identity"});
-    const auto rejections = map(operators::getattr, decisions, util::symbol{"rejection"});
-    const auto request_keys = operators::keys_where_true(map(operators::valid, request_dictionary));
-    const auto identity_keys = operators::keys_where_true(map(operators::valid, identities));
-    const auto rejection_keys = operators::keys_where_true(map(operators::valid, rejections));
-    const auto accepted_keys = operators::bit_and(request_keys, identity_keys);
-    const auto rejected_keys = operators::bit_and(request_keys, rejection_keys);
+    using DECISION = TimeSeriesVariable<"HTTP_AUTH_DECISION">;
 
-    return bundle("requests"_n = request_dictionary[accepted_keys], "identities"_n = identities[accepted_keys],
-                  "rejections"_n = rejections[rejected_keys]);
+    const auto select_field = graph([](const WiringArguments &arguments, wp<TS_T> field,
+                                       wp<TS<bool>> enabled) {
+        return operators::if_then_else(enabled, field, operators::nothing[arguments.type_map()]());
+    });
+    const auto project_field = graph<DECISION>(
+        {"decision"_n, "request"_n, "name"_n},
+        [select_field](wp<DECISION> decision, wp<TS<Bundle<HttpServerRequest>>> request, util::symbol name) {
+            return select_field(operators::getattr(decision, name), operators::valid(request));
+        });
+
+    const auto identities = map(project_field, decisions, request_dictionary, util::symbol{"identity"},
+                                 "__valid_items__"_n = true);
+    const auto rejections = map(project_field, decisions, request_dictionary, util::symbol{"rejection"},
+                                 "__valid_items__"_n = true);
+
+    return bundle("requests"_n = request_dictionary[operators::keys_(identities)], "identities"_n = identities,
+                  "rejections"_n = rejections);
 }
 
 WiringPoint details::http_merge_responses(WiringPoint responses, WiringPoint rejections) {
