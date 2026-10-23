@@ -203,9 +203,9 @@ Wiring applies the same conversion to raw C++ scalar arguments before type
 resolution. An explicit `ScalarValue<T>` retains a concrete `T` as its semantic
 type. For a generic declaration, wiring uses the value's resolved type.
 
-`ScalarValue<Opaque<T>>` owns a copy of private C++ data without adding graph
-operations. `T` must be copy constructible and destructible. For `Opaque<T*>`,
-ownership of the pointed-to object remains with the caller.
+`ScalarValue<Opaque<T>>` and `TS<Opaque<T>>` own copies of private C++ data.
+`T` must be copy constructible and destructible. For `Opaque<T*>`, ownership
+of the pointed-to object remains with the caller.
 Opaque scalars support equality and hashing when their `scalar_storage_traits`
 specialization provides those capabilities. Both are unsupported by default.
 

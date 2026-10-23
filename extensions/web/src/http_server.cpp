@@ -167,7 +167,7 @@ wp<TS<i64>> http_server(std::span<const Route> routes, ServerOptions options) {
     const auto requests = output->requests;
     const auto runtime = output->runtime;
 
-    static const auto response_sink = node([](In<TS<ServerRuntime *>> server,
+    static const auto response_sink = node([](In<TS<Opaque<ServerRuntime *>>> server,
                                               In<TSD<i64, TS<Bundle<HttpResponse>>>> responses) {
             if (!server.valid() || !responses.valid() || !responses.modified()) {
                 return;

@@ -234,8 +234,10 @@ so time series signatures use `i64` rather than `int`.
 `EvaluationTime` is a scalar type. Graph code can use it directly and as a
 component of another scalar type, such as `List<EvaluationTime>`.
 
-`Opaque<T>` carries private C++ data as a wiring-time scalar. It has exact
-compatibility and provides no equality or hashing.
+`Opaque<T>` carries private C++ data as a scalar. `TS<Opaque<T>>` supports
+payloads that meet the [runtime storage requirements](#runtime-types).
+Compatibility requires the same `T`. See the
+[scalar API](scalar-api.md#c-source-values) for ownership and optional operations.
 
 A scalar list has one scalar item type. `List<SCALAR>` accepts any resolved
 scalar item type. Each list is homogeneous.

@@ -35,7 +35,7 @@ template <typename T> struct scalar_declaration_traits<Opaque<T>> {
     static constexpr bool generic = false;
     static constexpr bool is_collection = false;
     static constexpr bool supports_implicit_argument = false;
-    static constexpr bool supports_time_series = false;
+    static constexpr bool supports_time_series = true;
 };
 
 } // namespace bg

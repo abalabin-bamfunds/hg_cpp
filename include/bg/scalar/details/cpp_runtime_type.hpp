@@ -38,7 +38,7 @@ template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Bas
                alignof(Stored),
                Traits::uses_variable_memory,
                Traits::requires_finalization,
-               !is_opaque_v<T> && util::byte_copy_initializable<Stored>,
+               util::byte_copy_initializable<Stored>,
                std::forward<Components>(components)...} {}
 
     [[nodiscard]] bool copy_inline(ScalarDataMode mode, std::uintptr_t source,
@@ -317,8 +317,6 @@ class CppScalarRuntimeType<Opaque<T>> final : public CppScalarRuntimeTypeBase<Op
 
   public:
     CppScalarRuntimeType() : Base{cpp_scalar_type<Opaque<T>>()} {}
-
-    void construct_initial_value(void *) const noexcept override { std::terminate(); }
 
     void copy_construct(void *destination, const void *source, allocator &) const override {
         std::construct_at(static_cast<T *>(destination), *static_cast<const T *>(source));

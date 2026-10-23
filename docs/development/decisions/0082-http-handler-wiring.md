@@ -21,6 +21,9 @@ runtime handle for the reply sink and a public bound-port time series. The
 transport runtime owns response correlation and socket operations. Queue
 messages contain public request data.
 
+The runtime handle uses `TS<Opaque<ServerRuntime*>>` so the transport remains
+an extension-private C++ type.
+
 ## Consequences
 
 Graph authors supply the handler's response through its output. They do not

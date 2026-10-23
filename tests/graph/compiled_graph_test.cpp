@@ -10,6 +10,7 @@
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/util/byte_copy.hpp>
 #include <bg/util/static_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -782,6 +783,10 @@ struct private_data {
     int value;
 };
 
+struct opaque_output_value {
+    int value{};
+};
+
 struct opaque_sink_definition {
     inline static private_data *observed{};
     inline static int observed_value{};
@@ -795,14 +800,40 @@ struct opaque_sink_definition {
     }
 };
 
-struct unsupported_opaque_output {
+struct opaque_pointer_source_definition {
+    Scalar<Opaque<private_data *>> source;
     Out<TS<Opaque<private_data *>>> output;
 
-    void evaluate() const {}
+    void start() const { output.set(*source); }
+};
+
+struct opaque_object_source_definition {
+    Out<TS<Opaque<opaque_output_value>>> output;
+
+    void start() const { output.set(opaque_output_value{42}); }
+};
+
+struct opaque_output_observer_definition {
+    In<TS<Opaque<opaque_output_value>>> object;
+    In<TS<Opaque<private_data *>>> pointer;
+
+    void evaluate() const {
+        observed_object_value = object->value;
+        observed_pointer = pointer.value();
+    }
+
+    inline static int observed_object_value{};
+    inline static private_data *observed_pointer{};
 };
 
 static_assert(AggregateNodeClass<opaque_sink_definition>);
-static_assert(!AggregateNodeClass<unsupported_opaque_output>);
+static_assert(AggregateNodeClass<opaque_pointer_source_definition>);
+static_assert(AggregateNodeClass<opaque_object_source_definition>);
+static_assert(AggregateNodeClass<opaque_output_observer_definition>);
+static_assert(!scalar_storage_traits<Opaque<private_data>>::supports_equality);
+static_assert(!scalar_storage_traits<Opaque<opaque_output_value>>::supports_equality);
+static_assert(util::byte_copy_initializable<opaque_output_value>);
+static_assert(!scalar_declaration_traits<Opaque<private_data>>::supports_implicit_argument);
 
 } // namespace
 
@@ -835,4 +866,34 @@ TEST_CASE("a compiled graph owns an opaque scalar copy", "[compiled_graph][featu
     CHECK(stored_object->value == 42);
     CHECK(opaque_sink_definition::observed == &value);
     CHECK(opaque_sink_definition::observed_value == 42);
+}
+
+TEST_CASE("opaque scalar time series propagate owning values and borrowed pointers",
+          "[compiled_graph][feature:graph-compilation][feature:time-series-storage][series:value][scalar:opaque]") {
+    const auto object_source = node<opaque_object_source_definition>();
+    const auto pointer_source = node<opaque_pointer_source_definition>();
+    const auto observe = node<opaque_output_observer_definition>();
+    auto borrowed = private_data{84};
+    auto wiring = GraphWiring{};
+
+    {
+        WiringContext context{wiring};
+        observe(object_source(), pointer_source(ScalarValue<Opaque<private_data *>>{&borrowed}));
+    }
+
+    wiring.finalize();
+    const auto graph = CompiledGraph{wiring};
+    auto runtime_global_state = GlobalState{};
+    RuntimeGraph runtime{graph, runtime_global_state};
+    const auto time = MIN_DT + std::chrono::microseconds{1};
+
+    opaque_output_observer_definition::observed_object_value = 0;
+    opaque_output_observer_definition::observed_pointer = nullptr;
+    runtime.start(time);
+    borrowed.value = 85;
+    runtime.evaluate(time);
+
+    CHECK(opaque_output_observer_definition::observed_object_value == 42);
+    REQUIRE(opaque_output_observer_definition::observed_pointer == &borrowed);
+    CHECK(opaque_output_observer_definition::observed_pointer->value == 85);
 }
