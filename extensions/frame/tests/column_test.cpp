@@ -582,6 +582,103 @@ void test_native_row_slots_map_external_ids_and_reuse_clean_cells() {
             "physical slot reuse retained a stale cell or external row mapping");
 }
 
+void test_native_column_compaction_preserves_values_order_and_deltas() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto column = NativeColumn<bool>{};
+    auto release = util::scope_exit{[&]() noexcept { column.release(memory); }};
+
+    const auto first_time = MIN_DT + EvaluationTime::duration{1};
+    auto ids = std::array<row_id_t, 16>{};
+    auto expected = std::array<std::optional<bool>, 16>{};
+    for (auto position = std::size_t{}; position != ids.size(); ++position) {
+        expected[position] = position == 3 || position == 10 ? std::nullopt : std::optional<bool>{position % 2 == 0};
+        ids[position] = column.add(expected[position], first_time, memory);
+    }
+
+    const auto *physical_rows = column.scalar_storage().physical_rows;
+    auto revision = physical_rows->layout_revision();
+    column.compact(memory);
+    require(physical_rows->layout_revision() == revision,
+            "compacting a dense native column changed its physical layout revision");
+
+    const auto second_time = first_time + EvaluationTime::duration{1};
+    for (const auto position : std::array<std::size_t, 5>{1, 4, 7, 10, 13}) {
+        require(column.erase(ids[position], second_time, memory), "native column compaction setup could not erase a row");
+        expected[position] = std::nullopt;
+    }
+    require(column.set(ids[15], false, second_time, memory), "native column compaction setup could not modify a row");
+    expected[15] = false;
+
+    auto expected_rows = std::vector<std::pair<row_id_t, std::optional<bool>>>{};
+    for (auto position = std::size_t{}; position != ids.size(); ++position)
+        if (position != 1 && position != 4 && position != 7 && position != 10 && position != 13)
+            expected_rows.emplace_back(ids[position], expected[position]);
+
+    const auto collect = [](const auto &index) {
+        auto result = std::vector<row_id_t>{};
+        for (const auto id : index)
+            result.push_back(id);
+        return result;
+    };
+    const auto added_before = collect(column.added());
+    const auto modified_before = collect(column.modified());
+    const auto removed_before = collect(column.removed());
+    revision = physical_rows->layout_revision();
+    column.compact(memory);
+    require(physical_rows->layout_revision() == revision + 1,
+            "native column compaction did not advance its layout revision exactly once");
+    require(collect(column.added()) == added_before && collect(column.modified()) == modified_before &&
+                collect(column.removed()) == removed_before,
+            "native column compaction changed row delta indexes");
+
+    auto rows = std::vector<std::pair<row_id_t, std::optional<bool>>>{};
+    for (auto position = std::size_t{}; position != column.size(); ++position)
+        rows.emplace_back(column.id_at(position), column.cell_at(position));
+    require(rows == expected_rows, "native column compaction changed row order, values, or nulls");
+
+    column.compact(memory);
+    require(physical_rows->layout_revision() == revision + 1,
+            "compacting an already packed native column changed its layout revision");
+}
+
+void test_computed_tsc_compaction_moves_native_cells() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto output = ColumnComputedOutputStorage<i64>{};
+    auto release = util::scope_exit{[&]() noexcept { output.release(memory); }};
+
+    auto expected = std::array<std::optional<i64>, 16>{};
+    for (auto id = row_id_t{}; id != expected.size(); ++id) {
+        expected[id] = id == 3 || id == 10 ? std::nullopt : std::optional<i64>{static_cast<i64>(id * 10)};
+        output.physical_rows.insert(id, memory);
+        output.cells.add(output.physical_rows, id, expected[id], memory);
+    }
+    for (const auto id : std::array<row_id_t, 5>{1, 4, 7, 10, 13}) {
+        const auto slot = output.physical_rows.slot_of(id);
+        output.cells.erase_slot(slot, id, memory);
+        output.physical_rows.erase(id);
+        expected[id] = std::nullopt;
+    }
+
+    const auto revision = output.physical_rows.layout_revision();
+    output.compact(memory);
+    require(output.physical_rows.layout_revision() == revision + 1,
+            "computed TSC compaction did not advance its row-layout revision");
+    for (auto id = row_id_t{}; id != expected.size(); ++id) {
+        if (id == 1 || id == 4 || id == 7 || id == 10 || id == 13)
+            continue;
+        require(output.cells.cell(output.physical_rows, id) == expected[id],
+                "computed TSC compaction changed a cell or its null state");
+    }
+}
+
 void test_tsc_view_uses_logical_order_and_validates_added_local_rows() {
     using namespace bg;
     using namespace bg::frame;
@@ -1263,6 +1360,8 @@ int main() {
         test_failed_mutations_leave_rows_unchanged();
         test_snapshot_lifetime_and_sparse_batches();
         test_native_row_slots_map_external_ids_and_reuse_clean_cells();
+        test_native_column_compaction_preserves_values_order_and_deltas();
+        test_computed_tsc_compaction_moves_native_cells();
         test_tsc_view_uses_logical_order_and_validates_added_local_rows();
         test_tsc_view_rejects_native_rows_from_another_logical_domain();
         test_tsc_view_revalidates_coverage_when_mapping_changes();

@@ -709,6 +709,22 @@ void test_native_frame_composite_keys() {
                     storage.removed_key(transient).empty() && !storage.find_key(transient_key),
                 "same-cycle add/remove published a removal or retained a transient key");
 
+        require(storage.erase(second, second_time, memory), "second keyed frame row could not be removed");
+        const auto added_after_gap = add(i64{10}, i64{10}, 10.0, 100, second_time);
+        const auto added_after_gap_key = std::array{KeyValue{i64{10}}, KeyValue{i64{10}}};
+        require(storage.find_key(first_key) == replacement && storage.find_key(added_after_gap_key) == added_after_gap &&
+                    storage.removed_key(first).size() == 2 && storage.removed_key(second).size() == 2,
+                "keyed frame compaction setup did not retain removed keys around live rows");
+
+        storage.compact(memory);
+        require(storage.rows().slot_of(replacement) == 0 && storage.rows().slot_of(added_after_gap) == 1 &&
+                    storage.find_key(first_key) == replacement && storage.find_key(added_after_gap_key) == added_after_gap &&
+                    storage.removed().contains(first) && storage.removed().contains(second) &&
+                    storage.removed_key(first).size() == 2 && storage.removed_key(second).size() == 2 &&
+                    std::get<i64>(storage.removed_key(first)[1]) == 0 &&
+                    std::get<i64>(storage.removed_key(second)[1]) == 1,
+                "keyed frame compaction damaged live lookup or retained removed keys");
+
         storage.clear(second_time + EvaluationTime::duration{1}, memory);
         require(storage.removed().contains(replacement) && storage.removed_key(replacement).size() == 2 &&
                     storage.removed_key(first).empty(),
@@ -718,6 +734,121 @@ void test_native_frame_composite_keys() {
     });
     require(resource.allocations == resource.deallocations,
             "native keyed frame storage leaked allocations");
+}
+
+void test_native_frame_compaction_rolls_back_a_failed_field_and_can_retry() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    constexpr auto first_live = row_id_t{1469};
+    constexpr auto empty_live = row_id_t{1471};
+    constexpr auto anchor_first = row_id_t{1474};
+    constexpr auto anchor_last = row_id_t{1481};
+    auto allocation_failures = std::size_t{};
+    auto failed_after_move = false;
+    auto succeeded = false;
+
+    for (auto failure = std::size_t{1}; !succeeded; ++failure) {
+        auto resource = FailingResource{};
+        const auto memory = allocator{resource};
+        with_native_storage(frame_schema_type<Quotes>(), memory, [&](NativeFrameStorage &storage) {
+            const auto first_time = MIN_DT + EvaluationTime::duration{1};
+            for (auto id = row_id_t{}; id <= anchor_last; ++id) {
+                const auto size = id == anchor_last ? std::optional<i64>{81} : std::nullopt;
+                const auto bid = id == first_live ? std::optional<double>{14.5} : std::nullopt;
+                const auto ask = std::optional<double>{};
+                const auto values = std::array<const void *, 3>{std::addressof(size), std::addressof(bid),
+                                                                std::addressof(ask)};
+                require(storage.add(values, first_time, memory) == id,
+                        "frame compaction setup did not allocate sequential row IDs");
+            }
+
+            const auto second_time = first_time + EvaluationTime::duration{1};
+            for (auto id = row_id_t{}; id <= anchor_last; ++id) {
+                const auto retained = id == first_live || id == empty_live ||
+                                      (id >= anchor_first && id <= anchor_last);
+                if (!retained)
+                    require(storage.erase(id, second_time, memory),
+                            "frame compaction setup could not erase a row");
+            }
+
+            const auto &rows = storage.rows().slots();
+            const auto revision = rows.layout_revision();
+            resource.fail_at = resource.attempts + failure;
+            try {
+                storage.compact(memory);
+                succeeded = true;
+            } catch (const std::bad_alloc &) {
+                ++allocation_failures;
+                failed_after_move = failed_after_move || rows.layout_revision() != revision;
+                resource.fail_at = 0;
+
+                const auto *size_cells = static_cast<const NativeColumnData<i64> *>(storage.native_field(0));
+                const auto *bid_cells = static_cast<const NativeColumnData<double> *>(storage.native_field(1));
+                const auto *ask_cells = static_cast<const NativeColumnData<double> *>(storage.native_field(2));
+                require(storage.size() == 10 && rows.contains(first_live) && rows.contains(empty_live) &&
+                            rows.contains(anchor_last),
+                        "failed frame compaction damaged row lookup");
+                require(storage.removed().count() == 1472, "failed frame compaction changed removal deltas");
+                require(size_cells->cell(storage.rows(), anchor_last) == i64{81},
+                        "failed frame compaction damaged a later field");
+                require(bid_cells->cell(storage.rows(), first_live) == 14.5 &&
+                            !ask_cells->cell(storage.rows(), first_live),
+                        "failed frame compaction damaged earlier or null fields");
+
+                storage.compact(memory);
+            }
+
+            const auto *size_cells = static_cast<const NativeColumnData<i64> *>(storage.native_field(0));
+            const auto *bid_cells = static_cast<const NativeColumnData<double> *>(storage.native_field(1));
+            const auto *ask_cells = static_cast<const NativeColumnData<double> *>(storage.native_field(2));
+            auto expected_ids = std::array<row_id_t, 10>{first_live, empty_live, anchor_first, anchor_first + 1,
+                                                         anchor_first + 2, anchor_first + 3, anchor_first + 4,
+                                                         anchor_first + 5, anchor_first + 6, anchor_last};
+            for (auto position = std::size_t{}; position != expected_ids.size(); ++position)
+                require(storage.id_at(position) == expected_ids[position],
+                        "frame compaction changed row order after failure or retry");
+            require(rows.slot_of(first_live) == 1472 && rows.slot_of(empty_live) == 1473 &&
+                        rows.slot_of(anchor_last) == 1481 &&
+                        size_cells->cell(storage.rows(), anchor_last) == i64{81} &&
+                        bid_cells->cell(storage.rows(), first_live) == 14.5 &&
+                        !ask_cells->cell(storage.rows(), first_live),
+                    "frame compaction or retry damaged row-to-cell mappings");
+        });
+        require(resource.allocations == resource.deallocations,
+                "failed frame compaction or its retry leaked native storage");
+    }
+    require(allocation_failures != 0 && failed_after_move,
+            "frame compaction failure injection did not cover a failure after a row move committed");
+}
+
+void test_zero_column_frame_compaction_uses_only_row_mappings() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    const auto &schema = static_cast<const Schema &>(frame_schema_type<EmptySchema>());
+    with_native_storage(schema, memory, [&](NativeFrameStorage &storage) {
+        const auto first_time = MIN_DT + EvaluationTime::duration{1};
+        const auto values = std::span<const void *const>{};
+        auto ids = std::array<row_id_t, 8>{};
+        for (auto &id : ids)
+            id = storage.add(values, first_time, memory);
+
+        const auto second_time = first_time + EvaluationTime::duration{1};
+        for (const auto position : std::array<std::size_t, 3>{1, 3, 5})
+            require(storage.erase(ids[position], second_time, memory),
+                    "zero-column frame compaction setup could not erase a row");
+
+        const auto revision = storage.rows().slots().layout_revision();
+        storage.compact(memory);
+        require(storage.rows().size() == 5 && storage.rows().id_at(0) == ids[0] &&
+                    storage.rows().id_at(1) == ids[2] && storage.rows().id_at(2) == ids[4] &&
+                    storage.rows().id_at(3) == ids[6] && storage.rows().id_at(4) == ids[7] &&
+                    storage.rows().slots().layout_revision() == revision + 1,
+                "zero-column frame compaction did not pack and preserve its row mapping");
+    });
 }
 
 void test_frame_key_schema_validation() {
@@ -6455,6 +6586,177 @@ void test_nested_and_fragmented_row_set_span_proofs() {
     });
 }
 
+void test_filtered_span_proofs_refresh_after_source_compaction() {
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto source = NativeFrame<Quotes>{};
+    auto release_source = util::scope_exit{[&]() noexcept { source.core().release(memory); }};
+    const auto first_time = MIN_DT + EvaluationTime::duration{1};
+    auto ids = std::array<row_id_t, 9>{};
+    for (auto index = std::size_t{}; index != ids.size(); ++index) {
+        const auto value = static_cast<double>(index + 10);
+        ids[index] = source.add(Quotes<Cell>{.size = Cell<i64>{static_cast<i64>(index)},
+                                             .bid = Cell<double>{value}, .ask = Cell<double>{value + 1}},
+                                first_time, memory);
+    }
+    const auto second_time = first_time + EvaluationTime::duration{1};
+    require(source.erase(ids[2], second_time, memory) && source.erase(ids[7], second_time, memory),
+            "filtered span compaction setup could not create separated live runs");
+
+    const auto all_fields = std::array<std::size_t, 3>{0, 1, 2};
+    auto select_first_two = [&](row_id_t id) { return id < ids[2]; };
+    with_runtime_view_storage<Quotes>(memory, [&](auto &outer_filter, const auto &outer_runtime) {
+        with_runtime_view_storage<Quotes>(memory, [&](auto &inner_filter, const auto &inner_runtime) {
+            auto source_input = native_frame_input(source);
+            static_cast<void>(bind_filter(outer_filter, source_input, all_fields, std::size_t{0},
+                                          select_first_two, second_time, memory));
+            auto outer_output = outer_runtime.input_storage(std::addressof(outer_filter));
+            static_cast<void>(bind_filter(inner_filter, outer_output, all_fields, std::size_t{0},
+                                          select_first_two, second_time, memory));
+
+            auto inner_output = inner_runtime.input_storage(std::addressof(inner_filter));
+            const auto verify_span = [&](const FrameReadStorage &output, row_id_t first_slot) {
+                auto spans = std::size_t{};
+                output.rows.each_span([&](const RowSetSpan &span) {
+                    ++spans;
+                    require(span.physical_rows == std::addressof(source.rows().slots()) &&
+                                span.first_slot == first_slot && span.ids.size() == 2 &&
+                                span.ids[0] == ids[0] && span.ids[1] == ids[1],
+                            "filtered frame did not refresh its contiguous source slot proof");
+                });
+                require(spans == 1, "filtered frame split a contiguous selected row span");
+            };
+            verify_span(outer_output, 0);
+            verify_span(inner_output, 0);
+
+            auto bids = std::optional<ColumnSeriesView<double>>{};
+            inner_output.bind_column_series_view(util::symbol{"bid"}, bids);
+            require(bids->cell(ids[0]) == 10.0 && bids->cell(ids[1]) == 11.0,
+                    "nested filtered TSC did not read its selected source cells before compaction");
+
+            const auto revision = source.rows().slots().layout_revision();
+            source.core().compact(memory);
+            require(source.rows().slots().layout_revision() == revision + 1 &&
+                        source.rows().slot_of(ids[0]) == 1 && source.rows().slot_of(ids[1]) == 2,
+                    "frame compaction setup did not move the selected span to a new physical start");
+
+            // Neither filter is rebound after compaction. Their cached span proofs must refresh
+            // from the source layout revision before a downstream reader uses them.
+            verify_span(outer_output, 1);
+            verify_span(inner_output, 1);
+            require(bids->cell(ids[0]) == 10.0 && bids->cell(ids[1]) == 11.0,
+                    "nested filtered TSC read stale source cells after compaction");
+        });
+    });
+}
+
+void test_computed_tsf_compaction_moves_only_its_own_mapping() {
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    auto memory = allocator{resource};
+    const auto schema_fields = std::array{
+        SchemaField{util::symbol{"bid"}, &cpp_scalar_type<double>()},
+        SchemaField{util::symbol{"ask"}, &cpp_scalar_type<double>()},
+        SchemaField{util::symbol{"mid"}, &cpp_scalar_type<double>()},
+    };
+    const auto &schema = anonymous_schema(schema_fields);
+    const auto &series_type = frame_series_type(schema, TimeSeriesGuarantee::ordinary);
+    const auto &filter_runtime = static_cast<const FrameSeriesRuntimeType &>(
+        frame_view_time_series_runtime_type<SCHEMA>(series_type));
+    const auto computed_names = std::array{util::symbol{"mid"}};
+    const auto &computed_runtime = static_cast<const FrameSeriesRuntimeType &>(
+        frame_computed_time_series_runtime_type(series_type, computed_names));
+    const auto first_time = MIN_DT + EvaluationTime::duration{1};
+    auto ids = std::array<row_id_t, 8>{};
+    with_native_storage(schema, memory, [&](NativeFrameStorage &source) {
+        for (auto index = std::size_t{}; index != ids.size(); ++index) {
+            const auto bid = std::optional<double>{static_cast<double>(index + 10)};
+            const auto ask = std::optional<double>{static_cast<double>(index + 11)};
+            const auto mid = std::optional<double>{};
+            const auto values = std::array<const void *, 3>{std::addressof(bid), std::addressof(ask),
+                                                            std::addressof(mid)};
+            ids[index] = source.add(values, first_time, memory);
+        }
+
+        const auto allocate = [&](const FrameSeriesRuntimeType &runtime) {
+            auto *value = ::operator new(runtime.value_size(), std::align_val_t{runtime.value_alignment()});
+            runtime.construct_initial_value(value);
+            return value;
+        };
+        auto *filter_allocation = allocate(filter_runtime);
+        auto release_filter = util::scope_exit{[&]() noexcept {
+            filter_runtime.destroy_value(filter_allocation, memory);
+            ::operator delete(filter_allocation, std::align_val_t{filter_runtime.value_alignment()});
+        }};
+        auto *computed_allocation = allocate(computed_runtime);
+        auto release_computed = util::scope_exit{[&]() noexcept {
+            computed_runtime.destroy_value(computed_allocation, memory);
+            ::operator delete(computed_allocation, std::align_val_t{computed_runtime.value_alignment()});
+        }};
+        auto &filter = *static_cast<RuntimeFrameViewOutputStorage *>(filter_allocation);
+        auto &output = *static_cast<RuntimeFrameViewOutputStorage *>(computed_allocation);
+
+        const auto source_input = bg::frame::details::frame_read_storage(source, std::addressof(source), nullptr);
+        auto select_even_rows = [&](row_id_t id) { return id % 2 == 0; };
+        static_cast<void>(filter.bind_filter(source_input, {}, true, {},
+                                             runtime_filter_evaluator(select_even_rows), first_time, memory));
+        auto filtered_input = filter_runtime.input_storage(filter_allocation);
+        require(output.bind_projection(filtered_input, {}, first_time, memory),
+                "runtime-schema computed TSF did not bind its filtered source rows");
+        for (auto index = std::size_t{}; index != ids.size(); index += 2) {
+            const auto mid = std::optional<double>{static_cast<double>(100 + ids[index])};
+            require(output.set_computed(2, ids[index], std::addressof(mid), first_time, memory),
+                    "runtime-schema computed TSF did not initialize a computed cell");
+        }
+
+        const auto initial_output = computed_runtime.input_storage(computed_allocation);
+        const auto initial_mid = initial_output.column(initial_output.field_index(util::symbol{"mid"}));
+        const auto initial_ask = initial_output.column(initial_output.field_index(util::symbol{"ask"}));
+        require(initial_mid.physical_rows != initial_ask.physical_rows &&
+                    initial_mid.physical_rows->slot_of(ids[2]) == 1 &&
+                    initial_ask.physical_rows->slot_of(ids[2]) == 2 &&
+                    initial_output.generic_column(initial_output.field_index(util::symbol{"mid"}))
+                            .view<double>()
+                            .cell(1) == 102.0,
+                "runtime-schema computed TSF did not use an independent computed-column mapping");
+
+        auto select_without_second_row = [&](row_id_t id) { return id % 2 == 0 && id != ids[2]; };
+        const auto second_time = first_time + EvaluationTime::duration{1};
+        static_cast<void>(filter.bind_filter(source_input, {}, true, {},
+                                             runtime_filter_evaluator(select_without_second_row), second_time,
+                                             memory));
+        filtered_input = filter_runtime.input_storage(filter_allocation);
+        require(output.bind_projection(filtered_input, {}, second_time, memory) &&
+                    output.removed_rows.contains(ids[2]),
+                "runtime-schema computed TSF did not remove a row from its computed mapping");
+
+        const auto before_compaction = computed_runtime.input_storage(computed_allocation);
+        const auto mid_index = before_compaction.field_index(util::symbol{"mid"});
+        const auto ask_index = before_compaction.field_index(util::symbol{"ask"});
+        const auto *computed_rows = before_compaction.column(mid_index).physical_rows;
+        const auto *source_rows = before_compaction.column(ask_index).physical_rows;
+        const auto revision = computed_rows->layout_revision();
+        require(computed_rows != source_rows && computed_rows->slot_of(ids[0]) == 0 &&
+                    computed_rows->slot_of(ids[4]) == 2 && source_rows->slot_of(ids[0]) == 0 &&
+                    source_rows->slot_of(ids[4]) == 4,
+                "runtime-schema computed TSF did not separate source and computed row layouts");
+
+        output.compact(memory);
+        require(computed_rows->layout_revision() == revision + 1 && computed_rows->slot_of(ids[0]) == 1 &&
+                    source_rows->slot_of(ids[0]) == 0 && source_rows->slot_of(ids[4]) == 4,
+                "runtime-schema computed TSF compaction changed borrowed rows or did not move computed rows");
+
+        const auto compacted_output = computed_runtime.input_storage(computed_allocation);
+        auto mids = std::optional<ColumnSeriesView<double>>{};
+        auto asks = std::optional<ColumnSeriesView<double>>{};
+        compacted_output.bind_column_series_view(util::symbol{"mid"}, mids);
+        compacted_output.bind_column_series_view(util::symbol{"ask"}, asks);
+        require(mids->cell(ids[0]) == 100.0 && mids->cell(ids[4]) == 104.0 &&
+                    mids->cell(ids[6]) == 106.0 && asks->cell(ids[0]) == 11.0 &&
+                    asks->cell(ids[4]) == 15.0 && asks->cell(ids[6]) == 17.0,
+                "runtime-schema computed TSF compaction damaged computed or borrowed cells");
+    });
+}
+
 void test_filter_validates_input_before_evaluation() {
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -7709,6 +8011,8 @@ int main() {
         test_frame_key_schema_validation();
         test_frame_scalar_key_validation();
         test_native_frame_composite_keys();
+        test_native_frame_compaction_rolls_back_a_failed_field_and_can_retry();
+        test_zero_column_frame_compaction_uses_only_row_mappings();
         test_native_frame_key_insert_rolls_back();
         test_native_frame_key_removal_retention_rolls_back();
         test_runtime_native_storage_mixed_and_zero_column_schemas();
@@ -7769,6 +8073,7 @@ int main() {
         test_filter_row_set_reads_cached_source_order();
         test_filtered_row_set_reuses_order_prefix();
         test_nested_and_fragmented_row_set_span_proofs();
+        test_filtered_span_proofs_refresh_after_source_compaction();
         test_filter_validates_input_before_evaluation();
         test_full_filter_request_skips_selected_order_rebuild();
         test_empty_full_filter_request_skips_evaluator();
@@ -7801,6 +8106,7 @@ int main() {
         test_computed_tsf_callable_and_aggregate_runtime_hooks();
         test_computed_tsf_runtime_cache_and_source_rebinding();
         test_runtime_schema_computed_tsf_output();
+        test_computed_tsf_compaction_moves_only_its_own_mapping();
         test_scalar_variable_frame_input();
     } catch (const std::exception &error) {
         std::cerr << "bg_frame_frame_test: " << error.what() << '\n';

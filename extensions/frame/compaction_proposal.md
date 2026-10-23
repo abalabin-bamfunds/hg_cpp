@@ -1,6 +1,8 @@
 # Compaction proposal
 
-Status: proposed; implementation has not started.
+Status: manual compaction mechanics and coverage are implemented in this lane.
+Automatic invocation-end scheduling and the compaction policy remain
+unimplemented.
 
 Agreed direction: mutations collect cheap statistics; storage assesses final
 occupancy after mutation and plans and allocates only when justified, at the
@@ -41,30 +43,16 @@ null storage, and allocation requirements. Evaluate candidates by both movement
 cost and the batches or Arrow chunks they remove. A deletion percentage alone
 does not describe either cost.
 
-The storage cannot infer future consumer use from occupancy. Traversal and Arrow
-export can supply observations to the owner; they do not move its cells during
-a read. Estimate reuse from observed consumption and calibrate the cost model
-with benchmarks. In particular, Arrow chunk construction has a different cost
-from native batch traversal. Do not impose Arrow-driven maintenance on an
-output that only receives ID-based incremental reads.
-
-Conceptually compare:
-
-```text
-maintenance = bytes moved + mapping/validity work + allocations + cached-view refresh
-benefit     = estimated reuse * saved cost per traversal/export
-```
-
-These terms need measured time costs, not addition of raw byte and chunk counts.
-Thresholds and the minimum consumption statistics remain to be selected from
-measurements. Include leaving the storage unchanged among the candidates.
+Measure native batch traversal and Arrow export separately; their costs differ.
+The automatic policy, its thresholds, and any required statistics remain open
+pending measurements.
 
 Mutation only collects cheap statistics about affected buffer ranges. It does
 not construct movement plans or allocate compaction buffers. Assess the final
 occupancy after all mutations in the invocation: additions can refill holes
 created by earlier removals. Plan and allocate only if that final state warrants
 maintenance. Remember unsuccessful assessments until sufficient changes or
-consumption justify another assessment.
+additional changes justify another assessment.
 
 ## Timing
 
@@ -93,8 +81,8 @@ invocation-end callbacks. It may modify outputs on resumption only if that call
 returns complete. Returning pending with active callbacks is an evaluation
 error. Registrations do not need to survive suspension.
 
-The callback API must define owner cancellation and failure cleanup. The generic
-BG API requires review. No frame-specific policy belongs in BG core.
+The callback API must define owner cancellation and failure cleanup. No
+frame-specific policy belongs in BG core.
 
 ## Removal lifetime
 
@@ -233,8 +221,8 @@ IDs or discard removal-cycle information.
 - Measure the break-even traversal/export count and policy overhead, including
   outputs consumed only by ID-based incremental reads.
 
-Proposed direction: storage-owned, cost-based maintenance that preserves row
-order, with bidirectional movement and revision-checked cached proofs, executed
-through explicit invocation-end callbacks before downstream consumers run.
-Policy measurements and the BG callback API remain open. Review this design
-before coding.
+Implemented mechanics: storage-owned manual compaction preserves row order,
+supports movement in either direction, and uses revision-checked cached proofs.
+Next, connect compaction scheduling to explicit invocation-end callbacks so
+maintenance runs before downstream consumers. The automatic decision policy
+remains open pending measurements.

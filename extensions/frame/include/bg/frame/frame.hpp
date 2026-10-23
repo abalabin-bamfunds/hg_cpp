@@ -188,6 +188,10 @@ struct NativeFrameFieldLayout {
     using add_function = void (*)(void *, NativeRows &, row_id_t, const void *, allocator);
     using set_function = void (*)(void *, NativeRows &, row_id_t, const void *, allocator);
     using erase_function = void (*)(void *, row_id_t, row_id_t, allocator);
+    using prepare_relocation_function = void (*)(void *, row_id_t, row_id_t, allocator);
+    using rollback_relocation_function = void (*)(void *, row_id_t, allocator) noexcept;
+    using finish_relocation_function = void (*)(void *, row_id_t, allocator) noexcept;
+    using block_end_function = std::uint64_t (*)(const void *, row_id_t) noexcept;
     using reset_function = void (*)(void *);
     using release_function = void (*)(void *, allocator);
     using modified_function = const util::index<> *(*)(const void *) noexcept;
@@ -233,6 +237,10 @@ struct NativeFrameFieldLayout {
     add_function add{};
     set_function set{};
     erase_function erase{};
+    prepare_relocation_function prepare_relocation{};
+    rollback_relocation_function rollback_relocation{};
+    finish_relocation_function finish_relocation{};
+    block_end_function block_end{};
     reset_function reset{};
     release_function release{};
     modified_function modified{};
@@ -1251,6 +1259,30 @@ class NativeFrameStorage {
         return true;
     }
 
+    void compact(allocator memory) {
+        rows_.slots().compact(
+            memory,
+            [&](row_id_t slot) {
+                auto end = std::numeric_limits<std::uint64_t>::max();
+                for (std::size_t index = 0; index != layout_->fields.size(); ++index)
+                    end = std::min(end, layout_->fields[index].block_end(native_field(index), slot));
+                return end;
+            },
+            [&](row_id_t, row_id_t source, row_id_t destination, auto &&commit_mapping) {
+                auto rollback = util::scope_exit{[&]() noexcept {
+                    for (std::size_t index = layout_->fields.size(); index != 0; --index)
+                        layout_->fields[index - 1].rollback_relocation(
+                            native_field(index - 1), destination, memory);
+                }};
+                for (std::size_t index = 0; index != layout_->fields.size(); ++index)
+                    layout_->fields[index].prepare_relocation(native_field(index), source, destination, memory);
+                std::invoke(commit_mapping);
+                rollback.release();
+                for (std::size_t index = 0; index != layout_->fields.size(); ++index)
+                    layout_->fields[index].finish_relocation(native_field(index), source, memory);
+            });
+    }
+
     void clear(EvaluationTime time, allocator memory) {
         reserve_changed_columns(memory);
         begin_cycle(time, memory);
@@ -1848,6 +1880,18 @@ template <cell_type Cell> NativeFrameFieldLayout make_native_frame_field_layout(
         .erase = [](void *field, row_id_t slot, row_id_t id, allocator memory) {
             static_cast<NativeColumnData<Cell> *>(field)->erase_slot(slot, id, memory);
         },
+        .prepare_relocation = [](void *field, row_id_t source, row_id_t destination, allocator memory) {
+            static_cast<NativeColumnData<Cell> *>(field)->prepare_relocation(source, destination, memory);
+        },
+        .rollback_relocation = [](void *field, row_id_t destination, allocator memory) noexcept {
+            static_cast<NativeColumnData<Cell> *>(field)->rollback_relocation(destination, memory);
+        },
+        .finish_relocation = [](void *field, row_id_t source, allocator memory) noexcept {
+            static_cast<NativeColumnData<Cell> *>(field)->clear_physical_slot(source, memory);
+        },
+        .block_end = [](const void *storage, row_id_t slot) noexcept {
+            return static_cast<const NativeColumnData<Cell> *>(storage)->block_containing_slot(slot).end;
+        },
         .reset = [](void *field) { static_cast<NativeColumnData<Cell> *>(field)->reset_changes(); },
         .release = [](void *field, allocator memory) { static_cast<NativeColumnData<Cell> *>(field)->release(memory); },
         .modified = [](const void *field) noexcept -> const util::index<> * {
@@ -1989,13 +2033,14 @@ class RuntimeFrameViewOutputStorage {
     struct SelectedOrderMapping {
         const NativeRowSlots *physical_rows{};
         row_id_t first_slot{};
+        std::uint64_t layout_revision{};
     };
 
     const RuntimeFrameViewLayout *layout{};
     SelectedRows previous_rows;
     SelectedRows selected_rows;
     util::sparse_bunch<row_id_t> selected_order;
-    util::contiguous_bunch<SelectedOrderMapping> selected_order_mappings;
+    mutable util::contiguous_bunch<SelectedOrderMapping> selected_order_mappings;
     util::sparse_bunch<row_id_t>::size_type selected_order_size{};
     util::sparse_bunch<row_id_t>::size_type selected_order_initialized{};
     RowSet source_rows{};
@@ -2086,7 +2131,21 @@ class RuntimeFrameViewOutputStorage {
                         std::min<std::uint64_t>(block.end, storage.selected_order_size));
                     const auto count = static_cast<std::size_t>(end - position);
                     const auto *ids = static_cast<const row_id_t *>(block.data) + position - block.first;
-                    const auto &mapping = storage.selected_order_mappings[mapping_index++];
+                    auto &mapping = storage.selected_order_mappings[mapping_index++];
+                    if (mapping.physical_rows != nullptr &&
+                        mapping.layout_revision != mapping.physical_rows->layout_revision()) {
+                        const auto *physical_rows = mapping.physical_rows;
+                        auto contiguous = physical_rows->contains(ids[0]);
+                        const auto first_slot = contiguous ? physical_rows->slot_of(ids[0]) : row_id_t{};
+                        for (auto offset = std::size_t{1}; contiguous && offset != count; ++offset) {
+                            const auto id = ids[offset];
+                            contiguous = physical_rows->contains(id) &&
+                                         physical_rows->slot_of(id) == static_cast<std::uint64_t>(first_slot) + offset;
+                        }
+                        mapping.physical_rows = contiguous ? physical_rows : nullptr;
+                        mapping.first_slot = contiguous ? first_slot : row_id_t{};
+                        mapping.layout_revision = physical_rows->layout_revision();
+                    }
                     const auto span = RowSetSpan{std::span<const row_id_t>{ids, count},
                                                  mapping.physical_rows, mapping.first_slot};
                     visit(target, span);
@@ -2145,7 +2204,8 @@ class RuntimeFrameViewOutputStorage {
                         span.physical_rows,
                         span.physical_rows == nullptr
                             ? row_id_t{}
-                            : static_cast<row_id_t>(static_cast<std::uint64_t>(span.first_slot) + offset)};
+                            : static_cast<row_id_t>(static_cast<std::uint64_t>(span.first_slot) + offset),
+                        span.physical_rows == nullptr ? 0 : span.physical_rows->layout_revision()};
                     if (mapping_size == selected_order_mappings.size())
                         selected_order_mappings.emplace_back(memory.memory_resource(), mapping);
                     else
@@ -2199,6 +2259,42 @@ class RuntimeFrameViewOutputStorage {
     const NativeRowSlots *computed_rows(const void *base) const noexcept {
         return reinterpret_cast<const NativeRowSlots *>(static_cast<const std::byte *>(base) +
                                                         layout->computed_rows_offset);
+    }
+
+    void compact(allocator memory) {
+        if (!layout->has_computed_fields)
+            return;
+        auto &rows = *computed_rows(this);
+        rows.compact(
+            memory,
+            [&](row_id_t slot) {
+                auto end = std::numeric_limits<std::uint64_t>::max();
+                for (std::size_t index = 0; index != layout->fields.size(); ++index)
+                    if (is_computed(index))
+                        end = std::min(end, layout->fields[index].column.block_end(
+                                                native_field(this, index), slot));
+                return end;
+            },
+            [&](row_id_t, row_id_t source, row_id_t destination, auto &&commit_mapping) {
+                auto rollback = util::scope_exit{[&]() noexcept {
+                    for (std::size_t index = layout->fields.size(); index != 0; --index) {
+                        const auto field_index = index - 1;
+                        if (is_computed(field_index))
+                            layout->fields[field_index].column.rollback_relocation(
+                                native_field(this, field_index), destination, memory);
+                    }
+                }};
+                for (std::size_t index = 0; index != layout->fields.size(); ++index)
+                    if (is_computed(index))
+                        layout->fields[index].column.prepare_relocation(
+                            native_field(this, index), source, destination, memory);
+                std::invoke(commit_mapping);
+                rollback.release();
+                for (std::size_t index = 0; index != layout->fields.size(); ++index)
+                    if (is_computed(index))
+                        layout->fields[index].column.finish_relocation(
+                            native_field(this, index), source, memory);
+            });
     }
 
     bool set_computed(std::size_t index, row_id_t id, const void *value, EvaluationTime time, allocator memory) {
