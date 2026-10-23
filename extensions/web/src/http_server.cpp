@@ -185,13 +185,8 @@ WiringPoint details::wire_http_server(ServerOptions options, WiringPoint routes,
 }
 
 WiringPoint details::http_authenticate_requests(WiringPoint requests, WiringPoint decisions) {
-    const auto map_field = [](WiringPoint values, util::symbol name) {
-        const auto arguments = std::array{MapArgument{WiringArgument{values}},
-                                          MapArgument{WiringArgument{util::symbol{"name"}, name}}};
-        return map(operators::getattr, std::span<const MapArgument>{arguments});
-    };
-    const auto identities = map_field(decisions, util::symbol{"identity"});
-    const auto rejections = map_field(decisions, util::symbol{"rejection"});
+    const auto identities = map(operators::getattr, decisions, util::symbol{"identity"});
+    const auto rejections = map(operators::getattr, decisions, util::symbol{"rejection"});
 
     const auto authenticate_request = graph(
         "name"_n = "http_authenticate_request",
@@ -251,9 +246,9 @@ WiringPoint details::http_authenticate_requests(WiringPoint requests, WiringPoin
         });
     const auto per_request = map(authenticate_request, requests, decisions, identities, rejections);
 
-    const auto request_values = map_field(per_request, util::symbol{"requests"});
-    const auto identity_values = map_field(per_request, util::symbol{"identities"});
-    const auto rejection_values = map_field(per_request, util::symbol{"rejections"});
+    const auto request_values = map(operators::getattr, per_request, util::symbol{"requests"});
+    const auto identity_values = map(operators::getattr, per_request, util::symbol{"identities"});
+    const auto rejection_values = map(operators::getattr, per_request, util::symbol{"rejections"});
 
     static const auto copy_valid_references = node<HTTP_AUTH_COPY_ITEM>(
         [](In<TSD<i64, TS<HTTP_AUTH_COPY_ITEM>>, optional> values,

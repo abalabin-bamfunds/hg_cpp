@@ -4,6 +4,7 @@
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
 #include <bg/run_graph.hpp>
+#include <bg/scalar/bundle/value.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
@@ -24,6 +25,10 @@ using namespace bg::literals;
 
 const auto increment = node([](i64 value) { return value + 1; });
 
+template <template <typename, auto...> typename Field> struct MapGetattrBundle {
+    Field<i64> value;
+};
+
 TEST_CASE("map applies a graph to each TSD item",
           "[feature:map][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[binding:value-to-reference][definition:function]") {
@@ -41,6 +46,26 @@ TEST_CASE("map applies a graph to each TSD item",
     const auto actual = bg::run_graph(tested, {{{1, 1}, {2, 10}}, {{1, 4}}, {{2, 20}}, {{1, literal::REMOVE}}});
 
     CHECK(actual.equals({{{1, 2}, {2, 11}}, {{1, 5}}, {{2, 21}}, {{1, literal::REMOVE}}}));
+}
+
+TEST_CASE("map evaluates an operator template through ordinary arguments",
+          "[feature:map][feature:nested-graph][feature:operator][feature:getattr]"
+          "[series:tsd][shape:nested][definition:runtime]") {
+    auto memory = allocator{};
+    const auto first = bundle<MapGetattrBundle>(memory, i64{19});
+    const auto second = bundle<MapGetattrBundle>(memory, i64{42});
+    const auto values = node([&](Out<TSD<i64, TS<Bundle<MapGetattrBundle>>>> output) {
+        output[1].set_value(first.view());
+        output[2].set_value(second.view());
+    });
+
+    const auto tested = [&] {
+        return map(operators::getattr, values(), util::symbol{"value"})[i64{2}];
+    };
+
+    const auto actual = bg::run_graph(tested);
+
+    CHECK(actual.equals<i64>({42}));
 }
 
 TEST_CASE("map applies an inner graph's omitted scalar default",

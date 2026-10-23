@@ -386,17 +386,17 @@ auto invoke_map_function(const TypeMap &type_map, SelectOverload &&select_overlo
 }
 
 struct map_operator_implementation {
-    template <typename SelectOverload, typename Graph>
-        requires std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate>
+    template <typename SelectOverload, typename Graph, typename Argument, std::size_t Extent>
+        requires std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate> &&
+                 std::same_as<std::remove_const_t<Argument>, MapArgument>
     static auto invoke(const TypeMap &type_map, SelectOverload &&select_overload, const Graph &function,
-                       std::span<const MapArgument> arguments) {
+                       std::span<Argument, Extent> arguments) {
         return invoke_runtime_map(type_map, std::forward<SelectOverload>(select_overload), function, arguments,
                                   map_graph_argument_builder{});
     }
 
     template <typename SelectOverload, typename Graph, typename... Arguments>
-        requires std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate> &&
-                 requires { typename std::remove_cvref_t<Graph>::result_type; }
+        requires std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate>
     static auto invoke(const TypeMap &type_map, SelectOverload &&select_overload, const Graph &function,
                        Arguments &&...arguments) {
         return invoke_map(type_map, std::forward<SelectOverload>(select_overload), function,

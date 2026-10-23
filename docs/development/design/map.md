@@ -6,10 +6,18 @@
 It compiles the graph once and creates a separate runtime instance for every
 current key.
 
-The first argument can be a graph template or a graph function. A graph
-template accepts typed or untyped wiring points because wiring resolves their
-semantic types. A C++ graph function requires typed TSD and TSS arguments so
-that C++ can derive its per-key parameter types before invoking it.
+The first argument can be a `WiringTemplate` (such as a graph, node, or
+operator template) or a graph function. A `WiringTemplate` accepts typed or
+untyped wiring points because wiring resolves their semantic types. A C++ graph
+function requires typed TSD and TSS arguments so that C++ can derive its
+per-key parameter types before invoking it.
+
+For example, map can select one field from each Bundle with the operator
+template directly:
+
+```cpp
+auto fields = bg::map(bg::operators::getattr, values, bg::util::symbol{"field"});
+```
 
 Map's operator implementation converts a graph function to a graph argument
 before normal overload resolution. This keeps generic lambdas unannotated while
