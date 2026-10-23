@@ -1,0 +1,507 @@
+#include <bg/graph.hpp>
+#include <bg/graph/compiled_graph.hpp>
+#include <bg/graph/graph_wiring.hpp>
+#include <bg/graph/runtime_graph.hpp>
+#include <bg/graph/wiring_context.hpp>
+#include <bg/literal/scalar_literal.hpp>
+#include <bg/node.hpp>
+#include <bg/realtime_evaluation_engine.hpp>
+#include <bg/run_graph.hpp>
+#include <bg/scalar/bundle/value.hpp>
+#include <bg/scalar/list/scalar.hpp>
+#include <bg/scalar/tuple/scalar.hpp>
+#include <bg/web/http_server.hpp>
+#include <bg/wall_clock.hpp>
+
+#include <boost/asio.hpp>
+#include <boost/beast.hpp>
+#include <boost/system/system_error.hpp>
+
+#include <algorithm>
+#include <array>
+#include <condition_variable>
+#include <exception>
+#include <initializer_list>
+#include <mutex>
+#include <stdexcept>
+#include <stop_token>
+#include <string>
+#include <thread>
+#include <utility>
+#include <vector>
+
+#include <catch2/catch_test_macros.hpp>
+
+using namespace bg;
+using namespace bg::literals;
+using namespace bg::web;
+
+namespace {
+
+struct ServerTest {
+    std::stop_source stop;
+
+    template <typename Client> void run(std::initializer_list<Route> routes, Client client_function) {
+        run_graph(
+            [&] {
+                const auto port = http_server(routes);
+                (void)node([&](In<TS<i64>> bound_port) {
+                    client = std::jthread{[&, client_function = std::move(client_function),
+                                           port = static_cast<std::uint16_t>(*bound_port)]() mutable {
+                        try {
+                            client_function(port);
+                        } catch (...) {
+                            client_failure = std::current_exception();
+                            stop.request_stop();
+                        }
+                    }};
+                })(port);
+            },
+            GraphRunOptions{.engine = EvaluationEngine::realtime,
+                            .run_time = std::chrono::seconds{5},
+                            .stop_token = stop.get_token()});
+
+        if (client.joinable()) client.join();
+        if (client_failure) std::rethrow_exception(client_failure);
+    }
+
+  private:
+    std::jthread client;
+    std::exception_ptr client_failure;
+};
+
+struct RawHttpResponse {
+    unsigned status{};
+    std::vector<std::pair<std::string, std::string>> headers;
+    std::string body;
+};
+
+RawHttpResponse read_response(boost::asio::ip::tcp::socket &socket, boost::asio::streambuf &buffer,
+                              bool head_request = false) {
+    namespace asio = boost::asio;
+    namespace http = boost::beast::http;
+    asio::read_until(socket, buffer, "\r\n\r\n");
+
+    const auto buffered = std::string{asio::buffers_begin(buffer.data()), asio::buffers_end(buffer.data())};
+    const auto header_end = buffered.find("\r\n\r\n");
+    auto response = RawHttpResponse{};
+    const auto first_line_end = buffered.find("\r\n");
+    auto line_start = first_line_end + 2;
+    while (line_start < header_end) {
+        const auto line_end = buffered.find("\r\n", line_start);
+        const auto colon = buffered.find(':', line_start);
+        if (colon == std::string::npos || colon >= line_end) {
+            throw std::runtime_error{"invalid HTTP response header"};
+        }
+        auto value_start = colon + 1;
+        while (value_start < line_end && buffered[value_start] == ' ') ++value_start;
+        const auto name = buffered.substr(line_start, colon - line_start);
+        const auto value = buffered.substr(value_start, line_end - value_start);
+        response.headers.emplace_back(name, value);
+        line_start = line_end + 2;
+    }
+
+    auto parser = http::response_parser<http::string_body>{};
+    parser.skip(head_request);
+    boost::beast::error_code error;
+    const auto consumed = parser.put(buffer.data(), error);
+    buffer.consume(consumed);
+    if (error && error != http::error::need_more) {
+        throw boost::system::system_error{error};
+    }
+    if (!parser.is_done()) http::read(socket, buffer, parser);
+    auto message = parser.release();
+    response.status = message.result_int();
+    response.body = std::move(message.body());
+    return response;
+}
+
+const auto echo_handler = node([](In<TS<Bundle<HttpServerRequest>>> request,
+                                  Out<TS<Bundle<HttpResponse>>> response) {
+    using Header = Tuple<string, string>;
+    const auto empty_headers = std::vector<Scalar<Header>>{};
+    const auto headers = ScalarValue<List<Header>>{empty_headers};
+    auto reply = bundle<HttpResponse>("status"_n = i64{200}, "headers"_n = headers.view(),
+                                      "body"_n = request.value()[5]);
+    response.set_value(reply.view());
+});
+
+} // namespace
+
+TEST_CASE("HTTP server handles expectations and keep-alive requests",
+          "[feature:http][feature:lifecycle][transition:stop]") {
+    namespace asio = boost::asio;
+    namespace beast = boost::beast;
+    namespace http = beast::http;
+    using tcp = asio::ip::tcp;
+
+    auto server = ServerTest{};
+    auto statuses = std::vector<unsigned>{};
+    auto bodies = std::vector<std::string>{};
+    auto interim_status = 0U;
+    auto missing_head_length = std::uint64_t{};
+
+    server.run({Route{"/echo", echo_handler}}, [&](std::uint16_t port) {
+        auto context = asio::io_context{};
+        auto socket = tcp::socket{context};
+        socket.connect({asio::ip::make_address("127.0.0.1"), port});
+
+        auto request = http::request<http::string_body>{http::verb::post, "/echo", 11};
+        request.set(http::field::expect, "100-continue");
+        request.body() = std::string{"\0binary\xff", 8};
+        request.prepare_payload();
+        auto serializer = http::request_serializer<http::string_body>{request};
+        http::write_header(socket, serializer);
+
+        auto buffer = beast::flat_buffer{};
+        auto interim = http::response<http::empty_body>{};
+        http::read(socket, buffer, interim);
+        interim_status = interim.result_int();
+        http::write(socket, serializer);
+
+        auto response = http::response<http::string_body>{};
+        http::read(socket, buffer, response);
+        statuses.push_back(response.result_int());
+        bodies.push_back(std::move(response.body()));
+
+        auto missing_head = http::request<http::empty_body>{http::verb::head, "/missing", 11};
+        http::write(socket, missing_head);
+        auto missing_head_parser = http::response_parser<http::string_body>{};
+        missing_head_parser.skip(true);
+        http::read(socket, buffer, missing_head_parser);
+        missing_head_length = missing_head_parser.content_length().value_or(0);
+        auto missing_head_response = missing_head_parser.release();
+        statuses.push_back(missing_head_response.result_int());
+
+        auto missing = http::request<http::empty_body>{http::verb::get, "/missing", 11};
+        http::write(socket, missing);
+        auto missing_response = http::response<http::string_body>{};
+        http::read(socket, buffer, missing_response);
+        statuses.push_back(missing_response.result_int());
+
+        auto second = http::request<http::string_body>{http::verb::post, "/echo", 11};
+        second.body() = "keep alive";
+        second.prepare_payload();
+        http::write(socket, second);
+        auto second_response = http::response<http::string_body>{};
+        http::read(socket, buffer, second_response);
+        statuses.push_back(second_response.result_int());
+        bodies.push_back(std::move(second_response.body()));
+
+        auto unsupported = http::request<http::empty_body>{http::verb::get, "/echo", 11};
+        unsupported.set(http::field::expect, "custom-expectation");
+        http::write(socket, unsupported);
+        auto unsupported_response = http::response<http::string_body>{};
+        http::read(socket, buffer, unsupported_response);
+        statuses.push_back(unsupported_response.result_int());
+        server.stop.request_stop();
+    });
+    CHECK(interim_status == 100);
+    CHECK(statuses == std::vector<unsigned>{200, 404, 404, 200, 417});
+    CHECK(missing_head_length == 9);
+    REQUIRE(bodies.size() == 2);
+    CHECK(bodies[0] == std::string{"\0binary\xff", 8});
+    CHECK(bodies[1] == "keep alive");
+}
+
+TEST_CASE("HTTP server runtime state can be recreated from one compiled graph",
+          "[feature:http][feature:lifecycle][transition:start][transition:stop]") {
+    auto ports = std::vector<i64>{};
+    auto *active_stop_source = static_cast<std::stop_source *>(nullptr);
+    const auto capture_port = node([&](In<TS<i64>> port) {
+        ports.push_back(port.value());
+        active_stop_source->request_stop();
+    });
+
+    auto wiring = GraphWiring{};
+    {
+        auto context = WiringContext{wiring};
+        capture_port(http_server({Route{ "/echo", echo_handler }}));
+    }
+    wiring.finalize();
+    auto compiled = CompiledGraph{wiring};
+
+    for (auto run = 0; run < 2; ++run) {
+        auto stop = std::stop_source{};
+        active_stop_source = &stop;
+        auto global_state = GlobalState{};
+        auto runtime = RuntimeGraph{compiled, global_state};
+        RealtimeEvaluationEngine{}.run(runtime, SystemWallClock::instance().now(), stop.get_token());
+    }
+
+    REQUIRE(ports.size() == 2);
+    CHECK(ports[0] > 0);
+    CHECK(ports[1] > 0);
+}
+
+TEST_CASE("HTTP server preserves duplicate fields and applies response framing rules",
+          "[feature:http][feature:lifecycle]") {
+    namespace asio = boost::asio;
+    namespace beast = boost::beast;
+    namespace http = beast::http;
+    using tcp = asio::ip::tcp;
+    using Header = Tuple<string, string>;
+    using Literal = literal::ScalarLiteral;
+
+    struct RequestObservation {
+        std::string method;
+        std::vector<std::pair<std::string, std::string>> query;
+        std::vector<std::pair<std::string, std::string>> headers;
+    };
+
+    auto observations = std::vector<RequestObservation>{};
+    const auto inspect = node([&](In<TS<Bundle<HttpServerRequest>>> request,
+                                  Out<TS<Bundle<HttpResponse>>> response) {
+        const auto value = request.value();
+        auto observation = RequestObservation{.method = std::string{scalar_cast<string>(value[0]).value()}};
+        for (const auto [field, destination] :
+             std::array{std::pair{value[3], &observation.query}, std::pair{value[4], &observation.headers}}) {
+            const auto fields = scalar_cast<List<Header>>(field);
+            for (auto index = std::size_t{}; index < fields.size(); ++index) {
+                const auto item = fields[index];
+                destination->emplace_back(std::string{scalar_cast<string>(item.template get<0>()).value()},
+                                          std::string{scalar_cast<string>(item.template get<1>()).value()});
+            }
+        }
+        observations.push_back(std::move(observation));
+
+        auto status = i64{200};
+        auto headers = std::vector<ScalarValue<Header>>{};
+        auto header_views = std::vector<Scalar<Header>>{};
+        headers.push_back(ScalarValue<Header>::from_literal(Literal{"X-Dup", "first"}));
+        headers.push_back(ScalarValue<Header>::from_literal(Literal{"X-Middle", "middle"}));
+        headers.push_back(ScalarValue<Header>::from_literal(Literal{"x-dup", "second"}));
+        const auto &query = observations.back().query;
+        for (const auto &[key, item] : query) {
+            if (key == "case") {
+                if (item == "204") status = 204;
+                if (item == "205") status = 205;
+                if (item == "304") status = 304;
+                if (item == "bad-length") {
+                    headers.push_back(ScalarValue<Header>::from_literal(Literal{"Content-Length", "99"}));
+                }
+            }
+        }
+        header_views.reserve(headers.size());
+        for (const auto &header : headers) header_views.push_back(header.view());
+        const auto response_headers = ScalarValue<List<Header>>{header_views};
+        const auto body = std::array{std::byte{'r'}, std::byte{'e'}, std::byte{'p'}, std::byte{'l'}, std::byte{'y'}};
+        const auto body_value = ScalarValue<bytes>{std::span<const std::byte>{body}};
+        const auto reply = bundle<HttpResponse>("status"_n = status, "headers"_n = response_headers.view(),
+                                                "body"_n = body_value.view());
+        response.set_value(reply.view());
+    });
+
+    auto server = ServerTest{};
+    auto statuses = std::vector<unsigned>{};
+    auto bodies = std::vector<std::string>{};
+    auto response_header_names = std::vector<std::string>{};
+    auto content_lengths = std::vector<std::string>{};
+    auto invalid_framing_closed = false;
+
+    server.run({Route{"/test", inspect}}, [&](std::uint16_t port) {
+        auto context = asio::io_context{};
+        auto socket = tcp::socket{context};
+        auto buffer = asio::streambuf{};
+        socket.connect({asio::ip::make_address("127.0.0.1"), port});
+
+        const auto record = [&](std::string request, bool head = false) {
+            asio::write(socket, asio::buffer(request));
+            const auto response = read_response(socket, buffer, head);
+            statuses.push_back(response.status);
+            bodies.push_back(response.body);
+            const auto length = std::ranges::find_if(response.headers, [](const auto &header) {
+                return boost::beast::iequals(header.first, "content-length");
+            });
+            content_lengths.emplace_back(length == response.headers.end() ? "" : length->second);
+            if (statuses.size() == 1) {
+                for (const auto &[name, value] : response.headers) {
+                    (void)value;
+                    if (boost::beast::iequals(name, "x-dup") || boost::beast::iequals(name, "x-middle")) {
+                        response_header_names.push_back(name);
+                    }
+                }
+            }
+        };
+
+        record("GET /test?dup=one&dup=two HTTP/1.1\r\nHost: localhost\r\nX-Dup: first\r\n"
+               "X-Middle: middle\r\nx-dup: second\r\n\r\n");
+        record("HEAD /test?case=head HTTP/1.1\r\nHost: localhost\r\n\r\n", true);
+        record("GET /test?case=204 HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        record("GET /test?case=205 HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        record("GET /test?case=304 HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        record("GET /test?case=bad-length HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        socket.close();
+
+        auto invalid_socket = tcp::socket{context};
+        invalid_socket.connect({asio::ip::make_address("127.0.0.1"), port});
+        const auto malformed = std::string{
+            "POST /test HTTP/1.1\r\nHost: localhost\r\nContent-Length: 1\r\n"
+            "Transfer-Encoding: chunked\r\n\r\n0\r\n\r\n"};
+        asio::write(invalid_socket, asio::buffer(malformed));
+        auto byte = std::array<char, 1>{};
+        beast::error_code error;
+        (void)invalid_socket.read_some(asio::buffer(byte), error);
+        invalid_framing_closed = static_cast<bool>(error);
+        server.stop.request_stop();
+    });
+
+    REQUIRE(statuses == std::vector<unsigned>{200, 200, 204, 205, 304, 500});
+    CHECK(bodies[0] == "reply");
+    CHECK(bodies[1].empty());
+    CHECK(bodies[2].empty());
+    CHECK(bodies[3].empty());
+    CHECK(bodies[4].empty());
+    CHECK(bodies[5] == "Invalid Response Header");
+    CHECK(response_header_names == std::vector<std::string>{"X-Dup", "X-Middle", "x-dup"});
+    CHECK(content_lengths == std::vector<std::string>{"5", "5", "", "0", "5", "23"});
+    REQUIRE(observations.size() == 6);
+    CHECK(observations[0].query == std::vector<std::pair<std::string, std::string>>{
+                                         {"dup", "one"}, {"dup", "two"}});
+    auto duplicate_headers = std::vector<std::pair<std::string, std::string>>{};
+    for (const auto &header : observations[0].headers) {
+        if (boost::beast::iequals(header.first, "x-dup") || boost::beast::iequals(header.first, "x-middle")) {
+            duplicate_headers.push_back(header);
+        }
+    }
+    CHECK(duplicate_headers == std::vector<std::pair<std::string, std::string>>{
+                                   {"X-Dup", "first"}, {"X-Middle", "middle"}, {"x-dup", "second"}});
+    CHECK(observations[1].method == "HEAD");
+    CHECK(invalid_framing_closed);
+}
+
+TEST_CASE("HTTP server removes disconnected requests before replying to later requests",
+          "[feature:http][feature:lifecycle][transition:removal]") {
+    namespace asio = boost::asio;
+    namespace beast = boost::beast;
+    namespace http = beast::http;
+    using tcp = asio::ip::tcp;
+    using Header = Tuple<string, string>;
+
+    auto mutex = std::mutex{};
+    auto changed = std::condition_variable{};
+    auto first_id = i64{};
+    auto first_seen = false;
+    auto first_removed = false;
+    auto second_response = std::string{};
+    const auto delayed = node([&](In<TSD<i64, TS<Bundle<HttpServerRequest>>>> requests,
+                                  Out<TSD<i64, TS<Bundle<HttpResponse>>>> responses) {
+        requests.for_each_added([&](const auto &key) {
+            {
+                auto lock = std::lock_guard{mutex};
+                if (!first_seen) {
+                    first_id = key.value();
+                    first_seen = true;
+                    changed.notify_all();
+                    return;
+                }
+            }
+
+            const auto reply = [&](std::string_view text) {
+                const auto status = ScalarValue<i64>{200};
+                const auto headers = ScalarValue<List<Header>>{std::vector<Scalar<Header>>{}};
+                const auto body_bytes = std::span<const std::byte>{
+                    reinterpret_cast<const std::byte *>(text.data()), text.size()};
+                const auto body = ScalarValue<bytes>{body_bytes};
+                const auto value = bundle<HttpResponse>("status"_n = status.view(), "headers"_n = headers.view(),
+                                                        "body"_n = body.view());
+                return ScalarValue<Bundle<HttpResponse>>{value.view()};
+            };
+
+            const auto stale = reply("stale");
+            responses[first_id].set_value(stale.view());
+            const auto current = reply("second");
+            responses[key].set_value(current.view());
+            {
+                auto lock = std::lock_guard{mutex};
+                second_response = "second";
+            }
+            changed.notify_all();
+        });
+        requests.for_each_removed([&](const auto &key) {
+            auto lock = std::lock_guard{mutex};
+            if (key.value() == first_id) {
+                first_removed = true;
+                changed.notify_all();
+            }
+        });
+    });
+
+    auto server = ServerTest{};
+    auto client_reply = std::string{};
+    auto removal_observed = false;
+
+    server.run({Route{"/pending", delayed}}, [&](std::uint16_t port) {
+        auto context = asio::io_context{};
+        auto first_socket = tcp::socket{context};
+        first_socket.connect({asio::ip::make_address("127.0.0.1"), port});
+        auto first = http::request<http::empty_body>{http::verb::get, "/pending", 11};
+        first.set(http::field::host, "localhost");
+        http::write(first_socket, first);
+
+        {
+            auto lock = std::unique_lock{mutex};
+            if (!changed.wait_for(lock, std::chrono::seconds{3}, [&] { return first_seen; })) {
+                throw std::runtime_error{"first HTTP request was not delivered"};
+            }
+        }
+        beast::error_code ignored;
+        first_socket.shutdown(tcp::socket::shutdown_both, ignored);
+        first_socket.close(ignored);
+
+        {
+            auto lock = std::unique_lock{mutex};
+            if (!changed.wait_for(lock, std::chrono::seconds{3}, [&] { return first_removed; })) {
+                throw std::runtime_error{"disconnected HTTP request was not removed"};
+            }
+            removal_observed = first_removed;
+        }
+
+        auto second_socket = tcp::socket{context};
+        second_socket.connect({asio::ip::make_address("127.0.0.1"), port});
+        auto second = http::request<http::empty_body>{http::verb::get, "/pending", 11};
+        second.set(http::field::host, "localhost");
+        http::write(second_socket, second);
+        auto buffer = beast::flat_buffer{};
+        auto response = http::response<http::string_body>{};
+        http::read(second_socket, buffer, response);
+        client_reply = std::move(response.body());
+        server.stop.request_stop();
+    });
+    CHECK(removal_observed);
+    CHECK(second_response == "second");
+    CHECK(client_reply == "second");
+}
+
+TEST_CASE("HTTP server closes a connection with a pending request when the graph stops",
+          "[feature:http][feature:lifecycle][transition:stop]") {
+    namespace asio = boost::asio;
+    namespace beast = boost::beast;
+    using tcp = asio::ip::tcp;
+
+    auto server = ServerTest{};
+    auto request_seen = false;
+    const auto hold_open = node([&](In<TS<Bundle<HttpServerRequest>>> request,
+                                    Out<TS<Bundle<HttpResponse>>>) {
+        if (request.valid() && !request_seen) {
+            request_seen = true;
+            server.stop.request_stop();
+        }
+    });
+    auto pending_connection_closed = false;
+
+    server.run({Route{"/pending", hold_open}}, [&](std::uint16_t port) {
+        auto context = asio::io_context{};
+        auto socket = tcp::socket{context};
+        socket.connect({asio::ip::make_address("127.0.0.1"), port});
+        const auto request = std::string{
+            "GET /pending HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive\r\n\r\n"};
+        asio::write(socket, asio::buffer(request));
+        auto byte = std::array<char, 1>{};
+        beast::error_code error;
+        (void)socket.read_some(asio::buffer(byte), error);
+        pending_connection_closed = static_cast<bool>(error);
+    });
+    CHECK(request_seen);
+    CHECK(pending_connection_closed);
+}

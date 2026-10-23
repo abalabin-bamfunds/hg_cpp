@@ -25,7 +25,7 @@ Use `[dimension:value]` for each applicable dimension:
   `wiring-defaults`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `feedback`,
   `item-id-remapping`, `service`, `getitem`, `getattr`, `nested-graph`, `mesh`,
-  `multiservice`, `reduce`, `late-bound-wiring`,
+  `multiservice`, `reduce`, `late-bound-wiring`, `http`,
   `variadic-wiring`, or `wiring-materialisation`
 - `series`: `value`, `fixed-tsl`, `tss`, `tsd`, `tsb`, `reference`, or `generic`
 - `schema`: `named`, `unnamed`, or `generic`
@@ -736,6 +736,15 @@ For each reusable node and graph, test:
 - Python runtime dispatch on Python classes and derived schemas, explicit
   implementation lists, node and graph branches, fallback, type transitions,
   scalar arguments, sinks, and invalid declarations
+
+### HTTP extension
+
+- scalar and dictionary handlers, exact-path routing, and bound-port publication
+- binary bodies, ordered duplicate headers and query parameters, and peer metadata
+- keep-alive, response framing, HEAD, and status codes that omit bodies
+- request removal after completion or disconnection, late replies, and stop with pending requests
+- independent transport state for repeated runs of one compiled graph
+- Python native schema conversion and request/reply wiring
 
 ### Performance and portability
 
