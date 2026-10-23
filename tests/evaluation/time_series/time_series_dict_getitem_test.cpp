@@ -222,6 +222,28 @@ TEST_CASE("TSS-keyed getitem follows a replaced reference for a selected key",
     CHECK(actual.equals<i64>({2, 3, 30, 5}));
 }
 
+TEST_CASE("TSS-keyed getitem uses a reference dictionary input without payload ticks",
+          "[evaluation][series:tsd][series:tss][series:reference][feature:getitem]"
+          "[transition:update][transition:removal][transition:resurrection]") {
+    auto dictionary_evaluations = std::size_t{};
+    const auto observe_dictionary = node([&](In<TSD<i64, REF<TS<i64>>>>) {
+        ++dictionary_evaluations;
+    });
+
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> dictionary, wp<TSS<i64>> keys) {
+        (void)observe_dictionary(dictionary.as<TSD<i64, REF<TS<i64>>>>());
+        const auto selected = dictionary[keys].as<TSD<i64, TS<i64>>>();
+        return selected[i64{1}];
+    };
+
+    const auto actual = bg::run_graph(
+        graph, {{}, {{1, 10}}, {{1, 20}}, {{1, literal::REMOVE}}, {{1, 40}}},
+        {{1}, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP});
+
+    CHECK(actual.equals<i64>({std::nullopt, 10, 20, std::nullopt, 40}));
+    CHECK(dictionary_evaluations == 4);
+}
+
 TEST_CASE("dictionary getitem fans out one selected value item without observing another item",
           "[evaluation][series:tsd][series:value][feature:getitem][feature:operator][shape:fan-out]"
           "[binding:value-to-reference][binding:reference-to-value][transition:update]") {

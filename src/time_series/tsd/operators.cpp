@@ -73,11 +73,10 @@ struct tsd_reference_getitem_time_series {
     }
 };
 
-template <typename KEY, typename SOURCE_ITEM, typename OUTPUT_ITEM, auto GUARANTEE> struct tsd_getitem_tss {
-    In<TSD<KEY, SOURCE_ITEM, GUARANTEE>, optional> source;
-    In<REF<TSD<KEY, SOURCE_ITEM, GUARANTEE>, GUARANTEE>, optional> dictionary;
+template <typename KEY, typename VALUE, auto GUARANTEE> struct tsd_getitem_tss {
+    In<TSD<KEY, REF<VALUE, GUARANTEE>, GUARANTEE>, optional> dictionary;
     In<TSS<KEY>, optional> keys;
-    Out<TSD<KEY, OUTPUT_ITEM>> output;
+    Out<TSD<KEY, REF<VALUE, GUARANTEE>>> output;
 
     void evaluate() const {
         if (!keys.valid()) {
@@ -90,31 +89,41 @@ template <typename KEY, typename SOURCE_ITEM, typename OUTPUT_ITEM, auto GUARANT
         }
 
         keys.for_each_removed([&](const auto &key) { output.erase(key); });
+        if (!dictionary.valid()) {
+            keys.for_each([&](const auto &key) { output[key].invalidate(); });
+            return;
+        }
+
+        if (dictionary.became_valid()) {
+            keys.for_each([&](const auto &key) { update(key); });
+            return;
+        }
+
         keys.for_each_added([&](const auto &key) { update(key); });
-        source.for_each_removed([&](const auto &key) {
+        dictionary.for_each_removed([&](const auto &key) {
             if (keys.contains(key)) {
                 output[key].invalidate();
             }
         });
-        source.for_each_added([&](const auto &key) { update_if_selected(key); });
-        source.for_each_modified([&](const auto &key) { update_if_selected(key); });
+        dictionary.for_each_added([&](const auto &key) { update_if_selected(key); });
+        dictionary.for_each_modified([&](const auto &key) { update_if_selected(key); });
     }
 
     void update(const Scalar<KEY> &key) const {
-        if (dictionary.valid()) {
-            const auto item = dictionary[key];
-            const auto output_item = output[key];
-            if (!item.valid()) {
-                output_item.invalidate();
-                return;
-            }
-            if (output_item.value() != item.value()) {
-                output_item.copy(item);
-            }
+        const auto output_item = output[key];
+        if (!dictionary.contains(key)) {
+            output_item.invalidate();
             return;
         }
 
-        output[key].invalidate();
+        const auto item = dictionary[key];
+        if (!item.valid()) {
+            output_item.invalidate();
+            return;
+        }
+        if (!output_item.valid() || output_item.value() != item.value()) {
+            output_item.copy(item);
+        }
     }
 
     void update_if_selected(const Scalar<KEY> &key) const {
@@ -132,12 +141,12 @@ void register_time_series_dict_operators(Operator &getitem) {
     getitem.overload(bg::node<tsd_reference_getitem_scalar>());
     getitem.overload(bg::node<tsd_reference_getitem_time_series>());
     getitem.overload(bg::graph([](wp<TSD<K, V, G>, optional> dictionary, wp<TSS<K>> keys) {
-        static const auto select = bg::node<tsd_getitem_tss<K, V, REF<V, G>, G>>();
-        return select(dictionary, dictionary, keys);
+        static const auto select = bg::node<tsd_getitem_tss<K, V, G>>();
+        return select(dictionary.as<TSD<K, REF<V, G>, G>>(), keys);
     }));
     getitem.overload(bg::graph([](wp<TSD<K, REF<V, G>, G>, optional> dictionary, wp<TSS<K>> keys) {
-        static const auto select = bg::node<tsd_getitem_tss<K, REF<V, G>, REF<V, G>, G>>();
-        return select(dictionary, dictionary, keys);
+        static const auto select = bg::node<tsd_getitem_tss<K, V, G>>();
+        return select(dictionary, keys);
     }));
 }
 
