@@ -227,6 +227,19 @@ TEST_CASE("getattr selects a field from an unnamed free TSB",
     CHECK(wiring.outputs().size() == 2);
 }
 
+TEST_CASE("getattr selects a scalar field from a time series of Bundles",
+          "[feature:getattr][feature:operator][series:value][scalar:hierarchical][schema:named]") {
+    using namespace bg::util::literals;
+
+    const auto source = node([](Out<TS<Bundle<SharedBundle>>>) {});
+
+    testing::test_wiring([&] {
+        const auto value = operators::getattr(source(), "value"_sym);
+        CHECK(&value.type() == &TS<double>::type());
+        CHECK_THROWS_AS(operators::getattr(source(), "missing"_sym), WiringError);
+    });
+}
+
 TEST_CASE("a free TSB accepts a span of named wiring arguments",
           "[feature:wiring][series:tsb][schema:named][representation:free]") {
     const auto count_source = node([](Out<TS<i64>>) {});

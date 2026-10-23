@@ -204,6 +204,25 @@ TEST_CASE("convert maps optional Bundle fields through present and absent update
                        {{"ratio", 4.5}, {"count", 3}}}));
 }
 
+TEST_CASE("getattr propagates scalar Bundle field absence and source invalidation",
+          "[feature:getattr][feature:validity][series:value][scalar:hierarchical][schema:named]"
+          "[transition:update][transition:invalidation][transition:revalidation]") {
+    const auto observe_validity = node([](In<TS<Bundle<ConversionOptionalScalarRecord>>, optional>,
+                                          In<TS<double>, optional> selected) {
+        return selected.valid();
+    });
+    const auto select_ratio = [&](wp<TS<Bundle<ConversionOptionalScalarRecord>>> source) {
+        return observe_validity(source, operators::getattr(source, "ratio"_sym));
+    };
+
+    const auto actual = bg::run_graph(
+        select_ratio,
+        bg::input<TS<Bundle<ConversionOptionalScalarRecord>>>(
+            {{{"count", 1}, {"ratio", 2.5}}, {{"count", 2}}, literal::INVALID, {{"count", 4}, {"ratio", 4.5}}}));
+
+    CHECK(actual.equals<bool>({true, false, false, true}));
+}
+
 TEST_CASE("convert rejects a non-TSB result for a Bundle input",
           "[feature:operator][feature:wiring][series:tsb][scalar:hierarchical]") {
     const auto invalid_result = [](wp<TS<Bundle<ConversionScalarRecord>>> source) {

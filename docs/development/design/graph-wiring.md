@@ -125,8 +125,10 @@ a schema that is also valid for `Bundle<Schema>`.
 `wp<TSB<Schema>>` exposes the schema fields through `operator->`. Each field is
 a typed wiring point. A field becomes a wired output only when a node consumes
 it. `operators::getattr` selects a field by name from named and unnamed TSBs and
-returns `wp<>`. Re-annotate an unnamed TSB with `as<TSB<Schema>>()` to use the
-schema's C++ field members.
+returns `wp<>`. It also selects named scalar fields from `TS<Bundle<Schema>>`;
+the selected time series is invalid when the source or field is invalid.
+Re-annotate an unnamed TSB with `as<TSB<Schema>>()` to use the schema's C++
+field members.
 
 ## Deferred wiring points
 
