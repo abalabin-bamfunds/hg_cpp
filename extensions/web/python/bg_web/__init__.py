@@ -8,7 +8,7 @@ import bg
 
 from ._bg_web import (
     _http_client_impl,
-    _http_auth_projection,
+    _http_authenticate_requests,
     _http_handler_input_is_dictionary,
     _http_merge_responses,
     _http_response_field,
@@ -112,7 +112,7 @@ class HttpHandler:
             request_graph, reply_graph = self.policy_graphs
             client_ids = bg.map(request_graph, requests)
             decisions = bg.map(reply_graph, client_ids)
-            projected = _http_auth_projection(requests, decisions)
+            projected = _http_authenticate_requests(requests, decisions)
             handler_requests = bg.operators.getattr(projected, bg.Symbol("requests"))
             identities = bg.operators.getattr(projected, bg.Symbol("identities"))
             rejections = bg.operators.getattr(projected, bg.Symbol("rejections"))

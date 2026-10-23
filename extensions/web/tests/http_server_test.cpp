@@ -418,7 +418,7 @@ TEST_CASE("HTTP authentication keeps pending keys out of handlers and removes st
     const auto test_graph = [&](wp<TS<i64>> cycle) {
         const auto requests = request_source(cycle);
         const auto decisions = decision_source(cycle);
-        const auto projection = bg::web::details::http_auth_projection(requests, decisions);
+        const auto projection = bg::web::details::http_authenticate_requests(requests, decisions);
         observe(operators::getattr(projection, util::symbol{"requests"}),
                 operators::getattr(projection, util::symbol{"identities"}));
         return cycle;
@@ -435,6 +435,105 @@ TEST_CASE("HTTP authentication keeps pending keys out of handlers and removes st
     CHECK(changes[1].removed == std::vector<i64>{2, 3});
     CHECK(changes[1].request_keys == changes[1].identity_keys);
     CHECK(changes[1].request_keys == std::vector<i64>{1});
+}
+
+TEST_CASE("HTTP authentication tracks request and decision validity transitions",
+          "[feature:http][feature:service][feature:validity][transition:revalidation]") {
+    using Header = Tuple<string, string>;
+    auto memory = allocator{};
+    const auto headers = ScalarValue<List<Header>>{std::vector<Scalar<Header>>{}};
+    const auto body = ScalarValue<bytes>{std::span<const std::byte>{}};
+    const auto peer = bundle<HttpPeer>(memory, "address"_n = std::string{"127.0.0.1"}, "port"_n = i64{1});
+    const auto request = bundle<HttpServerRequest>(memory, "method"_n = std::string{"GET"},
+                                                   "target"_n = std::string{"/auth"},
+                                                   "path"_n = std::string{"/auth"}, "query"_n = headers.view(),
+                                                   "headers"_n = headers.view(), "body"_n = body.view(),
+                                                   "peer"_n = peer.view());
+    const auto identity = ScalarValue<i64>{10};
+    const auto response = make_http_response(401);
+    const auto accepted = auth::accept<i64>(memory, identity.view());
+    const auto rejected = auth::reject<i64>(memory, response.view());
+
+    const auto request_source = node([&](In<TS<i64>> cycle,
+                                         Out<TSD<i64, TS<Bundle<HttpServerRequest>>>> output) {
+        if (cycle.value() == 1 || cycle.value() == 3) {
+            output[1].set_value(request.view());
+        } else if (cycle.value() == 2) {
+            output[1].invalidate();
+        }
+    });
+    const auto decision_source = node([&](In<TS<i64>> cycle,
+                                          Out<TSD<i64, TS<AuthDecision<i64>>>> output) {
+        if (cycle.value() == 1 || cycle.value() == 5 || cycle.value() == 7) {
+            output[1].set_value(accepted.view());
+        } else if (cycle.value() == 4) {
+            output[1].invalidate();
+        } else if (cycle.value() == 6) {
+            output[1].set_value(rejected.view());
+        }
+    });
+
+    struct State {
+        std::vector<i64> request_keys;
+        std::vector<std::pair<i64, i64>> identities;
+        std::vector<i64> rejection_keys;
+        bool request_reference_matches{};
+    };
+    auto states = std::vector<State>{};
+    const auto observe = node([&](In<TSD<i64, TS<Bundle<HttpServerRequest>>>, optional> original_requests,
+                                  In<TSD<i64, TS<Bundle<HttpServerRequest>>>, optional> accepted_requests,
+                                  In<TSD<i64, TS<i64>>, optional> identities,
+                                  In<TSD<i64, TS<Bundle<HttpResponse>>>, optional> rejections) {
+        auto state = State{};
+        accepted_requests.for_each_key([&](const Scalar<i64> &key) {
+            state.request_keys.push_back(key.value());
+            state.request_reference_matches |= original_requests[key].data() == accepted_requests[key].data();
+        });
+        identities.for_each_key([&](const Scalar<i64> &key) {
+            state.identities.emplace_back(key.value(), identities[key].value());
+        });
+        rejections.for_each_key([&](const Scalar<i64> &key) { state.rejection_keys.push_back(key.value()); });
+        std::ranges::sort(state.request_keys);
+        std::ranges::sort(state.identities);
+        std::ranges::sort(state.rejection_keys);
+        states.push_back(std::move(state));
+    });
+
+    const auto test_graph = [&](wp<TS<i64>> cycle) {
+        const auto requests = request_source(cycle);
+        const auto decisions = decision_source(cycle);
+        const auto projection = bg::web::details::http_authenticate_requests(requests, decisions);
+        observe(requests, operators::getattr(projection, util::symbol{"requests"}),
+                operators::getattr(projection, util::symbol{"identities"}),
+                operators::getattr(projection, util::symbol{"rejections"}));
+        return cycle;
+    };
+
+    run_graph(test_graph, {1, 2, 3, 4, 5, 6, 7});
+
+    REQUIRE(states.size() == 7);
+    CHECK(states[0].request_keys == std::vector<i64>{1});
+    CHECK(states[0].identities == std::vector<std::pair<i64, i64>>{{1, 10}});
+    CHECK(states[0].rejection_keys.empty());
+    CHECK(states[0].request_reference_matches);
+    CHECK(states[1].request_keys.empty());
+    CHECK(states[1].identities.empty());
+    CHECK(states[1].rejection_keys.empty());
+    CHECK(states[2].request_keys == std::vector<i64>{1});
+    CHECK(states[2].identities == std::vector<std::pair<i64, i64>>{{1, 10}});
+    CHECK(states[2].request_reference_matches);
+    CHECK(states[3].request_keys.empty());
+    CHECK(states[3].identities.empty());
+    CHECK(states[4].request_keys == std::vector<i64>{1});
+    CHECK(states[4].identities == std::vector<std::pair<i64, i64>>{{1, 10}});
+    CHECK(states[4].request_reference_matches);
+    CHECK(states[5].request_keys.empty());
+    CHECK(states[5].identities.empty());
+    CHECK(states[5].rejection_keys == std::vector<i64>{1});
+    CHECK(states[6].request_keys == std::vector<i64>{1});
+    CHECK(states[6].identities == std::vector<std::pair<i64, i64>>{{1, 10}});
+    CHECK(states[6].rejection_keys.empty());
+    CHECK(states[6].request_reference_matches);
 }
 
 TEST_CASE("HTTP authentication rejects malformed decisions",
@@ -466,7 +565,7 @@ TEST_CASE("HTTP authentication rejects malformed decisions",
     const auto test_graph = [&](wp<TS<i64>> cycle) {
         const auto requests = request_source(cycle);
         const auto decisions = decision_source(cycle);
-        (void)bg::web::details::http_auth_projection(requests, decisions);
+        (void)bg::web::details::http_authenticate_requests(requests, decisions);
         return cycle;
     };
 

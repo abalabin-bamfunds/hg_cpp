@@ -108,66 +108,15 @@ const auto error_sink = node([](In<TS<string>> error) { throw std::runtime_error
 const auto server_source = node<ServerSource>();
 
 using HTTP_AUTH_IDENTITY = ScalarVariable<"HTTP_AUTH_IDENTITY">;
-
-template <typename IDENTITY> struct AuthProjectionOutput {
-    template <template <typename, auto...> typename Field> struct schema {
-        Field<TSD<i64, REF<TS<Bundle<HttpServerRequest>>>>> requests;
-        Field<TSD<i64, TS<IDENTITY>>> identities;
-        Field<TSD<i64, TS<Bundle<HttpResponse>>>> rejections;
-    };
+using HTTP_AUTH_GATE_VALUE = ScalarVariable<"HTTP_AUTH_GATE_VALUE">;
+using HTTP_AUTH_COPY_ITEM = ScalarVariable<"HTTP_AUTH_COPY_ITEM">;
+template <template <typename, auto...> typename Field>
+using HTTP_AUTH_DECISION_SCHEMA = BundleSchemaVariableDeclaration<"HTTP_AUTH_DECISION_SCHEMA", Field>;
+template <template <typename, auto...> typename Field> struct HTTP_AUTH_PROJECTION_SCHEMA {
+    Field<REF<TS<Bundle<HttpServerRequest>>>> requests;
+    Field<TS<HTTP_AUTH_IDENTITY>> identities;
+    Field<TS<Bundle<HttpResponse>>> rejections;
 };
-
-template <typename IDENTITY> struct AuthProjection {
-    In<TSD<i64, REF<TS<Bundle<HttpServerRequest>>>>, optional> requests;
-    In<TSD<i64, TS<HIERARCHICAL>>, optional> decisions;
-    Out<TSB<AuthProjectionOutput<IDENTITY>::template schema>> output;
-
-    void evaluate() const {
-        const auto erase = [&](const Scalar<i64> &key) {
-            output->requests.erase(key);
-            output->identities.erase(key);
-            output->rejections.erase(key);
-        };
-
-        const auto update = [&](const Scalar<i64> &key) {
-            if (!decisions.contains(key) || !decisions[key].valid() || !requests.contains(key) ||
-                !requests[key].valid()) {
-                erase(key);
-                return;
-            }
-
-            const auto decision = decisions[key];
-            const auto request = requests[key];
-
-            const auto value = decision.value_view();
-            const auto has_identity = value.present(0);
-            const auto has_rejection = value.present(1);
-            if (has_identity == has_rejection) {
-                throw std::logic_error{"an authentication decision must contain exactly one of identity or rejection"};
-            }
-
-            if (has_identity) {
-                output->requests[key].copy(request);
-                output->identities[key].set_value(value[0]);
-                output->rejections.erase(key);
-                return;
-            }
-
-            output->rejections[key].set_value(value[1]);
-            output->requests.erase(key);
-            output->identities.erase(key);
-        };
-
-        requests.for_each_added(update);
-        requests.for_each_modified(update);
-        requests.for_each_removed(erase);
-        decisions.for_each_added(update);
-        decisions.for_each_modified(update);
-        decisions.for_each_removed(erase);
-    }
-};
-
-const auto auth_projection = node<HTTP_AUTH_IDENTITY, AuthProjection<HTTP_AUTH_IDENTITY>>();
 
 const auto http_response_dictionary_reference = node(
     [](In<TSD<i64, REF<TS<Bundle<HttpResponse>>>>, optional> responses,
@@ -235,34 +184,102 @@ WiringPoint details::wire_http_server(ServerOptions options, WiringPoint routes,
     return bundle("requests"_n = source->requests, "port"_n = port);
 }
 
-WiringPoint details::http_auth_projection(WiringPoint requests, WiringPoint decisions) {
-    const auto *decision_dictionary = type_cast<TimeSeriesDictionaryType>(&decisions.type().target_type());
-    if (decision_dictionary == nullptr || !TSD<i64, TS<HIERARCHICAL>>::type().accepts(decisions.type())) {
-        throw WiringError{"an HTTP authentication policy must return a request dictionary of auth decisions"};
-    }
+WiringPoint details::http_authenticate_requests(WiringPoint requests, WiringPoint decisions) {
+    const auto map_field = [](WiringPoint values, util::symbol name) {
+        const auto arguments = std::array{MapArgument{WiringArgument{values}},
+                                          MapArgument{WiringArgument{util::symbol{"name"}, name}}};
+        return map(operators::getattr, std::span<const MapArgument>{arguments});
+    };
+    const auto identities = map_field(decisions, util::symbol{"identity"});
+    const auto rejections = map_field(decisions, util::symbol{"rejection"});
 
-    const auto *decision_value_type =
-        type_cast<TimeSeriesValueType>(&decision_dictionary->value_type().target_type());
-    const auto *decision_type = decision_value_type == nullptr
-                                    ? nullptr
-                                    : type_cast<HierarchicalScalarType>(&decision_value_type->value_type());
-    const auto *decision_schema =
-        decision_type == nullptr ? nullptr : dynamic_cast<const Schema *>(&decision_type->schema_type());
-    if (decision_schema == nullptr || decision_schema->field_count() != 2) {
-        throw WiringError{"an HTTP authentication policy must return AuthDecision[IDENTITY] values"};
-    }
-    const auto &identity_field = decision_schema->field(0);
-    const auto &rejection_field = decision_schema->field(1);
-    if (identity_field.name.text() != "identity" || rejection_field.name.text() != "rejection" ||
-        !identity_field.optional || !rejection_field.optional ||
-        !cpp_scalar_type<Bundle<HttpResponse>>().accepts(*rejection_field.type)) {
-        throw WiringError{"an HTTP authentication policy must return AuthDecision[IDENTITY] values"};
-    }
+    const auto authenticate_request = graph(
+        "name"_n = "http_authenticate_request",
+        [](wp<REF<TS<Bundle<HttpServerRequest>>>> request,
+           wp<TS<Bundle<HTTP_AUTH_DECISION_SCHEMA>>> decision, wp<TS<HTTP_AUTH_IDENTITY>> identity,
+           wp<TS<Bundle<HttpResponse>>> rejection) -> wp<TSB<HTTP_AUTH_PROJECTION_SCHEMA>> {
+            const auto request_target = request.as<TS<Bundle<HttpServerRequest>>>();
 
-    auto projection_types = TypeMap{};
-    projection_types.set(HTTP_AUTH_IDENTITY::type(), identity_field.type);
-    return auth_projection(projection_types,
-                           requests.as<TSD<i64, REF<TS<Bundle<HttpServerRequest>>>>>(), decisions);
+            static const auto validate = node<HTTP_AUTH_IDENTITY>(
+                [](In<TS<Bundle<HttpServerRequest>>, optional> request,
+                   In<TS<Bundle<HTTP_AUTH_DECISION_SCHEMA>>, optional> decision,
+                   In<TS<HTTP_AUTH_IDENTITY>, optional> identity,
+                   In<TS<Bundle<HttpResponse>>, optional> rejection, Out<TS<bool>> output) {
+                    if (!request.valid() || !decision.valid()) {
+                        output.invalidate();
+                        return;
+                    }
+
+                    if (identity.valid() == rejection.valid()) {
+                        throw std::logic_error{
+                            "an authentication decision must contain exactly one of identity or rejection"};
+                    }
+
+                    output.set(true);
+                });
+            const auto valid_decision = validate(request_target, decision, identity, rejection);
+
+            static const auto gate = node<HTTP_AUTH_GATE_VALUE>(
+                [](In<TS<bool>, optional> condition, In<TS<HTTP_AUTH_GATE_VALUE>, optional> value,
+                   Out<TS<HTTP_AUTH_GATE_VALUE>> output) {
+                    if (!condition.valid() || !value.valid()) {
+                        output.invalidate();
+                        return;
+                    }
+
+                    output.copy(value);
+                });
+            static const auto gate_reference = node<HTTP_AUTH_IDENTITY>(
+                [](In<TS<Bundle<HttpServerRequest>>, optional> target,
+                   In<REF<TS<Bundle<HttpServerRequest>>>, passive> original,
+                   In<TS<HTTP_AUTH_IDENTITY>, optional> condition,
+                   Out<REF<TS<Bundle<HttpServerRequest>>>> output) {
+                    if (!target.valid() || !condition.valid()) {
+                        output.invalidate();
+                        return;
+                    }
+
+                    output.copy(original);
+                });
+            const auto accepted_identity = gate(valid_decision, identity);
+            const auto accepted_request = gate_reference(request_target, request, accepted_identity);
+            const auto accepted_rejection = gate(valid_decision, rejection);
+
+            return bundle<TSB<HTTP_AUTH_PROJECTION_SCHEMA>>(
+                "requests"_n = accepted_request, "identities"_n = accepted_identity,
+                "rejections"_n = accepted_rejection);
+        });
+    const auto per_request = map(authenticate_request, requests, decisions, identities, rejections);
+
+    const auto request_values = map_field(per_request, util::symbol{"requests"});
+    const auto identity_values = map_field(per_request, util::symbol{"identities"});
+    const auto rejection_values = map_field(per_request, util::symbol{"rejections"});
+
+    static const auto copy_valid_references = node<HTTP_AUTH_COPY_ITEM>(
+        [](In<TSD<i64, TS<HTTP_AUTH_COPY_ITEM>>, optional> values,
+           In<TSD<i64, REF<TS<HTTP_AUTH_COPY_ITEM>>>, optional, passive> references,
+           Out<TSD<i64, REF<TS<HTTP_AUTH_COPY_ITEM>>>> output) {
+            const auto update = [&](const Scalar<i64> &key) {
+                if (values[key].valid()) {
+                    output[key].copy(references[key]);
+                    return;
+                }
+                output.erase(key);
+            };
+
+            values.for_each_added(update);
+            values.for_each_removed([&](const Scalar<i64> &key) { output.erase(key); });
+            values.for_each_modified(update);
+        });
+    const auto accepted_requests =
+        copy_valid_references(request_values.as<TSD<i64, TS<HTTP_AUTH_COPY_ITEM>>>(), request_values);
+    const auto accepted_identities =
+        copy_valid_references(identity_values.as<TSD<i64, TS<HTTP_AUTH_COPY_ITEM>>>(), identity_values);
+    const auto accepted_rejections =
+        copy_valid_references(rejection_values.as<TSD<i64, TS<HTTP_AUTH_COPY_ITEM>>>(), rejection_values);
+
+    return bundle("requests"_n = accepted_requests, "identities"_n = accepted_identities,
+                  "rejections"_n = accepted_rejections);
 }
 
 WiringPoint details::http_merge_responses(WiringPoint responses, WiringPoint rejections) {
@@ -368,7 +385,7 @@ wp<> details::wire_http_handler(std::string_view path, const WiringTemplate &han
                 return wp<DECISION>::from_validated(*replies);
             });
         const auto decisions = map(receive_policy_reply, request_client_ids);
-        const auto projected = details::http_auth_projection(requests, decisions);
+        const auto projected = details::http_authenticate_requests(requests, decisions);
         handler_requests = operators::getattr(projected, util::symbol{"requests"});
         identities = operators::getattr(projected, util::symbol{"identities"});
         rejections = operators::getattr(projected, util::symbol{"rejections"});

@@ -1,6 +1,7 @@
 # HTTP handler authentication
 
-Status: accepted
+Status: accepted; the projection decision is superseded by
+[0088](0088-http-handler-authentication-composition.md).
 
 ## Context
 
