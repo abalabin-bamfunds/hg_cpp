@@ -1,7 +1,8 @@
 # Compaction proposal
 
-Status: manual compaction mechanics and coverage are implemented in this lane.
-Automatic invocation-end scheduling and the compaction policy remain
+Status: manual compaction mechanics and coverage are implemented. BG's
+invocation-end callback API is available in this lane. Frame storage
+registration and scheduling, and the automatic compaction policy, remain
 unimplemented.
 
 Agreed direction: mutations collect cheap statistics; storage assesses final
@@ -9,8 +10,7 @@ occupancy after mutation and plans and allocates only when justified, at the
 end of the owning node invocation before downstream consumers run.
 Movement can pack rows toward either end or the middle while preserving current
 relative order. Algorithms retain their previous contributions; full removed
-rows are not retained for them. The callback API and measured policy remain
-subject to review.
+rows are not retained for them.
 
 ## Purpose
 
@@ -223,6 +223,6 @@ IDs or discard removal-cycle information.
 
 Implemented mechanics: storage-owned manual compaction preserves row order,
 supports movement in either direction, and uses revision-checked cached proofs.
-Next, connect compaction scheduling to explicit invocation-end callbacks so
-maintenance runs before downstream consumers. The automatic decision policy
-remains open pending measurements.
+The BG invocation-end callback API is available for storage registration.
+Remaining work connects frame storage to that API and selects an automatic
+decision policy using measured costs.
