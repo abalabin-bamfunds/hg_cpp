@@ -228,6 +228,7 @@ TEST_CASE("HTTP client dispatch rejects replies from a removed client generation
     auto request_point = WiringPoint{};
     auto response_point = WiringPoint{};
     auto observed_statuses = std::vector<i64>{};
+    auto client_present = false;
 
     auto wiring = GraphWiring{};
     {
@@ -238,6 +239,7 @@ TEST_CASE("HTTP client dispatch rejects replies from a removed client generation
         response_point = *output;
         (void)node([&](In<TSD<service_client_id_t, TS<Bundle<HttpResponse>>>> replies) {
             if (!replies.valid() || !replies.modified()) return;
+            client_present = replies.contains(service_client_id_t{42});
             const auto observe_reply = [&](const auto &client_id) {
                 const auto reply = replies[client_id];
                 if (reply.valid() && reply.modified()) {
@@ -276,6 +278,15 @@ TEST_CASE("HTTP client dispatch rejects replies from a removed client generation
         return runtime.has_committed_queue_messages();
     };
     const auto cycle = [&](i64 microseconds) { runtime.evaluate(MIN_DT + std::chrono::microseconds{microseconds}); };
+    const auto reply_generation = [&] {
+        const auto source = runtime.node(source_index);
+        const auto input = In<TS_T>{source.output_last_updated(), source.output_value(),
+                                    compiled.node(source_index).output_runtime_type()};
+        const auto output = input.as<TSB<bg::web::details::ClientOutput>>();
+        const auto reply = output->replies[service_client_id_t{42}];
+        REQUIRE(reply.valid());
+        return scalar_cast<i64>(reply.value()[0]).value();
+    };
 
     const auto first_request = make_request("GET", "file:///invalid");
     REQUIRE(request_queue.write(literal::TimeSeriesLiteral{{service_client_id_t{42}, first_request.view()}}));
@@ -283,31 +294,46 @@ TEST_CASE("HTTP client dispatch rejects replies from a removed client generation
     REQUIRE(wait_for_committed_queue());
     cycle(3);
     CHECK(observed_statuses == std::vector<i64>{599});
+    const auto first_generation = reply_generation();
 
     REQUIRE(request_queue.write(literal::TimeSeriesLiteral{{service_client_id_t{42}, literal::REMOVE}}));
     cycle(4);
     REQUIRE(wait_for_committed_queue());
     cycle(5);
+    CHECK_FALSE(client_present);
+
+    const auto stale_response = make_response(200, {});
+    const auto stale_reply = make_client_reply(first_generation, stale_response.view());
+    REQUIRE(source_queue.write(literal::TimeSeriesLiteral{
+        {util::symbol{"replies"}, {{service_client_id_t{42}, stale_reply.view()}}}}));
+    cycle(6);
+    CHECK_FALSE(client_present);
+    CHECK(observed_statuses == std::vector<i64>{599});
 
     const auto second_request = make_request("GET", "file:///invalid");
     REQUIRE(request_queue.write(literal::TimeSeriesLiteral{{service_client_id_t{42}, second_request.view()}}));
-    cycle(6);
-    REQUIRE(wait_for_committed_queue());
     cycle(7);
-    CHECK(observed_statuses == std::vector<i64>{599, 599});
-
-    const auto stale_response = make_response(200, {});
-    const auto stale_reply = make_client_reply(1, stale_response.view());
-    REQUIRE(source_queue.write(literal::TimeSeriesLiteral{
-        {util::symbol{"replies"}, {{service_client_id_t{42}, stale_reply.view()}}}}));
+    CHECK(client_present);
+    CHECK(observed_statuses == std::vector<i64>{599});
+    REQUIRE(wait_for_committed_queue());
     cycle(8);
+    CHECK(observed_statuses == std::vector<i64>{599, 599});
+    const auto second_generation = reply_generation();
+    CHECK(second_generation != first_generation);
+    CHECK(client_present);
+
+    const auto stale_response_after_readd = make_response(202, {});
+    const auto stale_reply_after_readd = make_client_reply(first_generation, stale_response_after_readd.view());
+    REQUIRE(source_queue.write(literal::TimeSeriesLiteral{
+        {util::symbol{"replies"}, {{service_client_id_t{42}, stale_reply_after_readd.view()}}}}));
+    cycle(9);
     CHECK(observed_statuses == std::vector<i64>{599, 599});
 
     const auto current_response = make_response(201, {});
-    const auto current_reply = make_client_reply(2, current_response.view());
+    const auto current_reply = make_client_reply(second_generation, current_response.view());
     REQUIRE(source_queue.write(literal::TimeSeriesLiteral{
         {util::symbol{"replies"}, {{service_client_id_t{42}, current_reply.view()}}}}));
-    cycle(9);
+    cycle(10);
     CHECK(observed_statuses == std::vector<i64>{599, 599, 201});
     runtime.stop();
 }
