@@ -32,9 +32,23 @@ post-compaction consumer time. Each consumer column is a different workload:
 | Scattered 20% | 1 borrowed Arrow consumer | 16.172 | 1.986 |
 | Scattered 20% | 10 dense-gather consumers | 20.202 | 11.365 |
 
+For one Arrow consumer, compare the three available paths directly:
+
+| Deletion pattern | Fragmented borrowed Arrow + sum (ms) | Dense gather + sum (ms) | Compaction + borrowed Arrow + sum (ms) |
+| --- | ---: | ---: | ---: |
+| Scattered 0.5% | 0.495 | 1.955 | 0.521 |
+| Scattered 5% | 3.999 | 1.497 | 0.915 |
+| Scattered 20% | 16.172 | 2.026 | 1.986 |
+
+At 20%, compaction plus borrowed Arrow and dense gather are effectively tied
+for one consumer. Repeated Arrow consumers make compaction more useful because
+the maintenance cost is paid once while each consumer avoids the fragmented
+export.
+
 The totals add the medians of separately measured phases; they are not direct
 end-to-end measurements. Range relocation makes compaction much cheaper, and
 the consumer measurements show when the saved traversal and export work repays
 that cost. At 0.5% scattered deletion, native traversal does not repay
-compaction in this workload; Arrow export does when repeated across consumers.
-At 5% and 20%, the modeled savings cover compaction for the shown workloads.
+compaction in this workload; one Arrow consumer does not repay it, while ten
+Arrow consumers do. At 5% and 20%, the modeled savings cover compaction for the
+shown workloads.
