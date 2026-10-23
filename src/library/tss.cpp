@@ -1,9 +1,13 @@
 #include "registration.hpp"
 
 #include <bg/graph.hpp>
+#include <bg/graph/wiring_context.hpp>
 #include <bg/library/operators.hpp>
 #include <bg/node.hpp>
 #include <bg/overload.hpp>
+#include <bg/time_series/item_id.hpp>
+#include <bg/time_series/ref/ref_input.hpp>
+#include <bg/type/time_series_dict_type.hpp>
 
 #include <cstddef>
 
@@ -13,6 +17,8 @@ namespace {
 using namespace bg::literals;
 
 inline constexpr auto G = guarantee_variable<"G">;
+inline constexpr auto GD = guarantee_variable<"GD">;
+inline constexpr auto GR = guarantee_variable<"GR">;
 
 template <InputValidity VALIDITY, auto OUTPUT_GUARANTEE, typename OPERATION>
 struct tss_set_operation_impl {
@@ -139,6 +145,31 @@ struct tss_overloads {
     };
 
     overload<keys_where_true, keys_where_true_impl> keys_where_true_tsd;
+
+    overload<keys_> keys_tsd{graph([](wp<TSD<K, TS_T, G>> dictionary) {
+        const auto &type = type_cast<TimeSeriesDictionaryType>(dictionary.type().target_type());
+        auto &wiring = WiringContext::current().wiring();
+        const auto key_set = wiring.output_item(dictionary, key_set_item_id, type.key_set_type());
+        return key_set.as<TSS<K, G>>();
+    })};
+
+    struct keys_tsd_reference_impl {
+        In<REF<TSD<K, TS_T, GD>, GR>, optional> dictionary;
+        In<REF<TSS<K, GD>, GR>, dynamic_binding, optional> key_set;
+        Out<REF<TSS<K, GD>, GR>> output;
+
+        void evaluate() const {
+            if (!dictionary.valid()) {
+                key_set.unbind();
+                output.invalidate();
+                return;
+            }
+
+            key_set.bind(dictionary.key_set());
+            output.copy(key_set);
+        }
+    };
+    overload<keys_, keys_tsd_reference_impl> keys_tsd_reference;
 
     // TSS set equality.
     overload<eq, tss_equality_impl<required, G, false>> eq_tss;

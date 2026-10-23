@@ -48,6 +48,102 @@ TEST_CASE("keys_where_true follows Boolean dictionary items",
     CHECK(actual.equals({{1}, {2, literal::REMOVED(1)}, literal::SKIP, {literal::REMOVED(2)}, {1}}));
 }
 
+TEST_CASE("keys_ projects dictionary membership without copying item updates",
+          "[feature:operator][series:tsd][series:tss][transition:addition][transition:removal]") {
+    const auto graph = [](wp<TSD<i64, TS<i64>>> values) { return operators::keys_(values); };
+
+    const auto input = bg::input<TSD<i64, TS<i64>>>(
+        {{}, {{1, 10}, {2, 20}}, {{1, 11}}, {{3, 30}, {2, literal::REMOVE}},
+         {{1, literal::REMOVE}, {3, literal::REMOVE}}});
+    const auto actual = bg::run_graph(graph, input);
+
+    CHECK(actual.equals({{}, {1, 2}, literal::SKIP, {3, literal::REMOVED(2)},
+                         {literal::REMOVED(1), literal::REMOVED(3)}}));
+}
+
+TEST_CASE("keys_ projects an ordinary dictionary without adding a runtime node",
+          "[feature:operator][feature:graph-compilation][series:tsd][series:tss]") {
+    const auto dictionary = node([](Out<TSD<i64, TS<i64>>> output) { output[1].set(1); });
+    auto wiring = GraphWiring{};
+    auto result = WiringPoint{};
+    {
+        auto context = WiringContext{wiring};
+        result = operators::keys_(dictionary());
+    }
+
+    result = wiring.complete_pending_wiring(result);
+    wiring.finalize();
+    const auto compiled = CompiledGraph{wiring};
+
+    CHECK(compiled.node_count() == 1);
+}
+
+TEST_CASE("keys_ follows a selected dictionary reference through switching and invalidation",
+          "[feature:operator][series:tsd][series:tss][series:reference][transition:invalidation]"
+          "[transition:revalidation]") {
+    const auto graph = [](wp<TS<bool>> condition, wp<TSD<i64, TS<i64>>> left,
+                          wp<TSD<i64, TS<i64>>> right) {
+        return operators::keys_(operators::if_then_else(condition, left, right));
+    };
+    const auto valid_graph = [](wp<TS<bool>> condition, wp<TSD<i64, TS<i64>>> left,
+                                wp<TSD<i64, TS<i64>>> right) {
+        return operators::valid(operators::keys_(operators::if_then_else(condition, left, right)));
+    };
+
+    const auto actual = bg::run_graph(
+        graph, bg::input<TS<bool>>({true, true, false, literal::INVALID, true}),
+        bg::input<TSD<i64, TS<i64>>>({{}, {{1, 10}, {2, 20}}, literal::SKIP, literal::SKIP, literal::SKIP}),
+        bg::input<TSD<i64, TS<i64>>>({{}, literal::SKIP, {{8, 80}}, literal::SKIP, literal::SKIP}));
+    const auto validity = bg::run_graph(
+        valid_graph, bg::input<TS<bool>>({true, true, false, literal::INVALID, true}),
+        bg::input<TSD<i64, TS<i64>>>({{}, {{1, 10}, {2, 20}}, literal::SKIP, literal::SKIP, literal::SKIP}),
+        bg::input<TSD<i64, TS<i64>>>({{}, literal::SKIP, {{8, 80}}, literal::SKIP, literal::SKIP}));
+
+    CHECK(actual.equals({{}, {1, 2}, {8, literal::REMOVED(1), literal::REMOVED(2)},
+                         {literal::REMOVED(8)}, {1, 2}}));
+    CHECK(validity.equals<bool>({true, std::nullopt, std::nullopt, false, true}));
+}
+
+TEST_CASE("keys_ follows an initially invalid selected dictionary as it becomes valid",
+          "[feature:operator][series:tsd][series:tss][series:reference][transition:invalidation]"
+          "[transition:revalidation]") {
+    const auto graph = [](wp<TS<bool>> condition, wp<TSD<i64, TS<i64>>> left,
+                          wp<TSD<i64, TS<i64>>> right) {
+        return operators::keys_(operators::if_then_else(condition, left, right));
+    };
+    const auto valid_graph = [](wp<TS<bool>> condition, wp<TSD<i64, TS<i64>>> left,
+                                wp<TSD<i64, TS<i64>>> right) {
+        return operators::valid(operators::keys_(operators::if_then_else(condition, left, right)));
+    };
+
+    const auto actual = bg::run_graph(
+        graph, bg::input<TS<bool>>({true, false, false, false}),
+        bg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP, literal::SKIP, literal::SKIP}),
+        bg::input<TSD<i64, TS<i64>>>({literal::SKIP, literal::SKIP, {}, {{8, 80}}}));
+    const auto validity = bg::run_graph(
+        valid_graph, bg::input<TS<bool>>({true, false, false, false}),
+        bg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP, literal::SKIP, literal::SKIP}),
+        bg::input<TSD<i64, TS<i64>>>({literal::SKIP, literal::SKIP, {}, {{8, 80}}}));
+
+    CHECK(actual.equals({{1}, {literal::REMOVED(1)}, {}, {8}}));
+    CHECK(validity.equals<bool>({true, false, true, std::nullopt}));
+}
+
+TEST_CASE("keys_ preserves the dictionary key-set guarantee",
+          "[feature:operator][series:tsd][series:tss][guarantee:final]") {
+    const auto final_dictionary = node([](Out<TSD<i64, TS<i64>, TimeSeriesGuarantee::final>> output) {
+        output[1].set(1);
+    });
+
+    const auto graph = [&] {
+        const auto keys = operators::keys_(final_dictionary());
+        CHECK(&keys.type() == &TSS<i64, TimeSeriesGuarantee::final>::type());
+        return keys;
+    };
+
+    CHECK(bg::run_graph(graph).equals({{1}}));
+}
+
 TEST_CASE("keys_where_true follows invalidation and revalidation of a referenced mask item",
           "[feature:operator][series:tsd][series:tss][series:reference][transition:invalidation]"
           "[transition:revalidation]") {

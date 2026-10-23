@@ -44,6 +44,8 @@ imports and headers.
 | `if_then_else` | [Reference](library-selection.md#if_then_else) |
 | `is_empty` | [Reference](library-collections.md#time-series-set-operations) |
 | `join` | [Reference](library-text.md#split-and-join) |
+| `keys_` | [Reference](library-collections.md#collection-queries) |
+| `keys_where_true` | [Reference](library-collections.md#collection-queries) |
 | `kwargs` (C++) | [Reference](graph-code.md#variadic-parameters) |
 | `lag` | [Reference](library-stateful.md#lag) |
 | `le` | [Reference](library-numeric.md#arithmetic) |

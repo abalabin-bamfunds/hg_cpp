@@ -233,6 +233,7 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "any_", operators::any_);
     export_operator(operators_module, "contains_", operators::contains_);
     export_operator(operators_module, "is_empty", operators::is_empty);
+    export_operator(operators_module, "keys_", operators::keys_);
     export_operator(operators_module, "keys_where_true", operators::keys_where_true);
     export_operator(operators_module, "bit_or", operators::bit_or);
     export_operator(operators_module, "bit_and", operators::bit_and);

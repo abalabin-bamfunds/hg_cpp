@@ -46,7 +46,7 @@ class FixedItemSubscriptions final
 FixedItemReferenceInput fixed_item_reference_input(Reference collection, item_id_t id) {
     const auto resolved = ResolvedTimeSeries::resolve(collection);
     if (resolved.runtime_type == nullptr || resolved.storage == nullptr ||
-        id >= resolved.runtime_type->item_count(resolved.storage)) {
+        (id != key_set_item_id && id >= resolved.runtime_type->item_count(resolved.storage))) {
         return {&initial_time_series_state, nullptr, {}, false};
     }
 

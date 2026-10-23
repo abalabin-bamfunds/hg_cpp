@@ -20,6 +20,7 @@
 #include <bg/time_series/tss/tss_type.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
+#include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
 
 #include <stdexcept>
@@ -30,6 +31,13 @@ namespace bg {
 namespace details {
 
 template <typename T> struct tsd_item_reference_type;
+
+template <typename T, auto... ReferenceProperties> struct tsd_key_set_reference_type;
+
+template <typename K, typename Item, auto... DictionaryProperties, auto... ReferenceProperties>
+struct tsd_key_set_reference_type<TSD<K, Item, DictionaryProperties...>, ReferenceProperties...> {
+    using type = REF<TSS<K, DictionaryProperties...>, ReferenceProperties...>;
+};
 
 template <typename K, typename Item, auto... Properties> struct tsd_item_reference_type<TSD<K, Item, Properties...>> {
     using type = REF<Item, Properties...>;
@@ -134,6 +142,29 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...>
         }
 
         return details::tsd_membership_binding(value(), Scalar<>::from(key), true);
+    }
+
+    template <typename T = Target>
+        requires details::is_time_series_dict<T>
+    auto key_set() const {
+        using Result = typename details::tsd_key_set_reference_type<T, TimeSeriesProperties...>::type;
+        const auto &reference_type = type_cast<TimeSeriesReferenceType>(runtime_type().type());
+        const auto &dictionary_type = type_cast<TimeSeriesDictionaryType>(reference_type.target_type());
+        if (!valid()) {
+            const auto &result_runtime_type =
+                details::fixed_item_reference_runtime_type(dictionary_type.key_set_type());
+            return In<Result>{initial_time_series_state, nullptr, result_runtime_type};
+        }
+
+        const auto input = details::fixed_item_reference_input(value(), key_set_item_id);
+        if (!input.binding) {
+            const auto *result_runtime_type = input.runtime_type;
+            if (result_runtime_type == nullptr) {
+                result_runtime_type = &details::fixed_item_reference_runtime_type(dictionary_type.key_set_type());
+            }
+            return In<Result>{*input.last_updated, nullptr, *result_runtime_type, input.modified};
+        }
+        return In<Result>{*input.last_updated, input.binding, *input.runtime_type, input.modified};
     }
 
     template <typename T = Target>

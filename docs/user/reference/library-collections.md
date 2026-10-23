@@ -108,6 +108,13 @@ case; TSS uses one Boolean membership lookup.
 
 ## Collection queries
 
+`keys_(dictionary)` returns a TSS with the dictionary's current keys. It projects
+the existing key-set series, so value updates do not update the result. It follows
+dictionary reference changes and preserves the dictionary guarantee.
+
+`keys_where_true(mask)` returns the keys whose TSD Boolean items are valid and true.
+It updates when an item becomes false or invalid, or when a key is added or removed.
+
 `len_(value)` returns an `i64` length. It counts current TSS membership or the items in
 `TS<List<T>>`, `TS<Set<T>>`, and `TS<Dict<K, V>>`. For fixed TSL and TSB, it returns the
 declared item count as a wiring-time constant, independent of item validity. These

@@ -134,3 +134,26 @@ def test_keys_where_true_selects_dictionary_values():
         return values[bg.operators.keys_where_true(mask)][1]
 
     assert bg.run_graph(selected, [1, 2, 3], [True, False, True]) == [10, None, 30]
+
+
+def test_keys_projects_dictionary_membership_without_item_value_updates():
+    @bg.graph
+    def key_set(values: bg.TSD[int, bg.TS[int]]) -> bg.TSS[int]:
+        return bg.operators.keys_(dictionary=values)
+
+    assert bg.run_graph(
+        key_set,
+        [
+            {},
+            {1: 10, 2: 20},
+            {1: 11},
+            {3: 30, 2: bg.REMOVE},
+            {1: bg.REMOVE, 3: bg.REMOVE},
+        ],
+    ) == [
+        bg.SetDelta(),
+        bg.SetDelta(added={1, 2}),
+        None,
+        bg.SetDelta(added={3}, removed={2}),
+        bg.SetDelta(removed={1, 3}),
+    ]

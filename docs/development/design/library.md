@@ -569,6 +569,11 @@ annotations are not yet supplied.
 
 ## Collection selection
 
+`keys_(dictionary)` returns the dictionary's key-set time series. It selects the
+existing key-set item, so key additions and removals update the result while
+dictionary value updates do not. The result follows dictionary reference
+switching and preserves the dictionary guarantee.
+
 `keys_where_true(mask)` returns a TSS containing the keys whose current TSD
 Boolean items are valid and true. False or invalid items are absent. The output
 follows item additions, updates, removals, and reference target validity changes.
