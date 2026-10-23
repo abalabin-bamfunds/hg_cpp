@@ -9,7 +9,6 @@
 #include <bg/time_series/tsd/tsd_input.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsb/tsb_output.hpp>
-#include <bg/time_series/tsd/tsd_output.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
 #include <bg/web/http_server.hpp>
@@ -105,15 +104,6 @@ const auto server_routes = node<ServerRoutes>();
 const auto error_sink = node([](In<TS<string>> error) { throw std::runtime_error{std::string{error.value()}}; });
 const auto server_source = node<ServerSource>();
 
-using HTTP_AUTH_IDENTITY = ScalarVariable<"HTTP_AUTH_IDENTITY">;
-using HTTP_AUTH_GATE_VALUE = ScalarVariable<"HTTP_AUTH_GATE_VALUE">;
-using HTTP_AUTH_COPY_ITEM = ScalarVariable<"HTTP_AUTH_COPY_ITEM">;
-template <template <typename, auto...> typename Field> struct HTTP_AUTH_PROJECTION_SCHEMA {
-    Field<REF<TS<Bundle<HttpServerRequest>>>> requests;
-    Field<TS<HTTP_AUTH_IDENTITY>> identities;
-    Field<TS<Bundle<HttpResponse>>> rejections;
-};
-
 bool is_response_dictionary(const TimeSeriesType &type) {
     return TSD<i64, TS<Bundle<HttpResponse>>>::type().accepts(type.target_type());
 }
@@ -172,77 +162,17 @@ WiringPoint details::wire_http_server(ServerOptions options, WiringPoint routes,
 }
 
 WiringPoint details::http_authenticate_requests(WiringPoint requests, WiringPoint decisions) {
+    const auto request_dictionary = wp<TSD<i64, TS<Bundle<HttpServerRequest>>>>{requests};
     const auto identities = map(operators::getattr, decisions, util::symbol{"identity"});
     const auto rejections = map(operators::getattr, decisions, util::symbol{"rejection"});
+    const auto request_keys = operators::keys_where_true(map(operators::valid, request_dictionary));
+    const auto identity_keys = operators::keys_where_true(map(operators::valid, identities));
+    const auto rejection_keys = operators::keys_where_true(map(operators::valid, rejections));
+    const auto accepted_keys = operators::bit_and(request_keys, identity_keys);
+    const auto rejected_keys = operators::bit_and(request_keys, rejection_keys);
 
-    const auto authenticate_request = graph(
-        "name"_n = "http_authenticate_request",
-        [](wp<REF<TS<Bundle<HttpServerRequest>>>> request, wp<TS<HTTP_AUTH_IDENTITY>> identity,
-           wp<TS<Bundle<HttpResponse>>> rejection) -> wp<TSB<HTTP_AUTH_PROJECTION_SCHEMA>> {
-            const auto request_target = request.as<TS<Bundle<HttpServerRequest>>>();
-            const auto request_is_valid = operators::valid(request_target);
-
-            static const auto gate = node<HTTP_AUTH_GATE_VALUE>(
-                [](In<TS<bool>, optional> condition, In<TS<HTTP_AUTH_GATE_VALUE>, optional> value,
-                   Out<TS<HTTP_AUTH_GATE_VALUE>> output) {
-                    if (!condition.valid() || !condition.value() || !value.valid()) {
-                        output.invalidate();
-                        return;
-                    }
-
-                    output.copy(value);
-                });
-            static const auto gate_reference = node<HTTP_AUTH_IDENTITY>(
-                [](In<TS<Bundle<HttpServerRequest>>, optional> target,
-                   In<REF<TS<Bundle<HttpServerRequest>>>, passive> original,
-                   In<TS<HTTP_AUTH_IDENTITY>, optional> condition,
-                   Out<REF<TS<Bundle<HttpServerRequest>>>> output) {
-                    if (!target.valid() || !condition.valid()) {
-                        output.invalidate();
-                        return;
-                    }
-
-                    output.copy(original);
-                });
-            const auto accepted_identity = gate(request_is_valid, identity);
-            const auto accepted_request = gate_reference(request_target, request, accepted_identity);
-            const auto accepted_rejection = gate(request_is_valid, rejection);
-
-            return bundle<TSB<HTTP_AUTH_PROJECTION_SCHEMA>>(
-                "requests"_n = accepted_request, "identities"_n = accepted_identity,
-                "rejections"_n = accepted_rejection);
-        });
-    const auto per_request = map(authenticate_request, requests, identities, rejections);
-
-    const auto request_values = map(operators::getattr, per_request, util::symbol{"requests"});
-    const auto identity_values = map(operators::getattr, per_request, util::symbol{"identities"});
-    const auto rejection_values = map(operators::getattr, per_request, util::symbol{"rejections"});
-
-    static const auto copy_valid_references = node<HTTP_AUTH_COPY_ITEM>(
-        [](In<TSD<i64, TS<HTTP_AUTH_COPY_ITEM>>, optional> values,
-           In<TSD<i64, REF<TS<HTTP_AUTH_COPY_ITEM>>>, optional, passive> references,
-           Out<TSD<i64, REF<TS<HTTP_AUTH_COPY_ITEM>>>> output) {
-            const auto update = [&](const Scalar<i64> &key) {
-                if (values[key].valid()) {
-                    output[key].copy(references[key]);
-                    return;
-                }
-                output.erase(key);
-            };
-
-            values.for_each_added(update);
-            values.for_each_removed([&](const Scalar<i64> &key) { output.erase(key); });
-            values.for_each_modified(update);
-        });
-    const auto accepted_requests =
-        copy_valid_references(request_values.as<TSD<i64, TS<HTTP_AUTH_COPY_ITEM>>>(), request_values);
-    const auto accepted_identities =
-        copy_valid_references(identity_values.as<TSD<i64, TS<HTTP_AUTH_COPY_ITEM>>>(), identity_values);
-    const auto accepted_rejections =
-        copy_valid_references(rejection_values.as<TSD<i64, TS<HTTP_AUTH_COPY_ITEM>>>(), rejection_values);
-
-    return bundle("requests"_n = accepted_requests, "identities"_n = accepted_identities,
-                  "rejections"_n = accepted_rejections);
+    return bundle("requests"_n = request_dictionary[accepted_keys], "identities"_n = identities[accepted_keys],
+                  "rejections"_n = rejections[rejected_keys]);
 }
 
 WiringPoint details::http_merge_responses(WiringPoint responses, WiringPoint rejections) {
