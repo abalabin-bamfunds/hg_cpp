@@ -48,6 +48,9 @@ if(BG_FRAME_BUILD_BENCHMARKS)
         find_package(ArrowCompute CONFIG REQUIRED)
         add_executable(bg_frame_arrow_benchmark benchmarks/arrow_benchmark.cpp)
         target_link_libraries(bg_frame_arrow_benchmark PRIVATE bg::frame_arrow ArrowCompute::arrow_compute_shared)
+        add_executable(bg_frame_compaction_benchmark benchmarks/compaction_benchmark.cpp)
+        target_link_libraries(bg_frame_compaction_benchmark PRIVATE bg::frame_arrow
+                                                                    ArrowCompute::arrow_compute_shared)
     endif()
 endif()
 
