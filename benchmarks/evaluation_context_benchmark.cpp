@@ -57,6 +57,27 @@ struct TimeReadNode {
     inline static std::uint64_t time_checksum{};
 };
 
+struct ScalarOutputNode {
+    static constexpr bool uses_timed_scheduling = true;
+
+    bg::Out<bg::TS<bg::i64>> output;
+
+    void start(bg::EvaluationContext *context) const { context->schedule_now(); }
+
+    void evaluate(bg::EvaluationContext *context) const {
+        ++evaluation_count;
+        const auto time = context->evaluation_time().time_since_epoch().count();
+        time_checksum += static_cast<std::uint64_t>(time);
+        output.set(static_cast<bg::i64>(time));
+        if (evaluation_count < evaluation_cycle_count) {
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        }
+    }
+
+    inline static std::uint64_t evaluation_count{};
+    inline static std::uint64_t time_checksum{};
+};
+
 struct NestedEvaluationNode {
     static constexpr bool uses_timed_scheduling = true;
 
@@ -208,6 +229,36 @@ void benchmark_flat_evaluation(const bg::CompiledGraph &compiled) {
            "cycle");
 }
 
+void benchmark_scalar_output(const bg::CompiledGraph &compiled) {
+    auto samples = std::vector<std::int64_t>{};
+    std::uint64_t expected_checksum{};
+    for (auto sample_index = std::size_t{}; sample_index < sample_count; ++sample_index) {
+        auto global_state = bg::GlobalState{};
+        auto runtime_graph = bg::RuntimeGraph{compiled, global_state};
+        ScalarOutputNode::evaluation_count = 0;
+        ScalarOutputNode::time_checksum = 0;
+        const auto [elapsed, checksum] = measure([&] {
+            bg::SimulationEvaluationEngine{}.run(runtime_graph, start_time);
+            return ScalarOutputNode::time_checksum;
+        });
+        if (ScalarOutputNode::evaluation_count != evaluation_cycle_count) {
+            std::terminate();
+        }
+        const auto first_time = start_time.time_since_epoch().count();
+        const auto cycle_sum = static_cast<std::uint64_t>(evaluation_cycle_count) *
+                                   static_cast<std::uint64_t>(first_time) +
+                               static_cast<std::uint64_t>(evaluation_cycle_count - 1) * evaluation_cycle_count / 2;
+        if (checksum != cycle_sum) {
+            std::terminate();
+        }
+        expected_checksum = checksum;
+        samples.push_back(elapsed);
+    }
+
+    report("scalar_output_evaluation", samples, expected_checksum, static_cast<double>(evaluation_cycle_count),
+           "cycle");
+}
+
 } // namespace
 
 int main() {
@@ -240,6 +291,9 @@ int main() {
     auto time_read_node = bg::node<TimeReadNode>();
     const auto child_graph = compile_graph([&] { time_read_node(); });
     benchmark_flat_evaluation(child_graph);
+    auto scalar_output_node = bg::node<ScalarOutputNode>();
+    const auto scalar_output_graph = compile_graph([&] { scalar_output_node(); });
+    benchmark_scalar_output(scalar_output_graph);
     auto nested_node = bg::node<NestedEvaluationNode>();
     const auto parent_graph = compile_graph([&] { nested_node(); });
     benchmark_nested_evaluation(parent_graph, child_graph);
