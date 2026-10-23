@@ -21,11 +21,15 @@ The priorities are listed from highest to lowest:
 
 Use this order to resolve a conflict between priorities.
 
+For wiring and graph compilation, prioritize correctness and code
+understandability. Accept small performance differences when algorithmic
+complexity and memory use remain broadly comparable.
+
 ## Performance and memory
 
-Performance and memory use are primary design constraints. Use optimization
-techniques and memory reduction methods when they provide a clear benefit. Add
-focused utility classes and functions when they support these methods.
+Runtime graph performance and memory use are primary design constraints. Use
+optimization techniques and memory reduction methods when they provide a clear
+benefit. Add focused utility classes and functions when they support these methods.
 
 ## Python support
 
