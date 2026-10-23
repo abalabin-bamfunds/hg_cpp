@@ -1,4 +1,6 @@
 #include <bg/dispatch/details/dispatch_selector.hpp>
+#include <bg/graph.hpp>
+#include <bg/node.hpp>
 #include <bg/scalar/bundle/value.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -111,6 +113,21 @@ TEST_CASE("dispatch rejects an unmatched concrete scalar type", "[feature:dispat
                         [&](std::size_t, std::size_t) -> const ScalarType & { return base; },
                         [&](std::size_t) -> const ScalarType & { return unrelated; }),
                     std::out_of_range);
+}
+
+TEST_CASE("dispatch selector declares value inputs for supplied references",
+          "[feature:dispatch][feature:reference][binding:reference-to-value]") {
+    auto wiring = GraphWiring{};
+    auto context = WiringContext{wiring};
+    const auto source = node([] { return i64{1}; });
+    const auto reference = source().as<REF<TS<i64>>>();
+    const auto inputs = std::array<WiringArgument, 1>{WiringArgument{reference}};
+    const auto candidates = std::array<details::DispatchSelectorCandidate, 1>{
+        details::DispatchSelectorCandidate{{&int64_type()}}};
+
+    const auto selector = details::DispatchSelectorDefinition{inputs, candidates};
+
+    CHECK(selector.signature().parameter(0).type == &reference.type().dereferenced_type());
 }
 
 TEST_CASE("dispatch compares every selected input when finding a more specific tuple",

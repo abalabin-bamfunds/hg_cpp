@@ -3,6 +3,7 @@
 #include <bg/graph/node.hpp>
 #include <bg/node/input_properties.hpp>
 #include <bg/time_series/time_series_type.hpp>
+#include <bg/type/time_series_value_type.hpp>
 
 #include <stdexcept>
 
@@ -14,10 +15,14 @@ DispatchSelectorDefinition::DispatchSelectorDefinition(
           auto parameters = std::vector<Parameter>{};
           parameters.reserve(inputs.size());
           for (auto index = std::size_t{}; index < inputs.size(); ++index) {
-              if (!inputs[index].is_time_series()) {
-                  throw std::invalid_argument{"dispatch selector inputs must be time series"};
+              const auto *time_series = type_cast<TimeSeriesType>(&inputs[index].type());
+              const auto *value_type = time_series == nullptr
+                                           ? nullptr
+                                           : type_cast<TimeSeriesValueType>(&time_series->dereferenced_type());
+              if (value_type == nullptr) {
+                  throw std::invalid_argument{"dispatch selector inputs must be value time series"};
               }
-              parameters.push_back({util::symbol{std::to_string(index)}, &inputs[index].type(), active, optional});
+              parameters.push_back({util::symbol{std::to_string(index)}, value_type, active, optional});
           }
           return Signature{util::symbol{"dispatch_selector"}, std::move(parameters),
                            TS<i64, TimeSeriesGuarantee::deduplicated>::type()};
