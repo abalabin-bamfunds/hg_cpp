@@ -75,8 +75,7 @@ struct ResolverContext {
 const TypeMapValue *resolve_missing_mapping(void *context, TypeMap &type_map, const Variable &variable) {
     auto &resolution = *static_cast<ResolverContext *>(context);
     try {
-        const auto found = std::ranges::find_if(resolution.resolvers,
-                                                [&](const auto &resolver) { return resolver.variable == &variable; });
+        const auto found = std::ranges::find(resolution.resolvers, &variable, &VariableResolver::variable);
         if (found == resolution.resolvers.end()) {
             return nullptr;
         }
@@ -209,9 +208,7 @@ Signature Signature::with_defaults(std::span<const WiringParameter> declarations
         }
         seen.push_back(entry.name());
 
-        const auto parameter = std::ranges::find_if(result.parameters_, [&](const auto &candidate) {
-            return candidate.name == entry.name();
-        });
+        const auto parameter = std::ranges::find(result.parameters_, entry.name(), &Parameter::name);
         if (parameter == result.parameters_.end()) {
             throw std::invalid_argument{"a wiring default names an unknown parameter"};
         }
