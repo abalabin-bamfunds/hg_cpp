@@ -17,6 +17,9 @@ Both versions use the fixed BG revision `5d48e914`, installed in
 `dependencies/bg-frame-core-release-install`. The baseline executables and their
 matching extension libraries were preserved before rebuilding. The manifest
 records their hashes and resolved libraries.
+The measured optimized binaries are also preserved under
+`build/frame-optimisation-2026-10-22/pre-bounded-runtime`. These measurements
+predate the bounded bitmap search added after this comparison.
 
 The compiler is GNU C++ 14.3.0, with `-O3 -DNDEBUG`. The Arrow benchmark uses
 Arrow and ArrowCompute 24.0.0. The host is an x86_64 Linux KVM VM with an AMD
@@ -105,8 +108,9 @@ BG_FRAME_LIBRARY_PATH="$BG_FRAME_RUNTIME:$PWD/dependencies/bg-frame-core-release
   --report /tmp/before-arrow.md --csv /tmp/before-arrow.csv
 ```
 
-For the optimized run, set `BG_FRAME_RUNTIME` to
-`$PWD/build/tsf-row-release-arrow-on` and rebuild `BG_FRAME_LIBRARY_PATH`.
+For the measured optimized run, set `BG_FRAME_RUNTIME` to
+`$PWD/build/frame-optimisation-2026-10-22/pre-bounded-runtime/arrow-on` and
+rebuild `BG_FRAME_LIBRARY_PATH`.
 For expressions, use the corresponding `arrow-off` directory and
 `bg_frame_expression_benchmark`. Verify that `--list` resolves each frame
 library to the selected runtime directory before measurement.
