@@ -357,6 +357,23 @@ class ColumnBatchValidity {
         std::terminate();
     }
 
+    std::size_t first_invalid(std::uint64_t first_slot, std::size_t count) const noexcept {
+        switch (kind_) {
+        case Kind::all_valid:
+            return count;
+        case Kind::all_invalid:
+            return 0;
+        case Kind::index:
+        case Kind::bitmap:
+        case Kind::callback:
+            for (auto position = std::size_t{}; position != count; ++position)
+                if (!contains(first_slot, position))
+                    return position;
+            return count;
+        }
+        std::terminate();
+    }
+
     ColumnBatchValidity subspan(std::size_t offset) const noexcept {
         auto result = *this;
         if (result.kind_ == Kind::bitmap)

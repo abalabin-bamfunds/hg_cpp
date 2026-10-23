@@ -204,19 +204,25 @@ template <cell_type T> arrow::Result<std::shared_ptr<arrow::Array>> make_array(c
             return batch.size * sizeof(T);
     }();
     const auto byte_size = static_cast<std::int64_t>(value_bytes);
-    auto validity_bytes = std::vector<std::uint8_t>(bitmap_bytes, 0);
+    const auto first_invalid = batch.valid.first_invalid(batch.first_slot, batch.size);
     auto null_count = std::int64_t{};
-    for (auto position = std::size_t{}; position != batch.size; ++position) {
-        if (batch.is_valid(position)) {
-            arrow::bit_util::SetBit(validity_bytes.data(), value_bit_offset + static_cast<std::int64_t>(position));
-        } else {
-            ++null_count;
-        }
-    }
-
     std::shared_ptr<arrow::Buffer> validity;
-    if (null_count != 0)
+    if (first_invalid != batch.size) {
+        auto validity_bytes = std::vector<std::uint8_t>(bitmap_bytes, 0);
+        if (first_invalid != 0)
+            arrow::bit_util::SetBitsTo(validity_bytes.data(), value_bit_offset,
+                                       static_cast<std::int64_t>(first_invalid), true);
+        null_count = 1;
+        for (auto position = first_invalid + 1; position != batch.size; ++position) {
+            if (batch.is_valid(position)) {
+                arrow::bit_util::SetBit(validity_bytes.data(),
+                                        value_bit_offset + static_cast<std::int64_t>(position));
+            } else {
+                ++null_count;
+            }
+        }
         validity = arrow::Buffer::FromVector(std::move(validity_bytes));
+    }
 
     std::shared_ptr<arrow::Buffer> values;
     if (batch.values != nullptr) {

@@ -143,6 +143,45 @@ std::shared_ptr<arrow::Array> boolean_array(std::initializer_list<std::optional<
     return result;
 }
 
+void test_arrow_batch_validity_fast_paths() {
+    const auto values = std::array<i64, 4>{10, 20, 30, 40};
+    const auto all_valid = ColumnBatch<i64>{0, values.size(), values.data(), ColumnBatchValidity::all_valid()};
+    auto all_valid_result = arrow_details::make_array(all_valid);
+    require(all_valid_result.ok(), "all-valid Arrow batch export failed");
+    const auto all_valid_array = std::move(all_valid_result).ValueUnsafe();
+    require(all_valid_array->null_count() == 0 && all_valid_array->data()->buffers[0] == nullptr,
+            "all-valid Arrow batch allocated a validity bitmap");
+
+    const auto mixed_bitmap = std::array<std::uint8_t, 1>{0b00001101};
+    const auto mixed = ColumnBatch<i64>{0, values.size(), values.data(),
+                                        ColumnBatchValidity::from_bitmap(mixed_bitmap.data(), 0)};
+    auto mixed_result = arrow_details::make_array(mixed);
+    require(mixed_result.ok(), "mixed-validity Arrow batch export failed");
+    const auto mixed_array = std::move(mixed_result).ValueUnsafe();
+    require(mixed_array->null_count() == 1 && mixed_array->IsValid(0) && mixed_array->IsNull(1) &&
+                mixed_array->IsValid(2) && mixed_array->IsValid(3),
+            "mixed-validity Arrow batch produced an incorrect validity bitmap");
+
+    const auto all_null = ColumnBatch<i64>{0, 3, nullptr, ColumnBatchValidity::all_invalid()};
+    auto all_null_result = arrow_details::make_array(all_null);
+    require(all_null_result.ok(), "all-null Arrow batch export failed");
+    const auto all_null_array = std::move(all_null_result).ValueUnsafe();
+    require(all_null_array->null_count() == 3 && all_null_array->IsNull(0) && all_null_array->IsNull(1) &&
+                all_null_array->IsNull(2),
+            "all-null Arrow batch produced an incorrect null count or bitmap");
+
+    const auto boolean_values = std::array<std::uint8_t, 1>{0b00101000};
+    const auto boolean_validity = std::array<std::uint8_t, 1>{0b01101000};
+    const auto offset_boolean = ColumnBatch<bool>{0, 4, boolean_values.data(), 3,
+                                                  ColumnBatchValidity::from_bitmap(boolean_validity.data(), 3)};
+    auto boolean_result = arrow_details::make_array(offset_boolean);
+    require(boolean_result.ok(), "offset Boolean Arrow batch export failed");
+    const auto boolean = std::static_pointer_cast<arrow::BooleanArray>(std::move(boolean_result).ValueUnsafe());
+    require(boolean->offset() == 3 && boolean->null_count() == 1 && boolean->Value(0) && boolean->IsNull(1) &&
+                boolean->Value(2) && !boolean->Value(3),
+            "offset Boolean Arrow batch misaligned values or validity bits");
+}
+
 void test_boolean_arrow_import_and_export() {
     auto source = boolean_array({false, true, std::nullopt, false, true, std::nullopt, true, false,
                                  true, false, false, true, std::nullopt, false, true, false});
@@ -771,6 +810,7 @@ void test_arrow_frame_key_validation() {
 } // namespace
 
 int main() {
+    test_arrow_batch_validity_fast_paths();
     test_arrow_first_column_runtime_registration();
     test_inferred_arrow_frame_import();
     test_arrow_default_frame_runtime();
