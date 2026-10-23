@@ -10,8 +10,7 @@ class ServerRuntime;
 namespace details {
 
 template <template <typename, auto...> typename Field> struct ServerOutput {
-    Field<TS<i64>> port;
-    Field<TSD<string, TSD<i64, TS<Bundle<HttpServerRequest>>>>> requests;
+    Field<TSD<i64, TSD<i64, TS<Bundle<HttpServerRequest>>>>> requests;
     Field<TS<string>> errors;
     Field<TS<Opaque<ServerRuntime *>>> runtime;
 };

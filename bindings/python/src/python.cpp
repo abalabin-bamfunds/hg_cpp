@@ -138,31 +138,44 @@ class PythonServiceDefinition {
 
     nb::object wire(nb::sequence arguments) const {
         auto &wiring = WiringContext::current().wiring();
-        const auto &service_signature = signature_->signature;
-        if (nb::len(arguments) != service_signature.parameter_count()) {
-            throw std::invalid_argument{"the Python service received the wrong number of arguments"};
-        }
-
         auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
         auto memory = allocator{temporary_memory};
-        auto wiring_arguments = std::vector<WiringArgument>{};
-        wiring_arguments.reserve(service_signature.parameter_count());
-        for (auto index = std::size_t{}; index < service_signature.parameter_count(); ++index) {
-            const auto &parameter_type = *signature_->wiring_parameter_types[index];
-            if (parameter_type.is_scalar()) {
-                wiring_arguments.push_back(details::wiring_argument(parameter_type, arguments[index], memory, wiring));
-                continue;
-            }
-            if (!nb::isinstance<PythonWiringPoint>(arguments[index])) {
-                throw std::invalid_argument{"Python service time-series arguments require wiring points"};
-            }
-            wiring_arguments.push_back(nb::cast<const PythonWiringPoint &>(arguments[index]).argument(wiring));
-        }
+        auto wiring_arguments = service_arguments(arguments, memory);
 
         const auto result = service_->operator()(std::span<const WiringArgument>{wiring_arguments});
         if (!result) {
             return nb::none();
         }
+        return nb::cast(PythonWiringPoint{*result, PythonWiringScope::current()});
+    }
+
+    void client_requests(nb::handle client_id, nb::sequence arguments) const {
+        auto *service = dynamic_cast<Service *>(service_.get());
+        if (service == nullptr) {
+            throw std::invalid_argument{"split client wiring requires a request/reply service"};
+        }
+
+        auto &wiring = WiringContext::current().wiring();
+        const auto id = nb::cast<const PythonWiringPoint &>(client_id).get(wiring);
+        auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
+        auto memory = allocator{temporary_memory};
+        auto wiring_arguments = service_arguments(arguments, memory);
+        service->client_requests(TypeMap{}, id, wiring_arguments);
+    }
+
+    nb::object client_replies(nb::handle client_id, nb::sequence arguments) const {
+        auto *service = dynamic_cast<Service *>(service_.get());
+        if (service == nullptr) {
+            throw std::invalid_argument{"split client wiring requires a request/reply service"};
+        }
+
+        auto &wiring = WiringContext::current().wiring();
+        const auto id = nb::cast<const PythonWiringPoint &>(client_id).get(wiring);
+        auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
+        auto memory = allocator{temporary_memory};
+        auto wiring_arguments = service_arguments(arguments, memory, true);
+        const auto result = service->client_replies(TypeMap{}, id, wiring_arguments);
+        if (!result) return nb::none();
         return nb::cast(PythonWiringPoint{*result, PythonWiringScope::current()});
     }
 
@@ -187,6 +200,43 @@ class PythonServiceDefinition {
     }
 
   private:
+    std::vector<WiringArgument> service_arguments(nb::sequence arguments, allocator &memory,
+                                                 bool scalar_parameters_only = false) const {
+        auto &wiring = WiringContext::current().wiring();
+        const auto &service_signature = signature_->signature;
+        auto parameter_count = std::size_t{};
+        for (auto index = std::size_t{}; index < service_signature.parameter_count(); ++index) {
+            const auto &parameter = service_signature.parameter(index);
+            if (!scalar_parameters_only || parameter.type->is_scalar()) {
+                ++parameter_count;
+            }
+        }
+        if (nb::len(arguments) != parameter_count) {
+            throw std::invalid_argument{"the Python service received the wrong number of arguments"};
+        }
+
+        auto wiring_arguments = std::vector<WiringArgument>{};
+        wiring_arguments.reserve(parameter_count);
+        auto argument_index = std::size_t{};
+        for (auto index = std::size_t{}; index < service_signature.parameter_count(); ++index) {
+            const auto &parameter_type = *signature_->wiring_parameter_types[index];
+            if (scalar_parameters_only && !parameter_type.is_scalar()) {
+                continue;
+            }
+            if (parameter_type.is_scalar()) {
+                wiring_arguments.push_back(
+                    details::wiring_argument(parameter_type, arguments[argument_index++], memory, wiring));
+                continue;
+            }
+            if (!nb::isinstance<PythonWiringPoint>(arguments[argument_index])) {
+                throw std::invalid_argument{"Python service time-series arguments require wiring points"};
+            }
+            wiring_arguments.push_back(
+                nb::cast<const PythonWiringPoint &>(arguments[argument_index++]).argument(wiring));
+        }
+        return wiring_arguments;
+    }
+
     std::vector<WiringArgument> implementation_arguments(nb::sequence positional, nb::dict named,
                                                          allocator &memory) const {
         auto &wiring = WiringContext::current().wiring();
@@ -383,7 +433,8 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
                const std::optional<TypeDescriptor> &output,
                const std::optional<std::vector<std::size_t>> &active_parameters = std::nullopt,
                const std::optional<std::vector<std::size_t>> &valid_parameters = std::nullopt,
-               const std::vector<std::size_t> &all_valid_parameters = {}) {
+               const std::vector<std::size_t> &all_valid_parameters = {},
+               bool infer_time_series_guarantees = true) {
     auto resolved_parameters = std::vector<Parameter>{};
     resolved_parameters.reserve(parameters.size());
     auto wiring_parameter_types = std::vector<const Type *>{};
@@ -406,12 +457,15 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
             type = &input_type;
             wiring_type = scalar;
         }
-        if (const auto *time_series = type_cast<TimeSeriesType>(type);
+        if (infer_time_series_guarantees) {
+            if (const auto *time_series = type_cast<TimeSeriesType>(type);
             time_series != nullptr && variadic.empty() &&
-            dynamic_cast<const TypeVariableType<TimeSeriesType> *>(time_series) == nullptr) {
-            const auto &guarantee = VariableRegistry::instance().register_owned(
-                std::make_unique<GuaranteeVariable>(util::symbol{parameter_name}, parameter_type.minimum_guarantee()));
-            type = &TypeRegistry::instance().register_owned(generic_time_series_type(*time_series, guarantee));
+                dynamic_cast<const TypeVariableType<TimeSeriesType> *>(time_series) == nullptr) {
+                const auto &guarantee = VariableRegistry::instance().register_owned(
+                    std::make_unique<GuaranteeVariable>(util::symbol{parameter_name},
+                                                        parameter_type.minimum_guarantee()));
+                type = &TypeRegistry::instance().register_owned(generic_time_series_type(*time_series, guarantee));
+            }
         }
 
         auto parameter = Parameter{util::symbol{parameter_name}, type};
@@ -485,7 +539,7 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
 PythonServiceDefinition make_service(std::string name, std::string kind,
                                      const std::vector<PythonParameter> &parameters,
                                      const std::optional<TypeDescriptor> &output) {
-    auto signature = make_signature(name, parameters, output);
+    auto signature = make_signature(name, parameters, output, std::nullopt, std::nullopt, {}, false);
     auto service = [&]() -> std::unique_ptr<ServiceDefinition> {
         if (kind == "reference") {
             return std::make_unique<ReferenceService>(signature->signature);
@@ -1147,6 +1201,18 @@ void bind_core(nb::module_ &module) {
     module.def("_wire_service", [](const PythonServiceDefinition &definition, nb::sequence arguments) {
         return definition.wire(arguments);
     });
+    module.def("_service_client_id", [] {
+        return nb::cast(PythonWiringPoint{static_cast<WiringPoint>(service_client_id()),
+                                          PythonWiringScope::current()});
+    });
+    module.def("_service_client_requests",
+               [](const PythonServiceDefinition &definition, nb::handle client_id, nb::sequence arguments) {
+                   definition.client_requests(client_id, arguments);
+               });
+    module.def("_service_client_replies",
+               [](const PythonServiceDefinition &definition, nb::handle client_id, nb::sequence arguments) {
+                   return definition.client_replies(client_id, arguments);
+               });
     module.def("_service_implementation_requests",
                [](const PythonServiceDefinition &definition, nb::sequence positional, nb::dict named) {
                    return definition.implementation_requests(positional, named);

@@ -4,12 +4,16 @@
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
 #include <bg/literal/scalar_literal.hpp>
+#include <bg/map.hpp>
+#include <bg/map_argument.hpp>
 #include <bg/node.hpp>
+#include <bg/queue.hpp>
 #include <bg/realtime_evaluation_engine.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/scalar/bundle/value.hpp>
 #include <bg/scalar/list/scalar.hpp>
 #include <bg/scalar/tuple/scalar.hpp>
+#include <bg/time_series/tsb/tsb.hpp>
 #include <bg/web/http_server.hpp>
 #include <bg/wall_clock.hpp>
 
@@ -21,7 +25,9 @@
 #include <array>
 #include <condition_variable>
 #include <exception>
+#include <functional>
 #include <initializer_list>
+#include <memory>
 #include <mutex>
 #include <span>
 #include <stdexcept>
@@ -40,13 +46,25 @@ using namespace bg::web;
 
 namespace {
 
+template <typename Handler> struct Route {
+    Route(std::string path, Handler handler)
+        : handler{std::make_shared<HttpHandler>(http_handler(std::move(path), std::move(handler)))} {}
+
+    std::shared_ptr<HttpHandler> handler;
+};
+
 struct ServerTest {
     std::stop_source stop;
 
-    template <typename Client> void run(std::initializer_list<Route> routes, Client client_function) {
+    template <typename Wire, typename Client>
+        requires std::invocable<Wire>
+    void run(Wire wire, Client client_function) {
+        auto catalogue = ServiceCatalogue{};
+        register_http_server(catalogue);
         run_graph(
             [&] {
-                const auto port = http_server(routes);
+                std::invoke(wire);
+                const auto port = http_server();
                 (void)node([&](In<TS<i64>> bound_port) {
                     client = std::jthread{[&, client_function = std::move(client_function),
                                            port = static_cast<std::uint16_t>(*bound_port)]() mutable {
@@ -59,7 +77,8 @@ struct ServerTest {
                     }};
                 })(port);
             },
-            GraphRunOptions{.engine = EvaluationEngine::realtime,
+            GraphRunOptions{.services = &catalogue,
+                            .engine = EvaluationEngine::realtime,
                             .run_time = std::chrono::seconds{5},
                             .stop_token = stop.get_token()});
 
@@ -67,9 +86,21 @@ struct ServerTest {
         if (client_failure) std::rethrow_exception(client_failure);
     }
 
+    template <typename Handler, typename Client>
+    void run(std::initializer_list<Route<Handler>> routes, Client client_function) {
+        run([routes] {
+            for (const auto &route : routes) (void)(*route.handler)();
+        }, std::move(client_function));
+    }
+
   private:
     std::jthread client;
     std::exception_ptr client_failure;
+};
+
+template <template <typename, auto...> typename Field> struct RichHandlerOutput {
+    Field<TS<Bundle<HttpResponse>>> response;
+    Field<TS<i64>> extra;
 };
 
 struct RawHttpResponse {
@@ -127,6 +158,183 @@ const auto echo_handler = node([](In<TS<Bundle<HttpServerRequest>>> request,
                                       "body"_n = request.value()[5]);
     response.set_value(reply.view());
 });
+
+TEST_CASE("HTTP handlers accept ambient inputs and preserve mapped extra outputs",
+          "[feature:http][feature:nested-graph][shape:nested]") {
+    using Header = Tuple<string, string>;
+
+    auto extra_values = std::vector<i64>{};
+    const auto respond = node([](In<TS<Bundle<HttpServerRequest>>> request, In<TS<i64>> extra,
+                                 Out<TS<Bundle<HttpResponse>>> response) {
+        const auto headers = ScalarValue<List<Header>>{std::vector<Scalar<Header>>{}};
+        const auto path = scalar_cast<string>(request.value()[2]).value();
+        const auto body = std::to_string(extra.value()) + std::string{path};
+        const auto body_bytes = std::span<const std::byte>{reinterpret_cast<const std::byte *>(body.data()),
+                                                            body.size()};
+        const auto body_value = ScalarValue<bytes>{body_bytes};
+        const auto result = bundle<HttpResponse>("status"_n = i64{200}, "headers"_n = headers.view(),
+                                                 "body"_n = body_value.view());
+        response.set_value(result.view());
+    });
+    const auto handler_graph = graph(
+        "name"_n = "ambient_http_handler",
+        [&](wp<TS<Bundle<HttpServerRequest>>> request, wp<TS<i64>> extra) {
+            const auto response = respond(request, extra);
+            return bundle<RichHandlerOutput>("response"_n = response, "extra"_n = extra);
+        });
+    const auto handler = http_handler("/rich", handler_graph);
+    auto server = ServerTest{};
+    auto response_body = std::string{};
+    auto status = 0U;
+
+    server.run(
+        [&] {
+            const auto result = handler(operators::const_(i64{42}));
+            const auto project_extra = GraphTemplate{
+                Signature{util::symbol{"project_extra"},
+                          {{util::symbol{"bundle"}, &TSB<RichHandlerOutput>::type()}}, TS<i64>::type()},
+                [](wp<> bundle) { return operators::getattr(bundle, util::symbol{"extra"}); }};
+            const auto arguments = std::array{MapArgument{WiringArgument{result}}};
+            const auto extra = map(project_extra, std::span<const MapArgument>{arguments});
+            (void)node([&](In<TSD<i64, TS<i64>>> values) {
+                const auto collect = [&](const Scalar<i64> &key) { extra_values.push_back(values[key].value()); };
+                values.for_each_added(collect);
+                values.for_each_modified(collect);
+            })(extra);
+        },
+        [&](std::uint16_t port) {
+            namespace asio = boost::asio;
+            namespace beast = boost::beast;
+            namespace http = beast::http;
+            using tcp = asio::ip::tcp;
+
+            auto context = asio::io_context{};
+            auto socket = tcp::socket{context};
+            socket.connect({asio::ip::make_address("127.0.0.1"), port});
+            auto request = http::request<http::empty_body>{http::verb::get, "/rich", 11};
+            request.set(http::field::host, "localhost");
+            http::write(socket, request);
+            auto buffer = beast::flat_buffer{};
+            auto reply = http::response<http::string_body>{};
+            http::read(socket, buffer, reply);
+            status = reply.result_int();
+            response_body = std::move(reply.body());
+            server.stop.request_stop();
+        });
+
+    CHECK(status == 200);
+    CHECK(response_body == "42/rich");
+    CHECK(extra_values == std::vector<i64>{42});
+}
+
+TEST_CASE("HTTP server can start without routes", "[feature:http][feature:lifecycle]") {
+    namespace asio = boost::asio;
+    namespace beast = boost::beast;
+    namespace http = beast::http;
+    using tcp = asio::ip::tcp;
+
+    auto server = ServerTest{};
+    auto status = 0U;
+    server.run([] { (void)http_server(); }, [&](std::uint16_t port) {
+        auto context = asio::io_context{};
+        auto socket = tcp::socket{context};
+        socket.connect({asio::ip::make_address("127.0.0.1"), port});
+        auto request = http::request<http::empty_body>{http::verb::get, "/unregistered", 11};
+        request.set(http::field::host, "localhost");
+        http::write(socket, request);
+        auto buffer = beast::flat_buffer{};
+        auto reply = http::response<http::string_body>{};
+        http::read(socket, buffer, reply);
+        status = reply.result_int();
+        server.stop.request_stop();
+    });
+
+    CHECK(status == 404);
+}
+
+TEST_CASE("HTTP server rejects duplicate routes", "[feature:http][feature:lifecycle]") {
+    auto catalogue = ServiceCatalogue{};
+    register_http_server(catalogue);
+    const auto first = http_handler("/duplicate", echo_handler);
+    const auto second = http_handler("/duplicate", echo_handler);
+
+    CHECK_THROWS(run_graph(
+        [&] {
+            (void)first();
+            (void)second();
+            (void)http_server();
+        },
+        GraphRunOptions{.services = &catalogue,
+                        .engine = EvaluationEngine::realtime,
+                        .run_time = std::chrono::seconds{1}}));
+}
+
+TEST_CASE("HTTP route removal withdraws the route and permits a later registration",
+          "[feature:http][feature:lifecycle][transition:removal][shape:nested]") {
+    namespace asio = boost::asio;
+    namespace beast = boost::beast;
+    namespace http = beast::http;
+    using tcp = asio::ip::tcp;
+
+    auto writer = Queue{};
+    const auto activations = queue<TSS<i64>>(start = [&](Queue queue) { writer = queue; });
+    const auto handler = http_handler("/dynamic", echo_handler);
+    auto server = ServerTest{};
+    auto statuses = std::vector<unsigned>{};
+
+    server.run(
+        [&] {
+            (void)map([&](auto key) {
+                (void)handler();
+                return key;
+            },
+                      activations());
+            (void)http_server();
+        },
+        [&](std::uint16_t port) {
+            auto context = asio::io_context{};
+            const auto request_status = [&] {
+                auto socket = tcp::socket{context};
+                socket.connect({asio::ip::make_address("127.0.0.1"), port});
+                auto request = http::request<http::empty_body>{http::verb::get, "/dynamic", 11};
+                request.set(http::field::host, "localhost");
+                http::write(socket, request);
+                auto buffer = beast::flat_buffer{};
+                auto reply = http::response<http::string_body>{};
+                http::read(socket, buffer, reply);
+                return reply.result_int();
+            };
+            const auto wait_for_status = [&](unsigned expected) {
+                auto status = 0U;
+                for (auto attempt = 0; attempt < 100; ++attempt) {
+                    try {
+                        status = request_status();
+                    } catch (const boost::system::system_error &error) {
+                        if (error.code() != http::error::end_of_stream) throw;
+                    }
+                    if (status == expected) return status;
+                    std::this_thread::sleep_for(std::chrono::milliseconds{10});
+                }
+                return status;
+            };
+
+            if (!writer.write(::literal::TimeSeriesLiteral{1})) {
+                throw std::runtime_error{"could not activate HTTP route"};
+            }
+            statuses.push_back(wait_for_status(200));
+            if (!writer.write(::literal::TimeSeriesLiteral{literal::REMOVED(1)})) {
+                throw std::runtime_error{"could not remove HTTP route"};
+            }
+            statuses.push_back(wait_for_status(404));
+            if (!writer.write(::literal::TimeSeriesLiteral{1})) {
+                throw std::runtime_error{"could not reactivate HTTP route"};
+            }
+            statuses.push_back(wait_for_status(200));
+            server.stop.request_stop();
+        });
+
+    CHECK(statuses == std::vector<unsigned>{200, 404, 200});
+}
 
 } // namespace
 
@@ -292,11 +500,15 @@ TEST_CASE("HTTP server runtime state can be recreated from one compiled graph",
     });
 
     auto wiring = GraphWiring{};
+    auto catalogue = ServiceCatalogue{};
+    register_http_server(catalogue);
+    auto handler = http_handler("/echo", echo_handler);
     {
         auto context = WiringContext{wiring};
-        capture_port(http_server({Route{ "/echo", echo_handler }}));
+        (void)handler();
+        capture_port(http_server());
     }
-    wiring.finalize();
+    wiring.finalize(catalogue);
     auto compiled = CompiledGraph{wiring};
 
     for (auto run = 0; run < 2; ++run) {
@@ -525,12 +737,13 @@ TEST_CASE("HTTP server rejects incompatible route signatures", "[feature:http]")
     const auto no_output = node([](In<TS<Bundle<HttpServerRequest>>>) {});
     const auto wrong_output = node([](In<TS<Bundle<HttpServerRequest>>>, Out<TS<i64>>) {});
 
-    CHECK_THROWS_AS(http_server({Route{"/zero", no_arguments}}), std::invalid_argument);
-    CHECK_THROWS_AS(http_server({Route{"/no-output", no_output}}), std::invalid_argument);
+    CHECK_THROWS_AS(http_handler("/zero", no_arguments), std::invalid_argument);
+    CHECK_THROWS_AS(http_handler("/no-output", no_output), std::invalid_argument);
 
     auto wiring = GraphWiring{};
     auto context = WiringContext{wiring};
-    CHECK_THROWS_AS((void)http_server({Route{"/wrong-output", wrong_output}}), TypeResolutionError);
+    auto handler = http_handler("/wrong-output", wrong_output);
+    CHECK_THROWS_AS(handler(), WiringError);
 }
 
 TEST_CASE("HTTP server removes disconnected requests before replying to later requests",

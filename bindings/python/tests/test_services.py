@@ -514,6 +514,30 @@ def test_multiservice_request_reply_uses_scalar_filter_and_installation_argument
     assert bg.run_graph(client, [2, 4], catalogue=catalogue) == [6, 12]
 
 
+def test_split_request_reply_client_binds_scalar_instance_arguments():
+    @bg.service
+    def echo(value: bg.TS[int], mode: str = "fast") -> bg.TS[int]:
+        pass
+
+    @bg.graph
+    def implementation() -> None:
+        requests = echo.implementation_requests("fast")
+        echo.implementation_replies(bg.operators.getattr(requests, bg.symbol("value")), "fast")
+
+    @bg.graph
+    def client(value: bg.TS[int]) -> bg.TS[int]:
+        client_id = bg.service_client_id()
+        replies = echo.client_replies(client_id)
+        echo.client_requests(client_id, value, mode="fast")
+        return replies
+
+    catalogue = bg.ServiceCatalogue()
+    registration = catalogue.register_multiservice(implementation)
+    registration.register_impl(echo, mode="fast")
+
+    assert bg.test_graph(client, [3, 7], catalogue=catalogue) == [3, 7]
+
+
 def test_multiservice_outputless_service_uses_request_port_without_reply():
     @bg.service
     def observe(value: bg.TS[int]) -> None:

@@ -12,7 +12,7 @@ These dependencies are private to the extension.
 
 ```python
 import bg
-from bg_web import HttpServerRequest, HttpResponse, http_server
+from bg_web import HttpServerRequest, HttpResponse, http_handler, http_server, register_http_server
 
 @bg.compute_node
 def echo_response(request: bg.TS[HttpServerRequest]) -> bg.TS[HttpResponse]:
@@ -24,20 +24,31 @@ def echo(request: bg.TS[HttpServerRequest]) -> bg.TS[HttpResponse]:
 
 @bg.graph
 def application() -> None:
-    http_server(routes={"/echo": echo}, host="127.0.0.1", port=8080)
+    http_handler("/echo", echo)()
+    http_server()
 
-bg.run_graph(application, engine=bg.EvaluationEngine.realtime)
+catalogue = bg.ServiceCatalogue()
+register_http_server(catalogue, host="127.0.0.1", port=8080)
+bg.run_graph(application, catalogue=catalogue, engine=bg.EvaluationEngine.realtime)
 ```
 
-`http_server` returns `TS[int]` containing the bound port once the listener is
-ready. Use `port=0` to let the operating system assign a port. Each call creates
-one server with separate runtime state for each graph run.
+`register_http_server` installs the server implementation in a service
+catalogue. `http_server()` returns `TS[int]` containing the bound port after the
+listener is ready. Use `port=0` to let the operating system assign a port. Each
+implementation owns one server with separate runtime state for each graph run.
 
-Routes match the request path exactly. Each route receives its own request
-dictionary, so changes on one route do not invoke another route's handler. An
-unmatched path returns HTTP 404.
-The handler reads the HTTP method from the request. A handler has one of these
-signatures:
+`http_handler(path, graph)` creates a callable handler. Invoke it wherever the
+route should be wired. The graph's first input receives the request. Remaining
+inputs are ambient graph arguments supplied to the handler call. A single-request
+handler returns a result keyed by request ID; use `map()` to project additional
+outputs from those per-request results. The handler output is the response, or a
+bundle containing a `response` field and any additional outputs. A dictionary
+handler can accept all active requests and return response values keyed by the
+same request IDs.
+Routes match the request path exactly. Each route receives only its own
+requests. An unmatched path returns HTTP 404.
+
+The request graph can use either signature:
 
 ```python
 TS[HttpServerRequest] -> TS[HttpResponse]
@@ -47,8 +58,8 @@ TSD[int, TS[HttpServerRequest]] -> TSD[int, TS[HttpResponse]]
 The first form uses `map()` to create one graph instance per request. The second
 form receives all active requests for its route. Its response keys must match
 the request keys. The first response completes a request. Completion,
-disconnection, or timeout removes the request. Responses for removed requests
-are ignored.
+disconnection, route removal, or timeout removes the request. Responses for
+removed requests are ignored.
 
 `HttpServerRequest` contains `method`, `target`, `path`, `query`, `headers`,
 `body`, and `peer`. `peer` contains the remote `address` and `port`.
@@ -72,17 +83,26 @@ HTTP/1.1 requests require one valid `Host` header.
 Request bodies are limited to 8 MiB. Request reads, handler responses, and
 response writes each time out after 30 seconds.
 
-The C++ entry point is declared in `<bg/web/http_server.hpp>`:
+The C++ entry points are declared in `<bg/web/http_server.hpp>`:
 
 ```cpp
-bg::web::http_server(
-    {{"/echo", echo}},
-    {.host = "127.0.0.1", .port = 8080});
+auto catalogue = bg::ServiceCatalogue{};
+bg::web::register_http_server(catalogue, {.host = "127.0.0.1", .port = 8080});
+
+bg::run_graph([&] {
+    (void)bg::web::http_handler("/echo", echo)();
+    (void)bg::web::http_server();
+}, bg::GraphRunOptions{.services = &catalogue,
+                       .engine = bg::EvaluationEngine::realtime});
 ```
 
-C++ handlers use `TS<Bundle<HttpServerRequest>>` and
-`TS<Bundle<HttpResponse>>`, or dictionaries of those time series keyed by
-`i64`. Link the optional `bg::web` target.
+C++ handlers use `TS<Bundle<HttpServerRequest>>` for one request or
+`TSD<i64, TS<Bundle<HttpServerRequest>>>` for all route requests. A single-request
+handler returns `TS<Bundle<HttpResponse>>` or a bundle with a `response` field
+and additional outputs. Its mapped result is `TSD<i64, REF<HANDLER_OUTPUT>>`.
+A dictionary handler returns `TSD<i64, TS<Bundle<HttpResponse>>>` or a bundle
+with a `response` field containing that dictionary and additional outputs. Link
+the optional `bg::web` target.
 
 ## Client
 

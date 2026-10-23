@@ -55,6 +55,9 @@ from ._bg import (
     _register_service_impl,
     _service_implementation_requests,
     _service_implementation_replies,
+    _service_client_id,
+    _service_client_requests,
+    _service_client_replies,
     _wire_service,
     _time_series_dict_type,
     _time_series_bundle_type,
@@ -785,17 +788,32 @@ class _FeedbackServiceImplementation:
 
 
 class _ServiceDefinition:
-    def __init__(self, function: Any, native_definition: Any):
+    def __init__(self, function: Any, native_definition: Any, scalar_parameters: tuple[str, ...]):
         self.function = function
         self._native_definition = native_definition
         update_wrapper(self, function)
         self.signature = inspect.signature(function)
+        self.scalar_signature = inspect.Signature(
+            [self.signature.parameters[name] for name in scalar_parameters]
+        )
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         bound = self.signature.bind(*args, **kwargs)
         bound.apply_defaults()
         arguments = tuple(bound.arguments[parameter] for parameter in self.signature.parameters)
         return _wire_service(self._native_definition, arguments)
+
+    def client_requests(self, client_id: Any, *args: Any, **kwargs: Any) -> None:
+        bound = self.signature.bind(*args, **kwargs)
+        bound.apply_defaults()
+        arguments = tuple(bound.arguments[parameter] for parameter in self.signature.parameters)
+        _service_client_requests(self._native_definition, client_id, arguments)
+
+    def client_replies(self, client_id: Any, *args: Any, **kwargs: Any) -> Any:
+        bound = self.scalar_signature.bind(*args, **kwargs)
+        bound.apply_defaults()
+        arguments = tuple(bound.arguments[name] for name in self.scalar_signature.parameters)
+        return _service_client_replies(self._native_definition, client_id, arguments)
 
     def implementation_requests(self, *args: Any, **kwargs: Any) -> Any:
         return _service_implementation_requests(self._native_definition, args, kwargs)
@@ -1232,6 +1250,7 @@ def _define_service(function: Any, kind: str) -> _ServiceDefinition:
     signature = inspect.signature(function)
     annotations = get_type_hints(function, include_extras=True)
     parameters = []
+    scalar_parameters = []
     for parameter in signature.parameters.values():
         if parameter.kind in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD):
             raise TypeError("Python services do not support variadic parameters")
@@ -1241,6 +1260,8 @@ def _define_service(function: Any, kind: str) -> _ServiceDefinition:
         native_type = _native_type(annotation)
         if isinstance(native_type, _ScalarAnnotation):
             native_type = native_type.type
+        if not native_type.is_time_series:
+            scalar_parameters.append(parameter.name)
         parameters.append((parameter.name, native_type, ""))
 
     output = annotations.get("return", signature.return_annotation)
@@ -1252,7 +1273,7 @@ def _define_service(function: Any, kind: str) -> _ServiceDefinition:
             raise TypeError("Python service outputs must use an explicit TS[...] annotation")
 
     native_definition = _make_service(function.__name__, kind, parameters, output)
-    return _ServiceDefinition(function, native_definition)
+    return _ServiceDefinition(function, native_definition, tuple(scalar_parameters))
 
 
 def _is_time_series_type_variable(annotation: TypeVar) -> bool:
@@ -1369,6 +1390,11 @@ def service(function: Any) -> _ServiceDefinition:
 def subscription_service(function: Any) -> _ServiceDefinition:
     """Declare a service that requests values for final time-series keys."""
     return _define_service(function, "subscription")
+
+
+def service_client_id() -> _WiringPoint:
+    """Create a const time series that identifies one split service client."""
+    return _service_client_id()
 
 
 def feedback_service_implementation(
@@ -1607,6 +1633,7 @@ __all__ = [
     "reference_service",
     "service",
     "subscription_service",
+    "service_client_id",
     "source_node",
     "symbol",
     "switch_",

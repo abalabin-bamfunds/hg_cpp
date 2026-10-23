@@ -6,7 +6,7 @@ import threading
 from datetime import timedelta
 
 import bg
-from bg_web import HttpResponse, HttpServerRequest, http_server
+from bg_web import HttpResponse, HttpServerRequest, http_handler, http_server, register_http_server
 
 
 def test_bg_web_imports_before_bg():
@@ -49,6 +49,9 @@ def test_http_server_routes_binary_request_and_returns_native_bytes():
     ) -> bg.TSD[int, bg.TS[HttpResponse]]:
         return bg.map(dictionary_echo, requests)
 
+    echo_route = http_handler("/echo", echo)
+    dictionary_route = http_handler("/dictionary", dictionary_handler)
+
     @bg.compute_node
     def start_client(port: bg.TS[int]) -> bg.TS[int]:
         nonlocal worker
@@ -75,12 +78,14 @@ def test_http_server_routes_binary_request_and_returns_native_bytes():
 
     @bg.graph
     def application() -> bg.TS[int]:
-        port = http_server(routes={"/echo": echo, "/dictionary": dictionary_handler},
-                           host="127.0.0.1", port=0)
-        return start_client(port)
+        echo_route()
+        dictionary_route()
+        return start_client(http_server())
 
-    bg.run_graph(application, engine=bg.EvaluationEngine.realtime, run_time=timedelta(seconds=5),
-                 stop_token=stop.get_token())
+    catalogue = bg.ServiceCatalogue()
+    register_http_server(catalogue, host="127.0.0.1", port=0)
+    bg.run_graph(application, catalogue=catalogue, engine=bg.EvaluationEngine.realtime,
+                 run_time=timedelta(seconds=5), stop_token=stop.get_token())
     if worker is not None:
         worker.join(3)
 

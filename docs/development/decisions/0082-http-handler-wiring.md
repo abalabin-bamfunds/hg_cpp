@@ -1,6 +1,6 @@
 # HTTP handler wiring
 
-Status: accepted
+Status: superseded by [0084-http-service-handler-wiring](0084-http-service-handler-wiring.md)
 
 ## Context
 

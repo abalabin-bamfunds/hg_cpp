@@ -628,8 +628,9 @@ void ServiceCatalogue::BuildOperation::wire_multiservice(std::size_t registratio
         if (expected_output == nullptr || !expected_output->accepts(output.type())) {
             throw WiringError{"a multiservice reply has an incompatible output time series"};
         }
-        wiring_.provide_inherited_time_series(details::NestedBindingIdentity::object(&instance), *expected_output,
-                                              output);
+        const auto identity = details::NestedBindingIdentity::object(&instance);
+        (void)wiring_.require_inherited_time_series(identity, instance.signature.name, *expected_output);
+        wiring_.provide_inherited_time_series(identity, *expected_output, output);
         instance.implementation_replies_wired = true;
         instance.implementation_wired =
             !instance.service->implementation_requests_required() || instance.implementation_requests_wired;
@@ -980,8 +981,9 @@ bool ServiceCatalogue::BuildOperation::run() {
                                     std::string{instance.signature.name.text()} + "'",
                                 instance);
         }
-        wiring_.provide_inherited_time_series(details::NestedBindingIdentity::object(&instance), *expected_output,
-                                              matching_reply->output);
+        const auto identity = details::NestedBindingIdentity::object(&instance);
+        (void)wiring_.require_inherited_time_series(identity, instance.signature.name, *expected_output);
+        wiring_.provide_inherited_time_series(identity, *expected_output, matching_reply->output);
         instance.implementation_replies_wired = true;
         instance.implementation_wired =
             !instance.service->implementation_requests_required() || instance.implementation_requests_wired;

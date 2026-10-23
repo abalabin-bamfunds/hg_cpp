@@ -18,6 +18,8 @@
 #include <chrono>
 #include <cstdint>
 
+#include "http_server_internal.hpp"
+
 namespace nb = nanobind;
 
 namespace bg::web {
@@ -26,30 +28,23 @@ namespace {
 template <template <template <typename, auto...> typename> typename SCHEMA>
 void export_native_schema(nb::handle python_type) {
     const auto &time_series_schema = static_cast<const TimeSeriesBundleType &>(TSB<SCHEMA>::type()).schema();
-    const auto &scalar_schema = details::hierarchical_scalar_type<SCHEMA>().schema();
+    const auto &scalar_schema = bg::details::hierarchical_scalar_type<SCHEMA>().schema();
     python::export_schema(python_type, time_series_schema, &scalar_schema);
 }
 
-python::PythonWiringPoint make_http_server(nb::dict route_handlers, std::string host, std::uint16_t port) {
-    auto paths = std::vector<std::string>{};
-    auto handlers = std::vector<const WiringTemplate *>{};
-    paths.reserve(route_handlers.size());
-    handlers.reserve(route_handlers.size());
-    for (const auto &[path, handler] : route_handlers) {
-        paths.push_back(nb::cast<std::string>(path));
-        const auto &definition = nb::cast<const python::PythonGraphDefinition &>(
-            nb::getattr(handler, "_native_definition"));
-        handlers.push_back(&definition);
-    }
+python::PythonWiringPoint make_http_server_implementation(const python::PythonWiringPoint &routes,
+                                                           const python::PythonWiringPoint &responses,
+                                                           std::string host, std::uint16_t port) {
+    auto &wiring = WiringContext::current().wiring();
+    const auto output = details::wire_http_server(ServerOptions{.host = std::move(host), .port = port},
+                                                  routes.get(wiring), responses.get(wiring));
+    return python::PythonWiringPoint{output, python::PythonWiringScope::current()};
+}
 
-    auto routes = std::vector<Route>{};
-    routes.reserve(paths.size());
-    for (auto index = std::size_t{}; index < paths.size(); ++index) {
-        routes.push_back({paths[index], *handlers[index]});
-    }
-    return python::PythonWiringPoint{
-        static_cast<WiringPoint>(http_server(routes, ServerOptions{.host = std::move(host), .port = port})),
-        python::PythonWiringScope::current()};
+python::PythonWiringPoint make_http_response_field(const python::PythonWiringPoint &result) {
+    auto &wiring = WiringContext::current().wiring();
+    const auto output = details::http_response_field(result.get(wiring));
+    return python::PythonWiringPoint{output, python::PythonWiringScope::current()};
 }
 
 python::PythonWiringPoint make_http_client_impl(const python::PythonWiringPoint &requests,
@@ -74,8 +69,12 @@ NB_MODULE(_bg_web, module) {
         bg::web::export_native_schema<bg::web::HttpClientRequest>(client_request);
         bg::web::export_native_schema<bg::web::HttpResponse>(response);
     });
-    module.def("http_server", &bg::web::make_http_server, nb::arg("routes"),
-               nb::arg("host") = "127.0.0.1", nb::arg("port") = 0);
+    module.def("_http_server_impl", &bg::web::make_http_server_implementation, nb::arg("routes"),
+               nb::arg("responses"), nb::arg("host") = "127.0.0.1", nb::arg("port") = 0);
+    module.def("_http_response_field", &bg::web::make_http_response_field, nb::arg("result"));
+    module.def("_http_handler_input_is_dictionary", [](const bg::python::PythonGraphDefinition &handler) {
+        return bg::web::details::http_handler_input_is_dictionary(handler);
+    });
     module.def("_http_client_impl", &bg::web::make_http_client_impl, nb::arg("requests"), nb::arg("timeout_ms"),
                nb::arg("max_response_body_size"));
 }

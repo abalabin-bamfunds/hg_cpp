@@ -137,6 +137,7 @@ class HttpSession final : public std::enable_shared_from_this<HttpSession> {
 
     void run();
     void close_for_shutdown() noexcept;
+    void cancel() noexcept;
     void write_response(ScalarValue<Bundle<HttpResponse>> response);
     void await_response(i64 request_id);
     void send_error(http::status status, std::string body, bool close);
@@ -172,19 +173,21 @@ class HttpSession final : public std::enable_shared_from_this<HttpSession> {
 
 class ServerImplementation final {
   public:
-    ServerImplementation(ServerOptions options, std::vector<std::string> routes, Queue output)
+    ServerImplementation(ServerOptions options, Queue output)
         : output_{std::move(output)}, acceptor_{io_} {
-        for (auto &route : routes) {
-            routes_.insert(std::move(route));
-        }
         const auto address = asio::ip::make_address(options.host);
         const auto endpoint = tcp::endpoint{address, options.port};
         acceptor_.open(endpoint.protocol());
         acceptor_.set_option(asio::socket_base::reuse_address{true});
         acceptor_.bind(endpoint);
-        acceptor_.listen(asio::socket_base::max_listen_connections);
         port_ = acceptor_.local_endpoint().port();
+    }
+
+    void start() {
+        if (started_) return;
+        acceptor_.listen(asio::socket_base::max_listen_connections);
         accept();
+        started_ = true;
         thread_ = std::jthread{[this] {
             while (!stopped_.load(std::memory_order_acquire)) {
                 try {
@@ -206,13 +209,37 @@ class ServerImplementation final {
 
     std::uint16_t port() const noexcept { return port_; }
 
-    void respond(i64 id, ScalarValue<Bundle<HttpResponse>> response) {
+    void register_route(service_client_id_t client_id, std::string route) {
+        if (!started_) {
+            add_route(client_id, std::move(route));
+            return;
+        }
+        asio::post(io_, [this, client_id, route = std::move(route)]() mutable {
+            try {
+                add_route(client_id, std::move(route));
+            } catch (...) {
+                record_failure(std::current_exception());
+            }
+        });
+    }
+
+    void unregister_route(service_client_id_t client_id) {
+        if (!started_) {
+            remove_route(client_id);
+            return;
+        }
+        if (!stopped_.load(std::memory_order_acquire)) {
+            asio::post(io_, [this, client_id] { remove_route(client_id); });
+        }
+    }
+
+    void respond(service_client_id_t client_id, i64 id, ScalarValue<Bundle<HttpResponse>> response) {
         if (stopped_.load(std::memory_order_acquire)) {
             return;
         }
-        asio::post(io_, [this, id, response = std::move(response)]() mutable {
+        asio::post(io_, [this, client_id, id, response = std::move(response)]() mutable {
             const auto found = pending_.find(id);
-            if (found == pending_.end()) {
+            if (found == pending_.end() || found->second.client_id != client_id) {
                 return;
             }
             const auto session = found->second.session.lock();
@@ -247,11 +274,11 @@ class ServerImplementation final {
         if (found == pending_.end()) {
             return;
         }
-        const auto route = found->second.route;
+        const auto client_id = found->second.client_id;
         pending_.erase(found);
         try {
             (void)output_.write(
-                ::literal::TimeSeriesLiteral{{util::symbol{"requests"}, {{route, {{id, ::literal::REMOVE}}}}}});
+                ::literal::TimeSeriesLiteral{{util::symbol{"requests"}, {{client_id, {{id, ::literal::REMOVE}}}}}});
         } catch (...) {
             record_failure(std::current_exception());
         }
@@ -273,16 +300,16 @@ class ServerImplementation final {
             session->send_error(http::status::not_found, "Not Found", !request.keep_alive());
             return;
         }
+        const auto client_id = route->second;
         if (next_id_ == 0 || next_id_ > static_cast<std::uint64_t>(std::numeric_limits<i64>::max())) {
             next_id_ = 1;
         }
         const auto id = static_cast<i64>(next_id_++);
-        const auto route_path = std::string_view{*route};
-        pending_.emplace(id, PendingRequest{.session = session, .route = route_path});
+        pending_.emplace(id, PendingRequest{.session = session, .client_id = client_id});
         try {
             auto value = request_value(request, target, peer, request_headers);
-            if (!output_.write(
-                    ::literal::TimeSeriesLiteral{{util::symbol{"requests"}, {{route_path, {{id, value.view()}}}}}})) {
+            if (!output_.write(::literal::TimeSeriesLiteral{
+                    {util::symbol{"requests"}, {{client_id, {{id, value.view()}}}}}})) {
                 pending_.erase(id);
                 session->send_error(http::status::service_unavailable, "Service Unavailable", true);
                 return;
@@ -299,8 +326,49 @@ class ServerImplementation final {
   private:
     struct PendingRequest {
         std::weak_ptr<HttpSession> session;
-        std::string_view route;
+        service_client_id_t client_id;
     };
+
+    void add_route(service_client_id_t client_id, std::string route) {
+        const auto existing_client = route_by_client_.find(client_id);
+        if (existing_client != route_by_client_.end()) {
+            if (existing_client->second != route) {
+                throw std::logic_error{"an HTTP handler route changed while its client was active"};
+            }
+            return;
+        }
+        if (routes_.contains(route)) {
+            throw std::invalid_argument{"an HTTP route is already registered"};
+        }
+        routes_.emplace(route, client_id);
+        route_by_client_.emplace(client_id, std::move(route));
+    }
+
+    void remove_route(service_client_id_t client_id) {
+        const auto found = route_by_client_.find(client_id);
+        if (found == route_by_client_.end()) return;
+        routes_.erase(found->second);
+        route_by_client_.erase(found);
+
+        for (auto pending = pending_.begin(); pending != pending_.end();) {
+            if (pending->second.client_id != client_id) {
+                ++pending;
+                continue;
+            }
+            const auto id = pending->first;
+            const auto session = pending->second.session.lock();
+            ++pending;
+            finish_request(id);
+            if (session) session->cancel();
+        }
+
+        try {
+            (void)output_.write(
+                ::literal::TimeSeriesLiteral{{util::symbol{"requests"}, {{client_id, ::literal::REMOVE}}}});
+        } catch (...) {
+            record_failure(std::current_exception());
+        }
+    }
 
     void record_failure(std::exception_ptr failure) noexcept {
         try {
@@ -341,18 +409,19 @@ class ServerImplementation final {
         });
     }
 
-    std::unordered_set<std::string> routes_;
+    std::unordered_map<std::string, service_client_id_t> routes_;
+    std::unordered_map<service_client_id_t, std::string> route_by_client_;
     Queue output_;
     asio::io_context io_{1};
     tcp::acceptor acceptor_;
     std::jthread thread_;
     std::uint16_t port_{};
     std::uint64_t next_id_{1};
-    // Pending route views refer to routes_, which is populated before the transport thread starts.
     std::unordered_map<i64, PendingRequest> pending_;
     std::vector<std::shared_ptr<HttpSession>> sessions_;
     std::atomic<bool> stopped_{};
     std::exception_ptr failure_;
+    bool started_{};
 };
 
 namespace {
@@ -748,18 +817,30 @@ void HttpSession::close_for_shutdown() noexcept {
     socket_.close(ignored);
 }
 
+void HttpSession::cancel() noexcept { close_connection(); }
+
 } // namespace
 
-ServerRuntime::ServerRuntime(ServerOptions options, std::vector<std::string> routes, Queue output)
-    : implementation_{std::make_unique<ServerImplementation>(std::move(options), std::move(routes),
-                                                              std::move(output))} {}
+ServerRuntime::ServerRuntime(ServerOptions options, Queue output)
+    : implementation_{std::make_unique<ServerImplementation>(std::move(options), std::move(output))} {}
 
 ServerRuntime::~ServerRuntime() = default;
 
 std::uint16_t ServerRuntime::port() const noexcept { return implementation_->port(); }
 
-void ServerRuntime::respond(i64 request_id, ScalarValue<Bundle<HttpResponse>> response) {
-    implementation_->respond(request_id, std::move(response));
+void ServerRuntime::register_route(service_client_id_t client_id, std::string route) {
+    implementation_->register_route(client_id, std::move(route));
+}
+
+void ServerRuntime::unregister_route(service_client_id_t client_id) {
+    implementation_->unregister_route(client_id);
+}
+
+void ServerRuntime::start() { implementation_->start(); }
+
+void ServerRuntime::respond(service_client_id_t client_id, i64 request_id,
+                            ScalarValue<Bundle<HttpResponse>> response) {
+    implementation_->respond(client_id, request_id, std::move(response));
 }
 
 } // namespace bg::web

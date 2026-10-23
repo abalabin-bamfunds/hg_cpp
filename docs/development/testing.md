@@ -742,7 +742,8 @@ For each reusable node and graph, test:
 - client service registration, concurrent clients, repeated requests, and completion delivery
 - client transport failures as status 599, URL validation, response limits, and request deadlines
 - client cancellation, stale replies after reactivation, pending-work cleanup, and repeated graph runs
-- scalar and dictionary handlers, exact-path routing, and bound-port publication
+- scalar and dictionary handlers, ambient inputs and extra outputs, exact-path routing, and bound-port publication
+- route isolation, empty servers, duplicate routes, and route removal followed by re-registration
 - binary bodies, ordered duplicate headers and query parameters, and peer metadata
 - keep-alive, response framing, HEAD, and status codes that omit bodies
 - request removal after completion or disconnection, late replies, and stop with pending requests

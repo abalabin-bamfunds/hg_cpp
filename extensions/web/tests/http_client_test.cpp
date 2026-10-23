@@ -106,6 +106,7 @@ TEST_CASE("HTTP client preserves binary payloads, ordered headers, and sequentia
     auto stop = std::stop_source{};
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(http_client, http_client_impl(), std::span<const WiringArgument>{});
+    register_http_server(catalogue);
 
     auto writer = Queue{};
     auto first_write_accepted = false;
@@ -143,12 +144,15 @@ TEST_CASE("HTTP client preserves binary payloads, ordered headers, and sequentia
     const auto client_requests = queue<TS<Bundle<HttpClientRequest>>>(start = [&](Queue queue) {
         writer = queue;
     });
-    const auto routes = std::array{Route{"/first", handler}, Route{"/second", handler}};
+    const auto first_route = http_handler("/first", handler);
+    const auto second_route = http_handler("/second", handler);
 
     auto responses = std::vector<ObservedResponse>{};
     run_graph(
         [&] {
-            const auto port = http_server(routes);
+            (void)first_route();
+            (void)second_route();
+            const auto port = http_server();
             const auto response = http_client(client_requests());
             (void)node([&](In<TS<i64>> bound_port) {
                 if (!bound_port.valid() || !bound_port.modified()) return;

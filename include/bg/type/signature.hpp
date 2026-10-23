@@ -167,6 +167,11 @@ class Signature {
         result.output_ = nullptr;
         return result;
     }
+    Signature with_output(const TimeSeriesType &output) const {
+        auto result = *this;
+        result.output_ = &output;
+        return result;
+    }
     [[nodiscard]] Signature select_parameters(std::span<const std::size_t> indices) const;
 
     [[nodiscard]] Signature with_parameters(std::span<const WiringParameter> parameters) const;
