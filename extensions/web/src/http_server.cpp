@@ -10,10 +10,8 @@
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsb/tsb_output.hpp>
 #include <bg/time_series/tsd/tsd_output.hpp>
-#include <bg/time_series/tsb/details/wiring.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
 #include <bg/web/http_server.hpp>
 
 #include "http_server_internal.hpp"
@@ -140,16 +138,11 @@ WiringPoint response_field(WiringPoint result) {
             throw WiringError{"an HTTP handler output bundle must contain a response field"};
         }
 
-        const auto &response_type = bundle->item_type(*response_index);
-        const auto &item_type = dictionary->value_type().target_type();
-        const auto &item_reference = time_series_reference_type(item_type, TimeSeriesGuarantee::ordinary);
-        auto parameters = std::vector<Parameter>{{util::symbol{"bundle"}, &item_reference}};
-        auto signature = Signature{util::symbol{"http_response_field"}, std::move(parameters), response_type};
-        const auto projection = GraphTemplate{std::move(signature), [](wp<> value) {
-                                                  return operators::getattr(value, util::symbol{"response"});
-                                              }};
-        const auto arguments = std::array{MapArgument{WiringArgument{result}}};
-        return map(projection, std::span<const MapArgument>{arguments});
+        const auto field = map(operators::getattr, result, util::symbol{"response"});
+        if (!is_response_dictionary(field.type())) {
+            throw WiringError{"an HTTP handler response field must be a response dictionary"};
+        }
+        return field;
     }
 
     if (bundle == nullptr) {
@@ -159,7 +152,7 @@ WiringPoint response_field(WiringPoint result) {
     if (!response_index) {
         throw WiringError{"an HTTP handler output bundle must contain a response field"};
     }
-    const auto field = bg::details::time_series_bundle_field(result, util::symbol{"response"});
+    const auto field = operators::getattr(result, util::symbol{"response"});
     if (!is_response_dictionary(field.type())) {
         throw WiringError{"an HTTP handler response field must be a response dictionary"};
     }
