@@ -660,6 +660,43 @@ TEST_CASE("signature matching uses default materialisation and reports no unavai
     CHECK(&bg::TS_T::type().resolve(generic_matches[0].type_map) == &bg::TSB<OneValue>::type());
 }
 
+TEST_CASE("deferred materialisation selects the cheapest concrete callback input",
+          "[feature:wiring-materialisation][feature:wiring][schema:generic]") {
+    using namespace bg;
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    auto input = wiring.create_wp<TS<i64>>();
+    input.materialisation_option<TS<float>>([] { return WiringPoint{}; }, 2.0);
+    input.materialisation_option<TS<double>>([] { return WiringPoint{}; }, 2.0);
+    input.materialisation_option<TS<i64>>([] { return WiringPoint{}; }, 1.0);
+
+    auto deferred = wiring.create_wp<TS<i64>>(input);
+    deferred.materialisation_option<TS<bool>>([](wp<TS_T>) { return WiringPoint{}; }, 0.0);
+
+    wiring.require_materialisation(deferred, TS<bool>::type());
+
+    CHECK_FALSE(wiring.materialisation_required(input, TS<float>::type()));
+    CHECK_FALSE(wiring.materialisation_required(input, TS<double>::type()));
+    CHECK(wiring.materialisation_required(input, TS<i64>::type()));
+}
+
+TEST_CASE("deferred materialisation rejects equal-cost concrete callback inputs",
+          "[feature:wiring-materialisation][feature:wiring][schema:generic]") {
+    using namespace bg;
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    auto input = wiring.create_wp<TS<i64>>();
+    input.materialisation_option<TS<float>>([] { return WiringPoint{}; }, 1.0);
+    input.materialisation_option<TS<double>>([] { return WiringPoint{}; }, 1.0);
+
+    auto deferred = wiring.create_wp<TS<i64>>(input);
+    deferred.materialisation_option<TS<bool>>([](wp<TS_T>) { return WiringPoint{}; }, 0.0);
+
+    CHECK_THROWS_AS(wiring.require_materialisation(deferred, TS<bool>::type()), WiringError);
+    CHECK_FALSE(wiring.materialisation_required(input, TS<float>::type()));
+    CHECK_FALSE(wiring.materialisation_required(input, TS<double>::type()));
+}
+
 TEST_CASE("typed deferred bundles expose their materialisation options",
           "[feature:wiring-materialisation][feature:wiring][series:tsb][schema:named]") {
     using namespace bg::literals;

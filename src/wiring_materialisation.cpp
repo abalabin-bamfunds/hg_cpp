@@ -293,17 +293,13 @@ class DeferredWiringRecord final : public details::WiringRecord {
             throw WiringError{"materialisation inputs cannot resolve: " + completion_error};
         }
 
-        const auto binding_cost = [&](const auto &match) {
-            return match.binding_cost(normalized.arguments);
-        };
-
-        auto best_cost = binding_cost(prepared.calls.front());
+        auto best_cost = prepared.calls.front().binding_cost(normalized.arguments);
         for (std::size_t index = 1; index < prepared.calls.size(); ++index) {
-            best_cost = std::min(best_cost, binding_cost(prepared.calls[index]));
+            best_cost = std::min(best_cost, prepared.calls[index].binding_cost(normalized.arguments));
         }
         auto best = std::optional<std::size_t>{};
         for (std::size_t index = 0; index < prepared.calls.size(); ++index) {
-            if (binding_cost(prepared.calls[index]) != best_cost) {
+            if (prepared.calls[index].binding_cost(normalized.arguments) != best_cost) {
                 continue;
             }
             if (best && !prepared.calls[*best].same_concrete_binding(prepared.calls[index])) {
@@ -568,29 +564,25 @@ void GraphWiring::require_materialisation(WiringPoint point, const TimeSeriesTyp
         const auto needs_preparation = cached_preparation == prepared_materialisations_.end() &&
                                        staged_preparation == staged_preparations.end();
         auto preparation = std::optional<details::MaterialisationPreparation>{};
-        auto dependencies = std::vector<details::MaterialisationDependency>{};
-        auto argument_count = std::size_t{};
-        auto target_count = std::size_t{};
+        auto input_counts_match = false;
+        auto dependencies = std::span<const details::MaterialisationDependency>{};
         try {
             if (cached_preparation != prepared_materialisations_.end()) {
-                argument_count = cached_preparation->arguments.size();
-                target_count = cached_preparation->input_targets.size();
+                input_counts_match = cached_preparation->arguments.size() == cached_preparation->input_targets.size();
                 dependencies = cached_preparation->dependencies;
             } else if (staged_preparation != staged_preparations.end()) {
-                argument_count = staged_preparation->arguments.size();
-                target_count = staged_preparation->input_targets.size();
+                input_counts_match = staged_preparation->arguments.size() == staged_preparation->input_targets.size();
                 dependencies = staged_preparation->dependencies;
             } else {
                 preparation.emplace(record->prepare_materialisation(target));
-                argument_count = preparation->arguments.size();
-                target_count = preparation->input_targets.size();
+                input_counts_match = preparation->arguments.size() == preparation->input_targets.size();
                 dependencies = preparation->dependencies;
             }
         } catch (...) {
             throw WiringError::from_exception("failed to prepare materialisation", request_origins,
                                               std::current_exception());
         }
-        if (argument_count != target_count) {
+        if (!input_counts_match) {
             throw WiringError::from_exception(
                 "prepared materialisation inputs do not match their target bindings", request_origins, {});
         }
@@ -598,7 +590,9 @@ void GraphWiring::require_materialisation(WiringPoint point, const TimeSeriesTyp
             staged_preparations.push_back(
                 {record, &target, std::move(preparation->arguments), std::move(preparation->input_targets),
                  std::move(preparation->dependencies)});
+            dependencies = staged_preparations.back().dependencies;
         }
+        // Outer staging-vector moves preserve the dependency vector buffer.
         for (const auto &dependency : dependencies) {
             if (dependency.target_type == nullptr) {
                 throw WiringError::from_exception("a materialisation dependency has no target type", request_origins,

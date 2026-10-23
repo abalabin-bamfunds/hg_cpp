@@ -1351,10 +1351,9 @@ void plan_fixed_storage(CompilationPlan &plan) {
             throw std::logic_error{"a default output parameter is not a time series"};
         }
 
-        auto input = std::size_t{};
-        for (auto index = std::size_t{}; index < parameter; ++index) {
-            input += static_cast<std::size_t>(node.signature().parameters[index].type->is_time_series());
-        }
+        const auto input = static_cast<std::size_t>(std::ranges::count_if(
+            node.signature().parameters | std::views::take(parameter),
+            [](const auto &candidate) { return candidate.type->is_time_series(); }));
         if (input >= node.inputs().size()) {
             throw std::logic_error{"a default output has no input"};
         }
@@ -1380,10 +1379,9 @@ void plan_fixed_storage(CompilationPlan &plan) {
                 throw std::logic_error{"constant output does not match its scalar parameter"};
             }
 
-            auto scalar = std::size_t{};
-            for (auto parameter = std::size_t{}; parameter < constant->scalar_parameter; ++parameter) {
-                scalar += static_cast<std::size_t>(!node.signature().parameters[parameter].type->is_time_series());
-            }
+            const auto scalar = static_cast<std::size_t>(std::ranges::count_if(
+                node.signature().parameters | std::views::take(constant->scalar_parameter),
+                [](const auto &candidate) { return !candidate.type->is_time_series(); }));
             if (scalar >= node.scalar_values().size() || !node.scalar_values()[scalar].has_value()) {
                 throw std::logic_error{"constant output requires one scalar value"};
             }
