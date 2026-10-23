@@ -1,6 +1,7 @@
 # Frame foundation handoff
 
-Updated: 2026-10-22. The mixed-overload refactor is based on main `21a0f87c`.
+Updated: 2026-10-23. The frame lane and current consumer dependencies use main
+baseline `5d48e914`. The mixed-overload refactor used main `21a0f87c`.
 Earlier frame foundation work was rebased onto main `146ee478`, which included
 shared schema metadata (`6419e073`), process-lifetime ownership
 of registered type metadata (`160f128b`), compatible generic input-view casts
@@ -26,7 +27,7 @@ completed lane retirement, and consumer verification.
 
 | Work | Location / branch | State |
 | --- | --- | --- |
-| Main baseline | `/home/abalabin/_bg`, `main` | `21a0f87c` |
+| BG baseline for current consumer builds | Lane-local Release and Debug installs | `5d48e914`; held fixed during optimization comparisons |
 | Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Frame foundation, expressions, scalar literals, native keyed storage, TSF/TSC input literals, and native/view/computed capture |
 | Generic input-view casts | Main | `a17a8ffd`; tested build preserved in `.lanes/generic-input-cast` |
 | Shared schema metadata and BG lifetime fix | Main | `6419e073`, `160f128b`; consumer builds use matching lane-local installs |
@@ -170,6 +171,25 @@ owning buffers for off-graph use. Typed owning copies select native snapshots;
 erased Arrow copies preserve Arrow representation.
 
 ## Verification
+
+The 2026-10-23 optimization verification uses BG baseline `5d48e914` and the
+current lane-local Release and Debug installs:
+
+| Build | Configuration | Result |
+| --- | --- | --- |
+| `build/tsf-row-release-arrow-off` | Release, Arrow disabled | Build passed; CTest 5/5 |
+| `build/tsf-row-release-arrow-on` | Release, Arrow 24.0.0 | Build passed; CTest 6/6 |
+| `build/tsf-row-debug-asan-arrow-on` | Debug, Arrow 24.0.0, ASan/UBSan | Build passed; CTest 6/6 with leak detection; no sanitizer diagnostics |
+
+The sanitizer build instruments the extension and tests, with the matching
+uninstrumented Debug BG dependency. Run its CTest through the approved Conda
+invocation below; direct sandbox execution prevents LeakSanitizer from running.
+
+```sh
+ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+  conda run --no-capture-output -n hg-build ctest \
+  --test-dir build/tsf-row-debug-asan-arrow-on --output-on-failure
+```
 
 Scalar-expression cleanup verification used baseline `146ee478`, the lane-local
 BG installs, and these lane-root build directories:
@@ -629,7 +649,14 @@ frame implementation is recorded on the active frame lane.
 
 ## Performance artifacts
 
-Current matching Release consumer measurements are recorded in
+Current paired Release measurements are recorded in
+[the 2026-10-23 optimization results](benchmarks/results/2026-10-23/README.md).
+The report preserves three runs per version for all 30 cases, process-median
+ranges, runtime library hashes and loading commands, and complete timing data.
+Both versions use the same fixed BG dependency. Preserve the baseline runtime
+copies under `build/frame-optimisation-2026-10-22/before-runtime`.
+
+Earlier matching Release consumer measurements are recorded in
 [the 2026-10-22 benchmark notes](benchmarks/results/2026-10-22/README.md), with
 separate [expression](benchmarks/results/2026-10-22/expression-release-arrow-off.md)
 and [Arrow](benchmarks/results/2026-10-22/arrow-release-arrow-on.md) reports.
@@ -642,8 +669,7 @@ all 30 cases using the same binaries. Raw dumps and parsed analyses remain in
 `build/frame-profile-2026-10-22`; the dated results contain compact instruction
 counts. Profiles identify row-by-row batch construction, redundant full predicate
 traversal, selected-order rebuilds, and fragmented Arrow allocation as the main
-costs. The profiling report lists proposed changes in order. No optimization,
-rebase, or merge was performed during profiling; changes await design review.
+costs. These profiles predate the implemented optimizations below.
 
 The preserved active-lane sample is archived at:
 
@@ -675,6 +701,17 @@ operations.
 
 Boolean storage, Arrow support, numeric comparisons, and expression-based
 filtering are implemented.
+
+Filter optimization now avoids rebuilding unchanged selection on full predicate
+reevaluation. Selected IDs reuse initialized storage and supply callback-scoped
+spans with optional consecutive-slot mappings. Native and aligned consumers use
+matching mappings directly and retain existing lookup or gather behavior for
+other mappings. Arrow borrowed export allocates validity only when a batch has
+nulls. Node APIs and borrowed versus owning export contracts are unchanged.
+See the [row traversal contract](README.md#values-and-rows) and
+[selection metadata decision](docs/decisions/selected-row-span-metadata.md).
+Compaction, capacity trimming, and reducing fragmented Arrow object overhead
+remain later work.
 
 The Boolean foundation uses packed value bits with separate nullable validity.
 It covers `Column<bool>`, frame fields, TSC/TSF storage and deltas, literals,
