@@ -215,7 +215,7 @@ def test_const_schema_with_nested_list_strings_and_bytes_survives_repeated_wirin
         return bg.operators.const_(value)
 
     for _ in range(2):
-        observed = bg.test_graph(graph)[0]
+        observed = bg.run_graph(graph, capture_output=True)[0]
         assert type(observed) is Envelope
         assert observed.detail.labels == ("first", "second")
         assert observed.detail.payload == b"\x00nested\xff"

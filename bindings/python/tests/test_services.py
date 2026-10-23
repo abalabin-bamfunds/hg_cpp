@@ -535,7 +535,7 @@ def test_split_request_reply_client_binds_scalar_instance_arguments():
     registration = catalogue.register_multiservice(implementation)
     registration.register_impl(echo, mode="fast")
 
-    assert bg.test_graph(client, [3, 7], catalogue=catalogue) == [3, 7]
+    assert bg.run_graph(client, [3, 7], catalogue=catalogue, capture_output=True) == [3, 7]
 
 
 def test_multiservice_outputless_service_uses_request_port_without_reply():
