@@ -143,8 +143,50 @@ TEST_CASE("dictionary getitem selects a TSS key set and follows selected item re
     CHECK(membership.equals<bool>({true, true, true, true, false, true}));
 }
 
+TEST_CASE("TSS-keyed getitem retains a selected key while its source item is absent",
+          "[series:tsd][series:tss][series:reference][feature:getitem]"
+          "[transition:addition][transition:removal][transition:revalidation]") {
+    const auto inspect = node([](In<TS<i64>> cycle, In<TSD<i64, REF<TS<i64>>>, optional> selected) {
+        (void)cycle;
+        if (!selected.contains(i64{1})) {
+            return i64{};
+        }
+        return selected[i64{1}].valid() ? i64{2} : i64{1};
+    });
+
+    const auto graph = [&](wp<TS<i64>> cycle, wp<TSD<i64, TS<i64>>> dictionary, wp<TSS<i64>> keys) {
+        return inspect(cycle, dictionary[keys].as<TSD<i64, REF<TS<i64>>>>());
+    };
+
+    const auto actual = bg::run_graph(
+        graph, {0, 1, 2, 3, 4, 5, 6},
+        {{}, {{1, 10}}, {{1, 11}}, {{1, literal::REMOVE}}, {{1, 12}}, {{1, 13}}, {{1, 14}}},
+        {{1}, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP, {literal::REMOVED(1)}, {1}});
+
+    CHECK(actual.equals<i64>({1, 2, 2, 1, 2, 0, 2}));
+}
+
+TEST_CASE("TSS-keyed getitem follows root dictionary invalidation and revalidation",
+          "[feature:nested-graph][series:tsd][series:tss][series:reference][feature:getitem]"
+          "[transition:invalidation][transition:revalidation]") {
+    const auto make_dictionary = node([](In<TS<i64>> input, Out<TSD<i64, TS<i64>>> output) {
+        output[1].set(*input);
+    });
+    const auto inner = graph("name"_n = "dictionary", [&](wp<TS<i64>> input) -> wp<TSD<i64, TS<i64>>> {
+        return make_dictionary(input);
+    });
+
+    const auto outer = [&](wp<TS<i64>> input, wp<TS<bool>> run, wp<TSS<i64>> keys) {
+        return nested(inner, run, input)[keys][i64{1}];
+    };
+
+    const auto actual = bg::run_graph(outer, {10, 20, 30, 40}, {true, false, true, false}, {{1}});
+
+    CHECK(actual.equals<i64>({10, std::nullopt, 30, std::nullopt}));
+}
+
 TEST_CASE("TSS-keyed getitem selects a key from a dictionary of references",
-          "[evaluation][series:tsd][series:tss][series:reference][feature:getitem][feature:operator]"
+          "[series:tsd][series:tss][series:reference][feature:getitem]"
           "[binding:reference-to-reference][transition:update]") {
     const auto make_dictionary = node([](In<REF<TS<i64>>> target, Out<TSD<i64, REF<TS<i64>>>> output) {
         output[1].copy(target);
@@ -158,6 +200,26 @@ TEST_CASE("TSS-keyed getitem selects a key from a dictionary of references",
     const auto actual = bg::run_graph(graph, {10, 20, 30}, {{1}, {1}, {literal::REMOVED(1)}, {1}});
 
     CHECK(actual.equals<i64>({10, 20, std::nullopt, 30}));
+}
+
+TEST_CASE("TSS-keyed getitem follows a replaced reference for a selected key",
+          "[series:tsd][series:tss][series:reference][feature:getitem]"
+          "[binding:reference-to-reference][transition:update]") {
+    const auto increment = node([](i64 value) { return value + 1; });
+    const auto scale = node([](i64 value) { return value * 10; });
+    const auto make_dictionary =
+        node([](In<TS<bool>> select_second, In<REF<TS<i64>>> first, In<REF<TS<i64>>> second,
+                Out<TSD<i64, REF<TS<i64>>>> output) { output[1].copy(*select_second ? second : first); });
+
+    const auto graph = [&](wp<TS<i64>> input, wp<TS<bool>> select_second, wp<TSS<i64>> keys) {
+        const auto dictionary = make_dictionary(select_second, increment(input), scale(input));
+        const auto selected = operators::getitem(dictionary, keys).as<TSD<i64, REF<TS<i64>>>>();
+        return selected[i64{1}];
+    };
+
+    const auto actual = bg::run_graph(graph, {1, 2, 3, 4}, {false, false, true, false}, {{1}});
+
+    CHECK(actual.equals<i64>({2, 3, 30, 5}));
 }
 
 TEST_CASE("dictionary getitem fans out one selected value item without observing another item",
