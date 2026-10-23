@@ -103,8 +103,8 @@ handler returns `TS<Bundle<HttpResponse>>` or a bundle with a `response` field
 and additional outputs. Its mapped result is `TSD<i64, REF<HANDLER_OUTPUT>>`.
 A dictionary handler returns `TSD<i64, TS<Bundle<HttpResponse>>>` or a bundle
 with a `response` field containing that dictionary and additional outputs. Link
-the optional `bg::web` target. Keep each C++ `HttpHandler` object alive through
-graph compilation and execution; graph nodes retain its wiring template.
+the optional `bg::web` target. Keep each returned C++ route callable alive through
+graph compilation and execution. The callable owns its handler definition.
 
 ## Server authentication
 

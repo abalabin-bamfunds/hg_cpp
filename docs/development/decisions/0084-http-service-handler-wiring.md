@@ -1,6 +1,8 @@
 # HTTP service handler wiring
 
-Status: accepted
+Status: the callable representation is superseded by
+[0087-http-handler-graph-callable](0087-http-handler-graph-callable.md). The service
+boundary and lifecycle decisions below remain current.
 
 ## Context
 

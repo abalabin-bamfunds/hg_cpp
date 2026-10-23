@@ -52,9 +52,10 @@ namespace {
 
 template <typename Handler> struct Route {
     Route(std::string path, Handler handler)
-        : handler{std::make_shared<HttpHandler>(http_handler(std::move(path), std::move(handler)))} {}
+        : handler{http_handler(std::move(path), std::move(handler))} {}
 
-    std::shared_ptr<HttpHandler> handler;
+    using RouteHandler = decltype(http_handler(std::declval<std::string>(), std::declval<Handler>()));
+    RouteHandler handler;
 };
 
 struct ServerTest {
@@ -100,7 +101,7 @@ struct ServerTest {
     template <typename Handler, typename Client>
     void run(std::initializer_list<Route<Handler>> routes, Client client_function) {
         run([routes] {
-            for (const auto &route : routes) (void)(*route.handler)();
+            for (const auto &route : routes) (void)route.handler();
         }, std::move(client_function));
     }
 
@@ -1016,6 +1017,43 @@ TEST_CASE("HTTP server rejects incompatible route signatures", "[feature:http]")
     auto context = WiringContext{wiring};
     auto handler = http_handler("/wrong-output", wrong_output);
     CHECK_THROWS_AS(handler(), WiringError);
+}
+
+TEST_CASE("HTTP routes forward named, defaulted scalar arguments through handler resolvers",
+          "[feature:http][feature:wiring][feature:wiring-defaults]") {
+    using RESOLVED = ScalarVariable<"HTTP_HANDLER_RESOLVED">;
+
+    auto resolved_amounts = std::vector<i64>{};
+    const auto response = node([](Out<TS<Bundle<HttpResponse>>>) {});
+    const auto handler = graph<RESOLVED>(
+        {"request"_n, "amount"_n = i64{5}},
+        resolve<RESOLVED> = [&](const WiringArguments &arguments) -> const ScalarType & {
+            const auto amount = scalar_cast<i64>(*arguments.scalar("amount")).value();
+            resolved_amounts.push_back(amount);
+            return int64_type();
+        },
+        require = [](const WiringArguments &arguments) {
+            const auto *mapping = arguments.type_map().find(RESOLVED::type());
+            const auto *resolved = mapping == nullptr ? nullptr : std::get_if<const Type *>(mapping);
+            return resolved != nullptr && *resolved != nullptr;
+        },
+        [response](const WiringArguments &arguments, wp<TS<Bundle<HttpServerRequest>>>, i64) {
+            static const auto resolved_output = node([](Out<TS<RESOLVED>>) {});
+            (void)resolved_output(arguments.type_map());
+            return response();
+        });
+    const auto route = http_handler("/arguments", handler);
+
+    auto wiring = GraphWiring{};
+    {
+        const auto context = WiringContext{wiring};
+        const auto request = node([](Out<TS<Bundle<HttpServerRequest>>>) {});
+        CHECK_NOTHROW((void)handler(request(), "amount"_n = i64{7}));
+        CHECK_NOTHROW((void)route());
+        CHECK_NOTHROW((void)route("amount"_n = i64{9}));
+    }
+
+    CHECK(resolved_amounts == std::vector<i64>{7, 5, 9});
 }
 
 TEST_CASE("HTTP server removes disconnected requests before replying to later requests",

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/graph/wiring_argument.hpp>
 #include <bg/graph/wiring_template.hpp>
 #include <bg/service.hpp>
 #include <bg/service_catalogue.hpp>
@@ -9,11 +10,9 @@
 
 #include <concepts>
 #include <cstdint>
-#include <memory>
-#include <optional>
 #include <span>
-#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -36,59 +35,37 @@ BG_WEB_EXPORT void register_http_server(ServiceCatalogue &catalogue, ServerOptio
 // Return the bound port after the listener has installed its initial handler routes.
 BG_WEB_EXPORT wp<TS<i64>> http_server();
 
-class BG_WEB_EXPORT HttpHandler final : public WiringTemplate {
-  public:
-    HttpHandler(std::string path, std::shared_ptr<const WiringTemplate> handler,
-                const Service *policy = nullptr);
+namespace details {
 
-    const Signature &default_signature() const final { return signature_; }
-
-    template <typename... Arguments>
-        requires(bg::details::graph_code_argument<Arguments> && ...)
-    wp<> operator()(Arguments &&...arguments) const & {
-        const auto output = WiringTemplate::operator()(std::forward<Arguments>(arguments)...);
-        if (!output) {
-            throw std::logic_error{"an HTTP handler must return a time series"};
-        }
-        return wp<>{*output};
-    }
-
-    wp<> operator()(std::span<const WiringPoint> arguments) const & {
-        const auto output = WiringTemplate::operator()(arguments);
-        if (!output) {
-            throw std::logic_error{"an HTTP handler must return a time series"};
-        }
-        return wp<>{*output};
-    }
-
-    template <typename... Arguments>
-        requires(bg::details::graph_code_argument<Arguments> && ...)
-    wp<> operator()(Arguments &&...) const && = delete;
-
-    wp<> operator()(std::span<const WiringPoint>) const && = delete;
-
-  private:
-    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const WiringArguments &,
-                                    std::span<const WiringArgument>) const final;
-
-    std::string path_;
-    std::shared_ptr<const WiringTemplate> handler_;
-    const Service *policy_{};
-    Signature signature_;
-};
+BG_WEB_EXPORT void validate_http_handler(std::string_view path, const WiringTemplate &handler,
+                                       const Service *policy);
+BG_WEB_EXPORT wp<> wire_http_handler(std::string_view path, const WiringTemplate &handler,
+                                   const Service *policy, std::span<const WiringArgument> arguments);
 
 template <typename Handler>
     requires std::derived_from<std::remove_cvref_t<Handler>, WiringTemplate>
-HttpHandler http_handler(std::string path, Handler &&handler) {
-    using Definition = std::remove_cvref_t<Handler>;
-    return HttpHandler{std::move(path), std::make_shared<Definition>(std::forward<Handler>(handler))};
+auto make_http_handler(std::string path, Handler &&handler, const Service *policy) {
+    validate_http_handler(path, handler, policy);
+
+    return [path = std::move(path), handler = std::forward<Handler>(handler), policy](auto &&...arguments) -> wp<> {
+        const auto wiring_arguments = bg::details::make_wiring_arguments(
+            std::forward<decltype(arguments)>(arguments)...);
+        return wire_http_handler(path, handler, policy, wiring_arguments);
+    };
+}
+
+} // namespace details
+
+template <typename Handler>
+    requires std::derived_from<std::remove_cvref_t<Handler>, WiringTemplate>
+auto http_handler(std::string path, Handler &&handler) {
+    return details::make_http_handler(std::move(path), std::forward<Handler>(handler), nullptr);
 }
 
 template <typename Handler>
     requires std::derived_from<std::remove_cvref_t<Handler>, WiringTemplate>
-HttpHandler http_handler(std::string path, Handler &&handler, const Service &policy) {
-    using Definition = std::remove_cvref_t<Handler>;
-    return HttpHandler{std::move(path), std::make_shared<Definition>(std::forward<Handler>(handler)), &policy};
+auto http_handler(std::string path, Handler &&handler, const Service &policy) {
+    return details::make_http_handler(std::move(path), std::forward<Handler>(handler), &policy);
 }
 
 } // namespace bg::web
