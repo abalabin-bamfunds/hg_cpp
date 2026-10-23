@@ -62,6 +62,9 @@ aggregate or runtime-signature definition can disable this with
 `static constexpr bool deduplicate_wiring = false`. A callable definition uses
 `bg::deduplicate_wiring = false` as a `node()` option.
 
+An aggregate node that creates a queue with `context->runtime_graph().make_queue(context->node_index())` declares
+`static constexpr bool uses_queue = true` so the evaluator processes queue messages for the node.
+
 ## Callable view declaration
 
 A callable can declare the invocation views directly. This form keeps a small

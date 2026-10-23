@@ -38,6 +38,13 @@ class AggregateNodeTemplate final
         }
     }
 
+    bool uses_queue() const noexcept override {
+        if constexpr (requires { Definition::uses_queue; }) {
+            return static_cast<bool>(Definition::uses_queue);
+        }
+        return false;
+    }
+
     template <typename... Arguments>
         requires((details::graph_code_argument<Arguments> && ...) && details::aggregate_node_has_output<Definition>())
     [[nodiscard]] auto operator()(Arguments &&...arguments) const & {

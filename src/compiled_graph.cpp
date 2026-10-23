@@ -1098,7 +1098,8 @@ struct RuntimeTypeCounts {
 
 RuntimeTypeCounts runtime_type_counts(const WiredNode &node) {
     auto result = RuntimeTypeCounts{.dynamic_inputs = node.dynamic_input_types().size(),
-                                    .output = node.node_template().uses_output_runtime_type()};
+                                    .output = node.node_template().uses_output_runtime_type() ||
+                                              node.node_template().uses_queue()};
     for (auto parameter = std::size_t{}; parameter < node.signature().parameters.size(); ++parameter) {
         if (node.node_template().uses_time_series_input_runtime_type(node.signature(), parameter) ||
             node.node_template().uses_scalar_input_runtime_type(node.signature(), parameter)) {
@@ -2130,7 +2131,7 @@ class CompiledGraphBuilder {
             }
         }
 
-        if (node.node_template().uses_output_runtime_type()) {
+        if (counts.output) {
             const auto *runtime_type = plan.node_plans[node_index].output.runtime_type;
             set_runtime_type(counts.dynamic_input_begin() - 1, runtime_type);
         }
@@ -2490,7 +2491,7 @@ class CompiledGraphBuilder {
                              !node_plan.subscriptions.input_subscribers.empty(),
                              !node_plan.item_subscriptions.empty(), layout.node_invocation_metadata.count != 0,
                              layout.all_valid_metadata.count != 0,
-                             node.node_template().uses_output_runtime_type(),
+                             runtime_type_counts(node).output,
                              static_cast<std::uint32_t>(layout.controlled_inputs.count),
                              !node_plan.input_node_indices.empty(), node_plan.invalidation.mode,
                              node.node_template().queue_mode()});

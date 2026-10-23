@@ -338,6 +338,15 @@ struct QueueGraph {
     }
 };
 
+struct AggregateQueueSource {
+    Out<TS<i64>> output;
+    static constexpr bool uses_queue = true;
+
+    void start(EvaluationContext *context) const {
+        QueueState::set(context->runtime_graph().make_queue(context->node_index()));
+    }
+};
+
 void verify_queue_wakes_idle_engine(std::optional<std::chrono::microseconds> exact_timer_offset) {
     RealtimeProbe::reset();
     QueueState::reset();
@@ -433,6 +442,40 @@ TEST_CASE("queue input wakes an idle realtime engine with and without an exact t
     SECTION("one-hour exact timer") {
         verify_queue_wakes_idle_engine(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::hours{1}));
     }
+}
+
+TEST_CASE("an aggregate node can receive queue messages through its runtime context",
+          "[evaluation][realtime][feature:realtime][definition:aggregate][queue][feature:time-series-storage]") {
+    QueueState::reset();
+    QueueSink::values.clear();
+    auto wiring = GraphWiring{};
+    const auto source = bg::node<AggregateQueueSource>();
+    const auto sink = bg::node<QueueSink>();
+    {
+        auto context = WiringContext{wiring};
+        sink(source());
+    }
+    wiring.finalize();
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
+    auto queue_state_scope = QueueStateScope{};
+    EngineWorker worker{[&](std::stop_token token) {
+        RealtimeEvaluationEngine{}.run(runtime, SystemWallClock::instance().now(), token);
+    }};
+
+    REQUIRE(wait_for(QueueState::changed, QueueState::mutex, [] { return QueueState::ready; }));
+    auto queue = QueueState::copy();
+    const auto accepted = queue.write(::literal::TimeSeriesLiteral(i64{73}));
+    const auto received = wait_for(QueueSink::changed, QueueSink::mutex, [] { return !QueueSink::values.empty(); });
+    worker.request_stop();
+    worker.join();
+
+    CHECK(accepted);
+    REQUIRE(received);
+    REQUIRE_FALSE(worker.failure());
+    CHECK(QueueSink::values.front().second == 73);
+    CHECK_FALSE(queue.write(::literal::TimeSeriesLiteral(i64{74})));
 }
 
 TEST_CASE("a conflicting standard queue message waits through a dynamically rescheduled timer chain",
