@@ -147,6 +147,7 @@ TEST_CASE("HTTP server handles expectations and keep-alive requests",
         socket.connect({asio::ip::make_address("127.0.0.1"), port});
 
         auto request = http::request<http::string_body>{http::verb::post, "/echo", 11};
+        request.set(http::field::host, "localhost");
         request.set(http::field::expect, "100-continue");
         request.body() = std::string{"\0binary\xff", 8};
         request.prepare_payload();
@@ -165,6 +166,7 @@ TEST_CASE("HTTP server handles expectations and keep-alive requests",
         bodies.push_back(std::move(response.body()));
 
         auto missing_head = http::request<http::empty_body>{http::verb::head, "/missing", 11};
+        missing_head.set(http::field::host, "localhost");
         http::write(socket, missing_head);
         auto missing_head_parser = http::response_parser<http::string_body>{};
         missing_head_parser.skip(true);
@@ -174,12 +176,14 @@ TEST_CASE("HTTP server handles expectations and keep-alive requests",
         statuses.push_back(missing_head_response.result_int());
 
         auto missing = http::request<http::empty_body>{http::verb::get, "/missing", 11};
+        missing.set(http::field::host, "localhost");
         http::write(socket, missing);
         auto missing_response = http::response<http::string_body>{};
         http::read(socket, buffer, missing_response);
         statuses.push_back(missing_response.result_int());
 
         auto second = http::request<http::string_body>{http::verb::post, "/echo", 11};
+        second.set(http::field::host, "localhost");
         second.body() = "keep alive";
         second.prepare_payload();
         http::write(socket, second);
@@ -189,6 +193,7 @@ TEST_CASE("HTTP server handles expectations and keep-alive requests",
         bodies.push_back(std::move(second_response.body()));
 
         auto unsupported = http::request<http::empty_body>{http::verb::get, "/echo", 11};
+        unsupported.set(http::field::host, "localhost");
         unsupported.set(http::field::expect, "custom-expectation");
         http::write(socket, unsupported);
         auto unsupported_response = http::response<http::string_body>{};
@@ -368,6 +373,91 @@ TEST_CASE("HTTP server preserves duplicate fields and applies response framing r
                                    {"X-Dup", "first"}, {"X-Middle", "middle"}, {"x-dup", "second"}});
     CHECK(observations[1].method == "HEAD");
     CHECK(invalid_framing_closed);
+}
+
+TEST_CASE("HTTP server parses origin-form paths and query parameters", "[feature:http]") {
+    namespace asio = boost::asio;
+    using tcp = asio::ip::tcp;
+    using Header = Tuple<string, string>;
+
+    struct Observation {
+        std::string path;
+        std::vector<std::pair<std::string, std::string>> query;
+    };
+    auto observations = std::vector<Observation>{};
+    const auto inspect = node([&](In<TS<Bundle<HttpServerRequest>>> request,
+                                  Out<TS<Bundle<HttpResponse>>> response) {
+        const auto value = request.value();
+        auto observation = Observation{.path = std::string{scalar_cast<string>(value[2]).value()}};
+        const auto query = scalar_cast<List<Header>>(value[3]);
+        for (auto index = std::size_t{}; index < query.size(); ++index) {
+            const auto item = query[index];
+            observation.query.emplace_back(std::string{scalar_cast<string>(item.template get<0>()).value()},
+                                           std::string{scalar_cast<string>(item.template get<1>()).value()});
+        }
+        observations.push_back(std::move(observation));
+        const auto headers = ScalarValue<List<Header>>{std::span<const Scalar<Header>>{}};
+        const auto body = ScalarValue<bytes>{std::span<const std::byte>{}};
+        const auto reply = bundle<HttpResponse>("status"_n = i64{200}, "headers"_n = headers.view(),
+                                                "body"_n = body.view());
+        response.set_value(reply.view());
+    });
+
+    auto server = ServerTest{};
+    auto valid_statuses = std::vector<unsigned>{};
+    auto invalid_statuses = std::vector<unsigned>{};
+    server.run({Route{"/path", inspect}, Route{"/a+b", inspect}}, [&](std::uint16_t port) {
+        auto context = asio::io_context{};
+        auto socket = tcp::socket{context};
+        auto buffer = asio::streambuf{};
+        socket.connect({asio::ip::make_address("127.0.0.1"), port});
+        for (const auto target : {"/p%61th?space=a+b&empty=&flag&duplicate=x&duplicate=y%2Bz", "/a+b"}) {
+            const auto request = std::string{"GET "} + target + " HTTP/1.1\r\nHost: localhost\r\n\r\n";
+            asio::write(socket, asio::buffer(request));
+            valid_statuses.push_back(read_response(socket, buffer).status);
+        }
+        socket.close();
+
+        const auto read_invalid = [&](std::string request) {
+            auto invalid_socket = tcp::socket{context};
+            auto invalid_buffer = asio::streambuf{};
+            invalid_socket.connect({asio::ip::make_address("127.0.0.1"), port});
+            asio::write(invalid_socket, asio::buffer(request));
+            invalid_statuses.push_back(read_response(invalid_socket, invalid_buffer).status);
+            invalid_socket.close();
+        };
+        for (const auto target : {"/path?bad=%GG", "/path#fragment", "http://localhost/path"}) {
+            read_invalid(std::string{"GET "} + target + " HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        }
+        read_invalid("GET /path HTTP/1.1\r\n\r\n");
+        read_invalid("GET /path HTTP/1.1\r\nHost: localhost\r\nHost: example.com\r\n\r\n");
+        read_invalid("GET /path HTTP/1.1\r\nHost:\r\n\r\n");
+        read_invalid("GET /path HTTP/1.1\r\nHost: /invalid\r\n\r\n");
+        read_invalid("GET /path HTTP/1.1\r\nHost: user@localhost\r\n\r\n");
+        server.stop.request_stop();
+    });
+
+    CHECK(valid_statuses == std::vector<unsigned>{200, 200});
+    CHECK(invalid_statuses == std::vector<unsigned>{400, 400, 400, 400, 400, 400, 400, 400});
+    REQUIRE(observations.size() == 2);
+    CHECK(observations[0].path == "/path");
+    CHECK(observations[0].query == std::vector<std::pair<std::string, std::string>>{
+                                      {"space", "a b"}, {"empty", ""}, {"flag", ""}, {"duplicate", "x"},
+                                      {"duplicate", "y+z"}});
+    CHECK(observations[1].path == "/a+b");
+}
+
+TEST_CASE("HTTP server rejects incompatible route signatures", "[feature:http]") {
+    const auto no_arguments = node([] {});
+    const auto no_output = node([](In<TS<Bundle<HttpServerRequest>>>) {});
+    const auto wrong_output = node([](In<TS<Bundle<HttpServerRequest>>>, Out<TS<i64>>) {});
+
+    CHECK_THROWS_AS(http_server({Route{"/zero", no_arguments}}), std::invalid_argument);
+    CHECK_THROWS_AS(http_server({Route{"/no-output", no_output}}), std::invalid_argument);
+
+    auto wiring = GraphWiring{};
+    auto context = WiringContext{wiring};
+    CHECK_THROWS_AS((void)http_server({Route{"/wrong-output", wrong_output}}), TypeResolutionError);
 }
 
 TEST_CASE("HTTP server removes disconnected requests before replying to later requests",

@@ -12,6 +12,7 @@
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
 #include <boost/system/system_error.hpp>
+#include <boost/url.hpp>
 
 #include <algorithm>
 #include <array>
@@ -42,7 +43,6 @@ namespace http = beast::http;
 using tcp = asio::ip::tcp;
 using Literal = literal::ScalarLiteral;
 using RequestHeaders = std::vector<std::pair<std::string, std::string>>;
-using HeaderPair = Tuple<string, string>;
 using namespace bg::literals;
 
 constexpr auto request_body_limit = std::uint64_t{8 * 1024 * 1024};
@@ -53,91 +53,17 @@ struct ParsedTarget {
     std::vector<std::pair<std::string, std::string>> query;
 };
 
-int hex_value(char value) noexcept {
-    if (value >= '0' && value <= '9') {
-        return value - '0';
-    }
-    if (value >= 'a' && value <= 'f') {
-        return value - 'a' + 10;
-    }
-    if (value >= 'A' && value <= 'F') {
-        return value - 'A' + 10;
-    }
-    return -1;
-}
-
-std::optional<std::string> decode_component(std::string_view input, bool plus_as_space) {
-    auto result = std::string{};
-    result.reserve(input.size());
-    for (auto index = std::size_t{}; index < input.size(); ++index) {
-        if (input[index] == '%') {
-            if (index + 2 >= input.size()) {
-                return std::nullopt;
-            }
-            const auto high = hex_value(input[index + 1]);
-            const auto low = hex_value(input[index + 2]);
-            if (high < 0 || low < 0) {
-                return std::nullopt;
-            }
-            result.push_back(static_cast<char>(high * 16 + low));
-            index += 2;
-        } else if (plus_as_space && input[index] == '+') {
-            result.push_back(' ');
-        } else {
-            result.push_back(input[index]);
-        }
-    }
-    return result;
-}
-
 std::optional<ParsedTarget> parse_target(std::string_view target) {
-    if (target.empty() || target.front() != '/' || target.find('#') != std::string_view::npos) {
+    const auto parsed = boost::urls::parse_origin_form(boost::core::string_view{target.data(), target.size()});
+    if (!parsed) {
         return std::nullopt;
     }
 
-    const auto query_start = target.find('?');
-    const auto raw_path = target.substr(0, query_start);
-    auto path = decode_component(raw_path, false);
-    if (!path) {
-        return std::nullopt;
-    }
-
-    auto result = ParsedTarget{.path = std::move(*path)};
-    if (query_start == std::string_view::npos || query_start + 1 == target.size()) {
-        return result;
-    }
-
-    auto remaining = target.substr(query_start + 1);
-    while (!remaining.empty()) {
-        const auto separator = remaining.find('&');
-        const auto field = remaining.substr(0, separator);
-        const auto equals = field.find('=');
-        const auto raw_key = field.substr(0, equals);
-        const auto raw_value = equals == std::string_view::npos ? std::string_view{} : field.substr(equals + 1);
-        auto key = decode_component(raw_key, true);
-        auto value = decode_component(raw_value, true);
-        if (!key || !value) {
-            return std::nullopt;
-        }
-        result.query.emplace_back(std::move(*key), std::move(*value));
-        if (separator == std::string_view::npos) {
-            break;
-        }
-        remaining.remove_prefix(separator + 1);
+    auto result = ParsedTarget{.path = parsed->path()};
+    for (const auto parameter : parsed->params()) {
+        result.query.emplace_back(parameter.key, parameter.value);
     }
     return result;
-}
-
-ScalarValue<List<HeaderPair>> header_values(const RequestHeaders &headers) {
-    auto pair_values = std::vector<ScalarValue<HeaderPair>>{};
-    pair_values.reserve(headers.size());
-    auto pair_views = std::vector<Scalar<HeaderPair>>{};
-    pair_views.reserve(headers.size());
-    for (const auto &[name, value] : headers) {
-        pair_values.push_back(ScalarValue<HeaderPair>::from_literal(Literal{name, value}));
-        pair_views.push_back(pair_values.back().view());
-    }
-    return ScalarValue<List<HeaderPair>>{pair_views};
 }
 
 class OrderedRequestParser final : public http::request_parser<http::string_body> {
@@ -164,26 +90,37 @@ ScalarValue<Bundle<HttpServerRequest>> request_value(const http::request<http::s
     for (const auto &[name, raw_value] : request_headers) {
         auto value = std::string{};
         details::append_latin1_header_value_as_utf8(value, raw_value);
-        headers.emplace_back(std::move(name), std::move(value));
+        headers.emplace_back(name, std::move(value));
     }
 
-    auto query_values = header_values(target.query);
-    auto header_list = header_values(headers);
+    auto query_pairs = std::vector<std::array<Literal, 2>>{};
+    query_pairs.reserve(target.query.size());
+    for (const auto &[name, value] : target.query) query_pairs.push_back({Literal(name), Literal(value)});
+    auto query_items = std::vector<Literal>{};
+    query_items.reserve(query_pairs.size());
+    for (const auto &pair : query_pairs) query_items.emplace_back(std::span<const Literal>{pair});
+
+    auto header_pairs = std::vector<std::array<Literal, 2>>{};
+    header_pairs.reserve(headers.size());
+    for (const auto &[name, value] : headers) header_pairs.push_back({Literal(name), Literal(value)});
+    auto header_items = std::vector<Literal>{};
+    header_items.reserve(header_pairs.size());
+    for (const auto &pair : header_pairs) header_items.emplace_back(std::span<const Literal>{pair});
+
     const auto body = std::span<const std::byte>{reinterpret_cast<const std::byte *>(request.body().data()),
                                                  request.body().size()};
-    auto method = ScalarValue<string>{std::string_view{request.method_string().data(),
-                                                       request.method_string().size()}};
-    auto raw_target = ScalarValue<string>{std::string_view{request.target().data(), request.target().size()}};
-    auto path = ScalarValue<string>{target.path};
-    auto body_value = ScalarValue<bytes>{body};
-    auto address = ScalarValue<string>{peer.address().to_string()};
-    auto peer_port = ScalarValue<i64>{static_cast<i64>(peer.port())};
+    const auto address = peer.address().to_string();
+    const auto port = static_cast<i64>(peer.port());
     auto memory = allocator{};
-    auto peer_value = bundle<HttpPeer>(memory, "address"_n = address.view(), "port"_n = peer_port.view());
-    return bundle<HttpServerRequest>(memory, "method"_n = method.view(), "target"_n = raw_target.view(),
-                                     "path"_n = path.view(), "query"_n = query_values.view(),
-                                     "headers"_n = header_list.view(), "body"_n = body_value.view(),
-                                     "peer"_n = peer_value.view());
+    return ScalarValue<Bundle<HttpServerRequest>>::from_literal(
+        Literal{{"method", std::string_view{request.method_string().data(), request.method_string().size()}},
+                {"target", std::string_view{request.target().data(), request.target().size()}},
+                {"path", target.path},
+                {"query", Literal(std::span<const Literal>{query_items})},
+                {"headers", Literal(std::span<const Literal>{header_items})},
+                {"body", body},
+                {"peer", {{"address", address}, {"port", port}}}},
+        memory);
 }
 
 struct ActiveResponse {
@@ -212,6 +149,7 @@ class HttpSession final : public std::enable_shared_from_this<HttpSession> {
     void watch_disconnect();
     void cancel_disconnect_watch() noexcept;
     void cancel_timeout() noexcept;
+    void start_response_write_timeout();
     void finish_request();
     void close_connection() noexcept;
 
@@ -228,7 +166,6 @@ class HttpSession final : public std::enable_shared_from_this<HttpSession> {
     bool disconnect_watch_started_{};
     bool head_request_{};
     bool interim_response_pending_{};
-    bool timeout_pending_{};
 };
 
 } // namespace
@@ -421,7 +358,6 @@ void HttpSession::read_request() {
     disconnect_watch_started_ = false;
     head_request_ = false;
     interim_response_pending_ = false;
-    timeout_pending_ = false;
     parser_.emplace();
     parser_->body_limit(request_body_limit);
     cancel_timeout();
@@ -429,12 +365,11 @@ void HttpSession::read_request() {
     auto self = shared_from_this();
     const auto generation = request_generation_;
     timeout_.async_wait([self, generation](beast::error_code error) {
-        if (!error && generation == self->request_generation_ && !self->response_started_) {
-            if (self->interim_response_pending_) {
-                self->timeout_pending_ = true;
-            } else {
-                self->send_error(http::status::request_timeout, "Request Timeout", true);
-            }
+        if (error || generation != self->request_generation_) return;
+        if (self->response_started_ || self->interim_response_pending_) {
+            self->close_connection();
+        } else {
+            self->send_error(http::status::request_timeout, "Request Timeout", true);
         }
     });
     http::async_read_header(socket_, buffer_, *parser_, [self, generation](beast::error_code error, std::size_t) {
@@ -454,6 +389,27 @@ void HttpSession::on_header(beast::error_code error) {
     if (error) {
         on_read(error);
         return;
+    }
+
+    auto host_count = std::size_t{};
+    auto host = std::string_view{};
+    for (const auto &field : request) {
+        if (field.name() != http::field::host) continue;
+        ++host_count;
+        host = {field.value().data(), field.value().size()};
+    }
+    while (!host.empty() && (host.front() == ' ' || host.front() == '\t')) host.remove_prefix(1);
+    while (!host.empty() && (host.back() == ' ' || host.back() == '\t')) host.remove_suffix(1);
+    if ((request.version() == 11 && host_count != 1) || host_count > 1) {
+        send_error(http::status::bad_request, "Bad Request", true);
+        return;
+    }
+    if (host_count == 1) {
+        const auto authority = boost::urls::parse_authority(boost::core::string_view{host.data(), host.size()});
+        if (!authority || authority->has_userinfo() || authority->encoded_host().empty()) {
+            send_error(http::status::bad_request, "Bad Request", true);
+            return;
+        }
     }
 
     const auto expect = request.find(http::field::expect);
@@ -491,10 +447,6 @@ void HttpSession::on_header(beast::error_code error) {
         self->interim_response_pending_ = false;
         if (write_error) {
             self->close_connection();
-            return;
-        }
-        if (self->timeout_pending_) {
-            self->send_error(http::status::request_timeout, "Request Timeout", true);
             return;
         }
         self->read_body();
@@ -603,6 +555,18 @@ void HttpSession::cancel_timeout() noexcept {
     }
 }
 
+void HttpSession::start_response_write_timeout() {
+    cancel_timeout();
+    timeout_.expires_after(request_timeout);
+    auto self = shared_from_this();
+    const auto generation = request_generation_;
+    timeout_.async_wait([self, generation](beast::error_code error) {
+        if (!error && generation == self->request_generation_ && self->response_started_) {
+            self->close_connection();
+        }
+    });
+}
+
 void HttpSession::send_error(http::status status, std::string body, bool close) {
     if (response_started_) {
         return;
@@ -613,6 +577,7 @@ void HttpSession::send_error(http::status status, std::string body, bool close) 
     if (request_id_ != 0) {
         finish_request();
     }
+    start_response_write_timeout();
     close_after_response_ = close;
     auto response = std::make_shared<http::response<http::string_body>>(status, 11);
     response->set(http::field::content_type, "text/plain; charset=utf-8");
@@ -690,11 +655,6 @@ void HttpSession::write_response(ScalarValue<Bundle<HttpResponse>> retained_resp
         } else if (beast::iequals(name, "transfer-encoding") || beast::iequals(name, "connection")) {
             send_error(http::status::internal_server_error, "Invalid Response Header", true);
             return;
-        } else if (std::ranges::any_of(*latin1, [](unsigned char character) {
-                       return (character < 0x20 && character != '\t') || character == 0x7f;
-                   })) {
-            send_error(http::status::internal_server_error, "Invalid Response Header", true);
-            return;
         }
         ordered_headers.emplace_back(name, *latin1);
     }
@@ -706,7 +666,7 @@ void HttpSession::write_response(ScalarValue<Bundle<HttpResponse>> retained_resp
 
     response_started_ = true;
     cancel_disconnect_watch();
-    cancel_timeout();
+    start_response_write_timeout();
     const auto status_without_body = status == 204 || status == 205;
     const auto no_transmitted_body = status_without_body || status == 304 || head_request_;
 

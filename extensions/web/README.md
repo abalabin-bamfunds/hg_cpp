@@ -5,8 +5,8 @@ incoming requests and completed client responses through engine queues.
 
 Enable the extension with `BG_BUILD_WEB=ON`. Enable `BG_BUILD_PYTHON=ON` to build
 the Python package. Boost.Asio and Boost.Beast provide the server transport;
-libcurl provides the client transport. These dependencies are private to the
-extension.
+Boost.URL parses request targets. libcurl provides the client transport.
+These dependencies are private to the extension.
 
 ## Server
 
@@ -66,8 +66,9 @@ omit the body. For HEAD and 304, the body supplies the representation length.
 Network operations run on the transport thread. Graph stop closes the listener
 and connections and joins that thread. The initial transport supports
 HTTP/1.1 and keep-alive, with one active request per connection.
-Request bodies are limited to 8 MiB. Request reads and handler responses each
-time out after 30 seconds.
+HTTP/1.1 requests require one valid `Host` header.
+Request bodies are limited to 8 MiB. Request reads, handler responses, and
+response writes each time out after 30 seconds.
 
 The C++ entry point is declared in `<bg/web/http_server.hpp>`:
 

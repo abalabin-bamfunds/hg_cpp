@@ -2,6 +2,8 @@
 #include <bg/map.hpp>
 #include <bg/map_argument.hpp>
 #include <bg/node.hpp>
+#include <bg/scalar/list/scalar.hpp>
+#include <bg/scalar/value.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsb/tsb_output.hpp>
 #include <bg/time_series/tsd/tsd_output.hpp>
@@ -26,107 +28,64 @@ namespace {
 
 using namespace bg::literals;
 
-class ServerSource {
-  public:
-    struct CompiledData {
-        ServerOptions options;
-        std::vector<std::string> paths;
-    };
-
-    using compiled_data_type = CompiledData;
-    using state_type = ServerRuntime *;
-    using Invocation = NodeInvocation<compiled_data_type, state_type>;
-    using output_time_series_type = TSB<details::ServerOutput>;
+struct ServerSource {
+    Scalar<string> host;
+    i64 port;
+    Scalar<List<string>> paths;
+    State<ServerRuntime *> runtime_state;
+    Out<TSB<details::ServerOutput>> output;
 
     static constexpr bool uses_queue = true;
     static constexpr bool deduplicate_wiring = false;
 
-    ServerSource(ServerOptions options, std::vector<std::string> paths)
-        : options_{std::move(options)}, paths_{std::move(paths)},
-          signature_{util::symbol{"http_server"}, {}, TSB<details::ServerOutput>::type()} {}
-
-    const Signature &signature() const noexcept { return signature_; }
-    CompiledData compile(const ResolvedSignature &, allocator &) const { return {options_, paths_}; }
-
-    static void start(Invocation invocation) {
-        auto output_queue = invocation.context().runtime_graph().make_queue(invocation.context().node_index());
-        auto runtime = std::make_unique<ServerRuntime>(invocation.compiled_data().options,
-                                                       invocation.compiled_data().paths, std::move(output_queue));
-
-        auto output = invocation.output_as<Out<TSB<details::ServerOutput>>>();
+    void start(EvaluationContext *context) const {
+        auto route_paths = std::vector<std::string>{};
+        route_paths.reserve(paths.size());
+        for (auto index = std::size_t{}; index < paths.size(); ++index) {
+            route_paths.emplace_back(paths[index].value());
+        }
+        auto options = ServerOptions{.host = std::string{host.value()}, .port = static_cast<std::uint16_t>(port)};
+        auto output_queue = context->runtime_graph().make_queue(context->node_index());
+        auto runtime = std::make_unique<ServerRuntime>(std::move(options), std::move(route_paths),
+                                                       std::move(output_queue));
         output->port.set(static_cast<i64>(runtime->port()));
         output->runtime.set(runtime.get());
-        invocation.state() = runtime.release();
+        *runtime_state = runtime.release();
     }
 
-    static void stop(Invocation invocation) noexcept {
-        delete std::exchange(invocation.state(), nullptr);
-    }
+    void stop() const noexcept { delete std::exchange(*runtime_state, nullptr); }
 
-    static void destroy_state(Invocation invocation) noexcept {
-        delete std::exchange(invocation.state(), nullptr);
-    }
-
-  private:
-    ServerOptions options_;
-    std::vector<std::string> paths_;
-    Signature signature_;
+    void finalize() const noexcept { delete std::exchange(*runtime_state, nullptr); }
 };
 
-class RouteRequests {
-  public:
-    using compiled_data_type = std::string;
-    using Invocation = NodeInvocation<compiled_data_type>;
-    using output_time_series_type = TSD<i64, TS<Bundle<HttpServerRequest>>>;
+const auto route_requests = node([](In<TSD<i64, TS<Bundle<HttpServerRequest>>>, optional> requests, std::string path,
+                                    Out<TSD<i64, TS<Bundle<HttpServerRequest>>>> output) {
+    if (!requests.modified()) return;
 
-    static constexpr bool deduplicate_wiring = false;
+    const auto copy_if_matched = [&](const auto &key) {
+        const auto request = requests[key];
+        if (!request.valid()) return;
+        if (scalar_cast<string>(request.value()[2]).value() == path) output[key].copy_tick(request);
+    };
+    requests.for_each_added(copy_if_matched);
+    requests.for_each_modified(copy_if_matched);
+    requests.for_each_removed([&](const auto &key) { (void)output.erase(key); });
+});
 
-    explicit RouteRequests(std::string path)
-        : path_{std::move(path)},
-          signature_{util::symbol{"http_route_requests"},
-                     {{.name = util::symbol{"requests"},
-                       .type = &TSD<i64, TS<Bundle<HttpServerRequest>>>::type()}},
-                     TSD<i64, TS<Bundle<HttpServerRequest>>>::type()} {}
+const auto response_sink = node([](In<TS<Opaque<ServerRuntime *>>, passive> server,
+                                   In<TSD<i64, TS<Bundle<HttpResponse>>>> responses) {
+    auto *runtime = server.value();
+    const auto respond = [&](const Scalar<i64> &key) {
+        const auto response = responses[key];
+        if (!response.valid()) return;
+        runtime->respond(key.value(), ScalarValue<Bundle<HttpResponse>>{response.value()});
+    };
+    responses.for_each_added(respond);
+    responses.for_each_modified(respond);
+});
 
-    const Signature &signature() const noexcept { return signature_; }
-    compiled_data_type compile(const ResolvedSignature &, allocator &) const { return path_; }
-
-    static void evaluate(Invocation invocation) {
-        const auto input = invocation.input<In<TSD<i64, TS<Bundle<HttpServerRequest>>>>>(0);
-        auto output = invocation.output_as<Out<TSD<i64, TS<Bundle<HttpServerRequest>>>>>();
-        if (!input.valid()) {
-            return;
-        }
-
-        const auto &path = invocation.compiled_data();
-        input.for_each_added([&](const auto &key) {
-            const auto request = input[key];
-            if (request_matches(request, path)) {
-                output[key].copy_tick(request);
-            }
-        });
-        input.for_each_modified([&](const auto &key) {
-            const auto request = input[key];
-            if (request_matches(request, path)) {
-                output[key].copy_tick(request);
-            }
-        });
-        input.for_each_removed([&](const auto &key) { (void)output.erase(key); });
-    }
-
-  private:
-    static bool request_matches(const In<TS<Bundle<HttpServerRequest>>> &request, std::string_view path) {
-        if (!request.valid()) {
-            return false;
-        }
-
-        const auto value = request.value();
-        return scalar_cast<string>(value[2]).value() == path;
-    }
-
-    std::string path_;
-    Signature signature_;
-};
+const auto error_sink = node([](In<TS<string>> error) { throw std::runtime_error{std::string{error.value()}}; });
+const auto server_source = node<ServerSource>();
 
 void validate_routes(std::span<const Route> routes) {
     if (routes.empty()) {
@@ -153,64 +112,29 @@ void validate_routes(std::span<const Route> routes) {
 
 wp<TS<i64>> http_server(std::span<const Route> routes, ServerOptions options) {
     validate_routes(routes);
-    auto paths = std::vector<std::string>{};
-    paths.reserve(routes.size());
+    auto path_views = std::vector<std::string_view>{};
+    path_views.reserve(routes.size());
     for (const auto &route : routes) {
-        paths.emplace_back(route.path);
+        path_views.push_back(route.path);
     }
-
-    auto source_output = node(ServerSource{std::move(options), paths})();
-    if (!source_output) {
-        throw std::invalid_argument{"an HTTP server source must produce output"};
-    }
-    const auto output = wp<TSB<details::ServerOutput>>{*source_output};
+    auto route_paths = ScalarValue<List<string>>{path_views};
+    const auto output = server_source(options.host, static_cast<i64>(options.port), route_paths);
     const auto requests = output->requests;
     const auto runtime = output->runtime;
 
-    static const auto response_sink = node([](In<TS<Opaque<ServerRuntime *>>> server,
-                                              In<TSD<i64, TS<Bundle<HttpResponse>>>> responses) {
-            if (!server.valid() || !responses.valid() || !responses.modified()) {
-                return;
-            }
-            auto *runtime = server.value();
-            const auto respond = [&](const Scalar<i64> &key) {
-                const auto response = responses[key];
-                if (!response.valid()) {
-                    return;
-                }
-                auto memory = allocator{};
-                runtime->respond(key.value(), ScalarValue<Bundle<HttpResponse>>{response.value(), memory});
-            };
-            responses.for_each_added(respond);
-            responses.for_each_modified(respond);
-        });
-    static const auto error_sink = node([](In<TS<string>> error) {
-        if (error.valid() && error.modified()) {
-            throw std::runtime_error{std::string{error.value()}};
-        }
-    });
     error_sink(output->errors);
 
     for (const auto &route : routes) {
-        auto filtered_output = node(RouteRequests{std::string{route.path}})(requests);
-        if (!filtered_output) {
-            throw std::invalid_argument{"an HTTP route filter must produce requests"};
-        }
-        const auto filtered = wp<TSD<i64, TS<Bundle<HttpServerRequest>>>>{*filtered_output};
+        const auto filtered = route_requests(requests, std::string{route.path});
         const auto &signature = route.handler.signature();
-        const auto *input_type = signature.parameter_count() == 0
-                                     ? nullptr
-                                     : type_cast<TimeSeriesType>(signature.parameter(0).type);
-        const auto *input_dictionary = input_type == nullptr ? nullptr : type_cast<TimeSeriesDictionaryType>(input_type);
+        const auto *input_type = type_cast<TimeSeriesType>(signature.parameter(0).type);
+        const auto *input_dictionary = type_cast<TimeSeriesDictionaryType>(input_type);
         if (input_dictionary == nullptr) {
             const auto map_arguments = std::array{MapArgument{WiringArgument{filtered}, false}};
             const auto response = map(route.handler, std::span<const MapArgument>{map_arguments});
             response_sink(runtime, response);
         } else {
             const auto response = route.handler(filtered);
-            if (!response) {
-                throw std::invalid_argument{"an HTTP TSD handler must produce a response"};
-            }
             response_sink(runtime, *response);
         }
     }

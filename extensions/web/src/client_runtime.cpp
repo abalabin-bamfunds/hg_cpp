@@ -39,6 +39,7 @@ namespace {
 
 using HeaderPair = Tuple<string, string>;
 using HeaderValues = std::vector<std::pair<std::string, std::string>>;
+using Literal = literal::ScalarLiteral;
 using namespace bg::literals;
 
 struct Transfer {
@@ -61,7 +62,7 @@ struct Transfer {
     bool callback_failed{};
 
     std::optional<std::string> validate() const;
-    void configure(const HttpClientOptions &options);
+    std::optional<std::string> configure(const HttpClientOptions &options);
 
     void read_request() {
         const auto request = request_value.view();
@@ -210,7 +211,8 @@ std::string lowercase(std::string_view value) {
 std::optional<std::string> Transfer::validate() const {
     if (!details::valid_http_header_name(method)) return std::string{"HTTP method is not a valid token"};
     if (const auto url_error = validate_url(url)) return url_error;
-    for (const auto &[name, value] : request_headers_values) {
+    for (const auto &header : request_headers_values) {
+        const auto &name = header.first;
         if (!details::valid_http_header_name(name)) return std::string{"HTTP header name is not a valid token"};
         const auto normalized_name = lowercase(name);
         if (normalized_name == "host" || normalized_name == "connection" || normalized_name == "content-length" ||
@@ -219,34 +221,30 @@ std::optional<std::string> Transfer::validate() const {
             normalized_name == "expect") {
             return std::string{"HTTP header controls request routing or framing"};
         }
-        if (!details::utf8_header_value_to_latin1(value)) {
-            return std::string{"HTTP header value must be Latin-1 text without line breaks"};
-        }
     }
     return std::nullopt;
 }
 
-ScalarValue<List<HeaderPair>> header_values(const HeaderValues &headers) {
-    auto values = std::vector<ScalarValue<HeaderPair>>{};
-    auto views = std::vector<Scalar<HeaderPair>>{};
-    values.reserve(headers.size());
-    views.reserve(headers.size());
-    for (const auto &[name, raw_value] : headers) {
+ScalarValue<Bundle<HttpResponse>> response_value(i64 status, HeaderValues headers,
+                                                 ScalarValue<bytes> body_value) {
+    auto header_pairs = std::vector<std::array<Literal, 2>>{};
+    header_pairs.reserve(headers.size());
+    for (auto &[name, raw_value] : headers) {
         auto value = std::string{};
         details::append_latin1_header_value_as_utf8(value, raw_value);
-        values.push_back(ScalarValue<HeaderPair>::from_literal(literal::ScalarLiteral{name, value}));
-        views.push_back(values.back().view());
+        raw_value = std::move(value);
+        header_pairs.push_back({Literal(name), Literal(raw_value)});
     }
-    return ScalarValue<List<HeaderPair>>{views};
-}
+    auto header_items = std::vector<Literal>{};
+    header_items.reserve(header_pairs.size());
+    for (const auto &pair : header_pairs) header_items.emplace_back(std::span<const Literal>{pair});
 
-ScalarValue<Bundle<HttpResponse>> response_value(i64 status, const HeaderValues &headers,
-                                                 ScalarValue<bytes> body_value) {
-    auto header_list = header_values(headers);
-    auto status_value = ScalarValue<i64>{status};
     auto memory = allocator{};
-    return bundle<HttpResponse>(memory, "status"_n = status_value.view(), "headers"_n = header_list.view(),
-                                "body"_n = body_value.view());
+    return ScalarValue<Bundle<HttpResponse>>::from_literal(
+        Literal{{"status", status},
+                {"headers", Literal(std::span<const Literal>{header_items})},
+                {"body", body_value.view()}},
+        memory);
 }
 
 ScalarValue<Bundle<HttpResponse>> error_response(std::string_view message) {
@@ -261,11 +259,11 @@ template <typename Value> void set_easy_option(CURL *easy, CURLoption option, Va
     }
 }
 
-void Transfer::configure(const HttpClientOptions &options) {
+std::optional<std::string> Transfer::configure(const HttpClientOptions &options) {
     max_response_body_size = options.max_response_body_size;
     for (const auto &[name, raw_value] : request_headers_values) {
         const auto value = details::utf8_header_value_to_latin1(raw_value);
-        if (!value) throw std::logic_error{"request header validation changed before transport"};
+        if (!value) return std::string{"HTTP header value must be Latin-1 text without line breaks"};
         auto field = name + (value->empty() ? ";" : ": " + *value);
         auto *updated = curl_slist_append(request_headers, field.c_str());
         if (updated == nullptr) throw std::bad_alloc{};
@@ -307,6 +305,7 @@ void Transfer::configure(const HttpClientOptions &options) {
         set_easy_option(easy, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
     }
     if (method == "HEAD") set_easy_option(easy, CURLOPT_NOBODY, 1L);
+    return std::nullopt;
 }
 
 } // namespace
@@ -441,7 +440,10 @@ class ClientImplementation final {
         }
         transfer->easy = curl_easy_init();
         if (transfer->easy == nullptr) throw std::runtime_error{"libcurl request initialization failed"};
-        transfer->configure(options_);
+        if (const auto error = transfer->configure(options_)) {
+            write_response(command.client_id, command.generation, error_response(*error));
+            return;
+        }
 
         auto *easy = transfer->easy;
         const auto [position, inserted] = transfers_.emplace(easy, std::move(transfer));
@@ -512,7 +514,7 @@ class ClientImplementation final {
                                error_response("HTTP protocol upgrade is not supported"));
                 continue;
             }
-            auto response = response_value(static_cast<i64>(status), transfer->response_headers,
+            auto response = response_value(static_cast<i64>(status), std::move(transfer->response_headers),
                                            std::move(transfer->response_body).finish());
             write_response(transfer->client_id, transfer->generation, std::move(response));
         }
@@ -520,9 +522,8 @@ class ClientImplementation final {
 
     void write_response(i64 client_id, i64 generation, ScalarValue<Bundle<HttpResponse>> response) {
         auto memory = allocator{};
-        auto generation_value = ScalarValue<i64>{generation};
-        auto reply = bundle<details::ClientReply>(memory, "generation"_n = generation_value.view(),
-                                                  "response"_n = response.view());
+        const auto reply = ScalarValue<Bundle<details::ClientReply>>::from_literal(
+            Literal{{"generation", generation}, {"response", response.view()}}, memory);
         const auto accepted = output_.write(literal::TimeSeriesLiteral{
             {util::symbol{"replies"}, {{client_id, reply.view()}}}});
         if (!accepted && !stop_requested_.load(std::memory_order_acquire)) {

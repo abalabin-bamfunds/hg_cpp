@@ -60,7 +60,6 @@ python::PythonWiringPoint make_http_client_impl(const python::PythonWiringPoint 
         .max_response_body_size = max_response_body_size,
     });
     const auto result = (*implementation)(requests.get(WiringContext::current().wiring()));
-    if (!result) throw std::logic_error{"HTTP client implementation must produce responses"};
     return python::PythonWiringPoint{*result, python::PythonWiringScope::current()};
 }
 
