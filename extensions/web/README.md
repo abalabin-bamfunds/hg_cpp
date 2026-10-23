@@ -88,9 +88,10 @@ The C++ entry points are declared in `<bg/web/http_server.hpp>`:
 ```cpp
 auto catalogue = bg::ServiceCatalogue{};
 bg::web::register_http_server(catalogue, {.host = "127.0.0.1", .port = 8080});
+auto echo_route = bg::web::http_handler("/echo", echo);
 
 bg::run_graph([&] {
-    (void)bg::web::http_handler("/echo", echo)();
+    (void)echo_route();
     (void)bg::web::http_server();
 }, bg::GraphRunOptions{.services = &catalogue,
                        .engine = bg::EvaluationEngine::realtime});
@@ -102,7 +103,68 @@ handler returns `TS<Bundle<HttpResponse>>` or a bundle with a `response` field
 and additional outputs. Its mapped result is `TSD<i64, REF<HANDLER_OUTPUT>>`.
 A dictionary handler returns `TSD<i64, TS<Bundle<HttpResponse>>>` or a bundle
 with a `response` field containing that dictionary and additional outputs. Link
-the optional `bg::web` target.
+the optional `bg::web` target. Keep each C++ `HttpHandler` object alive through
+graph compilation and execution; graph nodes retain its wiring template.
+
+## Server authentication
+
+`http_handler(path, graph, policy=policy_service)` selects an ordinary service
+that authorizes each request. Register policy implementations in the service
+catalogue alongside the server implementation:
+
+```python
+from bg_web import AuthDecision
+
+@bg.schema
+class User:
+    name: str
+
+@bg.service
+def orders_access(request: bg.TS[HttpServerRequest]) -> bg.TS[AuthDecision[User]]:
+    ...
+
+@bg.graph
+def orders(request: bg.TS[HttpServerRequest], identity: bg.TS[User],
+           prices: bg.TSD[str, bg.TS[float]]) -> bg.TS[HttpResponse]:
+    return order_response(request, identity, prices)
+
+orders_route = http_handler("/orders", orders, policy=orders_access)
+
+@bg.graph
+def application(prices: bg.TSD[str, bg.TS[float]]) -> None:
+    orders_route(prices)
+
+catalogue.register_impl(orders_access, orders_access_impl)
+```
+
+The application supplies `order_response` and `orders_access_impl`. Different
+routes can select different policy services. Their implementations can share
+authentication services and can be replaced through the catalogue for tests.
+A missing implementation fails during graph wiring.
+
+A policy returns `AuthDecision[User].accept(user)` or
+`AuthDecision[User].reject(HttpResponse(...))`. A decision contains exactly one
+of `identity` and `rejection`. A rejection can be any valid HTTP response,
+including a redirect or a 401 response with `WWW-Authenticate` headers.
+
+While the decision is pending, no per-request handler graph starts. Acceptance
+starts the handler with the request and typed identity as its first two inputs.
+The handler call exposes only its remaining ambient arguments and preserves its
+additional outputs. Rejection sends the policy response without starting that
+request's handler graph.
+
+A protected dictionary handler takes request and identity dictionaries as its
+first two inputs. Both contain only accepted request IDs. The dictionary handler
+retains its lifecycle for the complete route. Rejection responses go directly to
+the HTTP service; they do not produce handler-specific additional outputs.
+
+The C++ decision type is `bg::web::AuthDecision<IDENTITY>` from
+`<bg/web/auth.hpp>`. Use `bg::web::auth::accept<IDENTITY>(identity)` and
+`bg::web::auth::reject<IDENTITY>(response)` to construct decisions; both
+factories also accept an allocator as their first argument.
+Pass the policy service as the third argument to C++ `http_handler` and keep the
+service declaration alive through handler wiring. The handler uses that original
+declaration's catalogue identity.
 
 ## Client
 

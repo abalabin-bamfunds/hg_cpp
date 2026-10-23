@@ -1,10 +1,12 @@
 #include <bg/graph.hpp>
+#include <bg/library/operators.hpp>
 #include <bg/map.hpp>
 #include <bg/map_argument.hpp>
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
 #include <bg/scalar/opaque.hpp>
 #include <bg/scalar/value.hpp>
+#include <bg/time_series/tsd/tsd_input.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsb/tsb_output.hpp>
 #include <bg/time_series/tsd/tsd_output.hpp>
@@ -105,6 +107,72 @@ const auto server_routes = node<ServerRoutes>();
 const auto error_sink = node([](In<TS<string>> error) { throw std::runtime_error{std::string{error.value()}}; });
 const auto server_source = node<ServerSource>();
 
+using HTTP_AUTH_IDENTITY = ScalarVariable<"HTTP_AUTH_IDENTITY">;
+
+template <typename IDENTITY> struct AuthProjectionOutput {
+    template <template <typename, auto...> typename Field> struct schema {
+        Field<TSD<i64, REF<TS<Bundle<HttpServerRequest>>>>> requests;
+        Field<TSD<i64, TS<IDENTITY>>> identities;
+        Field<TSD<i64, TS<Bundle<HttpResponse>>>> rejections;
+    };
+};
+
+template <typename IDENTITY> struct AuthProjection {
+    In<TSD<i64, REF<TS<Bundle<HttpServerRequest>>>>, optional> requests;
+    In<TSD<i64, TS<HIERARCHICAL>>, optional> decisions;
+    Out<TSB<AuthProjectionOutput<IDENTITY>::template schema>> output;
+
+    void evaluate() const {
+        const auto erase = [&](const Scalar<i64> &key) {
+            output->requests.erase(key);
+            output->identities.erase(key);
+            output->rejections.erase(key);
+        };
+
+        const auto update = [&](const Scalar<i64> &key) {
+            if (!decisions.contains(key) || !decisions[key].valid() || !requests.contains(key) ||
+                !requests[key].valid()) {
+                erase(key);
+                return;
+            }
+
+            const auto decision = decisions[key];
+            const auto request = requests[key];
+
+            const auto value = decision.value_view();
+            const auto has_identity = value.present(0);
+            const auto has_rejection = value.present(1);
+            if (has_identity == has_rejection) {
+                throw std::logic_error{"an authentication decision must contain exactly one of identity or rejection"};
+            }
+
+            if (has_identity) {
+                output->requests[key].copy(request);
+                output->identities[key].set_value(value[0]);
+                output->rejections.erase(key);
+                return;
+            }
+
+            output->rejections[key].set_value(value[1]);
+            output->requests.erase(key);
+            output->identities.erase(key);
+        };
+
+        requests.for_each_added(update);
+        requests.for_each_modified(update);
+        requests.for_each_removed(erase);
+        decisions.for_each_added(update);
+        decisions.for_each_modified(update);
+        decisions.for_each_removed(erase);
+    }
+};
+
+const auto auth_projection = node<HTTP_AUTH_IDENTITY, AuthProjection<HTTP_AUTH_IDENTITY>>();
+
+const auto http_response_dictionary_reference = node(
+    [](In<TSD<i64, REF<TS<Bundle<HttpResponse>>>>, optional> responses,
+       Out<TSD<i64, REF<TS<Bundle<HttpResponse>>>>> output) { output.copy_tick(responses); });
+
 bool is_response_dictionary(const TimeSeriesType &type) {
     return TSD<i64, TS<Bundle<HttpResponse>>>::type().accepts(type.target_type());
 }
@@ -151,11 +219,15 @@ WiringPoint response_field(WiringPoint result) {
     return field;
 }
 
-Signature handler_signature(const WiringTemplate &handler) {
+Signature handler_signature(const WiringTemplate &handler, bool authenticated) {
     const auto dictionary_input = details::http_handler_input_is_dictionary(handler);
     const auto &signature = handler.signature();
+    if (authenticated && signature.parameter_count() < 2) {
+        throw std::invalid_argument{"an authenticated HTTP handler must take request and identity inputs"};
+    }
     auto parameters = std::vector<std::size_t>{};
-    for (auto index = std::size_t{1}; index < signature.parameter_count(); ++index) parameters.push_back(index);
+    const auto first_argument = authenticated ? std::size_t{2} : std::size_t{1};
+    for (auto index = first_argument; index < signature.parameter_count(); ++index) parameters.push_back(index);
     auto result = signature.select_parameters(parameters).with_name(util::symbol{"http_handler"});
     if (!dictionary_input) {
         const auto &response_type = time_series_dictionary_type(cpp_scalar_type<i64>(), *signature.output(),
@@ -179,6 +251,52 @@ WiringPoint details::wire_http_server(ServerOptions options, WiringPoint routes,
     response_sink(source->runtime, responses);
     error_sink(source->errors);
     return bundle("requests"_n = source->requests, "port"_n = port);
+}
+
+WiringPoint details::http_auth_projection(WiringPoint requests, WiringPoint decisions) {
+    const auto *decision_dictionary = type_cast<TimeSeriesDictionaryType>(&decisions.type().target_type());
+    if (decision_dictionary == nullptr || !TSD<i64, TS<HIERARCHICAL>>::type().accepts(decisions.type())) {
+        throw WiringError{"an HTTP authentication policy must return a request dictionary of auth decisions"};
+    }
+
+    const auto *decision_value_type =
+        type_cast<TimeSeriesValueType>(&decision_dictionary->value_type().target_type());
+    const auto *decision_type = decision_value_type == nullptr
+                                    ? nullptr
+                                    : type_cast<HierarchicalScalarType>(&decision_value_type->value_type());
+    const auto *decision_schema =
+        decision_type == nullptr ? nullptr : dynamic_cast<const Schema *>(&decision_type->schema_type());
+    if (decision_schema == nullptr || decision_schema->field_count() != 2) {
+        throw WiringError{"an HTTP authentication policy must return AuthDecision[IDENTITY] values"};
+    }
+    const auto &identity_field = decision_schema->field(0);
+    const auto &rejection_field = decision_schema->field(1);
+    if (identity_field.name.text() != "identity" || rejection_field.name.text() != "rejection" ||
+        !identity_field.optional || !rejection_field.optional ||
+        !cpp_scalar_type<Bundle<HttpResponse>>().accepts(*rejection_field.type)) {
+        throw WiringError{"an HTTP authentication policy must return AuthDecision[IDENTITY] values"};
+    }
+
+    auto projection_types = TypeMap{};
+    projection_types.set(HTTP_AUTH_IDENTITY::type(), identity_field.type);
+    return auth_projection(projection_types,
+                           requests.as<TSD<i64, REF<TS<Bundle<HttpServerRequest>>>>>(), decisions);
+}
+
+WiringPoint details::http_merge_responses(WiringPoint responses, WiringPoint rejections) {
+    const auto normalize_dictionary = [](WiringPoint dictionary) {
+        if (!is_response_dictionary(dictionary.type())) {
+            throw WiringError{"HTTP responses must be a request dictionary of response time series"};
+        }
+        if (&dictionary.type().target_type() ==
+            &TSD<i64, REF<TS<Bundle<HttpResponse>>, TimeSeriesGuarantee::deduplicated>>::type()) {
+            return dictionary;
+        }
+        return static_cast<WiringPoint>(http_response_dictionary_reference(dictionary));
+    };
+    const auto response_references = normalize_dictionary(responses);
+    const auto rejection_references = normalize_dictionary(rejections);
+    return operators::merge(response_references, rejection_references);
 }
 
 WiringPoint details::http_response_field(WiringPoint result) { return response_field(result); }
@@ -212,9 +330,22 @@ void register_http_server(ServiceCatalogue &catalogue, ServerOptions options) {
 
 wp<TS<i64>> http_server() { return http_server_port_service().template as<TS<i64>>(); }
 
-HttpHandler::HttpHandler(std::string path, std::shared_ptr<const WiringTemplate> handler)
-    : path_{std::move(path)}, handler_{std::move(handler)}, signature_{handler_signature(*handler_)} {
+HttpHandler::HttpHandler(std::string path, std::shared_ptr<const WiringTemplate> handler,
+                         const Service *policy)
+    : path_{std::move(path)}, handler_{std::move(handler)}, policy_{policy},
+      signature_{handler_signature(*handler_, policy_ != nullptr)} {
     validate_route(path_);
+    if (policy_ == nullptr) return;
+
+    const auto &policy_signature = policy_->signature();
+    if (policy_signature.parameter_count() != 1 || policy_signature.output() == nullptr) {
+        throw std::invalid_argument{"an HTTP authentication policy must take one request input and return a decision"};
+    }
+    const auto *policy_input = type_cast<TimeSeriesType>(policy_signature.parameter(0).type);
+    if (policy_input == nullptr || !policy_input->accepts(TS<Bundle<HttpServerRequest>>::type()) ||
+        type_cast<TimeSeriesType>(policy_signature.output()) == nullptr) {
+        throw std::invalid_argument{"an HTTP authentication policy must map TS<HttpServerRequest> to a decision"};
+    }
 }
 
 std::optional<WiringPoint> HttpHandler::wire(GraphWiring &wiring, ResolvedSignature,
@@ -228,22 +359,65 @@ std::optional<WiringPoint> HttpHandler::wire(GraphWiring &wiring, ResolvedSignat
         type_cast<TimeSeriesDictionaryType>(&handler_input_type->target_type());
 
     auto output = WiringPoint{};
+    auto handler_requests = requests;
+    auto identities = std::optional<WiringPoint>{};
+    auto rejections = std::optional<WiringPoint>{};
+    if (policy_ != nullptr) {
+        const auto policy_type_map = argument_view.type_map().copy();
+        const auto submit_policy_request = graph(
+            "name"_n = "http_auth_request",
+            [policy = policy_, type_map = policy_type_map.copy()](wp<TS<Bundle<HttpServerRequest>>> request)
+                -> wp<TS<service_client_id_t, TimeSeriesGuarantee::const_>> {
+                const auto client_id = service_client_id();
+                const auto request_arguments = std::array{WiringArgument{request}};
+                policy->client_requests(type_map, client_id, request_arguments);
+                return client_id;
+            });
+        const auto request_client_ids = map(submit_policy_request, requests);
+        auto reply_parameters = std::vector<Parameter>{
+            {util::symbol{"client_id"}, &TS<service_client_id_t, TimeSeriesGuarantee::const_>::type()},
+        };
+        const auto *policy_output = type_cast<TimeSeriesType>(policy_->signature().output());
+        auto reply_signature = Signature{util::symbol{"http_auth_reply"}, std::move(reply_parameters),
+                                         *policy_output};
+        const auto receive_policy_reply = GraphTemplate{
+            std::move(reply_signature),
+            [policy = policy_, type_map = policy_type_map.copy()](
+                wp<TS<service_client_id_t, TimeSeriesGuarantee::const_>> client_id) -> wp<TS<HIERARCHICAL>> {
+                const auto replies = policy->client_replies(type_map, client_id, {});
+                return wp<TS<HIERARCHICAL>>::from_validated(*replies);
+            }};
+        const auto decisions = map(receive_policy_reply, request_client_ids);
+        const auto projected = details::http_auth_projection(requests, decisions);
+        handler_requests = operators::getattr(projected, util::symbol{"requests"});
+        identities = operators::getattr(projected, util::symbol{"identities"});
+        rejections = operators::getattr(projected, util::symbol{"rejections"});
+    }
+
     auto response = WiringPoint{};
     if (handler_input_dictionary != nullptr) {
-        if (!handler_input_type->accepts(requests.type())) {
+        if (!handler_input_type->accepts(handler_requests.type())) {
             throw WiringError{"an HTTP dictionary handler input must accept TSD<i64, TS<HttpServerRequest>>"};
         }
 
         auto handler_arguments = std::vector<WiringArgument>{};
-        handler_arguments.reserve(arguments.size() + 1);
-        handler_arguments.emplace_back(handler_input.name, requests);
+        handler_arguments.reserve(arguments.size() + (identities ? 2 : 1));
+        handler_arguments.emplace_back(handler_input.name, handler_requests);
+        if (identities) {
+            const auto &identity_input = handler_->signature().parameter(1);
+            const auto *identity_input_type = type_cast<TimeSeriesType>(identity_input.type);
+            if (identity_input_type == nullptr || !identity_input_type->accepts(identities->type())) {
+                throw WiringError{"an authenticated HTTP dictionary handler must accept an identity dictionary"};
+            }
+            handler_arguments.emplace_back(identity_input.name, *identities);
+        }
         for (const auto &argument : arguments) handler_arguments.emplace_back(argument);
         const auto result = wiring.invoke(*handler_, handler_arguments, &argument_view.type_map());
         if (!result) throw WiringError{"an HTTP handler must return a response time series"};
         output = *result;
         response = response_field(output);
     } else {
-        const auto &request_dictionary = type_cast<TimeSeriesDictionaryType>(requests.type().target_type());
+        const auto &request_dictionary = type_cast<TimeSeriesDictionaryType>(handler_requests.type().target_type());
         if (!handler_input_type->accepts(request_dictionary.value_type())) {
             throw WiringError{"an HTTP single-request handler input must accept TS<HttpServerRequest>"};
         }
@@ -252,11 +426,24 @@ std::optional<WiringPoint> HttpHandler::wire(GraphWiring &wiring, ResolvedSignat
         }
 
         auto map_arguments = std::vector<MapArgument>{};
-        map_arguments.reserve(arguments.size() + 1);
-        map_arguments.emplace_back(WiringArgument{requests}, false);
+        map_arguments.reserve(arguments.size() + (identities ? 2 : 1));
+        map_arguments.emplace_back(WiringArgument{handler_requests}, false);
+        if (identities) {
+            const auto &identity_input = handler_->signature().parameter(1);
+            const auto *identity_input_type = type_cast<TimeSeriesType>(identity_input.type);
+            const auto &identity_dictionary = type_cast<TimeSeriesDictionaryType>(identities->type().target_type());
+            if (identity_input_type == nullptr || !identity_input_type->accepts(identity_dictionary.value_type())) {
+                throw WiringError{"an authenticated HTTP single-request handler must accept an identity value"};
+            }
+            map_arguments.emplace_back(WiringArgument{*identities}, false);
+        }
         for (const auto &argument : arguments) map_arguments.emplace_back(argument, true);
         output = map(*handler_, std::span<const MapArgument>{map_arguments});
         response = response_field(output);
+    }
+
+    if (rejections) {
+        response = details::http_merge_responses(response, *rejections);
     }
 
     auto route = operators::const_(ScalarValue<string>{path_});

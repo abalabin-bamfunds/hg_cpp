@@ -47,6 +47,20 @@ python::PythonWiringPoint make_http_response_field(const python::PythonWiringPoi
     return python::PythonWiringPoint{output, python::PythonWiringScope::current()};
 }
 
+python::PythonWiringPoint make_http_auth_projection(const python::PythonWiringPoint &requests,
+                                                    const python::PythonWiringPoint &decisions) {
+    auto &wiring = WiringContext::current().wiring();
+    const auto output = details::http_auth_projection(requests.get(wiring), decisions.get(wiring));
+    return python::PythonWiringPoint{output, python::PythonWiringScope::current()};
+}
+
+python::PythonWiringPoint make_http_merge_responses(const python::PythonWiringPoint &responses,
+                                                    const python::PythonWiringPoint &rejections) {
+    auto &wiring = WiringContext::current().wiring();
+    const auto output = details::http_merge_responses(responses.get(wiring), rejections.get(wiring));
+    return python::PythonWiringPoint{output, python::PythonWiringScope::current()};
+}
+
 python::PythonWiringPoint make_http_client_impl(const python::PythonWiringPoint &requests,
                                                 std::int64_t timeout_ms,
                                                 std::size_t max_response_body_size) {
@@ -72,6 +86,10 @@ NB_MODULE(_bg_web, module) {
     module.def("_http_server_impl", &bg::web::make_http_server_implementation, nb::arg("routes"),
                nb::arg("responses"), nb::arg("host") = "127.0.0.1", nb::arg("port") = 0);
     module.def("_http_response_field", &bg::web::make_http_response_field, nb::arg("result"));
+    module.def("_http_auth_projection", &bg::web::make_http_auth_projection, nb::arg("requests"),
+               nb::arg("decisions"));
+    module.def("_http_merge_responses", &bg::web::make_http_merge_responses, nb::arg("responses"),
+               nb::arg("rejections"));
     module.def("_http_handler_input_is_dictionary", [](const bg::python::PythonGraphDefinition &handler) {
         return bg::web::details::http_handler_input_is_dictionary(handler);
     });

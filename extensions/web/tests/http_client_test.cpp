@@ -14,6 +14,7 @@
 #include <bg/service_catalogue.hpp>
 #include <bg/web/http_client.hpp>
 #include <bg/web/http_server.hpp>
+#include <bg/web/auth.hpp>
 
 #include "../src/client_output.hpp"
 
@@ -98,6 +99,24 @@ ObservedResponse observe(Scalar<Bundle<HttpResponse>> response) {
 }
 
 } // namespace
+
+TEST_CASE("HTTP auth decisions contain exactly one identity or rejection",
+          "[feature:http][feature:scalar]") {
+    auto memory = allocator{};
+    const auto identity = ScalarValue<i64>{42};
+    const auto accepted = auth::accept<i64>(memory, identity.view());
+
+    CHECK(accepted.view().present(0));
+    CHECK_FALSE(accepted.view().present(1));
+    CHECK(scalar_cast<i64>(accepted.view()[0]).value() == 42);
+
+    const auto response = make_response(401, {});
+    const auto rejected = auth::reject<i64>(memory, response.view());
+
+    CHECK_FALSE(rejected.view().present(0));
+    CHECK(rejected.view().present(1));
+    CHECK(scalar_cast<i64>(scalar_cast<Bundle<HttpResponse>>(rejected.view()[1])[0]).value() == 401);
+}
 
 TEST_CASE("HTTP client preserves binary payloads, ordered headers, and sequential connection reuse",
           "[feature:http][feature:service][feature:realtime]") {

@@ -7,6 +7,7 @@
 #include <bg/map.hpp>
 #include <bg/map_argument.hpp>
 #include <bg/node.hpp>
+#include <bg/operators.hpp>
 #include <bg/queue.hpp>
 #include <bg/realtime_evaluation_engine.hpp>
 #include <bg/run_graph.hpp>
@@ -15,7 +16,10 @@
 #include <bg/scalar/tuple/scalar.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/web/http_server.hpp>
+#include <bg/web/auth.hpp>
 #include <bg/wall_clock.hpp>
+
+#include "../src/http_server_internal.hpp"
 
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
@@ -59,8 +63,15 @@ struct ServerTest {
     template <typename Wire, typename Client>
         requires std::invocable<Wire>
     void run(Wire wire, Client client_function) {
+        run_with_services(std::move(wire), std::move(client_function), [](ServiceCatalogue &) {});
+    }
+
+    template <typename Wire, typename Client, typename Configure>
+        requires std::invocable<Wire> && std::invocable<Configure, ServiceCatalogue &>
+    void run_with_services(Wire wire, Client client_function, Configure configure) {
         auto catalogue = ServiceCatalogue{};
         register_http_server(catalogue);
+        std::invoke(configure, catalogue);
         run_graph(
             [&] {
                 std::invoke(wire);
@@ -108,6 +119,16 @@ struct RawHttpResponse {
     std::vector<std::pair<std::string, std::string>> headers;
     std::string body;
 };
+
+ScalarValue<Bundle<HttpResponse>> make_http_response(i64 status, std::string_view body = {}) {
+    using Header = Tuple<string, string>;
+    const auto headers = ScalarValue<List<Header>>{std::vector<Scalar<Header>>{}};
+    const auto body_bytes = std::span<const std::byte>{reinterpret_cast<const std::byte *>(body.data()), body.size()};
+    const auto body_value = ScalarValue<bytes>{body_bytes};
+    auto memory = allocator{};
+    return bundle<HttpResponse>(memory, "status"_n = status, "headers"_n = headers.view(),
+                                "body"_n = body_value.view());
+}
 
 RawHttpResponse read_response(boost::asio::ip::tcp::socket &socket, boost::asio::streambuf &buffer,
                               bool head_request = false) {
@@ -158,6 +179,54 @@ const auto echo_handler = node([](In<TS<Bundle<HttpServerRequest>>> request,
                                       "body"_n = request.value()[5]);
     response.set_value(reply.view());
 });
+
+const auto auth_policy = service<auto(TS<Bundle<HttpServerRequest>>) -> TS<AuthDecision<i64>>>{
+    "http_auth_policy", {"request"}};
+
+struct AuthPolicy {
+    inline static int evaluations{};
+};
+
+const auto auth_policy_node = node([](In<TS<Bundle<HttpServerRequest>>> request,
+                                      Out<TS<AuthDecision<i64>>> decision) {
+    ++AuthPolicy::evaluations;
+    const auto path = scalar_cast<string>(request.value()[2]).value();
+    if (path == "/auth/rejected") {
+        const auto response = make_http_response(401);
+        const auto result = auth::reject<i64>(response.view());
+        decision.set_value(result.view());
+        return;
+    }
+
+    const auto identity = ScalarValue<i64>{73};
+    const auto result = auth::accept<i64>(identity.view());
+    decision.set_value(result.view());
+});
+
+const auto auth_policy_implementation = graph(
+    [](wp<TSD<i64, TS<Bundle<HttpServerRequest>>>, "request"_n> request)
+        -> wp<TSD<i64, TS<AuthDecision<i64>>>> {
+        const auto arguments = std::array{MapArgument{WiringArgument{request}}};
+        const auto result = map(auth_policy_node, std::span<const MapArgument>{arguments});
+        return result.as<TSD<i64, TS<AuthDecision<i64>>>>();
+    });
+
+struct AuthenticatedHandler {
+    In<TS<Bundle<HttpServerRequest>>> request;
+    In<TS<i64>> identity;
+    Out<TS<Bundle<HttpResponse>>> response;
+
+    void start() const { ++starts; }
+
+    void evaluate() const {
+        ++evaluations;
+        const auto result = make_http_response(200, "identity=" + std::to_string(identity.value()));
+        response.set_value(result.view());
+    }
+
+    inline static int starts{};
+    inline static int evaluations{};
+};
 
 TEST_CASE("HTTP handlers accept ambient inputs and preserve mapped extra outputs",
           "[feature:http][feature:nested-graph][shape:nested]") {
@@ -225,6 +294,209 @@ TEST_CASE("HTTP handlers accept ambient inputs and preserve mapped extra outputs
     CHECK(status == 200);
     CHECK(response_body == "42/rich");
     CHECK(extra_values == std::vector<i64>{42});
+}
+
+TEST_CASE("HTTP authentication passes accepted identities and returns rejections directly",
+          "[feature:http][feature:service][feature:authentication]") {
+    AuthenticatedHandler::starts = 0;
+    AuthenticatedHandler::evaluations = 0;
+    AuthPolicy::evaluations = 0;
+    const auto handler = node<AuthenticatedHandler>();
+    auto server = ServerTest{};
+    auto accepted_status = 0U;
+    auto accepted_body = std::string{};
+    auto rejected_status = 0U;
+    auto rejected_body = std::string{};
+    const auto accepted_route = http_handler("/auth/accepted", handler, auth_policy);
+    const auto rejected_route = http_handler("/auth/rejected", handler, auth_policy);
+
+    server.run_with_services(
+        [&] {
+            (void)accepted_route();
+            (void)rejected_route();
+        },
+        [&](std::uint16_t port) {
+            namespace asio = boost::asio;
+            namespace beast = boost::beast;
+            namespace http = beast::http;
+            using tcp = asio::ip::tcp;
+
+            auto context = asio::io_context{};
+            auto socket = tcp::socket{context};
+            socket.connect({asio::ip::make_address("127.0.0.1"), port});
+            auto buffer = beast::flat_buffer{};
+
+            const auto request = [&](std::string_view path) {
+                auto message = http::request<http::empty_body>{http::verb::get, path, 11};
+                message.set(http::field::host, "localhost");
+                http::write(socket, message);
+                auto reply = http::response<http::string_body>{};
+                http::read(socket, buffer, reply);
+                return reply;
+            };
+
+            auto accepted = request("/auth/accepted");
+            accepted_status = accepted.result_int();
+            accepted_body = std::move(accepted.body());
+            auto rejected = request("/auth/rejected");
+            rejected_status = rejected.result_int();
+            rejected_body = std::move(rejected.body());
+            server.stop.request_stop();
+        },
+        [](ServiceCatalogue &catalogue) { catalogue.register_impl(auth_policy, auth_policy_implementation); });
+
+    CHECK(accepted_status == 200);
+    CHECK(accepted_body == "identity=73");
+    CHECK(rejected_status == 401);
+    CHECK(rejected_body.empty());
+    CHECK(AuthenticatedHandler::starts == 1);
+    CHECK(AuthenticatedHandler::evaluations == 1);
+    CHECK(AuthPolicy::evaluations == 2);
+}
+
+TEST_CASE("HTTP authentication keeps pending keys out of handlers and removes stale keys",
+          "[feature:http][feature:service][feature:validity][series:tsd][transition:removal]") {
+    using Header = Tuple<string, string>;
+    auto memory = allocator{};
+    const auto headers = ScalarValue<List<Header>>{std::vector<Scalar<Header>>{}};
+    const auto body = ScalarValue<bytes>{std::span<const std::byte>{}};
+    const auto peer = bundle<HttpPeer>(memory, "address"_n = std::string{"127.0.0.1"}, "port"_n = i64{1});
+    const auto request = bundle<HttpServerRequest>(memory, "method"_n = std::string{"GET"},
+                                                   "target"_n = std::string{"/auth"},
+                                                   "path"_n = std::string{"/auth"}, "query"_n = headers.view(),
+                                                   "headers"_n = headers.view(), "body"_n = body.view(),
+                                                   "peer"_n = peer.view());
+    const auto identity_1 = ScalarValue<i64>{10};
+    const auto identity_2 = ScalarValue<i64>{20};
+    const auto identity_3 = ScalarValue<i64>{30};
+    const auto decision_1 = auth::accept<i64>(memory, identity_1.view());
+    const auto decision_2 = auth::accept<i64>(memory, identity_2.view());
+    const auto decision_3 = auth::accept<i64>(memory, identity_3.view());
+
+    const auto request_source = node([&](In<TS<i64>> cycle,
+                                         Out<TSD<i64, TS<Bundle<HttpServerRequest>>>> output) {
+        if (cycle.value() == 1) {
+            output[1].set_value(request.view());
+            output[2].set_value(request.view());
+            output[3].set_value(request.view());
+            return;
+        }
+        output.erase(2);
+    });
+    const auto decision_source = node([&](In<TS<i64>> cycle,
+                                          Out<TSD<i64, TS<AuthDecision<i64>>>> output) {
+        if (cycle.value() == 1) {
+            output[2].set_value(decision_2.view());
+            output[3].set_value(decision_3.view());
+            return;
+        }
+        output[1].set_value(decision_1.view());
+        output.erase(3);
+    });
+
+    struct IdentityChanges {
+        std::vector<std::pair<i64, i64>> added;
+        std::vector<i64> removed;
+        std::vector<i64> request_keys;
+        std::vector<i64> identity_keys;
+    };
+    auto changes = std::vector<IdentityChanges>{};
+    const auto observe = node([&](In<TSD<i64, TS<Bundle<HttpServerRequest>>>, optional> accepted_requests,
+                                  In<TSD<i64, TS<i64>>, optional> identities) {
+        auto change = IdentityChanges{};
+        accepted_requests.for_each_key([&](const Scalar<i64> &key) { change.request_keys.push_back(key.value()); });
+        identities.for_each_key([&](const Scalar<i64> &key) { change.identity_keys.push_back(key.value()); });
+        std::ranges::sort(change.request_keys);
+        std::ranges::sort(change.identity_keys);
+        identities.for_each_added([&](const Scalar<i64> &key) {
+            change.added.emplace_back(key.value(), identities[key].value());
+        });
+        identities.for_each_removed([&](const Scalar<i64> &key) { change.removed.push_back(key.value()); });
+        if (!change.added.empty() || !change.removed.empty()) changes.push_back(std::move(change));
+    });
+    const auto test_graph = [&](wp<TS<i64>> cycle) {
+        const auto requests = request_source(cycle);
+        const auto decisions = decision_source(cycle);
+        const auto projection = bg::web::details::http_auth_projection(requests, decisions);
+        observe(operators::getattr(projection, util::symbol{"requests"}),
+                operators::getattr(projection, util::symbol{"identities"}));
+        return cycle;
+    };
+
+    run_graph(test_graph, {1, 2});
+
+    REQUIRE(changes.size() == 2);
+    CHECK(changes[0].added == std::vector<std::pair<i64, i64>>{{2, 20}, {3, 30}});
+    CHECK(changes[0].removed.empty());
+    CHECK(changes[0].request_keys == changes[0].identity_keys);
+    CHECK(changes[0].request_keys == std::vector<i64>{2, 3});
+    CHECK(changes[1].added == std::vector<std::pair<i64, i64>>{{1, 10}});
+    CHECK(changes[1].removed == std::vector<i64>{2, 3});
+    CHECK(changes[1].request_keys == changes[1].identity_keys);
+    CHECK(changes[1].request_keys == std::vector<i64>{1});
+}
+
+TEST_CASE("HTTP authentication rejects malformed decisions",
+          "[feature:http][feature:service][feature:authentication]") {
+    using Header = Tuple<string, string>;
+    auto memory = allocator{};
+    const auto headers = ScalarValue<List<Header>>{std::vector<Scalar<Header>>{}};
+    const auto body = ScalarValue<bytes>{std::span<const std::byte>{}};
+    const auto peer = bundle<HttpPeer>(memory, "address"_n = std::string{"127.0.0.1"}, "port"_n = i64{1});
+    const auto request = bundle<HttpServerRequest>(memory, "method"_n = std::string{"GET"},
+                                                   "target"_n = std::string{"/auth"},
+                                                   "path"_n = std::string{"/auth"}, "query"_n = headers.view(),
+                                                   "headers"_n = headers.view(), "body"_n = body.view(),
+                                                   "peer"_n = peer.view());
+    const auto identity = ScalarValue<i64>{10};
+    const auto response = make_http_response(401);
+    const auto malformed = bundle<bg::web::details::AuthDecisionSchema<i64>::template schema>(
+        memory, "identity"_n = identity.view(), "rejection"_n = response.view());
+    const auto request_source = node([&](In<TS<i64>> cycle,
+                                         Out<TSD<i64, TS<Bundle<HttpServerRequest>>>> requests) {
+        if (cycle.value() != 1) return;
+        requests[1].set_value(request.view());
+    });
+    const auto decision_source = node([&](In<TS<i64>> cycle,
+                                          Out<TSD<i64, TS<AuthDecision<i64>>>> decisions) {
+        if (cycle.value() != 1) return;
+        decisions[1].set_value(malformed.view());
+    });
+    const auto test_graph = [&](wp<TS<i64>> cycle) {
+        const auto requests = request_source(cycle);
+        const auto decisions = decision_source(cycle);
+        (void)bg::web::details::http_auth_projection(requests, decisions);
+        return cycle;
+    };
+
+    CHECK_THROWS_AS(run_graph(test_graph, {1}), std::logic_error);
+}
+
+TEST_CASE("HTTP authentication requires a policy implementation",
+          "[feature:http][feature:service][feature:authentication]") {
+    const auto route = http_handler("/auth/missing", node<AuthenticatedHandler>(), auth_policy);
+    auto catalogue = ServiceCatalogue{};
+    register_http_server(catalogue);
+
+    CHECK_THROWS(run_graph(
+        [&] {
+            (void)route();
+            (void)http_server();
+        },
+        GraphRunOptions{.services = &catalogue,
+                        .engine = EvaluationEngine::realtime,
+                        .run_time = std::chrono::seconds{1}}));
+}
+
+TEST_CASE("HTTP authentication requires a matching identity input",
+          "[feature:http][feature:authentication]") {
+    const auto wrong_identity_handler = node([](In<TS<Bundle<HttpServerRequest>>>, In<TS<string>>,
+                                                 Out<TS<Bundle<HttpResponse>>>) {});
+    auto wiring = GraphWiring{};
+    auto context = WiringContext{wiring};
+    const auto route = http_handler("/auth/wrong-identity", wrong_identity_handler, auth_policy);
+
+    CHECK_THROWS_AS(route(), WiringError);
 }
 
 TEST_CASE("HTTP server can start without routes", "[feature:http][feature:lifecycle]") {

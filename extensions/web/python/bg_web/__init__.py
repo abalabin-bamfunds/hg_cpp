@@ -8,7 +8,9 @@ import bg
 
 from ._bg_web import (
     _http_client_impl,
+    _http_auth_projection,
     _http_handler_input_is_dictionary,
+    _http_merge_responses,
     _http_response_field,
     _http_server_impl,
     _register_schemas,
@@ -56,6 +58,8 @@ class HttpResponse:
 
 _register_schemas(HttpPeer, HttpServerRequest, HttpClientRequest, HttpResponse)
 
+from .auth import AuthDecision, _policy_graphs
+
 
 @bg.service
 def _http_handler_service(
@@ -73,7 +77,7 @@ def _http_server_port_service() -> bg.TS[int]:
 
 
 class HttpHandler:
-    def __init__(self, path, graph):
+    def __init__(self, path, graph, policy=None):
         if not isinstance(path, str) or not path.startswith("/") or any(c in path for c in "?#"):
             raise ValueError("HTTP handler paths must be absolute paths without query or fragment")
         if not isinstance(graph, bg.GraphDefinition):
@@ -82,10 +86,15 @@ class HttpHandler:
         parameters = tuple(inspect.signature(graph.function).parameters.values())
         if not parameters:
             raise TypeError("an HTTP handler graph must take a request input")
+        self.policy = policy
+        self.policy_graphs = None if policy is None else _policy_graphs(policy)
+        argument_start = 1 if policy is None else 2
+        if len(parameters) < argument_start:
+            raise TypeError("an authenticated HTTP handler must take request and identity inputs")
         self.path = path
         self.graph = graph
         self.dictionary_input = _http_handler_input_is_dictionary(graph._native_definition)
-        self.parameters = parameters[1:]
+        self.parameters = parameters[argument_start:]
         self.signature = inspect.Signature(self.parameters)
         update_wrapper(self, graph.function)
         self.__signature__ = self.signature
@@ -96,22 +105,42 @@ class HttpHandler:
 
         client_id = bg.service_client_id()
         requests = _http_handler_service.client_replies(client_id)
+        identities = None
+        rejections = None
+        handler_requests = requests
+        if self.policy_graphs is not None:
+            request_graph, reply_graph = self.policy_graphs
+            client_ids = bg.map(request_graph, requests)
+            decisions = bg.map(reply_graph, client_ids)
+            projected = _http_auth_projection(requests, decisions)
+            handler_requests = bg.operators.getattr(projected, bg.Symbol("requests"))
+            identities = bg.operators.getattr(projected, bg.Symbol("identities"))
+            rejections = bg.operators.getattr(projected, bg.Symbol("rejections"))
+
         if self.dictionary_input:
-            result = self.graph(requests, *bound.args, **bound.kwargs)
+            if identities is None:
+                result = self.graph(handler_requests, *bound.args, **bound.kwargs)
+            else:
+                result = self.graph(handler_requests, identities, *bound.args, **bound.kwargs)
         else:
             mapped_positional = tuple(bg.pass_through(value) for value in bound.args)
             mapped_named = {name: bg.pass_through(value) for name, value in bound.kwargs.items()}
-            result = bg.map(self.graph, requests, *mapped_positional, **mapped_named)
+            if identities is None:
+                result = bg.map(self.graph, handler_requests, *mapped_positional, **mapped_named)
+            else:
+                result = bg.map(self.graph, handler_requests, identities, *mapped_positional, **mapped_named)
 
         responses = _http_response_field(result)
+        if rejections is not None:
+            responses = _http_merge_responses(responses, rejections)
         route = bg.operators.const_(self.path)
         _http_handler_service.client_requests(client_id, route, responses)
         return result
 
 
-def http_handler(path, graph):
+def http_handler(path, graph, policy=None):
     """Create a route that runs a graph for HTTP requests and returns its outputs."""
-    return HttpHandler(path, graph)
+    return HttpHandler(path, graph, policy)
 
 
 def register_http_server(catalogue, host="127.0.0.1", port=0):
@@ -166,6 +195,7 @@ __all__ = [
     "HttpServerRequest",
     "HttpClientRequest",
     "HttpResponse",
+    "AuthDecision",
     "http_handler",
     "register_http_server",
     "http_server",

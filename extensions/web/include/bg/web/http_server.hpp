@@ -4,6 +4,7 @@
 #include <bg/service.hpp>
 #include <bg/service_catalogue.hpp>
 #include <bg/web/export.hpp>
+#include <bg/web/auth.hpp>
 #include <bg/web/types.hpp>
 
 #include <concepts>
@@ -37,12 +38,13 @@ BG_WEB_EXPORT wp<TS<i64>> http_server();
 
 class BG_WEB_EXPORT HttpHandler final : public WiringTemplate {
   public:
-    HttpHandler(std::string path, std::shared_ptr<const WiringTemplate> handler);
+    HttpHandler(std::string path, std::shared_ptr<const WiringTemplate> handler,
+                const Service *policy = nullptr);
 
     const Signature &default_signature() const final { return signature_; }
 
     template <typename... Arguments>
-        requires(details::graph_code_argument<Arguments> && ...)
+        requires(bg::details::graph_code_argument<Arguments> && ...)
     wp<> operator()(Arguments &&...arguments) const & {
         const auto output = WiringTemplate::operator()(std::forward<Arguments>(arguments)...);
         if (!output) {
@@ -59,12 +61,19 @@ class BG_WEB_EXPORT HttpHandler final : public WiringTemplate {
         return wp<>{*output};
     }
 
+    template <typename... Arguments>
+        requires(bg::details::graph_code_argument<Arguments> && ...)
+    wp<> operator()(Arguments &&...) const && = delete;
+
+    wp<> operator()(std::span<const WiringPoint>) const && = delete;
+
   private:
     std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const WiringArguments &,
                                     std::span<const WiringArgument>) const final;
 
     std::string path_;
     std::shared_ptr<const WiringTemplate> handler_;
+    const Service *policy_{};
     Signature signature_;
 };
 
@@ -73,6 +82,13 @@ template <typename Handler>
 HttpHandler http_handler(std::string path, Handler &&handler) {
     using Definition = std::remove_cvref_t<Handler>;
     return HttpHandler{std::move(path), std::make_shared<Definition>(std::forward<Handler>(handler))};
+}
+
+template <typename Handler>
+    requires std::derived_from<std::remove_cvref_t<Handler>, WiringTemplate>
+HttpHandler http_handler(std::string path, Handler &&handler, const Service &policy) {
+    using Definition = std::remove_cvref_t<Handler>;
+    return HttpHandler{std::move(path), std::make_shared<Definition>(std::forward<Handler>(handler)), &policy};
 }
 
 } // namespace bg::web

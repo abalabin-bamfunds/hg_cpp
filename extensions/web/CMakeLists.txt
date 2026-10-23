@@ -46,7 +46,7 @@ target_include_directories(
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
-target_link_libraries(bg_web PUBLIC bg::bg PRIVATE CURL::libcurl ${BG_WEB_BOOST_TARGETS} Threads::Threads)
+target_link_libraries(bg_web PUBLIC bg::bg PRIVATE bg::library CURL::libcurl ${BG_WEB_BOOST_TARGETS} Threads::Threads)
 set_target_properties(
     bg_web
     PROPERTIES
@@ -92,6 +92,7 @@ if(BG_BUILD_PYTHON)
     )
     file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/extensions/web/python/bg_web")
     configure_file(python/bg_web/__init__.py "${PROJECT_BINARY_DIR}/extensions/web/python/bg_web/__init__.py" COPYONLY)
+    configure_file(python/bg_web/auth.py "${PROJECT_BINARY_DIR}/extensions/web/python/bg_web/auth.py" COPYONLY)
     if(WIN32)
         add_custom_command(
             TARGET _bg_web
@@ -105,7 +106,7 @@ if(BG_BUILD_PYTHON)
         )
     endif()
     install(TARGETS _bg_web LIBRARY DESTINATION bg_web RUNTIME DESTINATION bg_web)
-    install(FILES python/bg_web/__init__.py DESTINATION bg_web)
+    install(FILES python/bg_web/__init__.py python/bg_web/auth.py DESTINATION bg_web)
     if(WIN32)
         install(FILES
             "$<TARGET_FILE:bg>"

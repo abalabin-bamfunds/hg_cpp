@@ -6,7 +6,7 @@ import threading
 from datetime import timedelta
 
 import bg
-from bg_web import HttpResponse, HttpServerRequest, http_handler, http_server, register_http_server
+from bg_web import AuthDecision, HttpResponse, HttpServerRequest, http_handler, http_server, register_http_server
 
 
 def test_bg_web_imports_before_bg():
@@ -93,3 +93,93 @@ def test_http_server_routes_binary_request_and_returns_native_bytes():
     assert not errors, repr(errors)
     assert request_bodies == [b"\x00binary\xff", b"TSD response"]
     assert replies == [(200, b"\x00binary\xff"), (200, b"TSD response")]
+
+
+def test_http_handler_authentication_routes_identity_and_rejection():
+    @bg.schema
+    class User:
+        name: str
+
+    decision_type = AuthDecision[User]
+
+    @bg.service
+    def authenticate(request: bg.TS[HttpServerRequest]) -> bg.TS[decision_type]:
+        raise RuntimeError("authentication is a service declaration")
+
+    @bg.compute_node
+    def decide(request: bg.TS[HttpServerRequest]) -> bg.TS[decision_type]:
+        authorized = any(name.lower() == "authorization" and value == "allow" for name, value in request.value.headers)
+        if authorized:
+            return decision_type.accept(User("alice"))
+        return decision_type.reject(HttpResponse(status=401, body=b"denied"))
+
+    @bg.graph
+    def policy_graph(request: bg.TS[HttpServerRequest]) -> bg.TS[decision_type]:
+        return decide(request)
+
+    @bg.graph
+    def policy_implementation(
+        request: bg.TSD[int, bg.TS[HttpServerRequest]],
+    ) -> bg.TSD[int, bg.TS[decision_type]]:
+        return bg.map(policy_graph, request)
+
+    handler_calls = []
+
+    @bg.compute_node
+    def greet(request: bg.TS[HttpServerRequest], user: bg.TS[User]) -> bg.TS[HttpResponse]:
+        handler_calls.append(user.value.name)
+        return HttpResponse(status=200, body=user.value.name.encode())
+
+    @bg.graph
+    def authenticated_handler(
+        request: bg.TS[HttpServerRequest], user: bg.TS[User]
+    ) -> bg.TS[HttpResponse]:
+        return greet(request, user)
+
+    route = http_handler("/auth", authenticated_handler, policy=authenticate)
+    replies = []
+    errors = []
+    worker = None
+    stop = bg.StopSource()
+
+    @bg.compute_node
+    def start_client(port: bg.TS[int]) -> bg.TS[int]:
+        nonlocal worker
+        bound_port = int(port.value)
+
+        def request():
+            try:
+                connection = http.client.HTTPConnection("127.0.0.1", bound_port, timeout=3)
+                connection.request("GET", "/auth", headers={"Authorization": "allow"})
+                response = connection.getresponse()
+                replies.append((response.status, response.read()))
+                connection.request("GET", "/auth", headers={"Authorization": "deny"})
+                response = connection.getresponse()
+                replies.append((response.status, response.read()))
+                connection.close()
+            except BaseException as error:
+                errors.append(error)
+            finally:
+                stop.request_stop()
+
+        worker = threading.Thread(target=request)
+        worker.start()
+        return bound_port
+
+    @bg.graph
+    def application() -> bg.TS[int]:
+        route()
+        return start_client(http_server())
+
+    catalogue = bg.ServiceCatalogue()
+    catalogue.register_impl(authenticate, policy_implementation)
+    register_http_server(catalogue, host="127.0.0.1", port=0)
+    bg.run_graph(application, catalogue=catalogue, engine=bg.EvaluationEngine.realtime,
+                 run_time=timedelta(seconds=5), stop_token=stop.get_token())
+    if worker is not None:
+        worker.join(3)
+
+    assert worker is not None and not worker.is_alive()
+    assert not errors, repr(errors)
+    assert replies == [(200, b"alice"), (401, b"denied")]
+    assert handler_calls == ["alice"]
