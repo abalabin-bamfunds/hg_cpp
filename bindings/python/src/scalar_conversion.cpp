@@ -841,7 +841,8 @@ ScalarValue<> from_python_hierarchical(const ScalarType &expected, nanobind::han
         fields[index] = Scalar<>::from(field_values.back());
     }
 
-    auto bundle_value = bundle(memory, actual_schema, fields);
+    auto shared_memory = details::scalar_value_allocator(nullptr);
+    auto bundle_value = bundle(shared_memory, actual_schema, fields);
     return ScalarValue<>{bundle_value};
 }
 

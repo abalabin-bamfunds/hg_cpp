@@ -197,6 +197,31 @@ def test_python_schema_conversion_does_not_call_custom_constructor():
     assert bg.run_graph(graph) == [30]
 
 
+def test_const_schema_with_nested_list_strings_and_bytes_survives_repeated_wiring():
+    @bg.schema
+    class Detail:
+        labels: tuple[str, ...]
+        payload: bytes
+
+    @bg.schema
+    class Envelope:
+        detail: Detail
+        count: int
+
+    value = Envelope(detail=Detail(labels=("first", "second"), payload=b"\x00nested\xff"), count=3)
+
+    @bg.graph
+    def graph() -> bg.TS[bg.Bundle[Envelope]]:
+        return bg.operators.const_(value)
+
+    for _ in range(2):
+        observed = bg.test_graph(graph)[0]
+        assert type(observed) is Envelope
+        assert observed.detail.labels == ("first", "second")
+        assert observed.detail.payload == b"\x00nested\xff"
+        assert observed.count == 3
+
+
 def test_schema_value_converts_inside_scalar_dictionary():
     @bg.schema
     class Quote:
