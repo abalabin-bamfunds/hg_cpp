@@ -8,6 +8,8 @@
 #include <array>
 #include <cstdint>
 #include <limits>
+#include <memory>
+#include <span>
 #include <string>
 #include <type_traits>
 
@@ -125,6 +127,44 @@ TEST_CASE("a sparse bunch destroys each occupied value once", "[sparse_bunch][co
 
     values.release(positions, memory);
     positions.release(memory);
+    CHECK(counted_value::live == 0);
+    CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("a sparse bunch releases positions from an index", "[sparse_bunch][coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    auto positions = util::index<>{};
+    auto values = util::sparse_bunch<counted_value>{};
+
+    for (const auto position : std::array{std::uint32_t{0}, std::uint32_t{8}, std::uint32_t{40}}) {
+        values.emplace_at(position, memory, position);
+        CHECK(positions.set(position, memory));
+    }
+    REQUIRE(counted_value::live == 3);
+
+    values.release(positions, memory);
+    positions.release(memory);
+    CHECK(counted_value::live == 0);
+    CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("a sparse bunch releases a span with a custom destructor", "[sparse_bunch][coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    auto values = util::sparse_bunch<counted_value>{};
+    constexpr auto selected = std::array{std::uint32_t{8}, std::uint32_t{0}, std::uint32_t{40}, std::uint32_t{7}};
+    auto released_sum = std::uint32_t{};
+
+    for (const auto position : selected) {
+        values.emplace_at(position, memory, position);
+    }
+    REQUIRE(counted_value::live == 4);
+
+    values.release_with(std::span{selected}, memory, [&](counted_value *value) noexcept {
+        released_sum += value->value;
+        std::destroy_at(value);
+    });
+
+    CHECK(released_sum == 55);
     CHECK(counted_value::live == 0);
     CHECK(memory.allocations() == 0);
 }

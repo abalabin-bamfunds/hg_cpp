@@ -5,10 +5,12 @@
 #include <bg/util/scope_exit.hpp>
 
 #include <cassert>
+#include <concepts>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <memory_resource>
+#include <ranges>
 #include <utility>
 
 namespace bg::util {
@@ -61,7 +63,12 @@ template <typename T, std::uint32_t InitialElements = 8> class sparse_bunch {
         blocks_.removed(position, memory);
     }
 
-    void release(const occupancy_index &positions, std::pmr::memory_resource &memory) noexcept {
+    // The range must enumerate each constructed position exactly once, in any order.
+    // Iteration and destruction must not throw.
+    template <typename Positions>
+        requires std::ranges::input_range<const Positions> &&
+                 std::convertible_to<std::ranges::range_reference_t<const Positions>, size_type>
+    void release(const Positions &positions, std::pmr::memory_resource &memory) noexcept {
         release_with(positions, memory, [](T *value) noexcept { std::destroy_at(value); });
     }
 
@@ -75,10 +82,12 @@ template <typename T, std::uint32_t InitialElements = 8> class sparse_bunch {
         blocks_.release(memory);
     }
 
-    template <typename Destructor>
-        requires std::invocable<Destructor &, T *>
-    void release_with(const occupancy_index &positions, std::pmr::memory_resource &memory,
-                      Destructor &&destroy) noexcept {
+    // Uses the same position range contract with a caller-provided destructor.
+    template <typename Positions, typename Destructor>
+        requires std::ranges::input_range<const Positions> &&
+                 std::convertible_to<std::ranges::range_reference_t<const Positions>, size_type> &&
+                 std::invocable<Destructor &, T *>
+    void release_with(const Positions &positions, std::pmr::memory_resource &memory, Destructor &&destroy) noexcept {
         for (const auto position : positions) {
             std::invoke(destroy, blocks_.get(position));
             blocks_.removed(position, memory);
