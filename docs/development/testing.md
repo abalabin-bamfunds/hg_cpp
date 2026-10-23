@@ -739,6 +739,9 @@ For each reusable node and graph, test:
 
 ### HTTP extension
 
+- client service registration, concurrent clients, repeated requests, and completion delivery
+- client transport failures as status 599, URL validation, response limits, and request deadlines
+- client cancellation, stale replies after reactivation, pending-work cleanup, and repeated graph runs
 - scalar and dictionary handlers, exact-path routing, and bound-port publication
 - binary bodies, ordered duplicate headers and query parameters, and peer metadata
 - keep-alive, response framing, HEAD, and status codes that omit bodies

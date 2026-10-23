@@ -1,9 +1,11 @@
 #include <bg/python/graph_definition.hpp>
 #include <bg/python/schema.hpp>
 #include <bg/python/wiring_point.hpp>
+#include <bg/graph/wiring_context.hpp>
 #include <bg/scalar/bundle/scalar_type.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
+#include <bg/web/http_client.hpp>
 #include <bg/web/http_server.hpp>
 
 #include <nanobind/nanobind.h>
@@ -13,6 +15,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <chrono>
+#include <cstdint>
 
 namespace nb = nanobind;
 
@@ -48,15 +52,31 @@ python::PythonWiringPoint make_http_server(nb::dict route_handlers, std::string 
         python::PythonWiringScope::current()};
 }
 
+python::PythonWiringPoint make_http_client_impl(const python::PythonWiringPoint &requests,
+                                                std::int64_t timeout_ms,
+                                                std::size_t max_response_body_size) {
+    auto implementation = http_client_impl(HttpClientOptions{
+        .timeout = std::chrono::milliseconds{timeout_ms},
+        .max_response_body_size = max_response_body_size,
+    });
+    const auto result = (*implementation)(requests.get(WiringContext::current().wiring()));
+    if (!result) throw std::logic_error{"HTTP client implementation must produce responses"};
+    return python::PythonWiringPoint{*result, python::PythonWiringScope::current()};
+}
+
 } // namespace
 } // namespace bg::web
 
 NB_MODULE(_bg_web, module) {
-    module.def("_register_schemas", [](nb::handle peer, nb::handle request, nb::handle response) {
+    module.def("_register_schemas", [](nb::handle peer, nb::handle server_request, nb::handle client_request,
+                                       nb::handle response) {
         bg::web::export_native_schema<bg::web::HttpPeer>(peer);
-        bg::web::export_native_schema<bg::web::HttpServerRequest>(request);
+        bg::web::export_native_schema<bg::web::HttpServerRequest>(server_request);
+        bg::web::export_native_schema<bg::web::HttpClientRequest>(client_request);
         bg::web::export_native_schema<bg::web::HttpResponse>(response);
     });
     module.def("http_server", &bg::web::make_http_server, nb::arg("routes"),
                nb::arg("host") = "127.0.0.1", nb::arg("port") = 0);
+    module.def("_http_client_impl", &bg::web::make_http_client_impl, nb::arg("requests"), nb::arg("timeout_ms"),
+               nb::arg("max_response_body_size"));
 }

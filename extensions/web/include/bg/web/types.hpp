@@ -23,6 +23,13 @@ template <template <typename, auto...> typename Field> struct HttpServerRequest 
     Field<Bundle<HttpPeer>> peer;
 };
 
+template <template <typename, auto...> typename Field> struct HttpClientRequest {
+    Field<string> method;
+    Field<string> url;
+    Field<List<Tuple<string, string>>> headers;
+    Field<bytes> body;
+};
+
 template <template <typename, auto...> typename Field> struct HttpResponse {
     Field<i64> status;
     Field<List<Tuple<string, string>>> headers;

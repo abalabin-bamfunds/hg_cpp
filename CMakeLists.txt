@@ -49,7 +49,7 @@ endif()
 
 option(BG_BUILD_PYTHON "Build the Python extension module" OFF)
 option(BG_BUILD_BENCHMARKS "Build performance benchmarks" OFF)
-option(BG_BUILD_WEB "Build the HTTP server extension" OFF)
+option(BG_BUILD_WEB "Build the HTTP extension" OFF)
 
 set(QUILL_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(QUILL_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)

@@ -1,10 +1,14 @@
-# HTTP server extension
+# HTTP extension
 
-`bg_web` connects HTTP requests to graph handlers. The server queues requests into
-the graph and sends each handler's response to the corresponding connection.
+`bg_web` connects HTTP clients and servers to graphs. Transport threads submit
+incoming requests and completed client responses through engine queues.
 
 Enable the extension with `BG_BUILD_WEB=ON`. Enable `BG_BUILD_PYTHON=ON` to build
-the Python package. Boost.Asio and Boost.Beast are private transport dependencies.
+the Python package. Boost.Asio and Boost.Beast provide the server transport;
+libcurl provides the client transport. These dependencies are private to the
+extension.
+
+## Server
 
 ```python
 import bg
@@ -76,3 +80,73 @@ bg::web::http_server(
 C++ handlers use `TS<Bundle<HttpServerRequest>>` and
 `TS<Bundle<HttpResponse>>`, or dictionaries of those time series keyed by
 `i64`. Link the optional `bg::web` target.
+
+## Client
+
+`http_client` is a request/reply service. Register its transport implementation
+in the graph's service catalogue:
+
+```python
+import bg
+from bg_web import HttpClientRequest, HttpResponse, http_client, http_client_impl
+
+@bg.compute_node
+def show_response(response: bg.TS[HttpResponse]) -> None:
+    print(response.value.status, bytes(response.value.body))
+
+@bg.graph
+def application() -> None:
+    request = bg.operators.const_(HttpClientRequest("http://127.0.0.1:8080/echo"))
+    show_response(http_client(request))
+
+catalogue = bg.ServiceCatalogue()
+catalogue.register_impl(http_client, http_client_impl())
+bg.run_graph(application, catalogue=catalogue,
+             engine=bg.EvaluationEngine.realtime)
+```
+
+`HttpClientRequest` contains `method`, `url`, `headers`, and `body`. Its Python
+constructor requires `url` and defaults to method `GET`, empty headers, and an
+empty body. Headers preserve duplicate names and order. Bodies use the same
+native bytes representation as server requests and responses.
+
+The transport controls request routing and framing. Requests cannot supply
+`Host`, `Connection`, `Content-Length`, `Transfer-Encoding`, `Upgrade`,
+`Trailer`, `TE`, `Keep-Alive`, `Proxy-Connection`, or `Expect` headers. Header
+values must be Latin-1 text without line breaks. URLs must use `http` or `https`
+and cannot contain credentials or fragments.
+
+Every valid request tick starts a request. Responses tick in completion order
+under the originating service client ID. A client can have several outstanding
+requests. Graph code creates separate service clients when it needs a separate
+response time series for each request. Removing a client cancels its outstanding
+requests. Graph stop cancels transport work and joins the transport thread.
+
+HTTP error statuses, including 401 and 500, are ordinary responses. A local
+transport failure produces `HttpResponse(status=599)` with an error message in
+the body. This includes DNS, connection, timeout, and protocol failures.
+599 is a nonstandard status; an actual server response with that status has the
+same representation.
+
+`http_client_impl(timeout=timedelta(seconds=30),
+max_response_body_size=8 * 1024 * 1024)` configures each implementation. The
+timeout has millisecond resolution and must be at least one millisecond. It
+bounds the transfer. Bounding DNS resolution also requires a libcurl
+build with asynchronous DNS support. The response body limit defaults to
+8 MiB. The client uses libcurl multi for concurrent
+HTTP/1.1 requests, connection reuse, and DNS caching. HTTPS verifies the server
+certificate and hostname. Redirect following is disabled. The adaptor adds no
+retry policy.
+
+The C++ entry points are declared in `<bg/web/http_client.hpp>`:
+
+```cpp
+auto catalogue = bg::ServiceCatalogue{};
+catalogue.register_impl(bg::web::http_client, bg::web::http_client_impl(), {});
+```
+
+The client signature is `TS<Bundle<HttpClientRequest>> ->
+TS<Bundle<HttpResponse>>`. Pass `HttpClientOptions` to `http_client_impl()` to
+configure the timeout and response body limit. One implementation owns one
+transport thread shared by its service clients, with separate runtime state
+for each graph run.

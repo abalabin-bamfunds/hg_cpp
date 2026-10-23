@@ -1,3 +1,4 @@
+find_package(CURL 7.85 REQUIRED)
 find_package(Boost 1.87 CONFIG QUIET COMPONENTS system)
 if(TARGET Boost::headers)
     set(BG_WEB_BOOST_TARGETS Boost::headers)
@@ -30,6 +31,8 @@ endif()
 
 add_library(
     bg_web SHARED
+    src/client_runtime.cpp
+    src/http_client.cpp
     src/http_server.cpp
     src/server_runtime.cpp
 )
@@ -42,7 +45,7 @@ target_include_directories(
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
-target_link_libraries(bg_web PUBLIC bg::bg PRIVATE ${BG_WEB_BOOST_TARGETS} Threads::Threads)
+target_link_libraries(bg_web PUBLIC bg::bg PRIVATE CURL::libcurl ${BG_WEB_BOOST_TARGETS} Threads::Threads)
 set_target_properties(
     bg_web
     PROPERTIES
@@ -116,11 +119,13 @@ endif()
 
 if(BUILD_TESTING)
     find_package(Catch2 3 REQUIRED)
-    add_executable(bg_web_tests tests/http_server_test.cpp)
+    add_executable(bg_web_tests tests/http_client_test.cpp tests/http_server_test.cpp)
     target_compile_features(bg_web_tests PRIVATE cxx_std_23)
     target_link_libraries(bg_web_tests PRIVATE bg::web Catch2::Catch2WithMain ${BG_WEB_BOOST_TARGETS})
     add_test(NAME bg_web_tests COMMAND bg_web_tests)
-    set_tests_properties(bg_web_tests PROPERTIES TIMEOUT 10)
+    set_tests_properties(
+        bg_web_tests PROPERTIES TIMEOUT 10 ENVIRONMENT "NO_PROXY=127.0.0.1,localhost;no_proxy=127.0.0.1,localhost"
+    )
 
     if(BG_BUILD_PYTHON)
         add_test(
@@ -132,6 +137,7 @@ if(BUILD_TESTING)
             PROPERTIES
                 ENVIRONMENT_MODIFICATION
                     "PYTHONPATH=path_list_prepend:${PROJECT_BINARY_DIR}/extensions/web/python;PYTHONPATH=path_list_prepend:${PROJECT_BINARY_DIR}/bindings/python"
+                ENVIRONMENT "NO_PROXY=127.0.0.1,localhost;no_proxy=127.0.0.1,localhost"
                 TIMEOUT 15
         )
     endif()

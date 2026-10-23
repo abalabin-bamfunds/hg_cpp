@@ -1,4 +1,5 @@
 #include "server_runtime.hpp"
+#include "http_header.hpp"
 
 #include <bg/literal/scalar_literal.hpp>
 #include <bg/literal/time_series_literal.hpp>
@@ -127,64 +128,6 @@ std::optional<ParsedTarget> parse_target(std::string_view target) {
     return result;
 }
 
-void append_latin1_as_utf8(std::string &result, std::string_view value) {
-    for (const auto byte : value) {
-        const auto character = static_cast<unsigned char>(byte);
-        if (character < 0x80) {
-            result.push_back(static_cast<char>(character));
-        } else {
-            result.push_back(static_cast<char>(0xc0 | (character >> 6)));
-            result.push_back(static_cast<char>(0x80 | (character & 0x3f)));
-        }
-    }
-}
-
-std::optional<std::string> utf8_as_latin1(std::string_view value) {
-    auto result = std::string{};
-    result.reserve(value.size());
-    for (auto index = std::size_t{}; index < value.size();) {
-        const auto first = static_cast<unsigned char>(value[index]);
-        auto code_point = std::uint32_t{};
-        auto length = std::size_t{};
-        if (first < 0x80) {
-            code_point = first;
-            length = 1;
-        } else if (first == 0xc2 || first == 0xc3) {
-            if (index + 1 >= value.size()) {
-                return std::nullopt;
-            }
-            const auto second = static_cast<unsigned char>(value[index + 1]);
-            if ((second & 0xc0) != 0x80) {
-                return std::nullopt;
-            }
-            code_point = ((first & 0x1f) << 6) | (second & 0x3f);
-            length = 2;
-        } else {
-            return std::nullopt;
-        }
-        if (code_point == '\r' || code_point == '\n') {
-            return std::nullopt;
-        }
-        result.push_back(static_cast<char>(code_point));
-        index += length;
-    }
-    return result;
-}
-
-bool valid_header_name(std::string_view value) noexcept {
-    if (value.empty()) {
-        return false;
-    }
-    return std::ranges::all_of(value, [](unsigned char character) {
-        if ((character >= '0' && character <= '9') || (character >= 'A' && character <= 'Z') ||
-            (character >= 'a' && character <= 'z')) {
-            return true;
-        }
-        constexpr auto punctuation = std::string_view{"!#$%&'*+-.^_`|~"};
-        return punctuation.find(static_cast<char>(character)) != std::string_view::npos;
-    });
-}
-
 ScalarValue<List<HeaderPair>> header_values(const RequestHeaders &headers) {
     auto pair_values = std::vector<ScalarValue<HeaderPair>>{};
     pair_values.reserve(headers.size());
@@ -220,7 +163,7 @@ ScalarValue<Bundle<HttpServerRequest>> request_value(const http::request<http::s
     headers.reserve(request_headers.size());
     for (const auto &[name, raw_value] : request_headers) {
         auto value = std::string{};
-        append_latin1_as_utf8(value, raw_value);
+        details::append_latin1_header_value_as_utf8(value, raw_value);
         headers.emplace_back(std::move(name), std::move(value));
     }
 
@@ -718,11 +661,11 @@ void HttpSession::write_response(ScalarValue<Bundle<HttpResponse>> retained_resp
         const auto value_view = header.template get<1>().value();
         const auto name = std::string_view{name_view};
         const auto header_value = std::string_view{value_view};
-        if (!valid_header_name(name)) {
+        if (!details::valid_http_header_name(name)) {
             send_error(http::status::internal_server_error, "Invalid Response Header", true);
             return;
         }
-        const auto latin1 = utf8_as_latin1(header_value);
+        const auto latin1 = details::utf8_header_value_to_latin1(header_value);
         if (!latin1) {
             send_error(http::status::internal_server_error, "Invalid Response Header", true);
             return;
