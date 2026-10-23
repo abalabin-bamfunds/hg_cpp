@@ -231,9 +231,22 @@ void plan_compaction(NativeFrame<Schema> &frame, NativeRows &rows, allocator mem
     const auto start = std::chrono::steady_clock::now();
     rows.slots().compact(
         memory, block_end,
-        [&](row_id_t id, row_id_t source, row_id_t destination, auto &&) {
-            ++sample.planned_moves;
-            sample.plan_checksum = sample.plan_checksum * 1'099'511'628'211ULL + id + source * 31ULL + destination;
+        [&](row_id_t source, row_id_t destination, std::uint32_t count, auto &&) {
+            const auto account_move = [&](std::uint32_t offset) {
+                const auto moved_source = static_cast<row_id_t>(source + offset);
+                const auto moved_destination = static_cast<row_id_t>(destination + offset);
+                const auto id = rows.id_at_slot(moved_source);
+                ++sample.planned_moves;
+                sample.plan_checksum = sample.plan_checksum * 1'099'511'628'211ULL + id +
+                                       moved_source * 31ULL + moved_destination;
+            };
+            if (destination < source) {
+                for (auto offset = std::uint32_t{}; offset != count; ++offset)
+                    account_move(offset);
+            } else {
+                for (auto offset = count; offset != 0; --offset)
+                    account_move(offset - 1);
+            }
         });
     sample.plan_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 }
@@ -538,17 +551,12 @@ ComputedCaseSample run_computed_sample(bool reverse_mapping) {
             return std::min(computed_left.block_containing_slot(slot).end,
                             computed_right.block_containing_slot(slot).end);
         },
-        [&](row_id_t, row_id_t source_slot, row_id_t destination, auto &&commit_mapping) {
-            auto rollback = util::scope_exit{[&]() noexcept {
-                computed_right.rollback_relocation(destination, memory);
-                computed_left.rollback_relocation(destination, memory);
-            }};
-            computed_left.prepare_relocation(source_slot, destination, memory);
-            computed_right.prepare_relocation(source_slot, destination, memory);
+        [&](row_id_t source_slot, row_id_t destination, std::uint32_t count, auto &&commit_mapping) {
+            computed_left.prepare_relocation(source_slot, destination, count, memory);
+            computed_right.prepare_relocation(source_slot, destination, count, memory);
+            computed_left.relocate(source_slot, destination, count);
+            computed_right.relocate(source_slot, destination, count);
             std::invoke(commit_mapping);
-            rollback.release();
-            computed_left.clear_physical_slot(source_slot, memory);
-            computed_right.clear_physical_slot(source_slot, memory);
         });
     result.compact_ms = std::chrono::duration<double, std::milli>(
                             std::chrono::steady_clock::now() - compact_start)

@@ -188,9 +188,8 @@ struct NativeFrameFieldLayout {
     using add_function = void (*)(void *, NativeRows &, row_id_t, const void *, allocator);
     using set_function = void (*)(void *, NativeRows &, row_id_t, const void *, allocator);
     using erase_function = void (*)(void *, row_id_t, row_id_t, allocator);
-    using prepare_relocation_function = void (*)(void *, row_id_t, row_id_t, allocator);
-    using rollback_relocation_function = void (*)(void *, row_id_t, allocator) noexcept;
-    using finish_relocation_function = void (*)(void *, row_id_t, allocator) noexcept;
+    using prepare_relocation_function = void (*)(void *, row_id_t, row_id_t, std::uint32_t, allocator);
+    using relocate_function = void (*)(void *, row_id_t, row_id_t, std::uint32_t) noexcept;
     using block_end_function = std::uint64_t (*)(const void *, row_id_t) noexcept;
     using reset_function = void (*)(void *);
     using release_function = void (*)(void *, allocator);
@@ -238,8 +237,7 @@ struct NativeFrameFieldLayout {
     set_function set{};
     erase_function erase{};
     prepare_relocation_function prepare_relocation{};
-    rollback_relocation_function rollback_relocation{};
-    finish_relocation_function finish_relocation{};
+    relocate_function relocate{};
     block_end_function block_end{};
     reset_function reset{};
     release_function release{};
@@ -1268,18 +1266,13 @@ class NativeFrameStorage {
                     end = std::min(end, layout_->fields[index].block_end(native_field(index), slot));
                 return end;
             },
-            [&](row_id_t, row_id_t source, row_id_t destination, auto &&commit_mapping) {
-                auto rollback = util::scope_exit{[&]() noexcept {
-                    for (std::size_t index = layout_->fields.size(); index != 0; --index)
-                        layout_->fields[index - 1].rollback_relocation(
-                            native_field(index - 1), destination, memory);
-                }};
+            [&](row_id_t source, row_id_t destination, std::uint32_t count, auto &&commit_mapping) {
                 for (std::size_t index = 0; index != layout_->fields.size(); ++index)
-                    layout_->fields[index].prepare_relocation(native_field(index), source, destination, memory);
+                    layout_->fields[index].prepare_relocation(native_field(index), source, destination, count,
+                                                              memory);
+                for (std::size_t index = 0; index != layout_->fields.size(); ++index)
+                    layout_->fields[index].relocate(native_field(index), source, destination, count);
                 std::invoke(commit_mapping);
-                rollback.release();
-                for (std::size_t index = 0; index != layout_->fields.size(); ++index)
-                    layout_->fields[index].finish_relocation(native_field(index), source, memory);
             });
     }
 
@@ -1880,14 +1873,12 @@ template <cell_type Cell> NativeFrameFieldLayout make_native_frame_field_layout(
         .erase = [](void *field, row_id_t slot, row_id_t id, allocator memory) {
             static_cast<NativeColumnData<Cell> *>(field)->erase_slot(slot, id, memory);
         },
-        .prepare_relocation = [](void *field, row_id_t source, row_id_t destination, allocator memory) {
-            static_cast<NativeColumnData<Cell> *>(field)->prepare_relocation(source, destination, memory);
+        .prepare_relocation = [](void *field, row_id_t source, row_id_t destination, std::uint32_t count,
+                                 allocator memory) {
+            static_cast<NativeColumnData<Cell> *>(field)->prepare_relocation(source, destination, count, memory);
         },
-        .rollback_relocation = [](void *field, row_id_t destination, allocator memory) noexcept {
-            static_cast<NativeColumnData<Cell> *>(field)->rollback_relocation(destination, memory);
-        },
-        .finish_relocation = [](void *field, row_id_t source, allocator memory) noexcept {
-            static_cast<NativeColumnData<Cell> *>(field)->clear_physical_slot(source, memory);
+        .relocate = [](void *field, row_id_t source, row_id_t destination, std::uint32_t count) noexcept {
+            static_cast<NativeColumnData<Cell> *>(field)->relocate(source, destination, count);
         },
         .block_end = [](const void *storage, row_id_t slot) noexcept {
             return static_cast<const NativeColumnData<Cell> *>(storage)->block_containing_slot(slot).end;
@@ -2275,25 +2266,16 @@ class RuntimeFrameViewOutputStorage {
                                                 native_field(this, index), slot));
                 return end;
             },
-            [&](row_id_t, row_id_t source, row_id_t destination, auto &&commit_mapping) {
-                auto rollback = util::scope_exit{[&]() noexcept {
-                    for (std::size_t index = layout->fields.size(); index != 0; --index) {
-                        const auto field_index = index - 1;
-                        if (is_computed(field_index))
-                            layout->fields[field_index].column.rollback_relocation(
-                                native_field(this, field_index), destination, memory);
-                    }
-                }};
+            [&](row_id_t source, row_id_t destination, std::uint32_t count, auto &&commit_mapping) {
                 for (std::size_t index = 0; index != layout->fields.size(); ++index)
                     if (is_computed(index))
                         layout->fields[index].column.prepare_relocation(
-                            native_field(this, index), source, destination, memory);
-                std::invoke(commit_mapping);
-                rollback.release();
+                            native_field(this, index), source, destination, count, memory);
                 for (std::size_t index = 0; index != layout->fields.size(); ++index)
                     if (is_computed(index))
-                        layout->fields[index].column.finish_relocation(
-                            native_field(this, index), source, memory);
+                        layout->fields[index].column.relocate(
+                            native_field(this, index), source, destination, count);
+                std::invoke(commit_mapping);
             });
     }
 

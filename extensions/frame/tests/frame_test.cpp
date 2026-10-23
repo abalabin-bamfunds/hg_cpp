@@ -736,16 +736,18 @@ void test_native_frame_composite_keys() {
             "native keyed frame storage leaked allocations");
 }
 
-void test_native_frame_compaction_rolls_back_a_failed_field_and_can_retry() {
+void test_native_frame_compaction_prepares_later_fields_before_moving_each_range() {
     using namespace bg;
     using namespace bg::frame;
 
-    constexpr auto first_live = row_id_t{1469};
-    constexpr auto empty_live = row_id_t{1471};
-    constexpr auto anchor_first = row_id_t{1474};
-    constexpr auto anchor_last = row_id_t{1481};
+    constexpr auto last_id = row_id_t{450};
+    constexpr auto first_move = row_id_t{1};
+    constexpr auto first_anchor = row_id_t{3};
+    constexpr auto last_move = row_id_t{447};
+    constexpr auto last_anchor = row_id_t{449};
     auto allocation_failures = std::size_t{};
-    auto failed_after_move = false;
+    auto failed_after_prior_range = false;
+    auto failed_in_second_field = false;
     auto succeeded = false;
 
     for (auto failure = std::size_t{1}; !succeeded; ++failure) {
@@ -753,9 +755,11 @@ void test_native_frame_compaction_rolls_back_a_failed_field_and_can_retry() {
         const auto memory = allocator{resource};
         with_native_storage(frame_schema_type<Quotes>(), memory, [&](NativeFrameStorage &storage) {
             const auto first_time = MIN_DT + EvaluationTime::duration{1};
-            for (auto id = row_id_t{}; id <= anchor_last; ++id) {
-                const auto size = id == anchor_last ? std::optional<i64>{81} : std::nullopt;
-                const auto bid = id == first_live ? std::optional<double>{14.5} : std::nullopt;
+            for (auto id = row_id_t{}; id <= last_id; ++id) {
+                const auto size = id == first_move ? std::optional<i64>{10}
+                                                   : id == last_move ? std::optional<i64>{447} : std::nullopt;
+                const auto bid = id == first_move ? std::optional<double>{1.5}
+                                                  : id == last_move ? std::optional<double>{447.5} : std::nullopt;
                 const auto ask = std::optional<double>{};
                 const auto values = std::array<const void *, 3>{std::addressof(size), std::addressof(bid),
                                                                 std::addressof(ask)};
@@ -764,12 +768,12 @@ void test_native_frame_compaction_rolls_back_a_failed_field_and_can_retry() {
             }
 
             const auto second_time = first_time + EvaluationTime::duration{1};
-            for (auto id = row_id_t{}; id <= anchor_last; ++id) {
-                const auto retained = id == first_live || id == empty_live ||
-                                      (id >= anchor_first && id <= anchor_last);
+            for (auto id = row_id_t{}; id <= last_id; ++id) {
+                const auto retained = id == first_move || (id >= first_anchor && id < first_anchor + 3) ||
+                                      id == last_move || (id >= last_anchor && id <= last_anchor + 1);
                 if (!retained)
                     require(storage.erase(id, second_time, memory),
-                            "frame compaction setup could not erase a row");
+                            "frame compaction setup could not erase an unused row");
             }
 
             const auto &rows = storage.rows().slots();
@@ -780,20 +784,28 @@ void test_native_frame_compaction_rolls_back_a_failed_field_and_can_retry() {
                 succeeded = true;
             } catch (const std::bad_alloc &) {
                 ++allocation_failures;
-                failed_after_move = failed_after_move || rows.layout_revision() != revision;
                 resource.fail_at = 0;
 
                 const auto *size_cells = static_cast<const NativeColumnData<i64> *>(storage.native_field(0));
                 const auto *bid_cells = static_cast<const NativeColumnData<double> *>(storage.native_field(1));
                 const auto *ask_cells = static_cast<const NativeColumnData<double> *>(storage.native_field(2));
-                require(storage.size() == 10 && rows.contains(first_live) && rows.contains(empty_live) &&
-                            rows.contains(anchor_last),
+                const auto first_range_committed = rows.layout_revision() != revision;
+                failed_after_prior_range = failed_after_prior_range ||
+                                           (first_range_committed && rows.slot_of(first_move) == 2 &&
+                                            rows.slot_of(last_move) == last_move);
+                failed_in_second_field = failed_in_second_field ||
+                                         (first_range_committed && size_cells->valid_cells().size() == 449 &&
+                                          bid_cells->valid_cells().size() == 448);
+                require(storage.size() == 7 && rows.contains(first_move) && rows.contains(last_move) &&
+                            rows.contains(last_anchor + 1),
                         "failed frame compaction damaged row lookup");
-                require(storage.removed().count() == 1472, "failed frame compaction changed removal deltas");
-                require(size_cells->cell(storage.rows(), anchor_last) == i64{81},
-                        "failed frame compaction damaged a later field");
-                require(bid_cells->cell(storage.rows(), first_live) == 14.5 &&
-                            !ask_cells->cell(storage.rows(), first_live),
+                require(storage.removed().count() == last_id + 1 - storage.size(),
+                        "failed frame compaction changed removal deltas");
+                require(size_cells->cell(storage.rows(), first_move) == i64{10} &&
+                            size_cells->cell(storage.rows(), last_move) == i64{447} &&
+                            bid_cells->cell(storage.rows(), first_move) == 1.5 &&
+                            bid_cells->cell(storage.rows(), last_move) == 447.5 &&
+                            !ask_cells->cell(storage.rows(), first_move),
                         "failed frame compaction damaged earlier or null fields");
 
                 storage.compact(memory);
@@ -802,24 +814,25 @@ void test_native_frame_compaction_rolls_back_a_failed_field_and_can_retry() {
             const auto *size_cells = static_cast<const NativeColumnData<i64> *>(storage.native_field(0));
             const auto *bid_cells = static_cast<const NativeColumnData<double> *>(storage.native_field(1));
             const auto *ask_cells = static_cast<const NativeColumnData<double> *>(storage.native_field(2));
-            auto expected_ids = std::array<row_id_t, 10>{first_live, empty_live, anchor_first, anchor_first + 1,
-                                                         anchor_first + 2, anchor_first + 3, anchor_first + 4,
-                                                         anchor_first + 5, anchor_first + 6, anchor_last};
+            auto expected_ids = std::array<row_id_t, 7>{first_move, first_anchor, first_anchor + 1, first_anchor + 2,
+                                                        last_move, last_anchor, last_anchor + 1};
             for (auto position = std::size_t{}; position != expected_ids.size(); ++position)
                 require(storage.id_at(position) == expected_ids[position],
                         "frame compaction changed row order after failure or retry");
-            require(rows.slot_of(first_live) == 1472 && rows.slot_of(empty_live) == 1473 &&
-                        rows.slot_of(anchor_last) == 1481 &&
-                        size_cells->cell(storage.rows(), anchor_last) == i64{81} &&
-                        bid_cells->cell(storage.rows(), first_live) == 14.5 &&
-                        !ask_cells->cell(storage.rows(), first_live),
+            require(rows.slot_of(first_move) == 2 && rows.slot_of(last_move) == 448 &&
+                        rows.slot_of(last_anchor) == 449 && rows.slot_of(last_anchor + 1) == 450 &&
+                        size_cells->cell(storage.rows(), first_move) == i64{10} &&
+                        size_cells->cell(storage.rows(), last_move) == i64{447} &&
+                        bid_cells->cell(storage.rows(), first_move) == 1.5 &&
+                        bid_cells->cell(storage.rows(), last_move) == 447.5 &&
+                        !ask_cells->cell(storage.rows(), first_move),
                     "frame compaction or retry damaged row-to-cell mappings");
         });
         require(resource.allocations == resource.deallocations,
                 "failed frame compaction or its retry leaked native storage");
     }
-    require(allocation_failures != 0 && failed_after_move,
-            "frame compaction failure injection did not cover a failure after a row move committed");
+    require(allocation_failures != 0 && failed_after_prior_range && failed_in_second_field,
+            "frame compaction failure injection missed a later-field preparation after an earlier range moved");
 }
 
 void test_zero_column_frame_compaction_uses_only_row_mappings() {
@@ -8011,7 +8024,7 @@ int main() {
         test_frame_key_schema_validation();
         test_frame_scalar_key_validation();
         test_native_frame_composite_keys();
-        test_native_frame_compaction_rolls_back_a_failed_field_and_can_retry();
+        test_native_frame_compaction_prepares_later_fields_before_moving_each_range();
         test_zero_column_frame_compaction_uses_only_row_mappings();
         test_native_frame_key_insert_rolls_back();
         test_native_frame_key_removal_retention_rolls_back();

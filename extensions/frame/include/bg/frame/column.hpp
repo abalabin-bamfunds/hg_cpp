@@ -793,22 +793,20 @@ class NativeRowSlots {
                     if (runs[index].end - runs[index].first > runs[anchor].end - runs[anchor].first)
                         anchor = index;
 
-                auto destination = runs[anchor].first;
+                auto destination = std::uint64_t{runs[anchor].first};
                 for (auto index = anchor; index != 0;) {
                     const auto run = runs[--index];
-                    auto source = run.end;
-                    while (source != run.first) {
-                        --source;
-                        --destination;
-                        relocate_slot(source, static_cast<row_id_t>(destination), memory, revision_advanced, relocate);
-                    }
+                    const auto count = static_cast<std::uint32_t>(run.end - run.first);
+                    destination -= count;
+                    relocate_run(run.first, static_cast<row_id_t>(destination), count, revision_advanced, relocate);
                 }
 
                 destination = runs[anchor].end;
                 for (auto index = anchor + 1; index != runs.size(); ++index) {
                     const auto run = runs[index];
-                    for (auto source = run.first; source != run.end; ++source, ++destination)
-                        relocate_slot(source, static_cast<row_id_t>(destination), memory, revision_advanced, relocate);
+                    const auto count = static_cast<std::uint32_t>(run.end - run.first);
+                    relocate_run(run.first, static_cast<row_id_t>(destination), count, revision_advanced, relocate);
+                    destination += count;
                 }
             }
             block_first = block_end;
@@ -817,32 +815,54 @@ class NativeRowSlots {
 
   private:
     template <typename Relocate>
-    void relocate_slot(row_id_t source, row_id_t destination, allocator memory, bool &revision_advanced,
-                       Relocate &relocate) {
+    void relocate_run(row_id_t source, row_id_t destination, std::uint32_t count, bool &revision_advanced,
+                      Relocate &relocate) {
         if (source == destination)
             return;
-        const auto id = id_at_slot(source);
-        std::invoke(relocate, id, source, destination,
-                    [&]() noexcept { move(id, source, destination, memory, revision_advanced); });
+        std::invoke(relocate, source, destination, count,
+                    [&]() noexcept { move_range(source, destination, count, revision_advanced); });
     }
 
-    void move(row_id_t id, row_id_t source, row_id_t destination, allocator memory,
-              bool &revision_advanced) noexcept {
-        assert(contains(id) && ids_to_slots_[id] == source && !live_slots_.contains(destination));
-        const auto source_was_live = live_slots_.reset(source);
-        assert(source_was_live);
-        static_cast<void>(source_was_live);
-        const auto inserted = live_slots_.set(destination, memory.memory_resource());
-        assert(inserted);
-        static_cast<void>(inserted);
+    void move_range(row_id_t source, row_id_t destination, std::uint32_t count,
+                    bool &revision_advanced) noexcept {
+        assert(count != 0 && source != destination);
+        const auto source_end = static_cast<std::uint64_t>(source) + count;
+        const auto destination_end = static_cast<std::uint64_t>(destination) + count;
+        assert(source_end <= slot_extent_ && destination_end <= slot_extent_);
+        for (auto slot = source; slot != source_end; ++slot)
+            assert(live_slots_.contains(slot));
+        for (auto slot = std::uint64_t{destination}; slot != destination_end; ++slot) {
+            assert(live_slots_.contains(static_cast<row_id_t>(slot)) == (slot >= source && slot < source_end));
+        }
 
         if (!revision_advanced) {
             ++layout_revision_;
             revision_advanced = true;
         }
-        ids_to_slots_[id] = destination;
-        slots_to_ids_[destination] = id;
-        slots_to_ids_[source] = no_row;
+
+        const auto move_id = [&](row_id_t source_slot, row_id_t destination_slot) noexcept {
+            const auto id = slots_to_ids_[source_slot];
+            assert(id != no_row && ids_to_slots_[id] == source_slot);
+            slots_to_ids_[destination_slot] = id;
+            ids_to_slots_[id] = destination_slot;
+        };
+        if (destination < source) {
+            for (auto offset = std::uint32_t{}; offset != count; ++offset)
+                move_id(static_cast<row_id_t>(source + offset), static_cast<row_id_t>(destination + offset));
+        } else {
+            for (auto offset = count; offset != 0; --offset)
+                move_id(static_cast<row_id_t>(source + offset - 1), static_cast<row_id_t>(destination + offset - 1));
+        }
+
+        if (destination < source) {
+            for (auto slot = std::max<std::uint64_t>(source, destination_end); slot != source_end; ++slot)
+                slots_to_ids_[static_cast<row_id_t>(slot)] = no_row;
+        } else {
+            for (auto slot = source; slot != std::min(source_end, std::uint64_t{destination}); ++slot)
+                slots_to_ids_[static_cast<row_id_t>(slot)] = no_row;
+        }
+
+        live_slots_.relocate(source, destination, count);
     }
 
     void ensure_mapping(row_id_t id, row_id_t slot, allocator memory) {
@@ -1002,6 +1022,10 @@ template <cell_type T> class ColumnValueStorage {
     void assign(row_id_t slot, T value) noexcept { values_[slot] = value; }
     void clear(row_id_t slot, allocator memory) noexcept { values_.erase_at(slot, memory.memory_resource()); }
     T value(row_id_t slot) const noexcept { return values_[slot]; }
+    void prepare_relocation(row_id_t, row_id_t, std::uint32_t, const util::index<> &, allocator) {}
+    void relocate(row_id_t source, row_id_t destination, std::uint32_t count) noexcept {
+        values_.relocate(source, destination, count);
+    }
     util::storage_block block_containing(row_id_t slot) const noexcept { return values_.block_containing(slot); }
     ColumnBatch<T> batch(row_id_t first, std::size_t size) const noexcept {
         const auto block = block_containing(first);
@@ -1022,12 +1046,7 @@ template <> class ColumnValueStorage<bool> {
   public:
     void set(row_id_t slot, bool value, allocator memory) {
         const auto byte = static_cast<row_id_t>(slot / 8);
-        if (!allocated_bytes_.contains(byte)) {
-            bytes_.emplace_at(byte, memory.memory_resource(), std::uint8_t{});
-            auto rollback = util::scope_exit{[&]() noexcept { bytes_.erase_at(byte, memory.memory_resource()); }};
-            allocated_bytes_.set(byte, memory.memory_resource());
-            rollback.release();
-        }
+        ensure_byte(byte, memory);
         assign(slot, value);
     }
     void assign(row_id_t slot, bool value) noexcept {
@@ -1037,6 +1056,29 @@ template <> class ColumnValueStorage<bool> {
             byte |= mask;
         else
             byte &= static_cast<std::uint8_t>(~mask);
+    }
+    void prepare_relocation(row_id_t source, row_id_t destination, std::uint32_t count,
+                            const util::index<> &valid_cells, allocator memory) {
+        const auto source_end = static_cast<std::uint64_t>(source) + count;
+        for (auto slot = valid_cells.first_set(source); slot < source_end;
+             slot = valid_cells.first_set(slot + 1))
+            ensure_byte(static_cast<row_id_t>((destination + slot - source) / 8), memory);
+    }
+    void relocate(row_id_t source, row_id_t destination, std::uint32_t count,
+                  const util::index<> &valid_cells) noexcept {
+        if (destination < source) {
+            for (auto offset = std::uint32_t{}; offset != count; ++offset) {
+                const auto source_slot = static_cast<row_id_t>(source + offset);
+                if (valid_cells.contains(source_slot))
+                    assign(static_cast<row_id_t>(destination + offset), value(source_slot));
+            }
+            return;
+        }
+        for (auto offset = count; offset != 0; --offset) {
+            const auto source_slot = static_cast<row_id_t>(source + offset - 1);
+            if (valid_cells.contains(source_slot))
+                assign(static_cast<row_id_t>(destination + offset - 1), value(source_slot));
+        }
     }
     void clear(row_id_t, allocator) noexcept {}
     bool value(row_id_t slot) const noexcept {
@@ -1060,6 +1102,15 @@ template <> class ColumnValueStorage<bool> {
     }
 
   private:
+    void ensure_byte(row_id_t byte, allocator memory) {
+        if (allocated_bytes_.contains(byte))
+            return;
+        bytes_.emplace_at(byte, memory.memory_resource(), std::uint8_t{});
+        auto rollback = util::scope_exit{[&]() noexcept { bytes_.erase_at(byte, memory.memory_resource()); }};
+        allocated_bytes_.set(byte, memory.memory_resource());
+        rollback.release();
+    }
+
     util::occupancy_index allocated_bytes_;
     util::sparse_bunch<std::uint8_t> bytes_;
 };
@@ -1152,23 +1203,52 @@ template <typename T> class NativeColumnData {
         clear_physical_slot(slot, memory);
         modified_.reset(id);
     }
-    void prepare_relocation(row_id_t source, row_id_t destination, allocator memory) {
-        if (!valid_cells_.contains(source))
+    void prepare_relocation(row_id_t source, row_id_t destination, std::uint32_t count, allocator memory) {
+        if (source == destination || count == 0)
             return;
 
-        cells_.set(destination, cells_.value(source), memory);
-        auto rollback = util::scope_exit{[&]() noexcept {
-            valid_cells_.reset(destination);
-            cells_.clear(destination, memory);
-        }};
-        valid_cells_.set(destination, memory.memory_resource());
-        rollback.release();
-    }
-    void rollback_relocation(row_id_t destination, allocator memory) noexcept {
-        if (!valid_cells_.contains(destination))
+        const auto source_end = static_cast<std::uint64_t>(source) + count;
+        if (valid_cells_.first_set(source) >= source_end)
             return;
-        valid_cells_.reset(destination);
-        cells_.clear(destination, memory);
+
+        const auto destination_end = static_cast<std::uint64_t>(destination) + count;
+        valid_cells_.grow(static_cast<util::index<>::size_type>(std::max(source_end, destination_end)),
+                          memory.memory_resource());
+        cells_.prepare_relocation(source, destination, count, valid_cells_, memory);
+    }
+    void relocate(row_id_t source, row_id_t destination, std::uint32_t count) noexcept {
+        if (source == destination || count == 0)
+            return;
+
+        const auto source_end = static_cast<row_id_t>(source + count);
+        if (valid_cells_.first_set(source) >= source_end)
+            return;
+
+        if constexpr (std::same_as<T, bool>) {
+            cells_.relocate(source, destination, count, valid_cells_);
+        } else if (valid_cells_.first_unset(source, source_end) == source_end) {
+            cells_.relocate(source, destination, count);
+        } else if (destination < source) {
+            auto first = valid_cells_.first_set(source);
+            while (first < source_end) {
+                const auto end = valid_cells_.first_unset(first, source_end);
+                cells_.relocate(first, static_cast<row_id_t>(destination + first - source), end - first);
+                first = valid_cells_.first_set(end);
+            }
+        } else {
+            auto end = source_end;
+            while (end != source) {
+                while (end != source && !valid_cells_.contains(end - 1))
+                    --end;
+                if (end == source)
+                    break;
+                const auto run_end = end;
+                while (end != source && valid_cells_.contains(end - 1))
+                    --end;
+                cells_.relocate(end, static_cast<row_id_t>(destination + end - source), run_end - end);
+            }
+        }
+        valid_cells_.relocate(source, destination, count);
     }
     void clear(const NativeRows &rows, allocator memory) {
         clear(rows.slots(), memory);
@@ -1954,12 +2034,10 @@ template <typename T> struct ColumnComputedOutputStorage {
     void compact(allocator memory) {
         physical_rows.compact(
             memory, [&](row_id_t slot) { return cells.block_containing_slot(slot).end; },
-            [&](row_id_t, row_id_t source, row_id_t destination, auto &&commit_mapping) {
-                auto rollback = util::scope_exit{[&]() noexcept { cells.rollback_relocation(destination, memory); }};
-                cells.prepare_relocation(source, destination, memory);
+            [&](row_id_t source, row_id_t destination, std::uint32_t count, auto &&commit_mapping) {
+                cells.prepare_relocation(source, destination, count, memory);
+                cells.relocate(source, destination, count);
                 std::invoke(commit_mapping);
-                rollback.release();
-                cells.clear_physical_slot(source, memory);
             });
     }
 
@@ -2063,12 +2141,10 @@ template <typename T> class NativeColumn {
     void compact(allocator memory) {
         rows_.slots().compact(
             memory, [&](row_id_t slot) { return cells_.block_containing_slot(slot).end; },
-            [&](row_id_t, row_id_t source, row_id_t destination, auto &&commit_mapping) {
-                auto rollback = util::scope_exit{[&]() noexcept { cells_.rollback_relocation(destination, memory); }};
-                cells_.prepare_relocation(source, destination, memory);
+            [&](row_id_t source, row_id_t destination, std::uint32_t count, auto &&commit_mapping) {
+                cells_.prepare_relocation(source, destination, count, memory);
+                cells_.relocate(source, destination, count);
                 std::invoke(commit_mapping);
-                rollback.release();
-                cells_.clear_physical_slot(source, memory);
             });
     }
     void release(allocator memory) noexcept {

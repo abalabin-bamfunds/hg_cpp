@@ -645,6 +645,98 @@ void test_native_column_compaction_preserves_values_order_and_deltas() {
             "compacting an already packed native column changed its layout revision");
 }
 
+void test_native_column_compaction_moves_overlapping_ranges() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    const auto run = [](std::size_t deleted_position) {
+        auto resource = std::pmr::monotonic_buffer_resource{};
+        const auto memory = allocator{resource};
+        auto column = NativeColumn<i64>{};
+        auto release = util::scope_exit{[&]() noexcept { column.release(memory); }};
+
+        const auto first_time = MIN_DT + EvaluationTime::duration{1};
+        const auto values = std::array<std::optional<i64>, 8>{10, std::nullopt, 12, 13, 14, 15, std::nullopt, 17};
+        auto ids = std::array<row_id_t, values.size()>{};
+        for (auto position = std::size_t{}; position != values.size(); ++position)
+            ids[position] = column.add(values[position], first_time, memory);
+
+        require(column.erase(ids[deleted_position], first_time + EvaluationTime::duration{1}, memory),
+                "overlapping range compaction setup could not erase its row");
+        column.compact(memory);
+
+        auto expected = std::vector<std::pair<row_id_t, std::optional<i64>>>{};
+        for (auto position = std::size_t{}; position != values.size(); ++position)
+            if (position != deleted_position)
+                expected.emplace_back(ids[position], values[position]);
+
+        auto actual = std::vector<std::pair<row_id_t, std::optional<i64>>>{};
+        for (auto position = std::size_t{}; position != column.size(); ++position)
+            actual.emplace_back(column.id_at(position), column.cell_at(position));
+        require(actual == expected, "overlapping range compaction changed row order, values, or nulls");
+    };
+
+    run(3);
+    run(4);
+}
+
+void test_packed_boolean_compaction_prepares_destination_bytes() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    constexpr auto row_count = std::size_t{51};
+    auto failure_count = std::size_t{};
+    auto succeeded = false;
+
+    for (auto failure = std::size_t{1}; !succeeded; ++failure) {
+        auto resource = FailingResource{};
+        const auto memory = allocator{resource};
+        {
+            auto column = NativeColumn<bool>{};
+            auto release = util::scope_exit{[&]() noexcept { column.release(memory); }};
+            auto ids = std::array<row_id_t, row_count>{};
+            const auto first_time = MIN_DT + EvaluationTime::duration{1};
+            for (auto position = std::size_t{}; position != ids.size(); ++position)
+                ids[position] = column.add(position == 47 ? std::optional<bool>{true} : std::nullopt,
+                                           first_time, memory);
+
+            const auto second_time = first_time + EvaluationTime::duration{1};
+            for (auto position = std::size_t{24}; position != 49; ++position)
+                if (position != 47)
+                    require(column.erase(ids[position], second_time, memory),
+                            "packed boolean compaction setup could not erase a row");
+
+            const auto *rows = column.scalar_storage().physical_rows;
+            const auto revision = rows->layout_revision();
+            resource.fail_at = resource.attempts + failure;
+            try {
+                column.compact(memory);
+                succeeded = true;
+            } catch (const std::bad_alloc &) {
+                ++failure_count;
+                resource.fail_at = 0;
+                require(rows->layout_revision() == revision && rows->slot_of(ids[47]) == 47 &&
+                            column.cell(ids[47]) == true && column.cell(ids[49]) == std::nullopt &&
+                            column.cell(ids[50]) == std::nullopt,
+                        "failed packed boolean compaction changed row mappings or values");
+                column.compact(memory);
+            }
+
+            resource.fail_at = 0;
+            require(rows->slot_of(ids[47]) == 48 && rows->slot_of(ids[49]) == 49 &&
+                        rows->slot_of(ids[50]) == 50 && column.cell(ids[47]) == true,
+                    "packed boolean compaction lost a value while moving into an unset byte");
+            require(column.set(ids[50], true, second_time, memory) && column.cell(ids[47]) == true &&
+                        column.cell(ids[50]) == true,
+                    "setting a packed boolean after compaction damaged another value in its byte");
+        }
+        require(resource.allocations == resource.deallocations,
+                "packed boolean compaction failure or retry leaked allocations");
+    }
+
+    require(failure_count != 0, "packed boolean compaction did not exercise allocation failure");
+}
+
 void test_computed_tsc_compaction_moves_native_cells() {
     using namespace bg;
     using namespace bg::frame;
@@ -1361,6 +1453,8 @@ int main() {
         test_snapshot_lifetime_and_sparse_batches();
         test_native_row_slots_map_external_ids_and_reuse_clean_cells();
         test_native_column_compaction_preserves_values_order_and_deltas();
+        test_native_column_compaction_moves_overlapping_ranges();
+        test_packed_boolean_compaction_prepares_destination_bytes();
         test_computed_tsc_compaction_moves_native_cells();
         test_tsc_view_uses_logical_order_and_validates_added_local_rows();
         test_tsc_view_rejects_native_rows_from_another_logical_domain();

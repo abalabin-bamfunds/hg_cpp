@@ -1,6 +1,40 @@
 # Frame foundation handoff
 
-Updated: 2026-10-23. The frame lane and current consumer dependencies use main
+Updated: 2026-10-24.
+
+## Current compaction verification
+
+The frame lane is rebased onto main `2e960f21`. Utility range relocation is
+committed as `cc12d38c`; its original utility-lane commit is `7b0596f1`.
+The frame changes and utility changes remain on their lanes.
+
+Current build paths are relative to `.lanes/frame-field-access`:
+
+| Build | BG install |
+| --- | --- |
+| `build/compaction-optimisation/frame-release` | `build/compaction-optimisation/bg-release-install` |
+| `build/compaction-optimisation/frame-debug-asan` | `build/compaction-optimisation/bg-debug-install` |
+
+Both configurations use ICU 78 from `hg-build`. Preserve the existing
+`dependencies/` directory. The temporary and older verification paths recorded
+below are historical.
+
+Release column, provider, TSC, frame, and Arrow tests passed. Focused Debug
+column, frame, and Arrow tests passed with ASan, UBSan, and LeakSanitizer.
+Utility relocation passed 31 Catch2 cases in both Debug and Release.
+
+The Release expression test fails in BG's `tsb_to_bundle` schema resolver in
+`src/library/conversion.cpp`, which is identical to main. That resolver assumes
+the requested output is a scalar Bundle before its requirement checks run;
+frame conversion requests such as `TSC<double>` can therefore throw during
+overload selection. The compaction work does not change that resolver.
+
+[The compaction benchmark](benchmarks/compaction.md) records the measured
+operation definitions and retained results.
+
+## Earlier integration notes
+
+The earlier frame lane and consumer dependencies used main
 baseline `5d48e914` plus bounded bitmap search `73622fb7`. The mixed-overload
 refactor used main `21a0f87c`.
 Earlier frame foundation work was rebased onto main `146ee478`, which included
@@ -76,12 +110,10 @@ schema migration and extension boundary.
 discussion. Mutations collect cheap statistics; storage plans and allocates
 after final occupancy is known at invocation end, before downstream consumers
 run. Packing can proceed in both directions while preserving current row order.
-Algorithms retain previous
-contributions; removed IDs and copied keys do not pin column slots. Compaction
-implementation has not started. Explicit invocation-end callback registration
-is the selected timing mechanism. The proposal records scratch lifetime and
-pending-evaluation rules. The callback API and measured maintenance policy still
-require review.
+Algorithms retain previous contributions; removed IDs and copied keys do not
+pin column slots. Manual compaction is implemented. BG provides invocation-end
+callback registration with the agreed scratch lifetime and pending-evaluation
+rules. Frame registration and an automatic compaction policy remain unimplemented.
 
 - `Frame<Schema>` and `Column<T>` are scalar declarations. `TSF<Schema>` and
   `TSC<T>` add row identity and current-cycle changes.

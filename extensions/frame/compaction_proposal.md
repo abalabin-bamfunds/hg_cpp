@@ -119,8 +119,8 @@ after:  ....aaaaBBBBBBBBcc....
 
 Leave `BBBBBBBB` in place; move the four earlier rows right and the two later
 rows left. This moves six rows. Packing at either extreme moves ten or twelve
-rows. Move the earlier rows in descending slot order and later rows in ascending
-slot order so each destination is free before its row moves.
+rows. Move earlier runs in descending order and later runs in ascending order.
+Within each run, use overlap-safe movement toward its destination.
 
 Keeping relative row order supports the existing rule that filters enumerate
 rows in source order without rebuilding membership or selected-ID sequences.
@@ -134,7 +134,7 @@ make the longest run a more expensive anchor than another candidate.
 
 The storage owner coordinates movement across all columns that share a physical
 mapping. `NativeRowSlots` owns the mapping transition; `NativeColumnData<T>`
-owns copying and clearing physical cells. Frame field descriptors dispatch those
+owns preparing and relocating physical cells. Frame field descriptors dispatch those
 operations for runtime schemas. Cell relocation does not use logical `set` or
 `erase_slot`, because those operations change modification information.
 
@@ -171,30 +171,37 @@ Preserving relative order alone is therefore insufficient to trust old proofs.
 
 ## Allocation failure
 
-Commit one complete row at a time:
+Commit one contiguous live run at a time within a common mapping and column
+buffer range:
 
-1. Copy its cells and null state into the destination hole across all owned
-   columns. Keep the source cells and mapping intact during preparation.
-2. If preparation throws, clear prepared destination cells with scope-bound
-   rollback. The row remains at its source slot.
-3. Once every column is prepared, update the mapping and clear source cells.
-   This commit must not allocate or throw.
+1. Prepare every owned column's destination validity capacity and packed
+   Boolean bytes. Keep logical values and the mapping intact during preparation.
+2. If preparation throws, leave the run at its source slots. Prepared capacity
+   can remain allocated.
+3. Relocate cells and validity, then commit both mapping directions and live
+   occupancy. These operations must not allocate or throw.
 
-Previously completed moves remain committed if a later row fails. Logical
+Numeric columns relocate contiguous valid subruns within existing buffers.
+Packed Boolean columns move bits in overlap-safe order after preparation.
+Null cells have no numeric value object to relocate. Mapping entries are
+already constructed, so mapping updates assign values rather than relocating
+object lifetimes.
+
+Previously completed runs remain committed if preparation of a later run fails. Logical
 values, row order, and deltas remain unchanged; cached proofs use the revision
 check above. The exception follows BG's normal evaluation failure behavior.
 This avoids a second full table or a whole-table rollback mechanism.
 
 Choose destinations within the initialized physical mapping range. Mapping
 entries and occupancy capacity then already exist whether movement is left or
-right. Cell preparation handles any allocations for value buffers, packed
-Boolean storage, and validity. The current primitive cell types permit
-nonthrowing commit and cleanup.
+right. Numeric destination storage shares the allocated source block. Cell
+preparation handles allocations for packed Boolean storage and validity. The
+current primitive cell types permit nonthrowing movement and mapping commit.
 
 ## Capacity trimming
 
-Compaction creates longer contiguous live ranges. Empty numeric value blocks
-can be released by existing sparse-bunch erasure. Returning trailing capacity
+Compaction creates longer contiguous live ranges. Movement within an allocated
+block preserves its constructed-cell count. Returning trailing capacity
 can favor packing left, while reducing chunks can favor a middle range.
 Include that distinction in the cost comparison. Initialized mapping prefixes,
 packed Boolean bytes, bitmaps, and selected-ID buffers have separate retention
@@ -212,7 +219,7 @@ IDs or discard removal-cycle information.
 - Read unticked filters, nested filters, selected columns, and Arrow views
   after source compaction. Compare with an owning dense export.
 - Inject allocation failures during preparation of later columns and later
-  rows. Verify complete rows, unchanged logical values, safe cached proofs,
+  runs. Verify complete runs, unchanged logical values, safe cached proofs,
   and retry through the storage API.
 - Benchmark maintenance separately from subsequent traversal and Arrow export.
   Include early holes, clustered deletions, random deletion densities, and

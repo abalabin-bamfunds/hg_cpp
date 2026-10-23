@@ -1,6 +1,6 @@
 # Frame compaction mechanics
 
-Status: accepted
+Status: superseded by [frame compaction by contiguous runs](0084-range-based-frame-compaction.md).
 
 ## Context
 
