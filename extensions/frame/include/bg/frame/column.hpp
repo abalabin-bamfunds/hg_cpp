@@ -363,13 +363,17 @@ class ColumnBatchValidity {
             return count;
         case Kind::all_invalid:
             return 0;
-        case Kind::index:
         case Kind::bitmap:
         case Kind::callback:
             for (auto position = std::size_t{}; position != count; ++position)
                 if (!contains(first_slot, position))
                     return position;
             return count;
+        case Kind::index: {
+            const auto first = static_cast<util::index<>::size_type>(first_slot);
+            const auto end = static_cast<util::index<>::size_type>(first_slot + count);
+            return positions_->first_unset(first, end) - first;
+        }
         }
         std::terminate();
     }

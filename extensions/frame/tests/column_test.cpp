@@ -960,6 +960,27 @@ void test_column_batch_subspan_advances_value_and_validity_offsets() {
             "column batch subspan changed an all-null batch");
 }
 
+void test_index_validity_first_invalid_is_bounded_to_the_batch() {
+    using namespace bg::frame;
+
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    auto valid_slots = bg::util::index<>{};
+    auto release = bg::util::scope_exit{[&]() noexcept { valid_slots.release(resource); }};
+    valid_slots.set(20, resource);
+    valid_slots.set(21, resource);
+    valid_slots.set(30, resource);
+    valid_slots.set(31, resource);
+
+    const auto validity = ColumnBatchValidity::from_index(valid_slots);
+    require(validity.first_invalid(20, 4) == 2,
+            "index validity did not return an invalid offset relative to the batch start");
+    require(validity.first_invalid(30, 2) == 2,
+            "index validity treated the first null just beyond the batch as invalid within it");
+    require(validity.first_invalid(40, 3) == 0,
+            "index validity did not treat the implicit tail beyond the index size as null");
+    require(validity.first_invalid(40, 0) == 0, "empty index validity range was not empty");
+}
+
 void test_aligned_batches_gather_distinct_mappings_and_validate_before_callback() {
     using namespace bg;
     using namespace bg::frame;
@@ -1249,6 +1270,7 @@ int main() {
         test_aligned_batches_borrow_shared_mapping_and_accept_requested_subsets();
         test_aligned_batches_stop_at_shared_id_and_cell_block_boundaries();
         test_column_batch_subspan_advances_value_and_validity_offsets();
+        test_index_validity_first_invalid_is_bounded_to_the_batch();
         test_aligned_batches_gather_distinct_mappings_and_validate_before_callback();
         test_aligned_batches_gather_more_than_two_scratch_batches();
         test_aligned_batches_keep_null_only_blocks_unreadable();
