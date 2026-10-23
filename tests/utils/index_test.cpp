@@ -4,7 +4,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <new>
 #include <stdexcept>
 #include <vector>
@@ -144,6 +146,64 @@ TEST_CASE("an index finds the first set position in either index", "[index][cove
     allocated_left.release(memory);
     allocated_right.release(memory);
     CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("a bounded unset search clips the range and treats missing bits as unset", "[index][coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    auto dynamic = util::index<>{};
+    for (auto position = std::uint32_t{}; position != 56; ++position) {
+        CHECK(dynamic.set(position, memory));
+    }
+
+    CHECK(dynamic.first_unset(53, 56) == 56);
+    CHECK(dynamic.first_unset(55, 57) == 56);
+
+    CHECK(dynamic.set(56, memory));
+    for (auto position = std::uint32_t{57}; position != 130; ++position) {
+        if (position != 64 && position != 95) {
+            CHECK(dynamic.set(position, memory));
+        }
+    }
+
+    CHECK(dynamic.first_unset(63, 64) == 64);
+    CHECK(dynamic.first_unset(63, 65) == 64);
+    CHECK(dynamic.set(64, memory));
+    CHECK(dynamic.first_unset(64, 95) == 95);
+    CHECK(dynamic.first_unset(64, 96) == 95);
+    CHECK(dynamic.first_unset(3, 128) == 95);
+    CHECK(dynamic.first_unset(128, 140) == 130);
+    CHECK(dynamic.first_unset(132, 140) == 132);
+    CHECK(dynamic.first_unset(132) == dynamic.size());
+    CHECK(dynamic.first_unset(130, 130) == 130);
+    CHECK(dynamic.first_unset(131, 130) == 130);
+
+    dynamic.release(memory);
+}
+
+TEST_CASE("bounded unset search scans full words and handles maximum bounds", "[index][coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    auto dynamic = util::index<>{};
+    for (auto position = std::uint32_t{}; position != 129; ++position) {
+        CHECK(dynamic.set(position, memory));
+    }
+
+    for (auto start = std::uint32_t{}; start != dynamic.size(); ++start) {
+        for (auto width = std::uint32_t{1}; width <= 3; ++width) {
+            const auto end = std::min<std::uint32_t>(start + width, dynamic.size());
+            CHECK(dynamic.first_unset(start, end) == end);
+        }
+    }
+
+    CHECK(dynamic.first_unset(0, 129) == 129);
+    CHECK(dynamic.first_unset(63, 66) == 66);
+    CHECK(dynamic.first_unset(127, 200) == 129);
+    CHECK(dynamic.first_unset(129, 200) == 129);
+    dynamic.release(memory);
+
+    auto empty = util::index<>{};
+    const auto maximum = std::numeric_limits<std::uint32_t>::max();
+    CHECK(empty.first_unset(maximum - 1, maximum) == maximum - 1);
+    CHECK(empty.first_unset(maximum, maximum - 1) == maximum - 1);
 }
 
 TEST_CASE("a runtime-sized index retains its state when growth fails", "[index][coverage-exempt]") {

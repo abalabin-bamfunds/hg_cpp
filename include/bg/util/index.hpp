@@ -296,27 +296,42 @@ template <> class index<dynamic_index_extent> {
     }
 
     size_type first_unset(size_type start = 0) const noexcept {
-        if (start >= size()) {
-            return size();
+        return first_unset(start, size());
+    }
+
+    // Searches [start, end). Positions after size() are unset. Returns end if no unset bit occurs in the range;
+    // empty and reversed ranges also return end.
+    size_type first_unset(size_type start, size_type end) const noexcept {
+        if (start >= end) {
+            return end;
         }
 
+        const auto current_size = size();
+        if (start >= current_size) {
+            return start;
+        }
+
+        const auto search_end = std::min(end, current_size);
+        const auto final_word = (search_end - 1) / bits_per_word;
         auto word_index = start / bits_per_word;
         auto available = ~word(word_index) & (std::numeric_limits<std::uint64_t>::max() << (start % bits_per_word));
-
-        while (true) {
-            if (word_index + 1 == word_count()) {
-                available &= details::low_bits(size() - word_index * bits_per_word);
-            }
+        while (word_index < final_word) {
             if (available != 0) {
                 return word_index * bits_per_word + static_cast<size_type>(std::countr_zero(available));
             }
 
             ++word_index;
-            if (word_index == word_count()) {
-                return size();
-            }
             available = ~word(word_index);
         }
+
+        const auto final_word_start = std::uint64_t{final_word} * bits_per_word;
+        const auto final_word_bits = static_cast<size_type>(std::uint64_t{search_end} - final_word_start);
+        available &= details::low_bits(final_word_bits);
+        if (available != 0) {
+            return final_word * bits_per_word + static_cast<size_type>(std::countr_zero(available));
+        }
+
+        return search_end;
     }
 
     iterator begin() const noexcept { return iterator{*this, 0}; }
