@@ -3,17 +3,164 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/map.hpp>
+#include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
 #include <bg/run_graph.hpp>
+#include <bg/switch.hpp>
+#include <bg/time_series/tsb/tsb.hpp>
+#include <bg/time_series/tsd/tsd_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
 #include <optional>
+#include <vector>
 
 using namespace bg;
 using namespace bg::literals;
+
+namespace {
+
+struct dynamic_nothing_input {
+    In<TS<i64>, dynamic_activity, optional> missing;
+    In<TS<bool>> trigger;
+    Out<TS<bool>> output;
+
+    void evaluate() const {
+        missing.make_passive();
+        output.set(!missing.valid() && *trigger);
+    }
+};
+
+template <template <typename, auto...> typename Field> struct NothingBundle {
+    Field<TS<i64>> value;
+};
+
+} // namespace
+
+TEST_CASE("nothing blocks required inputs and leaves optional inputs invalid",
+          "[evaluation][validity][feature:operator][guarantee:final]") {
+    auto evaluations = std::size_t{};
+    const auto required = node([&](In<TS<i64>>, bool trigger) {
+        ++evaluations;
+        return trigger;
+    });
+    const auto optional_input = node([](In<TS<i64>, optional> missing, bool trigger) {
+        return !missing.valid() && trigger;
+    });
+
+    const auto actual = bg::run_graph(
+        [&](wp<TS<bool>> trigger) {
+            return required(operators::nothing[type<TS<i64>>](), trigger);
+        },
+        {true, false, true});
+    CHECK(evaluations == 0);
+    CHECK(actual.equals<bool>({std::nullopt, std::nullopt, std::nullopt}));
+
+    const auto optional_actual = bg::run_graph(
+        [&](wp<TS<bool>> trigger) {
+            return optional_input(operators::nothing[type<TS<i64>>](), trigger);
+        },
+        {true, false, true});
+    CHECK(optional_actual.equals({true, false, true}));
+}
+
+TEST_CASE("nothing supports dynamic activity and collection input inspection",
+          "[evaluation][input_activity][feature:operator][guarantee:final][series:list]") {
+    const auto dynamic = node<dynamic_nothing_input>();
+    const auto actual = bg::run_graph(
+        [&](wp<TS<bool>> trigger) {
+            return dynamic(operators::nothing[type<TS<i64>>](), trigger);
+        },
+        {true, false, true});
+    CHECK(actual.equals({true, false, true}));
+
+    const auto inspect = node([](In<TSL<TS<i64>, 2>, optional> missing, bool trigger) {
+        return !missing.valid() && missing.size() == 2 && trigger;
+    });
+    const auto collection_actual = bg::run_graph(
+        [&](wp<TS<bool>> trigger) {
+            return inspect(operators::nothing[type<TSL<TS<i64>, 2>>](), trigger);
+        },
+        {true, false});
+    CHECK(collection_actual.equals({true, false}));
+}
+
+TEST_CASE("nothing unwraps an explicit reference type and supplies a reference to its invalid target",
+          "[evaluation][validity][feature:operator][feature:reference][guarantee:final]") {
+    auto reference_validity = std::vector<bool>{};
+    auto target_validity = std::vector<bool>{};
+    const auto inspect = node([&](In<REF<TS<i64>, TimeSeriesGuarantee::final>, optional> reference,
+                                  In<TS<i64>, optional> target, bool trigger) {
+        reference_validity.push_back(reference.valid());
+        target_validity.push_back(target.valid());
+        return reference.valid() && static_cast<bool>(reference.value()) && !target.valid() && trigger;
+    });
+
+    const auto actual = bg::run_graph(
+        [&](wp<TS<bool>> trigger) {
+            const auto missing = operators::nothing[type<REF<TS<i64>>>]();
+            CHECK(&missing.type() == &TS<i64, TimeSeriesGuarantee::final>::type());
+            return inspect(missing, missing, trigger);
+        },
+        {true, false});
+
+    CHECK(actual.equals({true, false}));
+    CHECK(reference_validity == std::vector<bool>{true, true});
+    CHECK(target_validity == std::vector<bool>{false, false});
+}
+
+TEST_CASE("nothing crosses nested, map, and switch boundaries",
+          "[evaluation][feature:operator][feature:nested-graph][feature:map][feature:switch]"
+          "[validity:optional][guarantee:final]") {
+    const auto inner = graph("name"_n = "nothing_inner", []() -> wp<TS<i64, TimeSeriesGuarantee::final>> {
+        return operators::nothing[type<TS<i64>>]().as<TS<i64, TimeSeriesGuarantee::final>>();
+    });
+    const auto inspect_nested = node([](In<TS<i64>, optional> missing, bool run) {
+        return !missing.valid() && run;
+    });
+    const auto nested_graph = [&](wp<TS<bool>> run) { return inspect_nested(nested(inner, run), run); };
+    CHECK(bg::run_graph(nested_graph, {true, false}).equals({true, false}));
+
+    const auto inspect = node([](In<TS<i64>, optional> missing, i64 value) { return !missing.valid() && value > 0; });
+    const auto mapped = [&](wp<TSD<i64, TS<i64>>> values) {
+        const auto missing = operators::nothing[type<TS<i64>>]();
+        return map([&](auto value, auto missing_input) { return inspect(missing_input, value); }, values, missing)
+            [i64{1}];
+    };
+    CHECK(bg::run_graph(mapped, {{{1, 3}}}).equals({true}));
+
+    const auto switched = [&](wp<TS<i64>> key, wp<TS<i64>> value) {
+        const auto missing = operators::nothing[type<TS<i64>>]();
+        return switch_(key, cases{case_(1, [&](auto item, auto missing_input) {
+                          return inspect(missing_input, item);
+                      })},
+                       value, missing);
+    };
+    CHECK(bg::run_graph(switched, {1, 1}, {3, 4}).equals({true, true}));
+}
+
+TEST_CASE("nothing remains invalid through descendant field and list selections",
+          "[evaluation][feature:operator][feature:getattr][feature:getitem][validity:optional]"
+          "[series:tsb][series:fixed-tsl][guarantee:final]") {
+    const auto inspect = node([](In<TS<i64>, optional> missing, bool trigger) {
+        return !missing.valid() && trigger;
+    });
+    const auto select_field = [&](wp<TS<bool>> trigger) {
+        const auto missing =
+            operators::nothing[type<TSB<NothingBundle>>]().as<TSB<NothingBundle, TimeSeriesGuarantee::final>>();
+        return inspect(missing->value, trigger);
+    };
+    const auto select_item = [&](wp<TS<bool>> trigger) {
+        const auto missing = operators::nothing[type<TSL<TS<i64>, 2>>]();
+        return inspect(missing[0], trigger);
+    };
+
+    CHECK(bg::run_graph(select_field, {true, false}).equals({true, false}));
+    CHECK(bg::run_graph(select_item, {true, false}).equals({true, false}));
+}
 
 TEST_CASE("an active input schedules evaluation and a passive input supplies its latest value",
           "[evaluation][input_activity][feature:input-activity][activity:active][activity:passive]") {

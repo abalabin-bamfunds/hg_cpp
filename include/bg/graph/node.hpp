@@ -297,6 +297,9 @@ class Node {
     }
 
     InputData binding_data(const ParameterBinding &binding, ParameterBindingMode mode) const noexcept {
+        if (mode == ParameterBindingMode::nothing) {
+            return {&initial_time_series_state, nullptr};
+        }
         if (mode == ParameterBindingMode::time_series) {
             const auto &last_updated =
                 *reinterpret_cast<const TimeSeriesState *>(runtime_storage_ + binding.last_updated_offset());

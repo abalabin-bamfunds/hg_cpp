@@ -18,6 +18,7 @@ using K = ScalarVariable<"K", Hashable>;
 
 extern BG_EXPORT operator_<auto(SCALAR)->TS<SCALAR, TimeSeriesGuarantee::const_>> const_;
 extern BG_EXPORT operator_<auto(TS<SCALAR>, SCALAR)->TS<SCALAR>> default_;
+extern BG_EXPORT operator_<TS_T, auto() -> TS_T::with<TimeSeriesGuarantee::final>> nothing;
 extern BG_EXPORT operator_<VALUE, auto(COLLECTION, Union<"key", K, TS<K>, TSS<K>>)->ITEM> getitem;
 extern BG_EXPORT operator_<VALUE, auto(TS_T, SCALAR)->ITEM> getattr;
 

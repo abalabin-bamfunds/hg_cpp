@@ -29,6 +29,21 @@ class ConstantNodeTemplate final : public NodeTemplate {
     }
 };
 
+class NothingNodeTemplate final : public NodeTemplate {
+  public:
+    const Signature &default_signature() const override {
+        static const auto signature =
+            Signature{util::symbol{"nothing"}, {}, TS_T::with<TimeSeriesGuarantee::final>::type()};
+        return signature;
+    }
+
+    EvaluationFunction evaluation_function(const ResolvedSignature &) const noexcept override { return nullptr; }
+
+    bool produces_nothing(const ResolvedSignature &) const noexcept override { return true; }
+};
+
+const auto nothing_node = NothingNodeTemplate{};
+
 class DefaultInputNodeTemplate final : public NodeTemplate {
   public:
     const Signature &default_signature() const override {
@@ -74,6 +89,7 @@ class DefaultValueTemplate final : public WiringTemplate {
 
 operator_<auto(SCALAR)->TS<SCALAR, TimeSeriesGuarantee::const_>> const_{"const", {"value"}};
 operator_<auto(TS<SCALAR>, SCALAR)->TS<SCALAR>> default_{"default", {"value", "fallback"}};
+operator_<TS_T, auto() -> TS_T::with<TimeSeriesGuarantee::final>> nothing{"nothing"};
 operator_<VALUE, auto(COLLECTION, Union<"key", K, TS<K>, TSS<K>>)->ITEM> getitem{"getitem", {"collection", "key"}};
 operator_<VALUE, auto(TS_T, SCALAR)->ITEM> getattr{"getattr", {"bundle", "name"}};
 
@@ -82,6 +98,7 @@ namespace {
 const auto registered = [] {
     const_.overload(ConstantNodeTemplate{});
     default_.overload(DefaultValueTemplate{});
+    nothing.overload(nothing_node);
     details::register_time_series_list_operators(getitem);
     details::register_time_series_dict_operators(getitem);
     details::register_time_series_bundle_operators(getattr);

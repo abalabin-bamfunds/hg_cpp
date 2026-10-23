@@ -82,6 +82,14 @@ Each time series or scalar module registers the overloads it implements.
 `const_(scalar)` lifts a scalar to `TS<scalar, const>`. Graph compilation stores
 the scalar once and binds its consumers directly to that storage.
 
+`nothing[TS]()` creates an always-invalid series with the final guarantee. The
+operator has no inputs and no evaluation function. Compilation removes its node
+and binds consumers to the initial invalid state with null value storage. It
+creates no producer subscription, so required inputs remain blocked and
+optional inputs remain invalid. Its explicit type argument uses normal `TS_T`
+matching, which unwraps a reference type to its target. A reference input can
+therefore receive a valid reference to the invalid target series.
+
 `default_(source, fallback)` adapts a `TS<scalar>` input. A value consumer reads
 `fallback` while `source` is invalid and reads `source` otherwise. The adapter
 wires a node with the source and a const fallback. Its template identifies the

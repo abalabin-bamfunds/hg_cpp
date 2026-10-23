@@ -239,6 +239,8 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "bit_xor", operators::bit_xor);
     export_operator(operators_module, "const_", operators::const_);
     export_operator(operators_module, "default_", operators::default_);
+    const auto nothing_type_parameters = operators::nothing.explicit_type_parameters();
+    export_operator(operators_module, "nothing", operators::nothing, nothing_type_parameters);
     const auto getitem_type_parameters = operators::getitem.explicit_type_parameters();
     const auto getattr_type_parameters = operators::getattr.explicit_type_parameters();
     export_operator(operators_module, "getitem", operators::getitem, getitem_type_parameters);

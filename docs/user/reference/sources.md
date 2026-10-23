@@ -12,6 +12,25 @@ scalar values, including scalar collections; it does not split them into indepen
 updating items. Python imports it from `bg.operators`; C++ uses `bg::operators::const_`
 from `<bg/library.hpp>`.
 
+## nothing
+
+`nothing[TS[int]]()` creates a series that never becomes valid. It has the final
+guarantee. Required inputs connected to it remain blocked; optional inputs can
+evaluate from another active input and observe `valid == False`. It produces no
+updates and compiles without a runtime producer node.
+
+Python imports `nothing` from `bg.operators`. C++ supplies the time-series type
+explicitly:
+
+```cpp
+auto missing = operators::nothing[type<TS<i64>>]();
+```
+
+The type argument uses normal time-series type-variable matching. A reference
+type argument matches through its target, so `nothing[REF[TS[int]]]()` creates
+an invalid target series. A reference input can receive a valid reference to
+that invalid series.
+
 ## Callback sources
 
 Python `@source_node` evaluates once at graph start. It accepts scalar arguments and an

@@ -67,6 +67,7 @@ imports and headers.
 | `ne` | [Reference](library-numeric.md#arithmetic) |
 | `neg` | [Reference](library-numeric.md#arithmetic) |
 | `not_` | [Reference](library-numeric.md#arithmetic) |
+| `nothing` | [Reference](sources.md#nothing) |
 | `opt` | [Reference](graph-code.md#optional-arguments) |
 | `or_` | [Reference](library-numeric.md#arithmetic) |
 | `pass_through` | [Reference](higher-order.md#map) |

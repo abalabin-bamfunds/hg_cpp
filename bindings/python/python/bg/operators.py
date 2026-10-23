@@ -77,6 +77,7 @@ bit_and = _native.bit_and
 bit_xor = _native.bit_xor
 const_ = _native.const_
 default_ = _native.default_
+nothing = _native.nothing
 getitem = _native.getitem
 getattr = _native.getattr
 
@@ -139,6 +140,7 @@ __all__ = [
     "ne",
     "neg",
     "not_",
+    "nothing",
     "or_",
     "pow",
     "print_",

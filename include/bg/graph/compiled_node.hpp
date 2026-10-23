@@ -79,6 +79,7 @@ enum class ParameterBindingMode : std::uint8_t {
     time_series,
     reference,
     borrowed,
+    nothing,
     scalar,
     constant,
     default_value,
@@ -218,6 +219,9 @@ class ParameterBinding {
   public:
     ParameterBindingMode mode() const noexcept {
         if ((location_and_flags_ & scalar_flag) != 0) {
+            if ((value_offset_ & (constant_flag | default_flag)) == (constant_flag | default_flag)) {
+                return ParameterBindingMode::nothing;
+            }
             if ((value_offset_ & default_flag) != 0) {
                 return ParameterBindingMode::default_value;
             }
@@ -314,11 +318,18 @@ class ParameterBinding {
         return ParameterBinding{0, input_index | borrowed_flag, validity};
     }
 
+    static ParameterBinding nothing(InputValidity validity) noexcept {
+        return ParameterBinding{nothing_binding, validity};
+    }
+
     struct constant_binding_t {};
     static constexpr constant_binding_t constant_binding{};
 
     struct default_binding_t {};
     static constexpr default_binding_t default_binding{};
+
+    struct nothing_binding_t {};
+    static constexpr nothing_binding_t nothing_binding{};
 
     ParameterBinding(constant_binding_t, std::uint32_t start_time_offset, std::uint32_t scalar_offset,
                      InputValidity validity) noexcept
@@ -331,6 +342,10 @@ class ParameterBinding {
         : location_and_flags_{last_updated_offset | scalar_flag |
                               (validity == InputValidity::optional ? optional_flag : std::uint32_t{})},
           value_offset_{input_offset | default_flag} {}
+
+    ParameterBinding(nothing_binding_t, InputValidity validity) noexcept
+        : location_and_flags_{scalar_flag | (validity == InputValidity::optional ? optional_flag : std::uint32_t{})},
+          value_offset_{constant_flag | default_flag} {}
 
     ParameterBinding() noexcept : location_and_flags_{scalar_flag | optional_flag}, value_offset_{} {}
 

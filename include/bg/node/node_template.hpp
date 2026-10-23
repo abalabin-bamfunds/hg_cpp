@@ -94,6 +94,7 @@ class NodeTemplate : public WiringTemplate {
     virtual std::optional<DefaultOutput> default_output(const ResolvedSignature &) const noexcept {
         return std::nullopt;
     }
+    virtual bool produces_nothing(const ResolvedSignature &) const noexcept { return false; }
 
     // Engine-facing concrete wiring path for a node call retained by GraphWiring.
     [[nodiscard]] std::optional<WiringPoint> bind(GraphWiring &wiring, ResolvedSignature signature,

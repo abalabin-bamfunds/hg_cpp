@@ -1044,6 +1044,61 @@ def test_default_operator_is_available_with_native_fallback_behavior():
     assert bg.run_graph(graph, [None, 1.0, 3.0]) == [5.0, 1.0, 3.0]
 
 
+def test_nothing_operator_is_typed_final_and_never_publishes():
+    @bg.graph
+    def direct() -> bg.TS[int]:
+        return bg.operators.nothing[bg.TS[int]]()
+
+    assert bg.run_graph(direct) == [None]
+
+    required_calls = []
+
+    @bg.compute_node(active=("trigger",))
+    def required(trigger: bg.TS[bool], missing: bg.TS[int]) -> bg.TS[bool]:
+        required_calls.append(trigger.value)
+        return trigger.value
+
+    @bg.graph
+    def blocked(trigger: bg.TS[bool]) -> bg.TS[bool]:
+        return required(trigger, bg.operators.nothing[bg.TS[int]]())
+
+    assert bg.run_graph(blocked, [True, False]) == [None, None]
+    assert required_calls == []
+
+    @bg.compute_node(active=("trigger",), valid=("trigger",))
+    def optional(trigger: bg.TS[bool], missing: bg.TS[int]) -> bg.TS[bool]:
+        return not missing.valid
+
+    @bg.graph
+    def inspect_optional(trigger: bg.TS[bool]) -> bg.TS[bool]:
+        return optional(trigger, bg.operators.nothing[bg.TS[int]]())
+
+    assert bg.run_graph(inspect_optional, [True, False]) == [True, True]
+
+    @bg.compute_node(active=("trigger",), valid=("trigger",))
+    def collection_size(trigger: bg.TS[bool], missing: bg.TSL[bg.TS[int], 2]) -> bg.TS[bool]:
+        return not missing.valid and len(missing) == 2
+
+    @bg.graph
+    def inspect_collection(trigger: bg.TS[bool]) -> bg.TS[bool]:
+        return collection_size(trigger, bg.operators.nothing[bg.TSL[bg.TS[int], 2]]())
+
+    assert bg.run_graph(inspect_collection, [True, False]) == [True, True]
+
+    @bg.compute_node(active=("trigger",), valid=("trigger",))
+    def reference_valid(
+        trigger: bg.TS[bool], reference: bg.REF[bg.TS[int]], target: bg.TS[int]
+    ) -> bg.TS[bool]:
+        return trigger.value and reference.valid and reference.value.valid and not target.valid
+
+    @bg.graph
+    def inspect_reference(trigger: bg.TS[bool]) -> bg.TS[bool]:
+        missing = bg.operators.nothing[bg.REF[bg.TS[int]]]()
+        return reference_valid(trigger, missing, missing)
+
+    assert bg.run_graph(inspect_reference, [True, False]) == [True, False]
+
+
 def test_add_optional_overload_substitutes_zero_for_invalid_inputs():
     import bg._bg_test_extension as extension
 

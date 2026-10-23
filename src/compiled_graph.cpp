@@ -361,6 +361,7 @@ struct CompilationPlan {
     std::vector<std::size_t> wired_node_indices;
     std::vector<ConstantPlan> constants;
     std::vector<std::size_t> constant_outputs;
+    std::vector<bool> nothing_outputs;
     std::vector<DefaultInputPlan> defaults;
     std::vector<std::size_t> default_outputs;
     WiringPathLayout wiring_paths;
@@ -385,6 +386,13 @@ struct CompilationPlan {
     bool has_lifecycle() const noexcept { return !starts.nodes.empty() || !stops.nodes.empty(); }
 
     bool is_lowered_node(std::size_t node) const noexcept { return compiled_node_indices[node] == WiredOutput::npos; }
+
+    bool nothing_output(std::size_t output) const noexcept {
+        while (outputs[output].parent != WiredOutput::npos) {
+            output = outputs[output].parent;
+        }
+        return nothing_outputs[output];
+    }
 
     std::size_t compiled_node_index(std::size_t node) const noexcept { return compiled_node_indices[node]; }
 
@@ -758,9 +766,6 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
             const auto &parameter = target.signature().parameters[input.parameter];
             const auto is_active = parameter.activity == active;
             const auto is_required = !input.default_value && parameter.validity != optional;
-            if (input.sampled_reference) {
-                plan.uses_cycle_callbacks = true;
-            }
             const auto subscriber_index = static_cast<std::uint32_t>(plan.compiled_node_index(target_index));
             const auto original_notification = target.node_template().input_notification(input_index);
             const auto notification = input.default_value
@@ -772,6 +777,13 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
                         {subscriber_index, input.parameter, &DefaultInputDescriptor::notify_startup});
                 }
             };
+            if (input.wired_input.is_output() && plan.nothing_output(input.wired_input.index())) {
+                add_default_startup_notification();
+                continue;
+            }
+            if (input.sampled_reference) {
+                plan.uses_cycle_callbacks = true;
+            }
             if (input.wired_input.is_output() &&
                 plan.constant_for_output(input.wired_input.index()) != nullptr) {
                 if (notification.function != nullptr) {
@@ -853,7 +865,7 @@ std::vector<const ScalarRuntimeType *> parameter_runtime_types(const WiredNode &
             }
             const auto &requested_type = static_cast<const TimeSeriesType &>(*parameter.type);
             const auto *runtime_type =
-                !input.wired_input.is_output()
+                !input.wired_input.is_output() || plan.nothing_output(input.wired_input.index())
                     ? &resolve_time_series_runtime_type(requested_type)
                     : input_runtime_type(
                           input, wired_output_layout(input.wired_input.index(), outputs, node_plans).runtime_type,
@@ -980,6 +992,13 @@ void plan_runtime_storage(CompilationPlan &plan) {
             if (input.default_value) {
                 const auto slot = storage.add<DefaultInputState>();
                 input.default_input_offset = packed_offset(slot.offset, "runtime storage reaches 1 GiB");
+            }
+
+            if (input.wired_input.is_output() && plan.nothing_output(input.wired_input.index())) {
+                if (input.dynamic_activity) {
+                    input.activity_offset = packed_offset(storage.add<bool>().offset, "runtime storage reaches 1 GiB");
+                }
+                continue;
             }
 
             if (!input.dereferences_reference) {
@@ -1317,6 +1336,7 @@ void plan_fixed_storage(CompilationPlan &plan) {
     result.node_plans.resize(result.nodes.size());
     result.compiled_node_indices.assign(result.nodes.size(), WiredOutput::npos);
     result.constant_outputs.assign(result.outputs.size(), WiredOutput::npos);
+    result.nothing_outputs.assign(result.outputs.size(), false);
     result.default_outputs.assign(result.outputs.size(), WiredOutput::npos);
     result.inherited_time_series_slots.assign(wiring.inherited_requirements().size(), WiredOutput::npos);
     const auto borrowed_input_types = wiring.borrowed_input_types();
@@ -1363,6 +1383,24 @@ void plan_fixed_storage(CompilationPlan &plan) {
 
     for (auto node_index = std::size_t{}; node_index < result.nodes.size(); ++node_index) {
         const auto &node = result.nodes[node_index];
+        if (node.node_template().produces_nothing(node.signature())) {
+            const auto output_index = std::ranges::find_if(result.outputs, [=](const auto &candidate) {
+                return candidate.parent == WiredOutput::npos && candidate.node_index == node_index;
+            });
+            if (node.signature().output == nullptr || !node.signature().output->is_time_series() ||
+                output_index == result.outputs.end()) {
+                throw std::logic_error{"a nothing output has no time series root output"};
+            }
+
+            const auto &output_type = static_cast<const TimeSeriesType &>(*node.signature().output);
+            if (output_type.guarantee().value() != TimeSeriesGuarantee::final) {
+                throw std::logic_error{"a nothing output must have the final guarantee"};
+            }
+
+            const auto index = static_cast<std::size_t>(output_index - result.outputs.begin());
+            result.nothing_outputs[index] = true;
+            continue;
+        }
         const auto constant = node.node_template().constant_output(node.signature());
         const auto output_index = std::ranges::find_if(result.outputs, [=](const auto &candidate) {
             return candidate.parent == WiredOutput::npos && candidate.node_index == node_index;
@@ -1922,6 +1960,10 @@ class CompiledGraphBuilder {
                                                            const TimeSeriesInputPlan &input,
                                                            InputValidity validity,
                                                            std::size_t destination_offset) {
+        if (input.wired_input.is_output() && plan.nothing_output(input.wired_input.index())) {
+            return ParameterBinding::nothing(validity);
+        }
+
         if (input.wired_input.is_output()) {
             if (const auto *constant = plan.constant_for_output(input.wired_input.index())) {
                 return ParameterBinding::constant(
@@ -2109,6 +2151,9 @@ class CompiledGraphBuilder {
                     }
                 }
                 if (input.wired_input.is_inherited()) {
+                    return &resolve_time_series_runtime_type(parameter);
+                }
+                if (plan.nothing_output(input.wired_input.index())) {
                     return &resolve_time_series_runtime_type(parameter);
                 }
                 const auto output = wired_output_layout(input.wired_input.index(), plan.outputs, plan.node_plans);

@@ -84,6 +84,29 @@ TEST_CASE("map removes an output item while its result is invalid when valid_ite
     CHECK(observed == std::vector<i64>{1, 0, 2, 0, 2});
 }
 
+TEST_CASE("map omits an item when its graph output is nothing",
+          "[feature:map][feature:operator][feature:nested-graph][series:tsd]"
+          "[input-guarantee:valid-items][guarantee:final][validity:optional]") {
+    const auto nothing = graph("name"_n = "map_nothing_output",
+                               [](wp<TS<i64>>) -> wp<TS<i64, TimeSeriesGuarantee::final>> {
+        return operators::nothing[type<TS<i64>>]().as<TS<i64, TimeSeriesGuarantee::final>>();
+    });
+    const auto build_values = node([](i64 value, Out<TSD<i64, TS<i64>>> output) { output[1].set(value); });
+    auto observed = std::vector<bool>{};
+    const auto observe = node([&observed](In<TS<bool>> trigger,
+                                          In<TSD<i64, REF<TS<i64>>>, optional> output) {
+        const auto contains = output.contains(1);
+        observed.push_back(contains);
+        return *trigger && !contains;
+    });
+    const auto tested = [&](wp<TS<bool>> trigger, wp<TS<i64>> value) {
+        return observe(trigger, map(nothing, build_values(value), "__valid_items__"_n = true));
+    };
+
+    CHECK(bg::run_graph(tested, {true, false, true}, {10, 20, 30}).equals({true, false, true}));
+    CHECK(observed == std::vector<bool>{false, false, false});
+}
+
 TEST_CASE("map valid_items mode does not share runtime identity with ordinary output mode",
           "[feature:map][feature:nested-graph][series:tsd][input-guarantee:valid-items]"
           "[transition:invalidation]") {

@@ -23,6 +23,50 @@
 using namespace bg;
 using namespace bg::literals;
 
+TEST_CASE("nothing is a final typed output without a runtime node",
+          "[feature:operator][feature:graph-compilation][series:value][guarantee:final]") {
+    auto wiring = GraphWiring{};
+    {
+        auto context = WiringContext{wiring};
+        const auto output = operators::nothing[type<TS<i64>>]();
+        CHECK(&output.type() == &TS<i64, TimeSeriesGuarantee::final>::type());
+    }
+
+    wiring.finalize();
+    const auto compiled = CompiledGraph{wiring};
+    CHECK(compiled.node_count() == 0);
+    CHECK(compiled.runtime_storage_size() == 0);
+
+    const auto direct_output = bg::run_graph([] { return operators::nothing[type<TS<i64>>](); });
+    CHECK(direct_output.equals<i64>({std::nullopt}));
+
+    const auto sink = node([](In<TS<i64>, optional>) {});
+    auto consumer_wiring = GraphWiring{};
+    {
+        auto context = WiringContext{consumer_wiring};
+        sink(operators::nothing[type<TS<i64>>]());
+    }
+
+    consumer_wiring.finalize();
+    const auto consumer_graph = CompiledGraph{consumer_wiring};
+    REQUIRE(consumer_graph.node_count() == 1);
+    CHECK(consumer_graph.node(0).parameters()[0].mode() == ParameterBindingMode::nothing);
+    CHECK(sizeof(ParameterBinding) == 8);
+}
+
+TEST_CASE("nothing composes with default and conditional selection",
+          "[feature:operator][feature:graph-compilation][series:value][guarantee:final]"
+          "[feature:wiring][feature:validity][feature:reference]") {
+    const auto defaulted = [] { return operators::default_(operators::nothing[type<TS<i64>>](), i64{42}); };
+    CHECK(bg::run_graph(defaulted).equals<i64>({42}));
+
+    const auto observe = node([](In<TS<i64>, optional> value) { return value.valid(); });
+    const auto selected = [&](wp<TS<bool>> condition, wp<TS<i64>> value) {
+        return observe(operators::if_then_else(condition, value, operators::nothing[type<TS<i64>>]()));
+    };
+    CHECK(bg::run_graph(selected, {true, false, true}, {10, 20, 30}).equals<bool>({true, false, true}));
+}
+
 TEST_CASE("numeric division, floor division, and modulo follow signed arithmetic",
           "[feature:operator][series:value][scalar:i64][scalar:floating-point]") {
     const auto integer_division = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::div(lhs, rhs); };
