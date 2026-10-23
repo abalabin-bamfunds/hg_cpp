@@ -357,19 +357,16 @@ wp<> details::wire_http_handler(std::string_view path, const WiringTemplate &han
                 return client_id;
             });
         const auto request_client_ids = map(submit_policy_request, requests);
-        auto reply_parameters = std::vector<Parameter>{
-            {util::symbol{"client_id"}, &TS<service_client_id_t, TimeSeriesGuarantee::const_>::type()},
-        };
-        const auto *policy_output = type_cast<TimeSeriesType>(policy->signature().output());
-        auto reply_signature = Signature{util::symbol{"http_auth_reply"}, std::move(reply_parameters),
-                                         *policy_output};
-        const auto receive_policy_reply = GraphTemplate{
-            std::move(reply_signature),
-            [policy](
-                wp<TS<service_client_id_t, TimeSeriesGuarantee::const_>> client_id) -> wp<TS<HIERARCHICAL>> {
+        using DECISION = TimeSeriesVariable<"HTTP_AUTH_DECISION">;
+        const auto receive_policy_reply = graph<DECISION>(
+            "name"_n = "http_auth_reply",
+            resolve<DECISION> = [policy]() -> const TimeSeriesType & {
+                return *type_cast<TimeSeriesType>(policy->signature().output());
+            },
+            [policy](wp<TS<service_client_id_t, TimeSeriesGuarantee::const_>> client_id) -> wp<DECISION> {
                 const auto replies = policy->client_replies(TypeMap{}, client_id, {});
-                return wp<TS<HIERARCHICAL>>::from_validated(*replies);
-            }};
+                return wp<DECISION>::from_validated(*replies);
+            });
         const auto decisions = map(receive_policy_reply, request_client_ids);
         const auto projected = details::http_auth_projection(requests, decisions);
         handler_requests = operators::getattr(projected, util::symbol{"requests"});
