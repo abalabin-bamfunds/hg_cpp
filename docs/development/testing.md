@@ -531,6 +531,10 @@ graph compilation or evaluation.
   post-run enumeration and reporting, graph-ID reuse, and final-period closure
 - outer and inner graph failure behavior
 - cycle callbacks and deferred storage reclamation
+- extension invocation-end callbacks on lifecycle, evaluation, invalidation,
+  and each accepted queued message; deduplication, cancellation, re-registration
+  during dispatch, pending and exception cleanup, publication order, and scratch
+  lifetime
 - nested instance replacement in the final cycle, stopped-instance finalization,
   and instance deletion through the owning parent's allocator
 - global state shared by outer and inner graphs

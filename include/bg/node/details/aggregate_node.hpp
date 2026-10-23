@@ -15,6 +15,7 @@
 #include <bg/time_series/dynamic_value_input.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
 #include <bg/time_series/input_data.hpp>
+#include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/tsb/tsb_runtime_type.hpp>
 #include <bg/time_series/tsb/tsb_type.hpp>
@@ -260,12 +261,6 @@ template <typename TimeSeries, auto... Options>
 struct generic_output_field<Out<TimeSeries, Options...>>
     : std::bool_constant<generic_time_series<TimeSeries>> {};
 
-template <typename T> struct output_view_field : std::false_type {};
-
-template <typename TimeSeries, auto... Options>
-struct output_view_field<Out<TimeSeries, Options...>>
-    : std::bool_constant<!direct_time_series_output<Out<TimeSeries, Options...>>> {};
-
 template <typename T> struct output_runtime_type_field : std::false_type {};
 
 template <typename TimeSeries, auto... Options>
@@ -342,19 +337,35 @@ template <typename Definition> consteval bool aggregate_node_has_output() {
 }
 
 // Holds the root output view in the aggregate invocation; item views continue to use evaluation scratch storage.
-template <bool HasOutput> class aggregate_output_view_storage {
+template <typename Definition, bool HasOutput> class aggregate_output_state {
   public:
-    explicit aggregate_output_view_storage(EvaluationContext *) noexcept {}
+    aggregate_output_state(const CompiledNode &, void *, EvaluationContext *) noexcept {}
+
+    OutputState *output_state() noexcept { return nullptr; }
 };
 
-template <> class aggregate_output_view_storage<true> {
+template <typename Definition> class aggregate_output_state<Definition, true> {
   public:
-    explicit aggregate_output_view_storage(EvaluationContext *context) noexcept
-        : local_storage_{context->scratch().use_local_storage(storage_)} {}
+    aggregate_output_state(const CompiledNode &node, void *runtime_storage, EvaluationContext *context)
+        : output_state_{output_runtime_type(node)} {
+        const auto runtime_node = Node{node, runtime_storage};
+        output_state_.bind(runtime_node.output_last_updated(), runtime_node.output_value(), *context);
+    }
+
+    OutputState *output_state() noexcept { return &output_state_; }
 
   private:
-    alignas(OutputState) std::byte storage_[sizeof(OutputState)];
-    ScratchPad::LocalStorageScope local_storage_;
+    static const TimeSeriesRuntimeType &output_runtime_type(const CompiledNode &node) {
+        if constexpr (aggregate_uses_output_runtime_type<Definition>(
+                          std::make_index_sequence<util::aggregate_member_count<Definition>>{})) {
+            return node.output_runtime_type();
+        } else {
+            return cpp_time_series_runtime_type<aggregate_output_time_series_t<Definition>,
+                                                TimeSeriesTypeRole::output>();
+        }
+    }
+
+    OutputState output_state_;
 };
 
 template <typename Result>
@@ -747,7 +758,8 @@ std::size_t dynamic_input_offset(const CompiledNode &node) noexcept {
 
 template <typename Definition, std::size_t Index>
 [[nodiscard]] auto make_runtime_field(const CompiledNode &node, std::byte *runtime_storage,
-                                      EvaluationContext *context, bool invalidation = false) {
+                                      EvaluationContext *context, OutputState *output_state,
+                                      bool invalidation = false) {
     using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
     const auto runtime_node = Node{node, runtime_storage};
 
@@ -913,20 +925,7 @@ template <typename Definition, std::size_t Index>
             return Field{*reinterpret_cast<Value *>(value)};
         }
     } else {
-        auto &last_updated = runtime_node.output_last_updated();
-        constexpr auto definition_selects_output_runtime_type = requires(const WiringArguments &arguments) {
-            { Definition::output_runtime_type(arguments) } -> std::same_as<const TimeSeriesRuntimeType &>;
-        };
-
-        if constexpr (definition_selects_output_runtime_type || output_view_field<Field>::value ||
-                      output_runtime_type_field<Field>::value) {
-            return output_factory::make<Field>(
-                last_updated, runtime_node.output_value(),
-                node.output_runtime_type(), *context);
-        } else {
-            auto &value = *static_cast<typename Field::storage_type *>(runtime_node.output_value());
-            return output_factory::make<Field>(last_updated, value, *context);
-        }
+        return output_factory::make<Field>(TimeSeriesOutputBinding{*output_state});
     }
 }
 
@@ -1103,9 +1102,10 @@ template <typename Definition, auto Function, std::size_t... Index>
 decltype(auto) invoke_aggregate_node(const CompiledNode &node, void *runtime_storage, EvaluationContext *context,
                                      std::index_sequence<Index...>, bool invalidation = false) {
     [[maybe_unused]] auto *storage = static_cast<std::byte *>(runtime_storage);
-    [[maybe_unused]] auto output_view_storage =
-        aggregate_output_view_storage<aggregate_node_has_output<Definition>()>{context};
-    auto definition = Definition{make_runtime_field<Definition, Index>(node, storage, context, invalidation)...};
+    auto output_state = aggregate_output_state<Definition, aggregate_node_has_output<Definition>()>{
+        node, runtime_storage, context};
+    auto definition = Definition{make_runtime_field<Definition, Index>(
+        node, storage, context, output_state.output_state(), invalidation)...};
 
     if constexpr (std::invocable<decltype(Function), const Definition &, EvaluationContext *>) {
         return std::invoke(Function, std::as_const(definition), context);
@@ -1165,14 +1165,14 @@ template <typename Definition, std::size_t... Index>
 void invalidate_aggregate_output(const CompiledNode &node, void *runtime_storage, EvaluationContext *context,
                                  std::index_sequence<Index...>) {
     auto *storage = static_cast<std::byte *>(runtime_storage);
-    [[maybe_unused]] auto output_view_storage =
-        aggregate_output_view_storage<aggregate_node_has_output<Definition>()>{context};
+    auto output_state = aggregate_output_state<Definition, aggregate_node_has_output<Definition>()>{
+        node, runtime_storage, context};
 
     (
         [&] {
             using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
             if constexpr (output_field<Field>::value && requires(Field output) { output.invalidate(); }) {
-                make_runtime_field<Definition, Index>(node, storage, context).invalidate();
+                make_runtime_field<Definition, Index>(node, storage, context, output_state.output_state()).invalidate();
             }
         }(),
         ...);

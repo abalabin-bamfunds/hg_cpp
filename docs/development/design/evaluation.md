@@ -169,8 +169,10 @@ Each evaluation engine creates one global context for a run. A direct
 Overloads that take an `EvaluationContext` borrow its global context.
 `EvaluationContext` retains the evaluation time, current graph and node, borrowed
 graph inputs, scoped bindings, and invocation-local scratch frames. Evaluation
-time remains local for direct access during node execution. Child construction
-shares services and keeps scratch-frame state local.
+time remains local for direct access during node execution. Nested node
+invocations have separate scratch frames. Section contexts share their node
+invocation's scratch frame, so allocations made through a section remain valid
+until that invocation resets scratch.
 
 The engine constructs `EvaluationContext(global_context, time, runtime_graph,
 inputs)` for lifecycle calls and outer cycles. The global context, its services,
@@ -188,6 +190,27 @@ The context provides:
 - immediate and timed scheduling, and wall-clock timers
 - timer cancellation and fired-handle queries
 - registration of outer-cycle callbacks
+- registration of extension invocation-end callbacks
+
+An extension can register an invocation-end callback with an
+`extension::InvocationEndRegistration`. A registration has at most one pending
+callback. The runtime clears the registration before calling it, so the callback
+can register again during dispatch. Destroying the owner or calling `cancel()`
+cancels a pending callback. The receiver must refer to stable storage that
+remains valid through callback dispatch; it must not refer to a temporary
+`Out` or `OutputState`.
+
+The runtime calls callbacks after an invocation completes successfully and
+before publishing any output changes it made. Each callback receives its owning
+node invocation context, including when registered through a section context.
+This applies to start functions, completed node evaluations, invoked
+invalidation functions, and each accepted queued message. Invocation scratch
+remains valid through dispatch and resets afterward. A callback exception
+fails evaluation. A node that returns
+pending cannot have active invocation-end callbacks; its output changes must
+wait until it resumes and completes. Section contexts share their invocation's
+callback list and scratch. Nested node invocations use their own callback list
+and scratch.
 
 A runtime graph can declare borrowed time-series input slots.
 The caller passes a pointer to an array of `RuntimeGraphInput` records to each

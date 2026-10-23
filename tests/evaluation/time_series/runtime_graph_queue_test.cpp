@@ -15,6 +15,7 @@
 #include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/scalar/struct/scalar_type.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
+#include <bg/time_series/output_state.hpp>
 #include <bg/time_series/tick_serializer.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
@@ -164,12 +165,14 @@ namespace {
 struct QueueNodeDefinition {
     static constexpr bool uses_queue = true;
 
-    QueueNodeDefinition(const TimeSeriesRuntimeType &runtime_type = cpp_time_series_runtime_type<TS<i64>>())
-        : runtime_type_{&runtime_type}, signature_{util::symbol{"queue_node"}, {}, TS<i64>::type()} {}
+    QueueNodeDefinition(const TimeSeriesRuntimeType &runtime_type = cpp_time_series_runtime_type<TS<i64>>(),
+                        QueueMode mode = QueueMode::standard)
+        : runtime_type_{&runtime_type}, mode_{mode}, signature_{util::symbol{"queue_node"}, {}, TS<i64>::type()} {}
 
     const Signature &signature() const noexcept { return signature_; }
     bool uses_output_runtime_type() const noexcept { return true; }
     const TimeSeriesRuntimeType &output_runtime_type(const WiringArguments &) const noexcept { return *runtime_type_; }
+    QueueMode queue_mode() const noexcept { return mode_; }
 
     static void start(NodeInvocation<>) {}
     static void evaluate(NodeInvocation<>) {}
@@ -186,6 +189,7 @@ struct QueueNodeDefinition {
 
   private:
     const TimeSeriesRuntimeType *runtime_type_;
+    QueueMode mode_;
     Signature signature_;
 };
 
@@ -199,7 +203,96 @@ bool wait_for_notification(details::EngineWakeup &wakeup) {
     return false;
 }
 
+struct queued_invalidation_callback_state {
+    extension::InvocationEndRegistration registration;
+    std::size_t node_index{};
+    int callback_count{};
+    int expected_callback_count{};
+};
+
+queued_invalidation_callback_state queued_invalidation_callback;
+
+void count_queued_invalidation_callback(void *receiver, EvaluationContext &context) {
+    auto &state = *static_cast<queued_invalidation_callback_state *>(receiver);
+    CHECK(context.node_index() == state.node_index);
+    ++state.callback_count;
+}
+
+class QueueCallbackRuntimeType final : public TimeSeriesValueRuntimeType {
+  public:
+    QueueCallbackRuntimeType()
+        : TimeSeriesValueRuntimeType{TS<i64>::type(), cpp_scalar_runtime_type<i64>(), sizeof(i64), alignof(i64), false,
+                                     false, true} {}
+
+    void construct_initial_value(void *destination) const noexcept override {
+        std::construct_at(static_cast<i64 *>(destination), i64{});
+    }
+
+    void destroy_value(void *value, allocator &) const noexcept override { std::destroy_at(static_cast<i64 *>(value)); }
+
+    void invalidate_output(const OutputState &output) const override {
+        output.context().add_invocation_end_callback(queued_invalidation_callback.registration,
+                                                     &queued_invalidation_callback,
+                                                     count_queued_invalidation_callback);
+        TimeSeriesRuntimeType::invalidate_output(output);
+    }
+};
+
+struct queued_invalidation_observer_definition {
+    In<TS<i64>> input;
+
+    void evaluate() const {}
+
+    void on_invalidation() const {
+        CHECK(queued_invalidation_callback.callback_count == queued_invalidation_callback.expected_callback_count);
+        ++invalidation_count;
+    }
+
+    inline static int invalidation_count{};
+};
+
 } // namespace
+
+TEST_CASE("queued invalidation runs invocation-end callbacks before publication",
+          "[evaluation][queue][invocation_end_callback][feature:evaluation-context]") {
+    auto runtime_type = QueueCallbackRuntimeType{};
+    auto queue_node = node(QueueNodeDefinition{runtime_type, QueueMode::elide});
+    auto observer = node<queued_invalidation_observer_definition>();
+
+    auto wiring = GraphWiring{};
+    std::optional<WiringPoint> queue_output;
+    {
+        auto context = WiringContext{wiring};
+        queue_output = queue_node();
+        (void)observer(*queue_output);
+    }
+    wiring.finalize();
+    const auto target = wiring.output_node_index(*queue_output);
+    queued_invalidation_callback.node_index = target;
+    queued_invalidation_callback.callback_count = 0;
+    queued_invalidation_callback.expected_callback_count = 2;
+    queued_invalidation_observer_definition::invalidation_count = 0;
+
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
+    runtime.start(time(1));
+    auto queue = runtime.make_queue(target);
+
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(i64{42})));
+    runtime.evaluate(time(2));
+    CHECK(queued_invalidation_callback.callback_count == 0);
+
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(::literal::INVALID)));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(i64{43})));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(::literal::INVALID)));
+    runtime.evaluate(time(3));
+
+    CHECK(queued_invalidation_callback.callback_count == 2);
+    CHECK(queued_invalidation_observer_definition::invalidation_count == 1);
+    queued_invalidation_callback.registration.cancel();
+    runtime.stop();
+}
 
 TEST_CASE("a stopped runtime graph creates closed queue handles",
           "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][lifecycle]") {

@@ -33,9 +33,102 @@
 #include <memory>
 #include <memory_resource>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace bg {
+
+namespace details {
+
+struct InvocationEndCallback {
+    InvocationEndCallback *next;
+    extension::InvocationEndRegistration *registration;
+    void *receiver;
+    void (*function)(void *, EvaluationContext &);
+};
+
+class InvocationEndCallbackScope {
+  public:
+    explicit InvocationEndCallbackScope(EvaluationContext &context) noexcept : context_{&context} {
+        assert(context.invocation_end_callbacks_ == nullptr);
+        context.invocation_end_callbacks_ = this;
+    }
+
+    InvocationEndCallbackScope(const InvocationEndCallbackScope &) = delete;
+    InvocationEndCallbackScope &operator=(const InvocationEndCallbackScope &) = delete;
+
+    ~InvocationEndCallbackScope() {
+        clear();
+        context_->invocation_end_callbacks_ = nullptr;
+        context_->reset_scratch();
+    }
+
+    void add(extension::InvocationEndRegistration &registration, void *receiver,
+             void (*function)(void *, EvaluationContext &)) {
+        if (registration.callback_ != nullptr) {
+            return;
+        }
+
+        auto *callback = static_cast<InvocationEndCallback *>(
+            context_->scratch().allocate(sizeof(InvocationEndCallback), alignof(InvocationEndCallback)));
+        std::construct_at(callback, InvocationEndCallback{head_, nullptr, receiver, function});
+        registration.attach(callback);
+        head_ = callback;
+    }
+
+    bool has_active() const noexcept {
+        for (auto *callback = head_; callback != nullptr; callback = callback->next) {
+            if (callback->registration != nullptr) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void run() {
+        while (head_ != nullptr) {
+            auto *callback = head_;
+            head_ = callback->next;
+            if (callback->registration == nullptr) {
+                continue;
+            }
+
+            callback->registration->cancel();
+            callback->function(callback->receiver, *context_);
+        }
+    }
+
+  private:
+    void clear() noexcept {
+        for (auto *callback = head_; callback != nullptr; callback = callback->next) {
+            if (auto *registration = callback->registration; registration != nullptr) {
+                registration->cancel();
+            }
+        }
+        head_ = nullptr;
+    }
+
+    EvaluationContext *context_;
+    InvocationEndCallback *head_{};
+};
+
+} // namespace details
+
+extension::InvocationEndRegistration::~InvocationEndRegistration() {
+    cancel();
+}
+
+void extension::InvocationEndRegistration::attach(details::InvocationEndCallback *callback) noexcept {
+    callback_ = callback;
+    callback->registration = this;
+}
+
+void extension::InvocationEndRegistration::cancel() noexcept {
+    if (auto *callback = callback_; callback != nullptr) {
+        callback_ = nullptr;
+        callback->registration = nullptr;
+    }
+}
 
 struct RuntimeGraph::QueueState {
     explicit QueueState(details::EngineWakeup *wakeup) : control{wakeup} {}
@@ -1207,12 +1300,13 @@ void RuntimeGraph::drain_queue(EvaluationContext &context) {
             allocator_, context.global_state().scalar_allocation_pool(), this, *target};
         auto output = OutputState{compiled_node.output_runtime_type()};
         output.bind(runtime_node.output_last_updated(), runtime_node.output_value(), context);
-        const auto restore_context = util::scope_exit{[&]() noexcept {
-            context.reset_scratch();
-            context.node_index_ = 0;
-        }};
-        if (!reader.apply(output, compiled_node.queue_mode())) {
-            return;
+        const auto restore_context = util::scope_exit{[&]() noexcept { context.node_index_ = 0; }};
+        {
+            auto callbacks = details::InvocationEndCallbackScope{context};
+            if (!reader.apply(output, compiled_node.queue_mode())) {
+                return;
+            }
+            callbacks.run();
         }
 
         if (runtime_node.output_last_updated().time() == evaluation_time_) {
@@ -1451,7 +1545,11 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
     context.node_index_ = node_index;
     const auto allocation_context = details::ScalarAllocationContext{
         allocator_, context.global_state().scalar_allocation_pool(), this, node_index};
-    node.invalidation_function()(node, storage_, &context);
+    {
+        auto callbacks = details::InvocationEndCallbackScope{context};
+        node.invalidation_function()(node, storage_, &context);
+        callbacks.run();
+    }
     context.node_index_ = 0;
 
     if (node.has_output()) {
@@ -1592,10 +1690,14 @@ void RuntimeGraphEvaluator::start(RuntimeGraph &graph, EvaluationContext &parent
         context.node_index_ = node_index;
         const auto allocation_context = details::ScalarAllocationContext{
             graph.allocator_, context.global_state().scalar_allocation_pool(), &graph, node_index};
-        (*function)(node, graph.storage_, &context);
+        {
+            auto callbacks = details::InvocationEndCallbackScope{context};
+            (*function)(node, graph.storage_, &context);
+            started_node_count = node_index + 1;
+            callbacks.run();
+        }
         context.node_index_ = 0;
         ++function;
-        started_node_count = node_index + 1;
 
         if (node.has_output()) {
             if (const auto change = graph.output_change(node, output_was_valid)) {
@@ -1879,8 +1981,18 @@ bool RuntimeGraphEvaluator::evaluate_graph(RuntimeGraph &graph, EvaluationContex
             context.node_index_ = node_index;
             const auto allocation_context = details::ScalarAllocationContext{
                 graph.allocator_, context.global_state().scalar_allocation_pool(), &graph, node_index};
-            const auto evaluation_completed = evaluate(node, graph.storage_, &context);
-            context.reset_scratch();
+            auto evaluation_completed = false;
+            {
+                auto callbacks = details::InvocationEndCallbackScope{context};
+                evaluation_completed = evaluate(node, graph.storage_, &context);
+                if (!evaluation_completed && callbacks.has_active()) {
+                    throw std::logic_error{"node " + std::to_string(node_index) +
+                                           " returned pending with invocation-end callbacks registered"};
+                }
+                if (evaluation_completed) {
+                    callbacks.run();
+                }
+            }
             context.node_index_ = 0;
             if (!evaluation_completed) {
                 graph.paused_node_index_ = static_cast<std::uint32_t>(node_index);
@@ -1960,6 +2072,15 @@ void EvaluationContext::add_cycle_callback(void *receiver,
                                            void (*function)(void *, EvaluationContext &) noexcept,
                                            bool call_on_stop) const {
     runtime_graph_->add_cycle_callback(receiver, function, call_on_stop);
+}
+
+void EvaluationContext::add_invocation_end_callback(extension::InvocationEndRegistration &registration,
+                                                     void *receiver,
+                                                     void (*function)(void *, EvaluationContext &)) const {
+    if (invocation_end_callbacks_ == nullptr) {
+        throw std::logic_error{"invocation-end callbacks can only be registered during an output-writing invocation"};
+    }
+    invocation_end_callbacks_->add(registration, receiver, function);
 }
 
 EvaluationContext EvaluationContext::child(details::EvaluationContextSection &section) noexcept {
