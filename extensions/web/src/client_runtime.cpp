@@ -522,8 +522,8 @@ class ClientImplementation final {
 
     void write_response(i64 client_id, i64 generation, ScalarValue<Bundle<HttpResponse>> response) {
         auto memory = allocator{};
-        const auto reply = ScalarValue<Bundle<details::ClientReply>>::from_literal(
-            Literal{{"generation", generation}, {"response", response.view()}}, memory);
+        const auto reply = bundle<details::ClientReply>(memory, "generation"_n = generation,
+                                                       "response"_n = response.view());
         const auto accepted = output_.write(literal::TimeSeriesLiteral{
             {util::symbol{"replies"}, {{client_id, reply.view()}}}});
         if (!accepted && !stop_requested_.load(std::memory_order_acquire)) {
