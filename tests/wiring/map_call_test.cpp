@@ -198,6 +198,7 @@ TEST_CASE("map reports option errors through its public call forms",
     const auto function = [](wp<TS<float>> value) { return value; };
 
     const auto graph_template = graph("name"_n = "map_options", function);
+    const auto sink = graph("name"_n = "map_option_sink", [](wp<TS<float>>) {});
 
     testing::test_wiring([&] {
         CHECK_THROWS_WITH(
@@ -212,6 +213,13 @@ TEST_CASE("map reports option errors through its public call forms",
         CHECK_THROWS_WITH(map(function, "value"_n = values(),
                               "__key_set_arg__"_n = "missing"),
                           "a map argument selector names an unknown argument");
+        CHECK_THROWS_WITH(map(graph_template, values(), "__valid_items__"_n = i64{1}),
+                          "__valid_items__ must be a present boolean scalar");
+        CHECK_THROWS_WITH(map(graph_template, values(), "__valid_items__"_n = true,
+                              "__valid_items__"_n = false),
+                          "a map call accepts one __valid_items__ option");
+        CHECK_THROWS_WITH(map(sink, values(), "__valid_items__"_n = true),
+                          "__valid_items__ requires a mapped graph that produces an output");
 
         CHECK_NOTHROW(map(function, "value"_n = values(),
                           "__key_set_arg__"_n = "value"));
@@ -229,6 +237,10 @@ TEST_CASE("map reports option errors through its public call forms",
             MapArgument{WiringArgument{values()}},
             MapArgument{WiringArgument{util::symbol{"__key_set_arg__"}, i64{0}}, true},
         };
+        const auto valid_items_option = std::array{
+            MapArgument{WiringArgument{values()}},
+            MapArgument{WiringArgument{util::symbol{"__valid_items__"}, true}},
+        };
         const WiringTemplate &runtime_graph = graph_template;
         CHECK_THROWS_WITH(map(runtime_graph, std::span<const MapArgument>{invalid_selector}),
                           "a map argument selector must be an integer or a name");
@@ -237,6 +249,7 @@ TEST_CASE("map reports option errors through its public call forms",
                           "a map call accepts one __key_arg__ option");
         CHECK_THROWS_WITH(map(runtime_graph, std::span<const MapArgument>{pass_through_option}),
                           "a map option cannot be pass-through");
+        CHECK_NOTHROW(map(runtime_graph, std::span<const MapArgument>{valid_items_option}));
     });
 }
 

@@ -119,6 +119,11 @@ from a selected TSS.
 remaining arguments. Structurally equivalent graphs share overload-resolution
 cache entries as defined by [operators](operators.md#graph-arguments).
 
+`"__valid_items__"_n = true` makes map output contain only keys whose inner
+graph output target is valid. An invalid target erases its key while the inner
+graph remains alive for its input key. Revalidation adds the key again. Filtered
+output references use the ordinary guarantee. The default is `false`.
+
 ## Evaluation and lifecycle
 
 An added key starts a new inner runtime graph. Removing the key stops that

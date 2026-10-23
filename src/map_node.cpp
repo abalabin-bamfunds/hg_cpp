@@ -120,8 +120,14 @@ class MapRuntimeState {
         auto &entries = branches_.entries();
         auto &entry = entries.table().value_at(branch_id);
         const auto key = entries.key(entry);
-        auto item = (*output)[Scalar<SCALAR>::from(key)];
         const auto result = entry.inner_graph.output(compiled.nested);
+        const auto output_key = Scalar<SCALAR>::from(key);
+        if (compiled.valid_items && !result) {
+            output->erase(output_key);
+            return;
+        }
+
+        auto item = (*output)[output_key];
         if (result) {
             if (!item.valid() || item.value() != result) {
                 item.set_value(result);

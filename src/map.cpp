@@ -74,12 +74,16 @@ class MapCallResolver {
 
         const auto key_argument_name = util::symbol{map_key_argument_name.view()};
         const auto key_set_argument_name = util::symbol{map_key_set_argument_name.view()};
+        const auto valid_items_argument_name = util::symbol{map_valid_items_argument_name.view()};
         for (const auto &argument : arguments_) {
             const auto name = argument.value.name();
             const auto is_key_argument = name == key_argument_name;
             const auto is_key_set_argument = name == key_set_argument_name;
+            const auto is_valid_items_argument = operation_ == "map" && name == valid_items_argument_name;
             if (is_key_argument || is_key_set_argument) {
                 add_option(argument, is_key_argument);
+            } else if (is_valid_items_argument) {
+                add_valid_items_option(argument);
             } else if (name) {
                 result_.named.push_back(argument);
             } else {
@@ -101,6 +105,23 @@ class MapCallResolver {
         }
 
         destination = selector(argument.value);
+        result_.options.push_back(argument.value);
+    }
+
+    void add_valid_items_option(const MapArgument &argument) {
+        if (argument.pass_through) {
+            throw WiringError{"__valid_items__ cannot be pass-through"};
+        }
+        if (valid_items_option_seen_) {
+            throw WiringError{"a map call accepts one __valid_items__ option"};
+        }
+        if (!argument.value.is_scalar() || !argument.value.present() ||
+            &argument.value.scalar().type() != &bool_type()) {
+            throw WiringError{"__valid_items__ must be a present boolean scalar"};
+        }
+
+        valid_items_option_seen_ = true;
+        result_.valid_items = scalar_cast<bool>(argument.value.scalar()).value();
         result_.options.push_back(argument.value);
     }
 
@@ -214,6 +235,7 @@ class MapCallResolver {
     std::span<const MapArgument> arguments_;
     ResolvedMapCall result_;
     std::optional<MapArgumentSelector> key_set_argument_;
+    bool valid_items_option_seen_{};
 };
 
 } // namespace

@@ -53,6 +53,22 @@ struct NestedOutput {
     }
 };
 
+struct FilteredNestedOutput {
+    In<REF<TS_T>, active, optional> value;
+    In<TS_T, dynamic_activity> target;
+    Out<REF<TS_T, TimeSeriesGuarantee::ordinary>> output;
+
+    void evaluate() const {
+        output.copy(value);
+        target.make_passive();
+    }
+
+    void on_invalidation() const {
+        output.invalidate();
+        target.make_active();
+    }
+};
+
 struct NestedConstantInput {
     static constexpr bool deduplicate_wiring = false;
 
@@ -64,6 +80,7 @@ struct NestedConstantInput {
 const auto nested_input_node = node<NestedInput>();
 const auto nested_constant_input_node = node<NestedConstantInput>();
 const auto nested_output_node = node<NestedOutput>();
+const auto filtered_nested_output_node = node<FilteredNestedOutput>();
 
 struct NestedNodeState {
     static constexpr bool supports_byte_copy_initialization = true;
@@ -251,6 +268,21 @@ WiringPoint wire_nested_output(WiringPoint output, const TimeSeriesType &type) {
     auto argument = WiringArgument{output};
     argument.set_resolution_type(*resolution_type);
     return static_cast<WiringPoint>(nested_output_node(type_map, std::move(argument)));
+}
+
+WiringPoint wire_filtered_nested_output(WiringPoint output, const TimeSeriesType &type) {
+    const auto *reference = type_cast<TimeSeriesReferenceType>(&type);
+    const auto &target_type = reference == nullptr ? type : reference->target_type();
+    const auto &reference_type = time_series_reference_type(target_type, TimeSeriesGuarantee::ordinary);
+
+    auto type_map = TypeMap{};
+    type_map.set(TimeSeriesVariableInstance<TS_T>::get(), &target_type);
+    auto reference_argument = WiringArgument{output};
+    reference_argument.set_resolution_type(reference_type);
+    auto target_argument = WiringArgument{std::move(output)};
+    target_argument.set_resolution_type(target_type);
+    return static_cast<WiringPoint>(filtered_nested_output_node(type_map, std::move(reference_argument),
+                                                                std::move(target_argument)));
 }
 
 std::unique_ptr<NodeTemplate> make_nested_node(NestedGraphWiring wiring, const ResolvedSignature &graph_signature) {

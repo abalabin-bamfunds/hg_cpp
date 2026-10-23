@@ -29,6 +29,7 @@ namespace details {
 
 inline constexpr auto map_key_argument_name = util::compile_time_string{"__key_arg__"};
 inline constexpr auto map_key_set_argument_name = util::compile_time_string{"__key_set_arg__"};
+inline constexpr auto map_valid_items_argument_name = util::compile_time_string{"__valid_items__"};
 
 class MapArgumentSelector {
   public:
@@ -79,6 +80,7 @@ struct ResolvedMapCall {
     std::optional<MapArgumentSelector> key_argument;
     std::optional<std::size_t> selected_key_set;
     bool omit_selected_key_set_argument{};
+    bool valid_items{};
 };
 
 ResolvedMapCall resolve_map_call(std::span<const MapArgument> arguments);
@@ -86,7 +88,8 @@ ResolvedMapCall resolve_map_call(std::string_view operation, std::span<const Map
 
 template <typename T>
 inline constexpr bool is_map_option =
-    named_argument_is<map_key_argument_name, T> || named_argument_is<map_key_set_argument_name, T>;
+    named_argument_is<map_key_argument_name, T> || named_argument_is<map_key_set_argument_name, T> ||
+    named_argument_is<map_valid_items_argument_name, T>;
 
 // These traits describe only the C++ parameter needed to instantiate a graph function.
 // Map's semantic decisions use WiringArgument types at runtime.

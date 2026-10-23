@@ -369,6 +369,99 @@ TEST_CASE("a nested boundary retains a direct final target guarantee",
     CHECK(bg::run_graph(outer, {17}, {true}).equals({17}));
 }
 
+TEST_CASE("a filtered nested output suspends its target after publishing a reference",
+          "[evaluation][nested][reference][feature:validity][feature:input-activity][transition:update]") {
+    const auto observe_reference = node([](In<TS<i64>> trigger, In<REF<TS<i64>>, passive, optional> reference) {
+        return reference.modified();
+    });
+
+    const auto graph = [&](wp<TS<i64>> value, wp<TS<i64>> trigger) {
+        const auto filtered = details::wire_filtered_nested_output(value, TS<i64>::type());
+        return observe_reference(trigger, filtered);
+    };
+
+    const auto actual = bg::run_graph(graph, {10, 20, 30}, {1, 2, 3});
+
+    CHECK(actual.equals<bool>({true, false, false}));
+}
+
+TEST_CASE("a filtered nested output invalidates and restores its reference with its target",
+          "[evaluation][nested][reference][feature:validity][transition:invalidation]"
+          "[transition:revalidation]") {
+    const auto observe_reference = node([](In<TS<i64>> trigger, In<REF<TS<i64>>, passive, optional> reference) {
+        return reference.modified();
+    });
+
+    const auto graph = [&](wp<TS<i64>> value, wp<TS<i64>> trigger) {
+        const auto filtered = details::wire_filtered_nested_output(value, TS<i64>::type());
+        return observe_reference(trigger, filtered);
+    };
+
+    const auto actual = bg::run_graph(graph, {literal::INVALID, 10, literal::INVALID, 20}, {1, 2, 3, 4});
+
+    CHECK(actual.equals<bool>({false, true, true, true}));
+}
+
+TEST_CASE("a filtered nested output unbinds and restores its source reference",
+          "[evaluation][nested][reference][feature:validity][transition:invalidation]"
+          "[transition:revalidation][binding:reference-to-reference]") {
+    const auto select = node([](In<TS<bool>> bound, In<REF<TS<i64>>> target, Out<REF<TS<i64>>> output) {
+        if (*bound) {
+            output.copy(target);
+        } else {
+            output.invalidate();
+        }
+    });
+    const auto observe_reference = node([](In<TS<i64>> trigger,
+                                           In<REF<TS<i64>>, passive, optional> reference) {
+        return *trigger >= 0 && reference.modified();
+    });
+
+    const auto graph = [&](wp<TS<bool>> bound, wp<TS<i64>> value, wp<TS<i64>> trigger) {
+        const auto selected = select(bound, value);
+        const auto filtered = details::wire_filtered_nested_output(selected, TS<i64>::type());
+        return observe_reference(trigger, filtered);
+    };
+
+    const auto actual = bg::run_graph(graph, {true, false, literal::SKIP, true, literal::SKIP},
+                                      {10, 20, 30, 40, 50}, {1, 2, 3, 4, 5});
+
+    CHECK(actual.equals<bool>({true, true, false, true, false}));
+}
+
+template <int Delay, i64 Value> struct DelayedInvalidTarget {
+    static constexpr bool uses_timed_scheduling = true;
+
+    Out<TS<i64>> output;
+
+    void start(EvaluationContext *context) const {
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{Delay});
+    }
+
+    void evaluate() const { output.set(Value); }
+};
+
+TEST_CASE("a filtered nested output tracks a reference replacement while both targets are invalid",
+          "[evaluation][nested][reference][feature:validity][transition:update]"
+          "[binding:reference-to-reference]") {
+    const auto first_target = node<DelayedInvalidTarget<2, 10>>();
+    const auto second_target = node<DelayedInvalidTarget<3, 20>>();
+    const auto select = node([](In<TS<i64>> condition, In<REF<TS<i64>>> first, In<REF<TS<i64>>> second,
+                                Out<REF<TS<i64>>> output) { output.copy(*condition ? second : first); });
+
+    const auto graph = [&](wp<TS<i64>> condition) {
+        const auto first = first_target();
+        const auto second = second_target();
+        const auto selected = select(condition, first, second);
+        const auto filtered = details::wire_filtered_nested_output(selected, TS<i64>::type());
+        return wp<TS<i64>>{filtered};
+    };
+
+    const auto actual = bg::run_graph(graph, {0, 1, literal::SKIP, literal::SKIP});
+
+    CHECK(actual.equals({std::nullopt, std::nullopt, std::nullopt, 20}));
+}
+
 TEST_CASE("a dynamic input controls scheduling inside a nested graph",
           "[feature:input-activity][feature:nested-graph][series:value][definition:function]"
           "[shape:nested][activity:active][transition:update]") {

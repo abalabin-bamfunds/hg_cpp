@@ -29,6 +29,7 @@ struct MapGraphWiring {
     std::optional<std::size_t> key_input_node{};
     std::optional<std::size_t> output_node{};
     std::optional<std::size_t> key_set_parameter{};
+    bool valid_items{};
 };
 
 } // namespace details

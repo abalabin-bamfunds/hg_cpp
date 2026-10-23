@@ -20,6 +20,7 @@ struct MapNodeIdentity {
     GraphWiringStructure graph;
     std::vector<std::size_t> input_metadata;
     std::optional<std::size_t> key_set_parameter;
+    bool valid_items;
 
     std::size_t hash() const noexcept {
         auto result = graph.hash();
@@ -30,6 +31,7 @@ struct MapNodeIdentity {
             combine(value);
         }
         combine(key_set_parameter.value_or(std::numeric_limits<std::size_t>::max()));
+        combine(valid_items);
         return result;
     }
 
@@ -83,6 +85,7 @@ NodeTemplateIdentity MapNodeDefinition::definition_identity() const {
         .graph = graph_wiring_structure(*wiring_.wiring, boundaries, wiring_.output_node),
         .input_metadata = std::move(input_metadata),
         .key_set_parameter = wiring_.key_set_parameter,
+        .valid_items = wiring_.valid_items,
     });
 }
 
@@ -110,6 +113,7 @@ MapNodeDefinition::compiled_data_type MapNodeDefinition::compile(const ResolvedS
                    .parent_service_binding_indices = std::pmr::vector<std::uint32_t>{&memory.memory_resource()},
                    .output_node = wiring_.output_node ? std::optional{node_indices[output_position]} : std::nullopt},
         .inputs = std::pmr::vector<CompiledMapInput>{&memory.memory_resource()},
+        .valid_items = wiring_.valid_items,
     };
     result.nested.input_nodes.reserve(wiring_.inputs.size());
     result.inputs.reserve(wiring_.inputs.size());

@@ -22,6 +22,7 @@ struct CompiledMapGraph {
     CompiledNestedGraph nested;
     std::pmr::vector<CompiledMapInput> inputs;
     std::optional<std::uint32_t> key_set_parameter{};
+    bool valid_items{};
 };
 
 // Owns the common signature, identity, validation, and compilation rules for nodes that run one inner graph per key.

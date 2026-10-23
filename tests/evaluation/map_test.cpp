@@ -48,6 +48,119 @@ TEST_CASE("map applies a graph to each TSD item",
     CHECK(actual.equals({{{1, 2}, {2, 11}}, {{1, 5}}, {{2, 21}}, {{1, literal::REMOVE}}}));
 }
 
+TEST_CASE("map removes an output item while its result is invalid when valid_items is enabled",
+          "[feature:map][feature:nested-graph][series:tsd][input-guarantee:valid-items]"
+          "[transition:invalidation][transition:revalidation][transition:removal]") {
+    const auto identity = graph("name"_n = "map_valid_items_identity", [](wp<TS<i64>> value) { return value; });
+    const auto build_values = node([](i64 command, Out<TSD<i64, TS<i64>>> output) {
+        if (command == 1) {
+            output[1].set(10);
+        } else if (command == 2) {
+            output[1].invalidate();
+            output[2].invalidate();
+        } else if (command == 3) {
+            output.erase(1);
+            output[2].set(20);
+        } else if (command == 4) {
+            output[2].invalidate();
+        } else {
+            output[2].set(30);
+        }
+    });
+    auto observed = std::vector<i64>{};
+    const auto observe_keys = node([&observed](In<TS<i64>>, In<TSD<i64, REF<TS<i64>>>, optional> output) {
+        const auto membership = static_cast<i64>(output.contains(1)) + 2 * static_cast<i64>(output.contains(2));
+        observed.push_back(membership);
+        return membership;
+    });
+
+    const auto tested = [&](wp<TS<i64>> command) {
+        const auto values = build_values(command);
+        return observe_keys(command, map(identity, values, "__valid_items__"_n = true));
+    };
+
+    bg::run_graph(tested, std::array{1, 2, 3, 4, 5});
+
+    CHECK(observed == std::vector<i64>{1, 0, 2, 0, 2});
+}
+
+TEST_CASE("map valid_items mode does not share runtime identity with ordinary output mode",
+          "[feature:map][feature:nested-graph][series:tsd][input-guarantee:valid-items]"
+          "[transition:invalidation]") {
+    const auto identity = graph("name"_n = "map_valid_items_identity_cache", [](wp<TS<i64>> value) { return value; });
+    const auto build_values = node([](i64 command, Out<TSD<i64, TS<i64>>> output) {
+        if (command == 1) {
+            output[1].set(10);
+        } else if (command == 2) {
+            output[1].invalidate();
+        } else {
+            output[1].set(20);
+        }
+    });
+    auto observed = std::vector<i64>{};
+    const auto observe_keys = node([&observed](In<TS<i64>>, In<TSD<i64, REF<TS<i64>>>, optional> filtered,
+                                               In<TSD<i64, REF<TS<i64>>>, optional> ordinary) {
+        const auto membership = static_cast<i64>(filtered.contains(1)) + 2 * static_cast<i64>(ordinary.contains(1));
+        observed.push_back(membership);
+        return membership;
+    });
+
+    const auto tested = [&](wp<TS<i64>> command) {
+        const auto values = build_values(command);
+        const auto filtered = map(identity, values, "__valid_items__"_n = true);
+        const auto ordinary = map(identity, values, "__valid_items__"_n = false);
+        return observe_keys(command, filtered, ordinary);
+    };
+
+    bg::run_graph(tested, std::array{1, 2, 3});
+
+    CHECK(observed == std::vector<i64>{3, 2, 3});
+}
+
+TEST_CASE("map valid_items follows a switched reference and ignores stale targets",
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd]"
+          "[input-guarantee:valid-items][transition:invalidation][transition:revalidation]"
+          "[binding:reference-to-reference]") {
+    const auto make_keys = node([](i64 value, Out<TSD<i64, TS<i64>>> output) { output[1].set(value); });
+    const auto select = node([](In<TS<bool>> use_left, In<REF<TS<i64>>, optional> left,
+                                In<REF<TS<i64>>, optional> right, Out<REF<TS<i64>>> output) {
+        output.copy(*use_left ? left : right);
+    });
+    const auto apply = graph("name"_n = "map_valid_items_select_reference",
+                             [&](wp<TS<i64>>, wp<TS<bool>> use_left, wp<TS<i64>, optional> left,
+                                 wp<TS<i64>, optional> right) {
+                                 return select(use_left, left, right);
+                             });
+    auto observed = std::vector<bool>{};
+    auto right_validity = std::vector<bool>{};
+    const auto observe_key = node([&observed, &right_validity](In<TS<i64>>, In<TS<i64>, optional> right,
+                                                               In<TSD<i64, REF<TS<i64>>>, optional> output) {
+        const auto contains = output.contains(1);
+        observed.push_back(contains);
+        right_validity.push_back(right.valid());
+        return contains;
+    });
+
+    const auto tested = [&](wp<TS<i64>> key_value, wp<TS<bool>> use_left,
+                            wp<TS<i64>, optional> left, wp<TS<i64>, optional> right) {
+        const auto keys = make_keys(key_value);
+        return observe_key(key_value, right,
+                           map(apply, keys, pass_through(use_left), pass_through(left), pass_through(right),
+                               "__valid_items__"_n = true));
+    };
+
+    bg::run_graph(
+        tested, std::array{1, 2, 3, 4, 5, 6, 7, 8, 9},
+        std::array{true, false, false, false, true, true, false, false, false},
+        std::array<literal::TimeSeriesLiteral, 9>{literal::INVALID, literal::INVALID, 10, 10, 10, 10,
+                                                  literal::INVALID, 11, 11},
+        std::array<literal::TimeSeriesLiteral, 9>{literal::INVALID, literal::INVALID, literal::INVALID,
+                                                  20, 20, 20, 20, literal::INVALID, 30});
+
+    CHECK(observed == std::vector<bool>{false, false, false, true, true, true, true, false, true});
+    CHECK(right_validity == std::vector<bool>{false, false, false, true, true, true, true, false, true});
+}
+
 TEST_CASE("map evaluates an operator template through ordinary arguments",
           "[feature:map][feature:nested-graph][feature:operator][feature:getattr]"
           "[series:tsd][shape:nested][definition:runtime]") {
@@ -116,6 +229,26 @@ TEST_CASE("a second map can consume a constant output reference from the first m
     const auto actual = bg::run_graph(tested, {{{1, 7}}});
 
     CHECK(actual.equals<i64>({42}));
+}
+
+TEST_CASE("map valid_items retains a constant target",
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd]"
+          "[input-guarantee:valid-items][guarantee:const]") {
+    const auto send = graph("name"_n = "send_const_valid_items",
+                            [](wp<TS<i64>>) -> wp<TS<i64, TimeSeriesGuarantee::const_>> {
+                                return operators::const_(i64{42}).as<TS<i64, TimeSeriesGuarantee::const_>>();
+                            });
+    const auto observe_key = node([](In<TSD<i64, REF<TS<i64, TimeSeriesGuarantee::const_>>>, optional> output) {
+        return output.contains(1);
+    });
+
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> requests) {
+        return observe_key(map(send, requests, "__valid_items__"_n = true));
+    };
+
+    const auto actual = bg::run_graph(tested, {{{1, 7}}});
+
+    CHECK(actual.equals<bool>({true}));
 }
 
 TEST_CASE("map republishes an explicit reference output when its target changes",
