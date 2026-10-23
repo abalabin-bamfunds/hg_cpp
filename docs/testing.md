@@ -454,6 +454,8 @@ graph compilation or evaluation.
 - retained tick writing and replay through a one-cycle delay node, current-cycle filtering, delta-only collection
   replay from a matching baseline, nested key changes, empty first ticks, validity transitions, payload cleanup,
   provider scalar handlers, and unsupported references
+- live and retained tick formatting, scalar formatting and extension dispatch, nested collection deltas, removal,
+  invalid children, and reader preservation
 - queue message serialization for scalar and collection literals, frame targets and sizes, root skip, malformed
   selectors and markers, scalar ownership, concurrent reservation rollover, and failure cleanup
 - queue handle copying and moving, independent concurrent writers, closed-write rejection before serialization,

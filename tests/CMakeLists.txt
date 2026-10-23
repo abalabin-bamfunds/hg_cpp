@@ -59,6 +59,7 @@ add_executable(
     evaluation/time_series/queue_test.cpp
     evaluation/time_series/runtime_graph_queue_test.cpp
     evaluation/time_series/tick_serializer_test.cpp
+    evaluation/time_series/tick_format_test.cpp
     evaluation/time_series/feedback_test.cpp
     evaluation/validity/input_activity_test.cpp
     evaluation/validity/invalidation_behavior_test.cpp
@@ -120,6 +121,7 @@ add_executable(
     value/scalar/dict/storage_test.cpp
     value/scalar/dict/value_test.cpp
     value/scalar/dispatch_test.cpp
+    value/scalar/format_test.cpp
     value/scalar/erased_value_test.cpp
     value/scalar/fallible_operations_test.cpp
     value/scalar/list/mutable_test.cpp

@@ -85,6 +85,25 @@ eight-bit integer types do not canonicalize to it. The supported `int` and
 `float` declarations remain outside the built-in visitor list and use the
 erased visitor fallback.
 
+## Scalar formatting
+
+`<bg/scalar/format.hpp>` formats scalar views directly into fmt's format
+context. For example, `fmt::format("{}", value.view())` formats an owning
+scalar value. Strings and symbols use quoted debug formatting; an empty symbol
+formats as `""`. Bytes use `bytes("...")` with two lowercase hexadecimal
+digits per byte. Date-time values use UTC `YYYY-MM-DDTHH:MM:SS.ffffffZ`.
+Durations use `HH:MM:SS.ffffff`, with a leading `-` for negative values and a
+`<days>d ` prefix when the whole-day component is nonzero; the sign precedes
+the day prefix. Other atomic values use fmt's default representation.
+
+Lists use `[...]`, sets use `{...}` or `set()` when empty, and dictionaries,
+structs, and hierarchical scalars use `{key: value, ...}`. Positional tuples
+use `(value, ...)`, including the trailing comma for a one-item tuple. Nested
+values use the same formatting recursively. A scalar extension registers
+`ScalarFormatOperations` with `ScalarDispatch<ScalarFormatOperations>`; an
+exact runtime registration takes precedence over the semantic type
+registration. Complete registration before formatting on concurrent threads.
+
 ## Ownership
 
 `ScalarValue<T>` owns its value and is not copy constructible. Moving it

@@ -146,6 +146,40 @@ The buffer does not destroy owned tick payloads when its final handle is
 released. Create a `TimeSeriesTickReader` for a buffer containing records. It
 discards unread records on destruction, releasing their scalar payloads.
 
+## Tick formatting
+
+`<bg/time_series/tick_format.hpp>` provides fmt formatters for live inputs and
+retained records. `fmt::format("{}", tick(input, now))` formats the root input
+only when it changed at `now`; otherwise it writes `SKIP`. Formatting a retained
+record with `tick(type, reader)` reads one complete record from a fork and leaves
+the supplied reader and encoded scalar payloads unchanged. The overload
+`tick(type, valid, reader)` formats a payload whose root header was already
+consumed, as in `TestGraphResult::visit_tick`.
+The fmt wrappers borrow live inputs or retained readers and accept no format
+specifiers.
+
+Scalar values use the scalar formatter in `<bg/scalar/format.hpp>`. Collection
+ticks show changed entries only; invalid children print `INVALID`, dictionary
+removals print `REMOVE`, and set removals print `REMOVED(value)`. Live and
+retained reference ticks are unsupported. The formatter writes directly to
+fmt's format context.
+
+Provider-defined time-series types register `TimeSeriesTickFormatOperations`
+with `TimeSeriesDispatch<TimeSeriesTickFormatOperations>::instance()`. A live
+callback receives a borrowed input. A retained callback receives a reader at
+the start of that type's payload and must advance past exactly one payload
+without destroying its encoded values. Keep a `TimeSeriesTickReader` alive for
+each buffer that contains owned tick payloads. Its destructor discards unread
+records.
+
+Live dispatch checks an exact runtime registration first and then the semantic
+type registration. Retained dispatch uses the semantic type. Complete
+time-series operation registration before concurrent formatting begins.
+Callback arguments are borrowed for the call duration; do not retain them. A
+provider module must remain loaded while its registered callbacks can run.
+Scalar registrations and representations are documented in the [scalar
+API](scalar-api.md#scalar-formatting).
+
 ## Queue messages
 
 `bg::Queue::write(literal)` returns whether it committed a message. Root `SKIP`

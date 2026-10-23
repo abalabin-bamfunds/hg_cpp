@@ -57,6 +57,7 @@
 #include <bg/scalar/dict/runtime_type.hpp>
 #include <bg/scalar/dict/scalar_type.hpp>
 #include <bg/scalar/dict/type.hpp>
+#include <bg/scalar/format.hpp>
 #include <bg/scalar/list/runtime_type.hpp>
 #include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/list/type.hpp>
@@ -89,6 +90,7 @@
 #include <bg/time_series/size_variable.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/time_series_type.hpp>
+#include <bg/time_series/tick_format.hpp>
 #include <bg/time_series/time_series_variable.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsb/tsb_runtime_type.hpp>

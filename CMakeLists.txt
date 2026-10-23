@@ -80,6 +80,7 @@ add_library(
     src/service_catalogue.cpp
     src/scalar/allocation.cpp
     src/scalar/buffer_operations.cpp
+    src/scalar/format.cpp
     src/scalar/literal_operations.cpp
     src/scalar/literal_sentinel.cpp
     src/scalar/allocation_pool.cpp
@@ -137,6 +138,7 @@ add_library(
     src/time_series/time_series_runtime_type.cpp
     src/time_series/literal_operations.cpp
     src/time_series/tick_serializer.cpp
+    src/time_series/tick_format.cpp
     src/time_series_type.cpp
     src/time_series_variable.cpp
     src/time_series_value_type.cpp
@@ -162,7 +164,7 @@ add_library(bg::bg ALIAS bg)
 
 target_compile_features(bg PUBLIC cxx_std_23)
 target_compile_definitions(bg PRIVATE BG_BUILDING_ENGINE BG_VERSION="${PROJECT_VERSION}")
-target_link_libraries(bg PUBLIC ddv::ddvisitor PRIVATE Threads::Threads)
+target_link_libraries(bg PUBLIC ddv::ddvisitor fmt::fmt PRIVATE Threads::Threads)
 target_include_directories(
     bg
     PUBLIC
