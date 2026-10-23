@@ -114,10 +114,6 @@ template <template <typename, auto...> typename Field> struct HTTP_AUTH_PROJECTI
     Field<TS<Bundle<HttpResponse>>> rejections;
 };
 
-const auto http_response_dictionary_reference = node(
-    [](In<TSD<i64, REF<TS<Bundle<HttpResponse>>>>, optional> responses,
-       Out<TSD<i64, REF<TS<Bundle<HttpResponse>>>>> output) { output.copy_tick(responses); });
-
 bool is_response_dictionary(const TimeSeriesType &type) {
     return TSD<i64, TS<Bundle<HttpResponse>>>::type().accepts(type.target_type());
 }
@@ -250,19 +246,11 @@ WiringPoint details::http_authenticate_requests(WiringPoint requests, WiringPoin
 }
 
 WiringPoint details::http_merge_responses(WiringPoint responses, WiringPoint rejections) {
-    const auto normalize_dictionary = [](WiringPoint dictionary) {
-        if (!is_response_dictionary(dictionary.type())) {
-            throw WiringError{"HTTP responses must be a request dictionary of response time series"};
-        }
-        if (&dictionary.type().target_type() ==
-            &TSD<i64, REF<TS<Bundle<HttpResponse>>, TimeSeriesGuarantee::deduplicated>>::type()) {
-            return dictionary;
-        }
-        return static_cast<WiringPoint>(http_response_dictionary_reference(dictionary));
-    };
-    const auto response_references = normalize_dictionary(responses);
-    const auto rejection_references = normalize_dictionary(rejections);
-    return operators::merge(response_references, rejection_references);
+    if (!is_response_dictionary(responses.type()) || !is_response_dictionary(rejections.type())) {
+        throw WiringError{"HTTP responses must be a request dictionary of response time series"};
+    }
+
+    return operators::merge(responses, rejections);
 }
 
 WiringPoint details::http_response_field(WiringPoint result) { return response_field(result); }

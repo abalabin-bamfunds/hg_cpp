@@ -75,19 +75,16 @@ const TimeSeriesListType &TimeSeriesListType::from_items(std::span<const TimeSer
         throw std::invalid_argument{"a time series list type requires resolved item types"};
     }
 
-    const auto &first = items.front()->dereferenced_type();
-    auto guarantee = *first.guarantee().value();
-    const auto &shape = first.with_guarantee(TimeSeriesGuarantee::ordinary);
+    auto common = &items.front()->dereferenced_type();
 
     for (const auto *item : items.subspan(1)) {
-        const auto &candidate = item->dereferenced_type();
-        if (&candidate.with_guarantee(TimeSeriesGuarantee::ordinary) != &shape) {
+        common = common->common_type(item->dereferenced_type());
+        if (common == nullptr) {
             throw std::invalid_argument{"a time series list requires compatible item types"};
         }
-        guarantee = weakest(guarantee, *candidate.guarantee().value());
     }
 
-    return time_series_list_type(first.with_guarantee(guarantee), items.size(), collection_guarantee);
+    return time_series_list_type(*common, items.size(), collection_guarantee);
 }
 
 const TimeSeriesType &TimeSeriesListType::item_type(std::size_t index) const {

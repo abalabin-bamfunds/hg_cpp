@@ -1,6 +1,8 @@
 #include <bg/time_series/time_series_type.hpp>
+#include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/type/details/time_series_type.hpp>
+#include <bg/type/time_series_dict_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
@@ -104,6 +106,31 @@ TEST_CASE("a time series list type derives its shape from resolved items",
     CHECK(list.item_count() == 3);
     CHECK(list.guarantee().value() == TimeSeriesGuarantee::final);
     CHECK(&list.item_type() == &final);
+}
+
+TEST_CASE("time series list item types combine nested reference guarantees",
+          "[feature:type-system][series:fixed-tsl][series:reference]"
+          "[guarantee:ordinary][guarantee:deduplicated]"
+          "[guarantee:const]") {
+    const auto &constant_reference =
+        TSD<i64, REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::const_>>::type();
+    const auto &deduplicated_reference =
+        TSD<i64, REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::deduplicated>>::type();
+    const auto expected_item =
+        &TSD<i64, REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::deduplicated>>::type();
+    const auto left_first = std::array<const TimeSeriesType *, 2>{&constant_reference, &deduplicated_reference};
+    const auto right_first = std::array<const TimeSeriesType *, 2>{&deduplicated_reference, &constant_reference};
+
+    const auto &left_list = TimeSeriesListType::from_items(left_first);
+    const auto &right_list = TimeSeriesListType::from_items(right_first);
+
+    CHECK(&left_list.item_type() == expected_item);
+    CHECK(&right_list.item_type() == expected_item);
+    const auto *reference = type_cast<TimeSeriesReferenceType>(
+        &type_cast<TimeSeriesDictionaryType>(left_list.item_type()).value_type());
+    REQUIRE(reference != nullptr);
+    CHECK(reference->guarantee().value() == TimeSeriesGuarantee::deduplicated);
+    CHECK(reference->target_type().guarantee().value() == TimeSeriesGuarantee::const_);
 }
 
 TEST_CASE("dereferencing a direct time series preserves its type and guarantee",

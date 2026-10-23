@@ -76,7 +76,8 @@ rejects a scalar that cannot be stored in a time series.
 A `TSL<TS_T, SIZE>` parameter with `var_args` captures homogeneous time series.
 It rejects scalars and resolves `SIZE` from the capture count. An empty capture
 requires a concrete item type and collection guarantee so that wiring can
-resolve the list type.
+resolve the list type. Capture resolves compatible item types through
+[common-type resolution](type-system.md#time-series-guarantees).
 
 A single TSL or TSB argument supplied with the variadic parameter's exact name
 binds as one collection. Its items remain available as individual arguments to

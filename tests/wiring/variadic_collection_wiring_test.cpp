@@ -6,6 +6,7 @@
 #include <bg/run_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
+#include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tsl/details/wiring.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 #include <bg/type/scalar_variable.hpp>
@@ -102,6 +103,28 @@ TEST_CASE("a variadic TSL infers the guarantee observable through references",
 
     CHECK(observed_guarantees == std::vector{TimeSeriesGuarantee::ordinary, TimeSeriesGuarantee::ordinary,
                                               TimeSeriesGuarantee::final, TimeSeriesGuarantee::const_});
+}
+
+TEST_CASE("a variadic TSL combines guarantees in nested reference item types",
+          "[feature:wiring][feature:variadic-wiring][series:fixed-tsl][series:reference]"
+          "[guarantee:deduplicated][guarantee:const]") {
+    const auto constant_values = node([](
+        Out<TSD<i64, REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::const_>>>) {});
+    const auto deduplicated_values = node([](
+        Out<TSD<i64, REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::deduplicated>>>) {});
+    const auto expected_item =
+        &TSD<i64, REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::deduplicated>>::type();
+
+    const auto capture = graph("name"_n = "capture_nested_reference_guarantees",
+                               [=](wp<TSL<TS_T, SIZE>, var_args> values) {
+                                   const auto &list = static_cast<const TimeSeriesListType &>(values.type());
+                                   CHECK(&list.item_type() == expected_item);
+                               });
+
+    testing::test_wiring([&] {
+        capture(constant_values(), deduplicated_values());
+        capture(deduplicated_values(), constant_values());
+    });
 }
 
 TEST_CASE("each variadic pack uses its declared collection operations",
