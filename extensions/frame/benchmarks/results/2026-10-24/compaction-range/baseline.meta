@@ -1,0 +1,37 @@
+Compaction optimization baseline
+
+Revision checked out: 61219eb2fe8896a25b6a2ea4d84eb6030ce5a74d
+Benchmark binary originally built at: f43b785905db20968b729a501a6974b86176dc01
+
+Source comparison: `git diff --quiet f43b7859 61219eb2 --` returned success for
+`extensions/frame/include/bg/frame/frame.hpp`,
+`extensions/frame/include/bg/frame/column.hpp`,
+`extensions/frame/benchmarks/compaction_benchmark.cpp`, and the relevant BG
+callback, scratch, index, sparse-bunch, and runtime-graph files. The benchmark
+binary was not rebuilt after the rebase; this comparison establishes that the
+measured frame and relevant core source matched its build revision. The installed
+core library was built from the same source revision as the benchmark binary.
+
+Configuration: `build/tsf-row-release-arrow-on`, Release, Arrow ON, benchmarks
+ON. Runtime library path:
+`dependencies/bg-invocation-callbacks-release-install/lib64`.
+
+Command:
+`env LD_LIBRARY_PATH=/home/abalabin/_bg/.lanes/frame-field-access/dependencies/bg-invocation-callbacks-release-install/lib64 ./build/tsf-row-release-arrow-on/bg_frame_compaction_benchmark`
+
+Benchmark checksum: `345655889045100`
+
+CSV SHA-256:
+`bc830f2fb57e359f0fe90beeff109c9b5880d29222091c69abccb26ae0c88913`
+
+Benchmark binary SHA-256:
+`d1a6e78c54298c5cde35fb0ad224a035a763876f9786e516c0a872488ac3f83c`
+
+Installed `libbg_library.so` SHA-256:
+`d540166aded2c4f0412a922fe3143a89f9926383704245f8bb5888cc597ce062`
+
+Representative `wide_8x_i64` rows:
+- scattered_5_percent: compact 5.22103 ms, plan 0.158942 ms, 30,916 moved rows,
+  1,978,624 value bytes, 11 compaction allocations / 16,376 allocated bytes.
+- scattered_20_percent: compact 4.48428 ms, plan 0.141532 ms, 26,162 moved rows,
+  1,674,368 value bytes.

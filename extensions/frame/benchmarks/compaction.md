@@ -44,6 +44,11 @@ Release flags `-O3 -DNDEBUG`. It ran on Linux 6.12.68 on an AMD EPYC 7R13
 virtual machine. Timings are environment-specific measurements, not performance
 guarantees.
 
+The [range-relocation comparison](results/2026-10-24/compaction-range/README.md)
+shows range relocation reducing compaction time by 2.4× to 12.8× for scattered
+deletion in the eight-column case, with unchanged movement and allocation
+counts. Its consumer measurements show where the maintenance cost is recovered.
+
 ## Constructed-cell bitmap comparison
 
 `compaction_constructed_cells_before.csv` records revision `a52607e2`;
