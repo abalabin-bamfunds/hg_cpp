@@ -110,8 +110,6 @@ const auto server_source = node<ServerSource>();
 using HTTP_AUTH_IDENTITY = ScalarVariable<"HTTP_AUTH_IDENTITY">;
 using HTTP_AUTH_GATE_VALUE = ScalarVariable<"HTTP_AUTH_GATE_VALUE">;
 using HTTP_AUTH_COPY_ITEM = ScalarVariable<"HTTP_AUTH_COPY_ITEM">;
-template <template <typename, auto...> typename Field>
-using HTTP_AUTH_DECISION_SCHEMA = BundleSchemaVariableDeclaration<"HTTP_AUTH_DECISION_SCHEMA", Field>;
 template <template <typename, auto...> typename Field> struct HTTP_AUTH_PROJECTION_SCHEMA {
     Field<REF<TS<Bundle<HttpServerRequest>>>> requests;
     Field<TS<HTTP_AUTH_IDENTITY>> identities;
@@ -190,34 +188,15 @@ WiringPoint details::http_authenticate_requests(WiringPoint requests, WiringPoin
 
     const auto authenticate_request = graph(
         "name"_n = "http_authenticate_request",
-        [](wp<REF<TS<Bundle<HttpServerRequest>>>> request,
-           wp<TS<Bundle<HTTP_AUTH_DECISION_SCHEMA>>> decision, wp<TS<HTTP_AUTH_IDENTITY>> identity,
+        [](wp<REF<TS<Bundle<HttpServerRequest>>>> request, wp<TS<HTTP_AUTH_IDENTITY>> identity,
            wp<TS<Bundle<HttpResponse>>> rejection) -> wp<TSB<HTTP_AUTH_PROJECTION_SCHEMA>> {
             const auto request_target = request.as<TS<Bundle<HttpServerRequest>>>();
-
-            static const auto validate = node<HTTP_AUTH_IDENTITY>(
-                [](In<TS<Bundle<HttpServerRequest>>, optional> request,
-                   In<TS<Bundle<HTTP_AUTH_DECISION_SCHEMA>>, optional> decision,
-                   In<TS<HTTP_AUTH_IDENTITY>, optional> identity,
-                   In<TS<Bundle<HttpResponse>>, optional> rejection, Out<TS<bool>> output) {
-                    if (!request.valid() || !decision.valid()) {
-                        output.invalidate();
-                        return;
-                    }
-
-                    if (identity.valid() == rejection.valid()) {
-                        throw std::logic_error{
-                            "an authentication decision must contain exactly one of identity or rejection"};
-                    }
-
-                    output.set(true);
-                });
-            const auto valid_decision = validate(request_target, decision, identity, rejection);
+            const auto request_is_valid = operators::valid(request_target);
 
             static const auto gate = node<HTTP_AUTH_GATE_VALUE>(
                 [](In<TS<bool>, optional> condition, In<TS<HTTP_AUTH_GATE_VALUE>, optional> value,
                    Out<TS<HTTP_AUTH_GATE_VALUE>> output) {
-                    if (!condition.valid() || !value.valid()) {
+                    if (!condition.valid() || !condition.value() || !value.valid()) {
                         output.invalidate();
                         return;
                     }
@@ -236,15 +215,15 @@ WiringPoint details::http_authenticate_requests(WiringPoint requests, WiringPoin
 
                     output.copy(original);
                 });
-            const auto accepted_identity = gate(valid_decision, identity);
+            const auto accepted_identity = gate(request_is_valid, identity);
             const auto accepted_request = gate_reference(request_target, request, accepted_identity);
-            const auto accepted_rejection = gate(valid_decision, rejection);
+            const auto accepted_rejection = gate(request_is_valid, rejection);
 
             return bundle<TSB<HTTP_AUTH_PROJECTION_SCHEMA>>(
                 "requests"_n = accepted_request, "identities"_n = accepted_identity,
                 "rejections"_n = accepted_rejection);
         });
-    const auto per_request = map(authenticate_request, requests, decisions, identities, rejections);
+    const auto per_request = map(authenticate_request, requests, identities, rejections);
 
     const auto request_values = map(operators::getattr, per_request, util::symbol{"requests"});
     const auto identity_values = map(operators::getattr, per_request, util::symbol{"identities"});

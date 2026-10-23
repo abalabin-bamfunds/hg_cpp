@@ -10,8 +10,10 @@ the request or decision becomes invalid.
 ## Decision
 
 Use graph composition for the per-request projection. Read `identity` and
-`rejection` from each decision with `getattr`. Validate that exactly one field
-is valid when both the request and decision are valid.
+`rejection` from each decision with `getattr`; each projection carries the
+decision's validity. Use `valid` on the request target to gate both projected
+fields. The policy supplies exactly one of identity or rejection as required
+by the authentication decision contract.
 
 Gate accepted request references on identity validity. Gate rejection values on
 request and decision validity. Materialize compact dictionaries by copying

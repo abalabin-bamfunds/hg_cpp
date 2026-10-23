@@ -536,42 +536,6 @@ TEST_CASE("HTTP authentication tracks request and decision validity transitions"
     CHECK(states[6].request_reference_matches);
 }
 
-TEST_CASE("HTTP authentication rejects malformed decisions",
-          "[feature:http][feature:service][feature:authentication]") {
-    using Header = Tuple<string, string>;
-    auto memory = allocator{};
-    const auto headers = ScalarValue<List<Header>>{std::vector<Scalar<Header>>{}};
-    const auto body = ScalarValue<bytes>{std::span<const std::byte>{}};
-    const auto peer = bundle<HttpPeer>(memory, "address"_n = std::string{"127.0.0.1"}, "port"_n = i64{1});
-    const auto request = bundle<HttpServerRequest>(memory, "method"_n = std::string{"GET"},
-                                                   "target"_n = std::string{"/auth"},
-                                                   "path"_n = std::string{"/auth"}, "query"_n = headers.view(),
-                                                   "headers"_n = headers.view(), "body"_n = body.view(),
-                                                   "peer"_n = peer.view());
-    const auto identity = ScalarValue<i64>{10};
-    const auto response = make_http_response(401);
-    const auto malformed = bundle<bg::web::details::AuthDecisionSchema<i64>::template schema>(
-        memory, "identity"_n = identity.view(), "rejection"_n = response.view());
-    const auto request_source = node([&](In<TS<i64>> cycle,
-                                         Out<TSD<i64, TS<Bundle<HttpServerRequest>>>> requests) {
-        if (cycle.value() != 1) return;
-        requests[1].set_value(request.view());
-    });
-    const auto decision_source = node([&](In<TS<i64>> cycle,
-                                          Out<TSD<i64, TS<AuthDecision<i64>>>> decisions) {
-        if (cycle.value() != 1) return;
-        decisions[1].set_value(malformed.view());
-    });
-    const auto test_graph = [&](wp<TS<i64>> cycle) {
-        const auto requests = request_source(cycle);
-        const auto decisions = decision_source(cycle);
-        (void)bg::web::details::http_authenticate_requests(requests, decisions);
-        return cycle;
-    };
-
-    CHECK_THROWS_AS(run_graph(test_graph, {1}), std::logic_error);
-}
-
 TEST_CASE("HTTP authentication requires a policy implementation",
           "[feature:http][feature:service][feature:authentication]") {
     const auto route = http_handler("/auth/missing", node<AuthenticatedHandler>(), auth_policy);
