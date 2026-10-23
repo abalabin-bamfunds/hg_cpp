@@ -1010,8 +1010,8 @@ template <cell_type T> class ColumnValueStorage {
                                  : static_cast<const T *>(block.data) + first - block.first;
         return {first, size, values, 0, ColumnBatch<T>::Validity::all_invalid()};
     }
-    void release(const util::occupancy_index &constructed, allocator memory) noexcept {
-        values_.release(constructed, memory.memory_resource());
+    void release(const util::index<> &valid, allocator memory) noexcept {
+        values_.release(valid, memory.memory_resource());
     }
 
   private:
@@ -1054,7 +1054,7 @@ template <> class ColumnValueStorage<bool> {
         return {first, size, values == nullptr ? nullptr : values + bit_offset / 8, bit_offset % 8,
                 ColumnBatch<bool>::Validity::all_invalid()};
     }
-    void release(const util::occupancy_index &, allocator memory) noexcept {
+    void release(const util::index<> &, allocator memory) noexcept {
         bytes_.release(allocated_bytes_, memory.memory_resource());
         allocated_bytes_.release(memory.memory_resource());
     }
@@ -1102,14 +1102,10 @@ template <typename T> class NativeColumnData {
         if (!value)
             return;
         cells_.set(slot, *value, memory);
-        auto constructed = false;
         auto erase_cell = util::scope_exit{[&]() noexcept {
-            if (constructed)
-                constructed_cells_.reset(slot);
+            valid_cells_.reset(slot);
             cells_.clear(slot, memory);
         }};
-        constructed_cells_.set(slot, memory.memory_resource());
-        constructed = true;
         valid_cells_.set(slot, memory.memory_resource());
         erase_cell.release();
     }
@@ -1132,19 +1128,14 @@ template <typename T> class NativeColumnData {
             cells_.assign(slot, *value);
         } else if (valid_cells_.contains(slot)) {
             cells_.clear(slot, memory);
-            constructed_cells_.reset(slot);
             valid_cells_.reset(slot);
         }
         if (!valid_cells_.contains(slot) && value) {
             cells_.set(slot, *value, memory);
-            auto constructed = false;
             auto erase_cell = util::scope_exit{[&]() noexcept {
-                if (constructed)
-                    constructed_cells_.reset(slot);
+                valid_cells_.reset(slot);
                 cells_.clear(slot, memory);
             }};
-            constructed_cells_.set(slot, memory.memory_resource());
-            constructed = true;
             valid_cells_.set(slot, memory.memory_resource());
             erase_cell.release();
         }
@@ -1154,7 +1145,6 @@ template <typename T> class NativeColumnData {
     void clear_physical_slot(row_id_t slot, allocator memory) noexcept {
         if (valid_cells_.contains(slot)) {
             cells_.clear(slot, memory);
-            constructed_cells_.reset(slot);
             valid_cells_.reset(slot);
         }
     }
@@ -1167,23 +1157,17 @@ template <typename T> class NativeColumnData {
             return;
 
         cells_.set(destination, cells_.value(source), memory);
-        auto constructed = false;
         auto rollback = util::scope_exit{[&]() noexcept {
             valid_cells_.reset(destination);
-            if (constructed)
-                constructed_cells_.reset(destination);
             cells_.clear(destination, memory);
         }};
-        constructed_cells_.set(destination, memory.memory_resource());
-        constructed = true;
         valid_cells_.set(destination, memory.memory_resource());
         rollback.release();
     }
     void rollback_relocation(row_id_t destination, allocator memory) noexcept {
-        if (!constructed_cells_.contains(destination))
+        if (!valid_cells_.contains(destination))
             return;
         valid_cells_.reset(destination);
-        constructed_cells_.reset(destination);
         cells_.clear(destination, memory);
     }
     void clear(const NativeRows &rows, allocator memory) {
@@ -1197,8 +1181,7 @@ template <typename T> class NativeColumnData {
         }
     }
     void release(allocator memory) noexcept {
-        cells_.release(constructed_cells_, memory);
-        constructed_cells_.release(memory.memory_resource());
+        cells_.release(valid_cells_, memory);
         valid_cells_.release(memory.memory_resource());
         modified_.release(memory.memory_resource());
     }
@@ -1288,7 +1271,6 @@ template <typename T> class NativeColumnData {
     }
 
   private:
-    util::occupancy_index constructed_cells_;
     ColumnValueStorage<T> cells_;
     util::index<> valid_cells_;
     util::index<> modified_;
