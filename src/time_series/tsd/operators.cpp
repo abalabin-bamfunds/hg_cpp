@@ -1,11 +1,15 @@
 #include <bg/time_series/tsd/operators.hpp>
 
 #include <bg/graph/operator.hpp>
+#include <bg/map.hpp>
 #include <bg/node.hpp>
+#include <bg/operators.hpp>
 #include <bg/time_series/tsd/tsd_input.hpp>
 
 namespace bg::details {
 namespace {
+
+using namespace bg::literals;
 
 using K = ScalarVariable<"K", Hashable>;
 using V = TimeSeriesVariable<"V">;
@@ -78,6 +82,10 @@ void register_time_series_dict_operators(Operator &getitem) {
     getitem.overload(bg::node<tsd_value_getitem_time_series>());
     getitem.overload(bg::node<tsd_reference_getitem_scalar>());
     getitem.overload(bg::node<tsd_reference_getitem_time_series>());
+    getitem.overload(bg::graph([](wp<TSD<K, V>, optional> dictionary, wp<TSS<K>> keys) -> wp<TSD<K, V>> {
+        return map(operators::getitem, pass_through(dictionary), keys, "__key_arg__"_n = 1)
+            .template as<TSD<K, V>>();
+    }));
 }
 
 } // namespace bg::details

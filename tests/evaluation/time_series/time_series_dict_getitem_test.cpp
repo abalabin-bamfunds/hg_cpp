@@ -106,6 +106,60 @@ TEST_CASE("dictionary getitem changes its subscription with a time series key",
     CHECK(actual.equals<i64>({10, 110, 12}));
 }
 
+TEST_CASE("dictionary getitem selects a TSS key set and follows selected item removal",
+          "[evaluation][series:tsd][series:tss][series:value][feature:getitem][feature:operator]"
+          "[transition:addition][transition:removal][transition:resurrection]") {
+    const auto graph = [](wp<TSD<i64, TS<i64>>> dictionary, wp<TSS<i64>> keys) {
+        const auto selected = dictionary[keys].as<TSD<i64, TS<i64>>>();
+        return selected[i64{1}];
+    };
+
+    const auto actual = bg::run_graph(
+        graph,
+        {{{1, 10}, {2, 20}}, {{1, 11}, {2, 21}}, {{1, literal::REMOVE}}, {{1, 12}, {2, 22}},
+         literal::SKIP, literal::SKIP},
+        {{1}, literal::SKIP, literal::SKIP, literal::SKIP, {literal::REMOVED(1), 2}, {1}});
+
+    CHECK(actual.equals<i64>({10, 11, std::nullopt, 12, std::nullopt, 12}));
+
+    const auto selected_key_membership = node([](In<TS<i64>> cycle,
+                                                  In<TSD<i64, REF<TS<i64>>>, optional> selected,
+                                                  Out<TS<bool>> output) {
+        (void)cycle;
+        output.set(selected.contains(i64{1}));
+    });
+    const auto membership_graph = [&](wp<TS<i64>> cycle, wp<TSD<i64, TS<i64>>> dictionary,
+                                      wp<TSS<i64>> keys) {
+        return selected_key_membership(cycle, dictionary[keys].as<TSD<i64, REF<TS<i64>>>>());
+    };
+
+    const auto membership = bg::run_graph(
+        membership_graph,
+        {1, 2, 3, 4, 5, 6},
+        {{{1, 10}, {2, 20}}, {{1, 11}, {2, 21}}, {{1, literal::REMOVE}}, {{1, 12}, {2, 22}},
+         literal::SKIP, literal::SKIP},
+        {{1}, literal::SKIP, literal::SKIP, literal::SKIP, {literal::REMOVED(1), 2}, {1}});
+
+    CHECK(membership.equals<bool>({true, true, true, true, false, true}));
+}
+
+TEST_CASE("TSS-keyed getitem selects a key from a dictionary of references",
+          "[evaluation][series:tsd][series:tss][series:reference][feature:getitem][feature:operator]"
+          "[binding:reference-to-reference][transition:update]") {
+    const auto make_dictionary = node([](In<REF<TS<i64>>> target, Out<TSD<i64, REF<TS<i64>>>> output) {
+        output[1].copy(target);
+    });
+    const auto graph = [&](wp<TS<i64>> input, wp<TSS<i64>> keys) {
+        const auto dictionary = make_dictionary(input);
+        const auto selected = operators::getitem(dictionary, keys).as<TSD<i64, REF<TS<i64>>>>();
+        return selected[i64{1}];
+    };
+
+    const auto actual = bg::run_graph(graph, {10, 20, 30}, {{1}, {1}, {literal::REMOVED(1)}, {1}});
+
+    CHECK(actual.equals<i64>({10, 20, std::nullopt, 30}));
+}
+
 TEST_CASE("dictionary getitem fans out one selected value item without observing another item",
           "[evaluation][series:tsd][series:value][feature:getitem][feature:operator][shape:fan-out]"
           "[binding:value-to-reference][binding:reference-to-value][transition:update]") {

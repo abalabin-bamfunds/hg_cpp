@@ -116,3 +116,21 @@ def test_optional_boolean_tss_reductions_treat_invalid_selected_target_as_empty(
         False,
         True,
     ]
+
+
+def test_keys_where_true_selects_dictionary_values():
+    @bg.compute_node
+    def make_values(trigger: bg.TS[int]) -> bg.TSD[int, bg.TS[int]]:
+        return {1: trigger.value * 10, 2: trigger.value * 20}
+
+    @bg.compute_node
+    def make_mask(value: bg.TS[bool]) -> bg.TSD[int, bg.TS[bool]]:
+        return {1: value.value, 2: not value.value}
+
+    @bg.graph
+    def selected(trigger: bg.TS[int], condition: bg.TS[bool]) -> bg.TS[int]:
+        values = make_values(trigger)
+        mask = make_mask(condition)
+        return values[bg.operators.keys_where_true(mask)][1]
+
+    assert bg.run_graph(selected, [1, 2, 3], [True, False, True]) == [10, None, 30]

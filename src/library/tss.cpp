@@ -105,6 +105,41 @@ struct tss_overloads {
     }};
     overload<is_empty> is_empty_tss_optional{[](In<TSS<K, G>, optional> value) { return value.size() == 0; }};
 
+    struct keys_where_true_impl {
+        In<TSD<K, TS<bool>, G>, optional> mask;
+        Out<TSS<K>> output;
+
+        void evaluate() const {
+            if (!mask.valid()) {
+                if (output.valid()) {
+                    output.clear();
+                }
+                return;
+            }
+
+            if (!output.valid() || mask.became_valid()) {
+                output.clear();
+                mask.for_each_key([&](const auto &key) { update(key); });
+                return;
+            }
+
+            mask.for_each_added([&](const auto &key) { update(key); });
+            mask.for_each_removed([&](const auto &key) { output.erase(key); });
+            mask.for_each_modified([&](const auto &key) { update(key); });
+        }
+
+        void update(const auto &key) const {
+            const auto item = mask[key];
+            if (item.valid() && item.value()) {
+                output.insert(key);
+            } else {
+                output.erase(key);
+            }
+        }
+    };
+
+    overload<keys_where_true, keys_where_true_impl> keys_where_true_tsd;
+
     // TSS set equality.
     overload<eq, tss_equality_impl<required, G, false>> eq_tss;
     overload<eq, tss_equality_impl<optional, TimeSeriesGuarantee::ordinary, false>> eq_tss_optional;

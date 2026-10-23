@@ -567,6 +567,20 @@ Use named calls in Python. Its `len()` and `in` syntax cannot return wiring
 points. Annotate an engine scalar list as `tuple[T, ...]`; scalar set
 annotations are not yet supplied.
 
+## Collection selection
+
+`keys_where_true(mask)` returns a TSS containing the keys whose current TSD
+Boolean items are valid and true. False or invalid items are absent. The output
+follows item additions, updates, removals, and reference target validity changes.
+It remains invalid until the mask is valid; an invalid mask clears an existing
+output.
+
+TSD `getitem` accepts a TSS of keys. It returns a dictionary of references for
+the selected keys. A selected key absent from the source dictionary remains in
+the result with an invalid reference. This composes with `keys_where_true`:
+C++ uses `values[operators::keys_where_true(mask)]`; Python uses
+`values[bg.operators.keys_where_true(mask)]`.
+
 ## Text operations
 
 Character operations interpret strings and symbols as UTF-8. `len_`, indexing,

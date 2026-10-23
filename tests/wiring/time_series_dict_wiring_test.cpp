@@ -65,6 +65,19 @@ TEST_CASE("getitem accepts a time series dictionary key",
     CHECK(&reference.target_type() == &TS<float>::type());
 }
 
+TEST_CASE("TSS-keyed getitem preserves final item references",
+          "[wiring][series:tsd][series:tss][feature:getitem][feature:operator][guarantee:final]") {
+    const auto dictionary = node([](Out<TSD<i64, TS<float, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::final>>) {
+    });
+    const auto keys = node([](Out<TSS<i64>>) {});
+
+    testing::test_wiring([&] {
+        const auto selected = dictionary()[keys()];
+        CHECK(&selected.type() ==
+              &TSD<i64, REF<TS<float, TimeSeriesGuarantee::final>, TimeSeriesGuarantee::final>>::type());
+    });
+}
+
 TEST_CASE("getitem preserves a dictionary reference item's target type",
           "[wiring][series:tsd][reference][feature:getitem][feature:operator]") {
     const auto source = node([](Out<TSD<i64, REF<TS<float>>>>) {});

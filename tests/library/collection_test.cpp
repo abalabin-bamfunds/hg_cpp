@@ -37,6 +37,55 @@ TEST_CASE("len_ of a TSS follows key membership", "[feature:operator][series:tss
     CHECK(bg::run_graph(graph, {{1}, {2, literal::REMOVED(1)}}).equals<i64>({1, 1}));
 }
 
+TEST_CASE("keys_where_true follows Boolean dictionary items",
+          "[feature:operator][series:tsd][series:tss][scalar:boolean][transition:update][transition:removal]") {
+    const auto graph = [](wp<TSD<i64, TS<bool>>> mask) { return operators::keys_where_true(mask); };
+
+    const auto actual = bg::run_graph(
+        graph, {{{1, true}, {2, false}}, {{1, false}, {2, true}}, {{1, literal::INVALID}},
+                {{2, literal::REMOVE}}, {{1, true}}});
+
+    CHECK(actual.equals({{1}, {2, literal::REMOVED(1)}, literal::SKIP, {literal::REMOVED(2)}, {1}}));
+}
+
+TEST_CASE("keys_where_true follows invalidation and revalidation of a referenced mask item",
+          "[feature:operator][series:tsd][series:tss][series:reference][transition:invalidation]"
+          "[transition:revalidation]") {
+    const auto make_mask = node([](In<REF<TS<bool>>> first, In<REF<TS<bool>>> second,
+                                   Out<TSD<i64, REF<TS<bool>>>> output) {
+        output[1].copy(first);
+        output[2].copy(second);
+    });
+    const auto graph = [&](wp<TS<bool>> first, wp<TS<bool>> second) {
+        return operators::keys_where_true(make_mask(first, second));
+    };
+
+    const auto actual = bg::run_graph(graph, bg::input<TS<bool>>({true, literal::INVALID, true}),
+                                      bg::input<TS<bool>>({false, false, false}));
+
+    CHECK(actual.equals({{1}, {literal::REMOVED(1)}, {1}}));
+}
+
+TEST_CASE("keys_where_true clears its result when the mask reference becomes invalid",
+          "[feature:operator][series:tsd][series:tss][series:reference][transition:invalidation]"
+          "[transition:revalidation]") {
+    const auto invalid_mask = node([](Out<TSD<i64, TS<bool>>>) {});
+    const auto select_mask = node([](In<TS<bool>> choose_valid, In<REF<TSD<i64, TS<bool>>>, passive> valid,
+                                     In<REF<TSD<i64, TS<bool>>>, passive> invalid,
+                                     Out<REF<TSD<i64, TS<bool>>>> output) {
+        output.copy(*choose_valid ? valid : invalid);
+    });
+    const auto graph = [&](wp<TS<bool>> choose_valid, wp<TSD<i64, TS<bool>>> mask) {
+        return operators::keys_where_true(select_mask(choose_valid, mask, invalid_mask()));
+    };
+
+    const auto actual = bg::run_graph(
+        graph, bg::input<TS<bool>>({false, true, false, true}),
+        bg::input<TSD<i64, TS<bool>>>({{{1, true}}, literal::SKIP, literal::SKIP, literal::SKIP}));
+
+    CHECK(actual.equals({literal::SKIP, {1}, {literal::REMOVED(1)}, {1}}));
+}
+
 namespace {
 
 template <template <typename, auto...> typename Field> struct length_bundle {

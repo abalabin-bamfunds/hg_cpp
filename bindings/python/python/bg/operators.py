@@ -71,6 +71,7 @@ all_ = _native.all_
 any_ = _native.any_
 contains_ = _native.contains_
 is_empty = _native.is_empty
+keys_where_true = _native.keys_where_true
 bit_or = _native.bit_or
 bit_and = _native.bit_and
 bit_xor = _native.bit_xor
@@ -88,6 +89,7 @@ __all__ = [
     "const_",
     "contains_",
     "is_empty",
+    "keys_where_true",
     "bit_or",
     "bit_and",
     "bit_xor",
