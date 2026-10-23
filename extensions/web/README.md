@@ -33,7 +33,9 @@ bg.run_graph(application, engine=bg.EvaluationEngine.realtime)
 ready. Use `port=0` to let the operating system assign a port. Each call creates
 one server with separate runtime state for each graph run.
 
-Routes match the request path exactly. An unmatched path returns HTTP 404.
+Routes match the request path exactly. Each route receives its own request
+dictionary, so changes on one route do not invoke another route's handler. An
+unmatched path returns HTTP 404.
 The handler reads the HTTP method from the request. A handler has one of these
 signatures:
 

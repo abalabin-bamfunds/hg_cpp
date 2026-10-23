@@ -215,7 +215,7 @@ class ServerImplementation final {
             if (found == pending_.end()) {
                 return;
             }
-            const auto session = found->second.lock();
+            const auto session = found->second.session.lock();
             if (session) {
                 session->write_response(std::move(response));
             }
@@ -247,10 +247,11 @@ class ServerImplementation final {
         if (found == pending_.end()) {
             return;
         }
+        const auto route = found->second.route;
         pending_.erase(found);
         try {
             (void)output_.write(
-                ::literal::TimeSeriesLiteral{{util::symbol{"requests"}, {{id, ::literal::REMOVE}}}});
+                ::literal::TimeSeriesLiteral{{util::symbol{"requests"}, {{route, {{id, ::literal::REMOVE}}}}}});
         } catch (...) {
             record_failure(std::current_exception());
         }
@@ -267,7 +268,8 @@ class ServerImplementation final {
             session->close_for_shutdown();
             return;
         }
-        if (!routes_.contains(target.path)) {
+        const auto route = routes_.find(target.path);
+        if (route == routes_.end()) {
             session->send_error(http::status::not_found, "Not Found", !request.keep_alive());
             return;
         }
@@ -275,11 +277,12 @@ class ServerImplementation final {
             next_id_ = 1;
         }
         const auto id = static_cast<i64>(next_id_++);
-        pending_.emplace(id, session);
+        const auto route_path = std::string_view{*route};
+        pending_.emplace(id, PendingRequest{.session = session, .route = route_path});
         try {
             auto value = request_value(request, target, peer, request_headers);
             if (!output_.write(
-                    ::literal::TimeSeriesLiteral{{util::symbol{"requests"}, {{id, value.view()}}}})) {
+                    ::literal::TimeSeriesLiteral{{util::symbol{"requests"}, {{route_path, {{id, value.view()}}}}}})) {
                 pending_.erase(id);
                 session->send_error(http::status::service_unavailable, "Service Unavailable", true);
                 return;
@@ -294,6 +297,11 @@ class ServerImplementation final {
     }
 
   private:
+    struct PendingRequest {
+        std::weak_ptr<HttpSession> session;
+        std::string_view route;
+    };
+
     void record_failure(std::exception_ptr failure) noexcept {
         try {
             auto message = std::string{"unexpected HTTP transport failure"};
@@ -340,7 +348,8 @@ class ServerImplementation final {
     std::jthread thread_;
     std::uint16_t port_{};
     std::uint64_t next_id_{1};
-    std::unordered_map<i64, std::weak_ptr<HttpSession>> pending_;
+    // Pending route views refer to routes_, which is populated before the transport thread starts.
+    std::unordered_map<i64, PendingRequest> pending_;
     std::vector<std::shared_ptr<HttpSession>> sessions_;
     std::atomic<bool> stopped_{};
     std::exception_ptr failure_;

@@ -58,20 +58,6 @@ struct ServerSource {
     void finalize() const noexcept { delete std::exchange(*runtime_state, nullptr); }
 };
 
-const auto route_requests = node([](In<TSD<i64, TS<Bundle<HttpServerRequest>>>, optional> requests, std::string path,
-                                    Out<TSD<i64, TS<Bundle<HttpServerRequest>>>> output) {
-    if (!requests.modified()) return;
-
-    const auto copy_if_matched = [&](const auto &key) {
-        const auto request = requests[key];
-        if (!request.valid()) return;
-        if (scalar_cast<string>(request.value()[2]).value() == path) output[key].copy_tick(request);
-    };
-    requests.for_each_added(copy_if_matched);
-    requests.for_each_modified(copy_if_matched);
-    requests.for_each_removed([&](const auto &key) { (void)output.erase(key); });
-});
-
 const auto response_sink = node([](In<TS<Opaque<ServerRuntime *>>, passive> server,
                                    In<TSD<i64, TS<Bundle<HttpResponse>>>> responses) {
     auto *runtime = server.value();
@@ -125,16 +111,16 @@ wp<TS<i64>> http_server(std::span<const Route> routes, ServerOptions options) {
     error_sink(output->errors);
 
     for (const auto &route : routes) {
-        const auto filtered = route_requests(requests, std::string{route.path});
+        const auto requests_for_route = requests[std::string{route.path}];
         const auto &signature = route.handler.signature();
         const auto *input_type = type_cast<TimeSeriesType>(signature.parameter(0).type);
         const auto *input_dictionary = type_cast<TimeSeriesDictionaryType>(input_type);
         if (input_dictionary == nullptr) {
-            const auto map_arguments = std::array{MapArgument{WiringArgument{filtered}, false}};
+            const auto map_arguments = std::array{MapArgument{WiringArgument{requests_for_route}, false}};
             const auto response = map(route.handler, std::span<const MapArgument>{map_arguments});
             response_sink(runtime, response);
         } else {
-            const auto response = route.handler(filtered);
+            const auto response = route.handler(requests_for_route);
             response_sink(runtime, *response);
         }
     }

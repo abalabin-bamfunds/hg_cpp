@@ -23,9 +23,11 @@
 #include <exception>
 #include <initializer_list>
 #include <mutex>
+#include <span>
 #include <stdexcept>
 #include <stop_token>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -207,6 +209,77 @@ TEST_CASE("HTTP server handles expectations and keep-alive requests",
     REQUIRE(bodies.size() == 2);
     CHECK(bodies[0] == std::string{"\0binary\xff", 8});
     CHECK(bodies[1] == "keep alive");
+}
+
+TEST_CASE("HTTP server route dictionaries isolate request additions and removals",
+          "[feature:http][feature:lifecycle][transition:removal]") {
+    using Header = Tuple<string, string>;
+    auto route_a_events = std::vector<std::string>{};
+    auto route_b_events = std::vector<std::string>{};
+    const auto make_response = [](std::string_view text) {
+        const auto headers = ScalarValue<List<Header>>{std::vector<Scalar<Header>>{}};
+        const auto body_bytes = std::span<const std::byte>{reinterpret_cast<const std::byte *>(text.data()),
+                                                            text.size()};
+        const auto body = ScalarValue<bytes>{body_bytes};
+        return bundle<HttpResponse>("status"_n = i64{200}, "headers"_n = headers.view(), "body"_n = body.view());
+    };
+    const auto make_handler = [&](std::string route, std::vector<std::string> &events) {
+        auto *route_events = &events;
+        return node([&, route = std::move(route), route_events](In<TSD<i64, TS<Bundle<HttpServerRequest>>>> requests,
+                                                                Out<TSD<i64, TS<Bundle<HttpResponse>>>> responses) {
+            auto invocation = route + ":";
+            auto changed = false;
+            const auto record = [&](std::string_view kind, const auto &key) {
+                if (changed) invocation.push_back(',');
+                invocation.append(kind);
+                invocation.append(std::to_string(key.value()));
+                changed = true;
+            };
+            const auto respond = [&](const auto &key) {
+                record("+", key);
+                const auto response = make_response(route);
+                responses[key].set_value(response.view());
+            };
+            requests.for_each_added(respond);
+            requests.for_each_modified(respond);
+            requests.for_each_removed([&](const auto &key) { record("-", key); });
+            route_events->push_back(changed ? std::move(invocation) : route + ":empty");
+        });
+    };
+    const auto route_a = make_handler("A", route_a_events);
+    const auto route_b = make_handler("B", route_b_events);
+    auto server = ServerTest{};
+    auto statuses = std::vector<unsigned>{};
+    auto replies = std::vector<std::string>{};
+
+    server.run({Route{"/a", route_a}, Route{"/b", route_b}}, [&](std::uint16_t port) {
+        namespace asio = boost::asio;
+        namespace http = boost::beast::http;
+        using tcp = asio::ip::tcp;
+
+        auto context = asio::io_context{};
+        auto socket = tcp::socket{context};
+        socket.connect({asio::ip::make_address("127.0.0.1"), port});
+        auto buffer = asio::streambuf{};
+        for (const auto path : std::array<std::string_view, 4>{"/a", "/b", "/a", "/b"}) {
+            auto request = http::request<http::empty_body>{http::verb::get, path, 11};
+            request.set(http::field::host, "localhost");
+            http::write(socket, request);
+            const auto response = read_response(socket, buffer);
+            statuses.push_back(response.status);
+            replies.push_back(response.body);
+        }
+        server.stop.request_stop();
+    });
+
+    CHECK(statuses == std::vector<unsigned>{200, 200, 200, 200});
+    CHECK(route_a_events == std::vector<std::string>{"A:+1", "A:-1", "A:+3", "A:-3"});
+    REQUIRE((route_b_events.size() == 3 || route_b_events.size() == 4));
+    CHECK(route_b_events[0] == "B:+2");
+    CHECK(route_b_events[1] == "B:-2");
+    CHECK(route_b_events[2] == "B:+4");
+    if (route_b_events.size() == 4) CHECK(route_b_events[3] == "B:-4");
+    CHECK(replies == std::vector<std::string>{"A", "B", "A", "B"});
 }
 
 TEST_CASE("HTTP server runtime state can be recreated from one compiled graph",
