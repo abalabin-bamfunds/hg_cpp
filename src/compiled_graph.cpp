@@ -1919,6 +1919,38 @@ class CompiledGraphBuilder {
         }
     }
 
+    static ParameterBinding construct_time_series_binding(const CompilationPlan &plan,
+                                                           const TimeSeriesInputPlan &input,
+                                                           InputValidity validity,
+                                                           std::size_t destination_offset) {
+        if (input.wired_input.is_output()) {
+            if (const auto *constant = plan.constant_for_output(input.wired_input.index())) {
+                return ParameterBinding::constant(
+                    *plan.runtime.constant_start_time_offset,
+                    packed_offset(constant->storage.offset - destination_offset,
+                                  "a constant is more than 1 GiB from its parameter"),
+                    validity);
+            }
+        }
+
+        if (input.wired_input.is_borrowed()) {
+            return ParameterBinding::borrowed(static_cast<std::uint32_t>(input.wired_input.index()), validity);
+        }
+
+        if (input.dereferences_reference) {
+            return ParameterBinding::reference(input.output_last_updated_offset, input.offset, validity,
+                                               input.sampled_reference, input.dynamic_activity);
+        }
+
+        if (input.wired_input.is_inherited()) {
+            const auto &inherited = plan.inherited_time_series_at(input.wired_input.index());
+            return {inherited.last_updated_offset, inherited.value_offset, validity};
+        }
+
+        const auto output = wired_output_layout(input.wired_input.index(), plan.outputs, plan.node_plans);
+        return {output.last_updated_offset, output.value_offset, validity};
+    }
+
     static void construct_parameters(const CompilationPlan &plan, std::size_t node_index, std::byte *storage,
                                      allocator variable_memory, std::vector<ConstructedScalar> &constructed_scalars,
                                      std::size_t &scalar_destruction_index) {
@@ -1952,42 +1984,9 @@ class CompiledGraphBuilder {
                 }
                 if (input.default_value) {
                     auto *descriptor = default_inputs.data() + default_input_index++;
-                    auto source = ParameterBinding{};
-                    if (input.wired_input.is_output()) {
-                        if (const auto *constant = plan.constant_for_output(input.wired_input.index())) {
-                            const auto source_offset =
-                                static_cast<std::size_t>(reinterpret_cast<std::byte *>(&descriptor->source) - storage);
-                            source = ParameterBinding::constant(
-                                *plan.runtime.constant_start_time_offset,
-                                packed_offset(constant->storage.offset - source_offset,
-                                              "a constant is more than 1 GiB from its parameter"),
-                                optional);
-                        }
-                    }
-                    if (source.mode() == ParameterBindingMode::scalar && input.wired_input.is_borrowed()) {
-                        source = ParameterBinding::borrowed(static_cast<std::uint32_t>(input.wired_input.index()),
-                                                           optional);
-                    }
-                    if (source.mode() == ParameterBindingMode::scalar) {
-                        if (input.dereferences_reference) {
-                            source = ParameterBinding::reference(input.output_last_updated_offset, input.offset,
-                                                                 optional, input.sampled_reference,
-                                                                 input.dynamic_activity);
-                        } else {
-                            const auto resolved_output = input.wired_input.is_inherited()
-                                                             ? OutputLayout{plan.inherited_time_series_at(
-                                                                                input.wired_input.index())
-                                                                                .last_updated_offset,
-                                                                            plan.inherited_time_series_at(
-                                                                                input.wired_input.index())
-                                                                                .value_offset,
-                                                                            nullptr}
-                                                             : wired_output_layout(input.wired_input.index(),
-                                                                                   plan.outputs, plan.node_plans);
-                            source = ParameterBinding{resolved_output.last_updated_offset, resolved_output.value_offset,
-                                                      optional};
-                        }
-                    }
+                    const auto source = construct_time_series_binding(
+                        plan, input, optional,
+                        static_cast<std::size_t>(reinterpret_cast<std::byte *>(&descriptor->source) - storage));
 
                     const auto *fallback = plan.constant_for_output(input.fallback.index());
                     if (fallback == nullptr) {
@@ -2009,41 +2008,11 @@ class CompiledGraphBuilder {
                             parameter.validity));
                     continue;
                 }
-                if (input.wired_input.is_output()) {
-                    if (const auto *constant = plan.constant_for_output(input.wired_input.index())) {
-                        const auto parameter_offset =
-                            layout.offset + layout.parameters.offset + parameter_index * sizeof(ParameterBinding);
-                        std::construct_at(parameters.data() + parameter_index,
-                                          ParameterBinding::constant(
-                                              *plan.runtime.constant_start_time_offset,
-                                              packed_offset(constant->storage.offset - parameter_offset,
-                                                            "a constant is more than 1 GiB from its parameter"),
-                                              parameter.validity));
-                        continue;
-                    }
-                }
-                if (input.wired_input.is_borrowed()) {
-                    std::construct_at(parameters.data() + parameter_index,
-                                      ParameterBinding::borrowed(static_cast<std::uint32_t>(input.wired_input.index()),
-                                                                 parameter.validity));
-                    continue;
-                }
-                if (input.dereferences_reference) {
-                    std::construct_at(parameters.data() + parameter_index,
-                                      ParameterBinding::reference(input.output_last_updated_offset, input.offset,
-                                                                  parameter.validity, input.sampled_reference,
-                                                                  input.dynamic_activity));
-                } else {
-                    const auto resolved_output =
-                        input.wired_input.is_inherited()
-                            ? OutputLayout{plan.inherited_time_series_at(input.wired_input.index()).last_updated_offset,
-                                           plan.inherited_time_series_at(input.wired_input.index()).value_offset,
-                                           nullptr}
-                            : wired_output_layout(input.wired_input.index(), plan.outputs, plan.node_plans);
-                    std::construct_at(parameters.data() + parameter_index,
-                                      ParameterBinding{resolved_output.last_updated_offset,
-                                                       resolved_output.value_offset, parameter.validity});
-                }
+                const auto parameter_offset =
+                    layout.offset + layout.parameters.offset + parameter_index * sizeof(ParameterBinding);
+                auto *binding = parameters.data() + parameter_index;
+                std::construct_at(binding,
+                                  construct_time_series_binding(plan, input, parameter.validity, parameter_offset));
                 continue;
             }
 
