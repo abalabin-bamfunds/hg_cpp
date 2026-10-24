@@ -33,6 +33,14 @@ TEST_CASE("run_graph runs a node with initial values and tick histories",
     CHECK(run_graph(increment, {1, 2, 3}).equals<i64>({2, 3, 4}));
 }
 
+TEST_CASE("run_graph accepts heterogeneous numeric tick histories",
+          "[testing][evaluation][feature:test-graph][series:value][scalar:integer]") {
+    const auto identity = [](wp<TS<i64>> input) { return input; };
+
+    CHECK(run_graph(identity, {i64{3}, 1, -1}).equals<i64>({3, 1, -1}));
+    CHECK(run_graph(identity, {}).equals<i64>({std::nullopt}));
+}
+
 TEST_CASE("run_graph accepts string literal tick histories",
           "[testing][evaluation][feature:test-graph][series:value][scalar:string]") {
     const auto identity = [](wp<TS<string>> input) { return input; };
@@ -66,9 +74,10 @@ TEST_CASE("run_graph distinguishes a collection event from a tick history",
 
     const auto nested_constant = [](wp<TSD<i64, TS<i64, TimeSeriesGuarantee::const_>,
                                           TimeSeriesGuarantee::const_>> input) { return input; };
-    const auto nested_input = input<TSD<i64, TS<i64, TimeSeriesGuarantee::const_>,
-                                        TimeSeriesGuarantee::const_>>({{{1, 1}}});
-    CHECK_THROWS_AS((run_graph(nested_constant, GraphRunOptions{.capture_output = false}, nested_input)), WiringError);
+    CHECK_THROWS_AS((run_graph(nested_constant, GraphRunOptions{.capture_output = false},
+                               input<TSD<i64, TS<i64, TimeSeriesGuarantee::const_>,
+                                     TimeSeriesGuarantee::const_>>({{{1, 1}}}))),
+                    WiringError);
 }
 
 TEST_CASE("run_graph preserves nested single-pass ranges during generic input inference",
@@ -472,7 +481,7 @@ TEST_CASE("run_graph literal inputs coerce values and revalidate after INVALID",
     const auto integer_result =
         run_graph(integer_identity, {1, literal::INVALID, 3});
     const auto configured_integer_result =
-        run_graph(integer_identity, GraphRunOptions{}, {1, std::nullopt, 3});
+        run_graph(integer_identity, GraphRunOptions{}, {1, literal::SKIP, 3});
 
     CHECK(float_result.equals<float>({1.0F, 2.0F}));
     CHECK(integer_result.equals<i64>({1, std::nullopt, 3}));
@@ -571,14 +580,14 @@ TEST_CASE("run_graph accepts a graph function and reports skipped cycles",
 
     const auto graph = [&](wp<TS<i64>> input) { return increment(input); };
 
-    CHECK(run_graph(graph, {1, 2, std::nullopt, 4}).equals({2, 3, std::nullopt, 5}));
+    CHECK(run_graph(graph, {1, 2, literal::SKIP, 4}).equals({2, 3, std::nullopt, 5}));
 }
 
 TEST_CASE("run_graph captures a runtime-typed output",
           "[testing][evaluation][feature:test-graph][declaration:generic][series:value]") {
     const auto graph = [](wp<TS<i64>> input) { return wp<>{input}; };
 
-    CHECK(run_graph(graph, {1, 2, std::nullopt, 4}).equals<i64>({1, 2, std::nullopt, 4}));
+    CHECK(run_graph(graph, {1, 2, literal::SKIP, 4}).equals<i64>({1, 2, std::nullopt, 4}));
 }
 
 TEST_CASE("run_graph accepts runtime-typed inputs",

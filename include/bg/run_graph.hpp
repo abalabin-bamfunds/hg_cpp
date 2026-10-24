@@ -137,7 +137,7 @@ template <typename T> inline constexpr bool graph_run_initializer_list_v =
     graph_run_initializer_list<std::remove_cvref_t<T>>::value;
 
 template <typename T> struct graph_run_input_scalar {
-    using type = canonical_scalar_t<std::remove_cvref_t<T>>;
+    using type = canonical_scalar_type_t<T>;
 };
 
 template <typename T> struct graph_run_input_scalar<std::optional<T>> : graph_run_input_scalar<T> {};
@@ -158,7 +158,8 @@ template <typename T> inline constexpr bool graph_run_scalar_input_v = [] {
     } else if constexpr (graph_run_range_input_v<Input>) {
         return graph_run_scalar_input_v<std::ranges::range_value_t<Input>>;
     } else {
-        return scalar_source<Input> || requires(const Input &value) { details::scalar_data(value); };
+        return scalar_source<Input> || scalar_type_mapped<Input> ||
+               requires(const Input &value) { details::scalar_data(value); };
     }
 }();
 
@@ -167,6 +168,9 @@ template <typename Value> ScalarValue<> graph_run_scalar_value(Value &&value) {
         return ScalarValue<>{Scalar<>::from(details::scalar_data(value))};
     } else if constexpr (scalar_source<Value>) {
         return ScalarValue<>{value};
+    } else if constexpr (scalar_type_mapped<std::remove_cvref_t<Value>>) {
+        using Scalar = std::remove_cvref_t<Value>;
+        return ScalarValue<>{ScalarValue<Scalar>{std::forward<Value>(value)}};
     } else {
         static_assert(sizeof(Value) == 0, "run_graph input must be a scalar");
     }
@@ -622,8 +626,12 @@ GraphRunInputShape graph_run_parameter_time_series_for_input(const Signature &si
     }
 
     using Range = std::remove_cvref_t<Input>;
-    if constexpr (std::ranges::forward_range<Range> && graph_run_range_input_v<Input> &&
-                  !graph_run_optional_v<std::ranges::range_value_t<Range>> && !graph_run_literal_range_v<Input>) {
+    using Item = std::ranges::range_value_t<Range>;
+    if constexpr (scalar_type_mapped<std::remove_cvref_t<Item>> && !scalar_source<Item>) {
+        return {graph_run_parameter_time_series_for_value<Item>(signature, index), {}};
+    } else if constexpr (std::ranges::forward_range<Range> && graph_run_range_input_v<Input> &&
+                         !graph_run_optional_v<std::ranges::range_value_t<Range>> &&
+                         !graph_run_literal_range_v<Input>) {
         auto &values = storage.sequences.emplace_back();
         for (auto &&value : input) {
             if constexpr (std::same_as<std::remove_cvref_t<decltype(value)>,
@@ -652,13 +660,12 @@ GraphRunInputShape graph_run_parameter_time_series_for_input(const Signature &si
         const auto *fallback = graph_run_parameter_time_series_for_value<
             graph_run_input_scalar_t<std::ranges::range_value_t<Range>>>(signature, index);
         return {fallback, literal_values};
-    }
-
-    using Item = std::ranges::range_value_t<Range>;
-    if constexpr (scalar_source<Item> || graph_run_optional_v<Item> || graph_run_range_input_v<Item>) {
-        return {graph_run_parameter_time_series_for_value<graph_run_input_scalar_t<Item>>(signature, index), {}};
     } else {
-        return {};
+        if constexpr (scalar_source<Item> || graph_run_optional_v<Item> || graph_run_range_input_v<Item>) {
+            return {graph_run_parameter_time_series_for_value<graph_run_input_scalar_t<Item>>(signature, index), {}};
+        } else {
+            return {};
+        }
     }
 }
 
@@ -868,20 +875,28 @@ WiringArgument GraphRunArguments::argument_materialized(std::size_t index, Input
             point = wire_ticks(input, *time_series_type);
         } else {
             using Item = std::ranges::range_value_t<std::remove_cvref_t<Input>>;
-            auto &values = literals.sequences.emplace_back();
-            for (auto &&value : input) {
-                if constexpr (std::same_as<std::remove_cvref_t<decltype(value)>, Item>) {
-                    values.emplace_back(graph_run_literal_from_value(std::forward<decltype(value)>(value), literals));
-                } else {
-                    values.emplace_back(graph_run_literal_from_value(Item(value), literals));
+            if constexpr (scalar_type_mapped<std::remove_cvref_t<Item>> && !scalar_source<Item>) {
+                point = wire_ticks(input, *time_series_type);
+            } else {
+                auto &values = literals.sequences.emplace_back();
+                for (auto &&value : input) {
+                    if constexpr (std::same_as<std::remove_cvref_t<decltype(value)>, Item>) {
+                        values.emplace_back(graph_run_literal_from_value(std::forward<decltype(value)>(value), literals));
+                    } else {
+                        values.emplace_back(graph_run_literal_from_value(Item(value), literals));
+                    }
                 }
+                return raw_literals_argument(
+                    RawGraphRunLiteralInput{std::span<const literal::TimeSeriesLiteral>{values}}, *time_series_type);
             }
-            return raw_literals_argument(
-                RawGraphRunLiteralInput{std::span<const literal::TimeSeriesLiteral>{values}}, *time_series_type);
         }
     } else if constexpr (requires { details::scalar_data(input); } || scalar_source<Input>) {
         cycle_count = std::max(cycle_count, std::size_t{1});
         return WiringArgument{operators::const_(std::forward<Input>(input))};
+    } else if constexpr (scalar_type_mapped<std::remove_cvref_t<Input>>) {
+        cycle_count = std::max(cycle_count, std::size_t{1});
+        auto value = graph_run_scalar_value(std::forward<Input>(input));
+        return WiringArgument{operators::const_(std::move(value))};
     } else {
         static_assert(sizeof(Input) == 0, "run_graph input must be a scalar, range, or typed input descriptor");
     }
@@ -1045,22 +1060,6 @@ template <typename Tested, typename Options, typename... Inputs>
              ((!details::graph_run_descriptor_range_v<Inputs>) && ...)
 auto run_graph(const Tested &tested, const Options &options, Inputs &&...inputs) {
     return details::run_graph_bound_target(tested, options, std::forward<Inputs>(inputs)...);
-}
-
-template <typename Function>
-    requires details::graph_run_legacy_optional_input_v<Function>
-auto run_graph(
-    const Function &function,
-    std::initializer_list<std::optional<typename details::graph_function<Function>::template input_scalar<0>>> input) {
-    return details::run_graph_bound_target(function, GraphRunOptions{}, input);
-}
-
-template <typename Function>
-    requires details::graph_run_legacy_optional_input_v<Function>
-auto run_graph(
-    const Function &function, const GraphRunOptions &options,
-    std::initializer_list<std::optional<typename details::graph_function<Function>::template input_scalar<0>>> input) {
-    return details::run_graph_bound_target(function, options, input);
 }
 
 template <typename Tested, typename... Values>

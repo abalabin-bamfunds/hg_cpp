@@ -41,7 +41,7 @@ TEST_CASE("feedback waits for its first input tick",
         return static_cast<wp<TS<i64>>>(loop);
     };
 
-    const auto actual = bg::run_graph(graph, {std::nullopt, 3, std::nullopt, 8});
+    const auto actual = bg::run_graph(graph, {literal::SKIP, 3, literal::SKIP, 8});
     CHECK(actual.equals({std::nullopt, std::nullopt, 3, std::nullopt, 8}));
 }
 

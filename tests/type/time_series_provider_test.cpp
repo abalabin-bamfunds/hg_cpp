@@ -1438,8 +1438,11 @@ TEST_CASE("run_graph accepts raw provider scalar values and preserves explicit h
     const auto read = node([](In<TS<Value>> input) { return input.value().get(); });
     provider::scalar_literal_semantic_calls = 0;
 
+    const auto initial_scalar = run_graph(read, Value{7});
+
     const auto initial = run_graph(read, {7});
 
+    CHECK(initial_scalar.equals<i64>({17}));
     CHECK(initial.equals<i64>({17}));
     CHECK(provider::scalar_literal_semantic_calls == 1);
 

@@ -8,7 +8,7 @@
 #include <bg/scalar/list/scalar.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/run_graph.hpp>
-#include <bg/testing/run_graph_literal_input.hpp>
+#include <bg/graph_run_input.hpp>
 #include <bg/time_series/output_state.hpp>
 #include <bg/time_series/tick_serializer.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>

@@ -329,28 +329,7 @@ template <typename Function> struct graph_function {
     using output_scalar = typename graph_result_scalar<result>::type;
 
     template <std::size_t Index> using argument = std::remove_cvref_t<typename callable::template argument_type<Index>>;
-
-    template <std::size_t Index>
-    using input_time_series = typename bg::details::typed_wiring_point<argument<Index>>::time_series_type;
-
-    template <std::size_t Index> using input_scalar = typename input_time_series<Index>::value_type;
 };
-
-template <typename TimeSeries> struct simple_graph_run_input : std::false_type {};
-
-template <typename Scalar, auto... Properties>
-struct simple_graph_run_input<TS<Scalar, Properties...>>
-    : std::bool_constant<!scalar_declaration_traits<Scalar>::is_collection> {};
-
-template <typename Function> inline constexpr bool graph_run_legacy_optional_input_v = [] {
-    if constexpr (std::derived_from<std::remove_cvref_t<Function>, WiringTemplate>) {
-        return false;
-    } else if constexpr (graph_function<Function>::callable::argument_count == 1) {
-        return simple_graph_run_input<typename graph_function<Function>::template input_time_series<0>>::value;
-    } else {
-        return false;
-    }
-}();
 
 template <typename Tested>
 concept graph_run_target = std::derived_from<std::remove_cvref_t<Tested>, WiringTemplate> ||

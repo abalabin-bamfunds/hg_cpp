@@ -36,7 +36,7 @@ TEST_CASE("a constant waits for another required input",
     });
 
     const auto graph = [&](wp<TS<i64>> input) { return sum(operators::const_(4), input); };
-    const auto actual = bg::run_graph(graph, {std::nullopt, 3});
+    const auto actual = bg::run_graph(graph, {literal::SKIP, 3});
 
     CHECK(actual.equals({std::nullopt, 7}));
     CHECK(evaluations == 1);

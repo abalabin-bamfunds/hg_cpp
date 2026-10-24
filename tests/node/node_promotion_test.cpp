@@ -360,7 +360,7 @@ TEST_CASE("callable optional arguments and return values preserve absence",
         eval = [](std::optional<int> value) { return value.value_or(-1); }, schedule_on_start = true);
 
     const auto optional_graph = [=](wp<TS<i64>> input) { return optional_input(input); };
-    CHECK(bg::run_graph(optional_graph, {std::nullopt, 1, 2}).equals({-1, 1, 2}));
+    CHECK(bg::run_graph(optional_graph, {literal::SKIP, 1, 2}).equals({-1, 1, 2}));
 }
 
 TEST_CASE("required promoted callable inputs invalidate and recover their outputs",
@@ -413,7 +413,7 @@ TEST_CASE("callable scalar-or-time-series inputs accept constant and default bin
         return add(operators::const_(3), operators::default_(input, 7));
     };
 
-    CHECK(bg::run_graph(graph, {std::nullopt, 1, 2}).equals({10, 4, 5}));
+    CHECK(bg::run_graph(graph, {literal::SKIP, 1, 2}).equals({10, 4, 5}));
 }
 
 TEST_CASE("callable scalar-or-time-series inputs read references to values",

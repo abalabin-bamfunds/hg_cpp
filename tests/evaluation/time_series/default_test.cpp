@@ -22,7 +22,7 @@ TEST_CASE("a default value supplies an initially invalid source input",
           "[shape:single-node][activity:active][validity:required][transition:first-tick]") {
     const auto graph = [](wp<TS<i64>> input) { return operators::default_(input, 7); };
 
-    const auto actual = bg::run_graph(graph, {std::nullopt, 3, std::nullopt, 4});
+    const auto actual = bg::run_graph(graph, {literal::SKIP, 3, literal::SKIP, 4});
 
     CHECK(actual.equals<i64>({7, 3, std::nullopt, 4}));
 }

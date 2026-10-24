@@ -181,8 +181,6 @@ parameters supply input types. A plain node parameter supplies its time series a
 type must be resolved. Input types come from the signature, so empty and skip-only sequences work too. Use
 `input<TSD<string, TS<i64>>>({...})` for an unresolved input declaration, or
 `input(runtime_type, {...})` to supply a time series runtime type explicitly.
-Graph functions with non-collection scalar inputs accept C++ element
-conversions and `std::nullopt` in brace inputs.
 Raw brace calls support one through four inputs when every argument is a
 brace sequence. Use `ticks({...})` or a typed range to mix a history with
 ordinary scalar arguments. Pass `GraphRunLiteralInput` descriptors or a
