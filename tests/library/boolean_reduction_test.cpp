@@ -192,6 +192,7 @@ TEST_CASE("Boolean reductions preserve const, final, and deduplicated guarantees
     const auto final_value = node([](Scalar<bool> value, Out<TS<bool, TimeSeriesGuarantee::final>> output) {
         output.set(*value);
     });
+
     const auto check_final_tsl = [&] {
         const auto values = std::array{final_value(false), final_value(true)};
         const auto items = tsl(values);
@@ -215,6 +216,7 @@ TEST_CASE("Boolean reductions preserve const, final, and deduplicated guarantees
                                                      TimeSeriesGuarantee::final>> output) {
         output[1].set(true);
     });
+
     const auto check_final_tsd = [&] {
         const auto values = final_dictionary();
         const auto required = operators::all_("values"_n = values);
@@ -226,6 +228,7 @@ TEST_CASE("Boolean reductions preserve const, final, and deduplicated guarantees
                                                                 TimeSeriesGuarantee::deduplicated>> output) {
         output[1].set(true);
     });
+
     const auto check_deduplicated_tsd = [&] {
         const auto values = deduplicated_dictionary();
         const auto required = operators::any_("values"_n = values);
@@ -234,6 +237,7 @@ TEST_CASE("Boolean reductions preserve const, final, and deduplicated guarantees
     };
 
     const auto const_set = node([](Out<TSS<bool, TimeSeriesGuarantee::const_>> output) { output.apply({true}); });
+
     const auto check_const_tss = [&] {
         const auto values = const_set();
         const auto required = operators::all_("values"_n = values);
@@ -242,6 +246,7 @@ TEST_CASE("Boolean reductions preserve const, final, and deduplicated guarantees
     };
 
     const auto final_set = node([](Out<TSS<bool, TimeSeriesGuarantee::final>> output) { output.apply({false}); });
+
     const auto check_final_tss = [&] {
         const auto values = final_set();
         const auto required = operators::any_("values"_n = values);
@@ -252,6 +257,7 @@ TEST_CASE("Boolean reductions preserve const, final, and deduplicated guarantees
     const auto deduplicated_set = node([](Out<TSS<bool, TimeSeriesGuarantee::deduplicated>> output) {
         output.apply({true});
     });
+
     const auto check_deduplicated_tss = [&] {
         const auto values = deduplicated_set();
         const auto required = operators::all_("values"_n = values);
@@ -275,6 +281,7 @@ TEST_CASE("deduplicated Boolean reductions suppress equal aggregate results",
                                    Out<TSS<bool, TimeSeriesGuarantee::deduplicated>> output) {
         output.apply({*value});
     });
+
     const auto all = [&](wp<TS<bool>> values) { return operators::all_(add_value(values)); };
     const auto any = [&](wp<TS<bool>> values) { return operators::any_(add_value(values)); };
 

@@ -53,6 +53,7 @@ TEST_CASE("count preserves a final guarantee",
             output.set(7);
         }
     });
+
     const auto count = [&](wp<TS<bool>> publish) {
         const auto value = source(publish);
         const auto result = operators::count(value);

@@ -127,6 +127,7 @@ TEST_CASE("subscription service clients inside map branches update one root requ
         output[1].set(4);
         output[2].set(9);
     });
+
     const auto tested = [&] {
         const auto mapped = map(
             [&](auto key, auto item) {
@@ -217,6 +218,7 @@ TEST_CASE("subscription service clients inside mesh branches update one root req
         output[1].set(4);
         output[2].set(9);
     });
+
     const auto tested = [&] {
         const auto mapped = mesh(
             [&](auto key, auto item) {
@@ -298,6 +300,7 @@ TEST_CASE("removing a map branch removes its subscription request",
             output[5].set(7);
         }
     });
+
     const auto tested = [&](wp<TS<bool>> remove) {
         const auto mapped = map(
             [&](auto key, auto item) {
@@ -332,6 +335,7 @@ TEST_CASE("response-producing subscription clients inside a map reject dependenc
         output[1].set(4);
         output[2].set(9);
     });
+
     const auto tested = [&] {
         const auto mapped =
             map([&](auto key, auto) { return service(key).template as<TS<i64>>(); }, final_values(),

@@ -149,6 +149,7 @@ TEST_CASE("clip preserves the weakest input guarantee",
           "[feature:operator][series:value][scalar:floating-point]"
           "[guarantee:final][guarantee:const]") {
     const auto final_value = node([](Out<TS<double, TimeSeriesGuarantee::final>> output) { output.set(5.0); });
+
     const auto clip_final = [&] {
         const auto result = operators::clip(final_value(), 0.0, 10.0);
         CHECK(&result.type() == &TS<double, TimeSeriesGuarantee::final>::type());
@@ -171,6 +172,7 @@ TEST_CASE("clip preserves final guarantees and clamps floating infinities",
     const auto final_minimum = node([](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(2); });
 
     const auto final_maximum = node([](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(6); });
+
     const auto final_clip = [&] {
         const auto result = operators::clip(final_value(), final_minimum(), final_maximum());
         CHECK(&result.type() == &TS<i64, TimeSeriesGuarantee::final>::type());
@@ -255,6 +257,7 @@ TEST_CASE("ewma retains input guarantees and caps const warmup at final",
         return result;
     };
     const auto final_value = node([](Out<TS<double, TimeSeriesGuarantee::final>> output) { output.set(4.0); });
+
     const auto check_final = [&] {
         const auto result = operators::ewma(final_value(), 0.5);
         CHECK(&result.type() == &TS<double, TimeSeriesGuarantee::final>::type());

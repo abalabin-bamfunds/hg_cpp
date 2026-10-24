@@ -51,6 +51,7 @@ TEST_CASE("reduce combines final TSD items with a nested reducer",
         output[1].set(3);
         output[2].set(4);
     });
+
     const auto tested = [&] {
         return reduce(add_graph, final_values());
     };
@@ -287,6 +288,7 @@ TEST_CASE("reduce combines final TSD items through a context-dependent fallback 
         output[1].set(3);
         output[2].set(4);
     });
+
     const auto tested = [=](wp<TS<i64>> factor) {
         auto context_scope = with_context("factor"_n = factor);
         return reduce(context_add_graph, final_values());
