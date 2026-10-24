@@ -33,7 +33,24 @@ namespace bg::python::details {
 namespace {
 
 bool is_mapping(nb::handle value) {
+    return PyMapping_Check(value.ptr()) != 0 && PySequence_Check(value.ptr()) == 0;
+}
+
+bool is_dict(nb::handle value) {
     return PyDict_Check(value.ptr()) != 0;
+}
+
+nb::object mapping_items(nb::handle value) {
+    if (!is_mapping(value)) {
+        PyErr_SetString(PyExc_TypeError, "expected a mapping");
+        nb::raise_python_error();
+    }
+
+    auto items = nb::steal<nb::object>(PyMapping_Items(value.ptr()));
+    if (!items) {
+        nb::raise_python_error();
+    }
+    return items;
 }
 
 bool is_sequence(nb::handle value) {
@@ -73,8 +90,10 @@ bool scalar_shape(const ScalarType &type, nb::handle value) {
         if (!is_mapping(value)) {
             return false;
         }
-        for (const auto [key, item] : nb::borrow<nb::dict>(value)) {
-            if (!scalar_shape(dictionary->key_type(), key) || !scalar_shape(dictionary->mapped_type(), item)) {
+        const auto items = mapping_items(value);
+        for (const auto item : nb::borrow<nb::iterable>(items)) {
+            const auto pair = nb::cast<nb::tuple>(item);
+            if (!scalar_shape(dictionary->key_type(), pair[0]) || !scalar_shape(dictionary->mapped_type(), pair[1])) {
                 return false;
             }
         }
@@ -99,7 +118,7 @@ bool scalar_shape(const ScalarType &type, nb::handle value) {
     }
 
     if (type_cast<HierarchicalScalarType>(&type) != nullptr) {
-        if (is_mapping(value)) {
+        if (is_dict(value)) {
             return true;
         }
         const auto *hierarchical = type_cast<HierarchicalScalarType>(&type);

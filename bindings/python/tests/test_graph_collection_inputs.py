@@ -1,4 +1,5 @@
 from datetime import timedelta
+from types import MappingProxyType
 from typing import Annotated, TypeVar
 
 import pytest
@@ -78,6 +79,38 @@ def test_run_graph_tsd_inputs_accept_deltas_and_removals():
         graph,
         [{1: 10, 2: 20}, {1: bg.REMOVE, 2: 21, 3: 30}, None],
     ) == [30, 51, None]
+
+
+def test_run_graph_accepts_mapping_protocol_values_and_collection_deltas():
+    @bg.graph
+    def consume_const(value: bg.TS[dict[int, str], bg.const_]) -> bg.TS[dict[int, str]]:
+        return value
+
+    @bg.graph
+    def scalar_dictionary(value: bg.TS[dict[int, str]]) -> bg.TS[dict[int, str]]:
+        return consume_const(value)
+
+    @bg.graph
+    def dictionary(values: bg.TSD[int, bg.TS[str]]) -> bg.TSD[int, bg.TS[str]]:
+        return values
+
+    @bg.graph
+    def list_(values: bg.TSL[bg.TS[int], 2]) -> bg.TSL[bg.TS[int], 2]:
+        return values
+
+    @bg.schema
+    class Pair:
+        left: bg.TS[int]
+        right: bg.TS[int]
+
+    @bg.graph
+    def bundle(values: bg.TSB[Pair]) -> bg.TSB[Pair]:
+        return values
+
+    assert bg.run_graph(scalar_dictionary, MappingProxyType({1: "scalar"})) == [{1: "scalar"}]
+    assert bg.run_graph(dictionary, MappingProxyType({1: "dictionary"})) == [{1: "dictionary"}]
+    assert bg.run_graph(list_, MappingProxyType({1: 2})) == [{1: 2}]
+    assert bg.run_graph(bundle, MappingProxyType({"left": 3})) == [{"left": 3}]
 
 
 def test_run_graph_ticks_disambiguates_a_list_valued_scalar_and_accepts_empty_history():
