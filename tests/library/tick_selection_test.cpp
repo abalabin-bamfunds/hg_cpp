@@ -118,10 +118,7 @@ TEST_CASE("step follows TSS and TSD references through invalid targets and reval
         return operators::sum_(operators::step(select_set(cycle, populated, invalid), 2)).as<TS<i64>>();
     });
 
-    CHECK(bg::run_graph(set_sum,
-                              std::array{bg::input<TS<i64>>({0, 1, 2, 3}),
-                                         bg::input<TSS<i64>>({{1}, literal::SKIP, {2}, {3}}),
-                                         bg::input<TSS<i64>>(ticks({}))})
+    CHECK(bg::run_graph(set_sum, ticks({0, 1, 2, 3}), ticks({{1}, literal::SKIP, {2}, {3}}), ticks({}))
               .equals({1, 0, literal::SKIP, 6}));
 
     const auto select_dictionary = node([](In<TS<i64>> cycle, In<REF<TSD<i64, TS<i64>>>, passive> populated,
@@ -135,11 +132,8 @@ TEST_CASE("step follows TSS and TSD references through invalid targets and reval
             .as<TS<i64>>();
     });
 
-    CHECK(bg::run_graph(dictionary_sum,
-                              std::array{bg::input<TS<i64>>({0, 1, 2, 3}),
-                                         bg::input<TSD<i64, TS<i64>>>(
-                                             {{{1, 10}}, literal::SKIP, {{2, 20}}, {{3, 30}}}),
-                                         bg::input<TSD<i64, TS<i64>>>(ticks({}))})
+    CHECK(bg::run_graph(dictionary_sum, ticks({0, 1, 2, 3}),
+                        ticks({{{1, 10}}, literal::SKIP, {{2, 20}}, {{3, 30}}}), ticks({}))
               .equals({10, 0, literal::SKIP, 60}));
 }
 

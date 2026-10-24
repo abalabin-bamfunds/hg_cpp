@@ -276,7 +276,7 @@ TEST_CASE("an overload forwards node options to node",
         },
         schedule_on_start = true};
 
-    CHECK(bg::run_graph(scheduled_operator, input<TS<i64>>({literal::INVALID}))
+    CHECK(bg::run_graph(scheduled_operator, input<TS<i64>>({literal::SKIP}))
               .equals<bool>({false}));
 }
 

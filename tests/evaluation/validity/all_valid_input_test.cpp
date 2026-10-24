@@ -276,9 +276,8 @@ TEST_CASE("all_valid follows a selected reference using the declared base schema
         return inspect(select(choose_second, first, second));
     };
 
-    CHECK(bg::run_graph(graph, std::array{bg::input<TS<i64>>({0, 1, 1}),
-                                          bg::input<TSB<ValidityDerivedBundle>>({{{"value", 1}}}),
-                                          bg::input<TS<i64>>({1, literal::INVALID, 3})})
+    CHECK(bg::run_graph(graph, ticks({0, 1, 1}), input<TSB<ValidityDerivedBundle>>({{{"value", 1}}}),
+                        ticks({1, literal::INVALID, 3}))
               .equals({1, std::nullopt, 3}));
 }
 
