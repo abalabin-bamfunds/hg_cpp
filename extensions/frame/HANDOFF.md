@@ -4,33 +4,35 @@ Updated: 2026-10-24.
 
 ## Current compaction verification
 
-The frame lane is rebased onto main `2e960f21`. Utility range relocation is
-committed as `cc12d38c`; its original utility-lane commit is `7b0596f1`.
-The frame changes and utility changes remain on their lanes.
+The frame lane includes main through resolver fix `e2317423` as merge
+`e00f2102`. Frame range relocation is committed as `d8dbd8c3`; its benchmark
+report is committed separately. Utility range relocation is `cc12d38c`, from
+utility-lane commit `7b0596f1`.
 
 Current build paths are relative to `.lanes/frame-field-access`:
 
 | Build | BG install |
 | --- | --- |
+| `build/core-frame-release` | `build/compaction-optimisation/bg-release-install` |
 | `build/compaction-optimisation/frame-release` | `build/compaction-optimisation/bg-release-install` |
 | `build/compaction-optimisation/frame-debug-asan` | `build/compaction-optimisation/bg-debug-install` |
 
-Both configurations use ICU 78 from `hg-build`. Preserve the existing
-`dependencies/` directory. The temporary and older verification paths recorded
-below are historical.
+The core and frame configurations use ICU 78 from `hg-build`. Do not use
+`build/compaction-optimisation/bg-release`; it was configured against system ICU
+67 and cannot provide the correct frame link dependencies. Preserve the
+existing `dependencies/` directory. The other older verification paths below
+are historical.
 
-Release column, provider, TSC, frame, and Arrow tests passed. Focused Debug
-column, frame, and Arrow tests passed with ASan, UBSan, and LeakSanitizer.
-Utility relocation passed 31 Catch2 cases in both Debug and Release.
-
-The Release expression test fails in BG's `tsb_to_bundle` schema resolver in
-`src/library/conversion.cpp`, which is identical to main. That resolver assumes
-the requested output is a scalar Bundle before its requirement checks run;
-frame conversion requests such as `TSC<double>` can therefore throw during
-overload selection. The compaction work does not change that resolver.
+All six Release suites passed after installing the BG resolver fix: column,
+provider, TSC, frame, Arrow, and expression. The focused Debug column suite
+passed with ASan, UBSan, and LeakSanitizer after the packed-Boolean compaction
+regression was added to the test entry point. Utility relocation passed 31
+Catch2 cases in both Debug and Release.
 
 [The compaction benchmark](benchmarks/compaction.md) records the measured
-operation definitions and retained results.
+operation definitions and retained results. Those timings use frame source
+revision `d8dbd8c3`, before the BG resolver merge; no new timing run was needed
+for the resolver fix.
 
 ## Earlier integration notes
 
