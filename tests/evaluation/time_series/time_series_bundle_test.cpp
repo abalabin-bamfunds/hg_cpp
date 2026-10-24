@@ -521,7 +521,8 @@ TEST_CASE("getattr follows a reference field in a referenced native bundle",
     const auto select = node([](bool use_second, In<REF<TS<i64>>> first, In<REF<TS<i64>>> second,
                                 Out<REF<TS<i64>>> output) { output.copy(use_second ? second : first); });
 
-    const auto make_bundle = node([](i64 value, In<REF<TS<i64>>> selected, Out<TSB<ReferenceBundle>> output) {
+    const auto make_bundle = node([](i64 value, In<REF<TS<i64>>> selected,
+                                     Out<TSB<ReferenceBundle, TimeSeriesGuarantee::deduplicated>> output) {
         output->value.set(value);
         output->selected.copy(selected);
     });
