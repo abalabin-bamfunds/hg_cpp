@@ -19,7 +19,6 @@ wheel.packages = ["bindings/python/python/bg"]
 wheel.py-api = "cp312"
 sdist.include = [
   "CMakeLists.txt",
-  "README.md",
   "bindings/python/CMakeLists.txt",
   "bindings/python/python/**",
   "bindings/python/src/**",
