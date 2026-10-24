@@ -257,6 +257,28 @@ def test_run_graph_scalar_inputs_keep_the_const_guarantee_of_normal_wiring():
     assert bg.run_graph(graph, 5) == [5]
 
 
+def test_run_graph_rejects_a_history_for_a_root_const_input():
+    @bg.graph
+    def identity(value: bg.TS[int, bg.const_]) -> bg.TS[int]:
+        return value
+
+    with pytest.raises(ValueError):
+        bg.run_graph(identity, [1, 2])
+
+
+def test_run_graph_rejects_a_history_forwarded_to_a_nested_const_input():
+    @bg.graph
+    def consume_const(value: bg.TS[int, bg.const_]) -> bg.TS[int]:
+        return value
+
+    @bg.graph
+    def outer(value: bg.TS[int]) -> bg.TS[int]:
+        return consume_const(value)
+
+    with pytest.raises(ValueError):
+        bg.run_graph(outer, [1, 2])
+
+
 def test_run_graph_preserves_the_empty_history_baseline_and_empty_collection_event():
     @bg.graph
     def scalar_identity(value: bg.TS[int]) -> bg.TS[int]:

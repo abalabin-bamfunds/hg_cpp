@@ -690,12 +690,10 @@ def test_run_graph_captures_realtime_input_and_can_disable_capture():
         wired.append(True)
         return observe(value)
 
-    start_time = datetime.now().replace(tzinfo=None)
     result = bg.run_graph(
         graph,
         [1, 2],
         engine=bg.EvaluationEngine.realtime,
-        start_time=start_time,
         run_time=timedelta(milliseconds=40),
     )
     assert [value for _, value in result.events] == [1, 2]
