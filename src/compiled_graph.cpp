@@ -2101,9 +2101,11 @@ class CompiledGraphBuilder {
                 if (input.wired_input.is_borrowed()) {
                     return &resolve_time_series_runtime_type(parameter);
                 }
-                if (input.wired_input.is_output() &&
-                    plan.constant_for_output(input.wired_input.index()) != nullptr) {
-                    return &resolve_time_series_runtime_type(parameter);
+                if (input.wired_input.is_output()) {
+                    if (const auto *constant = plan.constant_for_output(input.wired_input.index())) {
+                        const auto &scalar = plan.nodes[constant->node].scalar_values()[constant->scalar];
+                        return &time_series_value_runtime_type(parameter, scalar.runtime_type());
+                    }
                 }
                 if (input.wired_input.is_inherited()) {
                     return &resolve_time_series_runtime_type(parameter);

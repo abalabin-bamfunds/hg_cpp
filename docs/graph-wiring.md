@@ -658,6 +658,9 @@ Specialize a generic graph before passing it to `run_graph`, or supply an
 explicitly typed [input descriptor](testing.md#test-layout). Its internal node
 and graph calls use normal type resolution.
 
+For a C++ graph function, normal graph invocation resolves its inputs before
+wiring its body. The returned wiring point determines the output type.
+
 Returned output is captured by default. Set `GraphRunOptions::capture_output`
 to `false` to omit the capture sink and storage. Outputless graphs require no
 capture. Captured results expose timestamped events and the

@@ -320,15 +320,36 @@ template <typename T> inline constexpr bool graph_run_descriptor_range_v = [] {
     }
 }();
 
+inline void graph_run_default_guarantees(const TimeSeriesType &type, TypeMap &type_map) {
+    if (const auto *guarantee = type.guarantee().variable()) {
+        type_map.set(*guarantee, guarantee->minimum().value_or(TimeSeriesGuarantee::ordinary));
+    }
+
+    if (const auto *reference = type_cast<TimeSeriesReferenceType>(&type)) {
+        graph_run_default_guarantees(reference->target_type(), type_map);
+    } else if (const auto *dictionary = type_cast<TimeSeriesDictionaryType>(&type)) {
+        graph_run_default_guarantees(dictionary->key_set_type(), type_map);
+        graph_run_default_guarantees(dictionary->value_type(), type_map);
+    } else if (const auto *list = type_cast<TimeSeriesListType>(&type)) {
+        graph_run_default_guarantees(list->item_type(), type_map);
+    } else if (const auto *bundle = type_cast<TimeSeriesBundleType>(&type)) {
+        const auto item_count = bundle->item_count();
+        if (item_count == std::dynamic_extent) {
+            return;
+        }
+        for (auto index = std::size_t{}; index < item_count; ++index) {
+            graph_run_default_guarantees(bundle->item_type(index), type_map);
+        }
+    }
+}
+
 inline const TimeSeriesRuntimeType &graph_run_runtime_type(const TimeSeriesType &type) {
     if (type.is_resolved()) {
         return resolve_time_series_runtime_type(type);
     }
 
     auto type_map = TypeMap{};
-    if (const auto *guarantee = type.guarantee().variable()) {
-        type_map.set(*guarantee, guarantee->minimum().value_or(TimeSeriesGuarantee::ordinary));
-    }
+    graph_run_default_guarantees(type, type_map);
     try {
         const auto &resolved_type = type_cast<TimeSeriesType>(type.resolve(type_map));
         return resolve_time_series_runtime_type(resolved_type);
@@ -351,6 +372,61 @@ inline const TimeSeriesRuntimeType &graph_run_runtime_type(const Signature &sign
 inline const ScalarType *graph_run_value_type(const TimeSeriesType &target) {
     const auto *value_type = type_cast<TimeSeriesValueType>(&target.target_type());
     return value_type == nullptr ? nullptr : &value_type->value_type();
+}
+
+inline bool graph_run_numeric_value_type(const TimeSeriesType &target) {
+    const auto *value_type = graph_run_value_type(target);
+    return value_type == &cpp_scalar_type<float>() || value_type == &cpp_scalar_type<double>();
+}
+
+inline bool graph_run_numeric_literal(const literal::TimeSeriesLiteral &value) {
+    return value.visit(
+        [](const literal::ScalarLiteralItem &item) {
+            auto numeric = false;
+            item.visit_scalar([&](const auto *source) {
+                const auto &scalar_type = details::scalar_data(*source).runtime_type().type();
+                if (const auto *builtin = type_cast<BuiltinScalarType>(&scalar_type)) {
+                    builtin->visit_builtin_type([&]<typename Builtin>() { numeric = std::is_arithmetic_v<Builtin>; });
+                }
+            });
+            return numeric;
+        },
+        [](std::span<const literal::TimeSeriesLiteral>) { return false; })
+        .value_or(false);
+}
+
+template <typename Target>
+ScalarValue<> graph_run_numeric_literal_value(const literal::TimeSeriesLiteral &value) {
+    return value.visit(
+        [](const literal::ScalarLiteralItem &item) {
+            return item.visit_scalar([](const auto *source) -> ScalarValue<> {
+                       if constexpr (requires { source->value(); }) {
+                           using Source = std::remove_cvref_t<decltype(source->value())>;
+                           if constexpr (std::is_arithmetic_v<Source>) {
+                               return ScalarValue<>{static_cast<Target>(source->value())};
+                           }
+                       }
+                       throw std::invalid_argument{"run_graph numeric literal has a non-numeric value"};
+                   })
+                .value();
+        },
+        [](std::span<const literal::TimeSeriesLiteral>) -> ScalarValue<> {
+            throw std::invalid_argument{"run_graph numeric literal cannot contain a sequence"};
+        })
+        .value();
+}
+
+template <typename Value>
+ScalarValue<> graph_run_scalar_value(Value &&value, const TimeSeriesType &target) {
+    if constexpr (std::is_arithmetic_v<std::remove_cvref_t<Value>>) {
+        if (graph_run_value_type(target) == &cpp_scalar_type<float>()) {
+            return ScalarValue<>{static_cast<float>(value)};
+        }
+        if (graph_run_value_type(target) == &cpp_scalar_type<double>()) {
+            return ScalarValue<>{static_cast<double>(value)};
+        }
+    }
+    return graph_run_owned_scalar_value(std::forward<Value>(value));
 }
 
 template <typename Value>
@@ -680,7 +756,10 @@ struct GraphRunArguments {
     template <typename Input> void append(Input &&input);
 
     template <typename Range> WiringPoint wire_ticks(Range &values, const TimeSeriesType &target);
-    WiringPoint wire_literal(const GraphRunLiteralInput &input, std::size_t index) const;
+    WiringPoint wire_literal(const GraphRunLiteralInput &input, std::size_t index);
+    std::span<const literal::TimeSeriesLiteral>
+    normalize_numeric_literals(std::span<const literal::TimeSeriesLiteral> values,
+                               const TimeSeriesRuntimeType &runtime_type);
     WiringArgument raw_literals_argument(RawGraphRunLiteralInput input, const TimeSeriesType &target);
     template <typename Input> WiringArgument argument_materialized(std::size_t index, Input &&input);
     template <typename Input> WiringArgument argument(std::size_t index, Input &&input);
@@ -723,7 +802,7 @@ WiringPoint GraphRunArguments::wire_ticks(Range &values, const TimeSeriesType &t
         if constexpr (graph_run_optional_v<Item>) {
             if (value) {
                 if constexpr (graph_run_scalar_input_v<typename graph_run_optional<Item>::value_type>) {
-                    stored_ticks.emplace_back(std::in_place, graph_run_owned_scalar_value(*value));
+                    stored_ticks.emplace_back(std::in_place, graph_run_scalar_value(*value, target));
                 } else {
                     throw std::invalid_argument{"run_graph requires a literal-compatible collection input"};
                 }
@@ -734,9 +813,9 @@ WiringPoint GraphRunArguments::wire_ticks(Range &values, const TimeSeriesType &t
             if constexpr (graph_run_scalar_input_v<decltype(value)>) {
                 auto item = [&] {
                     if constexpr (std::same_as<std::remove_cvref_t<decltype(value)>, Item>) {
-                        return graph_run_owned_scalar_value(value);
+                        return graph_run_scalar_value(value, target);
                     } else {
-                        return graph_run_owned_scalar_value(Item(value));
+                        return graph_run_scalar_value(Item(value), target);
                     }
                 }();
                 stored_ticks.emplace_back(std::in_place, std::move(item));
@@ -758,29 +837,57 @@ WiringPoint GraphRunArguments::wire_ticks(Range &values, const TimeSeriesType &t
     return details::wire_runtime_source(GraphRunInput{*runtime_type, stored_ticks});
 }
 
-inline WiringPoint GraphRunArguments::wire_literal(const GraphRunLiteralInput &input, std::size_t index) const {
+inline std::span<const literal::TimeSeriesLiteral> GraphRunArguments::normalize_numeric_literals(
+    std::span<const literal::TimeSeriesLiteral> values, const TimeSeriesRuntimeType &runtime_type) {
+    const auto &target = runtime_type.type();
+    if (!graph_run_numeric_value_type(target)) {
+        return values;
+    }
+
+    auto &normalized = literals.sequences.emplace_back();
+    normalized.reserve(values.size());
+    for (const auto &value : values) {
+        if (!graph_run_numeric_literal(value)) {
+            normalized.emplace_back(value);
+            continue;
+        }
+
+        if (graph_run_value_type(target) == &cpp_scalar_type<float>()) {
+            literals.values.emplace_back(graph_run_numeric_literal_value<float>(value));
+        } else {
+            literals.values.emplace_back(graph_run_numeric_literal_value<double>(value));
+        }
+        normalized.emplace_back(literals.values.back());
+    }
+
+    return normalized;
+}
+
+inline WiringPoint GraphRunArguments::wire_literal(const GraphRunLiteralInput &input, std::size_t index) {
     const auto &runtime_type = input.runtime_type == nullptr ? graph_run_runtime_type(signature, index)
                                                              : *input.runtime_type;
-    return details::wire_literal_source(input, runtime_type);
+    const auto values = normalize_numeric_literals(input.ticks, runtime_type);
+    return details::wire_literal_source(GraphRunLiteralInput(values), runtime_type);
 }
 
 inline WiringArgument GraphRunArguments::raw_literals_argument(RawGraphRunLiteralInput input,
                                                                const TimeSeriesType &target) {
     const auto &runtime_type = graph_run_runtime_type(target);
-    const auto initial_event = graph_run_raw_literals_are_initial_event(input.values, runtime_type.type());
-    cycle_count = std::max(cycle_count, initial_event ? std::size_t{1} : input.values.size());
+    const auto values = normalize_numeric_literals(input.values, runtime_type);
+    const auto initial_event = graph_run_raw_literals_are_initial_event(values, runtime_type.type());
+    cycle_count = std::max(cycle_count, initial_event ? std::size_t{1} : values.size());
     if (initial_event && graph_run_value_type(runtime_type.type()) != nullptr) {
-        const auto value = literal::TimeSeriesLiteral(input.values);
+        const auto value = literal::TimeSeriesLiteral(values);
         return WiringArgument{operators::const_(
             ScalarValue<>::from_literal(graph_run_value_runtime_type(runtime_type.type()), value))};
     }
     if (initial_event) {
         auto &event = literals.sequences.emplace_back();
-        event.emplace_back(input.values);
+        event.emplace_back(values);
         return WiringArgument{details::wire_literal_source(
             GraphRunLiteralInput(std::span<const literal::TimeSeriesLiteral>{event}), runtime_type)};
     }
-    return WiringArgument{details::wire_literal_source(GraphRunLiteralInput(input.values), runtime_type)};
+    return WiringArgument{details::wire_literal_source(GraphRunLiteralInput(values), runtime_type)};
 }
 
 template <typename Input>
@@ -851,6 +958,16 @@ WiringArgument GraphRunArguments::argument_materialized(std::size_t index, Input
         using Item = typename graph_run_initializer_list<std::remove_cvref_t<Input>>::value_type;
         if constexpr (graph_run_optional_v<Item>) {
             point = wire_ticks(input, *time_series_type);
+        } else if constexpr (std::is_arithmetic_v<Item>) {
+            if (graph_run_numeric_value_type(*time_series_type)) {
+                point = wire_ticks(input, *time_series_type);
+            } else {
+                auto &values = literals.sequences.emplace_back();
+                for (auto &&value : input) {
+                    values.emplace_back(graph_run_literal_from_value(std::forward<decltype(value)>(value), literals));
+                }
+                return raw_literals_argument(RawGraphRunLiteralInput{values}, *time_series_type);
+            }
         } else {
             auto &values = literals.sequences.emplace_back();
             for (auto &&value : input) {
@@ -873,6 +990,22 @@ WiringArgument GraphRunArguments::argument_materialized(std::size_t index, Input
             return raw_literals_argument(RawGraphRunLiteralInput{values}, *time_series_type);
         } else if constexpr (graph_run_optional_v<std::ranges::range_value_t<std::remove_cvref_t<Input>>>) {
             point = wire_ticks(input, *time_series_type);
+        } else if constexpr (std::is_arithmetic_v<std::ranges::range_value_t<std::remove_cvref_t<Input>>>) {
+            if (graph_run_numeric_value_type(*time_series_type)) {
+                point = wire_ticks(input, *time_series_type);
+            } else {
+                using Item = std::ranges::range_value_t<std::remove_cvref_t<Input>>;
+                auto &values = literals.sequences.emplace_back();
+                for (auto &&value : input) {
+                    if constexpr (std::same_as<std::remove_cvref_t<decltype(value)>, Item>) {
+                        values.emplace_back(graph_run_literal_from_value(std::forward<decltype(value)>(value), literals));
+                    } else {
+                        values.emplace_back(graph_run_literal_from_value(Item(value), literals));
+                    }
+                }
+                return raw_literals_argument(
+                    RawGraphRunLiteralInput{std::span<const literal::TimeSeriesLiteral>{values}}, *time_series_type);
+            }
         } else {
             using Item = std::ranges::range_value_t<std::remove_cvref_t<Input>>;
             if constexpr (scalar_type_mapped<std::remove_cvref_t<Item>> && !scalar_source<Item>) {
@@ -892,6 +1025,12 @@ WiringArgument GraphRunArguments::argument_materialized(std::size_t index, Input
         }
     } else if constexpr (requires { details::scalar_data(input); } || scalar_source<Input>) {
         cycle_count = std::max(cycle_count, std::size_t{1});
+        if constexpr (std::is_arithmetic_v<std::remove_cvref_t<Input>>) {
+            if (graph_run_numeric_value_type(*time_series_type)) {
+                auto value = graph_run_scalar_value(std::forward<Input>(input), *time_series_type);
+                return WiringArgument{operators::const_(std::move(value))};
+            }
+        }
         return WiringArgument{operators::const_(std::forward<Input>(input))};
     } else if constexpr (scalar_type_mapped<std::remove_cvref_t<Input>>) {
         cycle_count = std::max(cycle_count, std::size_t{1});
@@ -928,10 +1067,11 @@ template <typename Input> void GraphRunArguments::append(Input &&input) {
     values.emplace_back(argument(index, std::forward<Input>(input)));
 }
 
-template <typename OutputScalar, typename Tested>
-GraphRunResult<OutputScalar> run_graph_with_arguments(const Tested &tested, const GraphRunOptions &options,
-                                                      auto &&populate_arguments) {
-    auto arguments = GraphRunArguments{tested.signature()};
+template <typename OutputScalar, typename Invoke, typename PopulateArguments>
+GraphRunResult<OutputScalar> run_graph_with_arguments(const bg::Signature &signature,
+                                                      const GraphRunOptions &options,
+                                                      Invoke &&invoke, PopulateArguments &&populate_arguments) {
+    auto arguments = GraphRunArguments{signature};
     auto captured = details::CapturedValues{
         options.start_time.value_or(options.engine == EvaluationEngine::realtime
                                        ? SystemWallClock::instance().now()
@@ -939,8 +1079,9 @@ GraphRunResult<OutputScalar> run_graph_with_arguments(const Tested &tested, cons
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
-        std::invoke(std::forward<decltype(populate_arguments)>(populate_arguments), arguments);
-        const auto output = static_cast<const WiringTemplate &>(tested)(std::span<const WiringArgument>{arguments.values});
+        std::invoke(std::forward<PopulateArguments>(populate_arguments), arguments);
+        const auto output = std::invoke(std::forward<Invoke>(invoke),
+                                        std::span<const WiringArgument>{arguments.values});
         if (options.capture_output && output) {
             details::capture_graph_output(*output, captured);
         }
@@ -949,27 +1090,26 @@ GraphRunResult<OutputScalar> run_graph_with_arguments(const Tested &tested, cons
     return GraphRunResult<OutputScalar>{details::finish_graph_run(wiring, captured, options)};
 }
 
-template <typename OutputScalar, typename Tested, typename... Inputs>
-GraphRunResult<OutputScalar> run_graph_target(const Tested &tested, const GraphRunOptions &options,
-                                              Inputs &&...inputs) {
-    const auto &signature = tested.signature();
+template <typename OutputScalar, typename Invoke, typename... Inputs>
+GraphRunResult<OutputScalar> run_graph_target(const bg::Signature &signature, const GraphRunOptions &options,
+                                              Invoke &&invoke, Inputs &&...inputs) {
     if (sizeof...(Inputs) > signature.parameter_count() && !signature.has_variadic_parameters()) {
         throw std::invalid_argument{"run_graph input count exceeds the graph signature"};
     }
     preflight_graph_run_inputs(signature, std::index_sequence_for<Inputs...>{}, inputs...);
 
-    return run_graph_with_arguments<OutputScalar>(tested, options, [&](GraphRunArguments &arguments) {
-        arguments.values.reserve(sizeof...(Inputs));
-        (arguments.append(std::forward<Inputs>(inputs)), ...);
-    });
+    return run_graph_with_arguments<OutputScalar>(
+        signature, options, std::forward<Invoke>(invoke), [&](GraphRunArguments &arguments) {
+            arguments.values.reserve(sizeof...(Inputs));
+            (arguments.append(std::forward<Inputs>(inputs)), ...);
+        });
 }
 
-template <typename OutputScalar, typename Tested, std::ranges::contiguous_range InputRange>
+template <typename OutputScalar, typename Invoke, std::ranges::contiguous_range InputRange>
     requires graph_run_descriptor_range_v<InputRange>
-GraphRunResult<OutputScalar> run_graph_descriptor_range_target(const Tested &tested,
-                                                                const GraphRunOptions &options,
+GraphRunResult<OutputScalar> run_graph_descriptor_range_target(const bg::Signature &signature,
+                                                                const GraphRunOptions &options, Invoke &&invoke,
                                                                 const InputRange &inputs) {
-    const auto &signature = tested.signature();
     const auto input_count = std::ranges::size(inputs);
     if (input_count > signature.parameter_count() && !signature.has_variadic_parameters()) {
         throw std::invalid_argument{"run_graph input count exceeds the graph signature"};
@@ -979,23 +1119,33 @@ GraphRunResult<OutputScalar> run_graph_descriptor_range_target(const Tested &tes
         preflight_graph_run_input(signature, index++, input);
     }
 
-    return run_graph_with_arguments<OutputScalar>(tested, options, [&](GraphRunArguments &arguments) {
-        arguments.values.reserve(input_count);
-        for (const auto &input : inputs) {
-            arguments.append(input);
-        }
-    });
+    return run_graph_with_arguments<OutputScalar>(
+        signature, options, std::forward<Invoke>(invoke), [&](GraphRunArguments &arguments) {
+            arguments.values.reserve(input_count);
+            for (const auto &input : inputs) {
+                arguments.append(input);
+            }
+        });
 }
 
 template <typename Tested, typename... Inputs>
 auto run_graph_bound_target(const Tested &tested, const GraphRunOptions &options, Inputs &&...inputs) {
     if constexpr (std::derived_from<std::remove_cvref_t<Tested>, WiringTemplate>) {
-        return run_graph_target<void>(tested, options, std::forward<Inputs>(inputs)...);
+        return run_graph_target<void>(
+            tested.signature(), options,
+            [&](std::span<const WiringArgument> arguments) {
+                return WiringContext::current().wiring().invoke(tested, arguments);
+            },
+            std::forward<Inputs>(inputs)...);
     } else {
         using FunctionInfo = details::graph_function<Tested>;
         auto graph_template = bg::graph(tested);
         return run_graph_target<typename FunctionInfo::output_scalar>(
-            graph_template, options, std::forward<Inputs>(inputs)...);
+            graph_template.signature(), options,
+            [&](std::span<const WiringArgument> arguments) {
+                return graph_template.invoke_with_inferred_output(arguments);
+            },
+            std::forward<Inputs>(inputs)...);
     }
 }
 
@@ -1004,12 +1154,21 @@ template <typename Tested, std::ranges::contiguous_range InputRange>
 auto run_graph_bound_descriptor_range_target(const Tested &tested, const GraphRunOptions &options,
                                              const InputRange &inputs) {
     if constexpr (std::derived_from<std::remove_cvref_t<Tested>, WiringTemplate>) {
-        return run_graph_descriptor_range_target<void>(tested, options, inputs);
+        return run_graph_descriptor_range_target<void>(
+            tested.signature(), options,
+            [&](std::span<const WiringArgument> arguments) {
+                return WiringContext::current().wiring().invoke(tested, arguments);
+            },
+            inputs);
     } else {
         using FunctionInfo = details::graph_function<Tested>;
         auto graph_template = bg::graph(tested);
-        return run_graph_descriptor_range_target<typename FunctionInfo::output_scalar>(graph_template, options,
-                                                                                       inputs);
+        return run_graph_descriptor_range_target<typename FunctionInfo::output_scalar>(
+            graph_template.signature(), options,
+            [&](std::span<const WiringArgument> arguments) {
+                return graph_template.invoke_with_inferred_output(arguments);
+            },
+            inputs);
     }
 }
 

@@ -5,6 +5,7 @@
 #include <bg/graph/wiring_arguments.hpp>
 #include <bg/graph/type_mapping.hpp>
 #include <bg/graph/wiring_error.hpp>
+#include <bg/graph/wiring_context.hpp>
 #include <bg/graph/wiring_template.hpp>
 
 #include <functional>
@@ -83,6 +84,12 @@ class GraphTemplate final
             return std::remove_cvref_t<Result>{
                 *WiringTemplate::operator()(type_map, std::forward<Arguments>(arguments)...)};
         }
+    }
+
+    // Run this graph body after resolving its inputs and infer its output from the returned WiringPoint.
+    [[nodiscard]] std::optional<WiringPoint>
+    invoke_with_inferred_output(std::span<const WiringArgument> arguments) const {
+        return WiringTemplate::invoke_inferred_output(WiringContext::current().wiring(), arguments);
     }
 
     const Signature &default_signature() const override { return signature_; }

@@ -151,7 +151,7 @@ class GraphWiring {
                                                              SignatureResolution resolution,
                                                              std::span<const WiringArgument> arguments,
                                                              std::span<const details::WiringArgumentDescriptor> descriptors,
-                                                             util::symbol path_name);
+                                                             util::symbol path_name, bool infer_output = false);
     [[nodiscard]] WiringPoint defer_node_call(const NodeTemplate &node_template, ResolvedSignature signature,
                                               const TypeMap &type_map,
                                               std::span<const WiringArgument> arguments,

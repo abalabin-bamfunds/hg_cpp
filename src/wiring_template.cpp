@@ -21,25 +21,38 @@ WiringTemplate::~WiringTemplate() = default;
 std::optional<WiringPoint> WiringTemplate::invoke_resolved(GraphWiring &wiring, SignatureResolution resolution,
                                                            std::span<const WiringArgument> arguments,
                                                            std::span<const details::WiringArgumentDescriptor> descriptors,
-                                                           util::symbol path_name) const {
-    return wiring.invoke_resolved(*this, std::move(resolution), arguments, descriptors, path_name);
+                                                           util::symbol path_name, bool infer_output) const {
+    return wiring.invoke_resolved(*this, std::move(resolution), arguments, descriptors, path_name, infer_output);
 }
 
 std::optional<WiringPoint> WiringTemplate::invoke_resolved(GraphWiring &wiring, const WiringTemplate &implementation,
                                                            SignatureResolution resolution,
                                                            std::span<const WiringArgument> arguments,
                                                            std::span<const details::WiringArgumentDescriptor> descriptors,
-                                                           util::symbol path_name) const {
-    return wiring.invoke_resolved(implementation, std::move(resolution), arguments, descriptors, path_name);
+                                                           util::symbol path_name, bool infer_output) const {
+    return wiring.invoke_resolved(implementation, std::move(resolution), arguments, descriptors, path_name,
+                                  infer_output);
 }
 
 std::optional<WiringPoint> WiringTemplate::invoke(GraphWiring &wiring,
                                                   std::span<const WiringArgument> arguments,
                                                   const TypeMap *seed_type_map) const {
+    return invoke_impl(wiring, arguments, seed_type_map, false);
+}
+
+std::optional<WiringPoint> WiringTemplate::invoke_inferred_output(
+    GraphWiring &wiring, std::span<const WiringArgument> arguments) const {
+    return invoke_impl(wiring, arguments, nullptr, true);
+}
+
+std::optional<WiringPoint> WiringTemplate::invoke_impl(GraphWiring &wiring,
+                                                       std::span<const WiringArgument> arguments,
+                                                       const TypeMap *seed_type_map, bool infer_output) const {
     auto temporary_records = details::WiringRecordOverlay{wiring};
     auto probe = details::probe_wiring_arguments(signature(), arguments, temporary_records);
     const auto &declared_signature = signature();
-    auto preparation = details::WiringCallPreparation{declared_signature, probe.arguments, seed_type_map};
+    const auto resolution_signature = infer_output ? declared_signature.without_output() : declared_signature;
+    auto preparation = details::WiringCallPreparation{resolution_signature, probe.arguments, seed_type_map};
     if (preparation.empty()) {
         auto supplied_types = std::vector<const Type *>{};
         supplied_types.reserve(probe.arguments.size());
@@ -60,7 +73,7 @@ std::optional<WiringPoint> WiringTemplate::invoke(GraphWiring &wiring,
         double binding_cost;
     };
     auto type_map = TypeMap{};
-    auto argument_context = WiringArguments{declared_signature, type_map, probe.descriptors};
+    auto argument_context = WiringArguments{resolution_signature, type_map, probe.descriptors};
     auto requirement_results = std::vector<RequirementResult>{};
     const auto callback_context = WiringErrorContext{
         .stage = WiringFailureStage::callback,
@@ -158,7 +171,7 @@ std::optional<WiringPoint> WiringTemplate::invoke(GraphWiring &wiring,
     details::bind_materialisation_forms(wiring, *this, committed.arguments, selected_forms);
     return invoke_resolved(wiring, SignatureResolution{std::move(selected.resolution.signature),
                                                        std::move(selected.resolution.type_map)},
-                           committed.arguments, committed.descriptors, path_name);
+                           committed.arguments, committed.descriptors, path_name, infer_output);
 }
 
 } // namespace bg

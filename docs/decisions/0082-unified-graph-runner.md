@@ -9,12 +9,19 @@ runtime lifecycle. Initial values and update sequences are also useful outside
 tests. A separate test runner duplicated execution behavior and restricted
 capture to simulation.
 
+C++ graph functions can return wiring points whose concrete type is known only
+after wiring their bodies.
+
 ## Decision
 
 Use `run_graph` for execution and testing. Resolve top-level parameter types
 before interpreting arguments. A matching value takes precedence over an
 update sequence; `ticks(sequence)` selects updates explicitly. Scalar
 parameters retain normal wiring-time binding.
+
+Resolve C++ graph-function inputs through normal graph invocation, then infer
+the output from the returned wiring point. This preserves argument validation,
+defaults, requirements, and graph context scopes.
 
 Capture returned output by default in either evaluation engine. Capture stores
 only timestamped output events. Dense microsecond indexing and test comparisons

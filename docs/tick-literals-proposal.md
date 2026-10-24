@@ -22,7 +22,7 @@ The required interfaces are:
 - `wp<TSB<Schema>>{{"a", wp_x}, {"b", wp_y}}` and typed graph brace returns
 - `const_[type<TSD<string, TS<i64>>>](Literal{{"a", 2}})`
 - writing literal data into sequential and concurrent buffers
-- one `test_graph(graph, input1, input2, ...)` call with brace sequences
+- one `run_graph(graph, input1, input2, ...)` call with brace sequences
 
 `Literal`, `Tick`, `measure_write`, and the operation marker names below are
 proposed API names. This proposal does not change the
@@ -423,9 +423,9 @@ The [test utility API](testing.md#test-layout) defines literal inputs.
 Collection output capture described below remains proposed.
 
 ```cpp
-test_graph(add, {1, 2, SKIP}, {10, 20, 30});
+run_graph(add, {1, 2, SKIP}, {10, 20, 30});
 
-test_graph(dictionary_sum, {
+run_graph(dictionary_sum, {
     {{"a", 10}, {"b", 20}},
     {{"a", 11}},
     {{"b", REMOVE}},
@@ -439,7 +439,7 @@ count and forward to one implementation. Template argument packs cannot deduce
 raw brace expressions. The supported count remains open; existing typed range
 inputs continue to support arbitrary counts.
 
-`test_graph` completes evaluation before its input initializer lists expire.
+`run_graph` completes evaluation before its input initializer lists expire.
 It may borrow those sequences for the call. Source compiled data borrows the
 sequence, and per-runtime state stores the next cycle index. The test run keeps
 all borrowed data alive until its runtime and compiled graphs are destroyed.
@@ -453,7 +453,7 @@ Input types come from concrete graph parameters or resolved template
 signatures. For unresolved parameters, retain an explicit annotation form:
 
 ```cpp
-test_graph(generic_node,
+run_graph(generic_node,
     input<TSD<string, TS<i64>>>({
         {{"a", 10}},
         {{"a", 20}},
@@ -521,7 +521,7 @@ compatible provider scalar values remain valid leaf sources.
 - Decide whether whole-collection clear and replacement belong in the first
   implementation.
 - Select the erased callable output declaration syntax and the brace-input
-  count supported by `test_graph`.
+  count supported by `run_graph`.
 - Confirm complete startup values and recursive const guarantees for
   `const_(Literal)`.
 - Coordinate sizing, cleanup, and the eight-byte framing interface with the

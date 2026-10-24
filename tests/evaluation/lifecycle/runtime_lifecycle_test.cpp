@@ -87,7 +87,7 @@ TEST_CASE("run_graph starts, evaluates, and stops a graph",
     CHECK(add_definition::last_result == 3.0F);
 }
 
-TEST_CASE("run_graph captures optional callback outputs", "[evaluation][feature:graph-run]") {
+TEST_CASE("run_graph captures optional callback outputs", "[evaluation][feature:test-graph]") {
     const auto source = node([] { return i64{42}; });
 
     const auto direct = run_graph([&] { return source(); });

@@ -19,16 +19,6 @@ using namespace bg;
 
 namespace {
 
-struct sparse_output_source {
-    Out<TS<i64>> output;
-
-    void start(EvaluationContext *context) const {
-        context->schedule_at(context->evaluation_time() + std::chrono::hours{1});
-    }
-
-    void evaluate() const { output.set(7); }
-};
-
 TEST_CASE("run_graph captures TSL and TSS output deltas",
           "[testing][evaluation][feature:test-graph][series:fixed-tsl][series:tss][transition:update]") {
     const auto list_identity = [](wp<TSL<TS<i64>, 2>> input) { return input; };
@@ -50,6 +40,18 @@ TEST_CASE("run_graph captures TSL and TSS output deltas",
     CHECK(empty_set.equals({{}}));
     CHECK(empty_set.equals({{literal::SKIP}}));
 }
+
+struct sparse_output_source {
+    static constexpr bool uses_timed_scheduling = true;
+
+    Out<TS<i64>> output;
+
+    void start(EvaluationContext *context) const {
+        context->schedule_at(context->evaluation_time() + std::chrono::hours{1});
+    }
+
+    void evaluate() const { output.set(7); }
+};
 
 TEST_CASE("run_graph stores distant output as a sparse event",
           "[testing][evaluation][feature:test-graph][feature:simulation]") {

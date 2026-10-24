@@ -470,7 +470,7 @@ std::optional<WiringPoint> GraphWiring::invoke_resolved(const WiringTemplate &wi
                                                         SignatureResolution resolution,
                                                         std::span<const WiringArgument> arguments,
                                                         std::span<const details::WiringArgumentDescriptor> descriptors,
-                                                        util::symbol path_name) {
+                                                        util::symbol path_name, bool infer_output) {
     if (finalization_state_ == FinalizationState::finalized || finalization_state_ == FinalizationState::failed) {
         throw WiringError{"a finalized GraphWiring cannot accept more calls"};
     }
@@ -494,7 +494,7 @@ std::optional<WiringPoint> GraphWiring::invoke_resolved(const WiringTemplate &wi
     }
 
     try {
-        if ((expected_output == nullptr) != !output.has_value()) {
+        if (!infer_output && (expected_output == nullptr) != !output.has_value()) {
             auto mismatch = call_context;
             mismatch.expected_type = expected_output == nullptr ? "no output" : std::string{};
             mismatch.actual_type = output ? std::string{} : "no output";
@@ -516,7 +516,7 @@ std::optional<WiringPoint> GraphWiring::invoke_resolved(const WiringTemplate &wi
             throw WiringError{"a wiring-template returned a WiringPoint from another GraphWiring"};
         }
 
-        if (!expected_output->accepts(output->type())) {
+        if (expected_output != nullptr && !expected_output->accepts(output->type())) {
             auto mismatch = call_context;
             expected_output->format_name(mismatch.expected_type);
             output->type().format_name(mismatch.actual_type);

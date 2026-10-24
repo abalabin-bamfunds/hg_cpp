@@ -70,14 +70,15 @@ TEST_CASE("run_graph distinguishes a collection event from a tick history",
         return count_items(input);
     };
     CHECK(run_graph(count_const_list, {1, 2, 3}).equals<i64>({3}));
-    CHECK_THROWS_AS((run_graph(count_const_list, ticks(std::vector<std::vector<i64>>{{1}, {2}}))), WiringError);
+    CHECK_THROWS_AS((run_graph(count_const_list, ticks(std::vector<std::vector<i64>>{{1}, {2}}))),
+                    TypeResolutionError);
 
     const auto nested_constant = [](wp<TSD<i64, TS<i64, TimeSeriesGuarantee::const_>,
                                           TimeSeriesGuarantee::const_>> input) { return input; };
     CHECK_THROWS_AS((run_graph(nested_constant, GraphRunOptions{.capture_output = false},
                                input<TSD<i64, TS<i64, TimeSeriesGuarantee::const_>,
                                      TimeSeriesGuarantee::const_>>({{{1, 1}}}))),
-                    WiringError);
+                    TypeResolutionError);
 }
 
 TEST_CASE("run_graph preserves nested single-pass ranges during generic input inference",
@@ -366,20 +367,20 @@ TEST_CASE("run_graph literal annotations support generic and multiple inputs",
     };
 
     const auto annotated_second_result =
-        run_graph(generic_rhs, GraphRunLiteralInput{{1, 2}}, input<TS<i64>>({10, 20}));
+        run_graph(generic_rhs, ticks({1, 2}), input<TS<i64>>({10, 20}));
 
     const auto generic_lhs = [&](wp<> lhs, wp<TS<i64>> rhs) {
         return add_i64(lhs, rhs);
     };
 
     const auto annotated_first_result =
-        run_graph(generic_lhs, input<TS<i64>>({1, 2}), GraphRunLiteralInput{{10, 20}});
+        run_graph(generic_lhs, input<TS<i64>>({1, 2}), ticks({10, 20}));
 
     const auto select_second = [](wp<TS<i64>>, wp<TS<i64>> rhs) { return rhs; };
     const auto empty_first_result =
-        run_graph(select_second, GraphRunLiteralInput{}, GraphRunLiteralInput{{30}});
+        run_graph(select_second, ticks({}), ticks({30}));
     const auto configured_empty_first_result =
-        run_graph(select_second, GraphRunOptions{}, GraphRunLiteralInput{}, GraphRunLiteralInput{{30}});
+        run_graph(select_second, GraphRunOptions{}, ticks({}), ticks({30}));
 
     const auto observe_dictionary = node([](In<TSD<i64, TS<i64>>> input,
                                                 Out<TS<i64>> output) {
@@ -462,20 +463,27 @@ TEST_CASE("run_graph accepts empty raw inputs for functions and wiring templates
 
     const auto function = [&](wp<TS<List<i64>>> input) { return count_items(input); };
 
-    CHECK(run_graph(function, {}).equals<i64>({std::nullopt}));
+    CHECK(run_graph(function, {}).equals<i64>({0}));
     CHECK(run_graph(function, {{}}).equals<i64>({0}));
-    CHECK(run_graph(count_items, {}).equals<i64>({std::nullopt}));
+    CHECK(run_graph(count_items, {}).equals<i64>({0}));
     CHECK(run_graph(count_items, {{}}).equals<i64>({0}));
-    CHECK(run_graph(function, GraphRunOptions{}, {}).equals<i64>({std::nullopt}));
+    CHECK(run_graph(function, GraphRunOptions{}, {}).equals<i64>({0}));
     CHECK(run_graph(function, GraphRunOptions{}, {{}}).equals<i64>({0}));
-    CHECK(run_graph(count_items, GraphRunOptions{}, {}).equals<i64>({std::nullopt}));
+    CHECK(run_graph(count_items, GraphRunOptions{}, {}).equals<i64>({0}));
     CHECK(run_graph(count_items, GraphRunOptions{}, {{}}).equals<i64>({0}));
 }
 
 TEST_CASE("run_graph literal inputs coerce values and revalidate after INVALID",
           "[testing][evaluation][feature:test-graph][transition:invalidation][transition:revalidation]") {
     const auto float_identity = [](wp<TS<float>> input) { return input; };
+    const auto initial_float = run_graph(float_identity, 42);
     const auto float_result = run_graph(float_identity, {1, 2});
+    const auto float_range_result = run_graph(float_identity, std::array{1, 2});
+    const auto float_tick_result = run_graph(float_identity, ticks({1, 2}));
+    const auto float_literal_result = run_graph(float_identity, {1, literal::SKIP, 3});
+    const auto float_invalid_result = run_graph(float_identity, {1, literal::INVALID, 3});
+    const auto double_identity = [](wp<TS<double>> input) { return input; };
+    const auto double_result = run_graph(double_identity, 42);
 
     const auto integer_identity = [](wp<TS<i64>> input) { return input; };
     const auto integer_result =
@@ -483,7 +491,13 @@ TEST_CASE("run_graph literal inputs coerce values and revalidate after INVALID",
     const auto configured_integer_result =
         run_graph(integer_identity, GraphRunOptions{}, {1, literal::SKIP, 3});
 
+    CHECK(initial_float.equals<float>({42.0F}));
     CHECK(float_result.equals<float>({1.0F, 2.0F}));
+    CHECK(float_range_result.equals<float>({1.0F, 2.0F}));
+    CHECK(float_tick_result.equals<float>({1.0F, 2.0F}));
+    CHECK(float_literal_result.equals<float>({1.0F, std::nullopt, 3.0F}));
+    CHECK(float_invalid_result.equals<float>({1.0F, std::nullopt, 3.0F}));
+    CHECK(double_result.equals<double>({42.0}));
     CHECK(integer_result.equals<i64>({1, std::nullopt, 3}));
     CHECK(configured_integer_result.equals<i64>({1, std::nullopt, 3}));
 }
