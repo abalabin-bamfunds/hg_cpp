@@ -1,0 +1,132 @@
+name: Build platform wheel
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: true
+        type: string
+      platform:
+        required: true
+        type: string
+      parallel:
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ inputs.os }} wheel
+    runs-on: ${{ inputs.os }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Configure macOS compiler and deployment target
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          echo "CC=/usr/bin/clang" >> "$GITHUB_ENV"
+          echo "CXX=/usr/bin/clang++" >> "$GITHUB_ENV"
+          echo "MACOSX_DEPLOYMENT_TARGET=26.0" >> "$GITHUB_ENV"
+          /usr/bin/clang++ --version
+      - name: Install macOS native dependencies and wheel tools
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: |
+          brew install fmt icu4c
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix fmt):$(brew --prefix icu4c)" >> "$GITHUB_ENV"
+          python -m pip install --upgrade --only-binary=:all: \
+            "build==1.5.0" "scikit-build-core==1.0.3" "nanobind==3.1.0" \
+            "cmake>=3.31" "ninja==1.13.0" "abi3audit==0.0.26" \
+            "delocate>=0.13,<1" "packaging==26.3"
+      - name: Configure MSVC toolchain and install Windows dependencies
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+      - name: Locate vcpkg
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vcpkgRoot = $env:VCPKG_ROOT
+          if (-not $vcpkgRoot) { $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT }
+          if (-not $vcpkgRoot -or -not (Test-Path "$vcpkgRoot/vcpkg.exe")) {
+            throw "Could not locate the runner's vcpkg installation"
+          }
+          "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Install Windows native dependencies and wheel tools
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_ROOT/vcpkg.exe" install fmt icu --triplet x64-windows
+          python -m pip install --upgrade --only-binary=:all: `
+            "build==1.5.0" "scikit-build-core==1.0.3" "nanobind==3.1.0" `
+            "cmake>=3.31" "ninja==1.13.0" "abi3audit==0.0.26" `
+            "delvewheel>=1.10,<2" "packaging==26.3"
+      - name: Install build tools on macOS and configure Ninja
+        if: runner.os == 'macOS'
+        run: >-
+          python -m pip install --only-binary=:all: "ninja==1.13.0"
+      - name: Configure Windows CMake arguments
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "CMAKE_GENERATOR=Ninja" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "CMAKE_ARGS=-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_BUILD_TYPE=Release" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Configure macOS CMake arguments
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          echo "CMAKE_GENERATOR=Ninja" >> "$GITHUB_ENV"
+          echo "CMAKE_ARGS=-DCMAKE_OSX_DEPLOYMENT_TARGET=26.0 -DCMAKE_BUILD_TYPE=Release" >> "$GITHUB_ENV"
+      - name: Install Ninja on Windows
+        if: runner.os == 'Windows'
+        run: >-
+          python -m pip install --only-binary=:all: "ninja==1.13.0"
+      - name: Build stable ABI wheel
+        env:
+          CMAKE_BUILD_TYPE: Release
+          CMAKE_BUILD_PARALLEL_LEVEL: ${{ inputs.parallel }}
+        run: python -m build --wheel --no-isolation --outdir raw-wheel
+      - name: Repair macOS wheel dependencies
+        if: runner.os == 'macOS'
+        run: delocate-wheel --require-archs arm64 -w dist raw-wheel/*.whl
+      - name: Repair Windows wheel dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $wheels = @(Get-ChildItem raw-wheel -Filter *.whl)
+          if ($wheels.Count -ne 1) { throw "Expected one raw wheel, found $($wheels.Count)" }
+          delvewheel repair `
+            --add-path "$env:VCPKG_ROOT/installed/x64-windows/bin" `
+            --wheel-dir dist `
+            $wheels[0].FullName
+      - name: Audit wheel and stable ABI
+        shell: bash
+        run: |
+          python tools/audit_distribution.py --platform "${{ inputs.platform }}" dist
+          abi3audit --strict dist/*.whl
+      - name: Inspect repaired macOS dependencies
+        if: runner.os == 'macOS'
+        run: delocate-listdeps --all dist/*.whl
+      - name: Inspect repaired Windows dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $wheels = @(Get-ChildItem dist -Filter *.whl)
+          if ($wheels.Count -ne 1) { throw "Expected one repaired wheel, found $($wheels.Count)" }
+          delvewheel show $wheels[0].FullName
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: distribution-wheel-${{ inputs.os }}
+          path: dist/*.whl
+          if-no-files-found: error

@@ -1,4 +1,4 @@
-name: Build and test Python wheel artifacts
+name: Build and test Python distributions
 
 on:
   push:
@@ -16,9 +16,128 @@ permissions:
   contents: read
 
 jobs:
+  build-sdist:
+    name: Build and audit source distribution
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libfmt-dev libicu-dev
+          python -m pip install --upgrade --only-binary=:all: \
+            "build==1.5.0" "scikit-build-core==1.0.3" "nanobind==3.1.0" \
+            "cmake>=3.31" "ninja==1.13.0" "packaging==26.3" "abi3audit==0.0.26"
+      - name: Build source distribution
+        run: python -m build --sdist --no-isolation
+      - name: Audit source distribution
+        run: python tools/audit_distribution.py dist
+      - name: Build a wheel from the source distribution
+        run: python -m pip wheel --no-deps --no-build-isolation --wheel-dir sdist-wheel dist/*.tar.gz
+      - name: Audit the wheel built from the source distribution
+        run: |
+          python tools/audit_distribution.py sdist-wheel
+          abi3audit --strict sdist-wheel/*.whl
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: distribution-sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
   build-linux-wheel:
-    uses: ./.github/workflows/build-wheel.yml
+    name: Build manylinux 2.28 wheel
+    runs-on: ubuntu-24.04
+    env:
+      GCC_VERSION: "14"
+    container:
+      image: quay.io/pypa/manylinux_2_28_x86_64:latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install native build dependencies
+        run: dnf install --assumeyes libicu-devel fmt-devel
+      - name: Verify Linux compiler
+        shell: bash
+        run: |
+          g++ --version
+          test "$(g++ -dumpfullversion -dumpversion | cut -d. -f1)" -eq "$GCC_VERSION"
+          echo "CC=$(command -v gcc)" >> "$GITHUB_ENV"
+          echo "CXX=$(command -v g++)" >> "$GITHUB_ENV"
+      - name: Install build tools
+        run: >-
+          /opt/python/cp312-cp312/bin/python -m pip install --upgrade --only-binary=:all:
+          "build==1.5.0" "scikit-build-core==1.0.3" "nanobind==3.1.0"
+          "cmake>=3.31" "ninja==1.13.0" "abi3audit==0.0.26"
+          "auditwheel==6.7.0" "packaging==26.3"
+      - name: Verify build Python
+        run: /opt/python/cp312-cp312/bin/python --version
+      - name: Build stable ABI wheel
+        env:
+          CMAKE_GENERATOR: Ninja
+          CMAKE_BUILD_TYPE: Release
+          CMAKE_BUILD_PARALLEL_LEVEL: "2"
+        run: /opt/python/cp312-cp312/bin/python -m build --wheel --no-isolation --outdir raw-wheel
+      - name: Repair for manylinux 2.28
+        run: |
+          auditwheel repair \
+            --plat manylinux_2_28_x86_64 \
+            --exclude libbg.so \
+            --exclude libbg_library.so \
+            --exclude libbg_python.so \
+            --exclude libnanobind-abi3.so \
+            --exclude libfmt.so \
+            --wheel-dir dist \
+            raw-wheel/*.whl
+      - name: Audit wheel and stable ABI
+        run: |
+          /opt/python/cp312-cp312/bin/python tools/audit_distribution.py --platform manylinux_2_28_x86_64 dist
+          abi3audit --strict dist/*.whl
+          auditwheel show dist/*.whl
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: distribution-wheel-ubuntu-latest
+          path: dist/*.whl
+          if-no-files-found: error
+
+  build-macos-wheel:
+    name: Build macOS arm64 wheel
+    uses: ./.github/workflows/release-platform-wheel.yml
+    with:
+      os: macos-26
+      platform: macosx_26_0_arm64
+      parallel: "1"
+
+  build-windows-wheel:
+    name: Build Windows amd64 wheel
+    uses: ./.github/workflows/release-platform-wheel.yml
+    with:
+      os: windows-latest
+      platform: win_amd64
+      parallel: "4"
 
   test-linux-wheel:
     needs: build-linux-wheel
-    uses: ./.github/workflows/test-wheel.yml
+    uses: ./.github/workflows/test-platform-wheel.yml
+    with:
+      os: ubuntu-24.04
+      artifact: distribution-wheel-ubuntu-latest
+
+  test-macos-wheel:
+    needs: build-macos-wheel
+    uses: ./.github/workflows/test-platform-wheel.yml
+    with:
+      os: macos-26
+      artifact: distribution-wheel-macos-26
+
+  test-windows-wheel:
+    needs: build-windows-wheel
+    uses: ./.github/workflows/test-platform-wheel.yml
+    with:
+      os: windows-latest
+      artifact: distribution-wheel-windows-latest

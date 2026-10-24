@@ -6,7 +6,7 @@ build-backend = "scikit_build_core.build"
 name = "bg-graph"
 version = "0.1.0"
 description = "Python bindings for the bg graph engine"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 
 [project.optional-dependencies]
 test = ["pytest>=8"]
@@ -15,3 +15,18 @@ test = ["pytest>=8"]
 cmake.define.BG_BUILD_PYTHON = "ON"
 cmake.define.BUILD_TESTING = "OFF"
 wheel.packages = ["bindings/python/python/bg"]
+wheel.py-api = "cp312"
+sdist.include = [
+  "CMakeLists.txt",
+  "README.md",
+  "bindings/python/CMakeLists.txt",
+  "bindings/python/python/**",
+  "bindings/python/src/**",
+  "bindings/python/tests/extension_module.cpp",
+  "cmake/**",
+  "include/**",
+  "packaging/**",
+  "pyproject.toml",
+  "src/**",
+  "tools/audit_distribution.py",
+]
