@@ -254,7 +254,6 @@ def test_plain_graph_sink_uses_a_plain_scalar_parameter():
 
     assert bg.run_graph(graph, [1, 2]) is None
     assert received == [1, 2]
-    assert received == [1, 2]
 
 
 def test_plain_dictionary_parameter_promotes_to_ts_of_dictionary():
