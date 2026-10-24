@@ -1,6 +1,6 @@
 #include <bg/bg.hpp>
 #include <bg/scalar/data.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/input_data.hpp>
 #include <bg/time_series/output_binding.hpp>
@@ -376,7 +376,7 @@ void test_provider_output_specifications() {
     const auto callable_graph = [&](bg::wp<bg::TS<bg::i64>> input) {
         return callable_consume(callable_default(callable_view(input)));
     };
-    require(bg::testing::test_graph(callable_graph, std::array<bg::i64, 2>{3, 8}).equals<bg::i64>({3, 8}) &&
+    require(bg::run_graph(callable_graph, std::array<bg::i64, 2>{3, 8}).equals<bg::i64>({3, 8}) &&
                 callable_runtime == &default_runtime,
             "callable default output selected its input view runtime");
 
@@ -389,7 +389,7 @@ void test_provider_output_specifications() {
     const auto view_aggregate_graph = [&](bg::wp<bg::TS<bg::i64>> input) {
         return view_aggregate_consume(view_aggregate(input));
     };
-    require(bg::testing::test_graph(view_aggregate_graph, std::array<bg::i64, 2>{5, 7}).equals<bg::i64>({5, 7}) &&
+    require(bg::run_graph(view_aggregate_graph, std::array<bg::i64, 2>{5, 7}).equals<bg::i64>({5, 7}) &&
                 view_aggregate_runtime == &view_runtime,
             "aggregate view output did not select its view runtime");
 
@@ -402,7 +402,7 @@ void test_provider_output_specifications() {
     const auto default_aggregate_graph = [&](bg::wp<bg::TS<bg::i64>> input) {
         return default_aggregate_consume(default_aggregate(callable_view(input)));
     };
-    require(bg::testing::test_graph(default_aggregate_graph, std::array<bg::i64, 2>{11, 14}).equals<bg::i64>({11, 14}) &&
+    require(bg::run_graph(default_aggregate_graph, std::array<bg::i64, 2>{11, 14}).equals<bg::i64>({11, 14}) &&
                 default_aggregate_runtime == &default_runtime,
             "aggregate default output selected its input view runtime");
 }
@@ -424,7 +424,7 @@ void test_view_output_invalidation() {
     });
     const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return consume(provide(source(input))); };
 
-    const auto result = bg::testing::test_graph(graph, std::array<bg::i64, 2>{12, 0});
+    const auto result = bg::run_graph(graph, std::array<bg::i64, 2>{12, 0});
     provider::view_invalidation_observer = nullptr;
     require(result.equals<bg::i64>({12, std::nullopt}) && invalidated,
             "view output invalidation did not use the provider view specification");

@@ -1,6 +1,6 @@
 #include <bg/frame/arrow.hpp>
 #include <bg/scalar/value.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <arrow/api.h>
@@ -100,7 +100,7 @@ void test_arrow_default_frame_runtime() {
     });
     const auto graph = [&](wp<TS<i64>> command) { return publish(command); };
     const auto commands = std::array<i64, 1>{0};
-    const auto snapshots = testing::test_graph(graph, commands);
+    const auto snapshots = bg::run_graph(graph, commands);
     require(snapshots.size() == 1 && snapshots[0] &&
                 snapshots[0]->view().value().columns().bid.cell(0) == 12.5,
             "generic Frame scalar output failed after Arrow runtime initialization");
@@ -559,7 +559,7 @@ void test_imports_and_runtime_lifetime() {
     });
     auto graph_owner = ScalarValue<>{scalar};
     const auto graph = [&](wp<TS<i64>> trigger) { return consume_frame(trigger, std::move(graph_owner)); };
-    const auto consumed = bg::testing::test_graph(graph, std::array<i64, 1>{0});
+    const auto consumed = bg::run_graph(graph, std::array<i64, 1>{0});
     require(consumed.size() == 1, "BG node did not publish its Arrow-backed frame result");
     const auto consumed_value = consumed[0];
     require(consumed_value.has_value(), "BG node produced an invalid Arrow-backed frame result");

@@ -4,7 +4,7 @@
 #include <bg/type/time_series_bundle_type.hpp>
 #include <bg/library.hpp>
 #include <bg/scalar/value.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/util/named_argument.hpp>
 
@@ -170,7 +170,7 @@ void test_packed_boolean_expression_result() {
         return observe(
             make_column_expression(ColumnBlockFunction<bool, i64, i64>{&greater_than_batch}, values, threshold), tick);
     };
-    const auto result = testing::test_graph(graph, std::array<i64, 1>{0});
+    const auto result = bg::run_graph(graph, std::array<i64, 1>{0});
     require(result.equals({0}), "packed boolean expression graph lost its trigger");
     require(observed == std::vector<std::optional<bool>>{false, false, false, false, true, false,
                                                          true, true, false, true, std::nullopt} &&
@@ -269,7 +269,7 @@ void test_column_expression_builder_integration() {
     };
     const auto unary_values = std::array{3.0, -4.0};
     const auto unary_ticks = std::array<i64, 2>{0, 1};
-    static_cast<void>(testing::test_graph(unary_graph, unary_values, unary_ticks));
+    static_cast<void>(bg::run_graph(unary_graph, unary_values, unary_ticks));
     require(unary_observations ==
                 std::vector<std::vector<std::optional<i64>>>{{-3}, {-3, 4}},
             "shared column expression builder did not materialize a unary operation with a different result type");
@@ -295,7 +295,7 @@ void test_column_expression_builder_integration() {
     const auto integer_parameters = std::array<i64, 3>{10, 20, 30};
     const auto double_parameters = std::array{0.5, 1.25, 2.0};
     const auto mixed_ticks = std::array<i64, 3>{0, 1, 2};
-    static_cast<void>(testing::test_graph(mixed_graph, mixed_values, integer_parameters, double_parameters,
+    static_cast<void>(bg::run_graph(mixed_graph, mixed_values, integer_parameters, double_parameters,
                                           mixed_ticks));
     require(mixed_observations == std::vector<std::vector<std::optional<double>>>{{12.5}, {23.25, 25.25},
                                                                                     {34.0, 36.0, 38.0}},
@@ -325,7 +325,7 @@ void test_symbol_producing_column_block_function() {
         return observe(copied, tick);
     };
 
-    const auto result = testing::test_graph(graph, std::array<i64, 2>{0, 1});
+    const auto result = bg::run_graph(graph, std::array<i64, 2>{0, 1});
     require(result.equals<i64>({0, 1}) && observations.size() == 2 &&
                 observations[0] == std::vector<std::optional<symbol>>{symbol{"XNAS"}, symbol{}, symbol{""},
                                                                       std::nullopt} &&
@@ -551,16 +551,16 @@ void test_filter_expression_with_multiple_parameters() {
         return observe(frame::filter(source, predicate, "fifth"_n = fifth));
     };
 
-    const auto result = testing::test_graph(
+    const auto result = bg::run_graph(
         graph,
-        testing::input(TSF<ComparisonFrame>::type(),
+        bg::input(TSF<ComparisonFrame>::type(),
                        {literal::TimeSeriesLiteral{}, {{{"size", i64{1}}, {"bid", 10.0}, {"ask", 100.0}}},
                         literal::TimeSeriesLiteral{}}),
-        testing::input(cpp_time_series_runtime_type<TS<double>>(), {1.0, 1.0, 1.0}),
-        testing::input(cpp_time_series_runtime_type<TS<double>>(), {2.0, 2.0, 2.0}),
-        testing::input(cpp_time_series_runtime_type<TS<double>>(), {4.0, 4.0, 4.0}),
-        testing::input(cpp_time_series_runtime_type<TS<double>>(), {8.0, 8.0, 8.0}),
-        testing::input(cpp_time_series_runtime_type<TS<double>>(), {16.0, 16.0, 15.0}));
+        bg::input(cpp_time_series_runtime_type<TS<double>>(), {1.0, 1.0, 1.0}),
+        bg::input(cpp_time_series_runtime_type<TS<double>>(), {2.0, 2.0, 2.0}),
+        bg::input(cpp_time_series_runtime_type<TS<double>>(), {4.0, 4.0, 4.0}),
+        bg::input(cpp_time_series_runtime_type<TS<double>>(), {8.0, 8.0, 8.0}),
+        bg::input(cpp_time_series_runtime_type<TS<double>>(), {16.0, 16.0, 15.0}));
     require(result.equals<i64>({0, 1, 0}) && selected_counts == std::vector<std::size_t>{0, 1, 0},
             "frame filter did not evaluate parameters stored across multiple aligned blocks");
 }
@@ -601,19 +601,19 @@ void test_mixed_expression_chaining_and_filter() {
         return observe(frame::filter(source, inverted, "binding_0"_n = limit), first_adjusted, second_adjusted);
     };
 
-    const auto result = testing::test_graph(
+    const auto result = bg::run_graph(
         graph,
-        testing::input(TSF<NumericFrame>::type(),
+        bg::input(TSF<NumericFrame>::type(),
                        {literal::TimeSeriesLiteral{},
                         {{{"id", i64{1}}, {"value", i64{2}}, {"price", 10.0}},
                          {{"id", i64{2}}, {"value", i64{4}}, {"price", 20.0}}},
                         {{{"id", i64{1}}, {"value", i64{6}}}}}),
-        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {2, 2, 2}),
-        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {6, 6, 8}),
-        testing::input(cpp_time_series_runtime_type<TS<bool>>(), {true, true, true}),
-        testing::input(cpp_time_series_runtime_type<TS<double>>(), {1.5, 1.5, 1.5}),
-        testing::input(cpp_time_series_runtime_type<TS<double>>(), {-0.5, -0.5, -0.5}),
-        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1, 2}));
+        bg::input(cpp_time_series_runtime_type<TS<i64>>(), {2, 2, 2}),
+        bg::input(cpp_time_series_runtime_type<TS<i64>>(), {6, 6, 8}),
+        bg::input(cpp_time_series_runtime_type<TS<bool>>(), {true, true, true}),
+        bg::input(cpp_time_series_runtime_type<TS<double>>(), {1.5, 1.5, 1.5}),
+        bg::input(cpp_time_series_runtime_type<TS<double>>(), {-0.5, -0.5, -0.5}),
+        bg::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1, 2}));
     require(result.equals<i64>({0, 1, 1}) && selected_counts == std::vector<std::size_t>{0, 1, 1},
             "mixed expression chaining or filtering lost bound values");
     require(first_adjusted_values ==
@@ -697,13 +697,13 @@ void test_mixed_operator_requirements() {
         return observe(bind_expression(source, after_constant), bind_expression(source, before_constant),
                        bind_expression(source, mixed_sum), bind_expression(source, disjunction), tick);
     };
-    const auto result = testing::test_graph(
+    const auto result = bg::run_graph(
         graph,
-        testing::input(TSF<NumericFrame>::type(),
+        bg::input(TSF<NumericFrame>::type(),
                        {literal::TimeSeriesLiteral{}, {{{"id", i64{1}}, {"value", i64{2}}, {"price", 0.0}}}}),
-        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {1, 1}),
-        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {2, 2}),
-        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1}));
+        bg::input(cpp_time_series_runtime_type<TS<i64>>(), {1, 1}),
+        bg::input(cpp_time_series_runtime_type<TS<i64>>(), {2, 2}),
+        bg::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1}));
     require(result.equals<i64>({0, 1}) && observations.size() == 2,
             "mixed operator observer missed an input cycle");
     require(observations[1].after_constant == std::vector<std::optional<i64>>{7} &&
@@ -738,14 +738,14 @@ void test_mixed_expression_parameter_invalidation() {
         const auto predicate = mixed_value > threshold;
         return observe(opt(bind_expression(source, predicate, "binding_0"_n = limit)), tick);
     };
-    const auto result = testing::test_graph(
+    const auto result = bg::run_graph(
         graph,
-        testing::input(TSF<NumericFrame>::type(),
+        bg::input(TSF<NumericFrame>::type(),
                        {{{{"id", i64{1}}, {"value", i64{2}}, {"price", 10.0}}}, literal::SKIP,
                         literal::TimeSeriesLiteral{}}),
-        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {2, literal::INVALID, 2}),
-        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {5, literal::SKIP, 6}),
-        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1, 2}));
+        bg::input(cpp_time_series_runtime_type<TS<i64>>(), {2, literal::INVALID, 2}),
+        bg::input(cpp_time_series_runtime_type<TS<i64>>(), {5, literal::SKIP, 6}),
+        bg::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1, 2}));
     require(result.equals<i64>({0, 1, 2}) && observations.size() == 3,
             "mixed expression observer missed a parameter cycle");
     require(observations[0].valid && !observations[0].became_invalid && observations[0].became_valid &&
@@ -783,7 +783,7 @@ void test_comparison_runtime(Operation &operation) {
         return observe(operation(write(tick), T{0}), tick);
     };
     const auto ticks = std::array<i64, 2>{0, 1};
-    const auto result = testing::test_graph(graph, ticks);
+    const auto result = bg::run_graph(graph, ticks);
     require(result.equals({0, 1}) && observations.size() == ticks.size(),
             "numeric comparison did not evaluate both source ticks");
 
@@ -851,20 +851,20 @@ void test_text_and_symbol_comparison_filters() {
                        frame::filter(source, named_predicate, "target"_n = symbol_parameter), tick);
     };
 
-    const auto result = testing::test_graph(
+    const auto result = bg::run_graph(
         graph,
-        testing::input(TSF<TextComparisonFrame>::type(),
+        bg::input(TSF<TextComparisonFrame>::type(),
                        {literal::TimeSeriesLiteral{},
                         {{{"text", std::string_view{"alpha"}}, {"venue", symbol{"XNAS"}}},
                          {{"text", std::string_view{"beta"}}, {"venue", symbol{"XNYS"}}},
                          {{"text", NULL_VALUE}, {"venue", symbol{"XNAS"}}},
                          {{"text", std::string_view{}}, {"venue", symbol{""}}}},
                         {{{"text", std::string_view{"alpha"}}, {"venue", symbol{"XNYS"}}}}}),
-        testing::input(cpp_time_series_runtime_type<TS<string>>(),
+        bg::input(cpp_time_series_runtime_type<TS<string>>(),
                        {std::string_view{"alpha"}, std::string_view{"beta"}, std::string_view{"alpha"}}),
-        testing::input(cpp_time_series_runtime_type<TS<symbol>>(),
+        bg::input(cpp_time_series_runtime_type<TS<symbol>>(),
                        {symbol{"XNAS"}, symbol{"XNYS"}, symbol{"XNYS"}}),
-        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1, 2}));
+        bg::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1, 2}));
 
     require(result.equals<i64>({0, 1, 2}) &&
                 observations == std::vector<observation>{{{0, 0, 0, 0, 0}}, {{1, 2, 1, 1, 1}}, {{2, 3, 2, 2, 2}}},
@@ -879,12 +879,12 @@ void test_comparison_expression_with_tick_parameter() {
         const auto predicate = col("ask") - col("bid") < tolerance;
         return bind_expression(frame, predicate);
     };
-    const auto result = testing::test_graph(
+    const auto result = bg::run_graph(
         graph,
-        testing::input(TSF<ComparisonFrame>::type(),
+        bg::input(TSF<ComparisonFrame>::type(),
                        {literal::TimeSeriesLiteral{}, {{{"size", i64{1}}, {"bid", 10.0}, {"ask", 13.0}}},
                         {{{"size", i64{2}}, {"bid", 20.0}, {"ask", 23.0}}}}),
-        testing::input(cpp_time_series_runtime_type<TS<double>>(), {2.0, 2.5, 4.0}));
+        bg::input(cpp_time_series_runtime_type<TS<double>>(), {2.0, 2.5, 4.0}));
     require(result.equals({literal::TimeSeriesLiteral{}, {{"first", false}}, {{"first", true}, {"second", true}}}),
             "comparison expression lost arithmetic fusion, parameter ticks, or row values");
 }
@@ -916,13 +916,13 @@ void test_comparison_uses_forced_concrete_intermediate() {
         return observe_predicate(operators::lt(difference, tolerance).as<TSC<bool>>(), tick);
     };
 
-    const auto result = testing::test_graph(
+    const auto result = bg::run_graph(
         graph,
-        testing::input(TSF<ComparisonFrame>::type(),
+        bg::input(TSF<ComparisonFrame>::type(),
                        {literal::TimeSeriesLiteral{}, {{{"size", i64{1}}, {"bid", 10.0}, {"ask", 13.0}}},
                         {{{"size", i64{2}}, {"bid", 20.0}, {"ask", 23.0}}}}),
-        testing::input(cpp_time_series_runtime_type<TS<double>>(), {2.0, 2.5, 4.0}),
-        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1, 2}));
+        bg::input(cpp_time_series_runtime_type<TS<double>>(), {2.0, 2.5, 4.0}),
+        bg::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1, 2}));
     require(result.equals({0, 1, 2}) &&
                 differences == std::vector<std::vector<std::optional<double>>>{{}, {3.0}, {3.0, 3.0}} &&
                 predicates == std::vector<std::vector<std::optional<bool>>>{{}, {false}, {true, true}},
@@ -993,18 +993,18 @@ void test_numeric_arithmetic_and_conversion_updates() {
 
     const auto two_to_63 = std::ldexp(1.0, 63);
     const auto below_limit = std::nextafter(two_to_63, 0.0);
-    const auto result = testing::test_graph(
+    const auto result = bg::run_graph(
         graph,
-        testing::input(TSF<NumericFrame>::type(),
+        bg::input(TSF<NumericFrame>::type(),
                        {literal::TimeSeriesLiteral{},
                         {{{"id", i64{1}}, {"value", std::numeric_limits<i64>::max()}, {"price", 2.9}}},
                         {{{"id", i64{2}}, {"value", std::numeric_limits<i64>::min()}, {"price", -2.9}}},
                         {{{"id", i64{2}}, {"price", -two_to_63}}},
                         {{{"id", i64{2}}, {"price", below_limit}}},
                         {literal::REMOVE({{"id", i64{1}}})}}),
-        testing::input(cpp_time_series_runtime_type<TS<double>>(),
+        bg::input(cpp_time_series_runtime_type<TS<double>>(),
                        {4096.0, literal::SKIP, literal::SKIP, literal::SKIP, 8192.0, literal::SKIP}),
-        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1, 2, 3, 4, 5}));
+        bg::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1, 2, 3, 4, 5}));
 
     require(result.equals<i64>({0, 1, 2, 3, 4, 5}) && observations.size() == 6,
             "numeric arithmetic and conversion graph missed an input cycle");
@@ -1064,11 +1064,11 @@ void test_numeric_null_and_range_errors() {
     const auto nullable_division = [&](wp<TSF<NumericFrame>> source, wp<TS<i64>> tick) {
         return observe(bind_expression(source, col("value") / i64{0}), tick);
     };
-    const auto null_result = testing::test_graph(
+    const auto null_result = bg::run_graph(
         nullable_division,
-        testing::input(TSF<NumericFrame>::type(),
+        bg::input(TSF<NumericFrame>::type(),
                        {literal::TimeSeriesLiteral{}, {{{"id", i64{1}}, {"price", 1.0}}}}),
-        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1}));
+        bg::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1}));
     require(null_result.equals<i64>({0, 1}) && values == std::vector<std::optional<double>>{std::nullopt},
             "a null numerator evaluated division by zero instead of remaining null");
 
@@ -1078,9 +1078,9 @@ void test_numeric_null_and_range_errors() {
         };
         auto rejected = false;
         try {
-            static_cast<void>(testing::test_graph(
+            static_cast<void>(bg::run_graph(
                 convert_graph,
-                testing::input(TSF<NumericFrame>::type(),
+                bg::input(TSF<NumericFrame>::type(),
                                {literal::TimeSeriesLiteral{}, {{{"id", i64{1}}, {"price", value}}}})));
         } catch (const std::domain_error &) {
             rejected = domain_error;
@@ -1104,9 +1104,9 @@ void test_numeric_null_and_range_errors() {
         };
         auto rejected = false;
         try {
-            static_cast<void>(testing::test_graph(
+            static_cast<void>(bg::run_graph(
                 division_graph,
-                testing::input(TSF<NumericFrame>::type(),
+                bg::input(TSF<NumericFrame>::type(),
                                {literal::TimeSeriesLiteral{}, {{{"id", i64{1}}, {"price", 1.0}}}})));
         } catch (const std::domain_error &) {
             rejected = true;
@@ -1203,9 +1203,9 @@ void test_scalar_capture_and_named_string_parameter() {
         return bind_expression(expression, "suffix"_n = suffix);
     };
     const auto values = std::array<std::string_view, 2>{" first", " second"};
-    const auto actual = testing::test_graph(graph, values);
+    const auto actual = bg::run_graph(graph, values);
     const auto next_values = std::array<std::string_view, 2>{" third", " fourth"};
-    const auto next_actual = testing::test_graph(graph, next_values);
+    const auto next_actual = bg::run_graph(graph, next_values);
     require(actual.equals<string>({"captured string first", "captured string second"}) &&
                 next_actual.equals<string>({"captured string third", "captured string fourth"}),
             "a scalar string capture or named string parameter did not survive expression binding");

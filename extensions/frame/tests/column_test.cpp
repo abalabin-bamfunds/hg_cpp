@@ -2,7 +2,7 @@
 
 #include <bg/bg.hpp>
 #include <bg/scalar/value.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/util/scope_exit.hpp>
 #include <bg/type/type_registry.hpp>
 
@@ -207,7 +207,7 @@ void test_ordinary_time_series_graph() {
     });
     const auto graph = [&](bg::wp<bg::TS<Column>> input) { return copy(input); };
     const auto source = std::vector{Column{{bg::i64{1}, std::nullopt}}, Column{{bg::i64{2}, bg::i64{3}}}};
-    const auto result = bg::testing::test_graph(graph, source);
+    const auto result = bg::run_graph(graph, source);
     require(result.size() == 2 && result[0] && result[1], "ordinary graph lost column values");
     require(result[0]->view().value().cell(0) == 1 && !result[0]->view().value().cell(1),
             "ordinary graph changed a column");

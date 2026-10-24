@@ -145,7 +145,7 @@ values across layouts and chunk boundaries. A Base annotation preserves
 Derived columns for comparison. Numeric cells use ordinary numeric equality.
 Row IDs and deltas are time-series state and do not participate.
 Ordinary `TS<Column<T>>` and `TS<Frame<Schema>>` support these literals in
-`test_graph` inputs and result assertions.
+`run_graph` inputs and result assertions.
 
 ### TSF row updates
 
@@ -167,12 +167,11 @@ auto count_rows = node([](In<TSF<KeyedQuotes>> frame, Out<TS<i64>> count) {
     count.set(static_cast<i64>(frame.size()));
 });
 auto graph = [&](wp<TSF<KeyedQuotes>> frame) { return count_rows(frame); };
-auto result = testing::test_graph(
-    graph, testing::input(TSF<KeyedQuotes>::type(), {
-        {{{"id", i64{1}}, {"price", 10.0}}},
-        {{{"id", i64{1}}, {"price", 11.0}}},
-        {literal::REMOVE({{"id", i64{1}}})},
-    }));
+auto result = run_graph(graph, {
+    {{{"id", i64{1}}, {"price", 10.0}}},
+    {{{"id", i64{1}}, {"price", 11.0}}},
+    {literal::REMOVE({{"id", i64{1}}})},
+});
 ```
 
 Entries apply in written order. At the root of a TSF literal,
@@ -189,7 +188,7 @@ Base schema.
 
 ### Keyed TSF result capture
 
-`test_graph` captures keyed TSF deltas from native and frame view outputs and
+`run_graph` captures keyed TSF deltas from native and frame view outputs and
 compares them with the row literal syntax above. Expected rows match by key,
 independent of entry order.
 An addition compares every non-key field; omitted fields mean null. A patch
@@ -198,7 +197,7 @@ One removal and one insertion of the same key may occur in the same delta.
 
 ```cpp
 auto identity = [](wp<TSF<KeyedQuotes>> frame) { return frame; };
-auto actual = testing::test_graph(identity, {
+auto actual = run_graph(identity, {
     {{{"id", i64{1}}, {"price", 10.0}}},
     {{{"id", i64{1}}, {"price", 11.0}}},
     {literal::REMOVE({{"id", i64{1}}})},
@@ -222,7 +221,7 @@ annotations and references.
 A native `TSC<T>` literal is a sequence of nullable cells. Each cell appends a
 row; internal row IDs are allocated by the output. For example,
 `output.apply({i64{10}, NULL_VALUE})` appends two rows to `TSC<i64>`.
-The same syntax supplies `test_graph` inputs. Cells must match the resolved
+The same syntax supplies `run_graph` inputs. Cells must match the resolved
 column type.
 
 An empty literal validates an invalid output as an empty column and leaves a

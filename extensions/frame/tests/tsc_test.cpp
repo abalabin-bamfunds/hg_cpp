@@ -1,7 +1,7 @@
 #include <bg/frame/tsc.hpp>
 
 #include <bg/bg.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 
 #include <algorithm>
 #include <array>
@@ -366,7 +366,7 @@ void test_cold_generic_tsc_column_output() {
     });
     const auto graph = [&](bg::wp<bg::TS<bg::i64>> input) { return copy(write(input)); };
     const auto values = std::array<bg::i64, 2>{14, -7};
-    const auto result = bg::testing::test_graph(graph, values);
+    const auto result = bg::run_graph(graph, values);
     require(result.size() == values.size() && result[0] && result[1] &&
                 result[0]->view().value().cell<bg::i64>(0) == 14 &&
                 result[1]->view().value().cell<bg::i64>(0) == -7,
@@ -394,12 +394,12 @@ void test_tsc_literal_inputs() {
     });
     const auto graph = [&](wp<TSC<i64>> input, wp<TS<i64>> tick) { return observe(input, tick); };
     const auto ticks = std::array<i64, 8>{0, 1, 2, 3, 4, 5, 6, 7};
-    const auto result = testing::test_graph(
+    const auto result = bg::run_graph(
         graph,
-        testing::input<TSC<i64>>({literal::TimeSeriesLiteral{}, {i64{10}, NULL_VALUE, i64{20}},
+        bg::input<TSC<i64>>({literal::TimeSeriesLiteral{}, {i64{10}, NULL_VALUE, i64{20}},
                                   literal::TimeSeriesLiteral{}, literal::SKIP, {i64{30}}, literal::INVALID,
                                   literal::TimeSeriesLiteral{}, {i64{40}}}),
-        testing::input<TS<i64>>({0, 1, 2, 3, 4, 5, 6, 7}));
+        bg::input<TS<i64>>({0, 1, 2, 3, 4, 5, 6, 7}));
 
     require(result.equals({0, 1, 2, 3, 4, 5, 6, 7}) && observations.size() == ticks.size(),
             "inferred TSC literal input missed an observation cycle");
@@ -435,9 +435,9 @@ void test_tsc_literal_inputs() {
     });
     const auto double_graph = [&](wp<TSC<double>> input, wp<TS<i64>> tick) { return observe_double(input, tick); };
     const auto &double_runtime = column_time_series_runtime_type<double>(TSC<double>::type());
-    const auto explicit_result = testing::test_graph(
-        double_graph, testing::input(double_runtime, {{1.25, NULL_VALUE}, {2.5}}),
-        testing::input<TS<i64>>({0, 1}));
+    const auto explicit_result = bg::run_graph(
+        double_graph, bg::input(double_runtime, {{1.25, NULL_VALUE}, {2.5}}),
+        bg::input<TS<i64>>({0, 1}));
     require(explicit_result.equals({0, 1}) &&
                 explicit_values == std::vector<std::vector<std::optional<double>>>{{1.25, std::nullopt},
                                                                                    {1.25, std::nullopt, 2.5}},
@@ -458,7 +458,7 @@ void test_tsc_literal_output_apply() {
         output.set_value(input.value_view());
     });
     const auto typed_graph = [&](wp<TS<i64>> tick) { return typed_snapshot(typed_write(tick)); };
-    const auto typed_result = testing::test_graph(typed_graph, std::array<i64, 2>{0, 1});
+    const auto typed_result = bg::run_graph(typed_graph, std::array<i64, 2>{0, 1});
     require(typed_result.size() == 2 && typed_result[0] && typed_result[1] &&
                 typed_result[0]->view().value().cell(0) == 10 &&
                 !typed_result[0]->view().value().cell(1) &&
@@ -488,8 +488,8 @@ void test_tsc_literal_output_apply() {
     });
     const auto generic_integer_graph = [&](wp<TS<i64>> input) { return generic_snapshot(generic_write(input)); };
     const auto generic_double_graph = [&](wp<TS<double>> input) { return generic_snapshot(generic_write(input)); };
-    const auto integer_result = testing::test_graph(generic_integer_graph, std::array<i64, 1>{7});
-    const auto double_result = testing::test_graph(generic_double_graph, std::array<double, 1>{2.5});
+    const auto integer_result = bg::run_graph(generic_integer_graph, std::array<i64, 1>{7});
+    const auto double_result = bg::run_graph(generic_double_graph, std::array<double, 1>{2.5});
     require(integer_result.equals({2}) && double_result.equals({2}) &&
                 integer_values == std::vector<std::optional<i64>>{7, std::nullopt} &&
                 double_values == std::vector<std::optional<double>>{2.5, std::nullopt},
@@ -504,25 +504,20 @@ void test_tsc_literal_rejections() {
         output.set(static_cast<i64>(input.size()));
     });
     const auto graph = [&](wp<TSC<i64>> input) { return observe(input); };
-    const auto rejects = [&](const TimeSeriesRuntimeType &runtime,
-                             std::initializer_list<literal::TimeSeriesLiteral> ticks) {
+    const auto &native_runtime = column_time_series_runtime_type<i64>(TSC<i64>::type());
+    const auto rejects = [&](std::initializer_list<literal::TimeSeriesLiteral> ticks) {
         try {
-            static_cast<void>(testing::test_graph(graph, testing::input(runtime, ticks)));
+            const auto input = GraphRunLiteralInput(std::span<const literal::TimeSeriesLiteral>{ticks});
+            static_cast<void>(bg::run_graph(graph, bg::input(native_runtime, input)));
         } catch (const std::invalid_argument &) {
             return true;
         }
         return false;
     };
 
-    const auto &native_runtime = column_time_series_runtime_type<i64>(TSC<i64>::type());
-    require(rejects(native_runtime, {literal::TimeSeriesLiteral(i64{1})}),
+    require(rejects({literal::TimeSeriesLiteral(i64{1})}),
             "TSC literal accepted a scalar instead of a cell sequence");
-    require(rejects(native_runtime, {{1.5}}), "TSC literal accepted a cell with the wrong type");
-
-    const auto &view_runtime = column_view_time_series_runtime_type(TSC<i64>::type());
-    require(rejects(view_runtime, {{i64{1}}}), "TSC literal dispatch accepted a view runtime");
-    const auto &computed_runtime = column_computed_time_series_runtime_type<i64>(TSC<i64>::type());
-    require(rejects(computed_runtime, {{i64{1}}}), "TSC literal dispatch accepted a computed runtime");
+    require(rejects({{1.5}}), "TSC literal accepted a cell with the wrong type");
 }
 
 void test_computed_tsc_output() {
@@ -553,7 +548,7 @@ void test_computed_tsc_output() {
         return observe(compute(write(command), command), tick);
     };
     const auto commands = std::array<i64, 15>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 10, 11, 12, 13};
-    const auto result = testing::test_graph(graph, commands, commands);
+    const auto result = bg::run_graph(graph, commands, commands);
 
     require(result.size() == commands.size() && observations.size() == commands.size(),
             "computed TSC graph missed a command cycle");
@@ -641,7 +636,7 @@ void test_computed_tsc_domain_rebinding() {
     const auto second_commands = std::array<i64, 3>{1, 2, 0};
     const auto selections = std::array<i64, 3>{0, 0, 1};
     const auto ticks = std::array<i64, 3>{0, 1, 2};
-    static_cast<void>(testing::test_graph(graph, first_commands, second_commands, selections, ticks));
+    static_cast<void>(bg::run_graph(graph, first_commands, second_commands, selections, ticks));
 
     require(observations.size() == 3 && observations[0].rows == std::vector<row_id_t>{0} &&
                 !observations[0].cells.front() && observations[0].changed == std::vector<row_id_t>{0} &&
@@ -700,7 +695,7 @@ void test_computed_tsc_publishes_empty_domain_rebinding() {
     };
     const auto ticks = std::array<i64, 4>{0, 1, 2, 3};
     const auto selections = std::array<i64, 4>{0, 0, 1, 1};
-    static_cast<void>(testing::test_graph(graph, ticks, selections));
+    static_cast<void>(bg::run_graph(graph, ticks, selections));
 
     require(observations.size() == ticks.size() && observations[0].valid &&
                 observations[0].source_row_domain != nullptr &&
@@ -861,7 +856,7 @@ void test_tsc_graph_behavior() {
     };
     const auto commands = std::array<bg::i64, 16>{9, 1, 2, 3, 0, 4, 5, 6, 7, 8, 9, 11, 10, 0, 9, 11};
     const auto ticks = std::array<bg::i64, 16>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
-    const auto snapshots = bg::testing::test_graph(graph, commands, ticks);
+    const auto snapshots = bg::run_graph(graph, commands, ticks);
 
     require(observations.size() == commands.size(), "tick observer did not run for every cycle");
     for (const auto &entry : observations)
@@ -959,7 +954,7 @@ void test_double_tsc_graph() {
     });
     const auto graph = [&](bg::wp<bg::TS<double>> input) { return snapshot(write(input)); };
     const auto values = std::array{1.25, 2.5, 8.75};
-    const auto result = bg::testing::test_graph(graph, values);
+    const auto result = bg::run_graph(graph, values);
     require(result.size() == values.size(), "double TSC graph lost cycles");
     for (auto index = std::size_t{}; index != values.size(); ++index) {
         require(result[index] && result[index]->view().value().size() == 1 &&
@@ -995,7 +990,7 @@ void test_boolean_tsc_literals_and_capture() {
         observe(output, tick);
         return output;
     };
-    const auto result = testing::test_graph(graph, std::array<i64, 2>{0, 1});
+    const auto result = bg::run_graph(graph, std::array<i64, 2>{0, 1});
 
     require(result.equals({{{"first", true}, {"second", NULL_VALUE}, {"third", false}},
                            {{"fourth", false}, {"fifth", true}}}) &&
@@ -1013,18 +1008,18 @@ void test_text_tsc_literal_capture_and_discard() {
 
     constexpr auto embedded_nul = std::string_view{"a\0b", 3};
     const auto string_identity = [](wp<TSC<string>> input) { return input; };
-    const auto strings = testing::test_graph(
+    const auto strings = bg::run_graph(
         string_identity,
-        testing::input<TSC<string>>({{embedded_nul, std::string_view{}, NULL_VALUE}, literal::SKIP,
+        bg::input<TSC<string>>({{embedded_nul, std::string_view{}, NULL_VALUE}, literal::SKIP,
                                      {std::string_view{"last"}}}));
     require(strings.equals({{{"first", embedded_nul}, {"second", std::string_view{}}, {"third", NULL_VALUE}},
                             literal::SKIP, {{"fourth", std::string_view{"last"}}}}),
             "string TSC capture or discard changed embedded NUL, empty, null, or appended text");
 
     const auto symbol_identity = [](wp<TSC<symbol>> input) { return input; };
-    const auto symbols = testing::test_graph(
+    const auto symbols = bg::run_graph(
         symbol_identity,
-        testing::input<TSC<symbol>>({{symbol{}, symbol{""}, NULL_VALUE}, literal::SKIP}));
+        bg::input<TSC<symbol>>({{symbol{}, symbol{""}, NULL_VALUE}, literal::SKIP}));
     require(symbols.equals({{{"first", symbol{}}, {"second", symbol{""}}, {"third", NULL_VALUE}},
                             literal::SKIP}),
             "symbol TSC capture conflated a missing symbol, an interned empty symbol, or a null cell");
@@ -1094,8 +1089,8 @@ void test_generic_tsc_output() {
     const auto integers = std::array<bg::i64, 2>{14, -7};
     const auto doubles = std::array{1.25, -3.5};
     const auto ticks = std::array<bg::i64, 2>{0, 1};
-    static_cast<void>(bg::testing::test_graph(integer_graph, integers, ticks));
-    static_cast<void>(bg::testing::test_graph(double_graph, doubles, ticks));
+    static_cast<void>(bg::run_graph(integer_graph, integers, ticks));
+    static_cast<void>(bg::run_graph(double_graph, doubles, ticks));
 
     require(observed_values == std::vector<double>{14, -7, 1.25, -3.5},
             "generic TSC output changed an i64 or double value");
@@ -1128,7 +1123,7 @@ void test_generic_tsc_view_output() {
         return observe(bind(write(command)));
     };
     const auto commands = std::array<bg::i64, 4>{1, 2, 3, 5};
-    const auto result = bg::testing::test_graph(graph, commands);
+    const auto result = bg::run_graph(graph, commands);
     require(result.equals({10, 10, 10, 10}),
             "generic TSC view output did not dispatch to its resolved cell runtime");
 }
@@ -1191,9 +1186,9 @@ void test_generic_computed_tsc_output() {
     const auto string_graph = [&](bg::wp<bg::TS<bg::string>> value) {
         return inspect(compute(write(value)));
     };
-    const auto integer_result = bg::testing::test_graph(integer_graph, std::array<bg::i64, 1>{17});
-    const auto double_result = bg::testing::test_graph(double_graph, std::array<double, 1>{2.5});
-    const auto string_result = bg::testing::test_graph(
+    const auto integer_result = bg::run_graph(integer_graph, std::array<bg::i64, 1>{17});
+    const auto double_result = bg::run_graph(double_graph, std::array<double, 1>{2.5});
+    const auto string_result = bg::run_graph(
         string_graph, std::array<std::string_view, 1>{std::string_view{"computed text"}});
 
     require(integer_result.equals({1}) && double_result.equals({1}) &&
@@ -1232,7 +1227,7 @@ void test_tsc_view_binding() {
     };
     const auto commands = std::array<bg::i64, 16>{9, 1, 2, 3, 0, 4, 5, 6, 7, 8, 9, 11, 10, 0, 9, 11};
     const auto ticks = std::array<bg::i64, 16>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
-    static_cast<void>(bg::testing::test_graph(graph, commands, ticks));
+    static_cast<void>(bg::run_graph(graph, commands, ticks));
 
     require(observations.size() == commands.size(), "TSC view observer did not run for every cycle");
     for (const auto &entry : observations)
@@ -1291,7 +1286,7 @@ void test_tsc_view_rebinding() {
     const auto second_commands = std::array<bg::i64, 3>{1, 2, 0};
     const auto selection = std::array<bg::i64, 3>{0, 0, 1};
     const auto ticks = std::array<bg::i64, 3>{0, 1, 2};
-    static_cast<void>(bg::testing::test_graph(graph, first_commands, second_commands, selection, ticks));
+    static_cast<void>(bg::run_graph(graph, first_commands, second_commands, selection, ticks));
 
     require(observations.size() == 3, "TSC view rebind observer missed a cycle");
     require(observations[0].valid && observations[0].cells == std::vector<std::optional<bg::i64>>{10} &&
