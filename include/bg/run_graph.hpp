@@ -32,6 +32,7 @@
 #include <optional>
 #include <ranges>
 #include <span>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -94,6 +95,15 @@ template <typename T> inline constexpr bool graph_run_atomic_range_v = [] {
     } else {
         using Scalar = canonical_scalar_t<std::remove_cvref_t<T>>;
         return std::same_as<Scalar, string> || std::same_as<Scalar, bytes>;
+    }
+}();
+
+template <typename T> inline constexpr bool graph_run_character_pointer_v = [] {
+    using Input = std::remove_cvref_t<T>;
+    if constexpr (!std::is_pointer_v<Input>) {
+        return false;
+    } else {
+        return std::same_as<std::remove_cv_t<std::remove_pointer_t<Input>>, char>;
     }
 }();
 
@@ -595,29 +605,33 @@ inline bool graph_run_raw_literals_are_initial_event(std::span<const literal::Ti
     return graph_run_literal_matches_event(literal::TimeSeriesLiteral(values), target);
 }
 
+struct GraphRunInputShape {
+    const TimeSeriesType *time_series_type{};
+    std::optional<std::span<const literal::TimeSeriesLiteral>> values;
+};
+
 template <typename Input>
-const TimeSeriesType *graph_run_parameter_time_series_for_input(const Signature &signature, std::size_t index,
-                                                                const Input &input) {
+GraphRunInputShape graph_run_parameter_time_series_for_input(const Signature &signature, std::size_t index,
+                                                             Input &input, GraphRunLiteralStorage &storage) {
     const auto parameter_index = index < signature.parameter_count()
                                      ? index
                                      : signature.first_variadic_parameter().value_or(index);
     const auto *variable = dynamic_cast<const TypeVariableType<Type> *>(signature.parameter(parameter_index).type);
     if (variable == nullptr) {
-        return nullptr;
+        return {};
     }
 
     using Range = std::remove_cvref_t<Input>;
     if constexpr (std::ranges::forward_range<Range> && graph_run_range_input_v<Input> &&
                   !graph_run_optional_v<std::ranges::range_value_t<Range>> && !graph_run_literal_range_v<Input>) {
-        auto literal_storage = GraphRunLiteralStorage{};
-        auto values = std::vector<literal::TimeSeriesLiteral>{};
+        auto &values = storage.sequences.emplace_back();
         for (auto &&value : input) {
             if constexpr (std::same_as<std::remove_cvref_t<decltype(value)>,
                                        std::ranges::range_value_t<Range>>) {
-                values.emplace_back(graph_run_literal_from_value(std::forward<decltype(value)>(value), literal_storage));
+                values.emplace_back(graph_run_literal_from_value(std::forward<decltype(value)>(value), storage));
             } else {
                 using Item = std::ranges::range_value_t<Range>;
-                values.emplace_back(graph_run_literal_from_value(Item(value), literal_storage));
+                values.emplace_back(graph_run_literal_from_value(Item(value), storage));
             }
         }
         const auto literal_values = std::span<const literal::TimeSeriesLiteral>{values};
@@ -633,15 +647,18 @@ const TimeSeriesType *graph_run_parameter_time_series_for_input(const Signature 
             match = candidate;
         }
         if (match != nullptr) {
-            return match;
+            return {match, literal_values};
         }
+        const auto *fallback = graph_run_parameter_time_series_for_value<
+            graph_run_input_scalar_t<std::ranges::range_value_t<Range>>>(signature, index);
+        return {fallback, literal_values};
     }
 
     using Item = std::ranges::range_value_t<Range>;
     if constexpr (scalar_source<Item> || graph_run_optional_v<Item> || graph_run_range_input_v<Item>) {
-        return graph_run_parameter_time_series_for_value<graph_run_input_scalar_t<Item>>(signature, index);
+        return {graph_run_parameter_time_series_for_value<graph_run_input_scalar_t<Item>>(signature, index), {}};
     } else {
-        return nullptr;
+        return {};
     }
 }
 
@@ -765,9 +782,12 @@ WiringArgument GraphRunArguments::argument_materialized(std::size_t index, Input
                                      ? index
                                      : signature.first_variadic_parameter().value_or(index);
     auto *time_series_type = graph_run_parameter_time_series(signature, parameter_index);
+    auto inferred_values = std::optional<std::span<const literal::TimeSeriesLiteral>>{};
     if (time_series_type == nullptr) {
         if constexpr (graph_run_range_input_v<Input> && !graph_run_literal_range_v<Input>) {
-            time_series_type = graph_run_parameter_time_series_for_input(signature, parameter_index, input);
+            const auto inferred = graph_run_parameter_time_series_for_input(signature, parameter_index, input, literals);
+            time_series_type = inferred.time_series_type;
+            inferred_values = inferred.values;
         }
     }
     if (time_series_type == nullptr) {
@@ -785,6 +805,16 @@ WiringArgument GraphRunArguments::argument_materialized(std::size_t index, Input
         } else if constexpr (graph_run_literal_range_v<Input>) {
             throw std::invalid_argument{"a literal time-series input cannot bind to a scalar graph parameter"};
         } else if constexpr (graph_run_range_input_v<Input>) {
+            if (inferred_values) {
+                if constexpr (graph_run_scalar_input_v<Input>) {
+                    using Scalar = graph_run_input_scalar_t<Input>;
+                    auto value = ScalarValue<>::from_literal(cpp_scalar_runtime_type<Scalar>(),
+                                                             literal::TimeSeriesLiteral(*inferred_values));
+                    return WiringArgument{std::move(value)};
+                } else {
+                    throw std::invalid_argument{"run_graph needs a concrete time-series input type"};
+                }
+            }
             using Item = std::ranges::range_value_t<std::remove_cvref_t<Input>>;
             if constexpr (graph_run_optional_v<Item> ||
                           !(scalar_source<Item> || graph_run_range_input_v<Item>)) {
@@ -795,6 +825,10 @@ WiringArgument GraphRunArguments::argument_materialized(std::size_t index, Input
         } else {
             return WiringArgument{std::forward<Input>(input)};
         }
+    }
+
+    if (inferred_values) {
+        return raw_literals_argument(RawGraphRunLiteralInput{*inferred_values}, *time_series_type);
     }
 
     WiringPoint point;
@@ -1031,6 +1065,7 @@ auto run_graph(
 
 template <typename Tested, typename... Values>
     requires details::graph_run_target<Tested> && (sizeof...(Values) > 0) &&
+             ((!details::graph_run_character_pointer_v<Values>) && ...) &&
              ((!std::same_as<std::remove_cvref_t<Values>, literal::Sentinel>) && ...)
 auto run_graph(const Tested &tested, std::initializer_list<Values>... inputs) {
     return details::run_graph_bound_target(tested, GraphRunOptions{}, inputs...);
@@ -1038,6 +1073,7 @@ auto run_graph(const Tested &tested, std::initializer_list<Values>... inputs) {
 
 template <typename Tested, typename... Values>
     requires details::graph_run_target<Tested> && (sizeof...(Values) > 0) &&
+             ((!details::graph_run_character_pointer_v<Values>) && ...) &&
              ((!std::same_as<std::remove_cvref_t<Values>, literal::Sentinel>) && ...)
 auto run_graph(const Tested &tested, const GraphRunOptions &options,
                              std::initializer_list<Values>... inputs) {

@@ -33,6 +33,25 @@ TEST_CASE("run_graph runs a node with initial values and tick histories",
     CHECK(run_graph(increment, {1, 2, 3}).equals<i64>({2, 3, 4}));
 }
 
+TEST_CASE("run_graph preserves nested single-pass ranges during generic input inference",
+          "[testing][evaluation][feature:test-graph][series:value][scalar:list]") {
+    const auto count_inner_items = node([](In<TS<List<List<i64>>>> input) {
+        return static_cast<i64>(input.value_view()[0].size());
+    });
+
+    auto values = std::istringstream{"1 2 3"};
+    auto nested_range = std::views::single(std::ranges::istream_view<i64>{values});
+
+    CHECK(run_graph(count_inner_items, nested_range).equals<i64>({3}));
+}
+
+TEST_CASE("run_graph accepts string literal tick histories",
+          "[testing][evaluation][feature:test-graph][series:value][scalar:string]") {
+    const auto identity = [](wp<TS<string>> input) { return input; };
+
+    CHECK(run_graph(identity, {"first", "second", "third"}).equals<string>({"first", "second", "third"}));
+}
+
 TEST_CASE("run_graph distinguishes a collection event from a tick history",
           "[testing][evaluation][feature:test-graph][series:value][scalar:list]") {
     const auto count_items = node([](In<TS<List<i64>>> input) {
