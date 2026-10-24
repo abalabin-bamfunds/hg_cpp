@@ -3,7 +3,11 @@
 include(CMakeFindDependencyMacro)
 find_dependency(ddvisitor CONFIG REQUIRED)
 find_dependency(Threads REQUIRED)
-find_dependency(fmt CONFIG REQUIRED)
+if(@BG_BUNDLE_FMT@)
+    find_dependency(fmt CONFIG REQUIRED PATHS "${CMAKE_CURRENT_LIST_DIR}/../fmt" NO_DEFAULT_PATH)
+else()
+    find_dependency(fmt CONFIG REQUIRED)
+endif()
 find_dependency(quill CONFIG REQUIRED)
 
 set(bg_python_FOUND FALSE)

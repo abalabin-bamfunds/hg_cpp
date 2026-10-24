@@ -15,7 +15,27 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 find_package(Threads REQUIRED)
 find_package(ICU REQUIRED COMPONENTS uc i18n)
-find_package(fmt CONFIG REQUIRED)
+
+option(BG_BUNDLE_FMT "Build and install fmt into the package prefix" OFF)
+if(BG_BUNDLE_FMT)
+    set(FMT_INSTALL ON CACHE BOOL "Install fmt with BG" FORCE)
+    set(_bg_build_shared_libs "${BUILD_SHARED_LIBS}")
+    set(BUILD_SHARED_LIBS ON)
+    FetchContent_Declare(
+        fmt
+        GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+        GIT_TAG 12.2.0
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(fmt)
+    set(BUILD_SHARED_LIBS "${_bg_build_shared_libs}")
+    get_target_property(fmt_type fmt TYPE)
+    if(NOT fmt_type STREQUAL "SHARED_LIBRARY")
+        message(FATAL_ERROR "BG_BUNDLE_FMT requires fmt to be built as a shared library")
+    endif()
+else()
+    find_package(fmt CONFIG REQUIRED)
+endif()
 
 # Installed libraries must not retain build-environment dependency paths.
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)

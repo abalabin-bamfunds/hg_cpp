@@ -150,7 +150,7 @@ if(BUILD_TESTING)
         message(
             FATAL_ERROR
             "pytest is required for Python tests. Install it with: "
-            "${Python_EXECUTABLE} -m pip install 'bg-graph[test]'"
+            "${Python_EXECUTABLE} -m pip install 'hg_cpp[test]'"
         )
     endif()
 

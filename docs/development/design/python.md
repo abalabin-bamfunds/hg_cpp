@@ -31,6 +31,7 @@ with `bg::python`.
 
 ## Distribution
 
+The Python distribution is named `hg_cpp`; its import package remains `bg`.
 The distribution workflow builds one `cp312-abi3` wheel for Linux
 `manylinux_2_28_x86_64`, macOS arm64, and Windows amd64, plus a source
 distribution. It audits the wheel ABI and contents, repairs platform
@@ -38,8 +39,9 @@ dependencies, audits the source archive, and builds a wheel from the source
 archive. Installed wheels are tested on Python 3.12, 3.13, and 3.14 on each
 platform, including the full Python suite and C++ and Python SDK consumers.
 
-Repaired wheels include the native runtime dependencies and the CMake and header
-files required by the installed SDK. The workflow does not publish to PyPI.
+Wheels include the native runtime dependencies, fmt headers/library/CMake
+package, and BG CMake package and headers required by the installed SDK. The
+workflow does not publish to PyPI.
 
 ## Graph authoring
 

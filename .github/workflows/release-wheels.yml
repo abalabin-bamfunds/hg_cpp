@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "*.*.*"
   pull_request:
   workflow_dispatch:
 
@@ -16,8 +18,26 @@ permissions:
   contents: read
 
 jobs:
+  validate-release:
+    name: Validate release tag
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Match release tag to project version
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python -c 'import os, tomllib; expected = tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]; actual = os.environ["RELEASE_TAG"]; assert actual == expected, f"tag {actual} does not match project version {expected}"'
+
   build-sdist:
     name: Build and audit source distribution
+    needs: validate-release
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -29,7 +49,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes libfmt-dev libicu-dev
+          sudo apt-get install --yes libicu-dev
           python -m pip install --upgrade --only-binary=:all: \
             "build==1.5.0" "scikit-build-core==1.0.3" "nanobind==3.1.0" \
             "cmake>=3.31" "ninja==1.13.0" "packaging==26.3" "abi3audit==0.0.26"
@@ -51,6 +71,7 @@ jobs:
 
   build-linux-wheel:
     name: Build manylinux 2.28 wheel
+    needs: validate-release
     runs-on: ubuntu-24.04
     env:
       GCC_VERSION: "14"
@@ -61,7 +82,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install native build dependencies
-        run: dnf install --assumeyes libicu-devel fmt-devel
+        run: dnf install --assumeyes libicu-devel
       - name: Verify Linux compiler
         shell: bash
         run: |
@@ -87,11 +108,10 @@ jobs:
         run: |
           auditwheel repair \
             --plat manylinux_2_28_x86_64 \
-            --exclude libbg.so \
-            --exclude libbg_library.so \
-            --exclude libbg_python.so \
-            --exclude libnanobind-abi3.so \
-            --exclude libfmt.so \
+            --exclude libbg.so.0 \
+            --exclude libbg_library.so.0 \
+            --exclude libbg_python.so.0 \
+            --exclude libfmt.so.12 \
             --wheel-dir dist \
             raw-wheel/*.whl
       - name: Audit wheel and stable ABI
@@ -107,6 +127,7 @@ jobs:
 
   build-macos-wheel:
     name: Build macOS arm64 wheel
+    needs: validate-release
     uses: ./.github/workflows/release-platform-wheel.yml
     with:
       os: macos-26
@@ -115,6 +136,7 @@ jobs:
 
   build-windows-wheel:
     name: Build Windows amd64 wheel
+    needs: validate-release
     uses: ./.github/workflows/release-platform-wheel.yml
     with:
       os: windows-latest

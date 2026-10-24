@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check required files and metadata in BG wheel and source distributions."""
+"""Check required files and metadata in hg_cpp wheel and source distributions."""
 
 from __future__ import annotations
 
