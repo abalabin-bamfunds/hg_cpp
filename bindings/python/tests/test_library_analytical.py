@@ -72,22 +72,25 @@ def test_clip_recomputes_for_maximum_only_and_scalar_value_bound_ticks():
 
 def test_clip_preserves_deduplicated_output():
     @bg.graph
-    def clip(value: bg.TS[int, bg.deduplicated]) -> bg.TS[int, bg.deduplicated]:
-        return bg.operators.clip(value, 2, 8)
+    def clip(value: bg.TS[int]) -> bg.TS[int, bg.deduplicated]:
+        return bg.operators.clip(bg.operators.dedup(value), 2, 8)
 
     assert bg.run_graph(clip, [1, 2, 3]) == [2, None, 3]
 
 
 def test_clip_preserves_final_guarantee_when_all_inputs_are_final():
+    @bg.source_node
+    def final_value(value: bg.Scalar[int]) -> bg.TS[int, bg.final]:
+        return value
+
     @bg.graph
-    def clip(
-        value: bg.TS[int, bg.final],
-        minimum: bg.TS[int, bg.final],
-        maximum: bg.TS[int, bg.final],
-    ) -> bg.TS[int, bg.final]:
+    def clip() -> bg.TS[int, bg.final]:
+        value = final_value(8)
+        minimum = final_value(2)
+        maximum = final_value(6)
         return bg.operators.clip(value, minimum, maximum)
 
-    assert bg.run_graph(clip, [8], [2], [6]) == [6]
+    assert bg.run_graph(clip) == [6]
 
 
 def test_clip_clamps_infinite_bounds_and_values():

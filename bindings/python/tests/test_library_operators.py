@@ -611,8 +611,8 @@ def test_collection_reductions_accept_values_and_tss_removals():
 
 def test_optional_collection_sum_publishes_equal_values_for_deduplicated_collection():
     @bg.graph
-    def total(values: bg.TSS[int, bg.deduplicated]) -> bg.TS[int]:
-        return bg.operators.sum_(values=bg.opt(values))
+    def total(values: bg.TSS[int]) -> bg.TS[int]:
+        return bg.operators.sum_(values=bg.opt(bg.operators.dedup(values)))
 
     assert bg.run_graph(total, [set(), {0}]) == [0, 0]
 
