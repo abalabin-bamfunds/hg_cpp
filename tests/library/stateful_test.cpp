@@ -48,26 +48,30 @@ TEST_CASE("count counts updates to a collection root",
 
 TEST_CASE("count preserves a final guarantee",
           "[feature:operator][series:value][scalar:i64][guarantee:final][transition:first-tick]") {
-    const auto count = [](wp<TS<i64, TimeSeriesGuarantee::final>> value) {
+    const auto source = node([](In<TS<bool>> publish, Out<TS<i64, TimeSeriesGuarantee::final>> output) {
+        if (*publish) {
+            output.set(7);
+        }
+    });
+    const auto count = [&](wp<TS<bool>> publish) {
+        const auto value = source(publish);
         const auto result = operators::count(value);
         CHECK(&result.type() == &TS<i64, TimeSeriesGuarantee::final>::type());
         return result;
     };
 
-    CHECK(bg::run_graph(count, {literal::SKIP, 7}).equals<i64>({std::nullopt, 1}));
+    CHECK(bg::run_graph(count, {false, true}).equals<i64>({std::nullopt, 1}));
 }
 
 TEST_CASE("count preserves a deduplicated guarantee",
           "[feature:operator][series:value][scalar:i64][guarantee:deduplicated][transition:update]") {
-    const auto count = [](wp<TS<i64, TimeSeriesGuarantee::deduplicated>> value) {
-        const auto result = operators::count(value);
+    const auto count = [](wp<TS<i64>> value) {
+        const auto result = operators::count(operators::dedup(value));
         CHECK(&result.type() == &TS<i64, TimeSeriesGuarantee::deduplicated>::type());
         return result;
     };
 
-    CHECK(bg::run_graph(
-              count, bg::input<TS<i64, TimeSeriesGuarantee::deduplicated>>({1, 1, 2}))
-              .equals<i64>({1, std::nullopt, 2}));
+    CHECK(bg::run_graph(count, {1, 1, 2}).equals<i64>({1, std::nullopt, 2}));
 }
 
 TEST_CASE("count observes retargeted references as value updates",

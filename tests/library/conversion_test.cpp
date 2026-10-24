@@ -224,10 +224,9 @@ TEST_CASE("convert rejects non-Bundle results for a TSB input",
     const auto to_fixed_list = [](wp<TSB<ConversionSeriesRecord>> source) {
         return operators::convert[type<TSL<TS<double>, 2>>](source);
     };
-    const auto input = bg::input<TSB<ConversionSeriesRecord>>({{{"ratio", 2.5}, {"count", 7}}});
     const auto expect_resolver_rejection = [&](const auto &graph) {
         try {
-            (void)bg::run_graph(graph, input);
+            (void)bg::run_graph(graph, bg::input<TSB<ConversionSeriesRecord>>({{{"ratio", 2.5}, {"count", 7}}}));
             FAIL("expected a rejected TSB conversion candidate");
         } catch (const WiringError &error) {
             REQUIRE(error.diagnostic());
@@ -292,14 +291,13 @@ TEST_CASE("convert preserves a TSS snapshot when its scalar collection input is 
                                  In<TSS<i64, TimeSeriesGuarantee::deduplicated>, optional> snapshot) {
         return snapshot.valid() && (!values.valid() || values.value_view().empty());
     });
-    const auto convert_and_observe = [&](wp<TS<List<i64>, TimeSeriesGuarantee::deduplicated>> values) {
-        const auto snapshot = operators::convert[type<TSS<i64, TimeSeriesGuarantee::deduplicated>>](values);
-        return observe(values, snapshot);
+    const auto convert_and_observe = [&](wp<TS<List<i64>>> values) {
+        const auto deduplicated = operators::dedup(values);
+        const auto snapshot = operators::convert[type<TSS<i64, TimeSeriesGuarantee::deduplicated>>](deduplicated);
+        return observe(deduplicated, snapshot);
     };
 
-    CHECK(bg::run_graph(convert_and_observe,
-              bg::input<TS<List<i64>, TimeSeriesGuarantee::deduplicated>>(
-                  {{}, {}, literal::INVALID, {}}))
+    CHECK(bg::run_graph(convert_and_observe, bg::input<TS<List<i64>>>({{}, {}, literal::INVALID, {}}))
               .equals<bool>({true, std::nullopt, true, true}));
 }
 
@@ -397,10 +395,10 @@ TEST_CASE("combine rejects explicit result guarantees stronger than its free col
         return operators::combine[type<TSB<ConversionSeriesRecord, TimeSeriesGuarantee::const_>>](
             "count"_n = count, "ratio"_n = ratio);
     };
-    const auto deduplicated_tsl = [](wp<TS<i64, TimeSeriesGuarantee::deduplicated>> first,
-                                     wp<TS<i64, TimeSeriesGuarantee::deduplicated>> second) {
+    const auto deduplicated_tsl = [](wp<TS<i64>> first, wp<TS<i64>> second) {
         return operators::combine[type<TSL<TS<i64, TimeSeriesGuarantee::deduplicated>, 2,
-                                          TimeSeriesGuarantee::deduplicated>>](first, second);
+                                          TimeSeriesGuarantee::deduplicated>>](operators::dedup(first),
+                                                                              operators::dedup(second));
     };
 
     CHECK_THROWS_AS(bg::run_graph(final_tsl, {1}, {2}), WiringError);

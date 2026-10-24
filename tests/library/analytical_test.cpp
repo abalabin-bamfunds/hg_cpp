@@ -26,8 +26,8 @@ TEST_CASE("diff subtracts the previous valid numeric value",
 TEST_CASE("diff wraps integer subtraction and accepts deduplicated inputs",
           "[feature:operator][series:value][scalar:i64][guarantee:deduplicated][transition:update]") {
     const auto difference = [](wp<TS<i64>> value) { return operators::diff(value); };
-    const auto deduplicated_difference = [](wp<TS<i64, TimeSeriesGuarantee::deduplicated>> value) {
-        const auto result = operators::diff(value);
+    const auto deduplicated_difference = [](wp<TS<i64>> value) {
+        const auto result = operators::diff(operators::dedup(value));
         CHECK(&result.type() == &TS<i64>::type());
         return result;
     };
@@ -37,7 +37,7 @@ TEST_CASE("diff wraps integer subtraction and accepts deduplicated inputs",
               .equals<i64>({std::nullopt, 1}));
     CHECK(bg::run_graph(
               deduplicated_difference,
-              bg::input<TS<i64, TimeSeriesGuarantee::deduplicated>>({1, 2, 3}))
+              {1, 2, 3})
               .equals<i64>({std::nullopt, 1, 1}));
 }
 
@@ -90,8 +90,8 @@ TEST_CASE("clip accepts scalar bounds for integer and floating inputs",
 
 TEST_CASE("clip preserves deduplication and recomputes on a maximum-only bound tick",
           "[feature:operator][series:value][scalar:i64][guarantee:deduplicated][transition:update]") {
-    const auto deduplicated_clip = [](wp<TS<i64, TimeSeriesGuarantee::deduplicated>> value) {
-        const auto result = operators::clip(value, i64{2}, i64{8});
+    const auto deduplicated_clip = [](wp<TS<i64>> value) {
+        const auto result = operators::clip(operators::dedup(value), i64{2}, i64{8});
         CHECK(&result.type() == &TS<i64, TimeSeriesGuarantee::deduplicated>::type());
         return result;
     };
@@ -104,7 +104,7 @@ TEST_CASE("clip preserves deduplication and recomputes on a maximum-only bound t
 
     CHECK(bg::run_graph(
               deduplicated_clip,
-              bg::input<TS<i64, TimeSeriesGuarantee::deduplicated>>({1, 2, 3}))
+              {1, 2, 3})
               .equals<i64>({2, std::nullopt, 3}));
     CHECK(bg::run_graph(maximum_clip, {5, literal::SKIP, literal::SKIP}, {10, 4, 8})
               .equals<i64>({5, 4, 5}));
@@ -148,8 +148,9 @@ TEST_CASE("clip checks bound order during evaluation and uses ordinary compariso
 TEST_CASE("clip preserves the weakest input guarantee",
           "[feature:operator][series:value][scalar:floating-point]"
           "[guarantee:final][guarantee:const]") {
-    const auto clip_final = [](wp<TS<double, TimeSeriesGuarantee::final>> value) {
-        const auto result = operators::clip(value, 0.0, 10.0);
+    const auto final_value = node([](Out<TS<double, TimeSeriesGuarantee::final>> output) { output.set(5.0); });
+    const auto clip_final = [&] {
+        const auto result = operators::clip(final_value(), 0.0, 10.0);
         CHECK(&result.type() == &TS<double, TimeSeriesGuarantee::final>::type());
         return result;
     };
@@ -159,18 +160,19 @@ TEST_CASE("clip preserves the weakest input guarantee",
         return result;
     };
 
-    CHECK(bg::run_graph(clip_final,
-                              bg::input<TS<double, TimeSeriesGuarantee::final>>({5.0}))
-              .equals<double>({5.0}));
+    CHECK(bg::run_graph(clip_final).equals<double>({5.0}));
     CHECK(bg::run_graph(clip_const).equals<double>({5.0}));
 }
 
 TEST_CASE("clip preserves final guarantees and clamps floating infinities",
           "[feature:operator][series:value][scalar:floating-point][guarantee:final][transition:update]") {
-    const auto final_clip = [](wp<TS<i64, TimeSeriesGuarantee::final>> value,
-                               wp<TS<i64, TimeSeriesGuarantee::final>> minimum,
-                               wp<TS<i64, TimeSeriesGuarantee::final>> maximum) {
-        const auto result = operators::clip(value, minimum, maximum);
+    const auto final_value = node([](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(8); });
+
+    const auto final_minimum = node([](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(2); });
+
+    const auto final_maximum = node([](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(6); });
+    const auto final_clip = [&] {
+        const auto result = operators::clip(final_value(), final_minimum(), final_maximum());
         CHECK(&result.type() == &TS<i64, TimeSeriesGuarantee::final>::type());
         return result;
     };
@@ -178,12 +180,7 @@ TEST_CASE("clip preserves final guarantees and clamps floating infinities",
         return operators::clip(value, 0.0, 10.0);
     };
 
-    CHECK(bg::run_graph(
-              final_clip,
-              bg::input<TS<i64, TimeSeriesGuarantee::final>>({8}),
-              bg::input<TS<i64, TimeSeriesGuarantee::final>>({2}),
-              bg::input<TS<i64, TimeSeriesGuarantee::final>>({6}))
-              .equals<i64>({6}));
+    CHECK(bg::run_graph(final_clip).equals<i64>({6}));
     const auto infinity = std::numeric_limits<double>::infinity();
     CHECK(bg::run_graph(floating_clip, {-infinity, infinity}).equals<double>({0.0, 10.0}));
 }
@@ -252,13 +249,14 @@ TEST_CASE("ewma validates scalar configuration during wiring",
 TEST_CASE("ewma retains input guarantees and caps const warmup at final",
           "[feature:operator][feature:state][series:value][scalar:floating-point]"
           "[guarantee:deduplicated][guarantee:final][guarantee:const]") {
-    const auto check_deduplicated = [](wp<TS<double, TimeSeriesGuarantee::deduplicated>> value) {
-        const auto result = operators::ewma(value, 0.5);
+    const auto check_deduplicated = [](wp<TS<double>> value) {
+        const auto result = operators::ewma(operators::dedup(value), 0.5);
         CHECK(&result.type() == &TS<double, TimeSeriesGuarantee::deduplicated>::type());
         return result;
     };
-    const auto check_final = [](wp<TS<double, TimeSeriesGuarantee::final>> value) {
-        const auto result = operators::ewma(value, 0.5);
+    const auto final_value = node([](Out<TS<double, TimeSeriesGuarantee::final>> output) { output.set(4.0); });
+    const auto check_final = [&] {
+        const auto result = operators::ewma(final_value(), 0.5);
         CHECK(&result.type() == &TS<double, TimeSeriesGuarantee::final>::type());
         return result;
     };
@@ -273,12 +271,8 @@ TEST_CASE("ewma retains input guarantees and caps const warmup at final",
         return result;
     };
 
-    CHECK(bg::run_graph(check_deduplicated,
-                              bg::input<TS<double, TimeSeriesGuarantee::deduplicated>>({2.0, 4.0}))
-              .equals<double>({2.0, 3.0}));
-    CHECK(bg::run_graph(check_final,
-                              bg::input<TS<double, TimeSeriesGuarantee::final>>({4.0}))
-              .equals<double>({4.0}));
+    CHECK(bg::run_graph(check_deduplicated, {2.0, 4.0}).equals<double>({2.0, 3.0}));
+    CHECK(bg::run_graph(check_final).equals<double>({4.0}));
     CHECK(bg::run_graph(check_const).equals<double>({2.0}));
     CHECK(bg::run_graph(check_const_warmup).equals<double>({std::nullopt}));
 }

@@ -206,24 +206,27 @@ TEST_CASE("join dereferences references stored in a fixed TSL",
 
 TEST_CASE("split and join propagate the weakest input guarantee",
           "[feature:operator][feature:wiring][series:value][scalar:string]") {
-    const auto split = [](wp<TS<string, TimeSeriesGuarantee::final>> text,
-                          wp<TS<string, TimeSeriesGuarantee::ordinary>> separator)
-        -> wp<TS<string, TimeSeriesGuarantee::ordinary>> {
+    const auto final_text = node([](Scalar<string> text, Out<TS<string, TimeSeriesGuarantee::final>> output) {
+        output.set(*text);
+    });
+    const auto ordinary_separator = node([](Out<TS<string>> output) { output.set(","); });
+    const auto split = [&] {
+        const auto text = final_text("a,b");
+        const auto separator = ordinary_separator();
         const auto parts = operators::split(text, separator);
         CHECK(&parts.type() == &TS<List<string>, TimeSeriesGuarantee::ordinary>::type());
         const auto result = operators::join(parts, "|");
         CHECK(&result.type() == &TS<string, TimeSeriesGuarantee::ordinary>::type());
         return result.as<TS<string, TimeSeriesGuarantee::ordinary>>();
     };
-    const auto join = [](wp<TSL<TS<string, TimeSeriesGuarantee::final>, 2, TimeSeriesGuarantee::final>> values)
-        -> wp<TS<string, TimeSeriesGuarantee::final>> {
+    const auto join = [&] {
+        const auto values = tsl(std::array{final_text("a"), final_text("b")});
         const auto result = operators::join(values, "|");
         CHECK(&result.type() == &TS<string, TimeSeriesGuarantee::final>::type());
         return result.as<TS<string, TimeSeriesGuarantee::final>>();
     };
-    const auto optional_join = [](wp<TSL<TS<string, TimeSeriesGuarantee::final>, 2,
-                                           TimeSeriesGuarantee::final>> values)
-        -> wp<TS<string, TimeSeriesGuarantee::ordinary>> {
+    const auto optional_join = [&] {
+        const auto values = tsl(std::array{final_text("a"), final_text("b")});
         const auto result = operators::join("values"_n = opt(values), "|");
         CHECK(&result.type() == &TS<string, TimeSeriesGuarantee::ordinary>::type());
         return result.as<TS<string, TimeSeriesGuarantee::ordinary>>();
@@ -234,16 +237,9 @@ TEST_CASE("split and join propagate the weakest input guarantee",
         return operators::join(result, "|");
     };
 
-    CHECK(bg::run_graph(split, bg::input<TS<string, TimeSeriesGuarantee::final>>({"a,b"}), {","})
-              .equals<string>({"a|b"}));
-    CHECK(bg::run_graph(
-              join, bg::input<TSL<TS<string, TimeSeriesGuarantee::final>, 2, TimeSeriesGuarantee::final>>(
-                        {{{0, "a"}, {1, "b"}}}))
-              .equals<string>({"a|b"}));
-    CHECK(bg::run_graph(optional_join,
-                              bg::input<TSL<TS<string, TimeSeriesGuarantee::final>, 2,
-                                                 TimeSeriesGuarantee::final>>({{{0, "a"}, {1, "b"}}}))
-              .equals<string>({"a|b"}));
+    CHECK(bg::run_graph(split).equals<string>({"a|b"}));
+    CHECK(bg::run_graph(join).equals<string>({"a|b"}));
+    CHECK(bg::run_graph(optional_join).equals<string>({"a|b"}));
     CHECK(bg::run_graph(scalar_split).equals<string>({"a|b"}));
 }
 
@@ -299,14 +295,12 @@ TEST_CASE("required and optional joins require a valid time-series separator",
     const auto optional = [](wp<TSL<TS<string>, 2>> values, wp<TS<string>> separator) {
         return operators::join("values"_n = opt(values), separator);
     };
-    CHECK(bg::run_graph(required, bg::input<TSL<TS<string>, 2>>(
-                                            {{{0, "a"}, {1, "b"}}, {{0, "c"}, {1, "d"}},
-                                             {{0, "e"}, {1, "f"}}}),
+    CHECK(bg::run_graph(required,
+                              {{{0, "a"}, {1, "b"}}, {{0, "c"}, {1, "d"}}, {{0, "e"}, {1, "f"}}},
                               {"|", literal::INVALID, "-"})
               .equals<string>({"a|b", std::nullopt, "e-f"}));
-    CHECK(bg::run_graph(optional, bg::input<TSL<TS<string>, 2>>(
-                                             {{{0, "a"}, {1, "b"}}, {{0, "c"}, {1, "d"}},
-                                              {{0, "e"}, {1, "f"}}}),
+    CHECK(bg::run_graph(optional,
+                              {{{0, "a"}, {1, "b"}}, {{0, "c"}, {1, "d"}}, {{0, "e"}, {1, "f"}}},
                               {"|", literal::INVALID, "-"})
               .equals<string>({"a|b", std::nullopt, "e-f"}));
 
@@ -316,15 +310,13 @@ TEST_CASE("required and optional joins require a valid time-series separator",
     const auto optional_valid = [](wp<TSL<TS<string>, 2>> input, wp<TS<string>> join_separator) {
         return operators::valid(operators::join("values"_n = opt(input), join_separator));
     };
-    CHECK(bg::run_graph(required_valid, bg::input<TSL<TS<string>, 2>>(
-                                                  {{{0, "a"}, {1, "b"}}, {{0, "c"}, {1, "d"}},
-                                                   {{0, "e"}, {1, "f"}}}),
-                                      {"|", literal::INVALID, "-"})
+    CHECK(bg::run_graph(required_valid,
+                              {{{0, "a"}, {1, "b"}}, {{0, "c"}, {1, "d"}}, {{0, "e"}, {1, "f"}}},
+                              {"|", literal::INVALID, "-"})
               .equals<bool>({true, false, true}));
-    CHECK(bg::run_graph(optional_valid, bg::input<TSL<TS<string>, 2>>(
-                                                  {{{0, "a"}, {1, "b"}}, {{0, "c"}, {1, "d"}},
-                                                   {{0, "e"}, {1, "f"}}}),
-                                      {"|", literal::INVALID, "-"})
+    CHECK(bg::run_graph(optional_valid,
+                              {{{0, "a"}, {1, "b"}}, {{0, "c"}, {1, "d"}}, {{0, "e"}, {1, "f"}}},
+                              {"|", literal::INVALID, "-"})
               .equals<bool>({true, false, true}));
 }
 

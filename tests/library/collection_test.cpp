@@ -654,8 +654,12 @@ TEST_CASE("optional TSS equality treats invalid inputs as empty with ordinary ou
 TEST_CASE("TSS equality preserves required guarantees and weakens optional guarantees",
           "[feature:operator][series:tss][scalar:i64][guarantee:final][guarantee:deduplicated]"
           "[validity:required][validity:optional]") {
-    const auto check_final = [](wp<TSS<i64, TimeSeriesGuarantee::final>> lhs,
-                                wp<TSS<i64, TimeSeriesGuarantee::final>> rhs) {
+    const auto final_set = node([](Scalar<i64> key, Out<TSS<i64, TimeSeriesGuarantee::final>> output) {
+        output.apply({*key});
+    });
+    const auto check_final = [&] {
+        const auto lhs = final_set(1);
+        const auto rhs = final_set(1);
         const auto required = operators::eq(lhs, rhs);
         const auto optional = operators::eq("lhs"_n = opt(lhs), "rhs"_n = opt(rhs));
         const auto empty = operators::is_empty("value"_n = opt(lhs));
@@ -664,8 +668,12 @@ TEST_CASE("TSS equality preserves required guarantees and weakens optional guara
         CHECK(&empty.type() == &TS<bool>::type());
         return required;
     };
-    const auto check_deduplicated = [](wp<TSS<i64, TimeSeriesGuarantee::deduplicated>> lhs,
-                                       wp<TSS<i64, TimeSeriesGuarantee::deduplicated>> rhs) {
+    const auto add_key = node([](In<TS<i64>> key, Out<TSS<i64, TimeSeriesGuarantee::deduplicated>> output) {
+        output.apply({*key});
+    });
+    const auto check_deduplicated = [&](wp<TS<i64>> lhs_keys, wp<TS<i64>> rhs_keys) {
+        const auto lhs = add_key(lhs_keys);
+        const auto rhs = add_key(rhs_keys);
         const auto required = operators::eq(lhs, rhs);
         const auto optional = operators::ne("lhs"_n = opt(lhs), "rhs"_n = opt(rhs));
         CHECK(&required.type() == &TS<bool, TimeSeriesGuarantee::deduplicated>::type());
@@ -673,14 +681,8 @@ TEST_CASE("TSS equality preserves required guarantees and weakens optional guara
         return required;
     };
 
-    CHECK(bg::run_graph(check_final,
-                              bg::input<TSS<i64, TimeSeriesGuarantee::final>>({{1}}),
-                              bg::input<TSS<i64, TimeSeriesGuarantee::final>>({{1}}))
-              .equals<bool>({true}));
-    CHECK(bg::run_graph(check_deduplicated,
-                              bg::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{1}, {2}}),
-                              bg::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{1}, {3}}))
-              .equals<bool>({true, false}));
+    CHECK(bg::run_graph(check_final).equals<bool>({true}));
+    CHECK(bg::run_graph(check_deduplicated, {1, 2}, {1, 3}).equals<bool>({true, false}));
 }
 
 TEST_CASE("TSS set operators publish only changes to their result",
@@ -742,38 +744,43 @@ TEST_CASE("TSS set operations handle same-cycle additions, removals, and key mov
 TEST_CASE("TSS set operators propagate guarantees and weaken optional inputs",
           "[feature:operator][series:tss][scalar:i64][guarantee:final][guarantee:deduplicated]"
           "[guarantee:const][validity:optional]") {
-    const auto check_final = [](wp<TSS<i64, TimeSeriesGuarantee::final>> lhs,
-                                wp<TSS<i64, TimeSeriesGuarantee::final>> rhs) {
+    const auto final_set = node([](Scalar<i64> key, Out<TSS<i64, TimeSeriesGuarantee::final>> output) {
+        output.apply({*key});
+    });
+    const auto check_final = [&] {
+        const auto lhs = final_set(1);
+        const auto rhs = final_set(2);
         const auto result = lhs | rhs;
         const auto optional = opt(lhs) | rhs;
         CHECK(&result.type() == &TSS<i64, TimeSeriesGuarantee::final>::type());
         CHECK(&optional.type() == &TSS<i64>::type());
         return result;
     };
-    const auto check_deduplicated = [](wp<TSS<i64, TimeSeriesGuarantee::deduplicated>> lhs,
-                                       wp<TSS<i64, TimeSeriesGuarantee::deduplicated>> rhs) {
+    const auto make_deduplicated = node([](Scalar<i64> key,
+                                          Out<TSS<i64, TimeSeriesGuarantee::deduplicated>> output) {
+        output.apply({*key});
+    });
+    const auto check_deduplicated = [&] {
+        const auto lhs = make_deduplicated(1);
+        const auto rhs = make_deduplicated(2);
         const auto result = lhs ^ rhs;
         CHECK(&result.type() == &TSS<i64, TimeSeriesGuarantee::deduplicated>::type());
         return result;
     };
-    const auto check_const = [](wp<TSS<i64, TimeSeriesGuarantee::const_>> lhs,
-                                wp<TSS<i64, TimeSeriesGuarantee::const_>> rhs) {
+    const auto constant_set = node([](Out<TSS<i64, TimeSeriesGuarantee::const_>> output) {
+        output.apply({1, 2});
+    });
+    const auto check_const = [&] {
+        const auto lhs = constant_set();
+        const auto rhs = constant_set();
         const auto result = lhs & rhs;
         CHECK(&result.type() == &TSS<i64, TimeSeriesGuarantee::const_>::type());
         return result;
     };
 
-    CHECK(bg::run_graph(check_final, bg::input<TSS<i64, TimeSeriesGuarantee::final>>({{1}}),
-                              bg::input<TSS<i64, TimeSeriesGuarantee::final>>({{2}}))
-              .equals({{1, 2}}));
-    CHECK(bg::run_graph(
-              check_deduplicated,
-              bg::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{1}}),
-              bg::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{2}}))
-              .equals({{1, 2}}));
-    CHECK(bg::run_graph(check_const, bg::input<TSS<i64, TimeSeriesGuarantee::const_>>({{1, 2}}),
-                              bg::input<TSS<i64, TimeSeriesGuarantee::const_>>({{2, 3}}))
-              .equals({{2}}));
+    CHECK(bg::run_graph(check_final).equals({{1, 2}}));
+    CHECK(bg::run_graph(check_deduplicated).equals({{1, 2}}));
+    CHECK(bg::run_graph(check_const).equals({{1, 2}}));
 }
 
 TEST_CASE("TSS set operations accept erased wiring points and treat optional invalid sets as empty",
@@ -894,7 +901,7 @@ TEST_CASE("TSS equality sees same-cycle removals from a sampled previous target"
         return operators::if_then_else(condition, old_target, new_target) == new_target;
     };
 
-    CHECK(bg::run_graph(graph, {true, false},
+    CHECK(bg::run_graph(graph, ticks({true, false}),
                               bg::input<TSS<i64>>({{2}, {3, literal::REMOVED(2)}}),
                               bg::input<TSS<i64>>({{3}, literal::SKIP}))
               .equals<bool>({false, true}));
@@ -1064,18 +1071,24 @@ TEST_CASE("len_ forwards equal sizes for ordinary inputs and suppresses them for
           "[feature:operator][series:tss][scalar:i64][guarantee:ordinary][guarantee:deduplicated]"
           "[transition:update]") {
     const auto ordinary = [](wp<TSS<i64>> values) { return operators::len_("value"_n = values); };
-    const auto deduplicated = [](wp<TSS<i64, TimeSeriesGuarantee::deduplicated>> values) {
-        return operators::len_("value"_n = values);
+    const auto deduplicated_set = node([](In<TS<i64>> step,
+                                          Out<TSS<i64, TimeSeriesGuarantee::deduplicated>> output) {
+        if (*step == 0) {
+            output.apply({1, 2});
+        } else if (*step == 1) {
+            output.apply({literal::REMOVED(1), 3});
+        } else {
+            output.apply({literal::REMOVED(3), 1});
+        }
+    });
+    const auto deduplicated = [&](wp<TS<i64>> step) {
+        return operators::len_("value"_n = deduplicated_set(step));
     };
 
     CHECK(bg::run_graph(ordinary,
                               {{1, 2}, {literal::REMOVED(1), 3}, {literal::REMOVED(3), 1}})
               .equals<i64>({2, 2, 2}));
-    CHECK(bg::run_graph(
-              deduplicated,
-              bg::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>(
-                  {{1, 2}, {literal::REMOVED(1), 3}, {literal::REMOVED(3), 1}}))
-              .equals<i64>({2, std::nullopt, std::nullopt}));
+    CHECK(bg::run_graph(deduplicated, {0, 1, 2}).equals<i64>({2, std::nullopt, std::nullopt}));
 }
 
 TEST_CASE("len_ and contains_ query scalar time-series lists",

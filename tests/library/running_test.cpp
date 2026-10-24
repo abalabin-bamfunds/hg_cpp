@@ -336,7 +336,9 @@ TEST_CASE("running extrema clear NaN history on reset-only and simultaneous tick
 
 TEST_CASE("running extrema retain final and const guarantees",
           "[feature:operator][series:value][scalar:i64][guarantee:final][guarantee:const]") {
-    const auto check_final = [](wp<TS<i64, TimeSeriesGuarantee::final>> value) {
+    const auto final_value = node([](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(4); });
+    const auto check_final = [&] {
+        const auto value = final_value();
         const auto minimum = operators::mins(value);
         const auto maximum = operators::maxs(value);
         CHECK(&minimum.type() == &TS<i64, TimeSeriesGuarantee::final>::type());
@@ -351,8 +353,7 @@ TEST_CASE("running extrema retain final and const guarantees",
         return minimum + maximum;
     };
 
-    CHECK(bg::run_graph(check_final, bg::input<TS<i64, TimeSeriesGuarantee::final>>({4}))
-              .equals<i64>({8}));
+    CHECK(bg::run_graph(check_final).equals<i64>({8}));
     CHECK(bg::run_graph(check_const).equals<i64>({6}));
 }
 
@@ -393,14 +394,21 @@ TEST_CASE("running means use double output and restart after invalidation",
 TEST_CASE("running sums and means retain the input guarantee",
           "[feature:operator][series:value][scalar:i64][scalar:floating-point]"
           "[guarantee:ordinary][guarantee:deduplicated][guarantee:final][guarantee:const]") {
-    const auto check_deduplicated = [](wp<TS<i64, TimeSeriesGuarantee::deduplicated>> value) {
-        const auto sum = operators::sums(value);
-        const auto mean = operators::means(value);
+    const auto check_deduplicated = [](wp<TS<i64>> value) {
+        const auto deduplicated = operators::dedup(value);
+        const auto sum = operators::sums(deduplicated);
+        const auto mean = operators::means(deduplicated);
         CHECK(&sum.type() == &TS<i64, TimeSeriesGuarantee::deduplicated>::type());
         CHECK(&mean.type() == &TS<double, TimeSeriesGuarantee::deduplicated>::type());
         return sum;
     };
-    const auto check_final = [](wp<TS<i64, TimeSeriesGuarantee::final>> value) {
+    const auto final_value = node([](In<TS<bool>> publish, Out<TS<i64, TimeSeriesGuarantee::final>> output) {
+        if (*publish) {
+            output.set(4);
+        }
+    });
+    const auto check_final = [&](wp<TS<bool>> publish) {
+        const auto value = final_value(publish);
         const auto sum = operators::sums(value);
         const auto mean = operators::means(value);
         CHECK(&sum.type() == &TS<i64, TimeSeriesGuarantee::final>::type());
@@ -416,20 +424,19 @@ TEST_CASE("running sums and means retain the input guarantee",
         return sum;
     };
 
-    CHECK(bg::run_graph(check_deduplicated,
-                              bg::input<TS<i64, TimeSeriesGuarantee::deduplicated>>({2, 3}))
-              .equals<i64>({2, 5}));
-    CHECK(bg::run_graph(check_final,
-                              bg::input<TS<i64, TimeSeriesGuarantee::final>>({literal::SKIP, 4}))
-              .equals<i64>({std::nullopt, 4}));
+    CHECK(bg::run_graph(check_deduplicated, {2, 3}).equals<i64>({2, 5}));
+    CHECK(bg::run_graph(check_final, {false, true}).equals<i64>({std::nullopt, 4}));
     CHECK(bg::run_graph(check_const).equals<i64>({7}));
 }
 
 TEST_CASE("reset operators weaken final and const guarantees",
           "[feature:operator][series:value][scalar:i64][scalar:boolean]"
           "[guarantee:final][guarantee:const][transition:update]") {
-    const auto check_final = [](wp<TS<i64, TimeSeriesGuarantee::final>> value,
-                                wp<TS<bool, TimeSeriesGuarantee::final>> reset) {
+    const auto final_value = node([](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(4); });
+    const auto final_reset = node([](Out<TS<bool, TimeSeriesGuarantee::final>> output) { output.set(false); });
+    const auto check_final = [&] {
+        const auto value = final_value();
+        const auto reset = final_reset();
         const auto sum = operators::sums(value, "reset"_n = reset);
         const auto minimum = operators::mins(value, "reset"_n = reset);
         const auto maximum = operators::maxs(value, "reset"_n = reset);
@@ -454,10 +461,7 @@ TEST_CASE("reset operators weaken final and const guarantees",
         return sum;
     };
 
-    CHECK(bg::run_graph(check_final,
-                              bg::input<TS<i64, TimeSeriesGuarantee::final>>({4}),
-                              bg::input<TS<bool, TimeSeriesGuarantee::final>>({false}))
-              .equals<i64>({4}));
+    CHECK(bg::run_graph(check_final).equals<i64>({4}));
     CHECK(bg::run_graph(check_const).equals<i64>({4}));
 }
 

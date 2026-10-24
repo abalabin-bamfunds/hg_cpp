@@ -478,9 +478,13 @@ TEST_CASE("a mapped inner graph survives one TSD item removal while another TSD 
             return sum(first, second);
         });
 
-    const auto tested = [&](wp<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> first,
-                            wp<TSD<i64, TS<i64>>> second) {
-        return map(branch, first, second)[i64{7}];
+    const auto final_items = node([](In<TSD<i64, TS<i64>>> input,
+                                     Out<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> output) {
+        input.for_each_removed([&](const auto &key) { output.erase(key); });
+        input.for_each_added([&](const auto &key) { output[key].set(*input[key]); });
+    });
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> first, wp<TSD<i64, TS<i64>>> second) {
+        return map(branch, final_items(first), second)[i64{7}];
     };
     RetainedMappedSum::starts = 0;
     RetainedMappedSum::stops = 0;

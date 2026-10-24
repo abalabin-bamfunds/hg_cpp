@@ -75,24 +75,25 @@ TEST_CASE("string repetition and substr propagate input guarantees",
         CHECK(&result.type() == &TS<string, TimeSeriesGuarantee::const_>::type());
         return result;
     };
-    const auto deduplicated = [](wp<TS<string, TimeSeriesGuarantee::deduplicated>> text) {
-        const auto repeated = operators::mul(text, i64{2});
-        const auto sliced = operators::substr(text, i64{0}, i64{1});
+    const auto deduplicated = [](wp<TS<string>> text) {
+        const auto value = operators::dedup(text);
+        const auto repeated = operators::mul(value, i64{2});
+        const auto sliced = operators::substr(value, i64{0}, i64{1});
         CHECK(&repeated.type() == &TS<string, TimeSeriesGuarantee::deduplicated>::type());
         CHECK(&sliced.type() == &TS<string, TimeSeriesGuarantee::deduplicated>::type());
         return repeated;
     };
-    const auto final = [](wp<TS<string, TimeSeriesGuarantee::final>> text) {
+    const auto final_text = node([](Out<TS<string, TimeSeriesGuarantee::final>> output) { output.set("once"); });
+    const auto final = [&] {
+        const auto text = final_text();
         const auto result = operators::substr(text, i64{0});
         CHECK(&result.type() == &TS<string, TimeSeriesGuarantee::final>::type());
         return result;
     };
     CHECK(bg::run_graph(constant).equals<string>({"xx"}));
-    CHECK(bg::run_graph(deduplicated, bg::input<TS<string, TimeSeriesGuarantee::deduplicated>>(
-                                                 {"same", "same", "next"}))
+    CHECK(bg::run_graph(deduplicated, {"same", "same", "next"})
               .equals<string>({"samesame", std::nullopt, "nextnext"}));
-    CHECK(bg::run_graph(final, bg::input<TS<string, TimeSeriesGuarantee::final>>({"once"}))
-              .equals<string>({"once"}));
+    CHECK(bg::run_graph(final).equals<string>({"once"}));
 }
 
 TEST_CASE("required string operation inputs gate evaluation and output validity",
@@ -196,12 +197,14 @@ TEST_CASE("Unicode casing preserves ordinary ticks, reference retargeting, and i
           "[feature:operator][feature:reference][feature:type-system][series:value][scalar:string]"
           "[guarantee:ordinary][guarantee:deduplicated][guarantee:final][transition:update]") {
     const auto repeated = [](wp<TS<string>> text) { return operators::casefold(text); };
-    const auto deduplicated = [](wp<TS<string, TimeSeriesGuarantee::deduplicated>> text) {
-        const auto result = operators::lower(text);
+    const auto deduplicated = [](wp<TS<string>> text) {
+        const auto result = operators::lower(operators::dedup(text));
         CHECK(&result.type() == &TS<string, TimeSeriesGuarantee::deduplicated>::type());
         return result;
     };
-    const auto final = [](wp<TS<string, TimeSeriesGuarantee::final>> text) {
+    const auto final_text = node([](Out<TS<string, TimeSeriesGuarantee::final>> output) { output.set("é"); });
+    const auto final = [&] {
+        const auto text = final_text();
         const auto result = operators::upper(text);
         CHECK(&result.type() == &TS<string, TimeSeriesGuarantee::final>::type());
         return result;
@@ -212,10 +215,8 @@ TEST_CASE("Unicode casing preserves ordinary ticks, reference retargeting, and i
 
     CHECK(bg::run_graph(repeated, {"Straße", "Straße", "Straße"})
               .equals<string>({"strasse", "strasse", "strasse"}));
-    CHECK(bg::run_graph(deduplicated, bg::input<TS<string, TimeSeriesGuarantee::deduplicated>>({"ABC"}))
-              .equals<string>({"abc"}));
-    CHECK(bg::run_graph(final, bg::input<TS<string, TimeSeriesGuarantee::final>>({"é"}))
-              .equals<string>({"É"}));
+    CHECK(bg::run_graph(deduplicated, {"ABC"}).equals<string>({"abc"}));
+    CHECK(bg::run_graph(final).equals<string>({"É"}));
     CHECK(bg::run_graph(retarget, std::array{true, false}, std::array<std::string_view, 2>{"É", "Ω"},
                               std::array<std::string_view, 2>{"A", "B"})
               .equals<string>({"é", "b"}));

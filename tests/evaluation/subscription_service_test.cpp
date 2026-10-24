@@ -123,17 +123,21 @@ TEST_CASE("subscription service clients inside map branches update one root requ
     });
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
-    const auto tested = [&](wp<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> values) {
+    const auto final_values = node([](Out<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> output) {
+        output[1].set(4);
+        output[2].set(9);
+    });
+    const auto tested = [&] {
         const auto mapped = map(
             [&](auto key, auto item) {
                 (void)service(key);
                 return item;
             },
-            values, "__key_arg__"_n = 0);
+            final_values(), "__key_arg__"_n = 0);
         return mapped[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {{{1, 4}, {2, 9}}});
+    const auto actual = bg::run_graph(tested, GraphRunOptions{.services = &catalogue});
 
     CHECK(actual.equals<i64>({4}));
     CHECK(log.sizes == std::vector<std::size_t>{2});
@@ -209,17 +213,21 @@ TEST_CASE("subscription service clients inside mesh branches update one root req
     });
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
-    const auto tested = [&](wp<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> values) {
+    const auto final_values = node([](Out<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> output) {
+        output[1].set(4);
+        output[2].set(9);
+    });
+    const auto tested = [&] {
         const auto mapped = mesh(
             [&](auto key, auto item) {
                 (void)service(key);
                 return item;
             },
-            values, "__key_arg__"_n = 0);
+            final_values(), "__key_arg__"_n = 0);
         return mapped[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {{{1, 4}, {2, 9}}});
+    const auto actual = bg::run_graph(tested, GraphRunOptions{.services = &catalogue});
 
     CHECK(actual.equals<i64>({4}));
     CHECK(log.sizes == std::vector<std::size_t>{2});
@@ -283,19 +291,25 @@ TEST_CASE("removing a map branch removes its subscription request",
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
 
-    const auto tested = [&](wp<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> values) {
+    const auto final_values = node([](In<TS<bool>> remove, Out<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> output) {
+        if (*remove) {
+            output.erase(5);
+        } else {
+            output[5].set(7);
+        }
+    });
+    const auto tested = [&](wp<TS<bool>> remove) {
         const auto mapped = map(
             [&](auto key, auto item) {
                 (void)service(key);
 
                 return item;
             },
-            values, "__key_arg__"_n = 0);
+            final_values(remove), "__key_arg__"_n = 0);
         return mapped[i64{5}];
     };
 
-    const auto actual = bg::run_graph(tested, GraphRunOptions{.services = &catalogue},
-                                            {{{5, 7}}, {{5, literal::REMOVE}}});
+    const auto actual = bg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {false, true});
 
     CHECK(actual.equals<i64>({7, std::nullopt}));
     CHECK(log.sizes == std::vector<std::size_t>{1, 0});
@@ -314,15 +328,20 @@ TEST_CASE("response-producing subscription clients inside a map reject dependenc
         graph("name"_n = "lookup_impl", [&](wp<TSS<i64>> requests) { return respond(requests); });
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
-    const auto tested = [&](wp<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> values) {
+    const auto final_values = node([](Out<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> output) {
+        output[1].set(4);
+        output[2].set(9);
+    });
+    const auto tested = [&] {
         const auto mapped =
-            map([&](auto key, auto) { return service(key).template as<TS<i64>>(); }, values, "__key_arg__"_n = 0);
+            map([&](auto key, auto) { return service(key).template as<TS<i64>>(); }, final_values(),
+                "__key_arg__"_n = 0);
         return mapped[i64{1}];
     };
 
     auto diagnostic = std::string{};
     try {
-        (void)bg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {{{1, 4}, {2, 9}}});
+        (void)bg::run_graph(tested, GraphRunOptions{.services = &catalogue});
     } catch (const std::exception &error) {
         diagnostic = error.what();
     }

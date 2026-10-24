@@ -256,30 +256,35 @@ TEST_CASE("optional TSS sum publishes zero before a final REF target becomes val
             output.copy(values);
         },
         schedule_on_start = true);
-    const auto graph = [=](wp<TSS<i64, TimeSeriesGuarantee::final>> values) {
-        const auto bound = retain_reference(values);
+    const auto final_values = node([](In<TS<bool>> publish, Out<TSS<i64, TimeSeriesGuarantee::final>> output) {
+        if (*publish) {
+            output.apply({0});
+        }
+    });
+    const auto graph = [=](wp<TS<bool>> publish) {
+        const auto bound = retain_reference(final_values(publish));
         const auto result = operators::sum_("values"_n = opt(bound));
         CHECK(&result.type() == &TS<i64>::type());
         return result;
     };
 
-    const auto result = bg::run_graph(
-        graph, bg::input<TSS<i64, TimeSeriesGuarantee::final>>({literal::SKIP, {0}}));
+    const auto result = bg::run_graph(graph, {false, true});
     CHECK(result.equals<i64>({0, 0}));
 }
 
 TEST_CASE("optional TSS sum publishes equal results for a deduplicated collection",
           "[feature:operator][series:tss][scalar:i64][guarantee:deduplicated]"
           "[guarantee:ordinary][validity:optional][transition:addition]") {
-    const auto graph = [](wp<TSS<i64, TimeSeriesGuarantee::deduplicated>> values) {
-        const auto result = operators::sum_("values"_n = opt(values));
+    const auto make_set = node([](In<TS<i64>> key, Out<TSS<i64, TimeSeriesGuarantee::deduplicated>> output) {
+        output.apply({*key});
+    });
+    const auto graph = [&](wp<TS<i64>> keys) {
+        const auto result = operators::sum_("values"_n = opt(make_set(keys)));
         CHECK(&result.type() == &TS<i64>::type());
         return result;
     };
 
-    CHECK(bg::run_graph(
-              graph, bg::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{1}, {0, 1}}))
-              .equals<i64>({1, 1}));
+    CHECK(bg::run_graph(graph, {1, 0}).equals<i64>({1, 1}));
 }
 
 TEST_CASE("collection reductions reject a TSL with sparse item metadata",
@@ -339,8 +344,8 @@ TEST_CASE("collection reductions preserve sound guarantees and weaken const extr
         CHECK(&result.type() == &TS<i64>::type());
         return result;
     };
-    const auto check_const_tsl = [](wp<TSL<TS<i64, TimeSeriesGuarantee::const_>, 2,
-                                           TimeSeriesGuarantee::const_>> values) {
+    const auto check_const_tsl = [] {
+        const auto values = tsl(std::array{operators::const_(i64{2}), operators::const_(i64{4})});
         const auto sum = operators::sum_("values"_n = values);
         const auto optional_sum = operators::sum_("values"_n = opt(values));
         const auto minimum = operators::min_("values"_n = values);
@@ -353,13 +358,17 @@ TEST_CASE("collection reductions preserve sound guarantees and weaken const extr
         CHECK(&mean.type() == &TS<double, TimeSeriesGuarantee::final>::type());
         return sum;
     };
-    const auto check_final_tsl = [](wp<TSL<TS<i64, TimeSeriesGuarantee::final>, 2,
-                                           TimeSeriesGuarantee::final>> values) {
-        const auto sum = operators::sum_("values"_n = values);
-        const auto optional_sum = operators::sum_("values"_n = opt(values));
-        const auto minimum = operators::min_("values"_n = values);
-        const auto maximum = operators::max_("values"_n = values);
-        const auto mean = operators::mean("values"_n = values);
+    const auto final_value = node([](Scalar<i64> value, Out<TS<i64, TimeSeriesGuarantee::final>> output) {
+        output.set(*value);
+    });
+    const auto check_final_tsl = [&] {
+        const auto values = std::array{final_value(2), final_value(4)};
+        const auto items = tsl(values);
+        const auto sum = operators::sum_("values"_n = items);
+        const auto optional_sum = operators::sum_("values"_n = opt(items));
+        const auto minimum = operators::min_("values"_n = items);
+        const auto maximum = operators::max_("values"_n = items);
+        const auto mean = operators::mean("values"_n = items);
         CHECK(&sum.type() == &TS<i64, TimeSeriesGuarantee::final>::type());
         CHECK(&optional_sum.type() == &TS<i64>::type());
         CHECK(&minimum.type() == &TS<i64, TimeSeriesGuarantee::final>::type());
@@ -367,15 +376,22 @@ TEST_CASE("collection reductions preserve sound guarantees and weaken const extr
         CHECK(&mean.type() == &TS<double, TimeSeriesGuarantee::final>::type());
         return sum;
     };
-    const auto check_const_tsd = [](wp<TSD<i64, TS<i64, TimeSeriesGuarantee::const_>,
-                                                TimeSeriesGuarantee::const_>> values) {
+    const auto const_dictionary = node([](Out<TSD<i64, TS<i64, TimeSeriesGuarantee::const_>,
+                                                  TimeSeriesGuarantee::const_>> output) {
+        output[1].set(2);
+        output[2].set(4);
+    });
+    const auto check_const_tsd = [&] {
+        const auto values = const_dictionary();
         const auto sum = operators::sum_("values"_n = values);
         const auto optional_sum = operators::sum_("values"_n = opt(values));
         CHECK(&sum.type() == &TS<i64, TimeSeriesGuarantee::const_>::type());
         CHECK(&optional_sum.type() == &TS<i64>::type());
         return sum;
     };
-    const auto check_const_tss = [](wp<TSS<i64, TimeSeriesGuarantee::const_>> values) {
+    const auto const_set = node([](Out<TSS<i64, TimeSeriesGuarantee::const_>> output) { output.apply({2, 4}); });
+    const auto check_const_tss = [&] {
+        const auto values = const_set();
         const auto sum = operators::sum_("values"_n = values);
         const auto optional_sum = operators::sum_("values"_n = opt(values));
         CHECK(&sum.type() == &TS<i64, TimeSeriesGuarantee::const_>::type());
@@ -388,21 +404,18 @@ TEST_CASE("collection reductions preserve sound guarantees and weaken const extr
     CHECK(bg::run_graph(check_optional_minimum).equals<i64>({2}));
     CHECK(bg::run_graph(check_empty_sum).equals<i64>({0}));
     CHECK(bg::run_graph(check_empty_minimum).equals<i64>({std::nullopt}));
-    CHECK(bg::run_graph(check_const_tsl, {{{0, 2}, {1, 4}}}).equals<i64>({6}));
-    CHECK(bg::run_graph(check_final_tsl, {{{0, 2}, {1, 4}}}).equals<i64>({6}));
-    CHECK(bg::run_graph(check_const_tsd,
-                              bg::input<TSD<i64, TS<i64, TimeSeriesGuarantee::const_>,
-                                                   TimeSeriesGuarantee::const_>>({{{1, 2}, {2, 4}}}))
-              .equals<i64>({6}));
-    CHECK(bg::run_graph(check_const_tss,
-                              bg::input<TSS<i64, TimeSeriesGuarantee::const_>>({{2, 4}}))
-              .equals<i64>({6}));
+    CHECK(bg::run_graph(check_const_tsl).equals<i64>({6}));
+    CHECK(bg::run_graph(check_final_tsl).equals<i64>({4}));
+    CHECK(bg::run_graph(check_const_tsd).equals<i64>({6}));
+    CHECK(bg::run_graph(check_const_tss).equals<i64>({6}));
 }
 
 TEST_CASE("collection reductions resolve final and deduplicated guarantees for required and optional inputs",
           "[feature:operator][series:tss][scalar:i64][guarantee:final][guarantee:deduplicated]"
           "[validity:all-valid][validity:optional]") {
-    const auto check_final = [](wp<TSS<i64, TimeSeriesGuarantee::final>> values) {
+    const auto final_set = node([](Out<TSS<i64, TimeSeriesGuarantee::final>> output) { output.apply({4}); });
+    const auto check_final = [&] {
+        const auto values = final_set();
         const auto sum = operators::sum_("values"_n = values);
         const auto minimum = operators::min_("values"_n = values);
         const auto maximum = operators::max_("values"_n = values);
@@ -421,7 +434,11 @@ TEST_CASE("collection reductions resolve final and deduplicated guarantees for r
         CHECK(&optional_mean.type() == &TS<double, TimeSeriesGuarantee::final>::type());
         return sum;
     };
-    const auto check_deduplicated = [](wp<TSS<i64, TimeSeriesGuarantee::deduplicated>> values) {
+    const auto make_set = node([](In<TS<i64>> key, Out<TSS<i64, TimeSeriesGuarantee::deduplicated>> output) {
+        output.apply({*key});
+    });
+    const auto check_deduplicated = [&](wp<TS<i64>> keys) {
+        const auto values = make_set(keys);
         const auto sum = operators::sum_("values"_n = values);
         const auto minimum = operators::min_("values"_n = values);
         const auto maximum = operators::max_("values"_n = values);
@@ -441,11 +458,8 @@ TEST_CASE("collection reductions resolve final and deduplicated guarantees for r
         return sum;
     };
 
-    CHECK(bg::run_graph(check_final, bg::input<TSS<i64, TimeSeriesGuarantee::final>>({{4}}))
-              .equals<i64>({4}));
-    CHECK(bg::run_graph(check_deduplicated,
-                              bg::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{1}, {2}}))
-              .equals<i64>({1, 3}));
+    CHECK(bg::run_graph(check_final).equals<i64>({4}));
+    CHECK(bg::run_graph(check_deduplicated, {1, 2}).equals<i64>({1, 3}));
 }
 
 TEST_CASE("i64 collection sums wrap and collection means accumulate in double",

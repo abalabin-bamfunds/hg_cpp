@@ -81,17 +81,15 @@ TEST_CASE("matches accepts symbol patterns and subjects and propagates the subje
         CHECK(&result.type() == &TS<bool, TimeSeriesGuarantee::const_>::type());
         return result;
     };
-    const auto deduplicated = [](wp<TS<string, TimeSeriesGuarantee::deduplicated>> text) {
-        const auto result = operators::matches(std::string_view{"x"}, text);
+    const auto deduplicated = [](wp<TS<string>> text) {
+        const auto result = operators::matches(std::string_view{"x"}, operators::dedup(text));
         CHECK(&result.type() == &TS<bool, TimeSeriesGuarantee::deduplicated>::type());
         return result;
     };
 
     CHECK(bg::run_graph(symbol_match).equals<bool>({true}));
     CHECK(bg::run_graph(constant).equals<bool>({false}));
-    CHECK(bg::run_graph(deduplicated,
-                              bg::input<TS<string, TimeSeriesGuarantee::deduplicated>>({"x", "x", "y"}))
-              .equals<bool>({true, std::nullopt, false}));
+    CHECK(bg::run_graph(deduplicated, {"x", "x", "y"}).equals<bool>({true, std::nullopt, false}));
 }
 
 TEST_CASE("matches accepts independent string and symbol pattern and subject types",

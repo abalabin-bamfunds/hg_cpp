@@ -180,8 +180,8 @@ TEST_CASE("optional Boolean TSS reductions treat an invalid selected target as e
 TEST_CASE("Boolean reductions preserve const, final, and deduplicated guarantees",
           "[feature:operator][series:fixed-tsl][series:tsd][series:tss][scalar:boolean]"
           "[guarantee:const][guarantee:final][guarantee:deduplicated]") {
-    const auto check_const_tsl = [](wp<TSL<TS<bool, TimeSeriesGuarantee::const_>, 2,
-                                             TimeSeriesGuarantee::const_>> values) {
+    const auto check_const_tsl = [] {
+        const auto values = tsl(std::array{operators::const_(true), operators::const_(true)});
         const auto required = operators::all_("values"_n = values);
         const auto optional = operators::any_("values"_n = opt(values));
         CHECK(&required.type() == &TS<bool, TimeSeriesGuarantee::const_>::type());
@@ -189,74 +189,97 @@ TEST_CASE("Boolean reductions preserve const, final, and deduplicated guarantees
         return required;
     };
 
-    const auto check_final_tsl = [](wp<TSL<TS<bool, TimeSeriesGuarantee::final>, 2,
-                                             TimeSeriesGuarantee::final>> values) {
-        const auto required = operators::any_("values"_n = values);
-        const auto optional = operators::all_("values"_n = opt(values));
+    const auto final_value = node([](Scalar<bool> value, Out<TS<bool, TimeSeriesGuarantee::final>> output) {
+        output.set(*value);
+    });
+    const auto check_final_tsl = [&] {
+        const auto values = std::array{final_value(false), final_value(true)};
+        const auto items = tsl(values);
+        const auto required = operators::any_("values"_n = items);
+        const auto optional = operators::all_("values"_n = opt(items));
         CHECK(&required.type() == &TS<bool, TimeSeriesGuarantee::final>::type());
         CHECK(&optional.type() == &TS<bool>::type());
         return required;
     };
 
-    const auto check_deduplicated_tsl = [](wp<TSL<TS<bool, TimeSeriesGuarantee::deduplicated>, 2,
-                                                     TimeSeriesGuarantee::deduplicated>> values) {
-        const auto required = operators::all_("values"_n = values);
-        const auto optional = operators::any_("values"_n = opt(values));
+    const auto check_deduplicated_tsl = [](wp<TS<bool>> first, wp<TS<bool>> second) {
+        const auto items = tsl(operators::dedup(first), operators::dedup(second));
+        const auto required = operators::all_("values"_n = items);
+        const auto optional = operators::any_("values"_n = opt(items));
         CHECK(&required.type() == &TS<bool, TimeSeriesGuarantee::deduplicated>::type());
         CHECK(&optional.type() == &TS<bool>::type());
         return required;
     };
 
-    const auto check_final_tsd = [](wp<TSD<i64, TS<bool, TimeSeriesGuarantee::final>,
-                                                  TimeSeriesGuarantee::final>> values) {
+    const auto final_dictionary = node([](Out<TSD<i64, TS<bool, TimeSeriesGuarantee::final>,
+                                                     TimeSeriesGuarantee::final>> output) {
+        output[1].set(true);
+    });
+    const auto check_final_tsd = [&] {
+        const auto values = final_dictionary();
         const auto required = operators::all_("values"_n = values);
         CHECK(&required.type() == &TS<bool, TimeSeriesGuarantee::final>::type());
         return required;
     };
 
-    const auto check_deduplicated_tsd = [](wp<TSD<i64, TS<bool, TimeSeriesGuarantee::deduplicated>,
-                                                           TimeSeriesGuarantee::deduplicated>> values) {
+    const auto deduplicated_dictionary = node([](Out<TSD<i64, TS<bool, TimeSeriesGuarantee::deduplicated>,
+                                                                TimeSeriesGuarantee::deduplicated>> output) {
+        output[1].set(true);
+    });
+    const auto check_deduplicated_tsd = [&] {
+        const auto values = deduplicated_dictionary();
         const auto required = operators::any_("values"_n = values);
         CHECK(&required.type() == &TS<bool, TimeSeriesGuarantee::deduplicated>::type());
         return required;
     };
 
-    const auto check_const_tss = [](wp<TSS<bool, TimeSeriesGuarantee::const_>> values) {
+    const auto const_set = node([](Out<TSS<bool, TimeSeriesGuarantee::const_>> output) { output.apply({true}); });
+    const auto check_const_tss = [&] {
+        const auto values = const_set();
         const auto required = operators::all_("values"_n = values);
         CHECK(&required.type() == &TS<bool, TimeSeriesGuarantee::const_>::type());
         return required;
     };
 
-    const auto check_final_tss = [](wp<TSS<bool, TimeSeriesGuarantee::final>> values) {
+    const auto final_set = node([](Out<TSS<bool, TimeSeriesGuarantee::final>> output) { output.apply({false}); });
+    const auto check_final_tss = [&] {
+        const auto values = final_set();
         const auto required = operators::any_("values"_n = values);
         CHECK(&required.type() == &TS<bool, TimeSeriesGuarantee::final>::type());
         return required;
     };
 
-    const auto check_deduplicated_tss = [](wp<TSS<bool, TimeSeriesGuarantee::deduplicated>> values) {
+    const auto deduplicated_set = node([](Out<TSS<bool, TimeSeriesGuarantee::deduplicated>> output) {
+        output.apply({true});
+    });
+    const auto check_deduplicated_tss = [&] {
+        const auto values = deduplicated_set();
         const auto required = operators::all_("values"_n = values);
         CHECK(&required.type() == &TS<bool, TimeSeriesGuarantee::deduplicated>::type());
         return required;
     };
 
-    CHECK(bg::run_graph(check_const_tsl, {{{0, true}, {1, true}}}).equals<bool>({true}));
-    CHECK(bg::run_graph(check_final_tsl, {{{0, false}, {1, true}}}).equals<bool>({true}));
-    CHECK(bg::run_graph(check_deduplicated_tsl, {{{0, true}, {1, true}}}).equals<bool>({true}));
-    CHECK(bg::run_graph(check_final_tsd, {{{1, true}}}).equals<bool>({true}));
-    CHECK(bg::run_graph(check_deduplicated_tsd, {{{1, true}}}).equals<bool>({true}));
-    CHECK(bg::run_graph(check_const_tss, {{true}}).equals<bool>({true}));
-    CHECK(bg::run_graph(check_final_tss, {{false}}).equals<bool>({false}));
-    CHECK(bg::run_graph(check_deduplicated_tss, {{true}}).equals<bool>({true}));
+    CHECK(bg::run_graph(check_const_tsl).equals<bool>({true}));
+    CHECK(bg::run_graph(check_final_tsl).equals<bool>({true}));
+    CHECK(bg::run_graph(check_deduplicated_tsl, {true}, {true}).equals<bool>({true}));
+    CHECK(bg::run_graph(check_final_tsd).equals<bool>({true}));
+    CHECK(bg::run_graph(check_deduplicated_tsd).equals<bool>({true}));
+    CHECK(bg::run_graph(check_const_tss).equals<bool>({true}));
+    CHECK(bg::run_graph(check_final_tss).equals<bool>({false}));
+    CHECK(bg::run_graph(check_deduplicated_tss).equals<bool>({true}));
 }
 
 TEST_CASE("deduplicated Boolean reductions suppress equal aggregate results",
           "[feature:operator][series:tss][scalar:boolean][guarantee:deduplicated][transition:addition]") {
-    CHECK(bg::run_graph(operators::all_,
-                              bg::input<TSS<bool, TimeSeriesGuarantee::deduplicated>>({{false}, {true}}))
-              .equals<bool>({false, std::nullopt}));
-    CHECK(bg::run_graph(operators::any_,
-                              bg::input<TSS<bool, TimeSeriesGuarantee::deduplicated>>({{true}, {false}}))
-              .equals<bool>({true, std::nullopt}));
+    const auto add_value = node([](In<TS<bool>> value,
+                                   Out<TSS<bool, TimeSeriesGuarantee::deduplicated>> output) {
+        output.apply({*value});
+    });
+    const auto all = [&](wp<TS<bool>> values) { return operators::all_(add_value(values)); };
+    const auto any = [&](wp<TS<bool>> values) { return operators::any_(add_value(values)); };
+
+    CHECK(bg::run_graph(all, {false, true}).equals<bool>({false, std::nullopt}));
+    CHECK(bg::run_graph(any, {true, false}).equals<bool>({true, std::nullopt}));
 }
 
 TEST_CASE("Boolean reductions accept free TSL inputs and nested operator results",

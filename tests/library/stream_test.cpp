@@ -240,8 +240,18 @@ TEST_CASE("filter caps a stronger child at a deduplicated root",
         return filter_observation{*values[0].template as<TS<i64>>(), values.item_updated(1)};
     });
 
-    const auto filter = [&](wp<TS<bool>> condition,
-                            wp<TSB<stream_test::mixed_guarantee_bundle, TimeSeriesGuarantee::deduplicated>> values) {
+    const auto make_values = node([](In<TS<i64>> step,
+                                     Out<TSB<stream_test::mixed_guarantee_bundle,
+                                             TimeSeriesGuarantee::deduplicated>> output) {
+        if (*step == 0) {
+            output->changing.set(10);
+            output->constant.set(1);
+        } else if (*step == 1) {
+            output->changing.set(20);
+        }
+    });
+    const auto filter = [&](wp<TS<bool>> condition, wp<TS<i64>> step) {
+        const auto values = make_values(step);
         const auto filtered = operators::filter_(condition, values);
         const auto *type = type_cast<TimeSeriesBundleType>(&filtered.type());
         REQUIRE(type != nullptr);
@@ -251,8 +261,7 @@ TEST_CASE("filter caps a stronger child at a deduplicated root",
         return observe(filtered);
     };
 
-    CHECK(bg::run_graph(filter, {true, false, true},
-                              {{{"changing", 10}, {"constant", 1}}, {{"changing", 20}}, literal::SKIP})
+    CHECK(bg::run_graph(filter, {true, false, true}, {0, 1, 2})
               .equals<filter_observation>({filter_observation{10, true}, std::nullopt,
                                            filter_observation{20, false}}));
 }
@@ -327,20 +336,29 @@ TEST_CASE("filter reflects TSD key changes made while closed and forwards open c
 TEST_CASE("filter reopens with a recreated final TSD item",
           "[feature:operator][series:tsd][guarantee:final][validity:optional]"
           "[transition:removal][transition:revalidation]") {
+    const auto make_values = node([](In<TS<i64>> step,
+                                     Out<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> output) {
+        if (*step == 0) {
+            output[1].set(10);
+        } else if (*step == 1) {
+            output.erase(1);
+        } else if (*step == 2) {
+            output[1].set(20);
+        }
+    });
     const auto inspect = node([](In<TSD<i64, TS<i64>>> input, Out<TS<i64>> output) {
         if (input.contains(1)) {
             output.set(*input[1]);
         }
     });
-    const auto filter = [&](wp<TS<bool>> condition,
-                            wp<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> input) {
+    const auto filter = [&](wp<TS<bool>> condition, wp<TS<i64>> step) {
+        const auto input = make_values(step);
         const auto filtered = operators::filter_(condition, input);
         CHECK(&filtered.type() == &TSD<i64, TS<i64>>::type());
         return inspect(filtered);
     };
 
-    CHECK(bg::run_graph(filter, {true, false, false, true},
-                              {{{1, 10}}, {{1, literal::REMOVE}}, {{1, 20}}, literal::SKIP})
+    CHECK(bg::run_graph(filter, {true, false, false, true}, {0, 1, 2, 3})
               .equals<i64>({10, std::nullopt, std::nullopt, 20}));
 }
 
@@ -430,26 +448,35 @@ TEST_CASE("filter caps const guarantees recursively at final",
     const auto sum = node([](In<TSL<TS<i64, TimeSeriesGuarantee::final>, 2>> value) {
         return *value[0] + *value[1];
     });
+    const auto const_values = node([](Out<TSL<TS<i64, TimeSeriesGuarantee::const_>, 2,
+                                               TimeSeriesGuarantee::const_>> output) {
+        output[0].set(10);
+        output[1].set(20);
+    });
 
-    const auto graph = [&](wp<TS<bool>> condition,
-                           wp<TSL<TS<i64, TimeSeriesGuarantee::const_>, 2, TimeSeriesGuarantee::const_>> values) {
+    const auto graph = [&](wp<TS<bool>> condition) {
+        const auto values = const_values();
         const auto result = operators::filter_(condition, values);
         CHECK(&result.type() ==
               &TSL<TS<i64, TimeSeriesGuarantee::final>, 2, TimeSeriesGuarantee::final>::type());
         return sum(result);
     };
 
-    CHECK(bg::run_graph(graph, {false, true}, {{{0, 10}, {1, 20}}}).equals<i64>({std::nullopt, 30}));
+    CHECK(bg::run_graph(graph, {false, true}).equals<i64>({std::nullopt, 30}));
 
-    const auto final_graph = [&](wp<TS<bool>> condition,
-                                 wp<TSL<TS<i64, TimeSeriesGuarantee::final>, 2,
-                                       TimeSeriesGuarantee::final>> values) {
+    const auto final_values = node([](Out<TSL<TS<i64, TimeSeriesGuarantee::final>, 2,
+                                                 TimeSeriesGuarantee::final>> output) {
+        output[0].set(10);
+        output[1].set(20);
+    });
+    const auto final_graph = [&](wp<TS<bool>> condition) {
+        const auto values = final_values();
         const auto result = operators::filter_(condition, values);
         CHECK(&result.type() ==
               &TSL<TS<i64, TimeSeriesGuarantee::final>, 2, TimeSeriesGuarantee::final>::type());
         return sum(result);
     };
-    CHECK(bg::run_graph(final_graph, {false, true}, {{{0, 10}, {1, 20}}}).equals<i64>({std::nullopt, 30}));
+    CHECK(bg::run_graph(final_graph, {false, true}).equals<i64>({std::nullopt, 30}));
 }
 
 TEST_CASE("if_then_else switches references and ignores repeated selections",

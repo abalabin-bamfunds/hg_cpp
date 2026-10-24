@@ -102,7 +102,7 @@ TEST_CASE("graph run limits apply through the profiler recorder",
     CHECK(profiler.outer_totals().cycles == 2);
 }
 
-TEST_CASE("test graph leaves positions beyond its run limit empty",
+TEST_CASE("run_graph leaves positions beyond its run limit empty",
           "[evaluation][simulation][feature:simulation][test-graph]") {
     const auto start = time(40);
     const auto actual = bg::run_graph([](wp<TS<i64>> input) { return input; },

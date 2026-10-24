@@ -47,11 +47,15 @@ TEST_CASE("reduce carries an odd item to the next level of its tree",
 
 TEST_CASE("reduce combines final TSD items with a nested reducer",
           "[feature:reduce][feature:nested-graph][series:tsd][shape:nested][guarantee:final]") {
-    const auto tested = [](wp<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> values) {
-        return reduce(add_graph, values);
+    const auto final_values = node([](Out<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> output) {
+        output[1].set(3);
+        output[2].set(4);
+    });
+    const auto tested = [&] {
+        return reduce(add_graph, final_values());
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 3}, {2, 4}}});
+    const auto actual = bg::run_graph(tested);
 
     CHECK(actual.equals<i64>({7}));
 }
@@ -279,13 +283,16 @@ const auto context_add_graph = graph("name"_n = "context_add_for_reduce", [](wp<
 TEST_CASE("reduce combines final TSD items through a context-dependent fallback reducer",
           "[feature:reduce][feature:context-time-series][feature:nested-graph][series:tsd][shape:nested]"
           "[guarantee:final]") {
-    const auto tested = [=](wp<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> dictionary,
-                            wp<TS<i64>> factor) {
+    const auto final_values = node([](Out<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> output) {
+        output[1].set(3);
+        output[2].set(4);
+    });
+    const auto tested = [=](wp<TS<i64>> factor) {
         auto context_scope = with_context("factor"_n = factor);
-        return reduce(context_add_graph, dictionary);
+        return reduce(context_add_graph, final_values());
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 3}, {2, 4}}}, {10});
+    const auto actual = bg::run_graph(tested, {10});
 
     CHECK(actual.equals<i64>({17}));
 }
