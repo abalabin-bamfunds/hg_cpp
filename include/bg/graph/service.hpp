@@ -27,8 +27,6 @@ struct ServiceImplementationRequestInput {
 
 class ServiceDefinition : public WiringTemplate {
   public:
-    static constexpr bool supports_client_wiring = false;
-
     explicit ServiceDefinition(Signature signature);
     ~ServiceDefinition() override;
 
@@ -74,7 +72,6 @@ class ServiceDefinition : public WiringTemplate {
 class Service : public ServiceDefinition {
   public:
     static constexpr bool supports_implementation_requests = true;
-    static constexpr bool supports_client_wiring = true;
 
     explicit Service(Signature signature);
 

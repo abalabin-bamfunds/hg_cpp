@@ -50,40 +50,34 @@ class ServiceTemplate final
         return public_result(WiringTemplate::operator()(type_map, arguments));
     }
 
-    template <typename ClientId, typename... Arguments>
-        requires(Definition::supports_client_wiring && details::wiring_point_argument<ClientId> &&
-                 (details::graph_code_argument<Arguments> && ...))
-    void client_requests(ClientId &&client_id, Arguments &&...arguments) const & {
+    template <typename... Arguments>
+        requires(requires { &Definition::client_requests; } && (details::graph_code_argument<Arguments> && ...))
+    void client_requests(WiringPoint client_id, Arguments &&...arguments) const & {
+        client_requests(TypeMap{}, client_id, std::forward<Arguments>(arguments)...);
+    }
+
+    template <typename... Arguments>
+        requires(requires { &Definition::client_requests; } && (details::graph_code_argument<Arguments> && ...))
+    void client_requests(const TypeMap &type_map, WiringPoint client_id, Arguments &&...arguments) const & {
         auto values = std::array<WiringArgument, sizeof...(Arguments)>{
             WiringArgument{std::forward<Arguments>(arguments)}...};
-        Definition::client_requests(TypeMap{}, static_cast<WiringPoint>(client_id), values);
+        Definition::client_requests(type_map, client_id, values);
     }
 
-    template <typename ClientId, typename... Arguments>
-        requires(Definition::supports_client_wiring && details::wiring_point_argument<ClientId> &&
-                 (details::graph_code_argument<Arguments> && ...))
-    void client_requests(const TypeMap &type_map, ClientId &&client_id, Arguments &&...arguments) const & {
-        auto values = std::array<WiringArgument, sizeof...(Arguments)>{
-            WiringArgument{std::forward<Arguments>(arguments)}...};
-        Definition::client_requests(type_map, static_cast<WiringPoint>(client_id), values);
+    template <typename... Arguments>
+        requires(details::typed_prototype<Prototype>::has_output &&
+                 requires { &Definition::client_replies; } && (details::graph_code_argument<Arguments> && ...))
+    auto client_replies(WiringPoint client_id, Arguments &&...scalar_arguments) const & {
+        return client_replies(TypeMap{}, client_id, std::forward<Arguments>(scalar_arguments)...);
     }
 
-    template <typename ClientId, typename... Arguments>
-        requires(Definition::supports_client_wiring && details::typed_prototype<Prototype>::has_output &&
-                 details::wiring_point_argument<ClientId> && (details::graph_code_argument<Arguments> && ...))
-    auto client_replies(ClientId &&client_id, Arguments &&...scalar_arguments) const & {
+    template <typename... Arguments>
+        requires(details::typed_prototype<Prototype>::has_output &&
+                 requires { &Definition::client_replies; } && (details::graph_code_argument<Arguments> && ...))
+    auto client_replies(const TypeMap &type_map, WiringPoint client_id, Arguments &&...scalar_arguments) const & {
         auto values = std::array<WiringArgument, sizeof...(Arguments)>{
             WiringArgument{std::forward<Arguments>(scalar_arguments)}...};
-        return public_result(Definition::client_replies(TypeMap{}, static_cast<WiringPoint>(client_id), values));
-    }
-
-    template <typename ClientId, typename... Arguments>
-        requires(Definition::supports_client_wiring && details::typed_prototype<Prototype>::has_output &&
-                 details::wiring_point_argument<ClientId> && (details::graph_code_argument<Arguments> && ...))
-    auto client_replies(const TypeMap &type_map, ClientId &&client_id, Arguments &&...scalar_arguments) const & {
-        auto values = std::array<WiringArgument, sizeof...(Arguments)>{
-            WiringArgument{std::forward<Arguments>(scalar_arguments)}...};
-        return public_result(Definition::client_replies(type_map, static_cast<WiringPoint>(client_id), values));
+        return public_result(Definition::client_replies(type_map, client_id, values));
     }
 
     template <typename... Arguments>
