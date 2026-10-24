@@ -1,6 +1,6 @@
 #include <bg/library.hpp>
 #include <bg/nested.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -19,10 +19,10 @@ TEST_CASE("running integer sums include every valid update and wrap at i64 limit
     const auto minimum = std::numeric_limits<i64>::min();
     const auto maximum = std::numeric_limits<i64>::max();
 
-    CHECK(testing::test_graph(sums, {literal::SKIP, 1, 1, 0, -1, literal::INVALID,
+    CHECK(bg::run_graph(sums, {literal::SKIP, 1, 1, 0, -1, literal::INVALID,
                                      literal::SKIP, 5})
               .equals<i64>({std::nullopt, 1, 2, 2, 1, std::nullopt, std::nullopt, 5}));
-    CHECK(testing::test_graph(sums, {maximum, 1, -1})
+    CHECK(bg::run_graph(sums, {maximum, 1, -1})
               .equals<i64>({maximum, minimum, maximum}));
 }
 
@@ -33,7 +33,7 @@ TEST_CASE("running integer sums reset only on a valid reset tick",
         return operators::sums(value, "reset"_n = reset);
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         sums,
         {1, literal::SKIP, 2, literal::SKIP, 3, literal::SKIP, literal::INVALID, 5},
         {literal::SKIP, false, literal::SKIP, true, literal::SKIP, literal::INVALID,
@@ -48,7 +48,7 @@ TEST_CASE("running integer sums handle reset before data and simultaneous reset 
         return operators::sums(value, "reset"_n = reset);
     };
 
-    CHECK(testing::test_graph(sums,
+    CHECK(bg::run_graph(sums,
                               {literal::SKIP, 10, literal::SKIP, 4, 7},
                               {false, literal::SKIP, true, false, literal::SKIP})
               .equals<i64>({std::nullopt, 10, std::nullopt, 4, 11}));
@@ -61,7 +61,7 @@ TEST_CASE("running sums accept any reset time series and reset on its valid tick
         return operators::sums(value, "reset"_n = reset);
     };
 
-    CHECK(testing::test_graph(sums,
+    CHECK(bg::run_graph(sums,
                               {1, 2, 3, 4, literal::INVALID, 5, 6},
                               {literal::SKIP, literal::SKIP, "reset", literal::SKIP,
                                "reset", literal::SKIP, literal::SKIP})
@@ -75,7 +75,7 @@ TEST_CASE("reset invalidation does not clear running sums",
         return operators::sums(value, "reset"_n = reset);
     };
 
-    CHECK(testing::test_graph(sums,
+    CHECK(bg::run_graph(sums,
                               {1, 2, literal::SKIP, 3},
                               {literal::SKIP, "reset", literal::INVALID, literal::SKIP})
               .equals<i64>({1, 2, std::nullopt, 5}));
@@ -87,7 +87,7 @@ TEST_CASE("a reset-only tick invalidates the running output",
         return operators::valid(operators::sums(value, "reset"_n = reset));
     };
 
-    CHECK(testing::test_graph(observe,
+    CHECK(bg::run_graph(observe,
                               {5, literal::SKIP, literal::SKIP, 3},
                               {literal::SKIP, false, literal::INVALID,
                                literal::SKIP})
@@ -113,7 +113,7 @@ TEST_CASE("all running aggregates reset on reset-only and simultaneous data tick
         return operators::means(value, "reset"_n = reset);
     };
     const auto run = [](const auto &operation) {
-        return testing::test_graph(operation,
+        return bg::run_graph(operation,
                                    {5, 4, 6, 8, 3, 9, literal::SKIP, 7},
                                    {literal::SKIP, false, true, literal::SKIP,
                                     false, true, true, literal::SKIP});
@@ -144,7 +144,7 @@ TEST_CASE("reset invalidation preserves each running history",
         return operators::means(value, "reset"_n = reset);
     };
     const auto run = [](const auto &operation) {
-        return testing::test_graph(operation, {5, 4, literal::SKIP, 3},
+        return bg::run_graph(operation, {5, 4, literal::SKIP, 3},
                                    {literal::SKIP, "reset", literal::INVALID, literal::SKIP});
     };
 
@@ -173,7 +173,7 @@ TEST_CASE("required value invalidation restarts every reset aggregate",
         return operators::means(value, "reset"_n = reset);
     };
     const auto run = [](const auto &operation) {
-        return testing::test_graph(operation,
+        return bg::run_graph(operation,
                                    {5, 4, literal::INVALID, 3, 2},
                                    {literal::SKIP, literal::SKIP, literal::SKIP,
                                     literal::SKIP, literal::SKIP});
@@ -192,9 +192,9 @@ TEST_CASE("running minimum and maximum publish only new extrema",
     const auto maxs = [](wp<TS<i64>> value) { return operators::maxs(value); };
     const auto values = std::array<i64, 7>{4, 4, 6, 3, 3, 5, 2};
 
-    CHECK(testing::test_graph(mins, values).equals<i64>({4, std::nullopt, std::nullopt, 3,
+    CHECK(bg::run_graph(mins, values).equals<i64>({4, std::nullopt, std::nullopt, 3,
                                                          std::nullopt, std::nullopt, 2}));
-    CHECK(testing::test_graph(maxs, values).equals<i64>({4, std::nullopt, 6, std::nullopt,
+    CHECK(bg::run_graph(maxs, values).equals<i64>({4, std::nullopt, 6, std::nullopt,
                                                          std::nullopt, std::nullopt, std::nullopt}));
 }
 
@@ -203,9 +203,9 @@ TEST_CASE("running extrema restart after input invalidation",
           "[transition:invalidation][transition:revalidation]") {
     const auto mins = [](wp<TS<i64>> value) { return operators::mins(value); };
     const auto maxs = [](wp<TS<i64>> value) { return operators::maxs(value); };
-    CHECK(testing::test_graph(mins, {5, 3, literal::INVALID, 7, 6})
+    CHECK(bg::run_graph(mins, {5, 3, literal::INVALID, 7, 6})
               .equals<i64>({5, 3, std::nullopt, 7, 6}));
-    CHECK(testing::test_graph(maxs, {5, 3, literal::INVALID, 7, 6})
+    CHECK(bg::run_graph(maxs, {5, 3, literal::INVALID, 7, 6})
               .equals<i64>({5, std::nullopt, std::nullopt, 7, std::nullopt}));
 }
 
@@ -218,7 +218,7 @@ TEST_CASE("running extrema keep an initial NaN until input invalidation",
     const auto maxs_valid = [](wp<TS<double>> value) { return operators::valid(operators::maxs(value)); };
     const auto nan = std::numeric_limits<double>::quiet_NaN();
     const auto check_sticky_nan = [nan](const auto &operation) {
-        const auto result = testing::test_graph(
+        const auto result = bg::run_graph(
             operation, {nan, 1.0, nan, 0.0, literal::INVALID,
                         literal::SKIP, 3.0});
         REQUIRE(result.size() == 7);
@@ -235,12 +235,12 @@ TEST_CASE("running extrema keep an initial NaN until input invalidation",
 
     check_sticky_nan(mins);
     check_sticky_nan(maxs);
-    CHECK(testing::test_graph(mins_valid,
+    CHECK(bg::run_graph(mins_valid,
                               {nan, 1.0, nan, 0.0, literal::INVALID,
                                literal::SKIP, 3.0})
               .equals<bool>({true, std::nullopt, std::nullopt, std::nullopt, false, std::nullopt,
                              true}));
-    CHECK(testing::test_graph(maxs_valid,
+    CHECK(bg::run_graph(maxs_valid,
                               {nan, 1.0, nan, 0.0, literal::INVALID,
                                literal::SKIP, 3.0})
               .equals<bool>({true, std::nullopt, std::nullopt, std::nullopt, false, std::nullopt,
@@ -256,11 +256,11 @@ TEST_CASE("running extrema ignore later NaNs without invalidating output",
     const auto nan = std::numeric_limits<double>::quiet_NaN();
     const auto values = std::array<double, 4>{2.0, nan, 3.0, 1.0};
 
-    CHECK(testing::test_graph(mins, values).equals<double>({2.0, std::nullopt, std::nullopt, 1.0}));
-    CHECK(testing::test_graph(maxs, values).equals<double>({2.0, std::nullopt, 3.0, std::nullopt}));
-    CHECK(testing::test_graph(mins_valid, values)
+    CHECK(bg::run_graph(mins, values).equals<double>({2.0, std::nullopt, std::nullopt, 1.0}));
+    CHECK(bg::run_graph(maxs, values).equals<double>({2.0, std::nullopt, 3.0, std::nullopt}));
+    CHECK(bg::run_graph(mins_valid, values)
               .equals<bool>({true, std::nullopt, std::nullopt, std::nullopt}));
-    CHECK(testing::test_graph(maxs_valid, values)
+    CHECK(bg::run_graph(maxs_valid, values)
               .equals<bool>({true, std::nullopt, std::nullopt, std::nullopt}));
 }
 
@@ -285,7 +285,7 @@ TEST_CASE("running extrema clear NaN history on reset-only and simultaneous tick
     const auto nan = std::numeric_limits<double>::quiet_NaN();
     const auto check_reset_history = [nan](const auto &operation,
                                            std::optional<double> expected_last_update) {
-        const auto result = testing::test_graph(
+        const auto result = bg::run_graph(
             operation, {nan, 1.0, literal::SKIP, 4.0,
                         nan, 5.0, 2.0, 3.0},
             {literal::SKIP, literal::SKIP, true, literal::SKIP,
@@ -316,7 +316,7 @@ TEST_CASE("running extrema clear NaN history on reset-only and simultaneous tick
 
     check_reset_history(mins, std::nullopt);
     check_reset_history(maxs, 3.0);
-    CHECK(testing::test_graph(mins_valid,
+    CHECK(bg::run_graph(mins_valid,
                               {nan, 1.0, literal::SKIP, 4.0,
                                nan, 5.0, 2.0, 3.0},
                               {literal::SKIP, literal::SKIP, true,
@@ -324,7 +324,7 @@ TEST_CASE("running extrema clear NaN history on reset-only and simultaneous tick
                                true, literal::SKIP})
               .equals<bool>({true, std::nullopt, false, true, std::nullopt, std::nullopt,
                              std::nullopt, std::nullopt}));
-    CHECK(testing::test_graph(maxs_valid,
+    CHECK(bg::run_graph(maxs_valid,
                               {nan, 1.0, literal::SKIP, 4.0,
                                nan, 5.0, 2.0, 3.0},
                               {literal::SKIP, literal::SKIP, true,
@@ -351,9 +351,9 @@ TEST_CASE("running extrema retain final and const guarantees",
         return minimum + maximum;
     };
 
-    CHECK(testing::test_graph(check_final, testing::input<TS<i64, TimeSeriesGuarantee::final>>({4}))
+    CHECK(bg::run_graph(check_final, bg::input<TS<i64, TimeSeriesGuarantee::final>>({4}))
               .equals<i64>({8}));
-    CHECK(testing::test_graph(check_const).equals<i64>({6}));
+    CHECK(bg::run_graph(check_const).equals<i64>({6}));
 }
 
 TEST_CASE("running floating aggregates calculate sums, extrema, and means",
@@ -365,12 +365,12 @@ TEST_CASE("running floating aggregates calculate sums, extrema, and means",
     const auto means = [](wp<TS<double>> value) { return operators::means(value); };
     const auto values = std::array<double, 6>{2.0, 2.0, -1.0, 4.0, 3.0, 1.0};
 
-    CHECK(testing::test_graph(sums, values).equals<double>({2.0, 4.0, 3.0, 7.0, 10.0, 11.0}));
-    CHECK(testing::test_graph(mins, values).equals<double>({2.0, std::nullopt, -1.0, std::nullopt,
+    CHECK(bg::run_graph(sums, values).equals<double>({2.0, 4.0, 3.0, 7.0, 10.0, 11.0}));
+    CHECK(bg::run_graph(mins, values).equals<double>({2.0, std::nullopt, -1.0, std::nullopt,
                                                             std::nullopt, std::nullopt}));
-    CHECK(testing::test_graph(maxs, values).equals<double>({2.0, std::nullopt, std::nullopt, 4.0,
+    CHECK(bg::run_graph(maxs, values).equals<double>({2.0, std::nullopt, std::nullopt, 4.0,
                                                             std::nullopt, std::nullopt}));
-    CHECK(testing::test_graph(means, values).equals<double>({2.0, 2.0, 1.0, 1.75, 2.0, 11.0 / 6.0}));
+    CHECK(bg::run_graph(means, values).equals<double>({2.0, 2.0, 1.0, 1.75, 2.0, 11.0 / 6.0}));
 }
 
 TEST_CASE("running means use double output and restart after invalidation",
@@ -383,9 +383,9 @@ TEST_CASE("running means use double output and restart after invalidation",
     };
     const auto floating_mean = [](wp<TS<double>> value) { return operators::means(value); };
 
-    CHECK(testing::test_graph(integer_mean, {1, 2, 3})
+    CHECK(bg::run_graph(integer_mean, {1, 2, 3})
               .equals<double>({1.0, 1.5, 2.0}));
-    CHECK(testing::test_graph(floating_mean,
+    CHECK(bg::run_graph(floating_mean,
                               {2.0, 4.0, literal::INVALID, 10.0, 20.0})
               .equals<double>({2.0, 3.0, std::nullopt, 10.0, 15.0}));
 }
@@ -416,13 +416,13 @@ TEST_CASE("running sums and means retain the input guarantee",
         return sum;
     };
 
-    CHECK(testing::test_graph(check_deduplicated,
-                              testing::input<TS<i64, TimeSeriesGuarantee::deduplicated>>({2, 3}))
+    CHECK(bg::run_graph(check_deduplicated,
+                              bg::input<TS<i64, TimeSeriesGuarantee::deduplicated>>({2, 3}))
               .equals<i64>({2, 5}));
-    CHECK(testing::test_graph(check_final,
-                              testing::input<TS<i64, TimeSeriesGuarantee::final>>({literal::SKIP, 4}))
+    CHECK(bg::run_graph(check_final,
+                              bg::input<TS<i64, TimeSeriesGuarantee::final>>({literal::SKIP, 4}))
               .equals<i64>({std::nullopt, 4}));
-    CHECK(testing::test_graph(check_const).equals<i64>({7}));
+    CHECK(bg::run_graph(check_const).equals<i64>({7}));
 }
 
 TEST_CASE("reset operators weaken final and const guarantees",
@@ -454,11 +454,11 @@ TEST_CASE("reset operators weaken final and const guarantees",
         return sum;
     };
 
-    CHECK(testing::test_graph(check_final,
-                              testing::input<TS<i64, TimeSeriesGuarantee::final>>({4}),
-                              testing::input<TS<bool, TimeSeriesGuarantee::final>>({false}))
+    CHECK(bg::run_graph(check_final,
+                              bg::input<TS<i64, TimeSeriesGuarantee::final>>({4}),
+                              bg::input<TS<bool, TimeSeriesGuarantee::final>>({false}))
               .equals<i64>({4}));
-    CHECK(testing::test_graph(check_const).equals<i64>({4}));
+    CHECK(bg::run_graph(check_const).equals<i64>({4}));
 }
 
 TEST_CASE("running means avoid integer overflow and use ordinary floating arithmetic",
@@ -468,9 +468,9 @@ TEST_CASE("running means avoid integer overflow and use ordinary floating arithm
     const auto maximum = std::numeric_limits<i64>::max();
     const auto infinity = std::numeric_limits<double>::infinity();
 
-    CHECK(testing::test_graph(integer_mean, {maximum, maximum})
+    CHECK(bg::run_graph(integer_mean, {maximum, maximum})
               .equals<double>({static_cast<double>(maximum), static_cast<double>(maximum)}));
-    CHECK(testing::test_graph(floating_mean, {infinity, 1.0})
+    CHECK(bg::run_graph(floating_mean, {infinity, 1.0})
               .equals<double>({infinity, infinity}));
 }
 
@@ -483,7 +483,7 @@ TEST_CASE("running integer sums have independent nested graph state",
         return operators::add(nested(running_sum, run, lhs), nested(running_sum, run, rhs));
     };
 
-    CHECK(testing::test_graph(combine, {1, 2, 3}, {10, 20, 30},
+    CHECK(bg::run_graph(combine, {1, 2, 3}, {10, 20, 30},
                               {true, true, true})
               .equals<i64>({11, 33, 66}));
 }
@@ -496,7 +496,7 @@ TEST_CASE("running integer sums follow selected reference ticks",
         return operators::sums(selected);
     };
 
-    CHECK(testing::test_graph(accumulate_selected, {true, true, true},
+    CHECK(bg::run_graph(accumulate_selected, {true, true, true},
                               {1, 2, 3})
               .equals<i64>({1, 3, 6}));
 
@@ -505,6 +505,6 @@ TEST_CASE("running integer sums follow selected reference ticks",
                                                        operators::const_(i64{20}));
         return operators::sums(selected);
     };
-    CHECK(testing::test_graph(retarget, {true, true, false, true})
+    CHECK(bg::run_graph(retarget, {true, true, false, true})
               .equals<i64>({10, std::nullopt, 30, 40}));
 }

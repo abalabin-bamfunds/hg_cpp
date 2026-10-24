@@ -21,7 +21,7 @@
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/util/scope_exit.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 
 #include <array>
 #include <cstdint>
@@ -155,7 +155,7 @@ void verify_scalar_leaf_and_deduplicated_output() {
         literal::apply(output, *input);
     });
     const auto graph = [&](bg::wp<TS<i64>> input) { return set(input); };
-    const auto actual = bg::testing::test_graph(graph, std::array<i64, 3>{4, 4, 7});
+    const auto actual = bg::run_graph(graph, std::array<i64, 3>{4, 4, 7});
 
     require(actual.equals<i64>({4, std::nullopt, 7}));
 }
@@ -187,7 +187,7 @@ void verify_fixed_list_delta_and_notifications() {
         output.set(observation.values[0] * 100 + observation.values[2]);
     });
     const auto graph = [&](bg::wp<TS<i64>> command) { return observe(patch(command)); };
-    const auto actual = bg::testing::test_graph(graph, std::array<i64, 3>{1, 2, 3});
+    const auto actual = bg::run_graph(graph, std::array<i64, 3>{1, 2, 3});
 
     require(actual.equals<i64>({1030, 1031, std::nullopt}));
     require(list_observations.size() == 2);
@@ -206,7 +206,7 @@ void verify_nested_list_delta() {
         output.set(*input[1][0]);
     });
     const auto graph = [&](bg::wp<TS<i64>> input) { return read(patch(input)); };
-    const auto actual = bg::testing::test_graph(graph, std::array<i64, 2>{8, 9});
+    const auto actual = bg::run_graph(graph, std::array<i64, 2>{8, 9});
 
     require(actual.equals<i64>({8, 9}));
 }
@@ -224,7 +224,7 @@ void verify_runtime_output_dispatch() {
         output.set(*input[0] + *input[1]);
     });
     const auto graph = [&](bg::wp<TS<i64>> input) { return read(patch(seed(input), input)); };
-    const auto actual = bg::testing::test_graph(graph, std::array<i64, 2>{5, 6});
+    const auto actual = bg::run_graph(graph, std::array<i64, 2>{5, 6});
 
     require(actual.equals<i64>({10, 12}));
 }
@@ -245,7 +245,7 @@ void verify_empty_root_and_nested_deltas() {
         static_cast<void>(command);
     });
     const auto graph = [&](bg::wp<TS<i64>> command) { return observe(command, patch(command)); };
-    const auto actual = bg::testing::test_graph(graph, std::array<i64, 3>{1, 2, 3});
+    const auto actual = bg::run_graph(graph, std::array<i64, 3>{1, 2, 3});
 
     require(actual.equals<i64>({0, 105, 105}));
     require((root_validity == std::vector<bool>{false, true, true}));
@@ -267,7 +267,7 @@ void verify_empty_root_and_nested_deltas() {
         static_cast<void>(command);
     });
     const auto nested_graph = [&](bg::wp<TS<i64>> command) { return nested_observe(command, nested_patch(command)); };
-    const auto nested_actual = bg::testing::test_graph(nested_graph, std::array<i64, 3>{1, 8, 3});
+    const auto nested_actual = bg::run_graph(nested_graph, std::array<i64, 3>{1, 8, 3});
 
     require(nested_actual.equals<i64>({0, 118, 118}));
 }
@@ -281,7 +281,7 @@ void verify_equal_deduplicated_value_revalidates() {
         literal::apply(output, 5);
     });
     const auto graph = [&](bg::wp<TS<i64>> command) { return update(command); };
-    const auto actual = bg::testing::test_graph(graph, std::array<i64, 3>{1, 2, 3});
+    const auto actual = bg::run_graph(graph, std::array<i64, 3>{1, 2, 3});
 
     require(actual.equals<i64>({5, std::nullopt, 5}));
 
@@ -310,7 +310,7 @@ void verify_equal_deduplicated_value_revalidates() {
         output.set(values[0].value() + values[1].value());
     });
     const auto list_graph = [&](bg::wp<TS<i64>> command) { return list_read(list_update(command)); };
-    const auto list_actual = bg::testing::test_graph(list_graph, std::array<i64, 4>{1, 2, 3, 4});
+    const auto list_actual = bg::run_graph(list_graph, std::array<i64, 4>{1, 2, 3, 4});
 
     require(list_actual.equals<i64>({5, 5, std::nullopt, 0}));
 }
@@ -334,7 +334,7 @@ void verify_scalar_list_output() {
         output.set(values[0].value() + values[1].value());
     });
     const auto runtime_graph = [&](bg::wp<TS<i64>> command) { return read_runtime(patch(seed(command), command)); };
-    const auto runtime_actual = bg::testing::test_graph(runtime_graph, std::array<i64, 2>{3, 4});
+    const auto runtime_actual = bg::run_graph(runtime_graph, std::array<i64, 2>{3, 4});
     require(runtime_actual.equals<i64>({5, 6}));
 
     const auto nested_patch = bg::node([](In<TS<i64>> command, Out<TSL<TS<bg::List<i64>>, 2>> output) {
@@ -345,7 +345,7 @@ void verify_scalar_list_output() {
         output.set(values[0].value() + values[1].value());
     });
     const auto nested_graph = [&](bg::wp<TS<i64>> command) { return read_nested(nested_patch(command)); };
-    const auto nested_actual = bg::testing::test_graph(nested_graph, std::array<i64, 2>{5, 6});
+    const auto nested_actual = bg::run_graph(nested_graph, std::array<i64, 2>{5, 6});
     require(nested_actual.equals<i64>({7, 8}));
 }
 
@@ -358,7 +358,7 @@ void verify_deduplicated_consuming_setter() {
         static_cast<void>(command);
     });
     const auto graph = [&](bg::wp<TS<i64>> command) { return update(command); };
-    const auto actual = bg::testing::test_graph(graph, std::array<i64, 2>{1, 2});
+    const auto actual = bg::run_graph(graph, std::array<i64, 2>{1, 2});
 
     require(actual.equals<i64>({5, std::nullopt}));
 }
@@ -836,7 +836,7 @@ void verify_named_variable_dictionary_and_set_apply() {
     const auto graph = [&](bg::wp<TS<bg::string>> key, bg::wp<TS<i64>> value) {
         return observe(update_dictionary(key, value), update_set(key));
     };
-    const auto actual = bg::testing::test_graph(graph, std::array<std::string_view, 2>{"first", "second"},
+    const auto actual = bg::run_graph(graph, std::array<std::string_view, 2>{"first", "second"},
                                                 std::array<i64, 2>{1, 2});
 
     require(actual.equals<i64>({142, 142}));
@@ -955,7 +955,7 @@ void verify_provider_list_output() {
         output.set(values[0].value().get() + values[1].value().get());
     });
     const auto graph = [&](bg::wp<TS<i64>> input) { return observe(update(input)); };
-    const auto actual = bg::testing::test_graph(graph, std::array<i64, 2>{6, 9});
+    const auto actual = bg::run_graph(graph, std::array<i64, 2>{6, 9});
 
     require(actual.equals<i64>({12, 18}));
 }
@@ -968,7 +968,7 @@ void verify_provider_scalar_leaf() {
         output.set(static_cast<i64>((*input).get()));
     });
     const auto graph = [&](bg::wp<TS<i64>> input) { return read(write(input)); };
-    const auto actual = bg::testing::test_graph(graph, std::array<i64, 2>{12, 17});
+    const auto actual = bg::run_graph(graph, std::array<i64, 2>{12, 17});
 
     require(actual.equals<i64>({12, 17}));
 }
@@ -978,7 +978,7 @@ void verify_scalar_view_leaf() {
         literal::apply(output, input.value_view());
     });
     const auto graph = [&](bg::wp<TS<i64>> input) { return copy(input); };
-    const auto actual = bg::testing::test_graph(graph, std::array<i64, 2>{21, 34});
+    const auto actual = bg::run_graph(graph, std::array<i64, 2>{21, 34});
 
     require(actual.equals<i64>({21, 34}));
 }
@@ -1026,7 +1026,7 @@ void verify_nested_collection_bundle_literal_updates() {
         output.set(*input->scalar);
     });
     const auto graph = [&](bg::wp<TS<i64>> command) { return observe(update(command)); };
-    const auto actual = bg::testing::test_graph(graph, std::array<i64, 3>{1, 2, 3});
+    const auto actual = bg::run_graph(graph, std::array<i64, 3>{1, 2, 3});
 
     require(actual.equals<i64>({10, 20, 30}));
     require(observations.size() == 3);
@@ -1076,7 +1076,7 @@ void verify_erased_nested_bundle_literal_dispatch() {
         output.set(*input->scalar);
     });
     const auto graph = [&](bg::wp<TS<i64>> command) { return observe(patch(seed(command), command)); };
-    const auto actual = bg::testing::test_graph(graph, std::array<i64, 2>{1, 2});
+    const auto actual = bg::run_graph(graph, std::array<i64, 2>{1, 2});
 
     require(actual.equals<i64>({1, 2}));
     require(observed.size() == 2);
@@ -1102,7 +1102,7 @@ void verify_empty_dynamic_collection_updates() {
     const auto dictionary_graph = [&](bg::wp<TS<i64>> command) {
         return dictionary_observe(dictionary_update(command));
     };
-    const auto dictionary_actual = bg::testing::test_graph(dictionary_graph, std::array<i64, 3>{1, 2, 3});
+    const auto dictionary_actual = bg::run_graph(dictionary_graph, std::array<i64, 3>{1, 2, 3});
     require(dictionary_actual.equals<i64>({100, 101, std::nullopt}));
 
     const auto set_update = bg::node([](In<TS<i64>> command, Out<bg::TSS<i64>> output) {
@@ -1116,7 +1116,7 @@ void verify_empty_dynamic_collection_updates() {
         output.set((input.valid() ? 100 : 0) + (input.contains(10) ? 1 : 0));
     });
     const auto set_graph = [&](bg::wp<TS<i64>> command) { return set_observe(set_update(command)); };
-    const auto set_actual = bg::testing::test_graph(set_graph, std::array<i64, 3>{1, 2, 3});
+    const auto set_actual = bg::run_graph(set_graph, std::array<i64, 3>{1, 2, 3});
     require(set_actual.equals<i64>({100, 101, std::nullopt}));
 }
 
@@ -1131,7 +1131,7 @@ void verify_nested_runtime_dictionary_literal_application() {
     const auto graph = [&] {
         return observe(bg::wp<bg::TSD<bg::string, bg::TSB<CollectionBundle>>>{*source()});
     };
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
     require(actual.equals<i64>({47}));
 }
 
@@ -1147,7 +1147,7 @@ void verify_composite_dictionary_keys_and_set_items() {
     const auto dictionary_graph = [&](bg::wp<TS<i64>> command) {
         return dictionary_observe(dictionary_update(command));
     };
-    const auto dictionary_actual = bg::testing::test_graph(dictionary_graph, std::array<i64, 1>{1});
+    const auto dictionary_actual = bg::run_graph(dictionary_graph, std::array<i64, 1>{1});
     require(dictionary_actual.equals<i64>({225}));
 
     const auto set_update = bg::node([](In<TS<i64>>, Out<bg::TSS<bg::List<i64>>> output) {
@@ -1157,7 +1157,7 @@ void verify_composite_dictionary_keys_and_set_items() {
         output.set(static_cast<i64>(input.size()));
     });
     const auto set_graph = [&](bg::wp<TS<i64>> command) { return set_observe(set_update(command)); };
-    const auto set_actual = bg::testing::test_graph(set_graph, std::array<i64, 1>{1});
+    const auto set_actual = bg::run_graph(set_graph, std::array<i64, 1>{1});
     require(set_actual.equals<i64>({2}));
 }
 
@@ -1174,7 +1174,7 @@ void verify_provider_temporary_dictionary_values() {
         output.set(static_cast<i64>(input.size()) * 10 + total);
     });
     const auto graph = [&](bg::wp<TS<i64>> input) { return observe(update(input)); };
-    const auto actual = bg::testing::test_graph(graph, std::array<i64, 1>{17});
+    const auto actual = bg::run_graph(graph, std::array<i64, 1>{17});
     require(actual.equals<i64>({56}));
 }
 
@@ -1199,7 +1199,7 @@ void verify_malformed_bundle_and_dictionary_literals() {
     const auto bundle_graph = [&](bg::wp<TS<i64>> command) {
         return bundle_observe(command, malformed_bundle(command));
     };
-    const auto bundle_actual = bg::testing::test_graph(bundle_graph, std::array<i64, 2>{1, 2});
+    const auto bundle_actual = bg::run_graph(bundle_graph, std::array<i64, 2>{1, 2});
     require(bundle_actual.equals<i64>({0, 0}));
     require((bundle_rejections == std::array{true, true}));
 
@@ -1221,7 +1221,7 @@ void verify_malformed_bundle_and_dictionary_literals() {
     const auto dictionary_graph = [&](bg::wp<TS<i64>> command) {
         return dictionary_observe(command, malformed_dictionary(command));
     };
-    const auto dictionary_actual = bg::testing::test_graph(dictionary_graph, std::array<i64, 1>{1});
+    const auto dictionary_actual = bg::run_graph(dictionary_graph, std::array<i64, 1>{1});
     require(dictionary_actual.equals<i64>({0}));
     require(dictionary_rejection_preserved_output);
 }
@@ -1240,7 +1240,7 @@ void verify_nested_reference_literal_rejection() {
         output.set(*input->status);
     });
     const auto graph = [&](bg::wp<TS<i64>> command) { return observe(update(command)); };
-    const auto actual = bg::testing::test_graph(graph, std::array<i64, 1>{1});
+    const auto actual = bg::run_graph(graph, std::array<i64, 1>{1});
     require(actual.equals<i64>({1}));
     require(rejected);
 }
@@ -1256,7 +1256,7 @@ void verify_invalid_list_deltas() {
     const auto duplicate_graph = [&](bg::wp<TS<i64>> input) { return observe(duplicate(input)); };
     auto duplicate_rejected = false;
     try {
-        static_cast<void>(bg::testing::test_graph(duplicate_graph, std::array<i64, 1>{1}));
+        static_cast<void>(bg::run_graph(duplicate_graph, std::array<i64, 1>{1}));
     } catch (const std::invalid_argument &) {
         duplicate_rejected = true;
     }
@@ -1268,7 +1268,7 @@ void verify_invalid_list_deltas() {
     const auto out_of_range_graph = [&](bg::wp<TS<i64>> input) { return observe(out_of_range(input)); };
     auto range_rejected = false;
     try {
-        static_cast<void>(bg::testing::test_graph(out_of_range_graph, std::array<i64, 1>{1}));
+        static_cast<void>(bg::run_graph(out_of_range_graph, std::array<i64, 1>{1}));
     } catch (const std::invalid_argument &) {
         range_rejected = true;
     }
@@ -1280,7 +1280,7 @@ void verify_invalid_list_deltas() {
     const auto malformed_graph = [&](bg::wp<TS<i64>> input) { return observe(malformed(input)); };
     auto malformed_rejected = false;
     try {
-        static_cast<void>(bg::testing::test_graph(malformed_graph, std::array<i64, 1>{1}));
+        static_cast<void>(bg::run_graph(malformed_graph, std::array<i64, 1>{1}));
     } catch (const std::invalid_argument &) {
         malformed_rejected = true;
     }
@@ -1305,7 +1305,7 @@ void verify_invalid_list_deltas() {
     for (const auto value : std::array<i64, 4>{0, 1, 2, 3}) {
         auto rejected = false;
         try {
-            static_cast<void>(bg::testing::test_graph(invalid_index_graph, std::array{i64{value}}));
+            static_cast<void>(bg::run_graph(invalid_index_graph, std::array{i64{value}}));
         } catch (const std::invalid_argument &) {
             rejected = true;
         }
@@ -1321,7 +1321,7 @@ void verify_invalid_list_deltas() {
     };
     auto scalar_sequence_rejected = false;
     try {
-        static_cast<void>(bg::testing::test_graph(unsupported_scalar_sequence_graph, std::array<i64, 1>{1}));
+        static_cast<void>(bg::run_graph(unsupported_scalar_sequence_graph, std::array<i64, 1>{1}));
     } catch (const std::invalid_argument &) {
         scalar_sequence_rejected = true;
     }
@@ -1332,7 +1332,7 @@ void verify_invalid_list_deltas() {
         literal::apply(output, {});
     });
     const auto empty_bundle_graph = [&](bg::wp<TS<i64>> input) { return observe(empty_bundle(input)); };
-    const auto bundle_actual = bg::testing::test_graph(empty_bundle_graph, std::array<i64, 1>{1});
+    const auto bundle_actual = bg::run_graph(empty_bundle_graph, std::array<i64, 1>{1});
     require(bundle_actual.equals<i64>({std::nullopt}));
 }
 
@@ -1351,7 +1351,7 @@ void verify_duplicate_prevalidation_and_partial_failure() {
         static_cast<void>(command);
     });
     const auto graph = [&](bg::wp<TS<i64>> command) { return observe(command, duplicate(command)); };
-    const auto actual = bg::testing::test_graph(graph, std::array<i64, 1>{9});
+    const auto actual = bg::run_graph(graph, std::array<i64, 1>{9});
     require(actual.equals<i64>({0}));
     require(duplicate_prevalidation_preserved_output);
 
@@ -1364,7 +1364,7 @@ void verify_duplicate_prevalidation_and_partial_failure() {
         }
     });
     const auto partial_graph = [&](bg::wp<TS<i64>> command) { return observe(command, partial(command)); };
-    const auto partial_actual = bg::testing::test_graph(partial_graph, std::array<i64, 1>{9});
+    const auto partial_actual = bg::run_graph(partial_graph, std::array<i64, 1>{9});
     require(partial_actual.equals<i64>({101}));
     require(partial_update_observed);
 }

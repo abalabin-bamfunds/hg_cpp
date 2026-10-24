@@ -4,7 +4,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
 #include <bg/node/input.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -88,7 +88,7 @@ TEST_CASE("a generic scalar list resolves its item view",
     const auto list = ScalarValue<List<float>>{values};
     const auto graph = [&] { return generic_list_source(list); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals<float>({2.5F}));
 }
@@ -120,7 +120,7 @@ TEST_CASE("a generic scalar time-series view preserves its resolved scalar type"
     const auto generic_value_copy = bg::node<generic_value_copy_definition>();
     const auto graph = [&] { return generic_value_copy(starting_source(2.5F)); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals<float>({2.5F}));
 }
@@ -153,7 +153,7 @@ TEST_CASE("a generic time-series view preserves its resolved time-series type",
     const auto double_source = bg::node<double_source_definition>();
     const auto graph = [&] { return generic_copy(double_source()); };
 
-    const auto actual = bg::testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals({1.5}));
 }
@@ -200,7 +200,7 @@ TEST_CASE("generic time-series list views expose their resolved size and items",
 
     const auto graph = [&](bg::wp<TSL<TS<i64>, 2>> input) { return value(copy(input)); };
 
-    const auto actual = bg::testing::test_graph(graph, {{{0, 3}, {1, 7}}});
+    const auto actual = bg::run_graph(graph, {{{0, 3}, {1, 7}}});
 
     CHECK(generic_list_view_copy_definition::input_size == 2);
     CHECK(generic_list_view_copy_definition::output_size == 2);
@@ -261,7 +261,7 @@ TEST_CASE("generic bundle views expose their resolved schema and items",
 
     const auto graph = [&](bg::wp<TSB<RuntimeViewBundle>> input) { return value(copy(input)); };
 
-    const auto actual = bg::testing::test_graph(graph, {{{"count", 4}, {"value", 2.5F}}});
+    const auto actual = bg::run_graph(graph, {{{"count", 4}, {"value", 2.5F}}});
 
     CHECK(generic_bundle_view_copy_definition::input_size == 2);
     CHECK(generic_bundle_view_copy_definition::output_size == 2);

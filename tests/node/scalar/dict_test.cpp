@@ -2,7 +2,7 @@
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/simulation_evaluation_engine.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 
 #include "../../utils/counting_memory_resource.hpp"
 
@@ -34,7 +34,7 @@ TEST_CASE("a scalar dictionary propagates through a value time series",
 
     const auto graph = [&] { return sum(source(input)); };
 
-    CHECK(testing::test_graph(graph).equals<i64>({6}));
+    CHECK(bg::run_graph(graph).equals<i64>({6}));
 }
 
 TEST_CASE("a scalar dictionary output accepts a C++ range",
@@ -49,7 +49,7 @@ TEST_CASE("a scalar dictionary output accepts a C++ range",
     });
     const auto graph = [&] { return sum(source()); };
 
-    CHECK(testing::test_graph(graph).equals<i64>({6}));
+    CHECK(bg::run_graph(graph).equals<i64>({6}));
 }
 
 TEST_CASE("a scalar dictionary output rejects incompatible items and rolls back duplicate keys",
@@ -70,7 +70,7 @@ TEST_CASE("a scalar dictionary output rejects incompatible items and rolls back 
     const auto invalid_source = node<invalid_range_output>();
     const auto size = node([](In<TS<Dict<i64, i64>>> input) { return static_cast<i64>(input.value_view().size()); });
     const auto invalid_graph = [&](wp<TS<i64>> action) { return size(invalid_source(action)); };
-    CHECK(testing::test_graph(invalid_graph, {0, 1}).equals<i64>({1, std::nullopt}));
+    CHECK(bg::run_graph(invalid_graph, {0, 1}).equals<i64>({1, std::nullopt}));
 
     struct duplicate_range_output {
         In<TS<i64>> action;
@@ -91,7 +91,7 @@ TEST_CASE("a scalar dictionary output rejects incompatible items and rolls back 
     };
     const auto duplicate_source = node<duplicate_range_output>();
     const auto duplicate_graph = [&](wp<TS<i64>> action) { return size(duplicate_source(action)); };
-    CHECK(testing::test_graph(duplicate_graph, {0, 1}).equals<i64>({1, std::nullopt}));
+    CHECK(bg::run_graph(duplicate_graph, {0, 1}).equals<i64>({1, std::nullopt}));
 
     auto memory = counting_memory_resource{};
     const auto source = node([&](Out<TS<Dict<string, string>>> output) {
@@ -144,7 +144,7 @@ TEST_CASE("scalar dictionary state is available during node start",
 
     const auto graph = [&] { return inspect(); };
 
-    CHECK(testing::test_graph(graph).equals<i64>({6}));
+    CHECK(bg::run_graph(graph).equals<i64>({6}));
 }
 
 struct inspect_scalar_dict {
@@ -169,7 +169,7 @@ TEST_CASE("a scalar dictionary is available from packed graph scalar storage",
 
     const auto graph = [&] { return inspect(input); };
 
-    CHECK(testing::test_graph(graph).equals<i64>({6}));
+    CHECK(bg::run_graph(graph).equals<i64>({6}));
 }
 
 } // namespace

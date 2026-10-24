@@ -1,6 +1,6 @@
 #include <bg/graph.hpp>
 #include <bg/library.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -74,7 +74,7 @@ TEST_CASE("an overload forwards callable arguments to node and retains the calla
     }
 
     CHECK_FALSE(captured_lifetime.expired());
-    CHECK(testing::test_graph(callable_operator, std::array<i64, 1>{7}).equals<i64>({42}));
+    CHECK(bg::run_graph(callable_operator, std::array<i64, 1>{7}).equals<i64>({42}));
 }
 
 TEST_CASE("an aggregate overload registers when its declaration object is constructed",
@@ -83,10 +83,10 @@ TEST_CASE("an aggregate overload registers when its declaration object is constr
         overload<aggregate_operator, pass_i64> pass_impl;
     };
 
-    CHECK_THROWS_AS(testing::test_graph(aggregate_operator, std::array<i64, 1>{3}), WiringError);
+    CHECK_THROWS_AS(bg::run_graph(aggregate_operator, std::array<i64, 1>{3}), WiringError);
 
     register_overloads<registration_group>();
-    CHECK(testing::test_graph(aggregate_operator, std::array<i64, 1>{3}).equals<i64>({3}));
+    CHECK(bg::run_graph(aggregate_operator, std::array<i64, 1>{3}).equals<i64>({3}));
 
     testing::test_wiring([&] {
         const auto source = node([](Out<TS<i64>>) {});
@@ -144,7 +144,7 @@ TEST_CASE("an overload registers an already constructed node template",
         overload<node_template_operator> registration{std::move(implementation)};
     }
 
-    CHECK(testing::test_graph(node_template_operator, std::array<i64, 1>{5}).equals<i64>({5}));
+    CHECK(bg::run_graph(node_template_operator, std::array<i64, 1>{5}).equals<i64>({5}));
 }
 
 TEST_CASE("an overload registers an already constructed graph template",
@@ -153,7 +153,7 @@ TEST_CASE("an overload registers an already constructed graph template",
         const auto implementation = graph([](wp<TS<i64>> value) { return value; });
         overload<graph_template_operator> registration{implementation};
     }
-    CHECK(testing::test_graph(graph_template_operator, std::array<i64, 1>{8}).equals<i64>({8}));
+    CHECK(bg::run_graph(graph_template_operator, std::array<i64, 1>{8}).equals<i64>({8}));
 }
 
 TEST_CASE("graph overload groups reflect member names and rename copies independently",
@@ -181,7 +181,7 @@ TEST_CASE("graph overload groups reflect member names and rename copies independ
     CHECK(named.signature().name().text() == "identity_graph");
     CHECK(renamed.signature().name().text() == "renamed_identity");
     CHECK(implementation.signature().name().text() != "identity_graph");
-    CHECK(testing::test_graph(reflected_graph_operator, std::array<i64, 1>{8}).equals<i64>({8}));
+    CHECK(bg::run_graph(reflected_graph_operator, std::array<i64, 1>{8}).equals<i64>({8}));
 }
 
 TEST_CASE("instantiate_overloads registers each selected class-template specialization",
@@ -189,8 +189,8 @@ TEST_CASE("instantiate_overloads registers each selected class-template speciali
     {
         const instantiate_overloads<family_operator, pass_value, i64, double> registrations;
     }
-    CHECK(testing::test_graph(family_operator, std::array<i64, 2>{2, 4}).equals<i64>({2, 4}));
-    CHECK(testing::test_graph(family_operator, std::array{1.5, 3.5}).equals<double>({1.5, 3.5}));
+    CHECK(bg::run_graph(family_operator, std::array<i64, 2>{2, 4}).equals<i64>({2, 4}));
+    CHECK(bg::run_graph(family_operator, std::array{1.5, 3.5}).equals<double>({1.5, 3.5}));
 }
 
 TEST_CASE("family overload groups apply one reflected name to each specialization",
@@ -269,7 +269,7 @@ TEST_CASE("an overload forwards node options to node",
         },
         schedule_on_start = true};
 
-    CHECK(testing::test_graph(scheduled_operator, std::array<std::optional<i64>, 1>{std::nullopt})
+    CHECK(bg::run_graph(scheduled_operator, std::array<std::optional<i64>, 1>{std::nullopt})
               .equals<bool>({false}));
 }
 
@@ -280,8 +280,8 @@ TEST_CASE("an overload forwards callable requirements and resolvers to node",
         resolve<RESULT> = []() -> const ScalarType & { return int64_type(); },
         require = [](const WiringArguments &arguments) { return &arguments.resolved_type(0) == &TS<i64>::type(); }};
 
-    CHECK(testing::test_graph(resolved_callable_operator, std::array<i64, 2>{2, 4}).equals<i64>({2, 4}));
-    CHECK_THROWS_AS(testing::test_graph(resolved_callable_operator, std::array{1.5}), WiringError);
+    CHECK(bg::run_graph(resolved_callable_operator, std::array<i64, 2>{2, 4}).equals<i64>({2, 4}));
+    CHECK_THROWS_AS(bg::run_graph(resolved_callable_operator, std::array{1.5}), WiringError);
 }
 
 TEST_CASE("registration members run in declaration order",
@@ -303,7 +303,7 @@ TEST_CASE("registration members run in declaration order",
 
     registration_order.clear();
     const registration_group registrations{};
-    CHECK(testing::test_graph(registration_order_operator, std::array<i64, 1>{0}).equals<i64>({2}));
+    CHECK(bg::run_graph(registration_order_operator, std::array<i64, 1>{0}).equals<i64>({2}));
     CHECK(registration_order == std::vector<int>{1, 2});
 }
 

@@ -6,7 +6,7 @@
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -23,7 +23,7 @@ TEST_CASE("a constant value updates only in the first test graph cycle",
         return operators::const_(3);
     };
 
-    CHECK(testing::test_graph(graph, {1, 2}).equals<i64>({3, std::nullopt}));
+    CHECK(bg::run_graph(graph, {1, 2}).equals<i64>({3, std::nullopt}));
 }
 
 TEST_CASE("a constant waits for another required input",
@@ -36,7 +36,7 @@ TEST_CASE("a constant waits for another required input",
     });
 
     const auto graph = [&](wp<TS<i64>> input) { return sum(operators::const_(4), input); };
-    const auto actual = testing::test_graph(graph, {std::nullopt, 3});
+    const auto actual = bg::run_graph(graph, {std::nullopt, 3});
 
     CHECK(actual.equals({std::nullopt, 7}));
     CHECK(evaluations == 1);
@@ -218,7 +218,7 @@ TEST_CASE("an inner constant uses its own start time",
 
     const auto outer = [&](wp<TS<bool>> run) { return nested(inner, run); };
 
-    const auto actual = testing::test_graph(outer, {false, true});
+    const auto actual = bg::run_graph(outer, {false, true});
 
     CHECK(actual.equals({std::nullopt, 2}));
 }

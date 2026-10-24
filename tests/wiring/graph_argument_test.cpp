@@ -27,7 +27,7 @@
 #include <string_view>
 #include <vector>
 
-namespace test_graph_argument {
+namespace run_graph_argument {
 
 struct captured_pointer {
     std::shared_ptr<int> value;
@@ -35,12 +35,12 @@ struct captured_pointer {
     friend bool operator==(const captured_pointer &, const captured_pointer &) = default;
 };
 
-} // namespace test_graph_argument
+} // namespace run_graph_argument
 
 namespace std {
 
-template <> struct hash<test_graph_argument::captured_pointer> {
-    std::size_t operator()(const test_graph_argument::captured_pointer &value) const noexcept {
+template <> struct hash<run_graph_argument::captured_pointer> {
+    std::size_t operator()(const run_graph_argument::captured_pointer &value) const noexcept {
         return std::hash<std::shared_ptr<int>>{}(value.value);
     }
 };
@@ -49,7 +49,7 @@ template <> struct hash<test_graph_argument::captured_pointer> {
 
 namespace bg {
 
-template <> struct scalar_type_traits<test_graph_argument::captured_pointer> {
+template <> struct scalar_type_traits<run_graph_argument::captured_pointer> {
     static const ScalarType &type() noexcept {
         class Type final : public ScalarType {
           public:
@@ -147,7 +147,7 @@ struct captured_integer_node {
 };
 
 struct captured_shared_pointer_node {
-    Scalar<test_graph_argument::captured_pointer> value;
+    Scalar<run_graph_argument::captured_pointer> value;
     Out<TS<i64>> output;
     void evaluate() const {}
 };
@@ -232,8 +232,8 @@ details::GraphWiringStructure captured_shared_pointer_structure(const std::share
     const auto context = WiringContext{wiring};
 
     const auto source = node<captured_shared_pointer_node>();
-    const auto result = source(ScalarValue<test_graph_argument::captured_pointer>{
-        test_graph_argument::captured_pointer{captured_value}});
+    const auto result = source(ScalarValue<run_graph_argument::captured_pointer>{
+        run_graph_argument::captured_pointer{captured_value}});
 
     (void)wiring.complete_pending_wiring();
     return details::graph_wiring_structure(wiring, std::span<const WiringPoint>{},

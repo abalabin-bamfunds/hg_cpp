@@ -3,7 +3,7 @@
 #include <bg/node.hpp>
 #include <bg/operator.hpp>
 #include <bg/scalar/type.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsl/details/wiring.hpp>
@@ -132,7 +132,7 @@ TEST_CASE("an aggregate variadic TSL materializes as one runtime-sized list",
         return first(left, right);
     };
 
-    const auto actual = testing::test_graph(tested, {1, 2, 3}, {4, 5, 6});
+    const auto actual = bg::run_graph(tested, {1, 2, 3}, {4, 5, 6});
 
     CHECK(actual.equals({1, 2, 3}));
 }
@@ -221,7 +221,7 @@ TEST_CASE("an empty materialized variadic TSL becomes valid at graph start",
           "[definition:aggregate][representation:free][validity:optional][transition:start]") {
     const auto validity = node<EmptyListValidity>();
 
-    const auto actual = testing::test_graph([&] { return validity(); });
+    const auto actual = bg::run_graph([&] { return validity(); });
 
     CHECK(actual.equals({true}));
 }
@@ -445,7 +445,7 @@ TEST_CASE("a direct variadic TSL crosses a nested boundary as one reference",
         return nested(inner, run, "values"_n = tsl(left, right));
     };
 
-    const auto actual = testing::test_graph(tested, {1, 2}, {3, 4}, {true, true});
+    const auto actual = bg::run_graph(tested, {1, 2}, {3, 4}, {true, true});
     CHECK(actual.equals({1, 2}));
 
     auto wiring = GraphWiring{};
@@ -506,7 +506,7 @@ TEST_CASE("a direct variadic TSB crosses a nested boundary as one reference",
         return nested(inner, run, "values"_n = make_bundle(count, value));
     };
 
-    const auto actual = testing::test_graph(tested, {1, 2}, {3.0F, 4.0F}, {true, true});
+    const auto actual = bg::run_graph(tested, {1, 2}, {3.0F, 4.0F}, {true, true});
     CHECK(actual.equals({1, 2}));
 
     auto wiring = GraphWiring{};

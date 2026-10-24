@@ -1,5 +1,5 @@
 #include <bg/library.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -18,10 +18,10 @@ TEST_CASE("split defaults to unlimited splitting for scalar and time-series text
     };
     const auto series = [](wp<TS<string>> text) { return operators::join(operators::split(text, ","), "|"); };
 
-    const auto scalar_result = testing::test_graph(scalar);
+    const auto scalar_result = bg::run_graph(scalar);
     CHECK(scalar_result.equals<string>({"a||b"}));
     CHECK(scalar_result.size() == 1);
-    CHECK(testing::test_graph(series, {"a,b", "c,,d"}).equals<string>({"a|b", "c||d"}));
+    CHECK(bg::run_graph(series, {"a,b", "c,,d"}).equals<string>({"a|b", "c||d"}));
 }
 
 TEST_CASE("split maxsplit preserves the remaining text",
@@ -30,7 +30,7 @@ TEST_CASE("split maxsplit preserves the remaining text",
         return operators::join(operators::split(text, ",", i64{1}), "|");
     };
 
-    CHECK(testing::test_graph(split, {"a,b,c", "x,,y"}).equals<string>({"a|b,c", "x|,y"}));
+    CHECK(bg::run_graph(split, {"a,b,c", "x,,y"}).equals<string>({"a|b,c", "x|,y"}));
 }
 
 TEST_CASE("split waits for required maxsplit and gates output validity",
@@ -43,10 +43,10 @@ TEST_CASE("split waits for required maxsplit and gates output validity",
         return operators::valid(operators::join(operators::split(text, ",", maxsplit), "|"));
     };
 
-    CHECK(testing::test_graph(split, {"a,b,c", literal::SKIP, "d,e,f", "g,h,i", "j,k,l", "m,n"},
+    CHECK(bg::run_graph(split, {"a,b,c", literal::SKIP, "d,e,f", "g,h,i", "j,k,l", "m,n"},
                               {literal::SKIP, 1, literal::SKIP, 2, literal::INVALID, 1})
               .equals<string>({std::nullopt, "a|b,c", "d|e,f", "g|h|i", std::nullopt, "m|n"}));
-    CHECK(testing::test_graph(valid, {"a,b", literal::INVALID, "c,d"}, {1, 1, 1})
+    CHECK(bg::run_graph(valid, {"a,b", literal::INVALID, "c,d"}, {1, 1, 1})
               .equals<bool>({true, false, true}));
 }
 
@@ -57,9 +57,9 @@ TEST_CASE("split preserves empty pieces and accepts scalar maxsplit",
         return operators::len_(operators::split(std::string_view{",a,"}, ",", i64{1}));
     };
 
-    CHECK(testing::test_graph(empty_size).equals<i64>({1}));
-    CHECK(testing::test_graph(limited_size).equals<i64>({2}));
-    CHECK_THROWS_AS(testing::test_graph([] { return operators::split(std::string_view{"a"}, ""); }),
+    CHECK(bg::run_graph(empty_size).equals<i64>({1}));
+    CHECK(bg::run_graph(limited_size).equals<i64>({2}));
+    CHECK_THROWS_AS(bg::run_graph([] { return operators::split(std::string_view{"a"}, ""); }),
                      std::invalid_argument);
 }
 
@@ -70,8 +70,8 @@ TEST_CASE("split supports an explicit fixed TSL result",
         return operators::join(pieces, "|");
     };
 
-    CHECK(testing::test_graph(split, {"a,b,c", "x,y,z"}).equals<string>({"a|b|c", "x|y|z"}));
-    CHECK_THROWS_AS(testing::test_graph(split, {"a,b"}), std::invalid_argument);
+    CHECK(bg::run_graph(split, {"a,b,c", "x,y,z"}).equals<string>({"a|b|c", "x|y|z"}));
+    CHECK_THROWS_AS(bg::run_graph(split, {"a,b"}), std::invalid_argument);
 }
 
 TEST_CASE("fixed split maxsplit preserves the final remainder",
@@ -81,7 +81,7 @@ TEST_CASE("fixed split maxsplit preserves the final remainder",
         return operators::join(pieces, "|");
     };
 
-    CHECK(testing::test_graph(split).equals<string>({"a|b|c|d,e"}));
+    CHECK(bg::run_graph(split).equals<string>({"a|b|c|d,e"}));
 }
 
 TEST_CASE("split and join preserve symbol, mixed, Unicode, and embedded NUL text",
@@ -101,10 +101,10 @@ TEST_CASE("split and join preserve symbol, mixed, Unicode, and embedded NUL text
         return operators::join(operators::split("left💠right💠end", "💠"), "|");
     };
 
-    CHECK(testing::test_graph(symbol_text).equals<string>({"left💠right"}));
-    CHECK(testing::test_graph(symbol_separator).equals<string>({"left::right"}));
-    CHECK(testing::test_graph(nul_separator).equals<string>({std::string_view{"a\0b\0c", 5}}));
-    CHECK(testing::test_graph(unicode_separator).equals<string>({"left|right|end"}));
+    CHECK(bg::run_graph(symbol_text).equals<string>({"left💠right"}));
+    CHECK(bg::run_graph(symbol_separator).equals<string>({"left::right"}));
+    CHECK(bg::run_graph(nul_separator).equals<string>({std::string_view{"a\0b\0c", 5}}));
+    CHECK(bg::run_graph(unicode_separator).equals<string>({"left|right|end"}));
 }
 
 TEST_CASE("split accepts explicit list outputs that accept the resolved output type",
@@ -119,9 +119,9 @@ TEST_CASE("split accepts explicit list outputs that accept the resolved output t
         return operators::split[type<TS<List<string>, TimeSeriesGuarantee::final>>](text, ",");
     };
 
-    CHECK(testing::test_graph(explicit_default).equals<string>({"a|b"}));
-    CHECK_THROWS_AS(testing::test_graph(wrong_item), WiringError);
-    CHECK_THROWS_AS(testing::test_graph(stronger_output, {"a,b"}), WiringError);
+    CHECK(bg::run_graph(explicit_default).equals<string>({"a|b"}));
+    CHECK_THROWS_AS(bg::run_graph(wrong_item), WiringError);
+    CHECK_THROWS_AS(bg::run_graph(stronger_output, {"a,b"}), WiringError);
 }
 
 TEST_CASE("fixed split rejects invalid output shapes and incompatible guarantees",
@@ -139,10 +139,10 @@ TEST_CASE("fixed split rejects invalid output shapes and incompatible guarantees
                                             TimeSeriesGuarantee::final>>](std::string_view{"a,b"}, ",");
     };
 
-    CHECK_THROWS_AS(testing::test_graph(zero_size), WiringError);
-    CHECK_THROWS_AS(testing::test_graph(wrong_item), WiringError);
-    CHECK_THROWS_AS(testing::test_graph(stronger_output, {"a,b"}), WiringError);
-    CHECK(testing::test_graph(constant_output).size() == 1);
+    CHECK_THROWS_AS(bg::run_graph(zero_size), WiringError);
+    CHECK_THROWS_AS(bg::run_graph(wrong_item), WiringError);
+    CHECK_THROWS_AS(bg::run_graph(stronger_output, {"a,b"}), WiringError);
+    CHECK(bg::run_graph(constant_output).size() == 1);
 }
 
 TEST_CASE("join supports scalar lists and all-scalar split with maxsplit",
@@ -154,8 +154,8 @@ TEST_CASE("join supports scalar lists and all-scalar split with maxsplit",
         return operators::join(operators::split(std::string_view{"a,b,c"}, ",", i64{1}), "|");
     };
 
-    CHECK(testing::test_graph(scalar_list).equals<string>({"a|b|c"}));
-    CHECK(testing::test_graph(split).equals<string>({"a|b,c"}));
+    CHECK(bg::run_graph(scalar_list).equals<string>({"a|b|c"}));
+    CHECK(bg::run_graph(split).equals<string>({"a|b,c"}));
 }
 
 TEST_CASE("scalar-list join supports symbols and mixed separators",
@@ -166,8 +166,8 @@ TEST_CASE("scalar-list join supports symbols and mixed separators",
     const auto string_separator = [&] { return operators::join(list.view(), "|"); };
     const auto symbol_separator = [&] { return operators::join(list.view(), symbol{"💠"}); };
 
-    CHECK(testing::test_graph(string_separator).equals<string>({"a|b|c"}));
-    CHECK(testing::test_graph(symbol_separator).equals<string>({"a💠b💠c"}));
+    CHECK(bg::run_graph(string_separator).equals<string>({"a|b|c"}));
+    CHECK(bg::run_graph(symbol_separator).equals<string>({"a💠b💠c"}));
 }
 
 TEST_CASE("join accepts free and reference-backed fixed TSL values",
@@ -183,10 +183,10 @@ TEST_CASE("join accepts free and reference-backed fixed TSL values",
         return result;
     };
 
-    CHECK(testing::test_graph(join_free, testing::input<TS<string>>({"a", "b", "c"}),
-                              testing::input<TS<string>>({"x", literal::INVALID, "z"}))
+    CHECK(bg::run_graph(join_free, bg::input<TS<string>>({"a", "b", "c"}),
+                              bg::input<TS<string>>({"x", literal::INVALID, "z"}))
               .equals<string>({"a|x", std::nullopt, "c|z"}));
-    CHECK(testing::test_graph(join_references, {"a", "b"}, {"x", "y"}).equals<string>({"a|x", "b|y"}));
+    CHECK(bg::run_graph(join_references, {"a", "b"}, {"x", "y"}).equals<string>({"a|x", "b|y"}));
 }
 
 TEST_CASE("join dereferences references stored in a fixed TSL",
@@ -201,7 +201,7 @@ TEST_CASE("join dereferences references stored in a fixed TSL",
         return operators::join(make_references(first, second), "|");
     };
 
-    CHECK(testing::test_graph(join_references, {"a", "b"}, {"x", "y"}).equals<string>({"a|x", "b|y"}));
+    CHECK(bg::run_graph(join_references, {"a", "b"}, {"x", "y"}).equals<string>({"a|x", "b|y"}));
 }
 
 TEST_CASE("split and join propagate the weakest input guarantee",
@@ -234,17 +234,17 @@ TEST_CASE("split and join propagate the weakest input guarantee",
         return operators::join(result, "|");
     };
 
-    CHECK(testing::test_graph(split, testing::input<TS<string, TimeSeriesGuarantee::final>>({"a,b"}), {","})
+    CHECK(bg::run_graph(split, bg::input<TS<string, TimeSeriesGuarantee::final>>({"a,b"}), {","})
               .equals<string>({"a|b"}));
-    CHECK(testing::test_graph(
-              join, testing::input<TSL<TS<string, TimeSeriesGuarantee::final>, 2, TimeSeriesGuarantee::final>>(
+    CHECK(bg::run_graph(
+              join, bg::input<TSL<TS<string, TimeSeriesGuarantee::final>, 2, TimeSeriesGuarantee::final>>(
                         {{{0, "a"}, {1, "b"}}}))
               .equals<string>({"a|b"}));
-    CHECK(testing::test_graph(optional_join,
-                              testing::input<TSL<TS<string, TimeSeriesGuarantee::final>, 2,
+    CHECK(bg::run_graph(optional_join,
+                              bg::input<TSL<TS<string, TimeSeriesGuarantee::final>, 2,
                                                  TimeSeriesGuarantee::final>>({{{0, "a"}, {1, "b"}}}))
               .equals<string>({"a|b"}));
-    CHECK(testing::test_graph(scalar_split).equals<string>({"a|b"}));
+    CHECK(bg::run_graph(scalar_split).equals<string>({"a|b"}));
 }
 
 TEST_CASE("join requires all TSL items unless the collection is optional",
@@ -255,11 +255,11 @@ TEST_CASE("join requires all TSL items unless the collection is optional",
         return operators::join("values"_n = opt(values), "|");
     };
 
-    CHECK(testing::test_graph(required, testing::input<TSL<TS<string>, 2>>(
+    CHECK(bg::run_graph(required, bg::input<TSL<TS<string>, 2>>(
                                              {literal::SKIP, {{0, "a"}}, {{1, "b"}},
                                               {{0, literal::INVALID}}, {{0, "c"}}}))
               .equals<string>({std::nullopt, std::nullopt, "a|b", std::nullopt, "c|b"}));
-    CHECK(testing::test_graph(optional, testing::input<TSL<TS<string>, 2>>(
+    CHECK(bg::run_graph(optional, bg::input<TSL<TS<string>, 2>>(
                                               {literal::SKIP, {{0, "a"}}, {{1, "b"}},
                                                {{0, literal::INVALID}}, {{0, "c"}}}))
               .equals<string>({std::nullopt, "a", "a|b", "b", "c|b"}));
@@ -270,10 +270,10 @@ TEST_CASE("join requires all TSL items unless the collection is optional",
     const auto optional_valid = [](wp<TSL<TS<string>, 2>> values) {
         return operators::valid(operators::join("values"_n = opt(values), "|"));
     };
-    CHECK(testing::test_graph(required_valid, testing::input<TSL<TS<string>, 2>>(
+    CHECK(bg::run_graph(required_valid, bg::input<TSL<TS<string>, 2>>(
                                                   {{{0, "a"}, {1, "b"}}, {{0, literal::INVALID}}, {{0, "c"}}}))
               .equals<bool>({true, false, true}));
-    CHECK(testing::test_graph(optional_valid, testing::input<TSL<TS<string>, 2>>(
+    CHECK(bg::run_graph(optional_valid, bg::input<TSL<TS<string>, 2>>(
                                                   {{{0, "a"}, {1, "b"}}, {{0, literal::INVALID}}, {{0, "c"}}}))
               .equals<bool>({true, std::nullopt, std::nullopt}));
 }
@@ -284,7 +284,7 @@ TEST_CASE("optional join treats an invalid collection root as empty without star
     const auto optional = [](wp<TSL<TS<string>, 2>> values) {
         return operators::join("values"_n = opt(values), "|");
     };
-    CHECK(testing::test_graph(optional, testing::input<TSL<TS<string>, 2>>(
+    CHECK(bg::run_graph(optional, bg::input<TSL<TS<string>, 2>>(
                                             {{{0, "a"}, {1, "b"}}, literal::INVALID,
                                              {{0, "c"}, {1, "d"}}}))
               .equals<string>({"a|b", "", "c|d"}));
@@ -299,12 +299,12 @@ TEST_CASE("required and optional joins require a valid time-series separator",
     const auto optional = [](wp<TSL<TS<string>, 2>> values, wp<TS<string>> separator) {
         return operators::join("values"_n = opt(values), separator);
     };
-    CHECK(testing::test_graph(required, testing::input<TSL<TS<string>, 2>>(
+    CHECK(bg::run_graph(required, bg::input<TSL<TS<string>, 2>>(
                                             {{{0, "a"}, {1, "b"}}, {{0, "c"}, {1, "d"}},
                                              {{0, "e"}, {1, "f"}}}),
                               {"|", literal::INVALID, "-"})
               .equals<string>({"a|b", std::nullopt, "e-f"}));
-    CHECK(testing::test_graph(optional, testing::input<TSL<TS<string>, 2>>(
+    CHECK(bg::run_graph(optional, bg::input<TSL<TS<string>, 2>>(
                                              {{{0, "a"}, {1, "b"}}, {{0, "c"}, {1, "d"}},
                                               {{0, "e"}, {1, "f"}}}),
                               {"|", literal::INVALID, "-"})
@@ -316,12 +316,12 @@ TEST_CASE("required and optional joins require a valid time-series separator",
     const auto optional_valid = [](wp<TSL<TS<string>, 2>> input, wp<TS<string>> join_separator) {
         return operators::valid(operators::join("values"_n = opt(input), join_separator));
     };
-    CHECK(testing::test_graph(required_valid, testing::input<TSL<TS<string>, 2>>(
+    CHECK(bg::run_graph(required_valid, bg::input<TSL<TS<string>, 2>>(
                                                   {{{0, "a"}, {1, "b"}}, {{0, "c"}, {1, "d"}},
                                                    {{0, "e"}, {1, "f"}}}),
                                       {"|", literal::INVALID, "-"})
               .equals<bool>({true, false, true}));
-    CHECK(testing::test_graph(optional_valid, testing::input<TSL<TS<string>, 2>>(
+    CHECK(bg::run_graph(optional_valid, bg::input<TSL<TS<string>, 2>>(
                                                   {{{0, "a"}, {1, "b"}}, {{0, "c"}, {1, "d"}},
                                                    {{0, "e"}, {1, "f"}}}),
                                       {"|", literal::INVALID, "-"})
@@ -331,5 +331,5 @@ TEST_CASE("required and optional joins require a valid time-series separator",
 TEST_CASE("join handles an empty fixed TSL",
           "[feature:operator][series:fixed-tsl][scalar:string]") {
     const auto join = [] { return operators::join(tsl<TS<string>>(), "|"); };
-    CHECK(testing::test_graph(join).equals<string>({""}));
+    CHECK(bg::run_graph(join).equals<string>({""}));
 }

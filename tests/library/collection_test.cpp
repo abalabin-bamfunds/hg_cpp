@@ -7,7 +7,7 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/ref/ref_provider.hpp>
@@ -34,7 +34,7 @@ using namespace bg::literals;
 TEST_CASE("len_ of a TSS follows key membership", "[feature:operator][series:tss][scalar:i64][shape:single-node]") {
     const auto graph = [](wp<TSS<i64>> value) { return operators::len_("value"_n = value); };
 
-    CHECK(testing::test_graph(graph, {{1}, {2, literal::REMOVED(1)}}).equals<i64>({1, 1}));
+    CHECK(bg::run_graph(graph, {{1}, {2, literal::REMOVED(1)}}).equals<i64>({1, 1}));
 }
 
 namespace {
@@ -175,7 +175,7 @@ TEST_CASE("len_ of a fixed TSL is a wiring-time constant",
         return operators::len_("value"_n = tsl(values));
     };
 
-    CHECK(testing::test_graph(graph).equals<i64>({3}));
+    CHECK(bg::run_graph(graph).equals<i64>({3}));
 
     auto wiring = GraphWiring{};
     auto result = WiringPoint{};
@@ -208,14 +208,14 @@ TEST_CASE("len_ of a fixed TSB is a wiring-time constant",
         return operators::len_("value"_n = values);
     };
 
-    CHECK(testing::test_graph(graph).equals<i64>({2}));
+    CHECK(bg::run_graph(graph).equals<i64>({2}));
 }
 
 TEST_CASE("len_ does not turn an invalid TSS into a valid empty set",
           "[feature:operator][series:tss][scalar:i64][validity:required][transition:first-tick]") {
     const auto graph = [](wp<TSS<i64>> values) { return operators::len_("value"_n = values); };
 
-    CHECK(testing::test_graph(graph, {literal::SKIP, {}}).equals<i64>({std::nullopt, 0}));
+    CHECK(bg::run_graph(graph, {literal::SKIP, {}}).equals<i64>({std::nullopt, 0}));
 }
 
 TEST_CASE("contains_ on a TSS queries the current key set",
@@ -224,7 +224,7 @@ TEST_CASE("contains_ on a TSS queries the current key set",
         return operators::contains_("collection"_n = collection, "key"_n = i64{1});
     };
 
-    CHECK(testing::test_graph(graph, {{1}, {2, literal::REMOVED(1)}, {1}}).equals<bool>({true, false, true}));
+    CHECK(bg::run_graph(graph, {{1}, {2, literal::REMOVED(1)}, {1}}).equals<bool>({true, false, true}));
 }
 
 TEST_CASE("contains_ distinguishes an invalid TSS from a valid empty TSS",
@@ -233,7 +233,7 @@ TEST_CASE("contains_ distinguishes an invalid TSS from a valid empty TSS",
         return operators::contains_("collection"_n = collection, "key"_n = i64{1});
     };
 
-    CHECK(testing::test_graph(graph, {literal::SKIP, {}}).equals<bool>({std::nullopt, false}));
+    CHECK(bg::run_graph(graph, {literal::SKIP, {}}).equals<bool>({std::nullopt, false}));
 }
 
 TEST_CASE("contains_ on a TSS accepts a time-series key",
@@ -242,7 +242,7 @@ TEST_CASE("contains_ on a TSS accepts a time-series key",
         return operators::contains_("collection"_n = collection, "key"_n = key);
     };
 
-    CHECK(testing::test_graph(graph, {{1}, {2}}, {1, 2}).equals<bool>({true, true}));
+    CHECK(bg::run_graph(graph, {{1}, {2}}, {1, 2}).equals<bool>({true, true}));
 }
 
 TEST_CASE("contains_ on a TSD distinguishes key presence from valid item presence",
@@ -254,9 +254,9 @@ TEST_CASE("contains_ on a TSD distinguishes key presence from valid item presenc
     const auto valid_item_contains = [](wp<TSD<i64, TS<i64>>> collection) {
         return operators::contains_("collection"_n = valid_items(collection), "key"_n = i64{7});
     };
-    CHECK(testing::test_graph(physical, {{{7, 70}}, {{7, literal::INVALID}}, {{7, 71}}})
+    CHECK(bg::run_graph(physical, {{{7, 70}}, {{7, literal::INVALID}}, {{7, 71}}})
               .equals<bool>({true, std::nullopt, std::nullopt}));
-    CHECK(testing::test_graph(valid_item_contains, {{{7, 70}}, {{7, literal::INVALID}}, {{7, 71}}})
+    CHECK(bg::run_graph(valid_item_contains, {{{7, 70}}, {{7, literal::INVALID}}, {{7, 71}}})
               .equals<bool>({true, false, true}));
 }
 
@@ -281,10 +281,10 @@ TEST_CASE("valid-item TSD membership uses REF item validity, not target validity
             return observe(make_dictionary(command, target_value));
         };
         Definition::evaluation_count = 0;
-        auto actual = testing::test_graph(
+        auto actual = bg::run_graph(
             graph,
-            testing::input<TS<i64>>({literal::INVALID, i64{10}, i64{20}, literal::INVALID, literal::INVALID, i64{30}}),
-            testing::input<TS<i64>>({0, 3, 3, 1, 2, 3}));
+            bg::input<TS<i64>>({literal::INVALID, i64{10}, i64{20}, literal::INVALID, literal::INVALID, i64{30}}),
+            bg::input<TS<i64>>({0, 3, 3, 1, 2, 3}));
         return std::pair{std::move(actual), Definition::evaluation_count};
     };
 
@@ -306,7 +306,7 @@ TEST_CASE("an aggregate can bind a dynamic reference and dynamic value input tog
         return observe(values, keys, key, i64{0});
     };
 
-    const auto actual = testing::test_graph(graph, {{{1, 10}}, {{1, 10}}, {{1, 10}}},
+    const auto actual = bg::run_graph(graph, {{{1, 10}}, {{1, 10}}, {{1, 10}}},
                                             {{1}, {literal::REMOVED(1)}, {1}}, {1, 1, 1});
 
     CHECK(actual.equals<bool>({true, false, true}));
@@ -321,7 +321,7 @@ TEST_CASE("a TSD membership binding ignores unrelated keys and item updates",
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return observe(input); };
     Definition::evaluation_count = 0;
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {{{7, 70}}, {{8, 80}}, {{7, literal::INVALID}}, {{7, literal::REMOVE}}, {{7, 71}}, {{8, 81}}});
 
     CHECK(actual.equals<bool>({true, std::nullopt, std::nullopt, false, true, std::nullopt}));
@@ -377,7 +377,7 @@ TEST_CASE("TSD membership supports shared consumers and release followed by rebi
         return observe(collection, key, first_active, second_active);
     };
 
-    const auto actual = testing::test_graph(graph,
+    const auto actual = bg::run_graph(graph,
                                             {{{7, 70}}, {{7, 70}}, {{7, 70}}, {{7, literal::REMOVE}},
                                              literal::SKIP, literal::SKIP, {{7, 71}}},
                                             {7, 7, 7, 7, 7, 7, 7},
@@ -394,7 +394,7 @@ TEST_CASE("a failed dynamic membership subscription preserves the previous bindi
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> collection) { return observe(collection); };
 
-    CHECK(testing::test_graph(graph, {{{7, 70}}, {{7, literal::REMOVE}}}).equals<bool>({true, false}));
+    CHECK(bg::run_graph(graph, {{{7, 70}}, {{7, literal::REMOVE}}}).equals<bool>({true, false}));
 }
 
 TEST_CASE("absent TSD membership key churn releases unused descriptors while the graph is alive",
@@ -456,7 +456,7 @@ TEST_CASE("valid-item TSD membership observes selected item validity only",
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return observe(input); };
     Definition::evaluation_count = 0;
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {{{7, 70}}, {{8, 80}}, {{7, literal::INVALID}}, {{8, 81}}, {{7, 71}}});
 
     CHECK(actual.equals<bool>({true, std::nullopt, false, std::nullopt, true}));
@@ -470,7 +470,7 @@ TEST_CASE("contains_ on a TSD handles an invalid and revalidated time-series key
         return operators::contains_("collection"_n = collection, "key"_n = key);
     };
 
-    const auto actual = testing::test_graph(graph, {{{7, 70}}, {{7, 70}}, {{7, 70}}}, {7, literal::INVALID, 7});
+    const auto actual = bg::run_graph(graph, {{{7, 70}}, {{7, 70}}, {{7, 70}}}, {7, literal::INVALID, 7});
 
     CHECK(actual.equals({true, literal::INVALID, true}));
 }
@@ -481,7 +481,7 @@ TEST_CASE("contains_ accepts an unchanged ordinary time-series key",
         return operators::contains_("collection"_n = collection, "key"_n = key);
     };
 
-    const auto actual = testing::test_graph(graph, {{{7, 70}}, {{7, 70}}}, {7, 7});
+    const auto actual = bg::run_graph(graph, {{{7, 70}}, {{7, 70}}}, {7, 7});
 
     CHECK(actual.equals<bool>({true, true}));
 }
@@ -492,7 +492,7 @@ TEST_CASE("contains_ follows a time-series key through absent-key churn",
         return operators::contains_("collection"_n = collection, "key"_n = key);
     };
 
-    const auto actual = testing::test_graph(graph,
+    const auto actual = bg::run_graph(graph,
                                             {{{7, 70}}, literal::SKIP, literal::SKIP, literal::SKIP,
                                              literal::SKIP, literal::SKIP},
                                             {8, 9, 8, 7, 9, 7});
@@ -509,7 +509,7 @@ TEST_CASE("contains_ follows a selected TSD reference when membership is unchang
         return operators::contains_("collection"_n = selected, "key"_n = i64{7});
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {true, false, true, false, true, false, true},
         {{{7, 70}}, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP,
          {{7, literal::REMOVE}}},
@@ -546,7 +546,7 @@ TEST_CASE("contains_ follows a stable nested TSD reference when its backing chan
         return operators::contains_("collection"_n = observed, "key"_n = i64{7});
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         tested, {false, true, false, true}, {{{7, 70}}, literal::SKIP, literal::SKIP, literal::SKIP},
         {{}, literal::SKIP, literal::SKIP, literal::SKIP});
 
@@ -577,7 +577,7 @@ TEST_CASE("TSD membership resubscribes when its switch branch is recreated",
     };
 
     Definition::evaluation_count = 0;
-    const auto actual = testing::test_graph(tested, {1, 2, 1, 2, 1}, {10, 20, 30, 40, 50});
+    const auto actual = bg::run_graph(tested, {1, 2, 1, 2, 1}, {10, 20, 30, 40, 50});
 
     CHECK(actual.equals<bool>({true, false, true, false, true}));
     CHECK(Definition::evaluation_count == 3);
@@ -588,10 +588,10 @@ TEST_CASE("is_empty observes required and optional TSS membership",
           "[transition:first-tick][transition:invalidation][transition:revalidation]") {
     const auto required = [](wp<TSS<i64>> values) { return operators::is_empty(values); };
     const auto optional = [](wp<TSS<i64>> values) { return operators::is_empty(opt(values)); };
-    CHECK(testing::test_graph(required, testing::input<TSS<i64>>(
+    CHECK(bg::run_graph(required, bg::input<TSS<i64>>(
                                            {literal::SKIP, {}, {1}, {literal::REMOVED(1)}}))
               .equals<bool>({std::nullopt, true, false, true}));
-    CHECK(testing::test_graph(optional, testing::input<TSS<i64>>(
+    CHECK(bg::run_graph(optional, bg::input<TSS<i64>>(
                                            {literal::SKIP, {}, {1}, {literal::REMOVED(1)}}))
               .equals<bool>({std::nullopt, true, false, true}));
 }
@@ -602,12 +602,12 @@ TEST_CASE("TSS equality accounts for simultaneous membership changes",
     const auto equal = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs == rhs; };
     const auto not_equal = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return operators::ne(lhs, rhs); };
 
-    const auto equal_result = testing::test_graph(
-        equal, testing::input<TSS<i64>>({{1}, {2}, {3}, {literal::REMOVED(2)}}),
-        testing::input<TSS<i64>>({{1}, {3}, {2}, {literal::REMOVED(2)}}));
-    const auto not_equal_result = testing::test_graph(
-        not_equal, testing::input<TSS<i64>>({{1}, {2}, {3}, {literal::REMOVED(2)}}),
-        testing::input<TSS<i64>>({{1}, {3}, {2}, {literal::REMOVED(2)}}));
+    const auto equal_result = bg::run_graph(
+        equal, bg::input<TSS<i64>>({{1}, {2}, {3}, {literal::REMOVED(2)}}),
+        bg::input<TSS<i64>>({{1}, {3}, {2}, {literal::REMOVED(2)}}));
+    const auto not_equal_result = bg::run_graph(
+        not_equal, bg::input<TSS<i64>>({{1}, {2}, {3}, {literal::REMOVED(2)}}),
+        bg::input<TSS<i64>>({{1}, {3}, {2}, {literal::REMOVED(2)}}));
     CHECK(equal_result.equals<bool>({true, false, true, true}));
     CHECK(not_equal_result.equals<bool>({false, true, false, false}));
 }
@@ -616,11 +616,11 @@ TEST_CASE("TSS equality preserves mismatch counts across same-cycle key changes"
           "[feature:operator][series:tss][scalar:i64][transition:addition][transition:removal]") {
     const auto equal = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs == rhs; };
 
-    CHECK(testing::test_graph(
+    CHECK(bg::run_graph(
               equal,
-              testing::input<TSS<i64>>({{}, {1}, {2}, {literal::REMOVED(1)}, {literal::REMOVED(2)}, {2},
+              bg::input<TSS<i64>>({{}, {1}, {2}, {literal::REMOVED(1)}, {literal::REMOVED(2)}, {2},
                                         {literal::REMOVED(2)}, literal::SKIP, {3}}),
-              testing::input<TSS<i64>>({{}, {1}, literal::SKIP, {literal::REMOVED(1)}, {2}, literal::SKIP,
+              bg::input<TSS<i64>>({{}, {1}, literal::SKIP, {literal::REMOVED(1)}, {2}, literal::SKIP,
                                         {literal::REMOVED(2)}, {3}, literal::SKIP}))
               .equals<bool>({true, true, false, false, false, true, true, false, true}));
 }
@@ -632,10 +632,10 @@ TEST_CASE("TSS equality reconciles after required input invalidation",
         return operators::if_then_else(condition, never_valid, values) == values;
     };
 
-    const auto result = testing::test_graph(
-        equal, testing::input<TS<bool>>({false, true, true, false}),
-        testing::input<TSS<i64>>({literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP}),
-        testing::input<TSS<i64>>({{1}, {1}, {2}, {2}}));
+    const auto result = bg::run_graph(
+        equal, bg::input<TS<bool>>({false, true, true, false}),
+        bg::input<TSS<i64>>({literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP}),
+        bg::input<TSS<i64>>({{1}, {1}, {2}, {2}}));
     CHECK(result.equals<bool>({true, std::nullopt, std::nullopt, true}));
 }
 
@@ -646,8 +646,8 @@ TEST_CASE("optional TSS equality treats invalid inputs as empty with ordinary ou
         return operators::eq("lhs"_n = opt(lhs), "rhs"_n = opt(rhs));
     };
 
-    CHECK(testing::test_graph(equal, testing::input<TSS<i64>>({literal::SKIP, {}, {1}}),
-                              testing::input<TSS<i64>>({{}, {}, {2}}))
+    CHECK(bg::run_graph(equal, bg::input<TSS<i64>>({literal::SKIP, {}, {1}}),
+                              bg::input<TSS<i64>>({{}, {}, {2}}))
               .equals<bool>({true, true, false}));
 }
 
@@ -673,13 +673,13 @@ TEST_CASE("TSS equality preserves required guarantees and weakens optional guara
         return required;
     };
 
-    CHECK(testing::test_graph(check_final,
-                              testing::input<TSS<i64, TimeSeriesGuarantee::final>>({{1}}),
-                              testing::input<TSS<i64, TimeSeriesGuarantee::final>>({{1}}))
+    CHECK(bg::run_graph(check_final,
+                              bg::input<TSS<i64, TimeSeriesGuarantee::final>>({{1}}),
+                              bg::input<TSS<i64, TimeSeriesGuarantee::final>>({{1}}))
               .equals<bool>({true}));
-    CHECK(testing::test_graph(check_deduplicated,
-                              testing::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{1}, {2}}),
-                              testing::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{1}, {3}}))
+    CHECK(bg::run_graph(check_deduplicated,
+                              bg::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{1}, {2}}),
+                              bg::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{1}, {3}}))
               .equals<bool>({true, false}));
 }
 
@@ -689,28 +689,28 @@ TEST_CASE("TSS set operators publish only changes to their result",
     const auto intersection = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs & rhs; };
     const auto difference = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs - rhs; };
     const auto symmetric_difference = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs ^ rhs; };
-    CHECK(testing::test_graph(set_union,
-                              testing::input<TSS<i64>>({{1, 2}, {3, literal::REMOVED(1)}, literal::SKIP,
+    CHECK(bg::run_graph(set_union,
+                              bg::input<TSS<i64>>({{1, 2}, {3, literal::REMOVED(1)}, literal::SKIP,
                                                         {literal::REMOVED(2)}}),
-                              testing::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
+                              bg::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
                                                         literal::SKIP}))
               .equals({{1, 2, 3}, literal::SKIP, literal::SKIP, literal::SKIP}));
-    CHECK(testing::test_graph(intersection,
-                              testing::input<TSS<i64>>({{1, 2}, {3, literal::REMOVED(1)}, literal::SKIP,
+    CHECK(bg::run_graph(intersection,
+                              bg::input<TSS<i64>>({{1, 2}, {3, literal::REMOVED(1)}, literal::SKIP,
                                                         {literal::REMOVED(2)}}),
-                              testing::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
+                              bg::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
                                                         literal::SKIP}))
               .equals({{2}, {3, literal::REMOVED(2)}, {2, literal::REMOVED(3)}, {literal::REMOVED(2)}}));
-    CHECK(testing::test_graph(difference,
-                              testing::input<TSS<i64>>({{1, 2}, {3, literal::REMOVED(1)}, literal::SKIP,
+    CHECK(bg::run_graph(difference,
+                              bg::input<TSS<i64>>({{1, 2}, {3, literal::REMOVED(1)}, literal::SKIP,
                                                         {literal::REMOVED(2)}}),
-                              testing::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
+                              bg::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
                                                         literal::SKIP}))
               .equals({{1}, {2, literal::REMOVED(1)}, {3, literal::REMOVED(2)}, literal::SKIP}));
-    CHECK(testing::test_graph(symmetric_difference,
-                              testing::input<TSS<i64>>({{1, 2}, {3, literal::REMOVED(1)}, literal::SKIP,
+    CHECK(bg::run_graph(symmetric_difference,
+                              bg::input<TSS<i64>>({{1, 2}, {3, literal::REMOVED(1)}, literal::SKIP,
                                                         {literal::REMOVED(2)}}),
-                              testing::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
+                              bg::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
                                                         literal::SKIP}))
               .equals({{1, 3}, {2, literal::REMOVED(3)}, {3, literal::REMOVED(2)}, {2}}));
 }
@@ -721,21 +721,21 @@ TEST_CASE("TSS set operations handle same-cycle additions, removals, and key mov
     const auto intersection = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs & rhs; };
     const auto difference = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs - rhs; };
     const auto symmetric_difference = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs ^ rhs; };
-    CHECK(testing::test_graph(set_union, testing::input<TSS<i64>>({{1}, {2}, {literal::REMOVED(2)}, {3}}),
-                              testing::input<TSS<i64>>({{}, {2}, {3, literal::REMOVED(2)},
+    CHECK(bg::run_graph(set_union, bg::input<TSS<i64>>({{1}, {2}, {literal::REMOVED(2)}, {3}}),
+                              bg::input<TSS<i64>>({{}, {2}, {3, literal::REMOVED(2)},
                                                         {literal::REMOVED(3)}}))
               .equals({{1}, {2}, {3, literal::REMOVED(2)}, literal::SKIP}));
-    CHECK(testing::test_graph(intersection, testing::input<TSS<i64>>({{1}, {2}, {literal::REMOVED(2)}, {3}}),
-                              testing::input<TSS<i64>>({{}, {2}, {3, literal::REMOVED(2)},
+    CHECK(bg::run_graph(intersection, bg::input<TSS<i64>>({{1}, {2}, {literal::REMOVED(2)}, {3}}),
+                              bg::input<TSS<i64>>({{}, {2}, {3, literal::REMOVED(2)},
                                                         {literal::REMOVED(3)}}))
               .equals({{}, {2}, {literal::REMOVED(2)}, literal::SKIP}));
-    CHECK(testing::test_graph(difference, testing::input<TSS<i64>>({{1}, {2}, {literal::REMOVED(2)}, {3}}),
-                              testing::input<TSS<i64>>({{}, {2}, {3, literal::REMOVED(2)},
+    CHECK(bg::run_graph(difference, bg::input<TSS<i64>>({{1}, {2}, {literal::REMOVED(2)}, {3}}),
+                              bg::input<TSS<i64>>({{}, {2}, {3, literal::REMOVED(2)},
                                                         {literal::REMOVED(3)}}))
               .equals({{1}, literal::SKIP, literal::SKIP, {3}}));
-    CHECK(testing::test_graph(
-              symmetric_difference, testing::input<TSS<i64>>({{1}, {2}, {literal::REMOVED(2)}, {3}}),
-              testing::input<TSS<i64>>({{}, {2}, {3, literal::REMOVED(2)}, {literal::REMOVED(3)}}))
+    CHECK(bg::run_graph(
+              symmetric_difference, bg::input<TSS<i64>>({{1}, {2}, {literal::REMOVED(2)}, {3}}),
+              bg::input<TSS<i64>>({{}, {2}, {3, literal::REMOVED(2)}, {literal::REMOVED(3)}}))
               .equals({{1}, literal::SKIP, {3}, literal::SKIP}));
 }
 
@@ -763,16 +763,16 @@ TEST_CASE("TSS set operators propagate guarantees and weaken optional inputs",
         return result;
     };
 
-    CHECK(testing::test_graph(check_final, testing::input<TSS<i64, TimeSeriesGuarantee::final>>({{1}}),
-                              testing::input<TSS<i64, TimeSeriesGuarantee::final>>({{2}}))
+    CHECK(bg::run_graph(check_final, bg::input<TSS<i64, TimeSeriesGuarantee::final>>({{1}}),
+                              bg::input<TSS<i64, TimeSeriesGuarantee::final>>({{2}}))
               .equals({{1, 2}}));
-    CHECK(testing::test_graph(
+    CHECK(bg::run_graph(
               check_deduplicated,
-              testing::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{1}}),
-              testing::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{2}}))
+              bg::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{1}}),
+              bg::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{2}}))
               .equals({{1, 2}}));
-    CHECK(testing::test_graph(check_const, testing::input<TSS<i64, TimeSeriesGuarantee::const_>>({{1, 2}}),
-                              testing::input<TSS<i64, TimeSeriesGuarantee::const_>>({{2, 3}}))
+    CHECK(bg::run_graph(check_const, bg::input<TSS<i64, TimeSeriesGuarantee::const_>>({{1, 2}}),
+                              bg::input<TSS<i64, TimeSeriesGuarantee::const_>>({{2, 3}}))
               .equals({{2}}));
 }
 
@@ -783,16 +783,16 @@ TEST_CASE("TSS set operations accept erased wiring points and treat optional inv
     const auto difference = [](wp<> lhs, wp<> rhs) {
         return operators::sub("lhs"_n = opt(lhs), "rhs"_n = opt(rhs));
     };
-    CHECK(testing::test_graph(set_union, testing::input<TSS<i64>>({literal::SKIP, {1, 2}}),
-                              testing::input<TSS<i64>>({{1}, {2}}))
+    CHECK(bg::run_graph(set_union, bg::input<TSS<i64>>({literal::SKIP, {1, 2}}),
+                              bg::input<TSS<i64>>({{1}, {2}}))
               .equals({literal::SKIP, {1, 2}}));
-    CHECK(testing::test_graph(difference, testing::input<TSS<i64>>({literal::SKIP, {1, 2}}),
-                              testing::input<TSS<i64>>({{1}, {2}}))
+    CHECK(bg::run_graph(difference, bg::input<TSS<i64>>({literal::SKIP, {1, 2}}),
+                              bg::input<TSS<i64>>({{1}, {2}}))
               .equals({{}, literal::SKIP}));
 
     const auto one_optional = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return opt(lhs) | rhs; };
-    CHECK(testing::test_graph(one_optional, testing::input<TSS<i64>>({literal::SKIP, {1, 2}}),
-                              testing::input<TSS<i64>>({{1}, {2}}))
+    CHECK(bg::run_graph(one_optional, bg::input<TSS<i64>>({literal::SKIP, {1, 2}}),
+                              bg::input<TSS<i64>>({{1}, {2}}))
               .equals({{1}, {2}}));
 }
 
@@ -809,7 +809,7 @@ TEST_CASE("TSS set operations retain members while a required reference is inval
         return select(phase, populated, invalid) | rhs;
     };
 
-    CHECK(testing::test_graph(graph, {0, 1, 2, 3}, {{1}, literal::SKIP, literal::SKIP, literal::SKIP}, {},
+    CHECK(bg::run_graph(graph, {0, 1, 2, 3}, {{1}, literal::SKIP, literal::SKIP, literal::SKIP}, {},
                               {{2}, {3, literal::REMOVED(2)}, {4, literal::REMOVED(3)}, literal::SKIP})
               .equals({{1, 2}, literal::SKIP, literal::SKIP, {4, literal::REMOVED(2)}}));
 }
@@ -838,16 +838,16 @@ TEST_CASE("optional TSS set operations remove an invalid reference contribution"
         return opt(selected) ^ rhs;
     };
 
-    CHECK(testing::test_graph(set_union, {true, false, true}, {{1, 2}, literal::SKIP, literal::SKIP}, {},
+    CHECK(bg::run_graph(set_union, {true, false, true}, {{1, 2}, literal::SKIP, literal::SKIP}, {},
                               {{2}, literal::SKIP, literal::SKIP})
               .equals({{1, 2}, {literal::REMOVED(1)}, {1}}));
-    CHECK(testing::test_graph(intersection, {true, false, true}, {{1, 2}, literal::SKIP, literal::SKIP}, {},
+    CHECK(bg::run_graph(intersection, {true, false, true}, {{1, 2}, literal::SKIP, literal::SKIP}, {},
                               {{2}, literal::SKIP, literal::SKIP})
               .equals({{2}, {literal::REMOVED(2)}, {2}}));
-    CHECK(testing::test_graph(difference, {true, false, true}, {{1, 2}, literal::SKIP, literal::SKIP}, {},
+    CHECK(bg::run_graph(difference, {true, false, true}, {{1, 2}, literal::SKIP, literal::SKIP}, {},
                               {{2}, literal::SKIP, literal::SKIP})
               .equals({{1}, {literal::REMOVED(1)}, {1}}));
-    CHECK(testing::test_graph(symmetric_difference, {true, false, true},
+    CHECK(bg::run_graph(symmetric_difference, {true, false, true},
                               {{1, 2}, literal::SKIP, literal::SKIP}, {}, {{2}, literal::SKIP, literal::SKIP})
               .equals({{1}, {2, literal::REMOVED(1)}, {1, literal::REMOVED(2)}}));
 }
@@ -859,7 +859,7 @@ TEST_CASE("TSS set operations do not publish when a valid reference selects equa
         return operators::if_then_else(condition, first, second) | rhs;
     };
 
-    CHECK(testing::test_graph(graph, {true, false}, {{1}, literal::SKIP}, {{1}, literal::SKIP},
+    CHECK(bg::run_graph(graph, {true, false}, {{1}, literal::SKIP}, {{1}, literal::SKIP},
                               {{2}, literal::SKIP})
               .equals({{1, 2}, literal::SKIP}));
 }
@@ -871,7 +871,7 @@ TEST_CASE("TSS set operations include the old target's same-cycle change when a 
         return lhs | operators::if_then_else(condition, old_target, new_target);
     };
 
-    CHECK(testing::test_graph(graph, {true, false}, {{1}, literal::SKIP}, {{2}, {3, literal::REMOVED(2)}},
+    CHECK(bg::run_graph(graph, {true, false}, {{1}, literal::SKIP}, {{2}, {3, literal::REMOVED(2)}},
                               {{3}, literal::SKIP})
               .equals({{1, 2}, {3, literal::REMOVED(2)}}));
 }
@@ -883,7 +883,7 @@ TEST_CASE("TSS set operations do not replay a stale old-target delta when a refe
         return lhs | operators::if_then_else(condition, old_target, new_target);
     };
 
-    CHECK(testing::test_graph(graph, {true, false}, {{1}, literal::SKIP}, {{2}, literal::SKIP},
+    CHECK(bg::run_graph(graph, {true, false}, {{1}, literal::SKIP}, {{2}, literal::SKIP},
                               {{3}, literal::SKIP})
               .equals({{1, 2}, {3, literal::REMOVED(2)}}));
 }
@@ -894,9 +894,9 @@ TEST_CASE("TSS equality sees same-cycle removals from a sampled previous target"
         return operators::if_then_else(condition, old_target, new_target) == new_target;
     };
 
-    CHECK(testing::test_graph(graph, {true, false},
-                              testing::input<TSS<i64>>({{2}, {3, literal::REMOVED(2)}}),
-                              testing::input<TSS<i64>>({{3}, literal::SKIP}))
+    CHECK(bg::run_graph(graph, {true, false},
+                              bg::input<TSS<i64>>({{2}, {3, literal::REMOVED(2)}}),
+                              bg::input<TSS<i64>>({{3}, literal::SKIP}))
               .equals<bool>({false, true}));
 }
 
@@ -904,7 +904,7 @@ TEST_CASE("TSS set operators support string keys",
           "[feature:operator][series:tss][scalar:string][transition:addition][transition:removal]") {
     const auto graph = [](wp<TSS<string>> lhs, wp<TSS<string>> rhs) { return lhs | rhs; };
 
-    CHECK(testing::test_graph(graph, {{"alpha", "beta"}, {literal::REMOVED("alpha"), "gamma"}}, {{"beta"}})
+    CHECK(bg::run_graph(graph, {{"alpha", "beta"}, {literal::REMOVED("alpha"), "gamma"}}, {{"beta"}})
               .equals({{"alpha", "beta"}, {"gamma", literal::REMOVED("alpha")}}));
 }
 
@@ -914,7 +914,7 @@ TEST_CASE("contains_ does not reevaluate when unrelated TSS keys change",
         return operators::contains_("collection"_n = collection, "key"_n = i64{1});
     };
 
-    CHECK(testing::test_graph(graph, {{2}, {3}, {4}, {1}, {5}, {literal::REMOVED(1)}, {6}})
+    CHECK(bg::run_graph(graph, {{2}, {3}, {4}, {1}, {5}, {literal::REMOVED(1)}, {6}})
               .equals<bool>({false, std::nullopt, std::nullopt, true, std::nullopt, false, std::nullopt}));
 }
 
@@ -938,7 +938,7 @@ TEST_CASE("mapped contains_ branches share an outer TSS and release removed subs
         return result[i64{7}];
     };
 
-    (void)testing::test_graph(tested, {{7, 8}, {}, {}, {literal::REMOVED(7)}, {}, {7}},
+    (void)bg::run_graph(tested, {{7, 8}, {}, {}, {literal::REMOVED(7)}, {}, {7}},
                               {{7}, {9}, {literal::REMOVED(7)}, {}, {7}, {}});
 
     const auto expected_evaluations = std::array<std::size_t, 2>{3, 1};
@@ -952,7 +952,7 @@ TEST_CASE("contains_ follows a time-series key through invalidation and revalida
         return operators::contains_("collection"_n = collection, "key"_n = key);
     };
 
-    CHECK(testing::test_graph(graph, {{1, 2}, {1, 2}, {1, 2}}, {1, literal::INVALID, 2})
+    CHECK(bg::run_graph(graph, {{1, 2}, {1, 2}, {1, 2}}, {1, literal::INVALID, 2})
               .equals({true, literal::INVALID, true}));
 }
 
@@ -964,11 +964,11 @@ TEST_CASE("contains_ follows a selected TSS reference through retargeting and in
         return operators::contains_("collection"_n = selected, "key"_n = i64{1});
     };
 
-    CHECK(testing::test_graph(query, {true, false, literal::INVALID, true, true, true},
+    CHECK(bg::run_graph(query, {true, false, literal::INVALID, true, true, true},
                               {{1}, {2}, {3}, {1}, {1}, {1}}, {{2}, {2}, {3}, {3}, {3}, {3}})
               .equals({true, false, literal::INVALID, true, literal::SKIP, literal::SKIP}));
 
-    CHECK(testing::test_graph(
+    CHECK(bg::run_graph(
               query, {true, true, true}, {literal::SKIP, literal::SKIP, literal::SKIP}, {{1}, {1}, {1}})
               .equals({literal::SKIP, literal::SKIP, literal::SKIP}));
 
@@ -976,7 +976,7 @@ TEST_CASE("contains_ follows a selected TSS reference through retargeting and in
         const auto selected = operators::if_then_else(condition, left, right);
         return operators::valid(operators::contains_("collection"_n = selected, "key"_n = i64{1}));
     };
-    CHECK(testing::test_graph(observe_validity,
+    CHECK(bg::run_graph(observe_validity,
                               {true, false, literal::INVALID, true, true, true},
                               {{1}, {2}, {3}, {1}, {1}, {1}}, {{2}, {2}, {3}, {3}, {3}, {3}})
               .equals({true, literal::SKIP, false, true, literal::SKIP, literal::SKIP}));
@@ -990,7 +990,7 @@ TEST_CASE("contains_ propagates a final TSS guarantee",
         return result;
     };
 
-    CHECK(testing::test_graph(graph).equals<bool>({true}));
+    CHECK(bg::run_graph(graph).equals<bool>({true}));
 }
 
 TEST_CASE("contains_ combines a final TSS with an ordinary time-series key",
@@ -1001,7 +1001,7 @@ TEST_CASE("contains_ combines a final TSS with an ordinary time-series key",
         return result;
     };
 
-    CHECK(testing::test_graph(graph, {1, 2, 3}).equals<bool>({true, true, false}));
+    CHECK(bg::run_graph(graph, {1, 2, 3}).equals<bool>({true, true, false}));
 }
 
 TEST_CASE("contains_ propagates TSD collection and key guarantees",
@@ -1068,12 +1068,12 @@ TEST_CASE("len_ forwards equal sizes for ordinary inputs and suppresses them for
         return operators::len_("value"_n = values);
     };
 
-    CHECK(testing::test_graph(ordinary,
+    CHECK(bg::run_graph(ordinary,
                               {{1, 2}, {literal::REMOVED(1), 3}, {literal::REMOVED(3), 1}})
               .equals<i64>({2, 2, 2}));
-    CHECK(testing::test_graph(
+    CHECK(bg::run_graph(
               deduplicated,
-              testing::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>(
+              bg::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>(
                   {{1, 2}, {literal::REMOVED(1), 3}, {literal::REMOVED(3), 1}}))
               .equals<i64>({2, std::nullopt, std::nullopt}));
 }
@@ -1088,9 +1088,9 @@ TEST_CASE("len_ and contains_ query scalar time-series lists",
         return operators::contains_("collection"_n = values, "key"_n = key);
     };
 
-    CHECK(testing::test_graph(length, {{1, 2, 3}, {}}).equals<i64>({3, 0}));
-    CHECK(testing::test_graph(contains, {{1, 2, 3}, {1, 3}, {}}).equals<bool>({true, false, false}));
-    CHECK(testing::test_graph(contains_key_series, {{1, 2, 3}, {1, 3}, {}}, {2, 3, 1})
+    CHECK(bg::run_graph(length, {{1, 2, 3}, {}}).equals<i64>({3, 0}));
+    CHECK(bg::run_graph(contains, {{1, 2, 3}, {1, 3}, {}}).equals<bool>({true, false, false}));
+    CHECK(bg::run_graph(contains_key_series, {{1, 2, 3}, {1, 3}, {}}, {2, 3, 1})
               .equals<bool>({true, true, false}));
 }
 
@@ -1104,9 +1104,9 @@ TEST_CASE("len_ and contains_ query scalar time-series sets",
         return operators::contains_("collection"_n = values, "key"_n = key);
     };
 
-    CHECK(testing::test_graph(length, {{1, 2, 3}, {2, 3}}).equals<i64>({3, 2}));
-    CHECK(testing::test_graph(contains, {{1, 2, 3}, {1, 3}, {}}).equals<bool>({true, false, false}));
-    CHECK(testing::test_graph(contains_key_series, {{1, 2, 3}, {1, 3}, {}}, {2, 3, 1})
+    CHECK(bg::run_graph(length, {{1, 2, 3}, {2, 3}}).equals<i64>({3, 2}));
+    CHECK(bg::run_graph(contains, {{1, 2, 3}, {1, 3}, {}}).equals<bool>({true, false, false}));
+    CHECK(bg::run_graph(contains_key_series, {{1, 2, 3}, {1, 3}, {}}, {2, 3, 1})
               .equals<bool>({true, true, false}));
 }
 
@@ -1120,9 +1120,9 @@ TEST_CASE("len_ and contains_ query scalar time-series dictionaries",
         return operators::contains_("collection"_n = values, "key"_n = key);
     };
 
-    CHECK(testing::test_graph(length, {{{1, 10}, {2, 20}}, {{2, 20}}}).equals<i64>({2, 1}));
-    CHECK(testing::test_graph(contains, {{{1, 10}, {2, 20}}, {{1, 10}}, {}}).equals<bool>({true, false, false}));
-    CHECK(testing::test_graph(contains_key_series, {{{1, 10}, {2, 20}}, {{1, 10}}, {}}, {2, 1, 3})
+    CHECK(bg::run_graph(length, {{{1, 10}, {2, 20}}, {{2, 20}}}).equals<i64>({2, 1}));
+    CHECK(bg::run_graph(contains, {{{1, 10}, {2, 20}}, {{1, 10}}, {}}).equals<bool>({true, false, false}));
+    CHECK(bg::run_graph(contains_key_series, {{{1, 10}, {2, 20}}, {{1, 10}}, {}}, {2, 1, 3})
               .equals<bool>({true, true, false}));
 }
 
@@ -1141,8 +1141,8 @@ TEST_CASE("len_ and contains_ query strings and symbols without copying text",
     const auto symbols = std::array{symbol{"alphabet"}, symbol{"gamma"}};
     const auto symbol_items = std::array{symbol{"pha"}, symbol{"am"}};
 
-    CHECK(testing::test_graph(string_length, strings).equals<i64>({4, 3}));
-    CHECK(testing::test_graph(symbol_length, symbols).equals<i64>({8, 5}));
-    CHECK(testing::test_graph(string_contains, strings, string_items).equals<bool>({true, false}));
-    CHECK(testing::test_graph(symbol_contains, symbols, symbol_items).equals<bool>({true, true}));
+    CHECK(bg::run_graph(string_length, strings).equals<i64>({4, 3}));
+    CHECK(bg::run_graph(symbol_length, symbols).equals<i64>({8, 5}));
+    CHECK(bg::run_graph(string_contains, strings, string_items).equals<bool>({true, false}));
+    CHECK(bg::run_graph(symbol_contains, symbols, symbol_items).equals<bool>({true, true}));
 }

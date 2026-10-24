@@ -1,5 +1,5 @@
 #include <bg/bg.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 
 #include "../utils/counting_memory_resource.hpp"
 
@@ -48,7 +48,7 @@ TEST_CASE("collection state is mutable during a node invocation", "[node][state]
 
     const auto graph = [&] { return collection_state(); };
 
-    CHECK(testing::test_graph(graph).equals<i64>({12}));
+    CHECK(bg::run_graph(graph).equals<i64>({12}));
 }
 
 namespace {
@@ -251,7 +251,7 @@ TEST_CASE("generic collection state uses its resolved storage",
 
     const auto graph = [&] { return generic_list_state(input); };
 
-    CHECK(testing::test_graph(graph).equals<i64>({4}));
+    CHECK(bg::run_graph(graph).equals<i64>({4}));
 }
 
 TEST_CASE("generic set state exposes a borrowed scalar value",
@@ -260,7 +260,7 @@ TEST_CASE("generic set state exposes a borrowed scalar value",
     const auto input = ScalarValue<Set<i64>>{std::array<i64, 1>{7}};
     const auto graph = [&] { return state_node(input); };
 
-    CHECK(testing::test_graph(graph).equals<i64>({7}));
+    CHECK(bg::run_graph(graph).equals<i64>({7}));
 }
 
 TEST_CASE("generic dictionary state exposes a borrowed scalar value",
@@ -269,7 +269,7 @@ TEST_CASE("generic dictionary state exposes a borrowed scalar value",
     const auto input = ScalarValue<Dict<i64, i64>>{std::array{std::pair<i64, i64>{1, 7}}};
     const auto graph = [&] { return state_node(input); };
 
-    CHECK(testing::test_graph(graph).equals<i64>({7}));
+    CHECK(bg::run_graph(graph).equals<i64>({7}));
 }
 
 TEST_CASE("generic scalar state resolves constrained types and owns its value",
@@ -278,7 +278,7 @@ TEST_CASE("generic scalar state resolves constrained types and owns its value",
 
     const auto retain = [&](wp<TS<string>> value) { return state_node(value); };
 
-    CHECK(testing::test_graph(retain, {"first", "second", "third"}).equals<string>({"first", "second", "third"}));
+    CHECK(bg::run_graph(retain, {"first", "second", "third"}).equals<string>({"first", "second", "third"}));
 }
 
 TEST_CASE("runtime-resolved scalar state reset releases its owned storage",
@@ -419,7 +419,7 @@ TEST_CASE("generic dictionary state composes storage from separate resolved type
 
     const auto graph = [&] { return composed_dict_state(key, value); };
 
-    CHECK(testing::test_graph(graph).equals<string>({"two"}));
+    CHECK(bg::run_graph(graph).equals<string>({"two"}));
 }
 
 namespace {
@@ -455,7 +455,7 @@ TEST_CASE("generic list and set state compose storage from their resolved item t
 
     const auto graph = [&] { return composed_list_set_state(value); };
 
-    CHECK(testing::test_graph(graph).equals<i64>({3}));
+    CHECK(bg::run_graph(graph).equals<i64>({3}));
 }
 
 TEST_CASE("a runtime graph releases composed collection state storage",
@@ -514,7 +514,7 @@ TEST_CASE("generic nested collection state returns mutable resolved items",
 
     const auto graph = [&] { return generic_nested_state(key, items); };
 
-    CHECK(testing::test_graph(graph).equals<string>({"one"}));
+    CHECK(bg::run_graph(graph).equals<string>({"one"}));
 }
 
 namespace {
@@ -544,7 +544,7 @@ TEST_CASE("nested collection state returns mutable child views", "[node][state][
 
     const auto graph = [&] { return nested_collection_state(initial); };
 
-    CHECK(testing::test_graph(graph).equals<i64>({1}));
+    CHECK(bg::run_graph(graph).equals<i64>({1}));
 }
 
 TEST_CASE("runtime graphs have independent generic collection state",

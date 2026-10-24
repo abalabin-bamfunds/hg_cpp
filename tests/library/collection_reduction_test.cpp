@@ -1,5 +1,5 @@
 #include <bg/library.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 
@@ -21,7 +21,7 @@ TEST_CASE("TSS reductions read the complete current membership",
     const auto mean = [](wp<TSS<i64>> values) { return operators::mean("values"_n = values); };
     const auto run = [](auto operation) {
         const auto graph = [operation](wp<TSS<i64>> values) { return operation(values); };
-        return testing::test_graph(graph,
+        return bg::run_graph(graph,
                                    {{1, 2}, {3}, {literal::REMOVED(1), 4},
                                     {literal::REMOVED(2), literal::REMOVED(3), literal::REMOVED(4)}});
     };
@@ -53,7 +53,7 @@ TEST_CASE("TSD reductions gate invalid items and optional reductions skip them",
     };
     const auto run = [](auto operation) {
         const auto graph = [operation](wp<TSD<i64, TS<i64>>> values) { return operation(values); };
-        return testing::test_graph(
+        return bg::run_graph(
             graph,
             {{{1, 10}, {2, 20}},
              {{1, literal::INVALID}, {2, 30}},
@@ -97,28 +97,28 @@ TEST_CASE("TSL reductions scan fixed items and optional reductions skip invalid 
     const auto optional_mean = [](wp<TS<i64>> first, wp<TS<i64>> second) {
         return operators::mean("values"_n = opt(tsl(std::array{first, second})));
     };
-    CHECK(testing::test_graph(sum, {1, 2, literal::INVALID, 4},
+    CHECK(bg::run_graph(sum, {1, 2, literal::INVALID, 4},
                               {10, literal::SKIP, 20, literal::INVALID})
               .equals<i64>({11, 12, std::nullopt, std::nullopt}));
-    CHECK(testing::test_graph(optional_sum, {1, 2, literal::INVALID, 4},
+    CHECK(bg::run_graph(optional_sum, {1, 2, literal::INVALID, 4},
                               {10, literal::SKIP, 20, literal::INVALID})
               .equals<i64>({11, 12, 20, 4}));
-    CHECK(testing::test_graph(mean, {1, 2, literal::INVALID, 4},
+    CHECK(bg::run_graph(mean, {1, 2, literal::INVALID, 4},
                               {10, literal::SKIP, 20, literal::INVALID})
               .equals<double>({5.5, 6.0, std::nullopt, std::nullopt}));
-    CHECK(testing::test_graph(optional_mean, {1, 2, literal::INVALID, 4},
+    CHECK(bg::run_graph(optional_mean, {1, 2, literal::INVALID, 4},
                               {10, literal::SKIP, 20, literal::INVALID})
               .equals<double>({5.5, 6.0, 20.0, 4.0}));
-    CHECK(testing::test_graph(minimum, {1, 2, literal::INVALID, 4},
+    CHECK(bg::run_graph(minimum, {1, 2, literal::INVALID, 4},
                               {10, literal::SKIP, 20, literal::INVALID})
               .equals<i64>({1, 2, std::nullopt, std::nullopt}));
-    CHECK(testing::test_graph(optional_minimum, {1, 2, literal::INVALID, 4},
+    CHECK(bg::run_graph(optional_minimum, {1, 2, literal::INVALID, 4},
                               {10, literal::SKIP, 20, literal::INVALID})
               .equals<i64>({1, 2, 20, 4}));
-    CHECK(testing::test_graph(maximum, {1, 2, literal::INVALID, 4},
+    CHECK(bg::run_graph(maximum, {1, 2, literal::INVALID, 4},
                               {10, literal::SKIP, 20, literal::INVALID})
               .equals<i64>({10, 10, std::nullopt, std::nullopt}));
-    CHECK(testing::test_graph(optional_maximum, {1, 2, literal::INVALID, 4},
+    CHECK(bg::run_graph(optional_maximum, {1, 2, literal::INVALID, 4},
                               {10, literal::SKIP, 20, literal::INVALID})
               .equals<i64>({10, 10, 20, 4}));
 }
@@ -131,12 +131,12 @@ TEST_CASE("collection reductions accept native fixed TSL inputs",
         return operators::sum_("values"_n = opt(values));
     };
 
-    CHECK(testing::test_graph(sum,
+    CHECK(bg::run_graph(sum,
                               {{{0, 1}, {1, 10}},
                                {{0, 2}},
                                {{0, literal::INVALID}, {1, 20}}})
               .equals<i64>({11, 12, std::nullopt}));
-    CHECK(testing::test_graph(optional_sum,
+    CHECK(bg::run_graph(optional_sum,
                               {{{0, 1}, {1, 10}},
                                {{0, 2}},
                                {{0, literal::INVALID}, {1, 20}}})
@@ -152,7 +152,7 @@ TEST_CASE("collection reductions handle valid empty TSS membership",
     const auto mean = [](auto values) { return operators::mean("values"_n = opt(values)); };
     const auto run = [](auto operation) {
         const auto graph = [operation](wp<TSS<i64>> values) { return operation(values); };
-        return testing::test_graph(
+        return bg::run_graph(
             graph, {literal::SKIP, {}, {4}, {literal::REMOVED(4)}, {5},
                     {literal::REMOVED(5)}});
     };
@@ -175,9 +175,9 @@ TEST_CASE("collection extrema invalidate and revalidate on membership changes",
         return operators::valid(operators::mean("values"_n = values));
     };
 
-    CHECK(testing::test_graph(valid_minimum, {{4}, {literal::REMOVED(4)}, {5}}).equals<bool>({true, false, true}));
-    CHECK(testing::test_graph(valid_maximum, {{4}, {literal::REMOVED(4)}, {5}}).equals<bool>({true, false, true}));
-    CHECK(testing::test_graph(valid_mean, {{4}, {literal::REMOVED(4)}, {5}}).equals<bool>({true, false, true}));
+    CHECK(bg::run_graph(valid_minimum, {{4}, {literal::REMOVED(4)}, {5}}).equals<bool>({true, false, true}));
+    CHECK(bg::run_graph(valid_maximum, {{4}, {literal::REMOVED(4)}, {5}}).equals<bool>({true, false, true}));
+    CHECK(bg::run_graph(valid_mean, {{4}, {literal::REMOVED(4)}, {5}}).equals<bool>({true, false, true}));
 }
 
 TEST_CASE("collection reductions observe empty results and revalidate",
@@ -195,13 +195,13 @@ TEST_CASE("collection reductions observe empty results and revalidate",
     const auto valid_mean = [](wp<TSS<i64>> values) {
         return operators::valid(operators::mean("values"_n = opt(values)));
     };
-    CHECK(testing::test_graph(valid_sum, {literal::SKIP, {}, {4}, {literal::REMOVED(4)}, {5}})
+    CHECK(bg::run_graph(valid_sum, {literal::SKIP, {}, {4}, {literal::REMOVED(4)}, {5}})
               .equals<bool>({false, true, std::nullopt, std::nullopt, std::nullopt}));
-    CHECK(testing::test_graph(valid_minimum, {literal::SKIP, {}, {4}, {literal::REMOVED(4)}, {5}})
+    CHECK(bg::run_graph(valid_minimum, {literal::SKIP, {}, {4}, {literal::REMOVED(4)}, {5}})
               .equals<bool>({false, std::nullopt, true, false, true}));
-    CHECK(testing::test_graph(valid_maximum, {literal::SKIP, {}, {4}, {literal::REMOVED(4)}, {5}})
+    CHECK(bg::run_graph(valid_maximum, {literal::SKIP, {}, {4}, {literal::REMOVED(4)}, {5}})
               .equals<bool>({false, std::nullopt, true, false, true}));
-    CHECK(testing::test_graph(valid_mean, {literal::SKIP, {}, {4}, {literal::REMOVED(4)}, {5}})
+    CHECK(bg::run_graph(valid_mean, {literal::SKIP, {}, {4}, {literal::REMOVED(4)}, {5}})
               .equals<bool>({false, std::nullopt, true, false, true}));
 }
 
@@ -220,7 +220,7 @@ TEST_CASE("optional collection reductions handle a REF retargeted to an invalid 
         const auto graph = [&, operation](wp<TS<i64>> cycle, wp<TSS<i64>> populated, wp<TSS<i64>> invalid) {
             return operation(select(cycle, populated, invalid));
         };
-        return testing::test_graph(graph, {0, 1, 2}, {{4}, literal::SKIP, literal::SKIP}, {});
+        return bg::run_graph(graph, {0, 1, 2}, {{4}, literal::SKIP, literal::SKIP}, {});
     };
 
     CHECK(run(sum).equals<i64>({4, 0, 4}));
@@ -242,7 +242,7 @@ TEST_CASE("collection reductions follow TSD reference items through updates and 
         return operators::sum_("values"_n = values);
     };
 
-    CHECK(testing::test_graph(graph, std::array{1, 2, 3, 4, 5}, std::array{10, 20, 30, 40, 50},
+    CHECK(bg::run_graph(graph, std::array{1, 2, 3, 4, 5}, std::array{10, 20, 30, 40, 50},
                               std::array{true, true, false, false, true})
               .equals<i64>({1, 2, 30, 40, 5}));
 }
@@ -263,8 +263,8 @@ TEST_CASE("optional TSS sum publishes zero before a final REF target becomes val
         return result;
     };
 
-    const auto result = testing::test_graph(
-        graph, testing::input<TSS<i64, TimeSeriesGuarantee::final>>({literal::SKIP, {0}}));
+    const auto result = bg::run_graph(
+        graph, bg::input<TSS<i64, TimeSeriesGuarantee::final>>({literal::SKIP, {0}}));
     CHECK(result.equals<i64>({0, 0}));
 }
 
@@ -277,8 +277,8 @@ TEST_CASE("optional TSS sum publishes equal results for a deduplicated collectio
         return result;
     };
 
-    CHECK(testing::test_graph(
-              graph, testing::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{1}, {0, 1}}))
+    CHECK(bg::run_graph(
+              graph, bg::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{1}, {0, 1}}))
               .equals<i64>({1, 1}));
 }
 
@@ -383,19 +383,19 @@ TEST_CASE("collection reductions preserve sound guarantees and weaken const extr
         return sum;
     };
 
-    CHECK(testing::test_graph(check_sum).equals<i64>({6}));
-    CHECK(testing::test_graph(check_minimum).equals<i64>({2}));
-    CHECK(testing::test_graph(check_optional_minimum).equals<i64>({2}));
-    CHECK(testing::test_graph(check_empty_sum).equals<i64>({0}));
-    CHECK(testing::test_graph(check_empty_minimum).equals<i64>({std::nullopt}));
-    CHECK(testing::test_graph(check_const_tsl, {{{0, 2}, {1, 4}}}).equals<i64>({6}));
-    CHECK(testing::test_graph(check_final_tsl, {{{0, 2}, {1, 4}}}).equals<i64>({6}));
-    CHECK(testing::test_graph(check_const_tsd,
-                              testing::input<TSD<i64, TS<i64, TimeSeriesGuarantee::const_>,
+    CHECK(bg::run_graph(check_sum).equals<i64>({6}));
+    CHECK(bg::run_graph(check_minimum).equals<i64>({2}));
+    CHECK(bg::run_graph(check_optional_minimum).equals<i64>({2}));
+    CHECK(bg::run_graph(check_empty_sum).equals<i64>({0}));
+    CHECK(bg::run_graph(check_empty_minimum).equals<i64>({std::nullopt}));
+    CHECK(bg::run_graph(check_const_tsl, {{{0, 2}, {1, 4}}}).equals<i64>({6}));
+    CHECK(bg::run_graph(check_final_tsl, {{{0, 2}, {1, 4}}}).equals<i64>({6}));
+    CHECK(bg::run_graph(check_const_tsd,
+                              bg::input<TSD<i64, TS<i64, TimeSeriesGuarantee::const_>,
                                                    TimeSeriesGuarantee::const_>>({{{1, 2}, {2, 4}}}))
               .equals<i64>({6}));
-    CHECK(testing::test_graph(check_const_tss,
-                              testing::input<TSS<i64, TimeSeriesGuarantee::const_>>({{2, 4}}))
+    CHECK(bg::run_graph(check_const_tss,
+                              bg::input<TSS<i64, TimeSeriesGuarantee::const_>>({{2, 4}}))
               .equals<i64>({6}));
 }
 
@@ -441,10 +441,10 @@ TEST_CASE("collection reductions resolve final and deduplicated guarantees for r
         return sum;
     };
 
-    CHECK(testing::test_graph(check_final, testing::input<TSS<i64, TimeSeriesGuarantee::final>>({{4}}))
+    CHECK(bg::run_graph(check_final, bg::input<TSS<i64, TimeSeriesGuarantee::final>>({{4}}))
               .equals<i64>({4}));
-    CHECK(testing::test_graph(check_deduplicated,
-                              testing::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{1}, {2}}))
+    CHECK(bg::run_graph(check_deduplicated,
+                              bg::input<TSS<i64, TimeSeriesGuarantee::deduplicated>>({{1}, {2}}))
               .equals<i64>({1, 3}));
 }
 
@@ -457,9 +457,9 @@ TEST_CASE("i64 collection sums wrap and collection means accumulate in double",
     };
     const auto maximum = std::numeric_limits<i64>::max();
 
-    CHECK(testing::test_graph(sum, {{maximum, 1}, {literal::REMOVED(1)}})
+    CHECK(bg::run_graph(sum, {{maximum, 1}, {literal::REMOVED(1)}})
               .equals<i64>({std::numeric_limits<i64>::min(), maximum}));
-    CHECK(testing::test_graph(mean, std::array{maximum}, std::array{maximum})
+    CHECK(bg::run_graph(mean, std::array{maximum}, std::array{maximum})
               .equals<double>({static_cast<double>(maximum)}));
 }
 
@@ -471,8 +471,8 @@ TEST_CASE("TSD and TSS reductions support double items",
     };
     const auto sum_tss = [](wp<TSS<double>> values) { return operators::sum_("values"_n = values); };
 
-    CHECK(testing::test_graph(sum_tsd, {{{1, 1.25}, {2, 2.5}}, {{1, 2.0}}}).equals<double>({3.75, 4.5}));
-    CHECK(testing::test_graph(sum_tss, {{1.25, 2.5}, {2.0}, {literal::REMOVED(1.25)}})
+    CHECK(bg::run_graph(sum_tsd, {{{1, 1.25}, {2, 2.5}}, {{1, 2.0}}}).equals<double>({3.75, 4.5}));
+    CHECK(bg::run_graph(sum_tss, {{1.25, 2.5}, {2.0}, {literal::REMOVED(1.25)}})
               .equals<double>({3.75, 5.75, 4.5}));
 }
 
@@ -493,9 +493,9 @@ TEST_CASE("fixed TSL extrema and means use ordinary floating-point comparisons",
     const auto first = std::array{nan, 1.0, positive_infinity};
     const auto second = std::array{2.0, negative_infinity, nan};
 
-    const auto minimum_result = testing::test_graph(minimum, first, second);
-    const auto maximum_result = testing::test_graph(maximum, first, second);
-    const auto mean_result = testing::test_graph(mean, first, second);
+    const auto minimum_result = bg::run_graph(minimum, first, second);
+    const auto maximum_result = bg::run_graph(maximum, first, second);
+    const auto mean_result = bg::run_graph(mean, first, second);
     REQUIRE(minimum_result.size() == first.size());
     REQUIRE(maximum_result.size() == first.size());
     REQUIRE(mean_result.size() == first.size());
@@ -532,5 +532,5 @@ TEST_CASE("collection reductions reject non-numeric item types",
           "[feature:operator][series:tss][scalar:string]") {
     const auto sum = [](wp<TSS<string>> values) { return operators::sum_("values"_n = values); };
 
-    CHECK_THROWS_AS(testing::test_graph(sum, {{"value"}}), WiringError);
+    CHECK_THROWS_AS(bg::run_graph(sum, {{"value"}}), WiringError);
 }

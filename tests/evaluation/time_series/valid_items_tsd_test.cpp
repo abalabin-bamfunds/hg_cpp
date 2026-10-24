@@ -4,7 +4,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
 #include <bg/nested.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 
@@ -24,7 +24,7 @@ TEST_CASE("all_valid on a valid_items dictionary input requires only a valid dic
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return count(input); };
 
-    const auto actual = testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, literal::INVALID}}});
+    const auto actual = bg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, literal::INVALID}}});
 
     CHECK(actual.equals<i64>({2, 1}));
 }
@@ -43,7 +43,7 @@ TEST_CASE("a nested graph preserves a fixed valid_items input",
 
     const auto outer = [&](wp<TSD<i64, TS<i64>>> input, wp<TS<bool>> run) { return nested(inner, run, input); };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         outer, {{{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}}}, {true, true});
 
     CHECK(actual.equals<i64>({1, 2}));
@@ -67,7 +67,7 @@ TEST_CASE("a nested graph preserves valid_items and scalar fields in a captured 
         return nested(inner, run, "values"_n = pack);
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         outer, {{{1, 10}, {2, literal::INVALID}}, {{2, 20}}}, {true, true});
 
     CHECK(actual.equals<i64>({41, 42}));
@@ -85,7 +85,7 @@ TEST_CASE("a lexical context preserves valid_items on a TSD input",
         return with_context("values"_n = valid_items(values), [&] { return count(); });
     };
 
-    const auto actual = testing::test_graph(contextual, {{{1, 10}, {2, literal::INVALID}}, {{2, 20}}});
+    const auto actual = bg::run_graph(contextual, {{{1, 10}, {2, literal::INVALID}}, {{2, 20}}});
 
     CHECK(actual.equals<i64>({1, 2}));
 }
@@ -104,7 +104,7 @@ TEST_CASE("a materialisation option preserves valid_items on a TSD input",
         return count(valid_items(deferred));
     };
 
-    const auto actual = testing::test_graph(materialized, {{{1, 10}, {2, literal::INVALID}}, {{2, 20}}});
+    const auto actual = bg::run_graph(materialized, {{{1, 10}, {2, literal::INVALID}}, {{2, 20}}});
 
     CHECK(actual.equals<i64>({1, 2}));
 }
@@ -147,21 +147,21 @@ TEST_CASE("valid_items survives erased input conversion",
     });
 
     SECTION("as") {
-        const auto actual = testing::test_graph(
+        const auto actual = bg::run_graph(
             [&](wp<TSD<i64, TS<i64>>> input) { return size_after_as(input); },
             {{{1, 10}, {2, literal::INVALID}}});
         CHECK(actual.equals<i64>({12}));
     }
 
     SECTION("visit") {
-        const auto actual = testing::test_graph(
+        const auto actual = bg::run_graph(
             [&](wp<TSD<i64, TS<i64>>> input) { return size_after_visit(input); },
             {{{1, 10}, {2, literal::INVALID}}});
         CHECK(actual.equals<i64>({1}));
     }
 
     SECTION("runtime copy") {
-        const auto actual = testing::test_graph(
+        const auto actual = bg::run_graph(
             [&](wp<TSD<i64, TS<i64>>> input) {
                 return size_and_second_key(runtime_copy(input, input));
             },
@@ -197,22 +197,22 @@ TEST_CASE("a valid_items dictionary input filters items and classifies validity 
         return sum(dictionary);
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {{{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}}, {{1, literal::INVALID}, {2, 21}}});
 
-    const auto visible_sizes = testing::test_graph(
+    const auto visible_sizes = bg::run_graph(
         [&](wp<TSD<i64, TS<i64>>> input) { return size(input); },
         {{{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}}, {{1, literal::INVALID}, {2, 21}}});
-    const auto visible_key_values = testing::test_graph(
+    const auto visible_key_values = bg::run_graph(
         [&](wp<TSD<i64, TS<i64>>> input) { return key_values(input); },
         {{{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}}, {{1, literal::INVALID}, {2, 21}}});
-    const auto selected_valid_value = testing::test_graph(
+    const auto selected_valid_value = bg::run_graph(
         [&](wp<TSD<i64, TS<i64>>> input) { return selected(input); },
         {{{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}}, {{1, literal::INVALID}, {2, 21}}});
 
     const auto contains_second =
         node([](In<TSD<i64, TS<i64>>, valid_items> input) { return input.contains(2); });
-    const auto second_key_visible = testing::test_graph(
+    const auto second_key_visible = bg::run_graph(
         [&](wp<TSD<i64, TS<i64>>> input) { return contains_second(input); },
         {{{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}}, {{1, literal::INVALID}, {2, 21}}});
 
@@ -234,13 +234,13 @@ TEST_CASE("a valid_items dictionary input filters items and classifies validity 
         return result;
     });
 
-    const auto added_keys = testing::test_graph(
+    const auto added_keys = bg::run_graph(
         [&](wp<TSD<i64, TS<i64>>> input) { return added(input); },
         {{{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}}, {{1, literal::INVALID}, {2, 21}}});
-    const auto removed_keys = testing::test_graph(
+    const auto removed_keys = bg::run_graph(
         [&](wp<TSD<i64, TS<i64>>> input) { return removed(input); },
         {{{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}}, {{1, literal::INVALID}, {2, 21}}});
-    const auto modified_keys = testing::test_graph(
+    const auto modified_keys = bg::run_graph(
         [&](wp<TSD<i64, TS<i64>>> input) { return modified(input); },
         {{{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}}, {{1, literal::INVALID}, {2, 21}}});
 
@@ -265,7 +265,7 @@ TEST_CASE("valid_items reports removal of valid keys but hides removed invalid k
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return inspect(input); };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {{{1, 10}, {2, literal::INVALID}}, {{1, literal::REMOVE}, {2, literal::REMOVE}}});
 
     CHECK(actual.equals<i64>({0, 1}));
@@ -282,7 +282,7 @@ TEST_CASE("valid_items does not report a second removal when an invalid item is 
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return inspect(input); };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {{{1, 10}}, {{1, literal::INVALID}}, {{1, literal::REMOVE}}});
 
     CHECK(actual.equals<i64>({0, 1, 0}));
@@ -306,7 +306,7 @@ TEST_CASE("valid_items does not repeat sampled invalidation when an invalid item
         return inspect(forward_reference(input));
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {{{1, 10}}, {{1, literal::INVALID}}, {{1, literal::REMOVE}}});
 
     CHECK(actual.equals<i64>({0, 1, 0}));
@@ -348,11 +348,11 @@ TEST_CASE("valid_items exposes filtered change cursors and key lookups",
 
     const auto modified_graph = [&](wp<TSD<i64, TS<i64>>> input) { return sum_modified(input); };
 
-    const auto added_keys = testing::test_graph(
+    const auto added_keys = bg::run_graph(
         added_graph, {{{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}}, {{1, literal::INVALID}, {2, 21}}});
-    const auto removed_keys = testing::test_graph(
+    const auto removed_keys = bg::run_graph(
         removed_graph, {{{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}}, {{1, literal::INVALID}, {2, 21}}});
-    const auto modified_keys = testing::test_graph(
+    const auto modified_keys = bg::run_graph(
         modified_graph, {{{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}}, {{1, literal::INVALID}, {2, 21}}});
 
     CHECK(added_keys.equals<i64>({1, 2, 0}));
@@ -382,7 +382,7 @@ TEST_CASE("valid_items key lookups classify revalidation, invalidation, and item
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input, wp<TS<i64>> command) { return inspect(input, command); };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {{{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}}, {{1, literal::INVALID}, {2, 21}}},
         {1, 2, 3});
 
@@ -404,7 +404,7 @@ TEST_CASE("valid_items hides invalid items from keyed lookup",
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return inspect(input); };
 
-    const auto actual = testing::test_graph(graph, {{{1, 10}, {2, literal::INVALID}}});
+    const auto actual = bg::run_graph(graph, {{{1, 10}, {2, literal::INVALID}}});
 
     CHECK(actual.equals({true}));
 }
@@ -434,7 +434,7 @@ TEST_CASE("valid_items retains removed cursor IDs in a sampled dictionary",
         return inspect(select(choose_second, first, second));
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {false, true}, {{{1, 10}, {2, literal::INVALID}}}, {{{3, 30}}});
 
     CHECK(actual.equals<i64>({0, 10}));
@@ -466,7 +466,7 @@ TEST_CASE("valid_items cursors include a sampled removal and invalidation sharin
         return inspect(select(choose_second, first, second));
     };
 
-    const auto actual = testing::test_graph(graph, {false, true}, {{{1, 10}, {2, 20}}}, {{{2, literal::INVALID}}});
+    const auto actual = bg::run_graph(graph, {false, true}, {{{1, 10}, {2, 20}}}, {{{2, literal::INVALID}}});
 
     CHECK(actual.equals<i64>({0, 23}));
 }

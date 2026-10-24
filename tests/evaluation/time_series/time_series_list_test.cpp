@@ -5,7 +5,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
 
@@ -29,7 +29,7 @@ TEST_CASE("a node can select an item from a free fixed time series list",
     const auto graph = [&](wp<TS<i64>> first, wp<TS<i64>> second) {
         return select(tsl(first, second));
     };
-    const auto result = testing::test_graph(graph, {1, 2}, {10, 20});
+    const auto result = bg::run_graph(graph, {1, 2}, {10, 20});
 
     CHECK(result.equals({10, 20}));
 }
@@ -65,7 +65,7 @@ TEST_CASE("a fixed time series list publishes changed items",
     const auto wiring = graph("name"_n = "literal_list_input",
                               [&](wp<TSL<TS<i64>, 3>> input) { return inspect(copy(input)); });
 
-    const auto actual = testing::test_graph(wiring, {{{0, 10}, {2, 30}}});
+    const auto actual = bg::run_graph(wiring, {{{0, 10}, {2, 30}}});
 
     CHECK(actual.equals<observation>({observation{10, 30, true, false, true}}));
     CHECK(evaluation_count == 1);
@@ -93,7 +93,7 @@ TEST_CASE("a free fixed time series list coalesces source changes",
         return sum(tsl(first, second));
     };
 
-    const auto result = testing::test_graph(graph, {1, 2}, {10, literal::SKIP});
+    const auto result = bg::run_graph(graph, {1, 2}, {10, literal::SKIP});
 
     CHECK(result.equals<observation>({observation{11, true, true}, observation{12, true, false}}));
     CHECK(evaluation_count == 2);
@@ -109,7 +109,7 @@ TEST_CASE("a free fixed time series list follows the receiving item runtime_type
     const auto graph = [&](wp<TS<i64>> first, wp<TS<i64>> second) {
         return sum(tsl(reference(first), second));
     };
-    const auto result = testing::test_graph(graph, {1, 2}, {10, 20});
+    const auto result = bg::run_graph(graph, {1, 2}, {10, 20});
 
     CHECK(result.equals({11, 22}));
 }
@@ -127,7 +127,7 @@ TEST_CASE("a span-backed free TSL retains its items through materialisation and 
         return sum(collection);
     };
 
-    const auto result = testing::test_graph(graph, {1, 2}, {10, 20});
+    const auto result = bg::run_graph(graph, {1, 2}, {10, 20});
 
     CHECK(result.equals({11, 22}));
 }
@@ -139,7 +139,7 @@ TEST_CASE("an empty typed TSL publishes valid at graph start",
 
     const auto graph = [&] { return observe(tsl<TS<i64>>()); };
 
-    CHECK(testing::test_graph(graph).equals({true}));
+    CHECK(bg::run_graph(graph).equals({true}));
 }
 
 TEST_CASE("a fixed time series list schedules subscribers of changed items",
@@ -170,7 +170,7 @@ TEST_CASE("a fixed time series list schedules subscribers of changed items",
         second_sink(second(list));
     });
 
-    (void)testing::test_graph(wiring, {{{0, 10}, {1, 15}}, {{1, 20}}});
+    (void)bg::run_graph(wiring, {{{0, 10}, {1, 15}}, {{1, 20}}});
 
     CHECK(first_evaluations == 1);
     CHECK(second_evaluations == 2);
@@ -205,7 +205,7 @@ TEST_CASE("nested time series lists schedule subscribers of changed items",
                                   second_sink(second(list));
                               });
 
-    (void)testing::test_graph(wiring, {{{0, {{0, 10}}}}, {{1, {{1, 20}}}}});
+    (void)bg::run_graph(wiring, {{{0, {{0, 10}}}}, {{1, {{1, 20}}}}});
 
     CHECK(first_evaluations == 1);
     CHECK(second_evaluations == 1);
@@ -244,7 +244,7 @@ TEST_CASE("invalidating a list invalidates its items",
         list_sink(list);
     });
 
-    (void)testing::test_graph(wiring, {{{0, 10}}, literal::INVALID, {{1, 20}}});
+    (void)bg::run_graph(wiring, {{{0, 10}}, literal::INVALID, {{1, 20}}});
 
     CHECK(item_validity == std::vector{true, false});
     CHECK(required_evaluations == 1);
@@ -264,7 +264,7 @@ TEST_CASE("a list child input reports its invalidation as modified",
 
     const auto graph = [&](wp<TSL<TS<i64>, 2>> input, wp<TS<i64>> trigger) { return observe(input, trigger); };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {{{0, 10}, {1, 1}}, {{0, literal::INVALID}}, {{0, 20}}}, {1, 2, 3});
 
     CHECK(actual.equals({false, true, false}));
@@ -302,7 +302,7 @@ TEST_CASE("a list remains valid while one item remains valid",
         list_sink(list);
     });
 
-    (void)testing::test_graph(wiring, {{{0, 10}, {1, 20}}, {{0, literal::INVALID}}});
+    (void)bg::run_graph(wiring, {{{0, 10}, {1, 20}}, {{0, literal::INVALID}}});
 
     CHECK(item_validity == std::vector{true, false});
     CHECK(updated_item_counts == std::vector<std::size_t>{2, 1});
@@ -314,7 +314,7 @@ TEST_CASE("a list becomes invalid when its last valid item is invalidated and re
           "[representation:native][declaration:concrete][binding:direct]") {
     const auto valid = node([](In<TSL<TS<i64>, 3>, optional> input) { return input.valid(); });
 
-    const auto actual = testing::test_graph(valid, {{{0, 10}}, {{0, literal::INVALID}}, {{1, 20}}});
+    const auto actual = bg::run_graph(valid, {{{0, 10}}, {{0, literal::INVALID}}, {{1, 20}}});
 
     CHECK(actual.equals({true, false, true}));
 }
@@ -329,7 +329,7 @@ TEST_CASE("required-input invalidation invalidates list items",
 
     const auto graph = [&](wp<TS<i64>> input) { return first(list(input)); };
 
-    const auto actual = testing::test_graph(graph, {10, literal::INVALID});
+    const auto actual = bg::run_graph(graph, {10, literal::INVALID});
 
     CHECK(actual.equals({10, std::nullopt}));
 }
@@ -354,7 +354,7 @@ TEST_CASE("nested list invalidation and revalidation propagate through each leve
     const auto wiring = graph("name"_n = "literal_nested_list_input",
                               [&](wp<TSL<TSL<TS<i64>, 2>, 2>> input) { return inspect(input); });
 
-    const auto actual = testing::test_graph(wiring, {{{0, {{0, 10}}}}, literal::INVALID, {{0, {{0, 20}}}}});
+    const auto actual = bg::run_graph(wiring, {{{0, {{0, 10}}}}, literal::INVALID, {{0, {{0, 20}}}}});
 
     CHECK(actual.equals<observation>({observation{true, true, true}, observation{false, false, false},
                                      observation{true, true, true}}));
@@ -429,7 +429,7 @@ TEST_CASE("inverse nested dictionary mutations publish their containing list",
 
     const auto graph = [&] { return marker(source()); };
 
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals({true, true}));
 }
@@ -461,7 +461,7 @@ TEST_CASE("a nested item view retains its containing path",
 
     const auto graph = [&] { return item(source()); };
 
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals({42}));
 }

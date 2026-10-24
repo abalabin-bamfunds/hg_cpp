@@ -1,5 +1,5 @@
 #include <bg/bg.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/time_series/tick_format.hpp>
 #include <bg/time_series/tick_format_operations.hpp>
 #include <bg/time_series/tick_serializer.hpp>
@@ -119,7 +119,7 @@ TEST_CASE("live and retained scalar ticks format the same value",
           "[feature:test-graph][series:value][scalar:i64][shape:single-node]") {
     const auto formatter = node<live_and_retained_tick_formatter<TS<i64>>>();
     const auto graph = [&](wp<TS<i64>> input) { return formatter(input); };
-    const auto result = testing::test_graph(graph, {42, literal::INVALID});
+    const auto result = bg::run_graph(graph, {42, literal::INVALID});
 
     CHECK(result.equals<string>({"[42]|[42]", "[INVALID]|[INVALID]"}));
 }
@@ -129,8 +129,8 @@ TEST_CASE("live and retained byte ticks format the same payload",
     const auto formatter = node<live_and_retained_tick_formatter<TS<bytes>>>();
     const auto graph = [&](wp<TS<bytes>> input) { return formatter(input); };
     const auto payload = std::array{byte{0x00}, byte{0x7f}, byte{0xff}};
-    const auto result = testing::test_graph(
-        graph, testing::input<TS<bytes>>({std::span<const byte>{payload}}));
+    const auto result = bg::run_graph(
+        graph, bg::input<TS<bytes>>({std::span<const byte>{payload}}));
 
     CHECK(result.equals<string>({"[bytes(\"007fff\")]|[bytes(\"007fff\")]"}));
 }
@@ -139,7 +139,7 @@ TEST_CASE("live tick formatting writes SKIP for an unchanged root input",
           "[feature:test-graph][series:value][scalar:i64]") {
     const auto formatter = node<stale_tick_formatter>();
     const auto graph = [&](wp<TS<i64>> input) { return formatter(input); };
-    const auto result = testing::test_graph(graph, {42});
+    const auto result = bg::run_graph(graph, {42});
 
     CHECK(result.equals<string>({"<SKIP>"}));
 }
@@ -147,7 +147,7 @@ TEST_CASE("live tick formatting writes SKIP for an unchanged root input",
 TEST_CASE("retained dictionary tick formatting preserves deltas and nested invalidity",
           "[feature:test-graph][series:tsd][scalar:i64][transition:update][transition:removal]") {
     const auto identity = [](wp<TSD<i64, TS<i64>>> input) { return input; };
-    const auto result = testing::test_graph(
+    const auto result = bg::run_graph(
         identity, {{{1, 10}}, {{1, 11}}, {{1, literal::INVALID}}, {{1, literal::REMOVE}}});
 
     CHECK(format_tick(result, 0) == "{1: 10}");
@@ -160,7 +160,7 @@ TEST_CASE("live and retained fixed-list ticks format the same changed items",
           "[feature:test-graph][series:fixed-tsl][scalar:i64][transition:update]") {
     const auto formatter = node<live_and_retained_tick_formatter<TSL<TS<i64>, 3>>>();
     const auto graph = [&](wp<TSL<TS<i64>, 3>> input) { return formatter(input); };
-    const auto result = testing::test_graph(graph, {{{0, 10}, {2, 30}}});
+    const auto result = bg::run_graph(graph, {{{0, 10}, {2, 30}}});
 
     CHECK(result.equals<string>({"[{0: 10, 2: 30}]|[{0: 10, 2: 30}]"}));
 }
@@ -169,7 +169,7 @@ TEST_CASE("live and retained set ticks format additions and removals",
           "[feature:test-graph][series:tss][scalar:i64][transition:addition][transition:removal]") {
     const auto formatter = node<live_and_retained_tick_formatter<TSS<i64>>>();
     const auto graph = [&](wp<TSS<i64>> input) { return formatter(input); };
-    const auto result = testing::test_graph(graph, {{1, 2}, {literal::REMOVED(1)}});
+    const auto result = bg::run_graph(graph, {{1, 2}, {literal::REMOVED(1)}});
 
     CHECK(result.equals<string>({"[{1, 2}]|[{1, 2}]", "[{REMOVED(1)}]|[{REMOVED(1)}]"}));
 }
@@ -178,7 +178,7 @@ TEST_CASE("live and retained bundle ticks format named fields",
           "[feature:test-graph][series:tsb][scalar:i64][scalar:string]") {
     const auto formatter = node<live_and_retained_tick_formatter<TSB<TickFormatBundle>>>();
     const auto graph = [&](wp<TSB<TickFormatBundle>> input) { return formatter(input); };
-    const auto result = testing::test_graph(graph, {{{"count", 3}, {"name", "last"}}});
+    const auto result = bg::run_graph(graph, {{{"count", 3}, {"name", "last"}}});
 
     CHECK(result.equals<string>({"[{\"count\": 3, \"name\": \"last\"}]|"
                                  "[{\"count\": 3, \"name\": \"last\"}]"}));
@@ -188,7 +188,7 @@ TEST_CASE("live and retained ticks format durations and symbols consistently",
           "[feature:test-graph][series:tsb][scalar:timedelta][scalar:symbol]") {
     const auto formatter = node<live_and_retained_tick_formatter<TSB<TickFormatDurationAndSymbol>>>();
     const auto graph = [&](wp<TSB<TickFormatDurationAndSymbol>> input) { return formatter(input); };
-    const auto result = testing::test_graph(
+    const auto result = bg::run_graph(
         graph, {{{"elapsed", timedelta_t{std::chrono::hours{26}}}, {"key", symbol{"price"}}}});
 
     CHECK(result.equals<string>({"[{\"elapsed\": 1d 02:00:00.000000, \"key\": \"price\"}]|"
@@ -199,7 +199,7 @@ TEST_CASE("nested dictionary bundle ticks format child collections recursively",
           "[feature:test-graph][series:tsd][series:tsb][shape:deeply-nested]") {
     const auto formatter = node<live_and_retained_tick_formatter<TSD<i64, TSB<NestedTickFormatBundle>>>>();
     const auto graph = [&](wp<TSD<i64, TSB<NestedTickFormatBundle>>> input) { return formatter(input); };
-    const auto result = testing::test_graph(graph, {{{1, {{"values", {{2, 20}, {3, 30}}}}}}});
+    const auto result = bg::run_graph(graph, {{{1, {{"values", {{2, 20}, {3, 30}}}}}}});
 
     CHECK(result.equals<string>({"[{1: {\"values\": {2: 20, 3: 30}}}]|"
                                  "[{1: {\"values\": {2: 20, 3: 30}}}]"}));
@@ -208,7 +208,7 @@ TEST_CASE("nested dictionary bundle ticks format child collections recursively",
 TEST_CASE("retained nested dictionary ticks format child payloads recursively",
           "[feature:test-graph][series:tsd][scalar:i64][shape:doubly-nested]") {
     const auto identity = [](wp<TSD<i64, TSD<i64, TS<i64>>>> input) { return input; };
-    const auto result = testing::test_graph(identity, {{{1, {{2, 10}}}}});
+    const auto result = bg::run_graph(identity, {{{1, {{2, 10}}}}});
 
     CHECK(format_tick(result, 0) == "{1: {2: 10}}");
 }
@@ -218,7 +218,7 @@ TEST_CASE("retained tick formatting leaves captured payload readers unchanged",
     const auto identity = [](wp<TS<string>> input) { return input; };
     const auto value = std::string(256, 'x');
     const auto expected = fmt::format("\"{}\"", value);
-    const auto result = testing::test_graph(identity, {value});
+    const auto result = bg::run_graph(identity, {value});
 
     REQUIRE(format_tick(result, 0) == expected);
     CHECK(format_tick(result, 0) == expected);

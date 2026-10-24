@@ -2,7 +2,7 @@
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -21,7 +21,7 @@ TEST_CASE("fixed TSL getitem changes selection with a time series index",
         return input[index];
     };
 
-    const auto actual = testing::test_graph(graph, {{{0, 1}, {1, 10}}, {{0, 2}, {1, 20}}, {{0, 3}, {1, 30}}},
+    const auto actual = bg::run_graph(graph, {{{0, 1}, {1, 10}}, {{0, 2}, {1, 20}}, {{0, 3}, {1, 30}}},
                                             {0, 1, 0});
 
     CHECK(actual.equals<i64>({1, 20, 3}));
@@ -38,7 +38,7 @@ TEST_CASE("fixed TSL getitem observes only the selected item",
     const auto index =
         std::array{std::optional<i64>{1}, std::optional<i64>{}, std::optional<i64>{}};
 
-    const auto actual = testing::test_graph(graph, first, second, index);
+    const auto actual = bg::run_graph(graph, first, second, index);
 
     CHECK(actual.equals<bg::i64>({10, std::nullopt, 30}));
 }
@@ -51,7 +51,7 @@ TEST_CASE("fixed TSL getitem invalidates for an invalid or out-of-range time ser
         return input[index];
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {{{0, 1}, {1, 10}}, {{0, 2}, {1, 20}}, {{0, 3}, {1, 30}}, {{0, 4}, {1, 40}}},
         {0, literal::INVALID, 2, 1});
 
@@ -74,7 +74,7 @@ TEST_CASE("fixed TSL getitem selects stored references with a time series index"
         return make_list(increment(input), scale(input))[index];
     };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2, 3}, std::array<i64, 3>{0, 1, 0});
+    const auto actual = bg::run_graph(graph, std::array{1, 2, 3}, std::array<i64, 3>{0, 1, 0});
 
     CHECK(actual.equals<i64>({2, 20, 4}));
 }
@@ -96,7 +96,7 @@ TEST_CASE("fixed TSL getitem forwards updates from a selected stored reference",
     const auto index =
         std::array{std::optional<i64>{0}, std::optional<i64>{}, std::optional<i64>{}};
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2, 3}, index);
+    const auto actual = bg::run_graph(graph, std::array{1, 2, 3}, index);
 
     CHECK(actual.equals<i64>({2, 3, 4}));
 }
@@ -109,7 +109,7 @@ TEST_CASE("fixed TSL getitem follows selected item invalidation and revalidation
         return input[index];
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {{{0, 1}, {1, 10}}, {{0, literal::INVALID}, {1, -10}}, {{0, 2}, {1, 20}}},
         {0, literal::SKIP, literal::SKIP});
 
@@ -131,7 +131,7 @@ TEST_CASE("fixed TSL getitem follows a list across a nested graph boundary",
         return nested(inner, run, input)[index];
     };
 
-    const auto actual = testing::test_graph(outer, {1, 2, 3, 4}, {0, 1, 0, 1}, {true, false, true, true});
+    const auto actual = bg::run_graph(outer, {1, 2, 3, 4}, {0, 1, 0, 1}, {true, false, true, true});
 
     CHECK(actual.equals<bg::i64>({1, std::nullopt, 3, 40}));
 }
@@ -150,7 +150,7 @@ TEST_CASE("scalar getitem reads a reference-backed fixed list",
         return nested(inner, run, input)[i64{1}];
     };
 
-    const auto actual = testing::test_graph(outer, {1, 2, 3}, {true, true, true});
+    const auto actual = bg::run_graph(outer, {1, 2, 3}, {true, true, true});
 
     CHECK(actual.equals<i64>({10, 20, 30}));
 }
@@ -169,7 +169,7 @@ TEST_CASE("fixed TSL getitem follows a free list into a nested graph",
     };
 
     const auto actual =
-        testing::test_graph(outer, std::array{1, 2, 3, 4}, std::array{10, 20, 30, 40},
+        bg::run_graph(outer, std::array{1, 2, 3, 4}, std::array{10, 20, 30, 40},
                             std::array<i64, 4>{0, 1, 0, 1}, std::array{true, false, true, true});
 
     CHECK(actual.equals<bg::i64>({1, std::nullopt, 3, 40}));

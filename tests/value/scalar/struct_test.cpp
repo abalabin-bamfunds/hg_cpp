@@ -1,7 +1,7 @@
 #include "test_scalar_provider.hpp"
 
 #include <bg/bg.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -290,12 +290,12 @@ TEST_CASE("a STRUCT node binds to and copies a concrete compound time series",
     const auto first = Price{.quantity = 1, .value = 2.5};
     const auto second = Price{.quantity = 2, .value = 3.5};
 
-    const auto result = testing::test_graph(graph, std::vector{first, second});
+    const auto result = bg::run_graph(graph, std::vector{first, second});
 
     CHECK(result.equals<Price>({first, second}));
 }
 
-TEST_CASE("test_graph carries concrete compound scalar values and suppresses equal updates",
+TEST_CASE("run_graph carries concrete compound scalar values and suppresses equal updates",
           "[feature:test-graph][feature:scalar-storage][scalar:compound][series:value]"
           "[guarantee:deduplicated][transition:update]") {
     const auto copy = node([](In<TS<Price>> input, Out<TS<Price, TimeSeriesGuarantee::deduplicated>> output) {
@@ -306,7 +306,7 @@ TEST_CASE("test_graph carries concrete compound scalar values and suppresses equ
     const auto first = Price{.quantity = 1, .value = 2.5};
     const auto second = Price{.quantity = 2, .value = 3.5};
 
-    const auto result = testing::test_graph(graph, std::vector{first, first, second});
+    const auto result = bg::run_graph(graph, std::vector{first, first, second});
 
     CHECK(result.equals<Price>({first, std::nullopt, second}));
 }

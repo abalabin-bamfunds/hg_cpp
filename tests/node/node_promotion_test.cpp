@@ -1,7 +1,7 @@
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
 #include <bg/scalar/opaque.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 #include <bg/type/time_series_value_type.hpp>
 
@@ -144,13 +144,13 @@ TEST_CASE("callable plain parameters accept scalar and time-series arguments",
     REQUIRE(add.signature().resolve(scalar_inputs).output == &TS<i64, TimeSeriesGuarantee::const_>::type());
 
     const auto scalar_graph = [=] { return add(2, 3); };
-    CHECK(testing::test_graph(scalar_graph).equals({5}));
+    CHECK(bg::run_graph(scalar_graph).equals({5}));
 
     const auto time_series_graph = [=](wp<TS<i64>> input) { return add(input, input); };
-    CHECK(testing::test_graph(time_series_graph, {1, 2, 3}).equals({2, 4, 6}));
+    CHECK(bg::run_graph(time_series_graph, {1, 2, 3}).equals({2, 4, 6}));
 
     const auto mixed_graph = [=](wp<TS<i64>> input) { return add(input, 3); };
-    CHECK(testing::test_graph(mixed_graph, {1, 2, 3}).equals({4, 5, 6}));
+    CHECK(bg::run_graph(mixed_graph, {1, 2, 3}).equals({4, 5, 6}));
 }
 
 TEST_CASE("callable return guarantees follow the weakest observed input guarantee",
@@ -220,7 +220,7 @@ TEST_CASE("callable dynamic activity controls inputs around promoted scalars",
     });
 
     const auto graph = [=](wp<TS<i64>> left, wp<TS<i64>> right) { return combine(left, 5, right); };
-    CHECK(testing::test_graph(graph, {1, 2, literal::SKIP}, {10, literal::SKIP, 11}).equals({16, std::nullopt, 18}));
+    CHECK(bg::run_graph(graph, {1, 2, literal::SKIP}, {10, literal::SKIP, 11}).equals({16, std::nullopt, 18}));
     CHECK(evaluations == 2);
 }
 
@@ -232,7 +232,7 @@ TEST_CASE("callable generic scalar runtime types follow runtime-type input slots
 
     const auto graph = [=](wp<TS<i64>> input) { return combine(5, input); };
 
-    CHECK(testing::test_graph(graph, {1, 2, 3}).equals({6, 7, 8}));
+    CHECK(bg::run_graph(graph, {1, 2, 3}).equals({6, 7, 8}));
 }
 
 TEST_CASE("callable output deduplication suppresses equal results from changing inputs",
@@ -252,7 +252,7 @@ TEST_CASE("callable output deduplication suppresses equal results from changing 
         return add(deduplicate(lhs), deduplicate(rhs));
     };
 
-    CHECK(testing::test_graph(graph, {1, 2, 3}, {3, 2, 1}).equals({4, std::nullopt, std::nullopt}));
+    CHECK(bg::run_graph(graph, {1, 2, 3}, {3, 2, 1}).equals({4, std::nullopt, std::nullopt}));
 }
 
 TEST_CASE("callable final output waits for both final inputs when they tick in separate cycles",
@@ -263,7 +263,7 @@ TEST_CASE("callable final output waits for both final inputs when they tick in s
 
     const auto graph = [=] { return add(source(1, 1), source(2, 2)); };
 
-    CHECK(testing::test_graph(graph).equals({std::nullopt, std::nullopt, 3}));
+    CHECK(bg::run_graph(graph).equals({std::nullopt, std::nullopt, 3}));
 }
 
 TEST_CASE("callable ordinary inputs schedule independently",
@@ -271,7 +271,7 @@ TEST_CASE("callable ordinary inputs schedule independently",
     const auto add = node([](int lhs, int rhs) { return lhs + rhs; });
 
     const auto graph = [=](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return add(lhs, rhs); };
-    CHECK(testing::test_graph(graph, {1, 2, literal::SKIP, literal::SKIP}, {10, literal::SKIP, 20, literal::SKIP})
+    CHECK(bg::run_graph(graph, {1, 2, literal::SKIP, literal::SKIP}, {10, literal::SKIP, 20, literal::SKIP})
               .equals({11, 12, 22, std::nullopt}));
 }
 
@@ -288,7 +288,7 @@ TEST_CASE("callable return infers const from const time-series inputs",
     };
 
     CHECK(add.signature().resolve(const_inputs).output == &TS<i64, TimeSeriesGuarantee::const_>::type());
-    CHECK(testing::test_graph(graph).equals({5}));
+    CHECK(bg::run_graph(graph).equals({5}));
 }
 
 TEST_CASE("callable return combines promoted scalars with explicit required inputs",
@@ -301,7 +301,7 @@ TEST_CASE("callable return combines promoted scalars with explicit required inpu
 
     const auto graph = [=] { return combine(10, source(2, 1)); };
 
-    CHECK(testing::test_graph(graph).equals({std::nullopt, 12}));
+    CHECK(bg::run_graph(graph).equals({std::nullopt, 12}));
 }
 
 TEST_CASE("passive callable inputs lower the active input guarantee",
@@ -319,7 +319,7 @@ TEST_CASE("passive callable inputs lower the active input guarantee",
         return output;
     };
 
-    CHECK(testing::test_graph(graph, {1, 2, 3}).equals({std::nullopt, std::nullopt, 8}));
+    CHECK(bg::run_graph(graph, {1, 2, 3}).equals({std::nullopt, std::nullopt, 8}));
 }
 
 TEST_CASE("callable explicit output guarantee takes precedence over input inference",
@@ -333,7 +333,7 @@ TEST_CASE("callable explicit output guarantee takes precedence over input infere
     };
 
     CHECK(copy.signature().output() == &TS<i64, TimeSeriesGuarantee::final>::type());
-    CHECK(testing::test_graph(graph).equals({7}));
+    CHECK(bg::run_graph(graph).equals({7}));
 }
 
 TEST_CASE("callable optional arguments and return values preserve absence",
@@ -346,7 +346,7 @@ TEST_CASE("callable optional arguments and return values preserve absence",
     });
 
     const auto graph = [=](wp<TS<i64>> input) { return select(input); };
-    CHECK(testing::test_graph(graph, {1, 2, 3}).equals({1, std::nullopt, 3}));
+    CHECK(bg::run_graph(graph, {1, 2, 3}).equals({1, std::nullopt, 3}));
     const std::array<const Type *, 1> final_input{&TS<i64, TimeSeriesGuarantee::final>::type()};
     CHECK(select.signature().resolve(final_input).output == &TS<i64>::type());
 
@@ -354,13 +354,13 @@ TEST_CASE("callable optional arguments and return values preserve absence",
 
     const auto reference_result = node([]() -> const std::optional<int> & { return result; });
     const auto constant_graph = [=] { return reference_result(); };
-    CHECK(testing::test_graph(constant_graph).equals({7}));
+    CHECK(bg::run_graph(constant_graph).equals({7}));
 
     const auto optional_input = node(
         eval = [](std::optional<int> value) { return value.value_or(-1); }, schedule_on_start = true);
 
     const auto optional_graph = [=](wp<TS<i64>> input) { return optional_input(input); };
-    CHECK(testing::test_graph(optional_graph, {std::nullopt, 1, 2}).equals({-1, 1, 2}));
+    CHECK(bg::run_graph(optional_graph, {std::nullopt, 1, 2}).equals({-1, 1, 2}));
 }
 
 TEST_CASE("required promoted callable inputs invalidate and recover their outputs",
@@ -379,7 +379,7 @@ TEST_CASE("required promoted callable inputs invalidate and recover their output
         return operators::default_(twice(gate(input)), -1);
     };
 
-    CHECK(testing::test_graph(graph, {1, -1, 3}).equals({2, -1, 6}));
+    CHECK(bg::run_graph(graph, {1, -1, 3}).equals({2, -1, 6}));
 }
 
 TEST_CASE("callable bool returns produce bool time series outputs",
@@ -388,7 +388,7 @@ TEST_CASE("callable bool returns produce bool time series outputs",
 
     const auto graph = [=](wp<TS<bool>> input) { return negate(input); };
 
-    CHECK(testing::test_graph(graph, {true, false, true}).equals({false, true, false}));
+    CHECK(bg::run_graph(graph, {true, false, true}).equals({false, true, false}));
 }
 
 TEST_CASE("callable start scheduling can be disabled for scalar-only nodes",
@@ -397,8 +397,8 @@ TEST_CASE("callable start scheduling can be disabled for scalar-only nodes",
 
     const auto disabled = node(eval = [](int value) { return value; }, schedule_on_start = false);
 
-    CHECK(testing::test_graph([=] { return source(5); }).equals({5}));
-    const auto result = testing::test_graph([=] { return disabled(5); });
+    CHECK(bg::run_graph([=] { return source(5); }).equals({5}));
+    const auto result = bg::run_graph([=] { return disabled(5); });
     REQUIRE(result.size() == 1);
     CHECK_FALSE(result[0].has_value());
     const std::array<const Type *, 1> scalar_input{&int64_type()};
@@ -413,7 +413,7 @@ TEST_CASE("callable scalar-or-time-series inputs accept constant and default bin
         return add(operators::const_(3), operators::default_(input, 7));
     };
 
-    CHECK(testing::test_graph(graph, {std::nullopt, 1, 2}).equals({10, 4, 5}));
+    CHECK(bg::run_graph(graph, {std::nullopt, 1, 2}).equals({10, 4, 5}));
 }
 
 TEST_CASE("callable scalar-or-time-series inputs read references to values",
@@ -428,7 +428,7 @@ TEST_CASE("callable scalar-or-time-series inputs read references to values",
         return identity(target);
     };
 
-    CHECK(testing::test_graph(graph, {1, 2, 3}).equals({1, 2, 3}));
+    CHECK(bg::run_graph(graph, {1, 2, 3}).equals({1, 2, 3}));
 }
 
 TEST_CASE("callable scalar-or-time-series inputs preserve stronger guarantees",
@@ -448,10 +448,10 @@ TEST_CASE("promoted callable parameters coexist with explicit input, scalar, and
     });
 
     const auto scalar_graph = [=](wp<TS<i64>> input) { return combine(3, input, 2); };
-    CHECK(testing::test_graph(scalar_graph, {1, 2, 3}).equals({5, 7, 9}));
+    CHECK(bg::run_graph(scalar_graph, {1, 2, 3}).equals({5, 7, 9}));
 
     const auto time_series_graph = [=](wp<TS<i64>> input) { return combine(input, input, 2); };
-    CHECK(testing::test_graph(time_series_graph, {1, 2, 3}).equals({3, 6, 9}));
+    CHECK(bg::run_graph(time_series_graph, {1, 2, 3}).equals({3, 6, 9}));
 }
 
 TEST_CASE("aggregate plain fields accept scalar or time-series bindings beside explicit fields",
@@ -460,12 +460,12 @@ TEST_CASE("aggregate plain fields accept scalar or time-series bindings beside e
 
     const auto graph = [=](wp<TS<i64>> input) { return sum(2, input, 3, std::optional<int>{4}); };
 
-    CHECK(testing::test_graph(graph, {1, 2, 3}).equals({10, 11, 12}));
+    CHECK(bg::run_graph(graph, {1, 2, 3}).equals({10, 11, 12}));
 
     const auto time_series_graph = [=](wp<TS<i64>> input) {
         return sum(input, input, 3, std::optional<int>{});
     };
-    CHECK(testing::test_graph(time_series_graph, {1, 2, 3}).equals({5, 7, 9}));
+    CHECK(bg::run_graph(time_series_graph, {1, 2, 3}).equals({5, 7, 9}));
 
     const auto &signature = sum.signature();
     CHECK(signature.parameter(2).type == &int64_type());
@@ -479,13 +479,13 @@ TEST_CASE("aggregate lifecycle functions reject promoted time-series fields",
     lifecycle_aggregate::started_with = 0;
     lifecycle_aggregate::stopped = 0;
     lifecycle_aggregate::finalized = 0;
-    CHECK(testing::test_graph(valid_graph, {1}).equals({4}));
+    CHECK(bg::run_graph(valid_graph, {1}).equals({4}));
     CHECK(lifecycle_aggregate::started_with == 3);
     CHECK(lifecycle_aggregate::stopped == 1);
     CHECK(lifecycle_aggregate::finalized == 1);
 
     const auto invalid_graph = [=](wp<TS<i64>> input) { return node_template(input, input); };
-    CHECK_THROWS(testing::test_graph(invalid_graph, {1}));
+    CHECK_THROWS(bg::run_graph(invalid_graph, {1}));
 }
 
 TEST_CASE("aggregate invalidation receives promoted scalar and empty optional fields",
@@ -507,7 +507,7 @@ TEST_CASE("aggregate invalidation receives promoted scalar and empty optional fi
     promoted_invalidation_aggregate::observed_offset = 0;
     promoted_invalidation_aggregate::observed_optional_has_value = true;
 
-    CHECK(testing::test_graph(graph, {1, -1, 2}).equals({8, -1, 11}));
+    CHECK(bg::run_graph(graph, {1, -1, 2}).equals({8, -1, 11}));
     CHECK(promoted_invalidation_aggregate::observed_offset == 5);
     CHECK_FALSE(promoted_invalidation_aggregate::observed_optional_has_value);
 }
@@ -526,8 +526,8 @@ TEST_CASE("promoted fields coexist with aggregate dynamic reference inputs",
         return node_template(input, input, collection);
     };
 
-    CHECK(testing::test_graph(scalar_graph, {1, 2}).equals({6, 7}));
-    CHECK(testing::test_graph(time_series_graph, {1, 2}).equals({2, 4}));
+    CHECK(bg::run_graph(scalar_graph, {1, 2}).equals({6, 7}));
+    CHECK(bg::run_graph(time_series_graph, {1, 2}).equals({2, 4}));
 }
 
 TEST_CASE("compiled runtime metadata locates interleaved parameters, output, and dynamic reference slots",
@@ -541,7 +541,7 @@ TEST_CASE("compiled runtime metadata locates interleaved parameters, output, and
         return read(combine(5, input, 3, select_second, tsl(first, second)));
     };
 
-    CHECK(testing::test_graph(graph, {1, 2, literal::SKIP, literal::SKIP, literal::SKIP},
+    CHECK(bg::run_graph(graph, {1, 2, literal::SKIP, literal::SKIP, literal::SKIP},
                               {false, false, literal::SKIP, true, literal::SKIP}, {10, 20, 30, 40, literal::SKIP},
                               {100, 200, 300, literal::SKIP, 400})
               .equals({100, 20, 30, 300, 400}));

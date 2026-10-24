@@ -4,7 +4,7 @@
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
 #include <bg/switch.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tsb/tsb_type.hpp>
@@ -117,7 +117,7 @@ TEST_CASE("switch preserves named arguments around an omitted case default",
                        "x"_n = operators::const_(i64{3}), "z"_n = operators::const_(i64{4}));
     };
 
-    CHECK(testing::test_graph(run).equals({423}));
+    CHECK(bg::run_graph(run).equals({423}));
 }
 
 TEST_CASE("switch runtime declarations preserve valid_items inputs",

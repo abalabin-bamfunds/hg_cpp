@@ -13,7 +13,7 @@
 #include <bg/scalar/data.hpp>
 #include <bg/scalar/opaque.hpp>
 #include <bg/scalar/literal_operations.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/input_data.hpp>
 #include <bg/time_series/literal_operations.hpp>
@@ -62,7 +62,7 @@ inline int copied_series_count{};
 inline int written_tick_count{};
 inline int replayed_tick_count{};
 inline int discarded_tick_count{};
-inline int test_graph_comparison_count{};
+inline int run_graph_comparison_count{};
 
 struct ScalarTickState {
     int writes{};
@@ -650,7 +650,7 @@ TEST_CASE("generic output copy uses the provider runtime for its output layout",
 
     const auto graph = [&](wp<TS<i64>> input) { return consume(copy(provide(input))); };
 
-    CHECK(testing::test_graph(graph, std::array<i64, 2>{41, 82}).equals<i64>({41, 82}));
+    CHECK(bg::run_graph(graph, std::array<i64, 2>{41, 82}).equals<i64>({41, 82}));
     CHECK(provider::copied_series_count == 2);
 }
 
@@ -1210,7 +1210,7 @@ TEST_CASE("erased time-series literal updates use runtime handlers and publish t
     const auto graph = [&](wp<TS<i64>> input) { return consume(make_list(input)); };
 
     provider::time_series_literal_semantic_calls = 0;
-    const auto result = testing::test_graph(graph, {4, 8});
+    const auto result = bg::run_graph(graph, {4, 8});
     CHECK(result.equals<i64>({4, 8}));
     CHECK(provider::time_series_literal_semantic_calls == 2);
 }
@@ -1358,14 +1358,14 @@ TEST_CASE("tick write dispatch reaches provider-defined time series",
     CHECK(output_value.value == 17);
 }
 
-TEST_CASE("test_graph captures provider time series with registered literal comparison",
+TEST_CASE("run_graph captures provider time series with registered literal comparison",
           "[testing][evaluation][feature:test-graph][series:generic][declaration:concrete]") {
     using Series = provider::Series<i64>;
     provider::register_default_tick_handlers();
 
     auto comparison = testing::TickLiteralComparison{
         .compare = [](util::buffer_reader &reader, const TimeSeriesType &, const literal::TimeSeriesLiteral &expected) {
-            ++provider::test_graph_comparison_count;
+            ++provider::run_graph_comparison_count;
             const auto actual = reader.read_raw<i64>();
             auto memory = allocator{};
             const auto tagged = literal::TaggedLiteral::from(expected);
@@ -1388,16 +1388,16 @@ TEST_CASE("test_graph captures provider time series with registered literal comp
     const auto ticks = std::array<i64, 3>{17, -1, 31};
     provider::written_tick_count = 0;
     provider::discarded_tick_count = 0;
-    provider::test_graph_comparison_count = 0;
+    provider::run_graph_comparison_count = 0;
 
     {
-        const auto result = testing::test_graph(graph, ticks);
+        const auto result = bg::run_graph(graph, ticks);
         CHECK(result.equals({17, literal::INVALID, 31}));
-        CHECK(provider::test_graph_comparison_count == 2);
+        CHECK(provider::run_graph_comparison_count == 2);
         CHECK_FALSE(result.equals({17, literal::INVALID, 32}));
-        CHECK(provider::test_graph_comparison_count == 4);
+        CHECK(provider::run_graph_comparison_count == 4);
         CHECK(result.equals({17, literal::INVALID, 31}));
-        CHECK(provider::test_graph_comparison_count == 6);
+        CHECK(provider::run_graph_comparison_count == 6);
     }
 
     CHECK(provider::written_tick_count == 2);
@@ -1408,23 +1408,23 @@ TEST_CASE("test_graph captures provider time series with registered literal comp
 
     const auto dictionary_graph = [&](wp<TS<i64>> input) { return publish_dictionary(input); };
     const auto dictionary_ticks = std::array<i64, 1>{17};
-    provider::test_graph_comparison_count = 0;
-    const auto dictionary_result = testing::test_graph(dictionary_graph, dictionary_ticks);
+    provider::run_graph_comparison_count = 0;
+    const auto dictionary_result = bg::run_graph(dictionary_graph, dictionary_ticks);
     CHECK(dictionary_result.equals({{{1, literal::REMOVED(17)}}}));
-    CHECK(provider::test_graph_comparison_count == 1);
+    CHECK(provider::run_graph_comparison_count == 1);
 }
 
-TEST_CASE("test_graph compares provider scalar values in nested time-series inputs",
+TEST_CASE("run_graph compares provider scalar values in nested time-series inputs",
           "[testing][evaluation][feature:test-graph][series:generic][series:tsd][scalar:opaque]") {
     using Value = test_scalar_provider::value;
     REQUIRE(provider::register_scalar_literal_handlers());
     REQUIRE(provider::register_provider_scalar_buffer_handlers());
 
     const auto identity = [](wp<> input) { return wp<>{input}; };
-    const auto series = testing::test_graph(identity, testing::input<TS<Value>>({{7}, {9}}));
+    const auto series = bg::run_graph(identity, bg::input<TS<Value>>({{7}, {9}}));
 
     const auto dictionary =
-        testing::test_graph(identity, testing::input<TSD<i64, TS<Value>>>({{{1, {7}}}, {{1, {9}}}}));
+        bg::run_graph(identity, bg::input<TSD<i64, TS<Value>>>({{{1, {7}}}, {{1, {9}}}}));
 
     CHECK(series.equals({{7}, {9}}));
     CHECK(dictionary.equals({{{1, {7}}}, {{1, {9}}}}));
@@ -1878,7 +1878,7 @@ TEST_CASE("a custom TSD key hook that throws after its callback does not discard
     const auto replay_node = node<provider::ContextActionNode>();
 
     const auto graph = [&](wp<TS<i64>> trigger) { return replay_node(replay_action_value, trigger); };
-    const auto graph_result = testing::test_graph(graph, {79});
+    const auto graph_result = bg::run_graph(graph, {79});
 
     CHECK(graph_result.equals<i64>({79}));
     CHECK(failure == "bundle key read failed after callback");
@@ -2173,7 +2173,7 @@ TEST_CASE("failed TSD write releases owned payloads from completed entries",
 
     const auto graph = [&](wp<TS<i64>> input) { return serialize(populate(input)); };
 
-    CHECK(testing::test_graph(graph, {17}).equals({true}));
+    CHECK(bg::run_graph(graph, {17}).equals({true}));
     CHECK(resource.allocations > 0);
     CHECK(resource.allocations == resource.deallocations);
 }
@@ -2327,7 +2327,7 @@ TEST_CASE("nested generic TSD replay selects the handler by item runtime represe
 
     const auto graph = [&](wp<TS<i64>> input) { return read_item(replay_dictionary(make_dictionary(input))); };
 
-    CHECK(testing::test_graph(graph, {17}).equals({17}));
+    CHECK(bg::run_graph(graph, {17}).equals({17}));
 }
 
 TEST_CASE("provider replay prefers exact runtime handlers over semantic handlers",
@@ -2445,7 +2445,7 @@ TEST_CASE("a node delays a configured provider output through ticks",
 
     const auto graph = [&](wp<TS<i64>> input) { return consume(delay(provide(input))); };
 
-    const auto actual = testing::test_graph(graph, {1, 2, 3, 4});
+    const auto actual = bg::run_graph(graph, {1, 2, 3, 4});
 
     CHECK(actual.equals<i64>({std::nullopt, 1, 2, 3, 4}));
 }
@@ -2473,7 +2473,7 @@ TEST_CASE("feedback uses registered handlers for provider time series",
         return output;
     };
 
-    const auto actual = testing::test_graph(graph, {2, 5, 7});
+    const auto actual = bg::run_graph(graph, {2, 5, 7});
     CHECK(actual.equals<i64>({std::nullopt, 2, 5, 7}));
     CHECK(provider::written_tick_count == 3);
     CHECK(provider::replayed_tick_count == 3);
@@ -2492,7 +2492,7 @@ TEST_CASE("a provider output binding works in a callable node",
 
     const auto graph = [&](wp<TS<i64>> input) { return consume(provide(input)); };
 
-    CHECK(testing::test_graph(graph, {3, 8}).equals<i64>({3, 8}));
+    CHECK(bg::run_graph(graph, {3, 8}).equals<i64>({3, 8}));
 }
 
 TEST_CASE("a provider generic series resolves its scalar and guarantee variables",
@@ -2532,7 +2532,7 @@ TEST_CASE("a generic provider input matches a concrete provider series", "[evalu
 
     const auto graph = [&](wp<TS<i64>> input) { return consume(provide(input)); };
 
-    CHECK(testing::test_graph(graph, {4, 9}).equals<i64>({4, 9}));
+    CHECK(bg::run_graph(graph, {4, 9}).equals<i64>({4, 9}));
 }
 
 TEST_CASE("a provider scalar declaration resolves in a generic series signature",
@@ -2547,7 +2547,7 @@ TEST_CASE("a provider scalar declaration resolves in a generic series signature"
 
     const auto graph = [&](wp<TS<i64>> input) { return consume(provide(input)); };
 
-    CHECK(testing::test_graph(graph, {11, 14}).equals<i64>({11, 14}));
+    CHECK(bg::run_graph(graph, {11, 14}).equals<i64>({11, 14}));
 }
 
 TEST_CASE("a builtin collection publishes provider items", "[evaluation][time_series][feature:test-graph]") {
@@ -2572,7 +2572,7 @@ TEST_CASE("a builtin collection publishes provider items", "[evaluation][time_se
 
     const auto graph = [&](wp<TS<i64>> input) { return consume(make_list(input)); };
 
-    CHECK(testing::test_graph(graph, {6, 10}).equals<i64>({6, 10}));
+    CHECK(bg::run_graph(graph, {6, 10}).equals<i64>({6, 10}));
 }
 
 TEST_CASE("an aggregate node binds configured provider outputs through public owners",
@@ -2587,7 +2587,7 @@ TEST_CASE("an aggregate node binds configured provider outputs through public ow
 
     const auto graph = [&](wp<TS<i64>> input) { return consume(aggregate(provide(input))); };
 
-    CHECK(testing::test_graph(graph, {5, 7}).equals<i64>({5, 7}));
+    CHECK(bg::run_graph(graph, {5, 7}).equals<i64>({5, 7}));
 }
 
 TEST_CASE("configured provider outputs select distinct callable and aggregate runtimes",
@@ -2609,7 +2609,7 @@ TEST_CASE("configured provider outputs select distinct callable and aggregate ru
 
     const auto callable_graph = [&](wp<TS<i64>> input) { return callable_consume(callable_provide(input)); };
 
-    CHECK(testing::test_graph(callable_graph, {2, 3}).equals<i64>({2, 3}));
+    CHECK(bg::run_graph(callable_graph, {2, 3}).equals<i64>({2, 3}));
     CHECK(callable_runtime == &view_runtime);
 
     const auto *aggregate_runtime = static_cast<const TimeSeriesRuntimeType *>(nullptr);
@@ -2623,7 +2623,7 @@ TEST_CASE("configured provider outputs select distinct callable and aggregate ru
 
     const auto aggregate_graph = [&](wp<TS<i64>> input) { return aggregate_consume(aggregate(input)); };
 
-    CHECK(testing::test_graph(aggregate_graph, {4, 5}).equals<i64>({4, 5}));
+    CHECK(bg::run_graph(aggregate_graph, {4, 5}).equals<i64>({4, 5}));
     CHECK(aggregate_runtime == &view_runtime);
 }
 
@@ -2643,7 +2643,7 @@ TEST_CASE("a runtime-signature node binds its configured provider output",
 
     const auto graph = [&](wp<TS<i64>> input) { return consume(provide(input)); };
 
-    const auto actual = testing::test_graph(graph, {12, 0, 14});
+    const auto actual = bg::run_graph(graph, {12, 0, 14});
     provider::view_invalidation_observer = nullptr;
 
     CHECK(actual.equals<i64>({12, std::nullopt, 14}));
@@ -2720,7 +2720,7 @@ TEST_CASE("ordinary provider outputs use resolved declarations instead of input 
         return generic_consume(generic_copy(concrete_provide(input)));
     };
 
-    CHECK(testing::test_graph(generic_graph, {6, 7}).equals<i64>({6, 7}));
+    CHECK(bg::run_graph(generic_graph, {6, 7}).equals<i64>({6, 7}));
     CHECK(generic_runtime == &default_runtime);
 
     const auto *default_runtime_after_view = static_cast<const TimeSeriesRuntimeType *>(nullptr);
@@ -2736,7 +2736,7 @@ TEST_CASE("ordinary provider outputs use resolved declarations instead of input 
 
     const auto default_graph = [&](wp<TS<i64>> input) { return default_consume(default_copy(view_provide(input))); };
 
-    CHECK(testing::test_graph(default_graph, {8, 9}).equals<i64>({8, 9}));
+    CHECK(bg::run_graph(default_graph, {8, 9}).equals<i64>({8, 9}));
     CHECK(default_runtime_after_view == &default_runtime);
 
     const auto *list_item_runtime = static_cast<const TimeSeriesRuntimeType *>(nullptr);
@@ -2751,7 +2751,7 @@ TEST_CASE("ordinary provider outputs use resolved declarations instead of input 
 
     const auto list_graph = [&](wp<TS<i64>> input) { return list_consume(make_list(view_provide(input))); };
 
-    CHECK(testing::test_graph(list_graph, {10, 11}).equals<i64>({10, 11}));
+    CHECK(bg::run_graph(list_graph, {10, 11}).equals<i64>({10, 11}));
     CHECK(list_item_runtime == &default_runtime);
 }
 
@@ -2775,7 +2775,7 @@ TEST_CASE("a configured provider output invalidates through its declared interfa
 
     const auto graph = [&](wp<TS<i64>> input) { return consume(provide(source(input))); };
 
-    CHECK(testing::test_graph(graph, {12, 0}).equals<i64>({12, std::nullopt}));
+    CHECK(bg::run_graph(graph, {12, 0}).equals<i64>({12, std::nullopt}));
     CHECK(invalidated);
     provider::view_invalidation_observer = nullptr;
 }

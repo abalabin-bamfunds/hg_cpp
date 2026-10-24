@@ -1,5 +1,5 @@
 #include <bg/library.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -24,17 +24,17 @@ TEST_CASE("string multiplication repeats text for scalar and time-series operand
         return operators::mul(text, count);
     };
 
-    CHECK(testing::test_graph(scalar).equals<string>({"ababab"}));
-    CHECK(testing::test_graph(text_by_scalar, {"a", "bc"}).equals<string>({"aa", "bcbc"}));
-    CHECK(testing::test_graph(scalar_by_text, {"a", "bc"}).equals<string>({"aa", "bcbc"}));
-    CHECK(testing::test_graph(scalar_text_by_series, {2, 3}).equals<string>({"xyxy", "xyxyxy"}));
-    CHECK(testing::test_graph(text_and_count, {"a", "bc"}, {2, 3}).equals<string>({"aa", "bcbcbc"}));
+    CHECK(bg::run_graph(scalar).equals<string>({"ababab"}));
+    CHECK(bg::run_graph(text_by_scalar, {"a", "bc"}).equals<string>({"aa", "bcbc"}));
+    CHECK(bg::run_graph(scalar_by_text, {"a", "bc"}).equals<string>({"aa", "bcbc"}));
+    CHECK(bg::run_graph(scalar_text_by_series, {2, 3}).equals<string>({"xyxy", "xyxyxy"}));
+    CHECK(bg::run_graph(text_and_count, {"a", "bc"}, {2, 3}).equals<string>({"aa", "bcbcbc"}));
 }
 
 TEST_CASE("string multiplication handles nonpositive counts, empty strings, and embedded nulls",
           "[feature:operator][series:value][scalar:string][scalar:i64]") {
     const auto repeat = [](wp<TS<string>> text, wp<TS<i64>> count) { return text * count; };
-    CHECK(testing::test_graph(repeat, {"ab", "ab", "ab", "", std::string_view{"a\0b", 3}},
+    CHECK(bg::run_graph(repeat, {"ab", "ab", "ab", "", std::string_view{"a\0b", 3}},
                               {0, -2, 2, std::numeric_limits<i64>::max(), 2})
               .equals<string>({"", "", "abab", "", std::string_view{"a\0ba\0b", 6}}));
 }
@@ -45,8 +45,8 @@ TEST_CASE("string multiplication rejects overflow and oversized output before pr
         return operators::mul(text, std::numeric_limits<i64>::max());
     };
 
-    CHECK_THROWS_AS(testing::test_graph(repeat, {"abc"}), std::length_error);
-    CHECK_THROWS_AS(testing::test_graph(repeat, {"ab"}), std::length_error);
+    CHECK_THROWS_AS(bg::run_graph(repeat, {"abc"}), std::length_error);
+    CHECK_THROWS_AS(bg::run_graph(repeat, {"ab"}), std::length_error);
 }
 
 TEST_CASE("substr selects code-point slices and defaults the end to the string length",
@@ -55,14 +55,14 @@ TEST_CASE("substr selects code-point slices and defaults the end to the string l
     const auto with_end = [](wp<TS<string>> text, wp<TS<i64>> start, wp<TS<i64>> end) {
         return operators::substr(text, start, end);
     };
-    CHECK(testing::test_graph(to_end, {"abcde", "abcde", "abcde", "abcde", "", "abcde"},
+    CHECK(bg::run_graph(to_end, {"abcde", "abcde", "abcde", "abcde", "", "abcde"},
                               {-2, -99, 5, std::numeric_limits<i64>::min(), 0, std::numeric_limits<i64>::max()})
               .equals<string>({"de", "abcde", "", "abcde", "", ""}));
-    CHECK(testing::test_graph(with_end, {"abcde", "abcde", "abcde", "abcde", std::string_view{"a\0bc", 4}},
+    CHECK(bg::run_graph(with_end, {"abcde", "abcde", "abcde", "abcde", std::string_view{"a\0bc", 4}},
                               {-4, 1, 3, std::numeric_limits<i64>::min(), 1},
                               {-1, std::numeric_limits<i64>::min(), 1, std::numeric_limits<i64>::max(), 3})
               .equals<string>({"bcd", "", "", "abcde", std::string_view{"\0b", 2}}));
-    CHECK(testing::test_graph(
+    CHECK(bg::run_graph(
               [] { return operators::substr(std::string_view{"abcde"}, i64{1}, std::numeric_limits<i64>::max()); })
               .equals<string>({"bcde"}));
 }
@@ -87,11 +87,11 @@ TEST_CASE("string repetition and substr propagate input guarantees",
         CHECK(&result.type() == &TS<string, TimeSeriesGuarantee::final>::type());
         return result;
     };
-    CHECK(testing::test_graph(constant).equals<string>({"xx"}));
-    CHECK(testing::test_graph(deduplicated, testing::input<TS<string, TimeSeriesGuarantee::deduplicated>>(
+    CHECK(bg::run_graph(constant).equals<string>({"xx"}));
+    CHECK(bg::run_graph(deduplicated, bg::input<TS<string, TimeSeriesGuarantee::deduplicated>>(
                                                  {"same", "same", "next"}))
               .equals<string>({"samesame", std::nullopt, "nextnext"}));
-    CHECK(testing::test_graph(final, testing::input<TS<string, TimeSeriesGuarantee::final>>({"once"}))
+    CHECK(bg::run_graph(final, bg::input<TS<string, TimeSeriesGuarantee::final>>({"once"}))
               .equals<string>({"once"}));
 }
 
@@ -101,7 +101,7 @@ TEST_CASE("required string operation inputs gate evaluation and output validity"
     const auto graph = [](wp<TS<string>> text, wp<TS<i64>> count) {
         return operators::valid(operators::mul(text, count));
     };
-    CHECK(testing::test_graph(graph, {literal::SKIP, literal::INVALID, "ab", literal::SKIP, literal::INVALID, "cd"},
+    CHECK(bg::run_graph(graph, {literal::SKIP, literal::INVALID, "ab", literal::SKIP, literal::INVALID, "cd"},
                               {2, 2, 2, 2, 2, 2})
               .equals<bool>({false, std::nullopt, true, std::nullopt, false, true}));
 }
@@ -109,14 +109,14 @@ TEST_CASE("required string operation inputs gate evaluation and output validity"
 TEST_CASE("ordinary string repetition publishes equal results on separate input ticks",
           "[feature:operator][series:value][scalar:string][scalar:i64][guarantee:ordinary][transition:update]") {
     const auto repeat = [](wp<TS<string>> text, wp<TS<i64>> count) { return text * count; };
-    CHECK(testing::test_graph(repeat, {"same", "same", "same"}, {2, 2, 2})
+    CHECK(bg::run_graph(repeat, {"same", "same", "same"}, {2, 2, 2})
               .equals<string>({"samesame", "samesame", "samesame"}));
 }
 
 TEST_CASE("string getitem indexes code points through wiring-point indexing",
           "[feature:getitem][series:value][scalar:string][scalar:i64][shape:single-node]") {
     const auto index = [](wp<TS<string>> text, wp<TS<i64>> position) { return text[position]; };
-    CHECK(testing::test_graph(index, {"abc", "abc", "abc", std::string_view{"a\0b", 3}, "x"},
+    CHECK(bg::run_graph(index, {"abc", "abc", "abc", std::string_view{"a\0b", 3}, "x"},
                               {0, -1, -3, 1, 0})
               .equals<string>({"a", "c", "a", std::string_view{"\0", 1}, "x"}));
 }
@@ -124,9 +124,9 @@ TEST_CASE("string getitem indexes code points through wiring-point indexing",
 TEST_CASE("string getitem rejects positive and negative out-of-range indexes",
           "[feature:getitem][series:value][scalar:string][scalar:i64]") {
     const auto index = [](wp<TS<string>> text, wp<TS<i64>> position) { return text[position]; };
-    CHECK_THROWS_AS(testing::test_graph(index, {"abc"}, {3}), std::out_of_range);
-    CHECK_THROWS_AS(testing::test_graph(index, {"abc"}, {std::numeric_limits<i64>::min()}), std::out_of_range);
-    CHECK_THROWS_AS(testing::test_graph(index, {""}, {0}), std::out_of_range);
+    CHECK_THROWS_AS(bg::run_graph(index, {"abc"}, {3}), std::out_of_range);
+    CHECK_THROWS_AS(bg::run_graph(index, {"abc"}, {std::numeric_limits<i64>::min()}), std::out_of_range);
+    CHECK_THROWS_AS(bg::run_graph(index, {""}, {0}), std::out_of_range);
 }
 
 TEST_CASE("string repetition observes reference retargeting",
@@ -135,7 +135,7 @@ TEST_CASE("string repetition observes reference retargeting",
     const auto graph = [](wp<TS<bool>> condition, wp<TS<string>> lhs, wp<TS<string>> rhs) {
         return operators::mul(operators::if_then_else(condition, lhs, rhs), i64{2});
     };
-    CHECK(testing::test_graph(graph, {true, false, false, true}, {"a", "b", "c", "d"}, {"w", "x", "y", "z"})
+    CHECK(bg::run_graph(graph, {true, false, false, true}, {"a", "b", "c", "d"}, {"w", "x", "y", "z"})
               .equals<string>({"aa", "xx", "yy", "dd"}));
 }
 
@@ -148,11 +148,11 @@ TEST_CASE("string length, getitem, and substr count Unicode code points",
         return operators::substr(text, start, end);
     };
     const auto text = std::string_view{"é🍕é"};
-    CHECK(testing::test_graph(length, {text, std::string_view{"a\0b", 3}}).equals<i64>({4, 3}));
-    CHECK(testing::test_graph(symbol_length).equals<i64>({4}));
-    CHECK(testing::test_graph(index, {text, text, text, text}, {0, 1, -1, -2})
+    CHECK(bg::run_graph(length, {text, std::string_view{"a\0b", 3}}).equals<i64>({4, 3}));
+    CHECK(bg::run_graph(symbol_length).equals<i64>({4}));
+    CHECK(bg::run_graph(index, {text, text, text, text}, {0, 1, -1, -2})
               .equals<string>({"é", "🍕", "́", "e"}));
-    CHECK(testing::test_graph(slice, {text, text, text, text}, {0, 2, -3, 1},
+    CHECK(bg::run_graph(slice, {text, text, text, text}, {0, 2, -3, 1},
                               {2, 4, std::numeric_limits<i64>::max(), 3})
               .equals<string>({"é🍕", "é", "🍕é", "🍕e"}));
 }
@@ -162,13 +162,13 @@ TEST_CASE("Unicode casing uses root-locale mappings and returns string values",
     const auto lower = [](wp<TS<string>> text) { return operators::lower(text); };
     const auto upper = [](wp<TS<string>> text) { return operators::upper(text); };
     const auto fold = [](wp<TS<string>> text) { return operators::casefold(text); };
-    CHECK(testing::test_graph(lower, {"ΟΣ", "𐐀", "é"}).equals<string>({"ος", "𐐨", "é"}));
-    CHECK(testing::test_graph(upper, {"ß", "é"}).equals<string>({"SS", "É"}));
-    CHECK(testing::test_graph(fold, {"Straße"}).equals<string>({"strasse"}));
-    CHECK(testing::test_graph([] { return operators::upper(symbol{"ß"}); }).equals<string>({"SS"}));
-    CHECK(testing::test_graph([] { return operators::len_(symbol{}); }).equals<i64>({0}));
-    CHECK(testing::test_graph([] { return operators::lower(symbol{}); }).equals<string>({""}));
-    CHECK_THROWS_AS(testing::test_graph([] { return operators::getitem(symbol{}, i64{0}); }), std::out_of_range);
+    CHECK(bg::run_graph(lower, {"ΟΣ", "𐐀", "é"}).equals<string>({"ος", "𐐨", "é"}));
+    CHECK(bg::run_graph(upper, {"ß", "é"}).equals<string>({"SS", "É"}));
+    CHECK(bg::run_graph(fold, {"Straße"}).equals<string>({"strasse"}));
+    CHECK(bg::run_graph([] { return operators::upper(symbol{"ß"}); }).equals<string>({"SS"}));
+    CHECK(bg::run_graph([] { return operators::len_(symbol{}); }).equals<i64>({0}));
+    CHECK(bg::run_graph([] { return operators::lower(symbol{}); }).equals<string>({""}));
+    CHECK_THROWS_AS(bg::run_graph([] { return operators::getitem(symbol{}, i64{0}); }), std::out_of_range);
 }
 
 TEST_CASE("Unicode length, indexing, slicing, and casing reject malformed UTF-8 suffixes",
@@ -183,12 +183,12 @@ TEST_CASE("Unicode length, indexing, slicing, and casing reject malformed UTF-8 
     const auto slice = [](wp<TS<string>> text) { return operators::substr(text, i64{0}, i64{1}); };
     const auto lower = [](wp<TS<string>> text) { return operators::lower(text); };
     for (const auto text : malformed) {
-        CHECK_THROWS_AS(testing::test_graph(length, {text}), std::invalid_argument);
+        CHECK_THROWS_AS(bg::run_graph(length, {text}), std::invalid_argument);
     }
-    CHECK_THROWS_AS(testing::test_graph(index, {malformed.front()}), std::invalid_argument);
-    CHECK_THROWS_AS(testing::test_graph(slice, {malformed.front()}), std::invalid_argument);
-    CHECK_THROWS_AS(testing::test_graph(lower, {malformed.front()}), std::invalid_argument);
-    CHECK_THROWS_AS(testing::test_graph([&] { return operators::len_(symbol{malformed.front()}); }),
+    CHECK_THROWS_AS(bg::run_graph(index, {malformed.front()}), std::invalid_argument);
+    CHECK_THROWS_AS(bg::run_graph(slice, {malformed.front()}), std::invalid_argument);
+    CHECK_THROWS_AS(bg::run_graph(lower, {malformed.front()}), std::invalid_argument);
+    CHECK_THROWS_AS(bg::run_graph([&] { return operators::len_(symbol{malformed.front()}); }),
                      std::invalid_argument);
 }
 
@@ -210,13 +210,13 @@ TEST_CASE("Unicode casing preserves ordinary ticks, reference retargeting, and i
         return operators::lower(operators::if_then_else(condition, left, right));
     };
 
-    CHECK(testing::test_graph(repeated, {"Straße", "Straße", "Straße"})
+    CHECK(bg::run_graph(repeated, {"Straße", "Straße", "Straße"})
               .equals<string>({"strasse", "strasse", "strasse"}));
-    CHECK(testing::test_graph(deduplicated, testing::input<TS<string, TimeSeriesGuarantee::deduplicated>>({"ABC"}))
+    CHECK(bg::run_graph(deduplicated, bg::input<TS<string, TimeSeriesGuarantee::deduplicated>>({"ABC"}))
               .equals<string>({"abc"}));
-    CHECK(testing::test_graph(final, testing::input<TS<string, TimeSeriesGuarantee::final>>({"é"}))
+    CHECK(bg::run_graph(final, bg::input<TS<string, TimeSeriesGuarantee::final>>({"é"}))
               .equals<string>({"É"}));
-    CHECK(testing::test_graph(retarget, std::array{true, false}, std::array<std::string_view, 2>{"É", "Ω"},
+    CHECK(bg::run_graph(retarget, std::array{true, false}, std::array<std::string_view, 2>{"É", "Ω"},
                               std::array<std::string_view, 2>{"A", "B"})
               .equals<string>({"é", "b"}));
 }
@@ -251,5 +251,5 @@ TEST_CASE("Unicode casing uses the observed guarantee of a string reference",
         return result;
     };
 
-    CHECK(testing::test_graph(graph, {false, true, false}).equals<string>({"é", "ω", "é"}));
+    CHECK(bg::run_graph(graph, {false, true, false}).equals<string>({"é", "ω", "é"}));
 }

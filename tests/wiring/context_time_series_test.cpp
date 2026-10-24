@@ -1,7 +1,7 @@
 #include <bg/graph.hpp>
 #include <bg/graph/context.hpp>
 #include <bg/node.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
@@ -49,7 +49,7 @@ TEST_CASE("a callable node receives a context time series",
         return with_context("value"_n = value, [] { return copy_context(); });
     };
 
-    const auto actual = testing::test_graph(tested, {3, 7});
+    const auto actual = bg::run_graph(tested, {3, 7});
 
     CHECK(actual.equals({3, 7}));
 }
@@ -65,7 +65,7 @@ TEST_CASE("a context provider retains ticks when converted to a reference",
         return with_context("value"_n = reference, [&] { return copy_reference_context(); });
     };
 
-    const auto actual = testing::test_graph(tested, {3, 7});
+    const auto actual = bg::run_graph(tested, {3, 7});
 
     CHECK(actual.equals({3, 7}));
 }
@@ -77,7 +77,7 @@ TEST_CASE("an aggregate node receives a context time series",
         return copy_aggregate_context();
     };
 
-    const auto actual = testing::test_graph(tested, {4, 8});
+    const auto actual = bg::run_graph(tested, {4, 8});
 
     CHECK(actual.equals({4, 8}));
 }
@@ -88,7 +88,7 @@ TEST_CASE("an aggregate graph establishes a context time series",
         return with_context("value"_n = value, [] { return copy_aggregate_graph_context(); });
     };
 
-    const auto actual = testing::test_graph(tested, {5, 10});
+    const auto actual = bg::run_graph(tested, {5, 10});
 
     CHECK(actual.equals({5, 10}));
 }
@@ -103,7 +103,7 @@ TEST_CASE("a TSL graph parameter can request lexical context",
         return with_context("values"_n = tsl(first, second), [&] { return first_item(); });
     };
 
-    const auto actual = testing::test_graph(tested, {6, 12}, {7, 14});
+    const auto actual = bg::run_graph(tested, {6, 12}, {7, 14});
 
     CHECK(actual.equals<i64>({6, 12}));
 }
@@ -118,7 +118,7 @@ TEST_CASE("a TSB graph parameter can request lexical context",
         return with_context("values"_n = values, [&] { return value_field(); });
     };
 
-    const auto actual = testing::test_graph(tested, {8, 16});
+    const auto actual = bg::run_graph(tested, {8, 16});
 
     CHECK(actual.equals({8, 16}));
 }
@@ -127,7 +127,7 @@ TEST_CASE("a scalar context value is lifted to a const time series",
           "[feature:context-time-series][feature:wiring][guarantee:const]") {
     const auto tested = [] { return with_context("value"_n = i64{11}, [] { return copy_context(); }); };
 
-    const auto actual = testing::test_graph(tested);
+    const auto actual = bg::run_graph(tested);
 
     CHECK(actual.equals({11}));
 }
@@ -139,7 +139,7 @@ TEST_CASE("a callable graph context parameter can be supplied explicitly by name
 
     const auto tested = [&](wp<TS<i64>> value) { return inner("value"_n = value); };
 
-    const auto actual = testing::test_graph(tested, {5, 9});
+    const auto actual = bg::run_graph(tested, {5, 9});
 
     CHECK(actual.equals({5, 9}));
 }
@@ -148,7 +148,7 @@ TEST_CASE("a callable node context parameter can be supplied explicitly by name"
           "[feature:context-time-series][feature:wiring][definition:function]") {
     const auto tested = [](wp<TS<i64>> value) { return copy_context("value"_n = value); };
 
-    const auto actual = testing::test_graph(tested, {7, 11});
+    const auto actual = bg::run_graph(tested, {7, 11});
 
     CHECK(actual.equals({7, 11}));
 }
@@ -157,7 +157,7 @@ TEST_CASE("an aggregate node context parameter can be supplied explicitly by nam
           "[feature:context-time-series][feature:wiring][definition:aggregate]") {
     const auto tested = [](wp<TS<i64>> value) { return copy_aggregate_context("value"_n = value); };
 
-    const auto actual = testing::test_graph(tested, {9, 13});
+    const auto actual = bg::run_graph(tested, {9, 13});
 
     CHECK(actual.equals({9, 13}));
 }
@@ -166,7 +166,7 @@ TEST_CASE("an aggregate graph context parameter can be supplied explicitly by na
           "[feature:context-time-series][feature:wiring][definition:aggregate]") {
     const auto tested = [](wp<TS<i64>> value) { return copy_aggregate_graph_context("value"_n = value); };
 
-    const auto actual = testing::test_graph(tested, {10, 14});
+    const auto actual = bg::run_graph(tested, {10, 14});
 
     CHECK(actual.equals({10, 14}));
 }
@@ -194,7 +194,7 @@ TEST_CASE("a graph context parameter inherits and shadows lexical context",
         return with_context("value"_n = outer, [&] { return inner("value"_n = inner_value); });
     };
 
-    const auto actual = testing::test_graph(tested, {1, 2}, {10, 20});
+    const auto actual = bg::run_graph(tested, {1, 2}, {10, 20});
 
     CHECK(actual.equals({10, 20}));
 }
@@ -229,7 +229,7 @@ TEST_CASE("context input resolves a graph type variable and output",
         return with_context("value"_n = value, [&] { return identity(); });
     };
 
-    const auto actual = testing::test_graph(tested, {6, 12});
+    const auto actual = bg::run_graph(tested, {6, 12});
 
     CHECK(actual.equals<i64>({6, 12}));
 }
@@ -418,7 +418,7 @@ TEST_CASE("operator cache entries include contexts used by rejected overloads",
         return with_context("value"_n = i64{1}, [&] { return choose_context(); });
     };
 
-    const auto actual = testing::test_graph(tested);
+    const auto actual = bg::run_graph(tested);
 
     CHECK(actual.equals({1}));
 }

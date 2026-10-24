@@ -7,8 +7,8 @@
 #include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/scalar/list/scalar.hpp>
 #include <bg/scalar/value.hpp>
-#include <bg/testing/test_graph.hpp>
-#include <bg/testing/test_graph_literal_input.hpp>
+#include <bg/run_graph.hpp>
+#include <bg/testing/run_graph_literal_input.hpp>
 #include <bg/time_series/output_state.hpp>
 #include <bg/time_series/tick_serializer.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
@@ -175,8 +175,8 @@ TEST_CASE("a typed graph reads and returns byte payload literals",
     const auto first = std::array{byte{0x00}, byte{0x01}};
     const auto second = std::array{byte{0xfe}, byte{0xff}};
 
-    const auto result = testing::test_graph(
-        identity, testing::input<TS<bytes>>({std::span<const byte>{first}, std::span<const byte>{second}}));
+    const auto result = bg::run_graph(
+        identity, bg::input<TS<bytes>>({std::span<const byte>{first}, std::span<const byte>{second}}));
 
     REQUIRE(result.size() == 2);
     const auto first_value = result[0];
@@ -194,7 +194,7 @@ TEST_CASE("a plain span node parameter resolves to the bytes scalar",
 
     const auto echo = node([](std::span<const byte> value) { return value; });
     const auto payload = std::array{byte{0x00}, byte{0xff}};
-    const auto result = testing::test_graph(echo, testing::input<TS<bytes>>({std::span<const byte>{payload}}));
+    const auto result = bg::run_graph(echo, bg::input<TS<bytes>>({std::span<const byte>{payload}}));
 
     REQUIRE(result.size() == 1);
     const auto value = result[0];

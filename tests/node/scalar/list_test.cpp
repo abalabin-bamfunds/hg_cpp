@@ -1,5 +1,5 @@
 #include <bg/bg.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 
 #include "../../utils/counting_memory_resource.hpp"
 
@@ -28,7 +28,7 @@ TEST_CASE("a scalar list propagates through a value time series",
 
     const auto graph = [&] { return sum(source(input)); };
 
-    CHECK(testing::test_graph(graph).equals<i64>({3}));
+    CHECK(bg::run_graph(graph).equals<i64>({3}));
 }
 
 TEST_CASE("a scalar list output accepts a C++ range",
@@ -40,7 +40,7 @@ TEST_CASE("a scalar list output accepts a C++ range",
     });
     const auto graph = [&] { return sum(source()); };
 
-    CHECK(testing::test_graph(graph).equals<i64>({6}));
+    CHECK(bg::run_graph(graph).equals<i64>({6}));
 }
 
 TEST_CASE("a scalar list output rejects an incompatible scalar range",
@@ -63,7 +63,7 @@ TEST_CASE("a scalar list output rejects an incompatible scalar range",
     const auto size = node([](In<TS<List<i64>>> input) { return static_cast<i64>(input.value_view().size()); });
     const auto graph = [&](wp<TS<i64>> action) { return size(source(action)); };
 
-    CHECK(testing::test_graph(graph, {0, 1}).equals<i64>({2, std::nullopt}));
+    CHECK(bg::run_graph(graph, {0, 1}).equals<i64>({2, std::nullopt}));
 }
 
 TEST_CASE("a scalar list output owns nested borrowed values on replacement",
@@ -85,7 +85,7 @@ TEST_CASE("a scalar list output owns nested borrowed values on replacement",
     });
 
     const auto inspect = node([](In<TS<List<List<string>>>> input) { return input.value_view()[0][0].value(); });
-    CHECK(testing::test_graph([&] { return inspect(source()); }).equals<string>({"replacement"}));
+    CHECK(bg::run_graph([&] { return inspect(source()); }).equals<string>({"replacement"}));
 }
 
 struct deduplicated_empty_list_output {
@@ -111,7 +111,7 @@ TEST_CASE("a deduplicated empty list output suppresses equal ranges and revalida
     const auto inspect = node([](In<TS<List<i64>>, optional> input) { return input.valid(); });
     const auto graph = [&](wp<TS<i64>> action) { return inspect(source(action)); };
 
-    CHECK(testing::test_graph(graph, {0, 1, 2, 0}).equals<bool>({true, std::nullopt, false, true}));
+    CHECK(bg::run_graph(graph, {0, 1, 2, 0}).equals<bool>({true, std::nullopt, false, true}));
 }
 
 struct inspect_scalar_list_state {
@@ -133,7 +133,7 @@ TEST_CASE("scalar list state is available during node start",
 
     const auto graph = [&] { return inspect(); };
 
-    CHECK(testing::test_graph(graph).equals<i64>({3}));
+    CHECK(bg::run_graph(graph).equals<i64>({3}));
 }
 
 struct inspect_scalar_list {
@@ -153,7 +153,7 @@ TEST_CASE("a scalar list is available from packed graph scalar storage",
 
     const auto graph = [&] { return inspect(input); };
 
-    CHECK(testing::test_graph(graph).equals<i64>({3}));
+    CHECK(bg::run_graph(graph).equals<i64>({3}));
 }
 
 TEST_CASE("a runtime graph releases scalar list time-series storage",

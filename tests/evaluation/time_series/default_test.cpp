@@ -7,7 +7,7 @@
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -22,7 +22,7 @@ TEST_CASE("a default value supplies an initially invalid source input",
           "[shape:single-node][activity:active][validity:required][transition:first-tick]") {
     const auto graph = [](wp<TS<i64>> input) { return operators::default_(input, 7); };
 
-    const auto actual = testing::test_graph(graph, {std::nullopt, 3, std::nullopt, 4});
+    const auto actual = bg::run_graph(graph, {std::nullopt, 3, std::nullopt, 4});
 
     CHECK(actual.equals<i64>({7, 3, std::nullopt, 4}));
 }
@@ -111,7 +111,7 @@ TEST_CASE("a default binding dereferences a reference source",
 
     const auto graph = [&] { return operators::default_(pass(source()), 7); };
 
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals({10, 20, 7, 30}));
 }
@@ -123,7 +123,7 @@ TEST_CASE("a default binding switches on source invalidation and revalidation",
 
     const auto graph = [&] { return operators::default_(source(), 7); };
 
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals({10, 20, 7, 30}));
 }
@@ -134,7 +134,7 @@ TEST_CASE("a default binding updates its timestamp across source validity change
     const auto source = node<changing_source>();
 
     const auto graph = [&] { return observe_default(operators::default_(source(), 7)); };
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals<default_observation>({default_observation{10, time(1), true, time(1)},
                                               default_observation{20, time(2), true, time(2)},
@@ -175,7 +175,7 @@ TEST_CASE("a default binding publishes equal fallback validity switches",
     const auto source = node<equal_default_source>();
 
     const auto graph = [&] { return observe_default(operators::default_(source(), 7)); };
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals<default_observation>({default_observation{7, time(1), true, time(1)},
                                               default_observation{7, time(2), true, time(2)},
@@ -191,7 +191,7 @@ TEST_CASE("a reference over a default binding receives fallback updates",
     const auto pass = node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) { output.copy(input); });
 
     const auto graph = [&] { return observe_default(pass(operators::default_(source(), 7))); };
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals<default_observation>({default_observation{10, time(1), true, time(1)},
                                               default_observation{20, time(2), true, time(2)},
@@ -208,7 +208,7 @@ TEST_CASE("a default binding initializes a reference consumer while its source i
     const auto pass = node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) { output.copy(input); });
 
     const auto graph = [&] { return observe_default(pass(operators::default_(source(), 7))); };
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals<default_observation>({default_observation{7, time(1), true, time(1)},
                                               default_observation{10, time(2), true, time(2)}}));
@@ -225,7 +225,7 @@ TEST_CASE("nested defaults preserve the first fallback",
         return observe(operators::default_(operators::default_(source(), 7), 9));
     };
 
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals({7, 10}));
 }
@@ -244,7 +244,7 @@ TEST_CASE("a nested graph returns a reference over a default binding",
 
     const auto outer = [&] { return nested(inner, operators::const_(true), source()); };
 
-    const auto actual = testing::test_graph(outer);
+    const auto actual = bg::run_graph(outer);
 
     CHECK(actual.equals({10, 20, 7, 30}));
 }

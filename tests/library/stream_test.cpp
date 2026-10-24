@@ -10,7 +10,7 @@
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/type/time_series_value_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -29,7 +29,7 @@ TEST_CASE("valid publishes the input validity",
           "[feature:operator][feature:validity][validity:optional][series:value]") {
     const auto query = [](wp<TS<i64>> value) { return operators::valid(value); };
 
-    CHECK(testing::test_graph(query, {literal::INVALID, 1}).equals<bool>({false, true}));
+    CHECK(bg::run_graph(query, {literal::INVALID, 1}).equals<bool>({false, true}));
 }
 
 namespace stream_test {
@@ -56,7 +56,7 @@ TEST_CASE("type_ reports scalar type and deduplicates repeated values",
           "[transition:update][transition:invalidation][transition:revalidation]") {
     const auto graph = [](wp<TS<i64>> value) { return operators::type_(value); };
 
-    const auto actual = testing::test_graph(graph, {1, 2, literal::INVALID, 3});
+    const auto actual = bg::run_graph(graph, {1, 2, literal::INVALID, 3});
 
     CHECK(actual.equals<const Type *>({
         &cpp_scalar_type<i64>(), std::nullopt, std::nullopt, &cpp_scalar_type<i64>(),
@@ -107,7 +107,7 @@ TEST_CASE("valid observes target validity through a reference",
 
     const auto graph = [&] { return operators::valid(reference(source())); };
 
-    CHECK(testing::test_graph(graph).equals<bool>({true, false, true}));
+    CHECK(bg::run_graph(graph).equals<bool>({true, false, true}));
 }
 
 TEST_CASE("all_valid checks every item in a fixed list",
@@ -116,7 +116,7 @@ TEST_CASE("all_valid checks every item in a fixed list",
         return operators::all_valid(tsl(first, second));
     };
 
-    CHECK(testing::test_graph(query, {1, 2}, {3, 4})
+    CHECK(bg::run_graph(query, {1, 2}, {3, 4})
               .equals<bool>({true, std::nullopt}));
 }
 
@@ -125,7 +125,7 @@ TEST_CASE("all_valid reports invalid and revalidated collection roots",
           "[transition:invalidation][transition:revalidation]") {
     const auto query = [](wp<TSL<TS<i64>, 2>> value) { return operators::all_valid(value); };
 
-    CHECK(testing::test_graph(query, {literal::INVALID, {{0, 1}, {1, 2}}, literal::INVALID, {{0, 3}, {1, 4}}})
+    CHECK(bg::run_graph(query, {literal::INVALID, {{0, 1}, {1, 2}}, literal::INVALID, {{0, 3}, {1, 4}}})
               .equals<bool>({false, true, false, true}));
 }
 
@@ -136,21 +136,21 @@ TEST_CASE("all_valid tracks immediate item invalidation in a free list",
 
     const auto graph = [&](wp<TS<i64>> first) { return operators::all_valid(tsl(first, changing_item())); };
 
-    CHECK(testing::test_graph(graph, {10}).equals<bool>({true, false, true}));
+    CHECK(bg::run_graph(graph, {10}).equals<bool>({true, false, true}));
 }
 
 TEST_CASE("all_valid treats a valid empty dictionary as valid",
           "[feature:operator][feature:validity][validity:all-valid][series:tsd]") {
     const auto graph = [](wp<TSD<i64, TS<i64>>> value) { return operators::all_valid(value); };
 
-    CHECK(testing::test_graph(graph, {{}}).equals<bool>({true}));
+    CHECK(bg::run_graph(graph, {{}}).equals<bool>({true}));
 }
 
 TEST_CASE("sample copies the current value on every signal tick",
           "[feature:operator][series:value][shape:chain]") {
     const auto sample = [](wp<TS<i64>> signal, wp<TS<i64>> value) { return operators::sample(signal, value); };
 
-    CHECK(testing::test_graph(sample, {0, 1, 2}, {10, 20, 30})
+    CHECK(bg::run_graph(sample, {0, 1, 2}, {10, 20, 30})
               .equals<i64>({10, 20, 30}));
 }
 
@@ -159,7 +159,7 @@ TEST_CASE("filter preserves the last value while closed and skips an unchanged v
     const auto source = node<stable_value_source>();
     const auto filter = [&](wp<TS<bool>> condition) { return operators::filter_(condition, source()); };
 
-    CHECK(testing::test_graph(filter, {true, false, true, true})
+    CHECK(bg::run_graph(filter, {true, false, true, true})
               .equals<i64>({10, std::nullopt, std::nullopt, std::nullopt}));
 }
 
@@ -171,7 +171,7 @@ TEST_CASE("filter copies scalar input invalidation while open",
         return operators::filter_(condition, source());
     };
 
-    CHECK(testing::test_graph(filter, {true}).equals<i64>({1, std::nullopt, 2}));
+    CHECK(bg::run_graph(filter, {true}).equals<i64>({1, std::nullopt, 2}));
 }
 
 TEST_CASE("filter invalidates its output when an open input becomes invalid",
@@ -184,7 +184,7 @@ TEST_CASE("filter invalidates its output when an open input becomes invalid",
         return observe_validity(operators::filter_(condition, source()));
     };
 
-    CHECK(testing::test_graph(filter, {true}).equals<bool>({true, false, true}));
+    CHECK(bg::run_graph(filter, {true}).equals<bool>({true, false, true}));
 }
 
 TEST_CASE("filter reconciles a fixed list when it reopens",
@@ -195,7 +195,7 @@ TEST_CASE("filter reconciles a fixed list when it reopens",
         return sum(operators::filter_(condition, tsl(value, operators::const_(i64{1}))));
     };
 
-    CHECK(testing::test_graph(filter, {true, false, true, true}, {10, 20, 30, 40})
+    CHECK(bg::run_graph(filter, {true, false, true, true}, {10, 20, 30, 40})
               .equals<i64>({11, std::nullopt, 31, 41}));
 }
 
@@ -228,7 +228,7 @@ TEST_CASE("filter limits contained guarantees by the input root guarantee",
         return observe(filtered);
     };
 
-    CHECK(testing::test_graph(filter, {true, false, true, true}, {10, 20, 30, 40})
+    CHECK(bg::run_graph(filter, {true, false, true, true}, {10, 20, 30, 40})
               .equals<filter_observation>({filter_observation{10, true}, std::nullopt,
                                            filter_observation{30, true}, filter_observation{40, false}}));
 }
@@ -251,7 +251,7 @@ TEST_CASE("filter caps a stronger child at a deduplicated root",
         return observe(filtered);
     };
 
-    CHECK(testing::test_graph(filter, {true, false, true},
+    CHECK(bg::run_graph(filter, {true, false, true},
                               {{{"changing", 10}, {"constant", 1}}, {{"changing", 20}}, literal::SKIP})
               .equals<filter_observation>({filter_observation{10, true}, std::nullopt,
                                            filter_observation{20, false}}));
@@ -268,7 +268,7 @@ TEST_CASE("filter reconciles a TSB when it reopens",
             condition, bundle<stream_test::stream_operator_bundle>(value, operators::const_(i64{1}))));
     };
 
-    CHECK(testing::test_graph(filter, {true, false, true, true}, {10, 20, 30, 40})
+    CHECK(bg::run_graph(filter, {true, false, true, true}, {10, 20, 30, 40})
               .equals<i64>({11, std::nullopt, 31, 41}));
 }
 
@@ -286,7 +286,7 @@ TEST_CASE("filter reflects TSS membership changes made while closed",
         return inspect(operators::filter_(condition, input));
     };
 
-    CHECK(testing::test_graph(filter, {true, false, false, true, true},
+    CHECK(bg::run_graph(filter, {true, false, false, true, true},
                               {{1, 2}, {literal::REMOVED(2)}, {3}, literal::SKIP, {literal::REMOVED(1), 4}})
               .equals<i64>({1, std::nullopt, std::nullopt, 2, 3}));
     CHECK(snapshots == std::vector<std::vector<i64>>{{1, 2}, {1, 3}, {3, 4}});
@@ -313,7 +313,7 @@ TEST_CASE("filter reflects TSD key changes made while closed and forwards open c
         return inspect(operators::filter_(condition, input));
     };
 
-    CHECK(testing::test_graph(
+    CHECK(bg::run_graph(
               filter, {true, false, false, true, true, true},
               {{{1, 10}, {2, 20}}, {{1, literal::INVALID}, {2, literal::REMOVE}}, {{3, 30}}, literal::SKIP,
                {{1, 11}, {4, 40}}, {{2, 22}}})
@@ -339,7 +339,7 @@ TEST_CASE("filter reopens with a recreated final TSD item",
         return inspect(filtered);
     };
 
-    CHECK(testing::test_graph(filter, {true, false, false, true},
+    CHECK(bg::run_graph(filter, {true, false, false, true},
                               {{{1, 10}}, {{1, literal::REMOVE}}, {{1, 20}}, literal::SKIP})
               .equals<i64>({10, std::nullopt, std::nullopt, 20}));
 }
@@ -360,7 +360,7 @@ TEST_CASE("filter restores TSS after a reference switches through an invalid tar
         return inspect(operators::filter_(operators::const_(true), selected));
     };
 
-    CHECK(testing::test_graph(graph, {0, 1, 2}, {{1}, literal::SKIP, literal::SKIP}, {})
+    CHECK(bg::run_graph(graph, {0, 1, 2}, {{1}, literal::SKIP, literal::SKIP}, {})
               .equals<i64>({1, 0, 1}));
 }
 
@@ -380,7 +380,7 @@ TEST_CASE("filter restores TSD after a reference switches through an invalid tar
         return inspect(operators::filter_(operators::const_(true), selected));
     };
 
-    CHECK(testing::test_graph(graph, {0, 1, 2}, {{{1, 10}}, literal::SKIP, literal::SKIP}, {})
+    CHECK(bg::run_graph(graph, {0, 1, 2}, {{{1, 10}}, literal::SKIP, literal::SKIP}, {})
               .equals<i64>({1, 0, 1}));
 }
 
@@ -401,7 +401,7 @@ TEST_CASE("filter copies an invalid TSS target when it reopens",
         return inspect(operators::filter_(condition, selected));
     };
 
-    CHECK(testing::test_graph(graph, {true, false, true}, {0, 1, 2}, {{1}, literal::SKIP, literal::SKIP}, {})
+    CHECK(bg::run_graph(graph, {true, false, true}, {0, 1, 2}, {{1}, literal::SKIP, literal::SKIP}, {})
               .equals<i64>({1, std::nullopt, 0}));
 }
 
@@ -421,7 +421,7 @@ TEST_CASE("filter copies an invalid TSD target when it reopens",
         return inspect(operators::filter_(condition, selected));
     };
 
-    CHECK(testing::test_graph(graph, {true, false, true}, {0, 1, 2}, {{{1, 10}}, literal::SKIP, literal::SKIP}, {})
+    CHECK(bg::run_graph(graph, {true, false, true}, {0, 1, 2}, {{{1, 10}}, literal::SKIP, literal::SKIP}, {})
               .equals<i64>({1, std::nullopt, 0}));
 }
 
@@ -439,7 +439,7 @@ TEST_CASE("filter caps const guarantees recursively at final",
         return sum(result);
     };
 
-    CHECK(testing::test_graph(graph, {false, true}, {{{0, 10}, {1, 20}}}).equals<i64>({std::nullopt, 30}));
+    CHECK(bg::run_graph(graph, {false, true}, {{{0, 10}, {1, 20}}}).equals<i64>({std::nullopt, 30}));
 
     const auto final_graph = [&](wp<TS<bool>> condition,
                                  wp<TSL<TS<i64, TimeSeriesGuarantee::final>, 2,
@@ -449,7 +449,7 @@ TEST_CASE("filter caps const guarantees recursively at final",
               &TSL<TS<i64, TimeSeriesGuarantee::final>, 2, TimeSeriesGuarantee::final>::type());
         return sum(result);
     };
-    CHECK(testing::test_graph(final_graph, {false, true}, {{{0, 10}, {1, 20}}}).equals<i64>({std::nullopt, 30}));
+    CHECK(bg::run_graph(final_graph, {false, true}, {{{0, 10}, {1, 20}}}).equals<i64>({std::nullopt, 30}));
 }
 
 TEST_CASE("if_then_else switches references and ignores repeated selections",
@@ -459,7 +459,7 @@ TEST_CASE("if_then_else switches references and ignores repeated selections",
         return copy(operators::if_then_else(condition, operators::const_(i64{10}), operators::const_(i64{20})));
     };
 
-    CHECK(testing::test_graph(select, {true, true, false, false, true})
+    CHECK(bg::run_graph(select, {true, true, false, false, true})
               .equals<i64>({10, std::nullopt, 20, std::nullopt, 10}));
 }
 
@@ -470,7 +470,7 @@ TEST_CASE("if_then_else follows the selected value and ignores unselected value 
         return copy(operators::if_then_else(condition, true_value, false_value));
     };
 
-    CHECK(testing::test_graph(select, {true, true, true}, {10, 20, 30},
+    CHECK(bg::run_graph(select, {true, true, true}, {10, 20, 30},
                               {1, 2, 3})
               .equals<i64>({10, 20, 30}));
 }
@@ -483,7 +483,7 @@ TEST_CASE("if_then_else ignores unselected target updates while the selected tar
         return copy(operators::if_then_else(operators::const_(true), selected(), unselected_value));
     };
 
-    CHECK(testing::test_graph(select, {1, 2, 3}).equals<i64>({10, std::nullopt, std::nullopt}));
+    CHECK(bg::run_graph(select, {1, 2, 3}).equals<i64>({10, std::nullopt, std::nullopt}));
 }
 
 TEST_CASE("if_then_else ignores retargeting of the unselected reference",
@@ -498,7 +498,7 @@ TEST_CASE("if_then_else ignores retargeting of the unselected reference",
         return copy(operators::if_then_else(condition, operators::const_(i64{10}), unused));
     };
 
-    CHECK(testing::test_graph(select, {true, true, true}, {false, true, false})
+    CHECK(bg::run_graph(select, {true, true, true}, {false, true, false})
               .equals<i64>({10, std::nullopt, std::nullopt}));
 }
 
@@ -514,7 +514,7 @@ TEST_CASE("if_then_else follows retargeting of the selected reference",
         return copy(operators::if_then_else(operators::const_(true), selected, operators::const_(i64{30})));
     };
 
-    CHECK(testing::test_graph(select, {true, false, true}).equals<i64>({10, 20, 10}));
+    CHECK(bg::run_graph(select, {true, false, true}).equals<i64>({10, 20, 10}));
 }
 
 TEST_CASE("if_then_else invalidates for an invalid condition and an invalid selected branch",
@@ -537,9 +537,9 @@ TEST_CASE("if_then_else invalidates for an invalid condition and an invalid sele
         return copy(operators::if_then_else(condition, operators::const_(i64{10}), invalid_source()));
     };
 
-    CHECK(testing::test_graph(invalid_condition, {0, 1, 2})
+    CHECK(bg::run_graph(invalid_condition, {0, 1, 2})
               .equals<i64>({10, std::nullopt, 10}));
-    CHECK(testing::test_graph(invalid_branch, {true, false, true})
+    CHECK(bg::run_graph(invalid_branch, {true, false, true})
               .equals<i64>({10, std::nullopt, 10}));
 }
 
@@ -559,7 +559,7 @@ TEST_CASE("if_then_else observes selection changes between equal-valued targets"
         return observe_selection(operators::if_then_else(condition, first(), second()));
     };
 
-    CHECK(testing::test_graph(select, {true, false, true}).equals<bool>({true, true, true}));
+    CHECK(bg::run_graph(select, {true, false, true}).equals<bool>({true, true, true}));
 }
 
 TEST_CASE("if_then_else selects TSS values",
@@ -574,7 +574,7 @@ TEST_CASE("if_then_else selects TSS values",
         return sum(operators::if_then_else(condition, left, right));
     };
 
-    CHECK(testing::test_graph(select, {true, false, true}, {{1}, {literal::REMOVED(1), 2},
+    CHECK(bg::run_graph(select, {true, false, true}, {{1}, {literal::REMOVED(1), 2},
                                                             {literal::REMOVED(2), 3}},
                               {{10}, {literal::REMOVED(10), 20}, {literal::REMOVED(20), 30}})
               .equals<i64>({1, 20, 3}));
@@ -589,7 +589,7 @@ TEST_CASE("if_then_else follows sparse TSD updates on the selected branch",
         return read(operators::if_then_else(condition, left, right));
     };
 
-    CHECK(testing::test_graph(select, {true, literal::SKIP, false, literal::SKIP},
+    CHECK(bg::run_graph(select, {true, literal::SKIP, false, literal::SKIP},
                               {{{1, 10}}, literal::SKIP, {{1, 30}}, literal::SKIP},
                               {{{1, 20}}, {{1, 21}}, {{1, 22}}, {{1, 23}}})
               .equals<i64>({10, std::nullopt, 22, 23}));
@@ -604,7 +604,7 @@ TEST_CASE("if_then_else selects a whole fixed list",
                                            tsl(operators::const_(i64{200}), right)));
     };
 
-    CHECK(testing::test_graph(select, {true, false, true}, {1, 2, 3},
+    CHECK(bg::run_graph(select, {true, false, true}, {1, 2, 3},
                               {10, 20, 30})
               .equals<i64>({101, 220, 103}));
 }
@@ -621,7 +621,7 @@ TEST_CASE("if_then_else selects a whole TSB",
             bundle<stream_test::stream_operator_bundle>(operators::const_(i64{200}), right)));
     };
 
-    CHECK(testing::test_graph(select, {true, false, true}, {1, 2, 3},
+    CHECK(bg::run_graph(select, {true, false, true}, {1, 2, 3},
                               {10, 20, 30})
               .equals<i64>({101, 220, 103}));
 }
@@ -640,13 +640,13 @@ TEST_CASE("sample uses the latest passive value and preserves output on invalida
         return operators::sample(signal, invalidate_on_negative(value));
     };
 
-    CHECK(testing::test_graph(sample, {0, 1, 2, 3}, {10, -1, 20, 30})
+    CHECK(bg::run_graph(sample, {0, 1, 2, 3}, {10, -1, 20, 30})
               .equals<i64>({10, std::nullopt, 20, 30}));
 
     const auto retain_passive_value = [](wp<TS<i64>> signal, wp<TS<i64>> value) {
         return operators::sample(signal, value);
     };
-    CHECK(testing::test_graph(retain_passive_value,
+    CHECK(bg::run_graph(retain_passive_value,
                               {0, literal::SKIP, 2, literal::SKIP, 4},
                               {10, 20, literal::SKIP, 30, literal::SKIP})
               .equals<i64>({10, std::nullopt, 20, std::nullopt, 30}));
@@ -661,7 +661,7 @@ TEST_CASE("sample observes a reference target only on signal ticks",
         return operators::sample(signal, reference(source()));
     };
 
-    CHECK(testing::test_graph(sample, {0, 1, 2}).equals<i64>({1, std::nullopt, 2}));
+    CHECK(bg::run_graph(sample, {0, 1, 2}).equals<i64>({1, std::nullopt, 2}));
 }
 
 TEST_CASE("sample limits stronger input guarantees to ordinary",
@@ -672,7 +672,7 @@ TEST_CASE("sample limits stronger input guarantees to ordinary",
         return result;
     };
 
-    CHECK(testing::test_graph(graph, {0, 1}).equals<i64>({42, 42}));
+    CHECK(bg::run_graph(graph, {0, 1}).equals<i64>({42, 42}));
 }
 
 TEST_CASE("sample republishes const list items on every signal tick",
@@ -686,7 +686,7 @@ TEST_CASE("sample republishes const list items on every signal tick",
         return sum(operators::sample(signal, values));
     };
 
-    CHECK(testing::test_graph(graph, {0, 1}).equals<i64>({30, 30}));
+    CHECK(bg::run_graph(graph, {0, 1}).equals<i64>({30, 30}));
 }
 
 TEST_CASE("sample copies set removals and does not publish unchanged membership",
@@ -700,7 +700,7 @@ TEST_CASE("sample copies set removals and does not publish unchanged membership"
         return inspect(operators::sample(signal, set));
     };
 
-    CHECK(testing::test_graph(graph, {0, 1, 2, 3}, {{}, {1, 2}, {literal::REMOVED(2)}, literal::SKIP})
+    CHECK(bg::run_graph(graph, {0, 1, 2, 3}, {{}, {1, 2}, {literal::REMOVED(2)}, literal::SKIP})
               .equals<i64>({0, 21, 10, std::nullopt}));
 }
 
@@ -708,7 +708,7 @@ TEST_CASE("dedup suppresses consecutive equal values",
           "[feature:operator][feature:type-system][series:value][guarantee:deduplicated]") {
     const auto deduplicate = [](wp<TS<i64>> value) { return operators::dedup(value); };
 
-    CHECK(testing::test_graph(deduplicate, {1, 1, 2, 2})
+    CHECK(bg::run_graph(deduplicate, {1, 1, 2, 2})
               .equals<i64>({1, std::nullopt, 2, std::nullopt}));
 }
 
@@ -725,7 +725,7 @@ TEST_CASE("dedup publishes the same value after invalidation",
 
     const auto graph = [&](wp<TS<i64>> value) { return operators::dedup(invalidate(value)); };
 
-    CHECK(testing::test_graph(graph, {1, -1, 1}).equals<i64>({1, std::nullopt, 1}));
+    CHECK(bg::run_graph(graph, {1, -1, 1}).equals<i64>({1, std::nullopt, 1}));
 }
 
 TEST_CASE("dedup leaves an already deduplicated input as the same graph node",
@@ -745,7 +745,7 @@ TEST_CASE("dedup leaves an already deduplicated input as the same graph node",
     const auto compiled = CompiledGraph{wiring};
 
     CHECK(compiled.node_count() == 2);
-    CHECK(testing::test_graph(graph).equals<i64>({1}));
+    CHECK(bg::run_graph(graph).equals<i64>({1}));
 }
 
 TEST_CASE("dedup on a reference observes retargeted values",
@@ -762,7 +762,7 @@ TEST_CASE("dedup on a reference observes retargeted values",
 
     const auto graph = [&](wp<TS<i64>> command) { return copy(operators::dedup(select(command, first(), second()))); };
 
-    CHECK(testing::test_graph(graph, {0, 0, 1, 1})
+    CHECK(bg::run_graph(graph, {0, 0, 1, 1})
               .equals<i64>({1, std::nullopt, 2, std::nullopt}));
 }
 

@@ -7,7 +7,7 @@
 #include <bg/scalar/bundle/value.hpp>
 #include <bg/scalar/dict/scalar.hpp>
 #include <bg/scalar/list/scalar.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsb/tsb_input.hpp>
 #include <bg/time_series/tsb/tsb_output.hpp>
@@ -42,7 +42,7 @@ TEST_CASE("node code selects a named bundle field",
           "[representation:native][declaration:concrete][binding:direct]") {
     const auto count = node([](In<TSB<DerivedBundle>> input) { return *input->count; });
 
-    const auto actual = testing::test_graph(count, {{{"count", 2}, {"value", 3.5F}}});
+    const auto actual = bg::run_graph(count, {{{"count", 2}, {"value", 3.5F}}});
 
     CHECK(actual.equals({2}));
 }
@@ -78,7 +78,7 @@ TEST_CASE("a typed bundle publishes inherited and direct fields",
     });
 
     const auto actual =
-        testing::test_graph(observe, {{{"count", 2}, {"value", 3.5F}}, {{"count", 4}}, {{"value", 6.5F}}});
+        bg::run_graph(observe, {{{"count", 2}, {"value", 3.5F}}, {{"count", 4}}, {{"value", 6.5F}}});
 
     CHECK(actual.equals({{{"count", 2}, {"value", 3.5}, {"count_updated", true}, {"value_updated", true}},
                          {{"count", 4}, {"value", 3.5}, {"count_updated", true}, {"value_updated", false}},
@@ -100,7 +100,7 @@ TEST_CASE("a span-backed free TSB retains its fields through materialisation and
         return sum(collection);
     };
 
-    const auto result = testing::test_graph(graph, {1, 2}, {10.0F, 20.0F});
+    const auto result = bg::run_graph(graph, {1, 2}, {10.0F, 20.0F});
 
     CHECK(result.equals({11.0F, 22.0F}));
 }
@@ -126,14 +126,14 @@ TEST_CASE("an empty free TSB publishes valid at graph start",
         return observe(bundle(fields));
     };
 
-    CHECK(testing::test_graph(graph).equals({1}));
+    CHECK(bg::run_graph(graph).equals({1}));
 }
 
 TEST_CASE("a scalar schema lifts mixed scalar and time series fields into a TSB",
           "[feature:wiring][feature:constant][series:tsb][schema:named][scalar:hierarchical]") {
     const auto graph = [](wp<TS<i64>> count) { return bundle<SharedBundle>(count, 2.5); };
 
-    const auto actual = testing::test_graph(graph, {1, 2});
+    const auto actual = bg::run_graph(graph, {1, 2});
 
     CHECK(actual.equals({{{"count", 1}, {"value", 2.5}}, {{"count", 2}}}));
 }
@@ -142,7 +142,7 @@ TEST_CASE("an explicit TSB construction lifts every scalar field",
           "[feature:wiring][feature:constant][series:tsb][schema:named][scalar:hierarchical]") {
     const auto graph = [] { return bundle<TSB<SharedBundle>>(i64{1}, 2.5); };
 
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals({{{"count", 1}, {"value", 2.5}}}));
 }
@@ -151,7 +151,7 @@ TEST_CASE("typed TSB construction uses inherited logical field order",
           "[feature:wiring][feature:constant][series:tsb][schema:named][binding:covariant]") {
     const auto graph = [] { return bundle<TSB<DerivedBundle>>(ScalarValue<i64>{1}, ScalarValue<float>{2.5F})->value; };
 
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals({2.5F}));
 }
@@ -160,7 +160,7 @@ TEST_CASE("an explicit time series schema selects TSB construction for scalar ar
           "[feature:wiring][feature:constant][series:tsb][schema:named][declaration:concrete]") {
     const auto graph = [] { return bundle<BaseBundle>(ScalarValue<i64>{1})->count; };
 
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals({1}));
 }
@@ -170,7 +170,7 @@ TEST_CASE("a typed TSB wiring point selects an inherited field",
           "[transition:update]") {
     const auto graph = [](wp<TSB<DerivedBundle>> input) { return input->count; };
 
-    const auto actual = testing::test_graph(graph, {{{"count", 2}, {"value", 3.5F}}});
+    const auto actual = bg::run_graph(graph, {{{"count", 2}, {"value", 3.5F}}});
 
     CHECK(actual.equals({2}));
 }
@@ -182,7 +182,7 @@ TEST_CASE("a typed free TSB wiring point selects its original source",
         return bundle("value"_n = value, "count"_n = count).as<TSB<DerivedBundle>>()->count;
     };
 
-    const auto actual = testing::test_graph(graph, {1, 2, 3}, {0.5F, 1.5F, 2.5F});
+    const auto actual = bg::run_graph(graph, {1, 2, 3}, {0.5F, 1.5F, 2.5F});
 
     CHECK(actual.equals({1, 2, 3}));
 }
@@ -196,7 +196,7 @@ TEST_CASE("a free bundle follows the receiving named schema",
         return sum(bundle("value"_n = value, "count"_n = count));
     };
 
-    const auto result = testing::test_graph(graph, {1, 2}, {0.5F, 1.5F});
+    const auto result = bg::run_graph(graph, {1, 2}, {0.5F, 1.5F});
 
     CHECK(result.equals({1.5F, 3.5F}));
 }
@@ -210,7 +210,7 @@ TEST_CASE("a named bundle input accepts extra free bundle fields",
         return sum(bundle("extra"_n = count, "value"_n = value, "count"_n = count));
     };
 
-    const auto result = testing::test_graph(graph, {1, 2}, {0.5F, 1.5F});
+    const auto result = bg::run_graph(graph, {1, 2}, {0.5F, 1.5F});
 
     CHECK(result.equals({1.5F, 3.5F}));
 }
@@ -223,7 +223,7 @@ TEST_CASE("a base bundle input accepts a derived bundle",
 
     const auto graph = [&](wp<TSB<DerivedBundle>> input) { return value(input); };
 
-    const auto actual = testing::test_graph(graph, {{{"count", 2}, {"value", 3.5F}}});
+    const auto actual = bg::run_graph(graph, {{{"count", 2}, {"value", 3.5F}}});
 
     CHECK(actual.equals({2}));
 }
@@ -245,7 +245,7 @@ TEST_CASE("a redefined bundle field shares its inherited storage",
 
     const auto graph = [&](wp<TSB<RedefinedBundle>> input) { return value(input); };
 
-    const auto actual = testing::test_graph(graph, {{{"count", 4}, {"value", 2.5F}}});
+    const auto actual = bg::run_graph(graph, {{{"count", 4}, {"value", 2.5F}}});
 
     CHECK(actual.equals({4}));
 }
@@ -266,7 +266,7 @@ TEST_CASE("a bundle field can contain another bundle",
     const auto sum =
         node([](In<TSB<NestedBundle>> input) { return static_cast<float>(*input->nested->count) + *input->value; });
 
-    const auto actual = testing::test_graph(sum, {{{"nested", {{"count", 3}}}, {"value", 1.5F}}});
+    const auto actual = bg::run_graph(sum, {{{"nested", {{"count", 3}}}, {"value", 1.5F}}});
 
     CHECK(actual.equals({4.5F}));
 }
@@ -277,7 +277,7 @@ TEST_CASE("fixed time series lists can contain runtime-sized time series",
           "[binding:direct][schema:named]") {
     const auto value = node([](In<TSL<TSB<DerivedBundle>, 2>> input) { return *input[1]->value; });
 
-    const auto actual = testing::test_graph(value, {{{1, {{"value", 4.5F}}}}});
+    const auto actual = bg::run_graph(value, {{{1, {{"value", 4.5F}}}}});
 
     CHECK(actual.equals({4.5F}));
 }
@@ -301,7 +301,7 @@ TEST_CASE("a hierarchical scalar is lifted through a shared TSB schema",
         return read(bundle<TSB<NestedSharedBundle>>(value)->value);
     };
 
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals({3}));
 }
@@ -324,7 +324,7 @@ TEST_CASE("a hierarchical time series output accepts input views and suppresses 
         return read(copy(publish(trigger, value)));
     };
 
-    const auto actual = testing::test_graph(graph, {1, 2, 3});
+    const auto actual = bg::run_graph(graph, {1, 2, 3});
 
     CHECK(actual.equals({3, std::nullopt, std::nullopt}));
 }
@@ -352,7 +352,7 @@ TEST_CASE("a hierarchical time series output accepts a derived scalar representa
 
     const auto graph = [&](wp<TS<i64>> trigger) { return publish(trigger, equity); };
 
-    const auto actual = testing::test_graph(graph, {1});
+    const auto actual = bg::run_graph(graph, {1});
     const auto result = actual[0];
 
     REQUIRE(result.has_value());
@@ -383,7 +383,7 @@ TEST_CASE("a generic bundle node forwards a derived runtime scalar through its b
         return inspect(forwarded);
     };
 
-    const auto actual = testing::test_graph(graph, {1});
+    const auto actual = bg::run_graph(graph, {1});
 
     CHECK(actual.equals({100}));
 }
@@ -429,7 +429,7 @@ TEST_CASE("a generic bundle node constructs a runtime schema inside its allocati
 
     const auto graph = [&] { return read(rebuild(initial)); };
 
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals({42}));
 }
@@ -456,7 +456,7 @@ TEST_CASE("a derived hierarchical value crosses a nested graph boundary",
         return read(nested(pass_through, run, make(lot_size)));
     };
 
-    const auto actual = testing::test_graph(graph, {100, 200}, {true, true});
+    const auto actual = bg::run_graph(graph, {100, 200}, {true, true});
 
     CHECK(actual.equals({100, 200}));
 }
@@ -492,8 +492,8 @@ TEST_CASE("a time series output copies a covariant scalar collection representat
         return copy_dictionary(dictionary_source(trigger, dictionary));
     };
 
-    const auto actual_list = testing::test_graph(list_graph, {1});
-    const auto actual_dictionary = testing::test_graph(dictionary_graph, {1});
+    const auto actual_list = bg::run_graph(list_graph, {1});
+    const auto actual_dictionary = bg::run_graph(dictionary_graph, {1});
 
     const auto list_result = actual_list[0];
     REQUIRE(list_result.has_value());
@@ -539,7 +539,7 @@ TEST_CASE("getattr follows a reference field in a referenced native bundle",
     };
 
     const auto actual =
-        testing::test_graph(graph, std::array{10, 20, 30}, std::array{100, 200, 300},
+        bg::run_graph(graph, std::array{10, 20, 30}, std::array{100, 200, 300},
                             std::array<std::optional<bool>, 3>{false, true, std::nullopt}, std::array{1, 2, 3});
 
     CHECK(actual.equals({10, 200, 300}));
@@ -617,7 +617,7 @@ TEST_CASE("invalidating a bundle invalidates every field",
 
     const auto transition_graph = [&](wp<TSB<DerivedBundle>> bundle) { return observe_transition(bundle); };
 
-    const auto actual = testing::test_graph(observe, {{{"count", 2}, {"value", 3.5F}}, literal::INVALID});
+    const auto actual = bg::run_graph(observe, {{{"count", 2}, {"value", 3.5F}}, literal::INVALID});
     CHECK(actual.equals({{{"root_valid", true},
                           {"count_valid", true},
                           {"value_valid", true},
@@ -631,7 +631,7 @@ TEST_CASE("invalidating a bundle invalidates every field",
                           {"count_modified", true},
                           {"value_modified", true}}}));
 
-    const auto transitions = testing::test_graph(transition_graph, {{{"count", 2}, {"value", 3.5F}}, literal::INVALID});
+    const auto transitions = bg::run_graph(transition_graph, {{{"count", 2}, {"value", 3.5F}}, literal::INVALID});
 
     CHECK(transitions.equals({true, std::nullopt}));
 }

@@ -11,7 +11,7 @@
 #include <bg/node.hpp>
 #include <bg/node/node_template.hpp>
 #include <bg/switch.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
@@ -46,7 +46,7 @@ TEST_CASE("nested graph commits omitted scalar defaults before creating boundari
         return bg::nested(inner, run, x);
     };
 
-    CHECK(bg::testing::test_graph(outer, std::array{3}, std::array{true}).equals({23}));
+    CHECK(bg::run_graph(outer, std::array{3}, std::array{true}).equals({23}));
 }
 
 struct LifecycleIncrement {
@@ -75,7 +75,7 @@ TEST_CASE("a nested graph can be stopped and started repeatedly",
 
     const auto values = {1, 2, 3, 4, 5};
     const auto running = {true, false, true, false, true};
-    const auto actual = bg::testing::test_graph(outer, values, running);
+    const auto actual = bg::run_graph(outer, values, running);
     CHECK(actual.equals({2, std::nullopt, 4, std::nullopt, 6}));
     CHECK(LifecycleIncrement::starts == 3);
     CHECK(LifecycleIncrement::stops == 3);
@@ -124,7 +124,7 @@ TEST_CASE("switch finalization destroys the current branch before a retired bran
     SwitchBranchLifetime::finalization_count = 0;
     SwitchBranchLifetime::overflow = false;
 
-    const auto actual = bg::testing::test_graph(tested, {0, 1}, {10, 20});
+    const auto actual = bg::run_graph(tested, {0, 1}, {10, 20});
 
     CHECK(actual.equals<bg::i64>({10, 20}));
     CHECK_FALSE(SwitchBranchLifetime::overflow);
@@ -239,7 +239,7 @@ TEST_CASE("nested graph supports inferred callable output guarantees",
 
     const auto inputs = std::array{1, 2, 3};
     const auto running = std::array{true, true, true};
-    CHECK(bg::testing::test_graph(outer, inputs, running).equals<i64>({2, 3, 4}));
+    CHECK(bg::run_graph(outer, inputs, running).equals<i64>({2, 3, 4}));
 }
 
 TEST_CASE("nested reference signature types outlive their node templates",
@@ -305,7 +305,7 @@ TEST_CASE("inner graph finalization uses the outer cycle's global state",
     FinalizingInner::global_state = nullptr;
     FinalizingInner::finalization_count = 0;
 
-    const auto actual = bg::testing::test_graph(outer, {1, 2, 3, 4}, {true, false, false, true});
+    const auto actual = bg::run_graph(outer, {1, 2, 3, 4}, {true, false, false, true});
 
     CHECK(actual.equals({1, std::nullopt, std::nullopt, 4}));
     CHECK(FinalizingInner::finalization_count == 2);
@@ -340,7 +340,7 @@ TEST_CASE("a nested boundary samples an existing valid input when it starts",
     const auto outer = [&](bg::wp<TS<i64>> input, bg::wp<TS<bool>> run) { return bg::nested(inner, run, input); };
     NestedTransitionSink::observed.clear();
 
-    const auto actual = bg::testing::test_graph(
+    const auto actual = bg::run_graph(
         outer, std::array<std::optional<i64>, 3>{10, std::nullopt, std::nullopt}, std::array{false, false, true});
 
     CHECK(actual.equals({std::nullopt, std::nullopt, 10}));
@@ -366,7 +366,7 @@ TEST_CASE("a nested boundary retains a direct final target guarantee",
         return bg::nested(inner, run, publish_final(input));
     };
 
-    CHECK(bg::testing::test_graph(outer, {17}, {true}).equals({17}));
+    CHECK(bg::run_graph(outer, {17}, {true}).equals({17}));
 }
 
 TEST_CASE("a dynamic input controls scheduling inside a nested graph",
@@ -381,7 +381,7 @@ TEST_CASE("a dynamic input controls scheduling inside a nested graph",
 
     const auto outer = [&](bg::wp<TS<i64>> input, bg::wp<TS<bool>> run) { return bg::nested(inner, run, input); };
 
-    CHECK(bg::testing::test_graph(outer, {1, 2}, {true, true})
+    CHECK(bg::run_graph(outer, {1, 2}, {true, true})
               .equals({1, std::nullopt}));
 }
 
@@ -431,7 +431,7 @@ TEST_CASE("a reference connects two nested graphs",
 
     const auto values = {1, 2, 3, 4, 5};
     const auto running = {true, true, false, true, true};
-    const auto actual = bg::testing::test_graph(outer, values, running);
+    const auto actual = bg::run_graph(outer, values, running);
     CHECK(actual.equals({4, 6, std::nullopt, 10, 12}));
     CHECK(ReferenceIncrement::starts == 2);
     CHECK(ReferenceIncrement::stops == 2);
@@ -581,7 +581,7 @@ TEST_CASE("nested evaluation contexts share root graph services",
 
     const auto values = {1, 2, 3};
     const auto running = {true, true, true};
-    CHECK(bg::testing::test_graph(outer, values, running).equals<i64>({1, 2, 3}));
+    CHECK(bg::run_graph(outer, values, running).equals<i64>({1, 2, 3}));
     CHECK(GlobalContextRootPassThrough::root_context_is_stable);
     CHECK(GlobalContextRootPassThrough::start_count == 1);
     CHECK(GlobalContextRootPassThrough::evaluate_count == 3);
@@ -619,7 +619,7 @@ TEST_CASE("a nested graph can own another nested graph",
 
     const auto values = {1, 2, 3, 4, 5};
     const auto running = {true, false, true, false, true};
-    const auto actual = bg::testing::test_graph(outer, values, running);
+    const auto actual = bg::run_graph(outer, values, running);
     CHECK(actual.equals({2, std::nullopt, 4, std::nullopt, 6}));
     CHECK(NestedMiddlePassThrough::starts == 3);
     CHECK(NestedMiddlePassThrough::stops == 3);
@@ -659,7 +659,7 @@ TEST_CASE("timed inner scheduling selects an outer cycle",
 
     const auto values = std::array<i64, 1>{10};
     const auto running = std::array{true};
-    const auto actual = bg::testing::test_graph(outer, values, running);
+    const auto actual = bg::run_graph(outer, values, running);
     CHECK(actual.equals({10, 11, 12}));
 }
 
@@ -687,7 +687,7 @@ TEST_CASE("a free list processes reference changes in a nested graph",
     const auto second = std::array<i64, 3>{10, 20, 30};
     const auto running = std::array{true, true, true};
 
-    const auto actual = bg::testing::test_graph(outer, first, second, running);
+    const auto actual = bg::run_graph(outer, first, second, running);
 
     CHECK(actual.equals({11, 22, 33}));
 }
@@ -713,7 +713,7 @@ TEST_CASE("a reference to an outer free list works in a nested graph",
     };
 
     const auto actual =
-        bg::testing::test_graph(outer, {1, 2, 3, 4}, {10, 20, 30, 40}, {true, true, false, true});
+        bg::run_graph(outer, {1, 2, 3, 4}, {10, 20, 30, 40}, {true, true, false, true});
 
     CHECK(actual.equals({11, 22, std::nullopt, 44}));
 }
@@ -737,7 +737,7 @@ TEST_CASE("a reference to an inner free list works in the outer graph",
     };
 
     const auto actual =
-        bg::testing::test_graph(outer, {1, 2, 3, 4}, {10, 20, 30, 40}, {true, true, false, true});
+        bg::run_graph(outer, {1, 2, 3, 4}, {10, 20, 30, 40}, {true, true, false, true});
 
     CHECK(actual.equals({11, 22, std::nullopt, 44}));
 }
@@ -756,7 +756,7 @@ TEST_CASE("a free list reference passes through a nested graph",
     };
 
     const auto actual =
-        bg::testing::test_graph(outer, {1, 2, 3, 4}, {10, 20, 30, 40}, {true, true, false, true});
+        bg::run_graph(outer, {1, 2, 3, 4}, {10, 20, 30, 40}, {true, true, false, true});
 
     CHECK(actual.equals({11, 22, std::nullopt, 44}));
 }
@@ -782,7 +782,7 @@ TEST_CASE("an outer free list reference item rebinds across a nested graph bound
         return bg::nested(inner, run, bg::tsl(value, selected));
     };
 
-    const auto actual = bg::testing::test_graph(
+    const auto actual = bg::run_graph(
         outer, std::array<std::optional<i64>, 5>{10, 20, 30, std::nullopt, std::nullopt},
         std::array<std::optional<i64>, 5>{100, 200, std::nullopt, 300, std::nullopt},
         std::array<std::optional<bool>, 5>{false, true, std::nullopt, std::nullopt, std::nullopt},
@@ -820,7 +820,7 @@ TEST_CASE("an inner free list reference item rebinds across a nested graph bound
         return add(list[0], list[1]);
     };
 
-    const auto actual = bg::testing::test_graph(
+    const auto actual = bg::run_graph(
         outer, std::array<std::optional<i64>, 5>{10, 20, 30, std::nullopt, std::nullopt},
         std::array<std::optional<i64>, 5>{100, 200, std::nullopt, 300, std::nullopt},
         std::array<std::optional<bool>, 5>{false, true, std::nullopt, std::nullopt, std::nullopt},
@@ -855,7 +855,7 @@ TEST_CASE("a free list reference item survives two boundaries and repeated lifec
         return add(result[0], result[1]);
     };
 
-    const auto actual = bg::testing::test_graph(
+    const auto actual = bg::run_graph(
         outer, std::array<std::optional<i64>, 8>{10, 20, 30, std::nullopt, 40, std::nullopt, std::nullopt, 50},
         std::array<std::optional<i64>, 8>{100, 200, std::nullopt, 300, 400, std::nullopt, 500, std::nullopt},
         std::array<std::optional<bool>, 8>{false, true, std::nullopt, std::nullopt, false, std::nullopt, std::nullopt,
@@ -894,7 +894,7 @@ TEST_CASE("a reference to an outer free bundle works in a nested graph",
     };
 
     const auto actual =
-        bg::testing::test_graph(outer, {1, 2, 3, 4}, {10, 20, 30, 40}, {true, true, false, true});
+        bg::run_graph(outer, {1, 2, 3, 4}, {10, 20, 30, 40}, {true, true, false, true});
 
     CHECK(actual.equals({11, 22, std::nullopt, 44}));
 }
@@ -918,7 +918,7 @@ TEST_CASE("a reference to an inner free bundle works in the outer graph",
     };
 
     const auto actual =
-        bg::testing::test_graph(outer, {1, 2, 3, 4}, {10, 20, 30, 40}, {true, true, false, true});
+        bg::run_graph(outer, {1, 2, 3, 4}, {10, 20, 30, 40}, {true, true, false, true});
 
     CHECK(actual.equals({11, 22, std::nullopt, 44}));
 }
@@ -937,7 +937,7 @@ TEST_CASE("a free bundle reference passes through a nested graph",
     };
 
     const auto actual =
-        bg::testing::test_graph(outer, {1, 2, 3, 4},
+        bg::run_graph(outer, {1, 2, 3, 4},
                                 {10, 20, 30, 40}, {true, true, false, true});
 
     CHECK(actual.equals({11, 22, std::nullopt, 44}));
@@ -969,7 +969,7 @@ TEST_CASE("an outer free bundle reference field rebinds across a nested graph bo
         return bg::nested(inner, run, bundle);
     };
 
-    const auto actual = bg::testing::test_graph(
+    const auto actual = bg::run_graph(
         outer, std::array<std::optional<i64>, 5>{10, 20, 30, std::nullopt, std::nullopt},
         std::array<std::optional<i64>, 5>{100, 200, std::nullopt, 300, std::nullopt},
         std::array<std::optional<bool>, 5>{false, true, std::nullopt, std::nullopt, std::nullopt},
@@ -1006,7 +1006,7 @@ TEST_CASE("an inner free bundle reference field rebinds across a nested graph bo
         return add(bundle->value, bundle->selected);
     };
 
-    const auto actual = bg::testing::test_graph(
+    const auto actual = bg::run_graph(
         outer, std::array<std::optional<i64>, 5>{10, 20, 30, std::nullopt, std::nullopt},
         std::array<std::optional<i64>, 5>{100, 200, std::nullopt, 300, std::nullopt},
         std::array<std::optional<bool>, 5>{false, true, std::nullopt, std::nullopt, std::nullopt},
@@ -1040,7 +1040,7 @@ TEST_CASE("a free bundle reference field survives two boundaries and repeated li
         return add(result->value, result->selected);
     };
 
-    const auto actual = bg::testing::test_graph(
+    const auto actual = bg::run_graph(
         outer, std::array<std::optional<i64>, 8>{10, 20, 30, std::nullopt, 40, std::nullopt, std::nullopt, 50},
         std::array<std::optional<i64>, 8>{100, 200, std::nullopt, 300, 400, std::nullopt, 500, std::nullopt},
         std::array<std::optional<bool>, 8>{false, true, std::nullopt, std::nullopt, false, std::nullopt, std::nullopt,

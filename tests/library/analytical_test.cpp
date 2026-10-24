@@ -1,7 +1,7 @@
 #include <bg/graph.hpp>
 #include <bg/library.hpp>
 #include <bg/nested.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -19,7 +19,7 @@ TEST_CASE("diff subtracts the previous valid numeric value",
           "[transition:first-tick][transition:update]") {
     const auto diff = [](wp<TS<i64>> value) { return operators::diff(value); };
 
-    CHECK(testing::test_graph(diff, {10, 15, 15, 20})
+    CHECK(bg::run_graph(diff, {10, 15, 15, 20})
               .equals<i64>({std::nullopt, 5, 0, 5}));
 }
 
@@ -32,12 +32,12 @@ TEST_CASE("diff wraps integer subtraction and accepts deduplicated inputs",
         return result;
     };
 
-    CHECK(testing::test_graph(difference,
+    CHECK(bg::run_graph(difference,
                               {std::numeric_limits<i64>::max(), std::numeric_limits<i64>::min()})
               .equals<i64>({std::nullopt, 1}));
-    CHECK(testing::test_graph(
+    CHECK(bg::run_graph(
               deduplicated_difference,
-              testing::input<TS<i64, TimeSeriesGuarantee::deduplicated>>({1, 2, 3}))
+              bg::input<TS<i64, TimeSeriesGuarantee::deduplicated>>({1, 2, 3}))
               .equals<i64>({std::nullopt, 1, 1}));
 }
 
@@ -46,7 +46,7 @@ TEST_CASE("diff skips idle cycles and restarts after invalidation",
           "[transition:update][transition:invalidation][transition:revalidation]") {
     const auto diff = [](wp<TS<i64>> value) { return operators::diff(value); };
 
-    CHECK(testing::test_graph(diff, {10, 15, literal::SKIP, 15, literal::INVALID,
+    CHECK(bg::run_graph(diff, {10, 15, literal::SKIP, 15, literal::INVALID,
                                      literal::SKIP, 30, 37})
               .equals<i64>({std::nullopt, 5, std::nullopt, 0, std::nullopt,
                             std::nullopt, std::nullopt, 7}));
@@ -60,7 +60,7 @@ TEST_CASE("diff follows reference retargeting and owns nested lag state",
                                      wp<TS<double>> second) {
         return operators::diff(operators::if_then_else(use_second, first, second));
     };
-    CHECK(testing::test_graph(follow_reference, {true, true, false, false},
+    CHECK(bg::run_graph(follow_reference, {true, true, false, false},
                               {1.0, 3.0, literal::SKIP, literal::SKIP},
                               {10.0, literal::SKIP, 10.0, 12.0})
               .equals<double>({std::nullopt, 2.0, 7.0, 2.0}));
@@ -71,7 +71,7 @@ TEST_CASE("diff follows reference retargeting and owns nested lag state",
     const auto combine = [&](wp<TS<double>> lhs, wp<TS<double>> rhs, wp<TS<bool>> run) {
         return operators::add(nested(differ, run, lhs), nested(differ, run, rhs));
     };
-    CHECK(testing::test_graph(combine, {1.0, 3.0, 6.0}, {10.0, 15.0, 25.0},
+    CHECK(bg::run_graph(combine, {1.0, 3.0, 6.0}, {10.0, 15.0, 25.0},
                               {true, true, true})
               .equals<double>({std::nullopt, 7.0, 13.0}));
 }
@@ -83,9 +83,9 @@ TEST_CASE("clip accepts scalar bounds for integer and floating inputs",
     const auto clip_integer = [](wp<TS<i64>> value) { return operators::clip(value, 0, 10); };
     const auto clip_double = [](wp<TS<double>> value) { return operators::clip(value, 0.0, 10.0); };
 
-    CHECK(testing::test_graph(clip_scalar).equals<i64>({5}));
-    CHECK(testing::test_graph(clip_integer, {-5, 5, 20}).equals<i64>({0, 5, 10}));
-    CHECK(testing::test_graph(clip_double, {-5.0, 5.0, 20.0}).equals<double>({0.0, 5.0, 10.0}));
+    CHECK(bg::run_graph(clip_scalar).equals<i64>({5}));
+    CHECK(bg::run_graph(clip_integer, {-5, 5, 20}).equals<i64>({0, 5, 10}));
+    CHECK(bg::run_graph(clip_double, {-5.0, 5.0, 20.0}).equals<double>({0.0, 5.0, 10.0}));
 }
 
 TEST_CASE("clip preserves deduplication and recomputes on a maximum-only bound tick",
@@ -102,13 +102,13 @@ TEST_CASE("clip preserves deduplication and recomputes on a maximum-only bound t
         return operators::clip(i64{5}, minimum, i64{10});
     };
 
-    CHECK(testing::test_graph(
+    CHECK(bg::run_graph(
               deduplicated_clip,
-              testing::input<TS<i64, TimeSeriesGuarantee::deduplicated>>({1, 2, 3}))
+              bg::input<TS<i64, TimeSeriesGuarantee::deduplicated>>({1, 2, 3}))
               .equals<i64>({2, std::nullopt, 3}));
-    CHECK(testing::test_graph(maximum_clip, {5, literal::SKIP, literal::SKIP}, {10, 4, 8})
+    CHECK(bg::run_graph(maximum_clip, {5, literal::SKIP, literal::SKIP}, {10, 4, 8})
               .equals<i64>({5, 4, 5}));
-    CHECK(testing::test_graph(scalar_value_clip, {0, 6, 3}).equals<i64>({5, 6, 5}));
+    CHECK(bg::run_graph(scalar_value_clip, {0, 6, 3}).equals<i64>({5, 6, 5}));
 }
 
 TEST_CASE("clip evaluates changing bounds and invalidates with required inputs",
@@ -118,13 +118,13 @@ TEST_CASE("clip evaluates changing bounds and invalidates with required inputs",
         return operators::clip(value, min_, max_);
     };
 
-    CHECK(testing::test_graph(clip,
+    CHECK(bg::run_graph(clip,
                               {5.0, literal::SKIP, literal::SKIP, 5.0},
                               {0.0, 4.0, 6.0, 6.0},
                               {10.0, 10.0, 10.0, 6.0})
               .equals<double>({5.0, 5.0, 6.0, 6.0}));
 
-    CHECK(testing::test_graph(clip,
+    CHECK(bg::run_graph(clip,
                               {5.0, literal::SKIP, literal::SKIP, 5.0},
                               {0.0, literal::INVALID, literal::SKIP, 1.0},
                               {10.0, 10.0, 10.0, 10.0})
@@ -137,10 +137,10 @@ TEST_CASE("clip checks bound order during evaluation and uses ordinary compariso
         return operators::clip(value, min_, max_);
     };
 
-    CHECK_THROWS_AS(testing::test_graph(clip, {1.0}, {2.0}, {0.0}), std::invalid_argument);
+    CHECK_THROWS_AS(bg::run_graph(clip, {1.0}, {2.0}, {0.0}), std::invalid_argument);
 
     const auto nan = std::numeric_limits<double>::quiet_NaN();
-    const auto actual = testing::test_graph(clip, {nan}, {0.0}, {10.0});
+    const auto actual = bg::run_graph(clip, {nan}, {0.0}, {10.0});
     REQUIRE(actual[0].has_value());
     CHECK(std::isnan(scalar_cast<double>(actual[0]->view()).value()));
 }
@@ -159,10 +159,10 @@ TEST_CASE("clip preserves the weakest input guarantee",
         return result;
     };
 
-    CHECK(testing::test_graph(clip_final,
-                              testing::input<TS<double, TimeSeriesGuarantee::final>>({5.0}))
+    CHECK(bg::run_graph(clip_final,
+                              bg::input<TS<double, TimeSeriesGuarantee::final>>({5.0}))
               .equals<double>({5.0}));
-    CHECK(testing::test_graph(clip_const).equals<double>({5.0}));
+    CHECK(bg::run_graph(clip_const).equals<double>({5.0}));
 }
 
 TEST_CASE("clip preserves final guarantees and clamps floating infinities",
@@ -178,14 +178,14 @@ TEST_CASE("clip preserves final guarantees and clamps floating infinities",
         return operators::clip(value, 0.0, 10.0);
     };
 
-    CHECK(testing::test_graph(
+    CHECK(bg::run_graph(
               final_clip,
-              testing::input<TS<i64, TimeSeriesGuarantee::final>>({8}),
-              testing::input<TS<i64, TimeSeriesGuarantee::final>>({2}),
-              testing::input<TS<i64, TimeSeriesGuarantee::final>>({6}))
+              bg::input<TS<i64, TimeSeriesGuarantee::final>>({8}),
+              bg::input<TS<i64, TimeSeriesGuarantee::final>>({2}),
+              bg::input<TS<i64, TimeSeriesGuarantee::final>>({6}))
               .equals<i64>({6}));
     const auto infinity = std::numeric_limits<double>::infinity();
-    CHECK(testing::test_graph(floating_clip, {-infinity, infinity}).equals<double>({0.0, 10.0}));
+    CHECK(bg::run_graph(floating_clip, {-infinity, infinity}).equals<double>({0.0, 10.0}));
 }
 
 TEST_CASE("ewma seeds from the first value and updates on each valid tick",
@@ -193,7 +193,7 @@ TEST_CASE("ewma seeds from the first value and updates on each valid tick",
           "[guarantee:ordinary][transition:first-tick][transition:update]") {
     const auto ewma = [](wp<TS<double>> value) { return operators::ewma(value, 0.5); };
 
-    CHECK(testing::test_graph(ewma, {1.0, 3.0, 6.0}).equals<double>({1.0, 2.0, 4.0}));
+    CHECK(bg::run_graph(ewma, {1.0, 3.0, 6.0}).equals<double>({1.0, 2.0, 4.0}));
 }
 
 TEST_CASE("ewma alpha endpoints and warmup count valid ticks only",
@@ -203,9 +203,9 @@ TEST_CASE("ewma alpha endpoints and warmup count valid ticks only",
     const auto alpha_one = [](wp<TS<double>> value) { return operators::ewma(value, 1.0); };
     const auto warmup = [](wp<TS<double>> value) { return operators::ewma(value, 0.5, 2); };
 
-    CHECK(testing::test_graph(alpha_zero, {1.0, 3.0, 6.0}).equals<double>({1.0, 1.0, 1.0}));
-    CHECK(testing::test_graph(alpha_one, {1.0, 3.0, 6.0}).equals<double>({1.0, 3.0, 6.0}));
-    CHECK(testing::test_graph(warmup, {1.0, literal::SKIP, 3.0, 5.0, 9.0})
+    CHECK(bg::run_graph(alpha_zero, {1.0, 3.0, 6.0}).equals<double>({1.0, 1.0, 1.0}));
+    CHECK(bg::run_graph(alpha_one, {1.0, 3.0, 6.0}).equals<double>({1.0, 3.0, 6.0}));
+    CHECK(bg::run_graph(warmup, {1.0, literal::SKIP, 3.0, 5.0, 9.0})
               .equals<double>({std::nullopt, std::nullopt, std::nullopt, 3.5, 6.25}));
 }
 
@@ -217,9 +217,9 @@ TEST_CASE("ewma clears its state and warmup after input invalidation",
         return operators::valid(operators::ewma(value, 0.5, 1));
     };
 
-    CHECK(testing::test_graph(ewma, {1.0, 3.0, literal::INVALID, literal::SKIP, 10.0, 14.0})
+    CHECK(bg::run_graph(ewma, {1.0, 3.0, literal::INVALID, literal::SKIP, 10.0, 14.0})
               .equals<double>({std::nullopt, 2.0, std::nullopt, std::nullopt, std::nullopt, 12.0}));
-    CHECK(testing::test_graph(valid_ewma,
+    CHECK(bg::run_graph(valid_ewma,
                               {1.0, 3.0, literal::INVALID, literal::SKIP, 10.0, 14.0})
               .equals<bool>({false, true, false, std::nullopt, std::nullopt, true}));
 }
@@ -229,7 +229,7 @@ TEST_CASE("ewma restarts an unfinished warmup after input invalidation",
           "[scalar:floating-point][transition:invalidation][transition:revalidation]") {
     const auto ewma = [](wp<TS<double>> value) { return operators::ewma(value, 0.5, 2); };
 
-    CHECK(testing::test_graph(ewma, {1.0, literal::INVALID, literal::SKIP, 10.0, 14.0, 18.0})
+    CHECK(bg::run_graph(ewma, {1.0, literal::INVALID, literal::SKIP, 10.0, 14.0, 18.0})
               .equals<double>({std::nullopt, std::nullopt, std::nullopt, std::nullopt,
                                std::nullopt, 15.0}));
 }
@@ -243,10 +243,10 @@ TEST_CASE("ewma validates scalar configuration during wiring",
     };
     const auto negative_periods = [](wp<TS<double>> value) { return operators::ewma(value, 0.5, -1); };
 
-    CHECK_THROWS_AS(testing::test_graph(negative_alpha, {1.0}), WiringError);
-    CHECK_THROWS_AS(testing::test_graph(high_alpha, {1.0}), WiringError);
-    CHECK_THROWS_AS(testing::test_graph(infinite_alpha, {1.0}), WiringError);
-    CHECK_THROWS_AS(testing::test_graph(negative_periods, {1.0}), WiringError);
+    CHECK_THROWS_AS(bg::run_graph(negative_alpha, {1.0}), WiringError);
+    CHECK_THROWS_AS(bg::run_graph(high_alpha, {1.0}), WiringError);
+    CHECK_THROWS_AS(bg::run_graph(infinite_alpha, {1.0}), WiringError);
+    CHECK_THROWS_AS(bg::run_graph(negative_periods, {1.0}), WiringError);
 }
 
 TEST_CASE("ewma retains input guarantees and caps const warmup at final",
@@ -273,14 +273,14 @@ TEST_CASE("ewma retains input guarantees and caps const warmup at final",
         return result;
     };
 
-    CHECK(testing::test_graph(check_deduplicated,
-                              testing::input<TS<double, TimeSeriesGuarantee::deduplicated>>({2.0, 4.0}))
+    CHECK(bg::run_graph(check_deduplicated,
+                              bg::input<TS<double, TimeSeriesGuarantee::deduplicated>>({2.0, 4.0}))
               .equals<double>({2.0, 3.0}));
-    CHECK(testing::test_graph(check_final,
-                              testing::input<TS<double, TimeSeriesGuarantee::final>>({4.0}))
+    CHECK(bg::run_graph(check_final,
+                              bg::input<TS<double, TimeSeriesGuarantee::final>>({4.0}))
               .equals<double>({4.0}));
-    CHECK(testing::test_graph(check_const).equals<double>({2.0}));
-    CHECK(testing::test_graph(check_const_warmup).equals<double>({std::nullopt}));
+    CHECK(bg::run_graph(check_const).equals<double>({2.0}));
+    CHECK(bg::run_graph(check_const_warmup).equals<double>({std::nullopt}));
 }
 
 TEST_CASE("ewma state is independent across nested graph instances",
@@ -293,7 +293,7 @@ TEST_CASE("ewma state is independent across nested graph instances",
         return operators::add(nested(smooth, run, lhs), nested(smooth, run, rhs));
     };
 
-    CHECK(testing::test_graph(combine, {1.0, 2.0, 3.0}, {10.0, 20.0, 30.0},
+    CHECK(bg::run_graph(combine, {1.0, 2.0, 3.0}, {10.0, 20.0, 30.0},
                               {true, true, true})
               .equals<double>({11.0, 16.5, 24.75}));
 }

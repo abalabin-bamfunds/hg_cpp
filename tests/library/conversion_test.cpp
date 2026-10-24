@@ -3,7 +3,7 @@
 #include <bg/node.hpp>
 #include <bg/scalar/bundle/scalar.hpp>
 #include <bg/scalar/bundle/value.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
@@ -58,7 +58,7 @@ TEST_CASE("convert copies scalar lists into fixed TSL snapshots",
         return operators::sum_(snapshot);
     };
 
-    CHECK(testing::test_graph(list_to_tsl_sum).equals<i64>({6}));
+    CHECK(bg::run_graph(list_to_tsl_sum).equals<i64>({6}));
 }
 
 TEST_CASE("convert copies scalar lists into TSS snapshots",
@@ -70,7 +70,7 @@ TEST_CASE("convert copies scalar lists into TSS snapshots",
         return operators::sum_(snapshot);
     };
 
-    CHECK(testing::test_graph(list_to_tss_sum).equals<i64>({12}));
+    CHECK(bg::run_graph(list_to_tss_sum).equals<i64>({12}));
 }
 
 TEST_CASE("convert copies scalar sets into TSS snapshots",
@@ -82,7 +82,7 @@ TEST_CASE("convert copies scalar sets into TSS snapshots",
         return operators::sum_(snapshot);
     };
 
-    CHECK(testing::test_graph(set_to_tss_sum).equals<i64>({12}));
+    CHECK(bg::run_graph(set_to_tss_sum).equals<i64>({12}));
 }
 
 TEST_CASE("convert copies fixed TSL snapshots into scalar lists",
@@ -95,8 +95,8 @@ TEST_CASE("convert copies fixed TSL snapshots into scalar lists",
         return sum_list(operators::convert[type<TS<List<i64>>>](values));
     };
 
-    CHECK(testing::test_graph(convert_and_sum,
-                              testing::input<TSL<TS<i64>, 2>>({{{0, 1}, {1, 2}}, {{0, 5}}}))
+    CHECK(bg::run_graph(convert_and_sum,
+                              bg::input<TSL<TS<i64>, 2>>({{{0, 1}, {1, 2}}, {{0, 5}}}))
               .equals<i64>({3, 7}));
 }
 
@@ -131,7 +131,7 @@ TEST_CASE("convert copies TSS snapshots into scalar sets",
         return sum_set(operators::convert[type<TS<Set<i64>>>](values));
     };
 
-    CHECK(testing::test_graph(convert_and_sum, testing::input<TSS<i64>>({{1, 2}, {literal::REMOVED(1), 3}}))
+    CHECK(bg::run_graph(convert_and_sum, bg::input<TSS<i64>>({{1, 2}, {literal::REMOVED(1), 3}}))
               .equals<i64>({3, 5}));
 }
 
@@ -146,8 +146,8 @@ TEST_CASE("convert copies TSD snapshots into scalar dictionaries",
         return sum_dict(operators::convert[type<TS<Dict<i64, i64>>>](values));
     };
 
-    CHECK(testing::test_graph(convert_and_sum,
-                              testing::input<TSD<i64, TS<i64>>>({{{1, 10}, {2, 20}},
+    CHECK(bg::run_graph(convert_and_sum,
+                              bg::input<TSD<i64, TS<i64>>>({{{1, 10}, {2, 20}},
                                                                  {{1, literal::REMOVE}, {2, 7}},
                                                                  {{2, literal::REMOVE}}}))
               .equals<i64>({30, 7, 0}));
@@ -159,8 +159,8 @@ TEST_CASE("convert maps Bundle and TSB fields by name",
         return operators::convert[type<TSB<ConversionSeriesRecord>>](source);
     };
 
-    CHECK(testing::test_graph(bundle_to_tsb,
-                              testing::input<TS<Bundle<ConversionScalarRecord>>>(
+    CHECK(bg::run_graph(bundle_to_tsb,
+                              bg::input<TS<Bundle<ConversionScalarRecord>>>(
                                   {{{"count", 7}, {"ratio", 2.5}}}))
               .equals({{{"ratio", 2.5}, {"count", 7}}}));
 
@@ -168,8 +168,8 @@ TEST_CASE("convert maps Bundle and TSB fields by name",
         return operators::convert[type<TS<Bundle<ConversionScalarRecord>>>](source);
     };
 
-    CHECK(testing::test_graph(tsb_to_bundle,
-                              testing::input<TSB<ConversionSeriesRecord>>({{{"ratio", 2.5}, {"count", 7}}}))
+    CHECK(bg::run_graph(tsb_to_bundle,
+                              bg::input<TSB<ConversionSeriesRecord>>({{{"ratio", 2.5}, {"count", 7}}}))
               .equals({{{"count", 7}, {"ratio", 2.5}}}));
 }
 
@@ -185,7 +185,7 @@ TEST_CASE("convert maps fields from a derived Bundle through its declared base s
         return operators::convert[type<TSB<ConversionSeriesRecord>>](source);
     };
 
-    CHECK(testing::test_graph(convert_derived, testing::input<TS<i64>>({0}))
+    CHECK(bg::run_graph(convert_derived, bg::input<TS<i64>>({0}))
               .equals({{{"ratio", 2.5}, {"count", 7}}}));
 }
 
@@ -196,9 +196,9 @@ TEST_CASE("convert maps optional Bundle fields through present and absent update
         return operators::convert[type<TSB<ConversionOptionalSeriesRecord>>](source);
     };
 
-    CHECK(testing::test_graph(
+    CHECK(bg::run_graph(
               bundle_to_tsb,
-              testing::input<TS<Bundle<ConversionOptionalScalarRecord>>>(
+              bg::input<TS<Bundle<ConversionOptionalScalarRecord>>>(
                   {{{"count", 1}, {"ratio", 2.5}}, {{"count", 2}}, {{"count", 3}, {"ratio", 4.5}}}))
               .equals({{{"ratio", 2.5}, {"count", 1}}, {{"ratio", literal::INVALID}, {"count", 2}},
                        {{"ratio", 4.5}, {"count", 3}}}));
@@ -210,8 +210,8 @@ TEST_CASE("convert rejects a non-TSB result for a Bundle input",
         return operators::convert[type<TS<List<i64>>>](source);
     };
 
-    CHECK_THROWS_AS(testing::test_graph(invalid_result,
-                                        testing::input<TS<Bundle<ConversionScalarRecord>>>(
+    CHECK_THROWS_AS(bg::run_graph(invalid_result,
+                                        bg::input<TS<Bundle<ConversionScalarRecord>>>(
                                             {{{"count", 7}, {"ratio", 2.5}}})),
                     WiringError);
 }
@@ -224,10 +224,10 @@ TEST_CASE("convert rejects non-Bundle results for a TSB input",
     const auto to_fixed_list = [](wp<TSB<ConversionSeriesRecord>> source) {
         return operators::convert[type<TSL<TS<double>, 2>>](source);
     };
-    const auto input = testing::input<TSB<ConversionSeriesRecord>>({{{"ratio", 2.5}, {"count", 7}}});
+    const auto input = bg::input<TSB<ConversionSeriesRecord>>({{{"ratio", 2.5}, {"count", 7}}});
     const auto expect_resolver_rejection = [&](const auto &graph) {
         try {
-            (void)testing::test_graph(graph, input);
+            (void)bg::run_graph(graph, input);
             FAIL("expected a rejected TSB conversion candidate");
         } catch (const WiringError &error) {
             REQUIRE(error.diagnostic());
@@ -250,8 +250,8 @@ TEST_CASE("convert rejects mismatched Bundle and TSB field names",
     const auto mismatched_graph = [](wp<TS<Bundle<ConversionScalarRecord>>> source) {
         return operators::convert[type<TSB<ConversionOtherSeriesRecord>>](source);
     };
-    CHECK_THROWS_AS(testing::test_graph(mismatched_graph,
-                                        testing::input<TS<Bundle<ConversionScalarRecord>>>(
+    CHECK_THROWS_AS(bg::run_graph(mismatched_graph,
+                                        bg::input<TS<Bundle<ConversionScalarRecord>>>(
                                             {{{"count", 7}, {"ratio", 2.5}}})),
                     WiringError);
 }
@@ -263,7 +263,7 @@ TEST_CASE("convert reconciles scalar dictionaries into TSD snapshots",
         return operators::sum_(snapshot);
     };
 
-    CHECK(testing::test_graph(dict_to_tsd_sum,
+    CHECK(bg::run_graph(dict_to_tsd_sum,
                               {{{1, 10}, {2, 20}}, {{2, 7}}, {}})
               .equals<i64>({30, 7, 0}));
 }
@@ -280,8 +280,8 @@ TEST_CASE("convert reconciles repeated set snapshots without publishing false ch
         return observe_changes(operators::convert[type<TSS<i64>>](values));
     };
 
-    CHECK(testing::test_graph(convert_and_observe,
-                              testing::input<TS<Set<i64>>>({{1, 2}, {1, 2}, {2, 3}}))
+    CHECK(bg::run_graph(convert_and_observe,
+                              bg::input<TS<Set<i64>>>({{1, 2}, {1, 2}, {2, 3}}))
               .equals<i64>({20, std::nullopt, 11}));
 }
 
@@ -297,8 +297,8 @@ TEST_CASE("convert preserves a TSS snapshot when its scalar collection input is 
         return observe(values, snapshot);
     };
 
-    CHECK(testing::test_graph(convert_and_observe,
-              testing::input<TS<List<i64>, TimeSeriesGuarantee::deduplicated>>(
+    CHECK(bg::run_graph(convert_and_observe,
+              bg::input<TS<List<i64>, TimeSeriesGuarantee::deduplicated>>(
                   {{}, {}, literal::INVALID, {}}))
               .equals<bool>({true, std::nullopt, true, true}));
 }
@@ -310,7 +310,7 @@ TEST_CASE("combine captures homogeneous time-series arguments into a TSL",
         return operators::sum_(values);
     };
 
-    CHECK(testing::test_graph(combine_and_sum, {1, 10}, {2, 20}).equals<i64>({3, 30}));
+    CHECK(bg::run_graph(combine_and_sum, {1, 10}, {2, 20}).equals<i64>({3, 30}));
 }
 
 TEST_CASE("combine keeps TSL item validity for unmarked inputs",
@@ -322,7 +322,7 @@ TEST_CASE("combine keeps TSL item validity for unmarked inputs",
         return values;
     };
 
-    CHECK(testing::test_graph(combine_values, {1, 2, literal::INVALID, 3}, {10, literal::SKIP, literal::SKIP,
+    CHECK(bg::run_graph(combine_values, {1, 2, literal::INVALID, 3}, {10, literal::SKIP, literal::SKIP,
                                                                            literal::SKIP})
               .equals({{{0, 1}, {1, 10}}, {{0, 2}}, {{0, literal::INVALID}}, {{0, 3}}}));
 }
@@ -337,7 +337,7 @@ TEST_CASE("combine keeps named TSB item validity for unmarked inputs",
         return values;
     };
 
-    CHECK(testing::test_graph(combine_values, {7, 8, literal::INVALID, 9}, {2.5, literal::SKIP,
+    CHECK(bg::run_graph(combine_values, {7, 8, literal::INVALID, 9}, {2.5, literal::SKIP,
                                                                            literal::SKIP, literal::SKIP})
               .equals({{{"ratio", 2.5}, {"count", 7}}, {{"count", 8}}, {{"count", literal::INVALID}},
                        {{"count", 9}}}));
@@ -353,9 +353,9 @@ TEST_CASE("combine publishes initially partial TSL and TSB values from unmarked 
         return operators::combine[type<TSB<ConversionSeriesRecord>>]("ratio"_n = ratio, "count"_n = count);
     };
 
-    CHECK(testing::test_graph(combine_tsl, {literal::INVALID, 7}, {2, literal::SKIP})
+    CHECK(bg::run_graph(combine_tsl, {literal::INVALID, 7}, {2, literal::SKIP})
               .equals({{{1, 2}}, {{0, 7}}}));
-    CHECK(testing::test_graph(combine_tsb, {literal::INVALID, 7}, {2.5, literal::SKIP})
+    CHECK(bg::run_graph(combine_tsb, {literal::INVALID, 7}, {2.5, literal::SKIP})
               .equals({{{"ratio", 2.5}}, {{"count", 7}}}));
 }
 
@@ -367,7 +367,7 @@ TEST_CASE("combine publishes partial optional named TSB updates and item validit
                                                                       "ratio"_n = opt(ratio));
     };
 
-    CHECK(testing::test_graph(combine_values,
+    CHECK(bg::run_graph(combine_values,
                               {literal::INVALID, 7, literal::INVALID, literal::SKIP, 9},
                               {2.5, literal::SKIP, literal::SKIP, literal::INVALID, 3.5})
               .equals({{{"ratio", 2.5}}, {{"count", 7}}, {{"count", literal::INVALID}}, literal::INVALID,
@@ -384,7 +384,7 @@ TEST_CASE("combine forwards a free named TSB with a referenced field",
         return sum(combined);
     };
 
-    CHECK(testing::test_graph(combine_values, {7, 8}, {2.5, literal::SKIP}).equals<double>({9.5, 10.5}));
+    CHECK(bg::run_graph(combine_values, {7, 8}, {2.5, literal::SKIP}).equals<double>({9.5, 10.5}));
 }
 
 TEST_CASE("combine rejects explicit result guarantees stronger than its free collection",
@@ -403,9 +403,9 @@ TEST_CASE("combine rejects explicit result guarantees stronger than its free col
                                           TimeSeriesGuarantee::deduplicated>>](first, second);
     };
 
-    CHECK_THROWS_AS(testing::test_graph(final_tsl, {1}, {2}), WiringError);
-    CHECK_THROWS_AS(testing::test_graph(const_tsb, {1}, {2.0}), WiringError);
-    CHECK_THROWS_AS(testing::test_graph(deduplicated_tsl, {1}, {2}), WiringError);
+    CHECK_THROWS_AS(bg::run_graph(final_tsl, {1}, {2}), WiringError);
+    CHECK_THROWS_AS(bg::run_graph(const_tsb, {1}, {2.0}), WiringError);
+    CHECK_THROWS_AS(bg::run_graph(deduplicated_tsl, {1}, {2}), WiringError);
 }
 
 TEST_CASE("combine preserves partial optional TSL updates",
@@ -415,7 +415,7 @@ TEST_CASE("combine preserves partial optional TSL updates",
         return operators::combine[type<TSL<TS<i64>, 2>>](opt(first), opt(second));
     };
 
-    CHECK(testing::test_graph(combine_values, {1, literal::INVALID, 3}, {10, literal::SKIP, literal::SKIP})
+    CHECK(bg::run_graph(combine_values, {1, literal::INVALID, 3}, {10, literal::SKIP, literal::SKIP})
               .equals({{{0, 1}, {1, 10}}, {{0, literal::INVALID}}, {{0, 3}}}));
 }
 
@@ -426,7 +426,7 @@ TEST_CASE("combine starts invalid when every TSL item is invalid",
         return operators::combine[type<TSL<TS<i64>, 2>>](first, second);
     };
 
-    CHECK(testing::test_graph(combine_values, {literal::INVALID, 2}, {literal::SKIP, 10})
+    CHECK(bg::run_graph(combine_values, {literal::INVALID, 2}, {literal::SKIP, 10})
               .equals({literal::SKIP, {{0, 2}, {1, 10}}}));
 }
 
@@ -437,7 +437,7 @@ TEST_CASE("combine publishes an initially partial optional TSL",
         return operators::combine[type<TSL<TS<i64>, 2>>](opt(first), opt(second));
     };
 
-    CHECK(testing::test_graph(combine_values, {literal::INVALID, 2}, {10, literal::SKIP})
+    CHECK(bg::run_graph(combine_values, {literal::INVALID, 2}, {10, literal::SKIP})
               .equals({{{1, 10}}, {{0, 2}}}));
 }
 
@@ -450,7 +450,7 @@ TEST_CASE("combine forwards a free TSL with a referenced item",
         return operators::sum_(combined);
     };
 
-    CHECK(testing::test_graph(combine_values, {1, 2}, {10, literal::SKIP}).equals<i64>({11, 12}));
+    CHECK(bg::run_graph(combine_values, {1, 2}, {10, literal::SKIP}).equals<i64>({11, 12}));
 }
 
 TEST_CASE("combine exposes partial items to all_valid consumers",
@@ -461,7 +461,7 @@ TEST_CASE("combine exposes partial items to all_valid consumers",
         return operators::all_valid(values);
     };
 
-    CHECK(testing::test_graph(all_items_valid, {literal::INVALID, 2}, {10, literal::SKIP})
+    CHECK(bg::run_graph(all_items_valid, {literal::INVALID, 2}, {10, literal::SKIP})
               .equals<bool>({false, true}));
 }
 
@@ -480,9 +480,9 @@ TEST_CASE("combine gates TSL and TSB consumers that require all items valid",
                                                                                 "ratio"_n = ratio));
     };
 
-    CHECK(testing::test_graph(combined_tsl, {literal::INVALID, 2}, {10, literal::SKIP})
+    CHECK(bg::run_graph(combined_tsl, {literal::INVALID, 2}, {10, literal::SKIP})
               .equals<i64>({std::nullopt, 12}));
-    CHECK(testing::test_graph(combined_tsb, {literal::INVALID, 7}, {2.5, literal::SKIP})
+    CHECK(bg::run_graph(combined_tsb, {literal::INVALID, 7}, {2.5, literal::SKIP})
               .equals<double>({std::nullopt, 9.5}));
 }
 
@@ -597,6 +597,6 @@ TEST_CASE("an adapted combined TSL supplies a nested reference consumer",
         return nested(inner, run, values);
     };
 
-    CHECK(testing::test_graph(outer, {1, 2, 3, 4}, {10, 20, 30, 40}, {true, true, false, true})
+    CHECK(bg::run_graph(outer, {1, 2, 3, 4}, {10, 20, 30, 40}, {true, true, false, true})
               .equals({11, 22, std::nullopt, 44}));
 }

@@ -11,7 +11,7 @@
 #include <bg/operator.hpp>
 #include <bg/scalar/declaration.hpp>
 #include <bg/scalar/scalar.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/type/signature.hpp>
 #include <bg/type/type_registry.hpp>
@@ -50,8 +50,8 @@ TEST_CASE("reference and value consumers observe converted inputs on each tick",
         return copy_value(value.as<REF<TS<i64>>>());
     });
 
-    CHECK(testing::test_graph(through_reference, {3, 7, 11}).equals({3, 7, 11}));
-    CHECK(testing::test_graph(through_value, {5, 9, 13}).equals({5, 9, 13}));
+    CHECK(bg::run_graph(through_reference, {3, 7, 11}).equals({3, 7, 11}));
+    CHECK(bg::run_graph(through_value, {5, 9, 13}).equals({5, 9, 13}));
 }
 
 namespace {
@@ -2427,7 +2427,7 @@ TEST_CASE("normal materialization completes and caches a lazy callback result",
         return sink(deferred, deferred);
     };
 
-    const auto actual = bg::testing::test_graph(tested, {7});
+    const auto actual = bg::run_graph(tested, {7});
 
     CHECK(actual.equals({14}));
     CHECK(callback_calls == 1);

@@ -1,7 +1,7 @@
 #include <bg/graph.hpp>
 #include <bg/node.hpp>
 #include <bg/operator.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
@@ -21,7 +21,7 @@ TEST_CASE("all_valid checks every item in a fixed list",
     const auto sum = node([](In<TSL<TS<i64>, 2>, all_valid> input) {
         return *input[0] + *input[1];
     });
-    const auto actual = testing::test_graph(sum, {{{0, 1}, {1, 10}}, {{1, literal::INVALID}}, {{1, 12}}});
+    const auto actual = bg::run_graph(sum, {{{0, 1}, {1, 10}}, {{1, literal::INVALID}}, {{1, 12}}});
 
     CHECK(actual.equals({11, literal::INVALID, 13}));
 }
@@ -61,8 +61,8 @@ TEST_CASE("all_valid rejects an unpopulated fixed-list position",
     const auto gate = node([](In<TSL<TS<i64>, 3>, all_valid> input) {
         return *input[0] + *input[2];
     });
-    CHECK(testing::test_graph(query, {{{0, 10}, {2, 20}}}).equals({false}));
-    CHECK(testing::test_graph(gate, {{{0, 10}, {2, 20}}}).equals({literal::SKIP}));
+    CHECK(bg::run_graph(query, {{{0, 10}, {2, 20}}}).equals({false}));
+    CHECK(bg::run_graph(gate, {{{0, 10}, {2, 20}}}).equals({literal::SKIP}));
 }
 
 TEST_CASE("an erased all_valid input uses the resolved runtime type",
@@ -76,9 +76,9 @@ TEST_CASE("an erased all_valid input uses the resolved runtime type",
 
     const auto gate_graph = bg::graph("name"_n = "gate", [&](wp<TSL<TS<i64>, 2>> input) { return gate(input); });
 
-    CHECK(testing::test_graph(query_graph, {{{0, 1}, {1, 10}}, {{1, literal::INVALID}}, {{1, 12}}})
+    CHECK(bg::run_graph(query_graph, {{{0, 1}, {1, 10}}, {{1, literal::INVALID}}, {{1, 12}}})
               .equals({true, false, true}));
-    CHECK(testing::test_graph(gate_graph, {{{0, 1}, {1, 10}}, {{1, literal::INVALID}}, {{1, 12}}})
+    CHECK(bg::run_graph(gate_graph, {{{0, 1}, {1, 10}}, {{1, literal::INVALID}}, {{1, 12}}})
               .equals({1, literal::INVALID, 1}));
 }
 
@@ -88,8 +88,8 @@ TEST_CASE("all_valid treats a valid empty set as valid",
 
     const auto query = node([](In<TSS<i64>> input) { return input.all_valid(); });
 
-    CHECK(testing::test_graph(query, {{}}).equals({true}));
-    CHECK(testing::test_graph(size, {{}}).equals<i64>({0}));
+    CHECK(bg::run_graph(query, {{}}).equals({true}));
+    CHECK(bg::run_graph(size, {{}}).equals<i64>({0}));
 }
 
 TEST_CASE("all_valid reports an invalid root even when the collection has no data",
@@ -98,7 +98,7 @@ TEST_CASE("all_valid reports an invalid root even when the collection has no dat
         eval = [](In<TSL<TS<i64>, 2>, optional> input) { return input.all_valid(); },
         schedule_on_start = true);
 
-    CHECK(testing::test_graph(query, {}).equals({false}));
+    CHECK(bg::run_graph(query, {}).equals({false}));
 }
 
 TEST_CASE("all_valid on an empty input view rejects invalid roots without runtime data",
@@ -127,7 +127,7 @@ TEST_CASE("aggregate all_valid inputs gate evaluation until every list item is v
     };
 
     const auto sum = node<sum_valid_list>();
-    CHECK(testing::test_graph(sum, {{{0, 1}, {1, 10}}, {{1, literal::INVALID}}, {{1, 12}}})
+    CHECK(bg::run_graph(sum, {{{0, 1}, {1, 10}}, {{1, literal::INVALID}}, {{1, 12}}})
               .equals({11, literal::INVALID, 13}));
 }
 
@@ -148,9 +148,9 @@ TEST_CASE("free TSL queries and enforces immediate item validity",
         return query(tsl(first, changing));
     };
 
-    CHECK(testing::test_graph(query_graph, {10, literal::SKIP, literal::SKIP}, {1, literal::INVALID, 3})
+    CHECK(bg::run_graph(query_graph, {10, literal::SKIP, literal::SKIP}, {1, literal::INVALID, 3})
               .equals({true, false, true}));
-    CHECK(testing::test_graph(sum_graph, {10, literal::SKIP, literal::SKIP}, {1, literal::INVALID, 3})
+    CHECK(bg::run_graph(sum_graph, {10, literal::SKIP, literal::SKIP}, {1, literal::INVALID, 3})
               .equals({11, literal::INVALID, 13}));
 }
 
@@ -161,7 +161,7 @@ TEST_CASE("all_valid includes optional fields in a bundle",
     const auto sum = node([](In<TSB<OptionalFieldBundle>, all_valid> input) {
         return *input->first + *input->second;
     });
-    const auto actual = testing::test_graph(sum, {{{"first", 1}}, {{"second", 2}}});
+    const auto actual = bg::run_graph(sum, {{{"first", 1}}, {{"second", 2}}});
 
     CHECK(actual.equals({literal::SKIP, 3}));
 }
@@ -183,9 +183,9 @@ TEST_CASE("free TSB queries and enforces immediate field validity",
         return sum(bundle("first"_n = first, "second"_n = changing));
     });
 
-    CHECK(testing::test_graph(query_graph, {10, literal::SKIP, literal::SKIP}, {1, literal::INVALID, 3})
+    CHECK(bg::run_graph(query_graph, {10, literal::SKIP, literal::SKIP}, {1, literal::INVALID, 3})
               .equals({true, false, true}));
-    CHECK(testing::test_graph(sum_graph, {10, literal::SKIP, literal::SKIP}, {1, literal::INVALID, 3})
+    CHECK(bg::run_graph(sum_graph, {10, literal::SKIP, literal::SKIP}, {1, literal::INVALID, 3})
               .equals({11, literal::INVALID, 13}));
 }
 
@@ -201,7 +201,7 @@ TEST_CASE("all_valid uses the declared base schema for native derived bundle sto
         return inspect(input);
     });
 
-    CHECK(testing::test_graph(graph, {{{"value", 1}}, {{"value", literal::INVALID}}, {{"value", 2}}})
+    CHECK(bg::run_graph(graph, {{{"value", 1}}, {{"value", literal::INVALID}}, {{"value", 2}}})
               .equals({1, literal::INVALID, 2}));
 }
 
@@ -232,10 +232,10 @@ TEST_CASE("all_valid uses the declared base schema for free derived bundle field
         return inspect_actual(input);
     };
 
-    CHECK(testing::test_graph(base_graph, {1, literal::INVALID, 3})
+    CHECK(bg::run_graph(base_graph, {1, literal::INVALID, 3})
               .equals({true, std::nullopt, std::nullopt}));
-    CHECK(testing::test_graph(derived_graph, {1, literal::INVALID, 3}).equals({true, false, true}));
-    CHECK(testing::test_graph(actual_graph, {1, literal::INVALID, 3}).equals({true, false, true}));
+    CHECK(bg::run_graph(derived_graph, {1, literal::INVALID, 3}).equals({true, false, true}));
+    CHECK(bg::run_graph(actual_graph, {1, literal::INVALID, 3}).equals({true, false, true}));
 }
 
 TEST_CASE("all_valid checks nested bundle roots without recursively checking their fields",
@@ -247,7 +247,7 @@ TEST_CASE("all_valid checks nested bundle roots without recursively checking the
 
     const auto graph = [&](wp<TSB<NestedValidityDerivedBundle>> input) { return inspect(input); };
 
-    CHECK(testing::test_graph(graph, {{{"nested", {{"value", 10}}}}}).equals({true}));
+    CHECK(bg::run_graph(graph, {{{"nested", {{"value", 10}}}}}).equals({true}));
 }
 
 TEST_CASE("all_valid follows a selected reference using the declared base schema",
@@ -276,7 +276,7 @@ TEST_CASE("all_valid follows a selected reference using the declared base schema
         return inspect(select(choose_second, first, second));
     };
 
-    CHECK(testing::test_graph(graph, {0, 1, 1}, {{{"value", 1}}},
+    CHECK(bg::run_graph(graph, {0, 1, 1}, {{{"value", 1}}},
                               {1, literal::INVALID, 3})
               .equals({1, std::nullopt, 3}));
 }
@@ -295,7 +295,7 @@ TEST_CASE("all_valid ignores removed TSD items and accepts an empty live set",
         return sum(operators::const_(i64{42}), value, i64{1}, input);
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {0, 0, 0, 0},
         {{{1, 10}, {2, 20}}, {{1, literal::INVALID}}, {{1, literal::REMOVE}}, {{2, literal::REMOVE}}});
 
@@ -314,7 +314,7 @@ TEST_CASE("all_valid descriptors stay aligned across collection inputs, constant
         return sum(operators::const_(i64{42}), list, pulse, i64{2}, dictionary);
     };
 
-    CHECK(testing::test_graph(graph, {1}, {{{0, 10}, {1, 20}}}, {{{1, 30}}})
+    CHECK(bg::run_graph(graph, {1}, {{{0, 10}, {1, 20}}}, {{{1, 30}}})
               .equals({105}));
 }
 
@@ -324,7 +324,7 @@ TEST_CASE("all_valid accepts a constant leaf time series",
 
     const auto graph = [&] { return copy(operators::const_(i64{42})); };
 
-    CHECK(testing::test_graph(graph).equals({42}));
+    CHECK(bg::run_graph(graph).equals({42}));
 }
 
 TEST_CASE("all_valid observes a defaulted input changing to its fallback",
@@ -334,7 +334,7 @@ TEST_CASE("all_valid observes a defaulted input changing to its fallback",
 
     const auto graph = [&](wp<TS<i64>> source) { return copy(operators::default_(source, i64{0})); };
 
-    CHECK(testing::test_graph(graph, {1, literal::INVALID, 3}).equals<i64>({1, 0, 3}));
+    CHECK(bg::run_graph(graph, {1, literal::INVALID, 3}).equals<i64>({1, 0, 3}));
 }
 
 TEST_CASE("all_valid ignores a retained but missing dictionary key",
@@ -357,7 +357,7 @@ TEST_CASE("all_valid ignores a retained but missing dictionary key",
         return inspect(dictionary, dictionary[2]);
     };
 
-    CHECK(testing::test_graph(graph, {{{1, 10}}, {{1, 20}}})
+    CHECK(bg::run_graph(graph, {{{1, 10}}, {{1, 20}}})
               .equals<observation>({observation{1, false}, observation{1, false}}));
 }
 
@@ -406,7 +406,7 @@ TEST_CASE("all_valid checks sampled TSD item values as they invalidate and reval
         return report(sum(dictionary));
     };
 
-    CHECK(testing::test_graph(graph).equals({true, false, true}));
+    CHECK(bg::run_graph(graph).equals({true, false, true}));
 }
 
 TEST_CASE("all_valid checks live items in sampled native dictionaries",
@@ -440,7 +440,7 @@ TEST_CASE("all_valid checks live items in sampled native dictionaries",
         return inspect(selected);
     });
 
-    CHECK(testing::test_graph(
+    CHECK(bg::run_graph(
               graph, {0, 0, 1, 1}, {{{1, 10}, {2, 20}}},
               {{{1, 30}, {2, 40}}, literal::SKIP, {{2, literal::INVALID}}, {{2, 42}}})
               .equals<observation>({observation{true, 30}, std::nullopt, observation{false, 30},
@@ -467,7 +467,7 @@ TEST_CASE("an all_valid invalidation handler runs once per failed transition",
 
     const auto graph = [&](wp<TSL<TS<i64>, 2>> input) { return observe(input); };
 
-    CHECK(testing::test_graph(graph, {{{0, 1}, {1, 10}},
+    CHECK(bg::run_graph(graph, {{{0, 1}, {1, 10}},
                                      {{1, literal::INVALID}},
                                      {{0, 2}},
                                      {{1, 12}},
@@ -485,7 +485,7 @@ TEST_CASE("all_valid checks immediate nested items without recursively checking 
 
     const auto graph = [&](wp<TSL<TSL<TS<i64>, 2>, 1>> input) { return inspect(input); };
 
-    CHECK(testing::test_graph(graph, {{{0, {{0, 10}}}}}).equals({true}));
+    CHECK(bg::run_graph(graph, {{{0, {{0, 10}}}}}).equals({true}));
 }
 
 TEST_CASE("all_valid on a reference checks the reference rather than its target items",
@@ -497,7 +497,7 @@ TEST_CASE("all_valid on a reference checks the reference rather than its target 
         return inspect(input);
     };
 
-    CHECK(testing::test_graph(graph, {{{0, 10}}}).equals({true}));
+    CHECK(bg::run_graph(graph, {{{0, 10}}}).equals({true}));
 }
 
 TEST_CASE("a passive all_valid input checks items on scheduled evaluation attempts",
@@ -513,7 +513,7 @@ TEST_CASE("a passive all_valid input checks items on scheduled evaluation attemp
         return observe(combine(input, pulse));
     };
 
-    CHECK(testing::test_graph(
+    CHECK(bg::run_graph(
               graph, {100, literal::SKIP, 200, literal::SKIP, 300},
               {{{0, 1}, {1, 10}}, {{1, literal::INVALID}}, literal::SKIP, {{1, 12}}})
               .equals({true, std::nullopt, false, std::nullopt, true}));
@@ -534,7 +534,7 @@ TEST_CASE("dynamic activity defers all_valid item checks until a scheduled attem
         return report(observe(input, pulse));
     };
 
-    CHECK(testing::test_graph(
+    CHECK(bg::run_graph(
               graph, {1, literal::SKIP, 2, literal::SKIP, 3},
               {{{0, 1}, {1, 10}}, {{1, literal::INVALID}}, literal::SKIP, {{1, 12}}})
               .equals({true, std::nullopt, false, std::nullopt, true}));
@@ -564,6 +564,6 @@ TEST_CASE("a timer evaluation checks passive all_valid items",
 
     const auto graph = [&](wp<TSL<TS<i64>, 2>> input) { return observe(gate(input)); };
 
-    CHECK(testing::test_graph(graph, {{{0, 1}, {1, 10}}, {{1, literal::INVALID}}, literal::SKIP, {{1, 12}}})
+    CHECK(bg::run_graph(graph, {{{0, 1}, {1, 10}}, {{1, literal::INVALID}}, literal::SKIP, {{1, 12}}})
               .equals({true, std::nullopt, false, std::nullopt, std::nullopt, true}));
 }

@@ -1,7 +1,7 @@
 #include <bg/graph.hpp>
 #include <bg/library.hpp>
 #include <bg/node.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsb/tsb_type.hpp>
@@ -23,11 +23,11 @@ TEST_CASE("take drop and step count valid events and preserve skipped ticks",
     const auto drop = bg::graph([](wp<TS<i64>> value) { return operators::drop(value, 2).as<TS<i64>>(); });
     const auto step = bg::graph([](wp<TS<i64>> value) { return operators::step(value, 2).as<TS<i64>>(); });
 
-    CHECK(testing::test_graph(take, {1, literal::INVALID, 2, 3, literal::INVALID, 4})
+    CHECK(bg::run_graph(take, {1, literal::INVALID, 2, 3, literal::INVALID, 4})
               .equals({1, literal::INVALID, 2, literal::SKIP, literal::SKIP, literal::SKIP}));
-    CHECK(testing::test_graph(drop, {1, literal::INVALID, 2, 3, literal::INVALID, 4})
+    CHECK(bg::run_graph(drop, {1, literal::INVALID, 2, 3, literal::INVALID, 4})
               .equals({literal::SKIP, literal::SKIP, literal::SKIP, 3, literal::INVALID, 4}));
-    CHECK(testing::test_graph(step, {1, 1, 2, literal::INVALID, 3, 4, 5})
+    CHECK(bg::run_graph(step, {1, 1, 2, literal::INVALID, 3, 4, 5})
               .equals({1, literal::SKIP, 2, literal::INVALID, literal::SKIP, 4, literal::SKIP}));
 }
 
@@ -38,16 +38,16 @@ TEST_CASE("counted operators validate their counts and handle zero",
     const auto step_every_event =
         bg::graph([](wp<TS<i64>> value) { return operators::step(value, 1).as<TS<i64>>(); });
 
-    CHECK(testing::test_graph(take_none, {1, 2}).equals({literal::SKIP, literal::SKIP}));
-    CHECK(testing::test_graph(drop_none, {1, 2}).equals({1, 2}));
-    CHECK(testing::test_graph(step_every_event, {1, 2}).equals({1, 2}));
-    CHECK_THROWS_AS(testing::test_graph(
+    CHECK(bg::run_graph(take_none, {1, 2}).equals({literal::SKIP, literal::SKIP}));
+    CHECK(bg::run_graph(drop_none, {1, 2}).equals({1, 2}));
+    CHECK(bg::run_graph(step_every_event, {1, 2}).equals({1, 2}));
+    CHECK_THROWS_AS(bg::run_graph(
                         [](wp<TS<i64>> value) { return operators::take(value, -1); }, {1}),
                     WiringError);
-    CHECK_THROWS_AS(testing::test_graph(
+    CHECK_THROWS_AS(bg::run_graph(
                         [](wp<TS<i64>> value) { return operators::drop(value, -1); }, {1}),
                     WiringError);
-    CHECK_THROWS_AS(testing::test_graph(
+    CHECK_THROWS_AS(bg::run_graph(
                         [](wp<TS<i64>> value) { return operators::step(value, 0); }, {1}),
                     WiringError);
 }
@@ -58,11 +58,11 @@ TEST_CASE("initial skips and invalidations do not consume selected events",
     const auto take = bg::graph([](wp<TS<i64>> value) { return operators::take(value, 2).as<TS<i64>>(); });
     const auto drop = bg::graph([](wp<TS<i64>> value) { return operators::drop(value, 1).as<TS<i64>>(); });
     const auto step = bg::graph([](wp<TS<i64>> value) { return operators::step(value, 2).as<TS<i64>>(); });
-    CHECK(testing::test_graph(take, {literal::SKIP, literal::INVALID, 10, literal::SKIP, 20, 30})
+    CHECK(bg::run_graph(take, {literal::SKIP, literal::INVALID, 10, literal::SKIP, 20, 30})
               .equals({literal::SKIP, literal::SKIP, 10, literal::SKIP, 20, literal::SKIP}));
-    CHECK(testing::test_graph(drop, {literal::SKIP, literal::INVALID, 10, literal::SKIP, 20, 30})
+    CHECK(bg::run_graph(drop, {literal::SKIP, literal::INVALID, 10, literal::SKIP, 20, 30})
               .equals({literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP, 20, 30}));
-    CHECK(testing::test_graph(step, {literal::SKIP, literal::INVALID, 10, literal::SKIP, 20, 30})
+    CHECK(bg::run_graph(step, {literal::SKIP, literal::INVALID, 10, literal::SKIP, 20, 30})
               .equals({literal::SKIP, literal::SKIP, 10, literal::SKIP, literal::SKIP, 30}));
 }
 
@@ -76,9 +76,9 @@ TEST_CASE("drop and step reconcile skipped dictionary changes before publishing"
         return operators::sum_(operators::step(value, 2)).as<TS<i64>>();
     });
 
-    CHECK(testing::test_graph(drop_sum, {{{1, 10}, {2, 20}}, {{2, 21}, {3, 30}}, {{2, literal::REMOVE}, {4, 40}}})
+    CHECK(bg::run_graph(drop_sum, {{{1, 10}, {2, 20}}, {{2, 21}, {3, 30}}, {{2, literal::REMOVE}, {4, 40}}})
               .equals({literal::SKIP, 61, 80}));
-    CHECK(testing::test_graph(step_sum, {{{1, 10}, {2, 20}}, {{2, 21}, {3, 30}}, {{2, literal::REMOVE}, {4, 40}}})
+    CHECK(bg::run_graph(step_sum, {{{1, 10}, {2, 20}}, {{2, 21}, {3, 30}}, {{2, literal::REMOVE}, {4, 40}}})
               .equals({30, literal::SKIP, 80}));
 }
 
@@ -101,9 +101,9 @@ TEST_CASE("step copies the current free TSL and TSB after skipped updates",
         return sum_bundle(operators::step(values, 2));
     });
 
-    CHECK(testing::test_graph(step_list, {1, 2}, {10, literal::SKIP, 20})
+    CHECK(bg::run_graph(step_list, {1, 2}, {10, literal::SKIP, 20})
               .equals({11, literal::SKIP, 22}));
-    CHECK(testing::test_graph(step_bundle, {1, 2}, {10, literal::SKIP, 20})
+    CHECK(bg::run_graph(step_bundle, {1, 2}, {10, literal::SKIP, 20})
               .equals({11, literal::SKIP, 22}));
 }
 
@@ -118,7 +118,7 @@ TEST_CASE("step follows TSS and TSD references through invalid targets and reval
         return operators::sum_(operators::step(select_set(cycle, populated, invalid), 2)).as<TS<i64>>();
     });
 
-    CHECK(testing::test_graph(set_sum, {0, 1, 2, 3}, {{1}, literal::SKIP, {2}, {3}}, {})
+    CHECK(bg::run_graph(set_sum, {0, 1, 2, 3}, {{1}, literal::SKIP, {2}, {3}}, {})
               .equals({1, 0, literal::SKIP, 6}));
 
     const auto select_dictionary = node([](In<TS<i64>> cycle, In<REF<TSD<i64, TS<i64>>>, passive> populated,
@@ -132,7 +132,7 @@ TEST_CASE("step follows TSS and TSD references through invalid targets and reval
             .as<TS<i64>>();
     });
 
-    CHECK(testing::test_graph(dictionary_sum, {0, 1, 2, 3}, {{{1, 10}}, literal::SKIP, {{2, 20}}, {{3, 30}}}, {})
+    CHECK(bg::run_graph(dictionary_sum, {0, 1, 2, 3}, {{{1, 10}}, literal::SKIP, {{2, 20}}, {{3, 30}}}, {})
               .equals({10, 0, literal::SKIP, 60}));
 }
 
@@ -152,7 +152,7 @@ TEST_CASE("take preserves item guarantees and forwards only changed bundle items
             bundle<changing_and_constant>(value, operators::const_(i64{1})), 2));
     });
 
-    CHECK(testing::test_graph(graph, {10, 20, 30}).equals({true, false, literal::SKIP}));
+    CHECK(bg::run_graph(graph, {10, 20, 30}).equals({true, false, literal::SKIP}));
 
     testing::test_wiring([] {
         auto &wiring = WiringContext::current().wiring();
@@ -202,7 +202,7 @@ TEST_CASE("take follows ordinary reference target updates",
         return operators::take(bind_reference(value), 2).as<TS<i64>>();
     });
 
-    CHECK(testing::test_graph(graph, {10, 20, 30, 40})
+    CHECK(bg::run_graph(graph, {10, 20, 30, 40})
               .equals({10, 20, literal::SKIP, literal::SKIP}));
 }
 
@@ -215,18 +215,18 @@ TEST_CASE("take state is independent for switch branches and map keys",
         return switch_(selector, cases{case_(i64{1}, take_branch), case_(i64{0}, pass_branch)}, value)
             .as<TS<i64>>();
     });
-    CHECK(testing::test_graph(switched, {1, 1, 0, 1, 1, 1}, {10, 20, 30, 40, 50, 60})
+    CHECK(bg::run_graph(switched, {1, 1, 0, 1, 1, 1}, {10, 20, 30, 40, 50, 60})
               .equals({10, 20, 30, 40, 50, literal::SKIP}));
 
     const auto mapped_sum = bg::graph([](wp<TSD<i64, TS<i64>>> values) {
         const auto selected = map([](wp<TS<i64>> input) { return operators::take(input, 2).as<TS<i64>>(); }, values);
         return operators::sum_(selected).as<TS<i64>>();
     });
-    CHECK(testing::test_graph(mapped_sum,
+    CHECK(bg::run_graph(mapped_sum,
                               {{{1, 10}, {2, 100}}, {{1, 11}}, {{1, 12}, {2, 101}}, {{2, 102}}, {{2, 103}}})
               .equals({110, 111, 112, literal::SKIP, literal::SKIP}));
 
-    CHECK(testing::test_graph(mapped_sum,
+    CHECK(bg::run_graph(mapped_sum,
                               {{{1, 10}}, {{1, literal::REMOVE}}, {{1, 20}}, {{1, 21}}, {{1, 22}}})
               .equals({10, 0, 20, 21, literal::SKIP}));
 }

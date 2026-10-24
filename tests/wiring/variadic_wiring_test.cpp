@@ -5,7 +5,7 @@
 #include <bg/node.hpp>
 #include <bg/operator.hpp>
 #include <bg/operators.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
@@ -475,12 +475,12 @@ TEST_CASE("two variadic packs materialize independently for callable and aggrega
     const auto left = std::array<bg::i64, 2>{1, 2};
     const auto right = std::array<bg::i64, 2>{3, 4};
 
-    const auto callable_result = testing::test_graph(
+    const auto callable_result = bg::run_graph(
         [&](wp<TS<bg::i64>> first, wp<TS<bg::i64>> second) {
             return callable(first, "right"_n = second);
         },
         left, right);
-    const auto aggregate_result = testing::test_graph(
+    const auto aggregate_result = bg::run_graph(
         [&](wp<TS<bg::i64>> first, wp<TS<bg::i64>> second) {
             return aggregate(first, "right"_n = second);
         },
@@ -1127,7 +1127,7 @@ TEST_CASE("a materialized pack keeps scalar and time series fields",
 
     const auto tested = [&](wp<TS<bg::i64>> input) { return packed(7, input); };
 
-    const auto actual = testing::test_graph(tested, {1, 2, 3});
+    const auto actual = bg::run_graph(tested, {1, 2, 3});
     CHECK(actual.equals({8, 9, 10}));
 }
 
@@ -1165,7 +1165,7 @@ TEST_CASE("an empty materialized pack is valid at graph start",
     });
     const auto tested = [&] { return packed(); };
 
-    const auto actual = testing::test_graph(tested);
+    const auto actual = bg::run_graph(tested);
 
     CHECK(actual.equals({true}));
 }
@@ -1181,7 +1181,7 @@ TEST_CASE("a nested graph preserves an empty variadic parameter",
 
     const auto tested = [&](wp<TS<bool>> run) { return nested(inner, run); };
 
-    const auto actual = testing::test_graph(tested, {true});
+    const auto actual = bg::run_graph(tested, {true});
 
     CHECK(actual.equals({true}));
 }
@@ -1200,7 +1200,7 @@ TEST_CASE("a nested graph keeps scalar pack entries inside and crosses time seri
         return nested(inner, run, 7, input);
     };
 
-    const auto actual = testing::test_graph(tested, {1, 2, 3}, {true, true, true});
+    const auto actual = bg::run_graph(tested, {1, 2, 3}, {true, true, true});
 
     CHECK(actual.equals({8, 9, 10}));
 

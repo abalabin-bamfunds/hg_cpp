@@ -6,7 +6,7 @@
 #include <bg/node.hpp>
 #include <bg/queue_node.hpp>
 #include <bg/run_graph.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -106,7 +106,7 @@ TEST_CASE("graph run limits apply through the profiler recorder",
 TEST_CASE("test graph leaves positions beyond its run limit empty",
           "[evaluation][simulation][feature:simulation][test-graph]") {
     const auto start = time(40);
-    const auto actual = testing::test_graph([](wp<TS<i64>> input) { return input; },
+    const auto actual = bg::run_graph([](wp<TS<i64>> input) { return input; },
                                             GraphRunOptions{.start_time = start, .stop_time = time(42)},
                                             std::array{i64{1}, i64{2}, i64{3}, i64{4}});
 

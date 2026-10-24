@@ -2,7 +2,7 @@
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/time_series/tsd/tsd_runtime_type.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
@@ -25,7 +25,7 @@ TEST_CASE("dictionary getitem follows one scalar key without reacting to unrelat
           "[transition:removal][transition:resurrection]") {
     const auto graph = [](wp<TSD<i64, TS<i64>>> dictionary) { return dictionary[i64{1}]; };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {{{2, 100}}, {{2, 101}}, {{1, 10}}, {{1, 11}}, {{1, literal::REMOVE}}, {{1, 12}}});
 
     CHECK(actual.equals<i64>({std::nullopt, std::nullopt, 10, 11, std::nullopt, 12}));
@@ -36,7 +36,7 @@ TEST_CASE("dictionary getitem accepts a missing key from an empty value dictiona
           "[binding:value-to-reference][binding:reference-to-value][transition:invalidation]") {
     const auto graph = [](wp<TSD<i64, TS<i64>>> dictionary) { return dictionary[i64{1}]; };
 
-    const auto actual = testing::test_graph(graph, {{}, {}});
+    const auto actual = bg::run_graph(graph, {{}, {}});
 
     CHECK(actual.equals<i64>({std::nullopt, std::nullopt}));
 }
@@ -49,7 +49,7 @@ TEST_CASE("dictionary getitem accepts a missing key from an empty reference dict
 
     const auto graph = [&](wp<TS<i64>> input) { return make_dictionary(input)[i64{1}]; };
 
-    const auto actual = testing::test_graph(graph, {1, 2});
+    const auto actual = bg::run_graph(graph, {1, 2});
 
     CHECK(actual.equals<i64>({std::nullopt, std::nullopt}));
 }
@@ -59,7 +59,7 @@ TEST_CASE("dictionary getitem follows a missing key when it is added",
           "[binding:value-to-reference][binding:reference-to-value][transition:revalidation]") {
     const auto graph = [](wp<TSD<i64, TS<i64>>> dictionary) { return dictionary[i64{1}]; };
 
-    const auto actual = testing::test_graph(graph, {{}, {{1, 10}}, {{1, 20}}});
+    const auto actual = bg::run_graph(graph, {{}, {{1, 10}}, {{1, 20}}});
 
     CHECK(actual.equals<i64>({std::nullopt, 10, 20}));
 }
@@ -74,7 +74,7 @@ TEST_CASE("dictionary getitem remains invalid when a value item is added and rem
 
     const auto graph = [&](wp<TS<i64>> input) { return make_dictionary(input)[i64{1}]; };
 
-    const auto actual = testing::test_graph(graph, {1, 2});
+    const auto actual = bg::run_graph(graph, {1, 2});
 
     CHECK(actual.equals<i64>({std::nullopt, std::nullopt}));
 }
@@ -88,7 +88,7 @@ TEST_CASE("dictionary getitem does not evaluate when its selected value item tic
         return monitor(dictionary[i64{1}]);
     };
 
-    const auto actual = testing::test_graph(graph, {{{1, 10}}, {{1, 20}}, {{1, 30}}});
+    const auto actual = bg::run_graph(graph, {{{1, 10}}, {{1, 20}}, {{1, 30}}});
 
     CHECK(actual.equals({1, std::nullopt, std::nullopt}));
 }
@@ -100,7 +100,7 @@ TEST_CASE("dictionary getitem changes its subscription with a time series key",
         return dictionary[key];
     };
 
-    const auto actual = testing::test_graph(graph, {{{1, 10}, {2, 100}}, {{1, 11}, {2, 110}}, {{1, 12}, {2, 120}}},
+    const auto actual = bg::run_graph(graph, {{{1, 10}, {2, 100}}, {{1, 11}, {2, 110}}, {{1, 12}, {2, 120}}},
                                             {1, 2, 1});
 
     CHECK(actual.equals<i64>({10, 110, 12}));
@@ -115,7 +115,7 @@ TEST_CASE("dictionary getitem fans out one selected value item without observing
         return sum(dictionary[i64{1}], dictionary[i64{1}]);
     };
 
-    const auto actual = testing::test_graph(graph, {{{1, 1}, {2, 10}}, {{1, 2}, {2, 20}}, {{1, 3}, {2, 30}}});
+    const auto actual = bg::run_graph(graph, {{{1, 1}, {2, 10}}, {{1, 2}, {2, 20}}, {{1, 3}, {2, 30}}});
 
     CHECK(actual.equals({2, 4, 6}));
 }
@@ -129,7 +129,7 @@ TEST_CASE("dictionary getitem independently selects distinct value items",
         return sum(dictionary[i64{1}], dictionary[i64{2}]);
     };
 
-    const auto actual = testing::test_graph(graph, {{{1, 1}, {2, 10}}, {{1, 2}, {2, 20}}, {{1, 3}, {2, 30}}});
+    const auto actual = bg::run_graph(graph, {{{1, 1}, {2, 10}}, {{1, 2}, {2, 20}}, {{1, 3}, {2, 30}}});
 
     CHECK(actual.equals({11, 22, 33}));
 }
@@ -142,7 +142,7 @@ TEST_CASE("dictionary getitem releases its subscription while a time series key 
         return dictionary[key];
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {{{1, 10}, {2, 100}}, {{1, 11}, {2, 110}}, {{1, 12}, {2, 120}}, {{1, 13}, {2, 130}}},
         {1, literal::INVALID, 2, 1});
 
@@ -166,7 +166,7 @@ TEST_CASE("dictionary getitem selects an item from a dictionary of references",
         return make_dictionary(increment(input), scale(input))[i64{2}];
     };
 
-    const auto actual = testing::test_graph(graph, {1, 2, 3});
+    const auto actual = bg::run_graph(graph, {1, 2, 3});
 
     CHECK(actual.equals<i64>({10, 20, 30}));
 }
@@ -188,7 +188,7 @@ TEST_CASE("dictionary getitem follows a replaced reference without evaluating fo
         return monitor(make_dictionary(select_second, increment(input), scale(input))[i64{1}]);
     };
 
-    const auto actual = testing::test_graph(graph, {1, 2, 3, 4}, {false, false, true, true});
+    const auto actual = bg::run_graph(graph, {1, 2, 3, 4}, {false, false, true, true});
 
     CHECK(actual.equals({1, std::nullopt, 1, std::nullopt}));
 }
@@ -211,7 +211,7 @@ TEST_CASE("dictionary getitem restores a removed reference item after its only s
         return make_dictionary(command, make_target(input))[i64{1}];
     };
 
-    const auto actual = testing::test_graph(graph, {10, 20, 30}, {1, 0, 1});
+    const auto actual = bg::run_graph(graph, {10, 20, 30}, {1, 0, 1});
 
     CHECK(actual.equals<i64>({10, std::nullopt, 30}));
 }
@@ -235,7 +235,7 @@ TEST_CASE("dictionary getitem restores a removed reference item while another it
         return make_dictionary(command, make_target(input))[i64{1}];
     };
 
-    const auto actual = testing::test_graph(graph, {10, 20, 30}, {1, 0, 1});
+    const auto actual = bg::run_graph(graph, {10, 20, 30}, {1, 0, 1});
 
     CHECK(actual.equals<i64>({10, std::nullopt, 30}));
 }
@@ -259,7 +259,7 @@ TEST_CASE("dictionary reference getitem ignores another item",
         return monitor(make_dictionary(select_second, increment(input), scale(input))[i64{1}]);
     };
 
-    const auto actual = testing::test_graph(graph, {1, 2, 3}, {false, true, false});
+    const auto actual = bg::run_graph(graph, {1, 2, 3}, {false, true, false});
 
     CHECK(actual.equals({1, std::nullopt, std::nullopt}));
 }
@@ -281,7 +281,7 @@ TEST_CASE("a value dictionary provides stable final item references",
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return inspect(input); };
 
-    const auto actual = testing::test_graph(graph, {{{1, 1}}});
+    const auto actual = bg::run_graph(graph, {{{1, 1}}});
 
     CHECK(actual.equals({true}));
     REQUIRE(observed_runtime_type != nullptr);
@@ -314,7 +314,7 @@ TEST_CASE("a dereferenced dictionary follows a target that is initially invalid"
 
     const auto graph = [&](wp<TS<i64>> command) { return read(make_dictionary(make_target(command))); };
 
-    const auto actual = testing::test_graph(graph, {0, 10});
+    const auto actual = bg::run_graph(graph, {0, 10});
 
     CHECK(actual.equals({std::nullopt, 10}));
 }
@@ -424,7 +424,7 @@ TEST_CASE("a dereferenced dictionary reports later target changes after adding i
         return read_item(dictionary[1]);
     };
 
-    const auto actual = testing::test_graph(graph, {10, 0, 20, 21});
+    const auto actual = bg::run_graph(graph, {10, 0, 20, 21});
 
     CHECK(actual.equals<i64>({10, std::nullopt, 20, 21}));
     REQUIRE(dereferenced_dictionary_change_queries::changes.size() == 4);
@@ -465,7 +465,7 @@ TEST_CASE("a dereferenced dictionary reports one update when a stored reference 
         return read_item(dictionary[1]);
     };
 
-    const auto actual = testing::test_graph(graph, {1, 2}, {false, true});
+    const auto actual = bg::run_graph(graph, {1, 2}, {false, true});
 
     CHECK(actual.equals<i64>({1, 102}));
     REQUIRE(dereferenced_dictionary_change_queries::changes.size() == 2);
@@ -517,7 +517,7 @@ TEST_CASE("a dereferenced dictionary reports a removed item once",
         return read_item(dictionary[1]);
     };
 
-    const auto actual = testing::test_graph(graph, {10, 0});
+    const auto actual = bg::run_graph(graph, {10, 0});
 
     CHECK(actual.equals<i64>({10, std::nullopt}));
     REQUIRE(dereferenced_dictionary_change_queries::changes.size() == 2);
@@ -583,7 +583,7 @@ TEST_CASE("a sampled dereferenced dictionary preserves physical IDs and remappin
         return inspect(select_second, selected, first, second);
     };
 
-    const auto actual = testing::test_graph(graph, {false, true}, {{{10, 1}, {20, 1}, {40, 1}},
+    const auto actual = bg::run_graph(graph, {false, true}, {{{10, 1}, {20, 1}, {40, 1}},
                                                                     {{10, 1}, {20, 1}, {40, 1}}},
                                             {{{20, 1}, {10, 1}, {30, 1}}, {{20, 1}, {10, 1}, {30, 1}}});
 
@@ -622,7 +622,7 @@ TEST_CASE("a dereferenced dictionary follows target invalidation and revalidatio
         return read(dictionary);
     };
 
-    const auto actual = testing::test_graph(graph, {10, 0, 20});
+    const auto actual = bg::run_graph(graph, {10, 0, 20});
 
     CHECK(actual.equals({10, std::nullopt, 20}));
     // Target changes do not change the stable routed reference.
@@ -644,7 +644,7 @@ TEST_CASE("a dictionary reference representation crosses into a nested graph",
         return nested(inner, run, input);
     };
 
-    const auto actual = testing::test_graph(outer, {{{1, 10}}, {{1, 20}}, {{1, 30}}}, {true, false, true});
+    const auto actual = bg::run_graph(outer, {{{1, 10}}, {{1, 20}}, {{1, 30}}}, {true, false, true});
 
     CHECK(actual.equals({10, std::nullopt, 30}));
 }
@@ -664,7 +664,7 @@ TEST_CASE("an inner graph selects an outer dictionary reference across stop and 
         return read(nested(inner, run, input));
     };
 
-    const auto actual = testing::test_graph(outer, {{{1, 10}}, {{1, 20}}, {{1, 30}}, {{1, 40}}},
+    const auto actual = bg::run_graph(outer, {{{1, 10}}, {{1, 20}}, {{1, 30}}, {{1, 40}}},
                                             {true, false, true, true});
 
     CHECK(actual.equals<i64>({10, std::nullopt, 30, 40}));
@@ -687,7 +687,7 @@ TEST_CASE("an inner dictionary reference representation crosses into its outer g
 
     const auto outer = [&](wp<TS<i64>> input, wp<TS<bool>> run) { return read(select(nested(inner, run, input))); };
 
-    const auto actual = testing::test_graph(outer, {10, 20, 30}, {true, false, true});
+    const auto actual = bg::run_graph(outer, {10, 20, 30}, {true, false, true});
 
     CHECK(actual.equals({10, std::nullopt, 30}));
 }
@@ -714,7 +714,7 @@ TEST_CASE("a dictionary reference representation connects two nested graphs",
         return nested(consumer, run, dictionary);
     };
 
-    const auto actual = testing::test_graph(outer, {10, 20, 30}, {true, false, true});
+    const auto actual = bg::run_graph(outer, {10, 20, 30}, {true, false, true});
 
     CHECK(actual.equals({10, std::nullopt, 30}));
 }
@@ -740,7 +740,7 @@ TEST_CASE("an inner graph selects a dictionary reference from another inner grap
         return read(nested(consumer, run_consumer, nested(producer, run_producer, input)));
     };
 
-    const auto actual = testing::test_graph(outer, {10, 20, 30, 40, 50},
+    const auto actual = bg::run_graph(outer, {10, 20, 30, 40, 50},
                                             {true, true, false, true, true},
                                             {true, false, true, true, true});
 
@@ -757,7 +757,7 @@ TEST_CASE("dictionary getitem ignores changes to another contained dictionary",
         return read(dictionary[i64{1}][i64{2}]);
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {{{1, {{2, 10}}}}, {{2, {{2, 100}}}}, {{1, {{2, 11}}}}});
 
     CHECK(actual.equals({10, std::nullopt, 11}));
@@ -773,7 +773,7 @@ TEST_CASE("dictionary getitem follows removal and restoration of a contained dic
         return read(dictionary[i64{1}][i64{2}]);
     };
 
-    const auto actual = testing::test_graph(graph, {{{1, {{2, 10}}}}, {{1, literal::REMOVE}}, {{1, {{2, 20}}}}});
+    const auto actual = bg::run_graph(graph, {{{1, {{2, 10}}}}, {{1, literal::REMOVE}}, {{1, {{2, 20}}}}});
 
     CHECK(actual.equals({10, std::nullopt, 20}));
 }
@@ -797,7 +797,7 @@ TEST_CASE("a contained dictionary reference representation follows removal and r
 
     const auto graph = [&](wp<TS<i64>> command) { return read(select(make_dictionary(command)[i64{1}])); };
 
-    const auto actual = testing::test_graph(graph, {10, -1, 20});
+    const auto actual = bg::run_graph(graph, {10, -1, 20});
 
     CHECK(actual.equals({10, std::nullopt, 20}));
 }
@@ -813,7 +813,7 @@ TEST_CASE("dictionary getitem preserves a collection item's runtime representati
         return sum(dictionary[i64{1}]);
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {{{1, {{0, 1}, {1, 10}}}}, {{1, {{0, 2}, {1, 20}}}}, {{1, {{0, 3}, {1, 30}}}}});
 
     CHECK(actual.equals({11, 22, 33}));
@@ -850,7 +850,7 @@ TEST_CASE("dereferencing a dictionary item samples a new dictionary target",
         return inspect(select(selection, first, second));
     };
 
-    const auto actual = testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 10}, {2, 20}}, {{1, 10}, {2, 20}}},
+    const auto actual = bg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, 10}, {2, 20}}, {{1, 10}, {2, 20}}},
                                             {{{2, 200}, {3, 300}}, {{2, 200}, {3, 300}}, {{2, 200}, {3, 300}}},
                                             {0, 1, 2});
 
@@ -874,7 +874,7 @@ TEST_CASE("dictionary getitem follows a sampled dictionary item",
         return read(select(use_second, first, second)[i64{0}][i64{2}]);
     };
 
-    const auto actual = testing::test_graph(graph, {{{2, 20}}, {{2, 20}}, {{2, 20}}},
+    const auto actual = bg::run_graph(graph, {{{2, 20}}, {{2, 20}}, {{2, 20}}},
                                             {{{2, 200}}, {{2, 200}}, {{2, 200}}}, {false, true, true});
 
     CHECK(actual.equals({20, 200, 200}));
@@ -914,7 +914,7 @@ TEST_CASE("a sampled dictionary cursor enumerates every removed key",
         return inspect(select(use_second, first, second), first);
     };
 
-    const auto actual = testing::test_graph(graph, {{{1, 10}, {2, 20}, {3, 30}}, {{1, 10}, {2, 20}, {3, 30}}},
+    const auto actual = bg::run_graph(graph, {{{1, 10}, {2, 20}, {3, 30}}, {{1, 10}, {2, 20}, {3, 30}}},
                                             {{{3, 300}}, {{3, 300}}}, {false, true});
 
     CHECK(actual.equals({0, 12}));
@@ -946,7 +946,7 @@ TEST_CASE("all consumers see the same dictionary target sample",
         return sum(inspect(dictionary), inspect(dictionary));
     };
 
-    const auto actual = testing::test_graph(graph, {{{1, 10}}, {{1, 10}}}, {{{2, 20}}, {{2, 20}}}, {false, true});
+    const auto actual = bg::run_graph(graph, {{{1, 10}}, {{1, 10}}}, {{{2, 20}}, {{2, 20}}}, {false, true});
 
     CHECK(actual.equals({2, 24}));
 }
@@ -974,7 +974,7 @@ TEST_CASE("a passive consumer does not replay an old dictionary target sample",
         return inspect(dictionary, trigger);
     };
 
-    const auto actual = testing::test_graph(graph, {{{1, 10}}, {{1, 10}}, literal::SKIP},
+    const auto actual = bg::run_graph(graph, {{{1, 10}}, {{1, 10}}, literal::SKIP},
                                             {{{2, 20}}, {{2, 20}}, literal::SKIP},
                                             {0, 1, literal::SKIP}, {1, literal::SKIP, 2});
 
@@ -1006,7 +1006,7 @@ TEST_CASE("a contained dictionary target sample recurses into modified items",
         return inspect(select(use_second, first, second));
     };
 
-    const auto actual = testing::test_graph(graph, {{{2, {{10, 10}, {20, 20}}}}, {{2, {{10, 10}, {20, 20}}}}},
+    const auto actual = bg::run_graph(graph, {{{2, {{10, 10}, {20, 20}}}}, {{2, {{10, 10}, {20, 20}}}}},
                                             {{{2, {{20, 200}, {30, 300}}}}, {{2, {{20, 200}, {30, 300}}}}},
                                             {false, true});
 
@@ -1040,7 +1040,7 @@ TEST_CASE("a dictionary reference sample reports key-set changes",
         return inspect(select(use_second, first, second));
     };
 
-    const auto actual = testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 10}, {2, 20}}},
+    const auto actual = bg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, 10}, {2, 20}}},
                                             {{{2, 200}, {3, 300}}, {{2, 200}, {3, 300}}}, {false, true});
 
     REQUIRE(actual.size() == 2);
@@ -1090,7 +1090,7 @@ TEST_CASE("a sampled TSD reports item ID exchanges across a reference rebind",
         return inspect(use_second, select(use_second, first, second), first, second);
     };
 
-    const auto actual = testing::test_graph(graph, {false, true}, {{{10, 10}, {20, 20}}, {{10, 10}, {20, 20}}},
+    const auto actual = bg::run_graph(graph, {false, true}, {{{10, 10}, {20, 20}}, {{10, 10}, {20, 20}}},
                                             {{{20, 20}, {10, 10}}, {{20, 20}, {10, 10}}});
 
     REQUIRE(actual.size() == 2);
@@ -1143,7 +1143,7 @@ TEST_CASE("a sampled TSD does not report remapping for additions and removals at
         return inspect(use_second, select(use_second, first, second), first, second);
     };
 
-    const auto actual = testing::test_graph(graph, {false, true}, {{{10, 10}, {20, 20}}, {{10, 10}, {20, 20}}},
+    const auto actual = bg::run_graph(graph, {false, true}, {{{10, 10}, {20, 20}}, {{10, 10}, {20, 20}}},
                                             {{{10, 10}, {30, 30}}, {{10, 10}, {30, 30}}});
 
     REQUIRE(actual.size() == 2);
@@ -1166,7 +1166,7 @@ TEST_CASE("a TSD reports no item ID remapping for ordinary additions and removal
         return inspect(command, input);
     };
 
-    const auto actual = testing::test_graph(graph, {0, 1}, {{{10, 10}}, {{10, literal::REMOVE}, {20, 20}}});
+    const auto actual = bg::run_graph(graph, {0, 1}, {{{10, 10}}, {{10, literal::REMOVE}, {20, 20}}});
 
     CHECK(actual.equals<i64>({0, 1}));
 }
@@ -1191,7 +1191,7 @@ TEST_CASE("a dictionary reference follows a target that becomes valid after sele
         return inspect(select(selected, target));
     };
 
-    const auto actual = testing::test_graph(graph, {literal::SKIP, literal::SKIP, {{1, 10}}}, {false, true, true});
+    const auto actual = bg::run_graph(graph, {literal::SKIP, literal::SKIP, {{1, 10}}}, {false, true, true});
 
     CHECK(actual.equals<i64>({std::nullopt, std::nullopt, 10}));
 }
@@ -1221,7 +1221,7 @@ TEST_CASE("a contained dictionary reference sample recurses into nested TSS chan
         return inspect(select(use_second, first, second));
     };
 
-    const auto actual = testing::test_graph(graph, {{{2, {10, 20}}}, literal::SKIP},
+    const auto actual = bg::run_graph(graph, {{{2, {10, 20}}}, literal::SKIP},
                                             {{{2, {20, 30}}}, literal::SKIP}, {false, true});
 
     CHECK(actual.equals({3000, 3010}));
@@ -1258,7 +1258,7 @@ TEST_CASE("a dictionary reference sample reports nested TSS changes for added an
         return inspect(select(use_second, first, second));
     };
 
-    const auto actual = testing::test_graph(graph, {{{1, {10, 20}}}, literal::SKIP},
+    const auto actual = bg::run_graph(graph, {{{1, {10, 20}}}, literal::SKIP},
                                             {{{2, {30, 40}}}, literal::SKIP}, {false, true});
 
     CHECK(actual.equals({1'003'000, 2'107'030}));
@@ -1323,7 +1323,7 @@ TEST_CASE("sampled dictionary queries work before change enumeration",
         return inspect(query, select(use_second, first, second));
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {0, 1, 2, 3, 4, 5, 6, 7}, {false, true, false, true, false, true, false, true},
         {{{1, 10}, {2, 20}}, {{1, 10}, {2, 20}}, {{1, 10}, {2, 20}}, {{1, 10}, {2, 20}},
          {{1, 10}, {2, 20}}, {{1, 10}, {2, 20}}, {{1, 10}, {2, 20}}, {{1, 10}, {2, 20}}},
@@ -1365,7 +1365,7 @@ TEST_CASE("a dictionary item samples nested graph stop and restart",
 
     const auto graph = [&](wp<TS<i64>> input, wp<TS<bool>> run) { return inspect(wrap(nested(producer, run, input))); };
 
-    const auto actual = testing::test_graph(graph, {1, 2, 3}, {true, false, true});
+    const auto actual = bg::run_graph(graph, {1, 2, 3}, {true, false, true});
 
     CHECK(actual.equals({600, 60, 600}));
 }
@@ -1386,7 +1386,7 @@ TEST_CASE("dictionary getitem releases and restores its subscription across a ne
     };
 
     const auto actual =
-        testing::test_graph(outer, {1, 2, 3, 4, 5}, {true, true, false, true, true});
+        bg::run_graph(outer, {1, 2, 3, 4, 5}, {true, true, false, true, true});
 
     CHECK(actual.equals<i64>({1, 2, std::nullopt, 4, 5}));
 }

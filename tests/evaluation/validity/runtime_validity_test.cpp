@@ -1,6 +1,6 @@
 #include <bg/graph.hpp>
 #include <bg/node.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -12,7 +12,7 @@ TEST_CASE("a required input delays evaluation until it becomes valid",
           "[series:value][scalar:floating-point]") {
     const auto add = node([](float lhs, float rhs) { return lhs + rhs; });
 
-    const auto actual = testing::test_graph(add, {1.0F, literal::SKIP}, {literal::SKIP, 2.0F});
+    const auto actual = bg::run_graph(add, {1.0F, literal::SKIP}, {literal::SKIP, 2.0F});
 
     CHECK(actual.equals({literal::SKIP, 3.0F}));
 }
@@ -29,7 +29,7 @@ TEST_CASE("revalidating an active required input schedules normal evaluation",
         return consume(copied);
     });
 
-    const auto actual = testing::test_graph(graph, {4.0F, literal::INVALID, 4.0F});
+    const auto actual = bg::run_graph(graph, {4.0F, literal::INVALID, 4.0F});
 
     CHECK(actual.equals({4.0F, literal::INVALID, 4.0F}));
 }
@@ -63,7 +63,7 @@ TEST_CASE("a node resumes after all required inputs become valid",
     const auto add = node<required_pair_definition>();
     required_pair_definition::evaluation_count = 0;
     required_pair_definition::invalidation_count = 0;
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         add, {1.0F, literal::INVALID, 1.0F, literal::SKIP},
         {2.0F, literal::INVALID, literal::SKIP, 2.0F});
 

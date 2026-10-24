@@ -3,7 +3,7 @@
 #include <bg/scalar/details/string_storage.hpp>
 #include <bg/scalar/details/value_access.hpp>
 #include <bg/scalar/value.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/details/input_data.hpp>
 #include <bg/time_series/details/output_state.hpp>
@@ -51,7 +51,7 @@ TEST_CASE("copy copies the latest value when the node runs",
 
     const auto input = std::array<std::optional<i64>, 3>{1, std::nullopt, 2};
 
-    const auto actual = testing::test_graph(graph, input, std::array{0, 1, 2});
+    const auto actual = bg::run_graph(graph, input, std::array{0, 1, 2});
 
     CHECK(actual.equals({1, 1, 2}));
 }
@@ -66,9 +66,9 @@ TEST_CASE("a generic output copies and copies a tick from a time series value",
 
     const auto copy_tick_graph = [&](wp<TS<i64>> input) { return copy_tick(input); };
 
-    const auto copied = testing::test_graph(copy_graph, std::array{3, 5});
+    const auto copied = bg::run_graph(copy_graph, std::array{3, 5});
 
-    const auto copied_tick = testing::test_graph(copy_tick_graph, std::array{3, 5});
+    const auto copied_tick = bg::run_graph(copy_tick_graph, std::array{3, 5});
 
     CHECK(copied.equals<i64>({3, 5}));
     CHECK(copied_tick.equals<i64>({3, 5}));
@@ -89,7 +89,7 @@ TEST_CASE("copy_tick applies a current invalidation but ignores its stale state"
         return copy_tick(input, trigger);
     };
 
-    const auto actual = testing::test_graph(graph, {1, literal::INVALID, literal::SKIP, 2}, {0, 1, 2, 3});
+    const auto actual = bg::run_graph(graph, {1, literal::INVALID, literal::SKIP, 2}, {0, 1, 2, 3});
 
     CHECK(actual.equals({1, std::nullopt, 99, 2}));
 }
@@ -101,7 +101,7 @@ TEST_CASE("copy propagates value invalidation and revalidation",
 
     const auto graph = [&](wp<TS<i64>> input) { return copy(input); };
 
-    const auto actual = testing::test_graph(graph, {1, literal::INVALID, 2});
+    const auto actual = bg::run_graph(graph, {1, literal::INVALID, 2});
 
     CHECK(actual.equals({1, std::nullopt, 2}));
 }
@@ -149,10 +149,10 @@ TEST_CASE("reference copy accepts independent declarations and propagates invali
 
     const auto cycles = std::array{0, 1, 2};
 
-    CHECK(testing::test_graph(copy_graph, cycles).equals<i64>({10, std::nullopt, 10}));
-    CHECK(testing::test_graph(copy_validity_graph, cycles).equals<bool>({true, false, true}));
-    CHECK(testing::test_graph(copy_tick_graph, cycles).equals<i64>({10, std::nullopt, 10}));
-    CHECK(testing::test_graph(copy_tick_validity_graph, cycles).equals<bool>({true, false, true}));
+    CHECK(bg::run_graph(copy_graph, cycles).equals<i64>({10, std::nullopt, 10}));
+    CHECK(bg::run_graph(copy_validity_graph, cycles).equals<bool>({true, false, true}));
+    CHECK(bg::run_graph(copy_tick_graph, cycles).equals<i64>({10, std::nullopt, 10}));
+    CHECK(bg::run_graph(copy_tick_validity_graph, cycles).equals<bool>({true, false, true}));
 }
 
 TEST_CASE("copy of a string time series retains its storage",
@@ -197,7 +197,7 @@ TEST_CASE("copy copies every field of a time series bundle",
         return sum(copy(bundle<copy_bundle>(first, second)));
     };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2}, std::array{10, 20});
+    const auto actual = bg::run_graph(graph, std::array{1, 2}, std::array{10, 20});
 
     CHECK(actual.equals({11, 22}));
 }
@@ -213,7 +213,7 @@ TEST_CASE("copy_tick modifies only updated fields of a time series bundle",
 
     const auto graph = [&](wp<TSB<copy_bundle>> input) { return inspect(copy_tick(input)); };
 
-    const auto actual = testing::test_graph(graph, {{{"first", 1}, {"second", 10}}, {{"first", 2}}});
+    const auto actual = bg::run_graph(graph, {{{"first", 1}, {"second", 10}}, {{"first", 2}}});
 
     CHECK(actual.equals({30110, 10210}));
 }
@@ -231,7 +231,7 @@ TEST_CASE("copy copies each item of a fixed time series list",
         return sum(copy(tsl(first, second)));
     };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2}, std::array{10, 20});
+    const auto actual = bg::run_graph(graph, std::array{1, 2}, std::array{10, 20});
 
     CHECK(actual.equals({11, 22}));
 }
@@ -252,9 +252,9 @@ TEST_CASE("a generic output copies and copies ticks from a fixed time series lis
         return sum(copy_tick(tsl(first, second)));
     };
 
-    const auto copied = testing::test_graph(copy_graph, std::array{2, 4}, std::array{20, 40});
+    const auto copied = bg::run_graph(copy_graph, std::array{2, 4}, std::array{20, 40});
 
-    const auto copied_tick = testing::test_graph(copy_tick_graph, std::array{2, 4}, std::array{20, 40});
+    const auto copied_tick = bg::run_graph(copy_tick_graph, std::array{2, 4}, std::array{20, 40});
 
     CHECK(copied.equals({22, 44}));
     CHECK(copied_tick.equals({22, 44}));
@@ -276,7 +276,7 @@ TEST_CASE("a fixed list copy accepts a different child guarantee",
         return sum(copy(tsl(first, second)));
     };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 1, 2}, std::array{10, 10, 20});
+    const auto actual = bg::run_graph(graph, std::array{1, 1, 2}, std::array{10, 10, 20});
 
     CHECK(actual.equals({11, std::nullopt, 22}));
 }
@@ -295,7 +295,7 @@ TEST_CASE("copy reconciles a time series dictionary snapshot",
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return summarize(copy(input)); };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {{{1, 1}, {2, 11}}, {{1, 2}, {2, 12}}, {{1, 3}, {2, literal::REMOVE}}});
 
     CHECK(actual.equals({221, 232, 130}));
@@ -313,7 +313,7 @@ TEST_CASE("a dictionary copy accepts a different child guarantee",
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return read(copy(input)); };
 
-    const auto actual = testing::test_graph(graph, {{{1, 1}}, {{1, 1}}, {{1, 2}}});
+    const auto actual = bg::run_graph(graph, {{{1, 1}}, {{1, 1}}, {{1, 2}}});
 
     CHECK(actual.equals({1, std::nullopt, 2}));
 }
@@ -329,7 +329,7 @@ TEST_CASE("copy_tick publishes an initially empty time series dictionary",
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return size(copy(input)); };
 
-    const auto actual = testing::test_graph(graph, {{}, {{1, 1}}});
+    const auto actual = bg::run_graph(graph, {{}, {{1, 1}}});
 
     CHECK(actual.equals({0, 1}));
 }
@@ -346,7 +346,7 @@ TEST_CASE("copy handles an invalid erased input without runtime type metadata",
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return size(copy_invalid(input)); };
 
-    const auto actual = testing::test_graph(graph, {{{1, 1}}, {{1, 2}}});
+    const auto actual = bg::run_graph(graph, {{{1, 1}}, {{1, 2}}});
 
     CHECK(actual.equals({0, 0}));
 }
@@ -365,7 +365,7 @@ TEST_CASE("copy reconciles a time series set snapshot",
 
     const auto graph = [&](wp<TSS<i64>> input) { return summarize(copy(input)); };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {{1, 2}, {literal::REMOVED(2), 3}, {literal::REMOVED(3)}});
 
     CHECK(actual.equals({23, 24, 11}));
@@ -388,9 +388,9 @@ TEST_CASE("a generic output copies time series set snapshots and changes",
 
     const auto copy_tick_graph = [&](wp<TSS<i64>> input) { return summary(copy_tick(input)); };
 
-    const auto copied = testing::test_graph(copy_graph, {{1, 2}, {literal::REMOVED(2), 3}, {literal::REMOVED(3)}});
+    const auto copied = bg::run_graph(copy_graph, {{1, 2}, {literal::REMOVED(2), 3}, {literal::REMOVED(3)}});
 
-    const auto copied_tick = testing::test_graph(
+    const auto copied_tick = bg::run_graph(
         copy_tick_graph, {{1, 2}, {literal::REMOVED(2), 3}, {literal::REMOVED(3)}});
 
     CHECK(copied.equals({23, 24, 11}));
@@ -416,7 +416,7 @@ TEST_CASE("copy_tick copies a reference-bound time series set",
         return summary(copy(preserve_reference(input)));
     };
 
-    const auto actual = testing::test_graph(graph, {{1, 2}, {literal::REMOVED(2), 3}, {literal::REMOVED(3)}});
+    const auto actual = bg::run_graph(graph, {{1, 2}, {literal::REMOVED(2), 3}, {literal::REMOVED(3)}});
 
     CHECK(actual.equals({23, 24, 11}));
 }
@@ -473,7 +473,7 @@ TEST_CASE("collection copies remove items when a reference selects an invalid TS
         return inspect(copy_tick(selected), copy(selected), generic_copy_tick(selected), generic_copy(selected));
     };
 
-    const auto actual = testing::test_graph(graph, {0, 1, 2}, {{1, 2}, literal::SKIP, literal::SKIP},
+    const auto actual = bg::run_graph(graph, {0, 1, 2}, {{1, 2}, literal::SKIP, literal::SKIP},
                                             {});
 
     CHECK(actual.equals({3342, 10009, 3342}));
@@ -523,7 +523,7 @@ TEST_CASE("generic collection copy_tick removes nested items from an invalid TSD
         return inspect(copy_tick(selected), copy(selected));
     };
 
-    const auto actual = testing::test_graph(graph, {0, 1, 2},
+    const auto actual = bg::run_graph(graph, {0, 1, 2},
                                             {{{1, {{10, 10}, {11, 20}}}}, literal::SKIP, literal::SKIP}, {});
 
     CHECK(actual.equals({1650, 1000, 1650}));
@@ -549,7 +549,7 @@ TEST_CASE("copy_tick does not reconstruct TSS changes missed in an earlier cycle
         return sum(copy_tick(input, trigger), trigger);
     };
 
-    const auto actual = testing::test_graph(graph, {{1}, {2}, literal::SKIP}, {1, literal::SKIP, 2});
+    const auto actual = bg::run_graph(graph, {{1}, {2}, literal::SKIP}, {1, literal::SKIP, 2});
 
     CHECK(actual.equals({1, std::nullopt, 1}));
 }
@@ -582,7 +582,7 @@ TEST_CASE("copy and copy_tick leave initially invalid collection outputs invalid
         return inspect(cycle, copy_tick(invalid, cycle), copy(invalid, cycle));
     };
 
-    const auto actual = testing::test_graph(graph, std::array{0, 1});
+    const auto actual = bg::run_graph(graph, std::array{0, 1});
 
     CHECK(actual.equals({0, 0}));
 }
@@ -606,7 +606,7 @@ TEST_CASE("copy copies a reference-bound time series dictionary",
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return summary(copy(preserve_reference(input))); };
 
-    const auto actual = testing::test_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}, {2, literal::REMOVE}},
+    const auto actual = bg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}, {2, literal::REMOVE}},
                                                     {{1, 12}, {3, 30}}});
 
     CHECK(actual.equals({320, 210, 350}));
@@ -629,7 +629,7 @@ TEST_CASE("copy uses the valid_items view of a dictionary input",
 
     const auto graph = [&](wp<TS<i64>> value) { return summary(copy(source(value))); };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2});
+    const auto actual = bg::run_graph(graph, std::array{1, 2});
 
     CHECK(actual.equals({10, 10}));
 }
@@ -643,7 +643,7 @@ TEST_CASE("copy_tick publishes an initially empty time series set",
 
     const auto graph = [&](wp<TSS<i64>> input) { return size(copy(input)); };
 
-    const auto actual = testing::test_graph(graph, {{}, {1}});
+    const auto actual = bg::run_graph(graph, {{}, {1}});
 
     CHECK(actual.equals({0, 1}));
 }
@@ -664,7 +664,7 @@ TEST_CASE("a nested dictionary copy reconciles nested item changes",
 
     const auto graph = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> input) { return summarize(copy(input)); };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {{{1, {{10, 1}, {11, 11}}}}, {{1, {{10, 2}, {11, literal::REMOVE}}}}});
 
     CHECK(actual.equals({212, 102}));
@@ -698,7 +698,7 @@ TEST_CASE("copy_tick forwards a nested dictionary delta to its changed leaves",
         return summary(full_copy(input), copy(input));
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {{{1, {{10, 1}, {11, 11}}}}, {{1, {{10, 2}}}}, {{1, {{10, 3}, {11, literal::REMOVE}}}}});
 
     CHECK(actual.equals({1, 1, 1}));
@@ -716,7 +716,7 @@ TEST_CASE("copy_tick forwards a reference to its target",
 
     const auto graph = [&](wp<TS<i64>> input) { return read(copy_reference(input)); };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2, 3});
+    const auto actual = bg::run_graph(graph, std::array{1, 2, 3});
 
     CHECK(actual.equals({1, 2, 3}));
 }
@@ -751,7 +751,7 @@ TEST_CASE("copy_tick forwards reference selection changes and invalidation",
 
     const auto graph = [&](wp<TS<i64>> command) { return read(copy_tick(select(command, first(), second()))); };
 
-    const auto actual = testing::test_graph(graph, std::array{0, 1, 2, 0});
+    const auto actual = bg::run_graph(graph, std::array{0, 1, 2, 0});
 
     CHECK(actual.equals({10, 20, std::nullopt, 10}));
 }
@@ -764,7 +764,7 @@ TEST_CASE("copy preserves the destination guarantee",
 
     const auto graph = [&](wp<TS<i64>> input) { return copy(input); };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 1, 2});
+    const auto actual = bg::run_graph(graph, std::array{1, 1, 2});
 
     CHECK(actual.equals({1, std::nullopt, 2}));
 }

@@ -2,7 +2,7 @@
 #include <bg/library.hpp>
 #include <bg/nested.hpp>
 #include <bg/simulation_evaluation_engine.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -21,7 +21,7 @@ TEST_CASE("count counts valid input ticks and resets after invalidation",
           "[transition:first-tick][transition:update][transition:invalidation][transition:revalidation]") {
     const auto count = [](wp<TS<i64>> value) { return operators::count(value); };
 
-    CHECK(testing::test_graph(count, {literal::INVALID, literal::SKIP, 7, 7,
+    CHECK(bg::run_graph(count, {literal::INVALID, literal::SKIP, 7, 7,
                                       literal::INVALID, literal::SKIP, 9,
                                       literal::INVALID, 11})
               .equals<i64>({std::nullopt, std::nullopt, 1, 2, std::nullopt, std::nullopt, 1,
@@ -36,14 +36,14 @@ TEST_CASE("count propagates a const guarantee",
         return result;
     };
 
-    CHECK(testing::test_graph(graph).equals<i64>({1}));
+    CHECK(bg::run_graph(graph).equals<i64>({1}));
 }
 
 TEST_CASE("count counts updates to a collection root",
           "[feature:operator][series:tss][scalar:i64][guarantee:ordinary][transition:update]") {
     const auto count = [](wp<TSS<i64>> value) { return operators::count(value); };
 
-    CHECK(testing::test_graph(count, {{1}, {1, 2}, {1, 2, 3}}).equals<i64>({1, 2, 3}));
+    CHECK(bg::run_graph(count, {{1}, {1, 2}, {1, 2, 3}}).equals<i64>({1, 2, 3}));
 }
 
 TEST_CASE("count preserves a final guarantee",
@@ -54,7 +54,7 @@ TEST_CASE("count preserves a final guarantee",
         return result;
     };
 
-    CHECK(testing::test_graph(count, {literal::SKIP, 7}).equals<i64>({std::nullopt, 1}));
+    CHECK(bg::run_graph(count, {literal::SKIP, 7}).equals<i64>({std::nullopt, 1}));
 }
 
 TEST_CASE("count preserves a deduplicated guarantee",
@@ -65,8 +65,8 @@ TEST_CASE("count preserves a deduplicated guarantee",
         return result;
     };
 
-    CHECK(testing::test_graph(
-              count, testing::input<TS<i64, TimeSeriesGuarantee::deduplicated>>({1, 1, 2}))
+    CHECK(bg::run_graph(
+              count, bg::input<TS<i64, TimeSeriesGuarantee::deduplicated>>({1, 1, 2}))
               .equals<i64>({1, std::nullopt, 2}));
 }
 
@@ -81,7 +81,7 @@ TEST_CASE("count observes retargeted references as value updates",
         return result;
     };
 
-    CHECK(testing::test_graph(count_selected, std::array{false, true, false}).equals<i64>({1, 2, 3}));
+    CHECK(bg::run_graph(count_selected, std::array{false, true, false}).equals<i64>({1, 2, 3}));
 }
 
 TEST_CASE("count and lag observe target updates through an unchanged reference",
@@ -97,8 +97,8 @@ TEST_CASE("count and lag observe target updates through an unchanged reference",
     };
     const auto inputs = std::array<i64, 3>{10, 11, 12};
 
-    CHECK(testing::test_graph(count_selected, inputs).equals<i64>({1, 2, 3}));
-    CHECK(testing::test_graph(lag_selected, inputs).equals<i64>({std::nullopt, 10, 11}));
+    CHECK(bg::run_graph(count_selected, inputs).equals<i64>({1, 2, 3}));
+    CHECK(bg::run_graph(lag_selected, inputs).equals<i64>({std::nullopt, 10, 11}));
 }
 
 TEST_CASE("lag delays values and invalidations by one input event",
@@ -107,7 +107,7 @@ TEST_CASE("lag delays values and invalidations by one input event",
           "[transition:revalidation]") {
     const auto lag = [](wp<TS<i64>> value) { return operators::lag(value); };
 
-    CHECK(testing::test_graph(lag, {literal::SKIP, 10, 20, literal::INVALID,
+    CHECK(bg::run_graph(lag, {literal::SKIP, 10, 20, literal::INVALID,
                                     literal::SKIP, 30, literal::INVALID, 40})
               .equals<i64>({std::nullopt, std::nullopt, 10, 20, std::nullopt, std::nullopt, 30,
                             std::nullopt}));
@@ -118,7 +118,7 @@ TEST_CASE("lag delays invalidation until the next input event",
           "[transition:update][transition:invalidation][transition:revalidation]") {
     const auto observe = [](wp<TS<i64>> value) { return operators::valid(operators::lag(value)); };
 
-    CHECK(testing::test_graph(observe, {10, 20, literal::INVALID, 30, 40})
+    CHECK(bg::run_graph(observe, {10, 20, literal::INVALID, 30, 40})
               .equals<bool>({false, true, std::nullopt, false, true}));
 }
 
@@ -127,7 +127,7 @@ TEST_CASE("lag publishes repeated equal values and owns scalar snapshots",
           "[validity:optional][transition:update]") {
     const auto lag = [](wp<TS<string>> value) { return operators::lag(value); };
 
-    CHECK(testing::test_graph(lag, std::array<std::string, 3>{"same", "same", "next"})
+    CHECK(bg::run_graph(lag, std::array<std::string, 3>{"same", "same", "next"})
               .equals<string>({std::nullopt, "same", "same"}));
 }
 
@@ -135,7 +135,7 @@ TEST_CASE("lag retains owned collection scalar snapshots",
           "[feature:operator][feature:state][series:value][scalar:dict][scalar:string]"
           "[guarantee:ordinary][validity:optional][transition:update]") {
     const auto lag = [](wp<TS<Dict<i64, string>>> value) { return operators::lag(value); };
-    const auto actual = testing::test_graph(lag, {{{1, "old"}}, {{1, "new"}}, {{2, "last"}}});
+    const auto actual = bg::run_graph(lag, {{{1, "old"}}, {{1, "new"}}, {{2, "last"}}});
 
     REQUIRE(actual.size() == 3);
     CHECK_FALSE(actual[0]);
@@ -223,7 +223,7 @@ TEST_CASE("lag follows retargeted value references",
         return operators::lag(selected);
     };
 
-    CHECK(testing::test_graph(lag_selected, std::array{true, true, false, true})
+    CHECK(bg::run_graph(lag_selected, std::array{true, true, false, true})
               .equals<i64>({std::nullopt, std::nullopt, 10, 20}));
 }
 
@@ -236,7 +236,7 @@ TEST_CASE("lag keeps an ordinary output for a const input",
         return result;
     };
 
-    CHECK(testing::test_graph(graph).equals<i64>({std::nullopt}));
+    CHECK(bg::run_graph(graph).equals<i64>({std::nullopt}));
 }
 
 TEST_CASE("lag state is independent across nested graph instances",
@@ -249,7 +249,7 @@ TEST_CASE("lag state is independent across nested graph instances",
         return operators::add(nested(delayed, run, lhs), nested(delayed, run, rhs));
     };
 
-    CHECK(testing::test_graph(combine, std::array<i64, 3>{1, 2, 3}, std::array<i64, 3>{10, 20, 30},
+    CHECK(bg::run_graph(combine, std::array<i64, 3>{1, 2, 3}, std::array<i64, 3>{10, 20, 30},
                               std::array{true, true, true})
               .equals<i64>({std::nullopt, 11, 22}));
 }
@@ -264,7 +264,7 @@ TEST_CASE("runtime-resolved lag state is independent across nested graph instanc
         return operators::add(nested(delayed, run, lhs), nested(delayed, run, rhs));
     };
 
-    CHECK(testing::test_graph(combine, std::array<std::string, 2>{"left", "next"},
+    CHECK(bg::run_graph(combine, std::array<std::string, 2>{"left", "next"},
                               std::array<std::string, 2>{"right", "next"}, std::array{true, true})
               .equals<string>({std::nullopt, "leftright"}));
 }

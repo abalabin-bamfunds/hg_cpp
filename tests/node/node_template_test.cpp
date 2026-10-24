@@ -1,5 +1,5 @@
 #include <bg/node.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
@@ -146,7 +146,7 @@ TEST_CASE("a callable node receives typed inputs, scalars, and output",
 
     const auto graph = [&](wp<TS<i64>> input) { return add(input, 1); };
 
-    CHECK(testing::test_graph(graph, {1, 2, 3}).equals({3, 5, 7}));
+    CHECK(bg::run_graph(graph, {1, 2, 3}).equals({3, 5, 7}));
 }
 
 TEST_CASE("a callable node can omit its output", "[node_template][feature:node-api][definition:function]") {
@@ -160,7 +160,7 @@ TEST_CASE("a callable node can omit its output", "[node_template][feature:node-a
     };
 
     STATIC_CHECK(std::same_as<decltype(sink(std::declval<WiringPoint>())), void>);
-    CHECK(testing::test_graph(graph, {1, 2, 3}).equals({1, 2, 3}));
+    CHECK(bg::run_graph(graph, {1, 2, 3}).equals({1, 2, 3}));
     CHECK(sum == 6);
 }
 
@@ -568,7 +568,7 @@ TEST_CASE("collection inputs retain their resolved runtime layout", "[node_templ
     });
 
     const auto graph = [&](wp<TS<i64>> input) { return check_guarantee(input); };
-    CHECK(testing::test_graph(graph, {42}).equals<i64>({42}));
+    CHECK(bg::run_graph(graph, {42}).equals<i64>({42}));
 }
 
 TEST_CASE("direct TSS inputs keep concrete and resolved key runtime types",
@@ -598,9 +598,9 @@ TEST_CASE("direct TSS inputs keep concrete and resolved key runtime types",
 
     const auto guarantee_graph = [&](wp<TSS<i64>> input) { return read_guarantee(input); };
 
-    CHECK(testing::test_graph(concrete_graph, {{42}}).equals<i64>({42}));
-    CHECK(testing::test_graph(generic_graph, {{42}}).equals<i64>({42}));
-    CHECK(testing::test_graph(guarantee_graph, {{42}}).equals<i64>({42}));
+    CHECK(bg::run_graph(concrete_graph, {{42}}).equals<i64>({42}));
+    CHECK(bg::run_graph(generic_graph, {{42}}).equals<i64>({42}));
+    CHECK(bg::run_graph(guarantee_graph, {{42}}).equals<i64>({42}));
 }
 
 TEST_CASE("native collection outputs bind directly only for concrete declarations",

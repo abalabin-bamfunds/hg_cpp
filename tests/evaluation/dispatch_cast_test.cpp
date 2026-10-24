@@ -7,7 +7,7 @@
 #include <bg/operators.hpp>
 #include <bg/scalar/bundle/value.hpp>
 #include <bg/switch.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/time_series/time_series_variable.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 
@@ -119,7 +119,7 @@ TEST_CASE("dispatch casts work inside nested switch cases",
         return switch_(selector, cases{case_(1, middle)}, source).as<TS<i64>>();
     };
 
-    const auto actual = testing::test_graph(tested, {1}, {1});
+    const auto actual = bg::run_graph(tested, {1}, {1});
 
     CHECK(actual.equals({42}));
 }
@@ -146,7 +146,7 @@ TEST_CASE("a narrowed reference cast can feed a value input",
         return read_derived(cast);
     };
 
-    const auto actual = testing::test_graph(tested, {1});
+    const auto actual = bg::run_graph(tested, {1});
 
     CHECK(actual.equals({42}));
 }
@@ -182,7 +182,7 @@ TEST_CASE("a widened dispatch branch can advertise the switch output type",
         return read_base(selected);
     };
 
-    const auto actual = testing::test_graph(tested, {1, 1}, {1, 2});
+    const auto actual = bg::run_graph(tested, {1, 1}, {1, 2});
 
     CHECK(actual.equals({true, true}));
 }

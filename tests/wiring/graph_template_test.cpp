@@ -5,7 +5,7 @@
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/operator.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
@@ -273,8 +273,8 @@ TEST_CASE("callable output guarantee inference is local to its node signature",
                                             [=](wp<TS<double>> input) { return inferred_output_graph(input); });
 
     const auto inputs = std::array{1.0, 2.0, 3.0};
-    CHECK(testing::test_graph(inferred_output_graph, inputs).equals<double>({2.0, 3.0, 4.0}));
-    CHECK(testing::test_graph(forwarding_graph, inputs).equals<double>({2.0, 3.0, 4.0}));
+    CHECK(bg::run_graph(inferred_output_graph, inputs).equals<double>({2.0, 3.0, 4.0}));
+    CHECK(bg::run_graph(forwarding_graph, inputs).equals<double>({2.0, 3.0, 4.0}));
 }
 
 TEST_CASE("a graph reference output defaults to deduplicated",

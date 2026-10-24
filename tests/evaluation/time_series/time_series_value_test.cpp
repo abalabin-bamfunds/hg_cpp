@@ -1,6 +1,6 @@
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -18,7 +18,7 @@ TEST_CASE("symbol time series can store default and interned values",
 
     const auto input = std::array{symbol{}, symbol{"price"}, symbol{""}};
 
-    const auto actual = testing::test_graph(graph, input);
+    const auto actual = bg::run_graph(graph, input);
 
     CHECK(actual.equals({symbol{}, symbol{"price"}, symbol{""}}));
 }
@@ -83,7 +83,7 @@ TEST_CASE("an optional input exposes its latest validity transition",
         return output;
     };
 
-    const auto actual = testing::test_graph(graph, std::array<i64, 4>{1, 2, 0, 3});
+    const auto actual = bg::run_graph(graph, std::array<i64, 4>{1, 2, 0, 3});
 
     CHECK(actual.equals({1, 2, std::nullopt, 3}));
     CHECK(states == std::vector<std::array<bool, 4>>{
@@ -126,7 +126,7 @@ TEST_CASE("input changes and validity transitions apply only to the current eval
         return observe(input, trigger);
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         graph, {1, 1, literal::INVALID, literal::SKIP, 2, literal::SKIP}, {1, 2, 3, 4, 5, 6});
 
     CHECK(actual.equals<Observation>({
@@ -149,7 +149,7 @@ TEST_CASE("a deduplicated value output schedules subscribers only for changed va
 
     const auto graph = [&](wp<TS<i64>> input) { return deduplicate(input); };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 1, 2, 2, 1});
+    const auto actual = bg::run_graph(graph, std::array{1, 1, 2, 2, 1});
 
     CHECK(actual.equals({1, std::nullopt, 2, std::nullopt, 1}));
 }
@@ -164,7 +164,7 @@ TEST_CASE("a direct output uses its resolved guarantee",
         return preserve_guarantee(deduplicate(input), input);
     };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 1, 2});
+    const auto actual = bg::run_graph(graph, std::array{1, 1, 2});
 
     CHECK(actual.equals({1, std::nullopt, 2}));
 }
@@ -179,7 +179,7 @@ TEST_CASE("a nested direct output uses its resolved item guarantee",
         return make_dictionary(deduplicate(input), input)[1];
     };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 1, 2});
+    const auto actual = bg::run_graph(graph, std::array{1, 1, 2});
 
     CHECK(actual.equals<i64>({1, std::nullopt, 2}));
 }
@@ -199,7 +199,7 @@ TEST_CASE("a collection guarantee deduplicates contained value outputs",
 
     const auto graph = [&](wp<TS<i64>> input) { return first(collect(input)); };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 1, 2});
+    const auto actual = bg::run_graph(graph, std::array{1, 1, 2});
 
     CHECK(actual.equals({1, std::nullopt, 2}));
 }

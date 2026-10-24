@@ -16,7 +16,7 @@ TEST_CASE("reference service output is available at the root graph",
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
 
-    const auto actual = testing::test_graph(service, GraphRunOptions{.services = &catalogue});
+    const auto actual = bg::run_graph(service, GraphRunOptions{.services = &catalogue});
 
     CHECK(actual.equals<i64>({42}));
 }
@@ -39,7 +39,7 @@ TEST_CASE("reference service output crosses switch boundaries",
                              case_(2, [&](auto input) { return add(service(), input); })},
                        value);
     };
-    const auto actual = testing::test_graph(tested, GraphRunOptions{.services = &catalogue},
+    const auto actual = bg::run_graph(tested, GraphRunOptions{.services = &catalogue},
                                             {1, 2, 1}, {4, 8, 3});
 
     CHECK(actual.equals<i64>({46, 50, 45}));
@@ -58,8 +58,8 @@ TEST_CASE("reference service implementation can return a changing reference",
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, implementation);
 
-    CHECK(testing::test_graph(implementation).equals<i64>({42}));
-    const auto actual = testing::test_graph(service, GraphRunOptions{.services = &catalogue});
+    CHECK(bg::run_graph(implementation).equals<i64>({42}));
+    const auto actual = bg::run_graph(service, GraphRunOptions{.services = &catalogue});
 
     CHECK(actual.equals<i64>({42}));
 }
@@ -107,7 +107,7 @@ TEST_CASE("a changing service reference reaches clients through two nested bound
     const auto middle =
         graph("name"_n = "service_middle", [&] { return nested(leaf, operators::const_(true)).as<TS<i64>>(); });
     const auto outer = [&] { return nested(middle, operators::const_(true)); };
-    const auto actual = testing::test_graph(outer, GraphRunOptions{.services = &catalogue});
+    const auto actual = bg::run_graph(outer, GraphRunOptions{.services = &catalogue});
 
     CHECK(actual.equals<i64>({42, 84}));
 }

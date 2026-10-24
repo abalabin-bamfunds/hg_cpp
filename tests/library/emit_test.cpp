@@ -2,7 +2,7 @@
 #include <bg/library.hpp>
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -20,7 +20,7 @@ TEST_CASE("emit scalar list items in FIFO order across input updates and invalid
           "[transition:first-tick][transition:update][transition:invalidation]") {
     const auto emit = [](wp<TS<List<i64>>> value) { return operators::emit(value); };
 
-    CHECK(testing::test_graph(emit, {{1, 1, 2}, {3}, {}, literal::INVALID, {4}})
+    CHECK(bg::run_graph(emit, {{1, 1, 2}, {3}, {}, literal::INVALID, {4}})
               .equals<i64>({1, 1, 2, 3, 4}));
 }
 
@@ -28,14 +28,14 @@ TEST_CASE("emit empty scalar collections without publishing an empty event",
           "[feature:operator][series:value][scalar:list][transition:first-tick]") {
     const auto emit = [](wp<TS<List<i64>>> value) { return operators::emit(value); };
 
-    CHECK(testing::test_graph(emit, {{}, {7}}).equals<i64>({std::nullopt, 7}));
+    CHECK(bg::run_graph(emit, {{}, {7}}).equals<i64>({std::nullopt, 7}));
 }
 
 TEST_CASE("emit scalar set members as ordinary output ticks",
           "[feature:operator][feature:timed-scheduling][series:value][scalar:set][guarantee:ordinary]") {
     const auto emit = [](wp<TS<Set<i64>>> value) { return operators::emit(value); };
 
-    CHECK(testing::test_graph(emit, {{1}, {2}}).equals<i64>({1, 2}));
+    CHECK(bg::run_graph(emit, {{1}, {2}}).equals<i64>({1, 2}));
 }
 
 TEST_CASE("emit scalar dictionary entries as key and value bundle fields",
@@ -49,7 +49,7 @@ TEST_CASE("emit scalar dictionary entries as key and value bundle fields",
         return read_value(entries);
     };
 
-    CHECK(testing::test_graph(emit, {{{"first", 10}}, {{"second", 20}}}).equals<i64>({10, 20}));
+    CHECK(bg::run_graph(emit, {{{"first", 10}}, {{"second", 20}}}).equals<i64>({10, 20}));
 }
 
 TEST_CASE("emit TSD entries bind the public key/value schema to mixed scalar types",
@@ -63,7 +63,7 @@ TEST_CASE("emit TSD entries bind the public key/value schema to mixed scalar typ
         return read_key(entries);
     };
 
-    CHECK(testing::test_graph(emit, testing::input<TSD<string, TS<i64>>>({{{"alpha", 1}}, {{"beta", 2}}}))
+    CHECK(bg::run_graph(emit, bg::input<TSD<string, TS<i64>>>({{{"alpha", 1}}, {{"beta", 2}}}))
               .equals<string>({"alpha", "beta"}));
 }
 
@@ -71,7 +71,7 @@ TEST_CASE("emit TSS additions and ignore removals",
           "[feature:operator][feature:timed-scheduling][series:tss][transition:addition][transition:removal]") {
     const auto emit = [](wp<TSS<i64>> value) { return operators::emit(value); };
 
-    CHECK(testing::test_graph(emit,
+    CHECK(bg::run_graph(emit,
                               {{1}, {literal::REMOVED(1), 2}, {literal::REMOVED(2), 3}})
               .equals<i64>({1, 2, 3}));
 }
@@ -81,7 +81,7 @@ TEST_CASE("emit modified valid fixed TSL items",
           "[transition:update][transition:invalidation][transition:revalidation]") {
     const auto emit = [](wp<TSL<TS<i64>, 2>> value) { return operators::emit(value); };
 
-    CHECK(testing::test_graph(emit,
+    CHECK(bg::run_graph(emit,
                               {{{0, 1}, {1, 10}}, {{0, 2}}, {{1, literal::INVALID}}, {{1, 20}}})
               .equals<i64>({1, 10, 2, 20}));
 }
@@ -96,14 +96,14 @@ TEST_CASE("emit valid TSD additions and modifications while ignoring invalidatio
                          operators::getattr(entries, util::symbol{"value"}));
     };
 
-    CHECK(testing::test_graph(emit,
-                              testing::input<TSD<i64, TS<i64>>>({{{1, 10}}, {{2, 20}}, {{1, 11}},
+    CHECK(bg::run_graph(emit,
+                              bg::input<TSD<i64, TS<i64>>>({{{1, 10}}, {{2, 20}}, {{1, 11}},
                                                                  {{1, literal::INVALID}},
                                                                  {{1, literal::REMOVE}}, {{3, 30}}}))
               .equals<i64>({11, 22, 12, std::nullopt, std::nullopt, 33}));
 
-    const auto simultaneous = testing::test_graph(emit,
-                                                  testing::input<TSD<i64, TS<i64>>>({{{1, 10}, {2, 20}}}));
+    const auto simultaneous = bg::run_graph(emit,
+                                                  bg::input<TSD<i64, TS<i64>>>({{{1, 10}, {2, 20}}}));
     CHECK((simultaneous.equals<i64>({11, 22}) || simultaneous.equals<i64>({22, 11})));
 }
 
@@ -120,8 +120,8 @@ TEST_CASE("emit owns nested string values while later inputs replace their sourc
     });
     const auto emit = [&](wp<TS<List<List<string>>>> value) { return summarize(operators::emit(value)); };
 
-    CHECK(testing::test_graph(
-              emit, testing::input<TS<List<List<string>>>>({{{"old", "first"}, {"queued"}}, {{"new", "later"}}}))
+    CHECK(bg::run_graph(
+              emit, bg::input<TS<List<List<string>>>>({{{"old", "first"}, {"queued"}}, {{"new", "later"}}}))
               .equals<string>({"oldfirst", "queued", "newlater"}));
 }
 
@@ -137,7 +137,7 @@ TEST_CASE("emit keeps queued values when its input reference rebinds",
         return operators::emit(select_reference(use_second, first, second));
     };
 
-    CHECK(testing::test_graph(emit, {false, true}).equals<i64>({1, 2, 3, 10, 20}));
+    CHECK(bg::run_graph(emit, {false, true}).equals<i64>({1, 2, 3, 10, 20}));
 }
 
 TEST_CASE("emit releases a pending queue when a nested branch stops",
@@ -148,7 +148,7 @@ TEST_CASE("emit releases a pending queue when a nested branch stops",
     });
     const auto emit = [&](wp<TS<List<i64>>> value, wp<TS<bool>> run) { return nested(inner, run, value); };
 
-    CHECK(testing::test_graph(emit, {{1, 2, 3}, literal::SKIP, {9}}, {true, false, true})
+    CHECK(bg::run_graph(emit, {{1, 2, 3}, literal::SKIP, {9}}, {true, false, true})
               .equals<i64>({1, std::nullopt, 9}));
 }
 

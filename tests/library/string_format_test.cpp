@@ -1,5 +1,5 @@
 #include <bg/library.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/util/scope_exit.hpp>
 
@@ -23,9 +23,9 @@ TEST_CASE("str_ renders built-in scalar and nested collection values",
     const auto boolean = [] { return operators::str_(true); };
     const auto number = [] { return operators::str_(1.0); };
 
-    CHECK(testing::test_graph(render).equals<string>({"['left', 'right']"}));
-    CHECK(testing::test_graph(boolean).equals<string>({"True"}));
-    CHECK(testing::test_graph(number).equals<string>({"1.0"}));
+    CHECK(bg::run_graph(render).equals<string>({"['left', 'right']"}));
+    CHECK(bg::run_graph(boolean).equals<string>({"True"}));
+    CHECK(bg::run_graph(number).equals<string>({"1.0"}));
 }
 
 TEST_CASE("str_ renders non-finite floats and normalized date-time values",
@@ -42,21 +42,21 @@ TEST_CASE("str_ renders non-finite floats and normalized date-time values",
     const auto positive_date_microsecond = [] { return operators::str_(date_time_t{timedelta_t{1}}); };
     const auto negative_date_microsecond = [] { return operators::str_(date_time_t{timedelta_t{-1}}); };
 
-    CHECK(testing::test_graph(positive_infinity).equals<string>({"inf"}));
-    CHECK(testing::test_graph(negative_infinity).equals<string>({"-inf"}));
-    CHECK(testing::test_graph(not_a_number).equals<string>({"nan"}));
-    CHECK(testing::test_graph(negative_microsecond).equals<string>({"-1 day, 23:59:59.999999"}));
-    CHECK(testing::test_graph(negative_day_and_microsecond).equals<string>({"-2 days, 23:59:59.999999"}));
-    CHECK(testing::test_graph(positive_microsecond).equals<string>({"0:00:00.000001"}));
-    CHECK(testing::test_graph(epoch).equals<string>({"1970-01-01 00:00:00"}));
-    CHECK(testing::test_graph(positive_date_microsecond).equals<string>({"1970-01-01 00:00:00.000001"}));
-    CHECK(testing::test_graph(negative_date_microsecond).equals<string>({"1969-12-31 23:59:59.999999"}));
+    CHECK(bg::run_graph(positive_infinity).equals<string>({"inf"}));
+    CHECK(bg::run_graph(negative_infinity).equals<string>({"-inf"}));
+    CHECK(bg::run_graph(not_a_number).equals<string>({"nan"}));
+    CHECK(bg::run_graph(negative_microsecond).equals<string>({"-1 day, 23:59:59.999999"}));
+    CHECK(bg::run_graph(negative_day_and_microsecond).equals<string>({"-2 days, 23:59:59.999999"}));
+    CHECK(bg::run_graph(positive_microsecond).equals<string>({"0:00:00.000001"}));
+    CHECK(bg::run_graph(epoch).equals<string>({"1970-01-01 00:00:00"}));
+    CHECK(bg::run_graph(positive_date_microsecond).equals<string>({"1970-01-01 00:00:00.000001"}));
+    CHECK(bg::run_graph(negative_date_microsecond).equals<string>({"1969-12-31 23:59:59.999999"}));
 }
 
 TEST_CASE("str_ accepts scalar time-series values",
           "[feature:operator][series:value][scalar:string][scalar:i64]") {
     const auto render = [](wp<TS<i64>> value) { return operators::str_(value); };
-    CHECK(testing::test_graph(render, std::array<i64, 2>{7, -2}).equals<string>({"7", "-2"}));
+    CHECK(bg::run_graph(render, std::array<i64, 2>{7, -2}).equals<string>({"7", "-2"}));
 }
 
 TEST_CASE("str_ propagates scalar and time-series guarantees",
@@ -86,9 +86,9 @@ TEST_CASE("format_ retains numeric types for positional and named format fields"
     };
     const auto no_arguments = [] { return operators::format_(std::string_view{"static\0text", 11}); };
 
-    CHECK(testing::test_graph(positional).equals<string>({"0007 1.25"}));
-    CHECK(testing::test_graph(named).equals<string>({"value:1.25"}));
-    CHECK(testing::test_graph(no_arguments).equals<string>({std::string_view{"static\0text", 11}}));
+    CHECK(bg::run_graph(positional).equals<string>({"0007 1.25"}));
+    CHECK(bg::run_graph(named).equals<string>({"value:1.25"}));
+    CHECK(bg::run_graph(no_arguments).equals<string>({std::string_view{"static\0text", 11}}));
 }
 
 TEST_CASE("format_ waits for every positional and named argument to be valid",
@@ -102,8 +102,8 @@ TEST_CASE("format_ waits for every positional and named argument to be valid",
         return operators::format_("{value:d} {constant:d}", "value"_n = value, "constant"_n = i64{10});
     };
 
-    CHECK(testing::test_graph(positional, {1, literal::INVALID, 2}).equals({"1 10", literal::INVALID, "2 10"}));
-    CHECK(testing::test_graph(named, {1, literal::INVALID, 2}).equals({"1 10", literal::INVALID, "2 10"}));
+    CHECK(bg::run_graph(positional, {1, literal::INVALID, 2}).equals({"1 10", literal::INVALID, "2 10"}));
+    CHECK(bg::run_graph(named, {1, literal::INVALID, 2}).equals({"1 10", literal::INVALID, "2 10"}));
 }
 
 TEST_CASE("print_ supports scalar and time-series patterns and selects standard output or error",
@@ -125,7 +125,7 @@ TEST_CASE("print_ supports scalar and time-series patterns and selects standard 
         operators::print_(std::string_view{"error\0text", 10}, "__std_out__"_n = false);
         return operators::const_(i64{0});
     };
-    (void)testing::test_graph(graph, std::array<std::string_view, 2>{"first={:d}", "second={:d}"},
+    (void)bg::run_graph(graph, std::array<std::string_view, 2>{"first={:d}", "second={:d}"},
                               std::array<i64, 2>{1, 2});
 
     CHECK(output.str() == "value=7\nfirst=1\nsecond=2\n");

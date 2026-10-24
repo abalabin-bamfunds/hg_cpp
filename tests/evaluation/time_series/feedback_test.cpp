@@ -8,7 +8,7 @@
 #include <bg/operators.hpp>
 #include <bg/service.hpp>
 #include <bg/service_catalogue.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_input.hpp>
 #include <bg/time_series/tsd/tsd_output.hpp>
@@ -29,7 +29,7 @@ TEST_CASE("feedback replays each captured value in the next cycle",
         return static_cast<wp<TS<i64>>>(loop);
     };
 
-    const auto actual = testing::test_graph(graph, {2, 5, 7, 11});
+    const auto actual = bg::run_graph(graph, {2, 5, 7, 11});
     CHECK(actual.equals({std::nullopt, 2, 5, 7, 11}));
 }
 
@@ -41,7 +41,7 @@ TEST_CASE("feedback waits for its first input tick",
         return static_cast<wp<TS<i64>>>(loop);
     };
 
-    const auto actual = testing::test_graph(graph, {std::nullopt, 3, std::nullopt, 8});
+    const auto actual = bg::run_graph(graph, {std::nullopt, 3, std::nullopt, 8});
     CHECK(actual.equals({std::nullopt, std::nullopt, 3, std::nullopt, 8}));
 }
 
@@ -62,7 +62,7 @@ TEST_CASE("feedback can drive a bounded computation loop",
         return static_cast<wp<TS<i64>>>(loop);
     };
 
-    const auto actual = testing::test_graph(graph, {1});
+    const auto actual = bg::run_graph(graph, {1});
     CHECK(actual.equals({std::nullopt, 1, 2, 3}));
 }
 
@@ -81,7 +81,7 @@ TEST_CASE("separate feedback handles retain separate ticks",
         return output;
     };
 
-    const auto actual = testing::test_graph(graph, {2, 3});
+    const auto actual = bg::run_graph(graph, {2, 3});
     CHECK(actual.equals({std::nullopt, 22, 33}));
 }
 
@@ -104,7 +104,7 @@ TEST_CASE("feedback replays invalidation and revalidation",
         return static_cast<wp<TS<i64>>>(loop);
     });
 
-    CHECK(testing::test_graph(replay, {1, 2, 0, 3}).equals({literal::SKIP, 1, 2, literal::INVALID, 3}));
+    CHECK(bg::run_graph(replay, {1, 2, 0, 3}).equals({literal::SKIP, 1, 2, literal::INVALID, 3}));
 }
 
 TEST_CASE("feedback replays TSD item changes",
@@ -123,7 +123,7 @@ TEST_CASE("feedback replays TSD item changes",
         return output;
     };
 
-    const auto actual = testing::test_graph(graph, {{{1, 1}}, {{1, 2}}, {{1, literal::REMOVE}}});
+    const auto actual = bg::run_graph(graph, {{{1, 1}}, {{1, 2}}, {{1, literal::REMOVE}}});
     CHECK(actual.equals({std::nullopt, 1, 2, 0}));
 }
 
@@ -135,7 +135,7 @@ TEST_CASE("feedback accepts an explicit resolved output type",
         return static_cast<wp<TS<i64>>>(loop);
     };
 
-    const auto actual = testing::test_graph(graph, {2, 5, 7});
+    const auto actual = bg::run_graph(graph, {2, 5, 7});
     CHECK(actual.equals({std::nullopt, 2, 5, 7}));
 }
 
@@ -145,7 +145,7 @@ TEST_CASE("feedback infers a reference-free output type from a wiring point",
         return wp<TS<i64>>{feedback(static_cast<WiringPoint>(input))};
     };
 
-    const auto actual = testing::test_graph(graph, {2, 5, 7});
+    const auto actual = bg::run_graph(graph, {2, 5, 7});
     CHECK(actual.equals({std::nullopt, 2, 5, 7}));
 }
 
@@ -158,7 +158,7 @@ TEST_CASE("feedback inference changes a const source to a final output",
         return wp<TS<i64, TimeSeriesGuarantee::final>>{output};
     };
 
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
     CHECK(actual.equals({std::nullopt, 7}));
 }
 
@@ -185,7 +185,7 @@ TEST_CASE("feedback can drive a bounded computation loop in a nested graph",
         return nested(inner, run, seed);
     };
 
-    const auto actual = testing::test_graph(outer, {1}, {true});
+    const auto actual = bg::run_graph(outer, {1}, {true});
     CHECK(actual.equals({std::nullopt, 1, 2, 3}));
 }
 
@@ -209,7 +209,7 @@ TEST_CASE("feedback captures a service-shaped dictionary of reference requests",
 
     const auto echo = [&](wp<TS<i64>> input) { return service(input); };
 
-    const auto actual = testing::test_graph(echo, GraphRunOptions{.services = &catalogue}, {2, 4, 6});
+    const auto actual = bg::run_graph(echo, GraphRunOptions{.services = &catalogue}, {2, 4, 6});
     CHECK(actual.equals<i64>({std::nullopt, 2, 4, 6}));
 }
 
@@ -232,7 +232,7 @@ TEST_CASE("feedback samples switched dictionary references before retaining thei
         return output;
     };
 
-    const auto actual = testing::test_graph(graph, {false, true}, {{{1, 10}}, {{1, 10}}}, {{{2, 20}}, {{2, 20}}});
+    const auto actual = bg::run_graph(graph, {false, true}, {{{1, 10}}, {{1, 10}}}, {{{2, 20}}, {{2, 20}}});
     CHECK(actual.equals({literal::SKIP, {{1, 10}}, {{1, literal::REMOVE}, {2, 20}}}));
 }
 

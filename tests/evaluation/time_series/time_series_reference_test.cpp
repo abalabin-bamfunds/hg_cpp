@@ -5,7 +5,7 @@
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/time_series/ref/ref_provider.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
@@ -102,7 +102,7 @@ TEST_CASE("a dereferenced input subscribes directly to a fixed target",
     reference_pass::evaluation_count = 0;
     const auto graph = [&] { return pass(source()); };
 
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(reference_pass::evaluation_count == 1);
     CHECK(actual.equals({10, 20, std::nullopt, 30}));
@@ -131,7 +131,7 @@ TEST_CASE("a generated reference value stays stable while its target changes",
         return read(forward(tsl(source())));
     };
 
-    CHECK(testing::test_graph(graph).equals({10, 20, std::nullopt, 30}));
+    CHECK(bg::run_graph(graph).equals({10, 20, std::nullopt, 30}));
     CHECK(reference_evaluations == 1);
     CHECK(target_evaluations == 4);
 }
@@ -167,7 +167,7 @@ TEST_CASE("an ordinary reference can retarget a value input between stronger tar
         return output;
     };
 
-    const auto actual = testing::test_graph(graph, std::array{false, true, false, true});
+    const auto actual = bg::run_graph(graph, std::array{false, true, false, true});
 
     CHECK(actual.equals<double>({1.0, 2.0, 1.0, 2.0}));
 }
@@ -199,7 +199,7 @@ TEST_CASE("a deduplicated reference retarget samples equal constant values",
         return read(select(use_second, first(), second()));
     };
 
-    const auto actual = testing::test_graph(graph, std::array{false, true, false, true});
+    const auto actual = bg::run_graph(graph, std::array{false, true, false, true});
 
     CHECK(actual.equals<double>({4.0, 4.0, 4.0, 4.0}));
 }
@@ -232,7 +232,7 @@ TEST_CASE("a dereferenced list keeps the target runtime type when only guarantee
         return read(pass(values));
     };
 
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals<i64>({3}));
     CHECK(received_type == target_type);
@@ -261,7 +261,7 @@ TEST_CASE("a materialized free TSL samples retargeted ordinary references",
         return read(values);
     };
 
-    const auto actual = testing::test_graph(graph, std::array{false, true, false, true});
+    const auto actual = bg::run_graph(graph, std::array{false, true, false, true});
 
     CHECK(actual.equals({4, 7, 4, 7}));
 }
@@ -300,7 +300,7 @@ TEST_CASE("an ordinary list reference samples the selected list with final items
         return read(select(use_second, first, second));
     };
 
-    const auto actual = testing::test_graph(graph, std::array{false, true, false, true});
+    const auto actual = bg::run_graph(graph, std::array{false, true, false, true});
 
     CHECK(actual.equals<i64>({10, 20, 10, 20}));
 }
@@ -335,7 +335,7 @@ TEST_CASE("plain and notifying inputs share one sampled dictionary",
         return compare(item, bundle<DictionaryBundle>(item));
     };
 
-    const auto actual = testing::test_graph(graph, {{{1, 10}}, {{1, 10}}}, {{{2, 20}}, {{2, 20}}},
+    const auto actual = bg::run_graph(graph, {{{1, 10}}, {{1, 10}}}, {{{2, 20}}, {{2, 20}}},
                                                 {false, true});
 
     CHECK(actual.equals({true, true}));
@@ -379,7 +379,7 @@ TEST_CASE("a nested graph releases its sampled reference change when it stops",
         return combine(nested(inner, run, selected), inspect(selected));
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         outer, {{{1, 10}}, literal::SKIP, literal::SKIP, literal::SKIP},
         {{{2, 20}}, literal::SKIP, literal::SKIP, literal::SKIP},
         {false, literal::SKIP, true, false}, {true, true, false, true});
@@ -401,7 +401,7 @@ TEST_CASE("a default reference output does not schedule subscribers for the same
         return input;
     };
 
-    const auto actual = testing::test_graph(graph, std::array{1, 2, 3});
+    const auto actual = bg::run_graph(graph, std::array{1, 2, 3});
 
     CHECK(actual.equals({1, 2, 3}));
     CHECK(evaluations == 1);
@@ -708,7 +708,7 @@ TEST_CASE("changing a reference samples its target",
 
     const auto start_time = MIN_DT + std::chrono::microseconds{1};
 
-    const auto actual = testing::test_graph(graph, GraphRunOptions{.start_time = start_time});
+    const auto actual = bg::run_graph(graph, GraphRunOptions{.start_time = start_time});
 
     CHECK(actual.equals<Observation>({
         Observation{10, start_time, start_time},
@@ -734,7 +734,7 @@ TEST_CASE("a passive dereferenced input observes its current target",
         return value(select(trigger, left(), right()), trigger);
     };
 
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals({10, 20}));
 }
@@ -756,7 +756,7 @@ TEST_CASE("a dynamic dereferenced input rebinds while passive",
         return value(select(trigger, left(), right()), trigger);
     };
 
-    CHECK(testing::test_graph(graph).equals({10, 20}));
+    CHECK(bg::run_graph(graph).equals({10, 20}));
 }
 
 TEST_CASE("dynamic reference input unbinding reports one invalidation cycle",
@@ -769,7 +769,7 @@ TEST_CASE("dynamic reference input unbinding reports one invalidation cycle",
         return unbind(collection, trigger);
     };
 
-    CHECK(testing::test_graph(graph, {{{0, 10}}, {{0, 20}}}, {0, 1}).equals({true, false}));
+    CHECK(bg::run_graph(graph, {{{0, 10}}, {{0, 20}}}, {0, 1}).equals({true, false}));
 }
 
 namespace {
@@ -803,7 +803,7 @@ TEST_CASE("changing a reference to an invalid target invalidates required consum
     const auto forward = node<required_reference_forward>();
     const auto graph = [&] { return forward(select(condition(), left(), right())); };
 
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals({10, std::nullopt}));
 }
@@ -1006,7 +1006,7 @@ TEST_CASE("a native bundle adapts direct and referenced fields through its refer
         return observe(bundle.as<REF<TSB<SCHEMA>>>());
     };
 
-    CHECK(testing::test_graph(graph, {1, 2, 3, 4}).equals({110, 220, std::nullopt, 430}));
+    CHECK(bg::run_graph(graph, {1, 2, 3, 4}).equals({110, 220, std::nullopt, 430}));
     CHECK(evaluations == 4);
 }
 
@@ -1027,7 +1027,7 @@ TEST_CASE("a revalidated fixed-list reference resubscribes to the same target",
         return observe(collection.as<REF<TSL<TS<i64>, 2>>>());
     };
 
-    CHECK(testing::test_graph(graph).equals({10, -1, -1, 10, 20}));
+    CHECK(bg::run_graph(graph).equals({10, -1, -1, 10, 20}));
 }
 
 TEST_CASE("a revalidated fixed-list reference samples an unchanged TSS target as a first update",
@@ -1049,7 +1049,7 @@ TEST_CASE("a revalidated fixed-list reference samples an unchanged TSS target as
         return observe(collection.as<REF<TSL<TSS<i64>, 2>>>());
     };
 
-    CHECK(testing::test_graph(graph).equals({1, -1, -1, 1}));
+    CHECK(bg::run_graph(graph).equals({1, -1, -1, 1}));
 }
 
 TEST_CASE("a dereferenced input subscribes directly to a fixed collection item",
@@ -1063,7 +1063,7 @@ TEST_CASE("a dereferenced input subscribes directly to a fixed collection item",
     const auto graph = [&](wp<TSL<TS<i64>, 2>> source) { return pass(first(source)); };
     reference_pass::evaluation_count = 0;
 
-    const auto actual = testing::test_graph(graph, {{{0, 10}}, {{0, 20}}});
+    const auto actual = bg::run_graph(graph, {{{0, 10}}, {{0, 20}}});
 
     CHECK(reference_pass::evaluation_count == 1);
     CHECK(actual.equals({10, 20}));
@@ -1078,7 +1078,7 @@ TEST_CASE("a fixed collection can pass through a reference",
 
     const auto graph = [&](wp<TSL<TS<i64>, 2>> source) { return value(pass(source)); };
 
-    const auto actual = testing::test_graph(graph, {{{0, 10}}, {{0, 20}}});
+    const auto actual = bg::run_graph(graph, {{{0, 10}}, {{0, 20}}});
 
     CHECK(actual.equals({10, 20}));
 }
@@ -1092,7 +1092,7 @@ TEST_CASE("a generic fixed collection input uses the referenced target runtime_t
 
     const auto graph = [&](wp<TSL<TS<i64>, 2>> source) { return value(pass(source)); };
 
-    const auto actual = testing::test_graph(graph, {{{0, 10}}, {{0, 20}}});
+    const auto actual = bg::run_graph(graph, {{{0, 10}}, {{0, 20}}});
 
     CHECK(actual.equals({10, 20}));
 }
@@ -1196,7 +1196,7 @@ TEST_CASE("a dereferenced list reference selects the current target runtime_type
     const auto second_free_item = std::vector{20, 40, 60};
 
     const auto result =
-        testing::test_graph(graph, condition, first_owned, second_owned, first_free_item, second_free_item);
+        bg::run_graph(graph, condition, first_owned, second_owned, first_free_item, second_free_item);
 
     CHECK(result.equals({3, 60, 11}));
 }
@@ -1212,7 +1212,7 @@ TEST_CASE("a reference stored in a fixed collection item updates its consumer",
                                    Out<REF<TS<i64>>> output) { output.copy(input[0]); });
     const auto graph = [&] { return first(list(source())); };
 
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals({10, 20, std::nullopt, 30}));
 }
@@ -1241,7 +1241,7 @@ TEST_CASE("nested fixed collection adaptation propagates reference updates and v
         return sum(outer);
     };
 
-    CHECK(testing::test_graph(graph).equals({20, 40, std::nullopt, 60}));
+    CHECK(bg::run_graph(graph).equals({20, 40, std::nullopt, 60}));
 }
 
 TEST_CASE("nested fixed collection adaptation propagates a reference item retarget",
@@ -1262,7 +1262,7 @@ TEST_CASE("nested fixed collection adaptation propagates a reference item retarg
         return observe(reference);
     };
 
-    CHECK(testing::test_graph(graph).equals({10, 20}));
+    CHECK(bg::run_graph(graph).equals({10, 20}));
     CHECK(evaluations == 2);
 }
 
@@ -1285,7 +1285,7 @@ TEST_CASE("nested fixed collection adaptation propagates reference item validity
         return observe(reference);
     };
 
-    CHECK(testing::test_graph(graph).equals({30, -1, 30}));
+    CHECK(bg::run_graph(graph).equals({30, -1, 30}));
     CHECK(evaluations == 3);
 }
 
@@ -1307,7 +1307,7 @@ TEST_CASE("same-cycle target changes reach a selected native fixed-list item",
         return read(value_reference[i64{1}]);
     };
 
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals({10, 20}));
     CHECK(evaluations == 2);
@@ -1367,7 +1367,7 @@ TEST_CASE("reference invalidation unbinds and revalidation resamples consumers",
     const auto reference = node<invalidating_reference>();
     const auto graph = [&] { return reference(source()); };
 
-    const auto actual = testing::test_graph(graph);
+    const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals({10, std::nullopt, 10}));
 }
@@ -1386,15 +1386,15 @@ TEST_CASE("a sampled TSS output includes a same-cycle change to the previous tar
         return select(condition, old_target, new_target);
     };
 
-    const auto same_cycle_change = testing::test_graph(
-        graph, testing::input<TS<bool>>({true, false}),
-        testing::input<TSS<i64>>({{2}, {3, literal::REMOVED(2)}}),
-        testing::input<TSS<i64>>({{3}, literal::SKIP}));
+    const auto same_cycle_change = bg::run_graph(
+        graph, bg::input<TS<bool>>({true, false}),
+        bg::input<TSS<i64>>({{2}, {3, literal::REMOVED(2)}}),
+        bg::input<TSS<i64>>({{3}, literal::SKIP}));
     CHECK(same_cycle_change.equals({{2}, {3, literal::REMOVED(2)}}));
 
-    const auto stale_change = testing::test_graph(
-        graph, testing::input<TS<bool>>({true, true, false}),
-        testing::input<TSS<i64>>({{2}, {3, literal::REMOVED(2)}, literal::SKIP}),
-        testing::input<TSS<i64>>({{3}, literal::SKIP, literal::SKIP}));
+    const auto stale_change = bg::run_graph(
+        graph, bg::input<TS<bool>>({true, true, false}),
+        bg::input<TSS<i64>>({{2}, {3, literal::REMOVED(2)}, literal::SKIP}),
+        bg::input<TSS<i64>>({{3}, literal::SKIP, literal::SKIP}));
     CHECK(stale_change.equals({{2}, {3, literal::REMOVED(2)}, {}}));
 }

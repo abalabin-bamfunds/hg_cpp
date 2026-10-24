@@ -5,7 +5,7 @@
 #include <bg/operators.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/switch.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
@@ -41,7 +41,7 @@ TEST_CASE("switch selects a case graph from its key",
                    value);
     };
 
-    const auto actual = testing::test_graph(tested, {1, 2, 2, 1}, {3, 3, 4, 5});
+    const auto actual = bg::run_graph(tested, {1, 2, 2, 1}, {3, 3, 4, 5});
 
     CHECK(actual.equals<i64>({13, 23, 24, 15}));
 }
@@ -136,7 +136,7 @@ TEST_CASE("switch releases cached string graph arguments with its root wiring",
         return switch_(key, cases{case_(i64{1}, identity), case_(DEFAULT, fallback)}, value);
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         tested, {1, 0}, {std::string_view{"original"}, literal::SKIP});
 
     CHECK(actual.equals<string>({"original", "fallback"}));
@@ -149,7 +149,7 @@ TEST_CASE("switch accepts an optional wiring argument as its key",
         return switch_(opt(key), cases{case_(1, [](auto input) { return add(input, 10); })}, value);
     };
 
-    const auto actual = testing::test_graph(tested, {1, 1}, {3, 4});
+    const auto actual = bg::run_graph(tested, {1, 1}, {3, 4});
 
     CHECK(actual.equals<i64>({13, 14}));
 }
@@ -171,7 +171,7 @@ TEST_CASE("switch uses DEFAULT for invalid and unmatched keys",
                        value);
     };
 
-    const auto actual = testing::test_graph(tested, {1, 9}, {2, 3});
+    const auto actual = bg::run_graph(tested, {1, 9}, {2, 3});
 
     CHECK(actual.equals<i64>({12, 103}));
 }
@@ -186,7 +186,7 @@ TEST_CASE("switch reports an unmatched or invalid key without DEFAULT",
     };
 
     CHECK_THROWS_WITH(
-        (void)testing::test_graph(tested, {1, 9}, {5, 6}),
+        (void)bg::run_graph(tested, {1, 9}, {5, 6}),
         "switch_ key does not match a case and no DEFAULT case is defined");
 
     const auto invalid_tested = [](wp<TS<i64>> key, wp<TS<i64>> value) {
@@ -195,7 +195,7 @@ TEST_CASE("switch reports an unmatched or invalid key without DEFAULT",
                        value);
     };
     CHECK_THROWS_WITH(
-        (void)testing::test_graph(invalid_tested, {-1}, {5}),
+        (void)bg::run_graph(invalid_tested, {-1}, {5}),
         "switch_ key does not match a case and no DEFAULT case is defined");
 }
 
@@ -216,7 +216,7 @@ TEST_CASE("an outputless DEFAULT explicitly invalidates a switch output",
                    value);
     };
 
-    const auto actual = testing::test_graph(tested, {1, 9}, {2, 3});
+    const auto actual = bg::run_graph(tested, {1, 9}, {2, 3});
 
     CHECK(actual.equals<i64>({12, std::nullopt}));
     CHECK(recorded_values == std::vector<i64>{3});
@@ -239,7 +239,7 @@ TEST_CASE("switch matches named graph arguments and omits unused named arguments
                        "selected"_n = value, "unused"_n = unused);
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         tested, {1, 1}, {3, 5}, {40, 60});
 
     CHECK(actual.equals<i64>({4, 6}));
@@ -259,7 +259,7 @@ TEST_CASE("switch forwards positional arguments to a variadic case graph",
         return switch_(key, cases{case_(1, select_second)}, first, second);
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         tested, {1, 1}, {3, 5}, {40, 60});
 
     CHECK(actual.equals<i64>({40, 60}));
@@ -278,7 +278,7 @@ TEST_CASE("switch forwards named arguments to a variadic case graph",
         return switch_(key, cases{case_(1, select_item)}, "item"_n = value);
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         tested, {1, 1}, {3, 5});
 
     CHECK(actual.equals<i64>({3, 5}));
@@ -294,7 +294,7 @@ TEST_CASE("switch captures scalar case arguments at wiring time",
                    value, 10);
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         tested, {1, 1}, {3, 5});
 
     CHECK(actual.equals<i64>({13, 15}));
@@ -329,7 +329,7 @@ TEST_CASE("switch binds graph arguments to cases without forwarding them to over
     const auto typed = [&](wp<TS<i64>> key, wp<TS<i64>> value) {
         return switch_(key, cases{case_(1, branch)}, value, graph_argument).as<TS<i64>>();
     };
-    CHECK(testing::test_graph(typed, {1, 1}, {2, 5}).equals<i64>({5, 8}));
+    CHECK(bg::run_graph(typed, {1, 1}, {2, 5}).equals<i64>({5, 8}));
     CHECK(received_graph_argument);
     received_graph_argument = false;
 
@@ -344,7 +344,7 @@ TEST_CASE("switch binds graph arguments to cases without forwarding them to over
                        std::span<const WiringArgument>{arguments})
             .as<TS<i64>>();
     };
-    CHECK(testing::test_graph(runtime, {1, 1}, {2, 5}).equals<i64>({5, 8}));
+    CHECK(bg::run_graph(runtime, {1, 1}, {2, 5}).equals<i64>({5, 8}));
     CHECK(received_graph_argument);
 }
 
@@ -363,7 +363,7 @@ TEST_CASE("equal switch key ticks retain inner graph state and returning recreat
                    value);
     };
 
-    const auto actual = testing::test_graph(tested, {1, 1, 2, 1}, {1, 2, 3, 4});
+    const auto actual = bg::run_graph(tested, {1, 1, 2, 1}, {1, 2, 3, 4});
 
     CHECK(actual.equals<i64>({101, 102, 203, 304}));
     CHECK(StatefulCase::start_count == 3);
@@ -384,7 +384,7 @@ TEST_CASE("switching between tuple keys recreates the case graph",
                    value);
     };
 
-    const auto actual = testing::test_graph(tested, {1, 1, 2, 2}, {1, 2, 3, 4});
+    const auto actual = bg::run_graph(tested, {1, 1, 2, 2}, {1, 2, 3, 4});
 
     CHECK(actual.equals<i64>({101, 102, 203, 204}));
     CHECK(StatefulCase::start_count == 2);
@@ -401,7 +401,7 @@ TEST_CASE("switch supports source and sink case graphs",
                                                                TimeSeriesGuarantee::const_>>();
                        })});
     };
-    CHECK(testing::test_graph(source_tested, {1})
+    CHECK(bg::run_graph(source_tested, {1})
               .equals<i64>({42}));
 
     auto recorded_values = std::vector<i64>{};
@@ -414,7 +414,7 @@ TEST_CASE("switch supports source and sink case graphs",
                       value);
         return value;
     };
-    CHECK(testing::test_graph(sink_tested, {1, 1}, {7, 9})
+    CHECK(bg::run_graph(sink_tested, {1, 1}, {7, 9})
               .equals<i64>({7, 9}));
     CHECK(recorded_values == std::vector<i64>{7, 9});
 }
@@ -438,7 +438,7 @@ TEST_CASE("switch accepts fully runtime cases and arguments",
                        std::span<const WiringArgument>{runtime_arguments});
     };
 
-    CHECK(testing::test_graph(tested, {1, 2}, {2, 5})
+    CHECK(bg::run_graph(tested, {1, 2}, {2, 5})
               .equals<i64>({5, 8}));
 }
 
@@ -476,7 +476,7 @@ TEST_CASE("runtime switch preserves an optional key qualifier",
         return combine(required, optional);
     };
 
-    CHECK(testing::test_graph(tested, {1, 1}, {2, 5})
+    CHECK(bg::run_graph(tested, {1, 1}, {2, 5})
               .equals<i64>({34, 40}));
 }
 
@@ -527,7 +527,7 @@ TEST_CASE("switch DEFAULT handles an invalid key",
                        value);
     };
 
-    CHECK(testing::test_graph(tested, {1, -1}, {2, 3})
+    CHECK(bg::run_graph(tested, {1, -1}, {2, 3})
               .equals<i64>({12, 103}));
 }
 
@@ -543,7 +543,7 @@ TEST_CASE("switch starts a DEFAULT source when its key is initially invalid",
                    })});
     };
 
-    CHECK(testing::test_graph(tested, {-1})
+    CHECK(bg::run_graph(tested, {-1})
               .equals<i64>({7}));
 }
 
@@ -573,7 +573,7 @@ TEST_CASE("switches inside a map retain and replace state independently",
         return add_mapped_results(result[i64{1}], result[i64{2}]);
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         tested, {{{1, 0}, {2, 0}}, {{1, 0}, {2, 0}}, {{1, 0}, {2, 0}}, {{1, 0}, {2, 0}}},
         {{{1, 1}, {2, 2}}, {{1, 1}, {2, 2}}, {{1, 2}, {2, 2}}, {{1, 2}, {2, 1}}});
 
@@ -590,7 +590,7 @@ TEST_CASE("removing and recreating a map entry recreates its switch graph",
         return result[i64{1}];
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         tested, {{{1, 0}}, {{1, 0}}, {{1, literal::REMOVE}}, {{1, 0}}},
         {{{1, 1}}, {{1, 1}}, {{1, literal::REMOVE}}, {{1, 1}}});
 
@@ -608,7 +608,7 @@ TEST_CASE("an unmatched switch key inside a map fails the outer graph",
     };
 
     CHECK_THROWS_WITH(
-        (void)testing::test_graph(tested, {{{1, 0}}}, {{{1, 9}}}),
+        (void)bg::run_graph(tested, {{{1, 0}}}, {{{1, 9}}}),
         "switch_ key does not match a case and no DEFAULT case is defined");
 }
 
@@ -630,7 +630,7 @@ TEST_CASE("timed scheduling propagates through a switch inside a map",
     const auto tested = graph("name"_n = "timed_map_switch", [&](wp<TSD<i64, TS<i64>>> selectors) {
         (void)map(delayed_mapped_switch, selectors);
     });
-    (void)testing::test_graph(tested, {{{1, 1}}});
+    (void)bg::run_graph(tested, {{{1, 1}}});
 
     CHECK(DelayedCase::evaluation_count == 1);
 }
@@ -654,7 +654,7 @@ TEST_CASE("switch crosses an additional nested graph boundary",
         return nested(inner, run, key, value);
     };
 
-    const auto actual = testing::test_graph(
+    const auto actual = bg::run_graph(
         tested, {1, 2, 2, 1}, {3, 3, 4, 5}, {true, true, true, true});
 
     CHECK(actual.equals<i64>({13, 23, 24, 15}));

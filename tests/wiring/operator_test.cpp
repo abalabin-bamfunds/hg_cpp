@@ -4,7 +4,7 @@
 #include <bg/operator.hpp>
 #include <bg/operators.hpp>
 #include <bg/scalar/type.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/type/guarantee_variable.hpp>
 #include <bg/type/scalar_variable.hpp>
@@ -123,8 +123,8 @@ TEST_CASE("an operator selects the least generic applicable overload",
         return operation(value, fallback);
     };
 
-    CHECK(testing::test_graph(float_graph, {1.0F, 2.0F}, {10.0F, 20.0F}).equals<float>({1.0F, 2.0F}));
-    CHECK(testing::test_graph(double_graph, {1.0, 2.0}, {10.0, 20.0}).equals<double>({10.0, 20.0}));
+    CHECK(bg::run_graph(float_graph, {1.0F, 2.0F}, {10.0F, 20.0F}).equals<float>({1.0F, 2.0F}));
+    CHECK(bg::run_graph(double_graph, {1.0, 2.0}, {10.0, 20.0}).equals<double>({10.0, 20.0}));
 }
 
 TEST_CASE("operator specificity is independent of overload registration order",
@@ -183,7 +183,7 @@ TEST_CASE("operator specificity is independent of overload registration order",
                 (void)operation("value"_n = value);
                 return operation("value"_n = value);
             };
-            const auto result = testing::test_graph(graph, {1});
+            const auto result = bg::run_graph(graph, {1});
 
             CHECK((result.template equals<i64>({expected_result})));
             for (auto index = std::size_t{}; index < selected.size(); ++index) {
@@ -554,7 +554,7 @@ TEST_CASE("an operator reports equally specific overloads as ambiguous", "[featu
     const auto graph = [&](wp<TS<float>> value) { return operation(value); };
 
     try {
-        (void)testing::test_graph(graph, {1.0F});
+        (void)bg::run_graph(graph, {1.0F});
         FAIL("expected ambiguous operator wiring");
     } catch (const WiringError &error) {
         REQUIRE(error.diagnostic());
@@ -738,14 +738,14 @@ TEST_CASE("scalar-only overloads prefer presence and keep absent calls distinct 
     const auto optional_first_absent = [&] { return optional_first(std::optional<i64>{}); };
     const auto optional_first_omitted = [&] { return optional_first(); };
 
-    CHECK(testing::test_graph(required_first_graph).equals({11}));
-    CHECK(testing::test_graph(required_first_absent).equals({20}));
-    CHECK(testing::test_graph(required_first_omitted).equals({20}));
-    CHECK(testing::test_graph(required_first_omitted).equals({20}));
-    CHECK(testing::test_graph(required_first_graph).equals({11}));
-    CHECK(testing::test_graph(optional_first_graph).equals({11}));
-    CHECK(testing::test_graph(optional_first_absent).equals({20}));
-    CHECK(testing::test_graph(optional_first_omitted).equals({20}));
+    CHECK(bg::run_graph(required_first_graph).equals({11}));
+    CHECK(bg::run_graph(required_first_absent).equals({20}));
+    CHECK(bg::run_graph(required_first_omitted).equals({20}));
+    CHECK(bg::run_graph(required_first_omitted).equals({20}));
+    CHECK(bg::run_graph(required_first_graph).equals({11}));
+    CHECK(bg::run_graph(optional_first_graph).equals({11}));
+    CHECK(bg::run_graph(optional_first_absent).equals({20}));
+    CHECK(bg::run_graph(optional_first_omitted).equals({20}));
 }
 
 TEST_CASE("a graph can omit an optional scalar parameter",
@@ -755,7 +755,7 @@ TEST_CASE("a graph can omit an optional scalar parameter",
     });
     const auto omitted_graph = [&] { return optional_graph(); };
 
-    CHECK(testing::test_graph(omitted_graph).equals({7}));
+    CHECK(bg::run_graph(omitted_graph).equals({7}));
 }
 
 TEST_CASE("promoted node overloads prefer presence for scalar arguments",
@@ -771,11 +771,11 @@ TEST_CASE("promoted node overloads prefer presence for scalar arguments",
     const auto absent_graph = [&] { return operation(std::optional<i64>{}); };
     const auto omitted_graph = [&] { return operation(); };
 
-    CHECK(testing::test_graph(required_graph).equals({11}));
-    CHECK(testing::test_graph(absent_graph).equals({20}));
-    CHECK(testing::test_graph(omitted_graph).equals({20}));
-    CHECK(testing::test_graph(omitted_graph).equals({20}));
-    CHECK(testing::test_graph(required_graph).equals({11}));
+    CHECK(bg::run_graph(required_graph).equals({11}));
+    CHECK(bg::run_graph(absent_graph).equals({20}));
+    CHECK(bg::run_graph(omitted_graph).equals({20}));
+    CHECK(bg::run_graph(omitted_graph).equals({20}));
+    CHECK(bg::run_graph(required_graph).equals({11}));
 }
 
 TEST_CASE("named omission and scalar presence remain distinct in one root wiring",
@@ -797,7 +797,7 @@ TEST_CASE("named omission and scalar presence remain distinct in one root wiring
         return add(add(omitted, present), add(omitted_again, present_again));
     };
 
-    CHECK(testing::test_graph(graph).equals({224}));
+    CHECK(bg::run_graph(graph).equals({224}));
 }
 
 TEST_CASE("type specificity precedes scalar presence preference",
@@ -812,7 +812,7 @@ TEST_CASE("type specificity precedes scalar presence preference",
     operation.overload(explicit_scalar);
 
     const auto graph = [&] { return operation(i64{1}); };
-    CHECK(testing::test_graph(graph).equals({201}));
+    CHECK(bg::run_graph(graph).equals({201}));
 }
 
 TEST_CASE("conflicting scalar presence preferences remain ambiguous",
@@ -919,7 +919,7 @@ TEST_CASE("all_valid is preferred over optional for an unmarked input",
 
     const auto graph = [&](wp<TS<i64>> value) { return operation(value); };
 
-    CHECK(testing::test_graph(graph, {1, 2}).equals<i64>({1, 2}));
+    CHECK(bg::run_graph(graph, {1, 2}).equals<i64>({1, 2}));
 }
 
 TEST_CASE("required and all_valid overloads are equally specific",
@@ -931,7 +931,7 @@ TEST_CASE("required and all_valid overloads are equally specific",
     const auto graph = [&](wp<TS<i64>> value) { return operation(value); };
 
     try {
-        (void)testing::test_graph(graph, {1});
+        (void)bg::run_graph(graph, {1});
         FAIL("expected required and all_valid overloads to be ambiguous");
     } catch (const WiringError &error) {
         REQUIRE(error.diagnostic());
@@ -949,7 +949,7 @@ TEST_CASE("opt-qualified arguments do not match all_valid inputs",
 
     const auto graph = [&](wp<TS<i64>> value) { return operation(opt(value)); };
 
-    CHECK_THROWS_AS(testing::test_graph(graph, {1}), WiringError);
+    CHECK_THROWS_AS(bg::run_graph(graph, {1}), WiringError);
 }
 
 TEST_CASE("type specificity precedes required-input preference",
@@ -1076,7 +1076,7 @@ TEST_CASE("an operator reports expected and supplied types for a mismatch", "[fe
     const auto graph = [&](wp<TS<double>> value) { return operation(value); };
 
     try {
-        (void)testing::test_graph(graph, {1.0});
+        (void)bg::run_graph(graph, {1.0});
         FAIL("expected unmatched operator wiring");
     } catch (const WiringError &error) {
         REQUIRE(error.diagnostic());

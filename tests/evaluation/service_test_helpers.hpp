@@ -8,7 +8,7 @@
 #include <bg/service.hpp>
 #include <bg/service_catalogue.hpp>
 #include <bg/switch.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
 

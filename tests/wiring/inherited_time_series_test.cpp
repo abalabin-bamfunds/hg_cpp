@@ -4,7 +4,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -49,7 +49,7 @@ TEST_CASE("a late inherited provider resolves a root requirement during compilat
         return output;
     };
 
-    CHECK(testing::test_graph(tested, {7}).equals({7}));
+    CHECK(bg::run_graph(tested, {7}).equals({7}));
 }
 
 TEST_CASE("a late inherited provider crosses a nested graph boundary",
@@ -73,7 +73,7 @@ TEST_CASE("a late inherited provider crosses a nested graph boundary",
         return output;
     };
 
-    CHECK(testing::test_graph(tested, {7, 11}, {true, true}).equals({7, 11}));
+    CHECK(bg::run_graph(tested, {7, 11}, {true, true}).equals({7, 11}));
 }
 
 TEST_CASE("a named context requirement cannot be provided after wiring",

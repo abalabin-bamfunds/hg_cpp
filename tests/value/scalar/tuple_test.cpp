@@ -1,7 +1,7 @@
 #include <bg/bg.hpp>
 #include <bg/scalar/bundle/value.hpp>
 #include <bg/scalar/literal.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -245,7 +245,7 @@ TEST_CASE("positional scalar tuple construction destroys completed items after a
     CHECK(TrackedValue::instances == baseline);
 }
 
-TEST_CASE("test_graph accepts a tuple-valued time series input and output",
+TEST_CASE("run_graph accepts a tuple-valued time series input and output",
           "[feature:test-graph][evaluation][series:value][scalar:tuple][shape:single-node]") {
     auto retained = std::optional<ScalarValue<Nested>>{};
 
@@ -258,7 +258,7 @@ TEST_CASE("test_graph accepts a tuple-valued time series input and output",
 
     const auto graph = [&](wp<TS<Nested>> input) { return identity(input); };
 
-    const auto actual = testing::test_graph(graph, {{1, {"NASDAQ", symbol{"NQ"}}}, {2, {"NYSE", symbol{"IBM"}}}});
+    const auto actual = bg::run_graph(graph, {{1, {"NASDAQ", symbol{"NQ"}}}, {2, {"NYSE", symbol{"IBM"}}}});
 
     REQUIRE(actual.size() == 2);
     const auto first = actual[0]->view();
@@ -274,8 +274,8 @@ TEST_CASE("test_graph accepts a tuple-valued time series input and output",
 
     const auto erased_graph = bg::graph("name"_n = "erased_tuple_identity",
                                         [&](wp<> input) { return wp<>{identity(input)}; });
-    const auto erased = testing::test_graph(
-        erased_graph, testing::input<TS<Nested>>({{1, {"NASDAQ", symbol{"NQ"}}}, {2, {"NYSE", symbol{"IBM"}}}}));
+    const auto erased = bg::run_graph(
+        erased_graph, bg::input<TS<Nested>>({{1, {"NASDAQ", symbol{"NQ"}}}, {2, {"NYSE", symbol{"IBM"}}}}));
     CHECK(erased.equals({{1, {"NASDAQ", symbol{"NQ"}}}, {2, {"NYSE", symbol{"IBM"}}}}));
     REQUIRE(retained.has_value());
     CHECK(retained->view().get<0>().value() == 1);
