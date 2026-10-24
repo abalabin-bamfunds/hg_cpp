@@ -21,7 +21,7 @@ def test_time_series_set_value_and_delta():
     def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_set(trigger))
 
-    assert bg.test_graph(graph, [1, 2]) == [
+    assert bg.run_graph(graph, [1, 2]) == [
         (3, frozenset({1, 2}), bg.SetDelta(added={1, 2})),
         (5, frozenset({2, 3}), bg.SetDelta(added={3}, removed={1})),
     ]
@@ -45,7 +45,7 @@ def test_time_series_set_output_accepts_removed_markers():
     def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_set(trigger))
 
-    assert bg.test_graph(graph, [1, 2, 3]) == [
+    assert bg.run_graph(graph, [1, 2, 3]) == [
         (3, frozenset({1, 2}), bg.SetDelta(added={1, 2})),
         (5, frozenset({2, 3}), bg.SetDelta(added={3}, removed={1})),
         (7, frozenset({3, 4}), bg.SetDelta(added={4}, removed={2})),
@@ -72,7 +72,7 @@ def test_input_views_expose_last_modified_time_as_datetime():
     def graph(value: bg.TS[int]) -> bg.TS[object]:
         return inspect(value)
 
-    actual = bg.test_graph(graph, [1, 2])
+    actual = bg.run_graph(graph, [1, 2])
     assert [value for value, _, _, _ in actual] == [1, 2]
     assert [valid for _, valid, _, _ in actual] == [True, True]
     assert [modified for _, _, modified, _ in actual] == [True, True]
@@ -103,7 +103,7 @@ def test_delta_value_is_none_when_an_input_did_not_change():
     def graph(trigger: bg.TS[int], value: bg.TS[int]) -> bg.TS[object]:
         return inspect(trigger, value, make_dictionary(value))
 
-    assert bg.test_graph(graph, [1, 2], [10, None]) == [
+    assert bg.run_graph(graph, [1, 2], [10, None]) == [
         (1, True, 10, True, {1: 10}),
         (2, False, None, False, None),
     ]
@@ -122,7 +122,7 @@ def test_delta_value_is_none_after_input_invalidation():
     def graph(trigger: bg.TS[int], value: bg.TSL[bg.TS[int], 2]) -> bg.TS[int]:
         return inspect(trigger, value)
 
-    assert bg.test_graph(
+    assert bg.run_graph(
         graph, [1, 2, 3, 4], [{0: 10, 1: 1}, {0: bg.INVALID}, None, {0: 20}]
     ) == [1, 2, 3, 4]
     assert observed == [(True, True, 10), (False, True, None), (False, False, None), (True, True, 20)]
@@ -143,7 +143,7 @@ def test_time_series_set_removed_markers_apply_recursively_in_dictionary():
     def graph(trigger: bg.TS[int]) -> bg.TS[int]:
         return inspect(make_dictionary(trigger))
 
-    assert bg.test_graph(graph, [1, 2]) == [3, 5]
+    assert bg.run_graph(graph, [1, 2]) == [3, 5]
 
 
 def test_fixed_time_series_list_value_delta_and_item_access():
@@ -161,7 +161,7 @@ def test_fixed_time_series_list_value_delta_and_item_access():
     def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_list(trigger))
 
-    assert bg.test_graph(graph, [1, 2]) == [
+    assert bg.run_graph(graph, [1, 2]) == [
         (40, [10, None, 30], {0: 10, 2: 30}, False),
         (60, [10, 20, 30], {1: 20}, True),
     ]
@@ -195,7 +195,7 @@ def test_time_series_bundle_value_delta_inheritance_and_item_access():
     def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_bundle(trigger))
 
-    assert bg.test_graph(graph, [1, 2]) == [
+    assert bg.run_graph(graph, [1, 2]) == [
         (10, {"left": 10, "right": None}, {"left": 10}, False),
         (30, {"left": 10, "right": 20}, {"right": 20}, True),
     ]
@@ -225,7 +225,7 @@ def test_time_series_schemas_keep_nominal_identity_and_support_inheritance():
         return read_second_pair(make_first_pair())
 
     with pytest.raises(ValueError):
-        bg.test_graph(incompatible_graph)
+        bg.run_graph(incompatible_graph)
 
     @bg.schema
     class Base:
@@ -247,7 +247,7 @@ def test_time_series_schemas_keep_nominal_identity_and_support_inheritance():
     def compatible_graph() -> bg.TS[int]:
         return read_base(make_derived())
 
-    assert bg.test_graph(compatible_graph) == [11]
+    assert bg.run_graph(compatible_graph) == [11]
 
 
 def test_collection_lookup_defaults_and_missing_bundle_attributes():
@@ -276,7 +276,7 @@ def test_collection_lookup_defaults_and_missing_bundle_attributes():
     def graph(trigger: bg.TS[int]) -> bg.TS[int]:
         return inspect(make_bundle(trigger), make_dictionary(trigger))
 
-    assert bg.test_graph(graph, [1]) == [2]
+    assert bg.run_graph(graph, [1]) == [2]
 
 
 def test_time_series_schema_rejects_multiple_schema_bases():
@@ -311,7 +311,7 @@ def test_time_series_dictionary_value_delta_removal_resurrection_and_item_access
     def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_dictionary(trigger))
 
-    assert bg.test_graph(graph, [1, 2, 3]) == [
+    assert bg.run_graph(graph, [1, 2, 3]) == [
         (30, {1: 10, 2: 20}, {1: 10, 2: 20}, 20),
         (21, {2: 21}, {1: bg.REMOVE, 2: 21}, 21),
         (51, {1: 30, 2: 21}, {1: 30}, 21),
@@ -331,7 +331,7 @@ def test_string_tsd_keys_named_like_delta_fields_are_not_special():
     def graph(trigger: bg.TS[int]) -> bg.TS[int]:
         return inspect(make_dictionary(trigger))
 
-    assert bg.test_graph(graph, [1, 3]) == [3, 7]
+    assert bg.run_graph(graph, [1, 3]) == [3, 7]
 
 
 def test_nested_collection_deltas_are_applied_recursively():
@@ -349,7 +349,7 @@ def test_nested_collection_deltas_are_applied_recursively():
     def graph(trigger: bg.TS[int]) -> bg.TS[int]:
         return read(make_nested(trigger))
 
-    assert bg.test_graph(graph, [1, 2]) == [10, 30]
+    assert bg.run_graph(graph, [1, 2]) == [10, 30]
 
 
 def test_nested_collection_delta_views_expose_child_deltas():
@@ -367,7 +367,7 @@ def test_nested_collection_delta_views_expose_child_deltas():
     def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_nested(trigger))
 
-    assert bg.test_graph(graph, [1, 2]) == [(10, {0: 10}), (30, {1: 20})]
+    assert bg.run_graph(graph, [1, 2]) == [(10, {0: 10}), (30, {1: 20})]
 
 
 def test_reference_delta_can_be_forwarded_and_dereferenced():
@@ -384,7 +384,7 @@ def test_reference_delta_can_be_forwarded_and_dereferenced():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return read(forward(value))
 
-    assert bg.test_graph(graph, [1, 2, 3]) == [1, 2, 3]
+    assert bg.run_graph(graph, [1, 2, 3]) == [1, 2, 3]
 
 
 def test_reference_to_a_collection_can_be_forwarded_and_dereferenced():
@@ -406,7 +406,7 @@ def test_reference_to_a_collection_can_be_forwarded_and_dereferenced():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return read(forward(make_dictionary(value)))
 
-    assert bg.test_graph(graph, [1, 2]) == [1, 2]
+    assert bg.run_graph(graph, [1, 2]) == [1, 2]
 
 
 def test_tsd_of_references_notifies_a_dereferenced_python_input():
@@ -428,7 +428,7 @@ def test_tsd_of_references_notifies_a_dereferenced_python_input():
     def graph(trigger: bg.TS[int], left: bg.TS[int], right: bg.TS[int]) -> bg.TS[int]:
         return read(make_references(trigger, left, right))
 
-    assert bg.test_graph(graph, [1, 2, 3], [10, 20, 30], [1, 2, 3]) == [11, 22, 33]
+    assert bg.run_graph(graph, [1, 2, 3], [10, 20, 30], [1, 2, 3]) == [11, 22, 33]
 
 
 def test_delay_retains_target_only_updates_from_a_contained_reference():
@@ -487,7 +487,7 @@ def test_sampled_tsd_delta_keeps_removed_keys_available_for_lookup():
     def graph(use_second: bg.TS[bool]) -> bg.TS[object]:
         return inspect(select(use_second, first(use_second), second(use_second)))
 
-    assert bg.test_graph(graph, [False, True]) == [
+    assert bg.run_graph(graph, [False, True]) == [
         ({1: 10, 2: 20, 3: 30}, {1: 10, 2: 20, 3: 30}, 10, 20, 60),
         ({3: 300}, {1: bg.REMOVE, 2: bg.REMOVE, 3: 300}, bg.REMOVE, bg.REMOVE, 300),
     ]
@@ -513,7 +513,7 @@ def test_fixed_list_of_references_can_be_dereferenced_as_one_collection():
     def add(left: bg.TS[int], right: bg.TS[int]) -> bg.TS[int]:
         return left.value + right.value
 
-    assert bg.test_graph(graph, [1, 2], [10, 20], [1, 2]) == [11, 22]
+    assert bg.run_graph(graph, [1, 2], [10, 20], [1, 2]) == [11, 22]
 
 
 def test_bundle_reference_field_can_be_dereferenced():
@@ -535,7 +535,7 @@ def test_bundle_reference_field_can_be_dereferenced():
     def graph(trigger: bg.TS[int], value: bg.TS[int]) -> bg.TS[int]:
         return read(bg.operators.getattr(make_bundle(trigger, value), bg.symbol("value")))
 
-    assert bg.test_graph(graph, [1, 2], [10, 20]) == [10, 20]
+    assert bg.run_graph(graph, [1, 2], [10, 20]) == [10, 20]
 
 
 def test_collection_item_and_reference_views_expire_after_the_callback():
@@ -556,7 +556,7 @@ def test_collection_item_and_reference_views_expire_after_the_callback():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return inspect(make_list(value), value)
 
-    assert bg.test_graph(graph, [1]) == [1]
+    assert bg.run_graph(graph, [1]) == [1]
     with pytest.raises(RuntimeError, match="outside its callback"):
         _ = captured_items[0].value
     with pytest.raises(RuntimeError, match="outside its callback"):
@@ -585,7 +585,7 @@ def test_lazy_collection_views_and_iterators_expire_after_the_callback():
     def graph(trigger: bg.TS[int]) -> bg.TS[int]:
         return inspect(make_dictionary(trigger))
 
-    assert bg.test_graph(graph, [1]) == [1]
+    assert bg.run_graph(graph, [1]) == [1]
 
     expired_accesses = [
         lambda: captured["input"].valid,
@@ -618,7 +618,7 @@ def test_set_delta_views_expire_after_the_callback():
     def graph(trigger: bg.TS[int]) -> bg.TS[int]:
         return inspect(make_set(trigger))
 
-    assert bg.test_graph(graph, [1]) == [1]
+    assert bg.run_graph(graph, [1]) == [1]
 
     with pytest.raises(RuntimeError, match="outside its callback"):
         _ = captured["delta"].added
@@ -642,7 +642,7 @@ def test_collection_delta_validation_reports_the_shape():
         return size(invalid())
 
     with pytest.raises(ValueError, match="TSS output requires"):
-        bg.test_graph(graph)
+        bg.run_graph(graph)
 
 
 def test_set_delta_fields_do_not_interpret_removed_markers():
@@ -659,7 +659,7 @@ def test_set_delta_fields_do_not_interpret_removed_markers():
         return size(invalid())
 
     with pytest.raises(TypeError, match="expected an integer"):
-        bg.test_graph(graph)
+        bg.run_graph(graph)
 
 
 def test_lazy_tsd_views_cover_removal_key_set_and_expiration():
@@ -692,7 +692,7 @@ def test_lazy_tsd_views_cover_removal_key_set_and_expiration():
     def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_values(trigger))
 
-    assert bg.test_graph(graph, [1, 2]) == [
+    assert bg.run_graph(graph, [1, 2]) == [
         (30, {1: 10, 2: 20}, {1: 10, 2: 20}, {1: 10, 2: 20}, [1, 2], [], [], {1, 2}, True, 10),
         (
             51,
@@ -744,7 +744,7 @@ def test_tsd_key_set_tracks_key_changes_and_keeps_its_update_time():
     def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(trigger, make_values(trigger))
 
-    actual = bg.test_graph(graph, [1, 2, 3, 4, 5])
+    actual = bg.run_graph(graph, [1, 2, 3, 4, 5])
     assert [state[:5] for state in actual] == [
         (1, True, True, {1}, ({1}, set())),
         (2, True, False, {1}, None),
@@ -780,7 +780,7 @@ def test_tss_input_exposes_lazy_changes_and_membership_queries():
     def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_set(trigger))
 
-    assert bg.test_graph(graph, [1, 2]) == [
+    assert bg.run_graph(graph, [1, 2]) == [
         (2, {1, 2}, {1, 2}, set(), False, False),
         (2, {2, 3}, {3}, {1}, True, True),
     ]
@@ -811,7 +811,7 @@ def test_tsl_input_exposes_child_traversal_and_lazy_values():
     def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_list(trigger))
 
-    assert bg.test_graph(graph, [1, 2]) == [
+    assert bg.run_graph(graph, [1, 2]) == [
         (1, [True, False], [0, 1], [1, None], [0], [0], [1, None], {0: 1}),
         (2, [True, False], [0, 1], [2, None], [0], [0], [2, None], {0: 2}),
     ]
@@ -841,7 +841,7 @@ def test_tsb_input_exposes_named_child_access_and_lazy_values():
     def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_bundle(trigger))
 
-    assert bg.test_graph(graph, [1, 2]) == [
+    assert bg.run_graph(graph, [1, 2]) == [
         (1, 1, {"left": 1, "right": None}, {"left": 1}, ["left", "right"]),
         (2, 2, {"left": 2, "right": None}, {"left": 2}, ["left", "right"]),
     ]
@@ -891,4 +891,4 @@ def test_lazy_values_expose_only_their_collection_protocol():
             make_dictionary(trigger),
         )
 
-    assert bg.test_graph(graph, [1]) == [1]
+    assert bg.run_graph(graph, [1]) == [1]

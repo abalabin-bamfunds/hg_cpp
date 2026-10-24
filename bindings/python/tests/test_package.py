@@ -25,7 +25,7 @@ def test_imports_the_expected_package():
     assert Path(extension.origin).resolve().parent == package_dir
 
 
-def test_graph_wires_python_nodes_and_runs_each_input_tick():
+def test_run_graph_wires_python_nodes_and_runs_each_input_tick():
     @bg.node
     def increment(value: int) -> int:
         return value + 1
@@ -34,7 +34,7 @@ def test_graph_wires_python_nodes_and_runs_each_input_tick():
     def graph(value: int) -> int:
         return increment(value)
 
-    assert bg.test_graph(graph, [1, 2, None, 4]) == [2, 3, None, 5]
+    assert bg.run_graph(graph, [1, 2, None, 4]) == [2, 3, None, 5]
 
 
 def test_node_decorator_preserves_function_metadata():
@@ -48,7 +48,7 @@ def test_node_decorator_preserves_function_metadata():
     assert identity.__wrapped__ is identity.function
 
 
-def test_graph_composes_nested_graphs_and_scalar_arguments():
+def test_run_graph_composes_nested_graphs_and_scalar_arguments():
     @bg.node
     def add(value: int, offset: int) -> int:
         return value + offset
@@ -61,10 +61,10 @@ def test_graph_composes_nested_graphs_and_scalar_arguments():
     def graph(value: int) -> int:
         return add_default(value)
 
-    assert bg.test_graph(graph, [1, 2]) == [4, 5]
+    assert bg.run_graph(graph, [1, 2]) == [4, 5]
 
 
-def test_graph_wiring_retains_a_locally_declared_node_until_execution():
+def test_run_graph_wiring_retains_a_locally_declared_node_until_execution():
     @bg.graph
     def graph(value: int) -> int:
         @bg.node
@@ -73,7 +73,7 @@ def test_graph_wiring_retains_a_locally_declared_node_until_execution():
 
         return increment(value)
 
-    assert bg.test_graph(graph, [2, 4]) == [3, 5]
+    assert bg.run_graph(graph, [2, 4]) == [3, 5]
 
 
 def test_python_source_node_runs_at_graph_start():
@@ -85,7 +85,7 @@ def test_python_source_node_runs_at_graph_start():
     def graph() -> bg.TS[int]:
         return source()
 
-    assert bg.test_graph(graph) == [7]
+    assert bg.run_graph(graph) == [7]
 
 
 def test_python_time_series_input_accepts_a_constant():
@@ -97,7 +97,7 @@ def test_python_time_series_input_accepts_a_constant():
     def graph() -> bg.TS[int]:
         return identity(7)
 
-    assert bg.test_graph(graph) == [7]
+    assert bg.run_graph(graph) == [7]
 
 
 def test_python_node_receives_optional_scalar_as_none():
@@ -109,7 +109,7 @@ def test_python_node_receives_optional_scalar_as_none():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return add_optional(value, offset=None)
 
-    assert bg.test_graph(graph, [7]) == [7]
+    assert bg.run_graph(graph, [7]) == [7]
 
 
 @pytest.mark.parametrize(
@@ -129,7 +129,7 @@ def test_source_node_scalar_outputs(annotation, value):
     def graph() -> bg.TS[annotation]:
         return source()
 
-    assert bg.test_graph(graph) == [value]
+    assert bg.run_graph(graph) == [value]
 
 
 def test_extension_modules_share_python_conversion_registry():
@@ -179,7 +179,7 @@ def test_timedelta_scalar_conversion_round_trips_exact_microseconds(value):
     def constant() -> bg.TS[timedelta]:
         return bg.operators.const_(value)
 
-    assert bg.test_graph(constant) == [value]
+    assert bg.run_graph(constant) == [value]
 
 
 @pytest.mark.parametrize("microseconds", [-(1 << 63) - 1, 1 << 63])
@@ -191,7 +191,7 @@ def test_timedelta_scalar_conversion_rejects_values_outside_i64_microseconds(mic
         return bg.operators.const_(value)
 
     with pytest.raises(OverflowError, match="outside the bg.timedelta_t range"):
-        bg.test_graph(constant)
+        bg.run_graph(constant)
 
 
 def test_timedelta_conversion_accepts_subclasses_and_rejects_other_values():
@@ -220,9 +220,9 @@ def test_timed_operators_accept_datetime_timedelta():
     def throttled(value: bg.TS[int]) -> bg.TS[int]:
         return bg.operators.throttle(value, timedelta(microseconds=2))
 
-    assert bg.test_graph(delayed, [1, 2, None, 4]) == [None, None, 1, 2, None, 4]
-    assert bg.test_graph(scheduled) == [None, True, True, True]
-    assert bg.test_graph(throttled, [1, 2, 3, 4]) == [1, None, 3, None, 4]
+    assert bg.run_graph(delayed, [1, 2, None, 4]) == [None, None, 1, 2, None, 4]
+    assert bg.run_graph(scheduled) == [None, True, True, True]
+    assert bg.run_graph(throttled, [1, 2, 3, 4]) == [1, None, 3, None, 4]
 
 
 def test_nested_delay_releases_pending_python_values_when_stopped():
@@ -244,7 +244,7 @@ def test_nested_delay_releases_pending_python_values_when_stopped():
     def graph(key: bg.TS[int], value: bg.TS[str]) -> bg.TS[str]:
         return bg.switch_(key, {1: delayed, bg.DEFAULT: fallback}, value)
 
-    result = bg.test_graph(graph, [1, 0], [value, None])
+    result = bg.run_graph(graph, [1, 0], [value, None])
     assert result == [None, "fallback"]
 
     del result
@@ -253,7 +253,7 @@ def test_nested_delay_releases_pending_python_values_when_stopped():
     assert value_reference() is None
 
 
-def test_test_graph_uses_registered_runtime_scalar_conversion():
+def test_run_graph_uses_registered_runtime_scalar_conversion():
     script = """
 import bg
 from bg._bg_test_extension import register_runtime_double_result_conversion
@@ -264,13 +264,13 @@ assert register_runtime_double_result_conversion()
 def graph(value: bg.TS[float]) -> bg.TS[float]:
     return value
 
-assert bg.test_graph(graph, [2.5]) == ["extension scalar conversion"]
+assert bg.run_graph(graph, [2.5]) == ["extension scalar conversion"]
 
 @bg.graph
 def nested(values: bg.TSD[int, bg.TS[float]]) -> bg.TSD[int, bg.TS[float]]:
     return values
 
-assert bg.test_graph(nested, [{1: 2.5}]) == [{1: "extension scalar conversion"}]
+assert bg.run_graph(nested, [{1: 2.5}]) == [{1: "extension scalar conversion"}]
 """
     subprocess.run([sys.executable, "-c", script], check=True, capture_output=True, text=True)
 
@@ -325,8 +325,8 @@ def test_symbol_scalar_inference_keeps_symbols_distinct_from_strings():
     def string_graph() -> bg.TS[str]:
         return bg.operators.const_("name")
 
-    symbol_result = bg.test_graph(symbol_graph)
-    string_result = bg.test_graph(string_graph)
+    symbol_result = bg.run_graph(symbol_graph)
+    string_result = bg.run_graph(string_graph)
 
     assert type(symbol_result[0]) is bg.Symbol
     assert symbol_result[0] is symbol
@@ -343,7 +343,7 @@ def test_explicit_symbol_input_accepts_plain_python_text():
     def graph(trigger: bg.TS[int]) -> bg.TS[bg.Symbol]:
         return echo(trigger, label="explicit symbol")
 
-    result = bg.test_graph(graph, [1])
+    result = bg.run_graph(graph, [1])
 
     assert type(result[0]) is bg.Symbol
     assert result[0] == "explicit symbol"
@@ -358,7 +358,7 @@ def test_symbol_time_series_input_accepts_plain_python_text():
     def graph(value: bg.TS[bg.Symbol]) -> bg.TS[bg.Symbol]:
         return identity(value)
 
-    result = bg.test_graph(graph, ["time series symbol"])
+    result = bg.run_graph(graph, ["time series symbol"])
 
     assert type(result[0]) is bg.Symbol
     assert result[0] == "time series symbol"
@@ -373,7 +373,7 @@ def test_symbol_as_string_input_is_normalized_to_plain_text():
     def graph(value: bg.TS[str]) -> bg.TS[str]:
         return identity(value)
 
-    result = bg.test_graph(graph, [bg.Symbol("plain text")])
+    result = bg.run_graph(graph, [bg.Symbol("plain text")])
 
     assert result == ["plain text"]
     assert type(result[0]) is str
@@ -390,7 +390,7 @@ def test_symbol_round_trip_reuses_python_object_for_repeated_cpp_symbol():
     def graph(item: bg.TS[bg.Symbol]) -> bg.TS[bg.Symbol]:
         return identity(item)
 
-    result = bg.test_graph(graph, [value, value])
+    result = bg.run_graph(graph, [value, value])
 
     assert result == [value, value]
     assert result[0] is value
@@ -407,7 +407,7 @@ def test_null_symbol_round_trips_as_null():
         return identity(value)
 
     null_symbol = bg.Symbol()
-    result = bg.test_graph(graph, [null_symbol])
+    result = bg.run_graph(graph, [null_symbol])
 
     assert result[0] is null_symbol
     assert result[0]._is_null
@@ -438,7 +438,7 @@ def test_python_string_and_symbol_scalar_arguments():
     def graph() -> bg.TS[int]:
         return add_text(source(), text="market", label=bg.symbol("open"))
 
-    assert bg.test_graph(graph) == [1 + len("market") + len("open")]
+    assert bg.run_graph(graph) == [1 + len("market") + len("open")]
 
 
 def test_python_scalar_string_argument_outlives_wiring_allocator():
@@ -456,7 +456,7 @@ def test_python_scalar_string_argument_outlives_wiring_allocator():
     def graph() -> bg.TS[str]:
         return echo(source(), text)
 
-    assert bg.test_graph(graph) == [text]
+    assert bg.run_graph(graph) == [text]
 
 
 def test_python_string_time_series_source_input_and_output():
@@ -478,10 +478,10 @@ def test_python_string_time_series_source_input_and_output():
     def input_graph(value: bg.TS[str]) -> bg.TS[str]:
         return append(value)
 
-    source_result = bg.test_graph(source_graph)
+    source_result = bg.run_graph(source_graph)
     assert source_result == [text]
     assert source_result[0] is text
-    assert bg.test_graph(input_graph, [text]) == [text + "\x00done"]
+    assert bg.run_graph(input_graph, [text]) == [text + "\x00done"]
 
 
 def test_python_string_time_series_round_trip_preserves_identity():
@@ -495,7 +495,7 @@ def test_python_string_time_series_round_trip_preserves_identity():
     def graph(value: bg.TS[str]) -> bg.TS[str]:
         return identity(value)
 
-    result = bg.test_graph(graph, [text])
+    result = bg.run_graph(graph, [text])
 
     assert result[0] is text
 
@@ -515,7 +515,7 @@ def test_python_string_cache_releases_values_with_bg_storage():
     def graph(value: bg.TS[str]) -> bg.TS[str]:
         return identity(value)
 
-    result = bg.test_graph(graph, [text])
+    result = bg.run_graph(graph, [text])
     assert result[0] is text
 
     del result
@@ -534,7 +534,7 @@ def test_python_string_rejects_lone_surrogates():
         return identity(value)
 
     with pytest.raises(UnicodeEncodeError):
-        bg.test_graph(graph, ["lone surrogate: \ud800"])
+        bg.run_graph(graph, ["lone surrogate: \ud800"])
 
 
 def test_python_string_rejects_invalid_bg_utf8():
@@ -556,7 +556,7 @@ def test_input_view_expires_after_the_callback():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return save_input(value)
 
-    assert bg.test_graph(graph, [7]) == [7]
+    assert bg.run_graph(graph, [7]) == [7]
     with pytest.raises(RuntimeError, match="outside its callback"):
         _ = saved_inputs[0].value
 
@@ -576,7 +576,7 @@ def test_input_view_from_an_earlier_callback_stays_expired():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return save_input(value)
 
-    assert bg.test_graph(graph, [7, 8]) == [7, 8]
+    assert bg.run_graph(graph, [7, 8]) == [7, 8]
 
 
 def test_wiring_point_expires_after_graph_construction():
@@ -591,7 +591,7 @@ def test_wiring_point_expires_after_graph_construction():
         saved_points.append(value)
         return identity(value)
 
-    assert bg.test_graph(graph, [7]) == [7]
+    assert bg.run_graph(graph, [7]) == [7]
     with pytest.raises(RuntimeError, match="outside its graph construction"):
         _ = saved_points[0].has_output
 
@@ -609,11 +609,11 @@ def test_repeated_node_wiring_is_deduplicated():
         increment(value)
         return increment(value)
 
-    assert bg.test_graph(graph, [3]) == [4]
+    assert bg.run_graph(graph, [3]) == [4]
     assert evaluations == [3]
 
 
-def test_callback_exception_propagates_from_test_graph():
+def test_callback_exception_propagates_from_run_graph():
     @bg.compute_node
     def fail(value: bg.TS[int]) -> bg.TS[int]:
         raise ValueError("callback failed")
@@ -623,10 +623,10 @@ def test_callback_exception_propagates_from_test_graph():
         return fail(value)
 
     with pytest.raises(ValueError, match="callback failed"):
-        bg.test_graph(graph, [3])
+        bg.run_graph(graph, [3])
 
 
-def test_graph_callback_exception_keeps_identity_traceback_and_wiring_note():
+def test_run_graph_callback_exception_keeps_identity_traceback_and_wiring_note():
     class CallbackError(Exception):
         pass
 
@@ -637,7 +637,7 @@ def test_graph_callback_exception_keeps_identity_traceback_and_wiring_note():
         raise callback_error
 
     with pytest.raises(CallbackError, match="graph callback failed") as raised:
-        bg.test_graph(invalid)
+        bg.run_graph(invalid)
 
     assert raised.value is callback_error
     traceback_names = []
@@ -659,7 +659,7 @@ def test_none_requests_no_output_change():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return no_change(value)
 
-    assert bg.test_graph(graph, [3]) == [None]
+    assert bg.run_graph(graph, [3]) == [None]
 
 
 def test_sink_graph_runs_without_an_output():
@@ -673,7 +673,7 @@ def test_sink_graph_runs_without_an_output():
     def graph(value: bg.TS[int]) -> None:
         sink(value)
 
-    assert bg.test_graph(graph, [3, 5]) == [None, None]
+    assert bg.run_graph(graph, [3, 5]) is None
     assert received == [3, 5]
 
 
@@ -686,7 +686,7 @@ def test_python_callback_receives_interleaved_time_series_and_scalars():
     def graph(left: bg.TS[int], right: bg.TS[float]) -> bg.TS[float]:
         return combine(left, 2, right, 0.5)
 
-    assert bg.test_graph(graph, [2, 4], [10.0, 20.0]) == [12.0, 23.0]
+    assert bg.run_graph(graph, [2, 4], [10.0, 20.0]) == [12.0, 23.0]
 
 
 def test_module_scope_definitions_do_not_leak_native_instances_at_shutdown():
@@ -713,7 +713,7 @@ def graph(value: bg.TS[int]) -> bg.TS[int]:
     assert "nanobind: leaked" not in completed.stderr
 
 
-def test_graph_definition_retains_and_releases_python_callback():
+def test_run_graph_definition_retains_and_releases_python_callback():
     def make_graph():
         def graph() -> None:
             pass

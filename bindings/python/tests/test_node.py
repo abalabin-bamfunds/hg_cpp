@@ -12,7 +12,7 @@ def test_node_accepts_scalar_arguments_and_runs_at_graph_start():
     def graph() -> bg.TS[int]:
         return add(40)
 
-    assert bg.test_graph(graph) == [42]
+    assert bg.run_graph(graph) == [42]
 
 
 def test_node_receives_plain_values_for_time_series_and_scalar_inputs():
@@ -26,7 +26,7 @@ def test_node_receives_plain_values_for_time_series_and_scalar_inputs():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return add(value, 3)
 
-    assert bg.test_graph(graph, [1, 2, None, 4]) == [4, 5, None, 7]
+    assert bg.run_graph(graph, [1, 2, None, 4]) == [4, 5, None, 7]
 
 
 def test_node_accepts_multiple_time_series_values():
@@ -38,7 +38,7 @@ def test_node_accepts_multiple_time_series_values():
     def graph(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[int]:
         return add(lhs, rhs)
 
-    assert bg.test_graph(graph, [1, None, 3], [10, 20, 30]) == [11, 21, 33]
+    assert bg.run_graph(graph, [1, None, 3], [10, 20, 30]) == [11, 21, 33]
 
 
 def test_node_optional_time_series_input_receives_none_when_invalid():
@@ -50,7 +50,7 @@ def test_node_optional_time_series_input_receives_none_when_invalid():
     def graph(trigger: bg.TS[int], value: bg.TS[int]) -> bg.TS[int]:
         return add(trigger, value)
 
-    assert bg.test_graph(graph, [1, 2], [None, 4]) == [-1, 6]
+    assert bg.run_graph(graph, [1, 2], [None, 4]) == [-1, 6]
 
 
 def test_node_optional_scalar_input_receives_none():
@@ -62,7 +62,7 @@ def test_node_optional_scalar_input_receives_none():
     def graph() -> bg.TS[int]:
         return add(None, 4)
 
-    assert bg.test_graph(graph) == [4]
+    assert bg.run_graph(graph) == [4]
 
 
 def test_node_does_not_run_at_start_for_an_invalid_optional_time_series_input():
@@ -74,7 +74,7 @@ def test_node_does_not_run_at_start_for_an_invalid_optional_time_series_input():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return echo(value)
 
-    assert bg.test_graph(graph, [None, 5]) == [None, 5]
+    assert bg.run_graph(graph, [None, 5]) == [None, 5]
 
 
 def test_node_sink_receives_time_series_values():
@@ -93,7 +93,7 @@ def test_node_sink_receives_time_series_values():
         observe(value)
         return source()
 
-    assert bg.test_graph(graph, [2, 3]) == [0, None]
+    assert bg.run_graph(graph, [2, 3]) == [0, None]
     assert seen == [2, 3]
 
 
@@ -113,7 +113,7 @@ def test_node_scalar_only_sink_runs_once_at_graph_start():
         observe(7)
         return source()
 
-    assert bg.test_graph(graph) == [1]
+    assert bg.run_graph(graph) == [1]
     assert seen == [7]
 
 

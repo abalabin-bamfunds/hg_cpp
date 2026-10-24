@@ -12,7 +12,7 @@ def test_tuple_scalar_annotation_accepts_builtin_and_typing_forms():
     def identity(value: bg.TS[Tuple[int, ...]]) -> bg.TS[tuple[int, ...]]:
         return value
 
-    assert bg.test_graph(identity, [(1, 2), (3,)]) == [(1, 2), (3,)]
+    assert bg.run_graph(identity, [(1, 2), (3,)]) == [(1, 2), (3,)]
 
 
 def test_fixed_tuple_scalar_annotations_convert_each_position():
@@ -20,7 +20,7 @@ def test_fixed_tuple_scalar_annotations_convert_each_position():
     def identity(value: bg.TS[tuple[str, int, bg.Symbol]]) -> bg.TS[Tuple[str, int, bg.Symbol]]:
         return value
 
-    assert bg.test_graph(identity, [["answer", 42, bg.Symbol("ok")]]) == [("answer", 42, bg.Symbol("ok"))]
+    assert bg.run_graph(identity, [["answer", 42, bg.Symbol("ok")]]) == [("answer", 42, bg.Symbol("ok"))]
 
 
 def test_fixed_tuple_scalar_supports_single_and_empty_tuples():
@@ -32,8 +32,8 @@ def test_fixed_tuple_scalar_supports_single_and_empty_tuples():
     def empty(value: bg.TS[tuple[()]]) -> bg.TS[Tuple[()]]:
         return value
 
-    assert bg.test_graph(single, [[7]]) == [(7,)]
-    assert bg.test_graph(empty, [[]]) == [()]
+    assert bg.run_graph(single, [[7]]) == [(7,)]
+    assert bg.run_graph(empty, [[]]) == [()]
 
 
 def test_fixed_tuple_scalar_converts_typing_tuple_annotations():
@@ -41,7 +41,7 @@ def test_fixed_tuple_scalar_converts_typing_tuple_annotations():
     def identity(value: bg.TS[Tuple[str, int]]) -> bg.TS[tuple[str, int]]:
         return value
 
-    assert bg.test_graph(identity, [("life", 42)]) == [("life", 42)]
+    assert bg.run_graph(identity, [("life", 42)]) == [("life", 42)]
 
 
 def test_tuple_scalar_conversion_accepts_lists_and_returns_immutable_tuples():
@@ -61,10 +61,10 @@ def test_tuple_scalar_conversion_accepts_lists_and_returns_immutable_tuples():
     def graph() -> bg.TS[int]:
         return inspect(source())
 
-    assert bg.test_graph(graph) == [6]
+    assert bg.run_graph(graph) == [6]
 
 
-def test_tuple_scalar_output_materializes_as_tuple_in_test_graph():
+def test_tuple_scalar_output_materializes_as_tuple_in_run_graph():
     @bg.source_node
     def source() -> bg.TS[tuple[int, ...]]:
         return (4, 5)
@@ -73,7 +73,7 @@ def test_tuple_scalar_output_materializes_as_tuple_in_test_graph():
     def graph() -> bg.TS[tuple[int, ...]]:
         return source()
 
-    result = bg.test_graph(graph)
+    result = bg.run_graph(graph)
     assert result == [(4, 5)]
     assert type(result[0]) is tuple
 
@@ -91,7 +91,7 @@ def test_tuple_scalar_conversion_copies_a_python_list_during_wiring():
         values[0] = 99
         return result
 
-    assert bg.test_graph(graph) == [2]
+    assert bg.run_graph(graph) == [2]
 
 
 def test_fixed_tuple_scalar_conversion_copies_a_python_list_during_wiring():
@@ -108,7 +108,7 @@ def test_fixed_tuple_scalar_conversion_copies_a_python_list_during_wiring():
         values[1] = "after"
         return result
 
-    assert bg.test_graph(graph) == [2]
+    assert bg.run_graph(graph) == [2]
 
 
 def test_tuple_scalar_conversion_recurses_through_dictionary_values():
@@ -126,7 +126,7 @@ def test_tuple_scalar_conversion_recurses_through_dictionary_values():
     def graph() -> bg.TS[int]:
         return inspect(source())
 
-    assert bg.test_graph(graph) == [6]
+    assert bg.run_graph(graph) == [6]
 
 
 def test_tuple_scalar_conversion_recurses_through_nested_tuples():
@@ -138,7 +138,7 @@ def test_tuple_scalar_conversion_recurses_through_nested_tuples():
     def graph() -> bg.TS[tuple[tuple[int, ...], ...]]:
         return source()
 
-    assert bg.test_graph(graph) == [((1, 2), (3,))]
+    assert bg.run_graph(graph) == [((1, 2), (3,))]
 
 
 def test_fixed_tuple_scalar_conversion_recurses_through_nested_fixed_tuples():
@@ -150,7 +150,7 @@ def test_fixed_tuple_scalar_conversion_recurses_through_nested_fixed_tuples():
     def graph() -> bg.TS[tuple[tuple[int, str], tuple[bool]]]:
         return source()
 
-    assert bg.test_graph(graph) == [((1, "one"), (True,))]
+    assert bg.run_graph(graph) == [((1, "one"), (True,))]
 
 
 def test_nested_tuple_collection_input_outlives_temporary_conversion_storage():
@@ -162,7 +162,7 @@ def test_nested_tuple_collection_input_outlives_temporary_conversion_storage():
     def graph() -> bg.TS[int]:
         return total(([1, 2], {"items": [3, 4]}))
 
-    assert bg.test_graph(graph) == [10]
+    assert bg.run_graph(graph) == [10]
 
 
 def test_generic_compute_node_resolves_fixed_and_homogeneous_nested_tuples():
@@ -180,7 +180,7 @@ def test_generic_compute_node_resolves_fixed_and_homogeneous_nested_tuples():
     ]:
         return identity(value)
 
-    assert bg.test_graph(graph, [([1, 2], [3, "three"])]) == [((1, 2), (3, "three"))]
+    assert bg.run_graph(graph, [([1, 2], [3, "three"])]) == [((1, 2), (3, "three"))]
 
 
 def test_fixed_tuple_scalar_conversion_recurses_through_dictionary_keys_and_values():
@@ -190,7 +190,7 @@ def test_fixed_tuple_scalar_conversion_recurses_through_dictionary_keys_and_valu
     ]:
         return value
 
-    assert bg.test_graph(identity, [{(1, "one"): [True, 2]}]) == [{(1, "one"): (True, 2)}]
+    assert bg.run_graph(identity, [{(1, "one"): [True, 2]}]) == [{(1, "one"): (True, 2)}]
 
 
 def test_tuple_scalar_items_use_registered_extension_conversions():
@@ -208,7 +208,7 @@ def source() -> bg.TS[tuple[float, ...]]:
 def graph() -> bg.TS[tuple[float, ...]]:
     return source()
 
-assert bg.test_graph(graph) == [("extension scalar conversion", "extension scalar conversion")]
+assert bg.run_graph(graph) == [("extension scalar conversion", "extension scalar conversion")]
 """
     subprocess.run([sys.executable, "-c", script], check=True, capture_output=True, text=True)
 
@@ -228,7 +228,7 @@ def source() -> bg.TS[tuple[float, str]]:
 def graph() -> bg.TS[tuple[float, str]]:
     return source()
 
-assert bg.test_graph(graph) == [("extension scalar conversion", "value")]
+assert bg.run_graph(graph) == [("extension scalar conversion", "value")]
 """
     subprocess.run([sys.executable, "-c", script], check=True, capture_output=True, text=True)
 
@@ -238,7 +238,7 @@ def test_tuple_scalar_values_work_in_tsd_inputs_and_outputs():
     def identity(values: bg.TSD[int, bg.TS[tuple[int, ...]]]) -> bg.TSD[int, bg.TS[tuple[int, ...]]]:
         return values
 
-    assert bg.test_graph(identity, [{1: [2, 3]}, {1: (4,), 2: [5, 6]}, None]) == [
+    assert bg.run_graph(identity, [{1: [2, 3]}, {1: (4,), 2: [5, 6]}, None]) == [
         {1: (2, 3)}, {1: (4,), 2: (5, 6)}, None
     ]
 
@@ -252,7 +252,7 @@ def test_tuple_scalar_values_work_in_tsb_inputs_and_outputs():
     def identity(pair: bg.TSB[Pair]) -> bg.TSB[Pair]:
         return pair
 
-    assert bg.test_graph(identity, [{"values": [2, 3]}, {"values": (4,)}, None]) == [
+    assert bg.run_graph(identity, [{"values": [2, 3]}, {"values": (4,)}, None]) == [
         {"values": (2, 3)}, {"values": (4,)}, None
     ]
 
@@ -268,7 +268,7 @@ def test_tuple_scalar_annotation_resolves_typevars():
     def graph(value: bg.TS[tuple[int, ...]]) -> bg.TS[tuple[int, ...]]:
         return identity(value)
 
-    assert bg.test_graph(graph, [(8, 13)]) == [(8, 13)]
+    assert bg.run_graph(graph, [(8, 13)]) == [(8, 13)]
 
 
 def test_fixed_tuple_scalar_annotation_resolves_typevars():
@@ -282,7 +282,7 @@ def test_fixed_tuple_scalar_annotation_resolves_typevars():
     def graph(value: bg.TS[tuple[int, str]]) -> bg.TS[tuple[int, str]]:
         return identity(value)
 
-    assert bg.test_graph(graph, [(8, "eight")]) == [(8, "eight")]
+    assert bg.run_graph(graph, [(8, "eight")]) == [(8, "eight")]
 
 
 def test_generic_python_node_resolves_tuple_item_type():
@@ -296,7 +296,7 @@ def test_generic_python_node_resolves_tuple_item_type():
     def graph(value: bg.TS[tuple[int, ...]]) -> bg.TS[tuple[int, ...]]:
         return identity(value)
 
-    assert bg.test_graph(graph, [(3, 5, 8)]) == [(3, 5, 8)]
+    assert bg.run_graph(graph, [(3, 5, 8)]) == [(3, 5, 8)]
 
 
 @pytest.mark.parametrize("annotation", [tuple, Tuple])
@@ -351,7 +351,7 @@ def test_tuple_scalar_conversion_rejects_invalid_item_values():
         return source()
 
     with pytest.raises(TypeError):
-        bg.test_graph(graph)
+        bg.run_graph(graph)
 
 
 @pytest.mark.parametrize("value", [(1,), (1, 2, 3)])
@@ -365,7 +365,7 @@ def test_fixed_tuple_scalar_conversion_requires_exact_arity(value):
         return source()
 
     with pytest.raises(TypeError, match="expected a fixed tuple scalar with 2 items"):
-        bg.test_graph(graph)
+        bg.run_graph(graph)
 
 
 def test_fixed_tuple_scalar_conversion_checks_items_after_reentrant_list_mutation():
@@ -387,7 +387,7 @@ def test_fixed_tuple_scalar_conversion_checks_items_after_reentrant_list_mutatio
         return consume(values)
 
     with pytest.raises(IndexError, match="list index out of range"):
-        bg.test_graph(graph)
+        bg.run_graph(graph)
 
 
 def test_tuple_scalar_conversion_releases_items_when_a_later_item_fails():
@@ -412,7 +412,7 @@ def test_tuple_scalar_conversion_releases_items_when_a_later_item_fails():
 
     reference_count = sys.getrefcount(first)
     with pytest.raises(TypeError, match="not an instance"):
-        bg.test_graph(graph)
+        bg.run_graph(graph)
     assert sys.getrefcount(first) == reference_count
 
 
@@ -438,7 +438,7 @@ def test_fixed_tuple_scalar_conversion_releases_items_when_a_later_item_fails():
 
     reference_count = sys.getrefcount(first)
     with pytest.raises(TypeError, match="not an instance"):
-        bg.test_graph(graph)
+        bg.run_graph(graph)
     assert sys.getrefcount(first) == reference_count
 
 
@@ -451,4 +451,4 @@ def test_empty_tuple_scalar_round_trips():
     def graph() -> bg.TS[tuple[int, ...]]:
         return source()
 
-    assert bg.test_graph(graph) == [()]
+    assert bg.run_graph(graph) == [()]

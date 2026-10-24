@@ -24,7 +24,7 @@ def test_compute_node_injects_clock_between_inputs():
         return add(left, right)
 
     assert list(inspect.signature(add).parameters) == ["left", "right"]
-    assert bg.test_graph(graph, [1, 2], [10, 20]) == [11, 22]
+    assert bg.run_graph(graph, [1, 2], [10, 20]) == [11, 22]
     assert calls == 2
 
 
@@ -43,7 +43,7 @@ def test_node_injects_clock_without_exposing_it_as_a_wiring_argument():
         return increment(41)
 
     assert list(inspect.signature(increment).parameters) == ["value"]
-    assert bg.test_graph(graph) == [42]
+    assert bg.run_graph(graph) == [42]
     assert calls == 1
 
 
@@ -59,7 +59,7 @@ def test_source_node_clock_is_callback_scoped():
     def graph() -> bg.TS[int]:
         return source()
 
-    assert bg.test_graph(graph) == [1]
+    assert bg.run_graph(graph) == [1]
     assert len(clocks) == 1
     with pytest.raises(RuntimeError, match="outside its callback"):
         _ = clocks[0].evaluation_time
@@ -82,7 +82,7 @@ def test_keyword_only_clock_preserves_callback_parameter_order():
         return add(left, right=right)
 
     assert list(inspect.signature(add).parameters) == ["left", "right"]
-    assert bg.test_graph(graph, [2], [3]) == [5]
+    assert bg.run_graph(graph, [2], [3]) == [5]
     assert calls == 1
 
 
@@ -103,7 +103,7 @@ def test_keyword_only_clock_and_variadic_inputs_keep_callback_parameter_order():
         return total(left, right)
 
     assert list(inspect.signature(total).parameters) == ["values"]
-    assert bg.test_graph(graph, [1, 2], [10, 20]) == [11, 22]
+    assert bg.run_graph(graph, [1, 2], [10, 20]) == [11, 22]
     assert calls == 2
 
 
@@ -221,8 +221,8 @@ def test_state_is_reused_per_node_and_isolated_between_nodes_and_runs():
         return count(left) + count(right)
 
     assert list(inspect.signature(count).parameters) == ["value"]
-    assert bg.test_graph(graph, [1, 2], [10, 20]) == [2, 4]
-    assert bg.test_graph(graph, [3, 4], [30, 40]) == [2, 4]
+    assert bg.run_graph(graph, [1, 2], [10, 20]) == [2, 4]
+    assert bg.run_graph(graph, [3, 4], [30, 40]) == [2, 4]
 
 
 def test_state_node_instances_with_identical_wiring_are_not_deduplicated():
@@ -240,7 +240,7 @@ def test_state_node_instances_with_identical_wiring_are_not_deduplicated():
     def graph() -> bg.TS[int]:
         return identify(1) + identify(1)
 
-    assert bg.test_graph(graph) == [3]
+    assert bg.run_graph(graph) == [3]
 
 
 def test_state_factory_supports_non_weak_referenceable_callables():
@@ -261,7 +261,7 @@ def test_state_factory_supports_non_weak_referenceable_callables():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return accumulate(value)
 
-    assert bg.test_graph(graph, [1, 2]) == [1, 2]
+    assert bg.run_graph(graph, [1, 2]) == [1, 2]
 
 
 def test_state_is_isolated_between_nested_map_branches():
@@ -283,7 +283,7 @@ def test_state_is_isolated_between_nested_map_branches():
         mapped = bg.map(branch, make_values(trigger))
         return mapped[1] + mapped[2]
 
-    assert bg.test_graph(graph, [1, 2]) == [2, 4]
+    assert bg.run_graph(graph, [1, 2]) == [2, 4]
 
 
 def test_state_factory_exception_leaves_state_uninitialized():
@@ -303,7 +303,7 @@ def test_state_factory_exception_leaves_state_uninitialized():
         return copy(value)
 
     with pytest.raises(ValueError, match="state construction failed"):
-        bg.test_graph(graph, [1])
+        bg.run_graph(graph, [1])
     assert len(calls) == 1
 
 
@@ -322,7 +322,7 @@ def test_state_is_released_when_runtime_graph_is_destroyed():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return copy(value)
 
-    assert bg.test_graph(graph, [1]) == [1]
+    assert bg.run_graph(graph, [1]) == [1]
     assert released == [True]
 
 

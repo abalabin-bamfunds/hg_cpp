@@ -34,12 +34,12 @@ def test_add_operator_accepts_double_scalars_and_time_series():
     def promoted_add(lhs: float, rhs: float) -> float:
         return bg.operators.add(lhs, rhs)
 
-    assert bg.test_graph(scalar_add) == [3.75]
-    assert bg.test_graph(mixed_add, [1.0, 2.0]) == [3.5, 4.5]
-    assert bg.test_graph(reversed_mixed_add, [1.0, 2.0]) == [3.5, 4.5]
-    assert bg.test_graph(series_add, [1.0, 2.0], [10.0, 20.0]) == [11.0, 22.0]
-    assert bg.test_graph(keyword_add, [1.0], [10.0]) == [11.0]
-    assert bg.test_graph(promoted_add, [1.0, 2.0], [10.0, 20.0]) == [11.0, 22.0]
+    assert bg.run_graph(scalar_add) == [3.75]
+    assert bg.run_graph(mixed_add, [1.0, 2.0]) == [3.5, 4.5]
+    assert bg.run_graph(reversed_mixed_add, [1.0, 2.0]) == [3.5, 4.5]
+    assert bg.run_graph(series_add, [1.0, 2.0], [10.0, 20.0]) == [11.0, 22.0]
+    assert bg.run_graph(keyword_add, [1.0], [10.0]) == [11.0]
+    assert bg.run_graph(promoted_add, [1.0, 2.0], [10.0, 20.0]) == [11.0, 22.0]
 
 
 def test_add_operator_accepts_i64_scalars_and_time_series():
@@ -55,9 +55,9 @@ def test_add_operator_accepts_i64_scalars_and_time_series():
     def scalar_plus_series(value: bg.TS[int]) -> bg.TS[int]:
         return bg.operators.add(3, value)
 
-    assert bg.test_graph(scalar_add) == [5]
-    assert bg.test_graph(series_plus_scalar, [1, -2]) == [4, 1]
-    assert bg.test_graph(scalar_plus_series, [1, -2]) == [4, 1]
+    assert bg.run_graph(scalar_add) == [5]
+    assert bg.run_graph(series_plus_scalar, [1, -2]) == [4, 1]
+    assert bg.run_graph(scalar_plus_series, [1, -2]) == [4, 1]
 
 
 def test_i64_arithmetic_wraps_at_signed_boundaries():
@@ -84,11 +84,11 @@ def test_i64_arithmetic_wraps_at_signed_boundaries():
     def absolute(value: bg.TS[int]) -> bg.TS[int]:
         return abs(value)
 
-    assert bg.test_graph(add, [maximum, minimum], [1, -1]) == [minimum, maximum]
-    assert bg.test_graph(subtract, [minimum, maximum], [1, -1]) == [maximum, minimum]
-    assert bg.test_graph(multiply, [maximum, minimum], [2, -1]) == [-2, minimum]
-    assert bg.test_graph(negate, [minimum, maximum]) == [minimum, -maximum]
-    assert bg.test_graph(absolute, [minimum, -maximum]) == [minimum, maximum]
+    assert bg.run_graph(add, [maximum, minimum], [1, -1]) == [minimum, maximum]
+    assert bg.run_graph(subtract, [minimum, maximum], [1, -1]) == [maximum, minimum]
+    assert bg.run_graph(multiply, [maximum, minimum], [2, -1]) == [-2, minimum]
+    assert bg.run_graph(negate, [minimum, maximum]) == [minimum, -maximum]
+    assert bg.run_graph(absolute, [minimum, -maximum]) == [minimum, maximum]
 
 
 def test_running_numeric_operators_and_named_reset_input():
@@ -124,16 +124,16 @@ def test_running_numeric_operators_and_named_reset_input():
     def reset_means(value: bg.TS[int], reset: bg.TS[bool]) -> bg.TS[float]:
         return bg.operators.means(value, reset=reset)
 
-    assert bg.test_graph(sums, [1, 1, 2]) == [1, 2, 4]
-    assert bg.test_graph(mins, [4.0, 4.0, 6.0, 3.0]) == [4.0, None, None, 3.0]
-    assert bg.test_graph(maxs, [4.0, 4.0, 6.0, 3.0]) == [4.0, None, 6.0, None]
-    assert bg.test_graph(means, [1, 2, 3]) == [1.0, 1.5, 2.0]
+    assert bg.run_graph(sums, [1, 1, 2]) == [1, 2, 4]
+    assert bg.run_graph(mins, [4.0, 4.0, 6.0, 3.0]) == [4.0, None, None, 3.0]
+    assert bg.run_graph(maxs, [4.0, 4.0, 6.0, 3.0]) == [4.0, None, 6.0, None]
+    assert bg.run_graph(means, [1, 2, 3]) == [1.0, 1.5, 2.0]
     values = [5, 4, 6, 8, 3, 9, None, 7]
     resets = [None, False, True, None, False, True, True, None]
-    assert bg.test_graph(reset_sums, values, resets) == [5, 4, 6, 14, 3, 9, None, 7]
-    assert bg.test_graph(reset_mins, values, resets) == [5, 4, 6, None, 3, 9, None, 7]
-    assert bg.test_graph(reset_maxs, values, resets) == [5, 4, 6, 8, 3, 9, None, 7]
-    assert bg.test_graph(reset_means, values, resets) == [5.0, 4.0, 6.0, 7.0, 3.0, 9.0, None, 7.0]
+    assert bg.run_graph(reset_sums, values, resets) == [5, 4, 6, 14, 3, 9, None, 7]
+    assert bg.run_graph(reset_mins, values, resets) == [5, 4, 6, None, 3, 9, None, 7]
+    assert bg.run_graph(reset_maxs, values, resets) == [5, 4, 6, 8, 3, 9, None, 7]
+    assert bg.run_graph(reset_means, values, resets) == [5.0, 4.0, 6.0, 7.0, 3.0, 9.0, None, 7.0]
 
 
 def test_running_numeric_operators_handle_input_invalidation_with_named_reset():
@@ -155,10 +155,10 @@ def test_running_numeric_operators_handle_input_invalidation_with_named_reset():
 
     values = [5, 4, bg.INVALID, 3, 2]
     resets = [None, None, None, None, None]
-    assert bg.test_graph(sums, values, resets) == [5, 9, None, 3, 5]
-    assert bg.test_graph(mins, values, resets) == [5, 4, None, 3, 2]
-    assert bg.test_graph(maxs, values, resets) == [5, None, None, 3, None]
-    assert bg.test_graph(means, values, resets) == [5.0, 4.5, None, 3.0, 2.5]
+    assert bg.run_graph(sums, values, resets) == [5, 9, None, 3, 5]
+    assert bg.run_graph(mins, values, resets) == [5, 4, None, 3, 2]
+    assert bg.run_graph(maxs, values, resets) == [5, None, None, 3, None]
+    assert bg.run_graph(means, values, resets) == [5.0, 4.5, None, 3.0, 2.5]
 
 
 def test_running_numeric_operators_preserve_history_on_reset_invalidation():
@@ -180,10 +180,10 @@ def test_running_numeric_operators_preserve_history_on_reset_invalidation():
 
     values = [5, 4, None, 3]
     resets = [None, "reset", bg.INVALID, None]
-    assert bg.test_graph(sums, values, resets) == [5, 4, None, 7]
-    assert bg.test_graph(mins, values, resets) == [5, 4, None, 3]
-    assert bg.test_graph(maxs, values, resets) == [5, 4, None, None]
-    assert bg.test_graph(means, values, resets) == [5.0, 4.0, None, 3.5]
+    assert bg.run_graph(sums, values, resets) == [5, 4, None, 7]
+    assert bg.run_graph(mins, values, resets) == [5, 4, None, 3]
+    assert bg.run_graph(maxs, values, resets) == [5, 4, None, None]
+    assert bg.run_graph(means, values, resets) == [5.0, 4.0, None, 3.5]
 
 
 def test_running_extrema_keep_initial_nan_until_input_invalidation():
@@ -204,14 +204,14 @@ def test_running_extrema_keep_initial_nan_until_input_invalidation():
         return bg.operators.valid(bg.operators.maxs(value))
 
     values = [math.nan, 1.0, math.nan, 0.0, bg.INVALID, None, 3.0]
-    minimum = bg.test_graph(mins, values)
-    maximum = bg.test_graph(maxs, values)
+    minimum = bg.run_graph(mins, values)
+    maximum = bg.run_graph(maxs, values)
     assert math.isnan(minimum[0])
     assert math.isnan(maximum[0])
     assert minimum[1:] == [None, None, None, None, None, 3.0]
     assert maximum[1:] == [None, None, None, None, None, 3.0]
-    assert bg.test_graph(mins_valid, values) == [True, None, None, None, False, None, True]
-    assert bg.test_graph(maxs_valid, values) == [True, None, None, None, False, None, True]
+    assert bg.run_graph(mins_valid, values) == [True, None, None, None, False, None, True]
+    assert bg.run_graph(maxs_valid, values) == [True, None, None, None, False, None, True]
 
 
 def test_running_extrema_ignore_later_nan_without_invalidating_output():
@@ -232,10 +232,10 @@ def test_running_extrema_ignore_later_nan_without_invalidating_output():
         return bg.operators.valid(bg.operators.maxs(value))
 
     values = [2.0, math.nan, 3.0, 1.0]
-    assert bg.test_graph(mins, values) == [2.0, None, None, 1.0]
-    assert bg.test_graph(maxs, values) == [2.0, None, 3.0, None]
-    assert bg.test_graph(mins_valid, values) == [True, None, None, None]
-    assert bg.test_graph(maxs_valid, values) == [True, None, None, None]
+    assert bg.run_graph(mins, values) == [2.0, None, None, 1.0]
+    assert bg.run_graph(maxs, values) == [2.0, None, 3.0, None]
+    assert bg.run_graph(mins_valid, values) == [True, None, None, None]
+    assert bg.run_graph(maxs_valid, values) == [True, None, None, None]
 
 
 def test_running_extrema_clear_nan_history_on_reset_only_and_simultaneous_ticks():
@@ -257,8 +257,8 @@ def test_running_extrema_clear_nan_history_on_reset_only_and_simultaneous_ticks(
 
     values = [math.nan, 1.0, None, 4.0, math.nan, 5.0, 2.0, 3.0]
     resets = [None, None, True, None, False, None, True, None]
-    minimum = bg.test_graph(mins, values, resets)
-    maximum = bg.test_graph(maxs, values, resets)
+    minimum = bg.run_graph(mins, values, resets)
+    maximum = bg.run_graph(maxs, values, resets)
     assert math.isnan(minimum[0])
     assert math.isnan(maximum[0])
     assert minimum[1:4] == [None, None, 4.0]
@@ -268,8 +268,8 @@ def test_running_extrema_clear_nan_history_on_reset_only_and_simultaneous_ticks(
     assert minimum[5:] == [None, 2.0, None]
     assert maximum[5:] == [None, 2.0, 3.0]
     expected_validity = [True, None, False, True, None, None, None, None]
-    assert bg.test_graph(mins_valid, values, resets) == expected_validity
-    assert bg.test_graph(maxs_valid, values, resets) == expected_validity
+    assert bg.run_graph(mins_valid, values, resets) == expected_validity
+    assert bg.run_graph(maxs_valid, values, resets) == expected_validity
 
 
 @pytest.mark.parametrize("operator_name", ["sums", "mins", "maxs", "means"])
@@ -282,7 +282,7 @@ def test_running_numeric_operators_reject_non_numeric_time_series(operator_name,
         return operator(value)
 
     with pytest.raises(ValueError, match=f"Cannot resolve operator {operator_name}"):
-        bg.test_graph(unsupported, [True if value_type is bool else "value"])
+        bg.run_graph(unsupported, [True if value_type is bool else "value"])
 
 
 def test_python_operator_syntax_and_named_boolean_operators():
@@ -294,8 +294,8 @@ def test_python_operator_syntax_and_named_boolean_operators():
     def comparison(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[bool]:
         return bg.operators.and_(lhs < rhs, bg.operators.not_(rhs < 0))
 
-    assert bg.test_graph(arithmetic, [5.0, 2.0], [2.0, 3.0]) == [6.0, 3.0]
-    assert bg.test_graph(comparison, [1, 4, 3], [2, 3, -1]) == [True, False, False]
+    assert bg.run_graph(arithmetic, [5.0, 2.0], [2.0, 3.0]) == [6.0, 3.0]
+    assert bg.run_graph(comparison, [1, 4, 3], [2, 3, -1]) == [True, False, False]
 
 
 def test_collection_query_operators_accept_public_keyword_names():
@@ -332,13 +332,13 @@ def test_collection_query_operators_accept_public_keyword_names():
     def dictionary_contains_scalar(collection: bg.TS[dict[int, int]]) -> bg.TS[bool]:
         return bg.operators.contains_(collection=collection, key=2)
 
-    assert bg.test_graph(fixed_list_length, [{0: 10, 1: 20}]) == [2]
-    assert bg.test_graph(fixed_bundle_length, [{"left": 10, "right": 20.0}]) == [2]
-    assert bg.test_graph(set_length, [set(), {1, 2}, bg.SetDelta(added={3}, removed={1})]) == [0, 2, 2]
-    assert bg.test_graph(set_contains, [{1}, {2, bg.Removed(1)}, {3, bg.Removed(2)}], [1, 1, 3]) == [True, False, True]
-    assert bg.test_graph(dictionary_length, [{1: 10, 2: 20}, {}]) == [2, 0]
-    assert bg.test_graph(dictionary_contains, [{1: 10, 2: 20}, {}, {3: 30}], [2, 1, 3]) == [True, False, True]
-    assert bg.test_graph(dictionary_contains_scalar, [{1: 10, 2: 20}, {}, {3: 30}]) == [True, False, False]
+    assert bg.run_graph(fixed_list_length, [{0: 10, 1: 20}]) == [2]
+    assert bg.run_graph(fixed_bundle_length, [{"left": 10, "right": 20.0}]) == [2]
+    assert bg.run_graph(set_length, [set(), {1, 2}, bg.SetDelta(added={3}, removed={1})]) == [0, 2, 2]
+    assert bg.run_graph(set_contains, [{1}, {2, bg.Removed(1)}, {3, bg.Removed(2)}], [1, 1, 3]) == [True, False, True]
+    assert bg.run_graph(dictionary_length, [{1: 10, 2: 20}, {}]) == [2, 0]
+    assert bg.run_graph(dictionary_contains, [{1: 10, 2: 20}, {}, {3: 30}], [2, 1, 3]) == [True, False, True]
+    assert bg.run_graph(dictionary_contains_scalar, [{1: 10, 2: 20}, {}, {3: 30}]) == [True, False, False]
 
 
 def test_tsd_contains_operator_distinguishes_physical_and_valid_items_membership():
@@ -354,8 +354,8 @@ def test_tsd_contains_operator_distinguishes_physical_and_valid_items_membership
 
     dictionary_updates = [{2: 20}, {2: bg.INVALID}, {2: 21}]
     keys = [2, 2, 2]
-    assert bg.test_graph(physical_contains, dictionary_updates, keys) == [True, True, True]
-    assert bg.test_graph(valid_items_contains, dictionary_updates, keys) == [True, False, True]
+    assert bg.run_graph(physical_contains, dictionary_updates, keys) == [True, True, True]
+    assert bg.run_graph(valid_items_contains, dictionary_updates, keys) == [True, False, True]
 
     @bg.graph
     def physical_scalar_contains(collection: bg.TSD[int, bg.TS[int]]) -> bg.TS[bool]:
@@ -368,8 +368,8 @@ def test_tsd_contains_operator_distinguishes_physical_and_valid_items_membership
         return bg.operators.contains_(collection=collection, key=2)
 
     unrelated_key_updates = [{2: 20}, {3: 30}, {3: 31}]
-    assert bg.test_graph(physical_scalar_contains, unrelated_key_updates) == [True, None, None]
-    assert bg.test_graph(valid_items_scalar_contains, unrelated_key_updates) == [True, None, None]
+    assert bg.run_graph(physical_scalar_contains, unrelated_key_updates) == [True, None, None]
+    assert bg.run_graph(valid_items_scalar_contains, unrelated_key_updates) == [True, None, None]
 
 
 def test_tsd_contains_operator_follows_dynamic_keys_through_absent_key_churn():
@@ -386,8 +386,8 @@ def test_tsd_contains_operator_follows_dynamic_keys_through_absent_key_churn():
     collection = [{2: 20, 3: 30}]
     keys = [2, 4, 5, 3, 4]
     expected = [True, False, False, True, False]
-    assert bg.test_graph(physical_contains, collection, keys) == expected
-    assert bg.test_graph(valid_items_contains, collection, keys) == expected
+    assert bg.run_graph(physical_contains, collection, keys) == expected
+    assert bg.run_graph(valid_items_contains, collection, keys) == expected
 
 
 def test_tss_equality_and_is_empty():
@@ -399,9 +399,9 @@ def test_tss_equality_and_is_empty():
     def empty(values: bg.TSS[int]) -> bg.TS[bool]:
         return bg.operators.is_empty(value=values)
 
-    assert bg.test_graph(equal, [{1}, {2, bg.Removed(1)}, {4}],
+    assert bg.run_graph(equal, [{1}, {2, bg.Removed(1)}, {4}],
                          [{1}, {3, bg.Removed(1)}, {5}]) == [True, False, False]
-    assert bg.test_graph(empty, [set(), {1}, bg.SetDelta(removed={1})]) == [True, False, True]
+    assert bg.run_graph(empty, [set(), {1}, bg.SetDelta(removed={1})]) == [True, False, True]
 
 
 def test_optional_tss_operators_treat_invalid_sets_as_empty():
@@ -418,8 +418,8 @@ def test_optional_tss_operators_treat_invalid_sets_as_empty():
     condition = [False, True, True, False]
     values = [None, set(), {1}, None]
     invalid = [None, None, None, None]
-    assert bg.test_graph(equal, condition, values, invalid, [set(), None, None, None]) == [True, True, False, True]
-    assert bg.test_graph(empty, condition, values, invalid) == [True, True, False, True]
+    assert bg.run_graph(equal, condition, values, invalid, [set(), None, None, None]) == [True, True, False, True]
+    assert bg.run_graph(empty, condition, values, invalid) == [True, True, False, True]
 
 
 def test_tss_set_operators_and_bitwise_syntax():
@@ -452,10 +452,10 @@ def test_tss_set_operators_and_bitwise_syntax():
         None,
     ]
 
-    assert bg.test_graph(union, lhs, rhs) == [6, None, None, None]
-    assert bg.test_graph(intersection, lhs, rhs) == [2, 3, 2, 0]
-    assert bg.test_graph(difference, lhs, rhs) == [1, 2, 3, None]
-    assert bg.test_graph(symmetric_difference, lhs, rhs) == [4, 3, 4, 6]
+    assert bg.run_graph(union, lhs, rhs) == [6, None, None, None]
+    assert bg.run_graph(intersection, lhs, rhs) == [2, 3, 2, 0]
+    assert bg.run_graph(difference, lhs, rhs) == [1, 2, 3, None]
+    assert bg.run_graph(symmetric_difference, lhs, rhs) == [4, 3, 4, 6]
 
     @bg.graph
     def recover_union(condition: bg.TS[bool], values: bg.TSS[int], invalid: bg.TSS[int],
@@ -463,7 +463,7 @@ def test_tss_set_operators_and_bitwise_syntax():
         selected = bg.operators.if_then_else(condition, values, invalid)
         return bg.operators.sum_(bg.opt(selected) | other)
 
-    assert bg.test_graph(recover_union, [True, False, True], [{1}, None, None], [None, None, None],
+    assert bg.run_graph(recover_union, [True, False, True], [{1}, None, None], [None, None, None],
                          [{2}, None, None]) == [3, 2, 3]
 
 
@@ -477,9 +477,9 @@ def test_tss_union_reconciles_reference_retarget_against_the_previous_membership
         bg.SetDelta(added={1, 2}),
         bg.SetDelta(added={3}, removed={2}),
     ]
-    assert bg.test_graph(union, [True, False], [{1}, None], [{2}, bg.SetDelta(added={3}, removed={2})],
+    assert bg.run_graph(union, [True, False], [{1}, None], [{2}, bg.SetDelta(added={3}, removed={2})],
                          [{3}, None]) == expected
-    assert bg.test_graph(union, [True, False], [{1}, None], [{2}, None], [{3}, None]) == expected
+    assert bg.run_graph(union, [True, False], [{1}, None], [{2}, None], [{3}, None]) == expected
 
 
 def test_tss_equality_sees_same_cycle_removals_from_a_sampled_previous_target():
@@ -488,7 +488,7 @@ def test_tss_equality_sees_same_cycle_removals_from_a_sampled_previous_target():
                             new_target: bg.TSS[int]) -> bg.TS[bool]:
         return bg.operators.if_then_else(condition, old_target, new_target) == new_target
 
-    assert bg.test_graph(equal_to_new_target, [True, False],
+    assert bg.run_graph(equal_to_new_target, [True, False],
                          [{2}, bg.SetDelta(added={3}, removed={2})], [{3}, None]) == [False, True]
 
 
@@ -565,7 +565,7 @@ def test_sampled_tss_operators_match_seeded_membership_oracle(name, operation, s
             expected.append((value, previous_bool is None or value != previous_bool))
             previous_bool = value
 
-    actual = bg.test_graph(evaluate, selectors[0], selectors[1], source_inputs[0], source_inputs[1],
+    actual = bg.run_graph(evaluate, selectors[0], selectors[1], source_inputs[0], source_inputs[1],
                            [None] * cycle_count)
     assert len(actual) == cycle_count, name
     for expected_tick, actual_tick in zip(expected, actual):
@@ -603,10 +603,10 @@ def test_collection_reductions_accept_values_and_tss_removals():
         bg.SetDelta(added={3}, removed={1}),
         bg.SetDelta(removed={2, 3}),
     ]
-    assert bg.test_graph(sum_values, values) == [3, 5, 0]
-    assert bg.test_graph(min_values, values) == [1, 2, None]
-    assert bg.test_graph(max_values, values) == [2, 3, None]
-    assert bg.test_graph(mean_values, values) == [1.5, 2.5, None]
+    assert bg.run_graph(sum_values, values) == [3, 5, 0]
+    assert bg.run_graph(min_values, values) == [1, 2, None]
+    assert bg.run_graph(max_values, values) == [2, 3, None]
+    assert bg.run_graph(mean_values, values) == [1.5, 2.5, None]
 
 
 def test_optional_collection_sum_publishes_equal_values_for_deduplicated_collection():
@@ -614,7 +614,7 @@ def test_optional_collection_sum_publishes_equal_values_for_deduplicated_collect
     def total(values: bg.TSS[int, bg.deduplicated]) -> bg.TS[int]:
         return bg.operators.sum_(values=bg.opt(values))
 
-    assert bg.test_graph(total, [set(), {0}]) == [0, 0]
+    assert bg.run_graph(total, [set(), {0}]) == [0, 0]
 
 
 def test_collection_reductions_gate_invalid_tsd_items_and_optional_reductions_skip_them():
@@ -655,14 +655,14 @@ def test_collection_reductions_gate_invalid_tsd_items_and_optional_reductions_sk
         {1: bg.INVALID, 2: 30},
         {1: bg.REMOVE, 2: bg.INVALID},
     ]
-    assert bg.test_graph(sum_values, values) == [30, None, None]
-    assert bg.test_graph(optional_sum, values) == [30, 30, 0]
-    assert bg.test_graph(min_values, values) == [10, None, None]
-    assert bg.test_graph(optional_min, values) == [10, 30, None]
-    assert bg.test_graph(max_values, values) == [20, None, None]
-    assert bg.test_graph(optional_max, values) == [20, 30, None]
-    assert bg.test_graph(mean_values, values) == [15.0, None, None]
-    assert bg.test_graph(optional_mean, values) == [15.0, 30.0, None]
+    assert bg.run_graph(sum_values, values) == [30, None, None]
+    assert bg.run_graph(optional_sum, values) == [30, 30, 0]
+    assert bg.run_graph(min_values, values) == [10, None, None]
+    assert bg.run_graph(optional_min, values) == [10, 30, None]
+    assert bg.run_graph(max_values, values) == [20, None, None]
+    assert bg.run_graph(optional_max, values) == [20, 30, None]
+    assert bg.run_graph(mean_values, values) == [15.0, None, None]
+    assert bg.run_graph(optional_mean, values) == [15.0, 30.0, None]
 
 
 def test_numeric_operator_syntax_and_explicit_convert_target():
@@ -690,12 +690,12 @@ def test_numeric_operator_syntax_and_explicit_convert_target():
     def convert(value: bg.TS[int]) -> bg.TS[float]:
         return bg.operators.convert[bg.TS[float]](value)
 
-    assert bg.test_graph(divide, [-7], [3]) == [-7.0 / 3.0]
-    assert bg.test_graph(floor_divide, [-7, 7], [3, -3]) == [-3, -3]
-    assert bg.test_graph(modulo, [-7, 7], [3, -3]) == [2, -2]
-    assert bg.test_graph(power, [-2.0, 3.0]) == [4.0, 9.0]
-    assert bg.test_graph(round_value, [2.675, 1.125, 1.375]) == [2.68, 1.12, 1.38]
-    assert bg.test_graph(convert, [2, -3]) == [2.0, -3.0]
+    assert bg.run_graph(divide, [-7], [3]) == [-7.0 / 3.0]
+    assert bg.run_graph(floor_divide, [-7, 7], [3, -3]) == [-3, -3]
+    assert bg.run_graph(modulo, [-7, 7], [3, -3]) == [2, -2]
+    assert bg.run_graph(power, [-2.0, 3.0]) == [4.0, 9.0]
+    assert bg.run_graph(round_value, [2.675, 1.125, 1.375]) == [2.68, 1.12, 1.38]
+    assert bg.run_graph(convert, [2, -3]) == [2.0, -3.0]
 
 
 def test_integer_division_converts_operands_to_binary64_for_full_i64_domain():
@@ -734,11 +734,11 @@ def test_integer_division_converts_operands_to_binary64_for_full_i64_domain():
         lhs.append(-numerator if random_values.getrandbits(1) else numerator)
         rhs.append(-denominator if random_values.getrandbits(1) else denominator)
 
-    actual = bg.test_graph(divide, lhs, rhs)
+    actual = bg.run_graph(divide, lhs, rhs)
     expected = [float(numerator) / float(denominator) for numerator, denominator in zip(lhs, rhs)]
     assert [value.hex() for value in actual] == [value.hex() for value in expected]
 
-    negative_zero = bg.test_graph(divide, [0], [minimum])[0]
+    negative_zero = bg.run_graph(divide, [0], [minimum])[0]
     assert negative_zero == 0.0
     assert math.copysign(1.0, negative_zero) == -1.0
 
@@ -760,10 +760,10 @@ def test_reflected_numeric_operator_syntax():
     def power(value: bg.TS[int]) -> bg.TS[int]:
         return 2**value
 
-    assert bg.test_graph(divide, [2, -2]) == [3.5, -3.5]
-    assert bg.test_graph(floor_divide, [2, -2]) == [3, -4]
-    assert bg.test_graph(modulo, [3, -3]) == [1, -2]
-    assert bg.test_graph(power, [2, 3]) == [4, 8]
+    assert bg.run_graph(divide, [2, -2]) == [3.5, -3.5]
+    assert bg.run_graph(floor_divide, [2, -2]) == [3, -4]
+    assert bg.run_graph(modulo, [3, -3]) == [1, -2]
+    assert bg.run_graph(power, [2, 3]) == [4, 8]
 
 
 def test_mapped_python_operator_wrappers_are_reusable_and_isolated():
@@ -777,8 +777,8 @@ def test_mapped_python_operator_wrappers_are_reusable_and_isolated():
     def convert_second(value: bg.TS[int]) -> bg.TS[float]:
         return to_float(value)
 
-    assert bg.test_graph(convert_first, [1, 2]) == [1.0, 2.0]
-    assert bg.test_graph(convert_second, [3, 4]) == [3.0, 4.0]
+    assert bg.run_graph(convert_first, [1, 2]) == [1.0, 2.0]
+    assert bg.run_graph(convert_second, [3, 4]) == [3.0, 4.0]
     with pytest.raises(ValueError, match="does not match operator parameter"):
         to_float[bg.TS[int]]
 
@@ -786,7 +786,7 @@ def test_mapped_python_operator_wrappers_are_reusable_and_isolated():
     def explicit_constant() -> bg.TS[bool]:
         return bg.operators.eq[int](1, 1)
 
-    assert bg.test_graph(explicit_constant) == [True]
+    assert bg.run_graph(explicit_constant) == [True]
 
 
 def test_round_uses_numeric_scaling_ties_to_even_and_handles_extremes():
@@ -798,15 +798,15 @@ def test_round_uses_numeric_scaling_ties_to_even_and_handles_extremes():
     def round_whole(value: bg.TS[float]) -> bg.TS[float]:
         return round(value)
 
-    assert bg.test_graph(round_value, [2.675, 1.125, 1.375, -1.125, -1.375], [2, 2, 2, 2, 2]) == [
+    assert bg.run_graph(round_value, [2.675, 1.125, 1.375, -1.125, -1.375], [2, 2, 2, 2, 2]) == [
         2.68,
         1.12,
         1.38,
         -1.12,
         -1.38,
     ]
-    assert bg.test_graph(round_whole, [2.5, 3.5, -2.5, -3.5]) == [2.0, 4.0, -2.0, -4.0]
-    assert bg.test_graph(round_value, [25.0, 35.0, -25.0, -35.0, 250.0, 350.0], [-1, -1, -1, -1, -2, -2]) == [
+    assert bg.run_graph(round_whole, [2.5, 3.5, -2.5, -3.5]) == [2.0, 4.0, -2.0, -4.0]
+    assert bg.run_graph(round_value, [25.0, 35.0, -25.0, -35.0, 250.0, 350.0], [-1, -1, -1, -1, -2, -2]) == [
         20.0,
         40.0,
         -20.0,
@@ -815,26 +815,26 @@ def test_round_uses_numeric_scaling_ties_to_even_and_handles_extremes():
         400.0,
     ]
 
-    huge_digits = bg.test_graph(round_value, [1.25, -1.25], [sys.maxsize, -(1 << 63)])
+    huge_digits = bg.run_graph(round_value, [1.25, -1.25], [sys.maxsize, -(1 << 63)])
     assert huge_digits[0] == 1.25
     assert huge_digits[1] == 0.0 and math.copysign(1.0, huge_digits[1]) == -1.0
 
-    nonfinite = bg.test_graph(round_value, [math.inf, -math.inf, math.nan], [2, -1, 0])
+    nonfinite = bg.run_graph(round_value, [math.inf, -math.inf, math.nan], [2, -1, 0])
     assert math.isinf(nonfinite[0]) and nonfinite[0] > 0
     assert math.isinf(nonfinite[1]) and nonfinite[1] < 0
     assert math.isnan(nonfinite[2])
 
-    signed_zero = bg.test_graph(round_value, [-0.0, -0.1, 0.1], [2, 0, 0])
+    signed_zero = bg.run_graph(round_value, [-0.0, -0.1, 0.1], [2, 0, 0])
     assert math.copysign(1.0, signed_zero[0]) == -1.0
     assert math.copysign(1.0, signed_zero[1]) == -1.0
     assert math.copysign(1.0, signed_zero[2]) == 1.0
 
     subnormal = math.ulp(0.0)
-    assert bg.test_graph(round_value, [1.23e-310, subnormal, subnormal], [310, 323, 324]) == [1e-310, 0.0, subnormal]
-    assert bg.test_graph(round_value, [sys.float_info.max], [308]) == [sys.float_info.max]
+    assert bg.run_graph(round_value, [1.23e-310, subnormal, subnormal], [310, 323, 324]) == [1e-310, 0.0, subnormal]
+    assert bg.run_graph(round_value, [sys.float_info.max], [308]) == [sys.float_info.max]
 
     with pytest.raises(OverflowError, match="rounded result"):
-        bg.test_graph(round_value, [1.5e308], [-308])
+        bg.run_graph(round_value, [1.5e308], [-308])
 
 
 def test_convert_requires_a_compatible_explicit_full_time_series_type():
@@ -847,10 +847,10 @@ def test_convert_requires_a_compatible_explicit_full_time_series_type():
         return bg.operators.convert[bg.TS[str]](value)
 
     with pytest.raises(ValueError, match="Cannot resolve operator convert"):
-        bg.test_graph(missing_target, [1])
+        bg.run_graph(missing_target, [1])
 
     with pytest.raises(ValueError, match="Cannot resolve operator convert"):
-        bg.test_graph(wrong_target, [1])
+        bg.run_graph(wrong_target, [1])
 
 
 def test_symbol_equality_handles_scalar_mixed_and_time_series_inputs():
@@ -881,12 +881,12 @@ def test_symbol_equality_handles_scalar_mixed_and_time_series_inputs():
     values = [bg.Symbol(), bg.symbol(""), bg.symbol("bid")]
     same_or_different = [bg.symbol(""), bg.symbol(""), bg.symbol("ask")]
 
-    assert bg.test_graph(scalar_equal) == [False]
-    assert bg.test_graph(scalar_not_equal) == [True]
-    assert bg.test_graph(mixed_equal, values) == [False, True, False]
-    assert bg.test_graph(mixed_not_equal, values) == [True, False, True]
-    assert bg.test_graph(series_equal, values, same_or_different) == [False, True, False]
-    assert bg.test_graph(series_not_equal, values, same_or_different) == [True, False, True]
+    assert bg.run_graph(scalar_equal) == [False]
+    assert bg.run_graph(scalar_not_equal) == [True]
+    assert bg.run_graph(mixed_equal, values) == [False, True, False]
+    assert bg.run_graph(mixed_not_equal, values) == [True, False, True]
+    assert bg.run_graph(series_equal, values, same_or_different) == [False, True, False]
+    assert bg.run_graph(series_not_equal, values, same_or_different) == [True, False, True]
 
 
 @pytest.mark.parametrize(
@@ -906,7 +906,7 @@ def test_python_wiring_points_reject_truth_conversion(expression):
         return expression(value)
 
     with pytest.raises(TypeError, match="wiring point has no Python truth value"):
-        bg.test_graph(graph, [1])
+        bg.run_graph(graph, [1])
 
 
 def test_add_operator_concatenates_python_strings():
@@ -918,8 +918,8 @@ def test_add_operator_concatenates_python_strings():
     def series_add(value: bg.TS[str]) -> bg.TS[str]:
         return bg.operators.add(value, "\x00suffix")
 
-    assert bg.test_graph(scalar_add) == ["leftright"]
-    assert bg.test_graph(series_add, ["a\x00b", "café"]) == ["a\x00b\x00suffix", "café\x00suffix"]
+    assert bg.run_graph(scalar_add) == ["leftright"]
+    assert bg.run_graph(series_add, ["a\x00b", "café"]) == ["a\x00b\x00suffix", "café\x00suffix"]
 
 
 def test_add_accepts_a_native_const_wiring_point_and_propagates_its_guarantee():
@@ -930,7 +930,7 @@ def test_add_accepts_a_native_const_wiring_point_and_propagates_its_guarantee():
         assert result.type_name == "TS<double, const>"
         return result
 
-    assert bg.test_graph(graph) == [5.0]
+    assert bg.run_graph(graph) == [5.0]
 
 
 def test_wiring_point_addition_uses_the_native_operator():
@@ -953,8 +953,8 @@ def test_wiring_point_addition_uses_the_native_operator():
     def reflected(value: bg.TS[float]) -> bg.TS[float]:
         return 2.0 + value
 
-    assert bg.test_graph(graph, [1.0, 2.0], [10.0, 20.0]) == [13.0, 24.0]
-    assert bg.test_graph(reflected, [3.0, 4.0]) == [5.0, 6.0]
+    assert bg.run_graph(graph, [1.0, 2.0], [10.0, 20.0]) == [13.0, 24.0]
+    assert bg.run_graph(reflected, [3.0, 4.0]) == [5.0, 6.0]
 
 
 def test_add_operator_accepts_values_dereferenced_from_references():
@@ -966,7 +966,7 @@ def test_add_operator_accepts_values_dereferenced_from_references():
     def graph(lhs: bg.TS[float], rhs: bg.TS[float]) -> bg.TS[float]:
         return forward(lhs) + forward(rhs)
 
-    assert bg.test_graph(graph, [1.0, 2.0], [10.0, 20.0]) == [11.0, 22.0]
+    assert bg.run_graph(graph, [1.0, 2.0], [10.0, 20.0]) == [11.0, 22.0]
 
 
 def test_add_observes_retargeted_references_with_equal_values():
@@ -991,7 +991,7 @@ def test_add_observes_retargeted_references_with_equal_values():
         selected = select(use_second, first(), second())
         return bg.operators.add(selected, 1.0)
 
-    assert bg.test_graph(graph, [False, True, False, True]) == [5.0, 5.0, 5.0, 5.0]
+    assert bg.run_graph(graph, [False, True, False, True]) == [5.0, 5.0, 5.0, 5.0]
 
 
 def test_reflected_add_preserves_operand_order_and_native_diagnostics():
@@ -1004,10 +1004,10 @@ def test_reflected_add_preserves_operand_order_and_native_diagnostics():
         return "unsupported" + value
 
     with pytest.raises(ValueError, match="Cannot resolve operator add") as raised:
-        bg.test_graph(unsupported_direct, [1.0])
+        bg.run_graph(unsupported_direct, [1.0])
 
     with pytest.raises(ValueError, match="Cannot resolve operator add") as reflected:
-        bg.test_graph(unsupported_reflected, [1.0])
+        bg.run_graph(unsupported_reflected, [1.0])
 
     assert "Arguments: (lhs: string, rhs:" in str(raised.value)
     assert str(reflected.value) == str(raised.value)
@@ -1025,7 +1025,7 @@ def test_add_operator_preserves_required_input_validity():
         lhs = to_double(extension.invalidate_on_zero(value))
         return lhs + rhs
 
-    assert bg.test_graph(graph, [1, 0, 3], [10.0, 20.0, 30.0]) == [11.0, None, 33.0]
+    assert bg.run_graph(graph, [1, 0, 3], [10.0, 20.0, 30.0]) == [11.0, None, 33.0]
 
 
 def test_add_does_not_schedule_on_start_for_an_initially_invalid_input():
@@ -1033,7 +1033,7 @@ def test_add_does_not_schedule_on_start_for_an_initially_invalid_input():
     def graph(value: bg.TS[float]) -> bg.TS[float]:
         return value + 1.0
 
-    assert bg.test_graph(graph, [None, 2.0]) == [None, 3.0]
+    assert bg.run_graph(graph, [None, 2.0]) == [None, 3.0]
 
 
 def test_default_operator_is_available_with_native_fallback_behavior():
@@ -1041,7 +1041,7 @@ def test_default_operator_is_available_with_native_fallback_behavior():
     def graph(value: bg.TS[float]) -> bg.TS[float]:
         return bg.operators.default_(value, fallback=5.0)
 
-    assert bg.test_graph(graph, [None, 1.0, 3.0]) == [5.0, 1.0, 3.0]
+    assert bg.run_graph(graph, [None, 1.0, 3.0]) == [5.0, 1.0, 3.0]
 
 
 def test_add_optional_overload_substitutes_zero_for_invalid_inputs():
@@ -1067,9 +1067,9 @@ def test_add_optional_overload_substitutes_zero_for_invalid_inputs():
         rhs = to_double(extension.invalidate_on_zero(rhs))
         return bg.opt(lhs) + rhs
 
-    assert bg.test_graph(optional_series_plus_scalar, [2, 0, 3]) == [3.0, 1.0, 4.0]
-    assert bg.test_graph(scalar_plus_optional_series, [2, 0, 3]) == [3.0, 1.0, 4.0]
-    assert bg.test_graph(optional_series_plus_series, [2, 0, 3], [10, 20, 0]) == [12.0, 20.0, 3.0]
+    assert bg.run_graph(optional_series_plus_scalar, [2, 0, 3]) == [3.0, 1.0, 4.0]
+    assert bg.run_graph(scalar_plus_optional_series, [2, 0, 3]) == [3.0, 1.0, 4.0]
+    assert bg.run_graph(optional_series_plus_series, [2, 0, 3], [10, 20, 0]) == [12.0, 20.0, 3.0]
 
 
 def test_add_optional_i64_overload_substitutes_zero_for_invalid_inputs():
@@ -1079,7 +1079,7 @@ def test_add_optional_i64_overload_substitutes_zero_for_invalid_inputs():
     def graph(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[int]:
         return bg.opt(extension.invalidate_on_zero(lhs)) + bg.opt(extension.invalidate_on_zero(rhs))
 
-    assert bg.test_graph(graph, [1, 0, 3, 0], [10, 20, 0, 0]) == [11, 20, 3, 0]
+    assert bg.run_graph(graph, [1, 0, 3, 0], [10, 20, 0, 0]) == [11, 20, 3, 0]
 
 
 def test_add_optional_string_overload_substitutes_empty_string_for_invalid_inputs():
@@ -1095,7 +1095,7 @@ def test_add_optional_string_overload_substitutes_empty_string_for_invalid_input
         right = to_string(extension.invalidate_on_zero(rhs))
         return bg.opt(left) + right
 
-    assert bg.test_graph(graph, [1, 0, 3, 0], [10, 20, 0, 0]) == ["110", "20", "3", ""]
+    assert bg.run_graph(graph, [1, 0, 3, 0], [10, 20, 0, 0]) == ["110", "20", "3", ""]
 
 
 def test_optional_string_addition_waits_for_ticks_and_retains_latest_inputs():
@@ -1107,7 +1107,7 @@ def test_optional_string_addition_waits_for_ticks_and_retains_latest_inputs():
     def graph(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[str]:
         return bg.opt(to_string(lhs)) + bg.opt(to_string(rhs))
 
-    assert bg.test_graph(graph, [None, 1, None, 2], [None, None, 3, None]) == [None, "1", "13", "23"]
+    assert bg.run_graph(graph, [None, 1, None, 2], [None, None, 3, None]) == [None, "1", "13", "23"]
 
 
 def test_wiring_point_addition_selects_optional_overload():
@@ -1122,7 +1122,7 @@ def test_wiring_point_addition_selects_optional_overload():
         value = to_double(extension.invalidate_on_zero(value))
         return bg.opt(value) + 1.0
 
-    assert bg.test_graph(graph, [2, 0, 3]) == [3.0, 1.0, 4.0]
+    assert bg.run_graph(graph, [2, 0, 3]) == [3.0, 1.0, 4.0]
 
 
 def test_wiring_point_addition_does_not_depend_on_python_operator_attributes():
@@ -1146,8 +1146,8 @@ def graph(lhs: bg.TS[float], rhs: bg.TS[float]) -> bg.TS[float]:
 def reflected(value: bg.TS[float]) -> bg.TS[float]:
     return 2.0 + value
 
-assert bg.test_graph(graph, [1.0], [2.0]) == [3.0]
-assert bg.test_graph(reflected, [3.0]) == [5.0]
+assert bg.run_graph(graph, [1.0], [2.0]) == [3.0]
+assert bg.run_graph(reflected, [3.0]) == [5.0]
 """
 
     completed = subprocess.run([sys.executable, "-c", script], check=False, capture_output=True, text=True)
@@ -1162,14 +1162,14 @@ def test_add_reports_native_overload_diagnostics_for_unsupported_types():
         return bg.operators.add(lhs, rhs)
 
     with pytest.raises(ValueError, match="Cannot resolve operator add"):
-        bg.test_graph(graph, [True], [False])
+        bg.run_graph(graph, [True], [False])
 
     @bg.graph
     def mixed(lhs: bg.TS[float], rhs: bg.TS[int]) -> bg.TS[float]:
         return bg.operators.add(lhs, rhs)
 
     with pytest.raises(ValueError, match="Cannot resolve operator add"):
-        bg.test_graph(mixed, [1.0], [2])
+        bg.run_graph(mixed, [1.0], [2])
 
 
 def test_operator_namespace_reexports_existing_higher_order_apis():
@@ -1197,7 +1197,7 @@ def b(value: bg.TS[str]) -> bg.TS[str]:
 def root(key: bg.TS[int], value: bg.TS[str]) -> bg.TS[str]:
     return bg.switch_(key, {1: a, bg.DEFAULT: b}, value)
 
-assert bg.test_graph(root, [1, 0], ["original", None]) == ["original", "fallback"]
+assert bg.run_graph(root, [1, 0], ["original", None]) == ["original", "fallback"]
 """
 
     completed = subprocess.run([sys.executable, "-c", script], check=False, capture_output=True, text=True)
@@ -1213,11 +1213,11 @@ def test_addition_checks_wiring_point_lifetime():
         saved_points.append(value)
         return value
 
-    assert bg.test_graph(save, [1.0]) == [1.0]
+    assert bg.run_graph(save, [1.0]) == [1.0]
 
     @bg.graph
     def use_expired(value: bg.TS[float]) -> bg.TS[float]:
         return 1.0 + saved_points[0]
 
     with pytest.raises(RuntimeError, match="outside its graph construction"):
-        bg.test_graph(use_expired, [2.0])
+        bg.run_graph(use_expired, [2.0])

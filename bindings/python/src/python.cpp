@@ -23,7 +23,6 @@
 #include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/runtime_type.hpp>
 #include <bg/scalar/tuple/scalar_type.hpp>
-#include <bg/testing/test_graph.hpp>
 #include <bg/time_series/tsb/details/wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsl/details/wiring.hpp>
@@ -44,8 +43,8 @@
 #include <bg/version.hpp>
 
 #include "delta.hpp"
-#include "test_graph_input.hpp"
-#include "test_graph_output.hpp"
+#include "graph_run_input.hpp"
+#include "graph_run_output.hpp"
 #include "dict_view.hpp"
 #include "higher_order.hpp"
 #include "operator_binding.hpp"
@@ -504,58 +503,34 @@ PythonServiceDefinition make_service(std::string name, std::string kind,
 nb::object wire_graph(const PythonGraphDefinition &definition, nb::sequence fixed_values,
                       nb::sequence positional_values, nb::dict named_values);
 
-nb::list test_graph(const PythonGraphDefinition &definition, nb::sequence input_sequences,
-                    PythonServiceCatalogue *service_catalogue, EvaluationProfiler::Recorder *recorder,
-                    EvaluationEngine engine, std::optional<EvaluationTime> start_time,
-                    std::optional<EvaluationTime> stop_time,
-                    std::optional<EvaluationTime::duration> run_time) {
+nb::object run_graph(const PythonGraphDefinition &definition, nb::sequence fixed_values,
+                     nb::sequence positional_values, nb::dict named_values,
+                     PythonServiceCatalogue *service_catalogue, EvaluationProfiler::Recorder *recorder,
+                     EvaluationEngine engine, std::optional<EvaluationTime> start_time,
+                     std::optional<std::stop_token> stop_token, std::optional<EvaluationTime> stop_time,
+                     std::optional<EvaluationTime::duration> run_time, bool capture_output) {
     Object::drain_deferred_releases();
     auto drain_on_exit = util::scope_exit{[]() noexcept {
         if (Py_IsInitialized() && PyGILState_Check()) {
             Object::drain_deferred_releases();
         }
     }};
+
+    auto inputs = details::GraphRunInputs{definition.signature(), definition.wiring_parameter_types(), fixed_values,
+                                          positional_values, named_values};
     const auto &signature = definition.signature();
-    auto inputs = details::TestGraphInputs{signature, definition.wiring_parameter_types(), input_sequences};
-
-    const auto options = bg::GraphRunOptions{
-        .services = service_catalogue != nullptr ? &service_catalogue->catalogue() : nullptr,
-        .recorder = recorder != nullptr ? std::optional<EvaluationProfiler::Recorder>{*recorder} : std::nullopt,
-        .engine = engine,
-        .start_time = start_time,
-        .stop_time = stop_time,
-        .run_time = run_time,
-        .periodic_callback = python_periodic_callback(),
-    };
-    auto results = [&] {
-        try {
-            auto release_gil = nb::gil_scoped_release{};
-            return testing::test_graph(static_cast<const WiringTemplate &>(definition), options,
-                                       inputs.inputs());
-        } catch (const WiringError &error) {
-            details::rethrow_python_error(error);
-        }
-    }();
-    return details::TestGraphOutputs{results}.to_python();
-}
-
-void run_graph(const PythonGraphDefinition &definition, nb::sequence fixed_values, nb::sequence positional_values,
-               nb::dict named_values, PythonServiceCatalogue *service_catalogue,
-               EvaluationProfiler::Recorder *recorder, EvaluationEngine engine,
-               std::optional<EvaluationTime> start_time, std::optional<std::stop_token> stop_token,
-               std::optional<EvaluationTime> stop_time,
-               std::optional<EvaluationTime::duration> run_time) {
-    Object::drain_deferred_releases();
-    auto drain_on_exit = util::scope_exit{[]() noexcept {
-        if (Py_IsInitialized() && PyGILState_Check()) {
-            Object::drain_deferred_releases();
-        }
-    }};
-
-    auto run = [&] {
+    auto run = [&]() -> std::optional<WiringPoint> {
         auto acquire_gil = nb::gil_scoped_acquire{};
-        auto scope = PythonWiringScope{WiringContext::current().wiring()};
-        (void)wire_graph(definition, fixed_values, positional_values, named_values);
+        auto &wiring = WiringContext::current().wiring();
+        auto scope = PythonWiringScope{wiring};
+        auto fixed_values = inputs.fixed_values();
+        auto positional_values = inputs.positional_values();
+        auto output = wire_graph(definition, nb::cast<nb::sequence>(fixed_values),
+                                 nb::cast<nb::sequence>(positional_values), inputs.named_values());
+        if (output.is_none()) {
+            return std::nullopt;
+        }
+        return nb::cast<const PythonWiringPoint &>(output).get(wiring);
     };
 
     try {
@@ -563,16 +538,21 @@ void run_graph(const PythonGraphDefinition &definition, nb::sequence fixed_value
             .services = service_catalogue != nullptr ? &service_catalogue->catalogue() : nullptr,
             .recorder = recorder != nullptr ? std::optional<EvaluationProfiler::Recorder>{*recorder} : std::nullopt,
             .engine = engine,
+            .capture_output = capture_output,
             .start_time = start_time,
             .stop_time = stop_time,
             .run_time = run_time,
             .stop_token = stop_token.value_or(std::stop_token{}),
             .periodic_callback = python_periodic_callback(),
         };
-        {
+        auto results = [&] {
             auto release_gil = nb::gil_scoped_release{};
-            bg::run_graph(run, options);
+            return bg::run_graph(run, options);
+        }();
+        if (!capture_output || !signature.has_output()) {
+            return nb::none();
         }
+        return details::GraphRunOutputs{results}.to_python(inputs.input_length());
     } catch (const WiringError &error) {
         details::rethrow_python_error(error);
     }
@@ -1316,13 +1296,11 @@ void bind_core(nb::module_ &module) {
         }, "period_start"_a)
         .def("report", &EvaluationProfiler::report, "recent_outer_periods"_a = 10);
 
-    module.def("_test_graph", &test_graph, "definition"_a, "input_sequences"_a, "catalogue"_a = nullptr,
-               "recorder"_a = nullptr, "engine"_a = EvaluationEngine::simulation,
-               "start_time"_a = std::nullopt, "stop_time"_a = std::nullopt, "run_time"_a = std::nullopt);
     module.def("_run_graph", &run_graph, "definition"_a, "fixed_values"_a, "positional_values"_a,
-               "named_values"_a, "catalogue"_a = nullptr, "recorder"_a = nullptr,
-               "engine"_a = EvaluationEngine::simulation, "start_time"_a = std::nullopt,
-               "stop_token"_a = std::nullopt, "stop_time"_a = std::nullopt, "run_time"_a = std::nullopt);
+               "named_values"_a,
+               "catalogue"_a = nullptr, "recorder"_a = nullptr, "engine"_a = EvaluationEngine::simulation,
+               "start_time"_a = std::nullopt, "stop_token"_a = std::nullopt,
+               "stop_time"_a = std::nullopt, "run_time"_a = std::nullopt, "capture_output"_a = true);
     module.def("_register_delta_types", &details::register_delta_types);
     module.def("_scalar_conversions_address", [] { return reinterpret_cast<std::uintptr_t>(&scalar_conversions()); });
     module.def("_register_symbol_type", [](nb::handle python_type) {

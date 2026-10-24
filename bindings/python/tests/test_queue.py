@@ -30,7 +30,7 @@ def test_queue_modes_apply_standard_elided_and_batch_deltas(mode_name, item_type
     def graph() -> output_type:
         return source()
 
-    assert bg.test_graph(graph) == expected
+    assert bg.run_graph(graph) == expected
 
 
 def test_queue_ignores_start_return_when_no_message_is_written():
@@ -42,7 +42,7 @@ def test_queue_ignores_start_return_when_no_message_is_written():
     def graph() -> bg.TS[int]:
         return source()
 
-    assert bg.test_graph(graph) == [None]
+    assert bg.run_graph(graph) == [None]
 
 
 def test_queue_scalar_inputs_apply_default_arguments():
@@ -54,7 +54,7 @@ def test_queue_scalar_inputs_apply_default_arguments():
     def graph() -> bg.TS[int]:
         return source()
 
-    assert bg.test_graph(graph) == [7]
+    assert bg.run_graph(graph) == [7]
 
 
 def test_queue_realtime_writer_accepts_delta_keyword_and_closes_on_stop():
@@ -130,7 +130,7 @@ def test_queue_copies_bytes_from_a_producer_thread():
     def graph() -> bg.TS[bytes]:
         return source()
 
-    assert bytes(bg.test_graph(graph)[0]) == b"\x00\x80\xffpayload"
+    assert bytes(bg.run_graph(graph)[0]) == b"\x00\x80\xffpayload"
 
 
 def test_failed_queue_conversion_commits_no_partial_dictionary_and_writer_recovers():
@@ -187,7 +187,7 @@ def test_tuple_scalar_annotation_converts_nested_values():
     def graph() -> bg.TS[tuple[dict[int, str], ...]]:
         return source()
 
-    assert bg.test_graph(graph) == [({1: "one"},)]
+    assert bg.run_graph(graph) == [({1: "one"},)]
 
 
 def test_queue_missing_dictionary_key_removal_is_a_no_op():
@@ -209,7 +209,7 @@ def test_queue_missing_dictionary_key_removal_is_a_no_op():
     def graph() -> None:
         collect(source())
 
-    bg.test_graph(graph)
+    bg.run_graph(graph)
     assert received == [{1: 10}]
 
 
@@ -223,7 +223,7 @@ def test_batch_queue_projects_nested_tuples_into_a_batch_list():
     def graph() -> bg.TS[tuple[tuple[int, ...], ...]]:
         return source()
 
-    assert bg.test_graph(graph) == [((1, 2), (3,))]
+    assert bg.run_graph(graph) == [((1, 2), (3,))]
 
 
 def test_batch_invalidation_breaks_the_batch_and_pending_values_resume_later():
@@ -237,7 +237,7 @@ def test_batch_invalidation_breaks_the_batch_and_pending_values_resume_later():
     def graph() -> bg.TS[tuple[int, ...]]:
         return source()
 
-    assert bg.test_graph(graph) == [(10,), None, (20,)]
+    assert bg.run_graph(graph) == [(10,), None, (20,)]
 
 
 def test_batch_queue_round_trips_through_tsl_tsb_and_tsd_leaves():
@@ -280,7 +280,7 @@ def test_batch_queue_round_trips_through_tsl_tsb_and_tsd_leaves():
     def graph() -> bg.TS[int]:
         return total(list_source(), bundle_source(), dictionary_source())
 
-    assert bg.test_graph(graph) == [45]
+    assert bg.run_graph(graph) == [45]
 
 
 def test_queue_projects_tss_additions_and_removals():
@@ -297,7 +297,7 @@ def test_queue_projects_tss_additions_and_removals():
     def graph() -> bg.TS[int]:
         return total(source())
 
-    assert bg.test_graph(graph) == [3, 5]
+    assert bg.run_graph(graph) == [3, 5]
 
 
 def test_queue_projects_tsd_invalidation_removal_and_recreation():
@@ -323,7 +323,7 @@ def test_queue_projects_tsd_invalidation_removal_and_recreation():
     def graph() -> None:
         inspect(source())
 
-    bg.test_graph(graph)
+    bg.run_graph(graph)
     assert snapshots == [{1: 10, 2: 20}, {1: None, 2: 20}, {2: 20}, {1: 30, 2: 20}]
 
 
@@ -344,7 +344,7 @@ def test_batch_dictionary_removal_breaks_the_batch_before_recreation():
     def graph() -> None:
         inspect(source())
 
-    bg.test_graph(graph)
+    bg.run_graph(graph)
     assert snapshots == [{1: (10,)}, {}, {1: (20,)}]
 
 
@@ -370,7 +370,7 @@ def test_queue_start_and_stop_callbacks_select_scalar_state_and_queue_parameters
     def graph() -> bg.TS[int]:
         return source(topic="orders")
 
-    assert bg.test_graph(graph) == [6]
+    assert bg.run_graph(graph) == [6]
     assert events == [("start", "orders"), ("stop", "orders", False)]
     assert states == [[("start", "orders"), ("stop", "orders")]]
     assert retained[0].write(delta=object()) is False
@@ -423,7 +423,7 @@ def test_queue_output_validation_rejects_nonordinary_and_invalid_batch_types():
         return final_source()
 
     with pytest.raises(ValueError, match="queue outputs require the ordinary guarantee"):
-        bg.test_graph(final_graph)
+        bg.run_graph(final_graph)
 
     @bg.queue(mode=bg.QueueMode.batch)
     def scalar_batch_source(writer: bg.Queue = None) -> bg.TS[int]:
@@ -434,7 +434,7 @@ def test_queue_output_validation_rejects_nonordinary_and_invalid_batch_types():
         return scalar_batch_source()
 
     with pytest.raises(ValueError, match="batch queue leaves require a scalar list"):
-        bg.test_graph(scalar_batch_graph)
+        bg.run_graph(scalar_batch_graph)
 
     @bg.queue(mode=bg.QueueMode.batch)
     def set_batch_source(writer: bg.Queue = None) -> bg.TSS[int]:
@@ -445,7 +445,7 @@ def test_queue_output_validation_rejects_nonordinary_and_invalid_batch_types():
         return set_batch_source()
 
     with pytest.raises(ValueError, match="batch queues do not support TSS outputs"):
-        bg.test_graph(set_batch_graph)
+        bg.run_graph(set_batch_graph)
 
 
 def test_reference_queue_output_rejects_python_literal_writes():
@@ -458,7 +458,7 @@ def test_reference_queue_output_rejects_python_literal_writes():
         return source()
 
     with pytest.raises(ValueError, match="unsupported Python time-series literal type"):
-        bg.test_graph(graph)
+        bg.run_graph(graph)
 
 
 def test_copied_queue_writers_preserve_each_writers_order_when_used_concurrently():
@@ -602,7 +602,7 @@ def test_queue_output_is_restricted_to_outer_runtime_graphs():
         return bg.switch_(key, {1: branch})
 
     with pytest.raises(RuntimeError, match="only an outer runtime graph can create a queue"):
-        bg.test_graph(outer, [1])
+        bg.run_graph(outer, [1])
 
 
 def test_python_object_queue_payloads_are_released_after_graph_teardown():
@@ -625,7 +625,7 @@ def test_python_object_queue_payloads_are_released_after_graph_teardown():
     def graph() -> None:
         discard(source())
 
-    bg.test_graph(graph)
+    bg.run_graph(graph)
     gc.collect()
     assert references[0]() is None
 
@@ -763,7 +763,7 @@ def test_queue_handle_closes_and_releases_payload_after_startup_failure():
         return source()
 
     with pytest.raises(ValueError, match="queue startup failed"):
-        bg.test_graph(graph)
+        bg.run_graph(graph)
 
     assert retained[0].write(delta=object()) is False
     gc.collect()

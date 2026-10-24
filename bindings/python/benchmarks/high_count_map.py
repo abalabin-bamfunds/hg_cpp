@@ -364,7 +364,7 @@ def run_benchmark(profile_name: str, cycle_count: int, arithmetic: str = "callba
     before_wiring_rss = current_rss_bytes()
 
     runner_started = time.perf_counter_ns()
-    bg.test_graph(definition, triggers)
+    bg.run_graph(definition, triggers)
     runner_ns = time.perf_counter_ns() - runner_started
     after_stop_rss = current_rss_bytes()
     process_peak_rss = peak_rss_bytes()
@@ -496,8 +496,8 @@ def run_benchmark(profile_name: str, cycle_count: int, arithmetic: str = "callba
             "valid": True,
         },
         "notes": [
-            "bg.test_graph owns wiring, compilation, runtime creation, evaluation, and stop as one call.",
-            "Per-cycle timing starts at flat_source and ends after both output observers; it excludes test_graph input dispatch.",
+            "bg.run_graph owns wiring, compilation, runtime creation, evaluation, and stop as one call.",
+            "Per-cycle timing starts at flat_source and ends after both output observers; it excludes run_graph input dispatch.",
             "Per-cycle timing includes source callbacks, graph evaluation, and checksum observers.",
         ],
     }

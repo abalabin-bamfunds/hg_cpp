@@ -14,7 +14,7 @@ def test_getitem_infers_python_object_result_for_scalar_key():
     def graph(value: bg.TS[Indexed]) -> bg.TS[str]:
         return bg.operators.getitem(value, 3)
 
-    assert bg.test_graph(graph, [value])[0] == "item-3"
+    assert bg.run_graph(graph, [value])[0] == "item-3"
 
 
 def test_getitem_accepts_time_series_key_for_python_object():
@@ -28,7 +28,7 @@ def test_getitem_accepts_time_series_key_for_python_object():
     def graph(value: bg.TS[Indexed], key: bg.TS[int]) -> bg.TS[str]:
         return value[key]
 
-    assert bg.test_graph(graph, [value, value], [1, 2]) == ["item-1", "item-2"]
+    assert bg.run_graph(graph, [value, value], [1, 2]) == ["item-1", "item-2"]
 
 
 def test_getitem_accepts_unhashable_python_object_key():
@@ -43,7 +43,7 @@ def test_getitem_accepts_unhashable_python_object_key():
     def graph(value: bg.TS[Indexed], key: bg.TS[Key]) -> bg.TS[int]:
         return value[key]
 
-    assert bg.test_graph(graph, [Indexed()], [Key()]) == [7]
+    assert bg.run_graph(graph, [Indexed()], [Key()]) == [7]
 
 
 def test_getitem_accepts_explicit_output_type_without_annotation():
@@ -57,7 +57,7 @@ def test_getitem_accepts_explicit_output_type_without_annotation():
     def graph(value: bg.TS[Indexed]) -> bg.TS[int]:
         return bg.operators.getitem[int](value, 4)
 
-    assert bg.test_graph(graph, [value]) == [8]
+    assert bg.run_graph(graph, [value]) == [8]
 
 
 def test_getitem_explicit_output_type_overrides_annotation():
@@ -69,7 +69,7 @@ def test_getitem_explicit_output_type_overrides_annotation():
     def graph(value: bg.TS[Indexed]) -> bg.TS[str]:
         return bg.operators.getitem[str](value, 0)
 
-    assert bg.test_graph(graph, [Indexed()]) == ["value"]
+    assert bg.run_graph(graph, [Indexed()]) == ["value"]
 
 
 def test_python_object_getitem_result_supports_covariant_output_type():
@@ -89,7 +89,7 @@ def test_python_object_getitem_result_supports_covariant_output_type():
     def graph(value: bg.TS[Indexed]) -> bg.TS[Base]:
         return value[0]
 
-    result = bg.test_graph(graph, [Indexed()])[0]
+    result = bg.run_graph(graph, [Indexed()])[0]
     assert type(result) is Derived
     assert result is derived
 
@@ -108,13 +108,13 @@ def test_python_object_operators_do_not_match_unsupported_builtin_scalars():
         return bg.operators.getattr[int](value, "real")
 
     with pytest.raises(ValueError, match="Cannot resolve operator getitem"):
-        bg.test_graph(getitem_graph, [1])
+        bg.run_graph(getitem_graph, [1])
 
     with pytest.raises(ValueError, match="Cannot resolve operator getattr"):
-        bg.test_graph(getattr_graph, [1])
+        bg.run_graph(getattr_graph, [1])
 
     with pytest.raises(ValueError, match="Cannot resolve operator getattr"):
-        bg.test_graph(explicit_getattr_graph, [1])
+        bg.run_graph(explicit_getattr_graph, [1])
 
 
 def test_getattr_infers_annotated_field_and_property_types():
@@ -136,8 +136,8 @@ def test_getattr_infers_annotated_field_and_property_types():
     def read_count(value: bg.TS[Record]) -> bg.TS[int]:
         return bg.operators.getattr(value, bg.symbol("count"))
 
-    assert bg.test_graph(read_name, [record]) == ["record"]
-    assert bg.test_graph(read_count, [record]) == [2]
+    assert bg.run_graph(read_name, [record]) == ["record"]
+    assert bg.run_graph(read_count, [record]) == [2]
 
 
 def test_getattr_accepts_explicit_output_type_and_plain_string_name():
@@ -150,7 +150,7 @@ def test_getattr_accepts_explicit_output_type_and_plain_string_name():
     def graph(value: bg.TS[Record]) -> bg.TS[int]:
         return bg.operators.getattr[int](value, "count")
 
-    assert bg.test_graph(graph, [Record()]) == [2]
+    assert bg.run_graph(graph, [Record()]) == [2]
 
 
 def test_getattr_rejects_non_string_attribute_name():
@@ -170,13 +170,13 @@ def test_getattr_rejects_non_string_attribute_name():
         return bg.operators.getattr[int](value, bg.Symbol())
 
     with pytest.raises(ValueError, match="Cannot resolve operator getattr"):
-        bg.test_graph(graph, [Record()])
+        bg.run_graph(graph, [Record()])
 
     with pytest.raises(ValueError, match="Cannot resolve operator getattr"):
-        bg.test_graph(explicit_output_graph, [Record()])
+        bg.run_graph(explicit_output_graph, [Record()])
 
     with pytest.raises(ValueError):
-        bg.test_graph(null_symbol_graph, [Record()])
+        bg.run_graph(null_symbol_graph, [Record()])
 
 
 def test_python_object_operator_propagates_python_exception():
@@ -191,7 +191,7 @@ def test_python_object_operator_propagates_python_exception():
         return value[0]
 
     with pytest.raises(RuntimeError, match="lookup failed") as raised:
-        bg.test_graph(graph, [Indexed()])
+        bg.run_graph(graph, [Indexed()])
 
     assert raised.value is error
 
@@ -213,10 +213,10 @@ def test_python_object_operators_require_scalar_type_arguments():
         return bg.operators.getattr[bg.TS[int]](value, "count")
 
     with pytest.raises(ValueError, match="type argument does not match"):
-        bg.test_graph(getitem_graph, [Indexed()])
+        bg.run_graph(getitem_graph, [Indexed()])
 
     with pytest.raises(ValueError, match="type argument does not match"):
-        bg.test_graph(getattr_graph, [Record()])
+        bg.run_graph(getattr_graph, [Record()])
 
 
 def test_getitem_keeps_existing_time_series_collection_overload():
@@ -224,7 +224,7 @@ def test_getitem_keeps_existing_time_series_collection_overload():
     def graph(value: bg.TSL[bg.TS[int], 2]) -> bg.TS[int]:
         return value[1]
 
-    assert bg.test_graph(graph, [{0: 3, 1: 5}]) == [5]
+    assert bg.run_graph(graph, [{0: 3, 1: 5}]) == [5]
 
 
 @pytest.mark.parametrize("result_type", [int, str])
@@ -238,10 +238,10 @@ def test_getitem_rejects_explicit_type_for_time_series_collections(result_type):
         return bg.operators.getitem[result_type](value, 1)
 
     with pytest.raises(ValueError, match="does not accept the explicit type argument"):
-        bg.test_graph(list_graph, [{0: 3, 1: 5}])
+        bg.run_graph(list_graph, [{0: 3, 1: 5}])
 
     with pytest.raises(ValueError, match="does not accept the explicit type argument"):
-        bg.test_graph(dict_graph, [{1: 9}])
+        bg.run_graph(dict_graph, [{1: 9}])
 
 
 @pytest.mark.parametrize("result_type", [int, str])
@@ -255,4 +255,4 @@ def test_getattr_rejects_explicit_type_for_time_series_bundle(result_type):
         return bg.operators.getattr[result_type](value, bg.symbol("left"))
 
     with pytest.raises(ValueError, match="does not accept the explicit type argument"):
-        bg.test_graph(graph, [{"left": 4}])
+        bg.run_graph(graph, [{"left": 4}])

@@ -5,6 +5,7 @@ from __future__ import annotations
 import atexit
 import inspect
 import types
+from collections.abc import Iterable as IterableABC
 from datetime import datetime, timedelta
 from functools import update_wrapper
 from typing import Annotated, Any, Generic, Iterable, Tuple, TypeVar, get_args, get_origin, get_type_hints
@@ -46,7 +47,6 @@ from ._bg import (
     _run_graph,
     _scalar_type,
     _scalar_variable_type,
-    _test_graph,
     _make_service,
     _make_service_catalogue,
     _feedback_service_implementation,
@@ -658,6 +658,87 @@ class GraphDefinition:
             input_types = (input_types,)
         native = _specialize_graph(self._native_definition, input_types)
         return GraphDefinition(self.function, native, self._fixed_parameters, self._callback)
+
+
+class _Ticks:
+    __slots__ = ("values",)
+
+    def __init__(self, values: IterableABC[Any]):
+        if not isinstance(values, IterableABC):
+            raise TypeError("bg.ticks expects an iterable")
+        self.values = tuple(values)
+
+
+def ticks(values: IterableABC[Any]) -> _Ticks:
+    """Force an iterable graph input to be interpreted as a tick sequence."""
+    return _Ticks(values)
+
+
+class GraphRunResult:
+    """Sparse graph output events with lazy dense access by microsecond offset."""
+
+    __slots__ = ("_start_time", "_events", "_values", "_size")
+
+    def __init__(self, start_time: datetime, events: Iterable[tuple[datetime, Any]], size: int):
+        self._start_time = start_time
+        self._events = tuple(events)
+        self._values = {}
+        self._size = size
+        for time, value in self._events:
+            offset = self._offset(time)
+            self._values[offset] = value
+            self._size = max(self._size, offset + 1)
+
+    @property
+    def start_time(self) -> datetime:
+        return self._start_time
+
+    @property
+    def events(self) -> tuple[tuple[datetime, Any], ...]:
+        return self._events
+
+    @property
+    def event_count(self) -> int:
+        return len(self._events)
+
+    def _offset(self, time: datetime) -> int:
+        elapsed = time - self._start_time
+        return elapsed.days * 86_400_000_000 + elapsed.seconds * 1_000_000 + elapsed.microseconds
+
+    def __len__(self) -> int:
+        return self._size
+
+    def __getitem__(self, index: int | slice) -> Any:
+        if isinstance(index, slice):
+            return [self[position] for position in range(*index.indices(self._size))]
+        if not isinstance(index, int):
+            raise TypeError("GraphRunResult indices must be integers or slices")
+        if index < 0:
+            index += self._size
+        if index < 0 or index >= self._size:
+            raise IndexError("GraphRunResult index out of range")
+        return self._values.get(index)
+
+    def __iter__(self):
+        for index in range(self._size):
+            yield self._values.get(index)
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, GraphRunResult):
+            return self.events == other.events and self.start_time == other.start_time and len(self) == len(other)
+        if isinstance(other, (list, tuple)):
+            if len(self) != len(other):
+                return False
+            return all(value == other[index] for index, value in enumerate(self))
+        return NotImplemented
+
+    def __repr__(self) -> str:
+        if self._size <= 32:
+            return repr(list(self))
+        return (
+            f"GraphRunResult(start_time={self._start_time!r}, "
+            f"event_count={self.event_count}, size={self._size})"
+        )
 
 
 class DispatchDefinition:
@@ -1416,6 +1497,7 @@ def dispatch(signature: Any,
 def run_graph(
     definition: GraphDefinition,
     *args: Any,
+    capture_output: bool = True,
     catalogue: ServiceCatalogue | None = None,
     recorder: _EvaluationProfilerRecorder | None = None,
     engine: EvaluationEngine = EvaluationEngine.simulation,
@@ -1424,10 +1506,12 @@ def run_graph(
     stop_time: datetime | None = None,
     run_time: timedelta | None = None,
     **kwargs: Any,
-) -> None:
-    """Wire and run a graph with the selected evaluation engine."""
+) -> GraphRunResult | None:
+    """Wire and run a graph, capturing sparse output events by default."""
     if not isinstance(definition, GraphDefinition):
         raise TypeError("run_graph expects a decorated @graph definition")
+    if not isinstance(capture_output, bool):
+        raise TypeError("capture_output must be a bool")
     if recorder is not None and not isinstance(recorder, _EvaluationProfilerRecorder):
         raise TypeError("recorder must be created by EvaluationProfiler.recorder()")
     if catalogue is not None and not isinstance(catalogue, ServiceCatalogue):
@@ -1440,30 +1524,24 @@ def run_graph(
         definition.signature, definition._fixed_parameters, args, kwargs
     )
     native_catalogue = None if catalogue is None else catalogue._native_catalogue
-    _run_graph(definition._native_definition, fixed, positional, named, native_catalogue, recorder,
-               engine, start_time, stop_token, stop_time, run_time)
-
-
-def test_graph(definition: GraphDefinition, *inputs: Any,
-               catalogue: ServiceCatalogue | None = None,
-               recorder: _EvaluationProfilerRecorder | None = None,
-               engine: EvaluationEngine = EvaluationEngine.simulation,
-               start_time: datetime | None = None,
-               stop_time: datetime | None = None,
-               run_time: timedelta | None = None) -> Any:
-    """Run a graph definition with one update sequence for each time-series input."""
-    if not isinstance(definition, GraphDefinition):
-        raise TypeError("test_graph expects a decorated @graph definition")
-    if recorder is not None and not isinstance(recorder, _EvaluationProfilerRecorder):
-        raise TypeError("recorder must be created by EvaluationProfiler.recorder()")
-    if catalogue is not None and not isinstance(catalogue, ServiceCatalogue):
-        raise TypeError("catalogue must be a bg.ServiceCatalogue")
-    _validate_runner_options(engine, start_time, stop_time, run_time)
-    if engine is EvaluationEngine.realtime:
-        raise ValueError("test_graph only supports the simulation engine")
-    native_catalogue = None if catalogue is None else catalogue._native_catalogue
-    return _test_graph(definition._native_definition, inputs, native_catalogue, recorder, engine, start_time,
-                       stop_time, run_time)
+    result = _run_graph(
+        definition._native_definition,
+        fixed,
+        positional,
+        named,
+        native_catalogue,
+        recorder,
+        engine,
+        start_time,
+        stop_token,
+        stop_time,
+        run_time,
+        capture_output,
+    )
+    if result is None:
+        return None
+    result_start_time, events, size = result
+    return GraphRunResult(result_start_time, events, size)
 
 
 operators.map = map
@@ -1491,6 +1569,7 @@ __all__ = [
     "final",
     "feedback_service_implementation",
     "GraphDefinition",
+    "GraphRunResult",
     "DEFAULT",
     "INVALID",
     "NodeDefinition",
@@ -1531,6 +1610,6 @@ __all__ = [
     "source_node",
     "symbol",
     "switch_",
+    "ticks",
     "version",
-    "test_graph",
 ]

@@ -132,11 +132,11 @@ def benchmark_size(size: int, repeats: int) -> list[tuple[str, float, str]]:
 
     lazy_metrics: dict[str, float] = {}
     lazy_graph = make_lazy_graph(size, repeats, lazy_metrics)
-    bg.test_graph(lazy_graph, [values], [0])
+    bg.run_graph(lazy_graph, [values], [0])
 
     eager_metrics: dict[str, float] = {}
     eager_graph = make_eager_graph(size, repeats, eager_metrics)
-    bg.test_graph(eager_graph, [values], [0])
+    bg.run_graph(eager_graph, [values], [0])
 
     result = []
     result.extend((f"python_dict_{name}", value, "ns/op") for name, value in python_metrics.items())

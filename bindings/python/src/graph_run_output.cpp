@@ -1,4 +1,4 @@
-#include "test_graph_output.hpp"
+#include "graph_run_output.hpp"
 
 #include <bg/python/scalar_conversion.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
@@ -9,6 +9,9 @@
 
 #include "delta.hpp"
 
+#include <nanobind/stl/chrono.h>
+
+#include <algorithm>
 #include <stdexcept>
 #include <utility>
 
@@ -16,36 +19,30 @@ namespace nb = nanobind;
 
 namespace bg::python::details {
 
-nb::list TestGraphOutputs::to_python() const {
+nb::tuple GraphRunOutputs::to_python(std::size_t minimum_size) const {
     auto output = nb::list{};
-    for (auto index = std::size_t{}; index < results_.size(); ++index) {
-        const auto visited = results_.visit_tick(index, [&](const TimeSeriesType &type, bool valid,
-                                                            util::buffer_reader &reader) {
-            if (!valid) {
-                output.append(nb::none());
-                return;
-            }
-            output.append(delta(type, true, reader));
+    for (auto index = std::size_t{}; index < results_.event_count(); ++index) {
+        results_.visit_event(index, [&](EvaluationTime time, const TimeSeriesType &type, bool valid,
+                                        util::buffer_reader &reader) {
+            auto value = valid ? delta(type, true, reader) : nb::none();
+            output.append(nb::make_tuple(time, std::move(value)));
         });
-        if (!visited) {
-            output.append(nb::none());
-        }
     }
-    return output;
+    return nb::make_tuple(results_.start_time(), output, std::max(results_.size(), minimum_size));
 }
 
-nb::object TestGraphOutputs::scalar(util::buffer_reader &reader, const ScalarType &type) const {
+nb::object GraphRunOutputs::scalar(util::buffer_reader &reader, const ScalarType &type) const {
     auto value = nb::object{};
     const auto read = bg::details::TimeSeriesTickScalarRead::visit(reader, type, [&](Scalar<> item) {
         value = scalar_conversions().to_python(item);
     });
     if (!read) {
-        throw std::invalid_argument{"test_graph result scalar has no registered tick reader"};
+        throw std::invalid_argument{"run_graph result scalar has no registered tick reader"};
     }
     return value;
 }
 
-nb::object TestGraphOutputs::delta(const TimeSeriesType &type, bool valid, util::buffer_reader &reader) const {
+nb::object GraphRunOutputs::delta(const TimeSeriesType &type, bool valid, util::buffer_reader &reader) const {
     if (!valid) {
         return nb::borrow<nb::object>(invalid_sentinel());
     }
@@ -83,8 +80,8 @@ nb::object TestGraphOutputs::delta(const TimeSeriesType &type, bool valid, util:
 
                 const auto item_id = reader.read_raw<item_id_t>();
                 const auto name = bundle_type->item_name(item_id).text();
-                result[nb::str{name.data(), name.size()}] =
-                    delta(bundle_type->item_type(item_id), header.valid, reader);
+                const auto key = nb::str{name.data(), name.size()};
+                result[key] = delta(bundle_type->item_type(item_id), header.valid, reader);
             }
             return nb::object{std::move(result)};
         },
@@ -129,7 +126,7 @@ nb::object TestGraphOutputs::delta(const TimeSeriesType &type, bool valid, util:
             return nb::object{std::move(result)};
         },
         [&]() -> nb::object {
-            throw std::invalid_argument{"test_graph Python result conversion does not support this time-series type"};
+            throw std::invalid_argument{"run_graph Python result conversion does not support this time-series type"};
         }).value();
 }
 

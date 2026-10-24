@@ -25,7 +25,7 @@ def test_run_graph_wires_scalar_arguments_as_constants_and_reacquires_gil_for_ca
     def graph(value: int = 21) -> int:
         return double(value)
 
-    assert bg.run_graph(graph) is None
+    assert bg.run_graph(graph) == [42]
     assert values == [21]
 
     values.clear()
@@ -96,7 +96,7 @@ def test_run_graph_records_profile_and_exposes_post_run_queries():
     )
 
     recorder = profiler.recorder()
-    assert bg.test_graph(graph, [1], recorder=recorder) == [2]
+    assert bg.run_graph(graph, [1], recorder=recorder) == [2]
     graph_id = profiler.root_graph_id()
     assert isinstance(graph_id, int)
     assert profiler.graph_ids() == [graph_id]
@@ -156,7 +156,7 @@ def test_recorder_keeps_temporary_profiler_alive_for_the_run():
 
 
 @pytest.mark.parametrize("with_recorder", [False, True])
-def test_test_graph_propagates_python_callback_exception_identity(with_recorder):
+def test_run_graph_propagates_compute_callback_exception_identity(with_recorder):
     error = LookupError("compute callback failed")
 
     @bg.compute_node
@@ -169,7 +169,7 @@ def test_test_graph_propagates_python_callback_exception_identity(with_recorder)
 
     recorder = bg.EvaluationProfiler().recorder() if with_recorder else None
     with pytest.raises(LookupError, match="compute callback failed") as raised:
-        bg.test_graph(graph, [1], recorder=recorder)
+        bg.run_graph(graph, [1], recorder=recorder)
     assert raised.value is error
 
 
@@ -194,6 +194,23 @@ def test_run_graph_defaults_to_simulation_and_accepts_a_start_time():
     assert observed[1] == start_time
 
 
+def test_run_graph_simulation_start_time_applies_to_input_evaluations():
+    observed = []
+
+    @bg.compute_node
+    def observe(value: bg.TS[int], clock: bg.EvaluationClock = None) -> bg.TS[int]:
+        observed.append(clock.evaluation_time)
+        return value.value
+
+    @bg.graph
+    def graph(value: bg.TS[int]) -> bg.TS[int]:
+        return observe(value)
+
+    start_time = datetime(2024, 5, 6, 7, 8, 9, 123456)
+    assert bg.run_graph(graph, [1, 2], engine=bg.EvaluationEngine.simulation, start_time=start_time) == [1, 2]
+    assert observed == [start_time, start_time + timedelta(microseconds=1)]
+
+
 def test_python_runners_stop_at_simulation_and_realtime_limits():
     observed = []
 
@@ -207,7 +224,7 @@ def test_python_runners_stop_at_simulation_and_realtime_limits():
         return observe(value)
 
     start_time = datetime(2024, 5, 6, 7, 8, 9, 123456)
-    assert bg.test_graph(graph, [1, 2, 3], start_time=start_time,
+    assert bg.run_graph(graph, [1, 2, 3], start_time=start_time,
                          stop_time=start_time + timedelta(microseconds=2),
                          run_time=timedelta(microseconds=5)) == [1, 2, None]
     assert observed == [1, 2]
@@ -231,7 +248,7 @@ def test_python_runner_time_limits_validate_types_ranges_and_order():
     with pytest.raises(ValueError, match="stop_time must be a timezone-naive datetime"):
         bg.run_graph(graph, stop_time=datetime.now(timezone.utc))
     with pytest.raises(TypeError, match="run_time must be a datetime.timedelta or None"):
-        bg.test_graph(graph, run_time=1)
+        bg.run_graph(graph, run_time=1)
     with pytest.raises(ValueError, match="run_time must be positive"):
         bg.run_graph(graph, run_time=timedelta(0))
     with pytest.raises(OverflowError, match="run_time is outside"):
@@ -659,13 +676,13 @@ def test_runner_options_validate_engine_start_time_and_stop_token():
         bg.run_graph(graph, stop_token=bg.StopSource())
 
 
-def test_test_graph_uses_simulation_start_time_and_rejects_realtime_before_wiring():
+def test_run_graph_captures_realtime_input_and_can_disable_capture():
     observed = []
     wired = []
 
     @bg.compute_node
     def observe(value: bg.TS[int], clock: bg.EvaluationClock = None) -> bg.TS[int]:
-        observed.append(clock.evaluation_time)
+        observed.append((value.value, clock.evaluation_time))
         return value.value
 
     @bg.graph
@@ -673,22 +690,35 @@ def test_test_graph_uses_simulation_start_time_and_rejects_realtime_before_wirin
         wired.append(True)
         return observe(value)
 
-    start_time = datetime(2024, 5, 6, 7, 8, 9, 123456)
-    assert bg.test_graph(graph, [1, 2], engine=bg.EvaluationEngine.simulation, start_time=start_time) == [1, 2]
-    assert observed == [start_time, start_time + timedelta(microseconds=1)]
+    start_time = datetime.now().replace(tzinfo=None)
+    result = bg.run_graph(
+        graph,
+        [1, 2],
+        engine=bg.EvaluationEngine.realtime,
+        start_time=start_time,
+        run_time=timedelta(milliseconds=40),
+    )
+    assert [value for _, value in result.events] == [1, 2]
+    assert len(observed) == 2
+
     wired.clear()
+    observed.clear()
+    assert bg.run_graph(
+        graph,
+        [3],
+        engine=bg.EvaluationEngine.simulation,
+        capture_output=False,
+    ) is None
+    assert wired == [True]
+    assert [value for value, _ in observed] == [3]
 
-    with pytest.raises(ValueError, match="test_graph only supports the simulation engine"):
-        bg.test_graph(graph, [3], engine=bg.EvaluationEngine.realtime)
-    assert wired == []
 
-
-def test_test_graph_rejects_invalid_start_times():
+def test_run_graph_rejects_invalid_start_times():
     @bg.graph
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return value
 
     with pytest.raises(TypeError, match="start_time must be a datetime or None"):
-        bg.test_graph(graph, [1], start_time=1)
+        bg.run_graph(graph, [1], start_time=1)
     with pytest.raises(ValueError, match="timezone-naive"):
-        bg.test_graph(graph, [1], start_time=datetime.now(timezone.utc))
+        bg.run_graph(graph, [1], start_time=datetime.now(timezone.utc))

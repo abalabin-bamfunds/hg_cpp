@@ -5,7 +5,7 @@ import pytest
 import bg
 
 
-def test_graph_var_kwargs_are_packed_as_a_generic_tsb():
+def test_run_graph_var_kwargs_are_packed_as_a_generic_tsb():
     @bg.graph
     def select_right(**bundle: bg.TSB[bg.TS_SCHEMA]) -> bg.TS[int]:
         return bundle["right"]
@@ -14,10 +14,10 @@ def test_graph_var_kwargs_are_packed_as_a_generic_tsb():
     def graph(left: bg.TS[int], right: bg.TS[int]) -> bg.TS[int]:
         return select_right(left=left, right=right)
 
-    assert bg.test_graph(graph, [1, 2], [3, 4]) == [3, 4]
+    assert bg.run_graph(graph, [1, 2], [3, 4]) == [3, 4]
 
 
-def test_graph_var_kwargs_are_packed_as_a_declared_tsb():
+def test_run_graph_var_kwargs_are_packed_as_a_declared_tsb():
     @bg.schema
     class Pair:
         left: bg.TS[int]
@@ -31,10 +31,10 @@ def test_graph_var_kwargs_are_packed_as_a_declared_tsb():
     def graph(left: bg.TS[int], right: bg.TS[int]) -> bg.TS[int]:
         return select_right(left=left, right=right)
 
-    assert bg.test_graph(graph, [1], [2]) == [2]
+    assert bg.run_graph(graph, [1], [2]) == [2]
 
 
-def test_graph_var_args_are_packed_as_a_tsl():
+def test_run_graph_var_args_are_packed_as_a_tsl():
     @bg.graph
     def select_second(*values: bg.TSL[bg.TS[int], bg.SIZE]) -> bg.TS[int]:
         return values[1]
@@ -43,7 +43,44 @@ def test_graph_var_args_are_packed_as_a_tsl():
     def graph(left: bg.TS[int], right: bg.TS[int]) -> bg.TS[int]:
         return select_second(left, right)
 
-    assert bg.test_graph(graph, [1, 2], [3, 4]) == [3, 4]
+    assert bg.run_graph(graph, [1, 2], [3, 4]) == [3, 4]
+
+
+def test_run_graph_variadic_tsl_item_accepts_a_tick_sequence():
+    @bg.graph
+    def identity(*values: bg.TSL[bg.TS[int], bg.SIZE]) -> bg.TS[int]:
+        return values[0]
+
+    assert bg.run_graph(identity, [1, 2]) == [1, 2]
+
+
+def test_run_graph_variadic_tsb_field_accepts_a_tick_sequence():
+    @bg.schema
+    class Values:
+        value: bg.TS[int]
+
+    @bg.graph
+    def identity(**values: bg.TSB[Values]) -> bg.TS[int]:
+        return values["value"]
+
+    assert bg.run_graph(identity, value=[1, 2]) == [1, 2]
+
+
+def test_run_graph_generic_variadic_tsb_preserves_scalar_wiring():
+    @bg.graph
+    def identity(**values: bg.TSB[bg.TS_SCHEMA]) -> int:
+        return values["value"]
+
+    assert bg.run_graph(identity, value=3) == [3]
+
+
+def test_run_graph_generic_variadic_tsb_rejects_tick_sequences_without_field_types():
+    @bg.graph
+    def identity(**values: bg.TSB[bg.TS_SCHEMA]) -> bg.TS[int]:
+        return values["value"]
+
+    with pytest.raises(ValueError, match="declared TSB field type"):
+        bg.run_graph(identity, value=bg.ticks([1, 2]))
 
 
 def test_variadic_collection_guarantee_requires_a_concrete_collection():
@@ -73,7 +110,7 @@ def test_variadic_tsl_accepts_a_qualified_item_type():
     def graph() -> bg.TS[int]:
         return consume(final_value())
 
-    assert bg.test_graph(graph) == [13]
+    assert bg.run_graph(graph) == [13]
 
 
 def test_variadic_tsl_retains_a_generic_bundle_item_annotation():
@@ -95,10 +132,10 @@ def test_variadic_tsl_retains_a_generic_bundle_item_annotation():
         pair = make_pair(value)
         return select_second(pair, pair)
 
-    assert bg.test_graph(graph, [1, 3]) == [10, 30]
+    assert bg.run_graph(graph, [1, 3]) == [10, 30]
 
 
-def test_graph_var_args_can_capture_a_heterogeneous_tsb():
+def test_run_graph_var_args_can_capture_a_heterogeneous_tsb():
     @bg.compute_node
     def use_options(value: bg.TS[int], amount: int, factor: float) -> bg.TS[int]:
         return int((value.value + amount) * factor)
@@ -111,7 +148,7 @@ def test_graph_var_args_can_capture_a_heterogeneous_tsb():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return apply(value, 2, 3.0)
 
-    assert bg.test_graph(graph, [1, 2]) == [9, 12]
+    assert bg.run_graph(graph, [1, 2]) == [9, 12]
 
 
 def test_node_receives_materialized_variadic_collections():
@@ -128,7 +165,7 @@ def test_node_receives_materialized_variadic_collections():
     def graph(first: bg.TS[int], second: bg.TS[int], offset: bg.TS[int]) -> bg.TS[int]:
         return total(first, second, offset=offset, bonus=5)
 
-    assert bg.test_graph(graph, [1, 2], [10, 20], [100, 200]) == [116, 227]
+    assert bg.run_graph(graph, [1, 2], [10, 20], [100, 200]) == [116, 227]
 
 
 def test_positional_and_named_tsb_packs_resolve_independently():
@@ -143,7 +180,7 @@ def test_positional_and_named_tsb_packs_resolve_independently():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return total(value, 2, amount=3)
 
-    assert bg.test_graph(graph, [1, 4]) == [6, 9]
+    assert bg.run_graph(graph, [1, 4]) == [6, 9]
 
 
 def test_empty_variadic_collections_tick_at_graph_start():
@@ -159,7 +196,7 @@ def test_empty_variadic_collections_tick_at_graph_start():
     def graph() -> bg.TS[int]:
         return count_list() + count_bundle()
 
-    assert bg.test_graph(graph) == [0]
+    assert bg.run_graph(graph) == [0]
 
 
 def test_variadic_tsb_can_be_forwarded_through_a_nested_graph():
@@ -175,7 +212,7 @@ def test_variadic_tsb_can_be_forwarded_through_a_nested_graph():
     def graph(left: bg.TS[int], right: bg.TS[int]) -> bg.TS[int]:
         return forward(left=left, right=right)
 
-    assert bg.test_graph(graph, [1, 2], [10, 20]) == [11, 22]
+    assert bg.run_graph(graph, [1, 2], [10, 20]) == [11, 22]
 
 
 def test_positional_and_named_tsb_packs_can_be_forwarded_together():
@@ -197,7 +234,7 @@ def test_positional_and_named_tsb_packs_can_be_forwarded_together():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return forward(value, 2, bonus=3)
 
-    assert bg.test_graph(graph, [1, 4]) == [6, 9]
+    assert bg.run_graph(graph, [1, 4]) == [6, 9]
 
 
 def test_exact_pack_name_accepts_a_prebuilt_tsb():
@@ -218,7 +255,7 @@ def test_exact_pack_name_accepts_a_prebuilt_tsb():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return select_right(bundle=make_pair(value))
 
-    assert bg.test_graph(graph, [1, 3]) == [10, 30]
+    assert bg.run_graph(graph, [1, 3]) == [10, 30]
 
 
 def test_exact_pack_name_accepts_a_prebuilt_tsl():
@@ -234,7 +271,7 @@ def test_exact_pack_name_accepts_a_prebuilt_tsl():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return select_second(values=make_list(value))
 
-    assert bg.test_graph(graph, [1, 3]) == [10, 30]
+    assert bg.run_graph(graph, [1, 3]) == [10, 30]
 
 
 def test_map_can_invoke_a_variadic_python_graph():
@@ -250,7 +287,7 @@ def test_map_can_invoke_a_variadic_python_graph():
     def graph(trigger: bg.TS[int]) -> bg.TS[int]:
         return bg.map(branch, value=make_values(trigger))[2]
 
-    assert bg.test_graph(graph, [1, 3]) == [10, 30]
+    assert bg.run_graph(graph, [1, 3]) == [10, 30]
 
 
 def test_variadic_sink_node_receives_updates():
@@ -265,7 +302,7 @@ def test_variadic_sink_node_receives_updates():
         assert record(value=value, amount=2) is None
         return value
 
-    assert bg.test_graph(graph, [1, 3]) == [1, 3]
+    assert bg.run_graph(graph, [1, 3]) == [1, 3]
     assert observed == [{"value": 1, "amount": 2}, {"value": 3, "amount": 2}]
 
 
@@ -295,7 +332,7 @@ def test_fixed_keyword_only_parameters_are_passed_to_python_callbacks():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return add_offset(value, offset=2)
 
-    assert bg.test_graph(graph, [1, 3]) == [3, 5]
+    assert bg.run_graph(graph, [1, 3]) == [3, 5]
 
 
 def test_variadic_tsl_rejects_scalars_and_mixed_time_series_types():
@@ -312,10 +349,10 @@ def test_variadic_tsl_rejects_scalars_and_mixed_time_series_types():
         return consume(integer, floating)
 
     with pytest.raises(ValueError, match="variadic TSL accepts only time series") as scalar_error:
-        bg.test_graph(scalar_graph, [1])
+        bg.run_graph(scalar_graph, [1])
     assert any("callback scalar_graph at scalar_graph[1]" in note for note in scalar_error.value.__notes__)
     with pytest.raises(ValueError, match="compatible item types"):
-        bg.test_graph(mixed_graph, [1], [2.0])
+        bg.run_graph(mixed_graph, [1], [2.0])
 
 
 def test_variadic_parameters_require_collection_annotations():
@@ -349,6 +386,6 @@ def test_required_variadic_graph_captures_reject_optional_time_series_arguments(
 
     diagnostic = "an opt-qualified argument requires an optional input parameter"
     with pytest.raises(ValueError, match=diagnostic):
-        bg.test_graph(forward_positional, [1])
+        bg.run_graph(forward_positional, [1])
     with pytest.raises(ValueError, match=diagnostic):
-        bg.test_graph(forward_named, [1])
+        bg.run_graph(forward_named, [1])

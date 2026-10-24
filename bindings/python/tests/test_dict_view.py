@@ -36,7 +36,7 @@ def test_plain_node_receives_a_lazy_mapping_for_a_dictionary_time_series():
     def graph() -> bg.TS[int]:
         return inspect(source())
 
-    assert bg.test_graph(graph) == [10]
+    assert bg.run_graph(graph) == [10]
 
 
 def test_dictionary_view_raises_key_error_and_is_read_only():
@@ -57,7 +57,7 @@ def test_dictionary_view_raises_key_error_and_is_read_only():
     def graph() -> bg.TS[int]:
         return inspect(source())
 
-    assert bg.test_graph(graph) == [1]
+    assert bg.run_graph(graph) == [1]
 
 
 def test_dictionary_view_expires_when_the_node_callback_returns():
@@ -83,7 +83,7 @@ def test_dictionary_view_expires_when_the_node_callback_returns():
     def graph() -> bg.TS[int]:
         return retain(source())
 
-    assert bg.test_graph(graph) == [10]
+    assert bg.run_graph(graph) == [10]
     with pytest.raises(RuntimeError, match="outside its callback"):
         len(saved[0])
     with pytest.raises(RuntimeError, match="outside its callback"):
@@ -124,7 +124,7 @@ def test_dictionary_cursor_iterators_cross_batches_and_views_are_reiterable():
     def graph() -> bg.TS[int]:
         return inspect(source())
 
-    assert bg.test_graph(graph) == [130]
+    assert bg.run_graph(graph) == [130]
 
 
 def test_empty_dictionary_cursor_iterators_stop_immediately():
@@ -144,7 +144,7 @@ def test_empty_dictionary_cursor_iterators_stop_immediately():
     def graph() -> bg.TS[int]:
         return inspect(source())
 
-    assert bg.test_graph(graph) == [0]
+    assert bg.run_graph(graph) == [0]
 
 
 def test_dictionary_time_series_output_still_materializes_as_a_python_dict():
@@ -156,7 +156,7 @@ def test_dictionary_time_series_output_still_materializes_as_a_python_dict():
     def graph() -> bg.TS[dict[int, int]]:
         return source()
 
-    assert bg.test_graph(graph) == [{1: 10, 2: 20}]
+    assert bg.run_graph(graph) == [{1: 10, 2: 20}]
 
 
 def test_scalar_dictionary_arguments_use_callback_scoped_views():
@@ -172,6 +172,6 @@ def test_scalar_dictionary_arguments_use_callback_scoped_views():
     def graph() -> bg.TS[int]:
         return inspect({"answer": 42})
 
-    assert bg.test_graph(graph) == [42]
+    assert bg.run_graph(graph) == [42]
     with pytest.raises(RuntimeError, match="outside its callback"):
         len(saved[0])

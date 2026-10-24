@@ -27,8 +27,8 @@ def test_python_objects_keep_identity_through_base_typed_time_series():
     def base_to_base(value: bg.TS[Base]) -> bg.TS[Base]:
         return value
 
-    assert bg.test_graph(derived_to_base, [value])[0] is value
-    assert bg.test_graph(base_to_base, [value])[0] is value
+    assert bg.run_graph(derived_to_base, [value])[0] is value
+    assert bg.run_graph(base_to_base, [value])[0] is value
 
 
 def test_python_object_scalar_types_report_value_covariance():
@@ -57,7 +57,7 @@ def test_type_operator_reports_concrete_python_object_classes_from_base_typed_in
     def graph(value: bg.TS[Base]) -> bg.TS[str]:
         return native_concrete_type_name(value)
 
-    assert bg.test_graph(graph, [DerivedA(), DerivedA(), DerivedB(), Base()]) == [
+    assert bg.run_graph(graph, [DerivedA(), DerivedA(), DerivedB(), Base()]) == [
         "DerivedA",
         "DerivedA",
         "DerivedB",
@@ -78,7 +78,7 @@ def test_type_operator_reports_concrete_dataclass_schema_from_base_typed_input()
     def graph(value: bg.TS[bg.Bundle[BaseRecord]]) -> bg.TS[str]:
         return native_concrete_type_name(value)
 
-    assert bg.test_graph(graph, [DerivedRecord(1, 2), DerivedRecord(2, 3), BaseRecord(4)]) == [
+    assert bg.run_graph(graph, [DerivedRecord(1, 2), DerivedRecord(2, 3), BaseRecord(4)]) == [
         "DerivedRecord",
         "DerivedRecord",
         "BaseRecord",
@@ -105,8 +105,8 @@ def test_python_object_scalars_support_multiple_inheritance():
     def as_right(value: bg.TS[Derived]) -> bg.TS[Right]:
         return value
 
-    assert bg.test_graph(as_left, [value])[0] is value
-    assert bg.test_graph(as_right, [value])[0] is value
+    assert bg.run_graph(as_left, [value])[0] is value
+    assert bg.run_graph(as_right, [value])[0] is value
 
 
 def test_object_annotation_accepts_a_previously_registered_python_class():
@@ -120,7 +120,30 @@ def test_object_annotation_accepts_a_previously_registered_python_class():
         return value
 
     value = Value()
-    assert bg.test_graph(graph, [value])[0] is value
+    assert bg.run_graph(graph, bg.ticks([value]))[0] is value
+
+
+def test_run_graph_uses_registered_object_types_to_classify_iterable_values():
+    class Base:
+        pass
+
+    class Derived(Base):
+        pass
+
+    @bg.graph
+    def base_values(value: bg.TS[Base]) -> bg.TS[Base]:
+        return value
+
+    @bg.graph
+    def object_values(value: bg.TS[object]) -> bg.TS[object]:
+        return value
+
+    derived = [Derived(), Derived()]
+    list_value = [1, 2]
+
+    assert bg.run_graph(base_values, derived) == derived
+    assert bg.run_graph(object_values, list_value) == [list_value]
+    assert bg.run_graph(object_values, bg.ticks([list_value, [3, 4]])) == [list_value, [3, 4]]
 
 
 def test_can_from_python_recognizes_python_object_and_builtin_scalar_types():
@@ -141,7 +164,7 @@ def test_python_object_constants_copy_without_changing_identity():
     def graph() -> bg.TS[Value]:
         return bg.operators.const_(value)
 
-    assert bg.test_graph(graph)[0] is value
+    assert bg.run_graph(graph)[0] is value
 
 
 def test_python_object_reference_copy_and_final_release_do_not_need_the_gil():
@@ -167,7 +190,7 @@ def test_python_node_returning_none_produces_no_tick_for_object_scalars():
     def graph(trigger: bg.TS[int]) -> bg.TS[Value]:
         return maybe(trigger)
 
-    result = bg.test_graph(graph, [1, 2])
+    result = bg.run_graph(graph, [1, 2])
     assert result[0] is value
     assert result[1] is None
 
@@ -178,7 +201,7 @@ def test_none_is_not_a_python_object_scalar_value():
         return bg.operators.const_(None)
 
     with pytest.raises(ValueError, match="None does not identify a scalar type"):
-        bg.test_graph(graph)
+        bg.run_graph(graph)
 
 
 def test_tss_base_keys_use_python_hash_and_equality_across_classes():
@@ -221,7 +244,7 @@ def test_tss_base_keys_use_python_hash_and_equality_across_classes():
     def graph(trigger: bg.TS[int]) -> bg.TS[int]:
         return inspect(make_set(trigger))
 
-    assert bg.test_graph(graph, [1, 2]) == [1, 2]
+    assert bg.run_graph(graph, [1, 2]) == [1, 2]
 
 
 def test_tsd_base_keys_support_derived_lookup_and_removal():
@@ -253,7 +276,7 @@ def test_tsd_base_keys_support_derived_lookup_and_removal():
     def graph(trigger: bg.TS[int]) -> bg.TS[int]:
         return inspect(trigger, make_dictionary(trigger))
 
-    assert bg.test_graph(graph, [1, 2]) == [10, 0]
+    assert bg.run_graph(graph, [1, 2]) == [10, 0]
 
 
 @pytest.mark.parametrize("operation", ["hash", "equality"])
@@ -293,7 +316,7 @@ def test_python_hash_and_equality_exceptions_keep_their_identity(operation):
         return inspect(make_set(trigger))
 
     with pytest.raises(RuntimeError) as raised:
-        bg.test_graph(graph, [1])
+        bg.run_graph(graph, [1])
 
     assert raised.value is error
 
@@ -323,7 +346,7 @@ def test_unhashable_python_objects_raise_type_error_as_tss_keys():
         return inspect(make_set(trigger))
 
     with pytest.raises(TypeError, match="unhashable type"):
-        bg.test_graph(graph, [1])
+        bg.run_graph(graph, [1])
 
 
 def test_unhashable_python_objects_raise_type_error_as_tsd_lookup_keys():
@@ -356,4 +379,4 @@ def test_unhashable_python_objects_raise_type_error_as_tsd_lookup_keys():
         return inspect(trigger, make_dictionary(trigger))
 
     with pytest.raises(TypeError, match="unhashable type"):
-        bg.test_graph(graph, [1])
+        bg.run_graph(graph, [1])

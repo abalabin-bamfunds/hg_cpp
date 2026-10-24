@@ -20,7 +20,7 @@ def test_compute_node_activity_selects_scheduling_inputs_and_samples_passive_val
     def graph(trigger: bg.TS[int], sample: bg.TS[int]) -> bg.TS[int]:
         return combine(trigger, sample)
 
-    assert bg.test_graph(graph, [1, None, 3], [10, 20, None]) == [11, None, 23]
+    assert bg.run_graph(graph, [1, None, 3], [10, 20, None]) == [11, None, 23]
     assert calls == [(1, 10), (3, 20)]
     assert starts == [True]
 
@@ -36,7 +36,7 @@ def test_outputless_compute_node_uses_configured_activity_and_validity():
     def graph(trigger: bg.TS[int], sample: bg.TS[int]) -> None:
         observe(trigger, bg.opt(sample))
 
-    assert bg.test_graph(graph, [1, None, 2], [None, 10, None]) == [None, None, None]
+    assert bg.run_graph(graph, [1, None, 2], [None, 10, None]) is None
     assert calls == [(1, None), (2, 10)]
 
 
@@ -52,7 +52,7 @@ def test_empty_activity_tuple_selects_no_active_inputs():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return observe(value)
 
-    assert bg.test_graph(graph, [1, 2]) == [None, None]
+    assert bg.run_graph(graph, [1, 2]) == [None, None]
     assert calls == []
 
 
@@ -68,7 +68,7 @@ def test_empty_validity_tuple_makes_every_input_optional():
     def graph(trigger: bg.TS[int], value: bg.TS[int]) -> bg.TS[int]:
         return observe(trigger, bg.opt(value))
 
-    assert bg.test_graph(graph, [1, 2], [None, 5]) == [1, 2]
+    assert bg.run_graph(graph, [1, 2], [None, 5]) == [1, 2]
     assert calls == [(1, None), (2, 5)]
 
 
@@ -84,7 +84,7 @@ def test_omitted_activity_and_validity_preserve_required_active_defaults():
     def graph(trigger: bg.TS[int], value: bg.TS[int]) -> bg.TS[int]:
         return combine(trigger, value)
 
-    assert bg.test_graph(graph, [1, None], [None, 2]) == [None, 3]
+    assert bg.run_graph(graph, [1, None], [None, 2]) == [None, 3]
     assert calls == [(1, 2)]
 
 
@@ -100,7 +100,7 @@ def test_compute_node_validity_selects_required_inputs_and_accepts_opt_for_other
     def graph(trigger: bg.TS[int], sample: bg.TS[int]) -> bg.TS[int]:
         return combine(trigger, bg.opt(sample))
 
-    assert bg.test_graph(graph, [1, None, 2], [None, 10, None]) == [1, None, 12]
+    assert bg.run_graph(graph, [1, None, 2], [None, 10, None]) == [1, None, 12]
     assert calls == [(1, None), (2, 10)]
 
 
@@ -114,7 +114,7 @@ def test_compute_node_rejects_opt_for_a_selected_required_input():
         return identity(bg.opt(sample))
 
     with pytest.raises(ValueError, match="an opt-qualified argument requires an optional input parameter"):
-        bg.test_graph(graph, [1])
+        bg.run_graph(graph, [1])
 
 
 def test_compute_node_all_valid_gates_on_every_fixed_list_item():
@@ -129,7 +129,7 @@ def test_compute_node_all_valid_gates_on_every_fixed_list_item():
     def graph(trigger: bg.TS[int], values: bg.TSL[bg.TS[int], 2]) -> bg.TS[int]:
         return total(trigger, values)
 
-    assert bg.test_graph(graph, [1, 2], [{0: 10}, {1: 20}]) == [None, 30]
+    assert bg.run_graph(graph, [1, 2], [{0: 10}, {1: 20}]) == [None, 30]
     assert calls == [2]
 
 
@@ -145,14 +145,14 @@ def test_node_properties_apply_to_time_series_resolutions_and_preserve_optional_
     def graph(trigger: bg.TS[int], sample: bg.TS[int]) -> bg.TS[int]:
         return combine(trigger, sample)
 
-    assert bg.test_graph(graph, [1, 2], [None, 5]) == [None, 7]
+    assert bg.run_graph(graph, [1, 2], [None, 5]) == [None, 7]
     assert calls == [(2, 5)]
 
     @bg.graph
     def scalar_graph() -> bg.TS[int]:
         return combine(1, 5)
 
-    assert bg.test_graph(scalar_graph) == [6]
+    assert bg.run_graph(scalar_graph) == [6]
 
 
 @pytest.mark.parametrize(

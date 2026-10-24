@@ -30,4 +30,4 @@ def test_whole_graph_wiring():
         other_value = add_amount(price_value, amount=5)
         return add(doubled_price, other_value)
 
-    assert bg.test_graph(total_price) == [41]
+    assert bg.run_graph(total_price) == [41]

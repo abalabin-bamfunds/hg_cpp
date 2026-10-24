@@ -27,12 +27,12 @@ def reference_client() -> bg.TS[int]:
     return reference_value(7)
 
 
-def test_reference_service_uses_registered_graph_in_test_graph():
+def test_reference_service_captures_registered_graph_output_in_run_graph():
     catalogue = bg.ServiceCatalogue()
     catalogue.register_impl(reference_value, reference_implementation)
     profiler = bg.EvaluationProfiler()
 
-    assert bg.test_graph(reference_client, catalogue=catalogue, recorder=profiler.recorder()) == [42]
+    assert bg.run_graph(reference_client, catalogue=catalogue, recorder=profiler.recorder()) == [42]
     assert profiler.root_graph_id() is not None
 
 
@@ -53,8 +53,8 @@ def test_reference_service_selects_implementation_by_scalar_filter():
     catalogue.register_impl(reference_value, reference_implementation, key=7)
     catalogue.register_impl(reference_value, alternate_implementation, key=8)
 
-    assert bg.test_graph(reference_client, catalogue=catalogue) == [42]
-    assert bg.test_graph(alternate_client, catalogue=catalogue) == [84]
+    assert bg.run_graph(reference_client, catalogue=catalogue) == [42]
+    assert bg.run_graph(alternate_client, catalogue=catalogue) == [84]
 
 
 def test_reference_service_uses_registered_graph_in_run_graph():
@@ -98,7 +98,7 @@ def test_service_request_reply_with_python_tsd_implementation():
     catalogue = bg.ServiceCatalogue()
     catalogue.register_impl(double, implementation)
 
-    assert bg.test_graph(client, [2, 3, 5], catalogue=catalogue) == [4, 6, 10]
+    assert bg.run_graph(client, [2, 3, 5], catalogue=catalogue) == [4, 6, 10]
 
 
 def test_request_reply_service_without_output_is_a_sink():
@@ -150,7 +150,7 @@ def test_request_reply_service_supports_scalar_filter_and_installation_argument(
     catalogue = bg.ServiceCatalogue()
     catalogue.register_impl(transform, implementation, mode=2, factor=3)
 
-    assert bg.test_graph(client, [2, 4], catalogue=catalogue) == [6, 12]
+    assert bg.run_graph(client, [2, 4], catalogue=catalogue) == [6, 12]
 
 
 def test_feedback_service_implementation_delays_request_reply():
@@ -174,7 +174,7 @@ def test_feedback_service_implementation_delays_request_reply():
 
     catalogue = bg.ServiceCatalogue()
     catalogue.register_impl(echo, feedback)
-    assert bg.test_graph(client, [2, 4], catalogue=catalogue) == [None, 2, 4]
+    assert bg.run_graph(client, [2, 4], catalogue=catalogue) == [None, 2, 4]
 
 
 def test_feedback_service_implementation_preserves_filter_installation_and_generic_types():
@@ -201,7 +201,7 @@ def test_feedback_service_implementation_preserves_filter_installation_and_gener
 
     catalogue = bg.ServiceCatalogue()
     catalogue.register_impl(transform, feedback, mode=2, factor=3)
-    assert bg.test_graph(client, [2, 4], catalogue=catalogue) == [None, 6, 12]
+    assert bg.run_graph(client, [2, 4], catalogue=catalogue) == [None, 6, 12]
 
 
 def test_feedback_subscription_implementation_delays_keys_and_keeps_installation_argument():
@@ -228,7 +228,7 @@ def test_feedback_subscription_implementation_delays_keys_and_keeps_installation
 
     catalogue = bg.ServiceCatalogue()
     catalogue.register_impl(lookup, bg.feedback_service_implementation(lookup, implementation), offset=5)
-    assert bg.test_graph(client, [0], catalogue=catalogue) == [None, 35]
+    assert bg.run_graph(client, [0], catalogue=catalogue) == [None, 35]
 
 
 def test_feedback_service_implementation_retains_service_and_graph():
@@ -319,7 +319,7 @@ def test_subscription_service_accepts_final_and_const_keys():
     catalogue = bg.ServiceCatalogue()
     catalogue.register_impl(lookup, implementation)
 
-    assert bg.test_graph(client, catalogue=catalogue) == [160]
+    assert bg.run_graph(client, catalogue=catalogue) == [160]
 
 
 def test_subscription_service_rejects_ordinary_key_at_call_site():
@@ -347,7 +347,7 @@ def test_subscription_service_rejects_ordinary_key_at_call_site():
     catalogue.register_impl(lookup, implementation)
 
     with pytest.raises(RuntimeError, match="argument does not satisfy its generic type"):
-        bg.test_graph(client, catalogue=catalogue)
+        bg.run_graph(client, catalogue=catalogue)
 
 
 def test_guarantee_annotations_apply_to_each_time_series_shape():
@@ -380,13 +380,13 @@ def test_guarantee_annotations_apply_to_each_time_series_shape():
         field = bg.operators.getattr(make_bundle(), bg.symbol("value"))
         return read_final_field(field)
 
-    assert bg.test_graph(read_schema_field) == [13]
+    assert bg.run_graph(read_schema_field) == [13]
 
 
 def test_service_without_registered_implementation_fails_during_wiring():
     catalogue = bg.ServiceCatalogue()
     with pytest.raises(RuntimeError, match="no matching implementation"):
-        bg.test_graph(reference_client, catalogue=catalogue)
+        bg.run_graph(reference_client, catalogue=catalogue)
 
 
 def test_service_catalogue_retains_declarations_and_graph_wrappers():
@@ -447,7 +447,7 @@ def test_multiservice_graph_implements_two_reference_services():
     registration.register_impl(selected_reference, key=7)
     registration.register_impl(plain_reference)
 
-    assert bg.test_graph(client, catalogue=catalogue) == [30]
+    assert bg.run_graph(client, catalogue=catalogue) == [30]
 
 
 def test_multiservice_graph_combines_subscription_and_reference_services():
@@ -485,7 +485,7 @@ def test_multiservice_graph_combines_subscription_and_reference_services():
     registration.register_impl(clock)
     registration.register_impl(lookup)
 
-    assert bg.test_graph(client, catalogue=catalogue) == [35]
+    assert bg.run_graph(client, catalogue=catalogue) == [35]
 
 
 def test_multiservice_request_reply_uses_scalar_filter_and_installation_argument():
@@ -511,7 +511,7 @@ def test_multiservice_request_reply_uses_scalar_filter_and_installation_argument
     registration = catalogue.register_multiservice(implementation, factor=3)
     registration.register_impl(transform, mode=2)
 
-    assert bg.test_graph(client, [2, 4], catalogue=catalogue) == [6, 12]
+    assert bg.run_graph(client, [2, 4], catalogue=catalogue) == [6, 12]
 
 
 def test_multiservice_outputless_service_uses_request_port_without_reply():
@@ -539,7 +539,7 @@ def test_multiservice_outputless_service_uses_request_port_without_reply():
     registration = catalogue.register_multiservice(implementation)
     registration.register_impl(observe)
 
-    bg.test_graph(client, [4, 6], catalogue=catalogue)
+    bg.run_graph(client, [4, 6], catalogue=catalogue)
 
     assert seen == [4, 6]
 
@@ -609,7 +609,7 @@ def test_multiservice_graph_rejects_an_unregistered_request_port():
     registration.register_impl(registered)
 
     with pytest.raises(RuntimeError, match="unregistered service port"):
-        bg.test_graph(client, catalogue=catalogue)
+        bg.run_graph(client, catalogue=catalogue)
 
 
 def test_multiservice_catalogue_retains_claim_and_graph_wrappers():

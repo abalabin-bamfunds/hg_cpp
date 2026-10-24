@@ -17,7 +17,7 @@ def test_bytes_export_is_readonly_and_outlives_the_graph():
     def graph() -> bg.TS[bytes]:
         return source()
 
-    result = bg.test_graph(graph)[0]
+    result = bg.run_graph(graph)[0]
     gc.collect()
 
     assert isinstance(result, memoryview)
@@ -88,4 +88,14 @@ def test_memoryview_literal_infers_bg_bytes_type():
     def constant() -> bg.TS[bytes]:
         return const_(value=value)
 
-    assert bytes(bg.test_graph(constant)[0]) == b"literal"
+    assert bytes(bg.run_graph(constant)[0]) == b"literal"
+
+
+def test_run_graph_classifies_bytes_and_memoryview_as_single_bytes_values():
+    @bg.graph
+    def identity(value: bg.TS[bytes]) -> bg.TS[bytes]:
+        return value
+
+    assert bytes(bg.run_graph(identity, b"initial")[0]) == b"initial"
+    assert bytes(bg.run_graph(identity, memoryview(b"view"))[0]) == b"view"
+    assert [bytes(value) for value in bg.run_graph(identity, [b"first", b"second"])] == [b"first", b"second"]

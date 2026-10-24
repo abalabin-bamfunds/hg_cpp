@@ -25,7 +25,7 @@ def test_node_lifecycle_callbacks_select_definition_arguments_in_declared_order(
     def graph() -> bg.TS[int]:
         return add(40, amount=2)
 
-    assert bg.test_graph(graph) == [42]
+    assert bg.run_graph(graph) == [42]
     assert calls == [("start", 2), ("stop", 40, 2)]
 
 
@@ -90,7 +90,7 @@ def test_node_start_return_is_ignored_before_later_evaluation(compute_node):
     def graph() -> bg.TS[int]:
         return identity(source())
 
-    actual = bg.test_graph(graph)
+    actual = bg.run_graph(graph)
     assert starts == ["start"]
     assert actual == [None, 5]
 
@@ -133,7 +133,7 @@ def test_invalid_lifecycle_callback_does_not_occupy_registration_slot():
     def graph() -> bg.TS[int]:
         return value(3)
 
-    assert bg.test_graph(graph) == [3]
+    assert bg.run_graph(graph) == [3]
     assert seen == [3]
 
 
@@ -184,7 +184,7 @@ def test_source_node_passes_keyword_only_inputs_to_its_evaluation_function():
     def graph() -> bg.TS[int]:
         return source(value=7)
 
-    assert bg.test_graph(graph) == [7]
+    assert bg.run_graph(graph) == [7]
 
 
 def test_sources_reject_invalidation_callbacks_without_time_series_inputs():
@@ -231,7 +231,7 @@ def test_generator_reads_evaluation_clock_after_each_resume():
     def graph() -> bg.TS[int]:
         return source()
 
-    actual = bg.test_graph(graph)
+    actual = bg.run_graph(graph)
 
     assert actual == [0, 1, 2]
     assert len(observed) == 2
@@ -248,7 +248,7 @@ def test_empty_generator_is_a_valid_source():
     def graph() -> bg.TS[int]:
         return source()
 
-    assert bg.test_graph(graph) == [None]
+    assert bg.run_graph(graph) == [None]
 
 
 def test_generator_requires_strictly_increasing_output_times():
@@ -262,7 +262,7 @@ def test_generator_requires_strictly_increasing_output_times():
         return source()
 
     with pytest.raises(ValueError, match="strictly increasing"):
-        bg.test_graph(graph)
+        bg.run_graph(graph)
 
 
 def test_generator_accepts_timedelta_relative_to_each_resume():
@@ -275,7 +275,7 @@ def test_generator_accepts_timedelta_relative_to_each_resume():
     def graph() -> bg.TS[int]:
         return source()
 
-    assert bg.test_graph(graph) == [1, 2]
+    assert bg.run_graph(graph) == [1, 2]
 
 
 def test_generator_retains_scalar_dictionary_arguments_across_yields():
@@ -289,7 +289,7 @@ def test_generator_retains_scalar_dictionary_arguments_across_yields():
     def graph() -> bg.TS[int]:
         return source({"value": 42})
 
-    assert bg.test_graph(graph) == [None, 1, 42]
+    assert bg.run_graph(graph) == [None, 1, 42]
 
 
 def test_identical_generator_calls_create_independent_sources():
@@ -309,7 +309,7 @@ def test_identical_generator_calls_create_independent_sources():
     def graph() -> bg.TS[int]:
         return add(source(), source())
 
-    assert bg.test_graph(graph) == [3]
+    assert bg.run_graph(graph) == [3]
     assert values == [1, 2]
 
 
@@ -383,11 +383,11 @@ def test_invalidation_callback_receives_selected_input():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return identity(value)
 
-    assert bg.test_graph(graph, [1, bg.INVALID]) == [1, 99]
+    assert bg.run_graph(graph, [1, bg.INVALID]) == [1, 99]
     assert seen == [False]
 
 
-@pytest.mark.parametrize("runner", [bg.run_graph, bg.test_graph])
+@pytest.mark.parametrize("runner", [bg.run_graph, bg.run_graph])
 def test_stop_callback_errors_are_reported_as_unraisable_after_stop(runner):
     calls = []
 

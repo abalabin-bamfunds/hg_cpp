@@ -28,7 +28,7 @@ def test_map_wires_python_graphs_and_passes_the_key():
         mapped = bg.map(branch, make_values(trigger), __key_arg__=0)
         return mapped[2]
 
-    assert bg.test_graph(graph, [1, 3]) == [12, 32]
+    assert bg.run_graph(graph, [1, 3]) == [12, 32]
 
 
 def test_map_uses_the_union_of_mapped_dictionaries():
@@ -58,8 +58,8 @@ def test_map_uses_the_union_of_mapped_dictionaries():
         mapped = bg.map(available, make_left(trigger), make_right(trigger))
         return count_branches(mapped)
 
-    assert bg.test_graph(graph, [1, 3]) == [10, 30]
-    assert bg.test_graph(branch_count, [1]) == [2]
+    assert bg.run_graph(graph, [1, 3]) == [10, 30]
+    assert bg.run_graph(branch_count, [1]) == [2]
 
 
 def test_map_selects_a_named_key_set_argument():
@@ -97,8 +97,8 @@ def test_map_selects_a_named_key_set_argument():
         )
         return mapped[1]
 
-    assert bg.test_graph(graph, [1, 2]) == [None, None]
-    assert bg.test_graph(selected_left_value, [1]) == [1]
+    assert bg.run_graph(graph, [1, 2]) == [None, None]
+    assert bg.run_graph(selected_left_value, [1]) == [1]
 
 
 def test_map_pass_through_preserves_the_complete_time_series():
@@ -115,7 +115,7 @@ def test_map_pass_through_preserves_the_complete_time_series():
         )
         return mapped[1]
 
-    assert bg.test_graph(graph, [2, 3], [10, 20]) == [12, 23]
+    assert bg.run_graph(graph, [2, 3], [10, 20]) == [12, 23]
 
 
 def test_map_preserves_named_arguments_and_selects_a_named_key_parameter():
@@ -128,7 +128,7 @@ def test_map_preserves_named_arguments_and_selects_a_named_key_parameter():
         mapped = bg.map(branch, value=make_values(trigger), __key_arg__="key")
         return mapped[2]
 
-    assert bg.test_graph(graph, [1, 3]) == [12, 32]
+    assert bg.run_graph(graph, [1, 3]) == [12, 32]
 
 
 def test_nested_map_uses_normal_graph_wiring():
@@ -148,7 +148,7 @@ def test_nested_map_uses_normal_graph_wiring():
     def graph(trigger: bg.TS[int]) -> bg.TS[int]:
         return bg.map(outer_branch, make_values(trigger))[2]
 
-    assert bg.test_graph(graph, [1, 3]) == [11, 31]
+    assert bg.run_graph(graph, [1, 3]) == [11, 31]
 
 
 def test_map_removes_and_recreates_a_branch_on_later_cycles():
@@ -166,7 +166,7 @@ def test_map_removes_and_recreates_a_branch_on_later_cycles():
     def graph(trigger: bg.TS[int]) -> bg.TS[int]:
         return bg.map(branch, changing_values(trigger))[1]
 
-    assert bg.test_graph(graph, [1, 2, 3]) == [11, None, 13]
+    assert bg.run_graph(graph, [1, 2, 3]) == [11, None, 13]
 
 
 def test_map_supports_source_and_sink_graphs():
@@ -203,8 +203,8 @@ def test_map_supports_source_and_sink_graphs():
         assert bg.map(sink_branch, make_values(trigger)) is None
         return trigger
 
-    assert bg.test_graph(source_graph, [1, 2, 1]) == [7, None, 7]
-    assert bg.test_graph(sink_graph, [2, 3]) == [2, 3]
+    assert bg.run_graph(source_graph, [1, 2, 1]) == [7, None, 7]
+    assert bg.run_graph(sink_graph, [2, 3]) == [2, 3]
     assert events == [2, 20, 3, 30]
 
 
@@ -229,7 +229,7 @@ def test_switch_selects_cases_tuple_keys_and_default():
             value,
         )
 
-    assert bg.test_graph(graph, [1, 2, 3, 9], [5, 6, 7, 8]) == [15, 16, 27, 108]
+    assert bg.run_graph(graph, [1, 2, 3, 9], [5, 6, 7, 8]) == [15, 16, 27, 108]
 
 
 def test_switch_accepts_an_optional_key_wiring_point():
@@ -241,7 +241,7 @@ def test_switch_accepts_an_optional_key_wiring_point():
     def graph(key: bg.TS[int], value: bg.TS[int]) -> bg.TS[int]:
         return bg.switch_(bg.opt(key), {1: branch}, value)
 
-    assert bg.test_graph(graph, [1, 1], [2, 5]) == [12, 15]
+    assert bg.run_graph(graph, [1, 1], [2, 5]) == [12, 15]
 
 
 def test_switch_reports_an_unmatched_key():
@@ -254,7 +254,7 @@ def test_switch_reports_an_unmatched_key():
         return bg.switch_(key, {1: branch}, value)
 
     with pytest.raises(IndexError, match="does not match a case"):
-        bg.test_graph(graph, [2], [5])
+        bg.run_graph(graph, [2], [5])
 
 
 def test_switch_matches_named_arguments_for_each_case():
@@ -270,7 +270,7 @@ def test_switch_matches_named_arguments_for_each_case():
     def graph(key: bg.TS[int], value: bg.TS[int], other: bg.TS[int]) -> bg.TS[int]:
         return bg.switch_(key, {1: use_value, 2: use_other}, value=value, other=other)
 
-    assert bg.test_graph(graph, [1, 2], [10, 20], [100, 200]) == [10, 200]
+    assert bg.run_graph(graph, [1, 2], [10, 20], [100, 200]) == [10, 200]
 
 
 def test_switch_supports_source_and_sink_case_graphs():
@@ -297,8 +297,8 @@ def test_switch_supports_source_and_sink_case_graphs():
         assert bg.switch_(key, {1: sink}, value) is None
         return value
 
-    assert bg.test_graph(source_graph, [1]) == [42]
-    assert bg.test_graph(sink_graph, [1, 1], [7, 9]) == [7, 9]
+    assert bg.run_graph(source_graph, [1]) == [42]
+    assert bg.run_graph(sink_graph, [1, 1], [7, 9]) == [7, 9]
     assert events == [7, 9]
 
 
@@ -320,7 +320,7 @@ def test_switch_inside_map_recreates_the_selected_inner_graph():
         mapped = bg.map(mapped_branch, make_values(trigger), bg.pass_through(selected))
         return mapped[1]
 
-    assert bg.test_graph(graph, [1, 2, 3], [1, 2, 1]) == [11, 22, 13]
+    assert bg.run_graph(graph, [1, 2, 3], [1, 2, 1]) == [11, 22, 13]
 
 
 def test_mesh_evaluates_a_requested_branch_first():
@@ -341,7 +341,7 @@ def test_mesh_evaluates_a_requested_branch_first():
         result = bg.mesh(branch, make_values(trigger), __key_arg__=0)
         return result[2]
 
-    assert bg.test_graph(graph, [1, 3]) == [11, 33]
+    assert bg.run_graph(graph, [1, 3]) == [11, 33]
 
 
 def test_mesh_creates_a_branch_for_a_requested_missing_key():
@@ -363,7 +363,7 @@ def test_mesh_creates_a_branch_for_a_requested_missing_key():
         result = bg.mesh(branch, dependencies(trigger), __key_arg__=0)
         return result[1]
 
-    assert bg.test_graph(graph, [1]) == [1]
+    assert bg.run_graph(graph, [1]) == [1]
 
 
 def test_named_outer_mesh_can_be_selected_from_an_inner_mesh():
@@ -392,7 +392,7 @@ def test_named_outer_mesh_can_be_selected_from_an_inner_mesh():
         result = bg.mesh(outer_branch, make_values(trigger), name="outer", __key_arg__=0)
         return result[2]
 
-    assert bg.test_graph(graph, [1, 3]) == [11, 33]
+    assert bg.run_graph(graph, [1, 3]) == [11, 33]
 
 
 def test_mesh_removes_and_recreates_a_branch_on_later_cycles():
@@ -410,4 +410,4 @@ def test_mesh_removes_and_recreates_a_branch_on_later_cycles():
     def graph(trigger: bg.TS[int]) -> bg.TS[int]:
         return bg.mesh(branch, changing_values(trigger))[1]
 
-    assert bg.test_graph(graph, [1, 2, 3]) == [11, None, 13]
+    assert bg.run_graph(graph, [1, 2, 3]) == [11, None, 13]

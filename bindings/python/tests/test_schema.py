@@ -28,7 +28,7 @@ def test_bundle_construction_and_python_class_round_trip():
     def graph() -> bg.TS[float]:
         return read(source())
 
-    assert bg.test_graph(graph) == [5.0]
+    assert bg.run_graph(graph) == [5.0]
     assert missing_ask.ask is None
 
 
@@ -55,7 +55,7 @@ def test_bundle_covariance_retains_the_actual_derived_python_class():
     def graph() -> bg.TS[int]:
         return read(source())
 
-    assert bg.test_graph(graph) == [3]
+    assert bg.run_graph(graph) == [3]
 
 
 def test_tsb_projects_scalar_fields_and_preserves_explicit_time_series_fields():
@@ -76,7 +76,7 @@ def test_tsb_projects_scalar_fields_and_preserves_explicit_time_series_fields():
     def graph(value: bg.TS[int], text: bg.TS[str]) -> bg.TS[int]:
         return read(make(value, text))
 
-    assert bg.test_graph(graph, [2], ["abc"]) == [5]
+    assert bg.run_graph(graph, [2], ["abc"]) == [5]
 
 
 def test_bundle_rejects_time_series_schema_fields():
@@ -112,7 +112,7 @@ def test_optional_recursive_schema_field_round_trips():
     def graph() -> bg.TS[int]:
         return read(source())
 
-    assert bg.test_graph(graph) == [3]
+    assert bg.run_graph(graph) == [3]
 
 
 def test_recursive_schema_projects_and_wires_as_tsb():
@@ -137,7 +137,7 @@ def test_recursive_schema_projects_and_wires_as_tsb():
     def graph(trigger: bg.TS[int]) -> bg.TS[int]:
         return read(make(trigger))
 
-    assert bg.test_graph(graph, [1]) == [3]
+    assert bg.run_graph(graph, [1]) == [3]
 
 
 def test_required_recursive_schema_field_is_rejected():
@@ -167,7 +167,7 @@ def test_required_recursive_schema_field_is_rejected():
     def graph() -> bg.TS[int]:
         return read(source())
 
-    assert bg.test_graph(graph) == [1]
+    assert bg.run_graph(graph) == [1]
 
 
 def test_python_schema_conversion_does_not_call_custom_constructor():
@@ -194,7 +194,7 @@ def test_python_schema_conversion_does_not_call_custom_constructor():
     def graph() -> bg.TS[int]:
         return read(source())
 
-    assert bg.test_graph(graph) == [30]
+    assert bg.run_graph(graph) == [30]
 
 
 def test_schema_value_converts_inside_scalar_dictionary():
@@ -218,7 +218,7 @@ def test_schema_value_converts_inside_scalar_dictionary():
     def graph() -> bg.TS[float]:
         return read(source())
 
-    assert bg.test_graph(graph) == [2.5]
+    assert bg.run_graph(graph) == [2.5]
 
 
 def test_native_schema_export_supports_tsb_and_scalar_projections():
@@ -242,7 +242,7 @@ def test_native_schema_export_supports_tsb_and_scalar_projections():
     def scalar_graph() -> bg.TS[int]:
         return scalar_read(scalar_source())
 
-    assert bg.test_graph(scalar_graph) == [4]
+    assert bg.run_graph(scalar_graph) == [4]
 
     @bg.compute_node
     def make(value: bg.TS[int]) -> bg.TSB[NativePair]:
@@ -256,13 +256,13 @@ def test_native_schema_export_supports_tsb_and_scalar_projections():
     def time_series_graph(value: bg.TS[int]) -> bg.TS[int]:
         return read(make(value))
 
-    assert bg.test_graph(time_series_graph, [7]) == [7]
+    assert bg.run_graph(time_series_graph, [7]) == [7]
 
     @bg.graph
     def native_consumer_graph(value: bg.TS[int]) -> bg.TS[int]:
         return native_pair_consumer(make(value))
 
-    assert bg.test_graph(native_consumer_graph, [9]) == [9]
+    assert bg.run_graph(native_consumer_graph, [9]) == [9]
 
 
 def test_native_tsb_only_schema_export_does_not_require_scalar_projection():
@@ -289,13 +289,13 @@ def test_native_tsb_only_schema_export_does_not_require_scalar_projection():
     def graph(value: bg.TS[int], text: bg.TS[str]) -> bg.TS[str]:
         return read(make(value, text))
 
-    assert bg.test_graph(graph, [3], ["native"]) == ["3:native"]
+    assert bg.run_graph(graph, [3], ["native"]) == ["3:native"]
 
     @bg.graph
     def native_consumer_graph(value: bg.TS[int], text: bg.TS[str]) -> bg.TS[int]:
         return native_pair_consumer(make(value, text))
 
-    assert bg.test_graph(native_consumer_graph, [3], ["native"]) == [3]
+    assert bg.run_graph(native_consumer_graph, [3], ["native"]) == [3]
     with pytest.raises(TypeError, match="scalar Bundle schema"):
         bg._native_type(NativeChild)
     with pytest.raises(TypeError, match=r"Bundle\[\.\.\.\]"):
@@ -328,7 +328,7 @@ def test_native_schema_export_is_idempotent_and_can_add_scalar_projection():
     def graph() -> bg.TS[int]:
         return read(source())
 
-    assert bg.test_graph(graph) == [12]
+    assert bg.run_graph(graph) == [12]
 
 
 def test_native_scalar_export_installs_constructor_with_scalar_optional_fields():
@@ -357,7 +357,7 @@ def test_native_scalar_export_installs_constructor_with_scalar_optional_fields()
     def graph() -> bg.TS[bool]:
         return read(source())
 
-    assert bg.test_graph(graph) == [True]
+    assert bg.run_graph(graph) == [True]
 
 
 def test_native_schema_export_rejects_conflicting_rebinding():

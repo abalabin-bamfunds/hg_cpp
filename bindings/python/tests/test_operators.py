@@ -15,8 +15,8 @@ def test_const_operator_accepts_positional_and_named_scalars():
     def named() -> bg.TS[int]:
         return bg.operators.const_(value=43)
 
-    assert bg.test_graph(positional) == [42]
-    assert bg.test_graph(named) == [43]
+    assert bg.run_graph(positional) == [42]
+    assert bg.run_graph(named) == [43]
 
 
 def test_scalar_inference_uses_python_type_order():
@@ -31,8 +31,8 @@ def test_scalar_inference_uses_python_type_order():
     def integer_subclass() -> bg.TS[int]:
         return bg.operators.const_(Count(7))
 
-    assert bg.test_graph(boolean) == [True]
-    assert bg.test_graph(integer_subclass) == [7]
+    assert bg.run_graph(boolean) == [True]
+    assert bg.run_graph(integer_subclass) == [7]
 
 
 def test_extension_can_register_a_python_scalar_type():
@@ -49,7 +49,7 @@ def test_extension_can_register_a_python_scalar_type():
     def value() -> bg.TS[float]:
         return bg.operators.const_(DerivedMeasure())
 
-    assert bg.test_graph(value) == [1.5]
+    assert bg.run_graph(value) == [1.5]
 
 
 def test_getitem_operator_and_wiring_point_syntax_select_list_items():
@@ -61,8 +61,8 @@ def test_getitem_operator_and_wiring_point_syntax_select_list_items():
     def syntax() -> bg.TS[int]:
         return extension.make_list()[0]
 
-    assert bg.test_graph(explicit) == [20]
-    assert bg.test_graph(syntax) == [10]
+    assert bg.run_graph(explicit) == [20]
+    assert bg.run_graph(syntax) == [10]
 
 
 def test_operator_reports_normal_overload_diagnostics():
@@ -71,7 +71,7 @@ def test_operator_reports_normal_overload_diagnostics():
         return bg.operators.getitem(bg.operators.const_(1), 0)
 
     with pytest.raises(ValueError, match="Cannot resolve operator getitem") as raised:
-        bg.test_graph(invalid)
+        bg.run_graph(invalid)
     assert any("callback invalid at invalid[0]" in note for note in raised.value.__notes__)
 
 
@@ -84,8 +84,8 @@ def test_extension_can_export_existing_and_sink_operators():
     def sink() -> None:
         assert extension.discard(bg.operators.const_(1)) is None
 
-    assert bg.test_graph(constant) == [44]
-    bg.test_graph(sink)
+    assert bg.run_graph(constant) == [44]
+    bg.run_graph(sink)
 
 
 def test_opt_requires_an_optional_python_node_receiver():
@@ -101,7 +101,7 @@ def test_opt_requires_an_optional_python_node_receiver():
         observe(value=bg.opt(value))
         return value
 
-    assert bg.test_graph(graph, [1, 0, 2]) == [1, None, 2]
+    assert bg.run_graph(graph, [1, 0, 2]) == [1, None, 2]
     assert received == [1, None, 2]
 
 
@@ -115,7 +115,7 @@ def test_opt_rejects_a_required_python_node_receiver_with_a_clear_diagnostic():
         observe(bg.opt(value))
 
     with pytest.raises(ValueError, match="an opt-qualified argument requires an optional input parameter"):
-        bg.test_graph(graph, [1])
+        bg.run_graph(graph, [1])
 
 
 def test_opt_rejects_a_required_python_graph_receiver():
@@ -128,7 +128,7 @@ def test_opt_rejects_a_required_python_graph_receiver():
         return required(bg.opt(value))
 
     with pytest.raises(ValueError, match="an opt-qualified argument requires an optional input parameter"):
-        bg.test_graph(graph, [1])
+        bg.run_graph(graph, [1])
 
 
 def test_opt_is_preserved_through_python_operator_calls_and_cache_keys():
@@ -148,8 +148,8 @@ def test_opt_is_preserved_through_python_operator_calls_and_cache_keys():
         required = extension.optional_choice(value=value)
         return add(optional, required)
 
-    assert bg.test_graph(required_then_optional, [3]) == [36]
-    assert bg.test_graph(optional_then_required, [3]) == [36]
+    assert bg.run_graph(required_then_optional, [3]) == [36]
+    assert bg.run_graph(optional_then_required, [3]) == [36]
 
 
 def test_opt_rejects_values_without_time_series_identity():
@@ -171,7 +171,7 @@ def test_opt_preserves_wiring_point_lifetime():
         assert bg.opt(optional).type_name == value.type_name
         return value
 
-    assert bg.test_graph(graph, [3]) == [3]
+    assert bg.run_graph(graph, [3]) == [3]
     with pytest.raises(RuntimeError, match="outside its graph construction"):
         _ = optional_points[0].has_output
     with pytest.raises(RuntimeError, match="outside its graph construction"):
@@ -182,7 +182,7 @@ def test_opt_preserves_wiring_point_lifetime():
         return extension.optional_choice(optional_points[0])
 
     with pytest.raises(RuntimeError, match="outside its graph construction"):
-        bg.test_graph(use_expired, [3])
+        bg.run_graph(use_expired, [3])
 
 
 def test_repeated_opt_qualifier_is_accepted_by_an_optional_operator_input():
@@ -190,7 +190,7 @@ def test_repeated_opt_qualifier_is_accepted_by_an_optional_operator_input():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return extension.optional_choice(value=bg.opt(bg.opt(value)))
 
-    assert bg.test_graph(graph, [0]) == [20]
+    assert bg.run_graph(graph, [0]) == [20]
 
 
 def test_opt_qualified_graph_output_keeps_normal_output_semantics():
@@ -198,4 +198,4 @@ def test_opt_qualified_graph_output_keeps_normal_output_semantics():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return bg.opt(value)
 
-    assert bg.test_graph(graph, [1, 2]) == [1, 2]
+    assert bg.run_graph(graph, [1, 2]) == [1, 2]

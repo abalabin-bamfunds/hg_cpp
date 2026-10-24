@@ -14,7 +14,7 @@ def test_plain_graph_input_accepts_a_scalar_or_time_series():
     def graph(value: int) -> int:
         return identity(value)
 
-    assert bg.test_graph(graph, [1, 2, None, 4]) == [1, 2, None, 4]
+    assert bg.run_graph(graph, [1, 2, None, 4]) == [1, 2, None, 4]
 
 
 def test_plain_graph_inputs_can_be_mixed_with_explicit_scalar_and_time_series_inputs():
@@ -30,7 +30,7 @@ def test_plain_graph_inputs_can_be_mixed_with_explicit_scalar_and_time_series_in
     def graph(value: bg.TS[int], scale: bg.TS[int]) -> bg.TS[int]:
         return mixed(value, scale, offset=3)
 
-    assert bg.test_graph(graph, [2, 4], [5, 10]) == [13, 43]
+    assert bg.run_graph(graph, [2, 4], [5, 10]) == [13, 43]
 
 
 def test_plain_graph_accepts_a_scalar_argument_during_wiring():
@@ -42,7 +42,7 @@ def test_plain_graph_accepts_a_scalar_argument_during_wiring():
     def graph() -> int:
         return add(12, 30)
 
-    assert bg.test_graph(graph) == [42]
+    assert bg.run_graph(graph) == [42]
 
 
 def test_scalar_graph_parameter_rejects_a_time_series():
@@ -55,7 +55,7 @@ def test_scalar_graph_parameter_rejects_a_time_series():
         return scalar_only(value)
 
     with pytest.raises(ValueError, match="cannot wire Python graph"):
-        bg.test_graph(graph, [1])
+        bg.run_graph(graph, [1])
 
 
 def test_scalar_graph_parameter_accepts_a_scalar():
@@ -67,7 +67,7 @@ def test_scalar_graph_parameter_accepts_a_scalar():
     def graph() -> int:
         return scalar_only(7)
 
-    assert bg.test_graph(graph) == [7]
+    assert bg.run_graph(graph) == [7]
 
 
 def test_scalar_annotation_rejects_a_time_series_type():
@@ -99,7 +99,7 @@ def test_plain_graph_inputs_forward_through_nested_graphs():
     def outer(value: int) -> int:
         return inner(value)
 
-    assert bg.test_graph(outer, [3, 5]) == [3, 5]
+    assert bg.run_graph(outer, [3, 5]) == [3, 5]
 
 
 def test_plain_graph_parameters_support_defaults_and_named_arguments():
@@ -115,7 +115,7 @@ def test_plain_graph_parameters_support_defaults_and_named_arguments():
     def graph(value: bg.TS[int]) -> bg.TS[int]:
         return inner(offset=4, value=value)
 
-    assert bg.test_graph(graph, [1, 3]) == [5, 7]
+    assert bg.run_graph(graph, [1, 3]) == [5, 7]
 
 
 def test_optional_plain_graph_input_accepts_an_absent_scalar():
@@ -131,7 +131,7 @@ def test_optional_plain_graph_input_accepts_an_absent_scalar():
     def graph() -> int:
         return inner(None)
 
-    assert bg.test_graph(graph) == [9]
+    assert bg.run_graph(graph) == [9]
 
 
 def test_optional_plain_graph_input_accepts_a_scalar_value():
@@ -147,7 +147,7 @@ def test_optional_plain_graph_input_accepts_a_scalar_value():
     def graph() -> int:
         return inner(5)
 
-    assert bg.test_graph(graph) == [5]
+    assert bg.run_graph(graph) == [5]
 
 
 def test_optional_plain_graph_default_can_be_absent():
@@ -163,7 +163,7 @@ def test_optional_plain_graph_default_can_be_absent():
     def graph() -> int:
         return inner()
 
-    assert bg.test_graph(graph) == [9]
+    assert bg.run_graph(graph) == [9]
 
 
 def test_optional_scalar_annotation_accepts_only_an_optional_scalar():
@@ -183,9 +183,9 @@ def test_optional_scalar_annotation_accepts_only_an_optional_scalar():
     def time_series_call(value: bg.TS[int]) -> bg.TS[int]:
         return inner(bg.opt(value))
 
-    assert bg.test_graph(scalar_call) == [9]
+    assert bg.run_graph(scalar_call) == [9]
     with pytest.raises(ValueError, match="cannot wire Python graph"):
-        bg.test_graph(time_series_call, [4])
+        bg.run_graph(time_series_call, [4])
 
 
 def test_scalar_optional_annotation_also_accepts_an_absent_scalar():
@@ -201,7 +201,7 @@ def test_scalar_optional_annotation_also_accepts_an_absent_scalar():
     def graph() -> int:
         return inner(None)
 
-    assert bg.test_graph(graph) == [9]
+    assert bg.run_graph(graph) == [9]
 
 
 def test_optional_plain_graph_input_forwards_opt_to_an_optional_node():
@@ -213,7 +213,7 @@ def test_optional_plain_graph_input_forwards_opt_to_an_optional_node():
     def graph(value: int | None) -> int:
         return observe(value)
 
-    assert bg.test_graph(graph, [None, 4, None, 6]) == [None, 4, None, 6]
+    assert bg.run_graph(graph, [None, 4, None, 6]) == [None, 4, None, 6]
 
 
 def test_optional_plain_graph_input_cannot_forward_to_required_node():
@@ -230,7 +230,7 @@ def test_optional_plain_graph_input_cannot_forward_to_required_node():
         return inner(value)
 
     with pytest.raises(ValueError, match="optional input parameter"):
-        bg.test_graph(graph, [4])
+        bg.run_graph(graph, [4])
 
 
 def test_plain_scalar_graph_return_is_lifted_to_a_constant_time_series():
@@ -238,7 +238,7 @@ def test_plain_scalar_graph_return_is_lifted_to_a_constant_time_series():
     def graph() -> int:
         return 42
 
-    assert bg.test_graph(graph) == [42]
+    assert bg.run_graph(graph) == [42]
 
 
 def test_plain_graph_sink_uses_a_plain_scalar_parameter():
@@ -252,7 +252,8 @@ def test_plain_graph_sink_uses_a_plain_scalar_parameter():
     def graph(value: int) -> None:
         sink(value)
 
-    assert bg.test_graph(graph, [1, 2]) == [None, None]
+    assert bg.run_graph(graph, [1, 2]) is None
+    assert received == [1, 2]
     assert received == [1, 2]
 
 
@@ -265,7 +266,7 @@ def test_plain_dictionary_parameter_promotes_to_ts_of_dictionary():
     def graph(value: dict[str, int]) -> int:
         return size(value)
 
-    assert bg.test_graph(graph, [{"a": 1}, {"a": 1, "b": 2}]) == [1, 2]
+    assert bg.run_graph(graph, [{"a": 1}, {"a": 1, "b": 2}]) == [1, 2]
 
 
 def test_plain_dictionary_scalar_is_lifted_to_ts_of_dictionary():
@@ -277,7 +278,7 @@ def test_plain_dictionary_scalar_is_lifted_to_ts_of_dictionary():
     def graph() -> dict[str, int]:
         return identity({"a": 1, "b": 2})
 
-    assert bg.test_graph(graph) == [{"a": 1, "b": 2}]
+    assert bg.run_graph(graph) == [{"a": 1, "b": 2}]
 
 
 def test_plain_graph_return_rejects_an_incompatible_scalar():
@@ -286,7 +287,7 @@ def test_plain_graph_return_rejects_an_incompatible_scalar():
         return "wrong"
 
     with pytest.raises(TypeError, match="expected an integer for bg.i64"):
-        bg.test_graph(graph)
+        bg.run_graph(graph)
 
 
 def test_explicit_time_series_return_still_requires_a_wiring_point():
@@ -294,8 +295,8 @@ def test_explicit_time_series_return_still_requires_a_wiring_point():
     def graph() -> bg.TS[int]:
         return 42
 
-    with pytest.raises(RuntimeError, match="must return a wiring point"):
-        bg.test_graph(graph)
+    with pytest.raises(ValueError, match="must return a wiring point"):
+        bg.run_graph(graph)
 
 
 def test_plain_graph_branch_works_in_switch():
@@ -315,7 +316,7 @@ def test_plain_graph_branch_works_in_switch():
     def select(key: bg.TS[int], value: int) -> int:
         return bg.switch_(key, {1: first, 2: second}, value)
 
-    assert bg.test_graph(select, [1, 2], [10, 20]) == [10, 20]
+    assert bg.run_graph(select, [1, 2], [10, 20]) == [10, 20]
 
 
 def test_plain_graph_branch_works_in_map():
@@ -335,7 +336,7 @@ def test_plain_graph_branch_works_in_map():
     def graph(trigger: bg.TS[int]) -> bg.TS[int]:
         return bg.map(branch, make_values(trigger), __key_arg__=0)[2]
 
-    assert bg.test_graph(graph, [1, 3]) == [12, 32]
+    assert bg.run_graph(graph, [1, 3]) == [12, 32]
 
 
 def test_scalar_annotation_restricts_python_node_input():
@@ -351,9 +352,9 @@ def test_scalar_annotation_restricts_python_node_input():
     def time_series_call(value: bg.TS[int]) -> bg.TS[int]:
         return identity(value)
 
-    assert bg.test_graph(scalar_call) == [5]
+    assert bg.run_graph(scalar_call) == [5]
     with pytest.raises(ValueError, match="cannot wire Python node"):
-        bg.test_graph(time_series_call, [5])
+        bg.run_graph(time_series_call, [5])
 
 
 def test_python_graph_output_uses_normal_time_series_type_checking():
@@ -361,5 +362,5 @@ def test_python_graph_output_uses_normal_time_series_type_checking():
     def graph() -> bg.TS[int]:
         return bg.operators.const_(1.5)
 
-    with pytest.raises(RuntimeError, match="does not satisfy its resolved output type"):
-        bg.test_graph(graph)
+    with pytest.raises(ValueError, match="does not satisfy its resolved output type"):
+        bg.run_graph(graph)

@@ -29,7 +29,7 @@ def test_dispatch_selects_python_class_implementations_and_falls_back():
     def graph(value: bg.TS[Base]) -> bg.TS[str]:
         return choose(value)
 
-    assert bg.test_graph(graph, [Base(), Derived(), Base()]) == ["base", "derived", "base"]
+    assert bg.run_graph(graph, [Base(), Derived(), Base()]) == ["base", "derived", "base"]
 
 
 def test_dispatch_accepts_explicit_graph_list_and_named_scalar_argument():
@@ -55,7 +55,7 @@ def test_dispatch_accepts_explicit_graph_list_and_named_scalar_argument():
     def graph(value: bg.TS[Base]) -> bg.TS[int]:
         return choose(value=value, amount=5)
 
-    assert bg.test_graph(graph, [Derived(), Base(), Derived()]) == [15, 5, 15]
+    assert bg.run_graph(graph, [Derived(), Base(), Derived()]) == [15, 5, 15]
 
 
 def test_dispatch_specializes_a_generic_contract():
@@ -86,7 +86,7 @@ def test_dispatch_specializes_a_generic_contract():
     def graph(value: bg.TS[Base]) -> bg.TS[str]:
         return specialized(value)
 
-    assert bg.test_graph(graph, [Base(), Derived()]) == ["base", "derived"]
+    assert bg.run_graph(graph, [Base(), Derived()]) == ["base", "derived"]
 
 
 def test_dispatch_selects_a_runtime_type_tuple():
@@ -113,7 +113,7 @@ def test_dispatch_selects_a_runtime_type_tuple():
     def graph(first: bg.TS[Base], second: bg.TS[Base]) -> bg.TS[str]:
         return choose(first, second)
 
-    assert bg.test_graph(graph, [Derived(), Derived(), Base()], [Derived(), Base(), Derived()]) == [
+    assert bg.run_graph(graph, [Derived(), Derived(), Base()], [Derived(), Base(), Derived()]) == [
         "both derived", "fallback", "fallback"
     ]
 
@@ -138,7 +138,7 @@ def test_dispatch_without_a_fallback_rejects_an_unmatched_runtime_type():
         return choose(value)
 
     with pytest.raises(IndexError, match="dispatch input types do not match"):
-        bg.test_graph(graph, [Derived(), Base()])
+        bg.run_graph(graph, [Derived(), Base()])
 
 
 def test_dispatch_selects_derived_schema_values():
@@ -167,7 +167,7 @@ def test_dispatch_selects_derived_schema_values():
     def graph(value: bg.TS[bg.Bundle[Base]]) -> bg.TS[str]:
         return choose(value)
 
-    assert bg.test_graph(graph, [Derived("a", 1), Base("b"), Derived("c", 2)]) == [
+    assert bg.run_graph(graph, [Derived("a", 1), Base("b"), Derived("c", 2)]) == [
         "derived", "base", "derived"
     ]
 
@@ -200,7 +200,7 @@ def test_dispatch_supports_outputless_nodes():
         return value
 
     values = [Derived(), Base()]
-    assert bg.test_graph(graph, values) == values
+    assert bg.run_graph(graph, values) == values
     assert calls == ["derived", "base"]
 
 
@@ -227,7 +227,7 @@ def test_dispatch_requires_an_applicable_implementation():
         return choose(value)
 
     with pytest.raises(ValueError, match="at least one implementation"):
-        bg.test_graph(graph, [Base()])
+        bg.run_graph(graph, [Base()])
 
 
 def test_dispatch_rejects_an_input_without_value_covariance():
@@ -244,7 +244,7 @@ def test_dispatch_rejects_an_input_without_value_covariance():
         return choose(value)
 
     with pytest.raises(ValueError, match="covariance-capable"):
-        bg.test_graph(graph, [1])
+        bg.run_graph(graph, [1])
 
 
 def test_dispatch_preserves_python_wiring_exception():
@@ -266,5 +266,5 @@ def test_dispatch_preserves_python_wiring_exception():
         return choose(value)
 
     with pytest.raises(RuntimeError) as caught:
-        bg.test_graph(graph, [Base()])
+        bg.run_graph(graph, [Base()])
     assert caught.value is error
