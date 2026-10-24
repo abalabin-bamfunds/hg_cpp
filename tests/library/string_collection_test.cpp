@@ -210,6 +210,11 @@ TEST_CASE("split and join propagate the weakest input guarantee",
         output.set(*text);
     });
     const auto ordinary_separator = node([](Out<TS<string>> output) { output.set(","); });
+    const auto final_values = node([](Out<TSL<TS<string, TimeSeriesGuarantee::final>, 2,
+                                                TimeSeriesGuarantee::final>> output) {
+        output[0].set("a");
+        output[1].set("b");
+    });
     const auto split = [&] {
         const auto text = final_text("a,b");
         const auto separator = ordinary_separator();
@@ -220,13 +225,13 @@ TEST_CASE("split and join propagate the weakest input guarantee",
         return result.as<TS<string, TimeSeriesGuarantee::ordinary>>();
     };
     const auto join = [&] {
-        const auto values = tsl(std::array{final_text("a"), final_text("b")});
+        const auto values = final_values();
         const auto result = operators::join(values, "|");
         CHECK(&result.type() == &TS<string, TimeSeriesGuarantee::final>::type());
         return result.as<TS<string, TimeSeriesGuarantee::final>>();
     };
     const auto optional_join = [&] {
-        const auto values = tsl(std::array{final_text("a"), final_text("b")});
+        const auto values = final_values();
         const auto result = operators::join("values"_n = opt(values), "|");
         CHECK(&result.type() == &TS<string, TimeSeriesGuarantee::ordinary>::type());
         return result.as<TS<string, TimeSeriesGuarantee::ordinary>>();

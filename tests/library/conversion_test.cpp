@@ -174,7 +174,7 @@ TEST_CASE("convert maps Bundle and TSB fields by name",
 }
 
 TEST_CASE("convert maps fields from a derived Bundle through its declared base schema",
-          "[feature:operator][series:tsb][scalar:hierarchical][schema:inheritance]") {
+          "[feature:operator][series:tsb][scalar:hierarchical][schema:named]") {
     auto memory = allocator{};
     const auto derived = bundle<ConversionDerivedScalarRecord>(memory, i64{7}, 2.5, true);
     const auto base = ScalarValue<Bundle<ConversionScalarRecord>>{derived.view()};
@@ -190,7 +190,7 @@ TEST_CASE("convert maps fields from a derived Bundle through its declared base s
 }
 
 TEST_CASE("convert maps optional Bundle fields through present and absent updates",
-          "[feature:operator][feature:validity][series:tsb][scalar:hierarchical][schema:optional]"
+          "[feature:operator][feature:validity][series:tsb][scalar:hierarchical][schema:named]"
           "[transition:update][transition:invalidation][transition:revalidation]") {
     const auto bundle_to_tsb = [](wp<TS<Bundle<ConversionOptionalScalarRecord>>> source) {
         return operators::convert[type<TSB<ConversionOptionalSeriesRecord>>](source);

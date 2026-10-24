@@ -334,6 +334,16 @@ TEST_CASE("collection reductions preserve sound guarantees and weaken const extr
         CHECK(&result.type() == &TS<i64>::type());
         return result;
     };
+    const auto const_values = node([](Out<TSL<TS<i64, TimeSeriesGuarantee::const_>, 2,
+                                                  TimeSeriesGuarantee::const_>> output) {
+        output[0].set(2);
+        output[1].set(4);
+    });
+    const auto final_values = node([](Out<TSL<TS<i64, TimeSeriesGuarantee::final>, 2,
+                                                  TimeSeriesGuarantee::final>> output) {
+        output[0].set(2);
+        output[1].set(4);
+    });
     const auto check_empty_sum = [] {
         const auto result = operators::sum_("values"_n = tsl<TS<i64>>());
         CHECK(&result.type() == &TS<i64>::type());
@@ -344,8 +354,8 @@ TEST_CASE("collection reductions preserve sound guarantees and weaken const extr
         CHECK(&result.type() == &TS<i64>::type());
         return result;
     };
-    const auto check_const_tsl = [] {
-        const auto values = tsl(std::array{operators::const_(i64{2}), operators::const_(i64{4})});
+    const auto check_const_tsl = [&] {
+        const auto values = const_values();
         const auto sum = operators::sum_("values"_n = values);
         const auto optional_sum = operators::sum_("values"_n = opt(values));
         const auto minimum = operators::min_("values"_n = values);
@@ -358,12 +368,8 @@ TEST_CASE("collection reductions preserve sound guarantees and weaken const extr
         CHECK(&mean.type() == &TS<double, TimeSeriesGuarantee::final>::type());
         return sum;
     };
-    const auto final_value = node([](Scalar<i64> value, Out<TS<i64, TimeSeriesGuarantee::final>> output) {
-        output.set(*value);
-    });
     const auto check_final_tsl = [&] {
-        const auto values = std::array{final_value(2), final_value(4)};
-        const auto items = tsl(values);
+        const auto items = final_values();
         const auto sum = operators::sum_("values"_n = items);
         const auto optional_sum = operators::sum_("values"_n = opt(items));
         const auto minimum = operators::min_("values"_n = items);
@@ -405,7 +411,7 @@ TEST_CASE("collection reductions preserve sound guarantees and weaken const extr
     CHECK(bg::run_graph(check_empty_sum).equals<i64>({0}));
     CHECK(bg::run_graph(check_empty_minimum).equals<i64>({std::nullopt}));
     CHECK(bg::run_graph(check_const_tsl).equals<i64>({6}));
-    CHECK(bg::run_graph(check_final_tsl).equals<i64>({4}));
+    CHECK(bg::run_graph(check_final_tsl).equals<i64>({6}));
     CHECK(bg::run_graph(check_const_tsd).equals<i64>({6}));
     CHECK(bg::run_graph(check_const_tss).equals<i64>({6}));
 }

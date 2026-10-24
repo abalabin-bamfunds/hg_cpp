@@ -683,7 +683,9 @@ TEST_CASE("generic equality compares compound time-series values",
     const auto lhs = std::array{Quote{.quantity = 2, .price = 3.5}, Quote{.quantity = 2, .price = 3.5}};
     const auto rhs = std::array{Quote{.quantity = 2, .price = 3.5}, Quote{.quantity = 3, .price = 3.5}};
 
-    CHECK(bg::run_graph(series_equal, lhs, rhs).equals<bool>({true, false}));
+    CHECK(bg::run_graph(series_equal, bg::input<TS<Quote>>({lhs[0], lhs[1]}),
+                              bg::input<TS<Quote>>({rhs[0], rhs[1]}))
+              .equals<bool>({true, false}));
 }
 
 TEST_CASE("C++ wiring points report output presence explicitly",

@@ -342,11 +342,20 @@ TEST_CASE("delay replays removals from an invalid TSS inside a TSD",
         return removed_count(select_set(choose_second, first, second));
     };
 
-    CHECK(bg::run_graph(current_sum, {false, true, false}, {{1}, literal::SKIP, {2}}, {})
+    CHECK(bg::run_graph(current_sum,
+                              std::array{bg::input<TS<bool>>({false, true, false}),
+                                         bg::input<TSS<i64>>({{1}, literal::SKIP, {2}}),
+                                         bg::input<TSS<i64>>(ticks({}))})
               .equals<i64>({1, -1, 3}));
-    CHECK(bg::run_graph(current_removed_count, {false, true, false}, {{1}, literal::SKIP, {2}}, {})
+    CHECK(bg::run_graph(current_removed_count,
+                              std::array{bg::input<TS<bool>>({false, true, false}),
+                                         bg::input<TSS<i64>>({{1}, literal::SKIP, {2}}),
+                                         bg::input<TSS<i64>>(ticks({}))})
               .equals<i64>({0, 1, 0}));
-    const auto result = bg::run_graph(delayed_sum, {false, true, false}, {{1}, literal::SKIP, {2}}, {});
+    const auto result = bg::run_graph(
+        delayed_sum, std::array{bg::input<TS<bool>>({false, true, false}),
+                                bg::input<TSS<i64>>({{1}, literal::SKIP, {2}}),
+                                bg::input<TSS<i64>>(ticks({}))});
     CHECK(result.equals<i64>({std::nullopt, 1, 0, 3}));
 }
 

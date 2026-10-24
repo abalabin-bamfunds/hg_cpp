@@ -767,12 +767,12 @@ TEST_CASE("TSS set operators propagate guarantees and weaken optional inputs",
         CHECK(&result.type() == &TSS<i64, TimeSeriesGuarantee::deduplicated>::type());
         return result;
     };
-    const auto constant_set = node([](Out<TSS<i64, TimeSeriesGuarantee::const_>> output) {
-        output.apply({1, 2});
+    const auto constant_set = node([](Scalar<i64> first, Out<TSS<i64, TimeSeriesGuarantee::const_>> output) {
+        output.apply({*first, *first + 1});
     });
     const auto check_const = [&] {
-        const auto lhs = constant_set();
-        const auto rhs = constant_set();
+        const auto lhs = constant_set(1);
+        const auto rhs = constant_set(2);
         const auto result = lhs & rhs;
         CHECK(&result.type() == &TSS<i64, TimeSeriesGuarantee::const_>::type());
         return result;
@@ -780,7 +780,7 @@ TEST_CASE("TSS set operators propagate guarantees and weaken optional inputs",
 
     CHECK(bg::run_graph(check_final).equals({{1, 2}}));
     CHECK(bg::run_graph(check_deduplicated).equals({{1, 2}}));
-    CHECK(bg::run_graph(check_const).equals({{1, 2}}));
+    CHECK(bg::run_graph(check_const).equals({{2}}));
 }
 
 TEST_CASE("TSS set operations accept erased wiring points and treat optional invalid sets as empty",
