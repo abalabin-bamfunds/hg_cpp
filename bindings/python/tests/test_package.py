@@ -34,6 +34,7 @@ def test_run_graph_wires_python_nodes_and_runs_each_input_tick():
     def graph(value: int) -> int:
         return increment(value)
 
+    assert bg.run_graph(graph, 41) == [42]
     assert bg.run_graph(graph, [1, 2, None, 4]) == [2, 3, None, 5]
 
 

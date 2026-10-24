@@ -7,6 +7,144 @@ import pytest
 import bg
 
 
+def test_run_graph_tsd_inputs_accept_deltas_and_removals():
+    @bg.compute_node
+    def total(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        return sum(values.value.values())
+
+    @bg.graph
+    def graph(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        return total(values)
+
+    assert bg.run_graph(
+        graph,
+        [{1: 10, 2: 20}, {1: bg.REMOVE, 2: 21, 3: 30}, None],
+    ) == [30, 51, None]
+
+
+def test_run_graph_tsl_inputs_accept_sparse_index_updates():
+    @bg.compute_node
+    def first(items: bg.TSL[bg.TS[int], 2]) -> bg.TS[int]:
+        return items[0].value if items[0].valid else -1
+
+    @bg.graph
+    def graph(items: bg.TSL[bg.TS[int], 2]) -> bg.TS[int]:
+        return first(items)
+
+    assert bg.run_graph(graph, [{0: 10}, {1: 20}, {0: 30}]) == [10, 10, 30]
+
+
+def test_run_graph_tsb_inputs_accept_named_field_updates():
+    @bg.schema
+    class Pair:
+        left: bg.TS[int]
+        right: bg.TS[int]
+
+    @bg.compute_node
+    def total(pair: bg.TSB[Pair]) -> bg.TS[int]:
+        left = pair.left.value if pair.left.valid else 0
+        right = pair.right.value if pair.right.valid else 0
+        return left + right
+
+    @bg.graph
+    def graph(pair: bg.TSB[Pair]) -> bg.TS[int]:
+        return total(pair)
+
+    assert bg.run_graph(graph, [{"left": 2}, {"right": 5}, {"left": bg.INVALID}]) == [2, 7, 5]
+
+
+def test_run_graph_tss_inputs_accept_empty_and_incremental_deltas():
+    @bg.compute_node
+    def total(values: bg.TSS[int]) -> bg.TS[int]:
+        return sum(values.value)
+
+    @bg.graph
+    def graph(values: bg.TSS[int]) -> bg.TS[int]:
+        return total(values)
+
+    assert bg.run_graph(
+        graph,
+        [set(), {1, 2}, bg.SetDelta(added={3}, removed={1}), bg.SetDelta(removed={2})],
+    ) == [0, 3, 5, 3]
+
+
+def test_run_graph_tss_inputs_accept_removed_markers_in_sets():
+    @bg.compute_node
+    def total(values: bg.TSS[int]) -> bg.TS[int]:
+        return sum(values.value)
+
+    @bg.graph
+    def graph(values: bg.TSS[int]) -> bg.TS[int]:
+        return total(values)
+
+    assert bg.run_graph(graph, [{1, 2}, {3, bg.Removed(1)}]) == [3, 5]
+
+
+def test_run_graph_returns_tsd_and_tsl_output_deltas():
+    @bg.graph
+    def dictionary(values: bg.TSD[int, bg.TS[int]]) -> bg.TSD[int, bg.TS[int]]:
+        return values
+
+    assert bg.run_graph(
+        dictionary,
+        [{1: 10}, {1: bg.INVALID, 2: 20}, {1: bg.REMOVE}, None],
+    ) == [{1: 10}, {1: bg.INVALID, 2: 20}, {1: bg.REMOVE}, None]
+
+    @bg.graph
+    def fixed_list(values: bg.TSL[bg.TS[int], 2]) -> bg.TSL[bg.TS[int], 2]:
+        return values
+
+    assert bg.run_graph(fixed_list, [{0: 10}, {1: 20}, {1: bg.INVALID}, {0: 11}]) == [
+        {0: 10}, {1: 20}, {1: bg.INVALID}, {0: 11}
+    ]
+
+    assert bg.run_graph(fixed_list, [bg.INVALID, {0: 10}, bg.INVALID, None, {1: 20}]) == [
+        None, {0: 10}, None, None, {1: 20}
+    ]
+
+
+def test_run_graph_returns_tsb_and_nested_collection_deltas():
+    @bg.schema
+    class Pair:
+        left: bg.TS[int]
+        right: bg.TS[int]
+
+    @bg.graph
+    def bundle(value: bg.TSB[Pair]) -> bg.TSB[Pair]:
+        return value
+
+    assert bg.run_graph(bundle, [{"left": 10}, {"right": 20}, {"right": bg.INVALID}, None]) == [
+        {"left": 10}, {"right": 20}, {"right": bg.INVALID}, None
+    ]
+    assert bg.run_graph(bundle, [bg.INVALID, {"left": 10}, bg.INVALID, None, {"right": 20}]) == [
+        None, {"left": 10}, None, None, {"right": 20}
+    ]
+
+    @bg.graph
+    def nested(values: bg.TSD[int, bg.TSB[Pair]]) -> bg.TSD[int, bg.TSB[Pair]]:
+        return values
+
+    assert bg.run_graph(
+        nested,
+        [{1: {"left": 10}}, {1: {"right": 20}}, {1: {"right": bg.INVALID}}, {1: bg.REMOVE}],
+    ) == [{1: {"left": 10}}, {1: {"right": 20}}, {1: {"right": bg.INVALID}}, {1: bg.REMOVE}]
+
+
+def test_run_graph_returns_tss_set_deltas():
+    @bg.graph
+    def graph(values: bg.TSS[int]) -> bg.TSS[int]:
+        return values
+
+    assert bg.run_graph(
+        graph,
+        [set(), {1, 2}, bg.SetDelta(added={3}, removed={1})],
+    ) == [
+        bg.SetDelta(),
+        bg.SetDelta(added={1, 2}),
+        bg.SetDelta(added={3}, removed={1}),
+    ]
+
+
 def test_valid_items_annotation_is_accepted_and_forwarded_through_python_graphs():
     @bg.compute_node
     def count(values: Annotated[bg.TSD[int, bg.TS[int]], bg.valid_items]) -> bg.TS[int]:
@@ -64,21 +202,6 @@ def test_valid_items_metadata_requires_a_tsd_annotation():
         @bg.compute_node
         def invalid(value: Annotated[bg.TS[int], bg.valid_items]) -> bg.TS[int]:
             return value.value
-
-
-def test_run_graph_tsd_inputs_accept_deltas_and_removals():
-    @bg.compute_node
-    def total(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
-        return sum(values.value.values())
-
-    @bg.graph
-    def graph(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
-        return total(values)
-
-    assert bg.run_graph(
-        graph,
-        [{1: 10, 2: 20}, {1: bg.REMOVE, 2: 21, 3: 30}, None],
-    ) == [30, 51, None]
 
 
 def test_run_graph_accepts_mapping_protocol_values_and_collection_deltas():
@@ -238,33 +361,6 @@ def test_run_graph_accepts_an_empty_first_tsd_delta():
     assert bg.run_graph(graph, [{}, {1: 10}]) == [0, 1]
 
 
-def test_run_graph_tss_inputs_accept_empty_and_incremental_deltas():
-    @bg.compute_node
-    def total(values: bg.TSS[int]) -> bg.TS[int]:
-        return sum(values.value)
-
-    @bg.graph
-    def graph(values: bg.TSS[int]) -> bg.TS[int]:
-        return total(values)
-
-    assert bg.run_graph(
-        graph,
-        [set(), {1, 2}, bg.SetDelta(added={3}, removed={1}), bg.SetDelta(removed={2})],
-    ) == [0, 3, 5, 3]
-
-
-def test_run_graph_tss_inputs_accept_removed_markers_in_sets():
-    @bg.compute_node
-    def total(values: bg.TSS[int]) -> bg.TS[int]:
-        return sum(values.value)
-
-    @bg.graph
-    def graph(values: bg.TSS[int]) -> bg.TS[int]:
-        return total(values)
-
-    assert bg.run_graph(graph, [{1, 2}, {3, bg.Removed(1)}]) == [3, 5]
-
-
 def test_run_graph_keeps_removed_markers_alive_across_collection_reallocation():
     values = set(range(64))
 
@@ -290,37 +386,6 @@ def test_run_graph_keeps_removed_markers_alive_across_collection_reallocation():
         nested_graph,
         [{1: values}, {1: bg.SetDelta(removed=values)}],
     ) == [64, 0]
-
-
-def test_run_graph_tsl_inputs_accept_sparse_index_updates():
-    @bg.compute_node
-    def first(items: bg.TSL[bg.TS[int], 2]) -> bg.TS[int]:
-        return items[0].value if items[0].valid else -1
-
-    @bg.graph
-    def graph(items: bg.TSL[bg.TS[int], 2]) -> bg.TS[int]:
-        return first(items)
-
-    assert bg.run_graph(graph, [{0: 10}, {1: 20}, {0: 30}]) == [10, 10, 30]
-
-
-def test_run_graph_tsb_inputs_accept_named_field_updates():
-    @bg.schema
-    class Pair:
-        left: bg.TS[int]
-        right: bg.TS[int]
-
-    @bg.compute_node
-    def total(pair: bg.TSB[Pair]) -> bg.TS[int]:
-        left = pair.left.value if pair.left.valid else 0
-        right = pair.right.value if pair.right.valid else 0
-        return left + right
-
-    @bg.graph
-    def graph(pair: bg.TSB[Pair]) -> bg.TS[int]:
-        return total(pair)
-
-    assert bg.run_graph(graph, [{"left": 2}, {"right": 5}, {"left": bg.INVALID}]) == [2, 7, 5]
 
 
 def test_run_graph_converts_nested_collection_inputs_recursively():
@@ -350,71 +415,6 @@ def test_run_graph_ts_inputs_accept_invalidation_and_revalidation():
         return value
 
     assert bg.run_graph(graph, [1, bg.INVALID, 2]) == [1, None, 2]
-
-
-def test_run_graph_returns_tsd_and_tsl_output_deltas():
-    @bg.graph
-    def dictionary(values: bg.TSD[int, bg.TS[int]]) -> bg.TSD[int, bg.TS[int]]:
-        return values
-
-    assert bg.run_graph(
-        dictionary,
-        [{1: 10}, {1: bg.INVALID, 2: 20}, {1: bg.REMOVE}, None],
-    ) == [{1: 10}, {1: bg.INVALID, 2: 20}, {1: bg.REMOVE}, None]
-
-    @bg.graph
-    def fixed_list(values: bg.TSL[bg.TS[int], 2]) -> bg.TSL[bg.TS[int], 2]:
-        return values
-
-    assert bg.run_graph(fixed_list, [{0: 10}, {1: 20}, {1: bg.INVALID}, {0: 11}]) == [
-        {0: 10}, {1: 20}, {1: bg.INVALID}, {0: 11}
-    ]
-
-    assert bg.run_graph(fixed_list, [bg.INVALID, {0: 10}, bg.INVALID, None, {1: 20}]) == [
-        None, {0: 10}, None, None, {1: 20}
-    ]
-
-
-def test_run_graph_returns_tsb_and_nested_collection_deltas():
-    @bg.schema
-    class Pair:
-        left: bg.TS[int]
-        right: bg.TS[int]
-
-    @bg.graph
-    def bundle(value: bg.TSB[Pair]) -> bg.TSB[Pair]:
-        return value
-
-    assert bg.run_graph(bundle, [{"left": 10}, {"right": 20}, {"right": bg.INVALID}, None]) == [
-        {"left": 10}, {"right": 20}, {"right": bg.INVALID}, None
-    ]
-    assert bg.run_graph(bundle, [bg.INVALID, {"left": 10}, bg.INVALID, None, {"right": 20}]) == [
-        None, {"left": 10}, None, None, {"right": 20}
-    ]
-
-    @bg.graph
-    def nested(values: bg.TSD[int, bg.TSB[Pair]]) -> bg.TSD[int, bg.TSB[Pair]]:
-        return values
-
-    assert bg.run_graph(
-        nested,
-        [{1: {"left": 10}}, {1: {"right": 20}}, {1: {"right": bg.INVALID}}, {1: bg.REMOVE}],
-    ) == [{1: {"left": 10}}, {1: {"right": 20}}, {1: {"right": bg.INVALID}}, {1: bg.REMOVE}]
-
-
-def test_run_graph_returns_tss_set_deltas():
-    @bg.graph
-    def graph(values: bg.TSS[int]) -> bg.TSS[int]:
-        return values
-
-    assert bg.run_graph(
-        graph,
-        [set(), {1, 2}, bg.SetDelta(added={3}, removed={1})],
-    ) == [
-        bg.SetDelta(),
-        bg.SetDelta(added={1, 2}),
-        bg.SetDelta(added={3}, removed={1}),
-    ]
 
 
 def test_run_graph_preserves_empty_delta_semantics():
