@@ -190,7 +190,9 @@ descriptors from temporary values in the `run_graph` call so their sources and
 nested initializer lists remain alive throughout evaluation.
 
 Result capture supports `TS`, `TSL`, `TSS`, `TSD`, and `TSB`, including nested
-collections. A result owns the serialized deltas in a shared buffer chain.
+collections. Capture dereferences a returned reference. Collections containing
+references require `GraphRunOptions::capture_output = false`.
+A result owns the serialized deltas in a shared buffer chain.
 Built-in comparisons read borrowed payloads. Indexed scalar access returns an
 owning `ScalarValue<T>` copy in `std::optional`; call `.view()` to use the
 scalar interface. The copied value can outlive the result.
