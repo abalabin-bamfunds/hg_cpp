@@ -30,6 +30,7 @@ def main() -> None:
                 "-B",
                 str(build_directory),
                 f"-DCMAKE_PREFIX_PATH={install_prefix}",
+                f"-DPython_EXECUTABLE={sys.executable}",
             ],
             check=True,
         )
