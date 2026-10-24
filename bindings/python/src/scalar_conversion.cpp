@@ -151,8 +151,7 @@ class PythonObjectScalarRuntimeType final : public ScalarRuntimeType {
         }
 
         auto gil = nanobind::gil_scoped_acquire{};
-        return scalar_conversions().type_from_python(
-            nanobind::handle{reinterpret_cast<PyObject *>(Py_TYPE(object))});
+        return scalar_conversions().type_from_python(nanobind::handle{object}.type());
     }
 
     void construct_initial_value(void *destination) const noexcept override {
@@ -450,9 +449,9 @@ ScalarValue<> from_python_bytes(nanobind::handle value, allocator &, const Pytho
     }
     auto release_buffer = util::scope_exit{[&]() noexcept { PyBuffer_Release(&buffer); }};
 
-    auto *base = PyMemoryView_GET_BASE(value.ptr());
-    if (base != nullptr && nanobind::isinstance<BytesExporter>(nanobind::handle{base})) {
-        auto *exporter = nanobind::inst_ptr<BytesExporter>(nanobind::handle{base});
+    const auto base = nanobind::getattr(value, "obj");
+    if (nanobind::isinstance<BytesExporter>(base)) {
+        auto *exporter = nanobind::inst_ptr<BytesExporter>(base);
         const auto owned = exporter->value.view().value();
         if (buffer.buf == owned.data() && static_cast<std::size_t>(buffer.len) == owned.size()) {
             return ScalarValue<>{ScalarValue<bg::bytes>{exporter->value.view()}};
@@ -512,15 +511,21 @@ ScalarValue<> from_python_double(nanobind::handle value, allocator &memory, cons
 }
 
 ScalarValue<> from_python_timedelta(nanobind::handle value, allocator &memory, const PythonScalarConversions &) {
-    if (!PyDelta_Check(value.ptr())) {
+    const auto datetime = nanobind::module_::import_("datetime");
+    const auto is_timedelta = PyObject_IsInstance(value.ptr(), datetime.attr("timedelta").ptr());
+    if (is_timedelta < 0) {
+        nanobind::raise_python_error();
+    }
+    if (is_timedelta == 0) {
         PyErr_SetString(PyExc_TypeError, "expected datetime.timedelta for bg.timedelta_t");
         nanobind::raise_python_error();
     }
 
     constexpr auto microseconds_per_day = std::uint64_t{86'400'000'000};
-    const auto days = static_cast<std::int64_t>(PyDateTime_DELTA_GET_DAYS(value.ptr()));
-    const auto remainder = static_cast<std::uint64_t>(PyDateTime_DELTA_GET_SECONDS(value.ptr())) * 1'000'000 +
-                           static_cast<std::uint64_t>(PyDateTime_DELTA_GET_MICROSECONDS(value.ptr()));
+    const auto days = nanobind::cast<std::int64_t>(value.attr("days"));
+    const auto seconds = nanobind::cast<std::uint64_t>(value.attr("seconds"));
+    const auto microseconds = nanobind::cast<std::uint64_t>(value.attr("microseconds"));
+    const auto remainder = seconds * 1'000'000 + microseconds;
 
     const auto count = [&] {
         if (days >= 0) {
@@ -553,9 +558,8 @@ ScalarValue<> from_python_timedelta(nanobind::handle value, allocator &memory, c
 
 ScalarValue<> from_python_string(nanobind::handle value, allocator &, const PythonScalarConversions &conversions) {
     auto string_value = nanobind::object{};
-    auto *python_type = Py_TYPE(value.ptr());
-    if (python_type == &PyUnicode_Type ||
-        &conversions.type_from_python(nanobind::handle{python_type}) == &string_type()) {
+    const auto python_type = value.type();
+    if (&conversions.type_from_python(python_type) == &string_type()) {
         string_value = nanobind::borrow<nanobind::object>(value);
     } else {
         string_value = nanobind::steal<nanobind::object>(PyUnicode_FromObject(value.ptr()));
@@ -590,8 +594,7 @@ ScalarValue<> from_python_symbol(nanobind::handle value, allocator &memory,
         nanobind::raise_python_error();
     }
 
-    const auto &python_type = conversions.type_from_python(
-        nanobind::handle{reinterpret_cast<PyObject *>(Py_TYPE(value.ptr()))});
+    const auto &python_type = conversions.type_from_python(value.type());
     const auto is_null = &python_type == &symbol_type() &&
                          nanobind::cast<bool>(nanobind::borrow<nanobind::object>(value).attr("_is_null"));
     if (is_null) {
@@ -672,7 +675,7 @@ ScalarValue<> from_python_tuple(const TupleScalarType &type, nanobind::handle va
         nanobind::raise_python_error();
     }
 
-    const auto size = PyTuple_Check(value.ptr()) != 0 ? PyTuple_GET_SIZE(value.ptr()) : PyList_GET_SIZE(value.ptr());
+    const auto size = PySequence_Size(value.ptr());
     if (size != static_cast<Py_ssize_t>(type.size())) {
         PyErr_Format(PyExc_TypeError, "expected a fixed tuple scalar with %zu items, got %zd", type.size(), size);
         nanobind::raise_python_error();
@@ -787,11 +790,8 @@ nanobind::object to_python_hierarchical(const Scalar<HIERARCHICAL> &value,
 
     auto python_type = conversions.python_schema_class(value.type().schema());
     if (python_type) {
-        auto *instance_ptr = PyType_GenericAlloc(reinterpret_cast<PyTypeObject *>(python_type.ptr()), 0);
-        auto instance = nanobind::steal<nanobind::object>(instance_ptr);
-        if (!instance) {
-            nanobind::raise_python_error();
-        }
+        auto object_type = nanobind::module_::import_("builtins").attr("object");
+        auto instance = object_type.attr("__new__")(python_type);
         for (auto index = std::size_t{}; index < value.field_count(); ++index) {
             const auto name = value.field_name(index);
             const auto key = nanobind::str{name.data(), name.size()};
@@ -807,8 +807,7 @@ nanobind::object to_python_hierarchical(const Scalar<HIERARCHICAL> &value,
 
 ScalarValue<> from_python_hierarchical(const ScalarType &expected, nanobind::handle value, allocator &memory,
                                       const PythonScalarConversions &conversions) {
-    const auto &actual = conversions.type_from_python(
-        nanobind::handle{reinterpret_cast<PyObject *>(Py_TYPE(value.ptr()))});
+    const auto &actual = conversions.type_from_python(value.type());
     if (!expected.accepts(actual)) {
         PyErr_SetString(PyExc_TypeError, "Python schema value is not compatible with the annotated bundle type");
         nanobind::raise_python_error();
@@ -869,11 +868,8 @@ nanobind::object to_python_timedelta(Scalar<> value, const PythonScalarConversio
     const auto within_day = count % microseconds_per_day;
     const auto seconds = within_day / 1'000'000;
     const auto microseconds = within_day % 1'000'000;
-    auto *result = PyDelta_FromDSU(static_cast<int>(days), static_cast<int>(seconds), static_cast<int>(microseconds));
-    if (result == nullptr) {
-        nanobind::raise_python_error();
-    }
-    return nanobind::steal<nanobind::object>(result);
+    const auto timedelta = nanobind::module_::import_("datetime").attr("timedelta");
+    return timedelta(days, seconds, microseconds);
 }
 
 nanobind::object to_python_string(Scalar<> value, const PythonScalarConversions &) {
@@ -972,7 +968,7 @@ struct NB_HIDDEN PythonScalarConversions::Impl {
     ScalarDispatch<PythonToScalar> from_python;
     ScalarDispatch<ScalarToPython> to_python;
     ScalarDispatch<ScalarToPythonView> to_python_view;
-    std::unordered_map<PyTypeObject *, PythonType> python_types;
+    std::unordered_map<PyObject *, PythonType> python_types;
     std::unordered_map<const ScalarType *, const PythonObjectScalarRuntimeType *> python_object_types;
     std::unordered_map<const ScalarType *, Object> python_object_classes;
     std::unordered_map<const ScalarType *, Object> python_schemas;
@@ -980,13 +976,6 @@ struct NB_HIDDEN PythonScalarConversions::Impl {
 };
 
 PythonScalarConversions::PythonScalarConversions() : impl_{std::make_unique<Impl>()} {
-    if (PyDateTimeAPI == nullptr) {
-        PyDateTime_IMPORT;
-        if (PyDateTimeAPI == nullptr) {
-            nanobind::raise_python_error();
-        }
-    }
-
     const auto add_from_python = [this](const ScalarType &type, PythonToScalar conversion) {
         if (!impl_->from_python.add(type, conversion)) {
             throw std::logic_error{"a built-in Python scalar conversion was registered twice"};
@@ -1017,18 +1006,18 @@ PythonScalarConversions::PythonScalarConversions() : impl_{std::make_unique<Impl
     add_to_python(bytes_type(), &to_python_bytes);
     add_to_python(symbol_type(), &to_python_symbol);
 
-    const auto add_python_builtin = [this](PyTypeObject &python_type, const ScalarType &scalar_type) {
-        auto type = nanobind::handle{reinterpret_cast<PyObject *>(&python_type)};
-        impl_->python_types.emplace(&python_type, Impl::PythonType{Object{type}, &scalar_type, true});
+    const auto add_python_builtin = [this](nanobind::handle python_type, const ScalarType &scalar_type) {
+        impl_->python_types.emplace(python_type.ptr(), Impl::PythonType{Object{python_type}, &scalar_type, true});
     };
 
-    add_python_builtin(PyBool_Type, bool_type());
-    add_python_builtin(PyLong_Type, int64_type());
-    add_python_builtin(PyFloat_Type, double_type());
-    add_python_builtin(PyUnicode_Type, string_type());
-    add_python_builtin(PyBytes_Type, bytes_type());
-    add_python_builtin(PyMemoryView_Type, bytes_type());
-    add_python_builtin(*PyDateTimeAPI->DeltaType, timedelta_type());
+    const auto builtins = nanobind::module_::import_("builtins");
+    add_python_builtin(builtins.attr("bool"), bool_type());
+    add_python_builtin(builtins.attr("int"), int64_type());
+    add_python_builtin(builtins.attr("float"), double_type());
+    add_python_builtin(builtins.attr("str"), string_type());
+    add_python_builtin(builtins.attr("bytes"), bytes_type());
+    add_python_builtin(builtins.attr("memoryview"), bytes_type());
+    add_python_builtin(nanobind::module_::import_("datetime").attr("timedelta"), timedelta_type());
 }
 
 PythonScalarConversions::~PythonScalarConversions() = default;
@@ -1073,7 +1062,7 @@ bool PythonScalarConversions::add_python_type(nanobind::handle python_type, cons
         throw std::invalid_argument{"a Python scalar type registration requires a Python type"};
     }
 
-    auto *type_key = reinterpret_cast<PyTypeObject *>(python_type.ptr());
+    auto *type_key = python_type.ptr();
     const auto added =
         impl_->python_types.emplace(type_key, Impl::PythonType{Object{python_type}, &type, true}).second;
     if (added && &type == &symbol_type()) {
@@ -1088,7 +1077,7 @@ const ScalarType &PythonScalarConversions::add_python_schema(nanobind::handle py
     }
 
     const auto &scalar_type = hierarchical_scalar_type(schema);
-    auto *type_key = reinterpret_cast<PyTypeObject *>(python_type.ptr());
+    auto *type_key = python_type.ptr();
     if (const auto found = impl_->python_types.find(type_key); found != impl_->python_types.end()) {
         if (found->second.scalar_type != &scalar_type) {
             throw std::invalid_argument{"a Python schema class already has a different scalar type"};
@@ -1119,7 +1108,7 @@ nanobind::object PythonScalarConversions::python_object_class(const ScalarType &
 }
 
 const ScalarType &PythonScalarConversions::python_object_root_type() const {
-    return type_from_python(nanobind::handle{reinterpret_cast<PyObject *>(&PyBaseObject_Type)});
+    return type_from_python(nanobind::module_::import_("builtins").attr("object"));
 }
 
 const ScalarType &PythonScalarConversions::add_python_type(nanobind::handle python_type) {
@@ -1127,7 +1116,7 @@ const ScalarType &PythonScalarConversions::add_python_type(nanobind::handle pyth
         throw std::invalid_argument{"a Python scalar type registration requires a Python type"};
     }
 
-    auto *python_type_key = reinterpret_cast<PyTypeObject *>(python_type.ptr());
+    auto *python_type_key = python_type.ptr();
     if (const auto found = impl_->python_types.find(python_type_key); found != impl_->python_types.end()) {
         return *found->second.scalar_type;
     }
@@ -1139,19 +1128,19 @@ const ScalarType &PythonScalarConversions::add_python_type(nanobind::handle pyth
     }
 
     auto bases = std::vector<const ScalarType *>{};
-    const auto count = PyTuple_GET_SIZE(method_resolution_order.ptr());
+    const auto count = PyTuple_Size(method_resolution_order.ptr());
     for (auto index = Py_ssize_t{1}; index < count; ++index) {
-        auto *base = reinterpret_cast<PyTypeObject *>(PyTuple_GET_ITEM(method_resolution_order.ptr(), index));
+        auto *base = PyTuple_GetItem(method_resolution_order.ptr(), index);
         const auto found = impl_->python_types.find(base);
         if (found != impl_->python_types.end()) {
             bases.push_back(found->second.scalar_type);
         } else {
-            bases.push_back(&add_python_type(nanobind::handle{reinterpret_cast<PyObject *>(base)}));
+            bases.push_back(&add_python_type(nanobind::handle{base}));
         }
     }
 
-    auto scalar_type = std::make_unique<PythonObjectScalarType>(std::move(bases),
-                                                                 python_type_key->tp_hash != PyObject_HashNotImplemented);
+    const auto hash = nanobind::getattr(python_type, "__hash__");
+    auto scalar_type = std::make_unique<PythonObjectScalarType>(std::move(bases), !hash.is_none());
     const auto &registered_type = TypeRegistry::instance().register_owned(std::move(scalar_type));
     const auto &runtime_type = python_object_runtime_types().get(static_cast<const PythonObjectScalarType &>(registered_type));
     impl_->python_object_types.emplace(&registered_type, &runtime_type);
@@ -1225,14 +1214,14 @@ const ScalarType &PythonScalarConversions::type_from_python(nanobind::handle pyt
         nanobind::raise_python_error();
     }
 
-    auto *python_type_key = reinterpret_cast<PyTypeObject *>(python_type.ptr());
+    auto *python_type_key = python_type.ptr();
     if (const auto found = impl_->python_types.find(python_type_key); found != impl_->python_types.end()) {
         return *found->second.scalar_type;
     }
 
-    const auto count = PyTuple_GET_SIZE(method_resolution_order.ptr());
+    const auto count = PyTuple_Size(method_resolution_order.ptr());
     for (auto index = Py_ssize_t{1}; index < count; ++index) {
-        auto *type = reinterpret_cast<PyTypeObject *>(PyTuple_GET_ITEM(method_resolution_order.ptr(), index));
+        auto *type = PyTuple_GetItem(method_resolution_order.ptr(), index);
         const auto found = impl_->python_types.find(type);
         if (found != impl_->python_types.end() && found->second.explicit_mapping) {
             return *found->second.scalar_type;
@@ -1247,7 +1236,7 @@ ScalarValue<> PythonScalarConversions::from_python(nanobind::handle value, alloc
         throw std::invalid_argument{"a Python scalar value cannot be null"};
     }
 
-    const auto &type = type_from_python(nanobind::handle{reinterpret_cast<PyObject *>(Py_TYPE(value.ptr()))});
+    const auto &type = type_from_python(value.type());
     return from_python(type, value, memory);
 }
 
@@ -1259,7 +1248,7 @@ ScalarValue<> PythonScalarConversions::from_python(const ScalarType &type, nanob
 
     if (const auto found = impl_->python_object_types.find(&type); found != impl_->python_object_types.end()) {
         const auto &actual_type = type_from_python(
-            nanobind::handle{reinterpret_cast<PyObject *>(Py_TYPE(value.ptr()))});
+            value.type());
         if (!type.accepts(actual_type)) {
             PyErr_SetString(PyExc_TypeError, "Python object is not an instance of the annotated scalar class");
             nanobind::raise_python_error();

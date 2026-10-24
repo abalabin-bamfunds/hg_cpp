@@ -2,6 +2,7 @@
 #include <bg/operator.hpp>
 #include <bg/operators.hpp>
 #include <bg/python/input_view.hpp>
+#include <bg/python/gil.hpp>
 #include <bg/python/node.hpp>
 #include <bg/python/operator.hpp>
 #include <bg/python/object.hpp>
@@ -94,21 +95,21 @@ struct native_gil_node {
     bg::State<int> state;
     bg::Out<bg::TS<bg::i64>> output;
 
-    void start() const { native_node_lifecycle[0] = PyGILState_Check(); }
-    void evaluate() const { output.set(input.value() + PyGILState_Check()); }
+    void start() const { native_node_lifecycle[0] = bg::python::GilScope::is_held(); }
+    void evaluate() const { output.set(input.value() + bg::python::GilScope::is_held()); }
     void on_invalidation() const {
-        native_node_lifecycle[1] = PyGILState_Check();
+        native_node_lifecycle[1] = bg::python::GilScope::is_held();
         output.invalidate();
     }
-    void stop() const noexcept { native_node_lifecycle[2] = PyGILState_Check(); }
-    void finalize() const noexcept { native_node_lifecycle[3] = PyGILState_Check(); }
+    void stop() const noexcept { native_node_lifecycle[2] = bg::python::GilScope::is_held(); }
+    void finalize() const noexcept { native_node_lifecycle[3] = bg::python::GilScope::is_held(); }
 };
 
 struct native_callable_gil_node {
     bg::In<bg::TS<bg::i64>> input;
     bg::Out<bg::TS<bg::i64>> output;
 
-    void evaluate() const { output.set(input.value() + PyGILState_Check()); }
+    void evaluate() const { output.set(input.value() + bg::python::GilScope::is_held()); }
 };
 
 struct native_python_exception_node {
@@ -140,7 +141,7 @@ struct native_start_only_source_definition {
     const bg::Signature &signature() const { return signature_; }
 
     static void start(bg::NodeInvocation<> invocation) {
-        native_node_lifecycle[0] = PyGILState_Check();
+        native_node_lifecycle[0] = bg::python::GilScope::is_held();
         invocation.output().visit([](bg::Out<bg::TS<bg::SCALAR>> *output) {
             const auto value = bg::i64{42};
             output->set_value(bg::Scalar<bg::i64>::from(value));
@@ -157,7 +158,7 @@ struct native_python_object_property_node {
     bg::Out<bg::TS<PYOBJECT>> output;
 
     void evaluate(bg::EvaluationContext *context) const {
-        if (PyGILState_Check() == 0) {
+        if (!bg::python::GilScope::is_held()) {
             throw std::logic_error{"native Python-object node evaluated without the GIL"};
         }
 
@@ -233,7 +234,7 @@ const bg::Operator &native_callable_gil_operator() {
         bg::operator_<auto(bg::TS<bg::i64>) -> bg::TS<bg::i64>>{"native_callable_gil", {"value"}};
     static const auto &implementation = operation.overload(bg::python::node([](bg::In<bg::TS<bg::i64>> input,
                                                                                 bg::Out<bg::TS<bg::i64>> output) {
-        output.set(input.value() + PyGILState_Check());
+        output.set(input.value() + bg::python::GilScope::is_held());
     }));
     (void)implementation;
     return operation;

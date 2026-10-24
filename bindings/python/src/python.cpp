@@ -8,6 +8,7 @@
 #include <bg/run_graph.hpp>
 #include <bg/evaluation_profiler.hpp>
 #include <bg/python/graph_definition.hpp>
+#include <bg/python/gil.hpp>
 #include <bg/python/module.hpp>
 #include <bg/python/node_definition.hpp>
 #include <bg/python/object.hpp>
@@ -511,7 +512,7 @@ nb::object run_graph(const PythonGraphDefinition &definition, nb::sequence fixed
                      std::optional<EvaluationTime::duration> run_time, bool capture_output) {
     Object::drain_deferred_releases();
     auto drain_on_exit = util::scope_exit{[]() noexcept {
-        if (Py_IsInitialized() && PyGILState_Check()) {
+        if (Py_IsInitialized() && GilScope::is_held()) {
             Object::drain_deferred_releases();
         }
     }};

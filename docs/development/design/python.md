@@ -7,8 +7,9 @@ addition to `bg::bg`.
 
 ## Build and install
 
-The Python extension requires Python 3.13 or newer, its development module, and
-nanobind in the selected Python environment. Python tests also require pytest.
+The Python extension targets the CPython 3.12 Stable ABI (`abi3`) and requires
+Python 3.12 or newer, its Stable ABI development module, and nanobind 3.1 or
+newer in the selected Python environment. Python tests also require pytest.
 
 ```sh
 python -m pip install nanobind pytest

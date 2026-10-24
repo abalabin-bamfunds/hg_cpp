@@ -105,10 +105,10 @@ nb::object PythonOperator::invoke(std::span<const WiringArgument> arguments) con
 PythonOperator PythonOperator::map_type_arguments(nb::handle arguments) const {
     auto values = std::vector<const Type *>{};
     const auto tuple = PyTuple_Check(arguments.ptr());
-    const auto size = tuple ? PyTuple_GET_SIZE(arguments.ptr()) : Py_ssize_t{1};
+    const auto size = tuple ? PyTuple_Size(arguments.ptr()) : Py_ssize_t{1};
     values.reserve(static_cast<std::size_t>(size));
     for (auto index = Py_ssize_t{}; index < size; ++index) {
-        const auto value = tuple ? nb::handle{PyTuple_GET_ITEM(arguments.ptr(), index)} : arguments;
+        const auto value = tuple ? nb::handle{PyTuple_GetItem(arguments.ptr(), index)} : arguments;
         const auto &type = python_type_argument(value);
         if (!type.is_resolved()) {
             throw std::invalid_argument{"an explicit operator type argument must be resolved"};
@@ -255,8 +255,7 @@ nb::object getitem(const PythonWiringPoint &collection, nb::handle key) {
 
             const auto name = [&] {
                 if (PyUnicode_Check(key.ptr())) {
-                    const auto &type = scalar_conversions().type_from_python(
-                        nb::handle{reinterpret_cast<PyObject *>(Py_TYPE(key.ptr()))});
+                    const auto &type = scalar_conversions().type_from_python(key.type());
                     if (&type == &symbol_type() && nb::cast<bool>(key.attr("_is_null"))) {
                         return util::symbol{};
                     }

@@ -293,7 +293,8 @@ nanobind::object PythonNodeDefinition::CompiledData::call(
         }
     }
 
-    auto *result = PyObject_Vectorcall(callback_function.get().ptr(), arguments.data(), arguments.size(), nullptr);
+    auto *result =
+        PyObject_Vectorcall(callback_function.get().ptr(), arguments.data(), arguments.size(), nullptr);
     if (result == nullptr) {
         nanobind::raise_python_error();
     }

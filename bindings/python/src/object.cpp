@@ -1,4 +1,5 @@
 #include <bg/python/object.hpp>
+#include <bg/python/gil.hpp>
 
 #include <stdexcept>
 
@@ -35,7 +36,7 @@ Object WeakObject::lock() const {
 }
 
 void Object::release(PyObject *value) noexcept {
-    if (Py_IsInitialized() && PyGILState_Check()) {
+    if (Py_IsInitialized() && GilScope::is_held()) {
         Py_DECREF(value);
         return;
     }
@@ -54,7 +55,7 @@ void Object::drain_deferred_releases() {
     if (!Py_IsInitialized()) {
         return;
     }
-    if (!PyGILState_Check()) {
+    if (!GilScope::is_held()) {
         throw std::logic_error{"deferred Python references can only be released while holding the GIL"};
     }
 

@@ -12,6 +12,15 @@ namespace bg::python {
 
 class GilScope {
   public:
+    static bool is_held() noexcept {
+        if (Py_IsInitialized() == 0 || !NB_CALL(is_alive)()) {
+            return false;
+        }
+        const auto state = PyGILState_Ensure();
+        PyGILState_Release(state);
+        return state == PyGILState_LOCKED;
+    }
+
     GilScope() noexcept {
         if (Py_IsInitialized() != 0) {
             state_ = PyGILState_Ensure();
