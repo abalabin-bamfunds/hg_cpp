@@ -37,6 +37,7 @@ namespace bg::frame {
 // write values only for valid cells. Bits after the final row are ignored.
 template <typename T = void> struct MutableColumnBatch {
     static_assert(cell_type<T>);
+    static_assert(!std::same_as<T, string>, "column block functions cannot produce string cells");
     std::span<T> values;
     std::span<std::uint8_t> validity;
 
@@ -110,15 +111,16 @@ template <> struct MutableColumnBatch<void> {
 // when is_valid(position) returns true.
 template <typename T = void> class ColumnOperandBatch {
     static_assert(cell_type<T>);
+    using value_type = cell_value_t<T>;
   public:
     ColumnOperandBatch(ColumnBatch<T> column) : value_{column} {}
-    ColumnOperandBatch(T scalar) : value_{scalar} {}
+    ColumnOperandBatch(value_type scalar) : value_{scalar} {}
 
     bool is_column() const noexcept { return std::holds_alternative<ColumnBatch<T>>(value_); }
     const ColumnBatch<T> &column() const { return std::get<ColumnBatch<T>>(value_); }
-    T value(std::size_t position) const {
+    value_type value(std::size_t position) const {
         const auto *column = std::get_if<ColumnBatch<T>>(&value_);
-        return column == nullptr ? std::get<T>(value_) : column->value_at(position);
+        return column == nullptr ? std::get<value_type>(value_) : column->value_at(position);
     }
     bool is_valid(std::size_t position) const noexcept {
         const auto *column = std::get_if<ColumnBatch<T>>(&value_);
@@ -126,7 +128,7 @@ template <typename T = void> class ColumnOperandBatch {
     }
 
   private:
-    std::variant<ColumnBatch<T>, T> value_;
+    std::variant<ColumnBatch<T>, value_type> value_;
 };
 
 template <> class ColumnOperandBatch<void> {
@@ -193,7 +195,7 @@ template <cell_type RESULT, cell_type... ARGS> struct ColumnBlockFunctionAdapter
     template <cell_type ARG>
     static ColumnOperandBatch<ARG> operand(const ColumnOperandBatch<> &source) {
         if (!source.is_column())
-            return ColumnOperandBatch<ARG>{*static_cast<const ARG *>(source.scalar())};
+            return ColumnOperandBatch<ARG>{*static_cast<const cell_value_t<ARG> *>(source.scalar())};
         const auto &column = source.column();
         return ColumnOperandBatch<ARG>{ColumnBatch<ARG>{column.first_slot, column.size,
                                                         static_cast<typename ColumnValueTraits<ARG>::pointer>(
@@ -236,6 +238,7 @@ template <cell_type RESULT, cell_type... ARGS> struct ColumnBlockFunctionAdapter
 };
 
 template <cell_type RESULT, cell_type... ARGS> void register_column_block_function() {
+    static_assert(!std::same_as<RESULT, string>, "column block functions cannot produce string cells");
     using Factory = ColumnBlockFunctionAdapterFactory<RESULT, ARGS...>;
     const auto type = std::array<const ScalarType *, sizeof...(ARGS)>{&cpp_scalar_type<ARGS>()...};
     const auto &semantic_type = column_block_function_type(cpp_scalar_type<RESULT>(), type);

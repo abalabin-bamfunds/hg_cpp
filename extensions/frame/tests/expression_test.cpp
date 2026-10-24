@@ -18,6 +18,7 @@
 #include <map>
 #include <optional>
 #include <stdexcept>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -35,6 +36,11 @@ template <template <typename, auto...> typename Field> struct ComparisonFrame {
     Field<i64> size;
     Field<double> bid;
     Field<double> ask;
+};
+
+template <template <typename, auto...> typename Field> struct TextComparisonFrame {
+    Field<string> text;
+    Field<symbol> venue;
 };
 
 template <template <typename, auto...> typename Field> struct NumericFrame {
@@ -94,6 +100,16 @@ void greater_than_batch(std::span<const row_id_t> ids, const ColumnOperandBatch<
         output.set_valid(position, valid);
         if (valid)
             output.set_value(position, lhs.value(position) > rhs.value(position));
+    }
+}
+
+void copy_symbol_batch(std::span<const row_id_t> ids, const ColumnOperandBatch<symbol> &input,
+                       MutableColumnBatch<symbol> output) {
+    for (auto position = std::size_t{}; position != ids.size(); ++position) {
+        const auto valid = input.is_valid(position);
+        output.set_valid(position, valid);
+        if (valid)
+            output.set_value(position, input.value(position));
     }
 }
 
@@ -284,6 +300,37 @@ void test_column_expression_builder_integration() {
     require(mixed_observations == std::vector<std::vector<std::optional<double>>>{{12.5}, {23.25, 25.25},
                                                                                     {34.0, 36.0, 38.0}},
             "shared builder lost heterogeneous columns or parameter snapshots");
+}
+
+void test_symbol_producing_column_block_function() {
+    register_column_block_function<symbol, symbol>();
+    auto observations = std::vector<std::vector<std::optional<symbol>>>{};
+    const auto write = node([](In<TS<i64>> tick, Out<TSC<symbol>> output) {
+        if (*tick != 0)
+            return;
+        output.add(symbol{"XNAS"});
+        output.add(symbol{});
+        output.add(symbol{""});
+        output.add(std::nullopt);
+    });
+    const auto observe = node([&](In<TSC<symbol>> input, In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto cells = std::vector<std::optional<symbol>>{};
+        input.for_each_row([&](row_id_t id, std::size_t) { cells.push_back(input.cell(id)); });
+        observations.push_back(std::move(cells));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> tick) {
+        const auto copied = make_column_expression(ColumnBlockFunction<symbol, symbol>{&copy_symbol_batch},
+                                                   write(tick));
+        return observe(copied, tick);
+    };
+
+    const auto result = testing::test_graph(graph, std::array<i64, 2>{0, 1});
+    require(result.equals<i64>({0, 1}) && observations.size() == 2 &&
+                observations[0] == std::vector<std::optional<symbol>>{symbol{"XNAS"}, symbol{}, symbol{""},
+                                                                      std::nullopt} &&
+                observations[1] == observations[0],
+            "a symbol-producing column callback changed missing symbols, interned empty symbols, or null cells");
 }
 
 void test_deferred_column_union_matches_expression_form() {
@@ -770,6 +817,60 @@ void test_comparison_runtime(Operation &operation) {
             "numeric comparison lost sparse updates, removal, or the new row");
 }
 
+void test_text_and_symbol_comparison_filters() {
+    struct observation {
+        std::array<std::size_t, 5> counts;
+        bool operator==(const observation &) const = default;
+    };
+
+    auto observations = std::vector<observation>{};
+    const auto observe = node([&](In<TSF<TextComparisonFrame>> text_literal,
+                                  In<TSF<TextComparisonFrame>> symbol_bound,
+                                  In<TSF<TextComparisonFrame>> symbol_series,
+                                  In<TSF<TextComparisonFrame>> text_series,
+                                  In<TSF<TextComparisonFrame>> named_parameter, In<TS<i64>> tick,
+                                  Out<TS<i64>> output) {
+        auto count_rows = [](const auto &input) {
+            auto count = std::size_t{};
+            input.for_each_row([&](row_id_t, std::size_t) { ++count; });
+            return count;
+        };
+        observations.push_back({{count_rows(text_literal), count_rows(symbol_bound), count_rows(symbol_series),
+                                 count_rows(text_series), count_rows(named_parameter)}});
+        output.set(*tick);
+    });
+
+    const auto graph = [&](wp<TSF<TextComparisonFrame>> source, wp<TS<string>> text_parameter,
+                           wp<TS<symbol>> symbol_parameter, wp<TS<i64>> tick) {
+        const auto symbol_predicate = bind_expression(source, col("venue") != symbol{"XNAS"});
+        const auto named_predicate = col("venue") == param("target");
+        return observe(frame::filter(source, col("text") == std::string_view{"alpha"}),
+                       frame::filter(source, symbol_predicate),
+                       frame::filter(source, col("venue") == symbol_parameter),
+                       frame::filter(source, col("text") == text_parameter),
+                       frame::filter(source, named_predicate, "target"_n = symbol_parameter), tick);
+    };
+
+    const auto result = testing::test_graph(
+        graph,
+        testing::input(TSF<TextComparisonFrame>::type(),
+                       {literal::TimeSeriesLiteral{},
+                        {{{"text", std::string_view{"alpha"}}, {"venue", symbol{"XNAS"}}},
+                         {{"text", std::string_view{"beta"}}, {"venue", symbol{"XNYS"}}},
+                         {{"text", NULL_VALUE}, {"venue", symbol{"XNAS"}}},
+                         {{"text", std::string_view{}}, {"venue", symbol{""}}}},
+                        {{{"text", std::string_view{"alpha"}}, {"venue", symbol{"XNYS"}}}}}),
+        testing::input(cpp_time_series_runtime_type<TS<string>>(),
+                       {std::string_view{"alpha"}, std::string_view{"beta"}, std::string_view{"alpha"}}),
+        testing::input(cpp_time_series_runtime_type<TS<symbol>>(),
+                       {symbol{"XNAS"}, symbol{"XNYS"}, symbol{"XNYS"}}),
+        testing::input(cpp_time_series_runtime_type<TS<i64>>(), {0, 1, 2}));
+
+    require(result.equals<i64>({0, 1, 2}) &&
+                observations == std::vector<observation>{{{0, 0, 0, 0, 0}}, {{1, 2, 1, 1, 1}}, {{2, 3, 2, 2, 2}}},
+            "string or symbol comparison lost scalar, bound, time-series, null, empty, or filter behavior");
+}
+
 void test_comparison_expression_with_tick_parameter() {
     using namespace bg;
     using namespace bg::frame;
@@ -1118,6 +1219,7 @@ int main() {
         test_column_block_function_provider();
         test_erased_unary_and_mixed_column_callbacks();
         test_column_expression_builder_integration();
+        test_symbol_producing_column_block_function();
         test_deferred_column_union_matches_expression_form();
         test_column_expression_requires_a_column_operand();
         test_binary_expression_bundle_schema();
@@ -1140,6 +1242,7 @@ int main() {
         test_comparison_runtime<double, std::less_equal<>>(operators::le);
         test_comparison_runtime<double, std::greater<>>(operators::gt);
         test_comparison_runtime<double, std::greater_equal<>>(operators::ge);
+        test_text_and_symbol_comparison_filters();
         test_comparison_expression_with_tick_parameter();
         test_comparison_uses_forced_concrete_intermediate();
         test_numeric_arithmetic_and_conversion_updates();

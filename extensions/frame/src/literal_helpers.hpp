@@ -31,8 +31,8 @@ inline std::string_view read_literal_field_name(const literal::ScalarLiteral &va
         }).value();
 }
 
-template <typename T> std::optional<T> read_literal_cell(const literal::ScalarLiteral &value) {
-    auto result = std::optional<T>{};
+template <cell_type T> std::optional<cell_value_t<T>> read_literal_cell(const literal::ScalarLiteral &value) {
+    auto result = std::optional<cell_value_t<T>>{};
     value.visit(
         [&](const literal::ScalarLiteralItem &item) {
             item.visit_scalar([&](auto *source) {
@@ -87,8 +87,15 @@ inline std::vector<KeyValue> read_literal_key(std::span<const literal::ScalarLit
     auto key = std::vector<KeyValue>{};
     key.reserve(layout.key_fields.size());
     for (const auto index : layout.key_fields) {
-        const auto value = read_literal_cell<i64>(*fields[index]);
-        key.push_back(value ? KeyValue{*value} : KeyValue{std::monostate{}});
+        visit_cell_type(*layout.fields[index].cell_type, [&]<typename Cell>(std::type_identity<Cell>) {
+            const auto value = read_literal_cell<Cell>(*fields[index]);
+            if constexpr (std::same_as<Cell, string>)
+                key.push_back(value ? KeyValue{ScalarValue<string>{*value}} : KeyValue{std::monostate{}});
+            else if constexpr (std::same_as<Cell, i64> || std::same_as<Cell, symbol>)
+                key.push_back(value ? KeyValue{*value} : KeyValue{std::monostate{}});
+            else
+                throw std::invalid_argument{"frame key has an unsupported cell type"};
+        });
     }
     return key;
 }

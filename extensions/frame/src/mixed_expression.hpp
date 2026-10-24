@@ -13,6 +13,9 @@ namespace bg::frame::details {
 
 using MIXED_NUMERIC_SCALAR = ScalarVariable<"FRAME_MIXED_NUMERIC_SCALAR", i64, double, Expression>;
 using MIXED_BOOLEAN_SCALAR = ScalarVariable<"FRAME_MIXED_BOOLEAN_SCALAR", bool, Expression>;
+using MIXED_COMPARABLE_CELL = ScalarVariable<"FRAME_MIXED_COMPARABLE_CELL", i64, double, string, symbol>;
+using MIXED_COMPARABLE_SCALAR =
+    ScalarVariable<"FRAME_MIXED_COMPARABLE_SCALAR", i64, double, string, symbol, Expression>;
 
 template <template <typename, auto...> typename Field> struct MixedOneBindingSchema {
     Field<TS<Expression, TimeSeriesGuarantee::const_>> expression;
@@ -50,6 +53,8 @@ using MIXED_SERIES_RIGHT = Union<"FRAME_MIXED_SERIES_RIGHT", TSB<MixedInputRight
                                  TSB<MixedInputRightTwoBindingSchema>>;
 using MIXED_NUMERIC_SERIES = Union<"FRAME_MIXED_NUMERIC_SERIES", TSC<operators::NUMERIC>, TS<operators::NUMERIC>>;
 using MIXED_BOOLEAN_SERIES = Union<"FRAME_MIXED_BOOLEAN_SERIES", TSC<operators::BOOL>, TS<operators::BOOL>>;
+using MIXED_COMPARABLE_SERIES =
+    Union<"FRAME_MIXED_COMPARABLE_SERIES", TSC<MIXED_COMPARABLE_CELL>, TS<MIXED_COMPARABLE_CELL>>;
 
 template <ExpressionOperation Operation, typename ScalarDeclaration, typename Series> struct ScalarSeriesGraph {
     Scalar<ScalarDeclaration> scalar;

@@ -28,6 +28,8 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -40,6 +42,19 @@ template <template <typename, auto...> typename Field> struct Quotes {
     Field<bg::i64> size;
     Field<double> bid;
     Field<double> ask;
+};
+
+template <template <typename, auto...> typename Field> struct TextColumns {
+    Field<string> text;
+    Field<symbol> code;
+};
+
+template <template <typename, auto...> typename Field> struct TextKeyedRows {
+    Field<string> name;
+    Field<symbol> venue;
+    Field<string> description;
+
+    static bg::SchemaMetadata metadata() { return key_metadata<"name", "venue">(); }
 };
 
 template <template <typename, auto...> typename Field> struct KeyedQuotes {
@@ -194,6 +209,8 @@ template <typename Output, typename Argument>
 concept accepts_frame_add = requires(const Output &output, const Argument &argument) { output.add(argument); };
 template <typename Output, typename Argument>
 concept accepts_frame_set = requires(const Output &output, const Argument &argument) { output.set(row_id_t{}, argument); };
+template <typename Output, typename Value>
+concept accepts_column_set = requires(const Output &output, Value value) { output.set(row_id_t{}, value); };
 
 static_assert(complete_type<Out<TSF<Quotes>>>);
 static_assert(complete_type<Out<TSF<Quotes>, bg::frame::view>>);
@@ -202,6 +219,14 @@ static_assert(complete_type<Out<TSF<ComputedQuote>, bg::frame::computed<>>>);
 static_assert(complete_type<Out<TSC<bg::i64>>>);
 static_assert(complete_type<Out<TSC<bg::i64>, bg::frame::view>>);
 static_assert(!complete_type<Out<TS<bg::i64>, bg::frame::view>>);
+static_assert(accepts_column_set<Out<TSC<SCALAR>, bg::frame::computed<>>, i64>);
+static_assert(accepts_column_set<Out<TSC<SCALAR>, bg::frame::computed<>>, std::optional<i64>>);
+static_assert(requires(const Out<TSC<SCALAR>, bg::frame::computed<>> &output) {
+    output.template set<string>(row_id_t{}, std::string_view{});
+    output.template set<string>(row_id_t{}, std::optional<std::string_view>{});
+    output.template set<symbol>(row_id_t{}, symbol{});
+    output.template set<symbol>(row_id_t{}, std::optional<symbol>{});
+});
 static_assert(accepts_frame_add<Out<TSF<Quotes>>, RowPatch<Quotes>>);
 static_assert(!accepts_frame_add<Out<TSF<SCHEMA>>, RowPatch<SCHEMA>>);
 static_assert(accepts_frame_add<Out<TSF<GenericQuote>>, Row<GenericQuote>>);
@@ -268,6 +293,56 @@ void test_scalar_literals_and_content_equality() {
         rejected_distinct_sentinel = true;
     }
     require(rejected_distinct_sentinel, "column literal treated a same-name sentinel as the frame null singleton");
+
+    constexpr auto embedded_nul = std::string_view{"a\0b", 3};
+    auto text = ScalarValue<Column<string>>::from_literal({embedded_nul, std::string_view{}, NULL_VALUE}, memory);
+    const auto text_cells = text.view().value();
+    require(text_cells.cell(0) == embedded_nul && text_cells.cell(0)->size() == 3 &&
+                text_cells.cell(1) == std::string_view{} && !text_cells.cell(2),
+            "string column literal changed embedded NUL, empty, or null text");
+
+    auto symbols = ScalarValue<Column<symbol>>::from_literal({symbol{}, symbol{""}, NULL_VALUE}, memory);
+    const auto symbol_cells = symbols.view().value();
+    require(symbol_cells.cell(0).has_value() && !symbol_cells.cell(0)->has_value() &&
+                symbol_cells.cell(1).has_value() && symbol_cells.cell(1)->has_value() &&
+                symbol_cells.cell(1)->text().empty() && !symbol_cells.cell(2),
+            "symbol column literal conflated a missing symbol, an interned empty symbol, and a null cell");
+
+    auto text_frame = ScalarValue<Frame<TextColumns>>::from_literal(
+        {{"text", {embedded_nul, std::string_view{}, NULL_VALUE}},
+         {"code", {symbol{}, symbol{""}, NULL_VALUE}}},
+        memory);
+    const auto text_frame_view = text_frame.view().value();
+    require(text_frame_view.size() == 3 && text_frame_view.columns().text.cell(0) == embedded_nul &&
+                text_frame_view.columns().text.cell(1) == std::string_view{} &&
+                !text_frame_view.columns().text.cell(2) &&
+                text_frame_view.columns().code.cell(0).has_value() &&
+                !text_frame_view.columns().code.cell(0)->has_value() &&
+                text_frame_view.columns().code.cell(1)->has_value() &&
+                !text_frame_view.columns().code.cell(2),
+            "frame literal did not preserve text and symbol values independently of cell validity");
+
+    auto string_allocation_failures = std::size_t{};
+    auto string_literal_succeeded = false;
+    for (auto failure = std::size_t{1}; !string_literal_succeeded; ++failure) {
+        auto attempt_resource = FailingResource{};
+        auto attempt_memory = allocator{attempt_resource};
+        attempt_resource.fail_at = failure;
+        try {
+            auto value = ScalarValue<Column<string>>::from_literal(
+                {std::string_view{"first owned value"}, std::string_view{"second owned value"}}, attempt_memory);
+            require(value.view().value().cell(1) == std::string_view{"second owned value"},
+                    "string literal changed during an allocation retry");
+            string_literal_succeeded = true;
+        } catch (const std::bad_alloc &) {
+            ++string_allocation_failures;
+        }
+        require(attempt_resource.allocations == attempt_resource.deallocations,
+                "string column literal leaked allocations during failure or success");
+    }
+    require(string_allocation_failures != 0,
+            "string column literal allocation retry did not exercise rollback");
+
     auto frame = ScalarValue<Frame<Quotes>>::from_literal(
         {{"ask", {13.5, 14.5}}, {symbol{"size"}, {i64{7}, NULL_VALUE}}, {"bid", {12.5, NULL_VALUE}}},
         memory);
@@ -4424,6 +4499,35 @@ void test_keyed_tsf_delta_capture() {
             "keyed TSF capture accepted duplicate expected row keys");
 }
 
+void test_text_keyed_tsf_delta_capture() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    constexpr auto embedded_nul = std::string_view{"key\0tail", 8};
+    constexpr auto embedded_value = std::string_view{"text\0value", 10};
+    const auto identity = [](wp<TSF<TextKeyedRows>> input) { return input; };
+    const auto &runtime = frame_time_series_runtime_type<TextKeyedRows>(TSF<TextKeyedRows>::type());
+    const auto result = testing::test_graph(
+        identity,
+        testing::input(runtime,
+                       {literal::TimeSeriesLiteral{},
+                        {{{"name", embedded_nul}, {"venue", symbol{"XNAS"}}, {"description", embedded_value}}},
+                        {{{"name", embedded_nul}, {"venue", symbol{"XNAS"}},
+                          {"description", std::string_view{"updated"}}}},
+                        {literal::REMOVE({{"name", embedded_nul}, {"venue", symbol{"XNAS"}}})}}));
+
+    const auto expected = [&] {
+        return result.equals({literal::TimeSeriesLiteral{},
+                              {{{"name", embedded_nul}, {"venue", symbol{"XNAS"}},
+                                {"description", embedded_value}}},
+                              {{{"name", embedded_nul}, {"venue", symbol{"XNAS"}},
+                                {"description", std::string_view{"updated"}}}},
+                              {literal::REMOVE({{"name", embedded_nul}, {"venue", symbol{"XNAS"}}})}});
+    };
+    require(expected() && expected(),
+            "keyed TSF capture changed text keys, symbol keys, embedded NUL values, or removals");
+}
+
 void test_frame_view_tick_capture() {
     using namespace bg;
     using namespace bg::frame;
@@ -7888,6 +7992,7 @@ void test_runtime_schema_computed_tsf_output() {
         std::vector<std::optional<double>> bids;
         std::vector<std::optional<double>> asks;
         std::vector<std::optional<double>> mids;
+        std::vector<std::optional<std::string>> labels;
         bool computed_columns_share_slots{};
     };
     auto observations = std::vector<observation>{};
@@ -7895,13 +8000,15 @@ void test_runtime_schema_computed_tsf_output() {
         SchemaField{util::symbol{"bid"}, &cpp_scalar_type<double>()},
         SchemaField{util::symbol{"ask"}, &cpp_scalar_type<double>()},
         SchemaField{util::symbol{"mid"}, &cpp_scalar_type<double>()},
+        SchemaField{util::symbol{"label"}, &cpp_scalar_type<string>()},
     };
     const auto &schema = anonymous_schema(schema_fields);
     auto empty_bid = Column<double>{std::vector<std::optional<double>>{}};
     auto empty_ask = Column<double>{std::vector<std::optional<double>>{}};
     auto empty_mid = Column<double>{std::vector<std::optional<double>>{}};
+    auto empty_label = Column<string>{std::vector<std::optional<std::string_view>>{}};
     const auto seed_columns = std::array{ColumnView<>{empty_bid.view()}, ColumnView<>{empty_ask.view()},
-                                         ColumnView<>{empty_mid.view()}};
+                                         ColumnView<>{empty_mid.view()}, ColumnView<>{empty_label.view()}};
     auto memory = allocator{};
     auto seed = make_frame_value(memory, schema, 0, seed_columns);
     auto erased_seed = ScalarValue<>{seed, memory};
@@ -7928,7 +8035,9 @@ void test_runtime_schema_computed_tsf_output() {
         const auto bid = Scalar<double>::from(bid_value);
         const auto ask = Scalar<double>::from(ask_value);
         const auto null_mid = std::optional<Scalar<>>{};
-        const auto row = std::array<std::optional<Scalar<>>, 3>{Scalar<>::from(bid), Scalar<>::from(ask), null_mid};
+        const auto null_label = std::optional<Scalar<>>{};
+        const auto row = std::array<std::optional<Scalar<>>, 4>{Scalar<>::from(bid), Scalar<>::from(ask), null_mid,
+                                                               null_label};
         static_cast<void>(output.add(row));
     });
     const auto compute = node(
@@ -7959,6 +8068,14 @@ void test_runtime_schema_computed_tsf_output() {
                              ColumnBatch<double>{0, ids.size(), mids_out.data(),
                                                  ColumnBatch<double>::Validity::all_valid()});
 
+            const auto label_index = std::size_t{3};
+            output.set<string>(util::symbol{"label"}, ids.front(), std::string_view{"scalar label"});
+            const auto label_values = Column<string>{
+                std::vector<std::optional<std::string_view>>{std::string_view{"batch label"}}};
+            auto label_batch = ColumnBatch<string>{};
+            label_values.view().batches([&](const auto &batch) { label_batch = batch; });
+            output.set_batch<string>(label_index, ids, label_batch);
+
             const auto invalid_ids = std::array{ids.front(), no_row};
             const auto invalid_values = std::array{99.0, 100.0};
             auto invalid_batch_rejected = false;
@@ -7974,7 +8091,8 @@ void test_runtime_schema_computed_tsf_output() {
                              ColumnBatch<double>{0, ids.size(), bids_out.data(),
                                                  ColumnBatch<double>::Validity::all_invalid()});
         },
-        output_runtime_type = [computed_names = std::array{util::symbol{"bid"}, util::symbol{"mid"}}](
+        output_runtime_type = [computed_names = std::array{util::symbol{"bid"}, util::symbol{"mid"},
+                                                            util::symbol{"label"}}](
                                   const WiringArguments &arguments) -> const TimeSeriesRuntimeType & {
             return frame_computed_time_series_runtime_type(*arguments.resolved_output_type(), computed_names);
         });
@@ -7984,15 +8102,20 @@ void test_runtime_schema_computed_tsf_output() {
             const auto bids = input.column("bid").view<double>();
             const auto asks = input.column("ask").view<double>();
             const auto mids = input.column("mid").view<double>();
+            const auto labels = input.column("label").view<string>();
             const auto frame = input.extension_descriptor();
             const auto bid_binding = frame.column(frame.field_index(util::symbol{"bid"}));
             const auto mid_binding = frame.column(frame.field_index(util::symbol{"mid"}));
-            result.computed_columns_share_slots = bid_binding.physical_rows == mid_binding.physical_rows;
+            const auto label_binding = frame.column(frame.field_index(util::symbol{"label"}));
+            result.computed_columns_share_slots = bid_binding.physical_rows == mid_binding.physical_rows &&
+                                                  bid_binding.physical_rows == label_binding.physical_rows;
             input.for_each_row([&](row_id_t id, std::size_t) {
                 result.rows.push_back(id);
                 result.bids.push_back(bids.cell(id));
                 result.asks.push_back(asks.cell(id));
                 result.mids.push_back(mids.cell(id));
+                const auto label = labels.cell(id);
+                result.labels.push_back(label ? std::optional<std::string>{std::string{*label}} : std::nullopt);
             });
         }
         observations.push_back(std::move(result));
@@ -8009,6 +8132,7 @@ void test_runtime_schema_computed_tsf_output() {
                 observations[1].bids == std::vector<std::optional<double>>{std::nullopt} &&
                 observations[1].asks == std::vector<std::optional<double>>{12.0} &&
                 observations[1].mids == std::vector<std::optional<double>>{11.0} &&
+                observations[1].labels == std::vector<std::optional<std::string>>{"batch label"} &&
                 observations[1].computed_columns_share_slots,
             "runtime-schema computed TSF output did not materialize its fields on shared row slots");
 }
@@ -8049,6 +8173,7 @@ int main() {
         test_tsf_literal_anonymous_composite_key();
         test_tsf_literal_rejections();
         test_keyed_tsf_delta_capture();
+        test_text_keyed_tsf_delta_capture();
         test_unkeyed_tsf_capture_matches_named_row_histories();
         test_tsc_capture_matches_named_row_histories();
         test_tsc_capture_disambiguates_complete_row_histories();

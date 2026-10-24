@@ -11,6 +11,8 @@
 #include <memory_resource>
 #include <optional>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -470,7 +472,7 @@ void test_tsc_literal_output_apply() {
             [&](const auto *value) {
                 using Cell = typename std::remove_pointer_t<decltype(value)>::scalar_type;
                 if constexpr (cell_type<Cell>)
-                    output.apply({Cell{value->value()}, NULL_VALUE});
+                    output.apply({cell_value_t<Cell>{value->value()}, NULL_VALUE});
             },
             ddv::noop);
     });
@@ -1005,6 +1007,29 @@ void test_boolean_tsc_literals_and_capture() {
             "boolean TSC literal capture changed its row deltas");
 }
 
+void test_text_tsc_literal_capture_and_discard() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    constexpr auto embedded_nul = std::string_view{"a\0b", 3};
+    const auto string_identity = [](wp<TSC<string>> input) { return input; };
+    const auto strings = testing::test_graph(
+        string_identity,
+        testing::input<TSC<string>>({{embedded_nul, std::string_view{}, NULL_VALUE}, literal::SKIP,
+                                     {std::string_view{"last"}}}));
+    require(strings.equals({{{"first", embedded_nul}, {"second", std::string_view{}}, {"third", NULL_VALUE}},
+                            literal::SKIP, {{"fourth", std::string_view{"last"}}}}),
+            "string TSC capture or discard changed embedded NUL, empty, null, or appended text");
+
+    const auto symbol_identity = [](wp<TSC<symbol>> input) { return input; };
+    const auto symbols = testing::test_graph(
+        symbol_identity,
+        testing::input<TSC<symbol>>({{symbol{}, symbol{""}, NULL_VALUE}, literal::SKIP}));
+    require(symbols.equals({{{"first", symbol{}}, {"second", symbol{""}}, {"third", NULL_VALUE}},
+                            literal::SKIP}),
+            "symbol TSC capture conflated a missing symbol, an interned empty symbol, or a null cell");
+}
+
 void test_generic_tsc_output() {
     auto rejected_add = std::vector<bool>{};
     auto rejected_set = std::vector<bool>{};
@@ -1110,6 +1135,7 @@ void test_generic_tsc_view_output() {
 
 void test_generic_computed_tsc_output() {
     auto observed = std::vector<std::optional<double>>{};
+    auto observed_strings = std::vector<std::optional<std::string>>{};
     const auto write = bg::node([](bg::In<bg::TS<bg::SCALAR>> input,
                                    bg::Out<bg::frame::TSC<bg::SCALAR>> output) {
         output.clear();
@@ -1128,12 +1154,17 @@ void test_generic_computed_tsc_output() {
         if (std::addressof(type.cell_type()) == std::addressof(bg::cpp_scalar_type<bg::i64>())) {
             const auto typed = input.input<bg::i64>();
             typed.for_each_row([&](bg::frame::row_id_t id, std::size_t) {
-                output.set<bg::i64>(id, typed.cell(id));
+                output.set(id, typed.cell(id));
             });
-        } else {
+        } else if (std::addressof(type.cell_type()) == std::addressof(bg::cpp_scalar_type<double>())) {
             const auto typed = input.input<double>();
             typed.for_each_row([&](bg::frame::row_id_t id, std::size_t) {
-                output.set<double>(id, typed.cell(id));
+                output.set(id, typed.cell(id));
+            });
+        } else {
+            const auto typed = input.input<bg::string>();
+            typed.for_each_row([&](bg::frame::row_id_t id, std::size_t) {
+                output.set<bg::string>(id, typed.cell(id));
             });
         }
     });
@@ -1142,8 +1173,12 @@ void test_generic_computed_tsc_output() {
         const auto &type = static_cast<const bg::frame::ColumnSeriesType &>(input.runtime_type().type());
         if (std::addressof(type.cell_type()) == std::addressof(bg::cpp_scalar_type<bg::i64>()))
             observed.emplace_back(static_cast<double>(input.input<bg::i64>().cell(0).value()));
-        else
+        else if (std::addressof(type.cell_type()) == std::addressof(bg::cpp_scalar_type<double>()))
             observed.emplace_back(input.input<double>().cell(0));
+        else {
+            const auto value = input.input<bg::string>().cell(0);
+            observed_strings.emplace_back(value ? std::optional<std::string>{std::string{*value}} : std::nullopt);
+        }
         output.set(1);
     });
 
@@ -1153,11 +1188,17 @@ void test_generic_computed_tsc_output() {
     const auto double_graph = [&](bg::wp<bg::TS<double>> value) {
         return inspect(compute(write(value)));
     };
+    const auto string_graph = [&](bg::wp<bg::TS<bg::string>> value) {
+        return inspect(compute(write(value)));
+    };
     const auto integer_result = bg::testing::test_graph(integer_graph, std::array<bg::i64, 1>{17});
     const auto double_result = bg::testing::test_graph(double_graph, std::array<double, 1>{2.5});
+    const auto string_result = bg::testing::test_graph(
+        string_graph, std::array<std::string_view, 1>{std::string_view{"computed text"}});
 
     require(integer_result.equals({1}) && double_result.equals({1}) &&
-                observed == std::vector<std::optional<double>>{17.0, 2.5},
+                string_result.equals({1}) && observed == std::vector<std::optional<double>>{17.0, 2.5} &&
+                observed_strings == std::vector<std::optional<std::string>>{"computed text"},
             "generic computed TSC did not resolve source and result cell types");
 }
 
@@ -1282,6 +1323,7 @@ int main() {
         test_tsc_graph_behavior();
         test_double_tsc_graph();
         test_boolean_tsc_literals_and_capture();
+        test_text_tsc_literal_capture_and_discard();
         test_generic_tsc_output();
         test_generic_tsc_view_output();
         test_generic_computed_tsc_output();

@@ -28,11 +28,14 @@ namespace bg::frame {
 
 namespace arrow_details {
 
+template <typename T>
+concept arrow_cell_type = std::same_as<T, bool> || std::same_as<T, i64> || std::same_as<T, double>;
+
 using scalar_runtime_factory = std::unique_ptr<ScalarRuntimeType> (*)();
 const ScalarRuntimeType &canonical_scalar_runtime(const ScalarType &type, const std::type_info &identity,
                                                   scalar_runtime_factory factory);
 
-template <cell_type T> std::shared_ptr<arrow::DataType> data_type() {
+template <arrow_cell_type T> std::shared_ptr<arrow::DataType> data_type() {
     if constexpr (std::same_as<T, bool>)
         return arrow::boolean();
     else if constexpr (std::same_as<T, i64>)
@@ -41,7 +44,7 @@ template <cell_type T> std::shared_ptr<arrow::DataType> data_type() {
         return arrow::float64();
 }
 
-template <cell_type T> constexpr auto arrow_type_id = [] {
+template <arrow_cell_type T> constexpr auto arrow_type_id = [] {
     if constexpr (std::same_as<T, bool>)
         return arrow::Type::BOOL;
     else if constexpr (std::same_as<T, i64>)
@@ -66,7 +69,7 @@ template <typename Semantic> class ArrowScalarRuntimeBase : public ScalarRuntime
     using ScalarRuntimeType::ScalarRuntimeType;
 };
 
-template <cell_type T> arrow::Status check_array_buffers(const std::shared_ptr<arrow::Array> &array) {
+template <arrow_cell_type T> arrow::Status check_array_buffers(const std::shared_ptr<arrow::Array> &array) {
     if (!array || array->type_id() != arrow_type_id<T>)
         return arrow::Status::TypeError("Arrow column has an unsupported physical type");
     const auto &buffers = array->data()->buffers;
@@ -78,7 +81,7 @@ template <cell_type T> arrow::Status check_array_buffers(const std::shared_ptr<a
     return arrow::Status::OK();
 }
 
-template <cell_type T> arrow::Status check_chunked_buffers(const std::shared_ptr<arrow::ChunkedArray> &column) {
+template <arrow_cell_type T> arrow::Status check_chunked_buffers(const std::shared_ptr<arrow::ChunkedArray> &column) {
     if (!column || column->type()->id() != arrow_type_id<T>)
         return arrow::Status::TypeError("Arrow column type does not match the frame schema");
     for (const auto &chunk : column->chunks())
@@ -86,13 +89,13 @@ template <cell_type T> arrow::Status check_chunked_buffers(const std::shared_ptr
     return arrow::Status::OK();
 }
 
-template <cell_type T> arrow::Status validate_chunked(const std::shared_ptr<arrow::ChunkedArray> &column) {
+template <arrow_cell_type T> arrow::Status validate_chunked(const std::shared_ptr<arrow::ChunkedArray> &column) {
     ARROW_RETURN_NOT_OK(check_chunked_buffers<T>(column));
     ARROW_RETURN_NOT_OK(column->ValidateFull());
     return arrow::Status::OK();
 }
 
-template <cell_type T> class ArrowColumnReadSource final : public ColumnReadSource<T> {
+template <arrow_cell_type T> class ArrowColumnReadSource final : public ColumnReadSource<T> {
   public:
     ArrowColumnReadSource() = default;
     ArrowColumnReadSource(bg::details::FieldProbe &probe) noexcept { probe.record(this); }
@@ -171,11 +174,11 @@ template <cell_type T> class ArrowColumnReadSource final : public ColumnReadSour
 
 template <typename Storage, typename Value> struct ArrowScalarValueRead;
 
-template <cell_type T> struct ArrowScalarValueRead<ArrowColumnReadSource<T>, ColumnView<T>> {
+template <arrow_cell_type T> struct ArrowScalarValueRead<ArrowColumnReadSource<T>, ColumnView<T>> {
     static ColumnView<T> read(const ArrowColumnReadSource<T> &source) { return ColumnView<T>{source}; }
 };
 
-template <cell_type T> arrow::Result<std::shared_ptr<arrow::Array>> make_array(const ColumnBatch<T> &batch) {
+template <arrow_cell_type T> arrow::Result<std::shared_ptr<arrow::Array>> make_array(const ColumnBatch<T> &batch) {
     ARROW_RETURN_NOT_OK(check_length(batch.size));
     constexpr auto packed_values = std::same_as<T, bool>;
     if constexpr (packed_values) {
@@ -241,7 +244,7 @@ template <cell_type T> arrow::Result<std::shared_ptr<arrow::Array>> make_array(c
     return arrow::MakeArray(data);
 }
 
-template <cell_type T>
+template <arrow_cell_type T>
 arrow::Result<std::shared_ptr<arrow::ChunkedArray>> export_column(const ColumnView<T> &column, bool copy_values) {
     ARROW_RETURN_NOT_OK(check_length(column.size()));
     if (copy_values) {
@@ -407,7 +410,7 @@ const ArrowScalarRuntime<Semantic, Storage, Value> &scalar_runtime() {
         }));
 }
 
-template <cell_type T>
+template <arrow_cell_type T>
 const ArrowScalarRuntime<Column<T>, ArrowColumnReadSource<T>, ColumnView<T>> &column_scalar_runtime() {
     static_cast<void>(cpp_scalar_runtime_type<Column<T>>());
     const auto &runtime = scalar_runtime<Column<T>, ArrowColumnReadSource<T>, ColumnView<T>>();
@@ -433,9 +436,11 @@ class ArrowRuntimeFrameStorage {
             else if (field.type == std::addressof(cpp_scalar_type<i64>()))
                 columns.emplace_back(std::in_place_type<ArrowColumnReadSource<i64>>,
                                      table->column(static_cast<int>(index)));
-            else
+            else if (field.type == std::addressof(cpp_scalar_type<double>()))
                 columns.emplace_back(std::in_place_type<ArrowColumnReadSource<double>>,
                                      table->column(static_cast<int>(index)));
+            else
+                throw std::invalid_argument{"Arrow frame runtime has an unsupported cell type"};
         }
     }
 
@@ -445,7 +450,7 @@ class ArrowRuntimeFrameStorage {
     std::size_t size{};
 };
 
-template <cell_type T> void bind_runtime_arrow_column_view(const void *source, void *destination) {
+template <arrow_cell_type T> void bind_runtime_arrow_column_view(const void *source, void *destination) {
     const auto &column = std::get<ArrowColumnReadSource<T>>(*static_cast<const ArrowRuntimeFrameColumn *>(source));
     *static_cast<ColumnView<T> *>(destination) = ColumnView<T>{column};
 }
@@ -458,7 +463,9 @@ inline FrameColumnReadBinding runtime_arrow_frame_column_binding(const void *con
         return {std::addressof(cpp_scalar_type<bool>()), column, &bind_runtime_arrow_column_view<bool>, nullptr};
     if (field.type == std::addressof(cpp_scalar_type<i64>()))
         return {std::addressof(cpp_scalar_type<i64>()), column, &bind_runtime_arrow_column_view<i64>, nullptr};
-    return {std::addressof(cpp_scalar_type<double>()), column, &bind_runtime_arrow_column_view<double>, nullptr};
+    if (field.type == std::addressof(cpp_scalar_type<double>()))
+        return {std::addressof(cpp_scalar_type<double>()), column, &bind_runtime_arrow_column_view<double>, nullptr};
+    throw std::invalid_argument{"Arrow frame column has an unsupported cell type"};
 }
 
 inline FrameReadStorage frame_read_storage(const ArrowRuntimeFrameStorage &storage, const RuntimeType *runtime) {
@@ -507,7 +514,7 @@ inline arrow::Status validate_frame(const std::shared_ptr<arrow::Table> &table, 
 } // namespace arrow_details
 
 // The result borrows cell buffers and is valid only while the source view remains unchanged in its BG invocation.
-template <cell_type T>
+template <arrow_details::arrow_cell_type T>
 arrow::Result<std::shared_ptr<arrow::ChunkedArray>> borrow_arrow(const ColumnView<T> &column) {
     return arrow_details::export_column(column, false);
 }
@@ -517,7 +524,7 @@ inline arrow::Result<std::shared_ptr<arrow::ChunkedArray>> borrow_arrow(const Co
 }
 
 // The result owns dense value and validity buffers, including initialized bytes for null cells.
-template <cell_type T>
+template <arrow_details::arrow_cell_type T>
 arrow::Result<std::shared_ptr<arrow::ChunkedArray>> copy_to_arrow(const ColumnView<T> &column) {
     return arrow_details::export_column(column, true);
 }
@@ -539,7 +546,7 @@ arrow::Result<std::shared_ptr<arrow::Table>> copy_to_arrow(const FrameView<Schem
 
 // Imports retain the supplied Arrow arrays. Their buffers must remain alive through those Arrow owners; importing
 // a borrowed export does not extend the BG source lifetime. Use copy_to_arrow before retaining borrowed data.
-template <cell_type T>
+template <arrow_details::arrow_cell_type T>
 arrow::Result<ScalarValue<>> from_arrow(std::shared_ptr<arrow::ChunkedArray> column) {
     ARROW_RETURN_NOT_OK(arrow_details::validate_chunked<T>(column));
     auto storage = arrow_details::ArrowColumnReadSource<T>{std::move(column)};

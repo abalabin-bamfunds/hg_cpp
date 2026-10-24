@@ -249,6 +249,139 @@ void test_native_rows_changes_and_batches() {
     catch (const std::out_of_range &) {}
 }
 
+void test_text_columns_follow_scalar_storage_traits() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    CountingResource memory_resource;
+    const auto memory = allocator{memory_resource};
+    auto text = NativeColumn<string>{};
+    auto symbols = NativeColumn<symbol>{};
+    auto text_released = false;
+    auto release = util::scope_exit{[&]() noexcept {
+        symbols.release(memory);
+        if (!text_released)
+            text.release(memory);
+    }};
+
+    auto source = std::string{"copied text"};
+    const auto time = MIN_DT + EvaluationTime::duration{1};
+    const auto text_id = text.add(std::string_view{source}, time, memory);
+    const auto empty_id = text.add(std::string_view{}, time, memory);
+    const auto null_id = text.add(std::nullopt, time, memory);
+    const auto first_symbol = symbols.add(symbol{"IBM"}, time, memory);
+    const auto second_symbol = symbols.add(symbol{"MSFT"}, time, memory);
+    const auto repeated_symbol = symbols.add(symbol{"IBM"}, time, memory);
+    const auto empty_symbol = symbols.add(symbol{}, time, memory);
+    const auto interned_empty_symbol = symbols.add(symbol{""}, time, memory);
+    const auto null_symbol = symbols.add(std::nullopt, time, memory);
+    source.assign("overwritten");
+
+    require(text.cell(text_id) == std::string_view{"copied text"},
+            "native string storage did not copy the caller's text");
+    require(text.cell(empty_id) && text.cell(empty_id)->empty() && !text.cell(null_id),
+            "empty native text and null were not distinct");
+    require(symbols.cell(first_symbol) == symbol{"IBM"} && symbols.cell(second_symbol) == symbol{"MSFT"} &&
+                symbols.cell(repeated_symbol) == symbol{"IBM"} && symbols.cell(empty_symbol) == symbol{} &&
+                symbols.cell(empty_symbol).has_value() && !symbols.cell(empty_symbol)->has_value() &&
+                symbols.cell(interned_empty_symbol)->has_value() &&
+                symbols.cell(interned_empty_symbol)->text().empty() &&
+                !symbols.cell(null_symbol),
+            "native symbol storage did not distinguish null, empty, and interned values");
+
+    const auto original_data = text.cell(text_id)->data();
+    const auto native_snapshot = ScalarValue<Column<string>>{
+        Scalar<Column<string>>::from(text.scalar_storage())};
+    const auto native_snapshot_data = native_snapshot.view().value().cell(0)->data();
+    require(native_snapshot_data == original_data,
+            "copying native string storage changed the shared string payload");
+
+    auto snapshot = Column<string>{std::vector<std::optional<std::string_view>>{
+        std::string_view{"snapshot text"}, std::string_view{}, std::nullopt}};
+    const auto snapshot_value = ScalarValue<Column<string>>{snapshot.view()};
+    snapshot = Column<string>{};
+    const auto view = snapshot_value.view().value();
+    require(view.cell(0) == std::string_view{"snapshot text"} && view.cell(1) && view.cell(1)->empty() &&
+                !view.cell(2),
+            "string column snapshot did not retain its scalar values and validity");
+
+    auto borrowed_text = std::optional<ScalarValue<string>>{};
+    text.for_each_batch([&](const auto &batch) {
+        if (borrowed_text || !batch.cells.is_valid(0))
+            return;
+        borrowed_text.emplace(Scalar<string>::from(batch.cells.values[0]));
+    });
+    require(borrowed_text.has_value(), "native text batch did not expose its stored scalar handle");
+    const auto retained_data = borrowed_text->view().value().data();
+    require(retained_data == original_data, "native text batch did not expose the stored string handle");
+    require(text.set(text_id, std::string_view{"replacement"}, time, memory),
+            "native text replacement did not modify the value");
+    text.release(memory);
+    text_released = true;
+    require(borrowed_text->view().value() == std::string_view{"copied text"} &&
+                borrowed_text->view().value().data() == retained_data,
+            "retaining a native string scalar copied its payload or lost it with the source column");
+    const auto native_view = native_snapshot.view().value();
+    require(native_view.cell(0) == std::string_view{"copied text"} &&
+                native_view.cell(0)->data() == native_snapshot_data &&
+                native_view.cell(1) == std::string_view{} && !native_view.cell(2),
+            "copying native string storage did not retain its values and validity");
+
+    auto failing_resource = FailingResource{};
+    const auto failing_memory = allocator{failing_resource};
+    auto replaceable = NativeColumn<string>{};
+    auto release_replaceable = util::scope_exit{[&]() noexcept { replaceable.release(failing_memory); }};
+    const auto replaceable_id = replaceable.add(std::string_view{"original"}, time, failing_memory);
+    failing_resource.fail_next();
+    auto failed = false;
+    try {
+        static_cast<void>(replaceable.set(replaceable_id, std::string_view{"replacement"}, time, failing_memory));
+    } catch (const std::bad_alloc &) {
+        failed = true;
+    }
+    require(failed && replaceable.cell(replaceable_id) == std::string_view{"original"},
+            "failed text replacement did not preserve the existing cell");
+
+    auto compacted = NativeColumn<string>{};
+    auto release_compacted = util::scope_exit{[&]() noexcept { compacted.release(memory); }};
+    constexpr auto row_count = std::size_t{512};
+    auto values = std::vector<std::string>{};
+    values.reserve(row_count);
+    auto ids = std::vector<row_id_t>{};
+    ids.reserve(row_count);
+    for (auto index = std::size_t{}; index != row_count; ++index) {
+        values.push_back("text-" + std::to_string(index));
+        ids.push_back(compacted.add(index % 7 == 0 ? std::nullopt
+                                                   : std::optional<std::string_view>{values.back()},
+                                   time, memory));
+    }
+    const auto next_time = time + EvaluationTime::duration{1};
+    for (auto index = std::size_t{3}; index < row_count; index += 3)
+        require(compacted.erase(ids[index], next_time, memory), "string compaction setup could not erase a row");
+    const auto *slots = compacted.scalar_storage().physical_rows;
+    auto original_slots = std::vector<std::size_t>(row_count);
+    for (auto index = std::size_t{}; index != row_count; ++index)
+        if (compacted.contains(ids[index]))
+            original_slots[index] = slots->slot_of(ids[index]);
+    const auto layout_revision = slots->layout_revision();
+    compacted.compact(memory);
+    const auto *compacted_slots = compacted.scalar_storage().physical_rows;
+    const auto new_layout_revision = compacted_slots->layout_revision();
+    auto relocated = false;
+    for (auto index = std::size_t{}; index != row_count; ++index) {
+        if (!compacted.contains(ids[index])) {
+            continue;
+        }
+        relocated = relocated || compacted_slots->slot_of(ids[index]) != original_slots[index];
+        const auto expected = index % 7 == 0 ? std::optional<std::string_view>{}
+                                             : std::optional<std::string_view>{values[index]};
+        require(compacted.cell(ids[index]) == expected,
+                "string compaction changed a value or validity bit after relocating handles");
+    }
+    require(new_layout_revision > layout_revision && relocated,
+            "string compaction test did not verify that row slots moved");
+}
+
 void test_selected_batches_coalesce_without_copying() {
     using namespace bg;
     using namespace bg::frame;
@@ -1445,6 +1578,7 @@ int main() {
         test_double_column_snapshot();
         test_ordinary_time_series_graph();
         test_native_rows_changes_and_batches();
+        test_text_columns_follow_scalar_storage_traits();
         test_selected_batches_coalesce_without_copying();
         test_native_scalar_snapshots_and_allocator();
         test_native_explicit_allocator();

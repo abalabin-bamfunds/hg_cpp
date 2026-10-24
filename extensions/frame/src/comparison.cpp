@@ -64,7 +64,7 @@ void register_comparison(Operator &operation, std::string_view name) {
         require = [](const WiringArguments &arguments) {
             return details::is_column_operand(arguments.original_type(0), cpp_scalar_type<T>());
         },
-        [operation_ptr = std::addressof(operation)](wp<ColumnOperand> column, T value) -> wp<TSC<bool>> {
+        [operation_ptr = std::addressof(operation)](wp<ColumnOperand> column, Scalar<T> value) -> wp<TSC<bool>> {
             return (*operation_ptr)(column, operators::const_(value).template as<TS<T>>()).template as<TSC<bool>>();
         });
     operation.overload(column_parameter_graph);
@@ -74,7 +74,7 @@ void register_comparison(Operator &operation, std::string_view name) {
         require = [](const WiringArguments &arguments) {
             return details::is_column_operand(arguments.original_type(1), cpp_scalar_type<T>());
         },
-        [operation_ptr = std::addressof(operation)](T value, wp<ColumnOperand> column) -> wp<TSC<bool>> {
+        [operation_ptr = std::addressof(operation)](Scalar<T> value, wp<ColumnOperand> column) -> wp<TSC<bool>> {
             return (*operation_ptr)(operators::const_(value).template as<TS<T>>(), column).template as<TSC<bool>>();
         });
     operation.overload(parameter_column_graph);
@@ -83,6 +83,8 @@ void register_comparison(Operator &operation, std::string_view name) {
 const auto registered = [] {
     register_column_block_function<bool, i64, i64>();
     register_column_block_function<bool, double, double>();
+    register_column_block_function<bool, string, string>();
+    register_column_block_function<bool, symbol, symbol>();
 
     register_comparison<i64, std::equal_to<>>(operators::eq, "i64_equal");
     register_comparison<i64, std::not_equal_to<>>(operators::ne, "i64_not_equal");
@@ -98,12 +100,17 @@ const auto registered = [] {
     register_comparison<double, std::greater<>>(operators::gt, "double_greater");
     register_comparison<double, std::greater_equal<>>(operators::ge, "double_greater_equal");
 
+    register_comparison<string, std::equal_to<>>(operators::eq, "string_equal");
+    register_comparison<string, std::not_equal_to<>>(operators::ne, "string_not_equal");
+    register_comparison<symbol, std::equal_to<>>(operators::eq, "symbol_equal");
+    register_comparison<symbol, std::not_equal_to<>>(operators::ne, "symbol_not_equal");
+
     register_overloads<details::MixedBinaryOverloads<operators::eq, details::ExpressionOperation::eq,
-                                                      details::MIXED_NUMERIC_SCALAR,
-                                                      details::MIXED_NUMERIC_SERIES>>();
+                                                      details::MIXED_COMPARABLE_SCALAR,
+                                                      details::MIXED_COMPARABLE_SERIES>>();
     register_overloads<details::MixedBinaryOverloads<operators::ne, details::ExpressionOperation::ne,
-                                                      details::MIXED_NUMERIC_SCALAR,
-                                                      details::MIXED_NUMERIC_SERIES>>();
+                                                      details::MIXED_COMPARABLE_SCALAR,
+                                                      details::MIXED_COMPARABLE_SERIES>>();
     register_overloads<details::MixedBinaryOverloads<operators::lt, details::ExpressionOperation::lt,
                                                       details::MIXED_NUMERIC_SCALAR,
                                                       details::MIXED_NUMERIC_SERIES>>();

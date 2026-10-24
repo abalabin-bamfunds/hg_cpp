@@ -132,7 +132,7 @@ class In<frame::TSC<T, SeriesProperties...>, Properties...>
     const TimeSeriesInputData &input_data() const noexcept { return data_; }
     std::size_t size() const noexcept { return valid() ? storage().size() : 0; }
     bool contains(frame::row_id_t id) const noexcept { return valid() && storage().contains(id); }
-    std::optional<T> cell(frame::row_id_t id) const { return storage().cell(id); }
+    std::optional<frame::cell_value_t<T>> cell(frame::row_id_t id) const { return storage().cell(id); }
     const void *row_domain() const noexcept { return valid() ? storage().row_domain() : nullptr; }
     Scalar<frame::Column<T>> value_view() const noexcept {
         return Scalar<frame::Column<T>>::from(storage().scalar_storage());
@@ -223,30 +223,17 @@ class In<frame::TSC<T, SeriesProperties...>, Properties...>
 
     Scalar<frame::Column<T>> value_view() const {
         const auto &type = column_type();
-        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<bool>())) {
-            const auto value = input<bool>().value_view();
+        return frame::visit_cell_type(type.cell_type(), [&]<typename Cell>(std::type_identity<Cell>) {
+            const auto value = input<Cell>().value_view();
             return Scalar<frame::Column<T>>::from(value);
-        }
-        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<i64>())) {
-            const auto value = input<i64>().value_view();
-            return Scalar<frame::Column<T>>::from(value);
-        }
-        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<double>())) {
-            const auto value = input<double>().value_view();
-            return Scalar<frame::Column<T>>::from(value);
-        }
-        throw std::invalid_argument{"frame TSC input has an unsupported cell type"};
+        });
     }
 
     frame::ColumnView<> column_view() const {
         const auto &type = column_type();
-        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<bool>()))
-            return frame::ColumnView<>{view<bool>()};
-        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
-            return frame::ColumnView<>{view<i64>()};
-        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<double>()))
-            return frame::ColumnView<>{view<double>()};
-        throw std::invalid_argument{"frame TSC input has an unsupported cell type"};
+        return frame::visit_cell_type(type.cell_type(), [&]<typename Cell>(std::type_identity<Cell>) {
+            return frame::ColumnView<>{view<Cell>()};
+        });
     }
 
     static constexpr auto name = ParsedProperties::name;
@@ -263,19 +250,11 @@ class In<frame::TSC<T, SeriesProperties...>, Properties...>
 
     std::size_t cell_count() const noexcept {
         const auto &type = column_type();
-        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<bool>()))
-            return static_cast<const frame::ColumnSeriesRuntimeType<bool> &>(data_.runtime_type())
+        return frame::visit_cell_type(type.cell_type(), [&]<typename Cell>(std::type_identity<Cell>) {
+            return static_cast<const frame::ColumnSeriesRuntimeType<Cell> &>(data_.runtime_type())
                 .input_view(data_.data())
                 .size();
-        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
-            return static_cast<const frame::ColumnSeriesRuntimeType<i64> &>(data_.runtime_type())
-                .input_view(data_.data())
-                .size();
-        if (std::addressof(type.cell_type()) == std::addressof(cpp_scalar_type<double>()))
-            return static_cast<const frame::ColumnSeriesRuntimeType<double> &>(data_.runtime_type())
-                .input_view(data_.data())
-                .size();
-        return 0;
+        });
     }
 
     template <frame::cell_type Cell> void check_cell_type() const {
@@ -293,12 +272,12 @@ class Out<frame::TSC<T, Properties...>> {
     void apply(const literal::TimeSeriesLiteral &literal) const {
         frame::details::apply_series_literal(literal, binding_.get());
     }
-    frame::row_id_t add(std::optional<T> value) const {
+    frame::row_id_t add(std::optional<frame::cell_value_t<T>> value) const {
         const auto id = storage().add(value, binding_->context().evaluation_time(), binding_->allocator());
         binding_->publish();
         return id;
     }
-    void set(frame::row_id_t id, std::optional<T> value) const {
+    void set(frame::row_id_t id, std::optional<frame::cell_value_t<T>> value) const {
         storage().set(id, value, binding_->context().evaluation_time(), binding_->allocator());
         binding_->publish();
     }
@@ -336,49 +315,70 @@ class Out<frame::TSC<T, Properties...>> {
         frame::details::apply_series_literal(literal, binding_.get());
     }
 
-    template <frame::cell_type Cell> frame::row_id_t add(std::optional<Cell> value) const {
+    template <frame::cell_type Cell>
+        requires std::same_as<Cell, frame::cell_value_t<Cell>>
+    frame::row_id_t add(std::optional<Cell> value) const {
         const auto id = storage<Cell>().add(value, binding_->context().evaluation_time(), binding_->allocator());
         binding_->publish();
         return id;
     }
 
-    template <frame::cell_type Cell> frame::row_id_t add(Cell value) const {
+    template <frame::cell_type Cell>
+        requires(!std::same_as<Cell, frame::cell_value_t<Cell>>)
+    frame::row_id_t add(std::optional<frame::cell_value_t<Cell>> value) const {
+        const auto id = storage<Cell>().add(value, binding_->context().evaluation_time(), binding_->allocator());
+        binding_->publish();
+        return id;
+    }
+
+    template <frame::cell_type Cell>
+        requires std::same_as<Cell, frame::cell_value_t<Cell>>
+    frame::row_id_t add(Cell value) const {
         return add<Cell>(std::optional<Cell>{value});
     }
 
-    template <frame::cell_type Cell> void set(frame::row_id_t id, std::optional<Cell> value) const {
+    template <frame::cell_type Cell>
+        requires(!std::same_as<Cell, frame::cell_value_t<Cell>>)
+    frame::row_id_t add(frame::cell_value_t<Cell> value) const {
+        return add<Cell>(std::optional<frame::cell_value_t<Cell>>{value});
+    }
+
+    template <frame::cell_type Cell>
+        requires std::same_as<Cell, frame::cell_value_t<Cell>>
+    void set(frame::row_id_t id, std::optional<Cell> value) const {
         storage<Cell>().set(id, value, binding_->context().evaluation_time(), binding_->allocator());
         binding_->publish();
     }
 
-    template <frame::cell_type Cell> void set(frame::row_id_t id, Cell value) const {
+    template <frame::cell_type Cell>
+        requires(!std::same_as<Cell, frame::cell_value_t<Cell>>)
+    void set(frame::row_id_t id, std::optional<frame::cell_value_t<Cell>> value) const {
+        storage<Cell>().set(id, value, binding_->context().evaluation_time(), binding_->allocator());
+        binding_->publish();
+    }
+
+    template <frame::cell_type Cell>
+        requires std::same_as<Cell, frame::cell_value_t<Cell>>
+    void set(frame::row_id_t id, Cell value) const {
         set<Cell>(id, std::optional<Cell>{value});
     }
 
+    template <frame::cell_type Cell>
+        requires(!std::same_as<Cell, frame::cell_value_t<Cell>>)
+    void set(frame::row_id_t id, frame::cell_value_t<Cell> value) const {
+        set<Cell>(id, std::optional<frame::cell_value_t<Cell>>{value});
+    }
+
     bool erase(frame::row_id_t id) const {
-        if (has_cell_type<bool>())
-            return erase<bool>(id);
-        if (has_cell_type<i64>())
-            return erase<i64>(id);
-        if (has_cell_type<double>())
-            return erase<double>(id);
-        throw std::invalid_argument{"frame TSC output has an unsupported cell type"};
+        return frame::visit_cell_type(column_type().cell_type(), [&]<typename Cell>(std::type_identity<Cell>) {
+            return erase<Cell>(id);
+        });
     }
 
     void clear() const {
-        if (has_cell_type<bool>()) {
-            clear<bool>();
-            return;
-        }
-        if (has_cell_type<i64>()) {
-            clear<i64>();
-            return;
-        }
-        if (has_cell_type<double>()) {
-            clear<double>();
-            return;
-        }
-        throw std::invalid_argument{"frame TSC output has an unsupported cell type"};
+        frame::visit_cell_type(column_type().cell_type(), [&]<typename Cell>(std::type_identity<Cell>) {
+            clear<Cell>();
+        });
     }
 
     void invalidate() const { binding_->invalidate(); }
@@ -470,13 +470,9 @@ class Out<frame::TSC<T, Properties...>, frame::view> {
         }
 
         const auto &source_type = static_cast<const frame::ColumnSeriesType &>(source.runtime_type().type());
-        if (std::addressof(source_type.cell_type()) == std::addressof(cpp_scalar_type<bool>()))
-            return bind_cell<bool>(concrete_input<bool, SourceCell>(source));
-        if (std::addressof(source_type.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
-            return bind_cell<i64>(concrete_input<i64, SourceCell>(source));
-        if (std::addressof(source_type.cell_type()) == std::addressof(cpp_scalar_type<double>()))
-            return bind_cell<double>(concrete_input<double, SourceCell>(source));
-        throw std::invalid_argument{"frame TSC view supports only i64 and double cell types"};
+        return frame::visit_cell_type(source_type.cell_type(), [&]<typename Cell>(std::type_identity<Cell>) {
+            return bind_cell<Cell>(concrete_input<Cell, SourceCell>(source));
+        });
     }
 
     void invalidate() const { binding_->invalidate(); }
@@ -528,28 +524,15 @@ class Out<frame::TSC<T, Properties...>, frame::computed<>> {
             return false;
         }
         const auto &source_type = static_cast<const frame::ColumnSeriesType &>(source.runtime_type().type());
-        if (std::addressof(source_type.cell_type()) == std::addressof(cpp_scalar_type<bool>())) {
+        return frame::visit_cell_type(source_type.cell_type(), [&]<typename Cell>(std::type_identity<Cell>) {
             if constexpr (frame::cell_type<SourceCell>)
                 return bind_source(source);
             else
-                return bind_source(source.template input<bool>());
-        }
-        if (std::addressof(source_type.cell_type()) == std::addressof(cpp_scalar_type<i64>())) {
-            if constexpr (frame::cell_type<SourceCell>)
-                return bind_source(source);
-            else
-                return bind_source(source.template input<i64>());
-        }
-        if (std::addressof(source_type.cell_type()) == std::addressof(cpp_scalar_type<double>())) {
-            if constexpr (frame::cell_type<SourceCell>)
-                return bind_source(source);
-            else
-                return bind_source(source.template input<double>());
-        }
-        throw std::invalid_argument{"computed TSC source has an unsupported cell type"};
+                return bind_source(source.template input<Cell>());
+        });
     }
 
-    void set(frame::row_id_t id, std::optional<T> value) const
+    void set(frame::row_id_t id, std::optional<frame::cell_value_t<T>> value) const
         requires frame::cell_type<T>
     {
         auto &output = storage<T>();
@@ -559,6 +542,14 @@ class Out<frame::TSC<T, Properties...>, frame::computed<>> {
 
     template <frame::cell_type Cell>
         requires details::scalar_variable<T>
+    void set(frame::row_id_t id, std::optional<frame::cell_value_t<Cell>> value) const {
+        auto &output = storage<Cell>();
+        output.set(id, value, binding_->context().evaluation_time(), binding_->allocator());
+        binding_->publish();
+    }
+
+    template <frame::cell_type Cell>
+        requires(details::scalar_variable<T> && std::same_as<Cell, frame::cell_value_t<Cell>>)
     void set(frame::row_id_t id, std::optional<Cell> value) const {
         auto &output = storage<Cell>();
         output.set(id, value, binding_->context().evaluation_time(), binding_->allocator());
@@ -567,27 +558,29 @@ class Out<frame::TSC<T, Properties...>, frame::computed<>> {
 
     template <frame::cell_type Cell>
         requires details::scalar_variable<T>
-    void set(frame::row_id_t id, Cell value) const {
-        set(id, std::optional<Cell>{value});
+    void set(frame::row_id_t id, frame::cell_value_t<Cell> value) const {
+        set<Cell>(id, std::optional<frame::cell_value_t<Cell>>{value});
     }
 
-    void set(frame::row_id_t id, T value) const
+    template <frame::cell_type Cell>
+        requires(details::scalar_variable<T> && std::same_as<Cell, frame::cell_value_t<Cell>>)
+    void set(frame::row_id_t id, Cell value) const {
+        set<Cell>(id, std::optional<Cell>{value});
+    }
+
+    void set(frame::row_id_t id, frame::cell_value_t<T> value) const
         requires frame::cell_type<T>
     {
-        set(id, std::optional<T>{value});
+        set(id, std::optional<frame::cell_value_t<T>>{std::move(value)});
     }
 
     void set(frame::row_id_t id, std::nullopt_t) const {
         if constexpr (frame::cell_type<T>) {
-            set(id, std::optional<T>{});
-        } else if (has_cell_type<i64>()) {
-            set<i64>(id, std::optional<i64>{});
-        } else if (has_cell_type<bool>()) {
-            set<bool>(id, std::optional<bool>{});
-        } else if (has_cell_type<double>()) {
-            set<double>(id, std::optional<double>{});
+            set(id, std::optional<frame::cell_value_t<T>>{});
         } else {
-            throw std::invalid_argument{"computed TSC output has an unsupported cell type"};
+            frame::visit_cell_type(column_type().cell_type(), [&]<typename Cell>(std::type_identity<Cell>) {
+                set<Cell>(id, std::optional<frame::cell_value_t<Cell>>{});
+            });
         }
     }
 
@@ -629,14 +622,10 @@ class Out<frame::TSC<T, Properties...>, frame::computed<>> {
     bool bind_source(const SourceInput &source) const {
         if constexpr (frame::cell_type<T>) {
             return bind_result<T>(source);
-        } else if (has_cell_type<bool>()) {
-            return bind_result<bool>(source);
-        } else if (has_cell_type<i64>()) {
-            return bind_result<i64>(source);
-        } else if (has_cell_type<double>()) {
-            return bind_result<double>(source);
         } else {
-            throw std::invalid_argument{"computed TSC output has an unsupported cell type"};
+            return frame::visit_cell_type(column_type().cell_type(), [&]<typename Cell>(std::type_identity<Cell>) {
+                return bind_result<Cell>(source);
+            });
         }
     }
 

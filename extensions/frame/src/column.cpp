@@ -175,34 +175,22 @@ const ComputedColumnSeriesRuntimeType<T> &computed_column_series_runtime_type(co
     return runtime_value;
 }
 
+template <bg::frame::cell_type T>
+void register_column_series_default_runtime(const bg::TimeSeriesType &type) {
+    const auto &runtime = ordinary_column_series_runtime_type<T>(type);
+    bg::register_time_series_runtime_type(runtime);
+    bg::frame::details::register_column_series_literal_runtime(runtime);
+    bg::frame::details::register_column_series_tick_writer<T>(runtime);
+}
+
 void register_column_series_default_runtime(const bg::TimeSeriesType &type) {
     const auto *column_type = dynamic_cast<const bg::frame::ColumnSeriesType *>(std::addressof(type));
     if (column_type == nullptr || !column_type->is_resolved() || !column_type->guarantee().is_resolved() ||
         column_type->guarantee().value() != bg::TimeSeriesGuarantee::ordinary)
         return;
-    const auto *cell_type = std::addressof(column_type->cell_type());
-    if (cell_type == std::addressof(bg::cpp_scalar_type<bool>())) {
-        const auto &runtime = ordinary_column_series_runtime_type<bool>(type);
-        bg::register_time_series_runtime_type(runtime);
-        bg::frame::details::register_column_series_literal_runtime(runtime);
-        bg::frame::details::register_column_series_tick_writer<bool>(runtime);
-        return;
-    }
-    if (cell_type == std::addressof(bg::cpp_scalar_type<bg::i64>())) {
-        const auto &runtime = ordinary_column_series_runtime_type<bg::i64>(type);
-        bg::register_time_series_runtime_type(runtime);
-        bg::frame::details::register_column_series_literal_runtime(runtime);
-        bg::frame::details::register_column_series_tick_writer<bg::i64>(runtime);
-        return;
-    }
-    if (cell_type == std::addressof(bg::cpp_scalar_type<double>())) {
-        const auto &runtime = ordinary_column_series_runtime_type<double>(type);
-        bg::register_time_series_runtime_type(runtime);
-        bg::frame::details::register_column_series_literal_runtime(runtime);
-        bg::frame::details::register_column_series_tick_writer<double>(runtime);
-        return;
-    }
-    throw std::invalid_argument{"frame TSC has an unsupported cell type"};
+    bg::frame::visit_cell_type(column_type->cell_type(), [&]<typename Cell>(std::type_identity<Cell>) {
+        register_column_series_default_runtime<Cell>(type);
+    });
 }
 
 } // namespace
@@ -243,14 +231,10 @@ const bg::frame::ColumnSeriesType &bg::frame::column_series_type(const bg::Scala
     const auto &type =
         bg::TypeRegistry::instance().get_or_create<bg::frame::ColumnSeriesType, ColumnSeriesTypeKeyHash>(
             key, [&] { return std::make_unique<bg::frame::ColumnSeriesType>(cell_type, guarantee); });
-    if (type.is_resolved()) {
-        if (std::addressof(type.cell_type()) == std::addressof(bg::cpp_scalar_type<bool>()))
-            static_cast<void>(bg::cpp_scalar_runtime_type<bg::frame::Column<bool>>());
-        else if (std::addressof(type.cell_type()) == std::addressof(bg::cpp_scalar_type<bg::i64>()))
-            static_cast<void>(bg::cpp_scalar_runtime_type<bg::frame::Column<bg::i64>>());
-        else if (std::addressof(type.cell_type()) == std::addressof(bg::cpp_scalar_type<double>()))
-            static_cast<void>(bg::cpp_scalar_runtime_type<bg::frame::Column<double>>());
-    }
+    if (type.is_resolved())
+        bg::frame::visit_cell_type(type.cell_type(), []<typename Cell>(std::type_identity<Cell>) {
+            static_cast<void>(bg::cpp_scalar_runtime_type<bg::frame::Column<Cell>>());
+        });
     register_column_series_default_runtime(type);
     return type;
 }
@@ -291,6 +275,8 @@ namespace bg {
 template const ScalarRuntimeType &cpp_scalar_runtime_type<frame::Column<i64>>();
 template const ScalarRuntimeType &cpp_scalar_runtime_type<frame::Column<double>>();
 template const ScalarRuntimeType &cpp_scalar_runtime_type<frame::Column<bool>>();
+template const ScalarRuntimeType &cpp_scalar_runtime_type<frame::Column<string>>();
+template const ScalarRuntimeType &cpp_scalar_runtime_type<frame::Column<symbol>>();
 
 template <frame::cell_type T> const TimeSeriesType &frame::column_time_series_type(TimeSeriesGuarantee guarantee) {
     if (guarantee != TimeSeriesGuarantee::ordinary)
@@ -315,7 +301,7 @@ const TimeSeriesRuntimeType &frame::column_view_time_series_runtime_type(const T
         throw std::invalid_argument{"frame TSC view runtime requires resolved ordinary type"};
 
     const auto &runtime = column_view_series_runtime_type<T>();
-    details::register_column_series_tick_writer<T>(runtime);
+    frame::details::register_column_series_tick_writer<T>(runtime);
     return runtime;
 }
 
@@ -325,7 +311,7 @@ const TimeSeriesRuntimeType &frame::column_binding_view_time_series_runtime_type
         throw std::invalid_argument{"frame TSC binding view runtime requires resolved ordinary type"};
 
     const auto &runtime = column_binding_view_series_runtime_type<T>();
-    details::register_column_series_tick_writer<T>(runtime);
+    frame::details::register_column_series_tick_writer<T>(runtime);
     return runtime;
 }
 
@@ -340,13 +326,7 @@ const TimeSeriesRuntimeType &runtime_for_column_type(const TimeSeriesType &type,
         throw std::invalid_argument{"frame TSC runtime requires a resolved ordinary type"};
     if (column_type->guarantee().value() != TimeSeriesGuarantee::ordinary)
         throw std::invalid_argument{"frame TSC requires ordinary"};
-    if (std::addressof(column_type->cell_type()) == std::addressof(cpp_scalar_type<bool>()))
-        return std::invoke(std::forward<RuntimeFunction>(runtime), std::type_identity<bool>{});
-    if (std::addressof(column_type->cell_type()) == std::addressof(cpp_scalar_type<i64>()))
-        return std::invoke(std::forward<RuntimeFunction>(runtime), std::type_identity<i64>{});
-    if (std::addressof(column_type->cell_type()) == std::addressof(cpp_scalar_type<double>()))
-        return std::invoke(std::forward<RuntimeFunction>(runtime), std::type_identity<double>{});
-    throw std::invalid_argument{"frame TSC supports only i64 and double cell types"};
+    return frame::visit_cell_type(column_type->cell_type(), std::forward<RuntimeFunction>(runtime));
 }
 
 } // namespace
@@ -357,7 +337,7 @@ const TimeSeriesRuntimeType &frame::column_computed_time_series_runtime_type(con
         throw std::invalid_argument{"computed TSC runtime requires resolved ordinary type"};
     static_cast<void>(column_time_series_type<T>(TimeSeriesGuarantee::ordinary));
     const auto &runtime = computed_column_series_runtime_type<T>(type);
-    details::register_column_series_tick_writer<T>(runtime);
+    frame::details::register_column_series_tick_writer<T>(runtime);
     return runtime;
 }
 
@@ -395,17 +375,27 @@ const TimeSeriesRuntimeType &frame::column_computed_time_series_runtime_type(con
 template const TimeSeriesType &frame::column_time_series_type<i64>(TimeSeriesGuarantee);
 template const TimeSeriesType &frame::column_time_series_type<double>(TimeSeriesGuarantee);
 template const TimeSeriesType &frame::column_time_series_type<bool>(TimeSeriesGuarantee);
+template const TimeSeriesType &frame::column_time_series_type<string>(TimeSeriesGuarantee);
+template const TimeSeriesType &frame::column_time_series_type<symbol>(TimeSeriesGuarantee);
 template const TimeSeriesRuntimeType &frame::column_time_series_runtime_type<i64>(const TimeSeriesType &);
 template const TimeSeriesRuntimeType &frame::column_time_series_runtime_type<double>(const TimeSeriesType &);
 template const TimeSeriesRuntimeType &frame::column_time_series_runtime_type<bool>(const TimeSeriesType &);
+template const TimeSeriesRuntimeType &frame::column_time_series_runtime_type<string>(const TimeSeriesType &);
+template const TimeSeriesRuntimeType &frame::column_time_series_runtime_type<symbol>(const TimeSeriesType &);
 template const TimeSeriesRuntimeType &frame::column_view_time_series_runtime_type<i64>(const TimeSeriesType &);
 template const TimeSeriesRuntimeType &frame::column_view_time_series_runtime_type<double>(const TimeSeriesType &);
 template const TimeSeriesRuntimeType &frame::column_view_time_series_runtime_type<bool>(const TimeSeriesType &);
+template const TimeSeriesRuntimeType &frame::column_view_time_series_runtime_type<string>(const TimeSeriesType &);
+template const TimeSeriesRuntimeType &frame::column_view_time_series_runtime_type<symbol>(const TimeSeriesType &);
 template const TimeSeriesRuntimeType &frame::column_binding_view_time_series_runtime_type<i64>(const TimeSeriesType &);
 template const TimeSeriesRuntimeType &frame::column_binding_view_time_series_runtime_type<double>(const TimeSeriesType &);
 template const TimeSeriesRuntimeType &frame::column_binding_view_time_series_runtime_type<bool>(const TimeSeriesType &);
+template const TimeSeriesRuntimeType &frame::column_binding_view_time_series_runtime_type<string>(const TimeSeriesType &);
+template const TimeSeriesRuntimeType &frame::column_binding_view_time_series_runtime_type<symbol>(const TimeSeriesType &);
 template const TimeSeriesRuntimeType &frame::column_computed_time_series_runtime_type<i64>(const TimeSeriesType &);
 template const TimeSeriesRuntimeType &frame::column_computed_time_series_runtime_type<double>(const TimeSeriesType &);
 template const TimeSeriesRuntimeType &frame::column_computed_time_series_runtime_type<bool>(const TimeSeriesType &);
+template const TimeSeriesRuntimeType &frame::column_computed_time_series_runtime_type<string>(const TimeSeriesType &);
+template const TimeSeriesRuntimeType &frame::column_computed_time_series_runtime_type<symbol>(const TimeSeriesType &);
 
 } // namespace bg

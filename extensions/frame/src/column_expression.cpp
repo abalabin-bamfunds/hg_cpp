@@ -73,30 +73,41 @@ bool bind_column(const void *output, const TimeSeriesInputData &data) {
 }
 
 template <cell_type CELL> void read_parameter(Scalar<> value, void *destination) {
-    std::construct_at(static_cast<CELL *>(destination), Scalar<CELL>::from(value).value());
+    std::construct_at(static_cast<cell_value_t<CELL> *>(destination), Scalar<CELL>::from(value).value());
 }
 
 template <cell_type RESULT> ColumnBinding column_binding(const Type &type, std::size_t index) {
     const auto *column = dynamic_cast<const ColumnSeriesType *>(std::addressof(type));
     if (column == nullptr)
         throw WiringError{"column expression input is not a concrete column"};
-    if (std::addressof(column->cell_type()) == std::addressof(cpp_scalar_type<i64>()))
-        return {index, {&read_column<i64>, &bind_column<i64, RESULT>}};
-    if (std::addressof(column->cell_type()) == std::addressof(cpp_scalar_type<double>()))
-        return {index, {&read_column<double>, &bind_column<double, RESULT>}};
-    if (std::addressof(column->cell_type()) == std::addressof(cpp_scalar_type<bool>()))
-        return {index, {&read_column<bool>, &bind_column<bool, RESULT>}};
-    throw WiringError{"column expression input has an unsupported cell type"};
+    try {
+        return visit_cell_type(column->cell_type(), [&]<typename Cell>(std::type_identity<Cell>) {
+            return ColumnBinding{index, {&read_column<Cell>, &bind_column<Cell, RESULT>}};
+        });
+    } catch (const std::invalid_argument &) {
+        throw WiringError{"column expression input has an unsupported cell type"};
+    }
 }
 
 ParameterBinding parameter_binding(const ScalarType &type, std::size_t index) {
-    if (std::addressof(type) == std::addressof(cpp_scalar_type<i64>()))
-        return {index, 0, sizeof(i64), alignof(i64), &read_parameter<i64>};
-    if (std::addressof(type) == std::addressof(cpp_scalar_type<double>()))
-        return {index, 0, sizeof(double), alignof(double), &read_parameter<double>};
-    if (std::addressof(type) == std::addressof(cpp_scalar_type<bool>()))
-        return {index, 0, sizeof(bool), alignof(bool), &read_parameter<bool>};
-    throw WiringError{"column expression parameter has an unsupported cell type"};
+    try {
+        return visit_cell_type(type, [&]<typename Cell>(std::type_identity<Cell>) {
+            using Value = cell_value_t<Cell>;
+            return ParameterBinding{index, 0, sizeof(Value), alignof(Value), &read_parameter<Cell>};
+        });
+    } catch (const std::invalid_argument &) {
+        throw WiringError{"column expression parameter has an unsupported cell type"};
+    }
+}
+
+const TimeSeriesType &column_series_type(const ScalarType &type) {
+    try {
+        return visit_cell_type(type, []<typename Cell>(std::type_identity<Cell>) -> const TimeSeriesType & {
+            return TSC<Cell>::type();
+        });
+    } catch (const std::invalid_argument &) {
+        throw WiringError{"column expression input has an unsupported cell type"};
+    }
 }
 
 const ScalarType *expression_cell_type(const Type &type) {
@@ -469,13 +480,7 @@ template <cell_type RESULT> class ExpressionCompiler {
             expressions_.emplace(identity, result);
             return result;
         }
-        const auto *concrete_type = cell_type == std::addressof(cpp_scalar_type<bool>())
-                                        ? std::addressof(TSC<bool>::type())
-                                        : cell_type == std::addressof(cpp_scalar_type<i64>())
-                                              ? std::addressof(TSC<i64>::type())
-                                              : cell_type == std::addressof(cpp_scalar_type<double>())
-                                                    ? std::addressof(TSC<double>::type())
-                                                    : nullptr;
+        const auto *concrete_type = cell_type == nullptr ? nullptr : std::addressof(column_series_type(*cell_type));
         const auto concrete_option = std::ranges::find(options, concrete_type,
                                                        &WiringMaterialisationOption::target_type);
         if (concrete_type != nullptr && wiring_->materialisation_required(point, *concrete_type)) {
@@ -830,6 +835,8 @@ WiringPoint materialize_column_expression(WiringPoint result) {
         return materialize_column_expression_impl<double>(result);
     if (cell_type == std::addressof(cpp_scalar_type<bool>()))
         return materialize_column_expression_impl<bool>(result);
+    if (cell_type == std::addressof(cpp_scalar_type<symbol>()))
+        return materialize_column_expression_impl<symbol>(result);
     throw WiringError{"column expression result has an unsupported cell type"};
 }
 

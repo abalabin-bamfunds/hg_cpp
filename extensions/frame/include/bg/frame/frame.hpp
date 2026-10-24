@@ -54,7 +54,43 @@
 namespace bg::frame {
 
 // Erased key cells are used only by extension storage operations and retained removal deltas.
-using KeyValue = std::variant<std::monostate, i64>;
+using KeyValue = std::variant<std::monostate, i64, symbol, ScalarValue<string>>;
+
+inline std::size_t key_value_hash(const KeyValue &key) {
+    return std::visit(
+        [](const auto &value) -> std::size_t {
+            using Value = std::remove_cvref_t<decltype(value)>;
+            if constexpr (std::same_as<Value, std::monostate>)
+                return std::size_t{0x9e3779b9};
+            else if constexpr (std::same_as<Value, ScalarValue<string>>)
+                return value.hash();
+            else
+                return scalar_storage_traits<Value>::hash(value);
+        },
+        key);
+}
+
+inline bool key_values_equal(std::span<const KeyValue> left, std::span<const KeyValue> right) {
+    if (left.size() != right.size())
+        return false;
+    for (auto index = std::size_t{}; index != left.size(); ++index) {
+        const auto equal = std::visit(
+            [](const auto &left_value, const auto &right_value) {
+                using Left = std::remove_cvref_t<decltype(left_value)>;
+                using Right = std::remove_cvref_t<decltype(right_value)>;
+                if constexpr (!std::same_as<Left, Right>)
+                    return false;
+                else if constexpr (std::same_as<Left, ScalarValue<string>>)
+                    return left_value.equals(right_value);
+                else
+                    return left_value == right_value;
+            },
+            left[index], right[index]);
+        if (!equal)
+            return false;
+    }
+    return true;
+}
 
 template <util::compile_time_string... Names> bg::SchemaMetadata key_metadata() {
     static_assert(sizeof...(Names) != 0, "a frame key must name at least one column");
@@ -65,7 +101,8 @@ template <util::compile_time_string... Names> bg::SchemaMetadata key_metadata() 
 
 template <typename T> class Cell {
   public:
-    using value_type = std::conditional_t<bg::details::scalar_variable<T>, Scalar<>, T>;
+    using value_type = std::conditional_t<bg::details::scalar_variable<T>, Scalar<>,
+                                          std::conditional_t<cell_type<T>, cell_value_t<T>, T>>;
 
     Cell() = delete;
     Cell(bg::details::FieldProbe &probe) noexcept { probe.record(this); }
@@ -80,7 +117,8 @@ template <typename T> class Cell {
 
 template <typename T> class PatchCell {
   public:
-    using value_type = std::conditional_t<bg::details::scalar_variable<T>, Scalar<>, T>;
+    using value_type = std::conditional_t<bg::details::scalar_variable<T>, Scalar<>,
+                                          std::conditional_t<cell_type<T>, cell_value_t<T>, T>>;
 
     PatchCell() noexcept = default;
     PatchCell(bg::details::FieldProbe &probe) noexcept { probe.record(this); }
@@ -385,6 +423,16 @@ struct FrameReadStorage {
             binding.bind_column_view(binding.payload, std::addressof(result));
             return ColumnView<>{result};
         }
+        if (binding.cell_type == std::addressof(cpp_scalar_type<string>())) {
+            auto result = ColumnView<string>{};
+            binding.bind_column_view(binding.payload, std::addressof(result));
+            return ColumnView<>{result};
+        }
+        if (binding.cell_type == std::addressof(cpp_scalar_type<symbol>())) {
+            auto result = ColumnView<symbol>{};
+            binding.bind_column_view(binding.payload, std::addressof(result));
+            return ColumnView<>{result};
+        }
         throw std::invalid_argument{"frame column has an unsupported cell type"};
     }
     const util::index<> *modified_at(std::size_t index) const noexcept {
@@ -606,8 +654,11 @@ void *copy_frame_snapshot_column(const FrameColumnReadBinding &source, std::size
             for (auto index = std::size_t{}; index != batch.size; ++index, ++position) {
                 if (!batch.is_valid(index))
                     continue;
-                snapshot->set_value(position, batch.value_at(index));
                 snapshot->set_valid(static_cast<row_id_t>(position));
+                if constexpr (std::same_as<Cell, bool>)
+                    snapshot->set_value(position, batch.value_at(index));
+                else
+                    snapshot->copy_stored_value(position, batch.values[index]);
             }
         });
         if (position != size)
@@ -955,6 +1006,12 @@ FrameColumnReadBinding frame_view_column_binding(const void *context, std::size_
                 if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<double>()))
                     return {std::addressof(cell_type), std::addressof(column),
                             &bind_generic_frame_view_column<double>, nullptr};
+                if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<string>()))
+                    return {std::addressof(cell_type), std::addressof(column),
+                            &bind_generic_frame_view_column<string>, nullptr};
+                if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<symbol>()))
+                    return {std::addressof(cell_type), std::addressof(column),
+                            &bind_generic_frame_view_column<symbol>, nullptr};
                 throw std::invalid_argument{"frame column has an unsupported cell type"};
             } else {
                 return {std::addressof(cpp_scalar_type<Cell>()), payload,
@@ -1727,6 +1784,10 @@ inline FrameColumnReadBinding runtime_frame_column_binding(const ColumnView<> &c
         return {std::addressof(type), std::addressof(column), &bind_runtime_frame_column_view<i64>, nullptr};
     if (std::addressof(type) == std::addressof(cpp_scalar_type<double>()))
         return {std::addressof(type), std::addressof(column), &bind_runtime_frame_column_view<double>, nullptr};
+    if (std::addressof(type) == std::addressof(cpp_scalar_type<string>()))
+        return {std::addressof(type), std::addressof(column), &bind_runtime_frame_column_view<string>, nullptr};
+    if (std::addressof(type) == std::addressof(cpp_scalar_type<symbol>()))
+        return {std::addressof(type), std::addressof(column), &bind_runtime_frame_column_view<symbol>, nullptr};
     throw std::invalid_argument{"frame column has an unsupported cell type"};
 }
 
@@ -1864,11 +1925,11 @@ template <cell_type Cell> NativeFrameFieldLayout make_native_frame_field_layout(
         .column_storage_alignment = alignof(ColumnStorage<Cell>),
         .add = [](void *field, NativeRows &rows, row_id_t id, const void *value, allocator memory) {
             static_cast<NativeColumnData<Cell> *>(field)->add(
-                rows, id, *static_cast<const std::optional<Cell> *>(value), memory);
+                rows, id, *static_cast<const std::optional<cell_value_t<Cell>> *>(value), memory);
         },
         .set = [](void *field, NativeRows &rows, row_id_t id, const void *value, allocator memory) {
             static_cast<NativeColumnData<Cell> *>(field)->set(
-                rows, id, *static_cast<const std::optional<Cell> *>(value), memory);
+                rows, id, *static_cast<const std::optional<cell_value_t<Cell>> *>(value), memory);
         },
         .erase = [](void *field, row_id_t slot, row_id_t id, allocator memory) {
             static_cast<NativeColumnData<Cell> *>(field)->erase_slot(slot, id, memory);
@@ -1907,7 +1968,7 @@ template <cell_type Cell> NativeFrameFieldLayout make_native_frame_field_layout(
         .set_slots = [](void *field, const NativeRowSlots &rows, const util::index<> &added, row_id_t id,
                         const void *value, allocator memory) {
             return static_cast<NativeColumnData<Cell> *>(field)->set(
-                rows, added, id, *static_cast<const std::optional<Cell> *>(value), memory);
+                rows, added, id, *static_cast<const std::optional<cell_value_t<Cell>> *>(value), memory);
         },
         .bind_computed_storage = &bind_frame_computed_storage<Cell>,
         .read_binding = &frame_column_read_binding<Cell>,
@@ -1917,39 +1978,38 @@ template <cell_type Cell> NativeFrameFieldLayout make_native_frame_field_layout(
         .install_snapshot_column = &install_frame_snapshot_column<Cell>,
     };
 
-    if constexpr (std::same_as<Cell, i64>) {
+    if constexpr (std::same_as<Cell, i64> || std::same_as<Cell, string> || std::same_as<Cell, symbol>) {
         result.hash_key_value = [](const void *value) noexcept {
-            const auto &cell = *static_cast<const std::optional<Cell> *>(value);
-            return cell ? std::hash<Cell>{}(*cell) : null_key_hash;
+            const auto &cell = *static_cast<const std::optional<cell_value_t<Cell>> *>(value);
+            return cell ? scalar_storage_traits<Cell>::hash(*cell) : null_key_hash;
         };
         result.hash_row_key = [](const void *field, const NativeRows &rows, row_id_t id) noexcept {
             const auto cell = static_cast<const NativeColumnData<Cell> *>(field)->cell(rows, id);
-            return cell ? std::hash<Cell>{}(*cell) : null_key_hash;
+            return cell ? scalar_storage_traits<Cell>::hash(*cell) : null_key_hash;
         };
         result.equal_row_key = [](const void *field, const NativeRows &rows, row_id_t id,
                                   const void *value) noexcept {
             const auto cell = static_cast<const NativeColumnData<Cell> *>(field)->cell(rows, id);
-            const auto &candidate = *static_cast<const std::optional<Cell> *>(value);
+            const auto &candidate = *static_cast<const std::optional<cell_value_t<Cell>> *>(value);
             return cell == candidate;
         };
         result.append_row_key = [](const void *field, const NativeRows &rows, row_id_t id,
                                    std::pmr::vector<KeyValue> &key) {
-            const auto cell = static_cast<const NativeColumnData<Cell> *>(field)->cell(rows, id);
-            if (cell)
-                key.emplace_back(*cell);
-            else
+            const auto &column = *static_cast<const NativeColumnData<Cell> *>(field);
+            const auto cell = column.cell(rows, id);
+            if (!cell) {
                 key.emplace_back(std::monostate{});
+                return;
+            }
+            if constexpr (std::same_as<Cell, string>) {
+                const auto &stored = column.stored(rows.slots(), id);
+                key.emplace_back(ScalarValue<string>{Scalar<string>::from(stored)});
+            } else {
+                key.emplace_back(*cell);
+            }
         };
         result.hash_erased_key = [](const KeyValue &key) {
-            return std::visit(
-                [](const auto &value) -> std::size_t {
-                    using Value = std::remove_cvref_t<decltype(value)>;
-                    if constexpr (std::same_as<Value, std::monostate>)
-                        return null_key_hash;
-                    else
-                        return std::hash<Value>{}(value);
-                },
-                key);
+            return key_value_hash(key);
         };
         result.equal_erased_row_key = [](const void *field, const NativeRows &rows, row_id_t id,
                                          const KeyValue &key) {
@@ -1959,8 +2019,13 @@ template <cell_type Cell> NativeFrameFieldLayout make_native_frame_field_layout(
                     using Value = std::remove_cvref_t<decltype(value)>;
                     if constexpr (std::same_as<Value, std::monostate>)
                         return !cell.has_value();
-                    else
+                    else if constexpr (std::same_as<Cell, string> &&
+                                       std::same_as<Value, ScalarValue<string>>)
+                        return cell && scalar_storage_traits<string>::equals(*cell, value.view().value());
+                    else if constexpr (std::same_as<Value, cell_value_t<Cell>>)
                         return cell == value;
+                    else
+                        return false;
                 },
                 key);
         };
@@ -1970,13 +2035,9 @@ template <cell_type Cell> NativeFrameFieldLayout make_native_frame_field_layout(
 }
 
 inline NativeFrameFieldLayout native_frame_field_layout(const ScalarType &cell_type) {
-    if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<bool>()))
-        return make_native_frame_field_layout<bool>();
-    if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<i64>()))
-        return make_native_frame_field_layout<i64>();
-    if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<double>()))
-        return make_native_frame_field_layout<double>();
-    throw std::invalid_argument{"frame column has an unsupported cell type"};
+    return visit_cell_type(cell_type, []<typename Cell>(std::type_identity<Cell>) {
+        return make_native_frame_field_layout<Cell>();
+    });
 }
 
 } // namespace details
@@ -3591,41 +3652,20 @@ class Out<frame::TSF<Schema, Properties...>> {
     using time_series_type = frame::TSF<Schema, Properties...>;
 
   private:
-    using CellValue = std::variant<std::optional<bool>, std::optional<i64>, std::optional<double>>;
+    using CellValue = std::variant<std::optional<bool>, std::optional<i64>, std::optional<double>,
+                                   std::optional<std::string_view>, std::optional<symbol>>;
 
     static const void *decode_cell(const std::optional<Scalar<>> &source, const Type &cell_type,
                                    CellValue &destination) {
-        if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<bool>())) {
-            auto &value = destination.emplace<0>();
+        return frame::visit_cell_type(cell_type, [&]<typename Cell>(std::type_identity<Cell>) -> const void * {
+            auto &value = destination.emplace<std::optional<frame::cell_value_t<Cell>>>();
             if (source) {
-                if (std::addressof(source->type()) != std::addressof(cpp_scalar_type<bool>()))
+                if (std::addressof(source->type()) != std::addressof(cpp_scalar_type<Cell>()))
                     throw std::invalid_argument{"frame cell type does not match its schema"};
-                const auto typed_value = Scalar<bool>::from(*source);
-                value = typed_value.value();
+                value = Scalar<Cell>::from(*source).value();
             }
             return std::addressof(value);
-        }
-        if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<i64>())) {
-            auto &value = destination.emplace<1>();
-            if (source) {
-                if (std::addressof(source->type()) != std::addressof(cpp_scalar_type<i64>()))
-                    throw std::invalid_argument{"frame cell type does not match its schema"};
-                const auto typed_value = Scalar<i64>::from(*source);
-                value = typed_value.value();
-            }
-            return std::addressof(value);
-        }
-        if (std::addressof(cell_type) == std::addressof(cpp_scalar_type<double>())) {
-            auto &value = destination.emplace<2>();
-            if (source) {
-                if (std::addressof(source->type()) != std::addressof(cpp_scalar_type<double>()))
-                    throw std::invalid_argument{"frame cell type does not match its schema"};
-                const auto typed_value = Scalar<double>::from(*source);
-                value = typed_value.value();
-            }
-            return std::addressof(value);
-        }
-        throw std::invalid_argument{"frame schema has an unsupported cell type"};
+        });
     }
 
     template <template <template <typename, auto...> typename> typename SourceSchema>
@@ -3811,7 +3851,8 @@ class FrameViewOutputImplementation {
     }
 
     template <::bg::frame::cell_type Cell>
-    void set_computed_cell(std::size_t index, ::bg::frame::row_id_t id, std::optional<Cell> value) const {
+    void set_computed_cell(std::size_t index, ::bg::frame::row_id_t id,
+                           std::optional<::bg::frame::cell_value_t<Cell>> value) const {
         auto &output = runtime_storage();
         if (index >= output.layout->fields.size() || !output.is_computed(index))
             throw std::invalid_argument{"frame output field is not declared computed"};
@@ -3828,7 +3869,8 @@ class FrameViewOutputImplementation {
         auto &output = runtime_storage();
         if (index >= output.layout->fields.size() || !output.is_computed(index))
             throw std::invalid_argument{"frame output field is not declared computed"};
-        auto value = std::variant<std::optional<bool>, std::optional<i64>, std::optional<double>>{};
+        auto value = std::variant<std::optional<bool>, std::optional<i64>, std::optional<double>,
+                                  std::optional<std::string_view>, std::optional<symbol>>{};
         const void *cell = nullptr;
         if (output.layout->schema->field(index).type == std::addressof(cpp_scalar_type<bool>()))
             cell = std::addressof(value.emplace<0>());
@@ -3836,6 +3878,10 @@ class FrameViewOutputImplementation {
             cell = std::addressof(value.emplace<1>());
         else if (output.layout->schema->field(index).type == std::addressof(cpp_scalar_type<double>()))
             cell = std::addressof(value.emplace<2>());
+        else if (output.layout->schema->field(index).type == std::addressof(cpp_scalar_type<string>()))
+            cell = std::addressof(value.emplace<3>());
+        else if (output.layout->schema->field(index).type == std::addressof(cpp_scalar_type<symbol>()))
+            cell = std::addressof(value.emplace<4>());
         else
             throw std::invalid_argument{"computed frame schema has an unsupported cell type"};
         if (output.set_computed(index, id, cell, binding_->context().evaluation_time(), binding_->allocator())) {
@@ -3869,7 +3915,7 @@ class FrameViewOutputImplementation {
         output.begin_cycle(time);
         auto changed = false;
         for (std::size_t position = 0; position != ids.size(); ++position) {
-            auto value = std::optional<Cell>{};
+            auto value = std::optional<::bg::frame::cell_value_t<Cell>>{};
             if (batch.is_valid(position))
                 value = batch.value_at(position);
             changed = output.write_computed(index, ids[position], std::addressof(value),
@@ -4016,14 +4062,29 @@ class Out<frame::TSF<Schema, Properties...>, Option>
     }
 
     template <util::compile_time_string Name, frame::cell_type Cell>
+        requires std::same_as<Cell, frame::cell_value_t<Cell>>
     void set(frame::row_id_t id, std::optional<Cell> value) const {
-        this->template set_computed_cell(this->runtime_storage().field_index(util::symbol{Name.view()}), id,
-                                         std::move(value));
+        this->template set_computed_cell<Cell>(this->runtime_storage().field_index(util::symbol{Name.view()}), id,
+                                               std::move(value));
     }
 
     template <util::compile_time_string Name, frame::cell_type Cell>
+        requires(!std::same_as<Cell, frame::cell_value_t<Cell>>)
+    void set(frame::row_id_t id, std::optional<frame::cell_value_t<Cell>> value) const {
+        this->template set_computed_cell<Cell>(this->runtime_storage().field_index(util::symbol{Name.view()}), id,
+                                               std::move(value));
+    }
+
+    template <util::compile_time_string Name, frame::cell_type Cell>
+        requires std::same_as<Cell, frame::cell_value_t<Cell>>
     void set(frame::row_id_t id, Cell value) const {
-        set<Name>(id, std::optional<Cell>{std::move(value)});
+        set<Name, Cell>(id, std::optional<Cell>{std::move(value)});
+    }
+
+    template <util::compile_time_string Name, frame::cell_type Cell>
+        requires(!std::same_as<Cell, frame::cell_value_t<Cell>>)
+    void set(frame::row_id_t id, frame::cell_value_t<Cell> value) const {
+        set<Name, Cell>(id, std::optional<frame::cell_value_t<Cell>>{std::move(value)});
     }
 
     template <util::compile_time_string Name>
@@ -4038,13 +4099,27 @@ class Out<frame::TSF<Schema, Properties...>, Option>
     }
 
     template <frame::cell_type Cell>
+        requires std::same_as<Cell, frame::cell_value_t<Cell>>
     void set(util::symbol name, frame::row_id_t id, std::optional<Cell> value) const {
-        this->template set_computed_cell(this->runtime_storage().field_index(name), id, std::move(value));
+        this->template set_computed_cell<Cell>(this->runtime_storage().field_index(name), id, std::move(value));
     }
 
     template <frame::cell_type Cell>
+        requires(!std::same_as<Cell, frame::cell_value_t<Cell>>)
+    void set(util::symbol name, frame::row_id_t id, std::optional<frame::cell_value_t<Cell>> value) const {
+        this->template set_computed_cell<Cell>(this->runtime_storage().field_index(name), id, std::move(value));
+    }
+
+    template <frame::cell_type Cell>
+        requires std::same_as<Cell, frame::cell_value_t<Cell>>
     void set(util::symbol name, frame::row_id_t id, Cell value) const {
-        set(name, id, std::optional<Cell>{std::move(value)});
+        set<Cell>(name, id, std::optional<Cell>{std::move(value)});
+    }
+
+    template <frame::cell_type Cell>
+        requires(!std::same_as<Cell, frame::cell_value_t<Cell>>)
+    void set(util::symbol name, frame::row_id_t id, frame::cell_value_t<Cell> value) const {
+        set<Cell>(name, id, std::optional<frame::cell_value_t<Cell>>{std::move(value)});
     }
 
     void set(util::symbol name, frame::row_id_t id, std::nullopt_t) const {
@@ -4052,13 +4127,27 @@ class Out<frame::TSF<Schema, Properties...>, Option>
     }
 
     template <frame::cell_type Cell>
+        requires std::same_as<Cell, frame::cell_value_t<Cell>>
     void set(std::size_t index, frame::row_id_t id, std::optional<Cell> value) const {
-        this->template set_computed_cell(index, id, std::move(value));
+        this->template set_computed_cell<Cell>(index, id, std::move(value));
     }
 
     template <frame::cell_type Cell>
+        requires(!std::same_as<Cell, frame::cell_value_t<Cell>>)
+    void set(std::size_t index, frame::row_id_t id, std::optional<frame::cell_value_t<Cell>> value) const {
+        this->template set_computed_cell<Cell>(index, id, std::move(value));
+    }
+
+    template <frame::cell_type Cell>
+        requires std::same_as<Cell, frame::cell_value_t<Cell>>
     void set(std::size_t index, frame::row_id_t id, Cell value) const {
-        set(index, id, std::optional<Cell>{std::move(value)});
+        set<Cell>(index, id, std::optional<Cell>{std::move(value)});
+    }
+
+    template <frame::cell_type Cell>
+        requires(!std::same_as<Cell, frame::cell_value_t<Cell>>)
+    void set(std::size_t index, frame::row_id_t id, frame::cell_value_t<Cell> value) const {
+        set<Cell>(index, id, std::optional<frame::cell_value_t<Cell>>{std::move(value)});
     }
 
     void set(std::size_t index, frame::row_id_t id, std::nullopt_t) const {
@@ -4285,15 +4374,8 @@ inline ScalarValue<Frame<bg::SCHEMA>> make_frame_value(allocator &memory, const 
         const auto binding = details::runtime_frame_column_binding(column);
         if (field.type != binding.cell_type)
             throw std::invalid_argument{"frame column type does not match the schema"};
-        if (binding.cell_type == std::addressof(cpp_scalar_type<i64>())) {
-            if (column.view<i64>().size() != row_count)
-                throw std::invalid_argument{"frame columns have different lengths"};
-        } else if (binding.cell_type == std::addressof(cpp_scalar_type<bool>())) {
-            if (column.view<bool>().size() != row_count)
-                throw std::invalid_argument{"frame columns have different lengths"};
-        } else if (column.view<double>().size() != row_count) {
+        if (column.size() != row_count)
             throw std::invalid_argument{"frame columns have different lengths"};
-        }
     }
 
     auto source = FrameReadStorage{};

@@ -28,6 +28,11 @@ template <template <typename, auto...> typename Field> struct Quotes {
 
 template <template <typename, auto...> typename Field> struct BooleanArrowRows { Field<bool> enabled; };
 
+template <template <typename, auto...> typename Field> struct TextArrowRows {
+    Field<string> name;
+    Field<symbol> venue;
+};
+
 template <template <typename, auto...> typename Field> struct InheritedArrowBase {
     Field<i64> size;
     Field<double> bid;
@@ -99,6 +104,24 @@ void test_arrow_default_frame_runtime() {
     require(snapshots.size() == 1 && snapshots[0] &&
                 snapshots[0]->view().value().columns().bid.cell(0) == 12.5,
             "generic Frame scalar output failed after Arrow runtime initialization");
+}
+
+void test_arrow_rejects_text_cells() {
+    auto text = Column<string>{std::vector<std::optional<std::string_view>>{std::string_view{"alpha"}}};
+    auto symbol_values = Column<symbol>{std::vector<std::optional<symbol>>{symbol{"XNAS"}}};
+    const auto text_borrowed = borrow_arrow(ColumnView<>{text.view()});
+    const auto text_copied = copy_to_arrow(ColumnView<>{text.view()});
+    const auto symbol_borrowed = borrow_arrow(ColumnView<>{symbol_values.view()});
+    const auto symbol_copied = copy_to_arrow(ColumnView<>{symbol_values.view()});
+
+    const auto frame = Frame<TextArrowRows>{TextArrowRows<Column>{.name = std::move(text),
+                                                                  .venue = std::move(symbol_values)}};
+    const auto frame_view = FrameView<TextArrowRows>{frame};
+    const auto frame_borrowed = borrow_arrow(frame_view);
+    const auto frame_copied = copy_to_arrow(frame_view);
+    require(!text_borrowed.ok() && !text_copied.ok() && !symbol_borrowed.ok() && !symbol_copied.ok() &&
+                !frame_borrowed.ok() && !frame_copied.ok(),
+            "Arrow export accepted a generic string or symbol column/frame view");
 }
 
 std::shared_ptr<arrow::Array> int_array(std::initializer_list<std::optional<std::int64_t>> values) {
@@ -814,6 +837,7 @@ int main() {
     test_arrow_first_column_runtime_registration();
     test_inferred_arrow_frame_import();
     test_arrow_default_frame_runtime();
+    test_arrow_rejects_text_cells();
     test_exports();
     test_boolean_arrow_import_and_export();
     test_fragmented_dense_copy_and_source_mutation();

@@ -72,8 +72,10 @@ std::vector<std::size_t> frame_key_fields(const bg::Schema &schema) {
         const auto *field = schema.find(util::symbol{name});
         if (field == nullptr)
             throw std::invalid_argument{"frame key metadata names a missing column"};
-        if (field->type->is_resolved() && field->type != std::addressof(cpp_scalar_type<bg::i64>()))
-            throw std::invalid_argument{"frame key columns must have i64 cell types"};
+        if (field->type->is_resolved() && field->type != std::addressof(cpp_scalar_type<bg::i64>()) &&
+            field->type != std::addressof(cpp_scalar_type<string>()) &&
+            field->type != std::addressof(cpp_scalar_type<symbol>()))
+            throw std::invalid_argument{"frame key columns must have i64, string, or symbol cell types"};
 
         const auto field_index = static_cast<std::size_t>(field - schema.fields().data());
         if (std::ranges::find(result, field_index) != result.end())
@@ -146,37 +148,42 @@ bool frame_schema_matches(const SchemaType &parameter, const SchemaType &argumen
     return true;
 }
 
-struct KeyColumnBatches {
-    std::vector<ColumnView<i64>::Batch> batches;
+using FrameKeyCell = std::variant<std::monostate, i64, std::string_view, symbol>;
+
+template <cell_type T> struct KeyColumnBatches {
+    std::vector<typename ColumnView<T>::Batch> batches;
     std::vector<std::size_t> starts;
     std::size_t next_batch{};
 
-    std::optional<i64> next_cell(std::size_t position) {
+    FrameKeyCell next_cell(std::size_t position) {
         while (position >= starts[next_batch] + batches[next_batch].size)
             ++next_batch;
         return cell(next_batch, position - starts[next_batch]);
     }
 
-    std::optional<i64> cell_at(std::size_t position) const {
+    FrameKeyCell cell_at(std::size_t position) const {
         const auto next = std::upper_bound(starts.begin(), starts.end(), position);
         const auto index = static_cast<std::size_t>(next - starts.begin() - 1);
         return cell(index, position - starts[index]);
     }
 
   private:
-    std::optional<i64> cell(std::size_t batch_index, std::size_t offset) const {
+    FrameKeyCell cell(std::size_t batch_index, std::size_t offset) const {
         const auto &batch = batches[batch_index];
-        return batch.is_valid(offset) ? std::optional<i64>{batch.value_at(offset)} : std::nullopt;
+        return batch.is_valid(offset) ? FrameKeyCell{batch.value_at(offset)} : FrameKeyCell{std::monostate{}};
     }
 };
 
-KeyColumnBatches key_column_batches(const FrameReadStorage &source, std::size_t index) {
+using ErasedKeyColumnBatches =
+    std::variant<KeyColumnBatches<i64>, KeyColumnBatches<string>, KeyColumnBatches<symbol>>;
+
+template <cell_type T> KeyColumnBatches<T> key_column_batches(const FrameReadStorage &source, std::size_t index) {
     const auto binding = source.column(index);
-    auto view = ColumnView<i64>{};
+    auto view = ColumnView<T>{};
     binding.bind_column_view(binding.payload, std::addressof(view));
-    auto result = KeyColumnBatches{};
+    auto result = KeyColumnBatches<T>{};
     auto position = std::size_t{};
-    view.batches([&](const ColumnView<i64>::Batch &batch) {
+    view.batches([&](const ColumnView<T>::Batch &batch) {
         if (batch.size == 0)
             return;
         if (position > source.size || batch.size > source.size - position)
@@ -188,6 +195,30 @@ KeyColumnBatches key_column_batches(const FrameReadStorage &source, std::size_t 
     if (position != source.size)
         throw std::invalid_argument{"frame key column batches do not match the frame row count"};
     return result;
+}
+
+ErasedKeyColumnBatches key_column_batches(const FrameReadStorage &source, std::size_t index) {
+    const auto binding = source.column(index);
+    return visit_cell_type(*binding.cell_type, [&]<typename Cell>(std::type_identity<Cell>) -> ErasedKeyColumnBatches {
+        if constexpr (std::same_as<Cell, i64> || std::same_as<Cell, string> || std::same_as<Cell, symbol>)
+            return ErasedKeyColumnBatches{key_column_batches<Cell>(source, index)};
+        else
+            throw std::invalid_argument{"frame key has an unsupported cell type"};
+    });
+}
+
+std::size_t frame_key_cell_hash(const FrameKeyCell &cell) {
+    return std::visit(
+        [](const auto &value) -> std::size_t {
+            using Value = std::remove_cvref_t<decltype(value)>;
+            if constexpr (std::same_as<Value, std::monostate>)
+                return details::null_key_hash;
+            else if constexpr (std::same_as<Value, std::string_view>)
+                return scalar_storage_traits<string>::hash(value);
+            else
+                return scalar_storage_traits<Value>::hash(value);
+        },
+        cell);
 }
 
 std::size_t combine_frame_key_hash(std::size_t result, std::size_t value) noexcept {
@@ -253,7 +284,7 @@ void details::validate_frame_key_uniqueness(const FrameReadStorage &source) {
     if (layout.key_fields.empty() || source.size == 0)
         return;
 
-    auto columns = std::vector<KeyColumnBatches>{};
+    auto columns = std::vector<ErasedKeyColumnBatches>{};
     columns.reserve(layout.key_fields.size());
     for (auto index : layout.key_fields)
         columns.push_back(key_column_batches(source, index));
@@ -262,14 +293,13 @@ void details::validate_frame_key_uniqueness(const FrameReadStorage &source) {
     auto next_rows = std::vector<std::size_t>(source.size, no_position);
     auto rows_by_hash = std::unordered_map<std::size_t, std::size_t>{};
     rows_by_hash.reserve(source.size);
-    auto key = std::vector<std::optional<i64>>(columns.size());
+    auto key = std::vector<FrameKeyCell>(columns.size());
 
     for (auto position = std::size_t{}; position != source.size; ++position) {
         auto hash = std::size_t{};
         for (auto index = std::size_t{}; index != columns.size(); ++index) {
-            key[index] = columns[index].next_cell(position);
-            const auto cell_hash = key[index] ? std::hash<i64>{}(*key[index]) : null_key_hash;
-            hash = combine_frame_key_hash(hash, cell_hash);
+            key[index] = std::visit([&](auto &column) { return column.next_cell(position); }, columns[index]);
+            hash = combine_frame_key_hash(hash, frame_key_cell_hash(key[index]));
         }
 
         const auto [entry, inserted] = rows_by_hash.try_emplace(hash, position);
@@ -279,7 +309,8 @@ void details::validate_frame_key_uniqueness(const FrameReadStorage &source) {
         for (auto previous = entry->second; previous != no_position; previous = next_rows[previous]) {
             auto equal = true;
             for (auto index = std::size_t{}; index != columns.size(); ++index) {
-                if (columns[index].cell_at(previous) != key[index]) {
+                if (std::visit([&](const auto &column) { return column.cell_at(previous); }, columns[index]) !=
+                    key[index]) {
                     equal = false;
                     break;
                 }
