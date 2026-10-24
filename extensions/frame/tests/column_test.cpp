@@ -132,7 +132,7 @@ class ExternalTextColumn final : public bg::frame::ColumnReadSource<bg::string> 
     void visit_batches(void *target, batch_visitor visit) const override {
         const auto validity = bg::frame::ColumnBatch<bg::string>::Validity::from_callback(this, &is_valid);
         const auto source = bg::frame::ColumnBatchSource<bg::string>{this, &read_value};
-        std::invoke(visit, target, bg::frame::ColumnBatch<bg::string>{0, size(), nullptr, validity, source});
+        std::invoke(visit, target, bg::frame::ColumnBatch<bg::string>{0, size(), source, validity});
     }
 
   private:

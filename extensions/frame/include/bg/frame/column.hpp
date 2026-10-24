@@ -463,9 +463,9 @@ template <typename T = void> struct ColumnBatch {
     ColumnBatch(std::uint64_t first_slot, std::size_t size, typename ColumnValueTraits<T>::pointer values,
                 std::uint64_t value_bit_offset, Validity valid) noexcept
         : first_slot{first_slot}, size{size}, values{values}, value_bit_offset{value_bit_offset}, valid{valid} {}
-    ColumnBatch(std::uint64_t first_slot, std::size_t size, typename ColumnValueTraits<T>::pointer values,
-                Validity valid, column_batch_source_t<T> source) noexcept
-        : first_slot{first_slot}, size{size}, values{values}, valid{valid}, source{source} {}
+    ColumnBatch(std::uint64_t first_slot, std::size_t size, ColumnBatchSource<T> source, Validity valid) noexcept
+        requires source_backed_column_type<T>
+        : first_slot{first_slot}, size{size}, valid{valid}, source{source} {}
 
     bool is_valid(std::size_t position) const noexcept { return valid.contains(first_slot, position); }
     bool has_values() const noexcept {

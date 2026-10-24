@@ -20,6 +20,7 @@
 #include <string>
 #include <typeinfo>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -28,14 +29,15 @@ namespace bg::frame {
 
 namespace arrow_details {
 
+template <typename T> concept arrow_cell_type = cell_type<T>;
 template <typename T>
-concept arrow_cell_type = std::same_as<T, bool> || std::same_as<T, i64> || std::same_as<T, double>;
+concept arrow_numeric_cell_type = std::same_as<T, bool> || std::same_as<T, i64> || std::same_as<T, double>;
 
 using scalar_runtime_factory = std::unique_ptr<ScalarRuntimeType> (*)();
 const ScalarRuntimeType &canonical_scalar_runtime(const ScalarType &type, const std::type_info &identity,
                                                   scalar_runtime_factory factory);
 
-template <arrow_cell_type T> std::shared_ptr<arrow::DataType> data_type() {
+template <arrow_numeric_cell_type T> std::shared_ptr<arrow::DataType> data_type() {
     if constexpr (std::same_as<T, bool>)
         return arrow::boolean();
     else if constexpr (std::same_as<T, i64>)
@@ -44,7 +46,7 @@ template <arrow_cell_type T> std::shared_ptr<arrow::DataType> data_type() {
         return arrow::float64();
 }
 
-template <arrow_cell_type T> constexpr auto arrow_type_id = [] {
+template <arrow_numeric_cell_type T> constexpr auto arrow_type_id = [] {
     if constexpr (std::same_as<T, bool>)
         return arrow::Type::BOOL;
     else if constexpr (std::same_as<T, i64>)
@@ -69,7 +71,7 @@ template <typename Semantic> class ArrowScalarRuntimeBase : public ScalarRuntime
     using ScalarRuntimeType::ScalarRuntimeType;
 };
 
-template <arrow_cell_type T> arrow::Status check_array_buffers(const std::shared_ptr<arrow::Array> &array) {
+template <arrow_numeric_cell_type T> arrow::Status check_array_buffers(const std::shared_ptr<arrow::Array> &array) {
     if (!array || array->type_id() != arrow_type_id<T>)
         return arrow::Status::TypeError("Arrow column has an unsupported physical type");
     const auto &buffers = array->data()->buffers;
@@ -81,12 +83,99 @@ template <arrow_cell_type T> arrow::Status check_array_buffers(const std::shared
     return arrow::Status::OK();
 }
 
-template <arrow_cell_type T> arrow::Status check_chunked_buffers(const std::shared_ptr<arrow::ChunkedArray> &column) {
-    if (!column || column->type()->id() != arrow_type_id<T>)
-        return arrow::Status::TypeError("Arrow column type does not match the frame schema");
-    for (const auto &chunk : column->chunks())
-        ARROW_RETURN_NOT_OK(check_array_buffers<T>(chunk));
+inline arrow::Status check_cpu_buffers(const std::shared_ptr<arrow::Array> &array) {
+    if (!array)
+        return arrow::Status::Invalid("Arrow array is null");
+    for (const auto &buffer : array->data()->buffers)
+        if (buffer && !buffer->is_cpu())
+            return arrow::Status::NotImplemented("Arrow buffers must be on the CPU");
     return arrow::Status::OK();
+}
+
+inline bool is_string_type(arrow::Type::type type) noexcept {
+    return type == arrow::Type::STRING || type == arrow::Type::LARGE_STRING || type == arrow::Type::STRING_VIEW;
+}
+
+inline bool is_integer_type(arrow::Type::type type) noexcept {
+    switch (type) {
+    case arrow::Type::INT8:
+    case arrow::Type::INT16:
+    case arrow::Type::INT32:
+    case arrow::Type::INT64:
+    case arrow::Type::UINT8:
+    case arrow::Type::UINT16:
+    case arrow::Type::UINT32:
+    case arrow::Type::UINT64:
+        return true;
+    default:
+        return false;
+    }
+}
+
+inline std::string_view string_value(const arrow::Array &array, std::int64_t index) noexcept {
+    switch (array.type_id()) {
+    case arrow::Type::STRING:
+        return static_cast<const arrow::StringArray &>(array).GetView(index);
+    case arrow::Type::LARGE_STRING:
+        return static_cast<const arrow::LargeStringArray &>(array).GetView(index);
+    case arrow::Type::STRING_VIEW:
+        return static_cast<const arrow::StringViewArray &>(array).GetView(index);
+    default:
+        std::terminate();
+    }
+}
+
+inline arrow::Status validate_string_array(const std::shared_ptr<arrow::Array> &array) {
+    if (!array || !is_string_type(array->type_id()))
+        return arrow::Status::TypeError("Arrow text array must use string, large_string, or string_view");
+    ARROW_RETURN_NOT_OK(check_cpu_buffers(array));
+    return arrow::Status::OK();
+}
+
+inline arrow::Status validate_symbol_array(const std::shared_ptr<arrow::Array> &array) {
+    if (!array || array->type_id() != arrow::Type::DICTIONARY)
+        return arrow::Status::TypeError("Arrow symbol column must use a dictionary array");
+    ARROW_RETURN_NOT_OK(check_cpu_buffers(array));
+    const auto dictionary = std::static_pointer_cast<arrow::DictionaryArray>(array);
+    if (!is_integer_type(dictionary->dict_type()->index_type()->id()))
+        return arrow::Status::TypeError("Arrow symbol dictionary indices must be integers");
+    ARROW_RETURN_NOT_OK(check_cpu_buffers(dictionary->indices()));
+    return validate_string_array(dictionary->dictionary());
+}
+
+inline bool is_symbol_type(const arrow::DataType &type) noexcept {
+    if (type.id() != arrow::Type::DICTIONARY)
+        return false;
+    const auto &dictionary = static_cast<const arrow::DictionaryType &>(type);
+    return is_integer_type(dictionary.index_type()->id()) && is_string_type(dictionary.value_type()->id());
+}
+
+template <arrow_cell_type T> arrow::Status check_chunked_buffers(const std::shared_ptr<arrow::ChunkedArray> &column) {
+    if constexpr (std::same_as<T, string> || std::same_as<T, symbol>) {
+        if (!column)
+            return arrow::Status::Invalid("Arrow column is null");
+        if constexpr (std::same_as<T, string>) {
+            if (!is_string_type(column->type()->id()))
+                return arrow::Status::TypeError("Arrow string column must use string, large_string, or string_view");
+        } else {
+            if (!is_symbol_type(*column->type()))
+                return arrow::Status::TypeError("Arrow symbol column must use integer-indexed string categories");
+        }
+        for (const auto &chunk : column->chunks()) {
+            if constexpr (std::same_as<T, string>)
+                ARROW_RETURN_NOT_OK(validate_string_array(chunk));
+            else
+                ARROW_RETURN_NOT_OK(validate_symbol_array(chunk));
+        }
+        return arrow::Status::OK();
+    }
+    else {
+        if (!column || column->type()->id() != arrow_type_id<T>)
+            return arrow::Status::TypeError("Arrow column type does not match the frame schema");
+        for (const auto &chunk : column->chunks())
+            ARROW_RETURN_NOT_OK(check_array_buffers<T>(chunk));
+        return arrow::Status::OK();
+    }
 }
 
 template <arrow_cell_type T> arrow::Status validate_chunked(const std::shared_ptr<arrow::ChunkedArray> &column) {
@@ -104,12 +193,29 @@ template <arrow_cell_type T> class ArrowColumnReadSource final : public ColumnRe
     void bind(std::shared_ptr<arrow::ChunkedArray> column) {
         column_ = std::move(column);
         starts_.clear();
+        symbol_readers_.clear();
         starts_.reserve(column_ ? column_->num_chunks() + 1 : 0);
+        if constexpr (std::same_as<T, symbol>)
+            symbol_readers_.reserve(column_ ? column_->num_chunks() : 0);
         auto position = std::size_t{};
         if (!column_)
             return;
         starts_.push_back(0);
         for (const auto &chunk : column_->chunks()) {
+            if constexpr (std::same_as<T, symbol>) {
+                auto reader = std::make_shared<SymbolChunkReader>();
+                reader->array = chunk;
+                const auto &dictionary = *static_cast<const arrow::DictionaryArray *>(chunk.get());
+                const auto &values = *dictionary.dictionary();
+                reader->symbols.reserve(static_cast<std::size_t>(values.length()));
+                for (auto index = std::int64_t{}; index != values.length(); ++index) {
+                    if (values.IsNull(index))
+                        reader->symbols.emplace_back(symbol{});
+                    else
+                        reader->symbols.emplace_back(string_value(values, index));
+                }
+                symbol_readers_.push_back(std::move(reader));
+            }
             position += static_cast<std::size_t>(chunk->length());
             starts_.push_back(position);
         }
@@ -119,7 +225,7 @@ template <arrow_cell_type T> class ArrowColumnReadSource final : public ColumnRe
         return column_ == nullptr ? 0 : static_cast<std::size_t>(column_->length());
     }
 
-    std::optional<T> cell(std::size_t position) const override {
+    std::optional<cell_value_t<T>> cell(std::size_t position) const override {
         if (position >= size())
             throw std::out_of_range{"Arrow column cell position"};
         const auto end = std::upper_bound(starts_.begin(), starts_.end(), position);
@@ -128,20 +234,29 @@ template <arrow_cell_type T> class ArrowColumnReadSource final : public ColumnRe
         const auto local = position - starts_[index];
         if (chunk->IsNull(static_cast<std::int64_t>(local)))
             return std::nullopt;
-        const auto value_position = static_cast<std::size_t>(chunk->offset()) + local;
-        if constexpr (std::same_as<T, bool>) {
-            const auto *values = chunk->data()->buffers[1]->data();
-            return arrow::bit_util::GetBit(values, static_cast<std::int64_t>(value_position));
+        if constexpr (source_backed_column_type<T>) {
+            if constexpr (std::same_as<T, symbol>)
+                return read_value(symbol_readers_[index].get(), local);
+            else
+                return read_value(chunk.get(), local);
         } else {
-            const auto *values = chunk->data()->buffers[1]->data_as<T>();
-            return values[value_position];
+            const auto value_position = static_cast<std::size_t>(chunk->offset()) + local;
+            if constexpr (std::same_as<T, bool>) {
+                const auto *values = chunk->data()->buffers[1]->data();
+                return arrow::bit_util::GetBit(values, static_cast<std::int64_t>(value_position));
+            } else {
+                const auto *values = chunk->data()->buffers[1]->data_as<T>();
+                return values[value_position];
+            }
         }
     }
 
     void visit_batches(void *target, typename ColumnReadSource<T>::batch_visitor visit) const override {
         if (column_ == nullptr)
             return;
+        auto chunk_index = std::size_t{};
         for (const auto &chunk : column_->chunks()) {
+            const auto current_chunk = chunk_index++;
             const auto length = static_cast<std::size_t>(chunk->length());
             if (length == 0)
                 continue;
@@ -155,7 +270,13 @@ template <arrow_cell_type T> class ArrowColumnReadSource final : public ColumnRe
             } else if (!all_valid) {
                 validity = ColumnBatch<T>::Validity::from_bitmap(buffers[0]->data(), offset);
             }
-            if constexpr (std::same_as<T, bool>) {
+            if constexpr (source_backed_column_type<T>) {
+                const void *context = chunk.get();
+                if constexpr (std::same_as<T, symbol>)
+                    context = symbol_readers_[current_chunk].get();
+                const auto source = ColumnBatchSource<T>{context, &read_value, 0};
+                std::invoke(visit, target, ColumnBatch<T>{offset, length, source, validity});
+            } else if constexpr (std::same_as<T, bool>) {
                 const auto *values = buffers[1] == nullptr ? nullptr : buffers[1]->data() + offset / 8;
                 std::invoke(visit, target, ColumnBatch<T>{offset, length, values, offset % 8, validity});
             } else {
@@ -168,8 +289,27 @@ template <arrow_cell_type T> class ArrowColumnReadSource final : public ColumnRe
     }
 
   private:
+    struct SymbolChunkReader {
+        std::shared_ptr<arrow::Array> array;
+        std::vector<symbol> symbols;
+    };
+
+    static cell_value_t<T> read_value(const void *context, std::size_t position) noexcept {
+        if constexpr (std::same_as<T, string>) {
+            const auto &array = *static_cast<const arrow::Array *>(context);
+            return string_value(array, static_cast<std::int64_t>(position));
+        } else if constexpr (std::same_as<T, symbol>) {
+            const auto &reader = *static_cast<const SymbolChunkReader *>(context);
+            const auto &array = *reader.array;
+            const auto &dictionary = static_cast<const arrow::DictionaryArray &>(array);
+            const auto value_index = dictionary.GetValueIndex(static_cast<std::int64_t>(position));
+            return reader.symbols[static_cast<std::size_t>(value_index)];
+        }
+    }
+
     std::shared_ptr<arrow::ChunkedArray> column_;
     std::vector<std::size_t> starts_;
+    std::vector<std::shared_ptr<SymbolChunkReader>> symbol_readers_;
 };
 
 template <typename Storage, typename Value> struct ArrowScalarValueRead;
@@ -178,7 +318,8 @@ template <arrow_cell_type T> struct ArrowScalarValueRead<ArrowColumnReadSource<T
     static ColumnView<T> read(const ArrowColumnReadSource<T> &source) { return ColumnView<T>{source}; }
 };
 
-template <arrow_cell_type T> arrow::Result<std::shared_ptr<arrow::Array>> make_array(const ColumnBatch<T> &batch) {
+template <arrow_numeric_cell_type T>
+arrow::Result<std::shared_ptr<arrow::Array>> make_array(const ColumnBatch<T> &batch) {
     ARROW_RETURN_NOT_OK(check_length(batch.size));
     constexpr auto packed_values = std::same_as<T, bool>;
     if constexpr (packed_values) {
@@ -244,7 +385,7 @@ template <arrow_cell_type T> arrow::Result<std::shared_ptr<arrow::Array>> make_a
     return arrow::MakeArray(data);
 }
 
-template <arrow_cell_type T>
+template <arrow_numeric_cell_type T>
 arrow::Result<std::shared_ptr<arrow::ChunkedArray>> export_column(const ColumnView<T> &column, bool copy_values) {
     ARROW_RETURN_NOT_OK(check_length(column.size()));
     if (copy_values) {
@@ -323,15 +464,235 @@ arrow::Result<std::shared_ptr<arrow::ChunkedArray>> export_column(const ColumnVi
     return std::move(result).ValueUnsafe();
 }
 
+template <typename IsValid, typename GetValue>
+arrow::Result<std::shared_ptr<arrow::Array>> make_string_view_array(std::size_t size, IsValid is_valid,
+                                                                    GetValue get_value) {
+    ARROW_RETURN_NOT_OK(check_length(size));
+    if (size > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()) /
+                   sizeof(arrow::BinaryViewType::c_type))
+        return arrow::Status::CapacityError("Arrow string view descriptors exceed the signed 64-bit size limit");
+
+    auto descriptors = std::vector<arrow::BinaryViewType::c_type>(size);
+    auto validity_bytes = std::vector<std::uint8_t>(size / 8 + (size % 8 != 0), 0);
+    auto null_count = std::int64_t{};
+    auto buffers = std::vector<std::shared_ptr<arrow::Buffer>>{nullptr, nullptr};
+    for (auto position = std::size_t{}; position != size; ++position) {
+        auto &descriptor = descriptors[position];
+        if (!std::invoke(is_valid, position)) {
+            ++null_count;
+            continue;
+        }
+        arrow::bit_util::SetBit(validity_bytes.data(), static_cast<std::int64_t>(position));
+        const auto value = std::invoke(get_value, position);
+        if (value.size() > static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max()))
+            return arrow::Status::CapacityError("Arrow string_view value exceeds its signed 32-bit length limit");
+        const auto length = static_cast<std::int32_t>(value.size());
+        if (value.size() <= arrow::BinaryViewType::kInlineSize) {
+            descriptor.inlined.size = length;
+            if (!value.empty())
+                std::memcpy(descriptor.inlined.data.data(), value.data(), value.size());
+            continue;
+        }
+        if (buffers.size() - 2 > static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max()))
+            return arrow::Status::CapacityError("Arrow string_view export has too many payload buffers");
+        descriptor.ref.size = length;
+        std::memcpy(descriptor.ref.prefix.data(), value.data(), arrow::BinaryViewType::kPrefixSize);
+        descriptor.ref.buffer_index = static_cast<std::int32_t>(buffers.size() - 2);
+        descriptor.ref.offset = 0;
+        buffers.push_back(std::make_shared<arrow::Buffer>(
+            reinterpret_cast<const std::uint8_t *>(value.data()), static_cast<std::int64_t>(value.size())));
+    }
+
+    if (null_count != 0)
+        buffers[0] = arrow::Buffer::FromVector(std::move(validity_bytes));
+    buffers[1] = arrow::Buffer::FromVector(std::move(descriptors));
+    auto data = arrow::ArrayData::Make(arrow::utf8_view(), static_cast<std::int64_t>(size), std::move(buffers),
+                                       null_count);
+    return arrow::MakeArray(data);
+}
+
+inline arrow::Result<std::shared_ptr<arrow::ChunkedArray>> export_column(const ColumnView<string> &column,
+                                                                        bool copy_values) {
+    ARROW_RETURN_NOT_OK(check_length(column.size()));
+    if (copy_values) {
+        auto builder = arrow::LargeStringBuilder{};
+        auto position = std::size_t{};
+        auto status = arrow::Status::OK();
+        column.batches([&](const auto &batch) {
+            if (!status.ok())
+                return;
+            if (batch.size > column.size() - position) {
+                status = arrow::Status::Invalid("column batches exceed the column view length");
+                return;
+            }
+            for (auto offset = std::size_t{}; offset != batch.size; ++offset, ++position) {
+                if (!batch.is_valid(offset)) {
+                    status = builder.AppendNull();
+                } else {
+                    status = builder.Append(batch.value_at(offset));
+                }
+                if (!status.ok())
+                    return;
+            }
+        });
+        ARROW_RETURN_NOT_OK(status);
+        if (position != column.size())
+            return arrow::Status::Invalid("column batch lengths do not match the column view");
+        auto array = std::shared_ptr<arrow::Array>{};
+        ARROW_RETURN_NOT_OK(builder.Finish(&array));
+        return arrow::ChunkedArray::Make({std::move(array)}, arrow::large_utf8());
+    }
+
+    auto chunks = std::vector<std::shared_ptr<arrow::Array>>{};
+    auto position = std::size_t{};
+    auto status = arrow::Status::OK();
+    column.batches([&](const auto &batch) {
+        if (!status.ok())
+            return;
+        if (batch.size > column.size() - position) {
+            status = arrow::Status::Invalid("column batches exceed the column view length");
+            return;
+        }
+        auto result = make_string_view_array(
+            batch.size, [&](std::size_t offset) { return batch.is_valid(offset); },
+            [&](std::size_t offset) { return batch.value_at(offset); });
+        if (!result.ok()) {
+            status = result.status();
+            return;
+        }
+        position += batch.size;
+        chunks.push_back(std::move(result).ValueUnsafe());
+    });
+    ARROW_RETURN_NOT_OK(status);
+    if (position != column.size())
+        return arrow::Status::Invalid("column batch lengths do not match the column view");
+    auto result = arrow::ChunkedArray::Make(std::move(chunks), arrow::utf8_view());
+    if (!result.ok())
+        return result.status();
+    return std::move(result).ValueUnsafe();
+}
+
+class ArrowSymbolBuilder {
+  public:
+    explicit ArrowSymbolBuilder(bool copy_values) : copy_values_{copy_values} { values_.emplace_back(); }
+
+    arrow::Status append(const std::optional<symbol> &value) {
+        if (!value)
+            return indices_.AppendNull();
+        if (!value->has_value())
+            return indices_.Append(0);
+
+        const auto text = value->text();
+        auto [entry, inserted] = indices_by_text_.try_emplace(text, 0);
+        if (inserted) {
+            if (values_.size() > static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max()))
+                return arrow::Status::CapacityError("Arrow symbol dictionary exceeds its signed 32-bit index limit");
+            entry->second = static_cast<std::int32_t>(values_.size());
+            values_.emplace_back(text);
+        }
+        return indices_.Append(entry->second);
+    }
+
+    arrow::Result<std::shared_ptr<arrow::Array>> finish() {
+        auto indices = std::shared_ptr<arrow::Array>{};
+        ARROW_RETURN_NOT_OK(indices_.Finish(&indices));
+        auto categories = std::shared_ptr<arrow::Array>{};
+        if (copy_values_) {
+            auto builder = arrow::LargeStringBuilder{};
+            ARROW_RETURN_NOT_OK(builder.AppendNull());
+            for (auto index = std::size_t{1}; index != values_.size(); ++index)
+                ARROW_RETURN_NOT_OK(builder.Append(values_[index]));
+            ARROW_RETURN_NOT_OK(builder.Finish(&categories));
+        } else {
+            ARROW_ASSIGN_OR_RAISE(categories, make_string_view_array(
+                values_.size(), [](std::size_t position) { return position != 0; },
+                [&](std::size_t position) { return values_[position]; }));
+        }
+        return arrow::DictionaryArray::FromArrays(arrow::dictionary(arrow::int32(), categories->type()), indices,
+                                                  categories);
+    }
+
+  private:
+    bool copy_values_;
+    arrow::Int32Builder indices_;
+    std::vector<std::string_view> values_;
+    std::unordered_map<std::string_view, std::int32_t> indices_by_text_;
+};
+
+inline arrow::Result<std::shared_ptr<arrow::ChunkedArray>> export_column(const ColumnView<symbol> &column,
+                                                                        bool copy_values) {
+    ARROW_RETURN_NOT_OK(check_length(column.size()));
+    if (copy_values) {
+        auto builder = ArrowSymbolBuilder{true};
+        auto position = std::size_t{};
+        auto status = arrow::Status::OK();
+        column.batches([&](const auto &batch) {
+            if (!status.ok())
+                return;
+            if (batch.size > column.size() - position) {
+                status = arrow::Status::Invalid("column batches exceed the column view length");
+                return;
+            }
+            for (auto offset = std::size_t{}; offset != batch.size; ++offset, ++position) {
+                if (!batch.is_valid(offset))
+                    status = builder.append(std::nullopt);
+                else
+                    status = builder.append(batch.value_at(offset));
+                if (!status.ok())
+                    return;
+            }
+        });
+        ARROW_RETURN_NOT_OK(status);
+        if (position != column.size())
+            return arrow::Status::Invalid("column batch lengths do not match the column view");
+        ARROW_ASSIGN_OR_RAISE(auto array, builder.finish());
+        return arrow::ChunkedArray::Make({std::move(array)},
+                                         arrow::dictionary(arrow::int32(), arrow::large_utf8()));
+    }
+
+    auto chunks = std::vector<std::shared_ptr<arrow::Array>>{};
+    auto position = std::size_t{};
+    auto status = arrow::Status::OK();
+    column.batches([&](const auto &batch) {
+        if (!status.ok())
+            return;
+        if (batch.size > column.size() - position) {
+            status = arrow::Status::Invalid("column batches exceed the column view length");
+            return;
+        }
+        auto builder = ArrowSymbolBuilder{false};
+        for (auto offset = std::size_t{}; offset != batch.size; ++offset) {
+            if (!batch.is_valid(offset))
+                status = builder.append(std::nullopt);
+            else
+                status = builder.append(batch.value_at(offset));
+            if (!status.ok())
+                return;
+        }
+        auto result = builder.finish();
+        if (!result.ok()) {
+            status = result.status();
+            return;
+        }
+        position += batch.size;
+        chunks.push_back(std::move(result).ValueUnsafe());
+    });
+    ARROW_RETURN_NOT_OK(status);
+    if (position != column.size())
+        return arrow::Status::Invalid("column batch lengths do not match the column view");
+    auto result = arrow::ChunkedArray::Make(std::move(chunks),
+                                           arrow::dictionary(arrow::int32(), arrow::utf8_view()));
+    if (!result.ok())
+        return result.status();
+    return std::move(result).ValueUnsafe();
+}
+
 inline arrow::Result<std::shared_ptr<arrow::ChunkedArray>> export_column(const ColumnView<> &column,
                                                                           bool copy_values) {
-    if (std::addressof(column.cell_type()) == std::addressof(cpp_scalar_type<bool>()))
-        return export_column(column.view<bool>(), copy_values);
-    if (std::addressof(column.cell_type()) == std::addressof(cpp_scalar_type<i64>()))
-        return export_column(column.view<i64>(), copy_values);
-    if (std::addressof(column.cell_type()) == std::addressof(cpp_scalar_type<double>()))
-        return export_column(column.view<double>(), copy_values);
-    return arrow::Status::Invalid("frame column has an unsupported cell type");
+    return visit_cell_type(column.cell_type(), [&](auto identity) {
+        using T = typename decltype(identity)::type;
+        return export_column(column.view<T>(), copy_values);
+    });
 }
 
 template <bool CopyValues, template <template <typename, auto...> typename> typename Schema>
@@ -346,18 +707,10 @@ arrow::Result<std::shared_ptr<arrow::Table>> export_runtime_frame(const FrameVie
         const auto &field = schema.field(index);
         const auto source = frame.column(index);
         auto column = std::shared_ptr<arrow::ChunkedArray>{};
-        if (&source.cell_type() == std::addressof(cpp_scalar_type<bool>())) {
-            fields.push_back(arrow::field(std::string{field.name.text()}, data_type<bool>(), true));
-        } else if (&source.cell_type() == std::addressof(cpp_scalar_type<i64>())) {
-            fields.push_back(arrow::field(std::string{field.name.text()}, data_type<i64>(), true));
-        } else if (&source.cell_type() == std::addressof(cpp_scalar_type<double>())) {
-            fields.push_back(arrow::field(std::string{field.name.text()}, data_type<double>(), true));
-        } else {
-            return arrow::Status::Invalid("frame column has an unsupported cell type");
-        }
         ARROW_ASSIGN_OR_RAISE(column, export_column(source, CopyValues));
         if (column->length() != static_cast<std::int64_t>(frame.size()))
             return arrow::Status::Invalid("frame column length does not match the frame row count");
+        fields.push_back(arrow::field(std::string{field.name.text()}, column->type(), true));
         columns.push_back(std::move(column));
     }
     return arrow::Table::Make(arrow::schema(std::move(fields)), std::move(columns),
@@ -419,7 +772,8 @@ const ArrowScalarRuntime<Column<T>, ArrowColumnReadSource<T>, ColumnView<T>> &co
 }
 
 using ArrowRuntimeFrameColumn =
-    std::variant<ArrowColumnReadSource<bool>, ArrowColumnReadSource<i64>, ArrowColumnReadSource<double>>;
+    std::variant<ArrowColumnReadSource<bool>, ArrowColumnReadSource<i64>, ArrowColumnReadSource<double>,
+                 ArrowColumnReadSource<string>, ArrowColumnReadSource<symbol>>;
 
 class ArrowRuntimeFrameStorage {
   public:
@@ -430,17 +784,12 @@ class ArrowRuntimeFrameStorage {
         columns.reserve(schema->field_count());
         for (auto index = std::size_t{}; index != schema->field_count(); ++index) {
             const auto &field = schema->field(index);
-            if (field.type == std::addressof(cpp_scalar_type<bool>()))
-                columns.emplace_back(std::in_place_type<ArrowColumnReadSource<bool>>,
-                                     table->column(static_cast<int>(index)));
-            else if (field.type == std::addressof(cpp_scalar_type<i64>()))
-                columns.emplace_back(std::in_place_type<ArrowColumnReadSource<i64>>,
-                                     table->column(static_cast<int>(index)));
-            else if (field.type == std::addressof(cpp_scalar_type<double>()))
-                columns.emplace_back(std::in_place_type<ArrowColumnReadSource<double>>,
-                                     table->column(static_cast<int>(index)));
-            else
-                throw std::invalid_argument{"Arrow frame runtime has an unsupported cell type"};
+            columns.push_back(visit_cell_type(*field.type, [&](auto identity) {
+                using T = typename decltype(identity)::type;
+                return ArrowRuntimeFrameColumn{
+                    std::in_place_type<ArrowColumnReadSource<T>>,
+                    table->column(static_cast<int>(index))};
+            }));
         }
     }
 
@@ -459,13 +808,11 @@ inline FrameColumnReadBinding runtime_arrow_frame_column_binding(const void *con
     const auto &storage = *static_cast<const ArrowRuntimeFrameStorage *>(context);
     const auto &field = storage.schema->field(index);
     const auto *column = std::addressof(storage.columns.at(index));
-    if (field.type == std::addressof(cpp_scalar_type<bool>()))
-        return {std::addressof(cpp_scalar_type<bool>()), column, &bind_runtime_arrow_column_view<bool>, nullptr};
-    if (field.type == std::addressof(cpp_scalar_type<i64>()))
-        return {std::addressof(cpp_scalar_type<i64>()), column, &bind_runtime_arrow_column_view<i64>, nullptr};
-    if (field.type == std::addressof(cpp_scalar_type<double>()))
-        return {std::addressof(cpp_scalar_type<double>()), column, &bind_runtime_arrow_column_view<double>, nullptr};
-    throw std::invalid_argument{"Arrow frame column has an unsupported cell type"};
+    return visit_cell_type(*field.type, [&](auto identity) {
+        using T = typename decltype(identity)::type;
+        return FrameColumnReadBinding{std::addressof(cpp_scalar_type<T>()), column,
+                                      &bind_runtime_arrow_column_view<T>, nullptr};
+    });
 }
 
 inline FrameReadStorage frame_read_storage(const ArrowRuntimeFrameStorage &storage, const RuntimeType *runtime) {
@@ -503,6 +850,10 @@ inline arrow::Status validate_frame(const std::shared_ptr<arrow::Table> &table, 
             status = check_chunked_buffers<i64>(table->column(static_cast<int>(index)));
         } else if (field.type == std::addressof(cpp_scalar_type<double>())) {
             status = check_chunked_buffers<double>(table->column(static_cast<int>(index)));
+        } else if (field.type == std::addressof(cpp_scalar_type<string>())) {
+            status = check_chunked_buffers<string>(table->column(static_cast<int>(index)));
+        } else if (field.type == std::addressof(cpp_scalar_type<symbol>())) {
+            status = check_chunked_buffers<symbol>(table->column(static_cast<int>(index)));
         } else {
             return arrow::Status::TypeError("frame schema has an unsupported cell type");
         }
@@ -523,7 +874,7 @@ inline arrow::Result<std::shared_ptr<arrow::ChunkedArray>> borrow_arrow(const Co
     return arrow_details::export_column(column, false);
 }
 
-// The result owns dense value and validity buffers, including initialized bytes for null cells.
+// Numeric and Boolean copies initialize null-cell value bytes. Text copies own their output buffers.
 template <arrow_details::arrow_cell_type T>
 arrow::Result<std::shared_ptr<arrow::ChunkedArray>> copy_to_arrow(const ColumnView<T> &column) {
     return arrow_details::export_column(column, true);
@@ -588,8 +939,13 @@ inline arrow::Result<ScalarValue<>> from_arrow(std::shared_ptr<arrow::Table> tab
             cell_type = std::addressof(cpp_scalar_type<bool>());
         else if (field->type()->id() == arrow::Type::DOUBLE)
             cell_type = std::addressof(cpp_scalar_type<double>());
+        else if (arrow_details::is_string_type(field->type()->id()))
+            cell_type = std::addressof(cpp_scalar_type<string>());
+        else if (arrow_details::is_symbol_type(*field->type()))
+            cell_type = std::addressof(cpp_scalar_type<symbol>());
         else
-            return arrow::Status::TypeError("Arrow frame import supports only boolean, int64, and float64 fields");
+            return arrow::Status::TypeError(
+                "Arrow frame import supports boolean, int64, float64, string, and symbol fields");
         fields.push_back({util::symbol{field->name()}, cell_type, false});
     }
 

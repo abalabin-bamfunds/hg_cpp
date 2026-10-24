@@ -33,6 +33,14 @@ template <template <typename, auto...> typename Field> struct TextArrowRows {
     Field<symbol> venue;
 };
 
+template <template <typename, auto...> typename Field> struct KeyedTextSymbolArrowRows {
+    Field<string> label;
+    Field<symbol> venue;
+    Field<symbol> code;
+
+    static bg::SchemaMetadata metadata() { return key_metadata<"label", "venue">(); }
+};
+
 template <template <typename, auto...> typename Field> struct InheritedArrowBase {
     Field<i64> size;
     Field<double> bid;
@@ -84,6 +92,13 @@ void require(bool condition, const char *message) {
         throw std::runtime_error{message};
 }
 
+std::shared_ptr<arrow::Array> int_array(std::initializer_list<std::optional<std::int64_t>> values);
+std::shared_ptr<arrow::Array> string_array(std::initializer_list<std::optional<std::string_view>> values);
+std::shared_ptr<arrow::Array> large_string_array(std::initializer_list<std::optional<std::string_view>> values);
+std::shared_ptr<arrow::Array> string_view_array(std::initializer_list<std::optional<std::string_view>> values);
+std::shared_ptr<arrow::Array> symbol_array(std::initializer_list<std::optional<std::int32_t>> indices,
+                                           std::initializer_list<std::optional<std::string_view>> categories);
+
 void test_arrow_default_frame_runtime() {
     const auto &snapshot_runtime = frame_snapshot_runtime_type(frame_type(frame_schema_type<Quotes>()));
     const auto &resolved_runtime = resolve_scalar_runtime_type(cpp_scalar_type<Frame<Quotes>>(), {});
@@ -106,22 +121,310 @@ void test_arrow_default_frame_runtime() {
             "generic Frame scalar output failed after Arrow runtime initialization");
 }
 
-void test_arrow_rejects_text_cells() {
-    auto text = Column<string>{std::vector<std::optional<std::string_view>>{std::string_view{"alpha"}}};
-    auto symbol_values = Column<symbol>{std::vector<std::optional<symbol>>{symbol{"XNAS"}}};
-    const auto text_borrowed = borrow_arrow(ColumnView<>{text.view()});
-    const auto text_copied = copy_to_arrow(ColumnView<>{text.view()});
-    const auto symbol_borrowed = borrow_arrow(ColumnView<>{symbol_values.view()});
-    const auto symbol_copied = copy_to_arrow(ColumnView<>{symbol_values.view()});
+void test_arrow_string_column_import_export() {
+    constexpr auto embedded_nul = std::string_view{"left\0right", 10};
+    auto sliced = string_array({"skip", "short", embedded_nul, std::nullopt})->Slice(1, 3);
+    auto chunks_result = arrow::ChunkedArray::Make(
+        {string_array({}), sliced, string_array({"a sufficiently long string", ""})}, arrow::utf8());
+    require(chunks_result.ok(), "could not construct chunked Arrow string input");
+    auto chunks = std::move(chunks_result).ValueUnsafe();
+    auto imported_result = from_arrow<string>(chunks);
+    require(imported_result.ok(), "Arrow string column import failed");
+    auto imported = std::move(imported_result).ValueUnsafe();
+    auto column = Scalar<Column<string>>::from(imported).value();
+    require(column.size() == 5 && column.cell(0) == "short" && column.cell(1) == embedded_nul &&
+                !column.cell(2) && column.cell(3) == "a sufficiently long string" && column.cell(4) == "",
+            "Arrow string import changed sliced values, embedded NUL bytes, or validity");
 
-    const auto frame = Frame<TextArrowRows>{TextArrowRows<Column>{.name = std::move(text),
-                                                                  .venue = std::move(symbol_values)}};
-    const auto frame_view = FrameView<TextArrowRows>{frame};
-    const auto frame_borrowed = borrow_arrow(frame_view);
-    const auto frame_copied = copy_to_arrow(frame_view);
-    require(!text_borrowed.ok() && !text_copied.ok() && !symbol_borrowed.ok() && !symbol_copied.ok() &&
-                !frame_borrowed.ok() && !frame_copied.ok(),
-            "Arrow export accepted a generic string or symbol column/frame view");
+    auto native = ScalarValue<Column<string>>::from_literal(
+        {std::string_view{"short"}, embedded_nul, NULL_VALUE, std::string_view{"a sufficiently long string"},
+         std::string_view{}});
+    require(imported.equals(native.view()), "Arrow and native string columns compare differently");
+
+    auto imported_owner = std::optional<ScalarValue<>>{std::move(imported)};
+    chunks.reset();
+    const auto imported_scalar = Scalar<Column<string>>::from(*imported_owner);
+    auto retained = std::optional<ScalarValue<>>{std::in_place, imported_scalar};
+    imported_owner.reset();
+    const auto retained_scalar = retained->view();
+    const auto retained_column = Scalar<Column<string>>::from(retained_scalar).value();
+    auto retained_batches = std::size_t{};
+    auto found_long_string = false;
+    retained_column.batches([&](const auto &batch) {
+        ++retained_batches;
+        for (auto offset = std::size_t{}; offset != batch.size; ++offset)
+            if (batch.is_valid(offset) && batch.value_at(offset) == "a sufficiently long string")
+                found_long_string = true;
+    });
+    require(retained_column.cell(1) == embedded_nul && retained_column.cell(3) == "a sufficiently long string",
+            "copied Arrow string runtime did not retain its reader context");
+    require(retained_batches == 2 && found_long_string,
+            "copied Arrow string runtime did not retain batch reader contexts");
+    auto memory = allocator{};
+    auto native_snapshot = std::optional<ScalarValue<Column<string>>>{std::in_place, retained_column, memory};
+    retained.reset();
+    const auto snapshot_column = native_snapshot->view().value();
+    require(snapshot_column.cell(1) == embedded_nul && snapshot_column.cell(3) == "a sufficiently long string",
+            "native string snapshot did not retain imported values after Arrow release");
+
+    auto native_text = Column<string>{std::vector<std::optional<std::string_view>>{
+        std::string_view{"long borrowed text value"}, embedded_nul, std::nullopt, std::string_view{}}};
+    auto source_value = std::string_view{};
+    native_text.view().batches([&](const auto &batch) { source_value = batch.value_at(0); });
+    auto borrowed_result = borrow_arrow(native_text.view());
+    auto copied_result = copy_to_arrow(native_text.view());
+    require(borrowed_result.ok() && copied_result.ok(), "Arrow string export failed");
+    const auto borrowed = std::move(borrowed_result).ValueUnsafe();
+    const auto copied = std::move(copied_result).ValueUnsafe();
+    const auto borrowed_strings = std::static_pointer_cast<arrow::StringViewArray>(borrowed->chunk(0));
+    const auto copied_strings = std::static_pointer_cast<arrow::LargeStringArray>(copied->chunk(0));
+    require(borrowed->type()->id() == arrow::Type::STRING_VIEW && borrowed_strings->GetView(0).data() ==
+                source_value.data() && copied->type()->id() == arrow::Type::LARGE_STRING &&
+                copied_strings->GetView(0) == source_value && copied_strings->IsNull(2) &&
+                copied_strings->GetView(1) == embedded_nul && borrowed->ValidateFull().ok() &&
+                copied->ValidateFull().ok(),
+            "Arrow string export copied borrowed payloads or changed owned values");
+
+    auto durable_copy = [] {
+        auto source = Column<string>{std::vector<std::optional<std::string_view>>{
+            std::string_view{"owned after source release"}}};
+        auto result = copy_to_arrow(source.view());
+        if (!result.ok())
+            throw std::runtime_error{result.status().ToString()};
+        return std::move(result).ValueUnsafe();
+    }();
+    const auto durable_values = std::static_pointer_cast<arrow::LargeStringArray>(durable_copy->chunk(0));
+    require(durable_values->GetView(0) == "owned after source release",
+            "large_string copy export did not survive source destruction");
+
+    auto large_input = arrow::ChunkedArray::Make({large_string_array({"large input value"})}, arrow::large_utf8());
+    auto view_input = arrow::ChunkedArray::Make({string_view_array({"string-view input value"})}, arrow::utf8_view());
+    require(large_input.ok() && view_input.ok(), "could not construct Arrow large_string or string_view input");
+    auto large_import = from_arrow<string>(std::move(large_input).ValueUnsafe());
+    auto view_import = from_arrow<string>(std::move(view_input).ValueUnsafe());
+    require(large_import.ok() && view_import.ok(), "Arrow string import rejected large_string or string_view arrays");
+    auto large_value = std::move(large_import).ValueUnsafe();
+    auto view_value = std::move(view_import).ValueUnsafe();
+    require(Scalar<Column<string>>::from(large_value).value().cell(0) == "large input value" &&
+                Scalar<Column<string>>::from(view_value).value().cell(0) == "string-view input value",
+            "Arrow string import rejected large_string or string_view arrays");
+
+    require(!from_arrow<string>(arrow::ChunkedArray::Make({int_array({1})}, arrow::int64()).ValueOrDie()).ok(),
+            "Arrow string import accepted a non-string physical type");
+}
+
+void test_arrow_symbol_column_import_export() {
+    auto first = symbol_array({2, std::nullopt, 0, 1, 2}, {std::nullopt, "", "XNAS"})->Slice(1, 3);
+    auto second = symbol_array({2, 2}, {std::nullopt, "", "XNAS"});
+    auto chunks = arrow::ChunkedArray::Make({first, second}, first->type());
+    require(chunks.ok(), "could not construct chunked Arrow dictionary input");
+    auto input = std::move(chunks).ValueUnsafe();
+    auto imported_result = from_arrow<symbol>(input);
+    require(imported_result.ok(), "Arrow symbol column import failed");
+    auto imported = std::move(imported_result).ValueUnsafe();
+    const auto column = Scalar<Column<symbol>>::from(imported).value();
+    require(column.size() == 5 && !column.cell(0) && column.cell(1) == symbol{} &&
+                column.cell(2) == symbol{""} && column.cell(3) == symbol{"XNAS"} &&
+                column.cell(4) == symbol{"XNAS"},
+            "Arrow symbol import conflated null indices, null categories, empty text, or interned values");
+
+    auto imported_owner = std::optional<ScalarValue<>>{std::move(imported)};
+    input.reset();
+    const auto imported_scalar = Scalar<Column<symbol>>::from(*imported_owner);
+    auto retained = std::optional<ScalarValue<>>{std::in_place, imported_scalar};
+    imported_owner.reset();
+    const auto retained_scalar = retained->view();
+    const auto retained_column = Scalar<Column<symbol>>::from(retained_scalar).value();
+    auto retained_batches = std::size_t{};
+    auto found_interned_symbol = false;
+    retained_column.batches([&](const auto &batch) {
+        ++retained_batches;
+        for (auto offset = std::size_t{}; offset != batch.size; ++offset)
+            if (batch.is_valid(offset) && batch.value_at(offset) == symbol{"XNAS"})
+                found_interned_symbol = true;
+    });
+    require(retained_column.cell(1) == symbol{} && retained_column.cell(2) == symbol{""} &&
+                retained_column.cell(4) == symbol{"XNAS"},
+            "copied Arrow symbol runtime did not retain its arrays or cached categories");
+    require(retained_batches == 2 && found_interned_symbol,
+            "copied Arrow symbol runtime did not retain batch reader contexts");
+
+    auto native = Column<symbol>{std::vector<std::optional<symbol>>{
+        std::nullopt, symbol{}, symbol{""}, symbol{"long interned symbol"}, symbol{"long interned symbol"}}};
+    auto borrowed_result = borrow_arrow(native.view());
+    auto copied_result = copy_to_arrow(native.view());
+    require(borrowed_result.ok() && copied_result.ok(), "Arrow symbol export failed");
+    const auto borrowed = std::move(borrowed_result).ValueUnsafe();
+    const auto copied = std::move(copied_result).ValueUnsafe();
+    const auto borrowed_dictionary = std::static_pointer_cast<arrow::DictionaryArray>(borrowed->chunk(0));
+    const auto borrowed_categories = std::static_pointer_cast<arrow::StringViewArray>(borrowed_dictionary->dictionary());
+    const auto copied_dictionary = std::static_pointer_cast<arrow::DictionaryArray>(copied->chunk(0));
+    const auto copied_categories = std::static_pointer_cast<arrow::LargeStringArray>(copied_dictionary->dictionary());
+    require(borrowed->type()->id() == arrow::Type::DICTIONARY && borrowed_dictionary->IsNull(0) &&
+                borrowed_categories->IsNull(borrowed_dictionary->GetValueIndex(1)) &&
+                !borrowed_categories->IsNull(borrowed_dictionary->GetValueIndex(2)) &&
+                borrowed_categories->GetView(borrowed_dictionary->GetValueIndex(2)).empty() &&
+                borrowed_categories->GetView(borrowed_dictionary->GetValueIndex(3)) == "long interned symbol" &&
+                copied->type()->id() == arrow::Type::DICTIONARY && copied_categories->IsNull(0) &&
+                copied_categories->GetView(copied_dictionary->GetValueIndex(2)).empty() &&
+                borrowed->ValidateFull().ok() && copied->ValidateFull().ok(),
+            "Arrow symbol export changed dictionary validity, default, empty, or interned values");
+
+    require(!from_arrow<symbol>(arrow::ChunkedArray::Make({string_array({"not a dictionary"})}, arrow::utf8())
+                                    .ValueOrDie())
+                 .ok(),
+            "Arrow symbol import accepted a non-dictionary physical type");
+}
+
+void test_arrow_text_symbol_exact_runtime_literals() {
+    auto text_input = arrow::ChunkedArray::Make({string_array({"first", "second", std::nullopt})}, arrow::utf8());
+    auto symbol_input = arrow::ChunkedArray::Make(
+        {symbol_array({1, 2, std::nullopt}, {std::nullopt, "XNAS", ""})},
+        arrow::dictionary(arrow::int32(), arrow::utf8()));
+    require(text_input.ok() && symbol_input.ok(), "could not construct Arrow text literal inputs");
+    auto imported_text_result = from_arrow<string>(std::move(text_input).ValueUnsafe());
+    auto imported_symbol_result = from_arrow<symbol>(std::move(symbol_input).ValueUnsafe());
+    require(imported_text_result.ok() && imported_symbol_result.ok(), "could not import Arrow text literal inputs");
+    auto imported_text = std::move(imported_text_result).ValueUnsafe();
+    auto imported_symbol = std::move(imported_symbol_result).ValueUnsafe();
+
+    auto text_literal = ScalarValue<>::from_literal(imported_text.runtime_type(), {"first", "second", NULL_VALUE});
+    auto symbol_literal = ScalarValue<>::from_literal(
+        imported_symbol.runtime_type(), {symbol{"XNAS"}, symbol{""}, NULL_VALUE});
+    auto native_text = ScalarValue<Column<string>>::from_literal({"first", "second", NULL_VALUE});
+    auto native_symbol = ScalarValue<Column<symbol>>::from_literal({symbol{"XNAS"}, symbol{""}, NULL_VALUE});
+    require(&text_literal.runtime_type() == &imported_text.runtime_type() &&
+                &symbol_literal.runtime_type() == &imported_symbol.runtime_type() &&
+                imported_text.equals(text_literal.view()) && text_literal.equals(native_text.view()) &&
+                imported_symbol.equals(symbol_literal.view()) && symbol_literal.equals(native_symbol.view()),
+            "exact Arrow text or symbol runtime literal changed values or runtime type");
+}
+
+void test_arrow_keyed_text_symbol_frame_import() {
+    const auto make_table = [](bool duplicate) {
+        auto labels = arrow::ChunkedArray::Make(
+            {string_array({"alpha", "beta"}), string_array({duplicate ? "alpha" : "gamma"})}, arrow::utf8())
+                          .ValueOrDie();
+        auto venues = arrow::ChunkedArray::Make(
+            {symbol_array({2, 1}, {std::nullopt, "", "XNAS"}), symbol_array({2}, {std::nullopt, "", "XNAS"})},
+            symbol_array({}, {std::nullopt, "", "XNAS"})->type())
+                          .ValueOrDie();
+        auto codes = arrow::ChunkedArray::Make(
+            {symbol_array({std::nullopt, 0}, {std::nullopt, "", "XNAS"}),
+             symbol_array({1}, {std::nullopt, "", "XNAS"})},
+            symbol_array({}, {std::nullopt, "", "XNAS"})->type())
+                         .ValueOrDie();
+        return arrow::Table::Make(
+            arrow::schema({arrow::field("label", arrow::utf8(), true),
+                           arrow::field("venue", arrow::dictionary(arrow::int32(), arrow::utf8()), true),
+                           arrow::field("code", arrow::dictionary(arrow::int32(), arrow::utf8()), true)}),
+            {std::move(labels), std::move(venues), std::move(codes)});
+    };
+
+    auto imported = from_arrow<KeyedTextSymbolArrowRows>(make_table(false));
+    require(imported.ok(), "key validation rejected unique text and symbol keys spanning Arrow chunks");
+    auto imported_value = std::optional<ScalarValue<>>{std::move(imported).ValueUnsafe()};
+    const auto frame_scalar = Scalar<Frame<KeyedTextSymbolArrowRows>>::from(*imported_value);
+    const auto frame = frame_scalar.value();
+    require(frame.size() == 3 && frame.columns().label.cell(2) == "gamma" &&
+                !frame.columns().code.cell(0) && frame.columns().code.cell(1) == symbol{} &&
+                frame.columns().code.cell(2) == symbol{""},
+            "keyed Arrow frame import changed text, symbol, or validity distinctions");
+
+    auto memory = allocator{};
+    auto native_snapshot = ScalarValue<Frame<KeyedTextSymbolArrowRows>>{frame_scalar, memory};
+    imported_value.reset();
+    const auto snapshot_frame = native_snapshot.view().value();
+    require(snapshot_frame.size() == 3 && snapshot_frame.columns().label.cell(2) == "gamma" &&
+                snapshot_frame.columns().venue.cell(1) == symbol{""} &&
+                snapshot_frame.columns().code.cell(2) == symbol{""},
+            "typed frame snapshot did not retain imported text and symbol values after Arrow release");
+
+    auto duplicate = from_arrow<KeyedTextSymbolArrowRows>(make_table(true));
+    require(!duplicate.ok(), "Arrow frame key validation missed a duplicate tuple across chunks");
+
+    auto inferred = from_arrow(make_table(false));
+    require(inferred.ok(), "schema-inferred Arrow import rejected text and symbol columns");
+    auto inferred_value = std::move(inferred).ValueUnsafe();
+    const auto dynamic_frame = Scalar<Frame<bg::SCHEMA>>::from(inferred_value).value();
+    const auto label_column = dynamic_frame.column("label");
+    const auto code_column = dynamic_frame.column("code");
+    require(label_column.view<string>().cell(0) == "alpha" && code_column.view<symbol>().cell(1) == symbol{},
+            "schema-inferred Arrow import lost text and symbol fields");
+}
+
+void test_arrow_text_all_null_and_sparse_export() {
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto null_strings = NativeColumn<string>{};
+    auto null_symbols = NativeColumn<symbol>{};
+    auto release_nulls = util::scope_exit{[&]() noexcept {
+        null_strings.release(memory);
+        null_symbols.release(memory);
+    }};
+    const auto null_time = MIN_DT + EvaluationTime::duration{1};
+    null_strings.add(std::nullopt, null_time, memory);
+    null_strings.add(std::nullopt, null_time, memory);
+    null_symbols.add(std::nullopt, null_time, memory);
+    null_symbols.add(std::nullopt, null_time, memory);
+    const auto string_column = scalar_storage_traits<Column<string>>::read(null_strings.scalar_storage());
+    const auto symbol_column = scalar_storage_traits<Column<symbol>>::read(null_symbols.scalar_storage());
+    auto no_string_values = false;
+    string_column.batches([&](const auto &batch) {
+        no_string_values = batch.values == nullptr && batch.size == 2 && !batch.is_valid(0) && !batch.is_valid(1);
+    });
+    auto no_symbol_values = false;
+    symbol_column.batches([&](const auto &batch) {
+        no_symbol_values = batch.values == nullptr && batch.size == 2 && !batch.is_valid(0) && !batch.is_valid(1);
+    });
+    require(no_string_values && no_symbol_values,
+            "all-null native text columns unexpectedly allocated value buffers");
+
+    auto borrowed_strings_result = borrow_arrow(string_column);
+    auto copied_strings_result = copy_to_arrow(string_column);
+    auto borrowed_symbols_result = borrow_arrow(symbol_column);
+    auto copied_symbols_result = copy_to_arrow(symbol_column);
+    require(borrowed_strings_result.ok() && copied_strings_result.ok() && borrowed_symbols_result.ok() &&
+                copied_symbols_result.ok(),
+            "all-null string or symbol Arrow export failed");
+
+    const auto borrowed_strings = std::move(borrowed_strings_result).ValueUnsafe();
+    const auto copied_strings = std::move(copied_strings_result).ValueUnsafe();
+    const auto borrowed_symbols = std::move(borrowed_symbols_result).ValueUnsafe();
+    const auto copied_symbols = std::move(copied_symbols_result).ValueUnsafe();
+    const auto borrowed_string_array = borrowed_strings->chunk(0);
+    const auto borrowed_symbol_array = std::static_pointer_cast<arrow::DictionaryArray>(borrowed_symbols->chunk(0));
+    const auto borrowed_symbol_categories =
+        std::static_pointer_cast<arrow::StringViewArray>(borrowed_symbol_array->dictionary());
+    require(borrowed_string_array->null_count() == 2 && borrowed_string_array->data()->buffers.size() == 2 &&
+                borrowed_symbol_array->null_count() == 2 && borrowed_symbol_categories->length() == 1 &&
+                borrowed_symbol_categories->data()->buffers.size() == 2 &&
+                std::static_pointer_cast<arrow::LargeStringArray>(copied_strings->chunk(0))->null_count() == 2 &&
+                std::static_pointer_cast<arrow::DictionaryArray>(copied_symbols->chunk(0))->null_count() == 2,
+            "all-null text export allocated payload buffers or changed validity");
+
+    auto native = NativeColumn<string>{};
+    auto release_sparse = util::scope_exit{[&]() noexcept { native.release(memory); }};
+    const auto time = MIN_DT + EvaluationTime::duration{1};
+    const auto first = native.add(std::string_view{"first row"}, time, memory);
+    const auto removed = native.add(std::string_view{"removed row"}, time, memory);
+    const auto last = native.add(std::string_view{"last row"}, time, memory);
+    require(native.erase(removed, time, memory), "sparse text Arrow source did not remove its middle row");
+
+    const auto column = scalar_storage_traits<Column<string>>::read(native.scalar_storage());
+    auto borrowed_result = borrow_arrow(column);
+    auto copied_result = copy_to_arrow(column);
+    require(borrowed_result.ok() && copied_result.ok(), "sparse string Arrow export failed");
+    const auto borrowed = std::move(borrowed_result).ValueUnsafe();
+    const auto copied = std::move(copied_result).ValueUnsafe();
+    require(borrowed->num_chunks() == 2 && copied->num_chunks() == 1,
+            "sparse string Arrow export did not preserve batches and gather visible rows");
+    const auto copied_values = std::static_pointer_cast<arrow::LargeStringArray>(copied->chunk(0));
+    require(copied_values->length() == 2 && copied_values->GetView(0) == "first row" &&
+                copied_values->GetView(1) == "last row",
+            "sparse string gather-copy did not omit the removed row");
+    static_cast<void>(first);
+    static_cast<void>(last);
 }
 
 std::shared_ptr<arrow::Array> int_array(std::initializer_list<std::optional<std::int64_t>> values) {
@@ -164,6 +467,67 @@ std::shared_ptr<arrow::Array> boolean_array(std::initializer_list<std::optional<
     if (!status.ok())
         throw std::runtime_error{status.ToString()};
     return result;
+}
+
+std::shared_ptr<arrow::Array> string_array(std::initializer_list<std::optional<std::string_view>> values) {
+    auto builder = arrow::StringBuilder{};
+    for (const auto &value : values) {
+        const auto status = value ? builder.Append(*value) : builder.AppendNull();
+        if (!status.ok())
+            throw std::runtime_error{status.ToString()};
+    }
+    auto result = std::shared_ptr<arrow::Array>{};
+    const auto status = builder.Finish(&result);
+    if (!status.ok())
+        throw std::runtime_error{status.ToString()};
+    return result;
+}
+
+std::shared_ptr<arrow::Array> large_string_array(std::initializer_list<std::optional<std::string_view>> values) {
+    auto builder = arrow::LargeStringBuilder{};
+    for (const auto &value : values) {
+        const auto status = value ? builder.Append(*value) : builder.AppendNull();
+        if (!status.ok())
+            throw std::runtime_error{status.ToString()};
+    }
+    auto result = std::shared_ptr<arrow::Array>{};
+    const auto status = builder.Finish(&result);
+    if (!status.ok())
+        throw std::runtime_error{status.ToString()};
+    return result;
+}
+
+std::shared_ptr<arrow::Array> string_view_array(std::initializer_list<std::optional<std::string_view>> values) {
+    auto builder = arrow::StringViewBuilder{};
+    for (const auto &value : values) {
+        const auto status = value ? builder.Append(*value) : builder.AppendNull();
+        if (!status.ok())
+            throw std::runtime_error{status.ToString()};
+    }
+    auto result = std::shared_ptr<arrow::Array>{};
+    const auto status = builder.Finish(&result);
+    if (!status.ok())
+        throw std::runtime_error{status.ToString()};
+    return result;
+}
+
+std::shared_ptr<arrow::Array> symbol_array(std::initializer_list<std::optional<std::int32_t>> indices,
+                                           std::initializer_list<std::optional<std::string_view>> categories) {
+    auto index_builder = arrow::Int32Builder{};
+    for (const auto &index : indices) {
+        const auto status = index ? index_builder.Append(*index) : index_builder.AppendNull();
+        if (!status.ok())
+            throw std::runtime_error{status.ToString()};
+    }
+    auto index_array = std::shared_ptr<arrow::Array>{};
+    auto status = index_builder.Finish(&index_array);
+    if (!status.ok())
+        throw std::runtime_error{status.ToString()};
+    auto category_array = string_array(categories);
+    auto dictionary = arrow::DictionaryArray::FromArrays(index_array, category_array);
+    if (!dictionary.ok())
+        throw std::runtime_error{dictionary.status().ToString()};
+    return std::move(dictionary).ValueUnsafe();
 }
 
 void test_arrow_batch_validity_fast_paths() {
@@ -759,8 +1123,8 @@ void test_schema_validation() {
     require(!from_arrow(duplicate_names).ok(), "schema-inferred Arrow import accepted duplicate field names");
 
     auto unsupported = arrow::Table::Make(
-        arrow::schema({arrow::field("label", arrow::utf8(), true)}),
-        std::vector<std::shared_ptr<arrow::Array>>{arrow::MakeArrayOfNull(arrow::utf8(), 1).ValueOrDie()});
+        arrow::schema({arrow::field("label", arrow::binary(), true)}),
+        std::vector<std::shared_ptr<arrow::Array>>{arrow::MakeArrayOfNull(arrow::binary(), 1).ValueOrDie()});
     require(!from_arrow(unsupported).ok(), "schema-inferred Arrow import accepted an unsupported cell type");
 }
 
@@ -837,7 +1201,11 @@ int main() {
     test_arrow_first_column_runtime_registration();
     test_inferred_arrow_frame_import();
     test_arrow_default_frame_runtime();
-    test_arrow_rejects_text_cells();
+    test_arrow_string_column_import_export();
+    test_arrow_symbol_column_import_export();
+    test_arrow_text_symbol_exact_runtime_literals();
+    test_arrow_keyed_text_symbol_frame_import();
+    test_arrow_text_all_null_and_sparse_export();
     test_exports();
     test_boolean_arrow_import_and_export();
     test_fragmented_dense_copy_and_source_mutation();

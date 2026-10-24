@@ -1,6 +1,33 @@
 # Frame foundation handoff
 
-Updated: 2026-10-25.
+Updated: 2026-10-27.
+
+## Arrow text support
+
+Arrow adapters support the five native cell types. Borrowed strings use
+`string_view`; owned exports use `large_string`. Symbols use integer-indexed
+dictionaries and preserve null cells, default symbols, and empty symbols.
+[Arrow values](README.md#arrow-values) defines the formats and lifetime rules.
+
+Text batches can read retained Arrow sources without staging native handles.
+Copied batch descriptors borrow the source and reader context. Symbol imports
+intern dictionary categories once and retain shared reader contexts. Native
+snapshots copy source-backed cells through scalar storage traits.
+
+Frame graph tests use `run_graph` against main `8246a411`. Literal input sources
+use native outputs; view and computed outputs are produced by nodes.
+
+All six Release suites passed in
+`.lanes/frame-arrow-text/build/arrow-text-release`. This build uses Arrow 24
+and the fresh Release BG install at
+`.lanes/frame-field-access/build/arrow-sum/bg-release-install`.
+
+The focused Debug build is
+`.lanes/frame-arrow-text/build/arrow-text-debug-asan`, with BG from the matching
+`.lanes/frame-field-access/build/arrow-sum/bg-debug-install` prefix. ASan and UBSan
+instrument the extension and test targets; BG uses its ordinary Debug build.
+The column and Arrow suites passed with no sanitizer diagnostics. Leak detection
+is disabled.
 
 ## Native string and symbol columns
 
@@ -17,10 +44,9 @@ All six Release suites pass (0.26 seconds). All six Debug suites pass with
 ASan, UBSan, and LeakSanitizer enabled (14.29 seconds). Verification used the
 build directories listed below on 2026-10-25; the leak check ran outside the
 sandbox because its process restrictions prevent LeakSanitizer inspection.
-Arrow text adapters and string-producing expression callbacks are outside this
-change. Existing Arrow adapters reject unsupported text types.
+String-producing expression callbacks remain outside this change.
 
-## Current compaction verification
+## Earlier compaction verification
 
 The frame lane is rebased onto main `9675bfb7`, including resolver fix
 `e2317423`. After the rebase, frame range relocation is `31f658b2`, utility
@@ -774,6 +800,11 @@ operations.
 
 Boolean storage, Arrow support, numeric comparisons, and expression-based
 filtering are implemented.
+
+Incremental `operators::sum_` for numeric TSC inputs is next; its null and
+floating-point semantics still need confirmation. The implementation will own
+prior contributions in node state and process additions, modifications, and
+removals, including filter membership changes.
 
 Filter optimization now avoids rebuilding unchanged selection on full predicate
 reevaluation. Selected IDs reuse initialized storage and supply callback-scoped

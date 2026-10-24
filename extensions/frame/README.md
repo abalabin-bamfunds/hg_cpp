@@ -16,7 +16,7 @@ The current cell types are `bool`, `i64`, `double`, `string`, and `symbol`. `TSC
 ordinary outputs by default. Both support borrowed views; `TSC` and `TSF` also
 support computed outputs. `TSF` supports borrowed projections and row filters. The
 optional Arrow adapter supports scalar and frame imports and exports for
-`bool`, `i64`, and `double`; text adapters are not implemented. Boolean values
+all five cell types. Boolean values
 use packed bits in native storage and Arrow Boolean
 arrays; validity remains separate. Gather-copy export produces one dense chunk.
 Matching `i64` and `double` operands support arithmetic and comparisons through
@@ -85,11 +85,12 @@ IDs occupy consecutive slots in that mapping. Columns with the same mapping
 can read those slots directly; other columns resolve IDs through their own
 mapping. Selected batches split at cell and row-ID buffer boundaries.
 
-`RowSet::each_span` supplies ordered ID spans. IDs and batch buffers are valid
-only during their callback; callers must not retain them. Cells and validity
-borrow column storage. Kernels should use batches or iterate row IDs and read
-cells by ID to avoid repeated positional scans. View nodes use source deltas
-to identify changed cells.
+`RowSet::each_span` supplies ordered ID spans. ID spans and callback batch
+objects are valid only during their callback. A copied `ColumnBatch` descriptor
+borrows cells, validity, and any reader context from its source; it follows the
+scalar-view lifetime below. Kernels should use batches or iterate row IDs and
+read cells by ID to avoid repeated positional scans. View nodes use source
+deltas to identify changed cells.
 
 Frame column lengths must match. A zero-column frame can carry an explicit row
 count. `TSF` rows use one internal row domain across columns; schema names do
@@ -99,8 +100,7 @@ Rebinding to a different row domain publishes even when both values are empty.
 The row delta remains empty because no rows were added or removed.
 
 Borrowed scalar values are valid during a node invocation, before a mutation
-replaces their storage. Batch callbacks have the shorter lifetime stated above.
-Requesting an owning `ScalarValue` from
+replaces their storage. Requesting an owning `ScalarValue` from
 mutable native storage copies current cells. Ordinary mutations do not take a
 snapshot. The snapshot retains values, nulls, row count, and the actual schema;
 row IDs and change information remain time-series state. A Base annotation
@@ -777,17 +777,43 @@ deltas are not part of the exported schema.
 
 A borrowed Arrow view has the same lifetime as the scalar view: use it during
 the node invocation, before source mutation. It may allocate chunk metadata
-and packed validity bitmaps. An all-null native span without allocated cells
-needs a synthetic value buffer. Borrowing never switches to gathering because
-of fragmentation.
+and packed validity bitmaps. An all-null numeric or Boolean span without
+allocated cells needs a synthetic value buffer. Borrowing never switches to
+gathering because of fragmentation.
+
+| BG cell type | Borrowed Arrow representation | Copied Arrow representation |
+| --- | --- | --- |
+| `bool`, `i64`, `double` | `bool`, `int64`, `float64` | Same type, owned buffers |
+| `string` | `string_view` | `large_string` |
+| `symbol` | `dictionary<int32, string_view>` | `dictionary<int32, large_string>` |
+
+String borrowing builds Arrow descriptors and payload buffer records. Values
+up to 12 bytes are stored inside the descriptors; longer payloads are borrowed.
+Arrow `string_view` limits each value to a signed 32-bit length. Borrowing a
+larger value returns `CapacityError`; copied strings use 64-bit offsets.
+
+Symbol dictionaries keep these values distinct:
+
+| BG value | Arrow representation |
+| --- | --- |
+| Null cell | Null dictionary index |
+| Valid default `symbol{}` | Valid index pointing to a null dictionary entry |
+| Valid empty `symbol{""}` | Valid index pointing to an empty string |
+
+Decoding the dictionary to plain strings merges default symbols with null
+cells. Import interns dictionary categories once; cell reads use cached symbols.
 
 `copy_to_arrow` gathers the current rows into fresh value and validity buffers,
 including when the source is already Arrow-backed. It initializes value bytes
-at null positions. The result remains valid after source mutation or
+at numeric and Boolean null positions. The result remains valid after source mutation or
 destruction and can be passed outside the graph.
 
-Imports accept CPU `int64` and `float64` arrays, including sliced and chunked
-arrays. Explicit Frame schemas must match the table's names, order, and types.
+Imports accept CPU Boolean, `int64`, `float64`, `string`, `large_string`, and
+`string_view` arrays, including sliced and chunked arrays. Symbols require a
+dictionary with integer indices and one of the supported string types as its
+categories. Inferred Frame schemas map string arrays to `string` and text
+dictionaries to `symbol`.
+Explicit Frame schemas must match the table's names, order, and types.
 Inferred schemas preserve field order and reject duplicate names. Arrow field
 nullability describes cells; every BG schema column is present. Concrete-schema
 imports use the same runtime storage as programmatic schemas. Frame exports
