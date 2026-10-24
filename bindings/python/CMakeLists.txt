@@ -84,7 +84,11 @@ else()
     set(python_library_install_rpath "$ORIGIN")
 endif()
 
-set_target_properties(bg_python PROPERTIES INSTALL_RPATH "${python_library_install_rpath}")
+set_target_properties(
+    bg_python
+    PROPERTIES
+        INSTALL_RPATH "${python_library_install_rpath}"
+)
 
 set_target_properties(
     _bg

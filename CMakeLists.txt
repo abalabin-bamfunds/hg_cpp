@@ -17,6 +17,16 @@ find_package(Threads REQUIRED)
 find_package(ICU REQUIRED COMPONENTS uc i18n)
 find_package(fmt CONFIG REQUIRED)
 
+# Installed libraries must not retain build-environment dependency paths.
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
+if(APPLE)
+    set(native_library_install_rpath "@loader_path")
+elseif(WIN32)
+    set(native_library_install_rpath "")
+else()
+    set(native_library_install_rpath "$ORIGIN")
+endif()
+
 option(BG_BUILD_PYTHON "Build the Python extension module" OFF)
 option(BG_BUILD_BENCHMARKS "Build performance benchmarks" OFF)
 
@@ -191,6 +201,7 @@ set_target_properties(
     PROPERTIES
         CXX_EXTENSIONS OFF
         WINDOWS_EXPORT_ALL_SYMBOLS ON
+        INSTALL_RPATH "${native_library_install_rpath}"
         VERSION ${PROJECT_VERSION}
         SOVERSION ${PROJECT_VERSION_MAJOR}
 )
@@ -234,6 +245,7 @@ set_target_properties(
     PROPERTIES
         CXX_EXTENSIONS OFF
         EXPORT_NAME library
+        INSTALL_RPATH "${native_library_install_rpath}"
         VERSION ${PROJECT_VERSION}
         SOVERSION ${PROJECT_VERSION_MAJOR}
 )

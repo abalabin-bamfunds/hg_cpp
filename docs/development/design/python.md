@@ -29,6 +29,14 @@ environment selected by CMake. A consumer building a nanobind module must also
 use `nanobind_add_module(... NB_SHARED ...)` so that it shares nanobind's runtime
 with `bg::python`.
 
+## Wheel distribution
+
+The wheel workflow builds CPython 3.13 Linux wheels with the `linux_x86_64`
+platform tag. It includes the BG C++ SDK and CMake package. ICU and fmt are
+external native dependencies and must be installed with ABI-compatible runtime
+libraries. The workflow does not claim manylinux compatibility and does not
+publish to PyPI.
+
 ## Graph authoring
 
 The package exports time-series annotations, node and graph decorators,
