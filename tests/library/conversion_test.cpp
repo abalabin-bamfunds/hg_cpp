@@ -11,6 +11,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <algorithm>
 #include <array>
 
 using namespace bg;
@@ -213,6 +214,35 @@ TEST_CASE("convert rejects a non-TSB result for a Bundle input",
                                         testing::input<TS<Bundle<ConversionScalarRecord>>>(
                                             {{{"count", 7}, {"ratio", 2.5}}})),
                     WiringError);
+}
+
+TEST_CASE("convert rejects non-Bundle results for a TSB input",
+          "[feature:operator][feature:wiring][series:tsb][series:fixed-tsl]") {
+    const auto to_scalar_series = [](wp<TSB<ConversionSeriesRecord>> source) {
+        return operators::convert[type<TS<double>>](source);
+    };
+    const auto to_fixed_list = [](wp<TSB<ConversionSeriesRecord>> source) {
+        return operators::convert[type<TSL<TS<double>, 2>>](source);
+    };
+    const auto input = testing::input<TSB<ConversionSeriesRecord>>({{{"ratio", 2.5}, {"count", 7}}});
+    const auto expect_resolver_rejection = [&](const auto &graph) {
+        try {
+            (void)testing::test_graph(graph, input);
+            FAIL("expected a rejected TSB conversion candidate");
+        } catch (const WiringError &error) {
+            REQUIRE(error.diagnostic());
+            CHECK_FALSE(error.cause());
+            CHECK(std::ranges::any_of(error.diagnostic()->candidates, [](const auto &candidate) {
+                return candidate.stage == WiringFailureStage::resolver;
+            }));
+            CHECK_FALSE(std::ranges::any_of(error.diagnostic()->candidates, [](const auto &candidate) {
+                return candidate.stage == WiringFailureStage::callback;
+            }));
+        }
+    };
+
+    expect_resolver_rejection(to_scalar_series);
+    expect_resolver_rejection(to_fixed_list);
 }
 
 TEST_CASE("convert rejects mismatched Bundle and TSB field names",

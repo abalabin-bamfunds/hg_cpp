@@ -117,14 +117,6 @@ struct conversion_overloads {
         return accept;
     }
 
-    static const TimeSeriesType &resolved_result(const WiringArguments &arguments) {
-        const auto *result = requested_result(arguments);
-        if (result == nullptr) {
-            throw std::invalid_argument{"convert between Bundle and TSB requires an explicit result type"};
-        }
-        return *result;
-    }
-
     // Copy a scalar list into a TSL snapshot.
     struct list_to_tsl {
         In<TS<List<SCALAR>, G>> value;
@@ -376,13 +368,19 @@ struct conversion_overloads {
         In<TSB<SERIES_SCHEMA, G>, InputValidity::all_valid> value;
         Out<TS<Bundle<SCALAR_SCHEMA>, G>> output;
 
-        static const SchemaType &resolve(schema_type<SCALAR_SCHEMA>, const WiringArguments &arguments) {
-            return *resolved_result(arguments).target_type()
-                        .visit([](const TimeSeriesValueType *value) {
-                            return &type_cast<HierarchicalScalarType>(value->value_type()).schema_type();
-                        },
-                              ddv::noop)
-                        .value();
+        static const SchemaType *resolve(schema_type<SCALAR_SCHEMA>, const WiringArguments &arguments) {
+            const auto *requested = requested_result(arguments);
+            if (requested == nullptr) {
+                return nullptr;
+            }
+
+            return requested->target_type()
+                .visit([](const TimeSeriesValueType *value) -> const SchemaType * {
+                    const auto *schema = type_cast<HierarchicalScalarType>(&value->value_type());
+                    return schema == nullptr ? nullptr : &schema->schema_type();
+                },
+                      ddv::noop)
+                .value_or(nullptr);
         }
 
         static RequirementResult require(const WiringArguments &arguments) {
