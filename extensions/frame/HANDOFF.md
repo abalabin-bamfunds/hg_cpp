@@ -890,7 +890,6 @@ Ordinary node and scalar values keep normal destruction. The frame lane uses
 typed column runtime statics, FrameView scalar and mixed-view runtimes, and
 Arrow runtime cache owner.
 
-Previous-value subscriptions, text Arrow adapters, capacity trimming, and delta
-transport remain later work. Automatic compaction is deferred. Previous-cell capture, if
-needed, is requested from the owning storage through ColumnSource; graph
-back-propagation is not required. These features are not implemented.
+Text Arrow adapters, capacity trimming, and delta transport remain later work.
+Automatic compaction is deferred. Algorithms retain previous contributions in
+node state under the [removal lifetime contract](compaction_proposal.md#removal-lifetime).

@@ -24,7 +24,8 @@ deferred expressions and block evaluation. Arithmetic includes explicit column
 conversion; comparisons return nullable `TSC<bool>` and propagate nulls.
 String and symbol operands support equality and inequality with matching cell
 types. Text conversion and string-producing expression kernels are not implemented.
-Previous-cell subscriptions are later work.
+Algorithms retain previous contributions in node state; see
+[removal lifetime](compaction_proposal.md#removal-lifetime).
 
 `frame::view` is an output option owned by this extension. Use it with
 `Out<TSC<T>, frame::view>` and `Out<TSF<Schema>, frame::view>`. BG does not
