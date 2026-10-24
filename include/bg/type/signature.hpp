@@ -156,6 +156,13 @@ class Signature {
         return result;
     }
 
+    Signature without_output() const {
+        auto result = *this;
+        result.output_ = nullptr;
+        return result;
+    }
+    [[nodiscard]] Signature select_parameters(std::span<const std::size_t> indices) const;
+
     [[nodiscard]] Signature with_parameters(std::span<const WiringParameter> parameters) const;
     [[nodiscard]] Signature with_defaults(std::span<const WiringParameter> parameters) const;
     const WiringArgument *default_argument(std::size_t index) const noexcept;

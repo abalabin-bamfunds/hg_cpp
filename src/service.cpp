@@ -1,4 +1,5 @@
 #include <bg/graph/service.hpp>
+#include <bg/service.hpp>
 
 #include <bg/graph/details/nested_binding_identity.hpp>
 #include <bg/graph/details/node_scheduler.hpp>
@@ -245,10 +246,22 @@ struct ServiceRequestProvider {
     void evaluate() const {}
 };
 
+using SERVICE_ARGUMENT = TimeSeriesVariable<"SERVICE_ARGUMENT">;
+
+struct ServiceClientIdSource {
+    Out<TS<service_client_id_t, TimeSeriesGuarantee::const_>> output;
+
+    static constexpr bool deduplicate_wiring = false;
+
+    void start() const {
+        static auto next = std::atomic<service_client_id_t>{1};
+        output.set(next.fetch_add(1, std::memory_order_relaxed));
+    }
+};
+
 const auto subscription_request_client = node<SubscriptionRequestClient>();
 const auto service_request_provider = node<ServiceRequestProvider>();
-
-using SERVICE_ARGUMENT = TimeSeriesVariable<"SERVICE_ARGUMENT">;
+const auto service_client_id_source = node<ServiceClientIdSource>();
 
 struct ServiceRequestClientState {
     details::ServiceRequestBinding *requests{};
@@ -280,32 +293,19 @@ class ServiceRequestClient {
 
     static void evaluate(NodeInvocation<compiled_data_type, state_type> invocation) {
         auto &state = invocation.state();
-        const auto parameter_count = invocation.parameter_count() / 2;
+        const auto client_id = invocation.input<In<TS<service_client_id_t, TimeSeriesGuarantee::const_>>>(0);
+        state.id = client_id.value();
+        const auto parameter_count = (invocation.parameter_count() - 1) / 2;
         auto any_valid = false;
         for (auto input_index = std::size_t{}; input_index < parameter_count; ++input_index) {
-            any_valid |= invocation.input<In<SERVICE_ARGUMENT>>(input_index * 2).valid();
+            any_valid |= invocation.input<In<SERVICE_ARGUMENT>>(1 + input_index * 2).valid();
         }
 
-        auto output = invocation.output<TS<service_client_id_t, TimeSeriesGuarantee::deduplicated>>();
         if (!any_valid && !state.active) {
-            if (state.id != 0) {
-                output.invalidate();
-            }
             return;
         }
 
-        if (state.id == 0) {
-            state.id = next_client_id();
-        }
         update_requests(invocation, any_valid);
-
-        if (any_valid) {
-            if (!state.active) {
-                output.set(state.id);
-            }
-        } else {
-            output.invalidate();
-        }
         state.active = any_valid;
     }
 
@@ -318,16 +318,11 @@ class ServiceRequestClient {
     }
 
   private:
-    static service_client_id_t next_client_id() noexcept {
-        static auto next = std::atomic<service_client_id_t>{1};
-        return next.fetch_add(1, std::memory_order_relaxed);
-    }
-
     static void update_requests(NodeInvocation<compiled_data_type, state_type> invocation, bool active) {
         auto &state = invocation.state();
         const auto client_id = ScalarValue<service_client_id_t>{state.id};
         state.requests->modify_service(invocation.context(), state.id, active, [&](auto &requests) {
-            const auto parameter_count = invocation.parameter_count() / 2;
+            const auto parameter_count = (invocation.parameter_count() - 1) / 2;
             auto changed = false;
             for (auto parameter = std::size_t{}; parameter < parameter_count; ++parameter) {
                 requests[parameter].visit(
@@ -339,7 +334,7 @@ class ServiceRequestClient {
                         }
 
                         const auto reference =
-                            invocation.input<In<REF<SERVICE_ARGUMENT>>>(parameter * 2 + 1).value();
+                            invocation.input<In<REF<SERVICE_ARGUMENT>>>(1 + parameter * 2 + 1).value();
                         if (!reference && dictionary->item_id(key) == util::occupancy_index::npos) {
                             changed = true;
                         }
@@ -369,6 +364,8 @@ class ServiceRequestClient {
 
     static Signature make_signature(const ResolvedSignature &service_signature) {
         auto parameters = std::vector<Parameter>{};
+        parameters.push_back({util::symbol{"client_id"},
+                              &TS<service_client_id_t, TimeSeriesGuarantee::const_>::type()});
         auto time_series_index = std::size_t{};
         for (const auto &parameter : service_signature.parameters) {
             if (!parameter.type->is_time_series()) {
@@ -382,8 +379,7 @@ class ServiceRequestClient {
             parameters.push_back({name, &reference_type, active, optional});
         }
 
-        return Signature{util::symbol{"service_client"}, std::move(parameters),
-                         TS<service_client_id_t, TimeSeriesGuarantee::deduplicated>::type()};
+        return Signature{util::symbol{"service_client_requests"}, std::move(parameters)};
     }
 
     Signature signature_;
@@ -432,6 +428,86 @@ class ForwardingServiceRequestProvider {
 };
 
 } // namespace
+
+class Service::ClientRequestsWiring final : public WiringTemplate {
+  public:
+    ClientRequestsWiring(const Service &service, WiringPoint client_id)
+        : service_{service}, client_id_{client_id}, signature_{service.signature().without_output()} {}
+
+    const Signature &default_signature() const final { return signature_; }
+
+    std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature,
+                                    const WiringArguments &argument_view,
+                                    std::span<const WiringArgument> arguments) const final {
+        if (const auto *output = service_.signature().output()) {
+            signature.output = type_cast<TimeSeriesType>(&output->resolve(argument_view.type_map()));
+        }
+        service_.validate_resolved_signature(signature);
+
+        auto &instance = wiring.root_service_instances().find_or_create(
+            service_, std::move(signature), argument_view.type_map(), arguments, WiringContext::current().path());
+        service_.wire_client_requests(wiring, instance, arguments, client_id_);
+        return std::nullopt;
+    }
+
+  private:
+    const Service &service_;
+    WiringPoint client_id_;
+    Signature signature_;
+};
+
+class Service::ClientRepliesWiring final : public WiringTemplate {
+  public:
+    ClientRepliesWiring(const Service &service, WiringPoint client_id)
+        : service_{service}, client_id_{client_id}, signature_{make_signature(service.signature())} {}
+
+    const Signature &default_signature() const final { return signature_; }
+
+    std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature, const WiringArguments &argument_view,
+                                    std::span<const WiringArgument> arguments) const final {
+        auto type_map = argument_view.type_map().copy();
+        auto resolved_service_signature = service_.signature().complete_resolution(type_map);
+        service_.validate_resolved_signature(resolved_service_signature);
+        if (resolved_service_signature.output == nullptr) {
+            return std::nullopt;
+        }
+
+        auto scalar_arguments = std::vector<ScalarValue<>>{};
+        scalar_arguments.reserve(arguments.size());
+        auto argument_index = std::size_t{};
+        for (const auto &parameter : resolved_service_signature.parameters) {
+            const auto *scalar_type = type_cast<ScalarType>(parameter.type);
+            if (scalar_type == nullptr) {
+                continue;
+            }
+            if (!scalar_type->supports_equality()) {
+                throw WiringError{"service scalar parameters must support equality"};
+            }
+            scalar_arguments.emplace_back(arguments[argument_index++].scalar());
+        }
+
+        auto &instance = wiring.root_service_instances().find_or_create(
+            service_, std::move(resolved_service_signature), type_map, std::move(scalar_arguments),
+            WiringContext::current().path());
+        instance.has_client = true;
+        return service_.wire_client_replies(wiring, instance, client_id_);
+    }
+
+  private:
+    static Signature make_signature(const Signature &service_signature) {
+        auto scalar_parameter_indices = std::vector<std::size_t>{};
+        for (std::size_t index = 0; index < service_signature.parameter_count(); ++index) {
+            if (service_signature.parameter(index).type->is_scalar()) {
+                scalar_parameter_indices.push_back(index);
+            }
+        }
+        return service_signature.select_parameters(scalar_parameter_indices);
+    }
+
+    const Service &service_;
+    WiringPoint client_id_;
+    Signature signature_;
+};
 
 ServiceDefinition::ServiceDefinition(Signature signature) : signature_{std::move(signature)} {
     auto scalar_parameters_started = false;
@@ -494,6 +570,12 @@ void ServiceDefinition::implementation_replies_for_catch_all(
 std::optional<WiringPoint> ServiceDefinition::wire(GraphWiring &wiring, ResolvedSignature signature,
                                                    const WiringArguments &argument_view,
                                                    std::span<const WiringArgument> arguments) const {
+    validate_resolved_signature(signature);
+
+    return wire_client(wiring, std::move(signature), argument_view.type_map(), arguments);
+}
+
+void ServiceDefinition::validate_resolved_signature(const ResolvedSignature &signature) const {
     for (const auto &parameter : signature.parameters) {
         if (const auto *time_series = type_cast<TimeSeriesType>(parameter.type);
             time_series != nullptr && time_series->contains_reference()) {
@@ -503,8 +585,6 @@ std::optional<WiringPoint> ServiceDefinition::wire(GraphWiring &wiring, Resolved
     if (signature.output != nullptr && signature.output->contains_reference()) {
         throw WiringError{"service signatures cannot contain reference types"};
     }
-
-    return wire_client(wiring, std::move(signature), argument_view.type_map(), arguments);
 }
 
 Service::Service(Signature signature) : ServiceDefinition{std::move(signature)} {
@@ -626,17 +706,28 @@ void Service::append_implementation_request_arguments(WiringPoint requests,
     details::append_wiring_arguments(arguments, kwargs(requests));
 }
 
-std::optional<WiringPoint> Service::wire_client(GraphWiring &wiring, ResolvedSignature signature,
-                                                const TypeMap &type_map,
-                                                std::span<const WiringArgument> arguments) const {
-    auto &instance = wiring.root_service_instances().find_or_create(*this, signature, type_map, arguments,
-                                                                    WiringContext::current().path());
+void Service::client_requests(const TypeMap &type_map, WiringPoint client_id,
+                              std::span<const WiringArgument> arguments) const {
+    const auto wiring = ClientRequestsWiring{*this, client_id};
+    (void)wiring(type_map, arguments);
+}
+
+std::optional<WiringPoint> Service::client_replies(const TypeMap &type_map, WiringPoint client_id,
+                                                   std::span<const WiringArgument> scalar_arguments) const {
+    const auto wiring = ClientRepliesWiring{*this, client_id};
+    return wiring(type_map, scalar_arguments);
+}
+
+void Service::wire_client_requests(GraphWiring &wiring, details::ServiceInstance &instance,
+                                   std::span<const WiringArgument> arguments, WiringPoint client_id) const {
     const auto identity = details::NestedBindingIdentity::object(&instance);
     const auto binding_index =
         wiring.require_service_binding(identity, GraphWiring::ServiceBindingOrdering::provider_after_consumers);
     auto client_arguments = std::vector<WiringArgument>{};
-    for (auto index = std::size_t{}; index < signature.parameters.size(); ++index) {
-        if (!signature.parameters[index].type->is_time_series()) {
+    client_arguments.reserve(1 + 2 * instance.signature.parameters.size());
+    client_arguments.emplace_back(client_id);
+    for (auto index = std::size_t{}; index < instance.signature.parameters.size(); ++index) {
+        if (!instance.signature.parameters[index].type->is_time_series()) {
             continue;
         }
 
@@ -645,22 +736,44 @@ std::optional<WiringPoint> Service::wire_client(GraphWiring &wiring, ResolvedSig
         client_arguments.emplace_back(input);
     }
 
-    const auto &client_template =
-        wiring.own_node_template(std::make_unique<RuntimeSignatureNodeTemplate<ServiceRequestClient>>(
-            ServiceRequestClient{signature, binding_index}));
-    auto client_call = wiring.invoke_node(client_template, client_arguments);
-    if (!client_call.output) {
-        throw WiringError{"a service client did not produce its client id"};
-    }
-    const auto client = client_call.output;
+    const auto &client_template = wiring.own_node_template(
+        std::make_unique<RuntimeSignatureNodeTemplate<ServiceRequestClient>>(
+            ServiceRequestClient{instance.signature, binding_index}));
+    const auto client_call = wiring.invoke_node(client_template, client_arguments);
     wiring.register_service_binding_consumer(identity, client_call.identity);
-    if (signature.output == nullptr) {
+}
+
+std::optional<WiringPoint> Service::wire_client_replies(GraphWiring &wiring, details::ServiceInstance &instance,
+                                                        WiringPoint client_id) const {
+    const auto &required_client_id_type = TS<service_client_id_t, TimeSeriesGuarantee::const_>::type();
+    if (!required_client_id_type.accepts(client_id.type())) {
+        auto actual_type = std::string{};
+        client_id.type().format_name(actual_type);
+        throw WiringError{"a service client ID must be TS<service_client_id_t, const_>, got " + actual_type};
+    }
+
+    if (instance.signature.output == nullptr) {
         return std::nullopt;
     }
 
-    const auto &response_type = *implementation_output_type(signature);
-    const auto response = wiring.require_inherited_time_series(identity, signature.name, response_type);
-    return operators::getitem(response, *client);
+    const auto identity = details::NestedBindingIdentity::object(&instance);
+    const auto &response_type = *implementation_output_type(instance.signature);
+    const auto response = wiring.require_inherited_time_series(identity, instance.signature.name, response_type);
+    return operators::getitem(response, client_id);
+}
+
+std::optional<WiringPoint> Service::wire_client(GraphWiring &wiring, ResolvedSignature signature,
+                                                const TypeMap &type_map,
+                                                std::span<const WiringArgument> arguments) const {
+    auto &instance = wiring.root_service_instances().find_or_create(*this, signature, type_map, arguments,
+                                                                    WiringContext::current().path());
+    const auto client_id = service_client_id();
+    wire_client_requests(wiring, instance, arguments, client_id);
+    return wire_client_replies(wiring, instance, client_id);
+}
+
+wp<TS<service_client_id_t, TimeSeriesGuarantee::const_>> service_client_id() {
+    return service_client_id_source();
 }
 
 ReferenceService::ReferenceService(Signature signature) : ServiceDefinition{std::move(signature)} {

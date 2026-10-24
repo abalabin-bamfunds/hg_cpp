@@ -50,6 +50,42 @@ class ServiceTemplate final
         return public_result(WiringTemplate::operator()(type_map, arguments));
     }
 
+    template <typename ClientId, typename... Arguments>
+        requires(Definition::supports_client_wiring && details::wiring_point_argument<ClientId> &&
+                 (details::graph_code_argument<Arguments> && ...))
+    void client_requests(ClientId &&client_id, Arguments &&...arguments) const & {
+        auto values = std::array<WiringArgument, sizeof...(Arguments)>{
+            WiringArgument{std::forward<Arguments>(arguments)}...};
+        Definition::client_requests(TypeMap{}, static_cast<WiringPoint>(client_id), values);
+    }
+
+    template <typename ClientId, typename... Arguments>
+        requires(Definition::supports_client_wiring && details::wiring_point_argument<ClientId> &&
+                 (details::graph_code_argument<Arguments> && ...))
+    void client_requests(const TypeMap &type_map, ClientId &&client_id, Arguments &&...arguments) const & {
+        auto values = std::array<WiringArgument, sizeof...(Arguments)>{
+            WiringArgument{std::forward<Arguments>(arguments)}...};
+        Definition::client_requests(type_map, static_cast<WiringPoint>(client_id), values);
+    }
+
+    template <typename ClientId, typename... Arguments>
+        requires(Definition::supports_client_wiring && details::typed_prototype<Prototype>::has_output &&
+                 details::wiring_point_argument<ClientId> && (details::graph_code_argument<Arguments> && ...))
+    auto client_replies(ClientId &&client_id, Arguments &&...scalar_arguments) const & {
+        auto values = std::array<WiringArgument, sizeof...(Arguments)>{
+            WiringArgument{std::forward<Arguments>(scalar_arguments)}...};
+        return public_result(Definition::client_replies(TypeMap{}, static_cast<WiringPoint>(client_id), values));
+    }
+
+    template <typename ClientId, typename... Arguments>
+        requires(Definition::supports_client_wiring && details::typed_prototype<Prototype>::has_output &&
+                 details::wiring_point_argument<ClientId> && (details::graph_code_argument<Arguments> && ...))
+    auto client_replies(const TypeMap &type_map, ClientId &&client_id, Arguments &&...scalar_arguments) const & {
+        auto values = std::array<WiringArgument, sizeof...(Arguments)>{
+            WiringArgument{std::forward<Arguments>(scalar_arguments)}...};
+        return public_result(Definition::client_replies(type_map, static_cast<WiringPoint>(client_id), values));
+    }
+
     template <typename... Arguments>
         requires Definition::supports_implementation_requests && (details::graph_code_argument<Arguments> && ...)
     auto implementation_requests(Arguments &&...arguments) const & {
@@ -167,5 +203,7 @@ using subscription_service = typename details::service_declaration<SubscriptionS
 
 template <typename... Declaration>
 using service = typename details::service_declaration<Service, Declaration...>::type;
+
+wp<TS<service_client_id_t, TimeSeriesGuarantee::const_>> service_client_id();
 
 } // namespace bg

@@ -1,6 +1,7 @@
 #include "service_test_helpers.hpp"
 
 #include <bg/service_feedback.hpp>
+#include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 
 #include <utility>
@@ -9,6 +10,56 @@ using namespace bg;
 
 template <template <typename, auto...> typename Field>
 using SERVICE_KWARGS = BundleSchemaVariableDeclaration<"SERVICE_KWARGS", Field>;
+
+TEST_CASE("service request and reply wiring can share a separately wired client ID",
+          "[feature:service][series:tsd][shape:multiple][declaration:generic]") {
+    using VALUE = ScalarVariable<"CLIENT_REPLY_VALUE">;
+    const auto service = bg::service<VALUE, auto(TS<VALUE>, i64)->TS<VALUE>>{"echo_route", {"value", "route"}};
+    auto submitted = std::vector<i64>{};
+    const auto observe = node([&](In<TSD<service_client_id_t, TS<i64>>> requests) {
+        requests.for_each_key_value([&](const auto &, const auto &value) {
+            if (value.valid()) {
+                submitted.push_back(*value);
+            }
+        });
+    });
+    const auto response_source = node([](Out<TSD<service_client_id_t, TS<i64>>> responses) {
+        responses[service_client_id_t{123}].set(5);
+    });
+    const auto implementation = graph<VALUE>(
+        "name"_n = "echo_route_impl",
+        [&](wp<TSD<service_client_id_t, TS<VALUE>>, "value"_n> requests, i64 route) {
+            observe(requests);
+            return response_source();
+        });
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(service[type<VALUE> = type<i64>], implementation, "route"_n = 10);
+
+    const auto client_id_source = node([](Out<TS<service_client_id_t, TimeSeriesGuarantee::const_>> output) {
+        output.set(123);
+    });
+    const auto add_request = node([](In<TS<i64>> response, In<TS<i64>> value) { return *response + *value; });
+    const auto tested = [&](wp<TS<i64>> input) {
+        const auto client_id = client_id_source();
+        const auto typed_service = service[type<VALUE> = type<i64>];
+        const auto reply = typed_service.client_replies(client_id, 10);
+        const auto request = add_request(reply, input);
+        typed_service.client_requests(client_id, request, 10);
+        return request;
+    };
+
+    CHECK(testing::test_graph(tested, GraphRunOptions{.services = &catalogue}, {1, 4}).equals<i64>({6, 9}));
+    CHECK(submitted == std::vector<i64>{6, 9});
+}
+
+TEST_CASE("service reply wiring requires a const client ID", "[feature:service][wiring]") {
+    const auto service = bg::service<auto(TS<i64>)->TS<i64>>{"reply_id", {"value"}};
+    const auto client_id_source = node([](Out<TS<service_client_id_t>> output) { output.set(123); });
+
+    CHECK_THROWS_WITH(testing::test_wiring([&] { service.client_replies(client_id_source()); }),
+                      Catch::Matchers::ContainsSubstring(
+                          "a service client ID must be TS<service_client_id_t, const_>"));
+}
 
 TEST_CASE("service publishes each valid client input and selects its response",
           "[feature:service][series:tsd][shape:single-node]") {

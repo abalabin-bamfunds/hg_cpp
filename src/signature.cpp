@@ -133,6 +133,33 @@ bool Signature::is_union_parameter(std::size_t index) const noexcept {
     return variable != nullptr && !variable->alternatives().empty();
 }
 
+Signature Signature::select_parameters(std::span<const std::size_t> indices) const {
+    auto parameters = std::vector<Parameter>{};
+    parameters.reserve(indices.size());
+    auto selected_defaults = std::vector<std::shared_ptr<const WiringArgument>>{};
+    if (!defaults_.empty()) {
+        selected_defaults.reserve(indices.size());
+    }
+    auto selected = std::vector<bool>(parameters_.size());
+    for (const auto index : indices) {
+        if (index >= parameters_.size() || selected[index]) {
+            throw std::invalid_argument{"a selected signature parameter index is invalid or repeated"};
+        }
+        selected[index] = true;
+        parameters.push_back(parameters_[index]);
+        if (!defaults_.empty()) {
+            selected_defaults.push_back(defaults_[index]);
+        }
+    }
+
+    auto result = output_ == nullptr ? Signature{name_, std::move(parameters), resolvers_}
+                                     : Signature{name_, std::move(parameters), *output_, resolvers_};
+    if (!defaults_.empty()) {
+        result.defaults_ = std::move(selected_defaults);
+    }
+    return result;
+}
+
 Signature Signature::with_parameters(std::span<const WiringParameter> declarations) const {
     const auto expected_count = static_cast<std::size_t>(std::ranges::count_if(
         parameters_, [](const auto &parameter) { return !parameter.context; }));

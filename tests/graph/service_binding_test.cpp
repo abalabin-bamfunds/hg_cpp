@@ -85,7 +85,7 @@ TEST_CASE("service request ordering points at the service client after input mat
     auto found_service_client = false;
     for (const auto consumer_index : binding.consumers) {
         const auto &consumer = wiring.nodes()[wiring.node_index(consumer_index)];
-        if (consumer.path().name.text() == "service_client") {
+        if (consumer.path().name.text() == "service_client_requests") {
             found_service_client = true;
         }
     }

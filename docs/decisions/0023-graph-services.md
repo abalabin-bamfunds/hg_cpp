@@ -28,6 +28,11 @@ preserves each client's input series without copying its current value. Nested g
 pass service request bindings through their startup context, while implementation
 results use inherited time-series bindings.
 
+Service client identity is a separate const time series so request submission and reply
+selection can be wired independently. This allows reply selection to precede request
+submission when request values depend on replies, while the implementation response source
+remains independent of its request sink.
+
 Service implementations control reply timing. The engine does not defer replies
 or re-enter evaluation. A multiservice implementation wires once per build and
 associates request and reply ports with its registered service claims.

@@ -117,6 +117,24 @@ template <typename Target, typename... Parameters> class MappedWiring {
         return (*target_)(type_map_, std::forward<Arguments>(arguments)...);
     }
 
+    template <typename... Arguments>
+    decltype(auto) client_requests(Arguments &&...arguments) const
+        requires requires(const Target &target) {
+            target.client_requests(std::declval<const TypeMap &>(), std::declval<Arguments>()...);
+        }
+    {
+        return target_->client_requests(type_map_, std::forward<Arguments>(arguments)...);
+    }
+
+    template <typename... Arguments>
+    decltype(auto) client_replies(Arguments &&...arguments) const
+        requires requires(const Target &target) {
+            target.client_replies(std::declval<const TypeMap &>(), std::declval<Arguments>()...);
+        }
+    {
+        return target_->client_replies(type_map_, std::forward<Arguments>(arguments)...);
+    }
+
     template <typename... Mappings> auto operator[](Mappings... mappings) const & {
         return MappedWiring{*target_, extend_type_map<Parameters...>(type_map_, mappings...)};
     }

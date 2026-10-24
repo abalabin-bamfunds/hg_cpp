@@ -38,6 +38,24 @@ time-series argument is exposed as a separate dictionary with the same identifie
 The client observes the corresponding item of the implementation output dictionary.
 Subscription services require an output. Outputless clients use a service.
 
+Graph code can wire a service client's request and reply paths separately when both use
+the same `TS<service_client_id_t, const_>` input. `client_requests(id, ...)` accepts the
+service's time-series and scalar arguments. `client_replies(id, ...)` accepts its scalar
+arguments and returns the selected reply time series. The ID must be a const time series;
+`service_client_id()` creates a unique ID source for ordinary clients. The scalar arguments
+identify the same implementation instance in both calls. Generic services may need an
+explicit type map on `client_replies` to resolve the reply type.
+
+```cpp
+auto id = service_client_id();
+auto reply = echo.client_replies(id, route);
+auto request = make_request(reply);
+echo.client_requests(id, request, route);
+```
+
+This allows request processing to depend on a reply while the implementation's response
+source remains independent of the request input.
+
 ## Implementation multiplicity
 
 One implementation instance serves requirements with the same:
@@ -162,10 +180,10 @@ therefore sample an existing result produced for the same key immediately.
 
 ### Service clients
 
-A service call creates a generated client node with the client time-series arguments as
-active inputs. It obtains a process-unique identifier and publishes that identifier as
-a stable time series value while the client is active. The service result is an ordinary
-`getitem` of the implementation output by this identifier.
+A service call creates a generated request node with the client time-series arguments as
+active inputs and the client ID as a const input. The ID source is independent of request
+validity. The service result is an ordinary `getitem` of the implementation output by this
+identifier.
 
 The provider output is a runtime bundle with one
 `TSD<service_client_id_t, REF<A>>` field for each time-series argument. The implementation

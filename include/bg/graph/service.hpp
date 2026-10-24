@@ -16,6 +16,10 @@ namespace bg {
 
 using service_client_id_t = std::int64_t;
 
+namespace details {
+struct ServiceInstance;
+}
+
 struct ServiceImplementationRequestInput {
     std::optional<util::symbol> name;
     const TimeSeriesType *type;
@@ -23,6 +27,8 @@ struct ServiceImplementationRequestInput {
 
 class ServiceDefinition : public WiringTemplate {
   public:
+    static constexpr bool supports_client_wiring = false;
+
     explicit ServiceDefinition(Signature signature);
     ~ServiceDefinition() override;
 
@@ -53,6 +59,11 @@ class ServiceDefinition : public WiringTemplate {
     [[nodiscard]] std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature,
                                                   const WiringArguments &argument_view,
                                                   std::span<const WiringArgument> arguments) const final;
+
+  protected:
+    void validate_resolved_signature(const ResolvedSignature &signature) const;
+
+  private:
     virtual std::optional<WiringPoint> wire_client(GraphWiring &wiring, ResolvedSignature signature,
                                                    const TypeMap &type_map,
                                                    std::span<const WiringArgument> arguments) const = 0;
@@ -63,6 +74,7 @@ class ServiceDefinition : public WiringTemplate {
 class Service : public ServiceDefinition {
   public:
     static constexpr bool supports_implementation_requests = true;
+    static constexpr bool supports_client_wiring = true;
 
     explicit Service(Signature signature);
 
@@ -83,8 +95,18 @@ class Service : public ServiceDefinition {
     void wire_forwarding_requests(GraphWiring &wiring, details::NestedBindingIdentity original_identity,
                                   details::NestedBindingIdentity catch_all_identity,
                                   std::span<const WiringArgument> lifted_scalars) const;
+    void client_requests(const TypeMap &type_map, WiringPoint client_id,
+                         std::span<const WiringArgument> arguments) const;
+    std::optional<WiringPoint> client_replies(const TypeMap &type_map, WiringPoint client_id,
+                                              std::span<const WiringArgument> scalar_arguments) const;
+    void wire_client_requests(GraphWiring &wiring, details::ServiceInstance &instance,
+                              std::span<const WiringArgument> arguments, WiringPoint client_id) const;
+    std::optional<WiringPoint> wire_client_replies(GraphWiring &wiring, details::ServiceInstance &instance,
+                                                   WiringPoint client_id) const;
 
   private:
+    class ClientRequestsWiring;
+    class ClientRepliesWiring;
     std::optional<WiringPoint> wire_client(GraphWiring &wiring, ResolvedSignature signature,
                                            const TypeMap &type_map,
                                            std::span<const WiringArgument> arguments) const final;
