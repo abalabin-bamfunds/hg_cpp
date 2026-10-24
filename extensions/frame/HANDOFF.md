@@ -1,19 +1,39 @@
 # Frame foundation handoff
 
-Updated: 2026-10-24.
+Updated: 2026-10-25.
+
+## Native string and symbol columns
+
+Column storage uses
+`scalar_storage_traits<T>::stored_type` and exposes
+`scalar_storage_traits<T>::value_type`. Strings store shared handles; symbols
+store interned values. Snapshots retain string payloads, and compaction relocates
+handles. Null validity remains separate from empty text and default symbols.
+
+Literal/capture support, text keys, expression equality and inequality, and
+filtering are implemented. Concrete and runtime schemas share these operations;
+native, view, and computed outputs use the same stored and read cell types.
+All six Release suites pass (0.26 seconds). All six Debug suites pass with
+ASan, UBSan, and LeakSanitizer enabled (14.29 seconds). Verification used the
+build directories listed below on 2026-10-25; the leak check ran outside the
+sandbox because its process restrictions prevent LeakSanitizer inspection.
+Arrow text adapters and string-producing expression callbacks are outside this
+change. Existing Arrow adapters reject unsupported text types.
 
 ## Current compaction verification
 
-The frame lane includes main through resolver fix `e2317423` as merge
-`e00f2102`. Frame range relocation is committed as `d8dbd8c3`; its benchmark
-report is committed separately. Utility range relocation is `cc12d38c`, from
-utility-lane commit `7b0596f1`.
+The frame lane is rebased onto main `9675bfb7`, including resolver fix
+`e2317423`. After the rebase, frame range relocation is `31f658b2`, utility
+range relocation is `0c1a55a2`, and the benchmark reports are `2ee148fe` and
+`89cfbf64`. Older hashes in retained measurement reports identify their original
+source revisions.
 
 Current build paths are relative to `.lanes/frame-field-access`:
 
 | Build | BG install |
 | --- | --- |
 | `build/core-frame-release` | `build/compaction-optimisation/bg-release-install` |
+| `build/core-frame-debug` | `build/compaction-optimisation/bg-debug-install` |
 | `build/compaction-optimisation/frame-release` | `build/compaction-optimisation/bg-release-install` |
 | `build/compaction-optimisation/frame-debug-asan` | `build/compaction-optimisation/bg-debug-install` |
 
@@ -108,21 +128,20 @@ recovery archive and retirement manifest are under
 [schema_foundation_proposal.md](schema_foundation_proposal.md) defines the
 schema migration and extension boundary.
 
-[compaction_proposal.md](compaction_proposal.md) records the current maintenance
-discussion. Mutations collect cheap statistics; storage plans and allocates
-after final occupancy is known at invocation end, before downstream consumers
-run. Packing can proceed in both directions while preserving current row order.
-Algorithms retain previous contributions; removed IDs and copied keys do not
-pin column slots. Manual compaction is implemented. BG provides invocation-end
-callback registration with the agreed scratch lifetime and pending-evaluation
-rules. Frame registration and an automatic compaction policy remain unimplemented.
+[compaction_proposal.md](compaction_proposal.md) records explicit compaction and
+the requirements for future automatic scheduling. Packing can proceed in both
+directions while preserving current row order. Algorithms retain previous
+contributions; removed IDs and copied keys do not pin column slots. Automatic
+scheduling is deferred until representative BG pipelines demonstrate enough
+consumer savings. BG provides invocation-end callback registration with the
+agreed scratch lifetime and pending-evaluation rules.
 
 - `Frame<Schema>` and `Column<T>` are scalar declarations. `TSF<Schema>` and
   `TSC<T>` add row identity and current-cycle changes.
 - Concrete and runtime schemas use one native layout and mutation implementation,
   one view implementation, and one Arrow frame implementation.
 - Runtime schemas resolve during wiring and remain fixed for the graph lifetime.
-- Current cells are nullable `bool`, `i64`, and `double`. All columns are present;
+- Current cells are nullable `bool`, `i64`, `double`, `string`, and `symbol`. All columns are present;
   optional schema fields are rejected independently of nullable cells.
 - Internal recycled 32-bit row IDs are separate from user index columns.
   Removal reserves an ID through its removal cycle. Physical slots can be
@@ -193,21 +212,21 @@ which stores one `FrameSnapshotOwner*`. Owners retain their actual schema,
 columns, allocator, and matching BG allocation owner.
 
 Generic `ColumnView`, `Column`, TSC and TSF inputs/outputs, and scalar factories
-use the existing numeric implementations. Generic inputs expose actual schemas,
+share the concrete cell implementations. Generic inputs expose actual schemas,
 columns by name or ordinal, and checked typed access. Time-series cells use row
 IDs; scalar-view cells use positions. Runtime-schema writers accept borrowed
 scalar spans and concrete Row/RowPatch arguments. Concrete row adapters pass
 native nullable-cell pointers without scalar serialization. Generic scalar
-arguments use temporary numeric staging and checked scalar reads.
+arguments use temporary cell staging and checked scalar reads.
 Exact concrete Row/RowPatch operations use compile-time pointer arrays and
 perform no schema registration or field-name lookup.
 
 Row/RowPatch fields declared with a scalar variable accept borrowed `Scalar<>`
-values. These fields use `optional<Scalar<>>`; concrete numeric
-fields retain `optional<T>`. Generic row adapters validate the complete source
+values. These fields use `optional<Scalar<>>`; concrete fields use
+`optional<scalar_storage_traits<T>::value_type>`. Generic row adapters validate the complete source
 schema against the resolved output schema using BG type matching, then decode
-present borrowed handles into temporary numeric values before mutation.
-Numeric staging remains alive through the native mutation call.
+present borrowed handles into temporary read values before mutation.
+Cell staging remains alive through the native mutation call.
 Constrained and repeated variables retain their normal matching rules.
 Tables never retain the argument handles. Null and omitted patch behavior
 follows the selected Row/RowPatch rules above.
@@ -765,8 +784,8 @@ nulls. Native validity searches inspect bitmap words within the batch bounds.
 Node APIs and borrowed versus owning export contracts are unchanged.
 See the [row traversal contract](README.md#values-and-rows) and
 [selection metadata decision](docs/decisions/selected-row-span-metadata.md).
-Compaction, capacity trimming, and reducing fragmented Arrow object overhead
-remain later work.
+Explicit compaction is implemented. Automatic scheduling is deferred; capacity
+trimming and reducing fragmented Arrow object overhead remain later work.
 
 The Boolean foundation uses packed value bits with separate nullable validity.
 It covers `Column<bool>`, frame fields, TSC/TSF storage and deltas, literals,
@@ -821,7 +840,7 @@ The active frame lane uses main's shared schema metadata and process-lifetime
 ownership of registered type metadata.
 `bg::frame::key_metadata<...>()` records an ordered list of key column names in
 schema metadata under `bg.frame.key`; concrete and runtime schemas use the same
-representation. Key fields must have `i64` cell types; `double` remains
+representation. Key fields must have `i64`, `string`, or `symbol` cell types; `double` remains
 supported for non-key columns. Schema validation checks key names and types across inherited
 schemas, rejects changes to inherited keys, and requires a keyed parameter to
 match the argument's key metadata. An unkeyed parameter can match an otherwise
@@ -871,7 +890,7 @@ Ordinary node and scalar values keep normal destruction. The frame lane uses
 typed column runtime statics, FrameView scalar and mixed-view runtimes, and
 Arrow runtime cache owner.
 
-Previous-value subscriptions, strings and symbols, compaction, capacity
-trimming, and delta transport remain later work. Previous-cell capture, if
+Previous-value subscriptions, text Arrow adapters, capacity trimming, and delta
+transport remain later work. Automatic compaction is deferred. Previous-cell capture, if
 needed, is requested from the owning storage through ColumnSource; graph
 back-propagation is not required. These features are not implemented.

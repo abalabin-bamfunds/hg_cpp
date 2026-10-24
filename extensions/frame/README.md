@@ -1,7 +1,7 @@
 # BG frame extension
 
-`bg_frame` is a separate BG extension. It adds nullable Boolean and numeric
-columns, frames with BG schemas, and native incremental column storage through
+`bg_frame` is a separate BG extension. It adds nullable Boolean, numeric, string,
+and symbol columns, frames with BG schemas, and native incremental column storage through
 BG's public type, node, and runtime extension points.
 
 - `bg::frame::Column<bg::i64>` is an immutable owning scalar.
@@ -12,15 +12,18 @@ BG's public type, node, and runtime extension points.
   row identity and report current-cycle row changes. `TSF` exposes fixed-schema
   columns as child `TSC` values.
 
-The current cell types are `bool`, `i64`, and `double`. `TSC` and `TSF` use
+The current cell types are `bool`, `i64`, `double`, `string`, and `symbol`. `TSC` and `TSF` use
 ordinary outputs by default. Both support borrowed views; `TSC` and `TSF` also
 support computed outputs. `TSF` supports borrowed projections and row filters. The
-optional Arrow adapter supports scalar and frame imports and exports for these
-cell types. Boolean values use packed bits in native storage and Arrow Boolean
+optional Arrow adapter supports scalar and frame imports and exports for
+`bool`, `i64`, and `double`; text adapters are not implemented. Boolean values
+use packed bits in native storage and Arrow Boolean
 arrays; validity remains separate. Gather-copy export produces one dense chunk.
 Matching `i64` and `double` operands support arithmetic and comparisons through
 deferred expressions and block evaluation. Arithmetic includes explicit column
 conversion; comparisons return nullable `TSC<bool>` and propagate nulls.
+String and symbol operands support equality and inequality with matching cell
+types. Text conversion and string-producing expression kernels are not implemented.
 Previous-cell subscriptions are later work.
 
 `frame::view` is an output option owned by this extension. Use it with
@@ -42,11 +45,13 @@ rebuild after missed updates.
 Native rows use physical slot order. New rows reuse free slots; insertion order
 is not guaranteed after removals. A physical slot can be reused during the
 removal cycle while the removed row ID remains reserved. Physical slot mappings
-retain storage based on peak occupancy. Compaction and capacity trimming are
-not implemented yet.
+retain storage based on peak occupancy. Storage provides explicit compaction
+that preserves row order, identity, values, and deltas. Automatic compaction is
+deferred pending representative pipeline measurements. Capacity trimming is
+not implemented.
 
 Schemas can declare an ordered key with `bg::frame::key_metadata<...>()`.
-Key columns must have `i64` cells; `double` columns remain supported as data.
+Key columns must have `i64`, `string`, or `symbol` cells. Floating-point key columns are rejected.
 Native TSF storage rejects duplicate live keys and changes to key columns. Key
 values may be null, including in composite keys. A removed row's key remains
 available through its removal cycle; removing and re-adding the same key in one
@@ -56,11 +61,21 @@ imports reject duplicate key tuples. Nulls compare as key components, so
 duplicate all-null composite keys are rejected.
 
 A null cell is a present row with no value. ID-based cell reads return
-`std::optional<T>` and throw for a missing row. Scalar batches contain cells
+`std::optional<scalar_storage_traits<T>::value_type>` and throw for a missing row. Scalar batches contain cells
 and validity; native time-series batches additionally contain aligned IDs.
 Raw values at null positions must not be read.
 Every column allows null cells. `SchemaField::optional` describes an absent
 column; frame schemas require all columns and reject that flag.
+
+String and symbol storage uses BG's scalar storage traits. A string cell stores
+one 64-bit shared handle and reads as `std::string_view`; a symbol cell stores
+and reads an interned `symbol`. Native batches contain stored handles, and
+`value_at()` returns the scalar read value. Null validity is separate from an
+empty string or a default symbol. A default symbol and an interned empty symbol
+remain distinct values. Snapshot copies retain string payloads; replacement
+allocates a new payload before releasing the previous one. Compaction relocates
+handles without retaining or releasing their payloads.
+
 Native positional cell lookup scans live slots. A filter maintains its selected
 row sequence in source order; downstream traversal reads that sequence.
 The sequence reuses an initialized prefix of row-ID storage across rebuilds.
@@ -115,6 +130,9 @@ auto quotes = ScalarValue<Frame<Quotes>>::from_literal({
     {"bid", {1.0, NULL_VALUE}},
     {"ask", {1.5, 2.5}},
 });
+
+auto names = ScalarValue<Column<string>>::from_literal({"IBM", "", NULL_VALUE});
+auto venues = ScalarValue<Column<symbol>>::from_literal({symbol{"NYSE"}, symbol{}, NULL_VALUE});
 ```
 
 For a runtime schema, pass its scalar runtime to
@@ -160,8 +178,8 @@ Entries apply in written order. At the root of a TSF literal,
 `literal::SKIP` leaves the frame unchanged and `literal::INVALID` invalidates
 it. An empty literal validates an invalid output as an empty frame; on an
 already valid output it does nothing. Key cells may be null, including
-components of a composite key. Literal cells support `bool`, `i64`, and
-`double` and must match the schema types.
+components of a composite key. Literal cells support the current cell types
+and must match the schema types.
 
 Nodes can also call `Out<TSF<Schema>>::apply()` with one
 `literal::TimeSeriesLiteral` during evaluation. Literal updates use the actual
@@ -443,9 +461,11 @@ graph arguments supplied by those outputs use the supported path.
 These APIs are extension-facing. Graph authors use BG operators and `Expression`.
 
 `ColumnBlockFunction<RESULT, ARGS...>` declares a unary or binary block callback.
-The result and each operand independently select a supported cell type. An
+Each operand selects a supported cell type. Results support `bool`, `i64`,
+`double`, and `symbol`; string-producing callbacks are not implemented. An
 operand is a `ColumnOperandBatch<T>` containing an aligned column batch or a
-native scalar broadcast. The callback receives a row-ID span and writes a
+scalar read value broadcast. `value(position)` returns the scalar read value
+for either representation. The callback receives a row-ID span and writes a
 `MutableColumnBatch<RESULT>` supplied by the evaluator. It must set every output
 validity bit and write every valid result. The callback defines null behavior.
 Before reading a column operand with `value(position)`, the callback must check
@@ -482,8 +502,8 @@ domain; scalar-only expressions fail during wiring.
 `TS<Bundle<PARAMETERS>>` snapshot. Wiring fixes both schemas, callback adapters,
 and temporary buffer layouts. Evaluation reads current inputs, selects changed
 rows, executes aligned blocks, and publishes the typed result. The compiler
-recognises the TSB/callback contract without an operator list. Supported cells
-remain `i64` and `double`; conversion requires an explicit operator.
+recognises the TSB/callback contract without an operator list. Conversion
+requires an explicit operator.
 
 ## TSF input/output surface
 
@@ -557,8 +577,11 @@ Rebinding to a different domain clears computed cells and reports the old rows
 removed and the new rows added. See the
 [storage decision](docs/decisions/computed-column-storage.md).
 
-Use `set<Name>(id, value)` with a numeric value, `std::optional<T>`, or
-`std::nullopt`. `set_batch<Name>(ids, batch)` writes a `ColumnBatch<T>` after
+Use `set<Name>(id, value)` to write a cell or clear it with `std::nullopt`.
+For string cells, specify the semantic type and pass a `std::string_view`, for
+example `output.set<"label", string>(id, text)`. Runtime-schema setters use
+`output.set<string>(name, id, text)` or `output.set<string>(index, id, text)`.
+`set_batch<Name>(ids, batch)` writes a `ColumnBatch<T>` after
 validating its cell type, row IDs, length, and value-buffer presence. An all-null
 batch can use a null value pointer. Batch publication occurs once. Accepted
 writes publish even when the cell value is equal, following ordinary time-series
@@ -683,15 +706,15 @@ Column family and borrows the actual source representation.
 Time-series cells use row IDs; scalar-view cells use positions.
 
 A C++ schema field declared as `Field<SCALAR>` exposes `ColumnView<>` through
-`value.columns().field`. Use its checked `view<T>()` operation. The numeric
-`In<TSF>::cell<Index>` convenience requires a known numeric field; generic
+`value.columns().field`. Use its checked `view<T>()` operation. The positional
+`In<TSF>::cell<Index>` convenience requires a known cell type; generic
 fields use `column(name).input<T>().cell(id)`.
 
 `select_column<"bid">(wp<TSF<SCHEMA>>)` resolves the field ordinal from the actual
 wiring-point schema and returns `wp<TSC<SCALAR>>` with the resolved child type.
 
-Generic columns use the same `i64` and `double` storage and batch operations as
-concrete declarations. Runtime schemas resolve during wiring and remain fixed
+Generic columns use the same storage and batch operations as concrete
+declarations. Runtime schemas resolve during wiring and remain fixed
 for the graph lifetime.
 
 `Out<TSF<SCHEMA>>::schema()` exposes the resolved output schema. Generic writers
@@ -711,11 +734,11 @@ maps fields into output schema order. All argument validation runs before
 mutation.
 
 A field declared with `SCALAR` or another `ScalarVariable` accepts a borrowed
-`Scalar<>` in Row/RowPatch arguments. Concrete numeric fields retain typed
+`Scalar<>` in Row/RowPatch arguments. Concrete fields retain typed
 nullable values. The source schema's variable constraints and repeated-variable
 bindings must match the resolved output fields, including omitted patch fields.
-Each present handle must have the target cell type. Mutation copies its numeric
-value into table storage; the table retains no argument handles.
+Each present handle must have the target cell type. Mutation constructs stored
+cells through BG's scalar storage traits.
 
 ```cpp
 template <template <typename, auto...> typename Field> struct GenericQuote {

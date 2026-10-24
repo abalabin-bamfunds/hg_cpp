@@ -1,11 +1,11 @@
 # Compaction proposal
 
-Status: manual compaction mechanics and coverage are implemented. BG's
-invocation-end callback API is available in this lane. Frame storage
-registration and scheduling, and the automatic compaction policy, remain
-unimplemented.
+Status: explicit compaction and its tests are implemented. Automatic scheduling
+is deferred until representative BG pipelines demonstrate enough consumer
+savings to justify maintenance. BG's invocation-end callback API is available;
+frame storage does not register automatic maintenance.
 
-Agreed direction: mutations collect cheap statistics; storage assesses final
+For future automatic scheduling, mutations collect cheap statistics; storage assesses final
 occupancy after mutation and plans and allocates only when justified, at the
 end of the owning node invocation before downstream consumers run.
 Movement can pack rows toward either end or the middle while preserving current
@@ -231,5 +231,5 @@ IDs or discard removal-cycle information.
 Implemented mechanics: storage-owned manual compaction preserves row order,
 supports movement in either direction, and uses revision-checked cached proofs.
 The BG invocation-end callback API is available for storage registration.
-Remaining work connects frame storage to that API and selects an automatic
-decision policy using measured costs.
+Automatic scheduling remains deferred. The [benchmark](benchmarks/compaction.md)
+records the maintenance and consumer costs measured so far.
