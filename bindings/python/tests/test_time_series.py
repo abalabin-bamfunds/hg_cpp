@@ -450,7 +450,7 @@ def test_delay_retains_target_only_updates_from_a_contained_reference():
         delayed = bg.operators.delay(select_target(bind, value), timedelta(microseconds=2))
         return read(delayed)
 
-    assert bg.test_graph(graph, [True, None, None], ["first", "second", "third"]) == [
+    assert bg.run_graph(graph, [True, None, None], ["first", "second", "third"]) == [
         None,
         None,
         "first",
