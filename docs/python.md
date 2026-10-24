@@ -31,7 +31,7 @@ with `bg::python`.
 ## Graph authoring
 
 The package exports time-series annotations, node and graph decorators,
-`test_graph`, engine operators, `Symbol`, and `symbol`.
+`run_graph`, engine operators, `Symbol`, and `symbol`.
 
 ```python
 import bg
@@ -49,7 +49,7 @@ def add(value: bg.TS[int], amount: int = 2) -> bg.TS[int]:
 def example() -> bg.TS[int]:
     return add(source())
 
-assert bg.test_graph(example) == [3]
+assert bg.run_graph(example) == [3]
 ```
 
 Use standard `typing.TypeVar` declarations for generic graph signatures. An
@@ -79,7 +79,7 @@ independent. `bg.TimeSeries` is a typing marker for the TypeVar bound; it is not
 a value annotation.
 
 Specialize a generic graph with its fully resolved input types. The resulting
-graph definition can be called from normal wiring and passed to `test_graph`:
+graph definition can be called from normal wiring and passed to `run_graph`:
 
 ```python
 specialized = graph[bg.TS[int], bg.TSD[int, bg.TS[str]]]
@@ -199,12 +199,15 @@ receives a wiring-time collection. A node receives a materialized input view.
 A prebuilt TSL or TSB supplied with the variadic parameter's name binds as the
 complete collection.
 
-`test_graph` accepts one update sequence for every graph parameter and wires
-each sequence according to the parameter's declared time-series type. Plain
-scalar annotations accept this time-series form. `Scalar[T]` parameters require
-scalar arguments during graph construction; call them from a graph function to
-test that form. Each sequence element is a value or `None`; `None` skips that
-input's update for the cycle.
+`run_graph` accepts normal positional and named graph arguments. Top-level
+parameter types must be concrete; specialize a generic graph before running it.
+`Scalar[T]` parameters receive wiring-time values. For a time series parameter,
+an argument matching its declared value type supplies one initial value through
+normal constant lifting. Otherwise, a sequence supplies updates one microsecond
+apart. Plain scalar annotations support both forms. Use `ticks(sequence)` when a sequence also
+matches one value, including an empty collection. Each update is a value or
+`None`; `None` skips that input's update for the cycle.
+
 Collection annotations interpret sequence elements as deltas: TSD uses key-to-
 item mappings with `REMOVE` for key removal; TSS uses sets or `SetDelta`, with
 `Removed(value)` marking removals; TSL uses index-to-item mappings; TSB uses
@@ -213,9 +216,13 @@ type. `INVALID` invalidates TS, TSL, or TSB inputs; TSS and TSD do not support
 invalidation. A scalar collection such as `TS[dict[int, str]]` remains one
 scalar value and is not interpreted as a TSD delta. Generic graph definitions
 require explicit, fully resolved input types, for example
-`test_graph(graph[bg.TS[int], bg.TSD[int, bg.TS[str]]], ...)`.
+`run_graph(graph[bg.TS[int], bg.TSD[int, bg.TS[str]]], ...)`.
 The graph can return `TS`, `TSS`, `TSL`, `TSD`, or `TSB`, including nested
-collections. The result has one entry per cycle. A valid published tick becomes
+collections. `GraphRunResult` stores timestamped output events. Its `events` contain
+`(time, value)` pairs; `event_count` reports their count. `start_time` defines
+the origin of dense indexing.
+Length, indexing, iteration, and comparisons expose one entry per microsecond
+position without allocating skipped positions. A valid published tick becomes
 a scalar value or collection delta in the same format as input deltas; TSS
 results use `SetDelta`. Skipped and invalid root ticks become `None`.
 Invalidated collection items use `INVALID` and removed TSD keys use `REMOVE`.
@@ -225,7 +232,7 @@ Invalidated collection items use `INVALID` and removed TSD keys use `REMOVE`.
 def identity(values: bg.TSD[int, bg.TS[str]]) -> bg.TSD[int, bg.TS[str]]:
     return values
 
-assert bg.test_graph(identity, [{1: "first"}, {1: bg.REMOVE}, None]) == [
+assert bg.run_graph(identity, [{1: "first"}, {1: bg.REMOVE}, None]) == [
     {1: "first"}, {1: bg.REMOVE}, None,
 ]
 ```
@@ -233,16 +240,17 @@ assert bg.test_graph(identity, [{1: "first"}, {1: bg.REMOVE}, None]) == [
 `run_graph` wires a graph with normal Python arguments and selects its engine
 through `engine=bg.EvaluationEngine.simulation` or
 `engine=bg.EvaluationEngine.realtime`. Simulation is the default. Scalar
-arguments become wiring-time constants. Use `test_graph` when the graph needs
-update sequences or its output values.
+arguments follow the declared parameter types. Returned output is captured by
+default. Pass `capture_output=False` to omit the capture sink and storage.
+Outputless graphs and runs with capture disabled return `None`.
 
 `start_time` sets the first evaluation time using a timezone-naive local Python
 `datetime`, as returned by `EvaluationClock`. When omitted, the defaults follow
 [direct execution](graph-wiring.md#direct-execution).
 `stop_time` accepts a timezone-naive `datetime`; `run_time` accepts a `timedelta`.
 Both follow the shared [run limits](evaluation.md#run-limits).
-`test_graph` also accepts these options and `engine`; it requires simulation and
-keeps result positions relative to the configured start time.
+Input sequences and output capture support both engines. Result positions are
+relative to the run's start time.
 
 Realtime execution waits for work until a run limit or `stop_token` ends the run.
 Create a `bg.StopSource`, pass `source.get_token()` as `stop_token`, and call
@@ -270,7 +278,7 @@ stop was requested. A token retains its shared stop state after its source is
 destroyed. Simulation uses its normal termination condition and ignores a stop
 token.
 
-On Python's main thread, `run_graph` and `test_graph` process Python signals
+On Python's main thread, `run_graph` processes Python signals
 through a [periodic callback](evaluation.md#periodic-callbacks). Ctrl+C raises
 `KeyboardInterrupt` after graph cleanup. Realtime execution also checks during
 idle and future-start waits. Checks run approximately every 50 milliseconds,
@@ -313,7 +321,7 @@ and subscription services require an output. Calling a declaration wires a
 service request and returns its output wiring point, or `None` for a sink.
 
 Register graph implementations with `ServiceCatalogue.register_impl`, then
-pass the catalogue to `run_graph` or `test_graph`:
+pass the catalogue to `run_graph`:
 
 ```python
 @bg.reference_service
@@ -335,7 +343,7 @@ catalogue.register_impl(clock, clock_implementation)
 def client() -> bg.TS[int]:
     return clock()
 
-assert bg.test_graph(client, catalogue=catalogue) == [42]
+assert bg.run_graph(client, catalogue=catalogue) == [42]
 ```
 
 For a request/reply service, the implementation graph receives the request
@@ -612,7 +620,7 @@ looks up each value. A dictionary output still uses an ordinary Python `dict`.
 
 A callback returns an output delta. Returning `None` requests no output change.
 Sink nodes have no output annotation and must return `None`. An exception
-raised by a callback propagates from `test_graph`. Each test run constructs and
+raised by a callback propagates from `run_graph`. Each test run constructs and
 destroys a new runtime graph.
 
 An input view exposes `valid`, `modified`, `last_modified_time`, `value`, and
@@ -744,7 +752,7 @@ def values(count: int, q: bg.Queue = None) -> bg.TS[tuple[int, ...]]:
 def example() -> bg.TS[tuple[int, ...]]:
     return values(3)
 
-assert bg.test_graph(example) == [(0, 1, 2)]
+assert bg.run_graph(example) == [(0, 1, 2)]
 ```
 
 The default mode is `bg.QueueMode.standard`. `bg.QueueMode.elide` and

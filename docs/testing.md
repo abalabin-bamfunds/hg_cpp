@@ -4,7 +4,7 @@
 
 The test suite verifies graph correctness, supported interfaces, and performance
 constraints. Node and graph behavior tests construct graph code through public
-node and graph APIs and use `test_graph`. Tests for engine invariants use the
+node and graph APIs and use `run_graph`. Tests for engine invariants use the
 engine API that owns the invariant.
 
 ## Coverage model
@@ -120,10 +120,11 @@ this review. Coverage tags identify tested combinations; assertions must
 establish the claimed behavior. A test that claims independent behavior across
 items or graph instances must exercise and observe more than one.
 
-`test_graph` accepts a wiring template or a graph function. Each input range
-defines updates by outer cycle. An empty `std::optional` skips its cycle. The
-result has one position per cycle and uses an empty position when the output did
-not update.
+`run_graph` accepts a wiring template or a graph function. Arguments follow the
+[normal execution rules](graph-wiring.md#direct-execution). A sequence interpreted
+as ticks defines updates one microsecond apart. An empty `std::optional` skips
+its cycle. Captured output supports one position per
+microsecond and uses an empty position when the output did not update.
 
 Pass shared [graph run options](graph-wiring.md#direct-execution) immediately
 after the graph to configure [graph services](services.md) and profiling:
@@ -133,29 +134,33 @@ auto options = GraphRunOptions{
     .services = &catalogue,
     .recorder = profiler.recorder(),
 };
-auto actual = test_graph(graph, options, {1, 2}, {10, 20});
+auto actual = run_graph(graph, options, {1, 2}, {10, 20});
 ```
 
 Omit the options argument to use the defaults:
 
 ```cpp
-auto actual = test_graph(graph, {1, 2}, {10, 20});
+auto actual = run_graph(graph, {1, 2}, {10, 20});
 ```
 
-`test_graph` requires `EvaluationEngine::simulation` and rejects realtime
-selection. `GraphRunOptions::start_time` sets the first input time and the origin
-of captured result positions. Input positions remain one microsecond apart.
-The [run limits](evaluation.md#run-limits) bound evaluation of the input sequences; result positions for unevaluated
-inputs remain empty.
+Tests use `EvaluationEngine::simulation` by default. Input sequences and
+output capture also support realtime execution. `GraphRunOptions::start_time`
+sets the first input time and the origin of captured result positions.
+Input positions remain one microsecond apart.
+The [run limits](evaluation.md#run-limits) bound evaluation of the input
+sequences; result positions for unevaluated inputs remain empty.
 Defaults and shared options follow [direct execution](graph-wiring.md#direct-execution).
 
-Literal input sequences use the [output literal syntax](node-api.md#output-parameters).
-Each sequence element describes one cycle's delta. Source nodes borrow the
-sequences for the synchronous test run and call `Out::apply()` for each tick.
+Explicit `GraphRunInput` and `GraphRunLiteralInput` descriptors always describe
+tick sequences. `input<TS_T>(sequence)` adds a concrete type to a literal
+descriptor. Literal sequences use the
+[output literal syntax](node-api.md#output-parameters). Each sequence element
+describes one cycle's delta. Source nodes borrow the
+sequences for the synchronous run and call `Out::apply()` for each tick.
 Use `literal::SKIP` for a skipped cycle:
 
 ```cpp
-auto actual = test_graph(dictionary_sum, {
+auto actual = run_graph(dictionary_sum, {
     {{"a", 10}, {"b", 20}},
     {{"b", literal::REMOVE}},
     literal::SKIP,
@@ -164,23 +169,26 @@ auto actual = test_graph(dictionary_sum, {
 CHECK(actual.equals<i64>({30, 10, std::nullopt, 11}));
 ```
 
-`{}` supplies no ticks; `{{}}` supplies one empty collection tick.
+An empty collection matching the parameter type supplies one initial empty
+collection. Use `ticks({})` to supply no ticks explicitly.
 
-For a wiring template, input sequences bind positionally. Positional graph
-calls can omit trailing parameters; named calls can omit any parameter with a
-[wiring default](graph-wiring.md#default-arguments).
+C++ runner arguments bind positionally. Omit trailing parameters that have a
+[wiring default](graph-wiring.md#default-arguments). Python runner arguments
+use normal positional and named binding.
 
 Literal inputs require a non-variadic parameter list. Concrete time series parameters and plain node
 parameters supply input types. A plain node parameter supplies its time series alternative; its value
 type must be resolved. Input types come from the signature, so empty and skip-only sequences work too. Use
 `input<TSD<string, TS<i64>>>({...})` for an unresolved input declaration, or
 `input(runtime_type, {...})` to supply a time series runtime type explicitly.
-Graph functions with non-collection scalar inputs preserve their existing
-brace-input C++ element conversions and `std::nullopt` support.
-Raw brace calls support one through four inputs. Pass `TestGraphLiteralInput`
-descriptors or a contiguous range of descriptors for more inputs. Construct
-span-backed sequences with `TestGraphLiteralInput(ticks)`. Construct
-descriptors from temporary values in the `test_graph` call so their sources and
+Graph functions with non-collection scalar inputs accept C++ element
+conversions and `std::nullopt` in brace inputs.
+Raw brace calls support one through four inputs when every argument is a
+brace sequence. Use `ticks({...})` or a typed range to mix a history with
+ordinary scalar arguments. Pass `GraphRunLiteralInput` descriptors or a
+contiguous range of descriptors for more inputs. Construct
+span-backed sequences with `GraphRunLiteralInput(ticks)`. Construct
+descriptors from temporary values in the `run_graph` call so their sources and
 nested initializer lists remain alive throughout evaluation.
 
 Result capture supports `TS`, `TSL`, `TSS`, `TSD`, and `TSB`, including nested
@@ -188,6 +196,10 @@ collections. A result owns the serialized deltas in a shared buffer chain.
 Built-in comparisons read borrowed payloads. Indexed scalar access returns an
 owning `ScalarValue<T>` copy in `std::optional`; call `.view()` to use the
 scalar interface. The copied value can outlive the result.
+
+`events()` returns captured event times; `event_count()` reports their count.
+`visit_event(index, visitor)` calls `visitor(time, type, valid, reader)` for one
+event. Event indexing does not enumerate empty microsecond positions.
 
 `visit_tick(index, visitor)` reads a captured tick without copying its scalar
 values. It calls `visitor(type, valid, reader)` after the root header and returns
@@ -222,7 +234,7 @@ Compare collection output deltas with the same literal syntax used for inputs:
 
 ```cpp
 auto identity = [](wp<TSD<string, TS<i64>>> input) { return input; };
-auto actual = test_graph(identity, {
+auto actual = run_graph(identity, {
     {{"a", 10}, {"b", 20}},
     {{"b", literal::REMOVE}},
     literal::SKIP,
@@ -237,8 +249,8 @@ CHECK(actual.equals({
 Each expected tick describes the complete delta for that cycle. Set item order
 and collection entry order do not affect comparison. Use `literal::SKIP` for no
 publication, `{}` for a published empty collection delta, and `literal::INVALID`
-for invalidation. Scalar `equals<T>()` and indexed scalar access retain their
-existing `std::nullopt` behavior for skipped and invalidated cycles.
+for invalidation. Scalar `equals<T>()` and indexed scalar access use
+`std::nullopt` for skipped and invalidated cycles.
 
 `test_wiring` creates a `GraphWiring` and `WiringContext` for a `void` callable.
 Use it when the behavior under test ends during wiring and does not require
@@ -422,16 +434,18 @@ graph compilation or evaluation.
 
 ### Evaluation
 
-- `test_graph` input sequencing through brace literals, typed ranges, and runtime-selected types;
+- `run_graph` input sequencing through brace literals, typed ranges, and runtime-selected types;
   scalar construction, nested collection deltas, removal, skip, invalidation, and revalidation;
   plain callable and aggregate parameter inference, explicit generic input types, cycle positions,
-  configured start times, realtime rejection,
+  configured start times, realtime input scheduling,
   services, profiling, and existing scalar input compatibility
 - `run_graph` default and explicit simulation selection, realtime selection, engine-specific default start times,
-  explicit start times, realtime stop-token forwarding, and services, global state, and profiling in both modes
+  explicit start times, realtime stop-token forwarding, and services, global state, and profiling in both modes;
+  ordinary scalar arguments, mixed initial values and update sequences, ambiguous empty collections,
+  concrete top-level signatures, outputless graphs, disabled capture, and sparse timestamped output
 - absolute and duration run limits, exclusive boundaries, combined limits, invalid bounds and overflow,
   idle realtime termination, exact-timer catchup, queue closure, and profiled execution
-- `test_graph` output capture and literal comparison for scalar and nested collection deltas;
+- `run_graph` output capture and literal comparison for scalar and nested collection deltas;
   scalar ownership after graph destruction, complete delta comparison, entry order independence,
   empty ticks, skipped cycles, invalidation, revalidation, and removal;
   provider scalar expectations, extension comparison handlers, and sentinel identity and argument preservation
@@ -700,7 +714,7 @@ For each reusable node and graph, test:
   empty and omitted policy defaults, lifecycle callback registration,
   optional and all-valid gating, and invalid declarations
 - wiring failures preserving Python exception identity, type, traceback, and context notes
-- runner engine selection, default and explicit start times, simulation-only test capture,
+- runner engine selection, default and explicit start times, initial inputs and sparse output capture,
   profiling, explicit cancellation, stop-state lifetime, and GIL release while waiting
 - Python signal processing during idle realtime waits, future-start waits, and native evaluation;
   Ctrl+C cleanup, retained-writer closure, and custom signal-handler behavior

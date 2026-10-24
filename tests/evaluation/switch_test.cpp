@@ -5,7 +5,6 @@
 #include <bg/operators.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/switch.hpp>
-#include <bg/run_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>

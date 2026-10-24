@@ -222,7 +222,7 @@ Successful `finalize()` closes wiring. Repeating it is harmless;
 construction after it is an error. A failed completion stops construction.
 `complete_pending_wiring()` is an engine operation that completes current work
 while permitting later wiring. Compilation requires a successful `finalize()`
-and does not construct nodes. `run_graph` and `test_graph` complete wiring
+and does not construct nodes. `run_graph` completes wiring
 automatically.
 
 `GraphWiring::late_bound_wiring(type)` creates a typed deferred point for a
@@ -629,8 +629,39 @@ without a timeout callback.
 `periodic_callback` configures an optional [periodic callback](evaluation.md#periodic-callbacks)
 for either engine.
 
-[`testing::test_graph`](testing.md#test-layout) accepts the same options
-immediately after the graph and requires simulation execution.
+Arguments follow the graph's concrete parameter types. Scalar parameters bind
+at wiring time. A value matching a time series parameter supplies one initial
+value through normal constant lifting for scalar time series. Otherwise, a
+sequence supplies updates one microsecond apart, starting
+at the run's start time. Use `ticks(sequence)` to select updates explicitly when
+a sequence also matches one value, including an empty collection. Input histories
+produce ordinary time series; they do not satisfy a constant-input requirement.
+
+| Parameter | Argument | Interpretation |
+| --- | --- | --- |
+| `TS<i64>` | `42` | One initial value |
+| `TS<i64>` | `{1, 2, 3}` | Three ticks |
+| `TS<List<i64>>` | `{1, 2, 3}` | One initial list |
+| `TS<List<i64>>` | `{{1, 2}, {3, 4}}` | Two list ticks |
+| `TS<List<List<i64>>>` | `{{}, {}}` | One list containing two empty lists |
+| `TS<List<i64>>` | `ticks({})` | No input ticks |
+
+```cpp
+const auto increment = node([](i64 value) { return value + 1; });
+
+CHECK(run_graph(increment, 41).equals({42}));
+CHECK(run_graph(increment, {1, 2, 3}).equals({2, 3, 4}));
+```
+
+Top-level parameter types must be concrete before argument interpretation.
+Specialize a generic graph before passing it to `run_graph`, or supply an
+explicitly typed [input descriptor](testing.md#test-layout). Its internal node
+and graph calls use normal type resolution.
+
+Returned output is captured by default. Set `GraphRunOptions::capture_output`
+to `false` to omit the capture sink and storage. Outputless graphs require no
+capture. Captured results expose timestamped events and the
+[cycle comparisons](testing.md#test-layout) used by tests.
 
 ## Wiring paths
 

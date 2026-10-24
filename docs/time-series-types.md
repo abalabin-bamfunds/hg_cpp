@@ -158,7 +158,7 @@ only when it changed at `now`; otherwise it writes `SKIP`. Formatting a retained
 record with `tick(type, reader)` reads one complete record from a fork and leaves
 the supplied reader and encoded scalar payloads unchanged. The overload
 `tick(type, valid, reader)` formats a payload whose root header was already
-consumed, as in `TestGraphResult::visit_tick`.
+consumed, as in `GraphRunResult::visit_tick`.
 The fmt wrappers borrow live inputs or retained readers and accept no format
 specifiers.
 

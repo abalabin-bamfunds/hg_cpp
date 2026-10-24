@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/testing/details/test_graph.hpp>
+#include <bg/details/graph_run.hpp>
 
 #include <cstddef>
 #include <functional>
@@ -12,7 +12,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::testing::details {
+namespace bg::details {
 class LiteralMatcher;
 }
 
@@ -20,7 +20,7 @@ namespace bg {
 
 template <typename T = void> class GraphRunResult {
   public:
-    explicit GraphRunResult(testing::details::CapturedValues captured) : captured_{std::move(captured)} {}
+    explicit GraphRunResult(details::CapturedValues captured) : captured_{std::move(captured)} {}
 
     std::size_t size() const noexcept { return captured_.size(); }
     std::size_t event_count() const noexcept { return captured_.events().size(); }
@@ -154,7 +154,15 @@ template <typename T = void> class GraphRunResult {
         return present;
     }
 
-    testing::details::CapturedValues captured_;
+    details::CapturedValues captured_;
 };
+
+template <typename T>
+bool GraphRunResult<T>::equals(std::initializer_list<literal::TimeSeriesLiteral> expected) const
+    requires std::same_as<T, void>
+{
+    return details::LiteralMatcher::matches_sequence(
+        captured_, captured_.type(), std::span{expected.begin(), expected.size()});
+}
 
 } // namespace bg

@@ -20,8 +20,7 @@
 #include <bg/realtime_evaluation_engine.hpp>
 #include <bg/wall_clock.hpp>
 #include <bg/graph_run_options.hpp>
-#include <bg/testing/test_graph_input.hpp>
-#include <bg/testing/test_graph_literal_input.hpp>
+#include <bg/graph_run_input.hpp>
 #include <bg/testing/time_series_tick_comparison.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
@@ -46,41 +45,11 @@
 #include <utility>
 #include <vector>
 
-namespace bg::testing::details {
+namespace bg::details {
 
 struct SourceState {
     std::size_t next{};
     EvaluationTime::duration::rep start_time{};
-};
-
-struct Source {
-    static constexpr bool uses_timed_scheduling = true;
-
-    Scalar<List<SCALAR>> values;
-    Scalar<List<EvaluationTime>> times;
-    State<SourceState> state;
-    Out<TS<SCALAR>> output;
-
-    void start(EvaluationContext *context) const {
-        state->start_time = context->evaluation_time().time_since_epoch().count();
-        publish(context);
-    }
-    void evaluate(EvaluationContext *context) const { publish(context); }
-
-  private:
-    void publish(EvaluationContext *context) const {
-        if (state->next < times.size() &&
-            EvaluationTime{EvaluationTime::duration{state->start_time} +
-                           times[state->next].value().time_since_epoch()} == context->evaluation_time()) {
-            output.set_value(values[state->next]);
-            ++state->next;
-        }
-
-        if (state->next < times.size()) {
-            context->schedule_at(EvaluationTime{EvaluationTime::duration{state->start_time} +
-                                                times[state->next].value().time_since_epoch()});
-        }
-    }
 };
 
 struct CapturedValues {
@@ -147,7 +116,7 @@ struct CapturedValues {
             tail->consume(readable.size());
         }
 
-        const auto index = position(time);
+        const auto index = static_cast<std::size_t>((time - start_time_).count());
         if (!events_.empty() && events_.back().time == time) {
             events_.back().bytes = std::move(bytes);
         } else {
@@ -165,17 +134,10 @@ struct CapturedValues {
     const util::buffer &event_data(std::size_t index) const { return events_.at(index).bytes; }
 
   private:
-    std::size_t position(EvaluationTime time) {
-        const auto index = static_cast<std::size_t>((time - start_time_).count());
-        return index;
-    }
-
     std::vector<StoredEvent> events_;
     std::size_t size_{};
     std::size_t cycle_count_{};
 };
-
-inline const auto source = node<Source>();
 
 class RuntimeSink {
   public:
@@ -188,7 +150,7 @@ class RuntimeSink {
 
     RuntimeSink(const TimeSeriesType &input_type, CapturedValues &captured)
         : captured_{&captured},
-          signature_{util::symbol{"test_sink"}, {{.name = util::symbol{"input"}, .type = &input_type}}} {}
+          signature_{util::symbol{"graph_run_sink"}, {{.name = util::symbol{"input"}, .type = &input_type}}} {}
 
     const Signature &signature() const noexcept { return signature_; }
     CompiledData compile(const ResolvedSignature &, allocator &) const noexcept { return {captured_}; }
@@ -216,7 +178,7 @@ class RuntimeSink {
 inline void capture_output(WiringPoint output, CapturedValues &captured) {
     const auto &input_type = output.type().dereferenced_type();
     if (input_type.contains_reference()) {
-        throw std::invalid_argument{"test_graph output capture does not support nested time-series references"};
+        throw std::invalid_argument{"run_graph output capture does not support nested time-series references"};
     }
 
     captured.set_type(input_type);
@@ -237,9 +199,9 @@ class RuntimeSource {
     using state_type = SourceState;
     using Invocation = NodeInvocation<CompiledData, state_type>;
 
-    explicit RuntimeSource(const TestGraphInput &input)
+    explicit RuntimeSource(const GraphRunInput &input)
         : input_{input},
-          signature_{util::symbol{"test_source"},
+          signature_{util::symbol{"graph_run_source"},
                      {{.name = util::symbol{"runtime_type"},
                        .type = &input.runtime_type.type(),
                        .accepts_absent_scalar = true}},
@@ -277,7 +239,7 @@ class RuntimeSource {
         }
     }
 
-    TestGraphInput input_;
+    GraphRunInput input_;
     Signature signature_;
 };
 
@@ -291,9 +253,11 @@ class LiteralSource {
     static constexpr bool uses_timed_scheduling = true;
     static constexpr bool deduplicate_wiring = false;
 
-    LiteralSource(const TestGraphLiteralInput &input, const TimeSeriesRuntimeType &runtime_type)
-        : ticks_{input.ticks}, runtime_type_{&runtime_type},
-          signature_{util::symbol{"test_literal_source"}, {}, runtime_type.type()} {}
+    LiteralSource(const GraphRunLiteralInput &input, const TimeSeriesRuntimeType &runtime_type)
+        : ticks_{input.ticks},
+          runtime_type_{&resolve_time_series_runtime_type(
+              runtime_type.type().with_guarantee_limit(TimeSeriesGuarantee::ordinary))},
+          signature_{util::symbol{"graph_run_literal_source"}, {}, runtime_type_->type()} {}
 
     const Signature &signature() const noexcept { return signature_; }
     CompiledData compile(const ResolvedSignature &, allocator &) const noexcept { return {ticks_}; }
@@ -340,69 +304,29 @@ class LiteralSource {
 template <typename T> struct optional_value : std::false_type {};
 template <typename T> struct optional_value<std::optional<T>> : std::true_type {};
 
-template <typename T> struct canonical_tick {
-    using type = canonical_scalar_t<T>;
-};
-
-template <typename T> struct canonical_tick<std::optional<T>> {
-    using type = canonical_scalar_t<T>;
-};
-
-template <typename T> using canonical_tick_t = typename canonical_tick<T>::type;
-
-template <typename TimeSeries> struct test_output_scalar {
+template <typename TimeSeries> struct graph_output_scalar {
     using type = void;
 };
 
-template <typename T, auto... Properties> struct test_output_scalar<TS<T, Properties...>> {
+template <typename T, auto... Properties> struct graph_output_scalar<TS<T, Properties...>> {
     using type = T;
 };
 
 template <typename Target, auto... Properties>
-struct test_output_scalar<REF<Target, Properties...>> : test_output_scalar<Target> {};
+struct graph_output_scalar<REF<Target, Properties...>> : graph_output_scalar<Target> {};
 
-template <typename Result, bool = bg::details::is_typed_wiring_point<Result>> struct test_result_scalar {
+template <typename Result, bool = bg::details::is_typed_wiring_point<Result>> struct graph_result_scalar {
     using type = void;
 };
 
-template <typename Result> struct test_result_scalar<Result, true> {
-    using type = typename test_output_scalar<typename bg::details::typed_wiring_point<Result>::time_series_type>::type;
+template <typename Result> struct graph_result_scalar<Result, true> {
+    using type = typename graph_output_scalar<typename bg::details::typed_wiring_point<Result>::time_series_type>::type;
 };
 
-template <typename Scalar, std::ranges::input_range Range>
-[[nodiscard]] WiringPoint wire_source(const Range &ticks) {
-    using Tick = std::remove_cvref_t<std::ranges::range_value_t<Range>>;
-    using Value = typename bg::scalar_storage_traits<Scalar>::value_type;
-    using StoredValue =
-        std::conditional_t<std::same_as<std::remove_cvref_t<Value>, bool>, std::uint8_t, std::remove_cvref_t<Value>>;
-
-    auto values = std::vector<StoredValue>{};
-    auto times = std::vector<EvaluationTime>{};
-    values.reserve(std::ranges::size(ticks));
-    times.reserve(std::ranges::size(ticks));
-
-    auto index = std::size_t{};
-    for (const auto &tick : ticks) {
-        if constexpr (optional_value<Tick>::value) {
-            if (tick) {
-                values.emplace_back(static_cast<StoredValue>(*tick));
-                times.push_back(EvaluationTime{std::chrono::microseconds{index}});
-            }
-        } else {
-            values.emplace_back(static_cast<StoredValue>(tick));
-            times.push_back(EvaluationTime{std::chrono::microseconds{index}});
-        }
-
-        ++index;
-    }
-
-    return source(ScalarValue<List<Scalar>>{values}, ScalarValue<List<EvaluationTime>>{times});
-}
-
-template <typename Function> struct test_function {
+template <typename Function> struct graph_function {
     using callable = bg::details::callable<std::remove_cvref_t<Function>>;
     using result = std::remove_cvref_t<typename callable::result_type>;
-    using output_scalar = typename test_result_scalar<result>::type;
+    using output_scalar = typename graph_result_scalar<result>::type;
 
     template <std::size_t Index> using argument = std::remove_cvref_t<typename callable::template argument_type<Index>>;
 
@@ -411,6 +335,26 @@ template <typename Function> struct test_function {
 
     template <std::size_t Index> using input_scalar = typename input_time_series<Index>::value_type;
 };
+
+template <typename TimeSeries> struct simple_graph_run_input : std::false_type {};
+
+template <typename Scalar, auto... Properties>
+struct simple_graph_run_input<TS<Scalar, Properties...>>
+    : std::bool_constant<!scalar_declaration_traits<Scalar>::is_collection> {};
+
+template <typename Function> inline constexpr bool graph_run_legacy_optional_input_v = [] {
+    if constexpr (std::derived_from<std::remove_cvref_t<Function>, WiringTemplate>) {
+        return false;
+    } else if constexpr (graph_function<Function>::callable::argument_count == 1) {
+        return simple_graph_run_input<typename graph_function<Function>::template input_time_series<0>>::value;
+    } else {
+        return false;
+    }
+}();
+
+template <typename Tested>
+concept graph_run_target = std::derived_from<std::remove_cvref_t<Tested>, WiringTemplate> ||
+                           requires { typename graph_function<Tested>::callable; };
 
 inline auto finish_graph_run(GraphWiring &wiring, CapturedValues &captured, const GraphRunOptions &options) {
     if (options.services != nullptr) {
@@ -516,7 +460,7 @@ class LiteralMatcher {
             return true;
         }
 
-        TickLiteralComparisonState *extension_state(const TickLiteralComparison &operations) {
+        testing::TickLiteralComparisonState *extension_state(const testing::TickLiteralComparison &operations) {
             if (!extension_state_) {
                 extension_state_ = operations.create_state();
             }
@@ -524,7 +468,7 @@ class LiteralMatcher {
         }
 
       private:
-        std::unique_ptr<TickLiteralComparisonState> extension_state_;
+        std::unique_ptr<testing::TickLiteralComparisonState> extension_state_;
         std::vector<std::unique_ptr<Comparison>> indexed_children_;
         std::unordered_map<ScalarValue<>, std::unique_ptr<Comparison>, ScalarHash, ScalarEqual> dictionary_children_;
     };
@@ -540,6 +484,29 @@ class LiteralMatcher {
             auto comparison = Comparison{};
             for (auto index = std::size_t{}; index < expected.size(); ++index) {
                 if (!matches_tick(actual.event(index), type, expected[index], index, comparison)) {
+                    return false;
+                }
+            }
+            return comparison.finish();
+        } catch (const std::invalid_argument &) {
+            return false;
+        } catch (const std::out_of_range &) {
+            return false;
+        }
+    }
+
+    static bool matches_sequence(std::span<const std::optional<util::buffer>> actual,
+                                 const TimeSeriesType *type,
+                                 std::span<const literal::TimeSeriesLiteral> expected) {
+        if (actual.size() != expected.size()) {
+            return false;
+        }
+
+        try {
+            auto comparison = Comparison{};
+            for (auto index = std::size_t{}; index < expected.size(); ++index) {
+                const auto *event = actual[index] ? std::addressof(*actual[index]) : nullptr;
+                if (!matches_tick(event, type, expected[index], index, comparison)) {
                     return false;
                 }
             }
@@ -568,6 +535,11 @@ class LiteralMatcher {
                              const literal::TimeSeriesLiteral &expected) {
         auto comparison = Comparison{};
         return matches_tick(actual, type, expected, 0, comparison) && comparison.finish();
+    }
+
+    static bool matches_tick(const std::optional<util::buffer> &actual, const TimeSeriesType *type,
+                             const literal::TimeSeriesLiteral &expected) {
+        return matches_tick(actual ? std::addressof(*actual) : nullptr, type, expected);
     }
 
   private:
@@ -626,7 +598,7 @@ class LiteralMatcher {
             },
             [&] {
                 const auto *operations =
-                    TimeSeriesDispatch<TickLiteralComparison>::instance().find(type);
+                    TimeSeriesDispatch<testing::TickLiteralComparison>::instance().find(type);
                 if (operations == nullptr) {
                     return false;
                 }
@@ -859,70 +831,7 @@ class LiteralMatcher {
     }
 };
 
-inline auto literal_runtime_type(const TestGraphLiteralInput &input, const Signature &signature,
-                                std::size_t parameter_index) -> const TimeSeriesRuntimeType & {
-    if (input.runtime_type != nullptr) {
-        return *input.runtime_type;
-    }
-
-    const auto *parameter_type = signature.parameter(parameter_index).type;
-    auto *time_series_type = type_cast<TimeSeriesType>(parameter_type);
-    if (time_series_type == nullptr) {
-        const auto *variable = dynamic_cast<const TypeVariableType<Type> *>(parameter_type);
-        if (variable != nullptr) {
-            for (const auto *alternative : variable->alternatives()) {
-                const auto *candidate = type_cast<TimeSeriesType>(alternative);
-                if (candidate == nullptr) {
-                    continue;
-                }
-                if (time_series_type != nullptr) {
-                    time_series_type = nullptr;
-                    break;
-                }
-                time_series_type = candidate;
-            }
-        }
-    }
-
-    if (time_series_type == nullptr) {
-        throw std::invalid_argument{"a generic test_graph literal input requires an explicit time-series type"};
-    }
-
-    if (time_series_type->is_resolved()) {
-        return resolve_time_series_runtime_type(*time_series_type);
-    }
-
-    auto type_map = TypeMap{};
-    if (const auto *guarantee = time_series_type->guarantee().variable()) {
-        type_map.set(*guarantee, guarantee->minimum().value_or(TimeSeriesGuarantee::ordinary));
-    }
-
-    try {
-        const auto &resolved_type = type_cast<TimeSeriesType>(time_series_type->resolve(type_map));
-        return resolve_time_series_runtime_type(resolved_type);
-    } catch (const TypeResolutionError &error) {
-        if (error.code() != TypeResolutionErrorCode::unmapped_variable) {
-            throw;
-        }
-
-        throw std::invalid_argument{"a generic test_graph literal input requires an explicit time-series type"};
-    }
-}
-
-template <typename TimeSeries>
-auto literal_runtime_type(const TestGraphLiteralInput &input) -> const TimeSeriesRuntimeType & {
-    if (input.runtime_type != nullptr) {
-        return *input.runtime_type;
-    }
-
-    if constexpr (bg::details::generic_time_series<TimeSeries>) {
-        throw std::invalid_argument{"a generic test_graph literal input requires an explicit time-series type"};
-    } else {
-        return cpp_time_series_runtime_type<TimeSeries>();
-    }
-}
-
-inline WiringPoint wire_literal_source(const TestGraphLiteralInput &input,
+inline WiringPoint wire_literal_source(const GraphRunLiteralInput &input,
                                       const TimeSeriesRuntimeType &runtime_type) {
     auto definition = LiteralSource{input, runtime_type};
     auto &wiring = WiringContext::current().wiring();
@@ -952,151 +861,4 @@ template <typename Output> void capture_graph_output(const Output &output, Captu
     }
 }
 
-template <typename Function, typename Inputs, std::size_t... Index>
-[[nodiscard]] auto run_function_literals(const Function &function, const GraphRunOptions &options,
-                                         const Inputs &inputs,
-                                         std::index_sequence<Index...>) {
-    using FunctionInfo = test_function<Function>;
-    const auto start_time = options.start_time.value_or(MIN_DT + EvaluationTime::duration{1});
-    auto captured = CapturedValues{start_time};
-    auto cycle_count = std::size_t{1};
-    for (const auto &input : inputs) {
-        cycle_count = std::max(cycle_count, input.ticks.size());
-    }
-    captured.set_cycle_count(cycle_count);
-
-    auto wiring = GraphWiring{};
-    {
-        auto context = WiringContext{wiring};
-        const auto sources = std::array<WiringPoint, sizeof...(Index)>{
-            wire_literal_source(inputs[Index], literal_runtime_type<typename FunctionInfo::template input_time_series<Index>>(
-                                                   inputs[Index]))...};
-        if constexpr (std::same_as<typename FunctionInfo::result, void>) {
-            std::invoke(function, typename FunctionInfo::template argument<Index>{sources[Index]}...);
-        } else {
-            const auto output = std::invoke(
-                function, typename FunctionInfo::template argument<Index>{sources[Index]}...);
-            if (options.capture_output) {
-                capture_graph_output(output, captured);
-            }
-        }
-    }
-
-    return finish_graph_run(wiring, captured, options);
-}
-
-inline auto run_template_literals(const WiringTemplate &tested, const GraphRunOptions &options,
-                                  std::span<const TestGraphLiteralInput> inputs) {
-    if (tested.signature().has_variadic_parameters()) {
-        throw std::invalid_argument{"test_graph literal inputs do not support variadic wiring templates"};
-    }
-    if (inputs.size() > tested.signature().parameter_count()) {
-        throw std::invalid_argument{"test_graph literal input count exceeds the wiring template"};
-    }
-
-    const auto start_time = options.start_time.value_or(MIN_DT + EvaluationTime::duration{1});
-    auto captured = CapturedValues{start_time};
-    auto cycle_count = std::size_t{1};
-    for (const auto &input : inputs) {
-        cycle_count = std::max(cycle_count, input.ticks.size());
-    }
-    captured.set_cycle_count(cycle_count);
-
-    auto wiring = GraphWiring{};
-    {
-        auto context = WiringContext{wiring};
-        auto sources = std::vector<WiringPoint>{};
-        sources.reserve(inputs.size());
-        for (auto index = std::size_t{}; index < inputs.size(); ++index) {
-            sources.push_back(wire_literal_source(
-                inputs[index], literal_runtime_type(inputs[index], tested.signature(), index)));
-        }
-
-        const auto output = tested(std::span<const WiringPoint>{sources});
-        if (options.capture_output && output) {
-            capture_graph_output(*output, captured);
-        }
-    }
-
-    return finish_graph_run(wiring, captured, options);
-}
-
-template <typename Function, typename Inputs, std::size_t... Index>
-[[nodiscard]] auto run_function(const Function &function, const GraphRunOptions &options,
-                                const Inputs &inputs,
-                                std::index_sequence<Index...>) {
-    using FunctionInfo = test_function<Function>;
-    const auto start_time = options.start_time.value_or(MIN_DT + EvaluationTime::duration{1});
-    auto captured = CapturedValues{start_time};
-    captured.set_cycle_count(std::max({std::size_t{1}, std::ranges::size(std::get<Index>(inputs))...}));
-    auto wiring = GraphWiring{};
-
-    {
-        auto context = WiringContext{wiring};
-        [[maybe_unused]] const auto sources = std::tuple{
-            wire_source<typename FunctionInfo::template input_scalar<Index>>(std::get<Index>(inputs))...};
-        if constexpr (std::same_as<typename FunctionInfo::result, void>) {
-            std::invoke(function, typename FunctionInfo::template argument<Index>{std::get<Index>(sources)}...);
-        } else {
-            const auto output =
-                std::invoke(function, typename FunctionInfo::template argument<Index>{std::get<Index>(sources)}...);
-            if (options.capture_output) {
-                capture_graph_output(output, captured);
-            }
-        }
-    }
-
-    return finish_graph_run(wiring, captured, options);
-}
-
-template <std::ranges::contiguous_range... Inputs>
-[[nodiscard]] auto run_template(const WiringTemplate &tested, const GraphRunOptions &options,
-                                const Inputs &...inputs) {
-    const auto start_time = options.start_time.value_or(MIN_DT + EvaluationTime::duration{1});
-    auto captured = CapturedValues{start_time};
-    captured.set_cycle_count(std::max({std::size_t{1}, std::ranges::size(inputs)...}));
-    auto wiring = GraphWiring{};
-
-    {
-        auto context = WiringContext{wiring};
-        const auto sources = std::array<WiringPoint, sizeof...(Inputs)>{
-            wire_source<canonical_tick_t<std::ranges::range_value_t<Inputs>>>(inputs)...};
-        const auto output = tested(std::span<const WiringPoint>{sources});
-
-        if (options.capture_output && output) {
-            capture_graph_output(*output, captured);
-        }
-    }
-
-    return finish_graph_run(wiring, captured, options);
-}
-
-[[nodiscard]] inline auto run_runtime_template(const WiringTemplate &tested, const GraphRunOptions &options,
-                                               std::span<const TestGraphInput> inputs) {
-    const auto start_time = options.start_time.value_or(MIN_DT + EvaluationTime::duration{1});
-    auto captured = CapturedValues{start_time};
-    auto cycle_count = std::size_t{1};
-    auto wiring = GraphWiring{};
-
-    {
-        auto context = WiringContext{wiring};
-        auto sources = std::vector<WiringPoint>{};
-        sources.reserve(std::ranges::size(inputs));
-
-        for (const auto &input : inputs) {
-            cycle_count = std::max(cycle_count, input.ticks.size());
-            sources.push_back(wire_runtime_source(input));
-        }
-
-        const auto output = tested(std::span<const WiringPoint>{sources});
-        if (options.capture_output && output) {
-            capture_output(*output, captured);
-        }
-    }
-
-    captured.set_cycle_count(cycle_count);
-
-    return finish_graph_run(wiring, captured, options);
-}
-
-} // namespace bg::testing::details
+} // namespace bg::details

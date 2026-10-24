@@ -25,7 +25,7 @@ def calibrated_temperature(reading: int) -> int:
     return reading + 2
 
 
-print(bg.test_graph(calibrated_temperature, [18, 20, 19]))
+print(bg.run_graph(calibrated_temperature, [18, 20, 19]))
 ```
 
 Run it:
@@ -45,8 +45,8 @@ describe the input and output value types. Inside the function, `reading`
 identifies the changing input. The expression `reading + 2` connects an
 addition; BG performs that addition during evaluation.
 
-`bg.test_graph` runs the graph with the supplied input updates and returns a
-list of output updates.
+`bg.run_graph` runs the graph with the supplied input updates and returns a
+result containing the output updates.
 :::
 
 :::{tab-item} C++
@@ -57,7 +57,7 @@ complete example:
 
 ```cpp
 #include <bg/node.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 
 #include <iostream>
 
@@ -66,7 +66,7 @@ int main() {
         return reading + 2;
     });
 
-    const auto result = bg::testing::test_graph(calibrated_temperature, {18, 20, 19});
+    const auto result = bg::run_graph(calibrated_temperature, {18, 20, 19});
     std::cout << std::boolalpha << result.equals({20, 22, 21}) << '\n';
 }
 ```
@@ -113,7 +113,7 @@ true
 `bg::node` defines a calculation with plain `int` values. BG calls the lambda
 with the current reading during evaluation and publishes its return value.
 
-`bg::testing::test_graph` builds and runs a graph containing that node.
+`bg::run_graph` builds and runs a graph containing that node.
 `{18, 20, 19}` supplies the input updates. The runner infers their type from
 the plain `int` parameter. `equals` compares the recorded updates with the
 expected literal sequence. C++ examples print `true` when the updates match.
@@ -122,7 +122,7 @@ expected literal sequence. C++ examples print `true` when the updates match.
 
 ## Follow the updates
 
-`test_graph` supplies one reading per evaluation step:
+`run_graph` supplies one reading per evaluation step:
 
 | Step | Reading | Calibrated temperature |
 | --- | --- | --- |

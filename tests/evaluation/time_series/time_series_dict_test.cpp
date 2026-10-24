@@ -1,7 +1,6 @@
 #include <bg/graph.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
-#include <bg/run_graph.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>

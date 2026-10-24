@@ -1430,6 +1430,26 @@ TEST_CASE("run_graph compares provider scalar values in nested time-series input
     CHECK(dictionary.equals({{{1, {7}}}, {{1, {9}}}}));
 }
 
+TEST_CASE("run_graph accepts raw provider scalar values and preserves explicit histories",
+          "[testing][evaluation][feature:test-graph][series:value][scalar:opaque]") {
+    using Value = test_scalar_provider::value;
+    REQUIRE(provider::register_scalar_literal_handlers());
+
+    const auto read = node([](In<TS<Value>> input) { return input.value().get(); });
+    provider::scalar_literal_semantic_calls = 0;
+
+    const auto initial = run_graph(read, {7});
+
+    CHECK(initial.equals<i64>({17}));
+    CHECK(provider::scalar_literal_semantic_calls == 1);
+
+    provider::scalar_literal_semantic_calls = 0;
+    const auto history = run_graph(read, ticks({{7}, {9}}));
+
+    CHECK(history.equals<i64>({17, 19}));
+    CHECK(provider::scalar_literal_semantic_calls == 2);
+}
+
 TEST_CASE("a provider i64 tick uses a nine-byte record",
           "[feature:time-series-storage][series:generic][declaration:concrete][scalar:i64]") {
     using Series = provider::Series<i64>;

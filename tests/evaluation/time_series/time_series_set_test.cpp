@@ -1,7 +1,6 @@
 #include <bg/graph.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
-#include <bg/run_graph.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
 #include <bg/util/occupancy_index.hpp>
 

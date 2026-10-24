@@ -1,5 +1,6 @@
 #include <bg/graph.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/details/graph_run.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/type/type_registry.hpp>
 #include <bg/util/static_storage.hpp>
 #include <bg/time_series/tick_serializer.hpp>
@@ -7,7 +8,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <chrono>
 #include <memory>
+#include <ranges>
 #include <span>
 #include <string>
 #include <vector>
@@ -16,15 +19,25 @@ using namespace bg;
 
 namespace {
 
-TEST_CASE("test_graph captures TSL and TSS output deltas",
+struct sparse_output_source {
+    Out<TS<i64>> output;
+
+    void start(EvaluationContext *context) const {
+        context->schedule_at(context->evaluation_time() + std::chrono::hours{1});
+    }
+
+    void evaluate() const { output.set(7); }
+};
+
+TEST_CASE("run_graph captures TSL and TSS output deltas",
           "[testing][evaluation][feature:test-graph][series:fixed-tsl][series:tss][transition:update]") {
     const auto list_identity = [](wp<TSL<TS<i64>, 2>> input) { return input; };
     const auto list =
-        testing::test_graph(list_identity, {{{0, 1}, {1, 10}}, {{1, 20}}, literal::INVALID, {{0, 3}}});
+        run_graph(list_identity, {{{0, 1}, {1, 10}}, {{1, 20}}, literal::INVALID, {{0, 3}}});
 
     const auto set_identity = [](wp<TSS<i64>> input) { return input; };
-    const auto set = testing::test_graph(set_identity, {{1, 2}, {literal::REMOVED(1), 3}, literal::SKIP});
-    const auto empty_set = testing::test_graph(set_identity, {{}});
+    const auto set = run_graph(set_identity, {{1, 2}, {literal::REMOVED(1), 3}, literal::SKIP});
+    const auto empty_set = run_graph(set_identity, {{}});
 
     CHECK(list.equals({{{0, 1}, {1, 10}}, {{1, 20}}, literal::INVALID, {{0, 3}}}));
     CHECK(list.equals({{{0, 1}, {1, 10}}, {{0, literal::SKIP}, {1, 20}}, literal::INVALID, {{0, 3}}}));
@@ -38,15 +51,29 @@ TEST_CASE("test_graph captures TSL and TSS output deltas",
     CHECK(empty_set.equals({{literal::SKIP}}));
 }
 
+TEST_CASE("run_graph stores distant output as a sparse event",
+          "[testing][evaluation][feature:test-graph][feature:simulation]") {
+    const auto source = node<sparse_output_source>();
+    const auto result = run_graph([&] { return source(); });
+    const auto hour = std::chrono::duration_cast<EvaluationTime::duration>(std::chrono::hours{1});
+    const auto event_time = result.start_time() + hour;
+
+    CHECK(result.size() == 3'600'000'001);
+    CHECK(result.event_count() == 1);
+    CHECK(std::ranges::equal(result.events(), std::array{event_time}));
+    CHECK(result[3'600'000'000]->view().value() == 7);
+    CHECK_FALSE(result.equals<i64>({7}));
+}
+
 template <template <typename, auto...> typename Field> struct OutputScalarBundle {
     Field<i64> value;
 };
 
-TEST_CASE("test_graph compares runtime-typed scalar bundle literals",
+TEST_CASE("run_graph compares runtime-typed scalar bundle literals",
           "[testing][evaluation][feature:test-graph][series:value][scalar:hierarchical][declaration:generic]") {
     const auto identity = [](wp<> input) { return wp<>{input}; };
-    const auto actual = testing::test_graph(
-        identity, testing::input<TS<Bundle<OutputScalarBundle>>>({{{"value", 42}}}));
+    const auto actual = run_graph(
+        identity, input<TS<Bundle<OutputScalarBundle>>>({{{"value", 42}}}));
 
     CHECK(actual.equals({{{"value", 42}}}));
 }
@@ -68,9 +95,9 @@ const ExtensionTimeSeriesType &extension_time_series_type() {
     return type.get();
 }
 
-TEST_CASE("test_graph extension literal comparison delegates nested ticks to the framework",
+TEST_CASE("run_graph extension literal comparison delegates nested ticks to the framework",
           "[testing][evaluation][feature:test-graph][series:value]") {
-    using Comparison = testing::details::LiteralMatcher;
+    using Comparison = details::LiteralMatcher;
     using Dispatch = TimeSeriesDispatch<testing::TickLiteralComparison>;
 
     const auto time = MIN_DT + EvaluationTime::duration{1};
@@ -249,9 +276,9 @@ util::buffer list_tick(item_id_t index, i64 value) {
     return buffer;
 }
 
-TEST_CASE("test_graph stateful extension comparison spans cycles and nested lifetimes",
+TEST_CASE("run_graph stateful extension comparison spans cycles and nested lifetimes",
           "[testing][evaluation][feature:test-graph][series:generic]") {
-    using Comparison = testing::details::LiteralMatcher;
+    using Comparison = details::LiteralMatcher;
     using Dispatch = TimeSeriesDispatch<testing::TickLiteralComparison>;
     const auto &type = stateful_extension_time_series_type();
 
@@ -373,25 +400,25 @@ TEST_CASE("test_graph stateful extension comparison spans cycles and nested life
     CHECK(stateful_comparison_stats.invalidated.back() == 1);
 }
 
-TEST_CASE("test_graph preserves missing and empty collection output ticks",
+TEST_CASE("run_graph preserves missing and empty collection output ticks",
           "[testing][evaluation][feature:test-graph][series:tss][transition:first-tick]") {
     const auto identity = [](wp<TSS<i64>> input) { return input; };
 
-    const auto skipped = testing::test_graph(
+    const auto skipped = run_graph(
         identity, {literal::SKIP, literal::SKIP, literal::SKIP});
-    const auto no_ticks = testing::test_graph(
-        identity, testing::TestGraphLiteralInput(std::span<const literal::TimeSeriesLiteral>{}));
-    const auto empty = testing::test_graph(identity, {{}});
+    const auto no_ticks = run_graph(
+        identity, GraphRunLiteralInput(std::span<const literal::TimeSeriesLiteral>{}));
+    const auto empty = run_graph(identity, {{}});
 
     CHECK(skipped.equals({literal::SKIP, literal::SKIP, literal::SKIP}));
     CHECK(no_ticks.equals({literal::SKIP}));
     CHECK(empty.equals({{}}));
 }
 
-TEST_CASE("test_graph result visits captured ticks without consuming owning scalar values",
+TEST_CASE("run_graph result visits captured ticks without consuming owning scalar values",
           "[testing][evaluation][feature:test-graph][series:value][scalar:string][feature:scalar-storage]") {
     const auto identity = [](wp<TS<string>> input) { return input; };
-    const auto result = testing::test_graph(identity, {"first", literal::SKIP, literal::INVALID, "last"});
+    const auto result = run_graph(identity, {"first", literal::SKIP, literal::INVALID, "last"});
 
     const auto read_value = [&](std::size_t index) {
         auto value = std::string{};
@@ -437,7 +464,7 @@ TEST_CASE("test_graph result visits captured ticks without consuming owning scal
     CHECK(result[0]->view().value() == "first");
 }
 
-TEST_CASE("test_graph captured tick chain rolls over and remains readable after comparisons and moves",
+TEST_CASE("run_graph captured tick chain rolls over and remains readable after comparisons and moves",
           "[testing][evaluation][feature:test-graph][series:tsd][scalar:string][feature:scalar-storage]") {
     using Tick = literal::TimeSeriesLiteral;
     struct EntryStorage {
@@ -471,8 +498,8 @@ TEST_CASE("test_graph captured tick chain rolls over and remains readable after 
     const auto input_ticks = std::array{expected_tick};
 
     const auto identity = [](wp<TSD<string, TS<string>>> input) { return input; };
-    auto result = testing::test_graph(
-        identity, testing::TestGraphLiteralInput(std::span<const Tick>{input_ticks}));
+    auto result = run_graph(
+        identity, GraphRunLiteralInput(std::span<const Tick>{input_ticks}));
 
     auto mismatch_storage = make_entries(true);
     const auto mismatch_tick = Tick(std::span<const Tick>{mismatch_storage.second});
@@ -484,7 +511,7 @@ TEST_CASE("test_graph captured tick chain rolls over and remains readable after 
     CHECK(moved_result.equals({expected_tick}));
 }
 
-TEST_CASE("test_graph captures owning scalar strings across cycles and result lifetimes",
+TEST_CASE("run_graph captures owning scalar strings across cycles and result lifetimes",
           "[testing][evaluation][feature:test-graph][series:value][scalar:string][feature:scalar-storage]") {
     auto ticks = std::vector<std::string>{};
     for (auto index = std::size_t{}; index < 20; ++index) {
@@ -494,7 +521,7 @@ TEST_CASE("test_graph captures owning scalar strings across cycles and result li
     const auto identity = [](wp<TS<string>> input) { return input; };
 
     auto retained = [&] {
-        auto result = testing::test_graph(identity, ticks);
+        auto result = run_graph(identity, ticks);
         for (auto index = std::size_t{}; index < ticks.size(); ++index) {
             const auto value = result[index];
             CHECK(value.has_value());
@@ -513,24 +540,24 @@ template <template <typename, auto...> typename Field> struct OutputBundle {
     Field<TSD<i64, TS<i64>>> nested;
 };
 
-TEST_CASE("test_graph captures nested TSD and TSB output deltas",
+TEST_CASE("run_graph captures nested TSD and TSB output deltas",
           "[testing][evaluation][feature:test-graph][series:tsd][series:tsb][shape:nested]") {
     const auto bundle_identity = [](wp<TSB<OutputBundle>> input) { return input; };
-    const auto bundle = testing::test_graph(
+    const auto bundle = run_graph(
         bundle_identity,
         {{{"value", 1}, {"nested", {{2, 20}, {3, 30}}}},
          {{"value", 4}, {"nested", {{3, 31}}}},
          literal::SKIP});
 
     const auto nested_identity = [](wp<TSD<i64, TSB<OutputBundle>>> input) { return input; };
-    const auto nested = testing::test_graph(
+    const auto nested = run_graph(
         nested_identity,
         {{{1, {{"value", 1}, {"nested", {{2, 20}}}}}},
          {{1, {{"nested", {{2, literal::REMOVE}}}}}},
          {{1, literal::REMOVE}}});
 
     const auto dictionary_identity = [](wp<TSD<i64, TS<i64>>> input) { return input; };
-    const auto dictionary = testing::test_graph(dictionary_identity, {{{1, 10}, {2, 20}}});
+    const auto dictionary = run_graph(dictionary_identity, {{{1, 10}, {2, 20}}});
 
     CHECK(bundle.equals({{{"value", 1}, {"nested", {{2, 20}, {3, 30}}}},
                          {{"value", 4}, {"nested", {{3, 31}}}}, literal::SKIP}));
@@ -545,7 +572,7 @@ TEST_CASE("test_graph captures nested TSD and TSB output deltas",
     CHECK_FALSE(dictionary.equals({{{1, 10}}}));
 }
 
-TEST_CASE("test_graph compares invalid nested collection values",
+TEST_CASE("run_graph compares invalid nested collection values",
           "[testing][evaluation][feature:test-graph][series:tsd][shape:nested][transition:invalidation]") {
     const auto invalidate_set = node([](Out<TSD<i64, TSS<i64>>> output) {
         output[1].invalidate();
@@ -556,11 +583,11 @@ TEST_CASE("test_graph compares invalid nested collection values",
 
     const auto set_child_graph = [&] { return invalidate_set(); };
     const auto dictionary_child_graph = [&] { return invalidate_dictionary(); };
-    const auto set_child = testing::test_graph(set_child_graph);
-    const auto dictionary_child = testing::test_graph(dictionary_child_graph);
+    const auto set_child = run_graph(set_child_graph);
+    const auto dictionary_child = run_graph(dictionary_child_graph);
     const auto scalar_child_identity =
         [](wp<TSD<i64, TS<i64>>> input) { return input; };
-    const auto scalar_child = testing::test_graph(scalar_child_identity, {{{1, literal::INVALID}}});
+    const auto scalar_child = run_graph(scalar_child_identity, {{{1, literal::INVALID}}});
 
     CHECK(set_child.equals({{{1, literal::INVALID}}}));
     CHECK_FALSE(set_child.equals({{{1, {}}}}));
@@ -570,7 +597,7 @@ TEST_CASE("test_graph compares invalid nested collection values",
     CHECK_FALSE(scalar_child.equals({{{1, 1}}}));
 }
 
-TEST_CASE("test_graph captures a top-level reference to a collection",
+TEST_CASE("run_graph captures a top-level reference to a collection",
           "[testing][evaluation][feature:test-graph][feature:reference][series:tsd]"
           "[binding:reference-to-value][transition:update]") {
     const auto select = node([](In<TS<bool>> choose_second,
@@ -585,12 +612,12 @@ TEST_CASE("test_graph captures a top-level reference to a collection",
                            wp<TSD<i64, TS<i64>>> second) {
         return select(choose_second, first, second);
     };
-    const auto actual = testing::test_graph(graph, {false, true}, {{{1, 10}}}, {{{2, 20}}});
+    const auto actual = run_graph(graph, {false, true}, {{{1, 10}}}, {{{2, 20}}});
 
     CHECK(actual.equals({{{1, 10}}, {{1, literal::REMOVE}, {2, 20}}}));
 }
 
-TEST_CASE("test_graph rejects nested references in collection output capture",
+TEST_CASE("run_graph rejects nested references in collection output capture",
           "[testing][evaluation][feature:test-graph][feature:reference][series:tsd][series:tss]"
           "[binding:reference-to-value][shape:nested]") {
     const auto make_dictionary = node([](In<REF<TSS<i64>>> item,
@@ -600,10 +627,10 @@ TEST_CASE("test_graph rejects nested references in collection output capture",
 
     const auto graph = [&](wp<TSS<i64>> input) { return make_dictionary(input); };
 
-    CHECK_THROWS_AS(testing::test_graph(graph, {{1, 2}}), std::invalid_argument);
+    CHECK_THROWS_AS(run_graph(graph, {{1, 2}}), std::invalid_argument);
 }
 
-TEST_CASE("test_graph owns string keys and values in captured collection deltas",
+TEST_CASE("run_graph owns string keys and values in captured collection deltas",
           "[testing][evaluation][feature:test-graph][series:tsd][scalar:string][feature:scalar-storage]") {
     const auto actual = [] {
         const auto key = std::string(128, 'k');
@@ -611,7 +638,7 @@ TEST_CASE("test_graph owns string keys and values in captured collection deltas"
         const auto replacement_value = std::string(192, 'b');
 
         const auto identity = [](wp<TSD<string, TS<string>>> input) { return input; };
-        return testing::test_graph(identity, {{{key, first_value}}, {{key, replacement_value}}});
+        return run_graph(identity, {{{key, first_value}}, {{key, replacement_value}}});
     }();
 
     const auto key = std::string(128, 'k');
@@ -620,13 +647,13 @@ TEST_CASE("test_graph owns string keys and values in captured collection deltas"
     CHECK(actual.equals({{{key, first_value}}, {{key, replacement_value}}}));
 }
 
-TEST_CASE("test_graph rejects duplicate and extra expected collection removals",
+TEST_CASE("run_graph rejects duplicate and extra expected collection removals",
           "[testing][evaluation][feature:test-graph][series:tss][series:tsd][transition:removal]") {
     const auto set_identity = [](wp<TSS<i64>> input) { return input; };
-    const auto set = testing::test_graph(set_identity, {{1}, {literal::REMOVED(1)}});
+    const auto set = run_graph(set_identity, {{1}, {literal::REMOVED(1)}});
     const auto dictionary_identity =
         [](wp<TSD<i64, TS<i64>>> input) { return input; };
-    const auto dictionary = testing::test_graph(dictionary_identity, {{{1, 10}}, {{1, literal::REMOVE}}});
+    const auto dictionary = run_graph(dictionary_identity, {{{1, 10}}, {{1, literal::REMOVE}}});
 
     CHECK(set.equals({{1}, {literal::REMOVED(1)}}));
     CHECK_FALSE(set.equals({{1}, {literal::REMOVED(1), literal::REMOVED(1)}}));
@@ -636,10 +663,10 @@ TEST_CASE("test_graph rejects duplicate and extra expected collection removals",
     CHECK_FALSE(dictionary.equals({{{1, 10}}, {{1, literal::REMOVE}, {2, literal::REMOVE}}}));
 }
 
-TEST_CASE("test_graph scalar result access rejects collection ticks",
+TEST_CASE("run_graph scalar result access rejects collection ticks",
           "[testing][evaluation][feature:test-graph][series:tsd]") {
     const auto identity = [](wp<TSD<i64, TS<i64>>> input) { return input; };
-    const auto actual = testing::test_graph(identity, {{{1, 10}}});
+    const auto actual = run_graph(identity, {{{1, 10}}});
 
     CHECK_THROWS_AS(actual[0], std::invalid_argument);
 }

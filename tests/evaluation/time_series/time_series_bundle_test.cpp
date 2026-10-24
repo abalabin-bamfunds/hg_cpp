@@ -7,7 +7,6 @@
 #include <bg/scalar/bundle/value.hpp>
 #include <bg/scalar/dict/scalar.hpp>
 #include <bg/scalar/list/scalar.hpp>
-#include <bg/run_graph.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsb/tsb_input.hpp>
 #include <bg/time_series/tsb/tsb_output.hpp>

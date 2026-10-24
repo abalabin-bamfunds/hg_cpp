@@ -27,9 +27,9 @@ Provide Python and C++ versions of each user-facing example, including setup,
 run commands, expected results, and language-specific explanations. Keep inputs
 and expected updates equivalent. Use plain value types until the lesson needs
 explicit time series annotations in node and graph definitions. Use literal
-input sequences for C++ `test_graph` examples and `literal::SKIP` for skipped
+input sequences for C++ `run_graph` examples and `literal::SKIP` for skipped
 updates. Infer input types from plain parameters; supply an explicit type with
-`testing::input<TS<...>>` only when the signature leaves it unresolved. Use
+`input<TS<...>>` only when the signature leaves it unresolved. Use
 literal sequences for expected results too.
 Verify both versions against the current API.
 

@@ -307,7 +307,7 @@ after the limit. Simulation can finish earlier when its schedule is empty.
 Realtime waits end at the limit even when the graph is idle. Exact timers before
 the limit still run at their declared times when realtime evaluation catches up.
 Stopping does not create a cycle at the limit; stop functions observe the last
-evaluation time. Profiling and `test_graph` use the same limits.
+evaluation time. Profiling and output capture use the same limits.
 
 ## Simulation
 
@@ -365,7 +365,7 @@ An exception from the callback stops a started graph through its normal lifecycl
 and propagates to the caller. A callback that returns normally lets execution
 continue.
 
-Set `GraphRunOptions::periodic_callback` for `run_graph` or `test_graph`. Profiling
+Set `GraphRunOptions::periodic_callback` for `run_graph`. Profiling
 uses the same callback. Callback state belongs to the engine run; runtime graphs and
 nodes store no callback state. Runs without a callback retain their normal
 wait behavior and do not read a clock for periodic callbacks.
@@ -444,7 +444,7 @@ execution and include other work between checkpoints in that graph. Checkpoint
 ticks use the reader's clock.
 
 Set `GraphRunOptions::recorder` to `profiler.recorder()` and pass the options to
-`run_graph` or [`testing::test_graph`](testing.md#test-layout) to record one run.
+`run_graph` to record one run.
 Profiling follows the selected [engine and start time](graph-wiring.md#direct-execution).
 The helper starts the reader thread, finishes the recording,
 and joins the reader before destroying the compiled graph. Query the profiler

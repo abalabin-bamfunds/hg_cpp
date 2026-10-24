@@ -122,8 +122,8 @@ and repeats until implementation graphs introduce no new requirements. It report
 missing, incompatible, ambiguous, and cyclic requirements with the service call paths
 that produced them.
 
-`run_graph` and [`test_graph`](testing.md#test-layout) select a catalogue through
-`GraphRunOptions::services`. Both finalize services after root wiring and before
+`run_graph` selects a catalogue through `GraphRunOptions::services`.
+It finalizes services after root wiring and before
 graph compilation. Code that manages wiring and compilation directly calls
 `ServiceCatalogue::build` at the same point.
 

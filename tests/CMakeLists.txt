@@ -78,8 +78,8 @@ add_executable(
     node/scalar/list_test.cpp
     node/scalar/set_test.cpp
     node/scalar_state_test.cpp
-    testing/test_graph_test.cpp
-    testing/test_graph_output_test.cpp
+    testing/graph_run_test.cpp
+    testing/graph_run_output_test.cpp
     type/type_system_test.cpp
     type/type_registry_test.cpp
     type/type_name_formatting_test.cpp

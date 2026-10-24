@@ -13,7 +13,7 @@ and run it again. Rebuild the C++ executable after each change.
 :::{tab-item} Python
 :sync: python
 
-Use `None` in a `test_graph` input sequence to skip that input's update for a
+Use `None` in a `run_graph` input sequence to skip that input's update for a
 step:
 
 ```python
@@ -25,7 +25,7 @@ def calibrated_temperature(reading: int) -> int:
     return reading + 2
 
 
-print(bg.test_graph(calibrated_temperature, [18, None, 19, None]))
+print(bg.run_graph(calibrated_temperature, [18, None, 19, None]))
 ```
 
 Output:
@@ -44,7 +44,7 @@ Use `literal::SKIP` in an input literal sequence to skip an update:
 
 ```cpp
 #include <bg/node.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 
 #include <iostream>
 
@@ -53,7 +53,7 @@ int main() {
         return reading + 2;
     });
 
-    const auto result = bg::testing::test_graph(
+    const auto result = bg::run_graph(
         calibrated_temperature, {18, literal::SKIP, 19, literal::SKIP});
     std::cout << std::boolalpha
               << result.equals({20, literal::SKIP, 21, literal::SKIP}) << '\n';
@@ -82,7 +82,7 @@ Skipping an update preserves the current input value. The output's current
 value also remains available when it does not update.
 
 BG calls a value that can change over time a **time series**. A time series
-holds its current value and last updated time. `test_graph` records output
+holds its current value and last updated time. `run_graph` records output
 updates so you can inspect the run.
 
 ## Connect two changing inputs
@@ -104,7 +104,7 @@ def adjustable_temperature(reading: int, offset: int) -> int:
     return reading + offset
 
 
-print(bg.test_graph(
+print(bg.run_graph(
     adjustable_temperature,
     [18, None, 19, None],
     [None, 2, None, 3],
@@ -123,7 +123,7 @@ Output:
 
 ```cpp
 #include <bg/node.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 
 #include <iostream>
 
@@ -132,7 +132,7 @@ int main() {
         return reading + offset;
     });
 
-    const auto result = bg::testing::test_graph(
+    const auto result = bg::run_graph(
         adjustable_temperature,
         {18, literal::SKIP, 19, literal::SKIP},
         {literal::SKIP, 2, literal::SKIP, 3});
@@ -149,7 +149,7 @@ true
 :::
 ::::
 
-`test_graph` takes one sequence per input, in parameter order. Each step
+These calls supply one update sequence per input, in parameter order. Each step
 supplies the updates at the same position in those sequences.
 
 | Step | Reading update | Offset update | Current reading | Current offset | Output update |
@@ -176,7 +176,7 @@ produces one result. Replace the test call and output statement above with:
 :sync: python
 
 ```python
-print(bg.test_graph(adjustable_temperature, [18, 19], [2, 3]))
+print(bg.run_graph(adjustable_temperature, [18, 19], [2, 3]))
 ```
 
 Output:
@@ -190,7 +190,7 @@ Output:
 :sync: cpp
 
 ```cpp
-const auto result = bg::testing::test_graph(
+const auto result = bg::run_graph(
     adjustable_temperature,
     {18, 19},
     {2, 3});
@@ -217,7 +217,7 @@ test call and output statement with:
 :sync: python
 
 ```python
-print(bg.test_graph(calibrated_temperature, [18, 18, 19]))
+print(bg.run_graph(calibrated_temperature, [18, 18, 19]))
 ```
 
 Output:
@@ -231,7 +231,7 @@ Output:
 :sync: cpp
 
 ```cpp
-const auto result = bg::testing::test_graph(calibrated_temperature, {18, 18, 19});
+const auto result = bg::run_graph(calibrated_temperature, {18, 18, 19});
 std::cout << std::boolalpha << result.equals({20, 20, 21}) << '\n';
 ```
 

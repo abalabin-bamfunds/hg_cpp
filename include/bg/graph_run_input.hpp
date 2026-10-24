@@ -41,14 +41,8 @@ class GraphRunLiteralInput {
     const TimeSeriesRuntimeType *runtime_type{};
 };
 
-template <std::ranges::view Range> class GraphRunTicks {
-  public:
-    explicit GraphRunTicks(Range values) : values_{std::move(values)} {}
-
-    const Range &values() const noexcept { return values_; }
-
-  private:
-    Range values_;
+template <std::ranges::view Range> struct GraphRunTicks {
+    Range values;
 };
 
 template <std::ranges::viewable_range Range>
@@ -58,7 +52,7 @@ template <std::ranges::viewable_range Range>
 }
 
 [[nodiscard]] inline GraphRunLiteralInput ticks(std::initializer_list<literal::TimeSeriesLiteral> values) noexcept {
-    return GraphRunLiteralInput{values};
+    return GraphRunLiteralInput(values);
 }
 
 template <typename TimeSeries>

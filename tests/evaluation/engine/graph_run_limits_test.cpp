@@ -6,7 +6,6 @@
 #include <bg/node.hpp>
 #include <bg/queue_node.hpp>
 #include <bg/run_graph.hpp>
-#include <bg/run_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
 
 #include <catch2/catch_test_macros.hpp>

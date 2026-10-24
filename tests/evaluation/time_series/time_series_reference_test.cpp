@@ -5,7 +5,6 @@
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
-#include <bg/run_graph.hpp>
 #include <bg/time_series/ref/ref_provider.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/time_series/tsb/tsb.hpp>

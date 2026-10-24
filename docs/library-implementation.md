@@ -373,7 +373,7 @@ owner before choosing a library-specific workaround.
 Start with a complete graph test:
 
 ```cpp
-CHECK(testing::test_graph(
+CHECK(run_graph(
     add, {1.0, 2.0}, {10.0, 20.0}).equals({11.0, 22.0}));
 ```
 

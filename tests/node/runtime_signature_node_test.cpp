@@ -3,7 +3,6 @@
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/run_graph.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>

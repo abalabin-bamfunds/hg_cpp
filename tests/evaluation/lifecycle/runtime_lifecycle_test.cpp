@@ -99,7 +99,16 @@ TEST_CASE("run_graph captures optional callback outputs", "[evaluation][feature:
     CHECK(optional.equals({42}));
 
     const auto no_output = run_graph([]() -> std::optional<WiringPoint> { return std::nullopt; });
-    CHECK(no_output.size() == 1);
+    CHECK(no_output.size() == 0);
+
+    const auto lifecycle_source = node<starting_source_definition>();
+    starting_source_definition::start_count = 0;
+    starting_source_definition::stop_count = 0;
+    const auto uncaptured = run_graph([&] { (void)lifecycle_source(42.0F); },
+                                     GraphRunOptions{.capture_output = false});
+    CHECK(uncaptured.size() == 0);
+    CHECK(starting_source_definition::start_count == 1);
+    CHECK(starting_source_definition::stop_count == 1);
 }
 
 TEST_CASE("run_graph uses an explicit simulation start time",
