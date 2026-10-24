@@ -17,6 +17,8 @@
 #include <bg/scalar/value.hpp>
 #include <bg/service_catalogue.hpp>
 #include <bg/simulation_evaluation_engine.hpp>
+#include <bg/realtime_evaluation_engine.hpp>
+#include <bg/wall_clock.hpp>
 #include <bg/graph_run_options.hpp>
 #include <bg/testing/test_graph_input.hpp>
 #include <bg/testing/test_graph_literal_input.hpp>
@@ -46,44 +48,60 @@
 
 namespace bg::testing::details {
 
+struct SourceState {
+    std::size_t next{};
+    EvaluationTime::duration::rep start_time{};
+};
+
 struct Source {
     static constexpr bool uses_timed_scheduling = true;
 
     Scalar<List<SCALAR>> values;
     Scalar<List<EvaluationTime>> times;
-    State<std::size_t> next;
+    State<SourceState> state;
     Out<TS<SCALAR>> output;
 
-    void start(EvaluationContext *context) const { publish(context); }
+    void start(EvaluationContext *context) const {
+        state->start_time = context->evaluation_time().time_since_epoch().count();
+        publish(context);
+    }
     void evaluate(EvaluationContext *context) const { publish(context); }
 
   private:
     void publish(EvaluationContext *context) const {
-        if (*next < times.size() && times[*next].value() == context->evaluation_time()) {
-            output.set_value(values[*next]);
-            ++*next;
+        if (state->next < times.size() &&
+            EvaluationTime{EvaluationTime::duration{state->start_time} +
+                           times[state->next].value().time_since_epoch()} == context->evaluation_time()) {
+            output.set_value(values[state->next]);
+            ++state->next;
         }
 
-        if (*next < times.size()) {
-            context->schedule_at(times[*next].value());
+        if (state->next < times.size()) {
+            context->schedule_at(EvaluationTime{EvaluationTime::duration{state->start_time} +
+                                                times[state->next].value().time_since_epoch()});
         }
     }
 };
 
 struct CapturedValues {
   private:
-    EvaluationTime start_time;
-    util::buffer bytes;
+    struct StoredEvent {
+        EvaluationTime time;
+        util::buffer bytes;
+    };
+
+    EvaluationTime start_time_;
+    std::optional<util::buffer> bytes;
     std::unique_ptr<util::buffer_reader> tail;
     const TimeSeriesType *type_{};
 
   public:
-    explicit CapturedValues(EvaluationTime start_time)
-        : start_time{start_time}, bytes{util::buffer::chain(128)}, tail{std::make_unique<util::buffer_reader>(bytes)} {}
+    explicit CapturedValues(EvaluationTime start_time) : start_time_{start_time} {}
 
     CapturedValues(CapturedValues &&other) noexcept
-        : start_time{other.start_time}, bytes{std::move(other.bytes)}, tail{std::move(other.tail)},
-          type_{std::exchange(other.type_, nullptr)}, records{std::move(other.records)} {}
+        : start_time_{other.start_time_}, bytes{std::move(other.bytes)}, tail{std::move(other.tail)},
+          type_{std::exchange(other.type_, nullptr)}, events_{std::move(other.events_)}, size_{other.size_},
+          cycle_count_{other.cycle_count_} {}
 
     CapturedValues(const CapturedValues &) = delete;
     CapturedValues &operator=(const CapturedValues &) = delete;
@@ -91,12 +109,32 @@ struct CapturedValues {
 
     ~CapturedValues() {
         if (type_ != nullptr) {
-            TimeSeriesTickReader reader{std::move(bytes), *type_};
+            TimeSeriesTickReader reader{std::move(*bytes), *type_};
         }
     }
 
-    void set_type(const TimeSeriesType &type) noexcept { type_ = &type; }
+    void set_type(const TimeSeriesType &type) {
+        auto tick_bytes = util::buffer::chain(128);
+        auto tick_reader = std::make_unique<util::buffer_reader>(tick_bytes);
+        bytes.emplace(std::move(tick_bytes));
+        tail = std::move(tick_reader);
+        type_ = &type;
+        size_ = std::max(size_, cycle_count_);
+    }
     const TimeSeriesType *type() const noexcept { return type_; }
+    EvaluationTime start_time() const noexcept { return start_time_; }
+    auto events() const noexcept {
+        return events_ | std::views::transform([](const StoredEvent &event) { return event.time; });
+    }
+    std::size_t size() const noexcept { return size_; }
+    void set_cycle_count(std::size_t count) noexcept {
+        cycle_count_ = std::max(cycle_count_, count);
+        if (type_ != nullptr) {
+            size_ = std::max(size_, count);
+        }
+    }
+
+    void set_start_time(EvaluationTime time) noexcept { start_time_ = time; }
 
     util::buffer begin_tick() const { return tail->current_block(); }
 
@@ -110,20 +148,31 @@ struct CapturedValues {
         }
 
         const auto index = position(time);
-        records[index].emplace(std::move(bytes));
+        if (!events_.empty() && events_.back().time == time) {
+            events_.back().bytes = std::move(bytes);
+        } else {
+            events_.push_back(StoredEvent{time, std::move(bytes)});
+        }
+        size_ = std::max(size_, index + 1);
     }
 
-    std::vector<std::optional<util::buffer>> records;
+    const util::buffer *event(std::size_t index) const noexcept {
+        const auto time = start_time_ + EvaluationTime::duration{static_cast<EvaluationTime::duration::rep>(index)};
+        const auto event = std::ranges::lower_bound(events_, time, {}, &StoredEvent::time);
+        return event != events_.end() && event->time == time ? std::addressof(event->bytes) : nullptr;
+    }
+
+    const util::buffer &event_data(std::size_t index) const { return events_.at(index).bytes; }
 
   private:
     std::size_t position(EvaluationTime time) {
-        const auto index = static_cast<std::size_t>((time - start_time).count());
-        if (index >= records.size()) {
-            records.resize(index + 1);
-        }
-
+        const auto index = static_cast<std::size_t>((time - start_time_).count());
         return index;
     }
+
+    std::vector<StoredEvent> events_;
+    std::size_t size_{};
+    std::size_t cycle_count_{};
 };
 
 inline const auto source = node<Source>();
@@ -182,15 +231,14 @@ class RuntimeSource {
   public:
     struct CompiledData {
         std::span<const std::optional<ScalarValue<>>> ticks;
-        EvaluationTime start_time;
     };
 
     using compiled_data_type = CompiledData;
-    using state_type = std::size_t;
+    using state_type = SourceState;
     using Invocation = NodeInvocation<CompiledData, state_type>;
 
-    RuntimeSource(const TestGraphInput &input, EvaluationTime start_time)
-        : input_{input}, start_time_{start_time},
+    explicit RuntimeSource(const TestGraphInput &input)
+        : input_{input},
           signature_{util::symbol{"test_source"},
                      {{.name = util::symbol{"runtime_type"},
                        .type = &input.runtime_type.type(),
@@ -198,9 +246,12 @@ class RuntimeSource {
                      time_series_value_type(input.runtime_type.type(), TimeSeriesGuarantee::ordinary)} {}
 
     const Signature &signature() const noexcept { return signature_; }
-    CompiledData compile(const ResolvedSignature &, allocator &) const noexcept { return {input_.ticks, start_time_}; }
+    CompiledData compile(const ResolvedSignature &, allocator &) const noexcept { return {input_.ticks}; }
 
-    static void start(Invocation invocation) { publish(invocation); }
+    static void start(Invocation invocation) {
+        invocation.state().start_time = invocation.context().evaluation_time().time_since_epoch().count();
+        publish(invocation);
+    }
     static void evaluate(Invocation invocation) { publish(invocation); }
 
     static constexpr bool uses_timed_scheduling = true;
@@ -208,7 +259,8 @@ class RuntimeSource {
   private:
     static void publish(Invocation invocation) {
         const auto &data = invocation.compiled_data();
-        auto &next = invocation.state();
+        auto &state = invocation.state();
+        auto &next = state.next;
 
         if (next < data.ticks.size() && data.ticks[next]) {
             invocation.output().visit([&](Out<TS<SCALAR>> *output) { output->set_value(data.ticks[next]->view()); },
@@ -220,38 +272,37 @@ class RuntimeSource {
             ++next;
         }
         if (next < data.ticks.size()) {
-            invocation.context().schedule_at(data.start_time + EvaluationTime::duration{next});
+            invocation.context().schedule_at(
+                EvaluationTime{EvaluationTime::duration{state.start_time} + EvaluationTime::duration{next}});
         }
     }
 
     TestGraphInput input_;
-    EvaluationTime start_time_;
     Signature signature_;
 };
 
 class LiteralSource {
   public:
-    struct CompiledData {
-        std::span<const literal::TimeSeriesLiteral> ticks;
-        EvaluationTime start_time;
-    };
+    struct CompiledData { std::span<const literal::TimeSeriesLiteral> ticks; };
 
     using compiled_data_type = CompiledData;
-    using state_type = std::size_t;
+    using state_type = SourceState;
     using Invocation = NodeInvocation<CompiledData, state_type>;
     static constexpr bool uses_timed_scheduling = true;
     static constexpr bool deduplicate_wiring = false;
 
-    LiteralSource(const TestGraphLiteralInput &input, const TimeSeriesRuntimeType &runtime_type,
-                  EvaluationTime start_time)
-        : ticks_{input.ticks}, runtime_type_{&runtime_type}, start_time_{start_time},
+    LiteralSource(const TestGraphLiteralInput &input, const TimeSeriesRuntimeType &runtime_type)
+        : ticks_{input.ticks}, runtime_type_{&runtime_type},
           signature_{util::symbol{"test_literal_source"}, {}, runtime_type.type()} {}
 
     const Signature &signature() const noexcept { return signature_; }
-    CompiledData compile(const ResolvedSignature &, allocator &) const noexcept { return {ticks_, start_time_}; }
+    CompiledData compile(const ResolvedSignature &, allocator &) const noexcept { return {ticks_}; }
     const TimeSeriesRuntimeType &output_runtime_type(const WiringArguments &) const noexcept { return *runtime_type_; }
 
-    static void start(Invocation invocation) { publish(invocation); }
+    static void start(Invocation invocation) {
+        invocation.state().start_time = invocation.context().evaluation_time().time_since_epoch().count();
+        publish(invocation);
+    }
     static void evaluate(Invocation invocation) { publish(invocation); }
 
   private:
@@ -262,10 +313,12 @@ class LiteralSource {
 
     static void publish(Invocation invocation) {
         const auto &data = invocation.compiled_data();
-        auto &next = invocation.state();
+        auto &state = invocation.state();
+        auto &next = state.next;
 
-        if (next < data.ticks.size() && invocation.context().evaluation_time() ==
-                                             data.start_time + EvaluationTime::duration{next}) {
+        if (next < data.ticks.size() &&
+            invocation.context().evaluation_time() ==
+                EvaluationTime{EvaluationTime::duration{state.start_time} + EvaluationTime::duration{next}}) {
             invocation.output().apply(data.ticks[next]);
             ++next;
         }
@@ -274,13 +327,13 @@ class LiteralSource {
             ++next;
         }
         if (next < data.ticks.size()) {
-            invocation.context().schedule_at(data.start_time + EvaluationTime::duration{next});
+            invocation.context().schedule_at(
+                EvaluationTime{EvaluationTime::duration{state.start_time} + EvaluationTime::duration{next}});
         }
     }
 
     std::span<const literal::TimeSeriesLiteral> ticks_;
     const TimeSeriesRuntimeType *runtime_type_;
-    EvaluationTime start_time_;
     Signature signature_;
 };
 
@@ -308,8 +361,16 @@ template <typename T, auto... Properties> struct test_output_scalar<TS<T, Proper
 template <typename Target, auto... Properties>
 struct test_output_scalar<REF<Target, Properties...>> : test_output_scalar<Target> {};
 
+template <typename Result, bool = bg::details::is_typed_wiring_point<Result>> struct test_result_scalar {
+    using type = void;
+};
+
+template <typename Result> struct test_result_scalar<Result, true> {
+    using type = typename test_output_scalar<typename bg::details::typed_wiring_point<Result>::time_series_type>::type;
+};
+
 template <typename Scalar, std::ranges::input_range Range>
-[[nodiscard]] WiringPoint wire_source(const Range &ticks, EvaluationTime start_time) {
+[[nodiscard]] WiringPoint wire_source(const Range &ticks) {
     using Tick = std::remove_cvref_t<std::ranges::range_value_t<Range>>;
     using Value = typename bg::scalar_storage_traits<Scalar>::value_type;
     using StoredValue =
@@ -325,11 +386,11 @@ template <typename Scalar, std::ranges::input_range Range>
         if constexpr (optional_value<Tick>::value) {
             if (tick) {
                 values.emplace_back(static_cast<StoredValue>(*tick));
-                times.push_back(start_time + std::chrono::microseconds{index});
+                times.push_back(EvaluationTime{std::chrono::microseconds{index}});
             }
         } else {
             values.emplace_back(static_cast<StoredValue>(tick));
-            times.push_back(start_time + std::chrono::microseconds{index});
+            times.push_back(EvaluationTime{std::chrono::microseconds{index}});
         }
 
         ++index;
@@ -341,8 +402,7 @@ template <typename Scalar, std::ranges::input_range Range>
 template <typename Function> struct test_function {
     using callable = bg::details::callable<std::remove_cvref_t<Function>>;
     using result = std::remove_cvref_t<typename callable::result_type>;
-    using output_time_series = typename bg::details::typed_wiring_point<result>::time_series_type;
-    using output_scalar = typename test_output_scalar<output_time_series>::type;
+    using output_scalar = typename test_result_scalar<result>::type;
 
     template <std::size_t Index> using argument = std::remove_cvref_t<typename callable::template argument_type<Index>>;
 
@@ -352,13 +412,7 @@ template <typename Function> struct test_function {
     template <std::size_t Index> using input_scalar = typename input_time_series<Index>::value_type;
 };
 
-inline auto finish_test_graph(GraphWiring &wiring, CapturedValues &captured, EvaluationTime start_time,
-                              const GraphRunOptions &options) {
-    if (options.engine != EvaluationEngine::simulation) {
-        throw std::invalid_argument{"test_graph supports only the simulation evaluation engine"};
-    }
-    const auto stop_time = options.resolve_stop_time(start_time);
-
+inline auto finish_graph_run(GraphWiring &wiring, CapturedValues &captured, const GraphRunOptions &options) {
     if (options.services != nullptr) {
         wiring.finalize(*options.services);
     } else {
@@ -366,11 +420,20 @@ inline auto finish_test_graph(GraphWiring &wiring, CapturedValues &captured, Eva
     }
 
     const auto compiled = CompiledGraph{wiring};
+    const auto default_start_time = options.engine == EvaluationEngine::realtime
+                                        ? SystemWallClock::instance().now()
+                                        : MIN_DT + EvaluationTime::duration{1};
+    const auto start_time = options.start_time.value_or(default_start_time);
+    captured.set_start_time(start_time);
+    const auto stop_time = options.resolve_stop_time(start_time);
     auto run = [&](GlobalState &global_state) {
         auto runtime = RuntimeGraph{compiled, global_state};
         if (options.recorder) {
-            options.recorder->run(runtime, start_time, EvaluationEngine::simulation, {}, options.periodic_callback,
+            options.recorder->run(runtime, start_time, options.engine, options.stop_token, options.periodic_callback,
                                   stop_time);
+        } else if (options.engine == EvaluationEngine::realtime) {
+            RealtimeEvaluationEngine{}.run(runtime, start_time, options.stop_token, options.periodic_callback,
+                                           stop_time);
         } else {
             SimulationEvaluationEngine{}.run(runtime, start_time, options.periodic_callback, stop_time);
         }
@@ -467,7 +530,7 @@ class LiteralMatcher {
     };
 
   public:
-    static bool matches_sequence(std::span<const std::optional<util::buffer>> actual, const TimeSeriesType *type,
+    static bool matches_sequence(const CapturedValues &actual, const TimeSeriesType *type,
                                  std::span<const literal::TimeSeriesLiteral> expected) {
         if (actual.size() != expected.size()) {
             return false;
@@ -475,8 +538,8 @@ class LiteralMatcher {
 
         try {
             auto comparison = Comparison{};
-            for (auto index = std::size_t{}; index < actual.size(); ++index) {
-                if (!matches_tick(actual[index], type, expected[index], index, comparison)) {
+            for (auto index = std::size_t{}; index < expected.size(); ++index) {
+                if (!matches_tick(actual.event(index), type, expected[index], index, comparison)) {
                     return false;
                 }
             }
@@ -501,10 +564,10 @@ class LiteralMatcher {
         }
     }
 
-    static bool matches_tick(const std::optional<util::buffer> &actual, const TimeSeriesType *type,
+    static bool matches_tick(const util::buffer *actual, const TimeSeriesType *type,
                              const literal::TimeSeriesLiteral &expected) {
-        return matches_sequence(std::span{&actual, std::size_t{1}}, type,
-                                std::span{&expected, std::size_t{1}});
+        auto comparison = Comparison{};
+        return matches_tick(actual, type, expected, 0, comparison) && comparison.finish();
     }
 
   private:
@@ -513,13 +576,13 @@ class LiteralMatcher {
         return sentinel != nullptr && *sentinel == expected;
     }
 
-    static bool matches_tick(const std::optional<util::buffer> &actual, const TimeSeriesType *type,
+    static bool matches_tick(const util::buffer *actual, const TimeSeriesType *type,
                              const literal::TimeSeriesLiteral &expected, std::size_t tick_index,
                              Comparison &comparison) {
         if (is_sentinel(expected, literal::SKIP)) {
-            return !actual;
+            return actual == nullptr;
         }
-        if (!actual || type == nullptr) {
+        if (actual == nullptr || type == nullptr) {
             return false;
         }
 
@@ -860,12 +923,33 @@ auto literal_runtime_type(const TestGraphLiteralInput &input) -> const TimeSerie
 }
 
 inline WiringPoint wire_literal_source(const TestGraphLiteralInput &input,
-                                      const TimeSeriesRuntimeType &runtime_type, EvaluationTime start_time) {
-    auto definition = LiteralSource{input, runtime_type, start_time};
+                                      const TimeSeriesRuntimeType &runtime_type) {
+    auto definition = LiteralSource{input, runtime_type};
     auto &wiring = WiringContext::current().wiring();
     const auto &source_template = wiring.own_node_template(
         std::make_unique<RuntimeSignatureNodeTemplate<LiteralSource>>(std::move(definition)));
     return *static_cast<const WiringTemplate &>(source_template)();
+}
+
+inline WiringPoint wire_runtime_source(const GraphRunInput &input) {
+    auto definition = RuntimeSource{input};
+    auto &wiring = WiringContext::current().wiring();
+    const auto &source_template = wiring.own_node_template(
+        std::make_unique<RuntimeSignatureNodeTemplate<RuntimeSource>>(std::move(definition)));
+    const auto arguments = std::array{
+        WiringArgument::absent_scalar(input.runtime_type.type(), input.runtime_type),
+    };
+    return *static_cast<const WiringTemplate &>(source_template)(arguments);
+}
+
+template <typename Output> void capture_graph_output(const Output &output, CapturedValues &captured) {
+    if constexpr (optional_value<std::remove_cvref_t<Output>>::value) {
+        if (output) {
+            capture_output(static_cast<WiringPoint>(*output), captured);
+        }
+    } else {
+        capture_output(static_cast<WiringPoint>(output), captured);
+    }
 }
 
 template <typename Function, typename Inputs, std::size_t... Index>
@@ -879,21 +963,26 @@ template <typename Function, typename Inputs, std::size_t... Index>
     for (const auto &input : inputs) {
         cycle_count = std::max(cycle_count, input.ticks.size());
     }
-    captured.records.resize(cycle_count);
+    captured.set_cycle_count(cycle_count);
 
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
         const auto sources = std::array<WiringPoint, sizeof...(Index)>{
             wire_literal_source(inputs[Index], literal_runtime_type<typename FunctionInfo::template input_time_series<Index>>(
-                                                   inputs[Index]),
-                                start_time)...};
-        const auto output = std::invoke(
-            function, typename FunctionInfo::template argument<Index>{sources[Index]}...);
-        capture_output(output, captured);
+                                                   inputs[Index]))...};
+        if constexpr (std::same_as<typename FunctionInfo::result, void>) {
+            std::invoke(function, typename FunctionInfo::template argument<Index>{sources[Index]}...);
+        } else {
+            const auto output = std::invoke(
+                function, typename FunctionInfo::template argument<Index>{sources[Index]}...);
+            if (options.capture_output) {
+                capture_graph_output(output, captured);
+            }
+        }
     }
 
-    return finish_test_graph(wiring, captured, start_time, options);
+    return finish_graph_run(wiring, captured, options);
 }
 
 inline auto run_template_literals(const WiringTemplate &tested, const GraphRunOptions &options,
@@ -911,7 +1000,7 @@ inline auto run_template_literals(const WiringTemplate &tested, const GraphRunOp
     for (const auto &input : inputs) {
         cycle_count = std::max(cycle_count, input.ticks.size());
     }
-    captured.records.resize(cycle_count);
+    captured.set_cycle_count(cycle_count);
 
     auto wiring = GraphWiring{};
     {
@@ -920,16 +1009,16 @@ inline auto run_template_literals(const WiringTemplate &tested, const GraphRunOp
         sources.reserve(inputs.size());
         for (auto index = std::size_t{}; index < inputs.size(); ++index) {
             sources.push_back(wire_literal_source(
-                inputs[index], literal_runtime_type(inputs[index], tested.signature(), index), start_time));
+                inputs[index], literal_runtime_type(inputs[index], tested.signature(), index)));
         }
 
         const auto output = tested(std::span<const WiringPoint>{sources});
-        if (output) {
-            capture_output(*output, captured);
+        if (options.capture_output && output) {
+            capture_graph_output(*output, captured);
         }
     }
 
-    return finish_test_graph(wiring, captured, start_time, options);
+    return finish_graph_run(wiring, captured, options);
 }
 
 template <typename Function, typename Inputs, std::size_t... Index>
@@ -939,19 +1028,25 @@ template <typename Function, typename Inputs, std::size_t... Index>
     using FunctionInfo = test_function<Function>;
     const auto start_time = options.start_time.value_or(MIN_DT + EvaluationTime::duration{1});
     auto captured = CapturedValues{start_time};
-    captured.records.resize(std::max({std::size_t{1}, std::ranges::size(std::get<Index>(inputs))...}));
+    captured.set_cycle_count(std::max({std::size_t{1}, std::ranges::size(std::get<Index>(inputs))...}));
     auto wiring = GraphWiring{};
 
     {
         auto context = WiringContext{wiring};
         [[maybe_unused]] const auto sources = std::tuple{
-            wire_source<typename FunctionInfo::template input_scalar<Index>>(std::get<Index>(inputs), start_time)...};
-        const auto output =
+            wire_source<typename FunctionInfo::template input_scalar<Index>>(std::get<Index>(inputs))...};
+        if constexpr (std::same_as<typename FunctionInfo::result, void>) {
             std::invoke(function, typename FunctionInfo::template argument<Index>{std::get<Index>(sources)}...);
-        capture_output(output, captured);
+        } else {
+            const auto output =
+                std::invoke(function, typename FunctionInfo::template argument<Index>{std::get<Index>(sources)}...);
+            if (options.capture_output) {
+                capture_graph_output(output, captured);
+            }
+        }
     }
 
-    return finish_test_graph(wiring, captured, start_time, options);
+    return finish_graph_run(wiring, captured, options);
 }
 
 template <std::ranges::contiguous_range... Inputs>
@@ -959,21 +1054,21 @@ template <std::ranges::contiguous_range... Inputs>
                                 const Inputs &...inputs) {
     const auto start_time = options.start_time.value_or(MIN_DT + EvaluationTime::duration{1});
     auto captured = CapturedValues{start_time};
-    captured.records.resize(std::max({std::size_t{1}, std::ranges::size(inputs)...}));
+    captured.set_cycle_count(std::max({std::size_t{1}, std::ranges::size(inputs)...}));
     auto wiring = GraphWiring{};
 
     {
         auto context = WiringContext{wiring};
         const auto sources = std::array<WiringPoint, sizeof...(Inputs)>{
-            wire_source<canonical_tick_t<std::ranges::range_value_t<Inputs>>>(inputs, start_time)...};
+            wire_source<canonical_tick_t<std::ranges::range_value_t<Inputs>>>(inputs)...};
         const auto output = tested(std::span<const WiringPoint>{sources});
 
-        if (output) {
-            capture_output(*output, captured);
+        if (options.capture_output && output) {
+            capture_graph_output(*output, captured);
         }
     }
 
-    return finish_test_graph(wiring, captured, start_time, options);
+    return finish_graph_run(wiring, captured, options);
 }
 
 [[nodiscard]] inline auto run_runtime_template(const WiringTemplate &tested, const GraphRunOptions &options,
@@ -990,25 +1085,18 @@ template <std::ranges::contiguous_range... Inputs>
 
         for (const auto &input : inputs) {
             cycle_count = std::max(cycle_count, input.ticks.size());
-
-            auto definition = RuntimeSource{input, start_time};
-            const auto &source_template = wiring.own_node_template(
-                std::make_unique<RuntimeSignatureNodeTemplate<RuntimeSource>>(std::move(definition)));
-            const auto arguments = std::array{
-                WiringArgument::absent_scalar(input.runtime_type.type(), input.runtime_type),
-            };
-            sources.push_back(*static_cast<const WiringTemplate &>(source_template)(arguments));
+            sources.push_back(wire_runtime_source(input));
         }
 
         const auto output = tested(std::span<const WiringPoint>{sources});
-        if (output) {
+        if (options.capture_output && output) {
             capture_output(*output, captured);
         }
     }
 
-    captured.records.resize(cycle_count);
+    captured.set_cycle_count(cycle_count);
 
-    return finish_test_graph(wiring, captured, start_time, options);
+    return finish_graph_run(wiring, captured, options);
 }
 
 } // namespace bg::testing::details

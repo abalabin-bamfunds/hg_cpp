@@ -18,6 +18,7 @@ struct GraphRunOptions {
     const ServiceCatalogue *services{};
     std::optional<EvaluationProfiler::Recorder> recorder{};
     EvaluationEngine engine{EvaluationEngine::simulation};
+    bool capture_output{true};
     std::optional<EvaluationTime> start_time{};
     std::optional<EvaluationTime> stop_time{};
     std::optional<EvaluationTime::duration> run_time{};

@@ -1,16 +1,9 @@
 #pragma once
 
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/scalar/value.hpp>
-
-#include <optional>
-#include <span>
+#include <bg/graph_run_input.hpp>
 
 namespace bg::testing {
 
-struct TestGraphInput {
-    const ScalarRuntimeType &runtime_type;
-    std::span<const std::optional<ScalarValue<>>> ticks;
-};
+using TestGraphInput = GraphRunInput;
 
 } // namespace bg::testing

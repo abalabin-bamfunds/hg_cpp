@@ -10,6 +10,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
+#include <optional>
 #include <stop_token>
 #include <stdexcept>
 #include <vector>
@@ -84,6 +85,21 @@ TEST_CASE("run_graph starts, evaluates, and stops a graph",
     CHECK(starting_source_definition::stop_count == 2);
     CHECK(add_definition::evaluation_count == 1);
     CHECK(add_definition::last_result == 3.0F);
+}
+
+TEST_CASE("run_graph captures optional callback outputs", "[evaluation][feature:graph-run]") {
+    const auto source = node([] { return i64{42}; });
+
+    const auto direct = run_graph([&] { return source(); });
+    CHECK(direct.equals<i64>({42}));
+
+    const auto optional = run_graph([&]() -> std::optional<WiringPoint> {
+        return static_cast<WiringPoint>(source());
+    });
+    CHECK(optional.equals({42}));
+
+    const auto no_output = run_graph([]() -> std::optional<WiringPoint> { return std::nullopt; });
+    CHECK(no_output.size() == 1);
 }
 
 TEST_CASE("run_graph uses an explicit simulation start time",
