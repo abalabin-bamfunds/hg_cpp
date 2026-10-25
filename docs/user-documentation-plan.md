@@ -1,168 +1,389 @@
 # User documentation plan
 
+Status: proposed outline for editing. Chapter names and scope remain under review.
+
 Audience: readers who know basic Python or C++ and are new to computation graphs.
-Chapters answer concrete graph-authoring needs. Each feature explains its purpose,
-shows supported syntax, and links to its API contract.
 
-## Documentation structure
+## Structure
 
-| Area | Purpose |
+The quick starts provide compact syntax examples and links to detailed explanations.
+The graph guide describes patterns for connecting calculations. The node guide
+explains how to implement calculations. Advanced guides introduce time series
+contracts when a requirement needs more than ordinary values.
+
+| Section | Purpose |
 | --- | --- |
-| Getting started | Explain BG, install it, and run a fixed-value program. |
-| Guide | Introduce concepts with progressively more syntax and behavior. |
-| Task guides | Answer specific testing, conversion, diagnostic, profiling, and integration questions. |
-| Application recipes | Combine operations for alarm transitions, requested summaries, and independent per-key history. |
-| API reference | Specify graph-author declarations, runtime access, types, execution, and services. |
-| Library reference | Group supplied operations by behavior and provide an alphabetical index. |
+| Getting started | Recognise the syntax and run a small graph. |
+| Writing graphs | Express calculations using graph patterns and existing operations. |
+| Writing nodes | Add calculations written in ordinary Python or C++. |
+| Advanced syntax at a glance | Find compact examples of explicit types and runtime controls. |
+| Advanced graphs | Express independent updates, changing dependencies, and stronger type contracts. |
+| Advanced nodes | Inspect and control validity, activity, publication, state, and scheduling. |
+| Execution and diagnostics | Connect applications, test behavior, and investigate failures. |
+| Reference | Find complete API contracts and library operations. |
 
-Engine design documents remain outside the published site. Each concept has one
-primary explanation. Guide pages explain the behavior needed for their examples;
-reference pages own the complete contracts.
+Each graph pattern has one primary chapter. That chapter covers the relevant
+approaches together and explains when each applies. Advanced chapters explain
+additional contracts and link back to the pattern.
 
-## Presentation rules
+## Proposed table of contents
 
-- Use documentation language: purpose, syntax, behavior, constraints, and results.
-  Keep commands for installation and build/run instructions.
-- Begin with plain values. Introduce time series annotations when views,
-  collections, guarantees, or generic signatures require them.
-- Provide Python and C++ examples with equivalent observable behavior. State
-  language differences where the APIs differ.
-- Use direct Python imports and C++ namespace imports. Use literal test sequences
-  and sentinel values, with no unnecessary optional arrays.
-- Keep language tabs synchronized across pages. Put C++ setup in a nested
-  **Build and run** tab; select **Code** by default.
-- Use temperature readings in the core sequence, then multiple sensors for
-  collections. Keep example names and diagrams consistent.
-- Label fragments with their dependencies. Supply complete examples for new tasks.
-- Generate downloadable Python sources and C++ projects from the checked examples.
-  Keep the site build independent of the BG runtime and compiler.
-- Show actual diagnostic excerpts with the failing operation, supplied types, and
-  correction. Distinguish cycle durations, node counts, and checkpoint ticks in profiles.
+### 1. Getting started
 
-## Concept sequence
+#### 1.1 BG overview
 
-### Getting started
+- What BG computes and where a computation graph is useful. # important topics to mention - minimal recalcualtion is possible because all iteremediate results are cached and dependencies are tracked
+- Nodes, connections, inputs, and outputs, shown in code and a small diagram.
+- Graph construction and graph evaluation, in one short explanation.
+- Python and C++ authoring options.
 
-Introduction to BG → installation → first program.
+#### 1.2 Installation
 
-The first program introduces imports, declarations, `const_`, a return value,
-and `test_graph` without input sequences. It assumes no graph knowledge.
+- Python installation and import check.
+- C++ installation and minimal project.
+- Running a supplied example.
 
-### 1. Graph basics
+#### 1.3 Basic syntax crash course
 
-Arithmetic → graph functions → changing values → conditionals.
+Purpose: provide a compact, runnable introduction before the detailed guides.
 
-Expressions and named intermediate results establish dependencies. Functions add
-parameters and composition with fixed arguments. Changing values introduces test
-sequences, retained values, skipped/repeated updates, input availability, and
-simultaneous updates. C++ first uses `wp<TS<i64>>` here.
+- Fixed values and a first result.
+- Arithmetic and named expressions.
+- A graph function with parameters and a return value.
+- Calling another graph function.
+- Changing inputs supplied as sequences to `test_graph`.
+- A conditional expression.
+- A small node written with plain value types.
 
-Conditionals receives a full chapter because construction-time control flow and
-evaluation-time value selection have different behavior. It covers native truth
-conversion, fixed settings, Boolean combinations, multiple outcomes, selected
-input updates, and the absence of short-circuit evaluation.
+Each item has a short explanation, code, a result, and a link to its detailed
+chapter. Fixed-value syntax precedes changing values. Plain types remain the
+default; annotations required by the C++ graph boundary receive a local explanation.
 
-### 2. Working with updates
+### 2. Writing graphs
 
-Deduplication → conditional forwarding → sampling → count/lag → running totals/means.
+This guide organises existing operations by the calculation they express.
+Examples use plain value types wherever the supported API permits them.
 
-Each operation changes which updates reach later calculations or how updates
-contribute to history. Library calls precede custom implementations. This section
-requires neither input views nor custom node state.
+#### 2.1 Expressions and composition
+
+Purpose: combine existing calculations into a larger calculation.
+
+- Arithmetic, comparisons, and named intermediate results.
+- Graph functions, parameters, fixed arguments, and results.
+- Calling graph functions and sharing intermediate calculations.
+- Construction-time values and values supplied during evaluation.
+
+Example: a price calculation reused to compute a subtotal and a final total.
+
+#### 2.2 Types and connections
+
+Purpose: connect compatible outputs and inputs and identify incorrect connections.
+
+- Supported scalar types and plain annotations.
+- Output-to-input type matching in the simple, concrete case.
+- Type inference and explicit declarations where required.
+- Operator selection from argument types.
+- Explicit value conversion and connection type checks.
+- A type mismatch, its diagnostic, and the corrected connection.
+
+Example: connect an integer result to another calculation, then handle a numeric
+type mismatch. Generic resolution and guarantees belong to advanced graphs.
+
+#### 2.3 Scalar collections and structured values
+
+Purpose: pass several values as one input or result.
+
+- Supported lists, tuples, dictionaries, and sets.
+- Named fields and structured scalar values.
+- Item and field selection.
+- Whole-value updates and calculations over a scalar collection.
+- Fixed collections used to construct several graph connections.
+
+Example: a complete set of prices supplied as one value and reduced to a total.
+Per-item time series updates belong to advanced graphs.
+
+#### 2.4 Changing inputs and update patterns
+
+Purpose: define which input changes produce results.
+
+- Test sequences, current values, and positions with no update.
+- Multiple inputs, simultaneous updates, and dependency order.
+- Repeated values and `dedup`.
+- Signal-driven publication with `sample`.
+- Input sequences containing scalar collections.
+
+Example: a quote calculation that publishes on price changes or explicit requests.
+
+#### 2.5 Conditionals
+
+Purpose: choose values, forward updates conditionally, or run a selected calculation.
+
+- Native `if` for decisions made during graph construction.
+- Comparisons and Boolean combinations of changing values.
+- `if_then_else` for value selection.
+- `filter_` for conditional forwarding.
+- `default_` for a fallback when an input has no current value.
+- `switch_` for selecting a graph instance, including cases and a default.
+- Branch evaluation, output updates, and the absence of short-circuit behavior
+  in value selection.
+- Instance replacement and state reset when a switch changes case.
+- A comparison table covering purpose, branch execution, retained output, and state.
+
+Examples: a bounded result, enabled publication, a fallback reading, and a selected
+operating mode. These examples appear together so the alternatives can be compared.
+
+This chapter owns the complete overview of conditional patterns. Additional library
+primitives join the relevant pattern when implemented. Planning records distinguish
+supported and pending APIs; published examples use supported APIs.
+
+#### 2.6 Iteration
+
+Purpose: apply a calculation to several items.
+
+- Native loops over fixed values during graph construction.
+- Per-key graph application with `map`.
+- Fixed arguments and inputs shared across mapped calculations.
+- Multiple mapped arguments and key selection.
+- Item addition, updates, removal, and independent state.
+- Construction-time repetition and runtime graph instances.
+
+Example: apply one calibration graph to several sensors, then add and remove sensors.
+
+The current `map` API operates on keyed time series inputs. Its first example needs
+a minimal keyed-input declaration, explained at the point of use. The complete
+collection type model, validity rules, references, and subscriptions belong to
+advanced graphs. Examples must not imply that `map` accepts scalar containers.
+
+#### 2.7 Aggregation and history
+
+Purpose: combine items or retain information across successive updates.
+
+- Built-in reductions over the current collection.
+- Custom aggregation with `reduce`.
+- Counts, previous values, running totals, and running means.
+- Reset signals.
+- Aggregation across items and accumulation across time.
+
+Examples: a current portfolio total and a running traded-volume total.
 
 ### 3. Writing nodes
 
-Plain calculation nodes → skipped output → optional inputs → invalidation and
-recovery → input views → input availability.
+This guide implements value calculations with ordinary language code. Graph patterns
+remain in the graph guide.
 
-Ordinary node control flow works on values. No publication, absent input,
-invalidation, and a skipped test position have separate explanations. Zero-valued
-inputs demonstrate why absence checks cannot use truthiness.
+#### 3.1 Calculation nodes
 
-Input views follow a task requiring update information: identify which of two
-inputs changed. Explain `.value`, `.modified`, validity, and callback lifetime.
-Both languages provide optional input views. Python decorator options select
-input activity and validity; C++ expresses these in input declarations.
+- Plain input and result types.
+- Fixed parameters and changing inputs.
+- Ordinary arithmetic, native conditionals, loops, and helper functions.
+- Nodes consuming and returning scalar collections.
+- Calling a node from graph code.
 
-### 4. Running graphs
+Example: an application-specific calculation unavailable in the library.
 
-Sources/sinks and `run_graph` → evaluation time → periodic signals → delay →
-throttle → reset history → custom state → lifecycle → timed sources → queues.
+#### 3.2 Results and evaluation
 
-Finite simulation examples establish termination before external producers or
-realtime execution. Evaluation time precedes timers. Library history precedes
-custom state. Node state and lifecycle precede resource-owning sources.
+- Reading current input values during evaluation.
+- Required inputs and the first evaluation.
+- Publishing a result or skipping publication.
+- Exceptions and evaluation failure.
+- Testing a node through a small graph.
 
-C++ aggregate declarations expose state and evaluation context; Python injects
-state, clocks, and schedulers. Wiring reuse is distinct from value deduplication.
+Example: a calculation that publishes only accepted readings. Explicit optional
+inputs, invalidation, and update inspection belong to advanced nodes.
 
-### 5. Collections
+### 4. Advanced syntax at a glance
 
-Fixed lists → bundles → dictionaries → sets → current-item reductions → map →
-custom aggregation.
+Purpose: provide a compact syntax reference for readers entering either advanced guide.
 
-Each shape introduces its own declaration, delta, item selection, and availability
-rules. Current-item aggregation is distinct from history over successive updates.
-Boolean reductions follow numeric reductions. Map introduces independent graph
-instances per key; custom reduce follows the built-in operations.
+- Plain types and explicit `TS` declarations.
+- Scalar collections and independently updating time series items.
+- Optional inputs and input views.
+- Validity, modification, and input activity.
+- References and time series guarantees.
+- State and scheduled evaluation.
 
-### 6. Advanced graphs
+Each entry contains the smallest useful example, its effect, and a link to the
+full explanation. This page is an optional entry point after the basic guides.
 
-Guarantees → references → switch → mesh → generics → variadics → shared inputs →
-application state → services.
+### 5. Advanced graphs
 
-Single-publication sources and deduplication motivate explicit guarantees.
-Dictionary selection motivates reference identity and retargeting. Stateful nodes
-make switch lifecycle observable. Map and references precede mesh dependencies.
-Generic types precede variadic capture. Explicit dependencies, context inputs,
-shared scalar storage, and service implementation selection address distinct needs.
+#### 5.1 Time series types
 
-## API compatibility
+Purpose: describe update behavior that a scalar type alone cannot express.
 
-Examples use the lane's current implementation and tests. Design documents are
-supporting sources; examples must not invent syntax from a proposed interface.
+- Current value and update time; history requires a calculation.
+- Plain annotations and explicit time series declarations.
+- No update, no current value, and invalidation.
+- Time series output-to-input compatibility.
 
-| Facility | Python | C++ |
-| --- | --- | --- |
-| Plain optional node inputs | `int \| None` | `std::optional<i64>` |
-| Skip publication | Return `None` with a plain output annotation | Return a disengaged optional or leave `Out` unchanged |
-| Optional input views | `@compute_node(valid=(...))` and `.valid` | `In<TS<i64>, optional>` |
-| Retained node state | `State[Factory]` injectable | Aggregate `State<T>` field |
-| Evaluation clock | `EvaluationClock` injectable | Aggregate callback context |
-| Custom active/passive inputs | `active=(...)` decorator option | Input declaration properties |
-| Explicit output mutation | Return a delta; `Output` is read-only | `Out<>` operations |
-| Custom collection aggregate | Collection node | Reducer graph or collection node |
-| Context inputs | Explicit arguments | `with_context` and context parameters |
-| Application scalar storage | Application-owned sink storage | `GlobalState` |
-| Operator declarations | Export a native operator | `operator_`, `overload`, registration groups |
+Example: an input loses its current value and later becomes valid again.
 
-These differences do not authorize engine changes. Python alternatives show the
-same application result where a direct API is unavailable.
+#### 5.2 Time series collections
 
-## Review and improvement sequence
+Purpose: update and subscribe to individual items independently.
 
-At least four distinct cycles review the complete body and apply corrections:
+- A scalar collection held in one time series and separately changing items.
+- Lists: fixed positions and sparse indices.
+- Bundles: named items with different types.
+- Dictionaries: changing keys and per-key values.
+- Time series sets: membership changes.
+- Item selection, root validity, item validity, and change information.
+- Effects on the iteration and aggregation patterns.
 
-1. Structure and prerequisites: concept order, chapter purpose, overlap, and reference links.
-2. API and behavior: executable examples, declarations, defaults, validity, state, and lifetime.
-3. Readability and consistency: syntax load, terminology, purpose, repetition, and documentation tone.
-4. Publication and retrieval: navigation, fragments, language tabs, hidden setup, search, and layout.
+Example: one sensor changes without republishing every sensor value.
 
-[Documentation review](documentation-review.md) records corrections and evidence.
-`docs/check_examples.py` runs the complete examples in both languages. The native
-extension task is built separately. Sphinx treats warnings as errors.
+#### 5.3 References and dynamic binding
 
-## Draft status
+Purpose: follow a selected source as the source identity changes.
 
-The guide, task guides, API reference, and library reference are drafted on
-`agent/user-documentation`. The opening chapters retain their established URLs.
-The lane owns its build artifacts. Integration into the root worktree requires
-owner approval under the local agent workflow.
+- Value identity and source identity.
+- References, dereferencing, and retargeting.
+- Dynamic item selection and dependency subscriptions.
+- Invalid targets, removed items, and recovery.
+- Reference behavior behind conditionals, `map`, and `switch_`.
 
-## Documentation site and publication
+Example: a calculation follows whichever sensor is currently selected.
 
-Sphinx, MyST Markdown, and Furo provide navigation, search, and language tabs.
-[Read the Docs configuration](../.readthedocs.yaml) uses the same source and
-dependencies. [Authoring instructions](README.md) describe local builds, preview,
-and example verification. Hosting requires importing the repository into a Read
-the Docs project and selecting the branch and versions to publish.
+#### 5.4 Activity and dependency patterns
+
+Purpose: control which changes trigger a calculation.
+
+- Active and passive connections from the graph author's perspective.
+- Sampling and explicit trigger dependencies.
+- Dynamic subscriptions and selected collection items.
+- Per-key dependencies with `mesh`.
+
+Examples: a requested snapshot and calculations whose keys depend on other keys.
+Advanced nodes owns the input-view APIs and evaluation controls.
+
+#### 5.5 Guarantees and advanced type matching
+
+Purpose: declare publication constraints and reuse graph code across compatible types.
+
+- Ordinary, deduplicated, final, and const time series.
+- Guarantee compatibility and propagation through a graph.
+- Collection and reference guarantees.
+- Generic types, constraints, and variadic parameters.
+- Reusable operators and overloads.
+- Runtime type dispatch and its relation to value-based conditionals.
+
+Examples: a calculation accepting several numeric types and a single-publication input.
+
+#### 5.6 Shared dependencies and services
+
+- Explicit arguments and context time series.
+- Shared scalar state with `GlobalState` where supported.
+- Services and implementation selection.
+- Ownership and lifetime across inner graphs.
+
+Example: several calculations use a shared lookup service.
+
+### 6. Advanced nodes
+
+#### 6.1 Input views, validity, and activity
+
+Purpose: inspect input state when current values alone are insufficient.
+
+- Current value, validity, modification, and last update time.
+- Optional inputs and fallback logic.
+- Required, optional, and `all_valid` constraints.
+- Active and passive inputs; activity and validity are independent controls.
+- Input-view lifetime.
+
+Examples: identify which input changed and calculate when only some inputs are valid.
+
+#### 6.2 Collection inputs and output publication
+
+Purpose: process changes without reconstructing complete collection values.
+
+- Updated items, added and removed keys, and set membership changes.
+- Item validity and `valid_items` where supported.
+- Complete values and change information.
+- Publishing, skipping, and invalidating output.
+- Collection output updates and guarantee enforcement.
+- Python and C++ API differences.
+
+Example: update an aggregate from changed items and remove contributions for deleted keys.
+
+#### 6.3 State and lifecycle
+
+- Retained node state and initialization.
+- Separate state for independent instances.
+- Start and stop callbacks.
+- Resource ownership and cleanup.
+- State under mapped and switched graph lifetimes.
+
+Example: an accumulator with an explicit reset and independently owned instances.
+
+#### 6.4 Time, scheduling, and custom sources
+
+- Evaluation time and scheduled evaluation.
+- Timed output without a new input update.
+- Custom finite sources.
+- External producers and queues.
+- Scheduling and cleanup when an inner graph stops.
+
+Example: a source publishes timed values and releases an external subscription on stop.
+
+### 7. Execution and diagnostics
+
+- Sources, sinks, and complete applications with `run_graph`.
+- Simulation and real-time execution.
+- Library time patterns: periodic signals, delay, and throttle.
+- Tests for updates, invalidation, time, state, and dynamic graph instances.
+- Type errors, graph-construction errors, and evaluation failures.
+- Profiling and interpretation of reported measurements.
+- Python graphs with C++ nodes.
+- Complete application examples and downloadable projects.
+
+Split these topics into a few task-focused pages. Crash-course tests remain
+sufficient for running the earlier graph and node examples.
+
+### 8. Reference
+
+#### 8.1 API reference
+
+- Graph declarations, signatures, connections, and type matching.
+- Node declarations, input views, outputs, state, and lifecycle.
+- Scalar types, time series types, references, and guarantees.
+- Iteration, conditional graphs, dependent graphs, context, and services.
+- Execution, scheduling, sources, queues, testing, and literals.
+- Language-specific APIs and interoperability.
+
+#### 8.2 Library reference
+
+- Arithmetic, comparison, Boolean, string, and conversion operations.
+- Selection, conditional forwarding, and fallback operations.
+- Sampling, deduplication, history, and running calculations.
+- Time operations.
+- Scalar collections, time series collections, and reductions.
+- Alphabetical index with links to the relevant graph patterns.
+
+## Page and example format
+
+- Use topic titles and direct descriptions of purpose, behavior, and constraints.
+- Give every concept a Python example and a C++ example with observable results.
+- Keep quick-start explanations short and link to detailed explanations.
+- Begin pattern chapters with the problem and a complete example. Add variants
+  and a comparison table where the reader must choose between approaches.
+- Use direct Python imports and C++ namespace imports. Keep literal test sequences
+  readable. Explain required type declarations at the point of use.
+- Synchronize Python and C++ tabs. Place C++ setup in a nested **Build and run** tab.
+- Use diagrams for topology, selected dependencies, or instance lifetime when code
+  alone leaves the behavior unclear.
+- Generate downloads from checked examples. Keep Sphinx and Read the Docs support.
+- Separate supported API coverage from pending library work during planning.
+
+## Review checklist before page writing
+
+- Confirm chapter boundaries and quick-start scope.
+- Check that each graph pattern covers the relevant library and structural APIs.
+- Verify supported syntax in both languages, especially scalar collection operations
+  and the smallest `map` example.
+- Inventory pending conditional primitives without inventing their public APIs.
+- Assign each detailed concept one primary location and link from other uses.
+- Review the sequence from plain types to explicit time series contracts.
+
+Page rewriting follows review of this outline. The existing draft remains available
+as a coverage inventory and source of checked examples.
