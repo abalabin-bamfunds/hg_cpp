@@ -6,64 +6,64 @@ If there is a LOCAL_AGENTS.md in the directory, read and apply it too.
 
 ## Project direction
 
-[docs/project.md](docs/project.md) defines the project purpose and priorities.
+[docs/development/project.md](docs/development/project.md) defines the project purpose and priorities.
 Use its priority order when design goals conflict.
 
-[docs/node-layout.md](docs/node-layout.md) contains the current node object
+[docs/development/proposals/node-layout.md](docs/development/proposals/node-layout.md) contains the current node object
 layout proposal. Do not treat a proposed choice as an approved design.
 
-[docs/node-api.md](docs/node-api.md) defines node inputs, evaluation functions,
+[docs/development/design/node-api.md](docs/development/design/node-api.md) defines node inputs, evaluation functions,
 and output modification.
 
-[docs/graph-wiring.md](docs/graph-wiring.md) defines graph functions, wiring
+[docs/development/design/graph-wiring.md](docs/development/design/graph-wiring.md) defines graph functions, wiring
 templates, graph templates, wiring contexts, and wiring paths.
 
-[docs/variadic-wiring.md](docs/variadic-wiring.md) defines variadic parameters,
+[docs/development/design/variadic-wiring.md](docs/development/design/variadic-wiring.md) defines variadic parameters,
 capture, forwarding, materialization, and nested graph boundaries.
 
-[docs/operators.md](docs/operators.md) defines operators, overload resolution,
+[docs/development/design/operators.md](docs/development/design/operators.md) defines operators, overload resolution,
 requirements, resolution caching, and overload diagnostics.
 
-[docs/evaluation.md](docs/evaluation.md) defines evaluation order, context
+[docs/development/design/evaluation.md](docs/development/design/evaluation.md) defines evaluation order, context
 services, lifecycle, scheduling, cycle callbacks, and failure behavior.
 
-[docs/type-system.md](docs/type-system.md) defines type resolution, time series
+[docs/development/design/type-system.md](docs/development/design/type-system.md) defines type resolution, time series
 guarantees, compatibility, propagation, and runtime enforcement.
 
-[docs/scalar-api.md](docs/scalar-api.md) defines scalar access, ownership,
+[docs/development/design/scalar-api.md](docs/development/design/scalar-api.md) defines scalar access, ownership,
 construction, and generic list access.
 
-[docs/global-state.md](docs/global-state.md) defines scalar values shared by an
+[docs/development/design/global-state.md](docs/development/design/global-state.md) defines scalar values shared by an
 outer graph and its inner graphs.
 
-[docs/nested-graphs.md](docs/nested-graphs.md) defines nested graph boundaries,
+[docs/development/design/nested-graphs.md](docs/development/design/nested-graphs.md) defines nested graph boundaries,
 ownership, lifecycle, and scheduling.
 
-[docs/map.md](docs/map.md) defines map arguments, key selection, output,
+[docs/development/design/map.md](docs/development/design/map.md) defines map arguments, key selection, output,
 evaluation, and lifecycle.
 
-[docs/mesh.md](docs/mesh.md) defines mesh branch selection, dependency ordering,
+[docs/development/design/mesh.md](docs/development/design/mesh.md) defines mesh branch selection, dependency ordering,
 output, and lifecycle.
 
-[docs/switch.md](docs/switch.md) defines case selection, arguments, output,
+[docs/development/design/switch.md](docs/development/design/switch.md) defines case selection, arguments, output,
 evaluation, and lifecycle.
 
-[docs/testing.md](docs/testing.md) defines test organization and required
+[docs/development/testing.md](docs/development/testing.md) defines test organization and required
 coverage.
 
-[docs/time-series-references.md](docs/time-series-references.md) defines reference
+[docs/development/design/time-series-references.md](docs/development/design/time-series-references.md) defines reference
 routing, dynamic subscriptions, and removal lifetime.
 
-[docs/time-series-validity.md](docs/time-series-validity.md) defines invalidation,
+[docs/development/design/time-series-validity.md](docs/development/design/time-series-validity.md) defines invalidation,
 revalidation, and their effects on references, collections, and nodes.
 
-[docs/time-series-types.md](docs/time-series-types.md) defines the initial time
+[docs/development/design/time-series-types.md](docs/development/design/time-series-types.md) defines the initial time
 series types and their change information.
 
-[docs/tsd-layout.md](docs/tsd-layout.md) defines dictionary storage, shared
+[docs/development/design/tsd-layout.md](docs/development/design/tsd-layout.md) defines dictionary storage, shared
 representations, and tabular buffers.
 
-[docs/python.md](docs/python.md) defines Python graph authoring, Python node
+[docs/development/design/python.md](docs/development/design/python.md) defines Python graph authoring, Python node
 definitions, scalar integration, runtime access, and the Python extension
 boundary.
 
@@ -88,6 +88,13 @@ term before you use it as project terminology.
 
 Keep documentation brief and complete.
 
+`docs/user/` contains the published guides, task pages, and API reference for graph
+and node writers. `docs/development/` contains engine designs, contributor guidance,
+decision records, proposals, reports, and planning records. Use the
+[development index](docs/development/index.md) and
+[documentation maintenance guide](docs/development/documentation.md) for placement
+and verification rules. Both trees use the shared terminology dictionary.
+
 - Include the information that a reader needs to act correctly.
 - Put the purpose before details.
 - Prefer short paragraphs and short lists.
@@ -105,7 +112,7 @@ Keep documentation brief and complete.
 
 ## Decision records
 
-  - Documentation describes current behavior; `docs/decisions/` records why significant choices were made.
+  - Documentation describes current behavior; `docs/development/decisions/` records why significant choices were made.
   - Record only durable, non-obvious decisions implemented in committed code.
     Include the record in the same authorized commit.
   - Skip routine details, plans, experiments, and uncommitted work.

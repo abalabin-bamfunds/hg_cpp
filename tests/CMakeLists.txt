@@ -247,13 +247,13 @@ if(Python3_Interpreter_FOUND)
         test-coverage-report
         COMMAND
             "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/test_coverage.py" "$<TARGET_FILE:bg_tests>"
-            --dimensions "${PROJECT_SOURCE_DIR}/docs/testing.md"
+            --dimensions "${PROJECT_SOURCE_DIR}/docs/development/testing.md"
             --output "${PROJECT_BINARY_DIR}/test-coverage.md"
             --check
         COMMAND
             "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/test_coverage.py"
             "$<TARGET_FILE:bg_library_tests>"
-            --dimensions "${PROJECT_SOURCE_DIR}/docs/testing.md"
+            --dimensions "${PROJECT_SOURCE_DIR}/docs/development/testing.md"
             --output "${PROJECT_BINARY_DIR}/library-test-coverage.md"
             --check
         DEPENDS bg_tests bg_library_tests

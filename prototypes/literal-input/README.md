@@ -3,8 +3,8 @@
 The literal carriers live in `include/bg/literal/`. Scalar construction lives in
 `include/bg/scalar/literal.hpp`; owning value transfer lives in
 `include/bg/scalar/value.hpp`. See the
-[literal API](../../docs/scalar-api.md#literals) for source lifetimes and scalar
-construction, and the [node API](../../docs/node-api.md) for `Out::apply()`.
+[literal API](../../docs/development/design/scalar-api.md#literals) for source lifetimes and scalar
+construction, and the [node API](../../docs/development/design/node-api.md) for `Out::apply()`.
 
 Configure and build from this lane's root. The engine target and build output
 are local to this lane; the dependency source paths may point to existing
@@ -75,12 +75,12 @@ auto erased = bg::ScalarValue<>::from_literal(runtime_type, {{1, 2}, {}, {3}});
 ```
 
 Sequence syntax, field validation, allocator ownership, and failure cleanup
-follow the [scalar API](../../docs/scalar-api.md#literals).
+follow the [scalar API](../../docs/development/design/scalar-api.md#literals).
 
 `ScalarVisitTypes` dispatches built-in atomic types to typed scalar views and
 structural types to their generic views. Other declarations reach the
 `Scalar<>` extension callback, where the consumer owns extension behavior,
-optionally through `ScalarDispatch`; see [the scalar API](../../docs/scalar-api.md#optional-operations).
+optionally through `ScalarDispatch`; see [the scalar API](../../docs/development/design/scalar-api.md#optional-operations).
 
 `Out::apply()` accepts typed and runtime-selected scalar time series, fixed
 TSL, TSB, TSD, and TSS outputs:
@@ -104,7 +104,7 @@ Scalar TS application constructs an owning
 `set_value()` overload. Scalar sequences construct complete replacements through
 the actual destination runtime. Compatible storage transfers without another
 collection element copy.
-Collection deltas follow the [output API](../../docs/node-api.md#output-parameters).
+Collection deltas follow the [output API](../../docs/development/design/node-api.md#output-parameters).
 Child outputs own validity, guarantees, notifications, and containing paths.
 Literal interpretation lives in the time series consumer. The prototype
 `literal::apply` function forwards to the public output API.

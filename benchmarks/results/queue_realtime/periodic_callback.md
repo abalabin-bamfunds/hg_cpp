@@ -81,7 +81,7 @@ exceptions, and idle realtime waits also need their existing behavior.
 
 The implementation in `9473d53d` checks after every eight complete outer cycles
 during continuous evaluation and before and after every realtime wait. The
-[decision record](../../../docs/decisions/0076-periodic-callback-polling.md)
+[decision record](../../../docs/development/decisions/0076-periodic-callback-polling.md)
 states the timing tradeoff. Callback state remains local to the engine run.
 
 ## Reproduction

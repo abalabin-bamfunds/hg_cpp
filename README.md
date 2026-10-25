@@ -1,13 +1,10 @@
 # bg
 
-`bg` is a C++23 engine for forward propagation through computational graphs. See
-the [project definition](docs/project.md) for its scope and priorities. The
-[terminology dictionary](docs/terminology.md) defines project-specific terms and
-core entities.
+`bg` is a C++23 engine for forward propagation through computational graphs.
 
 ## User guide
 
-Start with the [BG documentation](docs/index.md). The opening chapters use
+Start with the [BG documentation](docs/user/index.md). The opening chapters use
 plain value types and introduce graphs through matching Python and C++
 examples.
 
@@ -15,33 +12,19 @@ Build and preview the documentation site with:
 
 ```sh
 python -m pip install -r docs/requirements.txt
-python -m sphinx -b html --fail-on-warning --keep-going docs build/docs/html
+python -m sphinx -b html --fail-on-warning --keep-going docs/user build/docs/html
 python -m http.server 8000 --directory build/docs/html
 ```
 
-Open <http://localhost:8000>. See [documentation builds](docs/README.md) for
-page authoring and Read the Docs setup.
+Open <http://localhost:8000>. See the [documentation map](docs/README.md) for
+build commands and authoring guidance.
 
-## Engine documentation
+## Development documentation
 
-Current design documents cover the [node API](docs/node-api.md),
-[node object layout](docs/node-layout.md),
-[graph wiring](docs/graph-wiring.md),
-[operators](docs/operators.md),
-[evaluation](docs/evaluation.md),
-[type system](docs/type-system.md),
-[scalar API](docs/scalar-api.md),
-[global state](docs/global-state.md),
-[nested graphs](docs/nested-graphs.md),
-[map](docs/map.md),
-[reduce](docs/reduce.md),
-[mesh](docs/mesh.md),
-[switch](docs/switch.md),
-[testing](docs/testing.md),
-[time series types](docs/time-series-types.md),
-[time series references](docs/time-series-references.md),
-[time series validity](docs/time-series-validity.md), and
-[TSD layout](docs/tsd-layout.md).
+The [development documentation](docs/development/index.md) covers engine design,
+implementation guidance, testing, decision records, and proposals. The
+[project definition](docs/development/project.md) sets scope and priorities. Both
+documentation trees follow the shared [terminology dictionary](docs/terminology.md).
 
 ## Build and test
 
@@ -77,7 +60,7 @@ This builds the `bg::python` CMake target and the Python package in
 `build/dev/bindings/python`. Installed CMake consumers can link `bg::python`;
 request it with `find_package(bg COMPONENTS python REQUIRED)`. Consumers that
 use only `bg::bg` do not require Python or nanobind. See [Python
-integration](docs/python.md) for the implemented API and package details. The
+integration](docs/development/design/python.md) for the implemented API and package details. The
 `test` optional dependency in `pyproject.toml` installs pytest. To build a
 wheel, install `scikit-build-core` and run `python -m pip wheel .`.
 

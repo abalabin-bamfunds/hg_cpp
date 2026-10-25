@@ -6,7 +6,7 @@
 /.codex/
 
 # Generated documentation downloads
-/docs/_generated/
+/docs/user/_generated/
 
 # CMake build trees
 /build/
