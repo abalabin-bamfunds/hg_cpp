@@ -63,14 +63,14 @@ auto total() {
 
 int main() {
     const auto result = run_graph(total);
-    std::cout << std::boolalpha << result.equals({60}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[60]
 ```
 :::
 
@@ -154,14 +154,14 @@ auto sensor_one(wp<TSD<i64, TS<i64>>> readings) {
 
 int main() {
     const auto result = run_graph(graph(sensor_one), {{{1, 18}, {2, 30}}, {{2, 31}}, {{1, REMOVE}}, {{1, 19}}});
-    std::cout << std::boolalpha << result.equals({20, SKIP, INVALID, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, None, None, 21]
 ```
 :::
 
@@ -250,14 +250,14 @@ auto first(wp<TSD<i64, TS<i64>>> readings, wp<TS<i64>> offset) {
 
 int main() {
     const auto result = run_graph(first, {{{1, 10}, {2, 20}}, {{2, 21}}, SKIP}, {2, SKIP, 3});
-    std::cout << std::boolalpha << result.equals({12, std::nullopt, 13}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[12, None, 13]
 ```
 :::
 

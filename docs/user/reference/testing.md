@@ -35,9 +35,9 @@ and engine selection.
 | `list(result)` | Complete dense list |
 | `result == expected_list` | Dense update comparison |
 
-Small results display as lists. Large results display a summary. Dense access fills
-empty positions with `None`; root invalidation also materializes as `None`. Observe
-`valid` when a test must distinguish them. Prefer sparse events for large time gaps.
+Dense access fills empty positions with `None`; root invalidation also materializes
+as `None`. Observe `valid` when a test must distinguish them. Prefer sparse events
+for large time gaps.
 
 ## C++ results
 
@@ -53,6 +53,18 @@ access when a value exists.
 visitor)` reads one dense position without copying payload values and returns false
 for a skipped position. Visitor views expire when the callback returns.
 Captured data remains owned by the result.
+
+## Printing results
+
+Python `print(result)` and C++ `std::cout << result` display results with at most
+32 positions as lists. A skipped position or root invalidation prints `None`.
+Larger results display `GraphRunResult(start_time=..., event_count=..., size=...)`
+without expanding the gaps between events. Printing preserves captured values.
+
+C++ values use [tick formatting](library-text.md#formatting-and-printing): booleans print
+as `true` and `false`, strings use double quotes, and floating-point values can
+omit `.0`. Collection outputs display changed items, including nested `INVALID`
+and `REMOVE` markers. Python uses its value representations.
 
 ## Test coverage
 

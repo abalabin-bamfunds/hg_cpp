@@ -57,14 +57,14 @@ auto requests() {
 
 int main() {
     const auto result = run_graph(requests);
-    std::cout << std::boolalpha << result.equals({SKIP, 1, 2, 3}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[None, 1, 2, 3]
 ```
 :::
 
@@ -143,14 +143,14 @@ auto delayed(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(delayed, {18, 19, 19});
-    std::cout << std::boolalpha << result.equals({SKIP, SKIP, 18, 19, 19}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[None, None, 18, 19, 19]
 ```
 :::
 
@@ -226,14 +226,14 @@ auto reported(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(reported, {18, 19, 20, 21});
-    std::cout << std::boolalpha << result.equals({18, SKIP, 20, SKIP, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[18, None, 20, None, 21]
 ```
 :::
 

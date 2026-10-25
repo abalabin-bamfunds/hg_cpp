@@ -137,14 +137,14 @@ auto change(wp<TS<i64>> value) {
 
 int main() {
     const auto result = run_graph(change, {10, 13, SKIP, 12});
-    std::cout << std::boolalpha << result.equals({SKIP, 3, SKIP, -1}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[None, 3, None, -1]
 ```
 :::
 
@@ -223,14 +223,14 @@ auto smoothed(wp<TS<double>> value) {
 
 int main() {
     const auto result = run_graph(smoothed, {10.0, 14.0, 16.0});
-    std::cout << std::boolalpha << result.equals({10.0, 12.0, 14.0}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[10, 12, 14]
 ```
 :::
 

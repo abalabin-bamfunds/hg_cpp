@@ -152,14 +152,14 @@ auto every_other(wp<TS<i64>> value) {
 
 int main() {
     const auto result = run_graph(every_other, {10, 11, SKIP, 12, 13, 14});
-    std::cout << std::boolalpha << result.equals({10, SKIP, SKIP, 12, SKIP, 14}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[10, None, None, 12, None, 14]
 ```
 :::
 

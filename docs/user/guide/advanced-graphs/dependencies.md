@@ -67,14 +67,14 @@ int main() {
         sampled_temperature,
         {18, 19, SKIP, 20, 21, SKIP},
         {SKIP, true, true, SKIP, true, false});
-    std::cout << std::boolalpha << result.equals({SKIP, 21, 21, SKIP, 23, 23}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[None, 21, 21, None, 23, 23]
 ```
 :::
 
@@ -176,14 +176,14 @@ auto sensor_two(wp<TSD<i64, TS<i64>>> readings, wp<TSD<i64, TS<i64>>> dependenci
 
 int main() {
     const auto result = run_graph(sensor_two, {{{1, 1}, {2, 10}}, {{1, 3}, {2, 30}}}, {{{2, 1}}, SKIP});
-    std::cout << std::boolalpha << result.equals({11, 33}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[11, 33]
 ```
 :::
 

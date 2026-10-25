@@ -72,14 +72,14 @@ auto timestamps(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(graph(timestamps), {18, SKIP, 19});
-    std::cout << std::boolalpha << result.equals({1, SKIP, 3}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[1, None, 3]
 ```
 :::
 
@@ -176,14 +176,14 @@ auto temperature() { return readings() + 2; }
 
 int main() {
     const auto result = run_graph(temperature);
-    std::cout << std::boolalpha << result.equals({SKIP, 20, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[None, 20, 21]
 ```
 :::
 
@@ -266,14 +266,14 @@ auto temperature() { return readings() + 2; }
 
 int main() {
     const auto result = run_graph(temperature);
-    std::cout << std::boolalpha << result.equals({20}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20]
 ```
 :::
 

@@ -75,14 +75,14 @@ auto combined(wp<TSD<i64, TS<i64>>> values) {
 
 int main() {
     const auto result = run_graph(combined, {{{1, 2}, {2, 3}}, {{1, 4}}, {{2, REMOVE}}});
-    std::cout << std::boolalpha << result.equals({6, 12, 4}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[6, 12, 4]
 ```
 :::
 
@@ -194,14 +194,14 @@ auto total(wp<TSD<i64, TS<i64>>> readings) {
 
 int main() {
     const auto result = run_graph(total, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, REMOVE}}});
-    std::cout << std::boolalpha << result.equals({34, 35, 13}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[34, 35, 13]
 ```
 :::
 
@@ -290,14 +290,14 @@ auto temperature(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(graph(temperature), {18, -3, 0, -1, 19});
-    std::cout << std::boolalpha << result.equals({20, SKIP, 2, SKIP, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, None, 2, None, 21]
 ```
 :::
 

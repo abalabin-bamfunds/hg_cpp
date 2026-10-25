@@ -68,14 +68,14 @@ int main() {
 using namespace literal;
 
 const auto result = run_graph(display_temperature, {18, SKIP, 18, 19});
-std::cout << std::boolalpha << result.equals({200, SKIP, 200, 210}) << '\n';
+std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[200, None, 200, 210]
 ```
 :::
 
@@ -176,14 +176,14 @@ int main() {
         display_temperature,
         {18, SKIP, 19, SKIP},
         {SKIP, 2, SKIP, 3});
-    std::cout << std::boolalpha << result.equals({SKIP, 200, 210, 220}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[None, 200, 210, 220]
 ```
 :::
 
@@ -263,14 +263,14 @@ auto reported_temperature(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(reported_temperature, {18, 18, SKIP, 19, 18, 18});
-    std::cout << std::boolalpha << result.equals({20, SKIP, SKIP, 21, 20, SKIP}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, None, None, 21, 20, None]
 ```
 :::
 
@@ -356,14 +356,14 @@ int main() {
         sampled_temperature,
         {18, 19, SKIP, 20, 21, SKIP},
         {SKIP, true, true, SKIP, true, false});
-    std::cout << std::boolalpha << result.equals({SKIP, 21, 21, SKIP, 23, 23}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[None, 21, 21, None, 23, 23]
 ```
 :::
 
@@ -396,7 +396,7 @@ gives a complete example and invalidation rules.
 
 ## Captured results
 
-Python returns `GraphRunResult`; small results display as a list and compare with
-lists. C++ results support `equals` with literal expected updates. Both retain sparse
-output events. See [result capture](../../reference/testing.md) for timestamps,
+Both languages return `GraphRunResult` and retain sparse output events. Printing
+a small result displays its updates as a list, with `None` at skipped positions.
+See [result capture](../../reference/testing.md) for comparisons, timestamps,
 large time gaps, indexing, and invalidation.

@@ -57,14 +57,14 @@ auto corrected(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(corrected, {18, SKIP, 19});
-    std::cout << std::boolalpha << result.equals({20, SKIP, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, None, 21]
 ```
 :::
 
@@ -139,14 +139,14 @@ auto sensor_one(wp<TSD<i64, TS<i64>>> readings) {
 
 int main() {
     const auto result = run_graph(sensor_one, {{{1, 18}, {2, 30}}, {{2, 31}}, {{1, REMOVE}}, {{1, 19}}});
-    std::cout << std::boolalpha << result.equals({20, SKIP, INVALID, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, None, None, 21]
 ```
 :::
 
@@ -228,14 +228,14 @@ auto changes(wp<TS<i64>> reading, wp<TS<i64>> offset) {
 
 int main() {
     const auto result = run_graph(changes, {18, SKIP, 18, 19}, {2, 3, SKIP, 4});
-    std::cout << std::boolalpha << result.equals({true, false, true, true}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[true, false, true, true]
 ```
 :::
 
@@ -340,14 +340,14 @@ auto peak(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(graph(peak), {18, 17, 21, SKIP, 19});
-    std::cout << std::boolalpha << result.equals({18, 18, 21, SKIP, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[18, 18, 21, None, 21]
 ```
 :::
 
@@ -423,14 +423,14 @@ auto selected(wp<TSD<i64, TS<i64>>> readings, wp<TS<i64>> sensor) {
 int main() {
     const auto result = run_graph(selected,
         {{{1, 18}, {2, 30}}, {{1, 19}}, {{2, 31}}, {{2, REMOVE}}}, {1, 2, SKIP, SKIP});
-    std::cout << std::boolalpha << result.equals({20, 32, 33, INVALID}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, 32, 33, None]
 ```
 :::
 

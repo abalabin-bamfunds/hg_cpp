@@ -348,14 +348,14 @@ auto pair_total(wp<TS<i64>> left, wp<TS<i64>> right) {
 
 int main() {
     const auto result = run_graph(pair_total, {1, 2}, {2, 3});
-    std::cout << std::boolalpha << result.equals({3, 5}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[3, 5]
 ```
 :::
 
@@ -445,14 +445,14 @@ auto collected(wp<TS<List<i64>>> values) {
 
 int main() {
     const auto result = run_graph(collected, {{2, 4, 6}});
-    std::cout << std::boolalpha << result.equals({{2}, {2, 4}, {2, 4, 6}}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[[2], [2, 4], [2, 4, 6]]
 ```
 :::
 

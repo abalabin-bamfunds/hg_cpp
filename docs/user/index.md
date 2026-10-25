@@ -79,14 +79,14 @@ auto total() {
 
 int main() {
     const auto result = run_graph(total);
-    std::cout << std::boolalpha << result.equals({17}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[17]
 ```
 :::
 

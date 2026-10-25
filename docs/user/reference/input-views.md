@@ -134,14 +134,14 @@ auto complete_total(wp<TSL<TS<i64>, 2>> values) {
 
 int main() {
     const auto result = run_graph(complete_total, {{{0, 10}}, {{1, 20}}, {{0, INVALID}}, {{0, 5}}});
-    std::cout << std::boolalpha << result.equals({std::nullopt, 30, std::nullopt, 25}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[None, 30, None, 25]
 ```
 :::
 

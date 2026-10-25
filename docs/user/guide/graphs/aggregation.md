@@ -66,14 +66,14 @@ auto total(wp<TSD<i64, TS<i64>>> readings) {
 
 int main() {
     const auto result = run_graph(total, {{{1, 18}, {2, 20}}, {{1, 19}}, {{2, REMOVE}}});
-    std::cout << std::boolalpha << result.equals({38, 39, 19}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[38, 39, 19]
 ```
 :::
 
@@ -151,14 +151,14 @@ auto enabled(wp<TSD<i64, TS<bool>>> sensors) {
 int main() {
     const auto result = run_graph(enabled,
         {{{1, true}, {2, false}}, {{2, true}}, {{1, REMOVE}, {2, REMOVE}}});
-    std::cout << std::boolalpha << result.equals({false, true, true}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[false, true, true]
 ```
 :::
 
@@ -243,14 +243,14 @@ auto combined(wp<TSD<i64, TS<i64>>> values) {
 
 int main() {
     const auto result = run_graph(combined, {{{1, 2}, {2, 3}}, {{1, 4}}, {{2, REMOVE}}});
-    std::cout << std::boolalpha << result.equals({6, 12, 4}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[6, 12, 4]
 ```
 :::
 
@@ -328,14 +328,14 @@ auto reading_count(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(reading_count, {SKIP, 18, 18, SKIP, 24, 22});
-    std::cout << std::boolalpha << result.equals({SKIP, 1, 2, SKIP, 3, 4}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[None, 1, 2, None, 3, 4]
 ```
 :::
 
@@ -406,14 +406,14 @@ auto previous_temperature(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(previous_temperature, {SKIP, 18, 18, SKIP, 24, 22});
-    std::cout << std::boolalpha << result.equals({SKIP, SKIP, 20, SKIP, 20, 26}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[None, None, 20, None, 20, 26]
 ```
 :::
 
@@ -491,14 +491,14 @@ auto temperature_total(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(temperature_total, {SKIP, 18, 18, SKIP, 24, 22});
-    std::cout << std::boolalpha << result.equals({SKIP, 20, 40, SKIP, 66, 90}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[None, 20, 40, None, 66, 90]
 ```
 :::
 
@@ -569,14 +569,14 @@ auto average_temperature(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(average_temperature, {SKIP, 18, 18, SKIP, 24, 22});
-    std::cout << std::boolalpha << result.equals({SKIP, 20.0, 20.0, SKIP, 22.0, 22.5}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[None, 20, 20, None, 22, 22.5]
 ```
 :::
 
@@ -652,14 +652,14 @@ auto session_total(wp<TS<i64>> reading, wp<TS<bool>> reset) {
 
 int main() {
     const auto result = run_graph(session_total, {18, 19, SKIP, 20, 21}, {SKIP, SKIP, false, SKIP, true});
-    std::cout << std::boolalpha << result.equals({18, 37, INVALID, 20, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[18, 37, None, 20, 21]
 ```
 :::
 

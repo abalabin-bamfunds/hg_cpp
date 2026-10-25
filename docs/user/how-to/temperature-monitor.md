@@ -64,14 +64,14 @@ auto monitor(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(monitor, {18, 19, 20, 22, 19, 18});
-    std::cout << std::boolalpha << result.equals({false, SKIP, true, SKIP, false, SKIP}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[false, None, true, None, false, None]
 ```
 :::
 

@@ -69,14 +69,14 @@ auto temperature(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(graph(temperature), {18, -3, SKIP, 19});
-    std::cout << std::boolalpha << result.equals({20, 0, SKIP, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, 0, None, 21]
 ```
 :::
 
@@ -171,14 +171,14 @@ auto portfolio(wp<TS<List<i64>>> prices) {
 
 int main() {
     const auto result = run_graph(portfolio, {{10, 20}, {12, 20}, {12}});
-    std::cout << std::boolalpha << result.equals({30, 32, 12}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[30, 32, 12]
 ```
 :::
 

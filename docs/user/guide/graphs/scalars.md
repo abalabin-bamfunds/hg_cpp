@@ -56,14 +56,14 @@ auto batch_size(wp<TS<List<i64>>> prices) {
 
 int main() {
     const auto result = run_graph(batch_size, {{10, 20}, {12, 20}, {12}});
-    std::cout << std::boolalpha << result.equals({2, 2, 1}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[2, 2, 1]
 ```
 :::
 
@@ -139,14 +139,14 @@ auto has_bid(wp<TS<Dict<string, i64>>> quote) {
 
 int main() {
     const auto result = run_graph(has_bid, {{{"bid", 10}, {"ask", 12}}, {{"ask", 13}}});
-    std::cout << std::boolalpha << result.equals({true, false}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[true, false]
 ```
 :::
 
@@ -230,14 +230,14 @@ auto order_quantity(wp<TS<Tuple<string, i64>>> order) {
 
 int main() {
     const auto result = run_graph(order_quantity, {{"buy", 3}, {"sell", 5}});
-    std::cout << std::boolalpha << result.equals({3, 5}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[3, 5]
 ```
 :::
 
@@ -329,14 +329,14 @@ auto quoted_spread(wp<TS<Bundle<Quote>>> quote) {
 
 int main() {
     const auto result = run_graph(quoted_spread, {{{"bid", 10}, {"ask", 12}}, {{"bid", 11}, {"ask", 14}}});
-    std::cout << std::boolalpha << result.equals({2, 3}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[2, 3]
 ```
 :::
 

@@ -73,14 +73,14 @@ auto prefix(wp<TS<string>> name) {
 
 int main() {
     const auto result = run_graph(prefix, {"north", "south"});
-    std::cout << std::boolalpha << result.equals({"sensor: NO", "sensor: SO"}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+["sensor: NO", "sensor: SO"]
 ```
 :::
 
@@ -253,14 +253,14 @@ auto label(wp<TS<i64>> value) {
 
 int main() {
     const auto result = run_graph(label, {2, 12});
-    std::cout << std::boolalpha << result.equals({"sensor 002", "sensor 012"}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+["sensor 002", "sensor 012"]
 ```
 :::
 
@@ -344,14 +344,14 @@ auto valid_name(wp<TS<string>> name) {
 
 int main() {
     const auto result = run_graph(valid_name, {"sensor-12", "north"});
-    std::cout << std::boolalpha << result.equals({true, false}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[true, false]
 ```
 :::
 
@@ -434,14 +434,14 @@ auto path(wp<TS<string>> text) {
 
 int main() {
     const auto result = run_graph(path, {"north,wind", "south,solar"});
-    std::cout << std::boolalpha << result.equals({"north/wind", "south/solar"}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+["north/wind", "south/solar"]
 ```
 :::
 

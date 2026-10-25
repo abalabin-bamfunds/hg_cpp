@@ -223,14 +223,14 @@ auto limited(wp<TS<i64>> value) {
 
 int main() {
     const auto result = run_graph(limited, {-2, 50, 120});
-    std::cout << std::boolalpha << result.equals({0, 50, 100}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[0, 50, 100]
 ```
 :::
 
