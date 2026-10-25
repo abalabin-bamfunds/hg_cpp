@@ -96,7 +96,7 @@ TEST_CASE("map passes reference items and pass-through collections consistently"
     const auto graph_template = graph("name"_n = "map_reference_items", function);
     const auto &expected = TSD<
         i64,
-        REF<TS<float>, TimeSeriesGuarantee::deduplicated>>::type();
+        REF<TS<float>, TimeSeriesGuarantee::final>>::type();
 
     testing::test_wiring([&] {
         const auto callable_result = map(function, values(), pass_through(factors()));
@@ -115,6 +115,55 @@ TEST_CASE("map passes reference items and pass-through collections consistently"
     });
 }
 
+TEST_CASE("map reference guarantees follow branch lifetime",
+          "[feature:map][feature:wiring][feature:reference][series:tsd][series:tss]") {
+    const auto values = node([](Out<TSD<i64, TS<float>>>) {});
+    const auto other_values = node([](Out<TSD<i64, TS<float>>>) {});
+    const auto keys = node([](Out<TSS<i64>>) {});
+    const auto reference_values = node([](Out<TSD<i64, REF<TS<float>, TimeSeriesGuarantee::final>>>) {});
+
+    const auto const_item = graph(
+        "name"_n = "const_map_item",
+        [](wp<REF<TS<float>, TimeSeriesGuarantee::const_>> item) { return item; });
+    const auto mutable_items = graph(
+        "name"_n = "mutable_map_items",
+        [](wp<REF<TS<float>, TimeSeriesGuarantee::ordinary>> item,
+           wp<REF<TS<float>, TimeSeriesGuarantee::ordinary>>)
+            -> wp<REF<TS<float>, TimeSeriesGuarantee::ordinary>> { return item; });
+    const auto selected_items = graph(
+        "name"_n = "selected_map_items",
+        [](wp<REF<TS<float>, TimeSeriesGuarantee::const_>> selected, wp<REF<TS<float>>>) { return selected; });
+    const auto final_item = graph(
+        "name"_n = "final_map_item",
+        [](wp<REF<TS<float>, TimeSeriesGuarantee::final>> item) { return item; });
+
+    testing::test_wiring([&] {
+        CHECK_NOTHROW(map(const_item, values()));
+        CHECK_NOTHROW(map(mutable_items, values(), other_values()));
+        CHECK_NOTHROW(map(selected_items, values(), other_values(), "__key_set_arg__"_n = 0));
+        CHECK_NOTHROW(map([](wp<REF<TS<float>, TimeSeriesGuarantee::ordinary>> item)
+                              -> wp<REF<TS<float>, TimeSeriesGuarantee::ordinary>> { return item; },
+                          values(), keys(),
+                          "__key_set_arg__"_n = 1));
+        CHECK_THROWS(map(selected_items, values(), other_values()));
+        CHECK_NOTHROW(map(final_item, reference_values()));
+        CHECK_THROWS(map(const_item, reference_values()));
+
+        const auto first_map = map([](auto item) { return item; }, values());
+        CHECK_NOTHROW(map(const_item, first_map));
+    });
+}
+
+TEST_CASE("a mutable root dictionary reference limits mapped item guarantees",
+          "[feature:map][feature:wiring][feature:reference][series:tsd]") {
+    const auto values = node([](Out<REF<TSD<i64, TS<float>>>>) {});
+    const auto const_item = graph(
+        "name"_n = "const_map_root_item",
+        [](wp<REF<TS<float>, TimeSeriesGuarantee::const_>> item) { return item; });
+
+    testing::test_wiring([&] { CHECK_THROWS(map(const_item, values())); });
+}
+
 TEST_CASE("map resolves explicit and inferred key arguments for every graph form",
           "[feature:map][feature:wiring][series:tsd][definition:function]"
           "[definition:runtime][guarantee:const]") {
@@ -127,7 +176,7 @@ TEST_CASE("map resolves explicit and inferred key arguments for every graph form
     const auto &expected = TSD<
         i64,
         REF<TS<i64, TimeSeriesGuarantee::const_>,
-            TimeSeriesGuarantee::deduplicated>>::type();
+            TimeSeriesGuarantee::const_>>::type();
 
     testing::test_wiring([&] {
         CHECK(&map(function, values()).type() == &expected);

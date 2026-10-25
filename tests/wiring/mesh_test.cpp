@@ -212,7 +212,7 @@ TEST_CASE("mesh accepts fully runtime graph and argument values",
         const WiringTemplate &runtime_sink = sink;
 
         const auto result = mesh(runtime_identity, std::span<const MapArgument>{arguments});
-        const auto &expected = TSD<i64, REF<TS<i64>, TimeSeriesGuarantee::deduplicated>>::type();
+        const auto &expected = TSD<i64, REF<TS<i64>, TimeSeriesGuarantee::const_>>::type();
 
         CHECK(&result.type() == &expected);
         CHECK_FALSE(mesh(runtime_sink, std::span<const MapArgument>{arguments}).has_output());
@@ -253,7 +253,7 @@ TEST_CASE("mesh resolves untyped arguments and selected outputs",
 
     testing::test_wiring([&] {
         const auto result = mesh(identity, wp<>{values()});
-        const auto &expected = TSD<i64, REF<TS<i64>, TimeSeriesGuarantee::deduplicated>>::type();
+        const auto &expected = TSD<i64, REF<TS<i64>, TimeSeriesGuarantee::const_>>::type();
 
         CHECK(&result.type() == &expected);
     });
@@ -274,7 +274,7 @@ TEST_CASE("an explicit mesh output type resolves a raw branch lambda before sele
             values());
 
         CHECK(&result.type() ==
-              &TSD<i64, REF<TS<i64>, TimeSeriesGuarantee::deduplicated>>::type());
+              &TSD<i64, REF<TS<i64>, TimeSeriesGuarantee::const_>>::type());
     });
 }
 

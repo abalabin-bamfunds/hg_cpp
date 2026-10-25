@@ -42,9 +42,15 @@ struct NestedInput {
 
 struct NestedOutput {
     In<REF<TS_T>, active, optional> value;
-    Out<REF<TS_T>> output;
+    Out<REF<TS_T, G>> output;
 
-    void evaluate() const { output.copy(value); }
+    void evaluate() const {
+        const auto &reference_type = type_cast<TimeSeriesReferenceType>(output.runtime_type().type());
+        if (reference_type.guarantee().value() == TimeSeriesGuarantee::const_ && output.valid()) {
+            return;
+        }
+        output.copy(value);
+    }
 };
 
 struct NestedConstantInput {
@@ -234,13 +240,17 @@ WiringPoint wire_nested_constant_input(const TimeSeriesType &type) {
 
 WiringPoint wire_nested_output(WiringPoint output, const TimeSeriesType &type) {
     auto *resolution_type = &type;
+    auto guarantee = TimeSeriesGuarantee::const_;
     if (const auto *reference = type_cast<TimeSeriesReferenceType>(&output.type())) {
+        guarantee = *reference->guarantee().value();
         resolution_type = &time_series_reference_type(type.target_type(), *reference->guarantee().value());
     }
 
+    auto type_map = TypeMap{};
+    type_map.set(guarantee_variable_instance<G>(), guarantee);
     auto argument = WiringArgument{output};
     argument.set_resolution_type(*resolution_type);
-    return static_cast<WiringPoint>(nested_output_node(std::move(argument)));
+    return static_cast<WiringPoint>(nested_output_node(type_map, std::move(argument)));
 }
 
 std::unique_ptr<NodeTemplate> make_nested_node(NestedGraphWiring wiring, const ResolvedSignature &graph_signature) {

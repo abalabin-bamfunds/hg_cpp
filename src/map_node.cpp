@@ -123,8 +123,10 @@ class MapRuntimeState {
         auto item = (*output)[Scalar<SCALAR>::from(key)];
         const auto result = entry.inner_graph.output(compiled.nested);
         if (result) {
-            item.set_value(result);
-        } else {
+            if (!item.valid() || item.value() != result) {
+                item.set_value(result);
+            }
+        } else if (item.valid()) {
             item.invalidate();
         }
     }

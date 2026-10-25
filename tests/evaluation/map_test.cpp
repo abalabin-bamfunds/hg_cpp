@@ -72,6 +72,51 @@ TEST_CASE("map invokes a generic graph function",
     CHECK(actual.equals<i64>({3, 6}));
 }
 
+TEST_CASE("a second map can consume a constant output reference from the first map",
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:doubly-nested]"
+          "[guarantee:const]") {
+    const auto send = graph("name"_n = "send",
+                            [](wp<TS<i64>>)
+                                -> wp<TS<i64, TimeSeriesGuarantee::const_>> {
+                                return operators::const_(i64{42}).as<TS<i64, TimeSeriesGuarantee::const_>>();
+                            });
+    const auto receive = graph(
+        "name"_n = "receive",
+        [](wp<TS<i64, TimeSeriesGuarantee::const_>> identity) { return identity; });
+
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> requests) {
+        return map(receive, map(send, requests))[i64{1}];
+    };
+
+    const auto actual = bg::run_graph(tested, {{{1, 7}}});
+
+    CHECK(actual.equals<i64>({42}));
+}
+
+TEST_CASE("map republishes an explicit reference output when its target changes",
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
+          "[binding:reference-to-reference][transition:update]") {
+    const auto make_values = node([](i64 value, Out<TSD<i64, TS<i64>>> output) { output[1].set(value); });
+    const auto scale = node([](i64 value, i64 factor) { return value * factor; });
+    const auto choose = node([](bool use_left, In<REF<TS<i64>>> left, In<REF<TS<i64>>> right,
+                                Out<REF<TS<i64>>> output) { output.copy(use_left ? left : right); });
+
+    const auto apply = graph(
+        "name"_n = "select_reference",
+        [&](wp<TS<i64>>, wp<TS<bool>> use_left, wp<TS<i64>> left, wp<TS<i64>> right) {
+            return choose(use_left, left, right);
+        });
+
+    const auto tested = [&](wp<TS<i64>> value, wp<TS<bool>> use_left) {
+        return map(apply, make_values(value), pass_through(use_left), pass_through(scale(value, 10)),
+                   pass_through(scale(value, 100)))[i64{1}];
+    };
+
+    const auto actual = bg::run_graph(tested, std::array{1, 2, 3}, std::array{true, false, true});
+
+    CHECK(actual.equals<i64>({10, 200, 30}));
+}
+
 TEST_CASE("map invokes a graph function with a const wiring-point reference parameter",
           "[feature:map][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[definition:function]") {

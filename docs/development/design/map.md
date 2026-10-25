@@ -15,13 +15,17 @@ Map's operator implementation converts a graph function to a graph argument
 before normal overload resolution. This keeps generic lambdas unannotated while
 allowing overloads to match the resulting graph signature and structure.
 
-A generic C++ lambda receives the reference wiring points supplied to the
-[inner graph inputs](nested-graphs.md#wiring). For example, a mapped
-`TSD<K, TS<i64, final>>` supplies `wp<REF<TS<i64, final>, ordinary>>`.
-An `In<TS<i64, G>>` consumer resolves `G` to `ordinary`; an explicit reference
-input can retain the target's `final` guarantee separately. An explicitly typed
-C++ graph function keeps its declared parameter types, which normal signature
-resolution checks against the supplied references.
+A generic C++ lambda uses the compile-time reference wrapper declared by the
+map call. That wrapper can declare `ordinary` even when the actual inner graph
+boundary has a stronger reference guarantee. For example, a sole mapped
+`TSD<K, TS<i64, final>>` has an actual boundary of
+`REF<TS<i64, final>, const>`, while the generic wrapper remains
+`wp<REF<TS<i64, final>, ordinary>>`. An explicitly typed graph template sees
+the actual boundary. Target and reference guarantees remain independent, so an
+`In<TS<i64, G>>` resolves `G` from the dereferenced boundary type, whose
+target guarantee is limited by the reference guarantee. For example, a union
+of mapped `TS<i64, final>` values has an ordinary target guarantee even when
+one source has a constant reference.
 
 ## Runtime calls
 
@@ -58,6 +62,16 @@ key through a reference. With several mapped TSD arguments, their key sets form
 a union. An item that is absent from one TSD produces an invalid input for that
 inner graph.
 
+A mapped TSD controls branch lifetime when it is the only mapped TSD and no
+key set is selected, or when it is the selected TSD key set. Its item reference
+is constant for that branch. Other mapped TSD item references remain mutable
+because their items can disappear and return while another input keeps the
+branch alive. A selected TSS controls branch lifetime but does not make mapped
+TSD item references constant. A reference to the root TSD also limits item
+reference guarantees according to its reference guarantee. An explicit item
+reference in `TSD<K, REF<TS_T>>` also caps the generated item reference
+guarantee.
+
 `pass_through(argument)` passes one complete time series to every inner graph.
 It excludes a TSD or TSS from key selection.
 
@@ -87,9 +101,11 @@ C++ graph functions do not expose parameter names.
 
 ## Output
 
-A graph with output `R` produces `TSD<K, REF<R, deduplicated>>`. The references
-identify the inner graph outputs without copying their values. A sink graph
-produces no output. A source graph obtains its keys from a selected TSS.
+A non-reference graph output `R` produces `TSD<K, REF<R, const>>`. Each reference
+identifies the fixed output handle of one inner graph, even when its target is
+initially invalid. An explicit reference output preserves its reference
+guarantee. A sink graph produces no output. A source graph obtains its keys
+from a selected TSS.
 
 `map` is an operator. Overloads can match the supplied graph structure and the
 remaining arguments. Structurally equivalent graphs share overload-resolution

@@ -144,6 +144,16 @@ struct MapSink {
 
 const auto map_sink = node<MapSink>();
 
+struct CaptureReferenceValidity {
+    In<REF<TS<i64>>, active, optional> input;
+
+    inline static std::vector<bool> validity;
+
+    void evaluate() const { validity.push_back(input.valid()); }
+};
+
+const auto capture_reference_validity = node<CaptureReferenceValidity>();
+
 struct ControlledKeys {
     Out<TSS<i64>> output;
 
@@ -193,7 +203,7 @@ wp<TSD<i64, REF<TS<i64>>>> wire_map(wp<TSD<i64, REF<TS<i64>>>> values) {
                         .type = &values.type().dereferenced_type(),
                         .activity = active,
                         .validity = required}},
-        .output = &TSD<i64, REF<TS<i64>, TimeSeriesGuarantee::deduplicated>>::type(),
+        .output = &TSD<i64, REF<TS<i64>, TimeSeriesGuarantee::const_>>::type(),
     };
     auto node_template = details::make_map_node(
         {.wiring = std::move(inner),
@@ -237,7 +247,7 @@ wp<TSD<i64, REF<TS<i64>>>> wire_union_map(wp<TSD<i64, REF<TS<i64>>>> left,
                         .type = &right.type().dereferenced_type(),
                         .activity = active,
                         .validity = required}},
-        .output = &TSD<i64, REF<TS<i64>>>::type(),
+        .output = &TSD<i64, REF<TS<i64>, TimeSeriesGuarantee::const_>>::type(),
     };
     auto node_template = details::make_map_node(
         {.wiring = std::move(inner),
@@ -329,7 +339,7 @@ wp<TSD<i64, REF<TS<i64>>>> wire_delayed_map(wp<TSD<i64, REF<TS<i64>>>> values) {
                         .type = &values.type().dereferenced_type(),
                         .activity = active,
                         .validity = required}},
-        .output = &TSD<i64, REF<TS<i64>>>::type(),
+        .output = &TSD<i64, REF<TS<i64>, TimeSeriesGuarantee::const_>>::type(),
     };
     auto node_template = details::make_map_node(
         {.wiring = std::move(inner),
@@ -362,7 +372,7 @@ wp<TSD<i64, REF<TS<i64>>>> wire_variable_delayed_map(wp<TSD<i64, REF<TS<i64>>>> 
                         .type = &values.type().dereferenced_type(),
                         .activity = active,
                         .validity = required}},
-        .output = &TSD<i64, REF<TS<i64>>>::type(),
+        .output = &TSD<i64, REF<TS<i64>, TimeSeriesGuarantee::const_>>::type(),
     };
     auto node_template = details::make_map_node(
         {.wiring = std::move(inner),
@@ -432,7 +442,7 @@ wp<TSD<i64, REF<TS<i64>>>> wire_pass_through_map(wp<TSD<i64, REF<TS<i64>>>> valu
               .activity = active,
               .validity = required},
              {.name = util::symbol{"factor"}, .type = &factor.type(), .activity = active, .validity = required}},
-        .output = &TSD<i64, REF<TS<i64>>>::type(),
+        .output = &TSD<i64, REF<TS<i64>, TimeSeriesGuarantee::const_>>::type(),
     };
     auto node_template = details::make_map_node(
         {.wiring = std::move(inner),
@@ -511,6 +521,23 @@ TEST_CASE("map evaluates more inner graphs than the ready bitmap inline capacity
 
     CHECK(result.equals<i64>({7}));
     CHECK(MapSink::values.size() == 100);
+}
+
+TEST_CASE("map publishes a fixed output reference before its target first becomes valid",
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:nested]"
+          "[transition:addition][validity:initially-invalid]") {
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> values) {
+        const auto mapped = map([](auto value) { return delayed_value(value); }, values);
+        capture_reference_validity(mapped[i64{1}]);
+        return mapped[i64{1}];
+    };
+    CaptureReferenceValidity::validity.clear();
+
+    const auto actual = bg::run_graph(graph, {{{1, 5}}});
+
+    REQUIRE_FALSE(CaptureReferenceValidity::validity.empty());
+    CHECK(CaptureReferenceValidity::validity.front());
+    CHECK(actual.equals<i64>({std::nullopt, std::nullopt, 5}));
 }
 
 TEST_CASE("stopped map inner graphs are destroyed at the start of the next outer cycle",

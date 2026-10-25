@@ -43,7 +43,7 @@ class MapGraphArgumentBuilder {
                 return;
             }
 
-            supplied_graph_arguments.push_back(graph_argument(argument, boundaries));
+            supplied_graph_arguments.push_back(graph_argument(argument, user_index, boundaries));
         };
 
         for (auto index = std::size_t{}; index < call_.positional.size(); ++index) {
@@ -76,16 +76,13 @@ class MapGraphArgumentBuilder {
         append_key_set_parameter();
         append_inherited_time_series_parameters();
         wiring_->finalize();
+        const TimeSeriesType *output = nullptr;
         if (output_boundary) {
             output_node_ = wiring_->output_node_index(*output_boundary);
-            output_target_ = &type_cast<TimeSeriesReferenceType>(output_boundary->type()).target_type();
+            const auto &output_reference = type_cast<TimeSeriesReferenceType>(output_boundary->type());
+            output = &time_series_dictionary_type(*call_.key_type, output_reference,
+                                                  TimeSeriesGuarantee::ordinary);
         }
-        const auto output =
-            output_target_ == nullptr
-                ? nullptr
-                : &time_series_dictionary_type(
-                      *call_.key_type, time_series_reference_type(*output_target_, TimeSeriesGuarantee::deduplicated),
-                      TimeSeriesGuarantee::ordinary);
         auto signature = ResolvedSignature{name_, std::move(parameters_), output};
         auto graph = MapGraphWiring{
             .wiring = wiring_,
@@ -104,16 +101,41 @@ class MapGraphArgumentBuilder {
     }
 
   private:
-    static const TimeSeriesType &mapped_dictionary_type(const TimeSeriesDictionaryType &dictionary) {
+    static const TimeSeriesType &mapped_dictionary_type(const TimeSeriesDictionaryType &dictionary,
+                                                        TimeSeriesGuarantee reference_guarantee) {
         const auto &item = dictionary.value_type();
         if (type_cast<TimeSeriesReferenceType>(&item) != nullptr) {
-            return dictionary;
+            return dictionary.with_guarantee_limit(reference_guarantee);
         }
 
         const auto dictionary_guarantee = *dictionary.guarantee().value();
-        const auto &reference =
-            time_series_reference_type(item, strongest(TimeSeriesGuarantee::final, dictionary_guarantee));
+        const auto &reference = time_series_reference_type(item, reference_guarantee);
         return time_series_dictionary_type(dictionary.key_type(), reference, dictionary_guarantee);
+    }
+
+    std::size_t mapped_dictionary_count() const {
+        const auto is_mapped_dictionary = [](const MapArgument &argument) {
+            if (argument.pass_through || !argument.value.is_time_series()) {
+                return false;
+            }
+            return type_cast<TimeSeriesDictionaryType>(&argument_time_series(argument.value)) != nullptr;
+        };
+
+        auto count = std::size_t{};
+        for (const auto &argument : call_.positional) {
+            count += static_cast<std::size_t>(is_mapped_dictionary(argument));
+        }
+        for (const auto &argument : call_.named) {
+            count += static_cast<std::size_t>(is_mapped_dictionary(argument));
+        }
+        return count;
+    }
+
+    bool mapped_source_controls_lifetime(std::size_t user_index) const {
+        if (call_.selected_key_set) {
+            return *call_.selected_key_set == user_index;
+        }
+        return mapped_dictionary_count() == 1;
     }
 
     static const TimeSeriesType &argument_time_series(const WiringArgument &argument) {
@@ -235,7 +257,8 @@ class MapGraphArgumentBuilder {
         return index < call_.positional.size() ? call_.positional[index] : call_.named[index - call_.positional.size()];
     }
 
-    WiringArgument graph_argument(MapArgument &supplied_argument, std::vector<WiringPoint> &boundaries) {
+    WiringArgument graph_argument(MapArgument &supplied_argument, std::size_t user_index,
+                                  std::vector<WiringPoint> &boundaries) {
         auto argument = WiringArgument::borrow(supplied_argument.value);
         if (!preserve_named_arguments_) {
             argument.clear_name();
@@ -248,10 +271,26 @@ class MapGraphArgumentBuilder {
         const auto &supplied_target = supplied_type.target_type();
         const auto *supplied_dictionary = type_cast<TimeSeriesDictionaryType>(&supplied_target);
         const auto mapped = supplied_dictionary != nullptr && !supplied_argument.pass_through;
-        const auto &inner_type = mapped ? supplied_dictionary->value_type().target_type() : supplied_target;
+        const auto controls_lifetime = mapped && mapped_source_controls_lifetime(user_index);
+        const auto *item_reference = mapped
+                                         ? type_cast<TimeSeriesReferenceType>(&supplied_dictionary->value_type())
+                                         : nullptr;
+        const auto &inner_type = mapped
+                                     ? item_reference != nullptr ? item_reference->target_type()
+                                                                 : supplied_dictionary->value_type().target_type()
+                                     : supplied_target;
         const auto *supplied_reference = type_cast<TimeSeriesReferenceType>(&supplied_type);
+        auto input_reference_guarantee = controls_lifetime ? TimeSeriesGuarantee::const_
+                                                          : TimeSeriesGuarantee::ordinary;
+        if (item_reference != nullptr) {
+            input_reference_guarantee =
+                weakest(input_reference_guarantee, *item_reference->guarantee().value());
+        }
+        if (supplied_reference != nullptr) {
+            input_reference_guarantee = weakest(input_reference_guarantee, supplied_reference->reference_limit());
+        }
         const auto &input_reference = mapped
-                                          ? time_series_reference_type(inner_type, TimeSeriesGuarantee::ordinary)
+                                          ? time_series_reference_type(inner_type, input_reference_guarantee)
                                           : supplied_reference != nullptr
                                                 ? *supplied_reference
                                                 : time_series_reference_type(supplied_type,
@@ -271,7 +310,8 @@ class MapGraphArgumentBuilder {
         }
 
         const auto parameter_index = parameters_.size();
-        const auto &mapped_type = mapped ? mapped_dictionary_type(*supplied_dictionary) : input_reference;
+        const auto &mapped_type = mapped ? mapped_dictionary_type(*supplied_dictionary, input_reference_guarantee)
+                                         : input_reference;
         const auto &outer_type = mapped && supplied_reference != nullptr
                                      ? mapped_type.with_guarantee_limit(supplied_reference->reference_limit())
                                      : mapped_type;
@@ -334,7 +374,6 @@ class MapGraphArgumentBuilder {
     std::optional<std::size_t> output_node_;
     std::optional<std::size_t> key_set_parameter_;
     std::optional<std::size_t> dictionary_key_set_parameter_;
-    const TimeSeriesType *output_target_{};
 };
 
 } // namespace

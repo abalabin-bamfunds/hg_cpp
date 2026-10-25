@@ -266,7 +266,7 @@ TEST_CASE("map accepts fully runtime graph and argument values",
         const auto result = map(runtime_identity, std::span<const MapArgument>{arguments});
         const auto &expected = TSD<
             i64,
-            REF<TS<i64>, TimeSeriesGuarantee::deduplicated>>::type();
+            REF<TS<i64>, TimeSeriesGuarantee::const_>>::type();
 
         CHECK(&result.type() == &expected);
         CHECK_FALSE(map(runtime_sink, std::span<const MapArgument>{arguments}).has_output());
@@ -283,7 +283,7 @@ TEST_CASE("an explicit type mapping resolves a raw map lambda output",
             [](auto value) -> wp<RESULT> { return wp<RESULT>{value}; }, values());
 
         CHECK(&result.type() ==
-              &TSD<i64, REF<TS<i64>, TimeSeriesGuarantee::deduplicated>>::type());
+              &TSD<i64, REF<TS<i64>, TimeSeriesGuarantee::const_>>::type());
     });
 }
 
@@ -337,7 +337,7 @@ TEST_CASE("map accepts a cacheable capturing graph function",
         const auto second = map(function, values());
         const auto &expected = TSD<
             i64,
-            REF<TS<i64>, TimeSeriesGuarantee::deduplicated>>::type();
+            REF<TS<i64>, TimeSeriesGuarantee::const_>>::type();
 
         CHECK(&first.type() == &expected);
         CHECK(&second.type() == &expected);
@@ -354,7 +354,7 @@ TEST_CASE("map preserves the mapped item guarantee",
         const auto &expected = TSD<
             i64,
             REF<TS<i64, TimeSeriesGuarantee::final>,
-                TimeSeriesGuarantee::deduplicated>>::type();
+                TimeSeriesGuarantee::const_>>::type();
 
         CHECK(&result.type() == &expected);
     });
@@ -397,14 +397,14 @@ TEST_CASE("map resolves an untyped wiring point from its semantic type",
         const auto values_result = map(identity, wp<>{values()});
         const auto &expected_values = TSD<
             i64,
-            REF<TS<i64>, TimeSeriesGuarantee::deduplicated>>::type();
+            REF<TS<i64>, TimeSeriesGuarantee::const_>>::type();
         CHECK(&values_result.type() == &expected_values);
 
         const auto keys_result = map(key_source, wp<>{keys()}, "__key_arg__"_n = 0);
         const auto &expected_keys = TSD<
             i64,
             REF<TS<i64, TimeSeriesGuarantee::const_>,
-                TimeSeriesGuarantee::deduplicated>>::type();
+                TimeSeriesGuarantee::const_>>::type();
         CHECK(&keys_result.type() == &expected_keys);
     });
 }
@@ -463,7 +463,7 @@ TEST_CASE("a map graph function requires an explicit selector when leading key u
         const auto &expected = TSD<
             i64,
             REF<TS<i64, TimeSeriesGuarantee::const_>,
-                TimeSeriesGuarantee::deduplicated>>::type();
+                TimeSeriesGuarantee::const_>>::type();
 
         CHECK(&result.type() == &expected);
     });
