@@ -124,109 +124,58 @@ def _slug(page: str, number: int) -> str:
 
 
 def collect_examples(root: Path) -> list[Example]:
-    """Collect the opening fragments and complete paired examples."""
+    """Collect complete Python and C++ examples marked in runnable documentation pages."""
     docs = root / "docs"
     examples = []
-    page_counts: dict[str, int] = {}
 
-    def add(page: str, python: str, python_output: str, cpp: str, cpp_output: str = "true",
-            python_ellipsis: bool = False, cpp_ellipsis: bool = False) -> None:
-        relative_page = f"guide/{page}" if not page.startswith(("guide/", "how-to/", "reference/")) else page
-        source = (docs / relative_page).read_text()
-        number = page_counts.get(relative_page, 0) + 1
-        page_counts[relative_page] = number
-        examples.append(Example(
-            f"{relative_page}:{number}", _slug(relative_page, number), relative_page,
-            _title(source, Path(relative_page).stem.replace("-", " ").title()),
-            python.strip(), python_output, python_ellipsis, cpp.strip(), cpp_output, cpp_ellipsis,
-        ))
-
-    def page_fences(page: str) -> tuple[str, list[Fence]]:
-        source = (docs / "guide" / page).read_text()
-        return source, fences(source)
-
-    for page, output in (
-        ("getting-started.md", "[18]"),
-        ("arithmetic.md", "[200]"),
-        ("connect-calculations.md", "[200]"),
-    ):
-        source, blocks = page_fences(page)
-        python = next(block.code for block in blocks if block.language == "python")
-        cpp = next(block.code for block in blocks if block.language == "cpp")
-        add(page, python, output, cpp)
-
-    _, blocks = page_fences("changing-values.md")
-    python_blocks = [block.code for block in blocks if block.language == "python"]
-    cpp_blocks = [block.code for block in blocks if block.language == "cpp"]
-    outputs = ("[200, 220, 210]", "[200, None, 200, 210]", "[None, 200, 210, 220]", "[200, 220]")
-    for index, output in enumerate(outputs):
-        python = python_blocks[index]
-        cpp = cpp_blocks[index]
-        if index in (1, 3):
-            base = python_blocks[0 if index == 1 else 2]
-            python = base[:base.index("print(test_graph(")] + python
-            base = cpp_blocks[0 if index == 1 else 2]
-            cpp = base[:base.index("int main()")] + "int main() {\n" + cpp + "\n}\n"
-        add("changing-values.md", python, output, cpp)
-
-    _, blocks = page_fences("conditions.md")
-    python_blocks = [block.code for block in blocks if block.language == "python"]
-    cpp_blocks = [block.code for block in blocks if block.language == "cpp"]
-    for index, output in ((0, "[20, 21, 21]"), (2, "[20, 22, 21]"),
-                          (3, "[False, True, True, False]"), (4, "[-1, 0, 1, -1]")):
-        add("conditions.md", python_blocks[index], output, cpp_blocks[index])
-
-    _, blocks = page_fences("dedup.md")
-    python_blocks = [block.code for block in blocks if block.language == "python"]
-    cpp_blocks = [block.code for block in blocks if block.language == "cpp"]
-    for index in range(2):
-        python = python_blocks[index]
-        cpp = cpp_blocks[index]
-        if index == 1:
-            python = (python_blocks[0][:python_blocks[0].index("@graph")] + python + "\n\n"
-                      + python_blocks[0][python_blocks[0].index("print(test_graph("):])
-            cpp = (cpp_blocks[0][:cpp_blocks[0].index("auto reported_temperature")] + cpp + "\n\n"
-                   + cpp_blocks[0][cpp_blocks[0].index("int main()") :])
-        add("dedup.md", python, "[20, None, None, 21, 20, None]", cpp)
-
-    for page, outputs in (
-        ("filter.md", ["[None, 20, None, None, 22, None, None, 22]"]),
-        ("sample.md", ["[None, 21, 21, None, 23, 23]"]),
-        ("count-and-lag.md", ["[None, 1, 2, None, 3, 4]", "[None, None, 20, None, 20, 26]"]),
-        ("running-calculations.md", ["[None, 20, 40, None, 66, 90]",
-                                      "[None, 20.0, 20.0, None, 22.0, 22.5]"]),
-    ):
-        _, blocks = page_fences(page)
-        python_blocks = [block.code for block in blocks if block.language == "python"]
-        cpp_blocks = [block.code for block in blocks if block.language == "cpp"]
-        for index, output in enumerate(outputs):
-            add(page, python_blocks[index], output, cpp_blocks[index])
-
-    for path in sorted(docs.rglob("*.md")):
-        if path.name.startswith("_") or path.parent.name == "_generated":
-            continue
-        source = path.read_text()
-        if "<!-- runnable-example -->" not in source.splitlines():
+    for section in ("guide", "how-to", "reference"):
+        section_root = docs / section
+        if not section_root.exists():
             continue
 
-        blocks = fences(source)
-        paired = {language: [] for language in ("python", "cpp")}
-        for block in blocks:
-            if block.language not in paired:
+        for path in sorted(section_root.rglob("*.md")):
+            relative_page = path.relative_to(docs).as_posix()
+            if "_generated" in Path(relative_page).parts:
                 continue
-            output = expected_output(source, block, blocks)
-            if output is not None:
+
+            source = path.read_text()
+            if "<!-- runnable-example -->" not in source.splitlines():
+                continue
+
+            blocks = fences(source)
+            paired = {language: [] for language in ("python", "cpp")}
+            for block in blocks:
+                if block.language not in paired:
+                    continue
+                output = expected_output(source, block, blocks)
+                if output is None:
+                    line = source.count("\n", 0, block.start) + 1
+                    raise ValueError(
+                        f"{relative_page}:{line}: {block.language} example requires an adjacent Output block"
+                    )
                 paired[block.language].append((block.code, *output))
 
-        if len(paired["python"]) != len(paired["cpp"]) or not paired["python"]:
-            raise ValueError(
-                f"{path.relative_to(root)}: expected the same nonzero number of paired Python and C++ examples; "
-                f"found {len(paired['python'])} and {len(paired['cpp'])}"
-            )
+            if len(paired["python"]) != len(paired["cpp"]) or not paired["python"]:
+                raise ValueError(
+                    f"{relative_page}: expected the same nonzero number of paired Python and C++ examples; "
+                    f"found {len(paired['python'])} and {len(paired['cpp'])}"
+                )
 
-        relative_page = path.relative_to(docs).as_posix()
-        for python, cpp in zip(paired["python"], paired["cpp"]):
-            add(relative_page, python[0], python[1], cpp[0], cpp[1], python[2], cpp[2])
+            page = relative_page
+            title = _title(source, path.stem.replace("-", " ").title())
+            for number, (python, cpp) in enumerate(zip(paired["python"], paired["cpp"]), start=1):
+                examples.append(Example(
+                    name=f"{page}:{number}",
+                    slug=_slug(page, number),
+                    page=page,
+                    title=title,
+                    python=python[0].strip(),
+                    python_output=python[1],
+                    python_ellipsis=python[2],
+                    cpp=cpp[0].strip(),
+                    cpp_output=cpp[1],
+                    cpp_ellipsis=cpp[2],
+                ))
 
     return examples
 

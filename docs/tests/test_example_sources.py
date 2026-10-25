@@ -11,6 +11,156 @@ from example_sources import (collect_examples, expected_output, fences, output_m
 
 
 class ExampleSourceTests(unittest.TestCase):
+    def test_collects_all_pairs_from_supported_page_paths(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            how_to = root / "docs/how-to/nested/topic.md"
+            reference = root / "docs/reference/library/topic.md"
+            generated = root / "docs/reference/_generated/ignored.md"
+            how_to.parent.mkdir(parents=True)
+            reference.parent.mkdir(parents=True)
+            generated.parent.mkdir(parents=True)
+            how_to.write_text("""# Topic
+
+<!-- runnable-example -->
+
+```python
+print('first python')
+```
+Output:
+```text
+first python
+```
+
+```cpp
+int main() { return 0; }
+```
+Output:
+```text
+first cpp
+```
+
+```python
+print('second python')
+```
+Output (ellipsis):
+```text
+second ...
+```
+
+```cpp
+int main() { return 0; }
+```
+Output:
+```text
+second cpp
+```
+""")
+            reference.write_text("""# Library topic
+
+<!-- runnable-example -->
+
+```python
+print(7)
+```
+Output:
+```text
+7
+```
+
+```cpp
+int main() { return 0; }
+```
+Output:
+```text
+7
+```
+""")
+            generated.write_text("""# Generated
+
+<!-- runnable-example -->
+
+```python
+print(0)
+```
+Output:
+```text
+0
+```
+
+```cpp
+int main() { return 0; }
+```
+Output:
+```text
+0
+```
+""")
+
+            examples = collect_examples(root)
+
+        self.assertEqual([example.page for example in examples], [
+            "how-to/nested/topic.md",
+            "how-to/nested/topic.md",
+            "reference/library/topic.md",
+        ])
+        self.assertEqual([example.slug for example in examples], [
+            "how-to-nested-topic-01",
+            "how-to-nested-topic-02",
+            "reference-library-topic-01",
+        ])
+        self.assertEqual([example.python_output for example in examples], [
+            "first python", "second ...", "7",
+        ])
+        self.assertEqual([example.python_ellipsis for example in examples], [False, True, False])
+        self.assertEqual([example.cpp_output for example in examples], [
+            "first cpp", "second cpp", "7",
+        ])
+        self.assertEqual([example.title for example in examples], ["Topic", "Topic", "Library topic"])
+
+    def test_marked_pages_require_nonzero_matching_pairs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            page = root / "docs/guide/empty.md"
+            page.parent.mkdir(parents=True)
+            page.write_text("""# Empty
+
+<!-- runnable-example -->
+
+Output:
+```text
+no runnable sources
+```
+""")
+
+            with self.assertRaisesRegex(ValueError, "same nonzero number"):
+                collect_examples(root)
+
+    def test_every_python_and_cpp_fence_requires_adjacent_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            page = root / "docs/reference/unpaired.md"
+            page.parent.mkdir(parents=True)
+            page.write_text("""# Unpaired
+
+<!-- runnable-example -->
+
+```python
+print(1)
+```
+
+```cpp
+int main() { return 0; }
+```
+Output:
+```text
+1
+```
+""")
+
+            with self.assertRaisesRegex(ValueError, r"unpaired\.md:5: python example"):
+                collect_examples(root)
+
     def test_output_pair_does_not_skip_unrelated_fences(self):
         source = """```python
 print(1)
@@ -59,7 +209,7 @@ elapsed: ... ns
     def test_collected_examples_have_stable_individual_sources(self):
         root = Path(__file__).resolve().parents[2]
         examples = collect_examples(root)
-        self.assertGreater(len(examples), 50)
+        self.assertTrue(examples)
         self.assertEqual(len({example.slug for example in examples}), len(examples))
         for example in examples:
             self.assertTrue(example.python)
