@@ -1,11 +1,11 @@
-# Report temperature alarm changes
+# Temperature alarm changes
 
 To notify an application when a sensor enters or leaves an alarm condition,
 compare its calibrated reading with a fixed limit and deduplicate the Boolean
 result. This publishes the initial alarm state and each transition.
 
-Prerequisites: [Graph functions](../guide/connect-calculations.md),
-[comparisons](../guide/conditions.md), [deduplication](../guide/dedup.md).
+Prerequisites: [Graph functions](../guide/graphs/composition.md#graph-functions),
+[comparisons](../guide/graphs/conditionals.md), [deduplication](../guide/graphs/updates.md#repeated-values).
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -15,7 +15,7 @@ Prerequisites: [Graph functions](../guide/connect-calculations.md),
 :sync: python
 
 ```python
-from bg import graph, test_graph
+from bg import graph, run_graph
 from bg.operators import dedup
 
 @graph
@@ -27,7 +27,7 @@ def temperature_alarm(reading: int, limit: int) -> bool:
 def monitor(reading: int) -> bool:
     return temperature_alarm(reading, 21)
 
-print(test_graph(monitor, [18, 19, 20, 22, 19, 18]))
+print(run_graph(monitor, [18, 19, 20, 22, 19, 18]))
 ```
 
 Output:
@@ -46,11 +46,10 @@ Output:
 
 ```cpp
 #include <bg/library.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <iostream>
 
 using namespace bg;
-using namespace bg::testing;
 using namespace bg::operators;
 using namespace literal;
 
@@ -64,7 +63,7 @@ auto monitor(wp<TS<i64>> reading) {
 }
 
 int main() {
-    const auto result = test_graph(monitor, {18, 19, 20, 22, 19, 18});
+    const auto result = run_graph(monitor, {18, 19, 20, 22, 19, 18});
     std::cout << std::boolalpha << result.equals({false, SKIP, true, SKIP, false, SKIP}) << '\n';
 }
 ```
@@ -78,8 +77,8 @@ true
 
 :::{tab-item} Build and run
 
-The [first program's CMake project](../guide/getting-started.md#write-and-run-the-example)
-builds this example as `first_graph.cpp`, linked to `bg::library`.
+The [C++ example project](../guide/installation.md#c-example-project)
+builds this example as `main.cpp`, linked to `bg::library`.
 :::
 ::::
 :::::
@@ -107,7 +106,6 @@ flowchart TD
     changes --> alarm["alarm updates"]
 ```
 
-A [sink](../guide/run-graphs.md) can send the Boolean updates to the application.
+A [sink](../guide/execution/running.md) can send the Boolean updates to the application.
 For a display refreshed on demand, use [requested summaries](requested-summary.md).
-The [operation chooser](choose-operation.md) compares publication rules.
 [Download the examples](examples.md) to run them outside this page.

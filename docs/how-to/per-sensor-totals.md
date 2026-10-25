@@ -1,12 +1,12 @@
-# Keep a total for each active sensor
+# Per-sensor running totals
 
 To accumulate quantities independently for a changing set of sensors, map a
 running-total graph over a dictionary. Each key owns a graph instance and its
 accumulator. Removing a key ends that accumulation; adding the key again
 starts a new total.
 
-Prerequisites: [Dictionaries](../guide/dictionaries.md),
-[running calculations](../guide/running-calculations.md), [map](../guide/map.md).
+Prerequisites: [Dictionaries](../guide/advanced-graphs/collections.md#dictionaries),
+[running calculations](../guide/graphs/aggregation.md#running-totals-and-means), [map](../guide/graphs/iteration.md#per-key-calculations-with-map).
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -16,7 +16,7 @@ Prerequisites: [Dictionaries](../guide/dictionaries.md),
 :sync: python
 
 ```python
-from bg import REMOVE, TS, TSD, graph, map, test_graph
+from bg import REMOVE, TS, TSD, graph, map, run_graph
 from bg.operators import sums
 
 @graph
@@ -28,7 +28,7 @@ def sensor_one_total(quantities: TSD[int, TS[int]]) -> int:
     totals = map(accumulated_quantity, quantities)
     return totals[1]
 
-print(test_graph(sensor_one_total, [
+print(run_graph(sensor_one_total, [
     {1: 3, 2: 10},
     {1: 4, 2: 5},
     {2: 2},
@@ -54,14 +54,13 @@ Output:
 
 ```cpp
 #include <bg/library.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/graph.hpp>
 #include <bg/map.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <iostream>
 
 using namespace bg;
-using namespace bg::testing;
 using namespace bg::operators;
 using namespace literal;
 
@@ -75,7 +74,7 @@ auto sensor_one_total(wp<TSD<i64, TS<i64>>> quantities) {
 }
 
 int main() {
-    const auto result = test_graph(graph(sensor_one_total), {
+    const auto result = run_graph(graph(sensor_one_total), {
         {{1, 3}, {2, 10}}, {{1, 4}, {2, 5}}, {{2, 2}},
         {{1, REMOVE}}, {{1, 6}}, {{1, 1}}});
     std::cout << std::boolalpha << result.equals({3, 7, SKIP, INVALID, 6, 7}) << '\n';
@@ -91,8 +90,8 @@ true
 
 :::{tab-item} Build and run
 
-The [first program's CMake project](../guide/getting-started.md#write-and-run-the-example)
-builds this example as `first_graph.cpp`, linked to `bg::library`.
+The [C++ example project](../guide/installation.md#c-example-project)
+builds this example as `main.cpp`, linked to `bg::library`.
 :::
 ::::
 :::::
@@ -126,8 +125,8 @@ both no publication and invalidation; the C++ literal check distinguishes
 `map` returns the complete dictionary of totals; selecting `[1]` is specific
 to this example. Applying `sum_` directly to the input dictionary would instead
 sum the current quantities across sensors. It would not accumulate each
-sensor's events. See [operation choices](choose-operation.md).
+sensor's events. See [aggregation and history](../guide/graphs/aggregation.md).
 
 C++ supplies concrete output types with `.as<TS<i64>>()` at the branch and
-selected-result boundaries, as required by [map](../guide/map.md).
+selected-result boundaries, as required by [map](../guide/graphs/iteration.md#per-key-calculations-with-map).
 [Download the examples](examples.md) includes the complete projects.

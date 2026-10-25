@@ -167,3 +167,84 @@ C++ `wp<T>` and `wp<>` do not convert to native `bool`. Python truth conversion 
 in Python.
 
 See [operator declarations](operators.md) for selection and extension.
+
+## clip
+
+`clip(value, min_, max_)` clamps an integer or floating-point value to inclusive bounds.
+All three arguments have the same numeric type and can be scalars or time series.
+Required inputs must be valid. `min_ > max_` raises an evaluation error. The output
+propagates the weakest observed input guarantee.
+
+<!-- runnable-example -->
+::::::{tab-set}
+:sync-group: language
+
+:::::{tab-item} Python
+:sync: python
+
+```python
+from bg import graph, run_graph
+from bg.operators import clip
+
+@graph
+def limited(value: int) -> int:
+    return clip(value, 0, 100)
+
+print(run_graph(limited, [-2, 50, 120]))
+```
+
+Output:
+
+```text
+[0, 50, 100]
+```
+:::::
+
+:::::{tab-item} C++
+:sync: cpp
+
+::::{tab-set}
+
+:::{tab-item} Code
+
+```cpp
+#include <bg/library.hpp>
+#include <bg/node.hpp>
+#include <bg/run_graph.hpp>
+#include <iostream>
+
+using namespace bg;
+using namespace bg::operators;
+using namespace literal;
+
+auto limited(wp<TS<i64>> value) {
+    return clip(value, i64{0}, i64{100});
+}
+
+int main() {
+    const auto result = run_graph(limited, {-2, 50, 120});
+    std::cout << std::boolalpha << result.equals({0, 50, 100}) << '\n';
+}
+```
+
+Output:
+
+```text
+true
+```
+:::
+
+:::{tab-item} Build and run
+
+The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake --build build --config Release
+```
+
+Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
+:::
+::::
+:::::
+::::::

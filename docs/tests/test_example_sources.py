@@ -11,6 +11,31 @@ from example_sources import (collect_examples, expected_output, fences, output_m
 
 
 class ExampleSourceTests(unittest.TestCase):
+    def test_collects_marked_homepage(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            docs = root / "docs"
+            docs.mkdir()
+            (docs / "index.md").write_text("""# Overview
+<!-- runnable-example -->
+```python
+print(1)
+```
+Output:
+```text
+1
+```
+```cpp
+int main() { return 0; }
+```
+Output:
+```text
+1
+```
+""")
+            examples = collect_examples(root)
+            self.assertEqual([example.page for example in examples], ["index.md"])
+
     def test_collects_all_pairs_from_supported_page_paths(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

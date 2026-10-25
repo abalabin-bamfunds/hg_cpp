@@ -1,155 +1,83 @@
-# Build the documentation
+# Documentation maintenance
 
-The user documentation uses Sphinx, MyST Markdown, and the Furo theme. Build it
-with Python 3.13 or later. The documentation build does not import BG or compile
-the C++ engine.
-
-Run these commands from the repository directory, with a Python virtual
-environment active:
+The published documentation uses Sphinx, MyST Markdown, Sphinx Design, and Furo.
+The build needs Python 3.13 or later. It does not import BG or compile the engine.
 
 ```sh
 python -m pip install -r docs/requirements.txt
-python -m sphinx -a -b html --fail-on-warning --keep-going docs build/docs/html
+python -m sphinx -E -a -b html --fail-on-warning --keep-going docs build/docs/html
 python -m http.server 8000 --directory build/docs/html
 ```
 
-Open <http://localhost:8000>. Search, chapter navigation, page contents, and
-light/dark appearance are provided by the theme.
+Open <http://localhost:8000>. `.readthedocs.yaml` uses the same dependencies and
+configuration. Publication requires importing this repository into Read the Docs.
 
-## Add pages
+## Structure
 
-Put guide chapters in `docs/guide/`, task guides in `docs/how-to/`, and reference
-pages in `docs/reference/`.
-Add each published page to a `toctree` in `docs/index.md` or its section index.
-Use relative Markdown links between pages and fenced code blocks with language
-names for examples.
+The [documentation plan](user-documentation-plan.md) defines chapter boundaries.
+`docs/index.md` owns navigation. `docs/conf.py` selects the published files; engine
+design documents and planning records remain outside the site.
 
-Group chapters by the sections in the [documentation plan](user-documentation-plan.md#documentation-structure).
-The sidebar includes the complete guide, task guides, application recipes, API reference, and library
-reference. Keep its captions consistent with the plan and introduction.
-Changing a navigation group does not require moving its chapter files.
+| Directory | Content |
+| --- | --- |
+| `guide/getting-started.md` | Basic syntax crash course |
+| `guide/graphs/` | Graph patterns |
+| `guide/nodes/` | Plain value node writing |
+| `guide/advanced-syntax.md` | Advanced syntax overview |
+| `guide/advanced-graphs/` | Time series, collections, references, guarantees, sharing |
+| `guide/advanced-nodes/` | Input views, publication, state, scheduling |
+| `guide/execution/` | Applications and time patterns |
+| `how-to/` | Testing, diagnostics, integration, worked applications |
+| `reference/` | API contracts and library operations |
 
-Provide Python and C++ versions of each user-facing example, including setup,
-run commands, expected results, and language-specific explanations. Keep inputs
-and expected updates equivalent. Use plain value types until the example needs
-explicit time series annotations in node and graph definitions. In Python
-examples, import the names used directly, such as `from bg import graph, test_graph`,
-and use unqualified decorators and calls. In C++ examples, use
-`using namespace bg;` and `using namespace bg::testing;` to keep calls short.
-Import `using namespace literal;` when an example uses literal sentinels, and
-`using namespace bg::literals;` for `_n` named arguments. Use
-literal input sequences for `test_graph` and `SKIP` for skipped updates. Infer
-input types from plain parameters; supply an explicit type with `input<TS<...>>`
-only when the signature leaves it unresolved. Use literal sequences for expected
-results too.
-Verify both versions against the current API.
+Use relative Markdown links and descriptive anchors. Keep one primary explanation
+for each concept. Introduce its purpose, show code and results, then state constraints.
+Quick starts link to detailed chapters. Avoid lesson narration, exercises, and
+instructions to modify an earlier program.
 
-The opening sequence is a fixed-value program, arithmetic, graph functions,
-then changing values. Keep the first `test_graph` calls free of input arguments.
-Introduce update sequences, their output encoding, and fixed versus changing
-arguments in Values that change. Each concept has one primary explanation;
-later chapters use it and link back when needed. The Graph functions chapter
-covers parameters and calls; Values that change covers input update behavior.
-Use `const_` when the fixed-value examples need a graph value; expressions using
-only language literals run during construction.
+## Examples
 
-Lead each chapter or section with a concrete need and the API that addresses it:
-“To use a changing offset, pass it as a second input.” Explain what the example
-does and when it is useful. Preserve a gradual introduction of syntax without
-framing chapters as lessons or exercises. Avoid prediction prompts, mandatory
-code changes, and file-replacement instructions in the explanations. Keep
-operational steps for installation, building, and running examples. Label excerpts
-with their required definitions and imports; provide a complete example for each
-new task when practical.
+Use complete Python and C++ examples with equivalent inputs and expected behavior.
+Start with plain types. Add explicit time series declarations when their contracts
+are needed. Python imports names directly. C++ uses `using namespace bg;` and the
+required `bg::operators`, `literal`, or `bg::literals` imports. Use literal input
+sequences for `run_graph`.
 
-Use synchronized language tabs with this MyST structure:
+Language tabs use `:sync-group: language` with `:sync: python` and `:sync: cpp`.
+Each C++ tab contains nested **Code** and **Build and run** tabs. The first shows
+source and expected output; the second links to the example project and gives build
+commands. Existing chapters provide the full directive structure.
 
-`````md
-::::{tab-set}
-:sync-group: language
+Mark pages containing complete examples with `<!-- runnable-example -->`.
+Place `Output:` and a fenced `text` block immediately after each runnable source
+block. Signature fragments omit an output block and are not executed. Use
+`Output (ellipsis):` only for variable fields such as timing or generated paths.
+Plain output labels require exact matches.
 
-:::{tab-item} Python
-:sync: python
+`docs/example_sources.py` collects examples from the homepage, guide, task pages,
+and reference. The checker and Sphinx download generator use the same sources.
+Generated sources belong to ignored `docs/_generated/` and `build/doc-examples/`.
 
-```python
-# Python example
-```
-:::
+## Verification
 
-:::{tab-item} C++
-:sync: cpp
-
-```cpp
-// C++ example
-```
-:::
-::::
-`````
-
-Put language-specific instructions inside the tabs. Keep shared concepts and
-update tables outside them. The `language` synchronization group remembers
-the selected language across examples and pages.
-
-Inside the C++ tab, use nested **Code** and **Build and run** tabs when an
-example needs build instructions. Put the example, expected output, and
-explanation in **Code**, selected by default. Put file setup, CMake configuration,
-and build and run commands in **Build and run**. Keep these inner tabs
-unsynchronized and use longer directive fences for the enclosing language tabs.
-
-`docs/conf.py` selects the user documentation as the site source. Engine design
-documents, decision records, this file, and the user documentation plan remain
-outside the published site.
-
-## Verify examples
-
-Use a Python environment containing a BG build from the same revision. After
-installing the native CMake package, run:
-
-```sh
-python docs/check_examples.py --cmake-prefix install --jobs 2
-```
-
-This runs Python examples, compiles C++ examples, and compares their output with
-the documentation. `--cpp-compiler /path/to/c++` selects a C++23 compiler;
-`--cmake /path/to/cmake` selects CMake. Without `--cmake-prefix`, the checker runs
-Python and extracts C++ sources without compiling them. Generated files belong
-to `build/doc-examples/`. The native extension task has a separate CMake project
-shown on its page and must also be built and run when changed.
-
-## Download generation
-
-Sphinx generates a download catalogue and source archives from the same assembled
-examples used by the checker. The shared collector uses only the Python standard
-library, so Read the Docs needs neither BG nor a C++ compiler. Generated files
-belong to the ignored `docs/_generated/` directory. The published downloads are
-under Sphinx’s `_downloads/` directory in the HTML output. Do not edit generated sources.
-
-The catalogue is included by `docs/how-to/examples.md`. Python downloads contain
-the complete assembled source. C++ archives contain source and CMake setup for
-an independently buildable project. Verify changed download generation with its
-stdlib tooling tests as well as the example checker:
+Run the tooling tests and strict site build after changing examples or navigation:
 
 ```sh
 python -m unittest discover -s docs/tests -v
+python -m sphinx -E -a -b html --fail-on-warning --keep-going docs build/docs/html
 ```
 
-Mark new pages containing complete examples with `<!-- runnable-example -->`.
-For each pair, place `Output:` and a fenced `text` block after each Python/C++
-code block. The checker executes every pair on a marked page. Use `Output (ellipsis):` only
-for variable fields such as timing values or generated paths; `...` then matches
-those fields. Plain `Output:` requires an exact match. The opening
-chapters also contain fragments; the checker supplies their documented context.
+Use a Python environment containing a BG build from the same revision to execute
+examples. Supply its native CMake installation to compile the C++ examples:
 
-The build treats warnings as errors and checks unresolved references. Keep
-links valid and include each published page in the navigation. Mermaid code
-blocks render as diagrams in HTML.
+```sh
+python docs/check_examples.py --cmake-prefix /absolute/path/to/install --jobs 2
+```
 
-## Read the Docs
+`--cpp-compiler` selects a C++23 compiler and `--cmake` selects CMake. Without
+`--cmake-prefix`, the checker executes Python and extracts C++ sources. An existing
+CMake cache must resolve `bg_DIR` to the requested installation.
 
-The root `.readthedocs.yaml` configures the build OS, Python version,
-documentation dependencies, Sphinx configuration, and failure on warnings.
-Read the Docs uses the same source and configuration as the local build.
-
-To publish, import the repository into a Read the Docs project and select the
-branch to build. The repository must be reachable by that project. Hosting
-activation and its public URL are configured in Read the Docs.
+Review the rendered desktop and mobile layouts, both languages, nested build tabs,
+search, diagrams, and downloadable source projects. The native extension example has
+a separate CMake project and must also be built when its source or setup changes.

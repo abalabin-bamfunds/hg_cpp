@@ -1,13 +1,12 @@
-# Download runnable examples
+# Runnable examples
 
 Each Python file contains the imports, definitions, and invocation for one
 checked example. Each C++ archive contains `main.cpp` and a CMake project linked
-to `bg::library`. Fragment examples include the definitions supplied earlier
-on their page.
+to `bg::library`. Each download contains a complete program.
 
 Python files use an [installed BG package](../guide/installation.md). For a C++
 archive, extract it and use the **Build and run** instructions in its README.
-The [first program](../guide/getting-started.md#write-and-run-the-example)
+The [example project](../guide/installation.md#c-example-project)
 explains the CMake installation prefix.
 
 These examples use finite inputs and print their result. The application

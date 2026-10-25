@@ -35,7 +35,7 @@ Invalidated contained items use `INVALID`; removed dictionary keys use `REMOVE`.
 root output update and root invalidation record as `None`. Observe `valid` explicitly
 when a test must distinguish those events.
 
-C++ literal-aware `TestGraphResult<>.equals({...})` compares recorded deltas. `SKIP`
+C++ literal-aware `GraphRunResult<>.equals({...})` compares recorded deltas. `SKIP`
 requires no update and `INVALID` requires invalidation. Wrap a plain function in
 `graph(function)` to request this result form when its inferred scalar result otherwise
 selects the typed comparison API. Typed scalar `.equals<T>(...)` comparisons use

@@ -63,3 +63,108 @@ all descendants of a nested collection.
 while it is invalid. It does not make `value` valid. The fallback is a scalar of the
 input scalar type; a time series fallback is not accepted. Use an optional node input
 for an application-specific fallback rule.
+
+## merge
+
+`merge(*values)` publishes the leftmost valid input that changed in the current
+evaluation. A valid input that did not change does not block later inputs. A scalar
+merge retains its current output when no valid changed input is available.
+Inputs have a common time series type. Collection overloads merge recursively;
+whole-input invalidation does not erase a previously merged collection.
+
+The [alternative-publisher example](../guide/graphs/conditionals.md#alternative-publishers)
+shows simultaneous updates and updates from a secondary publisher.
+
+## take, drop, step
+
+These operators select valid root input ticks. `n` is a fixed integer.
+
+| Call | Selection | Constraint |
+| --- | --- | --- |
+| `take(value, n)` | First `n` valid ticks | `n >= 0` |
+| `drop(value, n)` | All ticks after the first `n` valid ticks | `n >= 0` |
+| `step(value, n)` | First valid tick, then every `n`th valid tick | `n > 0` |
+
+Skipped positions and root invalidations do not advance or reset the count.
+`take` propagates invalidation until its count is complete, then retains its output.
+`drop` propagates invalidation after forwarding begins. `step` propagates invalidation
+independently of its tick selection. Invalid counts fail during construction.
+
+For collections, `step` copies the complete current value on each selected tick.
+`take` forwards deltas. `drop` copies the current value when forwarding starts, then
+forwards deltas. These operators retain supported input shapes. Delayed first
+publication limits const guarantees to final.
+
+<!-- runnable-example -->
+::::::{tab-set}
+:sync-group: language
+
+:::::{tab-item} Python
+:sync: python
+
+```python
+from bg import graph, run_graph
+from bg.operators import step
+
+@graph
+def every_other(value: int) -> int:
+    return step(value, 2)
+
+print(run_graph(every_other, [10, 11, None, 12, 13, 14]))
+```
+
+Output:
+
+```text
+[10, None, None, 12, None, 14]
+```
+:::::
+
+:::::{tab-item} C++
+:sync: cpp
+
+::::{tab-set}
+
+:::{tab-item} Code
+
+```cpp
+#include <bg/library.hpp>
+#include <bg/node.hpp>
+#include <bg/run_graph.hpp>
+#include <iostream>
+
+using namespace bg;
+using namespace bg::operators;
+using namespace literal;
+
+auto every_other(wp<TS<i64>> value) {
+    return step(value, i64{2});
+}
+
+int main() {
+    const auto result = run_graph(every_other, {10, 11, SKIP, 12, 13, 14});
+    std::cout << std::boolalpha << result.equals({10, SKIP, SKIP, 12, SKIP, 14}) << '\n';
+}
+```
+
+Output:
+
+```text
+true
+```
+:::
+
+:::{tab-item} Build and run
+
+The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake --build build --config Release
+```
+
+Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
+:::
+::::
+:::::
+::::::

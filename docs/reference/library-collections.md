@@ -125,7 +125,7 @@ the [valid-item rules](input-views.md#collection-views). A valid collection with
 matching key produces `false`; an invalid collection has no membership result. A time
 series key tick recomputes membership, including an equal-valued ordinary tick.
 
-String and symbol overloads count bytes with `len_` and test substrings with
+String and symbol overloads count Unicode code points with `len_` and test substrings with
 `contains_`, including embedded NUL bytes. Both substring operands have the same scalar
 type. These overloads accept scalars and time series.
 
@@ -198,3 +198,203 @@ selection during construction; supported time series keys can retarget it.
 missing dynamic dictionary key has no current item value. Selection follows the selected
 item's updates and validity. Python object scalar overloads use their annotated result
 types; see [scalar values](scalars.md#python-object-scalars).
+
+
+## Construction and conversion
+
+`convert[OUT](value)` in Python and `convert[type<OUT>](value)` in C++ copy a current
+value into the requested shape. Numeric conversion is specified in
+[convert](library-numeric.md#convert).
+
+| Source | Result |
+| --- | --- |
+| Scalar List | Fixed TSL or TSS |
+| Scalar Set | TSS |
+| TSS | Scalar Set |
+| Fixed TSL | Scalar List |
+| Scalar Dict | TSD |
+| TSD | Scalar Dict |
+| Scalar Bundle | Matching named TSB |
+| Named TSB | Matching scalar Bundle |
+
+Key and item scalar types must be compatible. Keys and set members require hashing.
+List-to-TSL conversion requires exactly the declared size. Bundle fields match by
+name. Conversion to a scalar collection requires a valid root and valid immediate
+items. The [shape-conversion example](../guide/advanced-graphs/types.md#converting-collection-shapes)
+shows both languages.
+
+`combine[OUT](...)` constructs a fixed TSL from positional time series or a TSB from
+named time series. Items alias the supplied sources and retain their validity and
+change information. The result type is explicit. C++ uses `combine[type<OUT>]`.
+
+
+<!-- runnable-example -->
+::::::{tab-set}
+:sync-group: language
+
+:::::{tab-item} Python
+:sync: python
+
+```python
+from bg import TS, TSL, graph, run_graph
+from bg.operators import combine, sum_
+
+@graph
+def pair_total(left: int, right: int) -> int:
+    return sum_(combine[TSL[TS[int], 2]](left, right))
+
+print(run_graph(pair_total, [1, 2], [2, 3]))
+```
+
+Output:
+
+```text
+[3, 5]
+```
+:::::
+
+:::::{tab-item} C++
+:sync: cpp
+
+::::{tab-set}
+
+:::{tab-item} Code
+
+```cpp
+#include <bg/library.hpp>
+#include <bg/node.hpp>
+#include <bg/run_graph.hpp>
+#include <iostream>
+
+using namespace bg;
+using namespace bg::operators;
+using namespace literal;
+
+auto pair_total(wp<TS<i64>> left, wp<TS<i64>> right) {
+    return sum_(combine[type<TSL<TS<i64>, 2>>](left, right));
+}
+
+int main() {
+    const auto result = run_graph(pair_total, {1, 2}, {2, 3});
+    std::cout << std::boolalpha << result.equals({3, 5}) << '\n';
+}
+```
+
+Output:
+
+```text
+true
+```
+:::
+
+:::{tab-item} Build and run
+
+The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake --build build --config Release
+```
+
+Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
+:::
+::::
+:::::
+::::::
+
+## Accumulation and emission
+
+`collect[OUT](value, reset=...)` accumulates valid ticks into a scalar List, scalar
+Set, or TSS. Dictionary results use `collect[OUT](key=key, value=value, reset=...)`
+and support scalar Dict and TSD. C++ supplies `type<OUT>` and `_n` named arguments.
+
+Only value ticks insert entries. The key input is passive; an invalid key ignores
+that value tick. Invalidation preserves collected history. A valid reset tick clears
+history, and a simultaneous value contributes after the reset. Reset alone publishes
+a valid empty collection. Supported output guarantees are ordinary and deduplicated.
+
+`emit(value)` publishes collection items as successive ordinary ticks. Scalar lists
+and sets contribute all items of each new value. TSS contributes additions; fixed TSL
+contributes modified valid items. Dictionaries contribute key/value entries, using
+`KeyValue` in Python and `operators::key_value` in C++ as the result TSB schema.
+TSD contributes added or modified valid entries.
+
+The first pending event publishes immediately. Further events publish one microsecond
+apart. New events append to the pending queue. Lists preserve index order; set and
+dictionary order is unspecified. Empty inputs, invalidations, and removals add no
+events. Invalidation preserves pending events. Stopping the owning graph releases
+them.
+
+<!-- runnable-example -->
+::::::{tab-set}
+:sync-group: language
+
+:::::{tab-item} Python
+:sync: python
+
+```python
+from bg import TS, graph, run_graph
+from bg.operators import collect, emit
+
+@graph
+def collected(values: tuple[int, ...]) -> tuple[int, ...]:
+    return collect[TS[tuple[int, ...]]](emit(values))
+
+print(run_graph(collected, [(2, 4, 6)]))
+```
+
+Output:
+
+```text
+[(2,), (2, 4), (2, 4, 6)]
+```
+:::::
+
+:::::{tab-item} C++
+:sync: cpp
+
+::::{tab-set}
+
+:::{tab-item} Code
+
+```cpp
+#include <bg/library.hpp>
+#include <bg/node.hpp>
+#include <bg/run_graph.hpp>
+#include <iostream>
+
+using namespace bg;
+using namespace bg::operators;
+using namespace literal;
+
+auto collected(wp<TS<List<i64>>> values) {
+    return collect[type<TS<List<i64>>>](emit(values));
+}
+
+int main() {
+    const auto result = run_graph(collected, {{2, 4, 6}});
+    std::cout << std::boolalpha << result.equals({{2}, {2, 4}, {2, 4, 6}}) << '\n';
+}
+```
+
+Output:
+
+```text
+true
+```
+:::
+
+:::{tab-item} Build and run
+
+The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake --build build --config Release
+```
+
+Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
+:::
+::::
+:::::
+::::::

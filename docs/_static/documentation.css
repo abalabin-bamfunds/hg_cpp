@@ -1,8 +1,26 @@
+/* Keep diagrams usable within a chapter and unrestricted in fullscreen. */
 .mermaid-container > pre > svg,
 pre.mermaid > svg {
     max-height: 28rem;
 }
-
 .mermaid-container-fullscreen pre.mermaid > svg {
     max-height: none;
+}
+
+.content { width: 54rem; }
+.article-container { max-width: 58rem; }
+article > section > p:first-of-type { font-size: 1.08em; }
+article h2 { margin-top: 2.1rem; }
+article table { font-size: .94em; }
+.sd-card { border-radius: .45rem; box-shadow: none; }
+.sd-card-title { font-weight: 650; }
+.sd-tab-set { margin: 1.3rem 0 1.6rem; }
+.sd-tab-content { padding-top: .65rem; }
+.sidebar-tree .caption { letter-spacing: .02em; }
+@media (max-width: 67em) {
+    .content { width: auto; }
+}
+article .highlight pre {
+    font-size: .875rem;
+    line-height: 1.5;
 }

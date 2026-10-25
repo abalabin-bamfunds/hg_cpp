@@ -48,7 +48,7 @@ These options apply to parameters resolved as time series inputs. Fixed scalars
 are unchanged. Names must identify time-series-capable parameters; fixed scalar
 and injected parameters cannot be selected. Optional compute views still use
 `TS[...]` annotations; check `.valid` before `.value`. Plain optional inputs
-receive `None` when absent. See [validity checks](../guide/view-validity.md).
+receive `None` when absent. See [validity checks](../guide/advanced-nodes/inputs.md#optional-views).
 
 Activity and validity are independent. A passive required input still gates
 evaluation; an active optional input can schedule evaluation while absent.

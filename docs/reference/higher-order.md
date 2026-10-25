@@ -5,6 +5,10 @@ lifecycle belong to those instances. Use ordinary graph calls when a runtime bou
 not required. C++ graph arguments need a concrete output type. Use
 `.as<TS<T>>()` when a library expression returns an untyped connection.
 
+Python imports `map`, `mesh`, `switch_`, and `pass_through` from `bg`. C++ imports
+`bg` and includes the corresponding `<bg/map.hpp>`, `<bg/mesh.hpp>`, or
+`<bg/switch.hpp>` header.
+
 ## map
 
 `map(graph, arguments...)` applies a graph per selected key. A mapped argument is a TSD
@@ -62,5 +66,5 @@ use ordinary guarantees because their tree positions can receive different items
 depend on a particular reduction tree or wiring-call count.
 
 Python does not currently expose `reduce`. Use built-in collection reductions or a
-custom collection node. The [custom aggregation guide](../guide/reduce.md) shows the
+custom collection node. The [custom aggregation guide](../guide/graphs/aggregation.md#custom-aggregation) shows the
 same scalar calculation through the available APIs.

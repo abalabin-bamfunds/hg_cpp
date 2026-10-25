@@ -1,49 +1,67 @@
-# Test graphs
+# Inputs and captured results
 
-`test_graph` constructs a fresh graph, feeds input updates in simulation, and records
-output updates. Use it to check values, timing, skipped updates, invalidation, and
-collection changes without external producers.
+`run_graph` captures sparse output events by default. A captured event is a publication
+or invalidation at an evaluation time. A skipped position can still have a retained
+current graph value.
 
-## Calls
+## Input sequences
 
-| Language | Form |
+Python uses a sequence for each changing graph input. C++ literal sequences infer types
+from concrete receiving parameters. `input<TS<T>>({...})` supplies an explicit type
+when the declaration is unresolved. Generic Python definitions can use concrete
+specialization such as `definition[TS[int]]`.
+
+`None` in Python and `SKIP` in C++ supply no update. `INVALID` invalidates a value.
+Collection deltas update supplied items and retain omitted items. `REMOVE` removes a
+dictionary key. [Literal forms](literals.md) specify supported values.
+
+Input positions are one microsecond apart, starting at the resolved run start.
+Scheduled work can extend capture beyond the input sequences. Both execution engines
+support capture. See [execution](execution.md) for fixed arguments, `ticks`, limits,
+and engine selection.
+
+## Python results
+
+`GraphRunResult` exposes:
+
+| API | Result |
 | --- | --- |
-| Python | `test_graph(definition, *sequences, catalogue=None, recorder=None, engine=EvaluationEngine.simulation, start_time=None, stop_time=None, run_time=None)` |
-| C++ | `test_graph(function, sequences...)` or `test_graph(function, GraphRunOptions{...}, sequences...)` |
+| `.start_time` | Origin for dense position offsets |
+| `.events` | Sparse `(time, value)` event tuples |
+| `.event_count` | Number of captured events |
+| `len(result)` | Dense microsecond position count |
+| `result[index]` | Value at one position, or `None` |
+| `result[start:stop]` | Dense slice as a list |
+| `list(result)` | Complete dense list |
+| `result == expected_list` | Dense update comparison |
 
-Python requires a decorated graph. Each sequence corresponds to a graph input and uses
-its declared type. Plain graph scalar annotations accept this changing input form. A
-generic definition needs concrete input specialization. Scalar-only parameters must be
-bound during construction through a wrapper graph.
+Small results display as lists. Large results display a summary. Dense access fills
+empty positions with `None`; root invalidation also materializes as `None`. Observe
+`valid` when a test must distinguish them. Prefer sparse events for large time gaps.
 
-C++ accepts ordinary graph functions, graph templates, and lambdas. Literal sequences
-infer types from the receiving parameter. `input<TS<T>>({...})` supplies a type if the
-declaration leaves it unresolved. Ordinary C++ range inputs are also accepted; the guide
-uses literal sequences to expose update behavior directly.
+## C++ results
 
-## Time positions
+`GraphRunResult<T>` exposes `start_time()`, `size()`, `event_count()`, and `events()`.
+An untyped `GraphRunResult<>` supports literal `equals({expected...})`, including
+`SKIP` and `INVALID`. A typed `GraphRunResult<T>` compares scalar values and
+`std::nullopt` positions with `equals`. A typed empty position does not distinguish
+no update from invalidation.
+Scalar indexing returns an owning optional scalar value. `view()` provides scalar
+access when a value exists.
 
-Input positions are one microsecond apart, starting at the run's start time. Sequences
-can have different lengths; after an input's last position it supplies no further
-updates. Current input values remain available. Scheduled work can extend the output
-recording. A graph with no changing input still has its start cycle. Run limits exclude
-work at and beyond the stop boundary.
+`visit_event(index, visitor)` reads a sparse event with its time. `visit_tick(index,
+visitor)` reads one dense position without copying payload values and returns false
+for a skipped position. Visitor views expire when the callback returns.
+Captured data remains owned by the result.
 
-Default simulation starts at epoch plus one microsecond. Python custom start times are
-timezone-naive local `datetime` values. C++ uses `EvaluationTime`. `test_graph` requires
-the simulation engine.
+## Test coverage
 
-## Results
+A meaningful test selects the behavior it needs to distinguish:
 
-Python returns one recorded position per test time step. C++ returns a
-`TestGraphResult`; `.equals` compares expected updates. A graph template, such as
-`test_graph(graph(function), ...)`, returns the literal-aware result needed for
-comparisons containing `SKIP` and `INVALID`. A typed scalar result instead accepts
-`std::optional` expected values and treats invalidation as absence. Results use [literal
-delta forms](literals.md), not a cumulative value at every position. A skipped output
-position can still have a retained current value.
+- Repeated equal values and skipped updates.
+- Invalidation and recovery.
+- Collection addition, modification, invalid items, removal, and re-addition.
+- Fresh state in separate runs and independent graph instances.
+- Simultaneous inputs and scheduled work at boundaries.
 
-Test fresh state with separate runs. Test repeated equal inputs separately from skips.
-Include invalidation and recovery when a node's contract depends on them. For collection
-operations, check additions, invalid items, removals, and re-additions. See [testing a
-calculation](../how-to/testing.md) for a complete example.
+[Testing](../how-to/testing.md) gives a complete example with assertions.

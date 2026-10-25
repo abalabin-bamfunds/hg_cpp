@@ -1,6 +1,6 @@
 # User documentation plan
 
-Status: proposed outline for editing. Chapter names and scope remain under review.
+Status: approved structure; implemented in the user documentation lane.
 
 Audience: readers who know basic Python or C++ and are new to computation graphs.
 
@@ -26,13 +26,14 @@ Each graph pattern has one primary chapter. That chapter covers the relevant
 approaches together and explains when each applies. Advanced chapters explain
 additional contracts and link back to the pattern.
 
-## Proposed table of contents
+## Table of contents
 
 ### 1. Getting started
 
 #### 1.1 BG overview
 
-- What BG computes and where a computation graph is useful. # important topics to mention - minimal recalcualtion is possible because all iteremediate results are cached and dependencies are tracked
+- What BG computes and where a computation graph is useful.
+- Retained intermediate results and dependency tracking reduce recalculation.
 - Nodes, connections, inputs, and outputs, shown in code and a small diagram.
 - Graph construction and graph evaluation, in one short explanation.
 - Python and C++ authoring options.
@@ -51,7 +52,7 @@ Purpose: provide a compact, runnable introduction before the detailed guides.
 - Arithmetic and named expressions.
 - A graph function with parameters and a return value.
 - Calling another graph function.
-- Changing inputs supplied as sequences to `test_graph`.
+- Changing inputs supplied as sequences to `run_graph`.
 - A conditional expression.
 - A small node written with plain value types.
 
@@ -385,5 +386,4 @@ sufficient for running the earlier graph and node examples.
 - Assign each detailed concept one primary location and link from other uses.
 - Review the sequence from plain types to explicit time series contracts.
 
-Page rewriting follows review of this outline. The existing draft remains available
-as a coverage inventory and source of checked examples.
+The implementation review is recorded in [documentation review](documentation-review.md).

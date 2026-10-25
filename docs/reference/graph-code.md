@@ -63,14 +63,14 @@ argument.
 Scalar bindings become constant time series. Missing names and incompatible bound types
 fail during construction. A context binding is a graph dependency, not mutable shared
 scalar storage. Python currently uses explicit arguments. See the [shared-input
-example](../guide/shared-inputs.md).
+example](../guide/advanced-graphs/sharing.md#context-time-series).
 
 ## Generic signatures
 
 Python `TypeVar("VALUE")` declares a scalar variable. Use it in `TS[VALUE]` or a plain
 scalar signature. Bind a TypeVar to `TimeSeries` for a complete time series type.
 `definition[TS[int], ...]` specializes a generic graph by its resolved input types, as
-required by `test_graph`.
+required by `run_graph`.
 
 C++ `ScalarVariable<"VALUE">` declares a scalar variable and
 `TimeSeriesVariable<"SERIES">` declares a complete time series variable. Explicit type

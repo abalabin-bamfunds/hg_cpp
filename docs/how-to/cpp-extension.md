@@ -1,4 +1,4 @@
-# Use C++ nodes from Python
+# C++ nodes in Python
 
 To expose a native graph operation to Python, export its operator from a
 nanobind module linked to `bg::python`. The same native overloads can then serve
@@ -17,14 +17,14 @@ existing `const_` operator and requires no new scalar conversions.
 After building `sensor_native`, graph code can import its exported operator:
 
 ```python
-from bg import graph, test_graph
+from bg import graph, run_graph
 from sensor_native import constant
 
 @graph
 def temperature() -> int:
     return constant(18) + 2
 
-print(test_graph(temperature))
+print(run_graph(temperature))
 ```
 
 Output: `[20]`.

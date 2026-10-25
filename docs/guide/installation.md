@@ -1,8 +1,8 @@
-# Install BG
+# Installation
 
-These instructions build BG from a local copy of this repository. Run the
-commands from the repository directory. You need a C++23 compiler, CMake 3.31
-or later, and Git available. Configuration downloads build dependencies.
+BG requires a C++23 compiler and CMake 3.31 or later. Python authoring requires
+Python 3.13 or later. The following commands build from a local repository checkout;
+configuration downloads build dependencies.
 
 ::::{tab-set}
 :sync-group: language
@@ -10,49 +10,53 @@ or later, and Git available. Configuration downloads build dependencies.
 :::{tab-item} Python
 :sync: python
 
-You also need Python 3.13 or later. Installation builds the Python extension.
-
-Create a virtual environment:
-
 ```sh
 python -m venv .venv
 ```
 
-Activate it on Linux or macOS:
-
-```sh
-source .venv/bin/activate
-```
-
-On Windows, activate it in PowerShell:
-
-```powershell
-.venv\Scripts\Activate.ps1
-```
-
-Install BG into that environment:
+Activate the environment with `source .venv/bin/activate` on Linux or macOS,
+or `.venv\Scripts\Activate.ps1` in Windows PowerShell.
 
 ```sh
 python -m pip install .
+python -c "from bg import graph, run_graph; print('BG is available')"
 ```
 :::
 
 :::{tab-item} C++
 :sync: cpp
 
-Configure a release build with tests disabled, then build and install it:
-
 ```sh
-cmake -S . -B build/cpp -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DCMAKE_INSTALL_PREFIX="$PWD/install"
+cmake -S . -B build/cpp -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DCMAKE_INSTALL_PREFIX=install
 cmake --build build/cpp --config Release
 cmake --install build/cpp --config Release
 ```
 
-These commands work in a Linux/macOS shell or Windows PowerShell. They install
-BG and its C++ dependencies into the repository's `install` directory.
-Python is not required for this build.
-
-[A first BG program](getting-started.md) uses a small CMake project
-to find this installation and link to `bg::library`.
+The installation contains the `bg::library` CMake target, public headers, and libraries.
 :::
 ::::
+
+(cpp-example-project)=
+## C++ example project
+
+Each C++ example is a complete `main.cpp`. This `CMakeLists.txt` builds it against
+an installed BG package:
+
+```cmake
+cmake_minimum_required(VERSION 3.31)
+project(example LANGUAGES CXX)
+find_package(bg CONFIG REQUIRED)
+add_executable(example main.cpp)
+target_link_libraries(example PRIVATE bg::library)
+```
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/absolute/path/to/bg/install
+cmake --build build --config Release
+```
+
+Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
+Shared-library installations may require the installation's library directory on the
+platform's library search path. On Windows, add its `bin` directory to `PATH`.
+
+The [example downloads](../how-to/examples.md) include Python source and C++ projects.

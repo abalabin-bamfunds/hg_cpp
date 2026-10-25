@@ -1,11 +1,11 @@
-# Publish a running summary on request
+# Running summaries on request
 
 To refresh a dashboard only when requested while retaining every sensor reading
 in its statistics, calculate the running mean before sampling it. Reading
 updates maintain the mean; request updates publish its current value.
 
-Prerequisites: [Sampling](../guide/sample.md),
-[running calculations](../guide/running-calculations.md).
+Prerequisites: [Sampling](../guide/graphs/updates.md#signal-driven-publication),
+[running calculations](../guide/graphs/aggregation.md#running-totals-and-means).
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -15,7 +15,7 @@ Prerequisites: [Sampling](../guide/sample.md),
 :sync: python
 
 ```python
-from bg import graph, test_graph
+from bg import graph, run_graph
 from bg.operators import means, sample
 
 @graph
@@ -24,7 +24,7 @@ def requested_average(reading: int, request: bool) -> float:
     average = means(calibrated)
     return sample(request, average)
 
-print(test_graph(
+print(run_graph(
     requested_average,
     [18, 20, 22, None, 24, None],
     [None, True, None, True, True, False],
@@ -47,11 +47,10 @@ Output:
 
 ```cpp
 #include <bg/library.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <iostream>
 
 using namespace bg;
-using namespace bg::testing;
 using namespace bg::operators;
 using namespace literal;
 
@@ -62,7 +61,7 @@ auto requested_average(wp<TS<i64>> reading, wp<TS<bool>> request) {
 }
 
 int main() {
-    const auto result = test_graph(
+    const auto result = run_graph(
         requested_average,
         {18, 20, 22, SKIP, 24, SKIP},
         {SKIP, true, SKIP, true, true, false});
@@ -79,8 +78,8 @@ true
 
 :::{tab-item} Build and run
 
-The [first program's CMake project](../guide/getting-started.md#write-and-run-the-example)
-builds this example as `first_graph.cpp`, linked to `bg::library`.
+The [C++ example project](../guide/installation.md#c-example-project)
+builds this example as `main.cpp`, linked to `bg::library`.
 :::
 ::::
 :::::
@@ -111,7 +110,7 @@ flowchart TD
 Placing `sample` before `means` would instead average the requested samples.
 Adding `dedup` after sampling would suppress repeated summaries, including the
 last output here. These orders serve different application requirements; see
-[Choose an update operation](choose-operation.md).
+[changing-input patterns](../guide/graphs/updates.md).
 
 For a continuously published alarm, see [alarm changes](temperature-monitor.md).
 [Download the examples](examples.md) includes both language versions.

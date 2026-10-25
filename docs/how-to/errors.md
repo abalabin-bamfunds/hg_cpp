@@ -1,10 +1,10 @@
-# Diagnose graph errors
+# Errors and diagnostics
 
 A wiring failure means BG could not construct a compatible graph. An evaluation
 failure means a callback or library calculation failed while processing values.
 The runner propagates either failure after cleanup.
 
-## Resolve incompatible numeric types
+## Type errors
 
 An integer input multiplied by a floating-point scalar has no matching numeric
 overload. The error names the operation and the supplied types. Convert the
@@ -21,7 +21,7 @@ The full error also lists the rejected overloads and their reasons.
 :sync: python
 
 ```python
-from bg import TS, graph, test_graph
+from bg import TS, graph, run_graph
 from bg.operators import convert
 
 @graph
@@ -29,7 +29,7 @@ def mixed_types(reading: int) -> float:
     return reading * 0.5
 
 try:
-    test_graph(mixed_types, [18])
+    run_graph(mixed_types, [18])
 except ValueError as error:
     print(type(error).__name__)
     print("\n".join(str(error).splitlines()[:2]))
@@ -38,7 +38,7 @@ except ValueError as error:
 def scaled(reading: int) -> float:
     return convert[TS[float]](reading) * 0.5
 
-print(test_graph(scaled, [18]))
+print(run_graph(scaled, [18]))
 ```
 
 Output (ellipsis):
@@ -60,14 +60,13 @@ Arguments: (lhs: TS<i64>, rhs: double)
 
 ```cpp
 #include <bg/library.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/graph/wiring_error.hpp>
 #include <iostream>
 #include <sstream>
 #include <string>
 
 using namespace bg;
-using namespace bg::testing;
 using namespace bg::operators;
 using namespace literal;
 
@@ -81,7 +80,7 @@ auto scaled(wp<TS<i64>> reading) {
 
 int main() {
     try {
-        (void)test_graph(mixed_types, {18});
+        (void)run_graph(mixed_types, {18});
     } catch (const WiringError& error) {
         auto lines = std::istringstream{error.what()};
         auto line = std::string{};
@@ -89,14 +88,14 @@ int main() {
             std::cout << line << '\n';
         }
     }
-    std::cout << std::boolalpha << test_graph(scaled, {18}).equals({9.0}) << '\n';
+    std::cout << std::boolalpha << run_graph(scaled, {18}).equals({9.0}) << '\n';
 }
 ```
 
-Output:
+Output (ellipsis):
 
 ```text
-Cannot resolve operator mul
+Cannot resolve operator mul at ...
 Arguments: (lhs: TS<i64>, rhs: double)
 true
 ```
@@ -104,8 +103,8 @@ true
 
 :::{tab-item} Build and run
 
-The [first program's CMake project](../guide/getting-started.md#write-and-run-the-example)
-builds this example as `first_graph.cpp`, linked to `bg::library`.
+The [C++ example project](../guide/installation.md#c-example-project)
+builds this example as `main.cpp`, linked to `bg::library`.
 :::
 ::::
 :::::
@@ -115,14 +114,14 @@ builds this example as `first_graph.cpp`, linked to `bg::library`.
 The integer overload rejects the right operand, and the double overload rejects
 the left. `convert` creates the floating-point input required by multiplication.
 Changing the declared return type alone does not convert values.
-See [numeric conversion](conversion.md) for supported conversions and limits.
+See [numeric conversion](../guide/graphs/types.md#operator-matching-and-conversion) for supported conversions and limits.
 
 The `...` in the Python excerpt represents a generated wiring path. Paths depend on
 the surrounding graph. Python exception notes add graph-call context; C++
 `WiringError` exposes `diagnostic()`, `contexts()`, and the underlying `cause()`.
 Keep the complete diagnostic when reporting a failure.
 
-## Handle an invalid application value
+## Evaluation errors
 
 A zero divisor is a valid integer input to BG. Application code must decide
 whether to reject it, publish a fallback, or skip publication. This example
@@ -136,7 +135,7 @@ first rejects zero, then implements a policy that skips the result for zero.
 :sync: python
 
 ```python
-from bg import graph, node, test_graph
+from bg import graph, node, run_graph
 
 @node
 def ratio(reading: int, divisor: int) -> int:
@@ -149,7 +148,7 @@ def normalized(reading: int, divisor: int) -> int:
     return ratio(reading, divisor)
 
 try:
-    test_graph(normalized, [18], [0])
+    run_graph(normalized, [18], [0])
 except ValueError as error:
     print(f"{type(error).__name__}: {error}")
 
@@ -163,7 +162,7 @@ def safe_ratio(reading: int, divisor: int) -> int:
 def safe_normalized(reading: int, divisor: int) -> int:
     return safe_ratio(reading, divisor)
 
-print(test_graph(safe_normalized, [18, None, None], [2, 0, 3]))
+print(run_graph(safe_normalized, [18, None, None], [2, 0, 3]))
 ```
 
 Output:
@@ -182,16 +181,12 @@ ValueError: divisor must be nonzero
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/testing/test_graph.hpp>
 #include <bg/graph.hpp>
 #include <bg/node.hpp>
-#include <iostream>
 #include <optional>
 #include <stdexcept>
 
 using namespace bg;
-using namespace bg::testing;
 using namespace bg::operators;
 using namespace literal;
 
@@ -219,11 +214,11 @@ auto safe_normalized(wp<TS<i64>> reading, wp<TS<i64>> divisor) {
 
 int main() {
     try {
-        (void)test_graph(normalized, {18}, {0});
+        (void)run_graph(normalized, {18}, {0});
     } catch (const std::invalid_argument& error) {
         std::cout << error.what() << '\n';
     }
-    const auto result = test_graph(graph(safe_normalized), {18, SKIP, SKIP}, {2, 0, 3});
+    const auto result = run_graph(graph(safe_normalized), {18, SKIP, SKIP}, {2, 0, 3});
     std::cout << std::boolalpha << result.equals({9, SKIP, 6}) << '\n';
 }
 ```
@@ -238,8 +233,8 @@ true
 
 :::{tab-item} Build and run
 
-The [first program's CMake project](../guide/getting-started.md#write-and-run-the-example)
-builds this example as `first_graph.cpp`, linked to `bg::library`.
+The [C++ example project](../guide/installation.md#c-example-project)
+builds this example as `main.cpp`, linked to `bg::library`.
 :::
 ::::
 :::::
@@ -247,25 +242,25 @@ builds this example as `first_graph.cpp`, linked to `bg::library`.
 
 Skipping publication keeps the previous output value, `9`, during the zero
 divisor update. It publishes `6` when the divisor becomes `3`. Use
-[invalidation](../guide/validity.md) instead if a zero divisor must remove the
+[invalidation](../guide/advanced-graphs/types.md#validity) instead if a zero divisor must remove the
 previous result. Ordinary node control flow checks zero before division;
-[value selection](../guide/conditions.md#selection-and-execution) would leave
+[value selection](../guide/graphs/conditionals.md#value-selection) would leave
 both calculations connected.
 
 Python preserves the original exception type and traceback, including the node
 callback that raised it. Wiring exceptions can also carry graph-call notes.
 Retain the traceback and any notes in application logs.
-See [output publication](../guide/skip-output.md) for no-update return behavior.
+See [output publication](../guide/nodes/results.md#skipping-publication) for no-update return behavior.
 
-## Interpret other wiring failures
+## Other wiring failures
 
 | Failure | Check | Correction |
 | --- | --- | --- |
 | Optional argument rejected | Receiver's validity constraint | Declare an optional parameter or supply a fallback |
-| Native truth conversion of a connection | `if`, Python `and/or/not`, chained comparison | Use [graph conditionals](../guide/conditions.md) |
+| Native truth conversion of a connection | `if`, Python `and/or/not`, chained comparison | Use [graph conditionals](../guide/graphs/conditionals.md) |
 | Missing collection output type | Generic or untyped signature | Specialize the graph or supply the required result type |
 | Missing service implementation | Catalogue and scalar filters | Register one matching implementation |
-| Dependency cycle | Connections or mesh dependencies | Remove the same-cycle cycle or use the documented feedback facility |
+| Dependency cycle | Connections or mesh dependencies | Make same-cycle dependencies acyclic |
 
 Start with the innermost failed operation and its supplied argument types.
 Read candidate rejection reasons before changing a signature.
@@ -282,6 +277,6 @@ removes it. [Testing](testing.md) records those events without application sourc
 - Check whether a collection update affects the subscribed key or item.
 - Check the run's exclusive stop boundary and whether its source is finite.
 
-[Choose an update operation](choose-operation.md) describes publication rules.
+[Changing-input patterns](../guide/graphs/updates.md) describes publication rules.
 If a failure occurs after a callback, check [view lifetime](../reference/input-views.md).
 Python lazy views expire; materialize owned data before retaining it.

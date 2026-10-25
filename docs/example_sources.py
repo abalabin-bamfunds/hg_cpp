@@ -128,51 +128,53 @@ def collect_examples(root: Path) -> list[Example]:
     docs = root / "docs"
     examples = []
 
+    pages = [docs / "index.md"]
     for section in ("guide", "how-to", "reference"):
-        section_root = docs / section
-        if not section_root.exists():
+        pages.extend(sorted((docs / section).rglob("*.md")))
+
+    for path in pages:
+        if not path.exists():
             continue
 
-        for path in sorted(section_root.rglob("*.md")):
-            relative_page = path.relative_to(docs).as_posix()
-            if "_generated" in Path(relative_page).parts:
+        relative_page = path.relative_to(docs).as_posix()
+        if "_generated" in Path(relative_page).parts:
+            continue
+
+        source = path.read_text()
+        if "<!-- runnable-example -->" not in source.splitlines():
+            continue
+
+        blocks = fences(source)
+        paired = {language: [] for language in ("python", "cpp")}
+        for block in blocks:
+            if block.language not in paired:
                 continue
-
-            source = path.read_text()
-            if "<!-- runnable-example -->" not in source.splitlines():
+            output = expected_output(source, block, blocks)
+            if output is None:
                 continue
+            paired[block.language].append((block.code, *output))
 
-            blocks = fences(source)
-            paired = {language: [] for language in ("python", "cpp")}
-            for block in blocks:
-                if block.language not in paired:
-                    continue
-                output = expected_output(source, block, blocks)
-                if output is None:
-                    continue
-                paired[block.language].append((block.code, *output))
+        if len(paired["python"]) != len(paired["cpp"]) or not paired["python"]:
+            raise ValueError(
+                f"{relative_page}: expected the same nonzero number of paired Python and C++ examples; "
+                f"found {len(paired['python'])} and {len(paired['cpp'])}"
+            )
 
-            if len(paired["python"]) != len(paired["cpp"]) or not paired["python"]:
-                raise ValueError(
-                    f"{relative_page}: expected the same nonzero number of paired Python and C++ examples; "
-                    f"found {len(paired['python'])} and {len(paired['cpp'])}"
-                )
-
-            page = relative_page
-            title = _title(source, path.stem.replace("-", " ").title())
-            for number, (python, cpp) in enumerate(zip(paired["python"], paired["cpp"]), start=1):
-                examples.append(Example(
-                    name=f"{page}:{number}",
-                    slug=_slug(page, number),
-                    page=page,
-                    title=title,
-                    python=python[0].strip(),
-                    python_output=python[1],
-                    python_ellipsis=python[2],
-                    cpp=cpp[0].strip(),
-                    cpp_output=cpp[1],
-                    cpp_ellipsis=cpp[2],
-                ))
+        page = relative_page
+        title = _title(source, path.stem.replace("-", " ").title())
+        for number, (python, cpp) in enumerate(zip(paired["python"], paired["cpp"]), start=1):
+            examples.append(Example(
+                name=f"{page}:{number}",
+                slug=_slug(page, number),
+                page=page,
+                title=title,
+                python=python[0].strip(),
+                python_output=python[1],
+                python_ellipsis=python[2],
+                cpp=cpp[0].strip(),
+                cpp_output=cpp[1],
+                cpp_ellipsis=cpp[2],
+            ))
 
     return examples
 

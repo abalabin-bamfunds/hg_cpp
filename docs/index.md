@@ -1,120 +1,209 @@
 # BG documentation
 
-BG connects calculations whose inputs change over time. Connections define how
-outputs depend on inputs. BG evaluates the calculations as updates arrive.
+BG connects calculations whose inputs change over time. Each node retains its
+current result. BG tracks the connections between nodes and evaluates affected
+calculations when an input updates. Shared intermediate results can feed several
+outputs without repeating the calculation.
 
-[Introduction to BG](guide/index.md) explains the concepts. [Installation](guide/installation.md)
-and [A first BG program](guide/getting-started.md) provide a runnable starting point.
+This supports derived prices, sensor processing, running statistics, and
+calculations maintained independently for many items.
 
-The guide progresses from expressions and functions to updates, custom nodes,
-execution, collections, and advanced graph composition. [Task guides](how-to/choose-operation.md)
-answer specific questions. [Application recipes](how-to/examples.md) combine
-operations into complete examples with downloadable source files. The [API reference](reference/index.md) and
-[library index](reference/library-index.md) specify contracts and supported types.
+```mermaid
+flowchart LR
+    price[Price] --> subtotal[Price × quantity]
+    quantity[Quantity] --> subtotal
+    subtotal --> total[Subtotal + delivery]
+    delivery[Delivery] --> total
+    subtotal --> display[Subtotal display]
+```
+
+The multiplication is a **node**. Its connections define its dependencies.
+The subtotal remains available to both consumers until it updates again.
+A **graph function** constructs these connections; node code computes their values.
+
+
+
+<!-- runnable-example -->
+::::::{tab-set}
+:sync-group: language
+
+:::::{tab-item} Python
+:sync: python
+
+```python
+from bg import graph, run_graph
+from bg.operators import const_
+
+@graph
+def subtotal(price: int, quantity: int) -> int:
+    return price * quantity
+
+@graph
+def total() -> int:
+    return subtotal(const_(5), 3) + 2
+
+print(run_graph(total))
+```
+
+Output:
+
+```text
+[17]
+```
+:::::
+
+:::::{tab-item} C++
+:sync: cpp
+
+::::{tab-set}
+
+:::{tab-item} Code
+
+```cpp
+#include <bg/library.hpp>
+#include <bg/node.hpp>
+#include <bg/run_graph.hpp>
+#include <iostream>
+
+using namespace bg;
+using namespace bg::operators;
+using namespace literal;
+
+auto subtotal(wp<TS<i64>> price, int quantity) {
+    return price * quantity;
+}
+
+auto total() {
+    return subtotal(const_(5).as<TS<i64>>(), 3) + 2;
+}
+
+int main() {
+    const auto result = run_graph(total);
+    std::cout << std::boolalpha << result.equals({17}) << '\n';
+}
+```
+
+Output:
+
+```text
+true
+```
+:::
+
+:::{tab-item} Build and run
+
+The [C++ example project](guide/installation.md#c-example-project) builds this code as `main.cpp`.
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake --build build --config Release
+```
+
+Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
+:::
+::::
+:::::
+::::::
+
+The example has a fixed result. [Changing inputs](guide/graphs/updates.md) use the
+same connections with successive values. BG retains current values; history is
+provided by operations such as running totals and lag.
+
+::::{grid} 1 2 2 2
+:gutter: 3
+
+:::{grid-item-card} Basic syntax
+:link: guide/getting-started
+:link-type: doc
+
+A compact introduction with runnable Python and C++ examples.
+:::
+:::{grid-item-card} Writing graphs
+:link: guide/graphs/composition
+:link-type: doc
+
+Composition, types, collections, conditionals, iteration, and aggregation.
+:::
+:::{grid-item-card} Writing nodes
+:link: guide/nodes/calculations
+:link-type: doc
+
+Calculations implemented with ordinary Python or C++ values.
+:::
+:::{grid-item-card} Advanced syntax
+:link: guide/advanced-syntax
+:link-type: doc
+
+Time series declarations, input views, state, and update controls.
+:::
+::::
+
+Examples assume basic knowledge of Python or C++. Language tabs retain the selected
+language across pages. C++ build commands are in the **Build and run** tab.
 
 ```{toctree}
 :caption: Getting started
-:maxdepth: 1
+:hidden:
 
-guide/index
 guide/installation
 guide/getting-started
 ```
 
 ```{toctree}
-:caption: Graph basics
-:maxdepth: 1
+:caption: Writing graphs
+:hidden:
 
-guide/arithmetic
-guide/connect-calculations
-guide/changing-values
-guide/conditions
-```
-
-```{toctree}
-:caption: Working with updates
-:maxdepth: 1
-
-guide/dedup
-guide/filter
-guide/sample
-guide/count-and-lag
-guide/running-calculations
+guide/graphs/composition
+guide/graphs/types
+guide/graphs/scalars
+guide/graphs/updates
+guide/graphs/conditionals
+guide/graphs/iteration
+guide/graphs/aggregation
 ```
 
 ```{toctree}
 :caption: Writing nodes
-:maxdepth: 1
+:hidden:
 
-guide/calculation-nodes
-guide/skip-output
-guide/optional-inputs
-guide/validity
-guide/input-views
-guide/view-validity
-```
-
-```{toctree}
-:caption: Running graphs
-:maxdepth: 1
-
-guide/run-graphs
-guide/time
-guide/schedule
-guide/delay
-guide/throttle
-guide/reset-history
-guide/state
-guide/lifecycle
-guide/sources
-guide/queues
-```
-
-```{toctree}
-:caption: Collections
-:maxdepth: 1
-
-guide/fixed-lists
-guide/bundles
-guide/dictionaries
-guide/sets
-guide/collection-reductions
-guide/map
-guide/reduce
+guide/nodes/calculations
+guide/nodes/results
 ```
 
 ```{toctree}
 :caption: Advanced graphs
-:maxdepth: 1
+:hidden:
 
-guide/guarantees
-guide/references
-guide/switch
-guide/mesh
-guide/generics
-guide/variadic
-guide/shared-inputs
-guide/global-state
-guide/services
+guide/advanced-syntax
+guide/advanced-graphs/types
+guide/advanced-graphs/collections
+guide/advanced-graphs/references
+guide/advanced-graphs/dependencies
+guide/advanced-graphs/guarantees
+guide/advanced-graphs/sharing
 ```
 
 ```{toctree}
-:caption: Task guides
-:maxdepth: 1
+:caption: Advanced nodes
+:hidden:
 
-how-to/choose-operation
+guide/advanced-nodes/inputs
+guide/advanced-nodes/collections
+guide/advanced-nodes/state
+guide/advanced-nodes/scheduling
+```
+
+```{toctree}
+:caption: Execution and diagnostics
+:hidden:
+
+guide/execution/running
+guide/execution/time
 how-to/testing
-how-to/conversion
 how-to/errors
 how-to/profiling
 how-to/cpp-extension
 how-to/examples
-```
-
-```{toctree}
-:caption: Application recipes
-:maxdepth: 1
-
 how-to/temperature-monitor
 how-to/requested-summary
 how-to/per-sensor-totals
@@ -122,7 +211,7 @@ how-to/per-sensor-totals
 
 ```{toctree}
 :caption: API reference
-:maxdepth: 1
+:hidden:
 
 reference/index
 reference/graph-code
@@ -143,7 +232,7 @@ reference/operators
 
 ```{toctree}
 :caption: Library reference
-:maxdepth: 1
+:hidden:
 
 reference/library-index
 reference/library-numeric
@@ -151,4 +240,5 @@ reference/library-selection
 reference/library-stateful
 reference/library-time
 reference/library-collections
+reference/library-text
 ```

@@ -81,3 +81,170 @@ auto restarted_total = sums(value, "reset"_n = reset);
 ```
 :::
 ::::
+
+## diff
+
+`diff(value)` subtracts the previous valid value from the current value. It accepts
+integer and floating-point time series and returns the same scalar type with an
+ordinary guarantee. The first value after start or invalidation produces no result.
+Skipped positions do not advance history.
+
+<!-- runnable-example -->
+::::::{tab-set}
+:sync-group: language
+
+:::::{tab-item} Python
+:sync: python
+
+```python
+from bg import graph, run_graph
+from bg.operators import diff
+
+@graph
+def change(value: int) -> int:
+    return diff(value)
+
+print(run_graph(change, [10, 13, None, 12]))
+```
+
+Output:
+
+```text
+[None, 3, None, -1]
+```
+:::::
+
+:::::{tab-item} C++
+:sync: cpp
+
+::::{tab-set}
+
+:::{tab-item} Code
+
+```cpp
+#include <bg/library.hpp>
+#include <bg/node.hpp>
+#include <bg/run_graph.hpp>
+#include <iostream>
+
+using namespace bg;
+using namespace bg::operators;
+using namespace literal;
+
+auto change(wp<TS<i64>> value) {
+    return diff(value);
+}
+
+int main() {
+    const auto result = run_graph(change, {10, 13, SKIP, 12});
+    std::cout << std::boolalpha << result.equals({SKIP, 3, SKIP, -1}) << '\n';
+}
+```
+
+Output:
+
+```text
+true
+```
+:::
+
+:::{tab-item} Build and run
+
+The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake --build build --config Release
+```
+
+Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
+:::
+::::
+:::::
+::::::
+
+## ewma
+
+`ewma(value, alpha, min_periods=0)` maintains an exponentially weighted moving average
+of floating-point values. `alpha` is a fixed finite value in `[0, 1]`. The first
+valid value seeds the average; each later value applies
+`average += alpha * (value - average)`.
+
+A nonnegative `min_periods` suppresses that many initial valid ticks. Invalidation
+clears the average and warmup count and invalidates the result. Skipped positions
+preserve state. Zero warmup retains the input guarantee; positive warmup limits const
+to final.
+
+<!-- runnable-example -->
+::::::{tab-set}
+:sync-group: language
+
+:::::{tab-item} Python
+:sync: python
+
+```python
+from bg import graph, run_graph
+from bg.operators import ewma
+
+@graph
+def smoothed(value: float) -> float:
+    return ewma(value, 0.5)
+
+print(run_graph(smoothed, [10.0, 14.0, 16.0]))
+```
+
+Output:
+
+```text
+[10.0, 12.0, 14.0]
+```
+:::::
+
+:::::{tab-item} C++
+:sync: cpp
+
+::::{tab-set}
+
+:::{tab-item} Code
+
+```cpp
+#include <bg/library.hpp>
+#include <bg/node.hpp>
+#include <bg/run_graph.hpp>
+#include <iostream>
+
+using namespace bg;
+using namespace bg::operators;
+using namespace literal;
+
+auto smoothed(wp<TS<double>> value) {
+    return ewma(value, 0.5);
+}
+
+int main() {
+    const auto result = run_graph(smoothed, {10.0, 14.0, 16.0});
+    std::cout << std::boolalpha << result.equals({10.0, 12.0, 14.0}) << '\n';
+}
+```
+
+Output:
+
+```text
+true
+```
+:::
+
+:::{tab-item} Build and run
+
+The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake --build build --config Release
+```
+
+Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
+:::
+::::
+:::::
+::::::

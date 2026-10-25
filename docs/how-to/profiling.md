@@ -1,10 +1,10 @@
-# Measure graph evaluation
+# Profiling
 
 To measure a run's computation cost, attach an `EvaluationProfiler` recorder.
 The profiler reports outer-cycle durations and per-node evaluation counts and
 checkpoint ticks. A recorder belongs to one graph run.
 
-## Record a finite run
+## Finite run
 
 This run processes three reading updates, including a repeated value. The
 skipped position does not create evaluation work. A one-microsecond node period
@@ -19,14 +19,14 @@ keeps the test's separate input times visible in the node history.
 
 ```python
 from datetime import timedelta
-from bg import EvaluationProfiler, graph, test_graph
+from bg import EvaluationProfiler, graph, run_graph
 
 @graph
 def temperature(reading: int) -> int:
     return reading + 2
 
 profiler = EvaluationProfiler(node_period=timedelta(microseconds=1))
-result = test_graph(temperature, [18, 18, None, 19], recorder=profiler.recorder())
+result = run_graph(temperature, [18, 18, None, 19], recorder=profiler.recorder())
 print(result)
 print(profiler.report(0), end="")
 
@@ -63,13 +63,12 @@ node 2: 1 evaluation(s)
 
 ```cpp
 #include <bg/library.hpp>
-#include <bg/testing/test_graph.hpp>
+#include <bg/run_graph.hpp>
 #include <bg/evaluation_profiler.hpp>
 #include <chrono>
 #include <iostream>
 
 using namespace bg;
-using namespace bg::testing;
 using namespace bg::operators;
 using namespace literal;
 
@@ -79,7 +78,7 @@ auto temperature(wp<TS<i64>> reading) {
 
 int main() {
     auto profiler = EvaluationProfiler{{.node_period = std::chrono::microseconds{1}}};
-    const auto result = test_graph(
+    const auto result = run_graph(
         temperature, GraphRunOptions{.recorder = profiler.recorder()}, {18, 18, SKIP, 19});
     std::cout << std::boolalpha << result.equals({20, 20, SKIP, 21}) << '\n';
     std::cout << profiler.report(0);
@@ -112,8 +111,8 @@ node 2: 1 evaluation(s)
 
 :::{tab-item} Build and run
 
-The [first program's CMake project](../guide/getting-started.md#write-and-run-the-example)
-builds this example as `first_graph.cpp`, linked to `bg::library`.
+The [C++ example project](../guide/installation.md#c-example-project)
+builds this example as `main.cpp`, linked to `bg::library`.
 :::
 ::::
 :::::
@@ -123,7 +122,7 @@ The numeric timing fields vary by run; `...` stands for those measurements.
 `report(0)` prints cumulative timing without recent-period rows. `report()`
 also lists recent outer periods.
 
-## Read the timing report
+## Timing report
 
 | Field | Meaning | Useful for |
 | --- | --- | --- |
@@ -140,7 +139,7 @@ Simulation advances event time without wall-clock waits. The one-microsecond
 input spacing is an evaluation-time interval, not a promised computation time.
 Realtime uses the same cycle measurements under its delivery schedule.
 
-## Find unexpectedly frequent work
+## Evaluation counts
 
 `node_periods(graph_id, period)` returns rows containing `node_index`,
 `evaluations`, and `checkpoint_ticks`. In Python these are dictionary entries;
@@ -162,7 +161,7 @@ and label. Map branches use their key as the label. Node indices are local to
 a compiled graph; do not compare an index across changed graph constructions.
 C++ compiled-graph metadata is available only while the graph is active.
 
-## Keep useful history
+## History retention
 
 Period queries return closed periods. The runner finishes the recording before
 returning, so the finite run above can query its final periods. Node history
@@ -173,4 +172,4 @@ period is retained in addition to those limits.
 Choose period lengths and retention before a run. After a graph stops, query
 retained node periods; cumulative active-node counters have been released.
 Keep the workload, engine, profiling configuration, and machine consistent when
-comparing performance. See [execution reference](../reference/execution.md#profiling).
+comparing performance. See [execution reference](../reference/execution.md#results-and-profiling).
