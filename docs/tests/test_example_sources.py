@@ -136,17 +136,71 @@ no runnable sources
             with self.assertRaisesRegex(ValueError, "same nonzero number"):
                 collect_examples(root)
 
-    def test_every_python_and_cpp_fence_requires_adjacent_output(self):
+    def test_unpaired_fragments_are_ignored_beside_complete_pairs(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            page = root / "docs/reference/unpaired.md"
+            page = root / "docs/reference/mixed.md"
             page.parent.mkdir(parents=True)
-            page.write_text("""# Unpaired
+            page.write_text("""# Mixed
+
+<!-- runnable-example -->
+
+```python
+def signature(value: int) -> int: ...
+```
+
+```cpp
+int signature(int value);
+```
+
+```python
+print('runnable')
+```
+Output:
+```text
+runnable
+```
+
+```cpp
+int main() { return 0; }
+```
+Output:
+```text
+runnable
+```
+""")
+
+            examples = collect_examples(root)
+
+        self.assertEqual(len(examples), 1)
+        self.assertEqual(examples[0].python, "print('runnable')")
+        self.assertEqual(examples[0].cpp, "int main() { return 0; }")
+        self.assertEqual(examples[0].python_output, "runnable")
+        self.assertEqual(examples[0].cpp_output, "runnable")
+
+    def test_unequal_nonzero_paired_counts_fail_with_unpaired_fragments(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            page = root / "docs/reference/unequal.md"
+            page.parent.mkdir(parents=True)
+            page.write_text("""# Unequal
 
 <!-- runnable-example -->
 
 ```python
 print(1)
+```
+Output:
+```text
+1
+```
+
+```python
+print(2)
+```
+Output:
+```text
+2
 ```
 
 ```cpp
@@ -156,9 +210,13 @@ Output:
 ```text
 1
 ```
+
+```cpp
+int signature(int value);
+```
 """)
 
-            with self.assertRaisesRegex(ValueError, r"unpaired\.md:5: python example"):
+            with self.assertRaisesRegex(ValueError, "found 2 and 1"):
                 collect_examples(root)
 
     def test_output_pair_does_not_skip_unrelated_fences(self):

@@ -149,10 +149,7 @@ def collect_examples(root: Path) -> list[Example]:
                     continue
                 output = expected_output(source, block, blocks)
                 if output is None:
-                    line = source.count("\n", 0, block.start) + 1
-                    raise ValueError(
-                        f"{relative_page}:{line}: {block.language} example requires an adjacent Output block"
-                    )
+                    continue
                 paired[block.language].append((block.code, *output))
 
             if len(paired["python"]) != len(paired["cpp"]) or not paired["python"]:
