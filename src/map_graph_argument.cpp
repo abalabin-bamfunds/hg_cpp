@@ -318,7 +318,7 @@ class MapGraphArgumentBuilder {
         parameters_.push_back({.name = argument_name(supplied_argument.value, parameter_index),
                                .type = &outer_type,
                                .activity = active,
-                               .validity = mapped ? required : optional,
+                               .validity = optional,
                                .valid_items = supplied_argument.value.annotations().valid_items});
         outer_arguments_.push_back(WiringArgument::borrow(supplied_argument.value));
         outer_arguments_.back().clear_name();
@@ -346,7 +346,8 @@ class MapGraphArgumentBuilder {
         }
 
         key_set_parameter_ = parameters_.size();
-        parameters_.push_back({util::symbol{"__key_set__"}, key_set_type, active, required, false, VariadicMode::none});
+        parameters_.push_back(
+            {util::symbol{"__key_set__"}, key_set_type, active, optional, false, VariadicMode::none});
         outer_arguments_.emplace_back(key_set_argument);
     }
 

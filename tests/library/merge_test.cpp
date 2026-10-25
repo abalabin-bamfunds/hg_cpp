@@ -519,6 +519,43 @@ TEST_CASE("merge combines TSD values over the union of keys",
                                                        {{1, 11}, {4, 400}}});
 }
 
+TEST_CASE("merge publishes a valid dictionary when another input is initially invalid",
+          "[feature:operator][feature:merge][series:tsd][validity:optional][transition:update]") {
+    const auto make_values = node([](In<TS<i64>> trigger, Out<TSD<i64, TS<i64>>> output) {
+        output[1].set(trigger.value());
+    });
+    const auto empty_values = node([](In<TS<i64>>, Out<TSD<i64, TS<i64>>>) {});
+    const auto to_reference = node([](In<TSD<i64, REF<TS<i64>>>, optional> input,
+                                      Out<TSD<i64, REF<TS<i64>>>> output) { output.copy_tick(input); });
+
+    auto direct_merge_reached = false;
+    auto normalized_merge_reached = false;
+    const auto observe_direct = node([&](In<TSD<i64, TS<i64>>> values) {
+        values.for_each_added([&](const Scalar<i64> &key) { direct_merge_reached |= values[key].valid(); });
+        values.for_each_modified(
+            [&](const Scalar<i64> &key) { direct_merge_reached |= values[key].valid(); });
+    });
+    const auto observe_normalized_merge = node([&](In<TSD<i64, TS<i64>>> values) {
+        values.for_each_added([&](const Scalar<i64> &key) { normalized_merge_reached |= values[key].valid(); });
+        values.for_each_modified(
+            [&](const Scalar<i64> &key) { normalized_merge_reached |= values[key].valid(); });
+    });
+    const auto graph = [&](wp<TS<i64>> trigger) {
+        const auto values = make_values(trigger);
+        const auto empty = empty_values(trigger);
+        const auto references = to_reference(values);
+        const auto empty_references = to_reference(empty);
+        observe_direct(operators::merge(values, empty));
+        observe_normalized_merge(operators::merge(references, empty_references));
+        return trigger;
+    };
+
+    (void)bg::run_graph(graph, {42});
+
+    CHECK(direct_merge_reached);
+    CHECK(normalized_merge_reached);
+}
+
 TEST_CASE("merge combines TSS membership and retains keys present in another input",
           "[feature:operator][feature:merge][series:tss][transition:addition][transition:removal]") {
     auto snapshots = std::vector<std::vector<i64>>{};
