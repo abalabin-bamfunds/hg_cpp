@@ -1128,18 +1128,18 @@ GraphRunResult<OutputScalar> run_graph_descriptor_range_target(const bg::Signatu
         });
 }
 
-template <typename Tested, typename... Inputs>
-auto run_graph_bound_target(const Tested &tested, const GraphRunOptions &options, Inputs &&...inputs) {
-    if constexpr (std::derived_from<std::remove_cvref_t<Tested>, WiringTemplate>) {
+template <typename Graph, typename... Inputs>
+auto run_graph_bound_target(const Graph &graph, const GraphRunOptions &options, Inputs &&...inputs) {
+    if constexpr (std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate>) {
         return run_graph_target<void>(
-            tested.signature(), options,
+            graph.signature(), options,
             [&](std::span<const WiringArgument> arguments) {
-                return WiringContext::current().wiring().invoke(tested, arguments);
+                return WiringContext::current().wiring().invoke(graph, arguments);
             },
             std::forward<Inputs>(inputs)...);
     } else {
-        using FunctionInfo = details::graph_function<Tested>;
-        auto graph_template = bg::graph(tested);
+        using FunctionInfo = details::graph_function<Graph>;
+        auto graph_template = bg::graph(graph);
         return run_graph_target<typename FunctionInfo::output_scalar>(
             graph_template.signature(), options,
             [&](std::span<const WiringArgument> arguments) {
@@ -1149,20 +1149,20 @@ auto run_graph_bound_target(const Tested &tested, const GraphRunOptions &options
     }
 }
 
-template <typename Tested, std::ranges::contiguous_range InputRange>
+template <typename Graph, std::ranges::contiguous_range InputRange>
     requires graph_run_descriptor_range_v<InputRange>
-auto run_graph_bound_descriptor_range_target(const Tested &tested, const GraphRunOptions &options,
+auto run_graph_bound_descriptor_range_target(const Graph &graph, const GraphRunOptions &options,
                                              const InputRange &inputs) {
-    if constexpr (std::derived_from<std::remove_cvref_t<Tested>, WiringTemplate>) {
+    if constexpr (std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate>) {
         return run_graph_descriptor_range_target<void>(
-            tested.signature(), options,
+            graph.signature(), options,
             [&](std::span<const WiringArgument> arguments) {
-                return WiringContext::current().wiring().invoke(tested, arguments);
+                return WiringContext::current().wiring().invoke(graph, arguments);
             },
             inputs);
     } else {
-        using FunctionInfo = details::graph_function<Tested>;
-        auto graph_template = bg::graph(tested);
+        using FunctionInfo = details::graph_function<Graph>;
+        auto graph_template = bg::graph(graph);
         return run_graph_descriptor_range_target<typename FunctionInfo::output_scalar>(
             graph_template.signature(), options,
             [&](std::span<const WiringArgument> arguments) {
@@ -1192,126 +1192,126 @@ auto run_graph(Function &&function, const GraphRunOptions &options = {}) {
     return details::run_graph_callback(std::forward<Function>(function), options);
 }
 
-template <typename Tested, std::ranges::contiguous_range Inputs>
-    requires details::graph_run_target<Tested> && details::graph_run_descriptor_range_v<Inputs>
-auto run_graph(const Tested &tested, const Inputs &inputs) {
-    return details::run_graph_bound_descriptor_range_target(tested, GraphRunOptions{}, inputs);
+template <typename Graph, std::ranges::contiguous_range Inputs>
+    requires details::graph_run_target<Graph> && details::graph_run_descriptor_range_v<Inputs>
+auto run_graph(const Graph &graph, const Inputs &inputs) {
+    return details::run_graph_bound_descriptor_range_target(graph, GraphRunOptions{}, inputs);
 }
 
-template <typename Tested, typename Options, std::ranges::contiguous_range Inputs>
-    requires details::graph_run_target<Tested> && std::same_as<std::remove_cvref_t<Options>, GraphRunOptions> &&
+template <typename Graph, typename Options, std::ranges::contiguous_range Inputs>
+    requires details::graph_run_target<Graph> && std::same_as<std::remove_cvref_t<Options>, GraphRunOptions> &&
              details::graph_run_descriptor_range_v<Inputs>
-auto run_graph(const Tested &tested, const Options &options, const Inputs &inputs) {
-    return details::run_graph_bound_descriptor_range_target(tested, options, inputs);
+auto run_graph(const Graph &graph, const Options &options, const Inputs &inputs) {
+    return details::run_graph_bound_descriptor_range_target(graph, options, inputs);
 }
 
-template <typename Tested, typename... Inputs>
-    requires details::graph_run_target<Tested> && (sizeof...(Inputs) > 0) &&
+template <typename Graph, typename... Inputs>
+    requires details::graph_run_target<Graph> && (sizeof...(Inputs) > 0) &&
              ((!std::same_as<std::remove_cvref_t<Inputs>, GraphRunOptions>) && ...) &&
              ((!details::graph_run_descriptor_range_v<Inputs>) && ...)
-auto run_graph(const Tested &tested, Inputs &&...inputs) {
-    return details::run_graph_bound_target(tested, GraphRunOptions{}, std::forward<Inputs>(inputs)...);
+auto run_graph(const Graph &graph, Inputs &&...inputs) {
+    return details::run_graph_bound_target(graph, GraphRunOptions{}, std::forward<Inputs>(inputs)...);
 }
 
-template <typename Tested, typename Options, typename... Inputs>
-    requires details::graph_run_target<Tested> && (sizeof...(Inputs) > 0) &&
+template <typename Graph, typename Options, typename... Inputs>
+    requires details::graph_run_target<Graph> && (sizeof...(Inputs) > 0) &&
              std::same_as<std::remove_cvref_t<Options>, GraphRunOptions> &&
              ((!details::graph_run_descriptor_range_v<Inputs>) && ...)
-auto run_graph(const Tested &tested, const Options &options, Inputs &&...inputs) {
-    return details::run_graph_bound_target(tested, options, std::forward<Inputs>(inputs)...);
+auto run_graph(const Graph &graph, const Options &options, Inputs &&...inputs) {
+    return details::run_graph_bound_target(graph, options, std::forward<Inputs>(inputs)...);
 }
 
-template <typename Tested, typename... Values>
-    requires details::graph_run_target<Tested> && (sizeof...(Values) > 0) &&
+template <typename Graph, typename... Values>
+    requires details::graph_run_target<Graph> && (sizeof...(Values) > 0) &&
              ((!details::graph_run_character_pointer_v<Values>) && ...) &&
              ((!std::same_as<std::remove_cvref_t<Values>, literal::Sentinel>) && ...)
-auto run_graph(const Tested &tested, std::initializer_list<Values>... inputs) {
-    return details::run_graph_bound_target(tested, GraphRunOptions{}, inputs...);
+auto run_graph(const Graph &graph, std::initializer_list<Values>... inputs) {
+    return details::run_graph_bound_target(graph, GraphRunOptions{}, inputs...);
 }
 
-template <typename Tested, typename... Values>
-    requires details::graph_run_target<Tested> && (sizeof...(Values) > 0) &&
+template <typename Graph, typename... Values>
+    requires details::graph_run_target<Graph> && (sizeof...(Values) > 0) &&
              ((!details::graph_run_character_pointer_v<Values>) && ...) &&
              ((!std::same_as<std::remove_cvref_t<Values>, literal::Sentinel>) && ...)
-auto run_graph(const Tested &tested, const GraphRunOptions &options,
+auto run_graph(const Graph &graph, const GraphRunOptions &options,
                              std::initializer_list<Values>... inputs) {
-    return details::run_graph_bound_target(tested, options, inputs...);
+    return details::run_graph_bound_target(graph, options, inputs...);
 }
 
-template <typename Tested>
-    requires details::graph_run_target<Tested>
-auto run_graph(const Tested &tested, std::initializer_list<literal::TimeSeriesLiteral> input) {
-    return details::run_graph_bound_target(tested, GraphRunOptions{}, input);
+template <typename Graph>
+    requires details::graph_run_target<Graph>
+auto run_graph(const Graph &graph, std::initializer_list<literal::TimeSeriesLiteral> input) {
+    return details::run_graph_bound_target(graph, GraphRunOptions{}, input);
 }
 
-template <typename Tested>
-    requires details::graph_run_target<Tested>
-auto run_graph(const Tested &tested, const GraphRunOptions &options,
+template <typename Graph>
+    requires details::graph_run_target<Graph>
+auto run_graph(const Graph &graph, const GraphRunOptions &options,
                              std::initializer_list<literal::TimeSeriesLiteral> input) {
-    return details::run_graph_bound_target(tested, options, input);
+    return details::run_graph_bound_target(graph, options, input);
 }
 
-template <typename Tested>
-    requires details::graph_run_target<Tested>
-auto run_graph(const Tested &tested, std::initializer_list<literal::TimeSeriesLiteral> first,
+template <typename Graph>
+    requires details::graph_run_target<Graph>
+auto run_graph(const Graph &graph, std::initializer_list<literal::TimeSeriesLiteral> first,
                              std::initializer_list<literal::TimeSeriesLiteral> second) {
-    return details::run_graph_bound_target(tested, GraphRunOptions{}, first, second);
+    return details::run_graph_bound_target(graph, GraphRunOptions{}, first, second);
 }
 
-template <typename Tested>
-    requires details::graph_run_target<Tested>
-auto run_graph(const Tested &tested, const GraphRunOptions &options,
+template <typename Graph>
+    requires details::graph_run_target<Graph>
+auto run_graph(const Graph &graph, const GraphRunOptions &options,
                              std::initializer_list<literal::TimeSeriesLiteral> first,
                              std::initializer_list<literal::TimeSeriesLiteral> second) {
-    return details::run_graph_bound_target(tested, options, first, second);
+    return details::run_graph_bound_target(graph, options, first, second);
 }
 
-template <typename Tested>
-    requires details::graph_run_target<Tested>
-auto run_graph(const Tested &tested, std::initializer_list<literal::TimeSeriesLiteral> first,
+template <typename Graph>
+    requires details::graph_run_target<Graph>
+auto run_graph(const Graph &graph, std::initializer_list<literal::TimeSeriesLiteral> first,
                              std::initializer_list<literal::TimeSeriesLiteral> second,
                              std::initializer_list<literal::TimeSeriesLiteral> third) {
-    return details::run_graph_bound_target(tested, GraphRunOptions{}, first, second, third);
+    return details::run_graph_bound_target(graph, GraphRunOptions{}, first, second, third);
 }
 
-template <typename Tested>
-    requires details::graph_run_target<Tested>
-auto run_graph(const Tested &tested, const GraphRunOptions &options,
+template <typename Graph>
+    requires details::graph_run_target<Graph>
+auto run_graph(const Graph &graph, const GraphRunOptions &options,
                              std::initializer_list<literal::TimeSeriesLiteral> first,
                              std::initializer_list<literal::TimeSeriesLiteral> second,
                              std::initializer_list<literal::TimeSeriesLiteral> third) {
-    return details::run_graph_bound_target(tested, options, first, second, third);
+    return details::run_graph_bound_target(graph, options, first, second, third);
 }
 
-template <typename Tested>
-    requires details::graph_run_target<Tested>
-auto run_graph(const Tested &tested, std::initializer_list<literal::TimeSeriesLiteral> first,
+template <typename Graph>
+    requires details::graph_run_target<Graph>
+auto run_graph(const Graph &graph, std::initializer_list<literal::TimeSeriesLiteral> first,
                              std::initializer_list<literal::TimeSeriesLiteral> second,
                              std::initializer_list<literal::TimeSeriesLiteral> third,
                              std::initializer_list<literal::TimeSeriesLiteral> fourth) {
-    return details::run_graph_bound_target(tested, GraphRunOptions{}, first, second, third, fourth);
+    return details::run_graph_bound_target(graph, GraphRunOptions{}, first, second, third, fourth);
 }
 
-template <typename Tested>
-    requires details::graph_run_target<Tested>
-auto run_graph(const Tested &tested, const GraphRunOptions &options,
+template <typename Graph>
+    requires details::graph_run_target<Graph>
+auto run_graph(const Graph &graph, const GraphRunOptions &options,
                              std::initializer_list<literal::TimeSeriesLiteral> first,
                              std::initializer_list<literal::TimeSeriesLiteral> second,
                              std::initializer_list<literal::TimeSeriesLiteral> third,
                              std::initializer_list<literal::TimeSeriesLiteral> fourth) {
-    return details::run_graph_bound_target(tested, options, first, second, third, fourth);
+    return details::run_graph_bound_target(graph, options, first, second, third, fourth);
 }
 
-template <typename Tested>
-    requires std::derived_from<std::remove_cvref_t<Tested>, WiringTemplate>
-auto run_graph(const Tested &tested) {
-    return details::run_graph_bound_target(tested, GraphRunOptions{});
+template <typename Graph>
+    requires std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate>
+auto run_graph(const Graph &graph) {
+    return details::run_graph_bound_target(graph, GraphRunOptions{});
 }
 
-template <typename Tested>
-    requires std::derived_from<std::remove_cvref_t<Tested>, WiringTemplate>
-auto run_graph(const Tested &tested, const GraphRunOptions &options) {
-    return details::run_graph_bound_target(tested, options);
+template <typename Graph>
+    requires std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate>
+auto run_graph(const Graph &graph, const GraphRunOptions &options) {
+    return details::run_graph_bound_target(graph, options);
 }
 
 } // namespace bg

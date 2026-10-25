@@ -331,9 +331,9 @@ template <typename Function> struct graph_function {
     template <std::size_t Index> using argument = std::remove_cvref_t<typename callable::template argument_type<Index>>;
 };
 
-template <typename Tested>
-concept graph_run_target = std::derived_from<std::remove_cvref_t<Tested>, WiringTemplate> ||
-                           requires { typename graph_function<Tested>::callable; };
+template <typename Graph>
+concept graph_run_target = std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate> ||
+                           requires { typename graph_function<Graph>::callable; };
 
 inline auto finish_graph_run(GraphWiring &wiring, CapturedValues &captured, const GraphRunOptions &options) {
     if (options.services != nullptr) {
