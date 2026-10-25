@@ -816,7 +816,8 @@ TEST_CASE("TSS set operations retain members while a required reference is inval
         return select(phase, populated, invalid) | rhs;
     };
 
-    CHECK(bg::run_graph(graph, {0, 1, 2, 3}, {{1}, literal::SKIP, literal::SKIP, literal::SKIP}, {},
+    CHECK(bg::run_graph(graph, {0, 1, 2, 3}, {{1}, literal::SKIP, literal::SKIP, literal::SKIP},
+                              {literal::SKIP},
                               {{2}, {3, literal::REMOVED(2)}, {4, literal::REMOVED(3)}, literal::SKIP})
               .equals({{1, 2}, literal::SKIP, literal::SKIP, {4, literal::REMOVED(2)}}));
 }

@@ -180,8 +180,14 @@ TEST_CASE("optional Boolean TSS reductions treat an invalid selected target as e
 TEST_CASE("Boolean reductions preserve const, final, and deduplicated guarantees",
           "[feature:operator][series:fixed-tsl][series:tsd][series:tss][scalar:boolean]"
           "[guarantee:const][guarantee:final][guarantee:deduplicated]") {
-    const auto check_const_tsl = [] {
-        const auto values = tsl(std::array{operators::const_(true), operators::const_(true)});
+    const auto const_values = node([](Out<TSL<TS<bool, TimeSeriesGuarantee::const_>, 2,
+                                               TimeSeriesGuarantee::const_>> output) {
+        output[0].set(true);
+        output[1].set(true);
+    });
+
+    const auto check_const_tsl = [&] {
+        const auto values = const_values();
         const auto required = operators::all_("values"_n = values);
         const auto optional = operators::any_("values"_n = opt(values));
         CHECK(&required.type() == &TS<bool, TimeSeriesGuarantee::const_>::type());
@@ -189,13 +195,14 @@ TEST_CASE("Boolean reductions preserve const, final, and deduplicated guarantees
         return required;
     };
 
-    const auto final_value = node([](Scalar<bool> value, Out<TS<bool, TimeSeriesGuarantee::final>> output) {
-        output.set(*value);
+    const auto final_values = node([](Out<TSL<TS<bool, TimeSeriesGuarantee::final>, 2,
+                                               TimeSeriesGuarantee::final>> output) {
+        output[0].set(false);
+        output[1].set(true);
     });
 
     const auto check_final_tsl = [&] {
-        const auto values = std::array{final_value(false), final_value(true)};
-        const auto items = tsl(values);
+        const auto items = final_values();
         const auto required = operators::any_("values"_n = items);
         const auto optional = operators::all_("values"_n = opt(items));
         CHECK(&required.type() == &TS<bool, TimeSeriesGuarantee::final>::type());
@@ -203,8 +210,14 @@ TEST_CASE("Boolean reductions preserve const, final, and deduplicated guarantees
         return required;
     };
 
-    const auto check_deduplicated_tsl = [](wp<TS<bool>> first, wp<TS<bool>> second) {
-        const auto items = tsl(operators::dedup(first), operators::dedup(second));
+    const auto deduplicated_values = node([](Out<TSL<TS<bool, TimeSeriesGuarantee::deduplicated>, 2,
+                                                      TimeSeriesGuarantee::deduplicated>> output) {
+        output[0].set(true);
+        output[1].set(true);
+    });
+
+    const auto check_deduplicated_tsl = [&] {
+        const auto items = deduplicated_values();
         const auto required = operators::all_("values"_n = items);
         const auto optional = operators::any_("values"_n = opt(items));
         CHECK(&required.type() == &TS<bool, TimeSeriesGuarantee::deduplicated>::type());
@@ -267,7 +280,7 @@ TEST_CASE("Boolean reductions preserve const, final, and deduplicated guarantees
 
     CHECK(bg::run_graph(check_const_tsl).equals<bool>({true}));
     CHECK(bg::run_graph(check_final_tsl).equals<bool>({true}));
-    CHECK(bg::run_graph(check_deduplicated_tsl, {true}, {true}).equals<bool>({true}));
+    CHECK(bg::run_graph(check_deduplicated_tsl).equals<bool>({true}));
     CHECK(bg::run_graph(check_final_tsd).equals<bool>({true}));
     CHECK(bg::run_graph(check_deduplicated_tsd).equals<bool>({true}));
     CHECK(bg::run_graph(check_const_tss).equals<bool>({true}));
