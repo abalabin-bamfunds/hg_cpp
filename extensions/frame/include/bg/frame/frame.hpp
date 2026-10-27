@@ -657,8 +657,10 @@ void *copy_frame_snapshot_column(const FrameColumnReadBinding &source, std::size
                 snapshot->set_valid(static_cast<row_id_t>(position));
                 if constexpr (std::same_as<Cell, bool>)
                     snapshot->set_value(position, batch.value_at(index));
-                else
+                else if (batch.values != nullptr)
                     snapshot->copy_stored_value(position, batch.values[index]);
+                else
+                    snapshot->set_value(position, batch.value_at(index));
             }
         });
         if (position != size)

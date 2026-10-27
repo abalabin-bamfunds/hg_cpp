@@ -13,6 +13,8 @@
 #include <memory_resource>
 #include <optional>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -114,6 +116,34 @@ class FailingResource final : public std::pmr::memory_resource {
     bool do_is_equal(const std::pmr::memory_resource &other) const noexcept override { return this == &other; }
 };
 
+class ExternalTextColumn final : public bg::frame::ColumnReadSource<bg::string> {
+  public:
+    std::array<std::string, 3> values{"alpha", "", "omega"};
+    std::array<std::uint8_t, 3> valid{1, 1, 0};
+
+    std::size_t size() const noexcept override { return values.size(); }
+    std::optional<std::string_view> cell(std::size_t position) const override {
+        if (position >= size())
+            throw std::out_of_range{"external text column position"};
+        if (valid[position] == 0)
+            return std::nullopt;
+        return values[position];
+    }
+    void visit_batches(void *target, batch_visitor visit) const override {
+        const auto validity = bg::frame::ColumnBatch<bg::string>::Validity::from_callback(this, &is_valid);
+        const auto source = bg::frame::ColumnBatchSource<bg::string>{this, &read_value};
+        std::invoke(visit, target, bg::frame::ColumnBatch<bg::string>{0, size(), nullptr, validity, source});
+    }
+
+  private:
+    static std::string_view read_value(const void *context, std::size_t position) noexcept {
+        return static_cast<const ExternalTextColumn *>(context)->values[position];
+    }
+    static bool is_valid(const void *context, std::uint64_t first_slot, std::size_t position) noexcept {
+        return static_cast<const ExternalTextColumn *>(context)->valid[first_slot + position] != 0;
+    }
+};
+
 void test_empty_and_immutable() {
     using Column = bg::frame::Column<bg::i64>;
     const auto &scalar_type = bg::cpp_scalar_type<Column>();
@@ -198,6 +228,33 @@ void test_double_column_snapshot() {
     const auto view = owned.view().value();
     require(view.size() == 3 && view.cell(0) == 1.25 && !view.cell(1) && view.cell(2) == 3.5,
             "double snapshot lost values or nulls");
+}
+
+void test_source_backed_text_batches_and_snapshot() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto source = ExternalTextColumn{};
+    const auto view = ColumnView<string>{source};
+    auto retained_batches = std::vector<ColumnBatch<string>>{};
+    view.batches([&](const auto &batch) { retained_batches.push_back(batch); });
+
+    require(retained_batches.size() == 1, "source-backed text column did not produce one batch");
+    const auto &batch = retained_batches.front();
+    require(batch.has_values() && batch.values == nullptr && batch.value_at(0) == "alpha" &&
+                batch.value_at(1).empty() && !batch.is_valid(2),
+            "source-backed text batch did not retain its reader or validity");
+
+    const auto subspan = batch.subspan(1, 2);
+    require(subspan.value_at(0).empty() && subspan.is_valid(0) && !subspan.is_valid(1),
+            "source-backed text subspan did not advance its source position");
+
+    const auto snapshot = ScalarValue<Column<string>>{view};
+    source.values[0] = "changed";
+    source.values[1] = "no longer empty";
+    const auto copied = snapshot.view().value();
+    require(copied.cell(0) == "alpha" && copied.cell(1) == "" && !copied.cell(2),
+            "source-backed text snapshot did not copy values and validity");
 }
 
 void test_ordinary_time_series_graph() {
@@ -1576,6 +1633,7 @@ int main() {
         test_empty_and_immutable();
         test_packed_boolean_column_values();
         test_double_column_snapshot();
+        test_source_backed_text_batches_and_snapshot();
         test_ordinary_time_series_graph();
         test_native_rows_changes_and_batches();
         test_text_columns_follow_scalar_storage_traits();

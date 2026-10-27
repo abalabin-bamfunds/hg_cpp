@@ -88,6 +88,19 @@ template <cell_type T> struct ColumnValueTraits {
     }
 };
 
+// Reads source-backed batch cells. `first_position` is advanced when a batch is subspanned.
+template <cell_type T> struct ColumnBatchSource {
+    using value_type = cell_value_t<T>;
+
+    const void *context{};
+    value_type (*read_value)(const void *, std::size_t) noexcept{};
+    std::size_t first_position{};
+};
+template <cell_type T>
+inline constexpr bool source_backed_column_type = std::same_as<T, string> || std::same_as<T, symbol>;
+template <cell_type T>
+using column_batch_source_t = std::conditional_t<source_backed_column_type<T>, ColumnBatchSource<T>, std::monostate>;
+
 template <> struct ColumnValueTraits<bool> {
     using pointer = const std::uint8_t *;
 
@@ -441,6 +454,7 @@ template <typename T = void> struct ColumnBatch {
     std::uint64_t value_bit_offset{};
     using Validity = ColumnBatchValidity;
     Validity valid;
+    [[no_unique_address]] column_batch_source_t<T> source{};
 
     ColumnBatch() = default;
     ColumnBatch(std::uint64_t first_slot, std::size_t size, typename ColumnValueTraits<T>::pointer values,
@@ -449,16 +463,33 @@ template <typename T = void> struct ColumnBatch {
     ColumnBatch(std::uint64_t first_slot, std::size_t size, typename ColumnValueTraits<T>::pointer values,
                 std::uint64_t value_bit_offset, Validity valid) noexcept
         : first_slot{first_slot}, size{size}, values{values}, value_bit_offset{value_bit_offset}, valid{valid} {}
+    ColumnBatch(std::uint64_t first_slot, std::size_t size, typename ColumnValueTraits<T>::pointer values,
+                Validity valid, column_batch_source_t<T> source) noexcept
+        : first_slot{first_slot}, size{size}, values{values}, valid{valid}, source{source} {}
 
     bool is_valid(std::size_t position) const noexcept { return valid.contains(first_slot, position); }
-    bool has_values() const noexcept { return values != nullptr; }
+    bool has_values() const noexcept {
+        if constexpr (source_backed_column_type<T>)
+            if (source.read_value != nullptr)
+                return true;
+        return values != nullptr;
+    }
     cell_value_t<T> value_at(std::size_t position) const noexcept {
+        if constexpr (source_backed_column_type<T>)
+            if (source.read_value != nullptr)
+                return source.read_value(source.context, source.first_position + position);
         return ColumnValueTraits<T>::read(values, position, value_bit_offset);
     }
     ColumnBatch subspan(std::size_t offset, std::size_t count) const noexcept {
         auto bit_offset = value_bit_offset;
         const auto subspan_values = ColumnValueTraits<T>::subspan(values, offset, bit_offset);
-        return {first_slot + offset, count, subspan_values, bit_offset, valid.subspan(offset)};
+        auto subspan_source = source;
+        if constexpr (source_backed_column_type<T>)
+            if (subspan_source.read_value != nullptr)
+                subspan_source.first_position += offset;
+        auto result = ColumnBatch{first_slot + offset, count, subspan_values, bit_offset, valid.subspan(offset)};
+        result.source = subspan_source;
+        return result;
     }
 };
 
@@ -493,14 +524,14 @@ template <> struct ColumnBatch<void> {
 };
 
 // Extension runtime implementers use this borrowed read interface to expose non-native scalar storage through
-// ColumnView. Node definitions should use ColumnView directly. The source must outlive every view that refers to it.
+// ColumnView. Node definitions should use ColumnView directly. The source must outlive every view and copied batch.
 template <typename T> class ColumnReadSource {
   public:
     using batch_visitor = void (*)(void *, const ColumnBatch<T> &);
     virtual ~ColumnReadSource() = default;
     virtual std::size_t size() const noexcept = 0;
     virtual std::optional<cell_value_t<T>> cell(std::size_t position) const = 0;
-    // Batches must cover size() cells in logical order; each valid cell must have a value buffer.
+    // Batches must cover size() cells in logical order; each valid cell must have stored values or a source reader.
     virtual void visit_batches(void *target, batch_visitor visit) const = 0;
 };
 
@@ -2367,8 +2398,10 @@ template <frame::cell_type T> struct scalar_storage_traits<frame::Column<T>> {
                         snapshot->set_valid(position);
                         if constexpr (std::same_as<T, bool>)
                             snapshot->set_value(position, batch.value_at(offset));
-                        else
+                        else if (batch.values != nullptr)
                             snapshot->copy_stored_value(position, batch.values[offset]);
+                        else
+                            snapshot->set_value(position, batch.value_at(offset));
                     }
                 }
             });
