@@ -304,6 +304,31 @@ source blocks; distinct mappings gather only requested rows into bounded
 scratch batches. Complete-column arithmetic uses the shared selection contract
 described below.
 
+## Column reductions
+
+`bg::operators::sum_(column)` accepts `TSC<i64>` or `TSC<double>` and returns
+`TS<i64>` or `TS<double>`. Link `bg::frame` and include
+`<bg/library/operators.hpp>`.
+
+```cpp
+const auto total_size = bg::operators::sum_(bg::frame::select_column<"size">(quotes));
+```
+
+The sum ignores null cells and returns zero for a valid empty or all-null
+column. Input invalidation invalidates the result; revalidation rebuilds it.
+Integer arithmetic wraps modulo 2^64. Floating-point arithmetic uses ordinary
+`double` rounding, so incremental updates can differ from a fresh scan.
+NaN and positive and negative infinity contributions are counted separately.
+The result is NaN while a NaN contributes or both infinity signs contribute.
+Removing those contributions lets the result recover. A finite subtotal that
+overflows is rescanned from cached contributions on the next row change.
+
+Each sum node owns previous non-null contributions by row ID. Normal updates
+process changed and removed rows, including filter membership changes. Removal
+uses the cached contribution and does not read removed cells. Initial
+evaluation, source rebinding, revalidation, and unavailable deltas rebuild the
+cache from current batches.
+
 ## Column arithmetic
 
 Include `<bg/library/operators.hpp>` and link `bg::frame`. The extension
@@ -867,13 +892,7 @@ graphs created from one compiled graph verify independent storage and allocator
 cleanup.
 
 The keyed native storage tests cover insertion and removal-retention allocation
-rollback. Before the pending BG lifetime fix, the target built successfully but
-its CTest process aborted during shared-library teardown after the test body
-completed. GDB showed
-`SchemaMetadata` releasing a `ScalarValue<List<string>>` after its runtime type
-has been destroyed (`__cxa_pure_virtual` from
-`bg::details::release_scalar_value`). This is a BG core lifetime issue under
-investigation; the frame extension does not work around it.
+rollback.
 
 Provider descriptors describe runtime storage and binding. Extension code uses
 `TimeSeriesType`, `TimeSeriesRuntimeType`, `TimeSeriesInputData`,
@@ -889,6 +908,7 @@ Configure the extension with a BG installation prefix. The package config also
 finds its `ddvisitor` dependency. Set `BG_INSTALL_PREFIX` to the directory
 containing the installed `lib64/cmake/bg/bgConfig.cmake`.
 BG and the extension must use matching Debug or Release build configurations.
+Tests require Catch2 3.
 The current lane uses Arrow 24.0.0.
 [HANDOFF.md](HANDOFF.md) lists the exact package prefix, verified checkpoints,
 and remaining foundation work.

@@ -2,6 +2,40 @@
 
 Updated: 2026-10-27.
 
+## Incremental numeric column sum
+
+`operators::sum_` accepts ordinary `TSC<i64>` and `TSC<double>` inputs.
+[Column reductions](README.md#column-reductions) defines the result semantics.
+The implementation is in `src/reduction.cpp`; Catch2 cases in
+`tests/reduction_test.cpp` use public `run_graph` calls.
+
+Each node owns non-null contributions in `sparse_bunch` storage indexed by row
+ID. Changed-row reads use aligned batches. Removal subtracts the cached value;
+non-null modifications replace the cached value in place. Source rebinding,
+revalidation, and unavailable deltas rebuild from current batches.
+
+The [benchmark report](benchmarks/incremental_sum.md) records complete evaluation
+cycle timings against a native batch full scan. For one changed `i64` row per
+cycle, median ratios range from 3.08× to 65.62× for direct columns and from
+4.12× to 74.60× for filtered columns across 1,000–100,000 source rows.
+
+Verification on `.lanes/frame-incremental-sum`:
+
+- Release Arrow-on: all seven CTest executables passed (0.30 seconds).
+- Debug ASan/UBSan: the reduction suite passed seven cases and 26 assertions.
+  The extension and test are instrumented and use matching ordinary Debug BG.
+  Leak detection is disabled.
+- `git diff --check` passed.
+
+Builds are `build/incremental-sum-release-arrow-on` and
+`build/incremental-sum-debug-asan`. They use the matching Release and Debug BG
+installs under `.lanes/frame-field-access/build/arrow-sum/`.
+
+`operators::sample(signal, column)` currently fails with
+`time series runtime type does not support copying`. The sum change does not
+add TSC copying. Its stale-delta rebuild branch is implemented, but this public
+sampling path cannot exercise it until TSC copying is supported.
+
 ## Arrow text support
 
 Arrow adapters support the five native cell types. Borrowed strings use
@@ -801,10 +835,8 @@ operations.
 Boolean storage, Arrow support, numeric comparisons, and expression-based
 filtering are implemented.
 
-Incremental `operators::sum_` for numeric TSC inputs is next; its null and
-floating-point semantics still need confirmation. The implementation will own
-prior contributions in node state and process additions, modifications, and
-removals, including filter membership changes.
+Incremental `operators::sum_` for numeric TSC inputs is described in
+[Incremental numeric column sum](#incremental-numeric-column-sum).
 
 Filter optimization now avoids rebuilding unchanged selection on full predicate
 reevaluation. Selected IDs reuse initialized storage and supply callback-scoped
@@ -921,6 +953,6 @@ Ordinary node and scalar values keep normal destruction. The frame lane uses
 typed column runtime statics, FrameView scalar and mixed-view runtimes, and
 Arrow runtime cache owner.
 
-Text Arrow adapters, capacity trimming, and delta transport remain later work.
+Capacity trimming and delta transport remain later work.
 Automatic compaction is deferred. Algorithms retain previous contributions in
 node state under the [removal lifetime contract](compaction_proposal.md#removal-lifetime).

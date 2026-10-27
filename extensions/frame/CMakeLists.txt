@@ -12,7 +12,8 @@ if(NOT TARGET bg::bg)
 endif()
 
 add_library(bg_frame SHARED src/arithmetic.cpp src/column.cpp src/column_expression.cpp src/comparison.cpp
-                            src/expression.cpp src/frame.cpp src/literal.cpp src/logical.cpp src/tick_capture.cpp)
+                            src/expression.cpp src/frame.cpp src/literal.cpp src/logical.cpp src/reduction.cpp
+                            src/tick_capture.cpp)
 add_library(bg::frame ALIAS bg_frame)
 
 target_compile_features(bg_frame PUBLIC cxx_std_23)
@@ -44,6 +45,9 @@ if(BG_FRAME_BUILD_BENCHMARKS)
     add_executable(bg_frame_expression_benchmark benchmarks/expression_benchmark.cpp)
     target_link_libraries(bg_frame_expression_benchmark PRIVATE bg::frame)
 
+    add_executable(bg_frame_incremental_sum_benchmark benchmarks/incremental_sum_benchmark.cpp)
+    target_link_libraries(bg_frame_incremental_sum_benchmark PRIVATE bg::frame)
+
     if(BG_FRAME_BUILD_ARROW)
         find_package(ArrowCompute CONFIG REQUIRED)
         add_executable(bg_frame_arrow_benchmark benchmarks/arrow_benchmark.cpp)
@@ -74,6 +78,11 @@ if(BUILD_TESTING)
     add_executable(bg_frame_expression_test tests/expression_test.cpp)
     target_link_libraries(bg_frame_expression_test PRIVATE bg::frame)
     add_test(NAME bg_frame_expression_test COMMAND bg_frame_expression_test)
+
+    find_package(Catch2 3 CONFIG REQUIRED)
+    add_executable(bg_frame_reduction_test tests/reduction_test.cpp)
+    target_link_libraries(bg_frame_reduction_test PRIVATE bg::frame Catch2::Catch2WithMain)
+    add_test(NAME bg_frame_reduction_test COMMAND bg_frame_reduction_test)
 
     if(BG_FRAME_BUILD_ARROW)
         add_executable(bg_frame_arrow_test tests/arrow_test.cpp)
