@@ -55,21 +55,9 @@ template <typename Function, typename... Arguments> struct BoundSwitchGraphFunct
     }
 };
 
-template <typename Argument> struct switch_callable_argument {
-    using type = std::remove_cvref_t<Argument>;
-};
-
-template <util::compile_time_string Name, typename Value>
-struct switch_callable_argument<named_argument<Name, Value>> {
-    using type = std::remove_cvref_t<Value>;
-};
-
-template <typename Argument>
-using switch_callable_argument_t = typename switch_callable_argument<std::remove_cvref_t<Argument>>::type;
-
 template <typename Function, typename... Arguments>
 auto bound_switch_graph(const Function &function) {
-    using Bound = BoundSwitchGraphFunction<Function, switch_callable_argument_t<Arguments>...>;
+    using Bound = BoundSwitchGraphFunction<Function, argument_value_t<Arguments>...>;
     auto signature = make_graph_signature<Bound>(util::symbol{"switch_function"});
     return GraphTemplate{std::move(signature), Bound{function}};
 }

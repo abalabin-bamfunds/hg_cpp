@@ -103,6 +103,7 @@ add_executable(
     utils/index_test.cpp
     utils/linear_hash_table_test.cpp
     utils/literal_test.cpp
+    utils/named_argument_test.cpp
     utils/occupancy_index_test.cpp
     utils/reflection_test.cpp
     utils/runtime_bunch_test.cpp

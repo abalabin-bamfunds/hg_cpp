@@ -7,6 +7,7 @@
 #include <catch2/matchers/catch_matchers.hpp>
 
 #include <array>
+#include <concepts>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -15,6 +16,32 @@ namespace {
 
 using namespace bg;
 using namespace bg::literals;
+
+TEST_CASE("map callable traits normalize named dictionary, key-set, and pass-through arguments",
+          "[feature:map][feature:wiring][series:tsd][series:tss]") {
+    using Dictionary = wp<TSD<i64, TS<float>>>;
+    using NamedDictionary = details::named_argument<"values", Dictionary &>;
+    using DictionaryTraits = details::map_callable_argument_t<const NamedDictionary &>;
+    using ExpectedDictionaryParameter = wp<REF<TS<float>, TimeSeriesGuarantee::ordinary>>;
+
+    static_assert(std::same_as<typename DictionaryTraits::key_type, i64>);
+    static_assert(std::same_as<typename DictionaryTraits::parameter_type, ExpectedDictionaryParameter>);
+
+    using KeySet = wp<TSS<i64>>;
+    using NamedKeySet = details::named_argument<"keys", const KeySet &>;
+    using KeySetTraits = details::map_callable_argument_t<NamedKeySet &&>;
+
+    static_assert(details::map_callable_key_set<const NamedKeySet &>);
+    static_assert(std::same_as<typename KeySetTraits::key_type, i64>);
+
+    using NamedPassThrough =
+        details::named_argument<"factors", pass_through_argument<Dictionary> &>;
+    using PassThroughTraits = details::map_callable_argument_t<const NamedPassThrough &>;
+    using ExpectedPassThroughParameter = wp<REF<TSD<i64, TS<float>>, TimeSeriesGuarantee::const_>>;
+
+    static_assert(!details::map_callable_key_set<NamedPassThrough>);
+    static_assert(std::same_as<typename PassThroughTraits::parameter_type, ExpectedPassThroughParameter>);
+}
 
 TEST_CASE("map validates collection key types for every graph form",
           "[feature:map][feature:wiring][feature:type-system][series:tsd]"
@@ -223,6 +250,11 @@ TEST_CASE("map reports option errors through its public call forms",
 
         CHECK_NOTHROW(map(function, "value"_n = values(),
                           "__key_set_arg__"_n = "value"));
+
+        const char *key_set_name = "value";
+        const auto named_key_set = details::named_argument<details::map_key_set_argument_name,
+                                                            const char *&>{key_set_name};
+        CHECK_NOTHROW(map(function, "value"_n = values(), named_key_set));
 
         const auto invalid_selector = std::array{
             MapArgument{WiringArgument{values()}},

@@ -16,6 +16,18 @@ template <util::compile_time_string Name, typename Value> struct named_argument 
     Value value;
 };
 
+template <typename Argument> struct argument_value {
+    using type = std::remove_cvref_t<Argument>;
+};
+
+template <util::compile_time_string Name, typename Value>
+struct argument_value<named_argument<Name, Value>> {
+    using type = std::remove_cvref_t<Value>;
+};
+
+template <typename Argument>
+using argument_value_t = typename argument_value<std::remove_cvref_t<Argument>>::type;
+
 template <util::compile_time_string Name> struct compile_time_name {
     static constexpr auto text = Name;
 

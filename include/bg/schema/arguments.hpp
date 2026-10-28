@@ -30,9 +30,7 @@ decltype(auto) schema_argument_value(Argument &&argument) {
     }
 }
 
-template <typename Argument>
-using schema_argument_value_t =
-    std::remove_cvref_t<decltype(schema_argument_value(std::declval<Argument>()))>;
+template <typename Argument> using schema_argument_value_t = argument_value_t<Argument>;
 
 template <std::size_t FieldCount, typename Error = std::invalid_argument> class SchemaArgumentAssignment {
   public:

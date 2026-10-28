@@ -155,10 +155,7 @@ template <typename T> struct map_callable_argument<pass_through_argument<T>> {
     static constexpr bool key_set = false;
 };
 
-template <util::compile_time_string Name, typename Value>
-struct map_callable_argument<named_argument<Name, Value>> : map_callable_argument<Value> {};
-
-template <typename Argument> using map_callable_argument_t = map_callable_argument<std::remove_cvref_t<Argument>>;
+template <typename Argument> using map_callable_argument_t = map_callable_argument<argument_value_t<Argument>>;
 
 template <typename Argument> inline constexpr bool map_callable_key_set = map_callable_argument_t<Argument>::key_set;
 
@@ -200,8 +197,8 @@ template <util::compile_time_string Name, typename Value>
 auto map_option_argument(named_argument<Name, Value> argument) {
     if constexpr (!is_map_option<named_argument<Name, Value>>) {
         return std::tuple<>{};
-    } else if constexpr (std::same_as<std::remove_cv_t<Value>, const char *> ||
-                         std::same_as<std::remove_cv_t<Value>, char *>) {
+    } else if constexpr (std::same_as<argument_value_t<Value>, const char *> ||
+                         std::same_as<argument_value_t<Value>, char *>) {
         return std::tuple{named_argument<Name, std::string>{std::string{argument.value}}};
     } else {
         return std::tuple<named_argument<Name, Value>>{std::move(argument)};
