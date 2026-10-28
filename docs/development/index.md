@@ -44,3 +44,7 @@ history and are marked `superseded`.
 
 - [Node object layout](proposals/node-layout.md): working design with open decisions.
 - [C++ tick construction and application](proposals/tick-literals-proposal.md): proposal for discussion.
+
+## Reports
+
+- [hgraph graph-pattern review](reports/hgraph-pattern-review-2026-10-28.md): source patterns, additional tests, and classified findings.
