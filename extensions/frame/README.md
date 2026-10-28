@@ -594,6 +594,28 @@ update. The output copies column descriptors and borrows their cell buffers
 through the node's retained input connections. Concrete and runtime schemas use
 the same binding implementation.
 
+### Adding and replacing columns
+
+`frame::with_columns` calculates its output schema during wiring. Assignments
+accept concrete TSC inputs and bound or unbound column expressions:
+
+```cpp
+auto priced = frame::with_columns(
+    quotes, "mid"_n = (frame::col("bid") + frame::col("ask")) / 2.0);
+```
+
+The returned wiring point carries a resolved anonymous output schema. Existing fields
+retain their order; assignments replace same-named fields or append new fields
+in assignment order. A replacement takes the assigned column's exact cell type.
+The result preserves source schema metadata and keys. Duplicate assignment names
+and assignments to key fields are wiring errors. Expressions read the source
+frame; chain calls when an expression needs a previously assigned field.
+
+The helper binds expressions against the source and passes concrete column
+results to one generic assembly node. That node uses `bind_columns`, with the
+binding and change-propagation rules above. Source, assignment, and result
+schemas resolve independently; no concrete C++ schema declaration is required.
+
 ### Mixed computed and borrowed columns
 
 `Out<TSF<Schema>, frame::computed<Names...>>` owns the named computed columns

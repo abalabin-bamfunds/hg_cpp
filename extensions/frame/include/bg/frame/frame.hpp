@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/frame/export.hpp>
 #include <bg/frame/expression.hpp>
 #include <bg/frame/literal.hpp>
 #include <bg/frame/tsc.hpp>
@@ -2985,6 +2986,32 @@ auto filter(wp<TSF<Schema, Properties...>> source, Predicate &&predicate, Bindin
     if constexpr (sizeof...(Bindings) != 0)
         throw WiringError{"a bound filter predicate cannot receive expression bindings"};
     return operators::filter_(std::forward<Predicate>(predicate), source).template as<TSF<Schema>>();
+}
+
+namespace details {
+
+template <template <typename, auto...> typename Field>
+using WITH_COLUMNS_RESULT_SCHEMA = SchemaVariableDeclaration<"FRAME_WITH_COLUMNS_RESULT_SCHEMA">;
+
+BG_FRAME_EXPORT WiringPoint with_columns(WiringPoint source, std::span<const WiringArgument> assignments);
+
+} // namespace details
+
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
+wp<TSF<details::WITH_COLUMNS_RESULT_SCHEMA>>
+with_columns(wp<TSF<Schema, Properties...>> source, std::span<const WiringArgument> assignments) {
+    return wp<TSF<details::WITH_COLUMNS_RESULT_SCHEMA>>{
+        details::with_columns(static_cast<WiringPoint>(source), assignments)};
+}
+
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties,
+          typename... Assignments>
+    requires(bg::details::is_named_bundle_wiring_field<Assignments> && ...)
+wp<TSF<details::WITH_COLUMNS_RESULT_SCHEMA>> with_columns(wp<TSF<Schema, Properties...>> source,
+                                                           Assignments &&...assignments) {
+    auto fields = std::array<WiringArgument, sizeof...(Assignments)>{
+        WiringArgument{std::forward<Assignments>(assignments)}...};
+    return with_columns(source, std::span<const WiringArgument>{fields});
 }
 
 template <std::size_t Index, template <template <typename, auto...> typename> typename Schema, auto... Properties>

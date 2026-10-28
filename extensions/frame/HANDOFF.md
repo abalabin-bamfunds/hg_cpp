@@ -31,6 +31,37 @@ Remaining stages:
 - Verify shared materialisation and measure expression and assembly nodes
   separately.
 
+### Wiring-time schema calculation in progress
+
+Uncommitted work adds `src/with_columns.cpp` and
+`tests/with_columns_test.cpp`. One assembly node uses independent source,
+assignment, and result schema variables. Its resolver preserves source field
+order and metadata, replaces assigned fields with their exact cell types,
+appends new fields, and rejects key replacement.
+
+The new target compiles and links. Initial rejection tests caught exceptions
+without checking their cause; they have been tightened to require `WiringError`
+and the intended diagnostic. The rejection case passed four assertions.
+An enclosing `graph(...)` fails before its body runs because BG
+resolves the output-only result schema variable before calling `with_columns`.
+The existing inferred-output path applies to plain functions passed to
+`run_graph`, not ordinary graph-template calls. A temporary `wp<>` pass-through
+probe also fails during signature completion with an unmapped `TS_T`, confirming
+that this limitation is independent of frame schemas. The BG lane
+`.lanes/graph-output-inference` contains the direct-form materialisation fix
+(`9d8af2c9`, applied here as `64916a1c`). Checked graph-output inference is in
+progress: normal input selection precedes one body invocation and validation
+against the original output declaration.
+Review found a resolver lookup gap: matching can infer an output field in a
+child `TypeMap`, while a dependent resolver receives the parent map. Changing
+lookup to expose the current matching map awaits the user's decision. Core
+inference remains uncommitted; do not treat the enclosing graph case as verified.
+Runtime-schema tests include invalid input, direct column assignment, and empty
+assignments; the focused case passed 17 assertions. Its first source sample is
+`literal::SKIP`; an empty frame literal publishes a valid empty frame. The
+eight existing Release CTest executables also passed. The enclosing graph case
+awaits the BG inference change.
+
 ## Incremental numeric column sum
 
 `operators::sum_` accepts ordinary `TSC<i64>` and `TSC<double>` inputs.

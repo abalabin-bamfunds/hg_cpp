@@ -11,14 +11,6 @@ from its inputs. Expression computation uses the existing BG nodes and
 
 ## Graph API
 
-Concrete output schema:
-
-```cpp
-auto priced = frame::with_columns<EnrichedQuotes>(
-    q,
-    "mid"_n = (frame::col("bid") + frame::col("ask")) / 2.0);
-```
-
 Inferred output schema, including when the input schema is supplied during wiring:
 
 ```cpp
@@ -27,10 +19,19 @@ auto priced = frame::with_columns(
     "mid"_n = (frame::col("bid") + frame::col("ask")) / 2.0);
 ```
 
-The inferred form returns `wp<TSF<SCHEMA>>` with a resolved anonymous schema.
+The returned wiring point carries a resolved anonymous output schema.
 Runtime assignment names use a span of named `WiringArgument` values, following
-BG's existing dynamic argument API. Both forms use the same schema calculation
-and runtime node.
+BG's existing dynamic argument API.
+
+An optional concrete output schema validates the calculated result:
+
+```cpp
+auto priced = frame::with_columns<EnrichedQuotes>(
+    q,
+    "mid"_n = (frame::col("bid") + frame::col("ask")) / 2.0);
+```
+
+Both forms use the same schema calculation and runtime node.
 
 An assignment accepts an unbound expression, a bound column expression, a
 concrete `TSC<T>`, a scalar constant, or a scalar time series. Scalar assignments
@@ -69,6 +70,12 @@ The assembly node borrows unchanged fields from the source frame and assigned
 fields from concrete column inputs. It owns membership and change information,
 as existing frame views do. It does not own copied cell buffers.
 
+The assembly node declares independent source, assignment, and result schema
+variables. A wiring resolver calculates the result schema from the resolved
+source frame and assignment TSB. The ordinary view output declaration selects
+its runtime layout after this resolution. One node definition handles all
+schemas; user schema declarations do not instantiate separate node definitions.
+
 BG materialises each assigned result as a `TSC<T>`. The existing expression
 compiler fuses upstream operations until a concrete materialisation is
 required. A result already required elsewhere is shared with the assembly node.
@@ -106,15 +113,17 @@ assigned fields. Binding changes and unavailable deltas follow the current
 frame-view reconciliation rules.
 
 The output borrows owners retained by ordinary BG input connections. Invocation
-descriptors remain invocation-local. No BG core changes are proposed.
+descriptors remain invocation-local. BG owns signature resolution and
+materialisation; the frame extension owns schema calculation and column binding.
 
 ## Implementation and verification
 
 1. Generalise borrowed-column binding and review its node API.
-2. Add scalar broadcasting, schema calculation, and the graph helper using
-   existing materialisation.
-3. Verify concrete and runtime schemas, replacement, keys, nulls, source
+2. Add wiring-time schema calculation and the inferred graph helper, including
+   dynamic assignment names, using existing materialisation.
+3. Add scalar broadcasting and concrete output schema validation.
+4. Verify concrete and runtime schemas, replacement, keys, nulls, source
    additions/removals, independent column updates, scalar captures, rebinding,
    and invalidation. Verify that borrowed buffers and row domains are shared.
-4. Verify shared expression results are materialised once. Measure the expression
+5. Verify shared expression results are materialised once. Measure the expression
    and assembly nodes separately against the existing expression path.
