@@ -592,8 +592,11 @@ TEST_CASE("mesh supports source and sink graphs",
     CHECK(recorded_values == std::vector<i64>{1, 2});
 }
 
+const auto add_mesh_values = node([](i64 left, i64 right) { return left + right; });
 const auto sum_mesh_values = graph("name"_n = "sum_mesh_values",
-                                   [](wp<TS<i64>> left, wp<TS<i64>> right) { return left + right; });
+                                   [](wp<TS<i64>> left, wp<TS<i64>> right) {
+                                       return add_mesh_values(left, right);
+                                   });
 
 TEST_CASE("reduce combines mesh outputs as branches update and disappear",
           "[feature:mesh][feature:reduce][feature:nested-graph][series:tsd]"
@@ -675,18 +678,19 @@ TEST_CASE("switch-selected mesh branches feed a reduction",
           "[feature:mesh][feature:switch][feature:reduce][feature:nested-graph]"
           "[series:tsd][shape:deeply-nested][transition:update]") {
     const auto add_amount = node([](i64 value, int amount) { return value + amount; });
+    const auto select_mesh_value = graph(
+        "name"_n = "select_mesh_value",
+        [=](wp<TS<i64>> key, wp<TS<i64>> item, wp<TS<i64>> dependency_key) {
+            const auto selected = add_mesh_dependency(item, mesh()[dependency_key]);
+            return switch_(key,
+                           cases{case_(i64{1}, [=](wp<TS<i64>> value) { return add_amount(value, 10); }),
+                                 case_(i64{2}, [](wp<TS<i64>> value) { return value; })},
+                           selected);
+        });
 
     const auto tested = [=](wp<TSD<i64, TS<i64>>> values,
                             wp<TSD<i64, TS<i64>>> dependencies) {
-        const auto result = mesh(
-            [=](auto key, auto item, auto dependency_key) {
-                const auto selected = add_mesh_dependency(item, mesh()[dependency_key]);
-                return switch_(key,
-                               cases{case_(i64{1}, [=](auto value) { return add_amount(value, 10); }),
-                                     case_(i64{2}, [](auto value) { return value; })},
-                               selected);
-            },
-            values, dependencies, "__key_arg__"_n = 0);
+        const auto result = mesh(select_mesh_value, values, dependencies, "__key_arg__"_n = 0);
         return reduce(sum_mesh_values, result, "default"_n = i64{0});
     };
 
@@ -700,20 +704,22 @@ TEST_CASE("a reduction observes mesh dependencies after switch outputs change",
           "[feature:mesh][feature:switch][feature:reduce][feature:nested-graph]"
           "[series:tsd][shape:deeply-nested][transition:update]") {
     const auto add_amount = node([](i64 value, int amount) { return value + amount; });
+    const auto select_mesh_value = graph(
+        "name"_n = "select_mesh_value_by_parent_case",
+        [=](wp<TS<i64>>, wp<TS<i64>> item, wp<TS<i64>> selector,
+            wp<TS<i64>> dependency_key) {
+            const auto value = add_mesh_dependency(item, mesh()[dependency_key]);
+            return switch_(selector,
+                           cases{case_(i64{1}, [=](wp<TS<i64>> input) { return add_amount(input, 10); }),
+                                 case_(i64{2}, [=](wp<TS<i64>> input) { return add_amount(input, 20); })},
+                           value);
+        });
 
     const auto tested = [=](wp<TS<i64>> selected_case,
                             wp<TSD<i64, TS<i64>>> values,
                             wp<TSD<i64, TS<i64>>> dependencies) {
-        const auto result = mesh(
-            [=](auto, auto item, auto selector, auto dependency_key) {
-                const auto value = add_mesh_dependency(item, mesh()[dependency_key]);
-                return switch_(selector,
-                               cases{case_(i64{1}, [=](auto input) { return add_amount(input, 10); }),
-                                     case_(i64{2}, [=](auto input) { return add_amount(input, 20); })},
-                               value);
-            },
-            values, pass_through(selected_case),
-            dependencies, "__key_arg__"_n = 0);
+        const auto result = mesh(select_mesh_value, values, pass_through(selected_case),
+                                 dependencies, "__key_arg__"_n = 0);
         return reduce(sum_mesh_values, result, "default"_n = i64{0});
     };
 

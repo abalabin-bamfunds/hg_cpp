@@ -838,7 +838,7 @@ TEST_CASE("a switch branch uses the reduce default for an empty TSD and recovers
                        values);
     };
 
-    const auto actual = bg::run_graph(tested, {1, 1, 1}, ticks({{}, literal::INVALID, {}}));
+    const auto actual = bg::run_graph(tested, ticks({1, 1, 1}), ticks({{}, literal::INVALID, {}}));
 
     CHECK(actual.equals({20, literal::INVALID, 20}));
 }
