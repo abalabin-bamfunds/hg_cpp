@@ -6,12 +6,11 @@ The current implementation accepts concrete `TSC<T>` inputs and column
 expressions. Scalar broadcasting, explicit concrete output schema validation,
 and shared-materialisation profiling remain future work.
 
-Combined Release verification passes eight of nine CTest executables. The
-enclosing graph-template expression test fails because BG's named
-`WiringArgument` retains a non-canonical scalar by borrowing from its temporary
-named argument. The resulting empty column name is a BG lifetime defect; a core
-correction is awaiting user approval. See [HANDOFF](HANDOFF.md) for the exact
-build and test result.
+Combined BG and Arrow-on frame Release verification passes all nine frame CTest
+executables. The test that resolves the inferred schema inside an enclosing
+graph template also passes after BG fixed named-argument and helper forwarding
+lifetimes. See [HANDOFF](HANDOFF.md) for the exact verification and audit
+findings.
 
 ## Purpose
 
@@ -135,7 +134,7 @@ materialisation; the frame extension owns schema calculation and column binding.
 Implemented stages generalise borrowed-column binding and add wiring-time schema
 calculation with inferred output and dynamic assignment names. BG resolves the
 graph output schema from the selected graph result after the graph body runs
-once.
+once. Combined Release verification passes all nine frame CTest executables.
 
 Outstanding stages add scalar broadcasting and concrete output schema
 validation. Verification must cover concrete and runtime schemas, replacement,

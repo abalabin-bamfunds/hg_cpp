@@ -12,17 +12,13 @@ change-propagation rules. Implementation and Catch2 tests are on
 
 Verification:
 
-- Release Arrow-on: all eight CTest executables passed. The final focused rerun
-  passed four cases and 40 assertions.
-- Debug ASan/UBSan: the focused suite passed four cases and 40 assertions.
-  The extension and test are instrumented and use matching ordinary Debug BG.
-  Leak detection is disabled.
+- Combined BG Release build and install succeeded after applying core commit
+  `5d0d0ba1` as frame-lane commit `05c53244`.
+- Arrow-on frame Release build succeeded. All nine CTest executables passed.
 - `git diff --check` passed.
 
-Builds are under `.lanes/frame-with-columns/build/release` and
-`.lanes/frame-with-columns/build/debug-asan`, relative to this implementation
-lane. They use the matching BG installs under
-`.lanes/frame-field-access/build/arrow-sum/` in the repository root.
+Builds are under `build/bg-release` and `build/release` in this implementation
+lane. The frame build uses the BG install at `build/bg-release-install`.
 
 Remaining stages:
 
@@ -41,22 +37,22 @@ assignment, and result schema variables. Its resolver preserves source field
 order and metadata, replaces assigned fields with their exact cell types,
 appends new fields, and rejects key replacement.
 
-Release verification passed the duplicate-name and key-replacement case
-(4 assertions), the runtime-schema and empty-assignment case (17 assertions),
-and the eight existing frame test executables. The runtime-schema case starts
-with `literal::SKIP` to test an invalid source. `literal::TimeSeriesLiteral{}`
-represents a valid empty frame.
+The runtime-schema case starts with `literal::SKIP` to test an invalid source.
+`literal::TimeSeriesLiteral{}` represents a valid empty frame.
 
-BG graph-output inference is integrated as `b9541dc6`. The combined BG and
-Arrow-on frame Release build completed successfully. Eight of nine CTest
-executables passed. `bg_frame_with_columns_test` fails in the enclosing
-graph-template case because an expression column name is empty. The frame
-assignment passes an `Expression` through `WiringArgument(named_argument)`;
-BG's named-argument constructor leaves non-canonical scalar values borrowed
-from its constructor-local named argument. The scalar is read after that object
-has been destroyed. A BG correction is awaiting user approval. The frame lane
-has no workaround for this lifetime issue. The frame lane also retains
-direct-form materialisation support in `a0b859b1`.
+BG graph-output inference is integrated as `b9541dc6`. Combined verification
+passes all nine Arrow-on frame CTest executables. The initial failure exposed
+three BG forwarding issues. `WiringArgument` accepted named arguments by value
+and borrowed non-owning scalar values from that constructor-local copy.
+`map_invoke` and `schema_argument_value` used unparenthesized member expressions
+with `decltype(auto)`, which copied values instead of preserving references;
+the map copy was then borrowed by another `WiringArgument`. BG commit
+`5d0d0ba1` adds named-argument overloads that borrow lvalues and move rvalues,
+and preserves member references in both helpers. The full BG Release CTest
+suite passed 2,680 assertions on the core lane. Frame-lane commit `05c53244`
+contains the core fix. The frame regression test now resolves the inferred
+schema in an enclosing graph template. The frame lane also retains direct-form
+materialisation support in `a0b859b1`.
 
 ## Incremental numeric column sum
 
