@@ -33,34 +33,26 @@ Remaining stages:
 
 ### Wiring-time schema calculation in progress
 
-Uncommitted work adds `src/with_columns.cpp` and
+The current change adds `src/with_columns.cpp` and
 `tests/with_columns_test.cpp`. One assembly node uses independent source,
 assignment, and result schema variables. Its resolver preserves source field
 order and metadata, replaces assigned fields with their exact cell types,
 appends new fields, and rejects key replacement.
 
-The new target compiles and links. Initial rejection tests caught exceptions
-without checking their cause; they have been tightened to require `WiringError`
-and the intended diagnostic. The rejection case passed four assertions.
-An enclosing `graph(...)` fails before its body runs because BG
-resolves the output-only result schema variable before calling `with_columns`.
-The existing inferred-output path applies to plain functions passed to
-`run_graph`, not ordinary graph-template calls. A temporary `wp<>` pass-through
-probe also fails during signature completion with an unmapped `TS_T`, confirming
-that this limitation is independent of frame schemas. The BG lane
-`.lanes/graph-output-inference` contains the direct-form materialisation fix
-(`9d8af2c9`, applied here as `64916a1c`). Checked graph-output inference is in
-progress: normal input selection precedes one body invocation and validation
-against the original output declaration.
-Review found a resolver lookup gap: matching can infer an output field in a
-child `TypeMap`, while a dependent resolver receives the parent map. Changing
-lookup to expose the current matching map awaits the user's decision. Core
-inference remains uncommitted; do not treat the enclosing graph case as verified.
-Runtime-schema tests include invalid input, direct column assignment, and empty
-assignments; the focused case passed 17 assertions. Its first source sample is
-`literal::SKIP`; an empty frame literal publishes a valid empty frame. The
-eight existing Release CTest executables also passed. The enclosing graph case
-awaits the BG inference change.
+Release verification passed the duplicate-name and key-replacement case
+(4 assertions), the runtime-schema and empty-assignment case (17 assertions),
+and the eight existing frame test executables. The runtime-schema case starts
+with `literal::SKIP` to test an invalid source. `literal::TimeSeriesLiteral{}`
+represents a valid empty frame.
+
+The enclosing graph-template case awaits the BG resolver update. Its output
+schema depends on mappings inferred while matching the graph arguments. The
+current resolver sees only the parent `TypeMap`; the approved core change will
+make the current matching map visible to dependent resolvers. The frame test
+will verify that the graph body runs once and that the inferred output schema
+reaches the observer. The lane also retains direct-form materialisation support
+in `a0b859b1`. Rebuild and run all nine Release test executables after the BG
+change is integrated.
 
 ## Incremental numeric column sum
 
@@ -629,7 +621,7 @@ domains/selections, fusion, and late concrete demands. The late-demand fixture
 combines computed and native columns with distinct physical mappings and
 covers both additions and an existing-row update. Its aggregate node template
 lives in the enclosing test scope through graph compilation, as required by
-[BG's wiring contract](../../docs/graph-wiring.md#wiring-template-call).
+[BG's wiring contract](../../docs/development/design/graph-wiring.md#wiring-template-call).
 The filter-order test uses the actual output binder and runtime input storage.
 It verifies source order `[2, 1]` after slot reuse and verifies that repeated
 enumeration and positional reads do not traverse the source.
@@ -690,7 +682,7 @@ parameter ticks do not change expression structure. Pure column expressions do
 not create this node. Block computation reads the snapshot once per invocation.
 The parameter-update node declares `all_valid`; the computed-column node requires
 its snapshot input. BG applies input validity and output invalidation through the
-[normal node contract](../../docs/node-api.md#required-input-invalidation).
+[normal node contract](../../docs/development/design/node-api.md#required-input-invalidation).
 Each operand is a column batch or scalar broadcast; broadcasts do not allocate
 column storage. Column changes recompute affected rows; parameter changes
 recompute all current rows. Invalid parameters invalidate the result;
@@ -780,7 +772,7 @@ discard and `testing::TickLiteralComparison` handlers registered by resolved
 semantic series type. Capture does not require replay. The framework handles
 invalidation and skipped ticks before calling a comparison handler; successful
 comparison consumes one valid payload without changing its encoded values. See
-[BG testing](../../docs/testing.md).
+[BG testing](../../docs/development/testing.md).
 
 Frame writers visit delta row sets through extension descriptors and borrowed
 column views. Each TSF tick stores a pointer to its actual registered schema so
@@ -1010,7 +1002,7 @@ rejection, and rejection before invalidating a previously bound output.
 The Release Arrow-on build and all six consumer test suites pass for this change.
 
 Registered types, canonical runtime descriptors, and schema metadata follow
-BG's [process-lifetime ownership rule](../../docs/decisions/0071-process-lifetime-type-storage.md).
+BG's [process-lifetime ownership rule](../../docs/development/decisions/0071-process-lifetime-type-storage.md).
 Ordinary node and scalar values keep normal destruction. The frame lane uses
 `bg::util::static_storage<T>` for its canonical runtime and layout cache owner,
 typed column runtime statics, FrameView scalar and mixed-view runtimes, and
