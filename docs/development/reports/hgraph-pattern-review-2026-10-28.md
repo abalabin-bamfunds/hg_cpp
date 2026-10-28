@@ -12,7 +12,8 @@ The upstream references were fetched from
 
 | Source | Revision |
 | --- | --- |
-| BG baseline | `11ba59a4` |
+| BG initial baseline | `11ba59a4` |
+| BG final review base | `8058a013` |
 | hgraph `release/0.5`, latest tag `v_0.5.42` | [`c34dba1db8a1c873ee303796db4c8fc48c8cc5be`](https://github.com/hhenson/hgraph/tree/c34dba1db8a1c873ee303796db4c8fc48c8cc5be) |
 | hgraph `main`, latest tag `0.8.37` | [`b9305bb23f8e54337cd1941447b940e5fd43ec59`](https://github.com/hhenson/hgraph/tree/b9305bb23f8e54337cd1941447b940e5fd43ec59) |
 
@@ -20,6 +21,10 @@ The 0.5 release branch still points to 0.5.42. The 0.8 snapshot includes changes
 through 2026-10-28. The earlier
 [functionality survey](hgraph-functionality-survey-2026-10-21.md) uses different
 BG and 0.8 revisions and does not establish the results of this review.
+
+The root branch advanced during the review. The review lane was rebased onto
+`8058a013`, which adds print and logging behavior. These commits do not change
+map, switch, mesh, reduce, or reference runtime implementations.
 
 ## Classification
 
@@ -47,21 +52,75 @@ which remain the [coverage source](../testing.md#coverage-model).
 - [Free bundles and fixed lists](hgraph-free-bundle-pattern-findings-2026-10-28.md).
 - [Nested graph compositions](hgraph-nested-pattern-findings-2026-10-28.md).
 
+## Results
+
+The review adds **37 cases**: **26 ordinary passing cases** and **11 hidden
+reproductions**. A reproduction can expose a wiring failure, an output
+mismatch, or an unresolved semantic difference; it is not automatically an
+approved defect or implementation task.
+
+| Finding | Cases | Classification |
+| --- | --- | --- |
+| Selected dictionary reference omits a held key on retargeting across a nested graph. | 1 | Output mismatch. |
+| Switch rejects native/free TSB branches, rebuilt free TSB branches, or reference/owned TSD branches. | 3 | Wiring compatibility failures. The TSD failure blocks the cascaded map/switch/`take` pattern before evaluation. |
+| Nested TSB/TSL REF pass-through attempts to create a reference targeting a reference. | 2 | Wiring failures against the documented reference-preserving nested boundary. |
+| Mesh/switch/reduce compositions fail type resolution, including with typed callbacks. | 2 | Wiring failures; runtime behavior remains unverified. |
+| Free TSB/TSL switch activations capture empty structural deltas while scalar consumers read held values. | 2 | Collection observation gap. Sampling and capture require separate investigation. |
+| Reselecting a rebuilt free list emits held values where the source test expects silence. | 1 | Unresolved target-identity semantics. |
+
+Passing additions exercise key removal/readdition, independent reference-backed
+contexts, leaf updates and validity, nested free structures, pass-through
+selection identity, and map/switch/mesh/reduce combinations. The detailed
+reports identify exact ports, partial coverage, and new BG combinations.
+
 ## Verification boundaries
 
-The existing Release build at the BG baseline passed before new tests were
-added: **2,230 engine cases** and **443 library cases**. This was the clean
-`graph-output-inference` lane at `11ba59a4`, using its existing build artifacts.
+Final validation uses a freshly built Release runtime from BG `8058a013` and
+test objects rebuilt against that revision's headers, with matching `NDEBUG`.
+This checks correctness; it is not a performance measurement.
+
+| Run | Result |
+| --- | --- |
+| Ordinary engine suite | 2,254 cases; 2,941,855 assertions passed. |
+| Ordinary library suite | 451 cases; 1,352 assertions passed. |
+| Logging startup cases, each in a separate process | 4 cases; 21 assertions passed. |
+| Hidden engine reproductions | 10 cases; 10 assertions failed with the recorded output or wiring error. |
+| Hidden library reproduction | 1 case; 1 assertion failed during switch wiring. |
+| Engine and library coverage-tag validation | Passed. |
+
+Run from `/home/abalabin/_bg/.lanes/hgraph-pattern-review`:
+
+```sh
+build/verification/bg_tests
+build/verification/bg_library_tests
+build/verification/bg_tests '[repro]'
+build/verification/bg_library_tests '[repro]'
+```
+
+The two reproduction commands intentionally return a failing status. Logs and
+coverage reports are in the lane's `build/verification` directory, including
+`latest-full-engine-final.log`, `latest-full-library-final.log`,
+`latest-all-engine-repros-final.log`, and `latest-library-repros.log`.
+The branch is `agent/hgraph-pattern-review`. Only tests and development reports
+changed; the review has not been merged into the root worktree.
 
 The review ports selected patterns to BG and runs BG tests. It does not claim
 to rerun either complete hgraph suite, establish Python authoring parity from a
 C++ test, or measure runtime performance. Source parameterizations and new BG
 test cases are counted separately.
 
-Failing reproductions stay outside the normal test executable until the owner
-decides which behaviors to address. They retain their required assertions and
-have explicit commands in the relevant report. Passing tests stay in the
-ordinary test suite.
+Failing reproductions use hidden Catch2 cases tagged `[.][repro]`. The default
+suite excludes them. They retain their required assertions and have explicit
+commands in the relevant report. Passing tests run in the ordinary suite.
+
+## Reduction semantics
+
+These source expectations are not used as BG failure oracles.
+
+| Source expectation | BG contract | Classification |
+| --- | --- | --- |
+| 0.5 `_wiring/test_reduce.py::test_tsd_reduce_no_zero` expects `0` before any dictionary tick and after removing the final item. | Without a default, an invalid TSD or a valid TSD without valid items produces an invalid result. | Semantic difference. |
+| 0.8 `ported/_wiring/test_reduce.py::test_tsd_reduce_zero_is_used_only_for_empty_and_singleton` expects `111` for singleton `1`, explicit zero `10`, and the associative combiner `left + right + 100`. | A singleton is forwarded directly, so BG produces `1`; the default is used only when the valid TSD has no valid items. | Semantic difference. |
 
 ## Scope exclusions
 

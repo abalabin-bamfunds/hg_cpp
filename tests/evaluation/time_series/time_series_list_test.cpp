@@ -623,6 +623,7 @@ TEST_CASE("reselecting a rebuilt free list keeps unchanged item references",
     });
 
     const auto first_value = node([](i64 first) { return first; });
+
     const auto select_first = graph("name"_n = "select_free_list_first", [&](wp<TSL<TS<i64>, 2>> input) {
         return first_value(input[0]);
     });
