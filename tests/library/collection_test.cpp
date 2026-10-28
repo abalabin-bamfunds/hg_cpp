@@ -52,10 +52,10 @@ TEST_CASE("keys_ projects dictionary membership without copying item updates",
           "[feature:operator][series:tsd][series:tss][transition:addition][transition:removal]") {
     const auto graph = [](wp<TSD<i64, TS<i64>>> values) { return operators::keys_(values); };
 
-    const auto input = bg::input<TSD<i64, TS<i64>>>(
-        {{}, {{1, 10}, {2, 20}}, {{1, 11}}, {{3, 30}, {2, literal::REMOVE}},
-         {{1, literal::REMOVE}, {3, literal::REMOVE}}});
-    const auto actual = bg::run_graph(graph, input);
+    const auto actual = bg::run_graph(
+        graph, bg::input<TSD<i64, TS<i64>>>(
+                   {{}, {{1, 10}, {2, 20}}, {{1, 11}}, {{3, 30}, {2, literal::REMOVE}},
+                    {{1, literal::REMOVE}, {3, literal::REMOVE}}}));
 
     CHECK(actual.equals({{}, {1, 2}, literal::SKIP, {3, literal::REMOVED(2)},
                          {literal::REMOVED(1), literal::REMOVED(3)}}));
