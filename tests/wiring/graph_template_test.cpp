@@ -7,17 +7,22 @@
 #include <bg/operator.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/type/scalar_type.hpp>
+#include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
+#include <bg/with_signature.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <variant>
 #include <array>
 #include <concepts>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 using namespace bg;
 
@@ -53,6 +58,10 @@ static_assert(std::same_as<decltype(scale_graph(std::declval<WiringPoint>(), 2.0
 
 using NESTED_OUTPUT = TimeSeriesVariable<"NESTED_OUTPUT">;
 using GRAPH_RESOLVED = ScalarVariable<"GRAPH_RESOLVED">;
+using OUTPUT_ONLY = TimeSeriesVariable<"GRAPH_OUTPUT_ONLY">;
+using SHARED_VALUE = ScalarVariable<"GRAPH_SHARED_VALUE">;
+using OUTPUT_KEY = ScalarVariable<"GRAPH_OUTPUT_KEY">;
+using OUTPUT_VALUE = ScalarVariable<"GRAPH_OUTPUT_VALUE">;
 
 } // namespace
 
@@ -262,6 +271,122 @@ TEST_CASE("callable graph requirements return rejection diagnostics with graph l
     CHECK(accepted_wiring.nodes()[0].path().parent->label.text() == "value=4");
 }
 
+TEST_CASE("graph outputs infer output-only variables from the selected body result",
+          "[graph_template][feature:wiring][feature:type-system]") {
+    const auto double_source = node([](Out<TS<double>>) {});
+    const auto inferred = graph<OUTPUT_ONLY>(
+        "name"_n = "output_only_graph",
+        [=]() -> wp<OUTPUT_ONLY> { return wp<OUTPUT_ONLY>{double_source()}; });
+    const auto nested = graph(
+        "name"_n = "nested_output_only_graph",
+        [=]() -> wp<OUTPUT_ONLY> { return wp<OUTPUT_ONLY>{inferred()}; });
+
+    auto wiring = GraphWiring{};
+    {
+        const auto context = WiringContext{wiring};
+        const auto direct = inferred();
+        CHECK(&direct.type() == &TS<double>::type());
+
+        const auto nested_result = nested();
+        CHECK(&nested_result.type() == &TS<double>::type());
+    }
+}
+
+TEST_CASE("graph output inference preserves input mappings and checks missing results",
+          "[graph_template][feature:wiring][feature:type-system]") {
+    auto body_calls = std::size_t{};
+    const auto double_source = node([](Out<TS<double>>) {});
+    const auto mismatched_source = node([](Out<TSD<i64, TS<i64>>>) {});
+    const auto mismatched = graph(
+        "name"_n = "shared_output_mismatch",
+        [&, mismatched_source](wp<TS<SHARED_VALUE>>) -> wp<TSD<OUTPUT_KEY, TS<SHARED_VALUE>>> {
+            ++body_calls;
+            return wp<TSD<OUTPUT_KEY, TS<SHARED_VALUE>>>{mismatched_source()};
+        });
+    const auto missing = graph<OUTPUT_ONLY>(
+        "name"_n = "missing_inferred_output",
+        [] { return wp<>{}; });
+
+    auto wiring = GraphWiring{};
+    {
+        const auto context = WiringContext{wiring};
+        CHECK_THROWS_WITH(mismatched(double_source()),
+                          Catch::Matchers::ContainsSubstring("the graph result does not satisfy its output declaration"));
+        CHECK_THROWS_WITH(missing(),
+                          Catch::Matchers::ContainsSubstring("a wiring-template result does not match its output declaration"));
+    }
+    CHECK(body_calls == 1);
+}
+
+TEST_CASE("output inference invokes later declared resolvers before mapping the result",
+          "[graph_template][feature:wiring][feature:type-system]") {
+    auto body_calls = std::size_t{};
+    auto resolver_calls = std::size_t{};
+    const auto concrete = node([](Out<TSD<i64, TS<double>>>) {});
+    const auto invalid = graph(
+        "name"_n = "inferred_output_resolver_failure",
+        resolve<OUTPUT_VALUE> = [&](const TypeMap &) -> const ScalarType & {
+            ++resolver_calls;
+            throw std::runtime_error{"output resolver rejected inference"};
+        },
+        [&]() -> wp<TSD<OUTPUT_KEY, TS<OUTPUT_VALUE>>> {
+            ++body_calls;
+            return wp<TSD<OUTPUT_KEY, TS<OUTPUT_VALUE>>>{concrete()};
+        });
+
+    auto wiring = GraphWiring{};
+    {
+        const auto context = WiringContext{wiring};
+        CHECK_THROWS_WITH(invalid(), Catch::Matchers::ContainsSubstring("output resolver rejected inference"));
+    }
+
+    CHECK(body_calls == 1);
+    CHECK(resolver_calls == 1);
+}
+
+TEST_CASE("output resolvers can read mappings inferred earlier from the graph result",
+          "[graph_template][feature:wiring][feature:type-system]") {
+    auto observed_key_type = static_cast<const Type *>(nullptr);
+    const auto concrete = node([](Out<TSD<i64, TS<double>>>) {});
+    const auto inferred = graph(
+        "name"_n = "output_resolver_reads_inferred_key",
+        resolve<OUTPUT_VALUE> = [&](const TypeMap &type_map) -> const ScalarType & {
+            const auto *mapped_key = std::get_if<const Type *>(type_map.find(OUTPUT_KEY::type()));
+            if (mapped_key != nullptr) {
+                observed_key_type = *mapped_key;
+            }
+            return double_type();
+        },
+        [=]() -> wp<TSD<OUTPUT_KEY, TS<OUTPUT_VALUE>>> {
+            return wp<TSD<OUTPUT_KEY, TS<OUTPUT_VALUE>>>{concrete()};
+        });
+
+    auto wiring = GraphWiring{};
+    {
+        const auto context = WiringContext{wiring};
+        const auto output = inferred();
+        CHECK(&output.type() == &TSD<i64, TS<double>>::type());
+    }
+
+    CHECK(observed_key_type == &int64_type());
+}
+
+TEST_CASE("with_signature forwards graph output inference to its target",
+          "[graph_template][feature:wiring][feature:type-system]") {
+    const auto double_source = node([](Out<TS<double>>) {});
+    const auto inferred = graph<OUTPUT_ONLY>(
+        "name"_n = "wrapped_output_only_graph",
+        [=]() -> wp<OUTPUT_ONLY> { return wp<OUTPUT_ONLY>{double_source()}; });
+    const auto wrapped = with_signature(inferred, inferred.signature());
+
+    auto wiring = GraphWiring{};
+    {
+        const auto context = WiringContext{wiring};
+        const auto output = wrapped();
+        CHECK(&output.type() == &TS<double>::type());
+    }
+}
+
 TEST_CASE("callable output guarantee inference is local to its node signature",
           "[graph_template][feature:wiring][feature:node-api][definition:function][series:value]") {
     const auto increment = node([](double value) { return value + 1.0; });
@@ -277,14 +402,52 @@ TEST_CASE("callable output guarantee inference is local to its node signature",
     CHECK(bg::run_graph(forwarding_graph, inputs).equals<double>({2.0, 3.0, 4.0}));
 }
 
-TEST_CASE("a graph reference output defaults to deduplicated",
-          "[graph_template][reference][feature:wiring][definition:function][guarantee:deduplicated]") {
+TEST_CASE("a graph reference result uses its declaration guarantee",
+          "[graph_template][reference][feature:wiring][definition:function][guarantee:ordinary]") {
     const auto pass =
         graph("name"_n = "reference_pass",
                   [](wp<REF<TS<i64>>> input) -> wp<REF<TS<i64>>> { return input; });
 
-    CHECK(pass.signature().output()->guarantee().value() == TimeSeriesGuarantee::deduplicated);
+    CHECK(pass.signature().output()->guarantee().value() == TimeSeriesGuarantee::ordinary);
     CHECK_FALSE(static_cast<const TimeSeriesType &>(*pass.signature().parameter(0).type).guarantee().is_resolved());
+}
+
+TEST_CASE("a graph result preserves a stronger returned reference for downstream wiring",
+          "[graph_template][reference][feature:wiring][guarantee:deduplicated]") {
+    const auto source = node([](Out<REF<TS<i64, TimeSeriesGuarantee::deduplicated>,
+                                         TimeSeriesGuarantee::deduplicated>>) {});
+    const auto pass = graph("name"_n = "preserve_reference_guarantee",
+                            [](wp<REF<TS<i64>>> input) -> wp<REF<TS<i64>>> { return input; });
+    const auto sink = node([](In<REF<TS<i64, TimeSeriesGuarantee::deduplicated>,
+                                    TimeSeriesGuarantee::deduplicated>>) {});
+
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto output = pass(source());
+
+    CHECK(&output.type() ==
+          &REF<TS<i64, TimeSeriesGuarantee::deduplicated>, TimeSeriesGuarantee::deduplicated>::type());
+    (void)sink(output);
+}
+
+TEST_CASE("an explicit graph result guarantee rejects a weaker returned reference",
+          "[graph_template][reference][feature:wiring][guarantee:deduplicated]") {
+    using OrdinaryReference = REF<TS<i64, TimeSeriesGuarantee::ordinary>, TimeSeriesGuarantee::ordinary>;
+    using DeduplicatedReference =
+        REF<TS<i64, TimeSeriesGuarantee::deduplicated>, TimeSeriesGuarantee::deduplicated>;
+
+    const auto source = node([](Out<OrdinaryReference>) {});
+    const auto identity = graph("name"_n = "ordinary_reference_identity",
+                                [](wp<OrdinaryReference> input) -> wp<OrdinaryReference> { return input; });
+    auto parameters = std::vector<Parameter>{identity.signature().parameter(0)};
+    const auto explicit_signature =
+        Signature{util::symbol{"deduplicated_reference_result"}, std::move(parameters),
+                  DeduplicatedReference::type()};
+    const auto require_deduplicated = with_signature(identity, explicit_signature);
+
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    CHECK_THROWS_AS(require_deduplicated(source()), WiringError);
 }
 
 TEST_CASE("graph output re-annotation is checked at the cast", "[graph_template][feature:wiring]") {

@@ -41,7 +41,8 @@ class WiringCallPreparation {
     bool empty() const noexcept { return matches_.empty(); }
     WiringCallPreparationResult complete(std::span<const unsigned char> preserved_inputs,
                                          const WiringArguments &argument_context,
-                                         const std::function<void(const TypeMap &)> &completion = {});
+                                         const std::function<void(const TypeMap &)> &completion = {},
+                                         bool allow_inferred_output = false);
 
   private:
     const Signature *signature_;

@@ -21,38 +21,31 @@ WiringTemplate::~WiringTemplate() = default;
 std::optional<WiringPoint> WiringTemplate::invoke_resolved(GraphWiring &wiring, SignatureResolution resolution,
                                                            std::span<const WiringArgument> arguments,
                                                            std::span<const details::WiringArgumentDescriptor> descriptors,
-                                                           util::symbol path_name, bool infer_output) const {
-    return wiring.invoke_resolved(*this, std::move(resolution), arguments, descriptors, path_name, infer_output);
+                                                           util::symbol path_name) const {
+    return wiring.invoke_resolved(*this, std::move(resolution), arguments, descriptors, path_name);
 }
 
 std::optional<WiringPoint> WiringTemplate::invoke_resolved(GraphWiring &wiring, const WiringTemplate &implementation,
                                                            SignatureResolution resolution,
                                                            std::span<const WiringArgument> arguments,
                                                            std::span<const details::WiringArgumentDescriptor> descriptors,
-                                                           util::symbol path_name, bool infer_output) const {
-    return wiring.invoke_resolved(implementation, std::move(resolution), arguments, descriptors, path_name,
-                                  infer_output);
+                                                           util::symbol path_name) const {
+    return wiring.invoke_resolved(implementation, std::move(resolution), arguments, descriptors, path_name);
 }
 
 std::optional<WiringPoint> WiringTemplate::invoke(GraphWiring &wiring,
                                                   std::span<const WiringArgument> arguments,
                                                   const TypeMap *seed_type_map) const {
-    return invoke_impl(wiring, arguments, seed_type_map, false);
-}
-
-std::optional<WiringPoint> WiringTemplate::invoke_inferred_output(
-    GraphWiring &wiring, std::span<const WiringArgument> arguments) const {
-    return invoke_impl(wiring, arguments, nullptr, true);
+    return invoke_impl(wiring, arguments, seed_type_map);
 }
 
 std::optional<WiringPoint> WiringTemplate::invoke_impl(GraphWiring &wiring,
                                                        std::span<const WiringArgument> arguments,
-                                                       const TypeMap *seed_type_map, bool infer_output) const {
+                                                       const TypeMap *seed_type_map) const {
     auto temporary_records = details::WiringRecordOverlay{wiring};
     auto probe = details::probe_wiring_arguments(signature(), arguments, temporary_records);
     const auto &declared_signature = signature();
-    const auto resolution_signature = infer_output ? declared_signature.without_output() : declared_signature;
-    auto preparation = details::WiringCallPreparation{resolution_signature, probe.arguments, seed_type_map};
+    auto preparation = details::WiringCallPreparation{declared_signature, probe.arguments, seed_type_map};
     if (preparation.empty()) {
         auto supplied_types = std::vector<const Type *>{};
         supplied_types.reserve(probe.arguments.size());
@@ -73,7 +66,7 @@ std::optional<WiringPoint> WiringTemplate::invoke_impl(GraphWiring &wiring,
         double binding_cost;
     };
     auto type_map = TypeMap{};
-    auto argument_context = WiringArguments{resolution_signature, type_map, probe.descriptors};
+    auto argument_context = WiringArguments{declared_signature, type_map, probe.descriptors};
     auto requirement_results = std::vector<RequirementResult>{};
     const auto callback_context = WiringErrorContext{
         .stage = WiringFailureStage::callback,
@@ -92,7 +85,7 @@ std::optional<WiringPoint> WiringTemplate::invoke_impl(GraphWiring &wiring,
                 throw WiringError::from_exception("wiring-template requirement callback failed", callback_context,
                                                   std::current_exception());
             }
-        });
+        }, allows_output_inference());
     } catch (const TypeResolutionError &) {
         throw;
     } catch (const WiringError &error) {
@@ -129,11 +122,16 @@ std::optional<WiringPoint> WiringTemplate::invoke_impl(GraphWiring &wiring,
         throw WiringError{"no advertised wiring form resolves the wiring-template signature"};
     }
 
-    const auto output = applicable.front().call.resolution.signature.output;
-    if (std::ranges::any_of(applicable, [&](const auto &candidate) {
-            return candidate.call.resolution.signature.output != output;
-        })) {
-        throw WiringError{"viable wiring forms resolve to different wiring-template output types"};
+    auto resolved_output = static_cast<const TimeSeriesType *>(nullptr);
+    for (const auto &candidate : applicable) {
+        const auto *candidate_output = candidate.call.resolution.signature.output;
+        if (candidate_output == nullptr) {
+            continue;
+        }
+        if (resolved_output != nullptr && resolved_output != candidate_output) {
+            throw WiringError{"viable wiring forms resolve to different wiring-template output types"};
+        }
+        resolved_output = candidate_output;
     }
     auto unique_applicable = std::vector<Candidate>{};
     unique_applicable.reserve(applicable.size());
@@ -169,9 +167,8 @@ std::optional<WiringPoint> WiringTemplate::invoke_impl(GraphWiring &wiring,
         selected_forms.push_back(selected.materialisation_target(index));
     }
     details::bind_materialisation_forms(wiring, *this, committed.arguments, selected_forms);
-    return invoke_resolved(wiring, SignatureResolution{std::move(selected.resolution.signature),
-                                                       std::move(selected.resolution.type_map)},
-                           committed.arguments, committed.descriptors, path_name, infer_output);
+    return invoke_resolved(wiring, std::move(selected.resolution), committed.arguments,
+                           committed.descriptors, path_name);
 }
 
 } // namespace bg

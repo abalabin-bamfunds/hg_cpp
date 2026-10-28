@@ -11,6 +11,7 @@
 #include <bg/type/time_series_value_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <array>
 #include <memory>
@@ -39,6 +40,40 @@ template <template <typename, auto...> typename Field>
 struct DispatchOtherDerived : schema_extends<DispatchOtherBase, Field> {
     Field<i64> value;
 };
+
+using INFERRED_DISPATCH_OUTPUT = TimeSeriesVariable<"INFERRED_DISPATCH_OUTPUT">;
+
+TEST_CASE("dispatch requires an output contract for an inferred implementation output",
+          "[feature:dispatch][feature:wiring][feature:type-system]") {
+    const auto dispatch_signature = Signature{
+        util::symbol{"dispatch_output_contract"},
+        {{util::symbol{"input"}, &TS<Bundle<DispatchBase>>::type()}}, TS<i64>::type()};
+    const auto concrete_output = node([](Out<TS<i64>>) {});
+    const auto implementation = graph<INFERRED_DISPATCH_OUTPUT>(
+        "name"_n = "inferred_dispatch_implementation",
+        [=](wp<TS<Bundle<DispatchBase>>>) -> wp<INFERRED_DISPATCH_OUTPUT> {
+            return wp<INFERRED_DISPATCH_OUTPUT>{concrete_output()};
+        });
+    const auto source = node([](Out<TS<Bundle<DispatchBase>>>) {});
+
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto supplied = std::array<WiringArgument, 1>{WiringArgument{source()}};
+    auto resolver = Operator{dispatch_signature};
+    const auto &registered_implementation = resolver.overload(implementation);
+    const auto implementations = std::array<const WiringTemplate *, 1>{&registered_implementation};
+    const auto type_map = TypeMap{};
+
+    CHECK_THROWS_WITH(details::wire_dispatch(wiring, dispatch_signature, true, nullptr, dispatch_signature,
+                                             supplied, implementations, resolver, type_map, {}),
+                      Catch::Matchers::ContainsSubstring("requires a resolved output contract"));
+
+    const auto output = details::wire_dispatch(wiring, dispatch_signature, true, &TS<i64>::type(),
+                                              dispatch_signature, supplied, implementations, resolver,
+                                              type_map, {});
+    REQUIRE(output);
+    CHECK(TS<i64>::type().accepts(output->type()));
+}
 
 TEST_CASE("dispatch selects the most specific implementation for a runtime scalar type",
           "[feature:dispatch][feature:nested-graph][series:value]") {

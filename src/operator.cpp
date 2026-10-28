@@ -571,7 +571,8 @@ auto Operator::analyze_overloads(
                             } catch (...) {
                                 requirement_exception = std::current_exception();
                             }
-                        }, explicit_type_parameters.empty() ? nullptr : &observed_type_variables));
+                        }, explicit_type_parameters.empty() ? nullptr : &observed_type_variables,
+                        implementation->allows_output_inference()));
                 } catch (const TypeResolutionError &error) {
                     failures.push_back(failure(*implementation, error));
                     continue;
@@ -654,8 +655,10 @@ auto Operator::analyze_overloads(
     };
     const auto output_ambiguous = [&](const OverloadCandidate &candidate) {
         return std::ranges::any_of(applicable, [&](const auto &other) {
+            const auto *candidate_output = candidate.resolution.signature.output;
+            const auto *other_output = other.resolution.signature.output;
             return candidate.implementation == other.implementation &&
-                   candidate.resolution.signature.output != other.resolution.signature.output;
+                   candidate_output != nullptr && other_output != nullptr && candidate_output != other_output;
         });
     };
     if (std::ranges::any_of(applicable, output_ambiguous)) {
@@ -738,7 +741,7 @@ auto Operator::analyze_overloads(
                                   std::ranges::to<std::vector>();
             analysis.resolution.selected.emplace(details::OperatorResolutionMatch{
                 selected->implementation,
-                {std::move(selected->resolution.signature), std::move(selected->resolution.type_map)},
+                std::move(selected->resolution),
                 std::move(selected_forms), std::move(selected->supplied_argument_indices)});
             analysis.resolution.failures = std::move(failures);
         }
@@ -868,7 +871,8 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
                 continue;
             }
 
-            auto resolution = SignatureResolution{entry.resolution.signature, entry.resolution.type_map.copy()};
+            auto resolution = SignatureResolution{entry.resolution.signature, entry.resolution.type_map.copy(),
+                                                  entry.resolution.infer_output};
             const auto &signature = entry.implementation->signature();
             details::bind_materialisation_forms(wiring, *entry.implementation, committed.arguments,
                                                 entry.argument_forms);
@@ -897,7 +901,8 @@ std::optional<WiringPoint> Operator::invoke(GraphWiring &wiring, std::span<const
         cache.entries.push_back({std::move(*cache_key), std::move(seed_key),
                                  std::move(analysis.scalar_reads.values),
                                  selected.implementation,
-                                 {selected.resolution.signature, selected.resolution.type_map.copy()},
+                                 {selected.resolution.signature, selected.resolution.type_map.copy(),
+                                  selected.resolution.infer_output},
                                  selected.argument_forms});
     }
 

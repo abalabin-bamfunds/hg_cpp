@@ -77,7 +77,8 @@ const TimeSeriesType &declared_graph_output_type() {
     if constexpr (time_series_variable<Value>) {
         return time_series_variable_instance<Value>();
     } else {
-        return time_series_type_for<Scope, Index, TimeSeriesTypeRole::output, Value>(TimeSeriesGuarantee::ordinary);
+        return time_series_type_for<Scope, Index, TimeSeriesTypeRole::declaration, Value>(
+            TimeSeriesGuarantee::ordinary);
     }
 }
 

@@ -55,6 +55,7 @@ template <typename Target> class SignatureWiringTemplate final : public WiringTe
     }
 
     const Signature &default_signature() const override { return signature_; }
+    bool allows_output_inference() const noexcept override { return target_.allows_output_inference(); }
 
   private:
     std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature, const WiringArguments &call,

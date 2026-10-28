@@ -86,12 +86,6 @@ class GraphTemplate final
         }
     }
 
-    // Run this graph body after resolving its inputs and infer its output from the returned WiringPoint.
-    [[nodiscard]] std::optional<WiringPoint>
-    invoke_with_inferred_output(std::span<const WiringArgument> arguments) const {
-        return WiringTemplate::invoke_inferred_output(WiringContext::current().wiring(), arguments);
-    }
-
     const Signature &default_signature() const override { return signature_; }
 
     RequirementResult requirement(const WiringArguments &arguments) const override {
@@ -101,6 +95,8 @@ class GraphTemplate final
             return accept;
         }
     }
+
+    bool allows_output_inference() const noexcept override { return true; }
 
     bool preserves_input_point(std::size_t index) const noexcept override {
         return signature_.is_union_parameter(index);

@@ -32,6 +32,7 @@ class WiringTemplate {
 
     [[nodiscard]] virtual RequirementResult requirement(const WiringArguments &) const { return accept; }
     virtual bool preserves_input_point(std::size_t) const noexcept { return false; }
+    virtual bool allows_output_inference() const noexcept { return false; }
     // Binding equivalence retains type mappings consumed by this template.
     virtual bool same_binding_type_map(const TypeMap &left, const TypeMap &right) const {
         return left.has_same_mappings(right);
@@ -109,24 +110,20 @@ class WiringTemplate {
   protected:
     virtual const Signature &default_signature() const = 0;
 
-    // Resolve and bind inputs before wiring a graph body, then infer its output from the returned WiringPoint.
-    [[nodiscard]] std::optional<WiringPoint>
-    invoke_inferred_output(GraphWiring &wiring, std::span<const WiringArgument> arguments) const;
-
     [[nodiscard]] std::optional<WiringPoint> invoke_resolved(GraphWiring &wiring, SignatureResolution resolution,
                                                              std::span<const WiringArgument> arguments,
                                                              std::span<const details::WiringArgumentDescriptor> descriptors,
-                                                             util::symbol path_name, bool infer_output = false) const;
+                                                             util::symbol path_name) const;
     [[nodiscard]] std::optional<WiringPoint> invoke_resolved(GraphWiring &wiring, const WiringTemplate &implementation,
                                                              SignatureResolution resolution,
                                                              std::span<const WiringArgument> arguments,
                                                              std::span<const details::WiringArgumentDescriptor> descriptors,
-                                                             util::symbol path_name, bool infer_output = false) const;
+                                                             util::symbol path_name) const;
 
   private:
     [[nodiscard]] std::optional<WiringPoint> invoke_impl(GraphWiring &wiring,
                                                          std::span<const WiringArgument> arguments,
-                                                         const TypeMap *seed_type_map, bool infer_output) const;
+                                                         const TypeMap *seed_type_map) const;
 
     std::shared_ptr<const Signature> named_signature_;
 };

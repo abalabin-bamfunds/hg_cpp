@@ -19,6 +19,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -45,6 +46,12 @@ using VARIADIC_RESULT = ScalarVariable<"VARIADIC_RESULT">;
 using UNMATCHED_FORM_VALUE = ScalarVariable<"UNMATCHED_FORM_VALUE">;
 using STATE_ONLY_VALUE = ScalarVariable<"STATE_ONLY_VALUE", i64, float>;
 using REQUIREMENT_ONLY_VALUE = ScalarVariable<"REQUIREMENT_ONLY_VALUE", i64, float>;
+using RETRY_KEY = ScalarVariable<"RESOLVER_RETRY_KEY">;
+using RETRY_VALUE = ScalarVariable<"RESOLVER_RETRY_VALUE">;
+using RETRY_REJECTED_OUTPUT = TSD<RETRY_KEY, TS<i64>>;
+using RETRY_ACCEPTED_OUTPUT = TSD<RETRY_KEY, TS<RETRY_VALUE>>;
+using OBSERVED_DEPENDENCY = ScalarVariable<"RESOLVER_OBSERVED_DEPENDENCY">;
+using OBSERVED_OUTPUT = ScalarVariable<"RESOLVER_OBSERVED_OUTPUT">;
 
 template <template <typename, auto...> typename Field> struct ResolvedBundle {
     Field<TS<i64>> value;
@@ -720,6 +727,61 @@ TEST_CASE("resolver dependency cycles reject an overload", "[feature:operator][f
         }));
 
     testing::test_wiring([&] { CHECK_THROWS_AS(operation(), WiringError); });
+}
+
+TEST_CASE("resolver mappings are retried after a union alternative is rejected",
+          "[feature:wiring][declaration:generic]") {
+    static const auto output = util::static_storage<TypeVariableType<TimeSeriesType>>{
+        util::symbol{"RESOLVER_RETRY_OUTPUT"},
+        std::vector<const TimeSeriesType *>{&RETRY_REJECTED_OUTPUT::type(), &RETRY_ACCEPTED_OUTPUT::type()}};
+    [[maybe_unused]] static const auto &output_registration = TypeRegistry::register_static(output.get());
+
+    auto key_resolver_calls = std::size_t{};
+    auto value_resolver_calls = std::size_t{};
+    auto resolvers = std::vector<VariableResolver>{};
+    resolvers.emplace_back(&RETRY_KEY::type(), [&](const TypeMap &type_map,
+                                                   const WiringArguments &arguments) -> TypeMapValue {
+        ++key_resolver_calls;
+        CHECK(&arguments.type_map() == &type_map);
+        return static_cast<const Type *>(&int64_type());
+    });
+    resolvers.emplace_back(&RETRY_VALUE::type(), [&](const TypeMap &) -> TypeMapValue {
+        ++value_resolver_calls;
+        return static_cast<const Type *>(&double_type());
+    });
+
+    const auto signature = Signature{util::symbol{"resolver_retry"}, {}, output.get(),
+                                     std::move(resolvers)};
+    auto type_map = TypeMap{};
+    const auto descriptors = std::span<const details::WiringArgumentDescriptor>{};
+    const auto arguments = WiringArguments{signature, type_map, descriptors};
+    const auto resolved = signature.complete_inferred_output(type_map, TSD<i64, TS<double>>::type(), &arguments);
+
+    CHECK(resolved.output == &TSD<i64, TS<double>>::type());
+    CHECK(key_resolver_calls == 2);
+    CHECK(value_resolver_calls == 1);
+}
+
+TEST_CASE("resolver reads through a type-map overlay are observed",
+          "[feature:wiring][declaration:generic]") {
+    auto resolvers = std::vector<VariableResolver>{};
+    resolvers.emplace_back(&OBSERVED_OUTPUT::type(), [](const TypeMap &type_map) -> TypeMapValue {
+        auto overlay = type_map.overlay();
+        const auto *mapping = overlay.find(OBSERVED_DEPENDENCY::type());
+        return *mapping;
+    });
+    resolvers.emplace_back(&OBSERVED_DEPENDENCY::type(), [](const TypeMap &) -> TypeMapValue {
+        return static_cast<const Type *>(&int64_type());
+    });
+
+    const auto signature = Signature{util::symbol{"resolver_observed"}, {}, TS<OBSERVED_OUTPUT>::type(),
+                                     std::move(resolvers)};
+    auto type_map = TypeMap{};
+    auto observed_type_variables = std::vector<const Variable *>{};
+    const auto resolved = signature.complete_resolution(type_map, nullptr, {}, &observed_type_variables);
+
+    CHECK(resolved.output == &TS<i64>::type());
+    CHECK(std::ranges::contains(observed_type_variables, &OBSERVED_DEPENDENCY::type()));
 }
 
 TEST_CASE("aggregate resolver discovery follows nested type traits",

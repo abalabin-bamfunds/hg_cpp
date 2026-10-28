@@ -142,7 +142,8 @@ class DispatchBranchTemplate final : public WiringTemplate {
         bind_materialisation_forms(wiring, *branch_.implementation, committed.arguments, branch_.argument_forms);
         require_concrete_materialisation_forms(wiring, *branch_.implementation, committed.arguments,
                                                branch_.argument_forms);
-        auto resolution = SignatureResolution{branch_.resolution.signature, branch_.resolution.type_map.copy()};
+        auto resolution = SignatureResolution{branch_.resolution.signature, branch_.resolution.type_map.copy(),
+                                              branch_.resolution.infer_output};
         const auto result = invoke_resolved(wiring, *branch_.implementation, std::move(resolution),
                                             committed.arguments, committed.descriptors, dispatch_signature_->name());
         if (!result) {
@@ -613,8 +614,11 @@ std::optional<WiringPoint> wire_dispatch(GraphWiring &wiring, const Signature &d
 
         auto selected = std::move(*resolution.selected);
         const auto *implementation_output = selected.resolution.signature.output;
-        if (has_output != (implementation_output != nullptr)) {
+        if (has_output != (implementation_output != nullptr || selected.resolution.infer_output)) {
             throw WiringError{"dispatch implementations must match the declared output presence"};
+        }
+        if (selected.resolution.infer_output && output_contract == nullptr) {
+            throw WiringError{"dispatch requires a resolved output contract when an implementation infers its output"};
         }
         auto dispatch_parameters = std::vector<std::pair<std::size_t, std::size_t>>{};
         for (const auto dispatch_input : selected_inputs) {

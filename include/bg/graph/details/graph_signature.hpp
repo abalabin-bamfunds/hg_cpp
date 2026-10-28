@@ -155,7 +155,7 @@ template <typename Function> const TimeSeriesType &graph_output_type() {
     if constexpr (time_series_variable<TimeSeries>) {
         return time_series_variable_instance<TimeSeries>();
     } else {
-        return time_series_type_for<Function, graph_callable<Function>::argument_count, TimeSeriesTypeRole::output,
+        return time_series_type_for<Function, graph_callable<Function>::argument_count, TimeSeriesTypeRole::declaration,
                                     TimeSeries>(
             TimeSeriesGuarantee::ordinary);
     }

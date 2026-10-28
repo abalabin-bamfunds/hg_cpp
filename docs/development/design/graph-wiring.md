@@ -154,8 +154,10 @@ Consumers can use only its advertised options. Ordinary wiring points provide
 their semantic type directly, including lazy bundles.
 
 `GraphWiring::materialisation_form(point, target)` returns the original point
-when its direct form satisfies `target`. Otherwise it selects an advertised
-materialisation form without expanding it.
+when its direct form satisfies `target` without creating a reference. A value
+point requested as `REF<TS_T>` still follows reference conversion, even when
+the reference type accepts the value type. Otherwise the method selects an
+advertised materialisation form without expanding it.
 
 `GraphWiring::expand_materialisation` runs the selected materialisation
 callback immediately and caches its result by source point and target type.
@@ -429,11 +431,11 @@ prior context when the activation ends.
 `WiringTemplate` is the common base of node templates and graph templates. A
 call:
 
-1. resolves and checks its signature
+1. resolves and checks its parameters and any output type available before invocation
 2. calculates its label
 3. creates a child wiring path and activates its wiring context
 4. invokes the template implementation
-5. checks the returned output against the resolved signature
+5. checks the returned output against its declaration
 
 A node template adds one wired node. A graph template invokes its graph function
 and can add any number of wired nodes.
@@ -516,6 +518,13 @@ parameter uses `wp<TS_T>`. Scalar parameters use their scalar types or
 `Scalar<T>` for borrowed access, including scalar type variables. Forwarding a
 scalar view copies its value into the receiving wiring argument. The return
 type is `wp<TS_T>` or `void`.
+
+When a graph's output remains unmapped after resolving its parameters, wiring
+selects its input forms and invokes its body once. The returned wiring point
+determines the remaining output mappings. Wiring checks the original output
+declaration using the established input mappings and validates the resolved
+output type. An incompatible result fails the call. Supplied output resolvers
+retain their ordinary error behavior.
 
 Callable and aggregate graph input parameters may use
 `wp<Union<"FORM", TS_A, TS_B>>` when every alternative is a supported time

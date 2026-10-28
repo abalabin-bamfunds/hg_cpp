@@ -592,16 +592,22 @@ lets one output represent alternative producers without discarding their shared
 time series structure.
 
 An omitted guarantee on a node or graph parameter accepts and preserves the
-source guarantee. An omitted output guarantee resolves to `ordinary`, except
-that a `REF` output resolves to `deduplicated`. An explicit `ordinary` guarantee
-disables this default.
+source guarantee. Node output construction applies output defaults: an omitted
+guarantee resolves to `ordinary`, except that a `REF` output resolves to
+`deduplicated`. An explicit `ordinary` guarantee disables this default.
+
+A graph result declaration uses declaration semantics. Its omitted guarantee,
+including a `REF` guarantee, resolves to `ordinary`. Wiring checks the returned
+point against that declaration and returns the point unchanged, preserving any
+stronger guarantee for downstream consumers. An explicit graph result guarantee
+remains a minimum requirement.
 
 Wiring-point annotation checks use normal type compatibility, including
 contained time series. An omitted reference guarantee accepts the supplied
 guarantee; an explicit guarantee remains a minimum requirement. The annotation
 retains the wiring point's actual type.
 
-Output construction applies defaults to the output and its contained time
+Node output construction applies defaults to the output and its contained time
 series. A reference target is a neutral declaration, not an output owned by
 that reference. For example, `Out<TSD<K, REF<V>>>` defaults its item references
 to `deduplicated`; `Out<REF<TSD<K, REF<V>>>>` defaults only the root reference.

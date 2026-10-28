@@ -1143,7 +1143,7 @@ auto run_graph_bound_target(const Graph &graph, const GraphRunOptions &options, 
         return run_graph_target<typename FunctionInfo::output_scalar>(
             graph_template.signature(), options,
             [&](std::span<const WiringArgument> arguments) {
-                return graph_template.invoke_with_inferred_output(arguments);
+                return WiringContext::current().wiring().invoke(graph_template, arguments);
             },
             std::forward<Inputs>(inputs)...);
     }
@@ -1166,7 +1166,7 @@ auto run_graph_bound_descriptor_range_target(const Graph &graph, const GraphRunO
         return run_graph_descriptor_range_target<typename FunctionInfo::output_scalar>(
             graph_template.signature(), options,
             [&](std::span<const WiringArgument> arguments) {
-                return graph_template.invoke_with_inferred_output(arguments);
+                return WiringContext::current().wiring().invoke(graph_template, arguments);
             },
             inputs);
     }

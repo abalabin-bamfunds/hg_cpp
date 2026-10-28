@@ -64,7 +64,7 @@ bool valid_resolver_mapping(const Variable &variable, const TypeMapValue &mappin
     return false;
 }
 
-enum class ResolverState : unsigned char { pending, active, complete };
+enum class ResolverState : unsigned char { pending, active };
 
 struct ResolverContext {
     std::span<const VariableResolver> resolvers;
@@ -85,10 +85,6 @@ const TypeMapValue *resolve_missing_mapping(void *context, TypeMap &type_map, co
             throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, variable.name(),
                                       "variable resolver dependency cycle"};
         }
-        if (resolution.states[index] == ResolverState::complete) {
-            throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, variable.name(),
-                                      "variable resolver completed without a mapping"};
-        }
         if (found->requires_arguments && resolution.arguments == nullptr) {
             throw TypeResolutionError{TypeResolutionErrorCode::unmapped_variable, variable.name(),
                                       "variable resolver requires wiring arguments"};
@@ -96,16 +92,16 @@ const TypeMapValue *resolve_missing_mapping(void *context, TypeMap &type_map, co
 
         resolution.states[index] = ResolverState::active;
         auto restore_state = util::scope_exit{[&]() noexcept { resolution.states[index] = ResolverState::pending; }};
-        auto mapping = found->resolve(type_map, resolution.arguments);
+        auto arguments = resolution.arguments == nullptr
+                             ? std::optional<WiringArguments>{}
+                             : std::optional{resolution.arguments->with_type_map(type_map)};
+        auto mapping = found->resolve(type_map, arguments ? &*arguments : nullptr);
         if (!valid_resolver_mapping(variable, mapping)) {
             throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, variable.name(),
                                       "variable resolver returned an incompatible value"};
         }
 
         type_map.set(variable, std::move(mapping));
-        resolution.states[index] = ResolverState::complete;
-        restore_state.release();
-
         return type_map.find(variable);
     } catch (const details::ResolverTypeResolutionError &) {
         throw;
@@ -594,10 +590,12 @@ void Signature::validate_wiring_arguments(std::span<const WiringArgument> argume
 ResolvedWiringSignatureMatch Signature::complete_wiring_match(
     WiringSignatureMatch match, const WiringArguments &argument_context,
     const std::function<void(const TypeMap &)> &completion,
-    std::vector<const Variable *> *observed_type_variables) const {
+    std::vector<const Variable *> *observed_type_variables, bool allow_inferred_output) const {
     auto arguments = argument_context.with_type_map(match.type_map);
-    auto signature = complete_resolution(match.type_map, &arguments, completion, observed_type_variables);
-    auto resolution = SignatureResolution{std::move(signature), std::move(match.type_map)};
+    auto infer_output = false;
+    auto signature = complete_resolution_impl(match.type_map, &arguments, completion, observed_type_variables,
+                                              allow_inferred_output ? &infer_output : nullptr);
+    auto resolution = SignatureResolution{std::move(signature), std::move(match.type_map), infer_output};
     return {std::move(resolution), std::move(match.argument_forms), match.materialisation_cost};
 }
 
@@ -605,6 +603,33 @@ ResolvedSignature Signature::complete_resolution(
     TypeMap &type_map, const WiringArguments *arguments,
     const std::function<void(const TypeMap &)> &completion,
     std::vector<const Variable *> *observed_type_variables) const {
+    return complete_resolution_impl(type_map, arguments, completion, observed_type_variables, nullptr);
+}
+
+ResolvedSignature Signature::complete_inferred_output(TypeMap &type_map, const TimeSeriesType &actual_output,
+                                                      const WiringArguments *arguments) const {
+    if (output_ == nullptr) {
+        throw TypeResolutionError{TypeResolutionErrorCode::mismatch, name_,
+                                  "an outputless signature cannot infer an output"};
+    }
+
+    auto resolver_context = ResolverContext{resolvers_, arguments, std::vector<ResolverState>(resolvers_.size())};
+    type_map.missing_mapping_handler(&resolver_context, &resolve_missing_mapping);
+    auto clear_handler = util::scope_exit{[&]() noexcept { type_map.missing_mapping_handler(nullptr, nullptr); }};
+
+    if (!output_->match(actual_output, type_map)) {
+        throw TypeResolutionError{TypeResolutionErrorCode::mismatch, name_,
+                                  "the graph result does not satisfy its output declaration", output_,
+                                  &actual_output};
+    }
+
+    return complete_resolution_impl(type_map, arguments, {}, nullptr, nullptr);
+}
+
+ResolvedSignature Signature::complete_resolution_impl(
+    TypeMap &type_map, const WiringArguments *arguments,
+    const std::function<void(const TypeMap &)> &completion,
+    std::vector<const Variable *> *observed_type_variables, bool *infer_output) const {
     auto resolver_context = ResolverContext{resolvers_, arguments, std::vector<ResolverState>(resolvers_.size())};
     type_map.missing_mapping_handler(&resolver_context, &resolve_missing_mapping);
     auto clear_handler = util::scope_exit{[&]() noexcept { type_map.missing_mapping_handler(nullptr, nullptr); }};
@@ -633,13 +658,22 @@ ResolvedSignature Signature::complete_resolution(
 
     const TimeSeriesType *output = nullptr;
     if (output_ != nullptr) {
-        const Type &resolved_output = output_->resolve(type_map);
-        if (!resolved_output.is_time_series()) {
-            throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, name_,
-                                      "output did not resolve to a time series type"};
-        }
+        try {
+            const Type &resolved_output = output_->resolve(type_map);
+            if (!resolved_output.is_time_series()) {
+                throw TypeResolutionError{TypeResolutionErrorCode::invalid_type_map, name_,
+                                          "output did not resolve to a time series type"};
+            }
 
-        output = static_cast<const TimeSeriesType *>(&resolved_output);
+            output = static_cast<const TimeSeriesType *>(&resolved_output);
+        } catch (const details::ResolverTypeResolutionError &) {
+            throw;
+        } catch (const TypeResolutionError &error) {
+            if (infer_output == nullptr || error.code() != TypeResolutionErrorCode::unmapped_variable) {
+                throw;
+            }
+            *infer_output = true;
+        }
     }
 
     auto signature = ResolvedSignature{name_, std::move(parameters), output};

@@ -448,6 +448,16 @@ TEST_CASE("graph types resolve variables from their parameters and output",
     CHECK(std::get<const Type *>(*type_map.find(VALUE::type())) == &cpp_scalar_type<i64>());
 }
 
+TEST_CASE("graph result declarations use declaration guarantee defaults",
+          "[feature:type-system][feature:graph-argument][guarantee:ordinary]") {
+    using DefaultReference = GRAPH<auto() -> REF<TS<i64>>>;
+    using ExplicitReference = GRAPH<auto() -> REF<TS<i64, TimeSeriesGuarantee::ordinary>,
+                                                   TimeSeriesGuarantee::deduplicated>>;
+
+    CHECK(DefaultReference::type().output()->guarantee().value() == TimeSeriesGuarantee::ordinary);
+    CHECK(ExplicitReference::type().output()->guarantee().value() == TimeSeriesGuarantee::deduplicated);
+}
+
 TEST_CASE("graph signature interning is independent of structural patterns",
           "[feature:operator][feature:type-system][feature:graph-argument]") {
     using Prototype = auto(TS<i64, TimeSeriesGuarantee::ordinary>) -> TS<i64, TimeSeriesGuarantee::ordinary>;

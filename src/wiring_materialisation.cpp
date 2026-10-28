@@ -102,13 +102,14 @@ WiringCallPreparation::WiringCallPreparation(const Signature &signature,
 
 WiringCallPreparationResult WiringCallPreparation::complete(
     std::span<const unsigned char> preserved_inputs, const WiringArguments &argument_context,
-    const std::function<void(const TypeMap &)> &completion) {
+    const std::function<void(const TypeMap &)> &completion, bool allow_inferred_output) {
     auto result = WiringCallPreparationResult{};
     auto matches = std::move(matches_);
     result.calls.reserve(matches.size());
     for (auto &match : matches) {
         try {
-            auto resolved = signature_->complete_wiring_match(std::move(match), argument_context, completion);
+            auto resolved = signature_->complete_wiring_match(std::move(match), argument_context, completion,
+                                                              nullptr, allow_inferred_output);
             result.calls.push_back({std::move(resolved), preserved_inputs});
         } catch (const TypeResolutionError &) {
             if (result.completion_error == nullptr) {

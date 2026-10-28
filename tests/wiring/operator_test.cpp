@@ -379,6 +379,35 @@ TEST_CASE("operator graph resolvers cache scalar-dependent outputs separately",
     CHECK(body_calls == 4);
 }
 
+TEST_CASE("selected operator graphs infer output-only variables and retain inference in the cache",
+          "[feature:operator][feature:wiring][feature:type-system]") {
+    using RESULT = TimeSeriesVariable<"OPERATOR_INFERRED_RESULT">;
+
+    auto body_calls = std::size_t{};
+    auto operation = operator_<RESULT, auto(TS<SCALAR>) -> RESULT>{"inferred_result", {"value"}};
+    const auto source = node([](Out<TS<float>>) {});
+    const auto floating_source = node([](Out<TS<double>>) {});
+    const auto integer_source = node([](Out<TS<i64>>) {});
+    operation.overload(graph<RESULT>("name"_n = "inferred_result_impl",
+                                     [&](wp<TS<SCALAR>>) -> wp<RESULT> {
+                                         if (body_calls++ == 0) {
+                                             return wp<RESULT>{floating_source()};
+                                         }
+                                         return wp<RESULT>{integer_source()};
+                                     }));
+
+    auto wiring = GraphWiring{};
+    {
+        const auto context = WiringContext{wiring};
+        const auto first = operation(source());
+        const auto repeated = operation(source());
+        CHECK(&first.type() == &TS<double>::type());
+        CHECK(&repeated.type() == &TS<i64>::type());
+    }
+
+    CHECK(body_calls == 2);
+}
+
 TEST_CASE("overload registration invalidates resolution caches in every live root",
           "[feature:operator][feature:wiring]") {
     auto generic_requirement_calls = 0;

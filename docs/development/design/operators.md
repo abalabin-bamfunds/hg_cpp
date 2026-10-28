@@ -133,6 +133,9 @@ with dispatch inputs adapted to its declared input types. Scalar-value time
 series outputs can be adapted to the declared output type. Collection outputs
 currently require identical dereferenced types.
 
+When an implementation infers its output from its returned wiring point, the
+dispatch output contract must resolve before wiring its branches.
+
 ## Overload implementation declarations
 
 `<bg/overload.hpp>` provides declarations for library initialization:
@@ -200,7 +203,8 @@ For each candidate, resolution proceeds in this order:
    [signature defaults](graph-wiring.md#default-arguments), then from the
    candidate implementation's defaults.
 2. Validate argument qualifiers and scalar presence, then match the argument types.
-3. Resolve its parameter and output types. This demands only mappings those types use.
+3. Resolve its parameter types and any output type available before invocation.
+   This demands only mappings those types use.
 4. Resolve any additional types needed by the wiring template's metadata.
 5. Run the requirement while resolver lookup remains active.
 6. Retain the candidate when each demand and its requirement succeeds.
@@ -241,6 +245,9 @@ observable type mappings remain ambiguous.
 Graph overloads with Union parameters receive the original wiring point and
 can select its form inside the graph body. Node overloads receive the selected
 concrete form. Materialisation runs only after selection.
+
+Selected graph overloads use [graph output inference](graph-wiring.md#graph-templates)
+when their output remains unmapped during candidate resolution.
 
 ## Optional arguments
 
@@ -308,6 +315,10 @@ preferences remain ambiguous.
 A resolver supplies a variable that argument matching did not map. Resolvers
 run on demand and can depend on other type map entries and wiring-time scalar
 arguments. Resolution detects dependency cycles.
+
+A resolver invoked during tentative matching sees that match's mappings and
+its inherited mappings. Discarding the match also discards mappings produced
+by its resolvers.
 
 A type resolver returns a reference or pointer to a persistent semantic type
 obtained from a declaration's `type()` function or a type registry.

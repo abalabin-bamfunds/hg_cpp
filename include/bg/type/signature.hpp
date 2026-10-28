@@ -84,6 +84,8 @@ struct ResolvedSignature {
 struct SignatureResolution {
     ResolvedSignature signature;
     TypeMap type_map;
+    // A null output is pending graph output inference when this is true; otherwise it is a sink.
+    bool infer_output{};
 };
 
 struct WiringArgumentFormMatch {
@@ -137,7 +139,8 @@ class Signature {
     [[nodiscard]] ResolvedWiringSignatureMatch complete_wiring_match(
         WiringSignatureMatch match, const WiringArguments &argument_context,
         const std::function<void(const TypeMap &)> &completion = {},
-        std::vector<const Variable *> *observed_type_variables = nullptr) const;
+        std::vector<const Variable *> *observed_type_variables = nullptr,
+        bool allow_inferred_output = false) const;
     [[nodiscard]] TypeMap match_arguments(std::span<const Type *const> arguments,
                                           const TypeMap *type_map = nullptr) const;
     void validate_wiring_arguments(std::span<const WiringArgument> arguments) const;
@@ -147,6 +150,9 @@ class Signature {
         TypeMap &type_map, const WiringArguments *arguments = nullptr,
         const std::function<void(const TypeMap &)> &completion = {},
         std::vector<const Variable *> *observed_type_variables = nullptr) const;
+    [[nodiscard]] ResolvedSignature complete_inferred_output(
+        TypeMap &type_map, const TimeSeriesType &actual_output,
+        const WiringArguments *arguments = nullptr) const;
 
     util::symbol name() const noexcept { return name_; }
 
@@ -199,6 +205,10 @@ class Signature {
     void validate_variadic_parameters() const;
     void validate_graph_constraints(std::span<const WiringArgument> arguments) const;
     [[nodiscard]] SignatureResolution resolve_seeded(std::span<const Type *const> arguments, TypeMap type_map) const;
+    [[nodiscard]] ResolvedSignature complete_resolution_impl(
+        TypeMap &type_map, const WiringArguments *arguments,
+        const std::function<void(const TypeMap &)> &completion,
+        std::vector<const Variable *> *observed_type_variables, bool *infer_output) const;
 
     util::symbol name_;
     std::vector<Parameter> parameters_;

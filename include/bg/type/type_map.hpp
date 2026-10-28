@@ -26,25 +26,8 @@ class TypeMap {
     TypeMap &operator=(TypeMap &&) = default;
 
     const TypeMapValue *find(const Variable &variable) const {
-        const auto found = values_.find(&variable);
-
-        if (found != values_.end()) {
-            if (observed_reads_ != nullptr) {
-                observed_reads_->push_back(&variable);
-            }
-            return &found->second;
-        }
-
-        if (parent_ != nullptr) {
-            return parent_->find(variable);
-        }
-
-        return missing_mapping_ == nullptr
-                   ? nullptr
-                   : missing_mapping_(missing_mapping_context_, const_cast<TypeMap &>(*this), variable);
+        return find(variable, const_cast<TypeMap &>(*this));
     }
-
-    void set(const Variable &variable, TypeMapValue value) { values_.insert_or_assign(&variable, std::move(value)); }
 
     [[nodiscard]] TypeMap overlay() const { return TypeMap{this}; }
 
@@ -55,6 +38,8 @@ class TypeMap {
         result.matching_reference_target_ = matching_reference_target_;
         return result;
     }
+
+    void set(const Variable &variable, TypeMapValue value) { values_.insert_or_assign(&variable, std::move(value)); }
 
     void apply(TypeMap &&overlay) {
         for (auto &[variable, value] : overlay.values_) {
@@ -98,7 +83,26 @@ class TypeMap {
 
     using MissingMappingFunction = const TypeMapValue *(*)(void *, TypeMap &, const Variable &);
 
-    explicit TypeMap(const TypeMap *parent) : parent_(parent) {}
+    explicit TypeMap(const TypeMap *parent) : parent_(parent), observed_reads_{parent->observed_reads_} {}
+
+    const TypeMapValue *find(const Variable &variable, TypeMap &lookup_map) const {
+        const auto found = values_.find(&variable);
+
+        if (found != values_.end()) {
+            if (observed_reads_ != nullptr) {
+                observed_reads_->push_back(&variable);
+            }
+            return &found->second;
+        }
+
+        if (parent_ != nullptr) {
+            return parent_->find(variable, lookup_map);
+        }
+
+        return missing_mapping_ == nullptr
+                   ? nullptr
+                   : missing_mapping_(missing_mapping_context_, lookup_map, variable);
+    }
 
     [[nodiscard]] bool apply_compatible(TypeMap &&overlay) {
         const auto compatible = std::ranges::all_of(overlay.values_, [&](const auto &entry) {

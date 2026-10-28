@@ -262,7 +262,10 @@ WiringPoint GraphWiring::materialisation_form(WiringPoint point, const TimeSerie
     if (!point.has_output() || &point.graph() != this || !point.record()->graph_owned()) {
         throw WiringError{"a selected materialisation form requires a graph-owned point"};
     }
-    if (point.has_default_materialisation() && target_type.accepts(point.type())) {
+    const auto *target_reference = type_cast<TimeSeriesReferenceType>(&target_type);
+    const auto *source_reference = type_cast<TimeSeriesReferenceType>(&point.type());
+    if (point.has_default_materialisation() && target_type.accepts(point.type()) &&
+        (target_reference == nullptr || source_reference != nullptr)) {
         return point;
     }
 
@@ -270,7 +273,6 @@ WiringPoint GraphWiring::materialisation_form(WiringPoint point, const TimeSerie
     const auto exact_form = std::ranges::find(options, &target_type, &WiringMaterialisationOption::target_type);
     auto reference_source_target = static_cast<const TimeSeriesType *>(nullptr);
     auto selected_type = &target_type;
-    const auto *target_reference = type_cast<TimeSeriesReferenceType>(&target_type);
     if (exact_form != options.end()) {
         if (target_reference != nullptr) {
             reference_source_target = exact_form->target_type;

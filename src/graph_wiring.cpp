@@ -470,14 +470,15 @@ std::optional<WiringPoint> GraphWiring::invoke_resolved(const WiringTemplate &wi
                                                         SignatureResolution resolution,
                                                         std::span<const WiringArgument> arguments,
                                                         std::span<const details::WiringArgumentDescriptor> descriptors,
-                                                        util::symbol path_name, bool infer_output) {
+                                                        util::symbol path_name) {
     if (finalization_state_ == FinalizationState::finalized || finalization_state_ == FinalizationState::failed) {
         throw WiringError{"a finalized GraphWiring cannot accept more calls"};
     }
 
     auto signature = std::move(resolution.signature);
-
     const auto *expected_output = signature.output;
+    const auto *declared_output = wiring_template.signature().output();
+    const auto infer_output = resolution.infer_output;
     const auto label = wiring_template.label(signature, arguments, default_label());
     const auto &path = make_path(path_name, label);
     auto context = WiringContext{*this, path};
@@ -494,26 +495,35 @@ std::optional<WiringPoint> GraphWiring::invoke_resolved(const WiringTemplate &wi
     }
 
     try {
-        if (!infer_output && (expected_output == nullptr) != !output.has_value()) {
+        const auto has_result = output.has_value() && output->has_output();
+        const auto expects_result = infer_output ? declared_output != nullptr : expected_output != nullptr;
+        if (expects_result != has_result) {
             auto mismatch = call_context;
-            mismatch.expected_type = expected_output == nullptr ? "no output" : std::string{};
-            mismatch.actual_type = output ? std::string{} : "no output";
-            if (expected_output != nullptr) {
-                expected_output->format_name(mismatch.expected_type);
+            const auto *output_contract = infer_output ? declared_output : expected_output;
+            mismatch.expected_type = output_contract == nullptr ? "no output" : std::string{};
+            mismatch.actual_type = has_result ? std::string{} : "no output";
+            if (output_contract != nullptr) {
+                output_contract->format_name(mismatch.expected_type);
             }
-            if (output) {
+            if (has_result) {
                 output->type().format_name(mismatch.actual_type);
             }
             throw WiringError{"a wiring-template result does not match its output declaration"}
                 .with_context(std::move(mismatch));
         }
 
-        if (!output) {
+        if (!has_result) {
             return std::nullopt;
         }
 
         if (&output->graph() != this) {
             throw WiringError{"a wiring-template returned a WiringPoint from another GraphWiring"};
+        }
+
+        if (infer_output) {
+            signature = wiring_template.signature().complete_inferred_output(
+                resolution.type_map, output->type(), &argument_view);
+            expected_output = signature.output;
         }
 
         if (expected_output != nullptr && !expected_output->accepts(output->type())) {
