@@ -1,6 +1,17 @@
 # Adding and replacing frame columns
 
-Status: approved design; implementation in progress.
+Status: approved design; inferred-schema column assignments are implemented.
+
+The current implementation accepts concrete `TSC<T>` inputs and column
+expressions. Scalar broadcasting, explicit concrete output schema validation,
+and shared-materialisation profiling remain future work.
+
+Combined Release verification passes eight of nine CTest executables. The
+enclosing graph-template expression test fails because BG's named
+`WiringArgument` retains a non-canonical scalar by borrowing from its temporary
+named argument. The resulting empty column name is a BG lifetime defect; a core
+correction is awaiting user approval. See [HANDOFF](HANDOFF.md) for the exact
+build and test result.
 
 ## Purpose
 
@@ -23,7 +34,8 @@ The returned wiring point carries a resolved anonymous output schema.
 Runtime assignment names use a span of named `WiringArgument` values, following
 BG's existing dynamic argument API.
 
-An optional concrete output schema validates the calculated result:
+An optional concrete output schema will validate the calculated result in a
+future stage:
 
 ```cpp
 auto priced = frame::with_columns<EnrichedQuotes>(
@@ -31,12 +43,14 @@ auto priced = frame::with_columns<EnrichedQuotes>(
     "mid"_n = (frame::col("bid") + frame::col("ask")) / 2.0);
 ```
 
-Both forms use the same schema calculation and runtime node.
+The current API provides the inferred-schema form. Both forms are intended to
+use the same schema calculation and runtime node.
 
-An assignment accepts an unbound expression, a bound column expression, a
-concrete `TSC<T>`, a scalar constant, or a scalar time series. Scalar assignments
-broadcast over the source frame's rows. Expressions can capture scalar constants
-and scalar time series through the existing expression API.
+The current implementation accepts an unbound expression, a bound column
+expression, or a concrete `TSC<T>`. A future stage will add scalar constants and
+scalar time series, broadcast over the source frame's rows. Expressions can
+capture scalar constants and scalar time series through the existing expression
+API.
 
 All assignments read the input frame. An expression cannot refer to a column
 introduced by another assignment in the same call. Chain calls to express that
@@ -118,12 +132,15 @@ materialisation; the frame extension owns schema calculation and column binding.
 
 ## Implementation and verification
 
-1. Generalise borrowed-column binding and review its node API.
-2. Add wiring-time schema calculation and the inferred graph helper, including
-   dynamic assignment names, using existing materialisation.
-3. Add scalar broadcasting and concrete output schema validation.
-4. Verify concrete and runtime schemas, replacement, keys, nulls, source
-   additions/removals, independent column updates, scalar captures, rebinding,
-   and invalidation. Verify that borrowed buffers and row domains are shared.
-5. Verify shared expression results are materialised once. Measure the expression
-   and assembly nodes separately against the existing expression path.
+Implemented stages generalise borrowed-column binding and add wiring-time schema
+calculation with inferred output and dynamic assignment names. BG resolves the
+graph output schema from the selected graph result after the graph body runs
+once.
+
+Outstanding stages add scalar broadcasting and concrete output schema
+validation. Verification must cover concrete and runtime schemas, replacement,
+keys, nulls, source additions and removals, independent column updates, scalar
+captures, rebinding, and invalidation. Verify borrowed buffers and row domains
+are shared. Verify that shared expression results materialise once, then measure
+the expression and assembly nodes separately against the existing expression
+path.

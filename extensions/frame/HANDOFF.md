@@ -27,7 +27,9 @@ lane. They use the matching BG installs under
 Remaining stages:
 
 - Broadcast scalar constants and scalar time series over source membership.
-- Calculate output schemas and provide the `with_columns` graph helper.
+- Add explicit concrete output schema validation.
+- Complete coverage for source additions and removals, independent column
+  updates, rebinding, and invalidation.
 - Verify shared materialisation and measure expression and assembly nodes
   separately.
 
@@ -45,14 +47,16 @@ and the eight existing frame test executables. The runtime-schema case starts
 with `literal::SKIP` to test an invalid source. `literal::TimeSeriesLiteral{}`
 represents a valid empty frame.
 
-The enclosing graph-template case awaits the BG resolver update. Its output
-schema depends on mappings inferred while matching the graph arguments. The
-current resolver sees only the parent `TypeMap`; the approved core change will
-make the current matching map visible to dependent resolvers. The frame test
-will verify that the graph body runs once and that the inferred output schema
-reaches the observer. The lane also retains direct-form materialisation support
-in `a0b859b1`. Rebuild and run all nine Release test executables after the BG
-change is integrated.
+BG graph-output inference is integrated as `b9541dc6`. The combined BG and
+Arrow-on frame Release build completed successfully. Eight of nine CTest
+executables passed. `bg_frame_with_columns_test` fails in the enclosing
+graph-template case because an expression column name is empty. The frame
+assignment passes an `Expression` through `WiringArgument(named_argument)`;
+BG's named-argument constructor leaves non-canonical scalar values borrowed
+from its constructor-local named argument. The scalar is read after that object
+has been destroyed. A BG correction is awaiting user approval. The frame lane
+has no workaround for this lifetime issue. The frame lane also retains
+direct-form materialisation support in `a0b859b1`.
 
 ## Incremental numeric column sum
 
