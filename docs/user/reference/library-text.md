@@ -146,7 +146,9 @@ handling. Call `bg::logging::flush()` to wait for queued messages.
 C++ applications configure logging at startup with `<bg/logging.hpp>`.
 `initialize(sinks, pattern_options, backend_options)` accepts Quill's sink,
 `PatternFormatterOptions`, and `BackendOptions` types. The options are optional;
-an empty sink list selects stdout.
+an empty sink list selects stdout. The default pattern includes time, level,
+logger name, message, and any MDC fields. Time uses local wall time with
+microsecond precision. Thread ID and source location are omitted.
 
 ```cpp
 #include <bg/logging.hpp>

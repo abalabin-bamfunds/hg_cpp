@@ -45,11 +45,16 @@ quill::Logger *initialize_lazily() {
         return state.logger;
     }
 
-    state.logger = quill::Frontend::create_or_get_logger("bg", stdout_sink());
+    state.logger = quill::Frontend::create_or_get_logger("bg", stdout_sink(), default_pattern_options());
     return state.logger;
 }
 
 } // namespace
+
+quill::PatternFormatterOptions default_pattern_options() {
+    return quill::PatternFormatterOptions{"%(time) LOG_%(log_level:<9) %(logger:<12) %(message)%(mdc)",
+                                         "%H:%M:%S.%Qus"};
+}
 
 quill::Logger *initialize(std::vector<std::shared_ptr<quill::Sink>> sinks,
                           const quill::PatternFormatterOptions &pattern,

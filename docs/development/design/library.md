@@ -635,7 +635,10 @@ backend_options)` for application startup. It uses Quill's configuration types
 and rejects initialization after BG's logger exists or Quill's backend starts.
 Initialization paths are serialized; subsequent `logger()` calls return a cached
 pointer. Empty sinks select stdout. Lazy initialization retains the same default
-and adopts an existing application-managed `bg` logger.
+and adopts an existing application-managed `bg` logger. The default pattern
+includes time, level, logger name, message, and MDC fields. It omits thread ID
+and source location and formats local wall time with microsecond precision.
+Explicit pattern options replace these defaults.
 `bg::logging::logger()` exposes runtime level changes through Quill;
 `bg::logging::flush()` waits for queued messages.
 
