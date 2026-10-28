@@ -153,6 +153,10 @@ A deferred point does not provide its semantic type as a direct representation.
 Consumers can use only its advertised options. Ordinary wiring points provide
 their semantic type directly, including lazy bundles.
 
+`GraphWiring::materialisation_form(point, target)` returns the original point
+when its direct form satisfies `target`. Otherwise it selects an advertised
+materialisation form without expanding it.
+
 `GraphWiring::expand_materialisation` runs the selected materialisation
 callback immediately and caches its result by source point and target type.
 The result may remain a lazy wiring record. A callback that wires graph

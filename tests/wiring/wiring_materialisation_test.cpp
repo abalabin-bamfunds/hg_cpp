@@ -2680,3 +2680,57 @@ TEST_CASE("materialisation preparation rejects an incompatible target for a defa
 
     CHECK_THROWS_AS(wiring.require_materialisation(input, bg::TS<bool>::type()), bg::WiringError);
 }
+
+TEST_CASE("a compatible direct point is its own selected materialisation form",
+          "[feature:wiring-materialisation][feature:wiring]") {
+    const auto source = bg::node([](bg::Out<bg::TS<bg::i64, bg::TimeSeriesGuarantee::final>>) {});
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    const auto input = source();
+    const auto node_count = wiring.nodes().size();
+
+    const auto selected = wiring.materialisation_form(input, bg::TS<bg::i64>::type());
+
+    CHECK(selected.record() == static_cast<bg::WiringPoint>(input).record());
+    CHECK(wiring.nodes().size() == node_count);
+}
+
+TEST_CASE("materialisation form rejects incompatible direct and foreign points",
+          "[feature:wiring-materialisation][feature:wiring]") {
+    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    const auto input = source();
+
+    CHECK_THROWS_AS(wiring.materialisation_form(input, bg::TS<bool>::type()), bg::WiringError);
+
+    auto foreign_wiring = bg::GraphWiring{};
+    auto foreign_point = bg::WiringPoint{};
+    {
+        const auto foreign_context = bg::WiringContext{foreign_wiring};
+        foreign_point = source();
+    }
+
+    try {
+        (void)wiring.materialisation_form(foreign_point, bg::TS<bg::i64>::type());
+        FAIL("expected a foreign graph wiring point to be rejected");
+    } catch (const bg::WiringError &error) {
+        CHECK(std::string_view{error.what()} == "a selected materialisation form requires a graph-owned point");
+    }
+}
+
+TEST_CASE("a deferred point requires an advertised selected materialisation form",
+          "[feature:wiring-materialisation][feature:wiring]") {
+    const auto source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
+    auto wiring = bg::GraphWiring{};
+    const auto context = bg::WiringContext{wiring};
+    const auto input = source();
+
+    const auto deferred = wiring.create_wp<bg::TS<bg::i64>>(input);
+    try {
+        (void)wiring.materialisation_form(deferred, bg::TS<bg::i64>::type());
+        FAIL("expected an unadvertised deferred materialisation form to be rejected");
+    } catch (const bg::WiringError &error) {
+        CHECK(std::string_view{error.what()} == "a selected materialisation form must name an advertised target");
+    }
+}

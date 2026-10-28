@@ -262,6 +262,10 @@ WiringPoint GraphWiring::materialisation_form(WiringPoint point, const TimeSerie
     if (!point.has_output() || &point.graph() != this || !point.record()->graph_owned()) {
         throw WiringError{"a selected materialisation form requires a graph-owned point"};
     }
+    if (point.has_default_materialisation() && target_type.accepts(point.type())) {
+        return point;
+    }
+
     const auto options = point.materialisation_options();
     const auto exact_form = std::ranges::find(options, &target_type, &WiringMaterialisationOption::target_type);
     auto reference_source_target = static_cast<const TimeSeriesType *>(nullptr);
