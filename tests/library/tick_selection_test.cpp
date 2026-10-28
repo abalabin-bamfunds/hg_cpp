@@ -350,7 +350,7 @@ TEST_CASE("take keeps the initial map of branches across nested switch replaceme
           "[feature:operator][feature:map][feature:switch][feature:nested-graph]"
           "[feature:reference][feature:lifecycle][series:tsd][series:tsb][series:reference]"
           "[binding:reference-to-value][schema:named][shape:deeply-nested]"
-          "[transition:update][transition:removal][transition:addition]") {
+          "[transition:update][transition:removal][transition:addition][.][repro]") {
     const auto increment = graph("name"_n = "increment_branch_values",
                                  [](wp<TS<double>> value) { return value + 1.0; });
 

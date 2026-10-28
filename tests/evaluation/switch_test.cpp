@@ -769,7 +769,8 @@ TEST_CASE("switch crosses an additional nested graph boundary",
 TEST_CASE("switch branches consume a reduced TSD value",
           "[feature:switch][feature:reduce][feature:nested-graph][shape:doubly-nested]"
           "[series:tsd][transition:update][definition:function]") {
-    const auto sum_values = node([](i64 left, i64 right) { return left + right; });
+    const auto sum_values = graph("name"_n = "sum_switch_values",
+                                  [](wp<TS<i64>> left, wp<TS<i64>> right) { return left + right; });
     const auto tested = [=](wp<TS<i64>> key, wp<TSD<i64, TS<i64>>> values) {
         const auto total = reduce(sum_values, values, "default"_n = i64{0});
         return switch_(key,
@@ -791,7 +792,8 @@ template <template <typename, auto...> typename Field> struct ReducedPair {
 TEST_CASE("switch passes a reduced value through a free bundle argument",
           "[feature:switch][feature:reduce][feature:nested-graph][series:tsd][series:tsb]"
           "[schema:named][representation:free][shape:doubly-nested]") {
-    const auto sum_values = node([](i64 left, i64 right) { return left + right; });
+    const auto sum_values = graph("name"_n = "sum_switch_values",
+                                  [](wp<TS<i64>> left, wp<TS<i64>> right) { return left + right; });
     const auto tested = [=](wp<TS<i64>> key, wp<TSD<i64, TS<i64>>> values) {
         const auto total = reduce(sum_values, values, "default"_n = i64{0});
         const auto arguments = bundle<TSB<ReducedPair>>(

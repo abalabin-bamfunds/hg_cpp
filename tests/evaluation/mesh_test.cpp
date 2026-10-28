@@ -592,7 +592,8 @@ TEST_CASE("mesh supports source and sink graphs",
     CHECK(recorded_values == std::vector<i64>{1, 2});
 }
 
-const auto sum_mesh_values = node([](i64 left, i64 right) { return left + right; });
+const auto sum_mesh_values = graph("name"_n = "sum_mesh_values",
+                                   [](wp<TS<i64>> left, wp<TS<i64>> right) { return left + right; });
 
 TEST_CASE("reduce combines mesh outputs as branches update and disappear",
           "[feature:mesh][feature:reduce][feature:nested-graph][series:tsd]"
