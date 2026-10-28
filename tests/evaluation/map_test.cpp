@@ -9,6 +9,7 @@
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
+#include <bg/time_series/tick_format.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -17,6 +18,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace {
@@ -960,8 +962,8 @@ TEST_CASE("each mapped graph reads the context for its own key",
     CHECK(actual.equals({{{1, 11}, {2, 20}}, {{1, 15}, {2, 23}}}));
 }
 
-TEST_CASE("repro: map makes a removed key available from a retained mapped reference",
-          "[.][repro][feature:map][feature:nested-graph][feature:reference][series:tsd][series:tss]") {
+TEST_CASE("map restores a removed key through a retained mapped reference",
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd][series:tss]") {
     const auto identity = graph("name"_n = "identity_value", [](wp<TS<i64>> value) { return value; });
     const auto select_value = graph("name"_n = "select_mapped_value",
                                     [](wp<TS<i64>> key, wp<TS<i64>> value) { return value; });
@@ -1007,6 +1009,14 @@ TEST_CASE("repro: map retargets a selected dictionary reference across a nested 
         {{{1, 1}, {2, 2}}, literal::SKIP, {{1, 3}}, {{1, 4}}},
         {{{1, 10}, {2, 20}}, {{1, 11}}, literal::SKIP, literal::SKIP},
         {true, true, true, true});
+
+    auto observed = std::vector<std::string>{};
+    for (auto index = std::size_t{}; index < actual.size(); ++index) {
+        actual.visit_tick(index, [&](const TimeSeriesType &type, bool valid, util::buffer_reader &reader) {
+            observed.push_back(fmt::format("{}", tick(type, valid, reader)));
+        });
+    }
+    CAPTURE(observed);
 
     CHECK(actual.equals({{{1, 1}, {2, 2}}, {{1, 11}, {2, 20}}, {{1, 3}, {2, 2}}, {{1, 4}}}));
 }
