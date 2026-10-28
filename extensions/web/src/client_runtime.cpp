@@ -3,7 +3,6 @@
 #include "client_output.hpp"
 #include "http_header.hpp"
 
-#include <bg/literal/scalar_literal.hpp>
 #include <bg/literal/time_series_literal.hpp>
 #include <bg/scalar/bundle/value.hpp>
 #include <bg/scalar/bytes_builder.hpp>
@@ -39,7 +38,6 @@ namespace {
 
 using HeaderPair = Tuple<string, string>;
 using HeaderValues = std::vector<std::pair<std::string, std::string>>;
-using Literal = literal::ScalarLiteral;
 using namespace bg::literals;
 
 struct Transfer {
@@ -227,24 +225,16 @@ std::optional<std::string> Transfer::validate() const {
 
 ScalarValue<Bundle<HttpResponse>> response_value(i64 status, HeaderValues headers,
                                                  ScalarValue<bytes> body_value) {
-    auto header_pairs = std::vector<std::array<Literal, 2>>{};
-    header_pairs.reserve(headers.size());
     for (auto &[name, raw_value] : headers) {
         auto value = std::string{};
         details::append_latin1_header_value_as_utf8(value, raw_value);
         raw_value = std::move(value);
-        header_pairs.push_back({Literal(name), Literal(raw_value)});
     }
-    auto header_items = std::vector<Literal>{};
-    header_items.reserve(header_pairs.size());
-    for (const auto &pair : header_pairs) header_items.emplace_back(std::span<const Literal>{pair});
 
     auto memory = allocator{};
-    return ScalarValue<Bundle<HttpResponse>>::from_literal(
-        Literal{{"status", status},
-                {"headers", Literal(std::span<const Literal>{header_items})},
-                {"body", body_value.view()}},
-        memory);
+    return bundle<HttpResponse>(memory, "status"_n = status,
+                                "headers"_n = std::span<const std::pair<std::string, std::string>>{headers},
+                                "body"_n = body_value.view());
 }
 
 ScalarValue<Bundle<HttpResponse>> error_response(std::string_view message) {

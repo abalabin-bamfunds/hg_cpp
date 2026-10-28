@@ -1,7 +1,6 @@
 #include "server_runtime.hpp"
 #include "http_header.hpp"
 
-#include <bg/literal/scalar_literal.hpp>
 #include <bg/literal/time_series_literal.hpp>
 #include <bg/scalar/bundle/scalar.hpp>
 #include <bg/scalar/bundle/value.hpp>
@@ -41,7 +40,6 @@ namespace asio = boost::asio;
 namespace beast = boost::beast;
 namespace http = beast::http;
 using tcp = asio::ip::tcp;
-using Literal = literal::ScalarLiteral;
 using RequestHeaders = std::vector<std::pair<std::string, std::string>>;
 using namespace bg::literals;
 
@@ -93,34 +91,20 @@ ScalarValue<Bundle<HttpServerRequest>> request_value(const http::request<http::s
         headers.emplace_back(name, std::move(value));
     }
 
-    auto query_pairs = std::vector<std::array<Literal, 2>>{};
-    query_pairs.reserve(target.query.size());
-    for (const auto &[name, value] : target.query) query_pairs.push_back({Literal(name), Literal(value)});
-    auto query_items = std::vector<Literal>{};
-    query_items.reserve(query_pairs.size());
-    for (const auto &pair : query_pairs) query_items.emplace_back(std::span<const Literal>{pair});
-
-    auto header_pairs = std::vector<std::array<Literal, 2>>{};
-    header_pairs.reserve(headers.size());
-    for (const auto &[name, value] : headers) header_pairs.push_back({Literal(name), Literal(value)});
-    auto header_items = std::vector<Literal>{};
-    header_items.reserve(header_pairs.size());
-    for (const auto &pair : header_pairs) header_items.emplace_back(std::span<const Literal>{pair});
-
     const auto body = std::span<const std::byte>{reinterpret_cast<const std::byte *>(request.body().data()),
                                                  request.body().size()};
     const auto address = peer.address().to_string();
     const auto port = static_cast<i64>(peer.port());
     auto memory = allocator{};
-    return ScalarValue<Bundle<HttpServerRequest>>::from_literal(
-        Literal{{"method", std::string_view{request.method_string().data(), request.method_string().size()}},
-                {"target", std::string_view{request.target().data(), request.target().size()}},
-                {"path", target.path},
-                {"query", Literal(std::span<const Literal>{query_items})},
-                {"headers", Literal(std::span<const Literal>{header_items})},
-                {"body", body},
-                {"peer", {{"address", address}, {"port", port}}}},
-        memory);
+    const auto peer_value = bundle<HttpPeer>(memory, "address"_n = std::string_view{address}, "port"_n = port);
+    return bundle<HttpServerRequest>(
+        memory,
+        "method"_n = std::string_view{request.method_string().data(), request.method_string().size()},
+        "target"_n = std::string_view{request.target().data(), request.target().size()},
+        "path"_n = std::string_view{target.path},
+        "query"_n = std::span<const std::pair<std::string, std::string>>{target.query},
+        "headers"_n = std::span<const std::pair<std::string, std::string>>{headers}, "body"_n = body,
+        "peer"_n = peer_value.view());
 }
 
 struct ActiveResponse {
