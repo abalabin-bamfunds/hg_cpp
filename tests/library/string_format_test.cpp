@@ -5,6 +5,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <fmt/format.h>
+
 #include <array>
 #include <iostream>
 #include <limits>
@@ -130,4 +132,120 @@ TEST_CASE("print_ supports scalar and time-series patterns and selects standard 
 
     CHECK(output.str() == "value=7\nfirst=1\nsecond=2\n");
     CHECK(error.str() == std::string{"error\0text\n", 11});
+}
+
+TEST_CASE("print_ formats time-series ticks and collection changes",
+          "[feature:operator][series:value][scalar:string][scalar:i64][transition:invalidation]"
+          "[transition:removal]") {
+    const auto previous_output = std::cout.rdbuf();
+    const auto previous_error = std::cerr.rdbuf();
+    auto output = std::ostringstream{};
+    auto error = std::ostringstream{};
+    std::cout.rdbuf(output.rdbuf());
+    std::cerr.rdbuf(error.rdbuf());
+    const auto restore_stream_buffers = util::scope_exit{[&]() noexcept {
+        std::cout.rdbuf(previous_output);
+        std::cerr.rdbuf(previous_error);
+    }};
+
+    const auto direct = [](wp<TSD<i64, TSD<i64, TS<i64>>>> book) {
+        operators::print_(book);
+        operators::print_(book);
+        operators::print_(book, "__std_out__"_n = false);
+        return operators::const_(i64{0});
+    };
+    (void)bg::run_graph(direct, {{{1, {{2, 10}}}}, {{1, {{2, literal::REMOVE}}}}});
+
+    CHECK(output.str() == "{1: {2: 10}}\n{1: {2: 10}}\n"
+                          "{1: {2: REMOVE}}\n{1: {2: REMOVE}}\n");
+    CHECK(error.str() == "{1: {2: 10}}\n{1: {2: REMOVE}}\n");
+}
+
+TEST_CASE("print_ formats nested tick arguments and scalar format arguments",
+          "[feature:operator][series:value][scalar:string][scalar:i64][transition:invalidation]"
+          "[transition:removal]") {
+    const auto previous_output = std::cout.rdbuf();
+    auto output = std::ostringstream{};
+    std::cout.rdbuf(output.rdbuf());
+    const auto restore_stream_buffer = util::scope_exit{[&]() noexcept { std::cout.rdbuf(previous_output); }};
+
+    const auto graph = [](wp<TSD<i64, TSD<i64, TS<i64>>>> book, wp<TS<i64>> value) {
+        operators::print_("book={} value={}", book, value);
+        return operators::const_(i64{0});
+    };
+    (void)bg::run_graph(graph, {{{1, {{2, 10}}}}, {{1, {{2, literal::REMOVE}}}}, literal::SKIP},
+                         {7, literal::INVALID, 8});
+    const auto number_graph = [] {
+        operators::print_("number={:04d}", i64{7});
+        return operators::const_(i64{0});
+    };
+    (void)bg::run_graph(number_graph);
+    auto memory = allocator{};
+    const auto values = ScalarValue<List<i64>>{std::array<i64, 2>{1, 2}, memory};
+    const auto list_graph = [&] {
+        operators::print_("values={values}", "values"_n = values.view());
+        return operators::const_(i64{0});
+    };
+    (void)bg::run_graph(list_graph);
+
+    CHECK(output.str() == "book={1: {2: 10}} value=7\n"
+                          "book={1: {2: REMOVE}} value=INVALID\n"
+                          "book=SKIP value=8\nnumber=0007\nvalues=[1, 2]\n");
+}
+
+TEST_CASE("print_ treats a bare string time series as tick data and prints invalidation",
+          "[feature:operator][series:value][scalar:string][scalar:i64][transition:invalidation]") {
+    const auto previous_output = std::cout.rdbuf();
+    auto output = std::ostringstream{};
+    std::cout.rdbuf(output.rdbuf());
+    const auto restore_stream_buffer = util::scope_exit{[&]() noexcept { std::cout.rdbuf(previous_output); }};
+
+    const auto string_graph = [](wp<TS<string>> value) {
+        operators::print_(value);
+        return operators::const_(i64{0});
+    };
+    (void)bg::run_graph(string_graph, {"book={}"});
+
+    const auto value_graph = [](wp<TS<i64>> value) {
+        operators::print_(value);
+        return operators::const_(i64{0});
+    };
+    (void)bg::run_graph(value_graph, {literal::SKIP, 7, literal::INVALID, 8});
+
+    CHECK(output.str() == "\"book={}\"\n7\nINVALID\n8\n");
+}
+
+TEST_CASE("print_ tick arguments reject scalar format specs",
+          "[feature:operator][series:value][scalar:i64][transition:invalidation]") {
+    const auto previous_output = std::cout.rdbuf();
+    auto output = std::ostringstream{};
+    std::cout.rdbuf(output.rdbuf());
+    const auto restore_stream_buffer = util::scope_exit{[&]() noexcept { std::cout.rdbuf(previous_output); }};
+
+    const auto graph = [](wp<TS<i64>> value) {
+        operators::print_("value={:04d}", value);
+        return operators::const_(i64{0});
+    };
+
+    CHECK_THROWS_AS(bg::run_graph(graph, {literal::INVALID}), fmt::format_error);
+}
+
+TEST_CASE("print_ binds a reference to its value",
+          "[feature:operator][series:reference][binding:reference-to-value][shape:chain]") {
+    const auto previous_output = std::cout.rdbuf();
+    auto output = std::ostringstream{};
+    std::cout.rdbuf(output.rdbuf());
+    const auto restore_stream_buffer = util::scope_exit{[&]() noexcept { std::cout.rdbuf(previous_output); }};
+
+    const auto make_reference = node([](In<REF<TS<i64>>> value, Out<REF<TS<i64>>> reference) {
+        reference.copy(value);
+    });
+    const auto graph = [&](wp<TS<i64>> value) {
+        operators::print_(make_reference(value.as<REF<TS<i64>>>()));
+        return operators::const_(i64{0});
+    };
+
+    (void)bg::run_graph(graph, {7});
+
+    CHECK(output.str() == "7\n");
 }

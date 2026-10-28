@@ -604,6 +604,16 @@ newline to standard output. Set `__std_out__=False` to write to standard error;
 `__std_out__` must be a scalar Boolean. Print nodes are not deduplicated during
 wiring.
 
+`print_(series)` writes the current tick. Formatting arguments to `print_` also
+accept collection time series. Collection arguments use the
+[tick formatter](time-series-types.md#tick-formatting) to print changes, including removals and
+invalidation. Valid scalar arguments retain native `{fmt}` format specifications.
+Tick views, including `SKIP` and `INVALID`, accept only an empty specification.
+Unchanged collection arguments print `SKIP`; valid scalar arguments use their
+current values.
+A lone string time series is tick data; a scalar string is a format pattern.
+A string-series pattern requires at least one formatting argument.
+
 ### Regular expressions
 
 `matches(pattern, text)` returns whether the pattern occurs anywhere in the

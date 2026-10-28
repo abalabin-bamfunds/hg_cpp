@@ -109,6 +109,19 @@ C++ named arguments use `"name"_n = value` with `bg::literals` imported.
 has no output. `__std_out__=False` selects standard error; this option is a fixed
 Boolean. Print calls produce separate nodes even when their arguments match.
 
+`print_(series)` prints a time-series tick. Formatting arguments can also be
+collection time series, for example `print_("book={}", book)`. Collections show
+changed entries, including `INVALID`, dictionary `REMOVE`, and set
+`REMOVED(value)` markers. Collection ticks accept only an empty format
+specification (`{}`). Valid scalar arguments retain specifications such as
+`{:04d}`. Use `{}` for arguments that may print `SKIP` or `INVALID`; these markers
+do not accept scalar format specifications.
+When another argument triggers printing, an unchanged collection prints `SKIP`;
+a valid scalar argument prints its current value.
+Passing a string series alone prints its tick data, including quotes around
+strings. A scalar string remains a format pattern. To format a string-series
+pattern, supply at least one formatting argument.
+
 <!-- runnable-example -->
 ::::::{tab-set}
 :sync-group: language

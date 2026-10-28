@@ -614,6 +614,8 @@ For each reusable node and graph, test:
 - built-in and nested scalar text rendering, non-finite numbers, normalized
   durations and timestamps; positional and named formatting, argument validity,
   output guarantees, and native output-stream selection with embedded NUL
+- direct and formatted tick printing, nested collection changes, removal and
+  invalidation, scalar format specifications, and separate print nodes
 - regular-expression search with Boolean results and fixed TSL captures, empty
   and absent captures, match loss, Unicode text, backreferences, invalid patterns,
   guarantees, references, wiring-time errors, shared compiled patterns, independent

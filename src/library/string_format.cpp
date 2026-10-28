@@ -1,11 +1,14 @@
 #include "registration.hpp"
 
 #include <bg/graph.hpp>
+#include <bg/evaluation_context.hpp>
 #include <bg/library/operators.hpp>
 #include <bg/node.hpp>
 #include <bg/overload.hpp>
+#include <bg/scalar/format.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/time_series/tsb/tsb_input.hpp>
+#include <bg/time_series/tick_format.hpp>
 
 #include <fmt/args.h>
 #include <fmt/chrono.h>
@@ -16,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <iterator>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -231,8 +235,9 @@ void push_argument(fmt::dynamic_format_arg_store<fmt::format_context> &store, co
     }
 }
 
-void push_scalar(fmt::dynamic_format_arg_store<fmt::format_context> &store, const char *name,
-                 Scalar<SCALAR> value) {
+template <typename FALLBACK>
+void push_scalar(fmt::dynamic_format_arg_store<fmt::format_context> &store, const char *name, Scalar<SCALAR> value,
+                 FALLBACK &&push_fallback) {
     value.visit(
         [&](const Scalar<byte> *item) { push_argument(store, name, std::to_integer<unsigned int>(item->value())); },
         [&](const Scalar<bool> *item) { push_argument(store, name, item->value()); },
@@ -240,12 +245,9 @@ void push_scalar(fmt::dynamic_format_arg_store<fmt::format_context> &store, cons
         [&](const Scalar<double> *item) { push_argument(store, name, item->value()); },
         [&](const Scalar<date_time_t> *item) { push_argument(store, name, item->value()); },
         [&](const Scalar<timedelta_t> *item) { push_argument(store, name, item->value()); },
-        [&](const Scalar<string> *item) { push_argument(store, name, std::string{item->value()}); },
-        [&](const Scalar<symbol> *item) { push_argument(store, name, std::string{item->value().text()}); },
-        [&](const Scalar<> *) {
-            auto text = scalar_text(value, true);
-            push_argument(store, name, std::move(text));
-        },
+        [&](const Scalar<string> *item) { push_argument(store, name, item->value()); },
+        [&](const Scalar<symbol> *item) { push_argument(store, name, item->value().text()); },
+        [&](const auto *) { std::forward<FALLBACK>(push_fallback)(store, name, value); },
         ddv::noop);
 }
 
@@ -258,19 +260,20 @@ struct string_format_overloads {
             throw std::invalid_argument{"format_ arguments must be scalar values or scalar time series"};
         }
 
-        if (name.empty()) {
-            push_scalar(store, nullptr, *value);
-            return;
+        const auto *argument_name = static_cast<const char *>(nullptr);
+        if (!name.empty()) {
+            names.emplace_back(name);
+            argument_name = names.back().c_str();
         }
-
-        names.emplace_back(name);
-        push_scalar(store, names.back().c_str(), *value);
+        push_scalar(store, argument_name, *value, [](auto &arguments, auto argument_name, Scalar<SCALAR> item) {
+            auto text = scalar_text(item, true);
+            push_argument(arguments, argument_name, std::move(text));
+        });
     }
 
     static std::string format(std::string_view pattern,
                               const In<TSB<FORMAT_POSITIONAL>, var_args, bg::all_valid> &positional,
-                              const In<TSB<FORMAT_NAMED>, var_kwargs, bg::all_valid> &named,
-                              bool *standard_output = nullptr) {
+                              const In<TSB<FORMAT_NAMED>, var_kwargs, bg::all_valid> &named) {
         auto store = fmt::dynamic_format_arg_store<fmt::format_context>{};
         auto names = std::vector<std::string>{};
         names.reserve(positional.size() + named.size());
@@ -280,21 +283,6 @@ struct string_format_overloads {
         }
         for (auto index = std::size_t{}; index < named.size(); ++index) {
             const auto name = named.item_name(index).text();
-            if (name == "__std_out__" && standard_output != nullptr) {
-                const auto output = named[index];
-                auto value = std::optional<bool>{};
-                output.visit(
-                    [&](const In<TS<SCALAR>> *series) {
-                        series->value_view().visit(
-                            [&](const Scalar<bool> *item) { value = item->value(); }, ddv::noop);
-                    },
-                    ddv::noop);
-                if (!value) {
-                    throw std::invalid_argument{"__std_out__ must be a scalar bool"};
-                }
-                *standard_output = *value;
-                continue;
-            }
             add_input(store, names, named[index], name);
         }
         return fmt::vformat(fmt::string_view{pattern.data(), pattern.size()}, store);
@@ -305,12 +293,78 @@ struct string_format_overloads {
             if (arguments.argument_name(index).text() != "__std_out__") {
                 continue;
             }
+            if (!arguments.present(index)) {
+                return reject("__std_out__ must be a scalar bool");
+            }
             const auto *type = type_cast<ScalarType>(&arguments.resolved_type(index));
             if (type == nullptr || type != &bool_type()) {
                 return reject("__std_out__ must be a scalar bool");
             }
         }
         return accept;
+    }
+
+    template <typename Variable, auto... Properties>
+    static void add_print_input(fmt::dynamic_format_arg_store<fmt::format_context> &store,
+                                std::vector<std::string> &names, const In<Variable, Properties...> &input,
+                                EvaluationTime now, std::string_view name = {}) {
+        const auto *argument_name = static_cast<const char *>(nullptr);
+        if (!name.empty()) {
+            names.emplace_back(name);
+            argument_name = names.back().c_str();
+        }
+
+        auto scalar_series = false;
+        if (input.valid()) {
+            input.visit(
+                [&](const In<TS<SCALAR>> *series) {
+                    scalar_series = true;
+                    push_scalar(store, argument_name, series->value_view(),
+                                [](auto &arguments, auto name, Scalar<SCALAR> value) {
+                                    push_argument(arguments, name, value);
+                                });
+                },
+                ddv::noop);
+        }
+        if (scalar_series) {
+            return;
+        }
+
+        push_argument(store, argument_name, tick(input, now));
+    }
+
+    template <typename POSITIONAL, typename NAMED>
+    static void print(std::string_view pattern, const POSITIONAL &positional, const NAMED &named,
+                      EvaluationTime now) {
+        auto store = fmt::dynamic_format_arg_store<fmt::format_context>{};
+        auto names = std::vector<std::string>{};
+        names.reserve(positional.size() + named.size());
+        const auto standard_output = read_standard_output(named);
+
+        for (auto index = std::size_t{}; index < positional.size(); ++index) {
+            add_print_input(store, names, positional[index], now);
+        }
+        for (auto index = std::size_t{}; index < named.size(); ++index) {
+            const auto name = named.item_name(index).text();
+            if (name == "__std_out__") {
+                continue;
+            }
+            add_print_input(store, names, named[index], now, name);
+        }
+
+        auto &stream = standard_output ? std::cout : std::cerr;
+        fmt::vformat_to(std::ostreambuf_iterator<char>{stream}, fmt::string_view{pattern.data(), pattern.size()}, store);
+        stream.put('\n');
+    }
+
+    static bool read_standard_output(const auto &named) {
+        for (auto index = std::size_t{}; index < named.size(); ++index) {
+            if (named.item_name(index).text() != "__std_out__") {
+                continue;
+            }
+            return named[index].template as<TS<bool>>().value_view().value();
+        }
+        return true;
     }
 
     overload<str_> str_scalar{node(
@@ -335,21 +389,69 @@ struct string_format_overloads {
         static constexpr bool deduplicate_wiring = false;
 
         std::string_view pattern;
-        In<TSB<FORMAT_POSITIONAL>, var_args, bg::all_valid> positional;
-        In<TSB<FORMAT_NAMED>, var_kwargs, bg::all_valid> named;
+        In<TSB<FORMAT_POSITIONAL>, var_args, optional> positional;
+        In<TSB<FORMAT_NAMED>, var_kwargs, optional> named;
 
-        static RequirementResult require(const WiringArguments &arguments) { return require_print_output(arguments); }
+        static RequirementResult require(const WiringArguments &arguments) {
+            const auto &pattern_type = arguments.original_type("pattern");
+            const auto *pattern_series = pattern_type.is_time_series()
+                                             ? type_cast<TimeSeriesValueType>(
+                                                   &type_cast<TimeSeriesType>(pattern_type).dereferenced_type())
+                                             : nullptr;
+            if (pattern_series != nullptr && &pattern_series->value_type() == &string_type()) {
+                auto has_format_argument = false;
+                for (auto index = std::size_t{}; index < arguments.size(); ++index) {
+                    const auto name = arguments.argument_name(index).text();
+                    if (name != "pattern" && name != "__std_out__") {
+                        has_format_argument = true;
+                        break;
+                    }
+                }
+                if (!has_format_argument) {
+                    return reject("a string time series without format arguments is a print_ tick input");
+                }
+            }
+            return require_print_output(arguments);
+        }
 
-        void evaluate() const {
-            auto standard_output = true;
-            auto text = format(pattern, positional, named, &standard_output);
-            auto &stream = standard_output ? std::cout : std::cerr;
-            stream.write(text.data(), static_cast<std::streamsize>(text.size()));
-            stream.put('\n');
+        void evaluate(EvaluationContext *context) const {
+            print(pattern, positional, named, context->evaluation_time());
         }
     };
 
     overload<print_> print_impl{node<print_definition>()};
+
+    struct print_tick_definition {
+        static constexpr bool deduplicate_wiring = false;
+
+        In<TS_T, optional> value;
+        In<TSB<FORMAT_NAMED>, var_kwargs> named;
+
+        static RequirementResult require(const WiringArguments &arguments) {
+            if (!arguments.original_type("value").is_time_series()) {
+                return reject("print_ tick input must be a time series");
+            }
+            for (auto index = std::size_t{}; index < arguments.size(); ++index) {
+                const auto name = arguments.argument_name(index).text();
+                if (name != "value" && name != "__std_out__") {
+                    return reject("print_ tick input accepts only the __std_out__ option");
+                }
+            }
+            return require_print_output(arguments);
+        }
+
+        void evaluate(EvaluationContext *context) const {
+            const auto now = context->evaluation_time();
+            if (value.last_updated() != now || !value.modified()) {
+                return;
+            }
+
+            auto &stream = read_standard_output(named) ? std::cout : std::cerr;
+            fmt::format_to(std::ostreambuf_iterator<char>{stream}, "{}\n", tick(value, now));
+        }
+    };
+
+    overload<print_, print_tick_definition> print_tick_impl;
 };
 
 } // namespace
