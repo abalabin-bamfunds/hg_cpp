@@ -10,7 +10,10 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 using namespace bg;
 
@@ -18,6 +21,7 @@ namespace {
 
 using Market = Tuple<string, i64, symbol>;
 using Nested = Tuple<i64, Tuple<string, symbol>>;
+using Header = Tuple<string, string>;
 using Empty = Tuple<>;
 using Single = Tuple<i64>;
 using NoEquality = Tuple<Opaque<std::array<int, 2>>>;
@@ -26,6 +30,10 @@ using MismatchAfterBinding = Tuple<ITEM, i64>;
 
 template <typename T> concept HasScalarEquality = requires(const T &value) { value.equals(value); };
 template <typename T> concept HasScalarHash = requires(const T &value) { value.hash(); };
+template <typename T, typename Source>
+concept ScalarValueConstructibleFrom = requires(Source &&source) {
+    ScalarValue<T>{std::forward<Source>(source)};
+};
 
 struct TrackedValue {
     static inline int instances{};
@@ -33,6 +41,23 @@ struct TrackedValue {
     TrackedValue() { ++instances; }
     TrackedValue(const TrackedValue &) { ++instances; }
     ~TrackedValue() { --instances; }
+};
+
+struct ThrowingCopy {
+    static inline int instances{};
+    static inline int copies_until_throw{-1};
+
+    ThrowingCopy() { ++instances; }
+    ThrowingCopy(const ThrowingCopy &) {
+        if (copies_until_throw == 0) {
+            throw std::runtime_error{"tuple item copy failed"};
+        }
+        if (copies_until_throw > 0) {
+            --copies_until_throw;
+        }
+        ++instances;
+    }
+    ~ThrowingCopy() { --instances; }
 };
 
 using GenericTuple = Tuple<i64, ITEM>;
@@ -140,6 +165,70 @@ TEST_CASE("positional scalar literals construct nested tuple values",
     auto first_item = i64{};
     generic[0].visit([&](const Scalar<i64> *item) { first_item = item->value(); }, ddv::noop);
     CHECK(first_item == 7);
+}
+
+TEST_CASE("scalar tuples construct from pair and tuple sources",
+          "[feature:scalar-api][scalar:tuple][scalar:string][storage:variable]") {
+    using PairValue = Tuple<string, i64>;
+    const auto pair_value = ScalarValue<PairValue>{std::pair{std::string{"temperature"}, 42}};
+    CHECK(pair_value.view().get<0>().value() == "temperature");
+    CHECK(pair_value.view().get<1>().value() == 42);
+
+    auto memory = allocator{};
+    const auto tuple_value = [&] {
+        auto source = std::tuple{7, std::pair{std::string{"NASDAQ"}, symbol{"NQ"}}};
+        return ScalarValue<Nested>{source, memory};
+    }();
+
+    CHECK(tuple_value.view().get<0>().value() == 7);
+    CHECK(tuple_value.view().get<1>().get<0>().value() == "NASDAQ");
+    CHECK(tuple_value.view().get<1>().get<1>().value() == symbol{"NQ"});
+
+    const auto host = ScalarValue<string>{"host"};
+    const auto address = ScalarValue<string>{"example.test"};
+    const auto scalar_sources = ScalarValue<Header>{std::pair{host.view(), address.view()}};
+    CHECK(scalar_sources.view().get<0>().value() == "host");
+    CHECK(scalar_sources.view().get<1>().value() == "example.test");
+}
+
+TEST_CASE("a scalar list constructs tuple items directly from pair ranges",
+          "[feature:scalar-api][scalar:tuple][scalar:list][scalar:string][storage:variable]") {
+    auto memory = allocator{};
+    const auto headers = [&] {
+        auto source = std::vector{std::pair{std::string{"content-type"}, std::string{"text/plain"}},
+                                  std::pair{std::string{"x-trace"}, std::string{"first"}},
+                                  std::pair{std::string{"x-trace"}, std::string{"second"}}};
+        return ScalarValue<List<Header>>{source, memory};
+    }();
+
+    const auto values = headers.view();
+    REQUIRE(values.size() == 3);
+    CHECK(values[0].get<0>().value() == "content-type");
+    CHECK(values[0].get<1>().value() == "text/plain");
+    CHECK(values[1].get<0>().value() == "x-trace");
+    CHECK(values[1].get<1>().value() == "first");
+    CHECK(values[2].get<0>().value() == "x-trace");
+    CHECK(values[2].get<1>().value() == "second");
+}
+
+TEST_CASE("scalar tuple construction constrains source arity and item compatibility",
+          "[feature:scalar-api][scalar:tuple][declaration:concrete]") {
+    STATIC_CHECK(ScalarValueConstructibleFrom<Header, std::pair<std::string, std::string>>);
+    STATIC_CHECK(ScalarValueConstructibleFrom<Header, std::tuple<std::string, std::string>>);
+    STATIC_CHECK_FALSE(ScalarValueConstructibleFrom<Header, std::tuple<std::string>>);
+    STATIC_CHECK_FALSE(ScalarValueConstructibleFrom<Header, std::tuple<int, int>>);
+}
+
+TEST_CASE("scalar tuple construction releases earlier items after a later item fails",
+          "[feature:scalar-api][scalar:tuple][scalar:opaque][storage:variable]") {
+    using Value = Tuple<Opaque<ThrowingCopy>, Opaque<ThrowingCopy>>;
+    const auto source = std::tuple<ThrowingCopy, ThrowingCopy>{};
+    const auto baseline = ThrowingCopy::instances;
+    ThrowingCopy::copies_until_throw = 1;
+
+    CHECK_THROWS_AS((ScalarValue<Value>{source}), std::runtime_error);
+    CHECK(ThrowingCopy::instances == baseline);
+    ThrowingCopy::copies_until_throw = -1;
 }
 
 TEST_CASE("positional scalar tuple equality and hashing use ordered items",

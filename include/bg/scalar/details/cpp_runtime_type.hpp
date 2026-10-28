@@ -327,6 +327,19 @@ class CppScalarRuntimeType<Opaque<T>> final : public CppScalarRuntimeTypeBase<Op
 
 namespace bg {
 
+namespace details {
+
+template <typename T> struct CppTupleRuntimeType;
+
+template <typename... Items> struct CppTupleRuntimeType<Tuple<Items...>> {
+    static const ScalarRuntimeType &get() {
+        (cpp_scalar_runtime_type<Items>(), ...);
+        return resolve_scalar_runtime_type(cpp_scalar_type<Tuple<Items...>>(), {});
+    }
+};
+
+} // namespace details
+
 template <typename T> const ScalarRuntimeType &cpp_scalar_runtime_type() {
     if constexpr (requires(const ScalarType &type) {
                       { scalar_storage_traits<T>::runtime_type(type) } -> std::same_as<const ScalarRuntimeType &>;
@@ -348,7 +361,10 @@ template <typename T> const ScalarRuntimeType &cpp_scalar_runtime_type() {
         (void)registered;
 
         return runtime_type;
-    } else if constexpr (details::hierarchical_scalar_declaration<T> || is_tuple_scalar_v<T>) {
+    } else if constexpr (is_tuple_scalar_v<T>) {
+        static const auto &runtime_type = details::CppTupleRuntimeType<T>::get();
+        return runtime_type;
+    } else if constexpr (details::hierarchical_scalar_declaration<T>) {
         return resolve_scalar_runtime_type(cpp_scalar_type<T>(), {});
     } else {
         static const auto runtime_type = util::static_storage<details::CppScalarRuntimeType<T>>{};
