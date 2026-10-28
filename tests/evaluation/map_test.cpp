@@ -962,11 +962,14 @@ TEST_CASE("each mapped graph reads the context for its own key",
 
 TEST_CASE("repro: map makes a removed key available from a retained mapped reference",
           "[.][repro][feature:map][feature:nested-graph][feature:reference][series:tsd][series:tss]") {
+    const auto identity = graph("name"_n = "identity_value", [](wp<TS<i64>> value) { return value; });
+    const auto select_value = graph("name"_n = "select_mapped_value",
+                                    [](wp<TS<i64>> key, wp<TS<i64>> value) { return value; });
+
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values, wp<TSS<i64>> selected_keys) {
-        const auto mapped_values = map([](auto value) { return value; }, values);
-        const auto selected_values = map(
-            [](auto, auto value) { return value; }, mapped_values, selected_keys,
-            "__key_arg__"_n = 0, "__key_set_arg__"_n = 1);
+        const auto mapped_values = map(identity, values);
+        const auto selected_values = map(select_value, mapped_values, selected_keys,
+                                         "__key_arg__"_n = 0, "__key_set_arg__"_n = 1);
         return selected_values[i64{1}];
     };
 
@@ -1005,7 +1008,7 @@ TEST_CASE("repro: map retargets a selected dictionary reference across a nested 
         {{{1, 10}, {2, 20}}, {{1, 11}}, literal::SKIP, literal::SKIP},
         {true, true, true, true});
 
-    CHECK(actual.equals({{{1, 1}, {2, 2}}, {{1, 11}}, {{1, 3}, {2, 2}}, {{1, 4}}}));
+    CHECK(actual.equals({{{1, 1}, {2, 2}}, {{1, 11}, {2, 20}}, {{1, 3}, {2, 2}}, {{1, 4}}}));
 }
 
 } // namespace
