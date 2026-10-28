@@ -649,8 +649,10 @@ uses the same formatting rules as `print_`.
 Extension type descriptors and registered callbacks must remain available until
 queued messages have been released.
 
-`<bg/logging.hpp>` exposes BG levels, configuration, and `bg::log` formatting
-functions. See the [public logging API](../../user/reference/library-text.md)
+`<bg/logging.hpp>` exposes BG levels, configuration, `bg::log` formatting
+functions, and `BG_LOG_*` statement macros. The macros check the level before
+evaluating arguments and call the corresponding formatting function.
+See the [public logging API](../../user/reference/library-text.md)
 for configuration fields and defaults. `initialize` rejects late or repeated
 configuration. `set_level` changes the runtime filter; `flush` waits for queued
 messages. Initialization paths are serialized and logging uses a cached backend.

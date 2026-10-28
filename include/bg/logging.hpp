@@ -100,3 +100,45 @@ template <typename... Args> void critical(fmt::format_string<Args...> pattern, A
 }
 
 } // namespace bg::log
+
+#define BG_LOG_TRACE(...)                                                                                             \
+    do {                                                                                                               \
+        if (::bg::logging::enabled(::bg::logging::Level::trace)) {                                                     \
+            ::bg::log::trace(__VA_ARGS__);                                                                             \
+        }                                                                                                              \
+    } while (false)
+
+#define BG_LOG_DEBUG(...)                                                                                             \
+    do {                                                                                                               \
+        if (::bg::logging::enabled(::bg::logging::Level::debug)) {                                                     \
+            ::bg::log::debug(__VA_ARGS__);                                                                             \
+        }                                                                                                              \
+    } while (false)
+
+#define BG_LOG_INFO(...)                                                                                              \
+    do {                                                                                                               \
+        if (::bg::logging::enabled(::bg::logging::Level::info)) {                                                      \
+            ::bg::log::info(__VA_ARGS__);                                                                              \
+        }                                                                                                              \
+    } while (false)
+
+#define BG_LOG_WARNING(...)                                                                                           \
+    do {                                                                                                               \
+        if (::bg::logging::enabled(::bg::logging::Level::warning)) {                                                   \
+            ::bg::log::warning(__VA_ARGS__);                                                                           \
+        }                                                                                                              \
+    } while (false)
+
+#define BG_LOG_ERROR(...)                                                                                             \
+    do {                                                                                                               \
+        if (::bg::logging::enabled(::bg::logging::Level::error)) {                                                     \
+            ::bg::log::error(__VA_ARGS__);                                                                             \
+        }                                                                                                              \
+    } while (false)
+
+#define BG_LOG_CRITICAL(...)                                                                                          \
+    do {                                                                                                               \
+        if (::bg::logging::enabled(::bg::logging::Level::critical)) {                                                  \
+            ::bg::log::critical(__VA_ARGS__);                                                                          \
+        }                                                                                                              \
+    } while (false)

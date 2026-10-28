@@ -621,7 +621,9 @@ For each reusable node and graph, test:
   and typed payload cleanup after formatting failure
 - BG logging startup configuration, stdout, stderr and file output, message and
   timestamp patterns, deferred node argument ownership, runtime level changes,
-  default initialization, and rejection of late or repeated initialization
+  default initialization, rejection of late or repeated initialization, and
+  logging macros that skip disabled argument evaluation and evaluate enabled
+  arguments once
 - regular-expression search with Boolean results and fixed TSL captures, empty
   and absent captures, match loss, Unicode text, backreferences, invalid patterns,
   guarantees, references, wiring-time errors, shared compiled patterns, independent

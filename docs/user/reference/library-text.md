@@ -162,6 +162,15 @@ available until queued messages have been released. Use `log_` to capture time
 series ticks. Disabled calls skip argument capture; C++ still
 evaluates the argument expressions.
 
+Use `BG_LOG_TRACE`, `BG_LOG_DEBUG`, `BG_LOG_INFO`, `BG_LOG_WARNING`,
+`BG_LOG_ERROR`, or `BG_LOG_CRITICAL` to skip argument evaluation when the level
+is disabled. These statement macros accept the same arguments as the functions:
+
+```cpp
+BG_LOG_DEBUG("received {} items", expensive_count());
+BG_LOG_INFO("ready");
+```
+
 Applications configure logging before its first use:
 
 ```cpp

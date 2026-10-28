@@ -130,3 +130,76 @@ TEST_CASE("disabled BG logging calls do not copy arguments", "[library][logging]
     CHECK(copies == 0);
     CHECK(formatted_on == std::thread::id{});
 }
+
+TEST_CASE("disabled BG logging macros do not evaluate arguments", "[library][logging]") {
+    bg::logging::set_level(bg::logging::Level::off);
+
+    auto evaluations = 0;
+    BG_LOG_TRACE("trace {}", ++evaluations);
+    BG_LOG_DEBUG("debug {}", ++evaluations);
+    BG_LOG_INFO("info {}", ++evaluations);
+    BG_LOG_WARNING("warning {}", ++evaluations);
+    BG_LOG_ERROR("error {}", ++evaluations);
+    BG_LOG_CRITICAL("critical {}", ++evaluations);
+
+    CHECK(evaluations == 0);
+}
+
+TEST_CASE("enabled BG logging macros evaluate arguments once", "[library][logging]") {
+    const auto path = log_path();
+    const auto cleanup = remove_file_on_exit(path);
+    bg::logging::initialize({.level = bg::logging::Level::trace, .file = path.string(), .pattern = "{message}"});
+
+    auto evaluations = 0;
+    BG_LOG_TRACE("trace {}", ++evaluations);
+    BG_LOG_DEBUG("debug {}", ++evaluations);
+    BG_LOG_INFO("info {}", ++evaluations);
+    BG_LOG_WARNING("warning {}", ++evaluations);
+    BG_LOG_ERROR("error {}", ++evaluations);
+    BG_LOG_CRITICAL("critical {}", ++evaluations);
+    BG_LOG_INFO("without formatting arguments");
+
+    CHECK(evaluations == 6);
+    bg::logging::flush();
+    const auto output = read_file(path);
+    CHECK(output.find("trace 1") != std::string::npos);
+    CHECK(output.find("debug 2") != std::string::npos);
+    CHECK(output.find("info 3") != std::string::npos);
+    CHECK(output.find("warning 4") != std::string::npos);
+    CHECK(output.find("error 5") != std::string::npos);
+    CHECK(output.find("critical 6") != std::string::npos);
+    CHECK(output.find("without formatting arguments") != std::string::npos);
+}
+
+TEST_CASE("BG logging macros are safe in conditionals and shadowed scopes", "[library][logging]") {
+    const auto path = log_path();
+    const auto cleanup = remove_file_on_exit(path);
+    bg::logging::initialize({.file = path.string(), .pattern = "{message}"});
+
+    const auto condition = true;
+    if (condition)
+        BG_LOG_INFO("if branch");
+    else
+        BG_LOG_INFO("unexpected else branch");
+
+    if (!condition)
+        BG_LOG_INFO("unexpected if branch");
+    else
+        BG_LOG_INFO("else branch");
+
+    const auto bg = 1;
+    const auto logging = 2;
+    const auto Level = 3;
+    const auto enabled = 4;
+    const auto log = 5;
+    const auto info = 6;
+    BG_LOG_INFO("shadow-safe branch");
+    CHECK(bg + logging + Level + enabled + log + info == 21);
+
+    ::bg::logging::flush();
+    const auto output = read_file(path);
+    CHECK(output.find("if branch") != std::string::npos);
+    CHECK(output.find("else branch") != std::string::npos);
+    CHECK(output.find("shadow-safe branch") != std::string::npos);
+    CHECK(output.find("unexpected") == std::string::npos);
+}
