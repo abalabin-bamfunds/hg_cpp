@@ -1,11 +1,16 @@
 #include <bg/frame/frame.hpp>
 #include <bg/graph.hpp>
+#include <bg/library/operators.hpp>
 #include <bg/scalar/list/scalar.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
+#include <bg/type/time_series_value_type.hpp>
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
 #include <span>
 #include <stdexcept>
+#include <string_view>
 #include <vector>
 
 namespace bg::frame::details {
@@ -56,7 +61,97 @@ struct WithColumnsNode {
     void evaluate() const { static_cast<void>(output.bind_columns(source, assignments)); }
 };
 
+template <cell_type Cell> struct BroadcastColumnNode {
+    In<TSF<SOURCE_SCHEMA>> source;
+    In<TS<Cell>> value;
+    Out<TSC<Cell>, computed<>> output;
+
+    void evaluate() const {
+        const auto fill_all = !output.valid() || value.modified();
+        output.bind(source);
+        const auto cell = *value;
+        auto ids = std::array<row_id_t, batch_capacity>{};
+        auto size = std::size_t{};
+        const auto flush = [&] {
+            if (size == 0)
+                return;
+            write_batch(std::span<const row_id_t>{ids.data(), size}, cell);
+            size = 0;
+        };
+        const auto append = [&](row_id_t id) {
+            ids[size++] = id;
+            if (size == batch_capacity)
+                flush();
+        };
+
+        if (fill_all)
+            source.for_each_row([&](row_id_t id, std::size_t) { append(id); });
+        else
+            output.for_each_added(append);
+        flush();
+    }
+
+  private:
+    static constexpr auto batch_capacity = std::size_t{128};
+
+    void write_batch(std::span<const row_id_t> ids, const cell_value_t<Cell> &value) const {
+        if constexpr (std::same_as<Cell, bool>) {
+            auto values = std::array<std::uint8_t, (batch_capacity + 7) / 8>{};
+            if (value) {
+                values.fill(0xff);
+            }
+            output.set_batch(ids, ColumnBatch<bool>{0, ids.size(), values.data(),
+                                                     ColumnBatch<bool>::Validity::all_valid()});
+        } else if constexpr (std::same_as<Cell, string>) {
+            const auto source = ColumnBatchSource<string>{
+                std::addressof(value),
+                [](const void *context, std::size_t) noexcept {
+                    return *static_cast<const std::string_view *>(context);
+                },
+                0};
+            output.set_batch(ids, ColumnBatch<string>{0, ids.size(), source,
+                                                       ColumnBatch<string>::Validity::all_valid()});
+        } else {
+            auto values = std::array<cell_stored_t<Cell>, batch_capacity>{};
+            std::ranges::fill(values, value);
+            output.set_batch(ids, ColumnBatch<Cell>{0, ids.size(), values.data(),
+                                                     ColumnBatch<Cell>::Validity::all_valid()});
+        }
+    }
+};
+
 const auto with_columns_node = node<WithColumnsNode>();
+
+template <cell_type Cell> WiringPoint broadcast_column(wp<TSF<SOURCE_SCHEMA>> source, wp<TS<Cell>> value) {
+    static const auto broadcast = node<BroadcastColumnNode<Cell>>();
+    return broadcast(source, value);
+}
+
+void validate_cell_type(const Type &type) {
+    try {
+        static_cast<void>(frame::visit_cell_type(type, []<typename Cell>(std::type_identity<Cell>) { return true; }));
+    } catch (const std::invalid_argument &) {
+        throw WiringError{"frame::with_columns supports only bool, i64, double, string, or symbol values"};
+    }
+}
+
+WiringPoint broadcast_series(wp<TSF<SOURCE_SCHEMA>> source, WiringPoint value) {
+    const auto &type = static_cast<const TimeSeriesValueType &>(value.type().dereferenced_type());
+    validate_cell_type(type.value_type());
+    return frame::visit_cell_type(type.value_type(), [&]<typename Cell>(std::type_identity<Cell>) {
+        return broadcast_column<Cell>(source, value.template as<TS<Cell>>());
+    });
+}
+
+WiringPoint broadcast_scalar(wp<TSF<SOURCE_SCHEMA>> source, const WiringArgument &argument) {
+    const auto scalar = argument.scalar();
+    validate_cell_type(argument.type());
+    return frame::visit_cell_type(argument.type(), [&]<typename Cell>(std::type_identity<Cell>) {
+        const auto value = Scalar<Cell>::from(scalar);
+        const auto constant = operators::const_(value).template as<TS<Cell>>();
+        return broadcast_column<Cell>(source, constant);
+    });
+}
 
 } // namespace
 
@@ -76,6 +171,8 @@ WiringPoint with_columns(WiringPoint source, std::span<const WiringArgument> ass
                 const auto point = assignment.time_series();
                 if (is_mixed_expression_bundle_type(point.type()))
                     return static_cast<WiringPoint>(frame::bind_expression(typed_source, wp<>{point}));
+                if (type_cast<TimeSeriesValueType>(std::addressof(point.type().dereferenced_type())) != nullptr)
+                    return broadcast_series(typed_source, point);
                 return point;
             }
             if (assignment.is_scalar() &&
@@ -84,7 +181,9 @@ WiringPoint with_columns(WiringPoint source, std::span<const WiringArgument> ass
                 return static_cast<WiringPoint>(
                     frame::bind_expression(typed_source, Scalar<Expression>::from(expression_value).value()));
             }
-            throw WiringError{"frame::with_columns assignments must be TSC columns or column expressions"};
+            if (assignment.is_scalar())
+                return broadcast_scalar(typed_source, assignment);
+            throw WiringError{"frame::with_columns assignments must be scalar values, TS values, TSC columns, or column expressions"};
         }();
 
         const auto &item_type = column.type().dereferenced_type();

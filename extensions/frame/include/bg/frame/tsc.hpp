@@ -19,6 +19,9 @@ namespace bg {
 
 namespace frame {
 
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
+struct TSF;
+
 // Extension descriptor for TSC<T>; node declarations use TSC<T> and do not access this type directly.
 class ColumnSeriesType final : public TimeSeriesType {
   public:
@@ -532,6 +535,34 @@ class Out<frame::TSC<T, Properties...>, frame::computed<>> {
         });
     }
 
+    template <template <template <typename, auto...> typename> typename Schema, auto... SourceProperties,
+              auto... InputProperties>
+    bool bind(const In<frame::TSF<Schema, SourceProperties...>, InputProperties...> &source) const {
+        if (!source.valid()) {
+            if (binding_->valid())
+                binding_->invalidate();
+            return false;
+        }
+        const auto input = source.extension_descriptor();
+        if constexpr (frame::cell_type<T>) {
+            return bind_frame_rows<T>(input);
+        } else {
+            return frame::visit_cell_type(column_type().cell_type(), [&]<typename Cell>(std::type_identity<Cell>) {
+                return bind_frame_rows<Cell>(input);
+            });
+        }
+    }
+
+    template <typename Function> void for_each_added(Function &&function) const {
+        if constexpr (frame::cell_type<T>) {
+            visit_added<T>(std::forward<Function>(function));
+        } else {
+            frame::visit_cell_type(column_type().cell_type(), [&]<typename Cell>(std::type_identity<Cell>) {
+                visit_added<Cell>(std::forward<Function>(function));
+            });
+        }
+    }
+
     void set(frame::row_id_t id, std::optional<frame::cell_value_t<T>> value) const
         requires frame::cell_type<T>
     {
@@ -618,6 +649,15 @@ class Out<frame::TSC<T, Properties...>, frame::computed<>> {
         return *static_cast<frame::ColumnComputedOutputStorage<Cell> *>(binding_->mutable_data());
     }
 
+    template <frame::cell_type Cell, typename Function>
+    void visit_added(Function &&function) const {
+        const auto &output = storage<Cell>();
+        if (!output.membership.valid || output.membership.delta_time != binding_->context().evaluation_time())
+            return;
+        for (auto id : output.membership.added_rows)
+            std::invoke(function, id);
+    }
+
     template <typename SourceInput>
     bool bind_source(const SourceInput &source) const {
         if constexpr (frame::cell_type<T>) {
@@ -635,6 +675,18 @@ class Out<frame::TSC<T, Properties...>, frame::computed<>> {
         auto &output = storage<Cell>();
         const auto changed = output.bind(input.storage, input.modified, input.last_updated,
                                          binding_->context().evaluation_time(), binding_->allocator());
+        if (changed)
+            binding_->publish();
+        return changed;
+    }
+
+    template <frame::cell_type Cell, typename SourceInput>
+    bool bind_frame_rows(const SourceInput &source) const {
+        auto &output = storage<Cell>();
+        const auto changed = output.bind_rows(source.rows, source.modified,
+                                              source.modified && source.change_time == source.last_updated,
+                                              source.added, source.removed, binding_->context().evaluation_time(),
+                                              binding_->allocator());
         if (changed)
             binding_->publish();
         return changed;

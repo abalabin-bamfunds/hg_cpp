@@ -4,7 +4,9 @@
 #include <bg/frame/frame.hpp>
 #include <bg/graph.hpp>
 #include <bg/run_graph.hpp>
+#include <bg/scalar/list/scalar.hpp>
 
+#include <algorithm>
 #include <array>
 #include <optional>
 #include <string_view>
@@ -28,6 +30,8 @@ template <template <typename, auto...> typename Field> struct KeyedQuotes {
     static SchemaMetadata metadata() { return key_metadata<"id">(); }
 };
 
+template <template <typename, auto...> typename Field> struct EmptySchema {};
+
 template <template <typename, auto...> typename Field>
 using SourceRuntimeSchema = SchemaVariableDeclaration<"WITH_COLUMNS_TEST_SOURCE_SCHEMA">;
 template <template <typename, auto...> typename Field>
@@ -49,6 +53,29 @@ struct QuoteSource {
             state->row = output.add(Row<Quotes>{.id = 7, .price = 8.0});
         if (*command == 2)
             output.set(state->row, RowPatch<Quotes>{.price = 12.0});
+        if (*command == 3)
+            output.set(state->row, RowPatch<Quotes>{.price = 8.0});
+    }
+};
+
+struct BroadcastValueSource {
+    In<TS<i64>> command;
+    Out<TS<i64>> output;
+
+    void evaluate() const {
+        switch (*command) {
+        case 1:
+            output.set(5);
+            return;
+        case 2:
+            output.invalidate();
+            return;
+        case 3:
+            output.set(9);
+            return;
+        default:
+            return;
+        }
     }
 };
 
@@ -70,6 +97,87 @@ struct RuntimeObservation {
     std::vector<std::optional<double>> prices;
     std::vector<std::optional<double>> copies;
     std::vector<std::optional<double>> unchanged_prices;
+    std::vector<std::optional<i64>> runtime_bases;
+    std::vector<std::optional<i64>> runtime_constants;
+};
+
+struct EmptySourceState {
+    row_id_t first{no_row};
+    row_id_t second{no_row};
+};
+
+struct EmptySource {
+    In<TS<i64>> command;
+    State<EmptySourceState> state;
+    Out<TSF<EmptySchema>> output;
+
+    void evaluate() const {
+        switch (*command) {
+        case 1:
+            state->first = output.add(EmptySchema<Cell>{});
+            return;
+        case 2:
+            state->second = output.add(EmptySchema<Cell>{});
+            return;
+        case 3:
+            CHECK(output.erase(state->first));
+            return;
+        case 4: {
+            const auto reused = output.add(EmptySchema<Cell>{});
+            CHECK(reused == state->first);
+            return;
+        }
+        case 5:
+            output.invalidate();
+            return;
+        case 6:
+            state->first = output.add(EmptySchema<Cell>{});
+            return;
+        default:
+            return;
+        }
+    }
+};
+
+struct ManyRowsSource {
+    In<TS<i64>> command;
+    Out<TSF<EmptySchema>> output;
+
+    void evaluate() const {
+        if (*command == 1)
+            for (auto index = std::size_t{}; index != 129; ++index)
+                static_cast<void>(output.add(EmptySchema<Cell>{}));
+    }
+};
+
+struct BroadcastRow {
+    row_id_t id{};
+    std::optional<bool> bool_series;
+    std::optional<bool> bool_constant;
+    std::optional<i64> i64_series;
+    std::optional<i64> i64_constant;
+    std::optional<double> double_series;
+    std::optional<double> double_constant;
+    std::optional<std::string> string_series;
+    std::optional<std::string> string_constant;
+    std::optional<symbol> symbol_series;
+    std::optional<symbol> symbol_constant;
+};
+
+struct BroadcastObservation {
+    bool valid{};
+    std::vector<std::string> names;
+    std::vector<BroadcastRow> rows;
+};
+
+struct BorrowedBroadcastObservation {
+    bool valid{};
+    bool frame_modified{};
+    bool pass_through_is_borrowed{};
+    bool broadcast_modified{};
+    std::vector<row_id_t> broadcast_changed;
+    std::vector<std::optional<i64>> source_values;
+    std::vector<std::optional<i64>> broadcast_values;
 };
 
 TEST_CASE("with_columns infers its result schema in an enclosing graph template",
@@ -208,6 +316,376 @@ TEST_CASE("with_columns resolves runtime schema and assignment names in run_grap
     CHECK(observations[2].prices == (std::vector<std::optional<double>>{10.0, 20.0}));
     CHECK(observations[2].copies == (std::vector<std::optional<double>>{10.0, 20.0}));
     CHECK(observations[2].unchanged_prices == (std::vector<std::optional<double>>{10.0, 20.0}));
+}
+
+TEST_CASE("with_columns broadcasts scalar values and TS values over zero-field frame membership",
+          "[feature:frame][feature:with_columns][declaration:generic]") {
+    auto observations = std::vector<BroadcastObservation>{};
+    const auto source_node = node<EmptySource>();
+    const auto observe = node([&](In<TSF<EmptySchema>, optional> source,
+                                  In<TSF<ResultRuntimeSchema>, optional> result, In<TS<i64>> tick,
+                                  Out<TS<i64>> output) {
+        auto observation = BroadcastObservation{.valid = result.valid()};
+        if (result.valid()) {
+            for (const auto &field : result.schema().fields())
+                observation.names.emplace_back(field.name.text());
+
+            const auto bool_series = result.column("bool_series").input<bool>();
+            const auto bool_constant = result.column("bool_constant").input<bool>();
+            const auto i64_series = result.column("i64_series").input<i64>();
+            const auto i64_constant = result.column("i64_constant").input<i64>();
+            const auto double_series = result.column("double_series").input<double>();
+            const auto double_constant = result.column("double_constant").input<double>();
+            const auto string_series = result.column("string_series").input<string>();
+            const auto string_constant = result.column("string_constant").input<string>();
+            const auto symbol_series = result.column("symbol_series").input<symbol>();
+            const auto symbol_constant = result.column("symbol_constant").input<symbol>();
+            result.for_each_row([&](row_id_t id, std::size_t) {
+                const auto series_text = string_series.cell(id);
+                const auto constant_text = string_constant.cell(id);
+                observation.rows.push_back(BroadcastRow{
+                    .id = id,
+                    .bool_series = bool_series.cell(id),
+                    .bool_constant = bool_constant.cell(id),
+                    .i64_series = i64_series.cell(id),
+                    .i64_constant = i64_constant.cell(id),
+                    .double_series = double_series.cell(id),
+                    .double_constant = double_constant.cell(id),
+                    .string_series = series_text ? std::optional{std::string{*series_text}} : std::nullopt,
+                    .string_constant = constant_text ? std::optional{std::string{*constant_text}} : std::nullopt,
+                    .symbol_series = symbol_series.cell(id),
+                    .symbol_constant = symbol_constant.cell(id),
+                });
+            });
+            std::ranges::sort(observation.rows, {}, &BroadcastRow::id);
+        }
+        static_cast<void>(source);
+        observations.push_back(std::move(observation));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<bool>> bool_series, wp<TS<i64>> i64_series,
+                           wp<TS<double>> double_series, wp<TS<string>> string_series,
+                           wp<TS<symbol>> symbol_series, wp<TS<i64>> tick) {
+        const auto source = source_node(command);
+        const auto assignments = std::array{
+            WiringArgument{util::symbol{"bool_series"}, bool_series},
+            WiringArgument{util::symbol{"bool_constant"}, true},
+            WiringArgument{util::symbol{"i64_series"}, i64_series},
+            WiringArgument{util::symbol{"i64_constant"}, i64{42}},
+            WiringArgument{util::symbol{"double_series"}, double_series},
+            WiringArgument{util::symbol{"double_constant"}, 3.5},
+            WiringArgument{util::symbol{"string_series"}, string_series},
+            WiringArgument{util::symbol{"string_constant"}, std::string_view{"fixed"}},
+            WiringArgument{util::symbol{"symbol_series"}, symbol_series},
+            WiringArgument{util::symbol{"symbol_constant"}, symbol{"constant"}},
+        };
+        const auto result = frame::with_columns(source, std::span<const WiringArgument>{assignments});
+        return observe(source, result, tick);
+    };
+
+    const auto result = run_graph(
+        graph, input<TS<i64>>({1, literal::SKIP, 2, 3, 4, 5, 6}),
+        input<TS<bool>>({true, false, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP, true}),
+        input<TS<i64>>({10, 11, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP, 12}),
+        input<TS<double>>({1.5, 2.5, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP, 3.5}),
+        input<TS<string>>({std::string_view{"first"}, std::string_view{"second"}, literal::SKIP,
+                           literal::SKIP, literal::SKIP, literal::SKIP, std::string_view{"last"}}),
+        input<TS<symbol>>({symbol{"first"}, symbol{"second"}, literal::SKIP, literal::SKIP, literal::SKIP,
+                           literal::SKIP, symbol{"last"}}),
+        input<TS<i64>>({0, 1, 2, 3, 4, 5, 6}));
+
+    REQUIRE(result.equals<i64>({0, 1, 2, 3, 4, 5, 6}));
+    REQUIRE(observations.size() == 7);
+    const auto expected_names = std::vector<std::string>{
+        "bool_series", "bool_constant", "i64_series", "i64_constant", "double_series", "double_constant",
+        "string_series", "string_constant", "symbol_series", "symbol_constant"};
+    for (const auto &observation : observations)
+        if (observation.valid)
+            CHECK(observation.names == expected_names);
+
+    CHECK(observations[0].valid);
+    REQUIRE(observations[0].rows.size() == 1);
+    CHECK(observations[0].rows[0].id == 0);
+    CHECK(observations[0].rows[0].bool_series == true);
+    CHECK(observations[0].rows[0].bool_constant == true);
+    CHECK(observations[0].rows[0].i64_series == 10);
+    CHECK(observations[0].rows[0].i64_constant == 42);
+    CHECK(observations[0].rows[0].double_series == 1.5);
+    CHECK(observations[0].rows[0].double_constant == 3.5);
+    CHECK(observations[0].rows[0].string_series == "first");
+    CHECK(observations[0].rows[0].string_constant == "fixed");
+    CHECK(observations[0].rows[0].symbol_series == symbol{"first"});
+    CHECK(observations[0].rows[0].symbol_constant == symbol{"constant"});
+
+    REQUIRE(observations[1].rows.size() == 1);
+    CHECK(observations[1].rows[0].bool_series == false);
+    CHECK(observations[1].rows[0].i64_series == 11);
+    CHECK(observations[1].rows[0].double_series == 2.5);
+    CHECK(observations[1].rows[0].string_series == "second");
+    CHECK(observations[1].rows[0].symbol_series == symbol{"second"});
+
+    REQUIRE(observations[2].rows.size() == 2);
+    CHECK(observations[2].rows[0].id == 0);
+    CHECK(observations[2].rows[1].id == 1);
+    CHECK(observations[2].rows[1].i64_series == 11);
+    CHECK(observations[3].rows.size() == 1);
+    CHECK(observations[3].rows[0].id == 1);
+    REQUIRE(observations[4].rows.size() == 2);
+    CHECK(observations[4].rows[0].id == 0);
+    CHECK(observations[4].rows[0].i64_series == 11);
+    CHECK(observations[4].rows[0].string_series == "second");
+    CHECK(observations[4].rows[1].id == 1);
+    CHECK_FALSE(observations[5].valid);
+    REQUIRE(observations[6].rows.size() == 1);
+    CHECK(observations[6].rows[0].i64_series == 12);
+    CHECK(observations[6].rows[0].string_series == "last");
+    CHECK(observations[6].rows[0].symbol_series == symbol{"last"});
+}
+
+TEST_CASE("with_columns accepts wiring-time runtime schemas and dynamic assignment names",
+          "[feature:frame][feature:with_columns][declaration:generic]") {
+    const auto fields = std::array{SchemaField{util::symbol{"base"}, &cpp_scalar_type<i64>()}};
+    const auto &schema = anonymous_schema(fields);
+    const auto &runtime = frame_time_series_runtime_type<SCHEMA>(
+        frame_series_type(schema, TimeSeriesGuarantee::ordinary));
+    auto observations = std::vector<RuntimeObservation>{};
+    const auto observe = node([&](In<TSF<ResultRuntimeSchema>, optional> result, In<TS<i64>> tick,
+                                  Out<TS<i64>> output) {
+        auto observation = RuntimeObservation{.valid = result.valid()};
+        if (result.valid()) {
+            for (const auto &field : result.schema().fields())
+                observation.names.emplace_back(field.name.text());
+            result.for_each_row([&](row_id_t id, std::size_t) {
+                observation.runtime_bases.push_back(result.column("base").input<i64>().cell(id));
+                observation.runtime_constants.push_back(result.column("dynamic_constant").input<i64>().cell(id));
+                observation.copies.push_back(result.column("dynamic_series").input<double>().cell(id));
+            });
+        }
+        observations.push_back(std::move(observation));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TSF<SCHEMA>> source, wp<TS<double>> series, wp<TS<i64>> tick) {
+        const auto assignments = std::array{
+            WiringArgument{util::symbol{"dynamic_constant"}, i64{17}},
+            WiringArgument{util::symbol{"dynamic_series"}, series},
+        };
+        const auto result = frame::with_columns(source, std::span<const WiringArgument>{assignments});
+        return observe(result, tick);
+    };
+
+    const auto result = run_graph(
+        graph,
+        input(runtime, {literal::SKIP, {{{"base", i64{5}}}}, {{{"base", i64{7}}}}, literal::SKIP}),
+        input<TS<double>>({2.5, literal::SKIP, literal::SKIP, 3.5}), input<TS<i64>>({0, 1, 2, 3}));
+
+    REQUIRE(result.equals<i64>({0, 1, 2, 3}));
+    REQUIRE(observations.size() == 4);
+    CHECK_FALSE(observations[0].valid);
+    CHECK(observations[1].valid);
+    CHECK(observations[1].names == std::vector<std::string>{"base", "dynamic_constant", "dynamic_series"});
+    CHECK(observations[1].runtime_bases == std::vector<std::optional<i64>>{5});
+    CHECK(observations[1].runtime_constants == std::vector<std::optional<i64>>{17});
+    CHECK(observations[1].copies == std::vector<std::optional<double>>{2.5});
+    CHECK(observations[2].runtime_bases == (std::vector<std::optional<i64>>{5, 7}));
+    CHECK(observations[2].runtime_constants == (std::vector<std::optional<i64>>{17, 17}));
+    CHECK(observations[2].copies == (std::vector<std::optional<double>>{2.5, 2.5}));
+    CHECK(observations[3].copies == (std::vector<std::optional<double>>{3.5, 3.5}));
+}
+
+TEST_CASE("with_columns does not republish a broadcast column for source cell changes",
+          "[feature:frame][feature:with_columns]") {
+    auto observations = std::vector<BorrowedBroadcastObservation>{};
+    const auto source_node = node<QuoteSource>();
+    const auto observe = node([&](In<TSF<Quotes>> source, In<TSF<ResultRuntimeSchema>, optional> result,
+                                  In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto observation = BorrowedBroadcastObservation{.valid = result.valid(),
+                                                        .frame_modified = result.modified()};
+        if (result.valid()) {
+            const auto source_price = source.column("price").input<double>().extension_descriptor().storage;
+            const auto result_price = result.column("price").input<double>().extension_descriptor().storage;
+            observation.pass_through_is_borrowed = source_price.native == result_price.native &&
+                                                    source_price.physical_rows == result_price.physical_rows;
+            const auto constant = result.column("constant").input<i64>();
+            observation.broadcast_modified = constant.modified();
+            constant.for_each_changed([&](row_id_t id) { observation.broadcast_changed.push_back(id); });
+            result.for_each_row([&](row_id_t id, std::size_t) {
+                observation.source_values.push_back(result.column("price").input<double>().cell(id).transform(
+                    [](double value) { return static_cast<i64>(value); }));
+                observation.broadcast_values.push_back(constant.cell(id));
+            });
+        }
+        observations.push_back(std::move(observation));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto source = source_node(command);
+        const auto assignments = std::array{WiringArgument{util::symbol{"constant"}, i64{5}}};
+        const auto result = frame::with_columns(source, std::span<const WiringArgument>{assignments});
+        return observe(source, result, tick);
+    };
+
+    const auto result = run_graph(graph, input<TS<i64>>({1, 2}), input<TS<i64>>({0, 1}));
+
+    REQUIRE(result.equals<i64>({0, 1}));
+    REQUIRE(observations.size() == 2);
+    CHECK(observations[0].valid);
+    CHECK(observations[0].pass_through_is_borrowed);
+    CHECK(observations[0].broadcast_changed == std::vector<row_id_t>{0});
+    CHECK(observations[0].source_values == std::vector<std::optional<i64>>{8});
+    CHECK(observations[0].broadcast_values == std::vector<std::optional<i64>>{5});
+    CHECK(observations[1].frame_modified);
+    CHECK(observations[1].pass_through_is_borrowed);
+    CHECK_FALSE(observations[1].broadcast_modified);
+    CHECK(observations[1].broadcast_changed.empty());
+    CHECK(observations[1].source_values == std::vector<std::optional<i64>>{12});
+    CHECK(observations[1].broadcast_values == std::vector<std::optional<i64>>{5});
+}
+
+TEST_CASE("with_columns refills a scalar broadcast when filtered row membership changes",
+          "[feature:frame][feature:with_columns][transition:update]") {
+    struct Observation {
+        std::vector<row_id_t> rows;
+        std::vector<row_id_t> changed;
+        std::vector<std::optional<i64>> values;
+    };
+    auto observations = std::vector<Observation>{};
+    const auto source_node = node<QuoteSource>();
+    const auto observe = node([&](In<TSF<ResultRuntimeSchema>, optional> result, In<TS<i64>> tick,
+                                  Out<TS<i64>> output) {
+        auto observation = Observation{};
+        if (result.valid()) {
+            const auto constant = result.column("constant").input<i64>();
+            constant.for_each_changed([&](row_id_t id) { observation.changed.push_back(id); });
+            result.for_each_row([&](row_id_t id, std::size_t) {
+                observation.rows.push_back(id);
+                observation.values.push_back(constant.cell(id));
+            });
+        }
+        observations.push_back(std::move(observation));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto source = source_node(command);
+        const auto selected = filter(source, col("price") > 10.0);
+        const auto assignments = std::array{WiringArgument{util::symbol{"constant"}, i64{5}}};
+        const auto result = frame::with_columns(selected, std::span<const WiringArgument>{assignments});
+        return observe(result, tick);
+    };
+
+    const auto result = run_graph(graph, input<TS<i64>>({1, 2, 3, 2}), input<TS<i64>>({0, 1, 2, 3}));
+
+    REQUIRE(result.equals<i64>({0, 1, 2, 3}));
+    REQUIRE(observations.size() == 4);
+    CHECK(observations[0].rows.empty());
+    CHECK(observations[1].rows == std::vector<row_id_t>{0});
+    CHECK(observations[1].changed == std::vector<row_id_t>{0});
+    CHECK(observations[1].values == std::vector<std::optional<i64>>{5});
+    CHECK(observations[2].rows.empty());
+    CHECK(observations[3].rows == std::vector<row_id_t>{0});
+    CHECK(observations[3].changed == std::vector<row_id_t>{0});
+    CHECK(observations[3].values == std::vector<std::optional<i64>>{5});
+}
+
+TEST_CASE("with_columns invalidates and refills a TS broadcast input",
+          "[feature:frame][feature:with_columns][transition:validity]") {
+    struct Observation {
+        bool valid{};
+        std::vector<std::optional<i64>> values;
+    };
+    auto observations = std::vector<Observation>{};
+    const auto source_node = node<EmptySource>();
+    const auto value_node = node<BroadcastValueSource>();
+    const auto observe = node([&](In<TSF<ResultRuntimeSchema>, optional> result, In<TS<i64>> tick,
+                                  Out<TS<i64>> output) {
+        auto observation = Observation{.valid = result.valid()};
+        if (result.valid()) {
+            const auto value = result.column("assigned").input<i64>();
+            result.for_each_row([&](row_id_t id, std::size_t) { observation.values.push_back(value.cell(id)); });
+        }
+        observations.push_back(std::move(observation));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto source = source_node(command);
+        const auto value = value_node(command);
+        const auto assignments = std::array{WiringArgument{util::symbol{"assigned"}, value}};
+        const auto result = frame::with_columns(source, std::span<const WiringArgument>{assignments});
+        return observe(result, tick);
+    };
+
+    const auto result = run_graph(graph, input<TS<i64>>({1, 2, 3}), input<TS<i64>>({0, 1, 2}));
+
+    REQUIRE(result.equals<i64>({0, 1, 2}));
+    REQUIRE(observations.size() == 3);
+    CHECK(observations[0].valid);
+    CHECK(observations[0].values == std::vector<std::optional<i64>>{5});
+    CHECK_FALSE(observations[1].valid);
+    CHECK(observations[2].valid);
+    CHECK(observations[2].values == std::vector<std::optional<i64>>{9});
+}
+
+TEST_CASE("with_columns reports unsupported scalar and TS cell types as wiring errors",
+          "[feature:frame][feature:with_columns][error:wiring]") {
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto source_node = node([](Out<TSF<Quotes>>) {});
+    const auto source = source_node();
+    const auto capture_wiring_error = [](auto &&operation) {
+        auto error = std::optional<WiringError>{};
+        try {
+            operation();
+        } catch (const WiringError &caught) {
+            error = caught;
+        }
+        return error;
+    };
+    const auto unsupported_scalar = ScalarValue<List<i64>>{std::array<i64, 1>{1}};
+    const auto scalar_error = capture_wiring_error([&] {
+        const auto assignments = std::array{WiringArgument{util::symbol{"unsupported_scalar"}, unsupported_scalar}};
+        static_cast<void>(frame::with_columns(source, std::span<const WiringArgument>{assignments}));
+    });
+    REQUIRE(scalar_error);
+    CHECK(std::string_view{scalar_error->what()} ==
+          "frame::with_columns supports only bool, i64, double, string, or symbol values");
+
+    const auto unsupported_series_node = node([](Out<TS<List<i64>>>) {});
+    const auto unsupported_series = unsupported_series_node();
+    const auto series_error = capture_wiring_error([&] {
+        const auto assignments = std::array{WiringArgument{util::symbol{"unsupported_series"}, unsupported_series}};
+        static_cast<void>(frame::with_columns(source, std::span<const WiringArgument>{assignments}));
+    });
+    REQUIRE(series_error);
+    CHECK(std::string_view{series_error->what()} ==
+          "frame::with_columns supports only bool, i64, double, string, or symbol values");
+    static_cast<void>(context);
+}
+
+TEST_CASE("with_columns writes the bool batch tail after 128 rows",
+          "[feature:frame][feature:with_columns][cell:bool]") {
+    const auto source_node = node<ManyRowsSource>();
+    auto observed_rows = std::size_t{};
+    auto observed_true = std::size_t{};
+    const auto observe = node([&](In<TSF<ResultRuntimeSchema>, optional> result, Out<TS<i64>> output) {
+        if (result.valid()) {
+            const auto flag = result.column("flag").input<bool>();
+            result.for_each_row([&](row_id_t id, std::size_t) {
+                ++observed_rows;
+                observed_true += flag.cell(id).value_or(false);
+            });
+        }
+        output.set(static_cast<i64>(observed_rows));
+    });
+    const auto graph = [&](wp<TS<i64>> command) {
+        const auto source = source_node(command);
+        const auto assignments = std::array{WiringArgument{util::symbol{"flag"}, true}};
+        return observe(frame::with_columns(source, std::span<const WiringArgument>{assignments}));
+    };
+
+    const auto result = run_graph(graph, input<TS<i64>>({1}));
+
+    CHECK(result.equals<i64>({129}));
+    CHECK(observed_rows == 129);
+    CHECK(observed_true == 129);
 }
 
 } // namespace

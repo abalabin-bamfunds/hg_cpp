@@ -1885,7 +1885,6 @@ struct ColumnRowMembership {
         const auto row_domain_changed = previous_row_set.identity != nullptr &&
                                         previous_row_set.identity != input.visible_rows.identity;
         const auto row_set_rebound = !valid || previous_row_set.context != input.visible_rows.context;
-        const auto new_cycle = !valid || time != delta_time;
         auto source_view = ColumnSeriesView<T>{input};
         const auto has_source_deltas = input.rows != nullptr ||
                                        (input.added != nullptr && input.modified != nullptr && input.removed != nullptr);
@@ -1907,6 +1906,23 @@ struct ColumnRowMembership {
             }
         }
 
+        auto binding = bind_rows(input.visible_rows, source_modified, input_changes_current,
+                                 std::addressof(source_view.added()), std::addressof(source_view.removed()), time,
+                                 memory, std::forward<OnAdd>(on_add), std::forward<OnRemove>(on_remove));
+        mapping = next_mapping;
+        binding.mapping_changed = mapping_changed;
+        return binding;
+    }
+
+    template <typename OnAdd, typename OnRemove>
+    Binding bind_rows(RowSet visible_rows, bool source_modified, bool input_changes_current,
+                      const util::index<> *source_added, const util::index<> *source_removed, EvaluationTime time,
+                      allocator memory, OnAdd &&on_add, OnRemove &&on_remove) {
+        const auto previous_row_set = previous_rows.source();
+        const auto row_domain_changed = previous_row_set.identity != nullptr &&
+                                        previous_row_set.identity != visible_rows.identity;
+        const auto row_set_rebound = !valid || previous_row_set.context != visible_rows.context;
+        const auto new_cycle = !valid || time != delta_time;
         const auto was_valid = valid;
         if (new_cycle) {
             added_rows.clear();
@@ -1937,44 +1953,45 @@ struct ColumnRowMembership {
                 transitioned = true;
             });
             previous_rows.clear();
-            input.visible_rows.each([&](row_id_t id) {
+            visible_rows.each([&](row_id_t id) {
                 std::invoke(on_add, id);
                 added_rows.set(id, memory.memory_resource());
                 transitioned = true;
             });
         } else if (row_set_rebound) {
             previous_rows.for_each_selected([&](row_id_t id) {
-                if (!input.visible_rows.has(id))
+                if (!visible_rows.has(id))
                     remove_row(id);
             });
-            input.visible_rows.each([&](row_id_t id) {
+            visible_rows.each([&](row_id_t id) {
                 if (!previous_rows.contains(id))
                     add_row(id);
             });
         } else if (input_changes_current) {
-            for (auto id : source_view.removed())
-                if (!input.visible_rows.has(id) && previous_rows.contains(id))
-                    remove_row(id);
-            for (auto id : source_view.added())
-                if (input.visible_rows.has(id) && !previous_rows.contains(id))
-                    add_row(id);
+            if (source_removed != nullptr)
+                for (auto id : *source_removed)
+                    if (!visible_rows.has(id) && previous_rows.contains(id))
+                        remove_row(id);
+            if (source_added != nullptr)
+                for (auto id : *source_added)
+                    if (visible_rows.has(id) && !previous_rows.contains(id))
+                        add_row(id);
         } else if (source_modified) {
             previous_rows.for_each_selected([&](row_id_t id) {
-                if (!input.visible_rows.has(id))
+                if (!visible_rows.has(id))
                     remove_row(id);
             });
-            input.visible_rows.each([&](row_id_t id) {
+            visible_rows.each([&](row_id_t id) {
                 if (!previous_rows.contains(id))
                     add_row(id);
             });
         }
 
-        previous_rows.bind(input.visible_rows);
+        previous_rows.bind(visible_rows);
         if (row_domain_changed || row_set_rebound)
-            input.visible_rows.each([&](row_id_t id) { previous_rows.include(id, memory); });
-        mapping = next_mapping;
+            visible_rows.each([&](row_id_t id) { previous_rows.include(id, memory); });
         valid = true;
-        return {row_domain_changed, row_set_rebound, input_changes_current, mapping_changed, new_cycle,
+        return {row_domain_changed, row_set_rebound, input_changes_current, false, new_cycle,
                 source_modified && !row_domain_changed && !row_set_rebound && !input_changes_current,
                 transitioned || row_domain_changed || !was_valid};
     }
@@ -2079,6 +2096,25 @@ template <typename T> struct ColumnComputedOutputStorage {
             cells.reset_changes();
         scalar = ColumnStorage<T>{cells, physical_rows, input.visible_rows, membership.added_rows,
                                   cells.modified(), membership.removed_rows, time};
+        return binding.transitioned;
+    }
+
+    bool bind_rows(RowSet rows, bool source_modified, bool input_changes_current, const util::index<> *source_added,
+                   const util::index<> *source_removed, EvaluationTime time, allocator memory) {
+        const auto binding = membership.bind_rows(
+            rows, source_modified, input_changes_current, source_added, source_removed, time, memory,
+            [&](row_id_t id) { physical_rows.insert(id, memory); },
+            [&](row_id_t id) {
+                if (!physical_rows.contains(id))
+                    return;
+                const auto slot = physical_rows.slot_of(id);
+                cells.erase_slot(slot, id, memory);
+                physical_rows.erase(id);
+            });
+        if (binding.new_cycle)
+            cells.reset_changes();
+        scalar = ColumnStorage<T>{cells, physical_rows, rows, membership.added_rows, cells.modified(),
+                                  membership.removed_rows, time};
         return binding.transitioned;
     }
 
