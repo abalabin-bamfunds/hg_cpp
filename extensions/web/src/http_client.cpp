@@ -39,7 +39,7 @@ struct ClientSource {
 
 struct ClientRequestSink {
     In<TS<service_client_id_t, TimeSeriesGuarantee::const_>, passive> client_id;
-    In<TS<service_client_id_t, TimeSeriesGuarantee::const_>, passive> generation;
+    In<TS<service_client_id_t, TimeSeriesGuarantee::const_>, passive> client_sequence;
     In<TS<Bundle<HttpClientRequest>>> request;
     In<TS<Opaque<ClientRuntime *>>, passive> runtime_input;
     State<bool> submitted;
@@ -47,13 +47,13 @@ struct ClientRequestSink {
     void start() const { *submitted = false; }
 
     void evaluate() const {
-        runtime_input.value()->request(client_id.value(), generation.value(),
+        runtime_input.value()->request(client_id.value(), client_sequence.value(),
                                        ScalarValue<Bundle<HttpClientRequest>>{request.value()});
         *submitted = true;
     }
 
     void stop() const noexcept {
-        if (*submitted) runtime_input.value()->cancel(client_id.value(), generation.value());
+        if (*submitted) runtime_input.value()->cancel(client_id.value(), client_sequence.value());
     }
 };
 
@@ -77,11 +77,11 @@ std::shared_ptr<const WiringTemplate> http_client_impl(HttpClientOptions options
                    wp<TS<Bundle<HttpClientRequest>>, "request"_n> request,
                    wp<TSD<service_client_id_t, TS<Bundle<details::ClientReply>>>, "replies"_n> replies,
                    wp<TS<Opaque<ClientRuntime *>>, "runtime"_n> runtime) -> wp<TS<Bundle<HttpResponse>>> {
-                    const auto generation = service_client_id();
+                    const auto client_sequence = service_client_id();
                     const auto reply = operators::getitem(replies, client_id);
-                    const auto is_current = operators::eq(operators::getattr(reply, util::symbol{"generation"}),
-                                                          generation);
-                    client_request_sink(client_id, generation, request, runtime);
+                    const auto is_current = operators::eq(
+                        operators::getattr(reply, util::symbol{"client_sequence"}), client_sequence);
+                    client_request_sink(client_id, client_sequence, request, runtime);
                     return wp<TS<Bundle<HttpResponse>>>{
                         operators::filter_(is_current, operators::getattr(reply, util::symbol{"response"}))};
                 });

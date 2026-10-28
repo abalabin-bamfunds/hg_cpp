@@ -72,11 +72,11 @@ ScalarValue<Bundle<HttpResponse>> make_response(i64 status, HeaderValues headers
                                 "body"_n = body_value.view());
 }
 
-ScalarValue<Bundle<bg::web::details::ClientReply>> make_client_reply(i64 generation,
+ScalarValue<Bundle<bg::web::details::ClientReply>> make_client_reply(i64 client_sequence,
                                                                      Scalar<Bundle<HttpResponse>> response) {
-    auto generation_value = ScalarValue<i64>{generation};
+    auto client_sequence_value = ScalarValue<i64>{client_sequence};
     auto memory = allocator{};
-    return bundle<bg::web::details::ClientReply>(memory, "generation"_n = generation_value.view(),
+    return bundle<bg::web::details::ClientReply>(memory, "client_sequence"_n = client_sequence_value.view(),
                                                  "response"_n = response);
 }
 
@@ -273,7 +273,7 @@ TEST_CASE("HTTP client preserves binary payloads, ordered headers, and sequentia
     CHECK(responses[1].body.empty());
 }
 
-TEST_CASE("HTTP client dispatch rejects replies from a removed client generation",
+TEST_CASE("HTTP client dispatch rejects replies from a removed client sequence",
           "[feature:http][feature:service][feature:lifecycle][transition:removal][queue]") {
     const auto requests = queue<TSD<service_client_id_t, TS<Bundle<HttpClientRequest>>>>(start = [](Queue) {});
     const auto implementation = http_client_impl();
@@ -330,7 +330,7 @@ TEST_CASE("HTTP client dispatch rejects replies from a removed client generation
         return runtime.has_committed_queue_messages();
     };
     const auto cycle = [&](i64 microseconds) { runtime.evaluate(MIN_DT + std::chrono::microseconds{microseconds}); };
-    const auto reply_generation = [&] {
+    const auto reply_client_sequence = [&] {
         const auto source = runtime.node(source_index);
         const auto input = In<TS_T>{source.output_last_updated(), source.output_value(),
                                     compiled.node(source_index).output_runtime_type()};
@@ -346,7 +346,7 @@ TEST_CASE("HTTP client dispatch rejects replies from a removed client generation
     REQUIRE(wait_for_committed_queue());
     cycle(3);
     CHECK(observed_statuses == std::vector<i64>{599});
-    const auto first_generation = reply_generation();
+    const auto first_client_sequence = reply_client_sequence();
 
     REQUIRE(request_queue.write(literal::TimeSeriesLiteral{{service_client_id_t{42}, literal::REMOVE}}));
     cycle(4);
@@ -355,7 +355,7 @@ TEST_CASE("HTTP client dispatch rejects replies from a removed client generation
     CHECK_FALSE(client_present);
 
     const auto stale_response = make_response(200, {});
-    const auto stale_reply = make_client_reply(first_generation, stale_response.view());
+    const auto stale_reply = make_client_reply(first_client_sequence, stale_response.view());
     REQUIRE(source_queue.write(literal::TimeSeriesLiteral{
         {util::symbol{"replies"}, {{service_client_id_t{42}, stale_reply.view()}}}}));
     cycle(6);
@@ -370,19 +370,19 @@ TEST_CASE("HTTP client dispatch rejects replies from a removed client generation
     REQUIRE(wait_for_committed_queue());
     cycle(8);
     CHECK(observed_statuses == std::vector<i64>{599, 599});
-    const auto second_generation = reply_generation();
-    CHECK(second_generation != first_generation);
+    const auto second_client_sequence = reply_client_sequence();
+    CHECK(second_client_sequence != first_client_sequence);
     CHECK(client_present);
 
     const auto stale_response_after_readd = make_response(202, {});
-    const auto stale_reply_after_readd = make_client_reply(first_generation, stale_response_after_readd.view());
+    const auto stale_reply_after_readd = make_client_reply(first_client_sequence, stale_response_after_readd.view());
     REQUIRE(source_queue.write(literal::TimeSeriesLiteral{
         {util::symbol{"replies"}, {{service_client_id_t{42}, stale_reply_after_readd.view()}}}}));
     cycle(9);
     CHECK(observed_statuses == std::vector<i64>{599, 599});
 
     const auto current_response = make_response(201, {});
-    const auto current_reply = make_client_reply(second_generation, current_response.view());
+    const auto current_reply = make_client_reply(second_client_sequence, current_response.view());
     REQUIRE(source_queue.write(literal::TimeSeriesLiteral{
         {util::symbol{"replies"}, {{service_client_id_t{42}, current_reply.view()}}}}));
     cycle(10);

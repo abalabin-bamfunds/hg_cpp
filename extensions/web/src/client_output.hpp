@@ -12,7 +12,7 @@ class ClientRuntime;
 namespace bg::web::details {
 
 template <template <typename, auto...> typename Field> struct ClientReply {
-    Field<i64> generation;
+    Field<i64> client_sequence;
     Field<Bundle<HttpResponse>> response;
 };
 

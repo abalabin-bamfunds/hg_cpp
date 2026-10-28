@@ -17,8 +17,8 @@ class ClientRuntime {
     ClientRuntime &operator=(const ClientRuntime &) = delete;
     ~ClientRuntime();
 
-    void request(i64 client_id, i64 generation, ScalarValue<Bundle<HttpClientRequest>> request);
-    void cancel(i64 client_id, i64 generation) noexcept;
+    void request(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> request);
+    void cancel(i64 client_id, i64 client_sequence) noexcept;
 
   private:
     std::unique_ptr<ClientImplementation> implementation_;

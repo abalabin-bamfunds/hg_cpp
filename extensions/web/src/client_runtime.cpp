@@ -41,13 +41,13 @@ using HeaderValues = std::vector<std::pair<std::string, std::string>>;
 using namespace bg::literals;
 
 struct Transfer {
-    Transfer(i64 client_id, i64 generation, ScalarValue<Bundle<HttpClientRequest>> request_value)
-        : client_id{client_id}, generation{generation}, request_value{std::move(request_value)} {}
+    Transfer(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> request_value)
+        : client_id{client_id}, client_sequence{client_sequence}, request_value{std::move(request_value)} {}
 
     CURL *easy{};
     curl_slist *request_headers{};
     i64 client_id{};
-    i64 generation{};
+    i64 client_sequence{};
     ScalarValue<Bundle<HttpClientRequest>> request_value;
     std::string method;
     std::string url;
@@ -141,7 +141,7 @@ struct Transfer {
 struct Command {
     enum class Kind { request, cancel } kind;
     i64 client_id;
-    i64 generation;
+    i64 client_sequence;
     std::optional<ScalarValue<Bundle<HttpClientRequest>>> request;
 };
 
@@ -322,16 +322,18 @@ class ClientImplementation final {
         stop();
     }
 
-    void request(i64 client_id, i64 generation, ScalarValue<Bundle<HttpClientRequest>> request) {
+    void request(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> request) {
         enqueue(Command{.kind = Command::Kind::request,
                         .client_id = client_id,
-                        .generation = generation,
+                        .client_sequence = client_sequence,
                         .request = std::move(request)});
     }
 
-    void cancel(i64 client_id, i64 generation) noexcept {
+    void cancel(i64 client_id, i64 client_sequence) noexcept {
         try {
-            enqueue(Command{.kind = Command::Kind::cancel, .client_id = client_id, .generation = generation});
+            enqueue(Command{.kind = Command::Kind::cancel,
+                            .client_id = client_id,
+                            .client_sequence = client_sequence});
         } catch (...) {
             record_failure(std::current_exception());
         }
@@ -413,23 +415,23 @@ class ClientImplementation final {
             if (command.kind == Command::Kind::request) {
                 start_request(std::move(command));
             } else {
-                cancel_requests(command.client_id, command.generation);
+                cancel_requests(command.client_id, command.client_sequence);
             }
         }
     }
 
     void start_request(Command command) {
-        auto transfer = std::make_unique<Transfer>(command.client_id, command.generation,
+        auto transfer = std::make_unique<Transfer>(command.client_id, command.client_sequence,
                                                    std::move(*command.request));
         transfer->read_request();
         if (const auto error = transfer->validate()) {
-            write_response(command.client_id, command.generation, error_response(*error));
+            write_response(command.client_id, command.client_sequence, error_response(*error));
             return;
         }
         transfer->easy = curl_easy_init();
         if (transfer->easy == nullptr) throw std::runtime_error{"libcurl request initialization failed"};
         if (const auto error = transfer->configure(options_)) {
-            write_response(command.client_id, command.generation, error_response(*error));
+            write_response(command.client_id, command.client_sequence, error_response(*error));
             return;
         }
 
@@ -443,10 +445,10 @@ class ClientImplementation final {
         }
     }
 
-    void cancel_requests(i64 client_id, i64 generation) {
+    void cancel_requests(i64 client_id, i64 client_sequence) {
         for (auto iterator = transfers_.begin(); iterator != transfers_.end();) {
             const auto &transfer = *iterator->second;
-            if (transfer.client_id == client_id && transfer.generation == generation) {
+            if (transfer.client_id == client_id && transfer.client_sequence == client_sequence) {
                 (void)curl_multi_remove_handle(multi_.get(), iterator->first);
                 iterator = transfers_.erase(iterator);
             } else {
@@ -478,7 +480,7 @@ class ClientImplementation final {
                 continue;
             }
             if (transfer->response_too_large) {
-                write_response(transfer->client_id, transfer->generation,
+                write_response(transfer->client_id, transfer->client_sequence,
                                error_response("HTTP response body exceeds configured limit"));
                 continue;
             }
@@ -487,7 +489,7 @@ class ClientImplementation final {
                                              ? std::string{"HTTP request timed out"}
                                              : std::string{"HTTP request failed: "} +
                                                    transfer->curl_error(result);
-                write_response(transfer->client_id, transfer->generation, error_response(description));
+                write_response(transfer->client_id, transfer->client_sequence, error_response(description));
                 continue;
             }
 
@@ -498,20 +500,20 @@ class ClientImplementation final {
                                          curl_easy_strerror(info_result)};
             }
             if (status == 101) {
-                write_response(transfer->client_id, transfer->generation,
+                write_response(transfer->client_id, transfer->client_sequence,
                                error_response("HTTP protocol upgrade is not supported"));
                 continue;
             }
             auto response = response_value(static_cast<i64>(status), std::move(transfer->response_headers),
                                            std::move(transfer->response_body).finish());
-            write_response(transfer->client_id, transfer->generation, std::move(response));
+            write_response(transfer->client_id, transfer->client_sequence, std::move(response));
         }
     }
 
-    void write_response(i64 client_id, i64 generation, ScalarValue<Bundle<HttpResponse>> response) {
+    void write_response(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpResponse>> response) {
         auto memory = allocator{};
-        const auto reply = bundle<details::ClientReply>(memory, "generation"_n = generation,
-                                                       "response"_n = response.view());
+        const auto reply = bundle<details::ClientReply>(memory, "client_sequence"_n = client_sequence,
+                                                        "response"_n = response.view());
         const auto accepted = output_.write(literal::TimeSeriesLiteral{
             {util::symbol{"replies"}, {{client_id, reply.view()}}}});
         if (!accepted && !stop_requested_.load(std::memory_order_acquire)) {
@@ -543,12 +545,12 @@ ClientRuntime::ClientRuntime(HttpClientOptions options, Queue output)
 
 ClientRuntime::~ClientRuntime() = default;
 
-void ClientRuntime::request(i64 client_id, i64 generation, ScalarValue<Bundle<HttpClientRequest>> value) {
-    implementation_->request(client_id, generation, std::move(value));
+void ClientRuntime::request(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> value) {
+    implementation_->request(client_id, client_sequence, std::move(value));
 }
 
-void ClientRuntime::cancel(i64 client_id, i64 generation) noexcept {
-    implementation_->cancel(client_id, generation);
+void ClientRuntime::cancel(i64 client_id, i64 client_sequence) noexcept {
+    implementation_->cancel(client_id, client_sequence);
 }
 
 } // namespace bg::web
