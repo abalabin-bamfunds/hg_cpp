@@ -475,7 +475,7 @@ def test_print_writes_scalar_and_time_series_patterns_to_selected_stream(capfd):
     def emit(value: bg.TS[int], pattern: bg.TS[str]) -> bg.TS[int]:
         bg.operators.print_("value={:d}", value)
         bg.operators.print_(pattern, value)
-        bg.operators.print_("error\0{:d}", value, __std_out__=False)
+        bg.operators.print_("error\0{:d}", value, __std_err__=True)
         return bg.operators.const_(0)
 
     assert bg.run_graph(emit, [7, 8], ["first={:d}", "second={:d}"]) == [0, None]

@@ -600,8 +600,8 @@ scalar collections. It rejects unsupported scalar extension types.
 argument types for format specifications. It evaluates scalar-only calls at
 graph start. The pattern and every formatting argument must be valid.
 `print_(pattern, *values, **named)` writes the formatted text and a
-newline to standard output. Set `__std_out__=False` to write to standard error;
-`__std_out__` must be a scalar Boolean. Print nodes are not deduplicated during
+newline to standard output. Set `__std_err__=True` to write to standard error;
+`__std_err__` must be a scalar Boolean. Print nodes are not deduplicated during
 wiring.
 
 `print_(series)` writes the current tick. Formatting arguments to `print_` also

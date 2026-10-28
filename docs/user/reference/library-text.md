@@ -106,7 +106,7 @@ and formatting arguments must be valid. Scalar-only calls evaluate at graph star
 C++ named arguments use `"name"_n = value` with `bg::literals` imported.
 
 `print_(pattern, *values, **named)` writes formatted text followed by a newline and
-has no output. `__std_out__=False` selects standard error; this option is a fixed
+has no output. `__std_err__=True` selects standard error; this option is a fixed
 Boolean. Print calls produce separate nodes even when their arguments match.
 
 `print_(series)` prints a time-series tick. Formatting arguments can also be

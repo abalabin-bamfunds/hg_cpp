@@ -290,15 +290,15 @@ struct string_format_overloads {
 
     static RequirementResult require_print_output(const WiringArguments &arguments) {
         for (auto index = std::size_t{}; index < arguments.size(); ++index) {
-            if (arguments.argument_name(index).text() != "__std_out__") {
+            if (arguments.argument_name(index).text() != "__std_err__") {
                 continue;
             }
             if (!arguments.present(index)) {
-                return reject("__std_out__ must be a scalar bool");
+                return reject("__std_err__ must be a scalar bool");
             }
             const auto *type = type_cast<ScalarType>(&arguments.resolved_type(index));
             if (type == nullptr || type != &bool_type()) {
-                return reject("__std_out__ must be a scalar bool");
+                return reject("__std_err__ must be a scalar bool");
             }
         }
         return accept;
@@ -339,32 +339,32 @@ struct string_format_overloads {
         auto store = fmt::dynamic_format_arg_store<fmt::format_context>{};
         auto names = std::vector<std::string>{};
         names.reserve(positional.size() + named.size());
-        const auto standard_output = read_standard_output(named);
+        const auto standard_error = read_standard_error(named);
 
         for (auto index = std::size_t{}; index < positional.size(); ++index) {
             add_print_input(store, names, positional[index], now);
         }
         for (auto index = std::size_t{}; index < named.size(); ++index) {
             const auto name = named.item_name(index).text();
-            if (name == "__std_out__") {
+            if (name == "__std_err__") {
                 continue;
             }
             add_print_input(store, names, named[index], now, name);
         }
 
-        auto &stream = standard_output ? std::cout : std::cerr;
+        auto &stream = standard_error ? std::cerr : std::cout;
         fmt::vformat_to(std::ostreambuf_iterator<char>{stream}, fmt::string_view{pattern.data(), pattern.size()}, store);
         stream.put('\n');
     }
 
-    static bool read_standard_output(const auto &named) {
+    static bool read_standard_error(const auto &named) {
         for (auto index = std::size_t{}; index < named.size(); ++index) {
-            if (named.item_name(index).text() != "__std_out__") {
+            if (named.item_name(index).text() != "__std_err__") {
                 continue;
             }
             return named[index].template as<TS<bool>>().value_view().value();
         }
-        return true;
+        return false;
     }
 
     overload<str_> str_scalar{node(
@@ -402,7 +402,7 @@ struct string_format_overloads {
                 auto has_format_argument = false;
                 for (auto index = std::size_t{}; index < arguments.size(); ++index) {
                     const auto name = arguments.argument_name(index).text();
-                    if (name != "pattern" && name != "__std_out__") {
+                    if (name != "pattern" && name != "__std_err__") {
                         has_format_argument = true;
                         break;
                     }
@@ -433,8 +433,8 @@ struct string_format_overloads {
             }
             for (auto index = std::size_t{}; index < arguments.size(); ++index) {
                 const auto name = arguments.argument_name(index).text();
-                if (name != "value" && name != "__std_out__") {
-                    return reject("print_ tick input accepts only the __std_out__ option");
+                if (name != "value" && name != "__std_err__") {
+                    return reject("print_ tick input accepts only the __std_err__ option");
                 }
             }
             return require_print_output(arguments);
@@ -446,7 +446,7 @@ struct string_format_overloads {
                 return;
             }
 
-            auto &stream = read_standard_output(named) ? std::cout : std::cerr;
+            auto &stream = read_standard_error(named) ? std::cerr : std::cout;
             fmt::format_to(std::ostreambuf_iterator<char>{stream}, "{}\n", tick(value, now));
         }
     };

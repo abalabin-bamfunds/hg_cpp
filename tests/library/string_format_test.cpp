@@ -124,7 +124,7 @@ TEST_CASE("print_ supports scalar and time-series patterns and selects standard 
     const auto graph = [](wp<TS<string>> pattern, wp<TS<i64>> value) {
         operators::print_("value={:d}", i64{7});
         operators::print_(pattern, value);
-        operators::print_(std::string_view{"error\0text", 10}, "__std_out__"_n = false);
+        operators::print_(std::string_view{"error\0text", 10}, "__std_err__"_n = true);
         return operators::const_(i64{0});
     };
     (void)bg::run_graph(graph, std::array<std::string_view, 2>{"first={:d}", "second={:d}"},
@@ -151,7 +151,7 @@ TEST_CASE("print_ formats time-series ticks and collection changes",
     const auto direct = [](wp<TSD<i64, TSD<i64, TS<i64>>>> book) {
         operators::print_(book);
         operators::print_(book);
-        operators::print_(book, "__std_out__"_n = false);
+        operators::print_(book, "__std_err__"_n = true);
         return operators::const_(i64{0});
     };
     (void)bg::run_graph(direct, {{{1, {{2, 10}}}}, {{1, {{2, literal::REMOVE}}}}});
