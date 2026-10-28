@@ -797,15 +797,15 @@ TEST_CASE("switch passes a reduced value through a free bundle argument",
           "[schema:named][representation:free][shape:doubly-nested]") {
     const auto add_values = node([](i64 left, i64 right) { return left + right; });
     const auto sum_values = graph("name"_n = "sum_switch_values",
-                                  [=](wp<TS<i64>> left, wp<TS<i64>> right) {
+                                  [&](wp<TS<i64>> left, wp<TS<i64>> right) {
                                       return add_values(left, right);
                                   });
-    const auto tested = [=](wp<TS<i64>> key, wp<TSD<i64, TS<i64>>> values) {
+    const auto tested = [&](wp<TS<i64>> key, wp<TSD<i64, TS<i64>>> values) {
         const auto total = reduce(sum_values, values, "default"_n = i64{0});
         const auto arguments = bundle<TSB<ReducedPair>>(
             "first"_n = total, "second"_n = total);
         return switch_(key,
-                       cases{case_(DEFAULT, [=](auto pair) {
+                       cases{case_(DEFAULT, [&](auto pair) {
                            return sum_values(pair->first, pair->second);
                        })},
                        arguments);
