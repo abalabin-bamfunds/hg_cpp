@@ -1,6 +1,39 @@
 # Frame foundation handoff
 
-Updated: 2026-10-28.
+Updated: 2026-10-29.
+
+## Development lanes
+
+Frame development continues in `.lanes/frame-with-columns` on
+`agent/frame-with-columns`. The lane is rebased onto main `d3906f2f` and includes
+the completed named-argument lifetime, named-argument type extraction,
+dictionary literal lifetime, and saved literal ownership changes. Its semantic
+and scalar runtime registration implementation matches main.
+
+Unfinished type registration is isolated in `.lanes/type-registration` on
+`agent/type-registration`. `TYPE_REGISTRATION_HANDOFF.md` in that lane records
+the agreed single-threaded registration contract and the preserved draft. The
+semantic-only literal source change and default runtime registration remain
+there. The frame lane does not contain the transaction draft.
+
+The next frame stage is scalar constant and scalar time series broadcasting in
+`with_columns`, followed by explicit output schema validation and the remaining
+binding and materialisation checks listed below.
+
+Verification after separation:
+
+- Matching Release BG build and install passed.
+- All 2,852 configured core C++ CTest tests passed. Python bindings were disabled.
+- Arrow-on frame Release build passed; all nine frame CTest executables passed.
+- `git diff --check` passed.
+
+The rebase retains both main's `first_set_union` tests and the frame lane's
+bounded `first_unset` tests. Compatibility changes migrate callback tests to
+`run_graph`, pass existing column state to the current `publish_item` API, and
+use typed input annotation in the TSC literal rejection test.
+The provider test reconstructs its input descriptor after state changes because
+`TimeSeriesInputData` stores a state copy. These changes are committed as
+`f86a73f8`.
 
 ## Adding and replacing frame columns
 
