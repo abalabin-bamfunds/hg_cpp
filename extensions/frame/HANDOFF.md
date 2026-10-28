@@ -17,7 +17,8 @@ Verification:
 - Arrow-on frame Release build succeeded. All nine CTest executables passed.
 - `git diff --check` passed.
 
-Builds are under `build/bg-release` and `build/release` in this implementation
+Builds are under `.lanes/frame-with-columns/build/bg-release` and
+`.lanes/frame-with-columns/build/release`, relative to this implementation
 lane. The frame build uses the BG install at `build/bg-release-install`.
 
 Remaining stages:
@@ -47,12 +48,12 @@ and borrowed non-owning scalar values from that constructor-local copy.
 `map_invoke` and `schema_argument_value` used unparenthesized member expressions
 with `decltype(auto)`, which copied values instead of preserving references;
 the map copy was then borrowed by another `WiringArgument`. BG commit
-`5d0d0ba1` adds named-argument overloads that borrow lvalues and move rvalues,
-and preserves member references in both helpers. The full BG Release CTest
-suite passed 2,680 assertions on the core lane. Frame-lane commit `05c53244`
-contains the core fix. The frame regression test now resolves the inferred
-schema in an enclosing graph template. The frame lane also retains direct-form
-materialisation support in `a0b859b1`.
+`5d0d0ba1` adds named-argument overloads that preserve references to the
+caller's named arguments and preserves member references in both helpers. The
+full BG Release CTest suite passed 2,680 tests on the core lane. Frame-lane
+commit `05c53244` contains the core fix. The frame regression test now resolves
+the inferred schema in an enclosing graph template. The frame lane also retains
+direct-form materialisation support in `a0b859b1`.
 
 ## Incremental numeric column sum
 
