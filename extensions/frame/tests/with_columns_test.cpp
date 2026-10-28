@@ -254,7 +254,7 @@ TEST_CASE("with_columns rejects duplicate assignment names and keyed field repla
     CHECK(std::string_view{key_error->what()}.contains("frame::with_columns cannot assign a key column"));
 }
 
-TEST_CASE("with_columns resolves runtime schema and assignment names in run_graph",
+TEST_CASE("with_columns accepts span assignments with an anonymous source schema",
           "[feature:frame][feature:with_columns]") {
     const auto fields = std::array{SchemaField{util::symbol{"price"}, &cpp_scalar_type<double>()}};
     const auto &schema = anonymous_schema(fields);
@@ -367,19 +367,11 @@ TEST_CASE("with_columns broadcasts scalar values and TS values over zero-field f
                            wp<TS<double>> double_series, wp<TS<string>> string_series,
                            wp<TS<symbol>> symbol_series, wp<TS<i64>> tick) {
         const auto source = source_node(command);
-        const auto assignments = std::array{
-            WiringArgument{util::symbol{"bool_series"}, bool_series},
-            WiringArgument{util::symbol{"bool_constant"}, true},
-            WiringArgument{util::symbol{"i64_series"}, i64_series},
-            WiringArgument{util::symbol{"i64_constant"}, i64{42}},
-            WiringArgument{util::symbol{"double_series"}, double_series},
-            WiringArgument{util::symbol{"double_constant"}, 3.5},
-            WiringArgument{util::symbol{"string_series"}, string_series},
-            WiringArgument{util::symbol{"string_constant"}, std::string_view{"fixed"}},
-            WiringArgument{util::symbol{"symbol_series"}, symbol_series},
-            WiringArgument{util::symbol{"symbol_constant"}, symbol{"constant"}},
-        };
-        const auto result = frame::with_columns(source, std::span<const WiringArgument>{assignments});
+        const auto result = frame::with_columns(
+            source, "bool_series"_n = bool_series, "bool_constant"_n = true, "i64_series"_n = i64_series,
+            "i64_constant"_n = i64{42}, "double_series"_n = double_series, "double_constant"_n = 3.5,
+            "string_series"_n = string_series, "string_constant"_n = std::string_view{"fixed"},
+            "symbol_series"_n = symbol_series, "symbol_constant"_n = symbol{"constant"});
         return observe(source, result, tick);
     };
 
@@ -442,7 +434,7 @@ TEST_CASE("with_columns broadcasts scalar values and TS values over zero-field f
     CHECK(observations[6].rows[0].symbol_series == symbol{"last"});
 }
 
-TEST_CASE("with_columns accepts wiring-time runtime schemas and dynamic assignment names",
+TEST_CASE("with_columns adds named assignments to an anonymous source schema",
           "[feature:frame][feature:with_columns][declaration:generic]") {
     const auto fields = std::array{SchemaField{util::symbol{"base"}, &cpp_scalar_type<i64>()}};
     const auto &schema = anonymous_schema(fields);
@@ -457,19 +449,15 @@ TEST_CASE("with_columns accepts wiring-time runtime schemas and dynamic assignme
                 observation.names.emplace_back(field.name.text());
             result.for_each_row([&](row_id_t id, std::size_t) {
                 observation.runtime_bases.push_back(result.column("base").input<i64>().cell(id));
-                observation.runtime_constants.push_back(result.column("dynamic_constant").input<i64>().cell(id));
-                observation.copies.push_back(result.column("dynamic_series").input<double>().cell(id));
+                observation.runtime_constants.push_back(result.column("constant").input<i64>().cell(id));
+                observation.copies.push_back(result.column("series").input<double>().cell(id));
             });
         }
         observations.push_back(std::move(observation));
         output.set(*tick);
     });
     const auto graph = [&](wp<TSF<SCHEMA>> source, wp<TS<double>> series, wp<TS<i64>> tick) {
-        const auto assignments = std::array{
-            WiringArgument{util::symbol{"dynamic_constant"}, i64{17}},
-            WiringArgument{util::symbol{"dynamic_series"}, series},
-        };
-        const auto result = frame::with_columns(source, std::span<const WiringArgument>{assignments});
+        const auto result = frame::with_columns(source, "constant"_n = i64{17}, "series"_n = series);
         return observe(result, tick);
     };
 
@@ -482,7 +470,7 @@ TEST_CASE("with_columns accepts wiring-time runtime schemas and dynamic assignme
     REQUIRE(observations.size() == 4);
     CHECK_FALSE(observations[0].valid);
     CHECK(observations[1].valid);
-    CHECK(observations[1].names == std::vector<std::string>{"base", "dynamic_constant", "dynamic_series"});
+    CHECK(observations[1].names == std::vector<std::string>{"base", "constant", "series"});
     CHECK(observations[1].runtime_bases == std::vector<std::optional<i64>>{5});
     CHECK(observations[1].runtime_constants == std::vector<std::optional<i64>>{17});
     CHECK(observations[1].copies == std::vector<std::optional<double>>{2.5});
@@ -519,8 +507,7 @@ TEST_CASE("with_columns does not republish a broadcast column for source cell ch
     });
     const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
         const auto source = source_node(command);
-        const auto assignments = std::array{WiringArgument{util::symbol{"constant"}, i64{5}}};
-        const auto result = frame::with_columns(source, std::span<const WiringArgument>{assignments});
+        const auto result = frame::with_columns(source, "constant"_n = i64{5});
         return observe(source, result, tick);
     };
 
@@ -567,8 +554,7 @@ TEST_CASE("with_columns refills a scalar broadcast when filtered row membership 
     const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
         const auto source = source_node(command);
         const auto selected = filter(source, col("price") > 10.0);
-        const auto assignments = std::array{WiringArgument{util::symbol{"constant"}, i64{5}}};
-        const auto result = frame::with_columns(selected, std::span<const WiringArgument>{assignments});
+        const auto result = frame::with_columns(selected, "constant"_n = i64{5});
         return observe(result, tick);
     };
 
@@ -608,8 +594,7 @@ TEST_CASE("with_columns invalidates and refills a TS broadcast input",
     const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
         const auto source = source_node(command);
         const auto value = value_node(command);
-        const auto assignments = std::array{WiringArgument{util::symbol{"assigned"}, value}};
-        const auto result = frame::with_columns(source, std::span<const WiringArgument>{assignments});
+        const auto result = frame::with_columns(source, "assigned"_n = value);
         return observe(result, tick);
     };
 
@@ -639,10 +624,9 @@ TEST_CASE("with_columns reports unsupported scalar and TS cell types as wiring e
         }
         return error;
     };
-    const auto unsupported_scalar = ScalarValue<List<i64>>{std::array<i64, 1>{1}};
     const auto scalar_error = capture_wiring_error([&] {
-        const auto assignments = std::array{WiringArgument{util::symbol{"unsupported_scalar"}, unsupported_scalar}};
-        static_cast<void>(frame::with_columns(source, std::span<const WiringArgument>{assignments}));
+        static_cast<void>(frame::with_columns(
+            source, "unsupported_scalar"_n = ScalarValue<List<i64>>{std::array<i64, 1>{1}}));
     });
     REQUIRE(scalar_error);
     CHECK(std::string_view{scalar_error->what()} ==
@@ -651,8 +635,7 @@ TEST_CASE("with_columns reports unsupported scalar and TS cell types as wiring e
     const auto unsupported_series_node = node([](Out<TS<List<i64>>>) {});
     const auto unsupported_series = unsupported_series_node();
     const auto series_error = capture_wiring_error([&] {
-        const auto assignments = std::array{WiringArgument{util::symbol{"unsupported_series"}, unsupported_series}};
-        static_cast<void>(frame::with_columns(source, std::span<const WiringArgument>{assignments}));
+        static_cast<void>(frame::with_columns(source, "unsupported_series"_n = unsupported_series));
     });
     REQUIRE(series_error);
     CHECK(std::string_view{series_error->what()} ==
@@ -677,8 +660,7 @@ TEST_CASE("with_columns writes the bool batch tail after 128 rows",
     });
     const auto graph = [&](wp<TS<i64>> command) {
         const auto source = source_node(command);
-        const auto assignments = std::array{WiringArgument{util::symbol{"flag"}, true}};
-        return observe(frame::with_columns(source, std::span<const WiringArgument>{assignments}));
+        return observe(frame::with_columns(source, "flag"_n = true));
     };
 
     const auto result = run_graph(graph, input<TS<i64>>({1}));
