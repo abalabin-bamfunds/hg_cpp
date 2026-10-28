@@ -412,13 +412,26 @@ void forward_bundle(In<TS<Bundle<SCHEMA>>> input,
 }
 ```
 
-`bundle<Schema>(arguments...)` constructs a `ScalarValue<Bundle<Schema>>` when
-all arguments are scalars. Positional arguments follow inherited logical field
-order. Named arguments use `_n`; a positional argument cannot follow a named
-argument. Optional fields may be omitted. An overload taking `bg::allocator&`
-as its first argument places owned storage under that allocator. Construction
-uses the engine's composed hierarchical runtime type. Extension runtime types
-provide their own construction APIs.
+`bundle<Schema>(arguments...)` constructs a `ScalarValue<Bundle<Schema>>` from
+scalar sources, scalar handles, tuple sources, and contiguous ranges for list
+fields. Positional arguments follow inherited logical field order. Named
+arguments use `_n`; a positional argument cannot follow a named argument.
+Optional fields may be omitted. An overload taking `bg::allocator&` as its
+first argument places owned storage under that allocator. Construction uses
+the engine's composed hierarchical runtime type. Extension runtime types
+provide their own construction APIs. Fields are constructed directly in final
+storage, and source arguments are borrowed only until `bundle()` returns. Pass
+views when the source container should not be copied:
+
+```cpp
+template <template <typename, auto...> typename Field>
+struct HeaderBatch {
+    Field<List<Tuple<string, string>>> headers;
+};
+
+const auto headers = std::array{std::pair{std::string{"x-trace"}, std::string{"first"}}};
+const auto value = bundle<HeaderBatch>(memory, "headers"_n = std::span{headers});
+```
 
 `bundle(schema, fields)` constructs a `ScalarValue<Bundle<SCHEMA>>` from a
 runtime schema. `fields` is a `std::span<const std::optional<Scalar<>>>` in

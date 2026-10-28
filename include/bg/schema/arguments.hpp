@@ -24,7 +24,7 @@ std::optional<util::symbol> schema_argument_name() {
 template <typename Argument>
 decltype(auto) schema_argument_value(Argument &&argument) {
     if constexpr (is_named_argument_v<Argument>) {
-        return std::forward<Argument>(argument).value;
+        return (std::forward<Argument>(argument).value);
     } else {
         return std::forward<Argument>(argument);
     }

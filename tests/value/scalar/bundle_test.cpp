@@ -18,6 +18,7 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 
 using namespace bg;
@@ -69,6 +70,11 @@ template <template <typename, auto...> typename Field> struct InstrumentList {
 
 template <template <typename, auto...> typename Field> struct InstrumentDictionary {
     Field<Dict<i64, Bundle<Instrument>>> instruments;
+};
+
+template <template <typename, auto...> typename Field> struct HeaderBatch {
+    Field<List<Tuple<string, string>>> headers;
+    Field<string, optional> note;
 };
 
 template <template <typename, auto...> typename Field> struct RecursiveValue {
@@ -179,6 +185,79 @@ TEST_CASE("bundle constructs a hierarchical scalar from positional and named arg
     STATIC_CHECK(std::same_as<std::remove_cvref_t<decltype(value)>, ScalarValue<Bundle<Instrument>>>);
     CHECK(scalar_cast<symbol>(view[0]).value().text() == "ABC");
     CHECK(scalar_cast<double>(view[1]).value() == 12.5);
+}
+
+TEST_CASE("bundle constructs a list of tuples directly from a span of pairs",
+          "[feature:scalar-api][scalar:hierarchical][scalar:list][scalar:tuple][schema:named]") {
+    using namespace bg::literals;
+
+    const auto value = [&] {
+        const auto source = std::array{std::pair{std::string{"content-type"}, std::string{"text/plain"}},
+                                       std::pair{std::string{"x-trace"}, std::string{"first"}},
+                                       std::pair{std::string{"x-trace"}, std::string{"second"}}};
+        const auto headers = std::span<const std::pair<std::string, std::string>>{source};
+        return bundle<HeaderBatch>(bundle_allocator, "headers"_n = headers);
+    }();
+    const auto headers = scalar_cast<List<Tuple<string, string>>>(value.view()[0]);
+
+    REQUIRE(headers.size() == 3);
+    CHECK(headers[0].get<0>().value() == "content-type");
+    CHECK(headers[0].get<1>().value() == "text/plain");
+    CHECK(headers[1].get<0>().value() == "x-trace");
+    CHECK(headers[1].get<1>().value() == "first");
+    CHECK(headers[2].get<0>().value() == "x-trace");
+    CHECK(headers[2].get<1>().value() == "second");
+    CHECK_FALSE(value.view().present(1));
+}
+
+TEST_CASE("bundle borrows an owning scalar from a named argument",
+          "[feature:scalar-api][scalar:hierarchical][schema:named][ownership:source]") {
+    using namespace bg::literals;
+
+    auto named = "value"_n = ScalarValue<i64>{73};
+    const auto value = bundle<UnrelatedRecord>(bundle_allocator, named);
+
+    CHECK(scalar_cast<i64>(value.view()[0]).value() == 73);
+}
+
+TEST_CASE("bundle rolls back a partially constructed list of tuples",
+          "[feature:scalar-storage][scalar:hierarchical][scalar:list][scalar:tuple][exception:rollback]") {
+    using namespace bg::literals;
+
+    auto memory = counting_memory_resource{};
+    auto allocator = bg::allocator{memory};
+    const auto source = std::array{std::pair{std::string{"content-type"}, 17}};
+    const auto headers = std::span<const std::pair<std::string, int>>{source};
+
+    CHECK_THROWS_AS(bundle<HeaderBatch>(allocator, "headers"_n = headers), std::invalid_argument);
+    CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("bundle list construction avoids an intermediate list value",
+          "[feature:scalar-storage][scalar:hierarchical][scalar:list][scalar:tuple][ownership:allocator]") {
+    using HeaderPair = std::pair<std::string, std::string>;
+    const auto source = std::array{HeaderPair{"content-type", "text/plain"}, HeaderPair{"x-trace", "first"},
+                                   HeaderPair{"x-trace", "second"}};
+    const auto headers = std::span<const HeaderPair>{source};
+
+    const auto direct_allocations = [&] {
+        auto memory = counting_memory_resource{};
+        auto allocator = bg::allocator{memory};
+        const auto value = bundle<HeaderBatch>(allocator, headers);
+        CHECK(scalar_cast<List<Tuple<string, string>>>(value.view()[0]).size() == 3);
+        return memory.allocations();
+    }();
+
+    const auto copied_allocations = [&] {
+        auto memory = counting_memory_resource{};
+        auto allocator = bg::allocator{memory};
+        const auto source_list = ScalarValue<List<Tuple<string, string>>>{headers, allocator};
+        const auto value = bundle<HeaderBatch>(allocator, source_list.view());
+        CHECK(scalar_cast<List<Tuple<string, string>>>(value.view()[0]).size() == 3);
+        return memory.allocations();
+    }();
+
+    CHECK(direct_allocations < copied_allocations);
 }
 
 TEST_CASE("bundle uses inherited logical field order and permits omitted optional fields",

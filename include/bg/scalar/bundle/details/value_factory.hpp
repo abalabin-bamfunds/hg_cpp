@@ -18,6 +18,8 @@ namespace bg::details {
 OwnedScalarData construct_composed_hierarchical_scalar_value(
     const ResolvedHierarchicalScalarType &type, std::span<const ScalarData *const> fields,
     ScalarAllocationPool &owner);
+OwnedScalarData construct_composed_hierarchical_scalar_value(
+    const ResolvedHierarchicalScalarType &type, ScalarFieldConstruction fields, ScalarAllocationPool &owner);
 
 class HierarchicalScalarValueFactory {
   public:
@@ -37,6 +39,16 @@ class HierarchicalScalarValueFactory {
 
         return with_owner<ScalarValue<Bundle<Schema>>>(upstream, [&](ScalarAllocationPool &owner) {
             return ScalarValue<Bundle<Schema>>{construct_composed_hierarchical_scalar_value(type, sources, owner)};
+        });
+    }
+
+    template <template <template <typename, auto...> typename> typename Schema>
+        requires(!schema_variable_template<Schema>)
+    static ScalarValue<Bundle<Schema>> make(ScalarFieldConstruction fields, allocator *upstream = nullptr) {
+        const auto &type = static_cast<const ResolvedHierarchicalScalarType &>(cpp_scalar_type<Bundle<Schema>>());
+
+        return with_owner<ScalarValue<Bundle<Schema>>>(upstream, [&](ScalarAllocationPool &owner) {
+            return ScalarValue<Bundle<Schema>>{construct_composed_hierarchical_scalar_value(type, fields, owner)};
         });
     }
 

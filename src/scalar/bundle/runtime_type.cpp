@@ -38,6 +38,8 @@ class ComposedHierarchicalScalarRuntimeType final : public HierarchicalScalarRun
     bool try_assign_from_owned(void *destination, void *source, allocator &, allocator &) const noexcept override;
     std::uintptr_t construct_shared(std::span<const details::ScalarData *const> fields,
                                     details::ScalarAllocationPool &owner) const;
+    std::uintptr_t construct_shared(ScalarFieldConstruction construction,
+                                    details::ScalarAllocationPool &owner, allocator &memory) const;
 
   private:
     struct FieldCopyContext {
@@ -76,8 +78,6 @@ class ComposedHierarchicalScalarRuntimeType final : public HierarchicalScalarRun
     static void store_handle(void *destination, Storage *storage) noexcept;
     static bool copy_field(void *context, std::size_t index, const ScalarRuntimeType &runtime_type,
                            void *destination, allocator &memory);
-    std::uintptr_t construct_shared(ScalarFieldConstruction construction,
-                                    details::ScalarAllocationPool &owner, allocator &memory) const;
     static std::size_t align_up(std::size_t offset, std::size_t alignment) noexcept;
     const void *field_storage(const Storage &storage, std::size_t index) const noexcept;
     void *field_storage(Storage &storage, std::size_t index) const noexcept;
@@ -502,6 +502,16 @@ OwnedScalarData construct_composed_hierarchical_scalar_value(
     const auto &runtime_type = static_cast<const ComposedHierarchicalScalarRuntimeType &>(
         resolve_composed_hierarchical_scalar_runtime_type(type));
     const auto data = runtime_type.construct_shared(fields, owner);
+
+    return {&runtime_type, data, ScalarDataMode::shared_value};
+}
+
+OwnedScalarData construct_composed_hierarchical_scalar_value(
+    const ResolvedHierarchicalScalarType &type, ScalarFieldConstruction fields, ScalarAllocationPool &owner) {
+    const auto &runtime_type = static_cast<const ComposedHierarchicalScalarRuntimeType &>(
+        resolve_composed_hierarchical_scalar_runtime_type(type));
+    auto memory = owner.memory();
+    const auto data = runtime_type.construct_shared(fields, owner, memory);
 
     return {&runtime_type, data, ScalarDataMode::shared_value};
 }
