@@ -504,11 +504,11 @@ void test_tsc_literal_rejections() {
         output.set(static_cast<i64>(input.size()));
     });
     const auto graph = [&](wp<TSC<i64>> input) { return observe(input); };
-    const auto &native_runtime = column_time_series_runtime_type<i64>(TSC<i64>::type());
     const auto rejects = [&](std::initializer_list<literal::TimeSeriesLiteral> ticks) {
         try {
-            const auto input = GraphRunLiteralInput(std::span<const literal::TimeSeriesLiteral>{ticks});
-            static_cast<void>(bg::run_graph(graph, bg::input(native_runtime, input)));
+            static_cast<void>(bg::run_graph(
+                graph,
+                bg::input<TSC<i64>>(GraphRunLiteralInput(std::span<const literal::TimeSeriesLiteral>{ticks}))));
         } catch (const std::invalid_argument &) {
             return true;
         }

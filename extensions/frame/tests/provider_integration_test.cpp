@@ -320,7 +320,10 @@ void test_provider_descriptor_and_views() {
             "provider input view did not expose its valid state");
 
     input_state.invalidate(invalidated);
-    require(!input.valid() && !input.became_valid() && input.became_invalid() && input.last_updated() == invalidated,
+    const auto invalidated_input_data = bg::TimeSeriesInputData{default_runtime, input_state, &input_value, true};
+    const auto invalidated_input = bg::In<Series>{invalidated_input_data};
+    require(!invalidated_input.valid() && !invalidated_input.became_valid() && invalidated_input.became_invalid() &&
+                invalidated_input.last_updated() == invalidated,
             "provider input view did not expose its invalid state");
 
     auto output_time = bg::TimeSeriesState{};

@@ -4022,7 +4022,8 @@ class FrameViewOutputImplementation {
                                                     binding_->allocator());
         if (changed) {
             for (auto index : output.changed_columns)
-                binding_->publish_item(binding_->runtime_type(), static_cast<item_id_t>(index));
+                binding_->publish_item(
+                    static_cast<item_id_t>(index), output.child_state(std::addressof(output), index));
             binding_->publish();
         }
         return changed;
@@ -4038,7 +4039,8 @@ class FrameViewOutputImplementation {
             throw std::invalid_argument{"computed frame cell type does not match its schema"};
         if (output.set_computed(index, id, std::addressof(value), binding_->context().evaluation_time(),
                                 binding_->allocator())) {
-            binding_->publish_item(binding_->runtime_type(), static_cast<item_id_t>(index));
+            binding_->publish_item(
+                static_cast<item_id_t>(index), output.child_state(std::addressof(output), index));
             binding_->publish();
         }
     }
@@ -4063,7 +4065,8 @@ class FrameViewOutputImplementation {
         else
             throw std::invalid_argument{"computed frame schema has an unsupported cell type"};
         if (output.set_computed(index, id, cell, binding_->context().evaluation_time(), binding_->allocator())) {
-            binding_->publish_item(binding_->runtime_type(), static_cast<item_id_t>(index));
+            binding_->publish_item(
+                static_cast<item_id_t>(index), output.child_state(std::addressof(output), index));
             binding_->publish();
         }
     }
@@ -4101,7 +4104,8 @@ class FrameViewOutputImplementation {
         }
         output.finish_computed_updates(index, time, changed);
         if (changed) {
-            binding_->publish_item(binding_->runtime_type(), static_cast<item_id_t>(index));
+            binding_->publish_item(
+                static_cast<item_id_t>(index), output.child_state(std::addressof(output), index));
             binding_->publish();
         }
     }
@@ -4154,7 +4158,8 @@ class Out<frame::TSF<Schema, Properties...>, frame::view>
                                                     binding_->context().evaluation_time(), binding_->allocator());
         if (changed) {
             for (auto index : output.changed_columns)
-                binding_->publish_item(binding_->runtime_type(), static_cast<item_id_t>(index));
+                binding_->publish_item(
+                    static_cast<item_id_t>(index), output.child_state(std::addressof(output), index));
             binding_->publish();
         }
         return changed;
@@ -4220,7 +4225,8 @@ class Out<frame::TSF<Schema, Properties...>, frame::view>
             binding_->context().evaluation_time(), binding_->allocator());
         if (changed) {
             for (auto index : output.changed_columns)
-                binding_->publish_item(binding_->runtime_type(), static_cast<item_id_t>(index));
+                binding_->publish_item(
+                    static_cast<item_id_t>(index), output.child_state(std::addressof(output), index));
             binding_->publish();
         }
         return changed;
@@ -4246,7 +4252,8 @@ class Out<frame::TSF<Schema, Properties...>, frame::view>
                                                 binding_->context().evaluation_time(), binding_->allocator());
         if (changed) {
             for (auto index : output.changed_columns)
-                binding_->publish_item(binding_->runtime_type(), static_cast<item_id_t>(index));
+                binding_->publish_item(
+                    static_cast<item_id_t>(index), output.child_state(std::addressof(output), index));
             binding_->publish();
         }
         return changed;
