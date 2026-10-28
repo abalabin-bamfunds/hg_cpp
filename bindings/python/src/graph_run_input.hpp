@@ -7,6 +7,7 @@
 
 #include <nanobind/nanobind.h>
 
+#include <deque>
 #include <optional>
 #include <span>
 #include <vector>
@@ -36,7 +37,7 @@ class GraphRunInputs {
 
     PythonLiteralBuilder literals_;
     nanobind::object ticks_type_;
-    std::vector<GraphRunLiteralInput> inputs_;
+    std::deque<GraphRunLiteralInput> inputs_;
     std::vector<Argument> fixed_values_;
     std::vector<Argument> positional_values_;
     std::vector<std::pair<nanobind::object, Argument>> named_values_;

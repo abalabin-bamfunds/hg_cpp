@@ -6,6 +6,7 @@
 #include <bg/scalar/storage_traits.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/util/symbol.hpp>
+#include <bg/util/lifetimebound.hpp>
 
 #include <cstddef>
 #include <functional>
@@ -34,7 +35,7 @@ class Sentinel {
 
     bool operator==(const Sentinel &other) const noexcept { return this == &other; }
 
-    TaggedLiteral operator()(const ScalarLiteral &value) const noexcept;
+    TaggedLiteral operator()(const ScalarLiteral &value BG_LIFETIMEBOUND) const noexcept;
 
     static BG_EXPORT const Sentinel *from(const bg::ScalarData &value) noexcept;
     static BG_EXPORT const Sentinel *from(const ScalarLiteralItem &value);
@@ -50,7 +51,7 @@ struct TaggedLiteral {
     static BG_EXPORT std::optional<TaggedLiteral> from(const ScalarLiteral &value);
 };
 
-inline TaggedLiteral Sentinel::operator()(const ScalarLiteral &value) const noexcept {
+inline TaggedLiteral Sentinel::operator()(const ScalarLiteral &value BG_LIFETIMEBOUND) const noexcept {
     return TaggedLiteral{*this, value};
 }
 

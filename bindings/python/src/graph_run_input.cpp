@@ -318,7 +318,7 @@ GraphRunInputs::Argument GraphRunInputs::prepare(nb::handle value, const Type &p
     const auto &runtime_type = resolve_time_series_runtime_type(time_series_type);
     inputs_.emplace_back(runtime_type, literals_.sequence(std::move(literals)));
     const auto index = inputs_.size() - 1;
-    input_length_ = std::max(input_length_, inputs_.back().ticks.size());
+    input_length_ = std::max(input_length_, inputs_.back().ticks().size());
     return {nb::none(), index};
 }
 

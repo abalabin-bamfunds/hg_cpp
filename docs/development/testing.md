@@ -185,9 +185,8 @@ Raw brace calls support one through four inputs when every argument is a
 brace sequence. Use `ticks({...})` or a typed range to mix a history with
 ordinary scalar arguments. Pass `GraphRunLiteralInput` descriptors or a
 contiguous range of descriptors for more inputs. Construct
-span-backed sequences with `GraphRunLiteralInput(ticks)`. Construct
-descriptors from temporary values in the `run_graph` call so their sources and
-nested initializer lists remain alive throughout evaluation.
+span-backed sequences with `GraphRunLiteralInput(ticks)`. Descriptor lifetime and
+copy behavior are specified in [graph execution](../user/reference/execution.md#arguments).
 
 Result capture supports `TS`, `TSL`, `TSS`, `TSD`, and `TSB`, including nested
 collections. Capture dereferences a returned reference. Collections containing

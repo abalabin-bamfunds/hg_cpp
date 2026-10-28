@@ -16,6 +16,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -24,6 +25,23 @@ using namespace bg;
 namespace {
 
 using namespace literals;
+
+using TypedInputResult = decltype(input<TS<i64>>(std::declval<GraphRunLiteralInput &&>()));
+using RuntimeInputResult = decltype(input(std::declval<const TimeSeriesRuntimeType &>(),
+                                          std::declval<GraphRunLiteralInput &&>()));
+using SemanticInputResult = decltype(input(std::declval<const TimeSeriesType &>(),
+                                           std::declval<GraphRunLiteralInput &&>()));
+
+static_assert(std::is_copy_constructible_v<GraphRunLiteralInput>);
+static_assert(std::is_copy_assignable_v<GraphRunLiteralInput>);
+static_assert(std::is_move_constructible_v<GraphRunLiteralInput>);
+static_assert(std::is_move_assignable_v<GraphRunLiteralInput>);
+static_assert(std::is_same_v<TypedInputResult, const GraphRunLiteralInput &>);
+static_assert(std::is_same_v<RuntimeInputResult, const GraphRunLiteralInput &>);
+static_assert(std::is_same_v<SemanticInputResult, const GraphRunLiteralInput &>);
+static_assert(std::is_same_v<decltype(ticks(std::declval<GraphRunLiteralInput &&>())),
+                             const GraphRunLiteralInput &>);
+static_assert(std::is_constructible_v<GraphRunLiteralInput, TypedInputResult>);
 
 TEST_CASE("run_graph runs a node with initial values and tick histories",
           "[testing][evaluation][feature:test-graph][series:value][scalar:integer]") {
@@ -338,6 +356,145 @@ TEST_CASE("run_graph accepts literals for deeply nested collection inputs",
         graph, {{{1, {{"items", {{2, {1, 2}}}}}}}, {{1, {{"items", {{2, {literal::REMOVED(2)}}}}}}}});
 
     CHECK(actual.equals<i64>({2, 1}));
+}
+
+TEST_CASE("run_graph input helpers annotate temporary literal descriptors",
+          "[testing][evaluation][feature:test-graph][series:value][scalar:integer]") {
+    const auto identity = [](wp<TS<i64>> input) { return input; };
+    const auto &runtime_type = resolve_time_series_runtime_type(TS<i64>::type());
+
+    CHECK(run_graph(identity, input<TS<i64>>({1, 2})).equals<i64>({1, 2}));
+    CHECK(run_graph(identity, input(runtime_type, {3, 4})).equals<i64>({3, 4}));
+    CHECK(run_graph(identity, input(TS<i64>::type(), {5, 6})).equals<i64>({5, 6}));
+    CHECK(run_graph(identity, ticks({7, 8})).equals<i64>({7, 8}));
+
+    const auto saved_typed = input<TS<i64>>({9, 10});
+    const auto saved_runtime = input(runtime_type, {11, 12});
+    const auto saved_semantic = input(TS<i64>::type(), {13, 14});
+    const auto saved_ticks = ticks({15, 16});
+
+    CHECK(run_graph(identity, saved_typed).equals<i64>({9, 10}));
+    CHECK(run_graph(identity, saved_runtime).equals<i64>({11, 12}));
+    CHECK(run_graph(identity, saved_semantic).equals<i64>({13, 14}));
+    CHECK(run_graph(identity, saved_ticks).equals<i64>({15, 16}));
+}
+
+TEST_CASE("inline run_graph literal inputs remain borrowed through graph wiring",
+          "[testing][evaluation][feature:test-graph][series:value][scalar:string][feature:scalar-storage]") {
+    auto source = std::string{"before wiring"};
+    const auto tick = literal::TimeSeriesLiteral(source);
+    const auto identity = [&](wp<TS<string>> input) {
+        source = "after wiring";
+        return input;
+    };
+
+    const auto actual = run_graph(identity, input<TS<string>>(GraphRunLiteralInput(std::span{&tick, 1})));
+
+    CHECK(actual.equals<string>({"after wiring"}));
+}
+
+TEST_CASE("copied run_graph inputs preserve nested extension sentinel identity",
+          "[testing][evaluation][feature:test-graph][series:value][scalar:opaque]") {
+    static const literal::Sentinel extension_sentinel{symbol{"test.graph-run.extension"}};
+    const auto argument_value = i64{17};
+    const auto argument = literal::ScalarLiteral(argument_value);
+    const auto tagged = extension_sentinel(argument);
+    const auto tagged_tick = literal::TimeSeriesLiteral(tagged);
+    const auto nested_ticks = std::array{tagged_tick};
+    const auto nested = literal::TimeSeriesLiteral(std::span{nested_ticks});
+    const auto outer_ticks = std::array{nested};
+    const auto outer = literal::TimeSeriesLiteral(std::span{outer_ticks});
+    const auto ticks = std::array{outer};
+    const auto borrowed = GraphRunLiteralInput(std::span{ticks});
+    const auto copied = GraphRunLiteralInput(borrowed);
+
+    const auto outer_children = copied.ticks().front().visit(
+        [](const literal::ScalarLiteralItem &) { return std::span<const literal::TimeSeriesLiteral>{}; },
+        [](std::span<const literal::TimeSeriesLiteral> values) { return values; }).value();
+    const auto nested_children = outer_children.front().visit(
+        [](const literal::ScalarLiteralItem &) { return std::span<const literal::TimeSeriesLiteral>{}; },
+        [](std::span<const literal::TimeSeriesLiteral> values) { return values; }).value();
+    const auto copied_tag = literal::TaggedLiteral::from(nested_children.front());
+
+    REQUIRE(copied_tag);
+    CHECK(&copied_tag->sentinel == &extension_sentinel);
+    const auto copied_argument = ScalarValue<i64>::from_literal(copied_tag->argument);
+    CHECK(copied_argument.view().value() == 17);
+}
+
+TEST_CASE("saved run_graph inputs own nested strings and tagged literals",
+          "[testing][evaluation][feature:test-graph][series:tsd][series:tss][scalar:string]"
+          "[feature:scalar-storage][transition:removal]") {
+    const auto count_members = node([](In<TSD<string, TSS<string>>> input) {
+        const auto values = input["outer"];
+        return static_cast<i64>(values.size()) + (values.contains("first") ? 100 : 0);
+    });
+    const auto graph = [&](wp<TSD<string, TSS<string>>> input) { return count_members(input); };
+
+    auto saved = input<TSD<string, TSS<string>>>({
+        {{std::string{"outer"}, {std::string{"first"}, std::string{"second"}}}},
+        {{std::string{"outer"}, {literal::REMOVED(std::string{"first"})}}},
+    });
+
+    CHECK(run_graph(graph, saved).equals<i64>({102, 1}));
+
+    auto shared_copy = saved;
+    auto moved_copy = std::move(shared_copy);
+    CHECK(shared_copy.ticks().empty());
+    CHECK(run_graph(graph, saved).equals<i64>({102, 1}));
+    CHECK(run_graph(graph, moved_copy).equals<i64>({102, 1}));
+}
+
+TEST_CASE("copied run_graph inputs own borrowed scalar sources",
+          "[testing][evaluation][feature:test-graph][series:value][scalar:string][feature:scalar-storage]") {
+    const auto identity = [](wp<TS<string>> input) { return input; };
+
+    auto saved = [&] {
+        auto source = std::string{"before copy"};
+        const auto tick = literal::TimeSeriesLiteral(source);
+        const auto borrowed = GraphRunLiteralInput(std::span{&tick, std::size_t{1}});
+        auto owned = borrowed;
+        source = "after copy";
+        return GraphRunLiteralInput{std::move(owned)};
+    }();
+
+    CHECK(run_graph(identity, saved).equals<string>({"before copy"}));
+
+    auto copy = saved;
+    auto moved = std::move(copy);
+    CHECK(run_graph(identity, saved).equals<string>({"before copy"}));
+    CHECK(run_graph(identity, moved).equals<string>({"before copy"}));
+}
+
+TEST_CASE("assigned run_graph inputs own their source descriptors",
+          "[testing][evaluation][feature:test-graph][series:value][scalar:string][feature:scalar-storage]") {
+    const auto identity = [](wp<TS<string>> input) { return input; };
+    auto assigned = GraphRunLiteralInput(std::span<const literal::TimeSeriesLiteral>{});
+
+    {
+        auto source = std::string{"before assignment"};
+        const auto tick = literal::TimeSeriesLiteral(source);
+        auto original = GraphRunLiteralInput(std::span{&tick, std::size_t{1}});
+        original.runtime_type = &cpp_time_series_runtime_type<TS<string>>();
+        assigned = original;
+        source = "after assignment";
+    }
+
+    CHECK(run_graph(identity, assigned).equals<string>({"before assignment"}));
+}
+
+TEST_CASE("move-assigned run_graph inputs retain shared owned storage",
+          "[testing][evaluation][feature:test-graph][series:value][scalar:string][feature:scalar-storage]") {
+    const auto identity = [](wp<TS<string>> input) { return input; };
+    auto moved_assigned = GraphRunLiteralInput(std::span<const literal::TimeSeriesLiteral>{});
+
+    {
+        const auto owned = input<TS<string>>({"owned snapshot"});
+        auto shared_copy = owned;
+        moved_assigned = std::move(shared_copy);
+    }
+
+    CHECK(run_graph(identity, moved_assigned).equals<string>({"owned snapshot"}));
 }
 
 TEST_CASE("run_graph literal annotations support generic and multiple inputs",

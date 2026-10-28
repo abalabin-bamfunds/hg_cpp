@@ -27,9 +27,20 @@ A scalar collection can be one fixed argument or a sequence of collection values
 Use `ticks` when the collection's shape is ambiguous. An empty collection matching the
 parameter type is one initial empty value; `ticks({})` supplies no ticks in C++.
 
-Literal and range-backed input storage must remain alive for the synchronous run.
-Construct temporary descriptors at the call site. See [input literals](literals.md)
-and [result access](testing.md).
+In C++, inline literal descriptors borrow their tick storage and scalar sources
+through the synchronous `run_graph` call. The `input()` overloads and brace-based
+`ticks()` return a const reference to the temporary descriptor argument. Use that
+reference inline or copy it into a value; do not retain the returned reference:
+
+```cpp
+run_graph(graph, input<TS<i64>>({1, 2}));
+auto saved = input<TS<i64>>({1, 2}); // copies and owns a snapshot
+```
+
+Copying a borrowed `GraphRunLiteralInput` snapshots recursive sequences and scalar
+payloads. Copies of an owned descriptor share its immutable snapshot; moving transfers
+it. Range-based `ticks(range)` borrows lvalue ranges and owns rvalue ranges through
+the returned view. See [input literals](literals.md) and [result access](testing.md).
 
 ## Options
 

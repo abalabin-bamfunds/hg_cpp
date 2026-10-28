@@ -1898,8 +1898,7 @@ TEST_CASE("queue message collection payloads use the tick reader discard grammar
     };
 
     verify(TSL<TS<i64>, 2>::type(), literal::TimeSeriesLiteral{{0, literal::SKIP}, {1, 11}});
-    const auto removed_key = literal::ScalarLiteral(2);
-    verify(TSS<i64>::type(), literal::TimeSeriesLiteral{1, literal::REMOVED(removed_key)});
+    verify(TSS<i64>::type(), literal::TimeSeriesLiteral{1, literal::REMOVED(2)});
     verify(TSD<i64, TS<i64>>::type(), literal::TimeSeriesLiteral{{4, 44}, {7, literal::REMOVE}, {9, literal::INVALID}});
     verify(TSD<i64, TSD<i64, TS<i64>>>::type(), literal::TimeSeriesLiteral{{1, {{2, 22}}}});
     verify(TSB<TickPair>::type(), literal::TimeSeriesLiteral{{"first", 10}, {"second", 20}});

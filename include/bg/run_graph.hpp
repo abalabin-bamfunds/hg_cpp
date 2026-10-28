@@ -866,7 +866,7 @@ inline std::span<const literal::TimeSeriesLiteral> GraphRunArguments::normalize_
 inline WiringPoint GraphRunArguments::wire_literal(const GraphRunLiteralInput &input, std::size_t index) {
     const auto &runtime_type = input.runtime_type == nullptr ? graph_run_runtime_type(signature, index)
                                                              : *input.runtime_type;
-    const auto values = normalize_numeric_literals(input.ticks, runtime_type);
+    const auto values = normalize_numeric_literals(input.ticks(), runtime_type);
     return details::wire_literal_source(GraphRunLiteralInput(values), runtime_type);
 }
 
@@ -911,7 +911,7 @@ WiringArgument GraphRunArguments::argument_materialized(std::size_t index, Input
             point = details::wire_runtime_source(input);
             return WiringArgument{point};
         } else if constexpr (std::same_as<std::remove_cvref_t<Input>, GraphRunLiteralInput>) {
-            cycle_count = std::max(cycle_count, input.ticks.size());
+            cycle_count = std::max(cycle_count, input.ticks().size());
             return WiringArgument{wire_literal(input, index)};
         } else if constexpr (graph_run_ticks_v<Input> ||
                              std::same_as<std::remove_cvref_t<Input>, RawGraphRunLiteralInput>) {
@@ -950,7 +950,7 @@ WiringArgument GraphRunArguments::argument_materialized(std::size_t index, Input
         cycle_count = std::max(cycle_count, input.ticks.size());
         point = details::wire_runtime_source(input);
     } else if constexpr (std::same_as<std::remove_cvref_t<Input>, GraphRunLiteralInput>) {
-        cycle_count = std::max(cycle_count, input.ticks.size());
+        cycle_count = std::max(cycle_count, input.ticks().size());
         point = wire_literal(input, index);
     } else if constexpr (std::same_as<std::remove_cvref_t<Input>, RawGraphRunLiteralInput>) {
         return raw_literals_argument(input, *time_series_type);
@@ -1175,7 +1175,8 @@ auto run_graph_bound_descriptor_range_target(const Graph &graph, const GraphRunO
 } // namespace details
 
 // Wire an explicitly typed input while a run_graph callback has an active WiringContext.
-inline WiringPoint graph_run_input(const GraphRunLiteralInput &input) {
+// Its tick storage and borrowed sources must survive the enclosing run_graph evaluation.
+inline WiringPoint graph_run_input(const GraphRunLiteralInput &input BG_LIFETIMEBOUND) {
     if (input.runtime_type == nullptr) {
         throw std::invalid_argument{"graph_run_input requires an explicit time-series type"};
     }
