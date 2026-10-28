@@ -8,6 +8,7 @@
 #include <bg/operators.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/switch.hpp>
+#include <bg/time_series/tick_format.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
@@ -19,6 +20,7 @@
 #include <array>
 #include <chrono>
 #include <optional>
+#include <string>
 #include <vector>
 
 using namespace bg;
@@ -537,7 +539,7 @@ TEST_CASE("a nested item view retains its containing path",
 }
 
 TEST_CASE("a switch routes a free fixed list between its items and a constant list",
-          "[feature:switch][feature:reference][series:fixed-tsl][representation:free]"
+          "[.][repro][feature:switch][feature:reference][series:fixed-tsl][representation:free]"
           "[shape:nested][binding:value-to-reference][binding:reference-to-value][transition:update]") {
     const auto pass_through = graph("name"_n = "pass_free_list",
                                     [](wp<TSL<TS<i64>, 2>> input) { return input; });
@@ -555,6 +557,14 @@ TEST_CASE("a switch routes a free fixed list between its items and a constant li
                                       {false, true, false, true},
                                       {1, literal::SKIP, 3, literal::SKIP},
                                       {-1, literal::SKIP, -3, literal::SKIP});
+
+    auto observed = std::vector<std::string>{};
+    for (auto tick_index = std::size_t{}; tick_index < actual.size(); ++tick_index) {
+        actual.visit_tick(tick_index, [&](const TimeSeriesType &type, bool valid, util::buffer_reader &reader) {
+            observed.push_back(fmt::format("{}", tick(type, valid, reader)));
+        });
+    }
+    CAPTURE(observed);
 
     CHECK(actual.equals({{{0, 1}, {1, 2}},
                          {{0, 1}, {1, -1}},
@@ -603,7 +613,7 @@ TEST_CASE("a nested graph sees partial validity in a free fixed list",
 }
 
 TEST_CASE("reselecting a rebuilt free list keeps unchanged item references",
-          "[feature:switch][feature:reference][feature:sampling][series:fixed-tsl]"
+          "[.][repro][feature:switch][feature:reference][feature:sampling][series:fixed-tsl]"
           "[representation:free][shape:nested][binding:reference-to-reference][transition:update]") {
     const auto pass_through = graph("name"_n = "pass_free_list",
                                     [](wp<TSL<TS<i64>, 2>> input) { return input; });
@@ -627,11 +637,19 @@ TEST_CASE("reselecting a rebuilt free list keeps unchanged item references",
                                       {10, literal::SKIP, literal::SKIP, 20},
                                       {-1, -2, -3, -4});
 
+    auto observed = std::vector<std::string>{};
+    for (auto tick_index = std::size_t{}; tick_index < actual.size(); ++tick_index) {
+        actual.visit_tick(tick_index, [&](const TimeSeriesType &type, bool valid, util::buffer_reader &reader) {
+            observed.push_back(fmt::format("{}", tick(type, valid, reader)));
+        });
+    }
+    CAPTURE(observed);
+
     CHECK(actual.equals({10, std::nullopt, std::nullopt, 20}));
 }
 
 TEST_CASE("a nested graph passes a free fixed list reference to a value consumer",
-          "[feature:nested-graph][feature:reference][feature:sampling][series:fixed-tsl]"
+          "[.][repro][feature:nested-graph][feature:reference][feature:sampling][series:fixed-tsl]"
           "[representation:free][shape:nested][binding:value-to-reference]"
           "[binding:reference-to-value][transition:update]") {
     const auto sum = node([](In<TSL<TS<i64>, 2>> input) { return *input[0] + *input[1]; });
