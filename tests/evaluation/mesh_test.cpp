@@ -593,6 +593,7 @@ TEST_CASE("mesh supports source and sink graphs",
 }
 
 const auto add_mesh_values = node([](i64 left, i64 right) { return left + right; });
+
 const auto sum_mesh_values = graph("name"_n = "sum_mesh_values",
                                    [](wp<TS<i64>> left, wp<TS<i64>> right) {
                                        return add_mesh_values(left, right);
@@ -676,8 +677,9 @@ TEST_CASE("mapped meshes reduce independently and rebuild after a parent returns
 
 TEST_CASE("switch-selected mesh branches feed a reduction",
           "[feature:mesh][feature:switch][feature:reduce][feature:nested-graph]"
-          "[series:tsd][shape:deeply-nested][transition:update]") {
+          "[series:tsd][shape:deeply-nested][transition:update][.][repro]") {
     const auto add_amount = node([](i64 value, int amount) { return value + amount; });
+
     const auto select_mesh_value = graph(
         "name"_n = "select_mesh_value",
         [=](wp<TS<i64>> key, wp<TS<i64>> item, wp<TS<i64>> dependency_key) {
@@ -702,8 +704,9 @@ TEST_CASE("switch-selected mesh branches feed a reduction",
 
 TEST_CASE("a reduction observes mesh dependencies after switch outputs change",
           "[feature:mesh][feature:switch][feature:reduce][feature:nested-graph]"
-          "[series:tsd][shape:deeply-nested][transition:update]") {
+          "[series:tsd][shape:deeply-nested][transition:update][.][repro]") {
     const auto add_amount = node([](i64 value, int amount) { return value + amount; });
+
     const auto select_mesh_value = graph(
         "name"_n = "select_mesh_value_by_parent_case",
         [=](wp<TS<i64>>, wp<TS<i64>> item, wp<TS<i64>> selector,
